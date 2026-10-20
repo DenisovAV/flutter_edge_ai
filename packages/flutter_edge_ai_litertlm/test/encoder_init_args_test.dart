@@ -108,5 +108,18 @@ void main() {
         1,
       );
     });
+
+    test("the load plan's encoder backends win over the request", () {
+      // planLiteRtLmLoad resolves an unset encoder backend from the file (the
+      // NPU for a compiled encoder); that choice, not the null, must reach
+      // native.
+      final args = encoderInitArgs(
+        _config(supportImage: true, supportAudio: true),
+        PreferredBackend.npu,
+        visionBackend: PreferredBackend.npu,
+        audioBackend: PreferredBackend.gpu,
+      );
+      expect((args.visionBackend, args.audioBackend), ('npu', 'gpu'));
+    });
   });
 }

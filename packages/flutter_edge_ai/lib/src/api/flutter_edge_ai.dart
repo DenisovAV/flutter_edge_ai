@@ -14,6 +14,10 @@ import 'package:flutter_edge_ai/src/infrastructure/web_download_service_stub.dar
     if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_download_service.dart';
 import 'package:flutter_edge_ai/src/model.dart';
 import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
+import 'package:flutter_edge_ai/src/registry/multi_model_engine.dart'
+    show MultiModelEngine;
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart'
+    show ActiveModelParams;
 import 'package:flutter_edge_ai/src/registry/embedding_registry.dart';
 import 'package:flutter_edge_ai/src/registry/stt_registry.dart';
 import 'package:flutter_edge_ai/src/registry/tts_registry.dart';
@@ -31,6 +35,7 @@ import 'package:flutter_edge_ai/src/registry/skill_executor_provider.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
 import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
 
@@ -358,14 +363,27 @@ class FlutterEdgeAi {
   /// Runtime parameters:
   /// - [maxTokens]: Maximum context size (default: 1024)
   /// - [preferredBackend]: CPU or GPU preference (optional)
-  /// - [preferredVisionBackend]: vision-encoder backend override; null
-  /// defaults to CPU (optional)
-  /// - [preferredAudioBackend]: audio-encoder backend override; null defaults to CPU (optional)
+  /// - [preferredVisionBackend]: vision-encoder backend override; null lets
+  /// the engine choose (the native `.litertlm` engine reads the model file:
+  /// the encoder's declared `backend_constraint`, the NPU when the encoder is
+  /// compiled for one, else CPU; `InferenceModel.activeVisionBackend` says
+  /// what it chose) (optional)
+  /// - [preferredAudioBackend]: audio-encoder backend override; null as for
+  /// [preferredVisionBackend] (optional)
   /// - [supportImage]: Enable multimodal image support (default: false)
   /// - [supportAudio]: Enable audio input support for Gemma 3n E4B (default: false)
   /// - [maxNumImages]: Maximum number of images if supportImage is true
+  /// - [multimodalOrder]: the order in which a user message's images, audio
+  ///   and text reach the model. Null picks the order of the active model's
+  ///   type ([MultimodalOrder.forModelType]): images, text, audio for
+  ///   [ModelType.gemma4], images, audio, text for every other type. Set it
+  ///   for a model whose template expects another order. Changing it rebuilds
+  ///   the model, as every argument here does. Read by the native LiteRT-LM
+  ///   engine only (optional)
   /// - [activationDataType]: activation type for the text decoder of native
-  ///   `.litertlm` models (Android, iOS, desktop); null honors the model file,
+  ///   `.litertlm` models (Android, iOS, desktop); null honors the model file
+  ///   (except a `ModelType.functionGemma` bundle that declares no
+  ///   `prefer_activation_type`, which gets float32 on its GPU attempt),
   ///   and a value overrides LiteRT-LM's own choice (float16 on GPU by
   ///   default). Pass
   ///   [ActivationDataType.float32] if the GPU writes wrong digits — it needs
@@ -419,6 +437,7 @@ class FlutterEdgeAi {
     bool? supportImage,
     bool? supportAudio,
     int? maxNumImages,
+    MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,
     int? maxConcurrentSessions,
@@ -439,26 +458,138 @@ class FlutterEdgeAi {
       );
     }
 
+    final merged = _mergeModelDefaults(
+      'getActiveModel',
+      defaults: defaults,
+      maxTokens: maxTokens,
+      preferredBackend: preferredBackend,
+      supportImage: supportImage,
+      supportAudio: supportAudio,
+    );
+
+    // Create InferenceModel using identity from spec + runtime params
+    return await FlutterEdgeAiPlugin.instance.obtainActiveModel(
+      modelType: activeSpec.modelType,
+      fileType: activeSpec.fileType,
+      maxTokens: merged.maxTokens,
+      preferredBackend: merged.preferredBackend,
+      preferredVisionBackend: preferredVisionBackend,
+      preferredAudioBackend: preferredAudioBackend,
+      supportImage: merged.supportImage,
+      supportAudio: merged.supportAudio,
+      maxNumImages: maxNumImages,
+      multimodalOrder: multimodalOrder,
+      enableSpeculativeDecoding: enableSpeculativeDecoding,
+      activationDataType: activationDataType,
+      maxConcurrentSessions: maxConcurrentSessions,
+    );
+  }
+
+  /// Opens a new model for [spec] that the caller owns, next to the active
+  /// model and to other opened ones. Mobile and desktop only.
+  ///
+  /// [getActiveModel] gives the one active model: cached, and rebuilt when a
+  /// parameter changes. [openModel] builds a new model on every call. It is
+  /// never cached, a [getActiveModel] rebuild never touches it, and closing it
+  /// leaves every other model open. Close it with [InferenceModel.close] when
+  /// done: the plugin has no memory policy, and each open model holds its own
+  /// weights and context window. On iOS a process past its memory limit is
+  /// killed, with no exception to catch.
+  ///
+  /// [spec] must be the installed model, as `install()` returned it. Register
+  /// a file without making it the active model with
+  /// `installModel(…).fromFile(path).install(activate: false)`. Uninstalling
+  /// a model does not close the models opened on it.
+  ///
+  /// The engine that runs [spec] must implement [MultiModelEngine]
+  /// (`LiteRtLmEngine` does); otherwise this throws [UnsupportedError] before
+  /// anything is loaded. Open models share the engine cache directory
+  /// [getActiveModel] uses, the native libraries the process loaded and the
+  /// engine's process-wide settings (LiteRT-LM's log level). A model's sampler
+  /// is fixed by its first generation (LiteRT-LM#2080), so sessions sharing
+  /// one model should use the same sampling.
+  ///
+  /// The parameters mean what they mean on [getActiveModel], with the same
+  /// precedence over [defaults].
+  ///
+  /// Throws [UnsupportedError] on web and for an engine without
+  /// [MultiModelEngine], [StateError] when no registered engine can run
+  /// [spec], and an `Exception` when [spec] is not the installed model.
+  static Future<InferenceModel> openModel(
+    InferenceModelSpec spec, {
+    ModelRuntimeDefaults? defaults,
+    int? maxTokens,
+    PreferredBackend? preferredBackend,
+    PreferredBackend? preferredVisionBackend,
+    PreferredBackend? preferredAudioBackend,
+    bool? supportImage,
+    bool? supportAudio,
+    int? maxNumImages,
+    MultimodalOrder? multimodalOrder,
+    bool? enableSpeculativeDecoding,
+    ActivationDataType? activationDataType,
+    int? maxConcurrentSessions,
+  }) async {
+    final merged = _mergeModelDefaults(
+      'openModel',
+      defaults: defaults,
+      maxTokens: maxTokens,
+      preferredBackend: preferredBackend,
+      supportImage: supportImage,
+      supportAudio: supportAudio,
+    );
+    return FlutterEdgeAiPlugin.instance.openModel(
+      spec,
+      ActiveModelParams(
+        maxTokens: merged.maxTokens,
+        preferredBackend: merged.preferredBackend,
+        preferredVisionBackend: preferredVisionBackend,
+        preferredAudioBackend: preferredAudioBackend,
+        supportImage: merged.supportImage,
+        supportAudio: merged.supportAudio,
+        maxNumImages: maxNumImages,
+        multimodalOrder:
+            multimodalOrder ?? MultimodalOrder.forModelType(spec.modelType),
+        enableSpeculativeDecoding: enableSpeculativeDecoding,
+        activationDataType: activationDataType,
+        maxConcurrentSessions: maxConcurrentSessions,
+      ),
+    );
+  }
+
+  /// The model-level values [getActiveModel] and [openModel] build with.
+  static ({
+    int maxTokens,
+    PreferredBackend? preferredBackend,
+    bool supportImage,
+    bool supportAudio,
+  })
+  _mergeModelDefaults(
+    String caller, {
+    required ModelRuntimeDefaults? defaults,
+    required int? maxTokens,
+    required PreferredBackend? preferredBackend,
+    required bool? supportImage,
+    required bool? supportAudio,
+  }) {
     // Merge precedence: explicit argument > manifest [defaults] > SDK default.
     // maxTokens keeps its historical 1024 fallback, so an omitted arg with no
     // defaults behaves exactly as before. The .litertlm engine still clamps
     // this value downstream (clampLitertlmContextTokens) — a manifest cannot
     // set a context window the engine rejects (guards #318).
-    final effMaxTokens = mergeRuntimeDefault(
-      maxTokens,
-      defaults?.maxTokens,
-      1024,
-    );
-    final effPreferredBackend = preferredBackend ?? defaults?.preferredBackend;
-    final effSupportImage = mergeRuntimeDefault(
-      supportImage,
-      defaults?.supportImage,
-      false,
-    );
-    final effSupportAudio = mergeRuntimeDefault(
-      supportAudio,
-      defaults?.supportAudio,
-      false,
+    final merged = (
+      maxTokens: mergeRuntimeDefault(maxTokens, defaults?.maxTokens, 1024),
+      preferredBackend: preferredBackend ?? defaults?.preferredBackend,
+      supportImage: mergeRuntimeDefault(
+        supportImage,
+        defaults?.supportImage,
+        false,
+      ),
+      supportAudio: mergeRuntimeDefault(
+        supportAudio,
+        defaults?.supportAudio,
+        false,
+      ),
     );
 
     // [defaults] also carries two SESSION-level fields (thinkingDeclared,
@@ -470,27 +601,12 @@ class FlutterEdgeAi {
         (defaults.thinkingDeclared != null ||
             defaults.minOutputTokens != null)) {
       edgeAiLog(
-        '[flutter_edge_ai] getActiveModel: manifest defaults carry session-level '
-        'fields (thinkingDeclared/minOutputTokens) that getActiveModel does not apply '
+        '[flutter_edge_ai] $caller: manifest defaults carry session-level '
+        'fields (thinkingDeclared/minOutputTokens) that $caller does not apply '
         '— forward them to createSession(enableThinking:, maxOutputTokens:).',
       );
     }
-
-    // Create InferenceModel using identity from spec + runtime params
-    return await FlutterEdgeAiPlugin.instance.createModel(
-      modelType: activeSpec.modelType,
-      fileType: activeSpec.fileType,
-      maxTokens: effMaxTokens,
-      preferredBackend: effPreferredBackend,
-      preferredVisionBackend: preferredVisionBackend,
-      preferredAudioBackend: preferredAudioBackend,
-      supportImage: effSupportImage,
-      supportAudio: effSupportAudio,
-      maxNumImages: maxNumImages,
-      enableSpeculativeDecoding: enableSpeculativeDecoding,
-      activationDataType: activationDataType,
-      maxConcurrentSessions: maxConcurrentSessions,
-    );
+    return merged;
   }
 
   /// The Hugging Face resolvers contributed by [engines] that implement
@@ -514,7 +630,7 @@ class FlutterEdgeAi {
     return resolvers;
   }
 
-  /// Three-tier runtime-default merge used by [getActiveModel]: an explicit
+  /// Three-tier runtime-default merge used by [getActiveModel] and [openModel]: an explicit
   /// argument wins over a manifest [ModelRuntimeDefaults] value, which wins over
   /// the SDK default. Extracted so the precedence rule is stated — and tested —
   /// in one place.
@@ -654,21 +770,20 @@ class FlutterEdgeAi {
   ///   `EmbeddingModalityNotLoadedException`. The embedder already loaded is
   ///   reused when it covers the request; otherwise it is rebuilt with the
   ///   UNION of what it had and what is asked, so declarations only widen.
-  /// - [preferredBackend]: [PreferredBackend.npu] runs an EmbeddingGemma 2
-  ///   per-SoC `.litertlm` bundle on the NPU (flutter_edge_ai_litertlm, on
-  ///   Qualcomm Android and Qualcomm Linux arm64). Such a bundle runs nowhere
-  ///   else, and its vectors are not the CPU bundle's, so the backend refuses
-  ///   rather than switches: an NPU bundle without `npu`, `npu` with the
-  ///   generic bundle, and `npu` where no NPU can run it are
-  ///   `EmbeddingLoadException`s, and an embedder cached for one side is never
-  ///   handed to a request for the other. Every other embedder runs on CPU on
-  ///   native — LiteRT's GPU delegate returns all-zero vectors for
-  ///   EmbeddingGemma's int4 weights, and the ONNX client appends no execution
-  ///   provider — so `gpu` is **not applied**, and neither is `npu` for them.
-  ///   On web the runtime chooses for itself. A request that is not applied
-  ///   logs a line once per isolate in debug builds; read
-  ///   [EmbeddingModel.activeBackend] for the backend in use, which is
-  ///   available in release builds too.
+  /// - [preferredBackend]: explicit accelerator preference. Providers declare
+  ///   what they honour for the installed spec. Automatic (null) reuses a
+  ///   current non-NPU embedder for that model and media. A repeated explicit
+  ///   CPU/GPU request reuses the model it loaded, including a fallback; it
+  ///   does not retry the accelerator until a rebuild is needed or the model
+  ///   is closed. An explicit switch otherwise replaces it. NPU requests keep
+  ///   a separate cache identity and automatic requests never borrow an NPU
+  ///   entry, since NPU vectors need not match CPU/GPU vectors. Existing
+  ///   CPU-only providers ignore GPU with a once-only diagnostic; legacy web
+  ///   runtimes choose their own placement. GPU-capable providers report the
+  ///   loaded backend and print one release-visible warning when a new
+  ///   explicit load falls back, including an NPU request; reuse is quiet.
+  ///   Read [EmbeddingModel.activeBackend] for the actual placement; null is
+  ///   unknown, not CPU. Provider constructors own any strict fallback policy.
   ///
   /// Fails (as a failed future) with:
   /// - [StateError] if no active embedding model is set

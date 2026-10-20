@@ -20,6 +20,7 @@ class ModelChoice {
     this.path,
     this.maxTokens = 4096,
     this.preferredBackend,
+    this.activationDataType,
   }) : assert(
          (url == null) != (path == null),
          'a model comes from a URL or from a file, not both and not neither',
@@ -74,6 +75,11 @@ class ModelChoice {
   /// where one file needs it — see [Models.functionGemma].
   final PreferredBackend? preferredBackend;
 
+  /// The activation precision to ask for, or `null` to leave the engine's
+  /// choice alone. Set only where one file needs it — see
+  /// [Models.functionGemma].
+  final ActivationDataType? activationDataType;
+
   /// Can these weights reason out loud before answering?
   ///
   /// A property of the checkpoint, not of the app: `enableThinking: true` on a
@@ -127,13 +133,16 @@ abstract final class Models {
     supportsThinking: false,
     supportsRequiredToolChoice: false,
     // What Steps 1–3 open it with. 1024 is the context this checkpoint was
-    // built and measured at. The CPU is a workaround for this FILE: it was
-    // converted before litetune 0.1.4 began setting
-    // `prefer_activation_type=fp32`, and without that key the GPU path
-    // answers every prompt with `<pad>` to the token limit. A model you
-    // re-convert in Step 4 carries the key, so `fromDisk` keeps the defaults.
+    // built and measured at. FP32 is for this FILE: it was converted before
+    // litetune 0.1.4 began setting `prefer_activation_type`, and without that
+    // key the GPU runs at FP16 and answers every prompt with `<pad>` or
+    // nothing. flutter_edge_ai_litertlm 1.14.0 reads the header and picks FP32
+    // for such a FunctionGemma file on its own, so the value is redundant
+    // there; it stays because it still works and older versions need it. A
+    // model you re-convert in Step 4 carries the key, so `fromDisk` keeps the
+    // defaults.
     maxTokens: 1024,
-    preferredBackend: PreferredBackend.cpu,
+    activationDataType: ActivationDataType.float32,
   );
 
   /// The reason to pay 2.59 GB instead of 284 MB.

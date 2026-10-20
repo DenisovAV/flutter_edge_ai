@@ -2,7 +2,7 @@
 
 First off, **thank you** for considering contributing to `flutter_edge_ai`! 🎉
 
-This project brings on-device AI to Flutter on Android, iOS, Web, macOS, Windows and Linux — LLM inference (Gemma, Qwen, Phi, DeepSeek, …) through pluggable engines (LiteRT-LM, MediaPipe, ONNX Runtime, the OS's own models), plus embeddings, RAG, speech and agent skills. Your contributions help make AI more accessible and privacy-preserving for everyone.
+This project brings on-device AI to Flutter on Android, iOS, Web, macOS, Windows and Linux — LLM inference with any model a registered engine runs, through pluggable engines (LiteRT-LM, MediaPipe, ONNX Runtime, llama.cpp, the OS's own models), plus embeddings, RAG, speech and agent skills. Your contributions help make AI more accessible and privacy-preserving for everyone.
 
 ---
 
@@ -247,7 +247,7 @@ If you're working on desktop support:
 2. **Understand the architecture:**
    - Since 0.14.0 desktop runs LiteRT-LM directly via `dart:ffi` against the C API. No JVM/JRE/gRPC.
    - The FFI client lives in `flutter_edge_ai_litertlm/lib/src/ffi/litert_lm_client.dart` (used by all five platforms)
-   - Native libs are downloaded by `flutter_edge_ai_litertlm/hook/build.dart` (the sole hook) at build time from the `native-v0.18.0-e` GitHub release; SHA256-verified and bundled by Native Assets
+   - Native libs are downloaded by `flutter_edge_ai_litertlm/hook/build.dart` (the sole hook) at build time from the `native-v0.18.0-f` GitHub release; SHA256-verified and bundled by Native Assets
 
 3. **Test your changes:**
    - Test on macOS (Apple Silicon) and/or Windows x64 / Linux x86_64 / Linux arm64

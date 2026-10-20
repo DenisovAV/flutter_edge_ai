@@ -73,6 +73,11 @@ jobs:
       - name: Web import graph
         run: dart tool/check_web_graph.dart
 
+      # The C shim between LiteRT-LM and Dart has its own host test: fake
+      # libraries opened the way Dart opens the real one, under ThreadSanitizer.
+      - name: StreamProxy host test
+        run: packages/flutter_edge_ai_litertlm/native/litert_lm/run_stream_proxy_test.sh
+
       # Every package that has tests, each run from its OWN directory. The loop
       # lives in tool/test_all.sh so CI and the local "before committing"
       # command are the same code — a second copy here would drift, which is

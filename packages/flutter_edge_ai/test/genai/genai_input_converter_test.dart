@@ -94,6 +94,53 @@ void main() {
     expect(out.single.text, contains('"parameters"'));
   });
 
+  test('a callId becomes the call id and the result names it', () async {
+    final call = await messagesFromChatMessage(
+      ChatMessage(
+        role: ChatMessageRole.model,
+        parts: [
+          ToolPart.call(callId: 'c1', toolName: 'calc', arguments: {'a': 1}),
+        ],
+      ),
+    );
+    final result = await messagesFromChatMessage(
+      ChatMessage(
+        role: ChatMessageRole.user,
+        parts: [
+          ToolPart.result(callId: 'c1', toolName: 'calc', result: {'v': 7}),
+        ],
+      ),
+    );
+
+    expect(call.single.toolCalls.single.id, 'c1');
+    expect(call.single.toolCalls.single.args, {'a': 1});
+    expect(result.single.toolCallId, 'c1');
+  });
+
+  test('a callId that is only the tool name is no id', () async {
+    // What the output converter writes for a call the engine gave no id:
+    // parallel calls to one tool would otherwise share it.
+    final call = await messagesFromChatMessage(
+      ChatMessage(
+        role: ChatMessageRole.model,
+        parts: [
+          ToolPart.call(callId: 'calc', toolName: 'calc', arguments: {'a': 1}),
+        ],
+      ),
+    );
+    final result = await messagesFromChatMessage(
+      ChatMessage(
+        role: ChatMessageRole.user,
+        parts: [
+          ToolPart.result(callId: 'calc', toolName: 'calc', result: {'v': 7}),
+        ],
+      ),
+    );
+
+    expect(call.single.toolCalls.single.id, isNull);
+    expect(result.single.toolCallId, isNull);
+  });
+
   test('single audio DataPart → Message with audioBytes set', () async {
     final bytes = Uint8List.fromList([1, 2, 3]);
     final msg = ChatMessage(

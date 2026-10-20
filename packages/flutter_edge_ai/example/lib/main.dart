@@ -14,12 +14,17 @@ void main() async {
 }
 
 class ChatApp extends StatelessWidget {
-  const ChatApp({super.key});
+  const ChatApp({super.key, this.debugBanner = true});
+
+  /// Whether the DEBUG ribbon shows in debug builds; the Multimodal RAG demo
+  /// recording turns it off.
+  final bool debugBanner;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Flutter Edge AI Example',
+      debugShowCheckedModeBanner: debugBanner,
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         textTheme: const TextTheme(

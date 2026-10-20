@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-inference
-description: Use when adding on-device LLM inference to a Flutter app with flutter_edge_ai — offline chat, running Gemma, Qwen or Phi locally, installing a model from Hugging Face (gated repos included), streaming replies, a system prompt, thinking or reasoning output, image or audio prompts, picking a CPU, GPU or NPU backend, stopping generation — or setting up the recommended .litertlm engine (ModelFileType.litertlm) on Android, iOS, macOS, Windows, Linux or web, including the Android minSdk and internet permission, the Apple entitlements and Podfile, and the web index.html script tags. Also use when a reply comes back empty, the model answers identically every time, maxTokens does not shorten replies, FlutterEdgeAi is an undefined name, getActiveModel throws "No inference engine can handle this model", a session throws "Session is closed", numbers come back wrong on the GPU, or .litertlm fails to load on Android. For .task or .bin models (ModelFileType.task or ModelFileType.binary), use flutter-edge-ai-mediapipe.
+description: Use when adding on-device LLM inference to a Flutter app with flutter_edge_ai — offline chat, running an LLM locally, installing a model from Hugging Face (gated repos included), streaming replies, a system prompt, thinking or reasoning output, image or audio prompts, picking a CPU, GPU or NPU backend, stopping generation — or setting up the recommended .litertlm engine (ModelFileType.litertlm) on Android, iOS, macOS, Windows, Linux or web, including the Android minSdk and internet permission, the Apple entitlements and Podfile, and the web index.html script tags. Also use when a reply comes back empty, the model answers identically every time, maxTokens does not shorten replies, FlutterEdgeAi is an undefined name, getActiveModel throws "No inference engine can handle this model", a session throws "Session is closed", numbers come back wrong on the GPU, or .litertlm fails to load on Android. For .task or .bin models (ModelFileType.task or ModelFileType.binary), use flutter-edge-ai-mediapipe.
 ---
 
 # Running a model with flutter_edge_ai
@@ -47,6 +47,8 @@ final InferenceModel model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024)
 
 Gemma 4 E2B is 2.6 GB and needs no token. On web use `gemma-4-E2B-it-web.litertlm` from the same repo (2.0 GB).
 
+Supported models, their file types and engines: https://flutteredge.ai/docs/models.
+
 `install()` skips the download when the file is already installed from the same source, so calling it at every launch is safe. The latest install becomes the model `getActiveModel` loads.
 
 A gated repo needs a token, given once:
@@ -91,9 +93,14 @@ Other sources on the same builder: `.fromAsset(path)` for a model bundled in the
 - Symptom: `Target of URI doesn't exist: 'package:flutter_edge_ai/core/model.dart'` — or any other `package:flutter_edge_ai/core/…`, `/mobile/…`, `/web/…`, `/desktop/…` or `flutter_edge_ai_interface.dart` import.
 - Fix: since `flutter_edge_ai` 2.3.0 core's internals are private under `lib/src`. Apps import `package:flutter_edge_ai/flutter_edge_ai.dart`; an engine or tokenizer package imports `package:flutter_edge_ai/engine.dart`. The deprecated members went in the same release — `setModelPath`, `installModelFromAsset`, `initialize(enableWebCache:)` and the rest; core's MIGRATION.md lists each with its replacement.
 
+**After upgrading to 2.5**
+- Symptom: `The method 'fromLegacyUrl' isn't defined for the type 'InferenceModelSpec'`, `generateEmbedding`/`generateEmbeddings`/`getDimension` undefined, or a deprecation warning on `FlutterEdgeAiPlugin.instance.createModel`.
+- Fix: build the spec as `InferenceModelSpec(name:, modelSource: ModelSource.network(url) /.asset/.bundled/.file, modelType:)`; `fromLegacyUrl` defaulted to `ModelType.general`, so pass a model type explicitly. Replace `createModel(...)` (removed in 2.6.0) with `FlutterEdgeAi.getActiveModel(...)` — on Android, iOS and desktop it ignored `modelType` and `fileType` and returned the active model anyway — or with `FlutterEdgeAi.openModel` for several models. Embeddings: `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)`, `embedAll`, `dimension` (see the flutter-edge-ai-rag skill and core's MIGRATION.md).
+
 **No engine registered**
 - Symptom: `StateError: No inference engine can handle this model (ModelFileType.litertlm). Add the engine package to pubspec.yaml and pass it in inferenceEngines: of FlutterEdgeAi.initialize(...)`
 - Fix: add the engine package and register its provider — or fix `fileType` if the wrong engine is registered.
+- A `.gguf` model needs `flutter_edge_ai_llama` (llama.cpp through llamadart): register `LlamaEngineProvider()` and install with `fileType: ModelFileType.gguf`. Its build setup — the `hooks: user_defines: llamadart:` block, the Apple companion package with SwiftPM, iOS 16.4 / macOS 14, Android arm64-v8a and x86_64 only — is in that package's README.
 
 **`maxTokens` used as a reply length**
 
@@ -152,7 +159,7 @@ await for (final token in session.getResponseAsync()) {
 }
 ```
 
-To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()` on a chat. Cancelling the stream subscription detaches Dart but does not stop native decoding on every engine. On `.litertlm` on Android, iOS and desktop the chat keeps working after a stop, but images and audio from earlier turns are no longer visible to the model — re-send an image if the next question is about it. Every `flutter_edge_ai_litertlm` release includes this behavior; the legacy `flutter_gemma_litertlm` package needs 1.8.1 or later.
+To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()` on a chat. Cancelling the stream subscription detaches Dart but does not stop native decoding on every engine. On `.litertlm` on Android, iOS and desktop the chat keeps working after a stop — whether the app called `stopGeneration()` or cancelled its subscription. With `flutter_edge_ai_litertlm` 1.15.0 and later it is rewound to before the stopped turn, which is put back with its partial reply, so the model still sees images and audio from earlier turns. With 1.14.0 and earlier, and on the NPU, it is rebuilt from text instead, and those are gone — re-send an image there if the next question is about it. The legacy `flutter_gemma_litertlm` package needs 1.8.1 or later for a stopped chat to answer again at all.
 
 ## Multi-turn chat
 
@@ -183,7 +190,7 @@ The chat keeps the history: add the next user message and generate again. `gener
 
 `createSession` and `createChat` fill a single slot on the model, so a second one closes the first. For concurrent conversations use `openSession` / `openChat`, and close each one.
 
-They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` if the chat sends images) explicitly, or the chat runs as `ModelType.gemmaIt` with images off. They work on `.litertlm` (native and web), on MediaPipe Android and iOS, and on built-in AI; everywhere else — ONNX and MediaPipe web — they throw `UnsupportedError`.
+They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` / `supportAudio:` if the chat sends images or audio) explicitly, or the chat runs as `ModelType.gemmaIt` with images and audio off. They work on `.litertlm` (native and web), on MediaPipe Android and iOS, on built-in AI, and on `flutter_edge_ai_llama`, whose `openChat` does take the installed model's type and image/audio support, as its `createChat` does; everywhere else — ONNX and MediaPipe web — they throw `UnsupportedError`.
 
 ```dart
 final summariser = await model.openChat(modelType: ModelType.gemma4);
@@ -199,7 +206,8 @@ try {
 
 ## Thinking models
 
-Gemma 4, Qwen3 and DeepSeek R1 can emit reasoning on their supported engines.
+Gemma 4, Qwen3, DeepSeek R1 and `.litertlm` bundles with a thought channel
+(e.g. SmolLM3, Phi-4 Mini Reasoning) can emit reasoning on their supported engines.
 Pass `enableThinking: true` to `createChat`. Reasoning arrives as
 `ThinkingResponse` only from `generateChatResponseAsync()`;
 `generateChatResponse()` strips it. On a native `.litertlm`, reasoning that a
@@ -253,11 +261,28 @@ await chat.addQueryChunk(
 );
 ```
 
-`audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop; on the `.litertlm` web engine an audio message throws `UnsupportedError`.
+`audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop (VibeVoice-ASR also takes audio, for transcription only; measured on Android and macOS); on the `.litertlm` web engine an audio message throws `UnsupportedError`.
+
+The `.litertlm` engine sends a Gemma 4 message as images, text, then audio, as the Gemma 4 model card asks, and every other model type as images, audio, then text (`flutter_edge_ai` 2.4.0 with `flutter_edge_ai_litertlm` 1.14.0; litertlm 1.13.x ignores `multimodalOrder`). A model whose chat template expects another order takes `getActiveModel(multimodalOrder: MultimodalOrder.imagesAudioText)` or `MultimodalOrder.imagesTextAudio`.
 
 ## The model is a singleton
 
 `getActiveModel` returns one model per process. Calling it again with the same arguments returns that model, on every platform (web since 2.2.1). Different runtime arguments, or another active model, rebuild it and close the previous one — a handle still held stops working; `model.isClosed` says so from the moment `close()` starts, and a `getActiveModel` call made meanwhile waits for the close to finish before it builds the next model. With no model installed it throws `NoActiveModelError`, a `StateError`. Load it once, then create and close sessions per conversation.
+
+For several models loaded at once (one file on CPU and GPU, or two files), use `FlutterEdgeAi.openModel(spec, …)` (2.5.0, mobile and desktop) with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0); other engines throw `UnsupportedError`. Install the file with `install(activate: false)` and pass the returned `spec`. Every call builds a new model that the app closes: it is never cached, a `getActiveModel` rebuild leaves it open, and the plugin has no memory policy (on iOS a process past its memory limit is killed, not thrown at). An `activate: false` install that would replace the active model's file throws `StateError`, and `openModel` refuses a spec that is not the installed one. Its parameters mean what they do on `getActiveModel`; a model's sampler is fixed by its first generation, so sessions sharing one model use the same sampling; uninstalling a model does not close the models opened on it. Measured on macOS (CPU and GPU engines on one file, two GPU engines) and on Windows Lunar Lake (CPU, GPU and NPU engines together). Not measured: Android, iOS, Linux, and two GPU engines on Windows, where a second one can fail with `wgpu::Instance already set` (https://flutteredge.ai/docs/desktop).
+
+```dart
+final spec = (await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm,
+).fromFile(path).install(activate: false)).spec;
+
+final cpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.cpu);
+final gpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.gpu);
+// ... generate on either ...
+await gpu.close();
+await cpu.close();
+```
 
 ## Backends
 
@@ -272,12 +297,15 @@ print(model.activeBackend); // what actually loaded
 | `preferredBackend` | Tried in order |
 | --- | --- |
 | `null` or `gpu` | GPU, then CPU |
-| `npu` | NPU, GPU, CPU on Windows, and on Qualcomm Android and Qualcomm Linux arm64 when the app sets `qualcomm_npu`; GPU, CPU everywhere else |
+| `npu` | GPU, then CPU: a generic bundle has no NPU graph, so the NPU is not tried (with `backendFallback: false`, a `LiteRtLmBundleException`) |
 | `cpu` | CPU only |
+| any, for a bundle compiled for an NPU | the NPU only: `null` and `npu` run there, `gpu` and `cpu` are refused |
 
-Read `activeBackend` rather than assuming the requested one loaded; the web `.litertlm` engine reports `null`. `PreferredBackend.npu` needs a Snapdragon (Android), a Qualcomm Linux arm64 board, or Intel Lunar/Panther Lake (Windows), and a model compiled for that NPU; `PreferredBackend.cpu` never falls back. The iOS Simulator is CPU-only. On an iOS device a MediaPipe `.task` on the GPU is killed for memory while loading, before any fallback can run: pass `PreferredBackend.cpu` for it (flutter-edge-ai-mediapipe). On web, MediaPipe is GPU-only.
+The rows are for a generic bundle. A text model that declares `backend_constraint` is tried only on the backends it allows (with `null`, GPU then CPU, each only if it allows it). With `LiteRtLmEngine(backendFallback: false)` (`flutter_edge_ai_litertlm` 1.14.0) only the first backend of a row is tried, and a failure throws `BackendInitException` with LiteRT-LM's own reason.
 
-On NPU, run a **Gemma 4** bundle. A Gemma 3 bundle on either vendor's NPU drops every prefill chunk after the first — no error, no log line, and a fluent reply that answers from the opening of the prompt and ignores the rest (LiteRT-LM#3508). `maxTokens` is also not clamped up to 1024 on the NPU attempt the way it is on CPU and GPU, because the safe context is baked into the compiled bundle: pass the `cache_length` it was built for. Requesting `PreferredBackend.npu` does not guarantee the NPU runs — the engine falls back to GPU then CPU, and the floor applies to those attempts, so a fallback is clamped rather than crashed. The NPU candidate is attempted only on Windows, on Android phones with Qualcomm FastRPC, and on Qualcomm Linux arm64 boards with `/dev/fastrpc-cdsp`, the last two only when the app sets `qualcomm_npu`; on other Android phones, macOS, other Linux machines and iOS it is skipped, because nothing there can run it — and on macOS the native runtime was measured accepting `npu` anyway, which made `activeBackend` report an NPU the machine does not have. On Windows the check is per OS, so a PC without an Intel NPU still attempts it, and `activeBackend` can then report `npu` while the model runs elsewhere.
+Read `activeBackend` rather than assuming the requested one loaded; the web `.litertlm` engine reports `null`. `PreferredBackend.npu` needs a Snapdragon (Android), a Qualcomm Linux arm64 board, a Google Tensor G5/G6 Pixel (Android 16 or later, not a BP2A build), or Intel Lunar/Panther Lake (Windows), and a model compiled for that NPU; the Intel NPU needs `flutter_edge_ai_litertlm` 1.15.0 — 1.14.0, like every release since `native-v0.17.0`, fails its load or ends the process (`0xC0000409`); `PreferredBackend.cpu` never falls back. The iOS Simulator is CPU-only. On an iOS device a MediaPipe `.task` on the GPU is killed for memory while loading, before any fallback can run: pass `PreferredBackend.cpu` for it (flutter-edge-ai-mediapipe). On web, MediaPipe is GPU-only.
+
+On NPU, run a **Gemma 4** bundle. A Gemma 3 bundle on the Qualcomm or the Intel NPU (Google Tensor not measured) drops every prefill chunk after the first — no error, no log line, and a fluent reply that answers from the opening of the prompt and ignores the rest (LiteRT-LM#3508). `maxTokens` is also not clamped up to 1024 on the NPU attempt the way it is on CPU and GPU, because the safe context is baked into the compiled bundle: pass the `cache_length` it was built for. A bundle compiled for no NPU never runs on one, whatever its `backend_constraint` says: it has no NPU graph, and LiteRT would try to compile it on the device with a compiler plugin, which no NPU stack here ships, and run it on the CPU while reporting `npu` — so `PreferredBackend.npu` falls back to GPU, then CPU, for it (refused with `backendFallback: false`), and the floor applies to those attempts. A bundle compiled for an NPU (`…_qualcomm_sm8750.litertlm`, read from the file before any engine exists) runs on the NPU only: it is the default when `preferredBackend` is unset, `gpu`/`cpu` throw `LiteRtLmBundleException`, and an unreachable NPU throws `BackendInitException` at once. Unset `preferredVisionBackend`/`preferredAudioBackend` follow the file (the encoder's declared `backend_constraint`, the CPU when it allows the CPU; else the NPU it is compiled for; else CPU): Gemma 4 vision and audio run on the CPU, Gemma 3n vision on the GPU, because its section allows gpu only. Set one only where the section allows it (the published Gemma 4 and Gemma 3n audio encoders declare cpu, so `gpu` is refused; `preferredVisionBackend: cpu` is refused on Gemma 3n), or the load throws `LiteRtLmBundleException`; read `activeVisionBackend`/`activeAudioBackend` (filled by `flutter_edge_ai_litertlm` 1.14.0, null when the model has no such encoder). Its `problem` is `wrongBackend` for a backend the file rules out, `incomplete` for a download that stopped early, and `unsupportedNpu` for a text model, or an encoder that is on, compiled for an NPU this package has no dispatch for here (MediaTek, a Qualcomm bundle on Windows, a Google Tensor bundle off Android), for sections the load turns on that are compiled for two different NPUs, or for an NPU encoder next to a text model that is not on the NPU. `LiteRtLmEngine(backendFallback: false)` (1.14.0) makes one attempt and reports LiteRT-LM's reason (`LiteRtLmEngineCreateException.nativeMessage`); `readLiteRtLmBundleInfo(path)` (1.14.0) shows what the file declares. The NPU candidate is attempted only for a bundle compiled for an NPU, and only on Windows, on Android phones with Qualcomm FastRPC, on Qualcomm Linux arm64 boards with `/dev/fastrpc-cdsp`, and on Google Tensor G5/G6 Pixels with Android 16 or later (not a BP2A build; LiteRT itself refuses a bundle of the other Tensor generation when the engine is created), the last three only when the app sets `qualcomm_npu` or `google_tensor_npu`; on other Android phones, macOS, other Linux machines and iOS it is skipped, because nothing there can run it — and on macOS the native runtime was measured accepting `npu` anyway, which made `activeBackend` report an NPU the machine does not have. Windows has no device probe: a bundle compiled for the Intel NPU is not refused on a PC without one, and what LiteRT does then is not measured.
 
 On GPU, Gemma 4 can copy numbers wrongly from a long prompt: `2026/06/23` comes back as `20226/12/17`, the same way on every run (LiteRT-LM#3012 on Adreno, #2814 on Metal). The published Gemma 4 `.litertlm` files ask for half-precision activations. Ask for full precision when the answers carry figures, dates or amounts:
 
@@ -288,9 +316,9 @@ final model = await FlutterEdgeAi.getActiveModel(
 );
 ```
 
-Prefill gets slower (about 3× on a Snapdragon 8 Elite and an iPhone 11, under 1.5× on an Apple M3 Max); decode speed barely changes. Left unset, the model file decides. It applies to the text decoder of `.litertlm` models on Android, iOS and desktop — not to the vision or audio encoders, which keep what the model file asks for; MediaPipe, ONNX, built-in AI and the web engines ignore it entirely.
+Prefill gets slower (about 3× on a Snapdragon 8 Elite and an iPhone 11, under 1.5× on an Apple M3 Max); decode speed barely changes. Left unset, the model file decides, with one exception: a FunctionGemma bundle that declares no `prefer_activation_type` gets `float32` on its GPU attempt, because at `float16` it answers with nothing. A plain Gemma 3 270M (`ModelType.gemmaIt`) answers with `<pad>` on the GPU too (LiteRT-LM#3280) but is not covered: pass `float32` for it. A value you pass always wins. It applies to the text decoder of `.litertlm` models on Android, iOS and desktop — not to the vision or audio encoders, which keep what the model file asks for; MediaPipe, ONNX, built-in AI and the web engines ignore it entirely.
 
-`float32` needs more GPU memory than the default, and a GPU engine that cannot be created falls back to CPU without an error — right digits, a much slower run. After loading, check `model.activeBackend == PreferredBackend.gpu` before concluding the setting did anything. On Android the GPU shares system memory, so on a 4–6 GB phone running out of it at `float32` can end the app rather than fall back to CPU. Both precisions share one compiled GPU program cache per model, so switching recompiles the GPU programs (about 600 MB for Gemma 4 E2B): pick one precision per install rather than per request. Every `flutter_edge_ai_litertlm` release supports the setting; the legacy `flutter_gemma_litertlm` package needs 1.8.3 or later.
+`float32` needs more GPU memory than the default, and by default a GPU engine that cannot be created falls back to CPU without an exception, only a WARNING line in the log — right digits, a much slower run; with `LiteRtLmEngine(backendFallback: false)` the load throws `BackendInitException` instead. After loading, check `model.activeBackend == PreferredBackend.gpu` before concluding the setting did anything. On Android the GPU shares system memory, so on a 4–6 GB phone running out of it at `float32` can end the app rather than fall back to CPU. Both precisions share one compiled GPU program cache per model, so switching recompiles the GPU programs (about 600 MB for Gemma 4 E2B): pick one precision per install rather than per request. Every `flutter_edge_ai_litertlm` release supports the setting; the legacy `flutter_gemma_litertlm` package needs 1.8.3 or later.
 
 ## Platform setup
 

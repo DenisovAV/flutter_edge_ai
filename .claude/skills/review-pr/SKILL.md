@@ -59,7 +59,7 @@ From the diff, detect which package(s)/area(s) are affected:
 - `flutter_edge_ai_speech/` — opt-in STT (moonshine / Whisper / Parakeet) + TTS (Matcha / Qwen3 / Inflect) over the LiteRT C API; shares the litertlm bundle
 - `flutter_edge_ai_agent/` — opt-in SKILL.md agent skills over the function-calling loop (no Web)
 - `flutter_edge_ai_builtin_ai/` — OS models: Gemini Nano (Android), Apple Foundation Models (iOS/macOS), Windows AI Foundry, Chrome Prompt API (Web). Pure Dart since 0.3.0: no native sources and no pigeon of its own — it adapts the `flutter_local_ai` plugin, which owns every backend.
-- `flutter_edge_ai_diagnostics/` — memory diagnostics (`MemorySnapshot`) read from the OS on Android and iOS through `dart:io`/`dart:ffi`. No native sources, no dependency on core. A failed read must throw `MemoryReadException`; null is reserved for a value the platform does not have.
+- `flutter_edge_ai_diagnostics/` — memory diagnostics (`MemorySnapshot`) read from the OS on Android, iOS and macOS through `dart:io`/`dart:ffi`. No native sources, no dependency on core. A failed read must throw `MemoryReadException`; null is reserved for a value the platform does not have.
 - `genkit_flutter_edge_ai/`, `genkit_hybrid/` — Genkit integration packages (Dart; no native)
 - `flutter_edge_ai/example/` — example app + `integration_test/` E2E
 
@@ -212,8 +212,8 @@ CHECKLIST
 2. MANIFEST: the `<uses-native-library>` entries (libOpenCL.so, -car, -pixel,
    libvndksupport.so, libcdsprpc.so) live in the CORE plugin manifest and merge
    into consumer apps. libvndksupport is load-bearing for the OpenCL ICD on
-   Android 12+ (#324) — removing it degrades GPU to WebGPU and can hard-freeze
-   Mali.
+   Android 12+ (#324) — without it OpenCL fails to load, and OpenCL is the only
+   Android GPU path (no WebGPU library ships for Android since native-v0.18.0).
 3. minSdk: `.litertlm` needs 30 (API-30-only Bionic symbols, #265); builtin_ai
    needs 26; core declares 24. A change to any floor must be consistent with what
    the code actually dlopens.
@@ -345,9 +345,10 @@ CHECKLIST
    v0.16.0 while every CI assertion passed.
 4. Bazel `--define` names rot silently: Bazel accepts an unknown define and
    builds the default. Grep the tree being built before trusting one.
-5. stream_proxy.c probes the callback ABI at runtime via dlsym/GetProcAddress
-   because v0.15.0 changed the shape with no version symbol. Do not replace that
-   with a compile-time branch.
+5. v0.15.0 changed the stream callback shape with no version symbol. The shipped
+   stream_proxy.c probes it at runtime via dlsym/GetProcAddress; the source on
+   main also has stream_proxy_create2, where Dart passes the accessors it resolved
+   on the library it drives. Do not replace either with a compile-time branch.
 6. `stage()` in the hook is Apple-only on purpose (an Xcode directoryTreeSignature
    cycle); staging on Windows splits companion DLLs and hangs cancel/close.
 7. Any claim that a native check "passed" must name the artifact it inspected —

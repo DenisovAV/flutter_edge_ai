@@ -5,6 +5,10 @@ import 'package:flutter_edge_ai/engine.dart';
 
 import 'litertlm_flatbuffer.dart';
 
+// Moved to the web-safe flatbuffer file (the web EmbeddingGemma 2 pass reads
+// the same header); re-exported for the readers that import it from here.
+export 'litertlm_flatbuffer.dart' show litertlmHeaderEnd;
+
 /// The sampler a `.litertlm` bundle ships, read from the file itself: the
 /// container header and its `LlmMetadata` section, a few kilobytes.
 ///
@@ -68,38 +72,12 @@ final class BundleSamplerRead {
   final String? error;
 }
 
-/// The container major version this reader understands, as LiteRT-LM's own
-/// reader (`LITERTLM_MAJOR_VERSION`).
-const _majorVersion = 1;
-
-/// Larger than any header or `LlmMetadata` seen (a few KB); a bigger value is
-/// a corrupt file, not one to read into memory.
-const _maxHeaderBytes = 1 << 20;
+/// Larger than any `LlmMetadata` seen (a few KB); a bigger value is a corrupt
+/// file, not one to read into memory.
 const _maxLlmMetadataBytes = 10 << 20;
 
 /// `AnySectionDataType.LlmMetadataProto` in `litertlm_header_schema.fbs`.
 const _llmMetadataProto = 5;
-
-/// Where the header flatbuffer ends, from the 32-byte preamble.
-int litertlmHeaderEnd(Uint8List preamble) {
-  final data = ByteData.sublistView(preamble);
-  if (preamble.length < 32 ||
-      String.fromCharCodes(preamble.sublist(0, 8)) != 'LITERTLM') {
-    throw const FormatException('not a .litertlm file: no LITERTLM magic');
-  }
-  final major = data.getUint32(8, Endian.little);
-  if (major != _majorVersion) {
-    throw FormatException(
-      '.litertlm container version $major is not supported '
-      '(expected $_majorVersion)',
-    );
-  }
-  final end = data.getUint64(24, Endian.little);
-  if (end < 32 || end - 32 > _maxHeaderBytes) {
-    throw FormatException('.litertlm header end $end is out of range');
-  }
-  return end;
-}
 
 /// The `[begin, end)` byte range of the `LlmMetadataProto` section, from the
 /// header flatbuffer, or null when the bundle has none.

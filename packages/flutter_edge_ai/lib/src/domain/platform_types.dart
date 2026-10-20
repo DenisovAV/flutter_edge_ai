@@ -37,7 +37,10 @@ enum PreferredBackend {
 ///
 /// Mirrors LiteRT-LM's `ActivationDataType` (Kotlin `EngineConfig`). Left
 /// unset, LiteRT-LM takes the model file's `prefer_activation_type`, else
-/// [float16] on GPU and [float32] on CPU.
+/// [float16] on GPU and [float32] on CPU. One exception, in the LiteRT-LM
+/// engine: a `ModelType.functionGemma` bundle that declares no
+/// `prefer_activation_type` is built at [float32] on its GPU attempt, because at
+/// [float16] it answers with nothing; a value you pass always wins.
 ///
 /// [float32] is the fix when a GPU copies numbers wrongly from a long prompt —
 /// `2026/06/23` coming back as `20226/12/17`, the same way on every run. Gemma 4

@@ -19,6 +19,7 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_parts.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_container_io.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_embedding_bindings.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +32,7 @@ const _allSignatures = [128, 256, 512, 1024, 2048, 8192];
 /// What a per-SoC bundle declares (measured: 128-1024, no 2048/8192).
 const _npuSignatures = [128, 256, 512, 1024];
 const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
+const _ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
 const _dispatchDir = '/data/app/code_cache/litert_npu';
 
 /// What LiteRT-LM's stb decoder handles (X3, measured on our dylib).
@@ -94,9 +96,11 @@ void main() {
     Set<EmbeddingModality> declaredMedia = const {},
     int? numThreads,
     int visionTokensPerImage = 140,
+    bool requireWeightCache = false,
     LiteRtLmEmbeddingBindings Function()? openBindings,
     DateTime Function()? clock,
     LiteRtLmNpuTarget? npuTarget,
+    String npuDispatchDir = _dispatchDir,
   }) => LiteRtLmEmbeddingPass(
     LiteRtLmEmbeddingConfig(
       modelPath: modelPath,
@@ -104,8 +108,9 @@ void main() {
       declaredMedia: declaredMedia,
       numThreads: numThreads,
       visionTokensPerImage: visionTokensPerImage,
+      requireWeightCache: requireWeightCache,
       npuTarget: npuTarget,
-      npuDispatchDir: npuTarget == null ? null : _dispatchDir,
+      npuDispatchDir: npuTarget == null ? null : npuDispatchDir,
     ),
     openBindings: openBindings ?? () => native,
     allocator: allocator,
@@ -362,6 +367,7 @@ void main() {
         expect(info.audioFormats, isEmpty);
         expect(info.combinedInputs, isTrue);
         expect(native.visionTokensPerImage, 140);
+        expect(info.visionTokensPerImage, 140, reason: 'reported to core');
         expect(
           native.order,
           containsAllInOrder([
@@ -376,11 +382,12 @@ void main() {
 
       test('70 is the opt-in budget', () async {
         native.visionSignatures = const [70, 140];
-        await pass(
+        final info = await pass(
           declaredMedia: {EmbeddingModality.image},
           visionTokensPerImage: 70,
         ).load();
         expect(native.visionTokensPerImage, 70);
+        expect(info.visionTokensPerImage, 70);
       });
 
       test('a budget the bundle has no vision signature for is refused from '
@@ -487,6 +494,7 @@ void main() {
           native.order,
           isNot(contains('settings_set_vision_tokens_per_image')),
         );
+        expect(info.visionTokensPerImage, isNull, reason: 'none was set');
       });
 
       test('a text-only bundle reports text, and no formats', () async {
@@ -773,39 +781,359 @@ void main() {
         // folder (the 12-hex / decimal / embedding_cache form left 4).
         expect(path.length, 232);
         expect(260 - path.length, greaterThanOrEqualTo(25));
+        // What the refusal and the warning report: this file's path, not the
+        // directory's (24 + 1 characters of directory below `base`).
+        expect(
+          liteRtLmCacheFilePathLength('$base\\$dir', model, 164626432),
+          path.length,
+        );
+      });
+
+      test('the causes name MAX_PATH as the likely one on Windows from 260 '
+          'characters, and list every cause otherwise', () {
+        const everyCause = [
+          'a path too long for the platform',
+          'MAX_PATH is 260 characters',
+          'a directory this process cannot write to',
+          'no free space at all',
+        ];
+        for (final (length, windows) in [(259, true), (300, false)]) {
+          final causes = liteRtLmNoWeightCacheCauses(
+            cachePathLength: length,
+            windows: windows,
+          );
+          expect(causes, allOf([for (final c in everyCause) contains(c)]));
+          expect(causes, isNot(contains('the likely cause')));
+        }
+        for (final length in [260, 300]) {
+          expect(
+            liteRtLmNoWeightCacheCauses(cachePathLength: length, windows: true),
+            allOf(
+              contains("past Windows' 260-character MAX_PATH"),
+              contains('the likely cause'),
+              contains('a directory this process cannot write to'),
+              contains('no free space at all'),
+            ),
+          );
+        }
+      });
+
+      test('a real cache file is a *.xnnpack_cache of at least 1 MiB; a file '
+          'gone or unreadable by the time it is looked at is skipped, and the '
+          'files after it are still read', () {
+        final dir = Directory('${root.path}/scan')..createSync();
+        File sized(String name, int bytes) {
+          final file = File('${dir.path}/$name');
+          file.openSync(mode: FileMode.write)
+            ..truncateSync(bytes)
+            ..closeSync();
+          return file;
+        }
+
+        final entries = <FileSystemEntity>[
+          File('${dir.path}/gone.text_encoder.xnnpack_cache'), // never made
+          sized('m_1_2.vision_encoder.xnnpack_cache', 1 << 20),
+          sized('m_1_2.text_encoder.xnnpack_cache', (1 << 20) - 1),
+          sized('m_1_2.static_audio_encoder.xnnpack_cache', 100),
+          sized('m.mldrift_program_cache.bin', 2 << 20),
+          Directory('${dir.path}/sub.xnnpack_cache')..createSync(),
+        ];
+        expect(liteRtLmWrittenWeightCaches(entries), [
+          'm_1_2.vision_encoder.xnnpack_cache',
+        ]);
+        expect(liteRtLmMinWeightCacheBytes, 1 << 20);
       });
 
       test('an empty directory after create is reported, a filled one is '
           'not', () async {
-        Future<List<String>> printsDuring(Future<void> Function() body) async {
-          final lines = <String>[];
-          await runZoned(
-            body,
-            zoneSpecification: ZoneSpecification(
-              print: (_, _, _, line) => lines.add(line),
-            ),
-          );
-          return lines;
-        }
-
-        final filled = await printsDuring(() => pass().load());
+        final filled = await _printsDuring(() => pass().load());
         expect(filled.where((l) => l.contains('weight cache')), isEmpty);
 
         native.dispose();
         native = _FakeLiteRtLm()..writeCacheOnCreate = false;
         Directory(expectedCacheDir()).deleteSync(recursive: true);
-        final empty = await printsDuring(() => pass().load());
+        final empty = await _printsDuring(() => pass().load());
         expect(
           empty,
           contains(
-            allOf(
+            allOf([
               contains('WARNING'),
               contains('no weight cache'),
               contains(expectedCacheDir()),
-            ),
+              contains(
+                'about ${_textCachePath(expectedCacheDir()).length} '
+                'characters',
+              ),
+              contains('a directory this process cannot write to'),
+              contains('no free space at all'),
+              contains('requireWeightCache: true'),
+              isNot(contains('full disk')),
+              isNot(contains('native log')),
+            ]),
           ),
         );
       });
+
+      test(
+        'without the flag, header-only files (a failed or partial header '
+        'write) are reported as no cache too, and the load goes on',
+        () async {
+          native.cacheFileBytes = 100;
+          final p = pass();
+          final lines = await _printsDuring(() async {
+            final info = await p.load();
+            expect(info.dimension, 4);
+          });
+          expect(_aboutWeightCache(lines), [
+            allOf(
+              contains('WARNING'),
+              contains('wrote no weight cache to ${expectedCacheDir()}'),
+            ),
+          ]);
+          expect(native.live['engine'], hasLength(1));
+          await p.close();
+          expectNothingLeaked();
+        },
+      );
+
+      test('requireWeightCache: an empty directory after create is a load '
+          'failure naming the directory, the length of the cache file path and '
+          'the likely causes; the engine is deleted, nothing is printed, and '
+          'the stale siblings are collected first', () async {
+        native.writeCacheOnCreate = false;
+        final stale = Directory(
+          '$cacheBase/${liteRtLmCacheDirPrefix(_file)}-1-2',
+        )..createSync(recursive: true);
+        final dir = expectedCacheDir();
+        final p = pass(requireWeightCache: true, clock: anHourLater);
+
+        final lines = await _printsDuring(
+          () => expectLater(
+            p.load(),
+            throwsA(
+              isA<EmbeddingLoadException>()
+                  .having((e) => e.engine, 'engine', 'LiteRT-LM')
+                  .having((e) => e.nativeCode, 'nativeCode', isNull)
+                  .having(
+                    (e) => e.message,
+                    'message',
+                    allOf([
+                      contains(
+                        'wrote no weight cache to $dir while loading $_file',
+                      ),
+                      contains(
+                        'about ${_textCachePath(dir).length} characters',
+                      ),
+                      contains('requireWeightCache: true'),
+                      contains('a path too long for the platform'),
+                      contains('MAX_PATH'),
+                      contains('a directory this process cannot write to'),
+                      contains('no free space at all'),
+                      isNot(contains('full disk')),
+                      isNot(contains('native log')),
+                    ]),
+                  ),
+            ),
+          ),
+        );
+
+        expect(
+          _aboutWeightCache(lines),
+          isEmpty,
+          reason: 'refused, not warned',
+        );
+        expect(native.created('engine'), 1);
+        expect(native.deleted('engine'), 1);
+        expect(native.deleted('options'), 1);
+        expectNothingLeaked();
+        expect(
+          stale.existsSync(),
+          isFalse,
+          reason:
+              'this refusal collects stale siblings: an older copy\'s cache '
+              'may be what left no free space',
+        );
+        expect(Directory(dir).existsSync(), isTrue, reason: 'ours is kept');
+        await p.close();
+        expectNothingLeaked();
+      });
+
+      test('requireWeightCache: header-only files (about 100 bytes, all a '
+          'failed write leaves) are no cache', () async {
+        native.cacheFileBytes = 100;
+        final dir = expectedCacheDir();
+        final p = pass(requireWeightCache: true);
+
+        await expectLater(
+          p.load(),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.message,
+              'message',
+              contains('wrote no weight cache to $dir'),
+            ),
+          ),
+        );
+        expect(
+          Directory(dir).listSync().whereType<File>(),
+          isNotEmpty,
+          reason: 'the header-only files are there',
+        );
+        expect(native.deleted('engine'), 1);
+        await p.close();
+        expectNothingLeaked();
+      });
+
+      test('requireWeightCache: a large file that is not a *.xnnpack_cache '
+          'is no cache', () async {
+        native.writeCacheOnCreate = false;
+        final dir = Directory(expectedCacheDir())..createSync(recursive: true);
+        File(
+            '${dir.path}/eg2.litertlm.mldrift_program_cache.bin',
+          ).openSync(mode: FileMode.write)
+          ..truncateSync(4 << 20)
+          ..closeSync();
+        final p = pass(requireWeightCache: true);
+
+        await expectLater(
+          p.load(),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.message,
+              'message',
+              contains('wrote no weight cache to ${dir.path}'),
+            ),
+          ),
+        );
+        await p.close();
+        expectNothingLeaked();
+      });
+
+      test(
+        'a tower whose cache is missing while another was written is a '
+        'printed warning naming it, never a refusal — with the flag too',
+        () async {
+          Future<List<String>> load({
+            required Set<String> omit,
+            Set<EmbeddingModality> declaredMedia = const {},
+            bool requireWeightCache = false,
+          }) async {
+            native.dispose();
+            native = _FakeLiteRtLm()
+              ..visionSignatures = const [70, 140]
+              ..omitTowerCaches = omit;
+            final dir = Directory(expectedCacheDir());
+            if (dir.existsSync()) dir.deleteSync(recursive: true);
+            final p = pass(
+              declaredMedia: declaredMedia,
+              requireWeightCache: requireWeightCache,
+            );
+            final lines = await _printsDuring(() async {
+              expect((await p.load()).dimension, 4);
+            });
+            await p.close();
+            expectNothingLeaked();
+            return _aboutWeightCache(lines).toList();
+          }
+
+          Matcher missing(String tower) => contains(
+            allOf(
+              contains('WARNING'),
+              contains('wrote no weight cache for '),
+              contains('the $tower tower'),
+              contains(expectedCacheDir()),
+              contains('a path too long for the platform'),
+            ),
+          );
+
+          // The vision tower is set up whatever was declared, so its cache is
+          // expected on a text-only load too.
+          expect(await load(omit: {}), isEmpty);
+          expect(await load(omit: {'vision_encoder'}), missing('vision'));
+          expect(
+            await load(omit: {'vision_encoder'}, requireWeightCache: true),
+            missing('vision'),
+          );
+          expect(await load(omit: {'text_encoder'}), missing('text'));
+
+          File(_header740m).copySync(modelPath);
+          final audio = {EmbeddingModality.audio};
+          expect(await load(omit: {}, declaredMedia: audio), isEmpty);
+          expect(
+            await load(omit: {'static_audio_encoder'}, declaredMedia: audio),
+            missing('audio'),
+          );
+          expect(
+            await load(
+              omit: {'static_audio_encoder', 'vision_encoder'},
+              declaredMedia: audio,
+              requireWeightCache: true,
+            ),
+            allOf(missing('vision'), missing('audio')),
+          );
+        },
+      );
+
+      test('requireWeightCache: a written cache loads as it does without the '
+          'flag', () async {
+        final p = pass(requireWeightCache: true);
+        final lines = await _printsDuring(() async {
+          final info = await p.load();
+          expect(info.dimension, 4);
+        });
+        expect(_aboutWeightCache(lines), isEmpty);
+        expect(native.live['engine'], hasLength(1));
+        expect(
+          await p.embed(EmbeddingInput.text('hello'), TaskType.retrievalQuery),
+          hasLength(4),
+        );
+        await p.close();
+        expectNothingLeaked();
+      });
+
+      test(
+        'a cache directory gone after create: without the flag the load '
+        'goes on as before, with it the cache is not taken as written',
+        () async {
+          native
+            ..writeCacheOnCreate = false
+            ..deleteCacheDirOnCreate = true;
+          final lenient = pass();
+          final lines = await _printsDuring(() => lenient.load());
+          expect(_aboutWeightCache(lines), isEmpty);
+          await lenient.close();
+          expectNothingLeaked();
+
+          final stale = Directory(
+            '$cacheBase/${liteRtLmCacheDirPrefix(_file)}-1-2',
+          )..createSync(recursive: true);
+          final strict = pass(requireWeightCache: true, clock: anHourLater);
+          await expectLater(
+            strict.load(),
+            throwsA(
+              isA<EmbeddingLoadException>()
+                  .having((e) => e.cause, 'cause', isA<FileSystemException>())
+                  .having(
+                    (e) => e.message,
+                    'message',
+                    contains(
+                      'could not check the weight cache LiteRT-LM was to write '
+                      'to ${expectedCacheDir()}',
+                    ),
+                  ),
+            ),
+          );
+          expect(native.created('engine'), 2);
+          expect(native.deleted('engine'), 2);
+          expect(
+            stale.existsSync(),
+            isTrue,
+            reason: 'only the no-cache refusal collects siblings',
+          );
+          expectNothingLeaked();
+          await strict.close();
+        },
+      );
 
       test('a path that cannot become a directory is a load failure, before '
           'any settings', () async {
@@ -844,11 +1172,11 @@ void main() {
         'TaskType', () async {
       for (final taskType in TaskType.values) {
         final vector = await p.embed(
-          EmbeddingInput.text('Привет, мир 🌍'),
+          EmbeddingInput.text('Grüße, Welt 🌍'),
           taskType,
         );
         expect(vector, native.lastVector);
-        expect(native.lastTexts, ['${taskType.prefix}Привет, мир 🌍']);
+        expect(native.lastTexts, ['${taskType.prefix}Grüße, Welt 🌍']);
         expect(native.lastPartTypes, [
           LiteRtLmInputDataType.kLiteRtLmInputDataTypeText,
         ]);
@@ -1456,6 +1784,118 @@ void main() {
   group('a per-SoC bundle on the NPU', () {
     setUp(() => native.textSignatures = _npuSignatures);
 
+    test(
+      'declared audio on the 740m: the audio encoder is named "cpu" (its '
+      'per-SoC builds compile it for cpu/gpu only), vision stays NULL',
+      () async {
+        File(_header740m).copySync(modelPath);
+        native.visionSignatures = const [70, 140];
+        await pass(
+          npuTarget: _sm8850,
+          declaredMedia: {EmbeddingModality.image, EmbeddingModality.audio},
+        ).load();
+        expect(native.settingsBackend, 'npu');
+        expect(native.settingsAudioBackend, 'cpu');
+        expect(native.settingsVisionBackend, isNull);
+      },
+    );
+
+    test('no audio declared on the 740m: both towers stay NULL', () async {
+      File(_header740m).copySync(modelPath);
+      native.visionSignatures = const [70, 140];
+      await pass(
+        npuTarget: _sm8850,
+        declaredMedia: {EmbeddingModality.image},
+      ).load();
+      expect(native.towerBackendsNull, isTrue);
+    });
+
+    test('without declared audio the cache is not checked: the text and '
+        'vision towers on the NPU write none, so an empty directory is '
+        'neither refused nor reported', () async {
+      native
+        ..writeCacheOnCreate = false
+        ..visionSignatures = const [70, 140];
+      final p = pass(
+        npuTarget: _sm8850,
+        declaredMedia: {EmbeddingModality.image},
+        requireWeightCache: true,
+      );
+      final lines = await _printsDuring(() async {
+        final info = await p.load();
+        expect(info.dimension, 4);
+      });
+      expect(_aboutWeightCache(lines), isEmpty);
+      expect(native.live['engine'], hasLength(1));
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('declared audio on the 740m: its tower runs on CPU and writes a '
+        'cache, which is checked — refused under requireWeightCache when '
+        'missing, accepted alone when written', () async {
+      File(_header740m).copySync(modelPath);
+      native.visionSignatures = const [70, 140];
+      final media = {EmbeddingModality.image, EmbeddingModality.audio};
+
+      final written = pass(
+        npuTarget: _sm8850,
+        declaredMedia: media,
+        requireWeightCache: true,
+      );
+      final lines = await _printsDuring(() async {
+        expect((await written.load()).dimension, 4);
+      });
+      expect(
+        _aboutWeightCache(lines),
+        isEmpty,
+        reason:
+            'the audio cache is the one expected; text and vision run on '
+            'the NPU and write none',
+      );
+      expect(Directory(expectedCacheDir()).listSync().map((e) => e.path), [
+        endsWith('.static_audio_encoder.xnnpack_cache'),
+      ]);
+      await written.close();
+      expectNothingLeaked();
+
+      native.dispose();
+      native = _FakeLiteRtLm()
+        ..textSignatures = _npuSignatures
+        ..visionSignatures = const [70, 140]
+        ..writeCacheOnCreate = false;
+      Directory(expectedCacheDir()).deleteSync(recursive: true);
+      final strict = pass(
+        npuTarget: _sm8850,
+        declaredMedia: media,
+        requireWeightCache: true,
+      );
+      await expectLater(
+        strict.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            contains('wrote no weight cache to ${expectedCacheDir()}'),
+          ),
+        ),
+      );
+      expect(native.deleted('engine'), 1);
+      await strict.close();
+      expectNothingLeaked();
+
+      final lenient = pass(npuTarget: _sm8850, declaredMedia: media);
+      final warned = await _printsDuring(() async {
+        expect((await lenient.load()).dimension, 4);
+      });
+      expect(
+        _aboutWeightCache(warned),
+        contains(contains('WARNING: LiteRT-LM wrote no weight cache')),
+      );
+      await lenient.close();
+      expectNothingLeaked();
+    });
+
     test('settings on "npu", towers NULL, the dispatch directory handed to '
         'every executor, and a probe embedding before load returns', () async {
       native.visionSignatures = const [70, 140];
@@ -1532,6 +1972,7 @@ void main() {
                   contains('could not run $_file on the NPU'),
                   contains('Failed to invoke the compiled model'),
                   contains('compiled for Qualcomm SM8850'),
+                  contains('with a QNN runtime that has no Skel'),
                 ),
               )
               .having((e) => e.nativeCode, 'nativeCode', 2),
@@ -1607,6 +2048,52 @@ void main() {
       expectNothingLeaked();
     });
 
+    test('an Intel bundle loads the same way, with the directory beside the '
+        'executable as every executor\'s dispatch directory', () async {
+      native.visionSignatures = const [70, 140];
+      const exeDir = r'C:\Apps\demo';
+      final p = pass(
+        npuTarget: _ptl,
+        npuDispatchDir: exeDir,
+        declaredMedia: {EmbeddingModality.image},
+      );
+      await p.load();
+      expect(native.settingsBackend, 'npu');
+      expect(native.towerBackendsNull, isTrue);
+      expect(native.dispatchDirs, {
+        'main': exeDir,
+        'vision': exeDir,
+        'audio': exeDir,
+      });
+      expect(native.lastTexts, ['task: search result | query: probe']);
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('a probe an Intel NPU cannot run names a PC without one, not a QNN '
+        'Skel', () async {
+      native.failCompute = (code: 2, message: 'dispatch failed');
+      final p = pass(npuTarget: _ptl, npuDispatchDir: r'C:\Apps\demo');
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains(
+                'compiled for IntelOpenVINO PTL; on another SoC, or on '
+                'a PC without an Intel NPU or its driver, it fails this way',
+              ),
+              isNot(contains('QNN')),
+            ),
+          ),
+        ),
+      );
+      await p.close();
+      expectNothingLeaked();
+    });
+
     test('the symbol gate covers what an NPU load calls', () async {
       final p = pass(npuTarget: _sm8850);
       await p.load();
@@ -1652,6 +2139,27 @@ void main() {
   });
 }
 
+/// What [body] prints, through the zone (the pass's warning is a `print`).
+Future<List<String>> _printsDuring(Future<void> Function() body) async {
+  final lines = <String>[];
+  await runZoned(
+    body,
+    zoneSpecification: ZoneSpecification(
+      print: (_, _, _, line) => lines.add(line),
+    ),
+  );
+  return lines;
+}
+
+/// The path LiteRT-LM gives the text tower's cache of the 37-byte test model
+/// in [dir]: `<dir>/<file>_<mtime s, 10 digits>_<size>.text_encoder.xnnpack_cache`.
+String _textCachePath(String dir) =>
+    '$dir/${_file}_1791758581_37.text_encoder.xnnpack_cache';
+
+/// The lines of [lines] about the weight cache.
+Iterable<String> _aboutWeightCache(List<String> lines) =>
+    lines.where((line) => line.contains('weight cache'));
+
 // ── Fakes ───────────────────────────────────────────────────────────────────
 
 Pointer<T> _noLookup<T extends NativeType>(String symbol) =>
@@ -1691,6 +2199,19 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   bool silentNullCompute = false;
   bool silentNullEngine = false;
   bool writeCacheOnCreate = true;
+
+  /// The size of each cache file engine_create writes: by default a real one
+  /// (the pass counts a `*.xnnpack_cache` of at least 1 MiB); about 100 is
+  /// the header XNNPack writes first, all a failed write leaves.
+  int cacheFileBytes = 1 << 20;
+
+  /// Towers whose cache engine_create does not write (`'vision_encoder'`,
+  /// `'static_audio_encoder'`, …): a path that crossed MAX_PATH for the longer
+  /// names only.
+  Set<String> omitTowerCaches = const {};
+
+  /// The cache directory is gone by the time engine_create returns.
+  bool deleteCacheDirOnCreate = false;
   _Failure? errorFromSetter;
   int? responseSize;
 
@@ -1711,6 +2232,8 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   String? settingsModelPath;
   String? settingsBackend;
   bool towerBackendsNull = false;
+  String? settingsVisionBackend;
+  String? settingsAudioBackend;
   String? cacheDir;
   int? maxInputLength;
   int? numThreads;
@@ -1889,6 +2412,12 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     settingsBackend = _string(backend_str);
     towerBackendsNull =
         vision_backend_str == nullptr && audio_backend_str == nullptr;
+    settingsVisionBackend = vision_backend_str == nullptr
+        ? null
+        : _string(vision_backend_str);
+    settingsAudioBackend = audio_backend_str == nullptr
+        ? null
+        : _string(audio_backend_str);
     final failure = failSettings;
     return failure != null ? _fail(failure) : _create('settings');
   }
@@ -1998,9 +2527,46 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     if (silentNullEngine) return nullptr;
     final dir = cacheDir;
     if (writeCacheOnCreate && dir != null) {
-      File('$dir/model.text_encoder.xnnpack_cache').writeAsStringSync('w');
+      for (final tower in _cachedTowers()) {
+        if (omitTowerCaches.contains(tower)) continue;
+        // Sparse: the size is what the pass reads, not the bytes.
+        File(
+            '$dir/eg2.litertlm_1791758581_37.$tower.xnnpack_cache',
+          ).openSync(mode: FileMode.write)
+          ..truncateSync(cacheFileBytes)
+          ..closeSync();
+      }
+    }
+    if (deleteCacheDirOnCreate && dir != null) {
+      Directory(dir).deleteSync(recursive: true);
     }
     return _create('engine');
+  }
+
+  /// The towers XNNPack writes a weight cache for at create, as upstream
+  /// decides: every tower the bundle has gets an executor (NULL tower backends
+  /// run on the main one, a set one on itself), and a tower on CPU writes a
+  /// cache while one on the NPU writes none.
+  List<String> _cachedTowers() {
+    final main = settingsBackend;
+    final path = settingsModelPath;
+    bool hasAudio() {
+      if (path == null) return false;
+      try {
+        return litertlmHasAudioEncoder(readLitertlmModelTypes(path));
+      } on FormatException {
+        return false; // the plain test file: no container, no audio tower
+      }
+    }
+
+    return [
+      if (main == 'cpu') 'text_encoder',
+      if ((settingsVisionBackend ?? main) == 'cpu' &&
+          (visionSignatures?.any((length) => length > 0) ?? false))
+        'vision_encoder',
+      if ((settingsAudioBackend ?? main) == 'cpu' && hasAudio())
+        'static_audio_encoder',
+    ];
   }
 
   @override

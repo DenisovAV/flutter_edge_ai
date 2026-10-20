@@ -1,8 +1,8 @@
 // LiteRT embedding backend — web arm. Core hosts what it describes inline on
 // the page. Two passes, chosen by the installed file's name (on the web the
 // path core resolves is a URL, not a file name):
-// - a `.litertlm` bundle (EmbeddingGemma 2, text and images) → the
-//   `@litert-lm/core` EmbeddingEngine pass, which needs
+// - a `.litertlm` bundle (EmbeddingGemma 2: text, images and audio, alone or
+//   combined) → the `@litert-lm/core` EmbeddingEngine pass, which needs
 //   `window.EmbeddingEngine = m.EmbeddingEngine;` in the page's module script;
 // - a two-file spec (EmbeddingGemma 1 `.tflite` + tokenizer) → the LiteRT.js
 //   pass over the bundle in this package's `web/`.
@@ -15,6 +15,7 @@ import 'package:flutter_edge_ai/engine_web.dart' show resolveWebModelUrl;
 
 import 'litert_lm_embedding_common.dart';
 import 'vision_budget.dart';
+import 'weight_cache_notice.dart';
 import 'web/litert_js_embedding_pass.dart';
 import 'web/litert_lm_web_embedding_pass.dart';
 import 'web/litert_lm_web_embedding_runtime.dart';
@@ -22,18 +23,32 @@ import 'web/litert_web_embeddings.dart'
     show WindowLiteRtJsBundle, revokeObjectUrl;
 
 /// LiteRT embedding backend, web: EmbeddingGemma 2 `.litertlm` bundles (text,
-/// and images on a bundle with a vision encoder) through `@litert-lm/core`'s
-/// EmbeddingEngine on WebGPU — a browser without WebGPU is refused with
-/// `EmbeddingLoadException`, as there is no CPU path for these bundles in
-/// `@litert-lm/core` 0.18.0 — and EmbeddingGemma 1 `.tflite` through LiteRT.js.
+/// images on a bundle with a vision encoder, audio on a bundle with an audio
+/// encoder, and combinations of them in one vector) through
+/// `@litert-lm/core`'s EmbeddingEngine on WebGPU — a browser without WebGPU is
+/// refused with `EmbeddingLoadException`, as there is no CPU path for these
+/// bundles in `@litert-lm/core` 0.18.0 — and EmbeddingGemma 1 `.tflite`
+/// through LiteRT.js.
 final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// [visionTokensPerImage] is how many vision tokens an EmbeddingGemma 2
   /// image gets: 140 (the default) or 70; any other value is refused with
   /// `EmbeddingLoadException` when a model loads. The same parameter as the
   /// native arm, so one registration compiles everywhere.
-  const LiteRtEmbeddingBackend({this._visionTokensPerImage = 140});
+  ///
+  /// [requireWeightCache] (flutter_edge_ai_litertlm 1.14.0) is accepted for
+  /// the same reason and does not apply: the web keeps no weight cache to
+  /// require. The bundle sits in the browser's storage and the engine builds
+  /// its weights at every load, so a load is never short of a cache it should
+  /// have written. A debug build says so once.
+  const LiteRtEmbeddingBackend({
+    this._visionTokensPerImage = 140,
+    this._requireWeightCache = false,
+  });
 
   final int _visionTokensPerImage;
+
+  /// Kept only to say, once, that it does not apply here.
+  final bool _requireWeightCache;
 
   @override
   String get name => 'LiteRT Embedding';
@@ -69,6 +84,9 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
         'tokenizer. Install the embedder again.',
         engine: bundle ? liteRtLmEngineTag : liteRtJsEngine,
       );
+    }
+    if (_requireWeightCache) {
+      noticeRequireWeightCacheNotApplied('the web keeps no weight cache');
     }
     if (bundle) {
       return _describeBundle(config, fileName, _visionTokensPerImage);
@@ -108,46 +126,48 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
 }
 
 /// A `.litertlm` embedding bundle (EmbeddingGemma 2) on the web. Declared
-/// audio is refused here, before anything loads (native-only since 1.13.1);
-/// whether the bundle has a vision encoder for declared images is answered by
-/// the runtime when the pass creates the engine.
-EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig> _describeBundle(
+/// audio on a bundle without an audio encoder (the 270m, the 440m) is refused
+/// here, from the container header — a few KB of the installed file, read
+/// through the page's `fetch()` — as natively: core calls describe() before
+/// it closes the embedder it holds, so that embedder keeps working. Whether
+/// the bundle has a vision encoder for declared images is answered by the
+/// runtime when the pass creates the engine.
+Future<EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig>> _describeBundle(
   RuntimeConfig config,
   String fileName,
   int visionTokensPerImage,
-) {
-  if (config.supportAudio) {
-    throw const EmbeddingLoadException(
-      liteRtLmNoAudioRefusal,
-      engine: liteRtLmEngineTag,
-    );
-  }
-  // An EmbeddingGemma 2 NPU bundle needs the native Qualcomm dispatch; asked
-  // for here it is refused, never run elsewhere.
+) async {
+  // An EmbeddingGemma 2 NPU bundle needs a native dispatch; asked for here it
+  // is refused, never run elsewhere.
   if (config.preferredBackend == PreferredBackend.npu) {
-    throw const EmbeddingLoadException(
+    throw EmbeddingLoadException(
       liteRtLmWebNpuRefusal,
       engine: liteRtLmEngineTag,
     );
   }
+  final passConfig = LiteRtLmWebEmbeddingConfig(
+    modelPath: config.modelPath,
+    fileName: fileName,
+    runtime: const WindowLiteRtLmWebRuntime(),
+    // Under WebStorageMode.streaming the path is `opfs://`; the pass
+    // resolves it to a `blob:` URL before the engine fetches it.
+    resolveUrl: resolveWebModelUrl,
+    revokeUrl: revokeObjectUrl,
+    declaredMedia: {
+      if (config.supportImage) EmbeddingModality.image,
+      if (config.supportAudio) EmbeddingModality.audio,
+    },
+    visionTokensPerImage: visionTokensPerImage,
+  );
+  if (config.supportAudio) await requireLiteRtLmWebAudioEncoderFor(passConfig);
   return EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig>(
     engineTag: liteRtLmEngineTag,
     factory: buildLiteRtLmWebEmbeddingPass,
-    config: LiteRtLmWebEmbeddingConfig(
-      modelPath: config.modelPath,
-      fileName: fileName,
-      runtime: const WindowLiteRtLmWebRuntime(),
-      // Under WebStorageMode.streaming the path is `opfs://`; the pass
-      // resolves it to a `blob:` URL before the engine fetches it.
-      resolveUrl: resolveWebModelUrl,
-      revokeUrl: revokeObjectUrl,
-      declaredMedia: {if (config.supportImage) EmbeddingModality.image},
-      visionTokensPerImage: visionTokensPerImage,
-    ),
+    config: passConfig,
     // The pass asks for the GPU (WebGPU) backend by name, for the text tower
-    // and the vision tower alike, and refuses a page without WebGPU rather
-    // than fall back — so this is known, unlike LiteRT.js, which picks its
-    // own accelerator.
+    // and the vision and audio towers alike, and refuses a page without
+    // WebGPU rather than fall back — so this is known, unlike LiteRT.js,
+    // which picks its own accelerator.
     activeBackend: PreferredBackend.gpu,
   );
 }

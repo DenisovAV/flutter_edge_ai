@@ -50,6 +50,10 @@ List<SkillExecutor> _resolveExecutors(List<SkillExecutor>? explicit) {
 /// the request to a skill, `loadSkill` its instructions, then follow them. The
 /// `__SKILLS__` placeholder is replaced with the registry's two-stage discovery
 /// list (name + description per selected skill).
+///
+/// It tells the model to look for a skill on every request, which suits a
+/// catalog where most requests are skill requests. For an assistant that also
+/// answers plain questions, see [onDemandAgentSystemPrompt].
 const String defaultAgentSystemPrompt =
     '''
 You are an AI assistant that helps users by answering questions and completing tasks using skills. For EVERY new task or request or question, you MUST execute the following steps in exact order. You MUST NOT skip any steps.
@@ -62,6 +66,21 @@ __SKILLS__
 3. Follow the skill's instructions exactly to complete the task. Output ONLY the final result when successful.
 4. If no relevant skill is found, answer the user directly.''';
 
+/// A system prompt that calls a skill only when the request needs one and
+/// answers everything else directly, with no tool call. Same `__SKILLS__`
+/// placeholder as [defaultAgentSystemPrompt]; pass it as
+/// `systemPromptTemplate:`.
+///
+/// For small models that, under the default prompt, call a tool on plain or
+/// photo questions too (Gemma 4 E2B invented intents such as
+/// `get_country_capital`). Neither template is benchmarked here: try both on
+/// your model and your requests.
+const String onDemandAgentSystemPrompt = '''
+You are a helpful assistant.
+Skills:
+__SKILLS__
+Only when a request needs one of these skills, call ${AgentToolNames.loadSkill} with its name and follow its instructions. Answer everything else directly with no tool call: general questions, questions about a picture, chat.''';
+
 /// A thin facade tying a [SkillRegistry], the registered [SkillExecutor]s, an
 /// [AgentLoop], and a model/chat into one [ask] entry point.
 ///
@@ -73,12 +92,19 @@ class AgentSession {
   /// Build a session. [executors] is optional: when omitted, the executors
   /// registered via `FlutterEdgeAi.initialize(skillExecutors: …)` are used (see
   /// [_resolveExecutors]). Pass an explicit list to bypass the global registry.
+  ///
+  /// [emptyAfterSkillRetries] and [emptyAfterSkillNudge] set what a turn does
+  /// when the model answers nothing right after loading a skill — see
+  /// [AgentLoop.emptyAfterSkillRetries]. A negative [emptyAfterSkillRetries]
+  /// throws [ArgumentError].
   AgentSession({
     required this.chat,
     required this.registry,
     List<SkillExecutor>? executors,
     SecretStore? secretStore,
     int maxIterations = 10,
+    int emptyAfterSkillRetries = 1,
+    String emptyAfterSkillNudge = defaultEmptyAfterSkillNudge,
   }) : _loop = AgentLoop(
          registry: registry,
          executors: _resolveExecutors(executors),
@@ -86,6 +112,8 @@ class AgentSession {
          // delegates to it so the facade and loop always share one instance.
          secretStore: secretStore,
          maxIterations: maxIterations,
+         emptyAfterSkillRetries: emptyAfterSkillRetries,
+         emptyAfterSkillNudge: emptyAfterSkillNudge,
        );
 
   /// The chat the loop drives. Created with [agentTools] + the discovery prompt.
@@ -120,12 +148,20 @@ class AgentSession {
   /// [executors] is optional: omit it to use the executors registered via
   /// `FlutterEdgeAi.initialize(skillExecutors: …)`; pass a list to override the
   /// global registry for this session.
+  ///
+  /// [systemPromptTemplate] defaults to [defaultAgentSystemPrompt];
+  /// [onDemandAgentSystemPrompt] calls skills only when a request needs one.
+  /// [emptyAfterSkillRetries] and [emptyAfterSkillNudge]: see
+  /// [AgentLoop.emptyAfterSkillRetries]. A negative [emptyAfterSkillRetries]
+  /// throws [ArgumentError] before the chat is created.
   static Future<AgentSession> fromModel(
     InferenceModel model, {
     required SkillRegistry registry,
     List<SkillExecutor>? executors,
     SecretStore? secretStore,
     int maxIterations = 10,
+    int emptyAfterSkillRetries = 1,
+    String emptyAfterSkillNudge = defaultEmptyAfterSkillNudge,
     ModelType modelType = ModelType.gemma4,
     bool supportsFunctionCalls = true,
     bool supportImage = false,
@@ -137,6 +173,13 @@ class AgentSession {
     int? maxOutputTokens,
     String systemPromptTemplate = defaultAgentSystemPrompt,
   }) async {
+    if (emptyAfterSkillRetries < 0) {
+      throw ArgumentError.value(
+        emptyAfterSkillRetries,
+        'emptyAfterSkillRetries',
+        'must be 0 (no retry) or more',
+      );
+    }
     final chat = await model.createChat(
       tools: agentTools,
       supportsFunctionCalls: supportsFunctionCalls,
@@ -161,12 +204,16 @@ class AgentSession {
       executors: executors,
       secretStore: secretStore,
       maxIterations: maxIterations,
+      emptyAfterSkillRetries: emptyAfterSkillRetries,
+      emptyAfterSkillNudge: emptyAfterSkillNudge,
     );
   }
 
   /// Drive one agent turn for [userMessage], emitting progress [AgentEvent]s
   /// (skill loads, tool calls + their image/webview/widget results, streamed
-  /// final text, and a terminal [DoneEvent] / [MaxIterationsEvent]).
+  /// final text, and a terminal [DoneEvent] / [MaxIterationsEvent]). An
+  /// [EmptyAnswerRetryEvent] says the loop asked again after an empty answer;
+  /// an [EmptyAnswerEvent] ends a turn whose answer stayed empty.
   ///
   /// [isCancelled], when provided, ends the stream promptly between
   /// iterations for barge-in — see [AgentLoop.run].
@@ -177,15 +224,24 @@ class AgentSession {
   /// [ArgumentError] rather than quietly answering as if there were no image;
   /// the "multimodal model" half is a caller precondition (undetectable from
   /// Dart — see [AgentLoop.run]).
+  ///
+  /// Pass [audioBytes] to ask with a recording: the spoken question, for a
+  /// model with an audio encoder, with [userMessage] empty or as extra text.
+  /// The session must have been built with `supportAudio: true`; otherwise
+  /// the stream fails with an [ArgumentError] instead of answering as if
+  /// nothing was said. A `.litertlm` model takes a WAV file (16 kHz mono 16-bit
+  /// PCM), not bare samples — see [AgentLoop.run].
   Stream<AgentEvent> ask(
     String userMessage, {
     bool Function()? isCancelled,
     Uint8List? imageBytes,
+    Uint8List? audioBytes,
   }) => _loop.run(
     chat,
     userMessage,
     isCancelled: isCancelled,
     imageBytes: imageBytes,
+    audioBytes: audioBytes,
   );
 
   /// Close the underlying chat session.

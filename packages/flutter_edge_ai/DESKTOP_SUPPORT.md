@@ -43,7 +43,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 ```
 
 **Native libraries** are fetched at build time by `hook/build.dart` from the
-GitHub release `native-v0.18.0-e`, SHA256-verified, and bundled by Flutter
+GitHub release `native-v0.18.0-f`, SHA256-verified, and bundled by Flutter
 [Native Assets](https://docs.flutter.dev/development/platform-integration/c-interop)
 into the application bundle. End-users only need to add a small
 `post_install` snippet to their **macOS** `Podfile` so the upstream companion
@@ -60,7 +60,8 @@ loading sequence differs per platform (handled in `litert_lm_client.dart`).
 >
 > The LiteRT-LM engine accepts only `.litertlm` files; MediaPipe `.bin` / `.task`
 > models used on web won't load on desktop. ONNX Runtime (`flutter_edge_ai_onnx`)
-> also runs on all three desktops, and built-in AI on macOS and Windows. See
+> and llama.cpp (`flutter_edge_ai_llama`, `.gguf`) also run on all three
+> desktops, and built-in AI on macOS and Windows. See
 > [litert-community on Hugging Face](https://huggingface.co/litert-community) for compatible `.litertlm` models.
 
 ---
@@ -73,8 +74,8 @@ loading sequence differs per platform (handled in `litert_lm_client.dart`).
 | macOS | x86_64 | — | — | — | Not supported (Apple Silicon only) |
 | Windows | x86_64 | DirectX 12 (via Dawn/WebGPU) | ✅ | ✅ | Nothing to install |
 | Windows | arm64 | — | — | — | Not supported |
-| Linux | x86_64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | glibc ≥ 2.34 (Ubuntu 22.04+, Debian 12+, RHEL 9+) |
-| Linux | arm64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | Same glibc requirement |
+| Linux | x86_64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, RHEL 10+) |
+| Linux | arm64 | Vulkan (via Dawn/WebGPU) | ✅ | ✅ | Same glibc and libstdc++ requirement |
 
 > Qualcomm Linux arm64 boards also run `PreferredBackend.npu` on the Hexagon DSP when the app opts in with `qualcomm_npu: true` — see the [`flutter_edge_ai_litertlm` README](../flutter_edge_ai_litertlm/README.md).
 
@@ -86,10 +87,10 @@ For mobile platforms see the main [README](README.md).
 
 - **Flutter** ≥ 3.44.0
 - **Dart SDK** ≥ 3.12.0
-- **macOS**: 11+ (Apple Silicon, arm64); 12.0 with `flutter_edge_ai_builtin_ai`
-- **Windows**: 10/11 64-bit. No Visual C++ Redistributable needed since `flutter_gemma_litertlm` 1.7.1 (see below).
-- **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 9+)
-- **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available
+- **macOS**: 11+ (Apple Silicon, arm64); 12.0 with `flutter_edge_ai_builtin_ai`, 14.0 with `flutter_edge_ai_llama`
+- **Windows**: 10/11 64-bit. LiteRT-LM needs no Visual C++ Redistributable since `flutter_gemma_litertlm` 1.7.1 (see below); `flutter_edge_ai_llama` does — llamadart needs the matching Visual C++ runtime.
+- **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 10+)
+- **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available (`LiteRtLmEngine(backendFallback: false)` turns the fallback off)
 
 No Java/JVM/JRE required.
 
@@ -100,8 +101,8 @@ No Java/JVM/JRE required.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_edge_ai: ^2.3.0            # core
-  flutter_edge_ai_litertlm: ^1.13.0  # .litertlm engine
+  flutter_edge_ai: ^2.4.1            # core
+  flutter_edge_ai_litertlm: ^1.15.0  # .litertlm engine
 ```
 
 ```dart
@@ -151,9 +152,9 @@ For the high-level chat API with history + thinking + tool calling, use
 
 ### macOS
 
-Native libs are fetched and bundled automatically via Native Assets. The
-**only manual step** is adding a `post_install` block to your app's
-`macos/Podfile` so the upstream companion dylibs get wrapped into
+Native libs are fetched and bundled automatically via Native Assets. Two
+steps are manual: the entitlements below, and a `post_install` block in your
+app's `macos/Podfile` so the upstream companion dylibs get wrapped into
 `.framework` bundles (and re-signed) inside `Contents/Frameworks/`, and
 `LiteRtLm.dylib`'s `LC_LOAD_DYLIB` reference is re-pointed at the new
 framework path (LiteRT-LM's `gpu_registry` resolves the Metal accelerator
@@ -161,7 +162,12 @@ through that framework). See the
 [macOS setup snippet in the README](README.md#macos) for the exact
 block. Without it the companion dylibs are never bundled, and
 `LiteRtLm.dylib` — which links `libGemmaModelConstraintProvider.dylib`
-directly — fails to load on every backend, CPU included.
+directly — fails to load on every backend, CPU included. Flutter 3.44+ uses
+Swift Package Manager by default, so a new app has no `macos/Podfile` until
+its `pubspec.yaml` sets `enable-swift-package-manager: false` under
+`flutter: config:` (same README section). `flutter_edge_ai_llama` needs Swift
+Package Manager on, so this setup is not qualified together with it: use
+separate apps.
 
 **Entitlements** in both `macos/Runner/DebugProfile.entitlements` and
 `Release.entitlements`, beside the `com.apple.security.app-sandbox` key that
@@ -212,11 +218,12 @@ DLL and silently fall back to CPU. (Mirrors the Linux `RTLD_GLOBAL` pattern.)
 
 Your end-users need nothing installed. Since `flutter_gemma_litertlm` 1.7.1
 `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
-measured on `native-v0.18.0`, 16 of its 24 DLLs import none.
+measured on `native-v0.18.0-f`, 16 of its 24 DLLs import none.
 
-The other eight are the Intel NPU stack behind `PreferredBackend.npu`: our own
+The other eight belong to the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus
-Intel's three `openvino*` and four `tbb*`. Each imports some of `msvcp140`,
+three of Intel's five `openvino*` (the NPU compiler and its loader import none) and
+its four `tbb*`. Each imports some of `msvcp140`,
 `vcruntime140` and `vcruntime140_1` — the runtimes any Flutter Windows app already
 resolves — and none imports `vcruntime140_threads.dll`, the Visual Studio 2022 17.8
 one that used to make this document ask for a redistributable and that failed a Microsoft
@@ -258,7 +265,7 @@ common runtime issues.
 
 ### One model, many sessions
 
-The recommended (and only well-supported) pattern is:
+The recommended pattern for one model is:
 
 ```dart
 // At app startup, ONCE:
@@ -282,26 +289,63 @@ Sessions are cheap to create/destroy. The expensive part is `engine_create`
 (2–10 s depending on backend and model size), which happens once when the
 model is first opened.
 
-### Why not "one model per chat"?
+### Swapping the active model
 
-Upstream LiteRT-LM keeps `LiteRtEnvironment` as a **process singleton** for
-GPU paths (see comment in `runtime/core/engine_impl.cc` referencing `b/454383477`).
-Once the env is initialized with the first model's settings — `cache_dir`,
-backend, capabilities — those become process-fixed. Trying to recreate the
-engine with different settings results in conflicts in the GPU stack
-(notably a `wgpu::Instance already set` from the WebGpu sampler binary on
-Linux/Windows).
+`getActiveModel` reuses the same `InferenceModel` while the requested
+parameters match. To swap models at runtime, call `model.close()` first, then
+`getActiveModel(...)` again with the new active model's spec. On Linux the
+plugin does not preload LiteRT-LM's WebGPU sampler, whose process-wide
+`wgpu::Instance` rejects a second engine (`wgpu::Instance already set`); the
+sampler factory falls back to a CPU sampler instead. On macOS per-token
+sampling already runs on CPU. Windows preloads the GPU sampler (see Known
+Limitations below), so a model swap on Windows GPU is unverified.
 
-The plugin avoids this by:
+### Several models at once
 
-1. Reusing the same `InferenceModel` whenever requested params match (built-in singleton in `FlutterEdgeAiDesktop.createModel`).
-2. Disabling GPU sampler preload on Linux so the upstream sampler factory falls back to a CPU sampler — eliminates the `wgpu::Instance` conflict and re-enables runtime model swap on Linux GPU.
+`getActiveModel` gives the one active model: cached, and rebuilt (the previous
+one closed) when a runtime parameter or the active model changes. To hold
+several models at once, such as one file on CPU and on GPU, or two files, use
+`FlutterEdgeAi.openModel` (`flutter_edge_ai` 2.5.0) with an engine that
+supports it: `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0) on Android,
+iOS and desktop.
 
-If you do need to swap models at runtime, call `model.close()` first, then
-`getActiveModel(...)` again with the new active model's spec. On Linux, this
-works thanks to the CPU-sampler fallback above; on macOS it works because
-per-token sampling already runs on CPU there. Windows preloads the GPU sampler
-(see Known Limitations below), so a model swap on Windows GPU is unverified.
+```dart
+final spec = (await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm,
+).fromFile(path).install(activate: false)).spec;
+
+final cpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.cpu);
+final gpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.gpu);
+// ... generate on either ...
+await gpu.close();
+await cpu.close();
+```
+
+- Each open model holds its own weights and KV cache, and the caller closes
+  it: the plugin has no memory policy. On iOS a process past its memory limit
+  is killed, with no exception to catch; read
+  `FlutterEdgeAiDiagnostics.memorySnapshot()` (`flutter_edge_ai_diagnostics`)
+  before opening another model.
+- The models share the engine cache directory `getActiveModel` uses (the
+  cache files of one model file serve every engine on it), the native
+  libraries the process loaded, and LiteRT-LM's log level. Engine creations
+  run one at a time; generation on open models does not wait for them.
+- An opened model is never cached: a `getActiveModel` rebuild leaves it open,
+  and closing it leaves the active model alone. Uninstalling a model does not
+  close the models opened on it.
+- `install(activate: false)` registers the file without making it the active
+  model, and `openModel` takes the spec it returns. A model is its file name
+  without the extension, so two files with the same name are one model; an
+  `activate: false` install that would replace the active model's file throws
+  a `StateError`.
+- Measured on macOS (Apple silicon): CPU and GPU engines on one file, two GPU
+  engines, and both created at the same time on an empty cache. On Windows
+  Lunar Lake, CPU, GPU and NPU engines ran together in the Intel NPU demo
+  (LiteRT-LM clients on `native-v0.18.0-f`). Not measured: Android, iOS,
+  Linux, and two GPU engines on Windows, which preloads LiteRT-LM's WebGPU
+  sampler: it keeps one `wgpu::Instance` per process, and a second one fails
+  with `wgpu::Instance already set`.
 
 ### Switching backend (CPU ↔ GPU)
 
@@ -382,11 +426,13 @@ never surfaces, because the first session already set the values you wanted.
 Reproducer: `flutter test integration_test/regression_bugs_test.dart` on any
 platform — `randomSeed=42` vs `randomSeed=99` at `temperature=1.0`.
 
-### Audio modality requires LiteRT-LM models
+### Audio modality requires LiteRT-LM or llama.cpp models
 
-Audio input only works with `.litertlm` models that include the audio adapter
-(Gemma 3n E2B/E4B, Gemma 4 E2B/E4B). MediaPipe `.task` models on web don't
-support audio.
+Audio input works with `.litertlm` models that include the audio adapter
+(Gemma 3n E2B/E4B, Gemma 4 E2B/E4B), and natively with a GGUF model through
+`flutter_edge_ai_llama` when the app supplies a compatible audio projector
+(`LlamaEngineProvider(projectorResolver:)`). MediaPipe `.task` models on web
+don't support audio.
 
 ### iOS Simulator: GPU disabled
 
@@ -427,8 +473,10 @@ release on next run.
 
 ### Windows GPU shaders fail to compile
 
-Symptom: `engine_create` returns null with no Dart-side error, app silently
-falls back to CPU.
+Symptom: `engine_create` returns null and the load falls back to CPU, with
+only a `[flutter_edge_ai] WARNING: … gpu backend failed` line in the log. With
+`LiteRtLmEngine(backendFallback: false)` the load throws a
+`BackendInitException` carrying LiteRT-LM's own reason instead.
 
 Verify `dxcompiler.dll` and `dxil.dll` are next to your `app.exe`. They should
 be — Native Assets bundles them. If they're absent, the WebGPU/DX12 shader
@@ -436,6 +484,26 @@ compiler can't run.
 
 If they're present but still failing, it is not a missing Visual C++ runtime —
 neither DLL imports one. Look at the GPU driver instead.
+
+### macOS: generation or embedding slows down while the app is in the background
+
+App Nap throttles a backgrounded macOS app after about a minute, and on-device
+models then run several times slower (measured: an EmbeddingGemma 2 image went
+from 0.35 s to 2–7 s, with memory flat). An app that embeds or generates while
+it is in the background should hold an activity for the duration of that work,
+from its macOS runner:
+
+```swift
+let activity = ProcessInfo.processInfo.beginActivity(
+  options: .userInitiated, reason: "Indexing photos")
+// … the work …
+ProcessInfo.processInfo.endActivity(activity)
+```
+
+An `NSAppSleepDisabled` key in `Info.plist` did not turn App Nap off in our
+measurements; the activity does. The example app holds one for its whole
+lifetime (`example/macos/Runner/AppDelegate.swift`), because its integration
+tests run in the background.
 
 ### Model file not found / `Cannot find: gemma-...litertlm`
 

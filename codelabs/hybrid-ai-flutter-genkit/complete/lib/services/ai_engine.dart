@@ -21,7 +21,7 @@ const _hfModelFile = kIsWeb
     : 'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
 const _modelType = kIsWeb ? ModelType.gemma4 : ModelType.gemmaIt;
 const _embeddingModelUrl =
-    'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq256_mixed-precision.tflite';
+    'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/embeddinggemma-300M_seq1024_mixed-precision.tflite';
 const _tokenizerUrl =
     'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/main/sentencepiece.model';
 
@@ -88,6 +88,11 @@ class AiEngine {
   bool cloudReady = false;
   bool localReady = false;
 
+  /// Why the embedding model did not install, or null. The chat screen reads
+  /// it before it starts RAG: an app that ran before still has its old
+  /// embedder active, and RAG must not quietly run on that one.
+  String? embedderError;
+
   // CostStrategy demo signal: the app counts cloud calls against a small cap.
   int cloudCallsSpent = 0;
   int budgetCap = 3;
@@ -123,7 +128,7 @@ class AiEngine {
   Future<void> initialize({
     void Function(int progress)? onProgress,
     // Test seam: install the LLM from a pre-staged local file instead of
-    // downloading it — avoids a flaky ~500MB on-device download on CI / FTL.
+    // downloading it — avoids a flaky ~500MB on-device download on CI / remote phones.
     String? localModelPath,
     // Test seam: skip the embedder download when RAG isn't exercised.
     bool downloadEmbedder = true,
@@ -193,7 +198,8 @@ class AiEngine {
             : const [],
         // A backend carries no tokenizer: which one a model needs is a
         // property of the model, so the app registers it. Without this the
-        // first embedding fails, and the error names the package to add.
+        // embedder fails to load on Android, iOS and desktop, and the error
+        // names the package to add.
         embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
       );
 
@@ -239,7 +245,8 @@ class AiEngine {
             )
             .install();
       } catch (e) {
-        debugPrint('⚠️ AiEngine: embedder install failed, RAG disabled — $e');
+        debugPrint('⚠️ AiEngine: embedder install failed — $e');
+        embedderError = '$e';
       }
     }
 

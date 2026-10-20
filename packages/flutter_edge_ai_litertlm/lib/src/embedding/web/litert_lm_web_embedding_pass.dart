@@ -39,6 +39,20 @@
 //   per image (D25). The web runtime has no ModelInfo, so a bundle without a
 //   vision encoder (the 270m) is refused by `EmbeddingEngine.create` itself;
 //   the load error then says which bundle embeds images.
+// - The audio tower is created only when audio is declared (`audioBackend`
+//   unset = audio disabled), on WebGPU like the rest (see
+//   [liteRtLmWebAudioBackend] for the measurement behind it). Whether the
+//   bundle HAS an audio encoder is read from its container header first, as
+//   natively (D23, `litertlm_container.dart`): the page's `fetch()` reads the
+//   first few KB of the installed file, and the 270m and the 440m are refused
+//   by name before any engine exists. `EmbeddingEngine.create` cannot be
+//   trusted with that question: with `audioBackend` set it SUCCEEDS on both,
+//   and only the first clip fails ("Audio executor is not available for
+//   audio input.", measured on Chrome 155).
+// - One vector may combine parts (`combinedInputs`), in the native order: the
+//   text with its task prefix, then the images in order, then the audio — sent
+//   as one array of parts to `computeEmbedding`. A single part is sent alone,
+//   as before.
 // - At load the pass embeds one over-long probe text under TRUNCATE: the
 //   vector's length is the model's dimension, and a NaN or all-zero vector —
 //   the fp16 failure — refuses the load instead of serving wrong vectors. The
@@ -53,7 +67,8 @@
 // - Every request runs under TRUNCATE. An input the engine had to cut
 //   (`truncatedLength`) or split (`numChunks` > 1) is thrown as
 //   EmbeddingInputTooLongException with the engine's exact count
-//   (`inputLength`) — the truncated or averaged vector is never returned.
+//   (`inputLength`, media tokens included) — the truncated or averaged vector
+//   is never returned.
 // - Under `WebStorageMode.streaming` the model path is `opfs://`, which the
 //   runtime's fetch() cannot open: it is resolved to a `blob:` URL first, and
 //   that URL — created by this pass — is revoked once the engine has read it.
@@ -65,6 +80,7 @@ import 'package:flutter_edge_ai/engine.dart';
 
 import '../../web/litert_lm_page_lock.dart';
 import '../litert_lm_embedding_common.dart';
+import '../litertlm_container.dart';
 import '../vision_budget.dart' show liteRtLmDefaultVisionTokensPerImage;
 
 /// The `@litert-lm/core` backends the pass can ask for (`Backend.CPU`,
@@ -85,13 +101,15 @@ enum LiteRtLmWebOverflowStrategy { chunkAndAverage, truncate, error }
 
 /// What the pass hands `EmbeddingEngine.create` (`EmbeddingEngineSettings`).
 /// A null field is left out of the settings object, so the runtime applies
-/// its own rule — for [visionBackend], vision disabled.
+/// its own rule — for [visionBackend] and [audioBackend], that tower
+/// disabled.
 final class LiteRtLmWebEngineSettings {
   const LiteRtLmWebEngineSettings({
     required this.modelUrl,
     required this.backend,
     required this.maxInputLength,
     this.visionBackend,
+    this.audioBackend,
     this.minInputLength,
     this.visionTokensPerImage,
   });
@@ -101,6 +119,7 @@ final class LiteRtLmWebEngineSettings {
 
   final LiteRtLmWebBackend backend;
   final LiteRtLmWebBackend? visionBackend;
+  final LiteRtLmWebBackend? audioBackend;
   final int maxInputLength;
   final int? minInputLength;
   final int? visionTokensPerImage;
@@ -108,9 +127,10 @@ final class LiteRtLmWebEngineSettings {
   @override
   String toString() =>
       'LiteRtLmWebEngineSettings(backend: ${backend.name}, '
-      'visionBackend: ${visionBackend?.name}, maxInputLength: '
-      '$maxInputLength, minInputLength: $minInputLength, '
-      'visionTokensPerImage: $visionTokensPerImage)';
+      'visionBackend: ${visionBackend?.name}, audioBackend: '
+      '${audioBackend?.name}, maxInputLength: $maxInputLength, '
+      'minInputLength: $minInputLength, visionTokensPerImage: '
+      '$visionTokensPerImage)';
 }
 
 /// `EmbeddingOptions` for one `computeEmbedding` call.
@@ -126,7 +146,9 @@ final class LiteRtLmWebEmbeddingOptions {
   final LiteRtLmWebOverflowStrategy inputOverflowStrategy;
 }
 
-/// One input part: a string, or an encoded image.
+/// What one `computeEmbedding` call embeds: one part — a string, an encoded
+/// image or an encoded audio clip — or several of them in one vector
+/// ([LiteRtLmWebParts]).
 sealed class LiteRtLmWebInput {
   const LiteRtLmWebInput();
 }
@@ -143,6 +165,33 @@ final class LiteRtLmWebImage extends LiteRtLmWebInput {
   const LiteRtLmWebImage(this.bytes);
 
   final Uint8List bytes;
+}
+
+/// An encoded audio clip (WAV, MP3 or FLAC), decoded, mixed down to mono and
+/// resampled to 16 kHz by the engine.
+final class LiteRtLmWebAudio extends LiteRtLmWebInput {
+  const LiteRtLmWebAudio(this.bytes);
+
+  final Uint8List bytes;
+}
+
+/// Several parts embedded as one vector (a combined input), in the order the
+/// engine reads them: the text, then the images, then the audio. Each part is
+/// a [LiteRtLmWebText], [LiteRtLmWebImage] or [LiteRtLmWebAudio], never
+/// another [LiteRtLmWebParts].
+final class LiteRtLmWebParts extends LiteRtLmWebInput {
+  LiteRtLmWebParts(Iterable<LiteRtLmWebInput> parts)
+    : parts = List.unmodifiable(parts) {
+    if (this.parts.length < 2 || this.parts.any((p) => p is LiteRtLmWebParts)) {
+      throw ArgumentError.value(
+        parts,
+        'parts',
+        'two or more text, image or audio parts',
+      );
+    }
+  }
+
+  final List<LiteRtLmWebInput> parts;
 }
 
 /// `EmbeddingResponse`: the vector and what the engine counted.
@@ -196,6 +245,12 @@ abstract interface class LiteRtLmWebRuntime {
 
   /// `EmbeddingEngine.create(settings)`.
   Future<LiteRtLmWebEngine> create(LiteRtLmWebEngineSettings settings);
+
+  /// The first [length] bytes of what [url] serves — fewer when it is
+  /// shorter — read from the start of the response, the rest cancelled: the
+  /// container header of a bundle of hundreds of MB costs a few KB. Throws
+  /// when the URL cannot be read.
+  Future<Uint8List> readPrefix(String url, int length);
 }
 
 /// One `EmbeddingEngine`.
@@ -222,6 +277,7 @@ final class LiteRtLmWebEmbeddingConfig {
     this.declaredMedia = const {},
     this.visionTokensPerImage = liteRtLmDefaultVisionTokensPerImage,
     this.backend = LiteRtLmWebBackend.gpu,
+    @visibleForTesting this.audioBackend = liteRtLmWebAudioBackend,
     @visibleForTesting this.minInputLength,
   });
 
@@ -242,8 +298,9 @@ final class LiteRtLmWebEmbeddingConfig {
   /// `opfs://` is never revoked.
   final void Function(String url) revokeUrl;
 
-  /// The media the caller declared: images create the vision tower; audio is
-  /// refused (1.13.1).
+  /// The media the caller declared: images create the vision tower, audio
+  /// the audio tower (after the container header showed the bundle has an
+  /// audio encoder).
   final Set<EmbeddingModality> declaredMedia;
 
   /// Vision tokens per image (D25): 140 or 70, checked by `describe()`.
@@ -255,6 +312,11 @@ final class LiteRtLmWebEmbeddingConfig {
   /// it; nothing in the package selects it.
   final LiteRtLmWebBackend backend;
 
+  /// The backend of the audio tower when audio is declared:
+  /// [liteRtLmWebAudioBackend]. Left selectable so the CPU (WebAssembly)
+  /// tower can be measured again; nothing in the package changes it.
+  final LiteRtLmWebBackend audioBackend;
+
   /// `minInputLength`; null leaves the runtime's default (= the max input
   /// length: one signature). Set only by the drive suite's measurement of
   /// short-text latency against memory.
@@ -265,6 +327,83 @@ final class LiteRtLmWebEmbeddingConfig {
 EmbeddingPass buildLiteRtLmWebEmbeddingPass(
   LiteRtLmWebEmbeddingConfig config,
 ) => LiteRtLmWebEmbeddingPass(config);
+
+/// The backend of the audio tower on the web: WebGPU, as the text and vision
+/// towers. Both work; WebGPU is about 65 times faster. Measured on the 740m,
+/// Chrome 155, Tesla T4 (2.6-3.6 s clips of speech):
+///
+/// | audio tower | per clip | first clip | cos to the native CPU vector |
+/// |---|---|---|---|
+/// | WebGPU | 0.27-0.34 s | 3.7-3.9 s (shader compile) | 0.974-0.991 |
+/// | CPU (WebAssembly) | 17.8-18.0 s, every clip | the same | 0.988-0.995 |
+///
+/// On the CPU the clip also runs on the page's main thread: the page would
+/// freeze for those 18 s. WebGPU's vectors are as far from the native ones as
+/// another native CPU kernel's (int8 activations; the native suite measures up
+/// to cos 0.05 between builds), deterministic run to run, and retrieval holds:
+/// text → audio top-1 6/6 on the example's clips.
+const liteRtLmWebAudioBackend = LiteRtLmWebBackend.gpu;
+
+/// Throws [EmbeddingLoadException] unless the `.litertlm` bundle at [url]
+/// has an audio encoder, read from its container header through
+/// [runtime]'s `readPrefix` (a few KB) — D23, the native rule
+/// (`litertlm_container.dart`): ModelInfo claims audio on the 270m and the
+/// 440m, and the web has no ModelInfo at all. A header that cannot be read or
+/// parsed is a load failure naming [fileName], never "no audio".
+Future<void> requireLiteRtLmWebAudioEncoder(
+  LiteRtLmWebRuntime runtime,
+  String url, {
+  required String fileName,
+}) async {
+  final List<String> types;
+  try {
+    types = await readLitertlmModelTypesFrom(
+      (length) => runtime.readPrefix(url, length),
+    );
+  } on FormatException catch (e) {
+    throw liteRtLmUnreadableContainer(fileName, e.message, e);
+  } catch (e) {
+    // A failed fetch() of the page's own copy (a JS TypeError).
+    throw liteRtLmUnreadableContainer(fileName, '$e', e);
+  }
+  if (!litertlmHasAudioEncoder(types)) throw liteRtLmNoAudioEncoder(fileName);
+}
+
+/// [requireLiteRtLmWebAudioEncoder] for the bundle [config] names, as
+/// `describe()` runs it before core closes the embedder it holds: the
+/// `opfs://` path resolved to a `blob:` URL for the read, and that URL
+/// revoked after it, whatever the outcome.
+Future<void> requireLiteRtLmWebAudioEncoderFor(
+  LiteRtLmWebEmbeddingConfig config,
+) async {
+  final url = await _resolveModelUrl(config);
+  try {
+    await requireLiteRtLmWebAudioEncoder(
+      config.runtime,
+      url,
+      fileName: config.fileName,
+    );
+  } finally {
+    if (config.modelPath.startsWith('opfs://')) config.revokeUrl(url);
+  }
+}
+
+/// [config]'s model path as a URL `fetch()` can read; the failure named.
+Future<String> _resolveModelUrl(LiteRtLmWebEmbeddingConfig config) async {
+  final rawPath = config.modelPath;
+  try {
+    return await config.resolveUrl(rawPath);
+  } catch (e) {
+    // Named here: unwrapped, a JS error reached the app as a bare
+    // "TypeError: Failed to fetch" with no file and no step in it.
+    throw EmbeddingLoadException(
+      'LiteRT-LM could not open ${config.fileName} from the page\'s model '
+      'storage ($rawPath): $e',
+      engine: liteRtLmEngineTag,
+      cause: e,
+    );
+  }
+}
 
 /// The `index.html` line the page needs for EmbeddingGemma 2, word for word.
 const liteRtLmWebShimLine = 'window.EmbeddingEngine = m.EmbeddingEngine;';
@@ -289,8 +428,9 @@ const _options = LiteRtLmWebEmbeddingOptions(
   inputOverflowStrategy: LiteRtLmWebOverflowStrategy.truncate,
 );
 
-/// The `.litertlm` embedding pass on the web: text, and images when declared
-/// on a bundle with a vision encoder.
+/// The `.litertlm` embedding pass on the web: text, images when declared on a
+/// bundle with a vision encoder, audio when declared on a bundle with an
+/// audio encoder, and any combination of them in one vector.
 final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
   LiteRtLmWebEmbeddingPass(this._config);
 
@@ -300,6 +440,7 @@ final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
   int _dimension = 0;
   int? _maxInputTokens;
   bool _images = false;
+  bool _audio = false;
   bool _loading = false;
   bool _loaded = false;
   bool _closed = false;
@@ -315,20 +456,30 @@ final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
     }
     _loading = true;
     final media = _config.declaredMedia;
-    if (media.contains(EmbeddingModality.audio)) {
-      throw const EmbeddingLoadException(
-        liteRtLmNoAudioRefusal,
-        engine: liteRtLmEngineTag,
-      );
-    }
     await _requireRuntime();
     if (_config.backend == LiteRtLmWebBackend.gpu) await _requireWebGpu();
     final images = media.contains(EmbeddingModality.image);
-    // Both suspend inside the page's WebAssembly module (the create reads the
-    // model stream), so they take the page lock the LLM engine takes too.
-    final (settings, probe, maxInputTokens) = await liteRtLmPageLock.run(
-      () async {
-        final settings = await _createEngine(images);
+    final audio = media.contains(EmbeddingModality.audio);
+    final rawPath = _config.modelPath;
+    final url = await _resolveModelUrl(_config);
+    final LiteRtLmWebEngineSettings settings;
+    final LiteRtLmWebEmbedding probe;
+    final int? maxInputTokens;
+    try {
+      // From the container, before any engine exists (D23): describe() has
+      // asked already; this is the backstop for a pass built another way.
+      if (audio) {
+        await requireLiteRtLmWebAudioEncoder(
+          _config.runtime,
+          url,
+          fileName: _file,
+        );
+      }
+      // Both suspend inside the page's WebAssembly module (the create reads
+      // the model stream), so they take the page lock the LLM engine takes
+      // too.
+      (settings, probe, maxInputTokens) = await liteRtLmPageLock.run(() async {
+        final settings = await _createEngine(url, images: images, audio: audio);
         final engine = _engine!;
         try {
           final probe = await engine.computeEmbedding(
@@ -344,8 +495,11 @@ final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
             cause: e,
           );
         }
-      },
-    );
+      });
+    } finally {
+      // The engine has read the model by now, or never will.
+      if (rawPath.startsWith('opfs://')) _config.revokeUrl(url);
+    }
     final dimension = probe.embedding.length;
     if (dimension == 0) {
       throw EmbeddingLoadException(
@@ -373,6 +527,7 @@ final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
     _dimension = dimension;
     _maxInputTokens = maxInputTokens;
     _images = images;
+    _audio = audio;
     _loaded = true;
     edgeAiLog(
       '[LiteRtLmWebEmbeddingPass] loaded $_file: dim=$dimension, '
@@ -381,8 +536,15 @@ final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
     return EmbeddingPassInfo(
       dimension: dimension,
       maxInputTokens: maxInputTokens,
-      modalities: {EmbeddingModality.text, if (images) EmbeddingModality.image},
+      modalities: {
+        EmbeddingModality.text,
+        if (images) EmbeddingModality.image,
+        if (audio) EmbeddingModality.audio,
+      },
       imageFormats: images ? liteRtLmImageFormats : const {},
+      audioFormats: audio ? liteRtLmAudioFormats : const {},
+      combinedInputs: true,
+      visionTokensPerImage: images ? _config.visionTokensPerImage : null,
     );
   }
 
@@ -504,27 +666,19 @@ final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
       'EmbeddingGemma 2 .litertlm bundles. Use a browser with WebGPU enabled '
       'and a GPU it can use.';
 
-  /// Creates the engine into [_engine] and returns the settings it got.
-  Future<LiteRtLmWebEngineSettings> _createEngine(bool images) async {
-    final rawPath = _config.modelPath;
-    final String url;
-    try {
-      url = await _config.resolveUrl(rawPath);
-    } catch (e) {
-      // Named here: unwrapped, a JS error reached the app as a bare
-      // "TypeError: Failed to fetch" with no file and no step in it.
-      throw EmbeddingLoadException(
-        'LiteRT-LM could not open $_file from the page\'s model storage '
-        '($rawPath): $e',
-        engine: liteRtLmEngineTag,
-        cause: e,
-      );
-    }
+  /// Creates the engine for [url] into [_engine] and returns the settings it
+  /// got.
+  Future<LiteRtLmWebEngineSettings> _createEngine(
+    String url, {
+    required bool images,
+    required bool audio,
+  }) async {
     final settings = LiteRtLmWebEngineSettings(
       modelUrl: url,
       backend: _config.backend,
-      // Unset = no vision tower: a text-only embedder never pays for it.
+      // Unset = no tower: a text-only embedder never pays for one.
       visionBackend: images ? _config.backend : null,
+      audioBackend: audio ? _config.audioBackend : null,
       maxInputLength: liteRtLmMaxInputLength,
       minInputLength: _config.minInputLength,
       visionTokensPerImage: images ? _config.visionTokensPerImage : null,
@@ -554,17 +708,19 @@ final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
           'the external weights of the EmbeddingGemma 2 .litertlm bundles; '
           'they load on WebGPU, the default backend.';
       final cpu = _config.backend == LiteRtLmWebBackend.cpu;
+      final towers = [
+        if (images) 'its vision encoder',
+        if (audio) 'its audio encoder',
+      ];
       throw EmbeddingLoadException(
         'LiteRT-LM could not create the embedding engine for $_file '
-        '(${_config.backend.name}${images ? ', with its vision encoder' : ''})'
-        // On the CPU path the CPU is the reason, with or without images.
+        '(${_config.backend.name}'
+        '${towers.isEmpty ? '' : ', with ${towers.join(' and ')}'})'
+        // On the CPU path the CPU is the reason, with or without media.
         ': $e${cpu ? cpuHint : (images ? visionHint : '')}',
         engine: liteRtLmEngineTag,
         cause: e,
       );
-    } finally {
-      // The engine has read the model by now, or failed to.
-      if (rawPath.startsWith('opfs://')) _config.revokeUrl(url);
     }
     return settings;
   }
@@ -578,69 +734,76 @@ final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
         engine: liteRtLmEngineTag,
       );
     }
-    final text = input.text;
-    final LiteRtLmWebInput part;
-    if (text != null && input.images.isEmpty && input.audio == null) {
-      // The one prefix function, as on native; the engine adds BOS and EOS.
-      part = LiteRtLmWebText(taskType.prefix + text);
-    } else if (text == null &&
-        input.images.length == 1 &&
-        input.audio == null &&
-        _images) {
-      // The encoded file as it is: a media part never gets a prefix.
-      part = LiteRtLmWebImage(input.images.single);
-    } else {
-      // Core refuses all of these before calling (one part per vector without
-      // combinedInputs, and only the modalities the model was loaded with);
-      // reaching here is a host bug.
+    // The native order (`embedding_parts.dart`): the text with its task
+    // prefix — the one prefix function; the engine adds BOS and EOS — then
+    // the images in order, then the audio. A media part is the encoded file
+    // as it is, never prefixed.
+    final parts = <LiteRtLmWebInput>[
+      if (input.text case final text?) LiteRtLmWebText(taskType.prefix + text),
+      for (final image in input.images) LiteRtLmWebImage(image),
+      if (input.audio case final audio?) LiteRtLmWebAudio(audio),
+    ];
+    final images = input.images.isNotEmpty;
+    final audio = input.audio != null;
+    if (parts.isEmpty || (images && !_images) || (audio && !_audio)) {
+      // Core refuses all of these before calling (only the modalities the
+      // model was loaded with, and never an input without a part); reaching
+      // here is a host bug.
       throw EmbeddingEngineException(
-        'flutter_edge_ai_litertlm embeds one text or one declared image per '
-        'vector, got $input',
+        'flutter_edge_ai_litertlm embeds text and the media this model was '
+        'loaded with, got $input',
         engine: liteRtLmEngineTag,
       );
     }
-    final image = part is LiteRtLmWebImage;
+    final request = parts.length == 1 ? parts.single : LiteRtLmWebParts(parts);
+    // A lone image is a fixed number of vision tokens, far below the limit:
+    // if the engine cuts or splits one, that is not an input the caller could
+    // shorten.
+    final loneImage = request is LiteRtLmWebImage;
+    final what = switch (request) {
+      LiteRtLmWebText() => 'text',
+      LiteRtLmWebImage() => 'image',
+      LiteRtLmWebAudio() => 'audio clip',
+      LiteRtLmWebParts() => 'combined input',
+    };
 
     final LiteRtLmWebEmbedding response;
     try {
       response = await liteRtLmPageLock.run(
-        () => engine.computeEmbedding(part, _options),
+        () => engine.computeEmbedding(request, _options),
       );
     } catch (e) {
       throw EmbeddingEngineException(
-        'LiteRT-LM could not embed the ${image ? 'image' : 'text'} for '
-        '$_file: $e',
+        'LiteRT-LM could not embed the $what for $_file: $e',
         engine: liteRtLmEngineTag,
         cause: e,
       );
     }
+    final media = images || audio;
     if (response.truncatedLength case final limit?) {
-      if (image) {
-        // An image is a fixed number of vision tokens, far below the text
-        // limit; a cut image is not an input the caller could split.
+      if (loneImage) {
         throw EmbeddingEngineException(
           'LiteRT-LM truncated an image of $_file at $limit of '
           '${response.inputLength} tokens',
           engine: liteRtLmEngineTag,
         );
       }
-      throw _tooLong(response.inputLength, limit);
+      throw _tooLong(response.inputLength, limit, media: media);
     }
     if (response.numChunks > 1) {
       // WebGPU: the engine averaged windows of the input instead of cutting
       // it — a vector of a different kind than every other in the index.
       final limit = _maxInputTokens;
-      if (image || limit == null) {
+      if (loneImage || limit == null) {
         throw EmbeddingEngineException(
-          'LiteRT-LM split the ${response.inputLength}-token '
-          '${image ? 'image' : 'input'} for $_file into '
-          '${response.numChunks} windows and averaged them'
+          'LiteRT-LM split the ${response.inputLength}-token $what for $_file '
+          'into ${response.numChunks} windows and averaged them'
           '${limit == null ? ' (its window is unknown)' : ''}; nothing was '
-          'returned for it.${image ? '' : ' Split the text and embed the pieces.'}',
+          'returned for it.${loneImage ? '' : ' Split the input and embed the pieces.'}',
           engine: liteRtLmEngineTag,
         );
       }
-      throw _tooLong(response.inputLength, limit);
+      throw _tooLong(response.inputLength, limit, media: media);
     }
     final vector = response.embedding;
     if (vector.length != _dimension) {
@@ -653,21 +816,30 @@ final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
     if (_unusable(vector)) {
       throw EmbeddingEngineException(
         'LiteRT-LM returned a vector with NaN, infinity or only zeros for '
-        '$_file on ${_config.backend.name}',
+        'the $what of $_file on ${_config.backend.name}',
         engine: liteRtLmEngineTag,
       );
     }
     return vector;
   }
 
-  EmbeddingInputTooLongException _tooLong(int actual, int limit) =>
-      EmbeddingInputTooLongException(
-        'The input is $actual tokens (task prefix, BOS and EOS included); '
-        '$_file takes at most $limit. Nothing was returned for it; split the '
-        'text and embed the pieces.',
-        maxInputTokens: limit,
-        actualTokens: actual,
-      );
+  EmbeddingInputTooLongException _tooLong(
+    int actual,
+    int limit, {
+    required bool media,
+  }) => EmbeddingInputTooLongException(
+    media
+        // The native words: the media tokens count against the same limit.
+        ? 'The input is $actual tokens long; $_file accepts at most $limit '
+              '(task prefix, BOS and EOS included, and media too: about 140 '
+              'tokens per image and 25 per second of audio). Nothing was '
+              'embedded; split the input and embed the pieces.'
+        : 'The input is $actual tokens (task prefix, BOS and EOS included); '
+              '$_file takes at most $limit. Nothing was returned for it; split '
+              'the text and embed the pieces.',
+    maxInputTokens: limit,
+    actualTokens: actual,
+  );
 
   @override
   Future<void> close() async {

@@ -13,8 +13,14 @@
 // for all nine task types, image bytes untouched, normalize + special tokens +
 // TRUNCATE), the typed overflow with the engine's exact counts for a cut or a
 // split input, `opfs://` resolve and revoke, close, and one case through
-// core's inline host.
+// core's inline host. Audio and combined inputs (1.13.2): the container
+// header read through the runtime before any engine exists — the 270m and the
+// 440m refused by name, the 740m's audio tower on WebGPU — the audio bytes
+// untouched, the parts of a combined input in the native order as one
+// request, its overflow with exact counts, and core's D17 gate letting a
+// combined input through.
 
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
@@ -30,8 +36,25 @@ import 'package:flutter_test/flutter_test.dart';
 /// "Tokens" as the fake engine counts them: one per character of a text part
 /// (prefix included), plus BOS and EOS when special tokens are on — except the
 /// pass's probes, runs of `the`, which count one per word as the real
-/// tokenizer reads them; an image is [_imageTokens].
+/// tokenizer reads them; an image is [_imageTokens], an audio clip one per
+/// byte (a test picks its length).
 const _imageTokens = 140;
+
+int _partTokens(LiteRtLmWebInput input) => switch (input) {
+  LiteRtLmWebText(:final text) => _textTokens(text),
+  LiteRtLmWebImage() => _imageTokens,
+  LiteRtLmWebAudio(:final bytes) => bytes.length,
+  LiteRtLmWebParts(:final parts) => parts.fold(
+    0,
+    (sum, part) => sum + _partTokens(part),
+  ),
+};
+
+/// The container headers of the three EmbeddingGemma 2 bundles, cut at their
+/// header end (test/ffi/fixtures/README.md): what `readPrefix` serves.
+Uint8List _header(String bundle) => File(
+  'test/ffi/fixtures/embeddinggemma2_${bundle}_header.litertlm',
+).readAsBytesSync();
 
 int _textTokens(String text) => RegExp(r'^the( the)*$').hasMatch(text)
     ? text.split(' ').length
@@ -60,10 +83,7 @@ final class _FakeEngine implements LiteRtLmWebEngine {
     calls.add((input, options));
     if (runtime.computeError case final error?) throw error;
     final special = options.insertSpecialTokens ? 2 : 0;
-    final tokens = switch (input) {
-      LiteRtLmWebText(:final text) => _textTokens(text) + special,
-      LiteRtLmWebImage() => _imageTokens + special,
-    };
+    final tokens = _partTokens(input) + special;
     // The largest signature the engine prepared.
     final limit = runtime.maxSignature;
     var vector = options.normalize ? _unit : _raw;
@@ -130,10 +150,18 @@ final class _FakeRuntime implements LiteRtLmWebRuntime {
 
   List<double> Function(LiteRtLmWebInput input)? vectorFor;
 
+  /// The installed file `readPrefix` serves the start of: the 740m's header
+  /// by default (it has an audio encoder).
+  Uint8List file = _header('740m');
+  Object? readError;
+
+  /// Every `readPrefix` call: the URL and the length asked for.
+  final reads = <(String, int)>[];
+
   int readyChecks = 0;
   int gpuChecks = 0;
 
-  /// The runtime calls, in order: `ready`, `gpu`, `create`.
+  /// The runtime calls, in order: `ready`, `gpu`, `read`, `create`.
   final calls = <String>[];
   final created = <_FakeEngine>[];
 
@@ -163,6 +191,14 @@ final class _FakeRuntime implements LiteRtLmWebRuntime {
     created.add(engine);
     return engine;
   }
+
+  @override
+  Future<Uint8List> readPrefix(String url, int length) async {
+    calls.add('read');
+    reads.add((url, length));
+    if (readError case final error?) throw error;
+    return Uint8List.sublistView(file, 0, length.clamp(0, file.length));
+  }
 }
 
 LiteRtLmWebEmbeddingConfig _config(
@@ -173,9 +209,10 @@ LiteRtLmWebEmbeddingConfig _config(
   List<String>? resolved,
   List<String>? revoked,
   LiteRtLmWebBackend? backend,
+  String fileName = 'embeddinggemma-2-text-vision-440m.litertlm',
 }) => LiteRtLmWebEmbeddingConfig(
   modelPath: modelPath,
-  fileName: 'embeddinggemma-2-text-vision-440m.litertlm',
+  fileName: fileName,
   runtime: runtime,
   resolveUrl: (path) async {
     resolved?.add(path);
@@ -200,6 +237,17 @@ LiteRtLmWebEmbeddingPass _pass(
 /// A PNG header, enough for core's sniffer.
 final _png = Uint8List.fromList([
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, //
+]);
+
+/// A WAV clip of [tokens] fake tokens (the fake counts one per byte).
+Uint8List _wav([int tokens = 100]) => Uint8List.fromList([
+  ...'RIFF'.codeUnits, 0, 0, 0, 0, ...'WAVEfmt '.codeUnits, //
+  ...List.filled(tokens - 16, 7),
+]);
+
+/// An M4A header (`ftyp` at 4), which the engine cannot decode.
+final _m4a = Uint8List.fromList([
+  0, 0, 0, 0x20, ...'ftypM4A '.codeUnits, 0, 0, 0, 0, //
 ]);
 
 /// A WebP header (RIFF....WEBP), which the engine cannot decode.
@@ -239,6 +287,7 @@ void main() {
       expect(settings.minInputLength, isNull, reason: 'the runtime default');
       expect(settings.visionBackend, isNull, reason: 'unset = no vision tower');
       expect(settings.visionTokensPerImage, isNull);
+      expect(info.visionTokensPerImage, isNull);
       expect(info.dimension, 4);
       expect(info.maxInputTokens, 1024);
       expect(info.modalities, {EmbeddingModality.text});
@@ -288,6 +337,7 @@ void main() {
         final settings = runtime.engine.settings;
         expect(settings.visionBackend, LiteRtLmWebBackend.gpu);
         expect(settings.visionTokensPerImage, budget);
+        expect(info.visionTokensPerImage, budget, reason: 'reported to core');
         expect(info.modalities, {
           EmbeddingModality.text,
           EmbeddingModality.image,
@@ -495,15 +545,177 @@ void main() {
       );
     });
 
-    test('audio declared: refused before the page is touched', () async {
+    test('audio declared on the 740m: its container header is read through '
+        'the page before the engine exists, then the audio tower on WebGPU; '
+        '{text, audio}, WAV/MP3/FLAC, combined inputs', () async {
       final runtime = _FakeRuntime();
-      await expectLater(
-        _pass(runtime, media: {EmbeddingModality.audio}).load(),
-        throwsA(_loadError(liteRtLmNoAudioRefusal)),
+      final revoked = <String>[];
+      final pass = LiteRtLmWebEmbeddingPass(
+        _config(
+          runtime,
+          modelPath: 'opfs://eg2.litertlm',
+          media: {EmbeddingModality.audio},
+          revoked: revoked,
+          fileName: 'embeddinggemma-2-740m.litertlm',
+        ),
       );
-      expect(runtime.readyChecks, 0);
-      expect(runtime.gpuChecks, 0);
-      expect(runtime.created, isEmpty);
+
+      final info = await pass.load();
+
+      expect(runtime.calls, ['ready', 'gpu', 'read', 'read', 'create']);
+      expect(runtime.reads, [
+        ('blob:resolved/eg2.litertlm', 32),
+        ('blob:resolved/eg2.litertlm', 2176),
+      ], reason: 'the preamble, then up to the header end; nothing past it');
+      final settings = runtime.engine.settings;
+      expect(settings.audioBackend, LiteRtLmWebBackend.gpu);
+      expect(settings.audioBackend, liteRtLmWebAudioBackend);
+      expect(settings.visionBackend, isNull, reason: 'images not declared');
+      expect(info.modalities, {
+        EmbeddingModality.text,
+        EmbeddingModality.audio,
+      });
+      expect(info.audioFormats, {
+        EncodedMediaFormat.wav,
+        EncodedMediaFormat.mp3,
+        EncodedMediaFormat.flac,
+      });
+      expect(info.audioFormats, liteRtLmAudioFormats);
+      expect(info.imageFormats, isEmpty);
+      expect(info.combinedInputs, isTrue);
+      expect(revoked, ['blob:resolved/eg2.litertlm']);
+      await pass.close();
+    });
+
+    test(
+      'images and audio declared: both towers, {text, image, audio}',
+      () async {
+        final runtime = _FakeRuntime();
+        final info = await _pass(
+          runtime,
+          media: {EmbeddingModality.image, EmbeddingModality.audio},
+        ).load();
+        final settings = runtime.engine.settings;
+        expect(settings.visionBackend, LiteRtLmWebBackend.gpu);
+        expect(settings.audioBackend, LiteRtLmWebBackend.gpu);
+        expect(settings.visionTokensPerImage, 140);
+        expect(info.modalities, EmbeddingModality.values.toSet());
+      },
+    );
+
+    test('no audio declared: no audio tower, and the header is never '
+        'read', () async {
+      final runtime = _FakeRuntime();
+      final info = await _pass(
+        runtime,
+        media: {EmbeddingModality.image},
+      ).load();
+      expect(runtime.engine.settings.audioBackend, isNull);
+      expect(runtime.reads, isEmpty);
+      expect(info.audioFormats, isEmpty);
+      expect(info.combinedInputs, isTrue);
+    });
+
+    for (final bundle in ['270m', '440m']) {
+      test('audio declared on the $bundle: refused from its container header, '
+          'naming the 740m, before any engine exists (ModelInfo would claim '
+          'audio)', () async {
+        final runtime = _FakeRuntime()..file = _header(bundle);
+        final revoked = <String>[];
+        final pass = LiteRtLmWebEmbeddingPass(
+          _config(
+            runtime,
+            modelPath: 'opfs://eg2.litertlm',
+            media: {EmbeddingModality.audio},
+            revoked: revoked,
+            fileName: 'embeddinggemma-2-$bundle.litertlm',
+          ),
+        );
+        await expectLater(
+          pass.load(),
+          throwsA(
+            _loadError(
+              'embeddinggemma-2-$bundle.litertlm has no audio encoder; '
+              'install embeddinggemma-2-740m',
+            ),
+          ),
+        );
+        expect(runtime.created, isEmpty);
+        expect(runtime.calls, isNot(contains('create')));
+        expect(revoked, ['blob:resolved/eg2.litertlm']);
+        await pass.close();
+      });
+    }
+
+    for (final (name, mutate, reason) in [
+      (
+        'not a .litertlm file',
+        (_FakeRuntime r) => r.file = Uint8List.fromList(List.filled(64, 0x41)),
+        'no LITERTLM magic',
+      ),
+      (
+        'a file that ends inside its header',
+        (_FakeRuntime r) => r.file = Uint8List.sublistView(r.file, 0, 1000),
+        'ends at 1000, expected 2176',
+      ),
+      (
+        'a read the page cannot do',
+        (_FakeRuntime r) =>
+            r.readError = StateError('TypeError: Failed to fetch'),
+        'TypeError: Failed to fetch',
+      ),
+    ]) {
+      test(
+        'audio declared, $name: a load error naming the file and the '
+        'reason, with the cause — never "no audio"; nothing created',
+        () async {
+          final runtime = _FakeRuntime();
+          mutate(runtime);
+          await expectLater(
+            _pass(runtime, media: {EmbeddingModality.audio}).load(),
+            throwsA(
+              _loadError(
+                allOf(
+                  startsWith(
+                    'could not read the container of '
+                    'embeddinggemma-2-text-vision-440m.litertlm to find its '
+                    'audio encoder',
+                  ),
+                  contains(reason),
+                ),
+              ).having((e) => e.cause, 'cause', isNotNull),
+            ),
+          );
+          expect(runtime.created, isEmpty);
+        },
+      );
+    }
+
+    test('requireLiteRtLmWebAudioEncoderFor (describe()): resolves an opfs:// '
+        'path, reads, revokes the URL it made — refused or not', () async {
+      for (final (bundle, refused) in [('740m', false), ('270m', true)]) {
+        final runtime = _FakeRuntime()..file = _header(bundle);
+        final revoked = <String>[];
+        final check = requireLiteRtLmWebAudioEncoderFor(
+          _config(
+            runtime,
+            modelPath: 'opfs://eg2.litertlm',
+            revoked: revoked,
+            fileName: 'eg2.litertlm',
+          ),
+        );
+        if (refused) {
+          await expectLater(
+            check,
+            throwsA(_loadError(contains('has no audio encoder'))),
+          );
+        } else {
+          await check;
+        }
+        expect(runtime.reads.first.$1, 'blob:resolved/eg2.litertlm');
+        expect(revoked, ['blob:resolved/eg2.litertlm']);
+        expect(runtime.created, isEmpty);
+      }
     });
 
     test('create fails, text only: the runtime\'s message, no vision '
@@ -843,14 +1055,14 @@ void main() {
       await pass.close();
     });
 
-    test('an image on a text-only pass, two modalities, or audio never reach '
-        'the engine (a host bug)', () async {
+    test('an image or audio on a pass not loaded for it never reaches the '
+        'engine (a host bug)', () async {
       final runtime = _FakeRuntime();
       final textOnly = _pass(runtime);
       await textOnly.load();
       for (final input in [
         EmbeddingInput.image(_png),
-        EmbeddingInput.audio(Uint8List.fromList([1, 2, 3])),
+        EmbeddingInput.audio(_wav()),
       ]) {
         await expectLater(
           textOnly.embed(input, TaskType.none),
@@ -860,20 +1072,170 @@ void main() {
       expect(runtime.engine.calls, hasLength(1), reason: 'the probe only');
       await textOnly.close();
 
-      // Text with an image, on a pass that embeds both: still one vector per
-      // modality, so it is refused rather than sent as text (or as an image).
+      // A combined input carrying a medium the pass was not loaded with is
+      // refused whole, never sent without it.
       final withImages = _FakeRuntime();
-      final both = _pass(withImages, media: {EmbeddingModality.image});
-      await both.load();
+      final images = _pass(withImages, media: {EmbeddingModality.image});
+      await images.load();
       await expectLater(
-        both.embed(
-          EmbeddingInput(text: 'a stop sign', images: [_png]),
+        images.embed(
+          EmbeddingInput(text: 'a stop sign', images: [_png], audio: _wav()),
           TaskType.none,
         ),
         throwsA(isA<EmbeddingEngineException>()),
       );
       expect(withImages.engine.calls, hasLength(1), reason: 'the probe only');
-      await both.close();
+      await images.close();
+    });
+
+    test('an audio clip reaches the engine as its own bytes, without a '
+        'prefix', () async {
+      final runtime = _FakeRuntime();
+      final pass = _pass(runtime, media: {EmbeddingModality.audio});
+      await pass.load();
+      final clip = _wav();
+      expect(
+        await pass.embed(EmbeddingInput.audio(clip), TaskType.retrievalQuery),
+        _unit,
+      );
+      final (input, options) = runtime.engine.calls.last;
+      expect((input as LiteRtLmWebAudio).bytes, clip);
+      expect(options.normalize, isTrue);
+      expect(options.insertSpecialTokens, isTrue);
+      expect(
+        options.inputOverflowStrategy,
+        LiteRtLmWebOverflowStrategy.truncate,
+      );
+      await pass.close();
+    });
+
+    test('a combined input is one request of its parts in the native order: '
+        'the prefixed text, the images in order, the audio', () async {
+      final runtime = _FakeRuntime();
+      final pass = _pass(
+        runtime,
+        media: {EmbeddingModality.image, EmbeddingModality.audio},
+      );
+      await pass.load();
+      final second = Uint8List.fromList([..._png, 9]);
+      final clip = _wav(50);
+      expect(
+        await pass.embed(
+          EmbeddingInput(text: 'a trip', images: [_png, second], audio: clip),
+          TaskType.retrievalDocument,
+        ),
+        _unit,
+      );
+      final parts = (runtime.engine.calls.last.$1 as LiteRtLmWebParts).parts;
+      expect(parts, hasLength(4));
+      expect(
+        (parts[0] as LiteRtLmWebText).text,
+        '${TaskType.retrievalDocument.prefix}a trip',
+      );
+      expect((parts[1] as LiteRtLmWebImage).bytes, _png);
+      expect((parts[2] as LiteRtLmWebImage).bytes, second);
+      expect((parts[3] as LiteRtLmWebAudio).bytes, clip);
+
+      // Two parts of one kind are a combined input too; one part alone is
+      // sent as it is.
+      await pass.embed(EmbeddingInput(images: [_png, second]), TaskType.none);
+      expect(
+        (runtime.engine.calls.last.$1 as LiteRtLmWebParts).parts,
+        hasLength(2),
+      );
+      await pass.embed(EmbeddingInput(text: 'x', audio: clip), TaskType.none);
+      expect(
+        [
+          for (final p
+              in (runtime.engine.calls.last.$1 as LiteRtLmWebParts).parts)
+            p.runtimeType,
+        ],
+        [LiteRtLmWebText, LiteRtLmWebAudio],
+      );
+      await pass.embed(EmbeddingInput(text: 'x'), TaskType.none);
+      expect(runtime.engine.calls.last.$1, isA<LiteRtLmWebText>());
+      await pass.close();
+    });
+
+    test('an audio clip or a combined input over the limit is '
+        'EmbeddingInputTooLongException with the engine\'s exact counts, media '
+        'tokens included — cut (truncatedLength) or split into windows '
+        '(WebGPU); nothing returned, the pass keeps working', () async {
+      for (final webGpu in [false, true]) {
+        final runtime = _FakeRuntime()..webGpu = webGpu;
+        final pass = _pass(
+          runtime,
+          media: {EmbeddingModality.image, EmbeddingModality.audio},
+        );
+        await pass.load();
+        // 1022 + BOS and EOS: exactly the limit.
+        expect(
+          await pass.embed(EmbeddingInput.audio(_wav(1022)), TaskType.none),
+          _unit,
+        );
+        for (final (input, tokens) in [
+          (EmbeddingInput.audio(_wav(1500)), 1502),
+          (
+            EmbeddingInput(text: 'x' * 200, images: [_png], audio: _wav(700)),
+            200 + _imageTokens + 700 + 2,
+          ),
+        ]) {
+          await expectLater(
+            pass.embed(input, TaskType.none),
+            throwsA(
+              isA<EmbeddingInputTooLongException>()
+                  .having((e) => e.maxInputTokens, 'maxInputTokens', 1024)
+                  .having((e) => e.actualTokens, 'actualTokens', tokens)
+                  .having(
+                    (e) => e.message,
+                    'message',
+                    allOf(
+                      contains('$tokens tokens long'),
+                      contains('25 per second of audio'),
+                      contains('split the input'),
+                    ),
+                  ),
+            ),
+            reason: webGpu ? 'split' : 'cut',
+          );
+        }
+        expect(
+          await pass.embed(EmbeddingInput.audio(_wav()), TaskType.none),
+          _unit,
+        );
+        await pass.close();
+      }
+    });
+
+    test('an audio clip the engine fails on (miniaudio refusing it) is '
+        'EmbeddingEngineException with the runtime\'s message', () async {
+      final runtime = _FakeRuntime();
+      final pass = _pass(runtime, media: {EmbeddingModality.audio});
+      await pass.load();
+      runtime.computeError = StateError(
+        'UNKNOWN: Failed to initialize decoder',
+      );
+      await expectLater(
+        pass.embed(EmbeddingInput.audio(_wav()), TaskType.none),
+        throwsA(
+          isA<EmbeddingEngineException>()
+              .having((e) => e.engine, 'engine', liteRtLmEngineTag)
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('could not embed the audio clip'),
+                  contains('Failed to initialize decoder'),
+                ),
+              ),
+        ),
+      );
+      runtime.computeError = null;
+      expect(
+        await pass.embed(EmbeddingInput.audio(_wav()), TaskType.none),
+        _unit,
+      );
+      await pass.close();
     });
 
     test('an image the engine fails on is EmbeddingEngineException with the '
@@ -993,6 +1355,64 @@ void main() {
                 'actualTokens',
                 TaskType.retrievalDocument.prefix.length + 1100 + 2,
               ),
+        ),
+      );
+    } finally {
+      await model.close();
+    }
+    expect(runtime.engine.deletes, 1);
+  });
+
+  test('through core\'s inline host, audio and images declared: '
+      '{text, image, audio}; a combined input passes the D17 gate and reaches '
+      'the engine as one request; an M4A clip is refused on the caller before '
+      'the engine sees it', () async {
+    final runtime = _FakeRuntime();
+    final media = {EmbeddingModality.image, EmbeddingModality.audio};
+    final host = await inline.startEmbeddingHost(
+      EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig>(
+        engineTag: liteRtLmEngineTag,
+        factory: buildLiteRtLmWebEmbeddingPass,
+        config: _config(runtime, media: media),
+        activeBackend: PreferredBackend.gpu,
+      ),
+      declaredMedia: media,
+      label: 'embeddinggemma-2-740m.litertlm',
+    );
+    final model = CommonEmbeddingModel.withHost(
+      host,
+      engine: liteRtLmEngineTag,
+      activeBackend: PreferredBackend.gpu,
+    );
+    try {
+      expect(model.modalities, EmbeddingModality.values.toSet());
+      final calls = runtime.engine.calls.length;
+      await expectLater(
+        model.embed(EmbeddingInput.audio(_m4a), taskType: TaskType.none),
+        throwsA(
+          isA<EmbeddingFormatNotSupportedException>()
+              .having((e) => e.detected, 'detected', EncodedMediaFormat.m4a)
+              .having((e) => e.accepted, 'accepted', liteRtLmAudioFormats),
+        ),
+      );
+      expect(runtime.engine.calls, hasLength(calls), reason: 'never sent');
+      expect(
+        await model.embed(
+          EmbeddingInput(text: 'a trip', images: [_png], audio: _wav()),
+          taskType: TaskType.retrievalDocument,
+        ),
+        _unit,
+      );
+      expect(
+        (runtime.engine.calls.last.$1 as LiteRtLmWebParts).parts,
+        hasLength(3),
+      );
+      await expectLater(
+        model.embed(EmbeddingInput.audio(_wav(1500)), taskType: TaskType.none),
+        throwsA(
+          isA<EmbeddingInputTooLongException>()
+              .having((e) => e.maxInputTokens, 'maxInputTokens', 1024)
+              .having((e) => e.actualTokens, 'actualTokens', 1502),
         ),
       );
     } finally {

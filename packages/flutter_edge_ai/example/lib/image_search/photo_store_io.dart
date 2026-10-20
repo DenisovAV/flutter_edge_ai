@@ -9,16 +9,20 @@ import 'package:path_provider/path_provider.dart';
 import 'photo_store.dart';
 
 /// The native [PhotoStore]: picked photos are copied into
-/// `<documents>/image_search_photos/`.
-PhotoStore createPhotoStore() => _FilePhotoStore();
+/// `<documents>/<directoryName>/`.
+PhotoStore createPhotoStore({String directoryName = 'image_search_photos'}) =>
+    _FilePhotoStore(directoryName);
 
 final class _FilePhotoStore implements PhotoStore {
+  _FilePhotoStore(this._directoryName);
+
+  final String _directoryName;
   int _counter = 0;
 
   Future<Directory> _directory() async {
     final documents = await getApplicationDocumentsDirectory();
     return Directory(
-      '${documents.path}${Platform.pathSeparator}image_search_photos',
+      '${documents.path}${Platform.pathSeparator}$_directoryName',
     ).create(recursive: true);
   }
 
@@ -39,6 +43,9 @@ final class _FilePhotoStore implements PhotoStore {
   @override
   ImageProvider imageFor(String reference) =>
       assetImageFor(reference) ?? FileImage(File(reference));
+
+  @override
+  Future<Uint8List> read(String reference) => File(reference).readAsBytes();
 
   @override
   Future<void> forget(String reference) async {

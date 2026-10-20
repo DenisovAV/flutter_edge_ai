@@ -180,35 +180,35 @@ packages:
       path: "../../flutter_edge_ai"
       relative: true
     source: path
-    version: "2.3.1"
+    version: "2.5.0"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_agent"
       relative: true
     source: path
-    version: "0.2.9"
+    version: "0.4.0"
   flutter_edge_ai_embeddings:
     dependency: "direct overridden"
     description:
       path: "../../flutter_edge_ai_embeddings"
       relative: true
     source: path
-    version: "2.3.0"
+    version: "2.3.1"
   flutter_edge_ai_litertlm:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.13.1"
+    version: "1.16.0"
   flutter_edge_ai_speech:
     dependency: "direct main"
     description:
       path: ".."
       relative: true
     source: path
-    version: "0.5.6"
+    version: "0.5.8"
   flutter_inappwebview:
     dependency: transitive
     description:

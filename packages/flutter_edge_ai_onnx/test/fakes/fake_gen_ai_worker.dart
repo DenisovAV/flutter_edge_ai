@@ -21,10 +21,14 @@
 // is JSON when the test needs it (anything else means the defaults):
 //   {"log": "/tmp/x.log", "failLoad": true, "throwOnClose": true}
 // - `log`: the engine appends one line per call (`load`, `generate`,
-//   `count`, `reset`, `close`, and `tail` for a turn's last call) to this
-//   file — the only way the test, on the main isolate, can see what ran
-//   inside the worker. The writes are synchronous and flushed, so a line is
-//   on disk before the call returns. Gates use `<log>.release`.
+//   `count`, `reset`, `close`, `tail` for a turn's last call, and how an
+//   `untilStopped` turn ended) to this file — the only way the test, on the
+//   main isolate, can see what ran inside the worker. The writes are
+//   synchronous, so a line can be read before the call returns. They are not
+//   fsync'd: the test reads them from the same machine's page cache, and an
+//   fsync makes every logged call wait for the disk — up to half a second a
+//   call in a Linux VM with another process writing (measured), the worker
+//   blocked and deaf to the client meanwhile. Gates use `<log>.release`.
 // - `failLoad`: `load` throws after it "allocated" something.
 // - `gateLoad`: `load` blocks on the gate.
 // - `gateClose`: `close` blocks on the gate before it logs.
@@ -51,8 +55,10 @@
 // - `gateAtTail`: once the chunks are done, logs `tail` and blocks on the
 //   gate before the turn returns — a last native call, during which the test
 //   sends what it wants queued behind the turn.
-// - `untilStopped`: after the chunks, yields until a stop is requested (30 s
-//   at most), so the turn ends only when something stops it.
+// - `untilStopped`: after the chunks, yields until a stop is requested and
+//   logs `stopped`, so the turn ends only when something stops it. After
+//   30 s without one it logs `deadline` and returns instead — a stop that
+//   never arrived, which a test can then tell apart from one that did.
 // - `kill`: when true, the isolate kills ITSELF (`Isolate.current.kill`)
 //   instead of ever replying — simulates an unexpected native crash
 //   mid-generation. Never sends a Chunk/GenerateDone.
@@ -100,7 +106,7 @@ class _ScriptedEngine implements GenAiWorkerEngine {
   void _log(String line) {
     final path = _logPath;
     if (path == null) return;
-    File(path).writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+    File(path).writeAsStringSync('$line\n', mode: FileMode.append);
   }
 
   /// Blocks this isolate — no events, no microtasks — until the test creates
@@ -191,6 +197,7 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       while (!stopRequested() && DateTime.now().isBefore(deadline)) {
         await Future<void>(() {});
       }
+      _log(stopRequested() ? 'stopped' : 'deadline');
     }
 
     if (script?['gateAtTail'] == true) {

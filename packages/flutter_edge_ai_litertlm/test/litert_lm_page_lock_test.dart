@@ -7,6 +7,7 @@
 // consumer cancel — is the browser suite test/web/litert_lm_page_lock_web_test.dart.
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
@@ -31,7 +32,7 @@ final class _Engine implements LiteRtLmWebEngine {
     computes++;
     final tokens = switch (input) {
       LiteRtLmWebText(:final text) => text.length + 2,
-      LiteRtLmWebImage() => 142,
+      LiteRtLmWebImage() || LiteRtLmWebAudio() || LiteRtLmWebParts() => 142,
     };
     return (
       embedding: const [0.5, 0.5, 0.5, 0.5],
@@ -62,6 +63,10 @@ final class _Runtime implements LiteRtLmWebRuntime {
     creates++;
     return engine;
   }
+
+  @override
+  Future<Uint8List> readPrefix(String url, int length) =>
+      throw UnimplementedError('no audio is declared here');
 }
 
 LiteRtLmWebEmbeddingPass _pass(_Runtime runtime) => LiteRtLmWebEmbeddingPass(

@@ -66,6 +66,11 @@ dependencies:
   record: ^6.0.0
   permission_handler: ^11.3.1
   just_audio: ^0.9.36
+  # The Tiny Island screen's 3D scene (needs Flutter GPU: see README).
+  # hook/build.dart converts assets/island/**/*.glb at build time.
+  flutter_scene: ^0.24.3
+  hooks: ^2.2.0
+  vector_math: ^2.1.4
 
 # The opt-in packages now declare a HOSTED dependency on flutter_edge_ai
 # (`^1.0.0-rc.1`) for publishing. This example consumes the local source, so
@@ -134,12 +139,16 @@ dev_dependencies:
 # Opt in to the Qualcomm NPU stack on Android: the litertlm build hook fetches
 # com.qualcomm.qti:qnn-runtime from Maven Central and bundles it into this app.
 # Qualcomm's licence lets an application ship it, not a package, so it is never
-# in flutter_edge_ai_litertlm itself. This pubspec is the root that declares
+# in flutter_edge_ai_litertlm itself. And to the Google Tensor NPU dispatch,
+# which the hook bundles from the native archive (built from LiteRT's
+# litert/vendors/google_tensor, covered by Google's Tensor SDK terms besides
+# its sources' own headers). This pubspec is the root that declares
 # hooks: user_defines because the example is not a workspace member.
 hooks:
   user_defines:
     flutter_edge_ai_litertlm:
       qualcomm_npu: true
+      google_tensor_npu: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -165,6 +174,26 @@ flutter:
     # integration_test/tools/generate_eg2_audio_clips.py): the device suites'
     # test clips and the text→audio retrieval set.
     - assets/eg2_audio/
+    # The Knowledge screen's sample voice memos and two-voice meeting, spoken
+    # by our own TTS (see integration_test/tools/generate_knowledge_memos.dart).
+    - assets/knowledge/
+    - assets/knowledge/memos/
+    - assets/knowledge/photos/
+    - flutter_scene_generated/
+    - path: flutter_scene_generated/metal_ios/
+      platforms:
+        - ios
+    - path: flutter_scene_generated/metal_desktop/
+      platforms:
+        - macos
+    - path: flutter_scene_generated/opengl_es_vulkan/
+      platforms:
+        - android
+        - linux
+        - windows
+    - path: flutter_scene_generated/opengl_es/
+      platforms:
+        - web
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware

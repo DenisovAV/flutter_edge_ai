@@ -113,8 +113,7 @@ class JsonParsingUtils {
           braceCount--;
           if (braceCount == 0 && objectStart >= 0) {
             final jsonStr = trimmed.substring(objectStart, i + 1);
-            final result = parseJsonString(jsonStr);
-            if (result != null) results.add(result);
+            results.addAll(_callsInObject(jsonStr));
             objectStart = -1;
           }
         }
@@ -122,6 +121,34 @@ class JsonParsingUtils {
     }
 
     return results;
+  }
+
+  /// The calls in one JSON object: the object itself when it is a call, or
+  /// the items of its `tool_calls` list, flat or under `function` — the text
+  /// `Message.toolCall(calls:)` writes, which a model may copy from its
+  /// history. A `tool_calls` list is read whole or not at all.
+  static List<FunctionCallResponse> _callsInObject(String jsonStr) {
+    final single = parseJsonString(jsonStr);
+    if (single != null) return [single];
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(jsonStr);
+    } on FormatException {
+      return const [];
+    }
+    if (decoded is! Map) return const [];
+    final items = decoded['tool_calls'];
+    if (items is! List) return const [];
+    final calls = <FunctionCallResponse>[];
+    for (final item in items) {
+      final call = item is Map && item['function'] is Map
+          ? item['function']
+          : item;
+      final parsed = call is Map ? parseJsonString(jsonEncode(call)) : null;
+      if (parsed == null) return const [];
+      calls.add(parsed);
+    }
+    return calls;
   }
 
   /// Fast check for balanced braces without full JSON parsing.

@@ -6,7 +6,7 @@
 // model restored after a restart that still generates.
 //
 // Model functiongemma-270M-it.litertlm: Android /data/local/tmp/
-// flutter_gemma_test/ (FTL --other-files), Linux ~/models, Windows
+// flutter_gemma_test/ (adb push or DDP staging), Linux ~/models, Windows
 // %USERPROFILE%\models.
 // Run: flutter test integration_test/install_rule_device_test.dart -d <id>
 //

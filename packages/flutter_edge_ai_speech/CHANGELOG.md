@@ -1,3 +1,12 @@
+## 0.5.9
+- README: which engines default `supportAudio` from the model.
+
+## 0.5.8
+- Docs: after a barge-in, earlier audio turns stay in context with `flutter_edge_ai_litertlm` 1.15.0.
+
+## 0.5.7
+- `VoiceSession.runAudioTurn`: the model hears the recording, no speech-to-text.
+
 ## 0.5.6
 - Require `flutter_edge_ai` ^2.3.0 and `flutter_edge_ai_litertlm` ^1.13.0.
 

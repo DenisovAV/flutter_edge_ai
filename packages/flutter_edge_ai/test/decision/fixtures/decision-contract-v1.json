@@ -1,0 +1,2435 @@
+{
+  "contract_version": 1,
+  "about": "Golden strings for the decision prompt contract, version 1. For each case, rendering 'state' with 'questions' gives 'prompt' (the user message the chat template wraps) byte for byte, and 'label' is trained and scored as 'completion' (null: the none_option). 'decision' is the section-shaped decision that 'questions' reads as, with every option spelled out: what a reader of the .litertlm gets. The measured cases are rows the option-scoring measurement of 2026-10-15 trained or scored, rendered from the dataset's own text; the constructed cases follow the same rules and were never trained. litetune tests its renderer against this file; flutter_edge_ai's proposed renderer is to do the same.",
+  "cases": [
+    {
+      "name": "emotion",
+      "source": "the measured emotion question and options; the state is constructed",
+      "questions": {
+        "type": "choice",
+        "question": "Which emotion does the text express?",
+        "options": [
+          {
+            "id": "sadness"
+          },
+          {
+            "id": "joy"
+          },
+          {
+            "id": "love"
+          },
+          {
+            "id": "anger"
+          },
+          {
+            "id": "fear"
+          },
+          {
+            "id": "surprise"
+          }
+        ]
+      },
+      "decision": {
+        "contract_version": 1,
+        "type": "choice",
+        "question": "Which emotion does the text express?",
+        "options": [
+          {
+            "id": "sadness"
+          },
+          {
+            "id": "joy"
+          },
+          {
+            "id": "love"
+          },
+          {
+            "id": "anger"
+          },
+          {
+            "id": "fear"
+          },
+          {
+            "id": "surprise"
+          }
+        ],
+        "none_option": null
+      },
+      "state": "i finally got the job and cannot stop smiling",
+      "label": "joy",
+      "prompt": "i finally got the job and cannot stop smiling\n\nQuestion: Which emotion does the text express?\nOptions:\n- sadness\n- joy\n- love\n- anger\n- fear\n- surprise\nAnswer with the id of one option.",
+      "completion": "joy"
+    },
+    {
+      "name": "abcd",
+      "source": "measured 2026-10-15: ABCD test row 178, the shortest conversation",
+      "questions": {
+        "type": "choice",
+        "question": "Which issue is the customer contacting support about?",
+        "options": [
+          {
+            "id": "recover_username",
+            "description": "account_access"
+          },
+          {
+            "id": "recover_password",
+            "description": "account_access"
+          },
+          {
+            "id": "reset_2fa",
+            "description": "account_access"
+          },
+          {
+            "id": "status_service_added",
+            "description": "manage_account"
+          },
+          {
+            "id": "status_service_removed",
+            "description": "manage_account"
+          },
+          {
+            "id": "status_shipping_question",
+            "description": "manage_account"
+          },
+          {
+            "id": "status_credit_missing",
+            "description": "manage_account"
+          },
+          {
+            "id": "manage_change_address",
+            "description": "manage_account"
+          },
+          {
+            "id": "manage_change_name",
+            "description": "manage_account"
+          },
+          {
+            "id": "manage_change_phone",
+            "description": "manage_account"
+          },
+          {
+            "id": "manage_payment_method",
+            "description": "manage_account"
+          },
+          {
+            "id": "status_mystery_fee",
+            "description": "order_issue"
+          },
+          {
+            "id": "status_delivery_time",
+            "description": "order_issue"
+          },
+          {
+            "id": "status_payment_method",
+            "description": "order_issue"
+          },
+          {
+            "id": "status_quantity",
+            "description": "order_issue"
+          },
+          {
+            "id": "manage_upgrade",
+            "description": "order_issue"
+          },
+          {
+            "id": "manage_downgrade",
+            "description": "order_issue"
+          },
+          {
+            "id": "manage_create",
+            "description": "order_issue"
+          },
+          {
+            "id": "manage_cancel",
+            "description": "order_issue"
+          },
+          {
+            "id": "refund_initiate",
+            "description": "product_defect"
+          },
+          {
+            "id": "refund_update",
+            "description": "product_defect"
+          },
+          {
+            "id": "refund_status",
+            "description": "product_defect"
+          },
+          {
+            "id": "return_stain",
+            "description": "product_defect"
+          },
+          {
+            "id": "return_color",
+            "description": "product_defect"
+          },
+          {
+            "id": "return_size",
+            "description": "product_defect"
+          },
+          {
+            "id": "bad_price_competitor",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "bad_price_yesterday",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "out_of_stock_general",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "out_of_stock_one_item",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "promo_code_invalid",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "promo_code_out_of_date",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "mistimed_billing_already_returned",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "mistimed_billing_never_bought",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "status",
+            "description": "shipping_issue"
+          },
+          {
+            "id": "manage",
+            "description": "shipping_issue"
+          },
+          {
+            "id": "missing",
+            "description": "shipping_issue"
+          },
+          {
+            "id": "cost",
+            "description": "shipping_issue"
+          },
+          {
+            "id": "boots",
+            "description": "single_item_query"
+          },
+          {
+            "id": "shirt",
+            "description": "single_item_query"
+          },
+          {
+            "id": "jeans",
+            "description": "single_item_query"
+          },
+          {
+            "id": "jacket",
+            "description": "single_item_query"
+          },
+          {
+            "id": "pricing",
+            "description": "storewide_query"
+          },
+          {
+            "id": "membership",
+            "description": "storewide_query"
+          },
+          {
+            "id": "timing",
+            "description": "storewide_query"
+          },
+          {
+            "id": "policy",
+            "description": "storewide_query"
+          },
+          {
+            "id": "status_questions",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "status_due_amount",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "status_due_date",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "manage_pay_bill",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "manage_extension",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "manage_dispute_bill",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "credit_card",
+            "description": "troubleshoot_site"
+          },
+          {
+            "id": "shopping_cart",
+            "description": "troubleshoot_site"
+          },
+          {
+            "id": "search_results",
+            "description": "troubleshoot_site"
+          },
+          {
+            "id": "slow_speed",
+            "description": "troubleshoot_site"
+          }
+        ]
+      },
+      "decision": {
+        "contract_version": 1,
+        "type": "choice",
+        "question": "Which issue is the customer contacting support about?",
+        "options": [
+          {
+            "id": "recover_username",
+            "description": "account_access"
+          },
+          {
+            "id": "recover_password",
+            "description": "account_access"
+          },
+          {
+            "id": "reset_2fa",
+            "description": "account_access"
+          },
+          {
+            "id": "status_service_added",
+            "description": "manage_account"
+          },
+          {
+            "id": "status_service_removed",
+            "description": "manage_account"
+          },
+          {
+            "id": "status_shipping_question",
+            "description": "manage_account"
+          },
+          {
+            "id": "status_credit_missing",
+            "description": "manage_account"
+          },
+          {
+            "id": "manage_change_address",
+            "description": "manage_account"
+          },
+          {
+            "id": "manage_change_name",
+            "description": "manage_account"
+          },
+          {
+            "id": "manage_change_phone",
+            "description": "manage_account"
+          },
+          {
+            "id": "manage_payment_method",
+            "description": "manage_account"
+          },
+          {
+            "id": "status_mystery_fee",
+            "description": "order_issue"
+          },
+          {
+            "id": "status_delivery_time",
+            "description": "order_issue"
+          },
+          {
+            "id": "status_payment_method",
+            "description": "order_issue"
+          },
+          {
+            "id": "status_quantity",
+            "description": "order_issue"
+          },
+          {
+            "id": "manage_upgrade",
+            "description": "order_issue"
+          },
+          {
+            "id": "manage_downgrade",
+            "description": "order_issue"
+          },
+          {
+            "id": "manage_create",
+            "description": "order_issue"
+          },
+          {
+            "id": "manage_cancel",
+            "description": "order_issue"
+          },
+          {
+            "id": "refund_initiate",
+            "description": "product_defect"
+          },
+          {
+            "id": "refund_update",
+            "description": "product_defect"
+          },
+          {
+            "id": "refund_status",
+            "description": "product_defect"
+          },
+          {
+            "id": "return_stain",
+            "description": "product_defect"
+          },
+          {
+            "id": "return_color",
+            "description": "product_defect"
+          },
+          {
+            "id": "return_size",
+            "description": "product_defect"
+          },
+          {
+            "id": "bad_price_competitor",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "bad_price_yesterday",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "out_of_stock_general",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "out_of_stock_one_item",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "promo_code_invalid",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "promo_code_out_of_date",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "mistimed_billing_already_returned",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "mistimed_billing_never_bought",
+            "description": "purchase_dispute"
+          },
+          {
+            "id": "status",
+            "description": "shipping_issue"
+          },
+          {
+            "id": "manage",
+            "description": "shipping_issue"
+          },
+          {
+            "id": "missing",
+            "description": "shipping_issue"
+          },
+          {
+            "id": "cost",
+            "description": "shipping_issue"
+          },
+          {
+            "id": "boots",
+            "description": "single_item_query"
+          },
+          {
+            "id": "shirt",
+            "description": "single_item_query"
+          },
+          {
+            "id": "jeans",
+            "description": "single_item_query"
+          },
+          {
+            "id": "jacket",
+            "description": "single_item_query"
+          },
+          {
+            "id": "pricing",
+            "description": "storewide_query"
+          },
+          {
+            "id": "membership",
+            "description": "storewide_query"
+          },
+          {
+            "id": "timing",
+            "description": "storewide_query"
+          },
+          {
+            "id": "policy",
+            "description": "storewide_query"
+          },
+          {
+            "id": "status_questions",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "status_due_amount",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "status_due_date",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "manage_pay_bill",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "manage_extension",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "manage_dispute_bill",
+            "description": "subscription_inquiry"
+          },
+          {
+            "id": "credit_card",
+            "description": "troubleshoot_site"
+          },
+          {
+            "id": "shopping_cart",
+            "description": "troubleshoot_site"
+          },
+          {
+            "id": "search_results",
+            "description": "troubleshoot_site"
+          },
+          {
+            "id": "slow_speed",
+            "description": "troubleshoot_site"
+          }
+        ],
+        "none_option": null
+      },
+      "state": "customer: Billing issue, charged for something I did not purchase.\nagent: sure i'll check\nagent: What is your full name?\ncustomer: Rodriguez Domingo\ncustomer: actually need extension on subscription\nagent: okay sure! let me check into that\nagent: what is your account id and order id?\nagent: ??\nagent: Are you there?",
+      "label": "manage_extension",
+      "prompt": "customer: Billing issue, charged for something I did not purchase.\nagent: sure i'll check\nagent: What is your full name?\ncustomer: Rodriguez Domingo\ncustomer: actually need extension on subscription\nagent: okay sure! let me check into that\nagent: what is your account id and order id?\nagent: ??\nagent: Are you there?\n\nQuestion: Which issue is the customer contacting support about?\nOptions:\n- recover_username: account_access\n- recover_password: account_access\n- reset_2fa: account_access\n- status_service_added: manage_account\n- status_service_removed: manage_account\n- status_shipping_question: manage_account\n- status_credit_missing: manage_account\n- manage_change_address: manage_account\n- manage_change_name: manage_account\n- manage_change_phone: manage_account\n- manage_payment_method: manage_account\n- status_mystery_fee: order_issue\n- status_delivery_time: order_issue\n- status_payment_method: order_issue\n- status_quantity: order_issue\n- manage_upgrade: order_issue\n- manage_downgrade: order_issue\n- manage_create: order_issue\n- manage_cancel: order_issue\n- refund_initiate: product_defect\n- refund_update: product_defect\n- refund_status: product_defect\n- return_stain: product_defect\n- return_color: product_defect\n- return_size: product_defect\n- bad_price_competitor: purchase_dispute\n- bad_price_yesterday: purchase_dispute\n- out_of_stock_general: purchase_dispute\n- out_of_stock_one_item: purchase_dispute\n- promo_code_invalid: purchase_dispute\n- promo_code_out_of_date: purchase_dispute\n- mistimed_billing_already_returned: purchase_dispute\n- mistimed_billing_never_bought: purchase_dispute\n- status: shipping_issue\n- manage: shipping_issue\n- missing: shipping_issue\n- cost: shipping_issue\n- boots: single_item_query\n- shirt: single_item_query\n- jeans: single_item_query\n- jacket: single_item_query\n- pricing: storewide_query\n- membership: storewide_query\n- timing: storewide_query\n- policy: storewide_query\n- status_questions: subscription_inquiry\n- status_due_amount: subscription_inquiry\n- status_due_date: subscription_inquiry\n- manage_pay_bill: subscription_inquiry\n- manage_extension: subscription_inquiry\n- manage_dispute_bill: subscription_inquiry\n- credit_card: troubleshoot_site\n- shopping_cart: troubleshoot_site\n- search_results: troubleshoot_site\n- slow_speed: troubleshoot_site\nAnswer with the id of one option.",
+      "completion": "manage_extension"
+    },
+    {
+      "name": "clinc151 in scope",
+      "source": "measured 2026-10-15: CLINC151 test row 0",
+      "questions": {
+        "type": "choice",
+        "question": "Which intent does the request express?",
+        "options": [
+          {
+            "id": "accept_reservations"
+          },
+          {
+            "id": "account_blocked"
+          },
+          {
+            "id": "alarm"
+          },
+          {
+            "id": "application_status"
+          },
+          {
+            "id": "apr"
+          },
+          {
+            "id": "are_you_a_bot"
+          },
+          {
+            "id": "balance"
+          },
+          {
+            "id": "bill_balance"
+          },
+          {
+            "id": "bill_due"
+          },
+          {
+            "id": "book_flight"
+          },
+          {
+            "id": "book_hotel"
+          },
+          {
+            "id": "calculator"
+          },
+          {
+            "id": "calendar"
+          },
+          {
+            "id": "calendar_update"
+          },
+          {
+            "id": "calories"
+          },
+          {
+            "id": "cancel"
+          },
+          {
+            "id": "cancel_reservation"
+          },
+          {
+            "id": "car_rental"
+          },
+          {
+            "id": "card_declined"
+          },
+          {
+            "id": "carry_on"
+          },
+          {
+            "id": "change_accent"
+          },
+          {
+            "id": "change_ai_name"
+          },
+          {
+            "id": "change_language"
+          },
+          {
+            "id": "change_speed"
+          },
+          {
+            "id": "change_user_name"
+          },
+          {
+            "id": "change_volume"
+          },
+          {
+            "id": "confirm_reservation"
+          },
+          {
+            "id": "cook_time"
+          },
+          {
+            "id": "credit_limit"
+          },
+          {
+            "id": "credit_limit_change"
+          },
+          {
+            "id": "credit_score"
+          },
+          {
+            "id": "current_location"
+          },
+          {
+            "id": "damaged_card"
+          },
+          {
+            "id": "date"
+          },
+          {
+            "id": "definition"
+          },
+          {
+            "id": "direct_deposit"
+          },
+          {
+            "id": "directions"
+          },
+          {
+            "id": "distance"
+          },
+          {
+            "id": "do_you_have_pets"
+          },
+          {
+            "id": "exchange_rate"
+          },
+          {
+            "id": "expiration_date"
+          },
+          {
+            "id": "find_phone"
+          },
+          {
+            "id": "flight_status"
+          },
+          {
+            "id": "flip_coin"
+          },
+          {
+            "id": "food_last"
+          },
+          {
+            "id": "freeze_account"
+          },
+          {
+            "id": "fun_fact"
+          },
+          {
+            "id": "gas"
+          },
+          {
+            "id": "gas_type"
+          },
+          {
+            "id": "goodbye"
+          },
+          {
+            "id": "greeting"
+          },
+          {
+            "id": "how_busy"
+          },
+          {
+            "id": "how_old_are_you"
+          },
+          {
+            "id": "improve_credit_score"
+          },
+          {
+            "id": "income"
+          },
+          {
+            "id": "ingredient_substitution"
+          },
+          {
+            "id": "ingredients_list"
+          },
+          {
+            "id": "insurance"
+          },
+          {
+            "id": "insurance_change"
+          },
+          {
+            "id": "interest_rate"
+          },
+          {
+            "id": "international_fees"
+          },
+          {
+            "id": "international_visa"
+          },
+          {
+            "id": "jump_start"
+          },
+          {
+            "id": "last_maintenance"
+          },
+          {
+            "id": "lost_luggage"
+          },
+          {
+            "id": "make_call"
+          },
+          {
+            "id": "maybe"
+          },
+          {
+            "id": "meal_suggestion"
+          },
+          {
+            "id": "meaning_of_life"
+          },
+          {
+            "id": "measurement_conversion"
+          },
+          {
+            "id": "meeting_schedule"
+          },
+          {
+            "id": "min_payment"
+          },
+          {
+            "id": "mpg"
+          },
+          {
+            "id": "new_card"
+          },
+          {
+            "id": "next_holiday"
+          },
+          {
+            "id": "next_song"
+          },
+          {
+            "id": "no"
+          },
+          {
+            "id": "nutrition_info"
+          },
+          {
+            "id": "oil_change_how"
+          },
+          {
+            "id": "oil_change_when"
+          },
+          {
+            "id": "order"
+          },
+          {
+            "id": "order_checks"
+          },
+          {
+            "id": "order_status"
+          },
+          {
+            "id": "pay_bill"
+          },
+          {
+            "id": "payday"
+          },
+          {
+            "id": "pin_change"
+          },
+          {
+            "id": "play_music"
+          },
+          {
+            "id": "plug_type"
+          },
+          {
+            "id": "pto_balance"
+          },
+          {
+            "id": "pto_request"
+          },
+          {
+            "id": "pto_request_status"
+          },
+          {
+            "id": "pto_used"
+          },
+          {
+            "id": "recipe"
+          },
+          {
+            "id": "redeem_rewards"
+          },
+          {
+            "id": "reminder"
+          },
+          {
+            "id": "reminder_update"
+          },
+          {
+            "id": "repeat"
+          },
+          {
+            "id": "replacement_card_duration"
+          },
+          {
+            "id": "report_fraud"
+          },
+          {
+            "id": "report_lost_card"
+          },
+          {
+            "id": "reset_settings"
+          },
+          {
+            "id": "restaurant_reservation"
+          },
+          {
+            "id": "restaurant_reviews"
+          },
+          {
+            "id": "restaurant_suggestion"
+          },
+          {
+            "id": "rewards_balance"
+          },
+          {
+            "id": "roll_dice"
+          },
+          {
+            "id": "rollover_401k"
+          },
+          {
+            "id": "routing"
+          },
+          {
+            "id": "schedule_maintenance"
+          },
+          {
+            "id": "schedule_meeting"
+          },
+          {
+            "id": "share_location"
+          },
+          {
+            "id": "shopping_list"
+          },
+          {
+            "id": "shopping_list_update"
+          },
+          {
+            "id": "smart_home"
+          },
+          {
+            "id": "spelling"
+          },
+          {
+            "id": "spending_history"
+          },
+          {
+            "id": "sync_device"
+          },
+          {
+            "id": "taxes"
+          },
+          {
+            "id": "tell_joke"
+          },
+          {
+            "id": "text"
+          },
+          {
+            "id": "thank_you"
+          },
+          {
+            "id": "time"
+          },
+          {
+            "id": "timer"
+          },
+          {
+            "id": "timezone"
+          },
+          {
+            "id": "tire_change"
+          },
+          {
+            "id": "tire_pressure"
+          },
+          {
+            "id": "todo_list"
+          },
+          {
+            "id": "todo_list_update"
+          },
+          {
+            "id": "traffic"
+          },
+          {
+            "id": "transactions"
+          },
+          {
+            "id": "transfer"
+          },
+          {
+            "id": "translate"
+          },
+          {
+            "id": "travel_alert"
+          },
+          {
+            "id": "travel_notification"
+          },
+          {
+            "id": "travel_suggestion"
+          },
+          {
+            "id": "uber"
+          },
+          {
+            "id": "update_playlist"
+          },
+          {
+            "id": "user_name"
+          },
+          {
+            "id": "vaccines"
+          },
+          {
+            "id": "w2"
+          },
+          {
+            "id": "weather"
+          },
+          {
+            "id": "what_are_your_hobbies"
+          },
+          {
+            "id": "what_can_i_ask_you"
+          },
+          {
+            "id": "what_is_your_name"
+          },
+          {
+            "id": "what_song"
+          },
+          {
+            "id": "where_are_you_from"
+          },
+          {
+            "id": "whisper_mode"
+          },
+          {
+            "id": "who_do_you_work_for"
+          },
+          {
+            "id": "who_made_you"
+          },
+          {
+            "id": "yes"
+          }
+        ],
+        "none_option": "none_of_these"
+      },
+      "decision": {
+        "contract_version": 1,
+        "type": "choice",
+        "question": "Which intent does the request express?",
+        "options": [
+          {
+            "id": "accept_reservations"
+          },
+          {
+            "id": "account_blocked"
+          },
+          {
+            "id": "alarm"
+          },
+          {
+            "id": "application_status"
+          },
+          {
+            "id": "apr"
+          },
+          {
+            "id": "are_you_a_bot"
+          },
+          {
+            "id": "balance"
+          },
+          {
+            "id": "bill_balance"
+          },
+          {
+            "id": "bill_due"
+          },
+          {
+            "id": "book_flight"
+          },
+          {
+            "id": "book_hotel"
+          },
+          {
+            "id": "calculator"
+          },
+          {
+            "id": "calendar"
+          },
+          {
+            "id": "calendar_update"
+          },
+          {
+            "id": "calories"
+          },
+          {
+            "id": "cancel"
+          },
+          {
+            "id": "cancel_reservation"
+          },
+          {
+            "id": "car_rental"
+          },
+          {
+            "id": "card_declined"
+          },
+          {
+            "id": "carry_on"
+          },
+          {
+            "id": "change_accent"
+          },
+          {
+            "id": "change_ai_name"
+          },
+          {
+            "id": "change_language"
+          },
+          {
+            "id": "change_speed"
+          },
+          {
+            "id": "change_user_name"
+          },
+          {
+            "id": "change_volume"
+          },
+          {
+            "id": "confirm_reservation"
+          },
+          {
+            "id": "cook_time"
+          },
+          {
+            "id": "credit_limit"
+          },
+          {
+            "id": "credit_limit_change"
+          },
+          {
+            "id": "credit_score"
+          },
+          {
+            "id": "current_location"
+          },
+          {
+            "id": "damaged_card"
+          },
+          {
+            "id": "date"
+          },
+          {
+            "id": "definition"
+          },
+          {
+            "id": "direct_deposit"
+          },
+          {
+            "id": "directions"
+          },
+          {
+            "id": "distance"
+          },
+          {
+            "id": "do_you_have_pets"
+          },
+          {
+            "id": "exchange_rate"
+          },
+          {
+            "id": "expiration_date"
+          },
+          {
+            "id": "find_phone"
+          },
+          {
+            "id": "flight_status"
+          },
+          {
+            "id": "flip_coin"
+          },
+          {
+            "id": "food_last"
+          },
+          {
+            "id": "freeze_account"
+          },
+          {
+            "id": "fun_fact"
+          },
+          {
+            "id": "gas"
+          },
+          {
+            "id": "gas_type"
+          },
+          {
+            "id": "goodbye"
+          },
+          {
+            "id": "greeting"
+          },
+          {
+            "id": "how_busy"
+          },
+          {
+            "id": "how_old_are_you"
+          },
+          {
+            "id": "improve_credit_score"
+          },
+          {
+            "id": "income"
+          },
+          {
+            "id": "ingredient_substitution"
+          },
+          {
+            "id": "ingredients_list"
+          },
+          {
+            "id": "insurance"
+          },
+          {
+            "id": "insurance_change"
+          },
+          {
+            "id": "interest_rate"
+          },
+          {
+            "id": "international_fees"
+          },
+          {
+            "id": "international_visa"
+          },
+          {
+            "id": "jump_start"
+          },
+          {
+            "id": "last_maintenance"
+          },
+          {
+            "id": "lost_luggage"
+          },
+          {
+            "id": "make_call"
+          },
+          {
+            "id": "maybe"
+          },
+          {
+            "id": "meal_suggestion"
+          },
+          {
+            "id": "meaning_of_life"
+          },
+          {
+            "id": "measurement_conversion"
+          },
+          {
+            "id": "meeting_schedule"
+          },
+          {
+            "id": "min_payment"
+          },
+          {
+            "id": "mpg"
+          },
+          {
+            "id": "new_card"
+          },
+          {
+            "id": "next_holiday"
+          },
+          {
+            "id": "next_song"
+          },
+          {
+            "id": "no"
+          },
+          {
+            "id": "nutrition_info"
+          },
+          {
+            "id": "oil_change_how"
+          },
+          {
+            "id": "oil_change_when"
+          },
+          {
+            "id": "order"
+          },
+          {
+            "id": "order_checks"
+          },
+          {
+            "id": "order_status"
+          },
+          {
+            "id": "pay_bill"
+          },
+          {
+            "id": "payday"
+          },
+          {
+            "id": "pin_change"
+          },
+          {
+            "id": "play_music"
+          },
+          {
+            "id": "plug_type"
+          },
+          {
+            "id": "pto_balance"
+          },
+          {
+            "id": "pto_request"
+          },
+          {
+            "id": "pto_request_status"
+          },
+          {
+            "id": "pto_used"
+          },
+          {
+            "id": "recipe"
+          },
+          {
+            "id": "redeem_rewards"
+          },
+          {
+            "id": "reminder"
+          },
+          {
+            "id": "reminder_update"
+          },
+          {
+            "id": "repeat"
+          },
+          {
+            "id": "replacement_card_duration"
+          },
+          {
+            "id": "report_fraud"
+          },
+          {
+            "id": "report_lost_card"
+          },
+          {
+            "id": "reset_settings"
+          },
+          {
+            "id": "restaurant_reservation"
+          },
+          {
+            "id": "restaurant_reviews"
+          },
+          {
+            "id": "restaurant_suggestion"
+          },
+          {
+            "id": "rewards_balance"
+          },
+          {
+            "id": "roll_dice"
+          },
+          {
+            "id": "rollover_401k"
+          },
+          {
+            "id": "routing"
+          },
+          {
+            "id": "schedule_maintenance"
+          },
+          {
+            "id": "schedule_meeting"
+          },
+          {
+            "id": "share_location"
+          },
+          {
+            "id": "shopping_list"
+          },
+          {
+            "id": "shopping_list_update"
+          },
+          {
+            "id": "smart_home"
+          },
+          {
+            "id": "spelling"
+          },
+          {
+            "id": "spending_history"
+          },
+          {
+            "id": "sync_device"
+          },
+          {
+            "id": "taxes"
+          },
+          {
+            "id": "tell_joke"
+          },
+          {
+            "id": "text"
+          },
+          {
+            "id": "thank_you"
+          },
+          {
+            "id": "time"
+          },
+          {
+            "id": "timer"
+          },
+          {
+            "id": "timezone"
+          },
+          {
+            "id": "tire_change"
+          },
+          {
+            "id": "tire_pressure"
+          },
+          {
+            "id": "todo_list"
+          },
+          {
+            "id": "todo_list_update"
+          },
+          {
+            "id": "traffic"
+          },
+          {
+            "id": "transactions"
+          },
+          {
+            "id": "transfer"
+          },
+          {
+            "id": "translate"
+          },
+          {
+            "id": "travel_alert"
+          },
+          {
+            "id": "travel_notification"
+          },
+          {
+            "id": "travel_suggestion"
+          },
+          {
+            "id": "uber"
+          },
+          {
+            "id": "update_playlist"
+          },
+          {
+            "id": "user_name"
+          },
+          {
+            "id": "vaccines"
+          },
+          {
+            "id": "w2"
+          },
+          {
+            "id": "weather"
+          },
+          {
+            "id": "what_are_your_hobbies"
+          },
+          {
+            "id": "what_can_i_ask_you"
+          },
+          {
+            "id": "what_is_your_name"
+          },
+          {
+            "id": "what_song"
+          },
+          {
+            "id": "where_are_you_from"
+          },
+          {
+            "id": "whisper_mode"
+          },
+          {
+            "id": "who_do_you_work_for"
+          },
+          {
+            "id": "who_made_you"
+          },
+          {
+            "id": "yes"
+          }
+        ],
+        "none_option": "none_of_these"
+      },
+      "state": "how would you say fly in italian",
+      "label": "translate",
+      "prompt": "how would you say fly in italian\n\nQuestion: Which intent does the request express?\nOptions:\n- accept_reservations\n- account_blocked\n- alarm\n- application_status\n- apr\n- are_you_a_bot\n- balance\n- bill_balance\n- bill_due\n- book_flight\n- book_hotel\n- calculator\n- calendar\n- calendar_update\n- calories\n- cancel\n- cancel_reservation\n- car_rental\n- card_declined\n- carry_on\n- change_accent\n- change_ai_name\n- change_language\n- change_speed\n- change_user_name\n- change_volume\n- confirm_reservation\n- cook_time\n- credit_limit\n- credit_limit_change\n- credit_score\n- current_location\n- damaged_card\n- date\n- definition\n- direct_deposit\n- directions\n- distance\n- do_you_have_pets\n- exchange_rate\n- expiration_date\n- find_phone\n- flight_status\n- flip_coin\n- food_last\n- freeze_account\n- fun_fact\n- gas\n- gas_type\n- goodbye\n- greeting\n- how_busy\n- how_old_are_you\n- improve_credit_score\n- income\n- ingredient_substitution\n- ingredients_list\n- insurance\n- insurance_change\n- interest_rate\n- international_fees\n- international_visa\n- jump_start\n- last_maintenance\n- lost_luggage\n- make_call\n- maybe\n- meal_suggestion\n- meaning_of_life\n- measurement_conversion\n- meeting_schedule\n- min_payment\n- mpg\n- new_card\n- next_holiday\n- next_song\n- no\n- nutrition_info\n- oil_change_how\n- oil_change_when\n- order\n- order_checks\n- order_status\n- pay_bill\n- payday\n- pin_change\n- play_music\n- plug_type\n- pto_balance\n- pto_request\n- pto_request_status\n- pto_used\n- recipe\n- redeem_rewards\n- reminder\n- reminder_update\n- repeat\n- replacement_card_duration\n- report_fraud\n- report_lost_card\n- reset_settings\n- restaurant_reservation\n- restaurant_reviews\n- restaurant_suggestion\n- rewards_balance\n- roll_dice\n- rollover_401k\n- routing\n- schedule_maintenance\n- schedule_meeting\n- share_location\n- shopping_list\n- shopping_list_update\n- smart_home\n- spelling\n- spending_history\n- sync_device\n- taxes\n- tell_joke\n- text\n- thank_you\n- time\n- timer\n- timezone\n- tire_change\n- tire_pressure\n- todo_list\n- todo_list_update\n- traffic\n- transactions\n- transfer\n- translate\n- travel_alert\n- travel_notification\n- travel_suggestion\n- uber\n- update_playlist\n- user_name\n- vaccines\n- w2\n- weather\n- what_are_your_hobbies\n- what_can_i_ask_you\n- what_is_your_name\n- what_song\n- where_are_you_from\n- whisper_mode\n- who_do_you_work_for\n- who_made_you\n- yes\n- none_of_these\nAnswer with the id of one option.",
+      "completion": "translate"
+    },
+    {
+      "name": "clinc151 out of scope",
+      "source": "measured 2026-10-15: CLINC151 out-of-scope test row 0",
+      "questions": {
+        "type": "choice",
+        "question": "Which intent does the request express?",
+        "options": [
+          {
+            "id": "accept_reservations"
+          },
+          {
+            "id": "account_blocked"
+          },
+          {
+            "id": "alarm"
+          },
+          {
+            "id": "application_status"
+          },
+          {
+            "id": "apr"
+          },
+          {
+            "id": "are_you_a_bot"
+          },
+          {
+            "id": "balance"
+          },
+          {
+            "id": "bill_balance"
+          },
+          {
+            "id": "bill_due"
+          },
+          {
+            "id": "book_flight"
+          },
+          {
+            "id": "book_hotel"
+          },
+          {
+            "id": "calculator"
+          },
+          {
+            "id": "calendar"
+          },
+          {
+            "id": "calendar_update"
+          },
+          {
+            "id": "calories"
+          },
+          {
+            "id": "cancel"
+          },
+          {
+            "id": "cancel_reservation"
+          },
+          {
+            "id": "car_rental"
+          },
+          {
+            "id": "card_declined"
+          },
+          {
+            "id": "carry_on"
+          },
+          {
+            "id": "change_accent"
+          },
+          {
+            "id": "change_ai_name"
+          },
+          {
+            "id": "change_language"
+          },
+          {
+            "id": "change_speed"
+          },
+          {
+            "id": "change_user_name"
+          },
+          {
+            "id": "change_volume"
+          },
+          {
+            "id": "confirm_reservation"
+          },
+          {
+            "id": "cook_time"
+          },
+          {
+            "id": "credit_limit"
+          },
+          {
+            "id": "credit_limit_change"
+          },
+          {
+            "id": "credit_score"
+          },
+          {
+            "id": "current_location"
+          },
+          {
+            "id": "damaged_card"
+          },
+          {
+            "id": "date"
+          },
+          {
+            "id": "definition"
+          },
+          {
+            "id": "direct_deposit"
+          },
+          {
+            "id": "directions"
+          },
+          {
+            "id": "distance"
+          },
+          {
+            "id": "do_you_have_pets"
+          },
+          {
+            "id": "exchange_rate"
+          },
+          {
+            "id": "expiration_date"
+          },
+          {
+            "id": "find_phone"
+          },
+          {
+            "id": "flight_status"
+          },
+          {
+            "id": "flip_coin"
+          },
+          {
+            "id": "food_last"
+          },
+          {
+            "id": "freeze_account"
+          },
+          {
+            "id": "fun_fact"
+          },
+          {
+            "id": "gas"
+          },
+          {
+            "id": "gas_type"
+          },
+          {
+            "id": "goodbye"
+          },
+          {
+            "id": "greeting"
+          },
+          {
+            "id": "how_busy"
+          },
+          {
+            "id": "how_old_are_you"
+          },
+          {
+            "id": "improve_credit_score"
+          },
+          {
+            "id": "income"
+          },
+          {
+            "id": "ingredient_substitution"
+          },
+          {
+            "id": "ingredients_list"
+          },
+          {
+            "id": "insurance"
+          },
+          {
+            "id": "insurance_change"
+          },
+          {
+            "id": "interest_rate"
+          },
+          {
+            "id": "international_fees"
+          },
+          {
+            "id": "international_visa"
+          },
+          {
+            "id": "jump_start"
+          },
+          {
+            "id": "last_maintenance"
+          },
+          {
+            "id": "lost_luggage"
+          },
+          {
+            "id": "make_call"
+          },
+          {
+            "id": "maybe"
+          },
+          {
+            "id": "meal_suggestion"
+          },
+          {
+            "id": "meaning_of_life"
+          },
+          {
+            "id": "measurement_conversion"
+          },
+          {
+            "id": "meeting_schedule"
+          },
+          {
+            "id": "min_payment"
+          },
+          {
+            "id": "mpg"
+          },
+          {
+            "id": "new_card"
+          },
+          {
+            "id": "next_holiday"
+          },
+          {
+            "id": "next_song"
+          },
+          {
+            "id": "no"
+          },
+          {
+            "id": "nutrition_info"
+          },
+          {
+            "id": "oil_change_how"
+          },
+          {
+            "id": "oil_change_when"
+          },
+          {
+            "id": "order"
+          },
+          {
+            "id": "order_checks"
+          },
+          {
+            "id": "order_status"
+          },
+          {
+            "id": "pay_bill"
+          },
+          {
+            "id": "payday"
+          },
+          {
+            "id": "pin_change"
+          },
+          {
+            "id": "play_music"
+          },
+          {
+            "id": "plug_type"
+          },
+          {
+            "id": "pto_balance"
+          },
+          {
+            "id": "pto_request"
+          },
+          {
+            "id": "pto_request_status"
+          },
+          {
+            "id": "pto_used"
+          },
+          {
+            "id": "recipe"
+          },
+          {
+            "id": "redeem_rewards"
+          },
+          {
+            "id": "reminder"
+          },
+          {
+            "id": "reminder_update"
+          },
+          {
+            "id": "repeat"
+          },
+          {
+            "id": "replacement_card_duration"
+          },
+          {
+            "id": "report_fraud"
+          },
+          {
+            "id": "report_lost_card"
+          },
+          {
+            "id": "reset_settings"
+          },
+          {
+            "id": "restaurant_reservation"
+          },
+          {
+            "id": "restaurant_reviews"
+          },
+          {
+            "id": "restaurant_suggestion"
+          },
+          {
+            "id": "rewards_balance"
+          },
+          {
+            "id": "roll_dice"
+          },
+          {
+            "id": "rollover_401k"
+          },
+          {
+            "id": "routing"
+          },
+          {
+            "id": "schedule_maintenance"
+          },
+          {
+            "id": "schedule_meeting"
+          },
+          {
+            "id": "share_location"
+          },
+          {
+            "id": "shopping_list"
+          },
+          {
+            "id": "shopping_list_update"
+          },
+          {
+            "id": "smart_home"
+          },
+          {
+            "id": "spelling"
+          },
+          {
+            "id": "spending_history"
+          },
+          {
+            "id": "sync_device"
+          },
+          {
+            "id": "taxes"
+          },
+          {
+            "id": "tell_joke"
+          },
+          {
+            "id": "text"
+          },
+          {
+            "id": "thank_you"
+          },
+          {
+            "id": "time"
+          },
+          {
+            "id": "timer"
+          },
+          {
+            "id": "timezone"
+          },
+          {
+            "id": "tire_change"
+          },
+          {
+            "id": "tire_pressure"
+          },
+          {
+            "id": "todo_list"
+          },
+          {
+            "id": "todo_list_update"
+          },
+          {
+            "id": "traffic"
+          },
+          {
+            "id": "transactions"
+          },
+          {
+            "id": "transfer"
+          },
+          {
+            "id": "translate"
+          },
+          {
+            "id": "travel_alert"
+          },
+          {
+            "id": "travel_notification"
+          },
+          {
+            "id": "travel_suggestion"
+          },
+          {
+            "id": "uber"
+          },
+          {
+            "id": "update_playlist"
+          },
+          {
+            "id": "user_name"
+          },
+          {
+            "id": "vaccines"
+          },
+          {
+            "id": "w2"
+          },
+          {
+            "id": "weather"
+          },
+          {
+            "id": "what_are_your_hobbies"
+          },
+          {
+            "id": "what_can_i_ask_you"
+          },
+          {
+            "id": "what_is_your_name"
+          },
+          {
+            "id": "what_song"
+          },
+          {
+            "id": "where_are_you_from"
+          },
+          {
+            "id": "whisper_mode"
+          },
+          {
+            "id": "who_do_you_work_for"
+          },
+          {
+            "id": "who_made_you"
+          },
+          {
+            "id": "yes"
+          }
+        ],
+        "none_option": "none_of_these"
+      },
+      "decision": {
+        "contract_version": 1,
+        "type": "choice",
+        "question": "Which intent does the request express?",
+        "options": [
+          {
+            "id": "accept_reservations"
+          },
+          {
+            "id": "account_blocked"
+          },
+          {
+            "id": "alarm"
+          },
+          {
+            "id": "application_status"
+          },
+          {
+            "id": "apr"
+          },
+          {
+            "id": "are_you_a_bot"
+          },
+          {
+            "id": "balance"
+          },
+          {
+            "id": "bill_balance"
+          },
+          {
+            "id": "bill_due"
+          },
+          {
+            "id": "book_flight"
+          },
+          {
+            "id": "book_hotel"
+          },
+          {
+            "id": "calculator"
+          },
+          {
+            "id": "calendar"
+          },
+          {
+            "id": "calendar_update"
+          },
+          {
+            "id": "calories"
+          },
+          {
+            "id": "cancel"
+          },
+          {
+            "id": "cancel_reservation"
+          },
+          {
+            "id": "car_rental"
+          },
+          {
+            "id": "card_declined"
+          },
+          {
+            "id": "carry_on"
+          },
+          {
+            "id": "change_accent"
+          },
+          {
+            "id": "change_ai_name"
+          },
+          {
+            "id": "change_language"
+          },
+          {
+            "id": "change_speed"
+          },
+          {
+            "id": "change_user_name"
+          },
+          {
+            "id": "change_volume"
+          },
+          {
+            "id": "confirm_reservation"
+          },
+          {
+            "id": "cook_time"
+          },
+          {
+            "id": "credit_limit"
+          },
+          {
+            "id": "credit_limit_change"
+          },
+          {
+            "id": "credit_score"
+          },
+          {
+            "id": "current_location"
+          },
+          {
+            "id": "damaged_card"
+          },
+          {
+            "id": "date"
+          },
+          {
+            "id": "definition"
+          },
+          {
+            "id": "direct_deposit"
+          },
+          {
+            "id": "directions"
+          },
+          {
+            "id": "distance"
+          },
+          {
+            "id": "do_you_have_pets"
+          },
+          {
+            "id": "exchange_rate"
+          },
+          {
+            "id": "expiration_date"
+          },
+          {
+            "id": "find_phone"
+          },
+          {
+            "id": "flight_status"
+          },
+          {
+            "id": "flip_coin"
+          },
+          {
+            "id": "food_last"
+          },
+          {
+            "id": "freeze_account"
+          },
+          {
+            "id": "fun_fact"
+          },
+          {
+            "id": "gas"
+          },
+          {
+            "id": "gas_type"
+          },
+          {
+            "id": "goodbye"
+          },
+          {
+            "id": "greeting"
+          },
+          {
+            "id": "how_busy"
+          },
+          {
+            "id": "how_old_are_you"
+          },
+          {
+            "id": "improve_credit_score"
+          },
+          {
+            "id": "income"
+          },
+          {
+            "id": "ingredient_substitution"
+          },
+          {
+            "id": "ingredients_list"
+          },
+          {
+            "id": "insurance"
+          },
+          {
+            "id": "insurance_change"
+          },
+          {
+            "id": "interest_rate"
+          },
+          {
+            "id": "international_fees"
+          },
+          {
+            "id": "international_visa"
+          },
+          {
+            "id": "jump_start"
+          },
+          {
+            "id": "last_maintenance"
+          },
+          {
+            "id": "lost_luggage"
+          },
+          {
+            "id": "make_call"
+          },
+          {
+            "id": "maybe"
+          },
+          {
+            "id": "meal_suggestion"
+          },
+          {
+            "id": "meaning_of_life"
+          },
+          {
+            "id": "measurement_conversion"
+          },
+          {
+            "id": "meeting_schedule"
+          },
+          {
+            "id": "min_payment"
+          },
+          {
+            "id": "mpg"
+          },
+          {
+            "id": "new_card"
+          },
+          {
+            "id": "next_holiday"
+          },
+          {
+            "id": "next_song"
+          },
+          {
+            "id": "no"
+          },
+          {
+            "id": "nutrition_info"
+          },
+          {
+            "id": "oil_change_how"
+          },
+          {
+            "id": "oil_change_when"
+          },
+          {
+            "id": "order"
+          },
+          {
+            "id": "order_checks"
+          },
+          {
+            "id": "order_status"
+          },
+          {
+            "id": "pay_bill"
+          },
+          {
+            "id": "payday"
+          },
+          {
+            "id": "pin_change"
+          },
+          {
+            "id": "play_music"
+          },
+          {
+            "id": "plug_type"
+          },
+          {
+            "id": "pto_balance"
+          },
+          {
+            "id": "pto_request"
+          },
+          {
+            "id": "pto_request_status"
+          },
+          {
+            "id": "pto_used"
+          },
+          {
+            "id": "recipe"
+          },
+          {
+            "id": "redeem_rewards"
+          },
+          {
+            "id": "reminder"
+          },
+          {
+            "id": "reminder_update"
+          },
+          {
+            "id": "repeat"
+          },
+          {
+            "id": "replacement_card_duration"
+          },
+          {
+            "id": "report_fraud"
+          },
+          {
+            "id": "report_lost_card"
+          },
+          {
+            "id": "reset_settings"
+          },
+          {
+            "id": "restaurant_reservation"
+          },
+          {
+            "id": "restaurant_reviews"
+          },
+          {
+            "id": "restaurant_suggestion"
+          },
+          {
+            "id": "rewards_balance"
+          },
+          {
+            "id": "roll_dice"
+          },
+          {
+            "id": "rollover_401k"
+          },
+          {
+            "id": "routing"
+          },
+          {
+            "id": "schedule_maintenance"
+          },
+          {
+            "id": "schedule_meeting"
+          },
+          {
+            "id": "share_location"
+          },
+          {
+            "id": "shopping_list"
+          },
+          {
+            "id": "shopping_list_update"
+          },
+          {
+            "id": "smart_home"
+          },
+          {
+            "id": "spelling"
+          },
+          {
+            "id": "spending_history"
+          },
+          {
+            "id": "sync_device"
+          },
+          {
+            "id": "taxes"
+          },
+          {
+            "id": "tell_joke"
+          },
+          {
+            "id": "text"
+          },
+          {
+            "id": "thank_you"
+          },
+          {
+            "id": "time"
+          },
+          {
+            "id": "timer"
+          },
+          {
+            "id": "timezone"
+          },
+          {
+            "id": "tire_change"
+          },
+          {
+            "id": "tire_pressure"
+          },
+          {
+            "id": "todo_list"
+          },
+          {
+            "id": "todo_list_update"
+          },
+          {
+            "id": "traffic"
+          },
+          {
+            "id": "transactions"
+          },
+          {
+            "id": "transfer"
+          },
+          {
+            "id": "translate"
+          },
+          {
+            "id": "travel_alert"
+          },
+          {
+            "id": "travel_notification"
+          },
+          {
+            "id": "travel_suggestion"
+          },
+          {
+            "id": "uber"
+          },
+          {
+            "id": "update_playlist"
+          },
+          {
+            "id": "user_name"
+          },
+          {
+            "id": "vaccines"
+          },
+          {
+            "id": "w2"
+          },
+          {
+            "id": "weather"
+          },
+          {
+            "id": "what_are_your_hobbies"
+          },
+          {
+            "id": "what_can_i_ask_you"
+          },
+          {
+            "id": "what_is_your_name"
+          },
+          {
+            "id": "what_song"
+          },
+          {
+            "id": "where_are_you_from"
+          },
+          {
+            "id": "whisper_mode"
+          },
+          {
+            "id": "who_do_you_work_for"
+          },
+          {
+            "id": "who_made_you"
+          },
+          {
+            "id": "yes"
+          }
+        ],
+        "none_option": "none_of_these"
+      },
+      "state": "how much has the dow changed today",
+      "label": null,
+      "prompt": "how much has the dow changed today\n\nQuestion: Which intent does the request express?\nOptions:\n- accept_reservations\n- account_blocked\n- alarm\n- application_status\n- apr\n- are_you_a_bot\n- balance\n- bill_balance\n- bill_due\n- book_flight\n- book_hotel\n- calculator\n- calendar\n- calendar_update\n- calories\n- cancel\n- cancel_reservation\n- car_rental\n- card_declined\n- carry_on\n- change_accent\n- change_ai_name\n- change_language\n- change_speed\n- change_user_name\n- change_volume\n- confirm_reservation\n- cook_time\n- credit_limit\n- credit_limit_change\n- credit_score\n- current_location\n- damaged_card\n- date\n- definition\n- direct_deposit\n- directions\n- distance\n- do_you_have_pets\n- exchange_rate\n- expiration_date\n- find_phone\n- flight_status\n- flip_coin\n- food_last\n- freeze_account\n- fun_fact\n- gas\n- gas_type\n- goodbye\n- greeting\n- how_busy\n- how_old_are_you\n- improve_credit_score\n- income\n- ingredient_substitution\n- ingredients_list\n- insurance\n- insurance_change\n- interest_rate\n- international_fees\n- international_visa\n- jump_start\n- last_maintenance\n- lost_luggage\n- make_call\n- maybe\n- meal_suggestion\n- meaning_of_life\n- measurement_conversion\n- meeting_schedule\n- min_payment\n- mpg\n- new_card\n- next_holiday\n- next_song\n- no\n- nutrition_info\n- oil_change_how\n- oil_change_when\n- order\n- order_checks\n- order_status\n- pay_bill\n- payday\n- pin_change\n- play_music\n- plug_type\n- pto_balance\n- pto_request\n- pto_request_status\n- pto_used\n- recipe\n- redeem_rewards\n- reminder\n- reminder_update\n- repeat\n- replacement_card_duration\n- report_fraud\n- report_lost_card\n- reset_settings\n- restaurant_reservation\n- restaurant_reviews\n- restaurant_suggestion\n- rewards_balance\n- roll_dice\n- rollover_401k\n- routing\n- schedule_maintenance\n- schedule_meeting\n- share_location\n- shopping_list\n- shopping_list_update\n- smart_home\n- spelling\n- spending_history\n- sync_device\n- taxes\n- tell_joke\n- text\n- thank_you\n- time\n- timer\n- timezone\n- tire_change\n- tire_pressure\n- todo_list\n- todo_list_update\n- traffic\n- transactions\n- transfer\n- translate\n- travel_alert\n- travel_notification\n- travel_suggestion\n- uber\n- update_playlist\n- user_name\n- vaccines\n- w2\n- weather\n- what_are_your_hobbies\n- what_can_i_ask_you\n- what_is_your_name\n- what_song\n- where_are_you_from\n- whisper_mode\n- who_do_you_work_for\n- who_made_you\n- yes\n- none_of_these\nAnswer with the id of one option.",
+      "completion": "none_of_these"
+    },
+    {
+      "name": "noul",
+      "source": "constructed: not trained or measured",
+      "questions": {
+        "type": "noul",
+        "question": "Does the customer ask for a refund?"
+      },
+      "decision": {
+        "contract_version": 1,
+        "type": "noul",
+        "question": "Does the customer ask for a refund?",
+        "options": [
+          {
+            "id": "no"
+          },
+          {
+            "id": "yes"
+          }
+        ],
+        "none_option": null
+      },
+      "state": "customer: my order came broken, i want my money back\nagent: sorry to hear that",
+      "label": "yes",
+      "prompt": "customer: my order came broken, i want my money back\nagent: sorry to hear that\n\nQuestion: Does the customer ask for a refund?\nOptions:\n- no\n- yes\nAnswer with the id of one option.",
+      "completion": "yes"
+    },
+    {
+      "name": "score",
+      "source": "constructed: not trained or measured",
+      "questions": {
+        "type": "score",
+        "question": "How urgent is the request?",
+        "options": [
+          "not urgent",
+          "somewhat urgent",
+          "very urgent"
+        ]
+      },
+      "decision": {
+        "contract_version": 1,
+        "type": "score",
+        "question": "How urgent is the request?",
+        "options": [
+          {
+            "id": "0",
+            "description": "not urgent"
+          },
+          {
+            "id": "1",
+            "description": "somewhat urgent"
+          },
+          {
+            "id": "2",
+            "description": "very urgent"
+          }
+        ],
+        "none_option": null
+      },
+      "state": "the basement is flooding right now",
+      "label": "2",
+      "prompt": "the basement is flooding right now\n\nQuestion: How urgent is the request?\nOptions:\n- 0: not urgent\n- 1: somewhat urgent\n- 2: very urgent\nAnswer with the id of one option.",
+      "completion": "2"
+    }
+  ]
+}

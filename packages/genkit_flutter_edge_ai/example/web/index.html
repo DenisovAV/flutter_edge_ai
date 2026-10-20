@@ -49,7 +49,7 @@
        ESM does not assign window globals and module scripts are deferred, so
        Dart would reach `LiteRtLmEngine.create()` before `Engine` is bound. This
        promise is what it awaits. `window.EmbeddingEngine` serves EmbeddingGemma
-       2 `.litertlm` embedders (flutter_edge_ai_litertlm 1.15.0+). -->
+       2 `.litertlm` embedders (flutter_edge_ai_litertlm 1.13.1+). -->
   <script type="module">
   window.litertLmReady = (async () => {
     const m = await import('https://cdn.jsdelivr.net/npm/@litert-lm/core@0.18.0/+esm');

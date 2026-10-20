@@ -1,0 +1,250 @@
+name: Flutter Edge AI llama connector
+
+on:
+  pull_request:
+    paths:
+      - 'packages/flutter_edge_ai_llama/**'
+      - 'packages/flutter_edge_ai/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.fvmrc'
+      - '.github/workflows/llama.yml'
+      - '.github/actions/setup-flutter-llama/**'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/flutter_edge_ai_llama/**'
+      - 'packages/flutter_edge_ai/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - '.fvmrc'
+      - '.github/workflows/llama.yml'
+      - '.github/actions/setup-flutter-llama/**'
+  workflow_dispatch:
+  schedule:
+    - cron: "17 7 * * *"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: edge-ai-llama-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
+env:
+  PACKAGE_DIRECTORY: packages/flutter_edge_ai_llama
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      runtime: ${{ steps.filter.outputs.runtime }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          base: main
+          filters: |
+            runtime:
+              - 'packages/flutter_edge_ai_llama/**'
+              - 'pubspec.yaml'
+              - 'pubspec.lock'
+              - '.github/workflows/llama.yml'
+              - '.github/actions/setup-flutter-llama/**'
+  contracts:
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.PACKAGE_DIRECTORY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: ./.github/actions/setup-flutter-llama
+      - run: python tool/verify.py contracts
+      - name: Hosted package archive validation
+        run: python tool/verify.py package
+      - name: Fetch immutable CPU smoke fixture
+        if: github.event_name != 'pull_request' || needs.changes.outputs.runtime == 'true'
+        run: python tool/fetch_test_model.py
+      - name: Real Web CPU smoke
+        if: github.event_name != 'pull_request' || needs.changes.outputs.runtime == 'true'
+        run: |
+          python tool/serve_web_fixture.py --model-path tool/fixtures/chat.gguf &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid"' EXIT
+          python tool/verify.py web --model-url http://127.0.0.1:8098/chat.gguf --storage-helper-url http://127.0.0.1:8098/cache_api.js
+
+  minimum-sdk:
+    name: Resolve Flutter 3.44 floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-flutter-llama
+        with:
+          flutter-version: '3.44.0'
+      - name: Resolve a standalone hosted consumer at the declared minimum
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          import os, pathlib, shutil, subprocess
+          source = pathlib.Path('packages/flutter_edge_ai_llama')
+          target = pathlib.Path(os.environ['RUNNER_TEMP']) / 'llama-minimum-sdk'
+          shutil.copytree(source, target, ignore=shutil.ignore_patterns('pubspec_overrides.yaml'))
+          pubspec = target / 'pubspec.yaml'
+          pubspec.write_text(pubspec.read_text().replace('resolution: workspace\n', ''))
+          subprocess.run(['flutter', 'pub', 'get'], cwd=target, check=True)
+          PYTHON
+
+  release-build:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.runtime == 'true'
+    name: Release build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform: android, runner: ubuntu-latest}
+          - {platform: ios, runner: macos-26}
+          - {platform: macos, runner: macos-26}
+          - {platform: windows, runner: windows-latest}
+          - {platform: linux, runner: ubuntu-latest}
+          - {platform: web, runner: ubuntu-latest}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.PACKAGE_DIRECTORY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-java@v5
+        if: matrix.platform == 'android'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: ./.github/actions/setup-flutter-llama
+      - if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - run: python tool/verify.py build --platform ${{ matrix.platform }}
+
+  desktop-runtime:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.runtime == 'true'
+    name: Native CPU (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-26, windows-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.PACKAGE_DIRECTORY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: ./.github/actions/setup-flutter-llama
+      - run: python tool/fetch_test_model.py
+      - name: Required native CPU smoke
+        run: |
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            # The monolithic Apple runtime otherwise compiles Metal at startup.
+            # This lane qualifies CPU inference on a hosted VM.
+            export GGML_METAL_DEVICES=0
+            python tool/verify.py native --model-path tool/fixtures/chat.gguf --cpu-threads 1 --native-diagnostics
+          else
+            python tool/verify.py native --model-path tool/fixtures/chat.gguf
+          fi
+      - name: Preserve Apple runtime thread samples
+        if: always() && runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-diagnostics-${{ matrix.runner }}
+          path: ${{ runner.temp }}/edge-ai-native-diagnostics
+          if-no-files-found: ignore
+      - name: Linux desktop dependencies
+        if: matrix.runner == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev xvfb
+      - name: Packaged Linux CPU lifecycle
+        if: matrix.runner == 'ubuntu-latest'
+        run: xvfb-run -a python tool/verify.py device --device linux --model-path tool/fixtures/chat.gguf
+
+  ios-runtime:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.runtime == 'true'
+    name: iOS simulator CPU
+    runs-on: macos-26
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.PACKAGE_DIRECTORY }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: ./.github/actions/setup-flutter-llama
+      - name: Boot available ARM64 iPhone simulator and exercise packaged runtime
+        env:
+          SIMCTL_CHILD_GGML_METAL_DEVICES: "0"
+        run: |
+          test "$(uname -m)" = arm64
+          simulator_id="$(xcrun simctl list devices available -j | python -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if x["name"].startswith("iPhone")))')"
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+          trap 'xcrun simctl shutdown "$simulator_id"' EXIT
+          python tool/verify.py device --device "$simulator_id" --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf --cpu-threads 1 --native-diagnostics --simulator-retry
+
+      - name: Preserve iOS runtime thread samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-diagnostics-ios-simulator
+          path: ${{ runner.temp }}/edge-ai-native-diagnostics
+          if-no-files-found: ignore
+
+  android-runtime:
+    needs: changes
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.runtime == 'true'
+    name: Android emulator CPU
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: ./.github/actions/setup-flutter-llama
+      - name: Enable KVM for the isolated runner
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          ram-size: 4096M
+          disk-size: 4096M
+          disable-animations: true
+          script: cd "$PACKAGE_DIRECTORY" && python tool/verify.py device --device emulator-5554 --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf --cpu-threads 1

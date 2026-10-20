@@ -34,8 +34,8 @@ inference.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.3.0
-  flutter_edge_ai_speech: ^0.5.6
+  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai_speech: ^0.5.9
 ```
 
 ## Register the backend
@@ -65,7 +65,7 @@ await FlutterEdgeAi.installStt()
       'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite',
     )
     .tokenizerFromNetwork(
-      'https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
+      'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
     )
     .ofType(SttModelType.moonshine)
     .install();
@@ -168,13 +168,15 @@ codec-LM (`litert-community/Qwen3-TTS-12Hz-0.6B-Base`, ~1.9 GB) that speaks 10
 languages plus `'auto'` detection, picked with `getActiveTts(language:)`. Unlike
 STT, the language is fixed when the synthesizer is created — `synthesize()` takes
 no language — and `getActiveTts` returns a singleton, so asking it for a different
-language throws `StateError` until you `close()` the current one. Same
+language throws `StateError` until you `close()` the current one (Matcha and
+Inflect ignore the language, but this check applies to them too). Same
 install/synthesize API as Matcha, but heavier: CPU-only, 24 kHz output, RTF≈3
 (~3 s of compute per 1 s of audio), and needs a 6 GB-RAM-class device.
 
 ```dart
+// A pinned revision: the repo's main branch has moved these files to legacy/.
 await FlutterEdgeAi.installTts()
-    .fromNetwork('https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/main/')
+    .fromNetwork('https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/')
     .ofType(TtsModelType.qwen3)
     .install();
 
@@ -281,6 +283,11 @@ await for (final event in session.runTurn(pcm16kMono)) {
 }
 ```
 
+A failed stage — transcribe, generate or synthesize — arrives as a stream
+error, so the `await for` throws: wrap it in `try`/`catch`. `VoiceErrorEvent`
+is reserved in this release and never emitted; its `case` is there because the
+switch must be exhaustive.
+
 `VoiceSession` owns no microphone or player — the app captures and plays PCM
 itself, same as the STT/TTS sections above. For barge-in, call
 `await session.interrupt()` while a turn is in flight: it stops generation,
@@ -326,6 +333,54 @@ final session = VoiceSession.fromChat(
 For the full agent (skills / MCP), wrap an `AgentSession` in a `VoiceResponder`
 and use `VoiceSession.custom`; `AgentSession.ask(…, isCancelled:)` makes barge-in
 halt the agent loop before the next tool.
+
+### Audio turns: the model hears the recording
+
+A model with an audio encoder (Gemma 4 E2B/E4B) can take the recording itself,
+not a transcript of it. `runAudioTurn` skips speech-to-text: the PCM goes to the
+chat as audio, and the reply streams and is spoken exactly as in `runTurn`.
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true, // loads the audio encoder
+);
+final chat = await model.createChat(supportAudio: true, maxOutputTokens: 128);
+final session = VoiceSession.fromChat(
+  recognizer: recognizer, chat: chat, synthesizer: synthesizer);
+
+await for (final event in session.runAudioTurn(pcm16kMono)) {
+  // the events of runTurn, without VoiceTranscriptEvent
+}
+```
+
+- **Same turn, no STT.** There is no `VoiceTranscriptEvent`;
+  `VoiceTurnCompleteEvent` and `VoiceTurnInterruptedEvent` carry an empty
+  transcript. `streamAudio`, `interrupt()` and its bounded drain, a tools chat
+  with `onToolCall`, and the one-turn-at-a-time `StateError` work as in
+  `runTurn`. A recording under 2 bytes (a push-to-talk tap) completes with an
+  empty `VoiceTurnCompleteEvent` without asking the model, as an empty
+  transcript does. The recognizer is still required, and `runTurn` still uses
+  it.
+- **Barge-in keeps the recordings (`flutter_edge_ai_litertlm` 1.15.0).**
+  After an interrupted reply, a `.litertlm` chat is rewound to before the
+  stopped turn and keeps what was said in earlier audio turns. With 1.14.0 and
+  earlier, and on the NPU, it rebuilds its conversation from the turns' text,
+  and an audio turn has none: the model keeps its own replies but loses what
+  was said.
+- **The format.** `runAudioTurn` takes the same 16 kHz mono 16-bit PCM as
+  `runTurn`. `runAudioTurn` adds the WAV header, because a `.litertlm` model
+  decodes an audio file, not bare samples.
+- **The flags.** `supportAudio` on `getActiveModel` creates the engine with its
+  audio encoder. `createChat` takes it from the model unless you pass it, and
+  the chat's flag is what `fromChat` checks: on a chat whose `supportAudio` is
+  false, `runAudioTurn` throws a `StateError`.
+- **Native only.** No web engine takes audio input.
+- **A custom responder.** `VoiceResponder` takes an optional `respondToAudio`
+  next to `respond`. It gets the recording as that WAV, ready for a `.litertlm`
+  chat: an `AgentSession` takes it as is, with
+  `respondToAudio: (wav) => agentTokens(agent.ask('', audioBytes: wav))`,
+  where `agentTokens` is whatever maps your agent's events to text.
 
 ## Platform support
 

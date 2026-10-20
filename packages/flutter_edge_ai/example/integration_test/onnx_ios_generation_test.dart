@@ -1,5 +1,5 @@
 // ONNX-GenAI real-iPhone device gate — the on-device RAM/thermal go/no-go for
-// iOS arm64, the iOS analogue of `onnx_inference_smoke_test.dart` (Android FTL).
+// iOS arm64, the iOS analogue of `onnx_inference_smoke_test.dart` (Android).
 //
 // Runs the SAME model/variant/prompts as every other platform's device gate so
 // the tok/s numbers stay comparable, driving `GenAiFfiClient` DIRECTLY (bypasses

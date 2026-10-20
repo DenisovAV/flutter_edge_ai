@@ -1,3 +1,9 @@
+## 0.5.10
+- README: what `activeBackend` reports, natively and on the web.
+
+## 0.5.9
+- README: which part of genai_config.json the engine reads.
+
 ## 0.5.8
 - **Breaking:** require `flutter_edge_ai` ^2.3.0; `OnnxEmbeddingForwardPass` is now `OnnxEmbeddingPass`.
 

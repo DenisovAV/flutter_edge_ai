@@ -531,6 +531,9 @@ final class _MemoryPhotos implements PhotoStore {
   };
 
   @override
+  Future<Uint8List> read(String reference) async => kept[reference]!;
+
+  @override
   Future<void> forget(String reference) async => kept.remove(reference);
 
   @override

@@ -1,6 +1,6 @@
 ---
 title: Thinking Mode
-description: View the reasoning process of DeepSeek, Gemma 4, and Qwen3 models with thinking blocks.
+description: View a model's reasoning, from a runtime thought channel or think tags, as separate thinking responses.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
@@ -12,16 +12,26 @@ answer.
 
 ## Supported models
 
-- **Gemma 4** (E2B, E4B) — `ModelType.gemma4`
-- **DeepSeek R1** — `ModelType.deepSeek`
-- **Qwen3 0.6B** — `ModelType.qwen3`; thinks by default. With `enableThinking: false`
-  flutter_edge_ai sends `enable_thinking: false` and appends ` /no_think` to each
-  text message — the only off switch for a bundle whose template ignores the flag.
-- **Any bundle with a thought channel** (e.g. Qwen3 4B Thinking 2507) — the
-  runtime streams the reasoning on the channel, and it arrives as
-  `ThinkingResponse` whatever the `ModelType`.
+Reasoning reaches you as `ThinkingResponse` in one of two ways:
 
-Enable it with `enableThinking: true` and the matching `ModelType`.
+- **A runtime thought channel** — any `ModelType`. A `.litertlm` bundle that
+  declares the channel (Gemma 4 E2B/E4B, SmolLM3 3B, Phi-4 Mini Reasoning,
+  Qwen3 4B Thinking 2507, …) streams its reasoning there, and the runtime
+  splits it out.
+- **`<think>` tags** — parsed by core for `ModelType.deepSeek`, `qwen`, `qwen3`
+  and `qwen35` (e.g. DeepSeek R1, Qwen3).
+
+**Qwen3 0.6B** (`ModelType.qwen3`) thinks by default. With `enableThinking: false`
+flutter_edge_ai sends `enable_thinking: false` and appends ` /no_think` to each
+text message — the only off switch for a bundle whose template ignores the flag.
+Use `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` from
+[litert-community/Qwen3-0.6B](https://huggingface.co/litert-community/Qwen3-0.6B),
+or `Qwen3-0.6B.litertlm` from the same repo downloaded after the repo replaced
+its tokenizer (2026-10-13, 15:53 UTC): a copy downloaded before that does not
+load ([#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659)).
+
+Enable it with `enableThinking: true` and the matching `ModelType`. See
+[Models](/docs/models) for which models think.
 
 Some models always reason — DeepSeek R1, Qwen3 4B Thinking 2507. With
 `enableThinking: false` their reasoning is hidden, not skipped: it still costs
@@ -30,11 +40,12 @@ when it hides any.
 
 <Warning>
 
-Reasoning tags are parsed per `ModelType`, and `ModelType.general` has no tag
-parser. On a `.litertlm` whose bundle declares a thought channel — **SmolLM3 3B**
-and **Phi-4 Mini Reasoning** among them — the runtime splits the reasoning out
-and it arrives as `ThinkingResponse` whatever the type. Without a channel, a
-model that reasons but runs as `general` emits no `ThinkingResponse`, and its
+Reasoning tags are parsed per `ModelType`, and only `deepSeek` and the Qwen
+types have a tag parser — `general`, `phi` and the others have none. On a
+`.litertlm` whose bundle declares a thought channel — **SmolLM3 3B** (`general`)
+and **Phi-4 Mini Reasoning** (`phi`) among them — the runtime splits the
+reasoning out and it arrives as `ThinkingResponse` whatever the type. Without a
+channel, a model that reasons but runs as such a type emits no `ThinkingResponse`, and its
 raw thinking blocks arrive inside the answer as ordinary `TextResponse` tokens.
 Strip them yourself, or don't advertise a thinking UI for those models.
 
@@ -76,8 +87,8 @@ final thinkingMessage = Message.thinking(text: "Let me analyze this problem...")
 <Warning>
 
 On Web, the <code>.litertlm</code> engine sends the same <code>enable_thinking</code> as native, and
-Gemma 4 E2B returns <code>ThinkingResponse</code> in Chrome; core also splits Qwen3's emitted
-<code>&lt;think&gt;...&lt;/think&gt;</code> tags there. MediaPipe Web has no
+Gemma 4 E2B returns <code>ThinkingResponse</code> in Chrome; core also splits the
+<code>&lt;think&gt;...&lt;/think&gt;</code> tags a model emits there (e.g. through ONNX on web). MediaPipe Web has no
 thinking API, ONNX ignores <code>enableThinking</code> (on Web and native alike, though
 core still parses <code>&lt;think&gt;</code> tags a model emits), and the catalog's DeepSeek R1
 <code>.task</code> model has no Web entry.
@@ -105,6 +116,6 @@ String cleanedResponse = ModelThinkingFilter.cleanResponse(
 // - <think>...</think> (DeepSeek and the Qwen types); for DeepSeek, which
 //   starts inside its reasoning, everything up to the first </think>
 // and trims whitespace. Turn markers (<end_of_turn>, <|im_end|>) are stripped
-// only for .bin / .tflite files — on .task and .litertlm the runtime already
-// ends the turn.
+// only for .bin / .tflite and .gguf files — on .task and .litertlm the runtime
+// already ends the turn.
 ```

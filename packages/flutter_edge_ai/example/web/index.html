@@ -31,13 +31,10 @@
 
   <!-- Built-in AI on web (flutter_edge_ai_builtin_ai through flutter_local_ai;
        Chrome Prompt API / Gemini Nano):
-       no CDN script needed (the browser owns `self.LanguageModel`), but the
-       feature is origin-trial-gated on plain web pages. Register this site
-       at https://developer.chrome.com/origintrials and uncomment with your
-       token to enable it in production, or use
-       chrome://flags/#prompt-api-for-gemini-nano for local dev. See
+       no CDN script needed (the browser owns `self.LanguageModel`), and
+       nothing to enable: Chrome 148+ ships the Prompt API to web pages with
+       no origin-trial token and no flag. See
        packages/flutter_edge_ai_builtin_ai/README.md "Web setup". -->
-  <!-- <meta http-equiv="origin-trial" content="YOUR_TOKEN_HERE"> -->
 
   <title>example</title>
   <link rel="manifest" href="manifest.json">
@@ -62,7 +59,7 @@
        and that Dart awaits before calling any static interop. See
        lib/web/litert_lm_web.dart and litert_lm_web_inference.dart.
        `window.EmbeddingEngine` is the same module's embedding engine, for
-       EmbeddingGemma 2 `.litertlm` embedders (flutter_edge_ai_litertlm 1.15.0+,
+       EmbeddingGemma 2 `.litertlm` embedders (flutter_edge_ai_litertlm 1.13.1+,
        on WebGPU); without that line they fail to load with an error naming it. -->
   <script type="module">
   window.litertLmReady = (async () => {

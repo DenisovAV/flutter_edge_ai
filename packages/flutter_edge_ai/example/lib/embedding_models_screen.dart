@@ -12,7 +12,8 @@ class EmbeddingModelsScreen extends StatefulWidget {
 class _EmbeddingModelsScreenState extends State<EmbeddingModelsScreen> {
   /// Every catalog model this platform can run: since flutter_edge_ai_litertlm
   /// 1.13.1 the `.litertlm` bundles (EmbeddingGemma 2) run on the web too; the
-  /// per-SoC NPU bundles are listed on Android and Linux only.
+  /// per-SoC NPU bundles are listed where their vendor's NPU can run: Qualcomm
+  /// on Android and Linux, Intel on Windows.
   List<EmbeddingModel> get _models => listedEmbeddingModels;
 
   @override

@@ -27,9 +27,10 @@ class _ChatScreenState extends State<ChatScreen> {
   String _statusMessage = 'Initializing...';
 
   bool _ragReady = false;
-  // Set on web only — on-device embeddings need LiteRT.js's WASM runtime,
-  // which no published package ships yet (see AiEngine.initialize). Read by
-  // the banner in build() so RAG shows as unavailable, not silently absent.
+  // Set when RAG cannot start: the embedder did not install
+  // (AiEngine.embedderError), or RagService.initialize() threw — a missing JS
+  // file on web, for one. Read by the banner in build() so RAG shows as
+  // unavailable, not silently absent.
   String? _ragUnavailableReason;
 
   late final AiEngine _engine;
@@ -73,6 +74,12 @@ class _ChatScreenState extends State<ChatScreen> {
       // failure still surfaces through the banner below rather than leaving
       // RAG silently off.
       try {
+        // Without this check RAG would start on whatever embedder an earlier
+        // run left active, and its errors would hide the install failure.
+        final installError = _engine.embedderError;
+        if (installError != null) {
+          throw StateError('embedder install failed: $installError');
+        }
         if (mounted) setState(() => _statusMessage = 'Setting up RAG...');
         final rag = RagService(
           ai: _engine.ai,
@@ -175,8 +182,8 @@ class _ChatScreenState extends State<ChatScreen> {
       if (_attachedImage != null) {
         final mime = _attachedMime ?? 'image/jpeg';
         final dataUri = 'data:$mime;base64,${base64Encode(_attachedImage!)}';
-        // contentType MUST be set: the on-device plugin drops media without an
-        // image/* contentType, and CapabilityStrategy reads it to detect vision.
+        // Gemini, the on-device plugin and CapabilityStrategy all read the type
+        // from the data: URI as well; contentType states it outright.
         content.add(
           MediaPart(
             media: Media(contentType: mime, url: dataUri),

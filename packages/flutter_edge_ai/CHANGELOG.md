@@ -1,3 +1,28 @@
+## 2.5.0
+- **Breaking:** remove the members deprecated for 2.5.0 (listed in MIGRATION.md).
+- `FlutterEdgeAi.openModel`: several caller-owned models at once; `FlutterEdgeAiPlugin.createModel` deprecated.
+- Experimental: `InferenceModel.createDecider` scores options on a model trained on the decision, Noul and Score too.
+- Embedding SPI: `honouredBackends`, the loaded backend reported, `.gguf` installs without a tokenizer.
+
+## 2.4.1
+- Android NPU: one vendor's dispatch per load; the manifest declares Google Tensor's runtime libraries.
+- Tool calls: a raw Gemma 4 call runs with typed arguments or not at all; one-chunk tagged calls parse.
+- `generateChatResponseWithTools`: a failed feed no longer masks the tool's error; unencodable results are answered.
+
+## 2.4.0
+- Experimental `Decider` API: pick one of N options or abstain (`EmbeddingModel.createDecider`).
+- Classes that `implements InferenceModel` add `createDecider` and two getters; `extends` is unaffected.
+- `getActiveModel(multimodalOrder:)`: per-model order of images, audio and text.
+- Structured tool calls: `Message.toolCall(calls:)`, `toolCallId`, `FunctionCallResponse.id`, `toolCallsOf`.
+- `InferenceModel.activeVisionBackend`/`activeAudioBackend`; an unset encoder backend is the engine's choice.
+- Gemma 4: a sentence before a tool call no longer streams the call's JSON as text.
+
+## 2.3.3
+- Docs: README and shipped skills checked against the code; models page linked.
+
+## 2.3.2
+- The active model keeps its LoRA across a restart; `ModelFileType.gguf` (#649).
+
 ## 2.3.1
 - Combined text, image and audio inputs: `EmbeddingInput(text:, images:, audio:)`.
 

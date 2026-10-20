@@ -7,10 +7,10 @@ meta:
 ---
 
 **flutter_edge_ai** is on-device AI for Flutter on Android, iOS, Web, macOS,
-Windows and Linux. Run Gemma and other open models — Qwen, DeepSeek, Phi,
-FastVLM, SmolLM and more, see [Models](/docs/models) — or the model the
-operating system already ships, with text, vision, audio, function calling,
-embeddings, RAG and speech. No server, no cloud.
+Windows and Linux. Run any open model a registered engine runs — see
+[Models](/docs/models) — or the model the operating system already ships, with
+text, vision, audio, function calling, embeddings, RAG and speech. No server,
+no cloud.
 
 The core is small: it installs models and dispatches to engines, and you add
 only the engines, stores and features your app uses — see
@@ -18,32 +18,95 @@ only the engines, stores and features your app uses — see
 
 ## Features
 
-- **Local Execution:** Run Gemma and other LLMs (Qwen, DeepSeek, Phi, FastVLM, SmolLM, …) directly on user devices for enhanced privacy and offline functionality.
+- **Local Execution:** Run any model a registered engine runs (see [Models](/docs/models)) directly on user devices for enhanced privacy and offline functionality.
 - **Platform Support:** Compatible with iOS, Android, Web, macOS, Windows, and Linux.
 - **Desktop Support:** Native desktop apps with GPU acceleration via LiteRT-LM, called directly from Dart through `dart:ffi` — no JVM/JRE bundling. See [Desktop Support](/docs/desktop).
 - **Built-in / System AI:** Use the OS's own on-device model, no download — Gemini Nano (Android + Chrome), Apple Foundation Models (iOS/macOS) and Windows AI Foundry. See [Built-in AI](/docs/builtin-ai).
-- **Pluggable Engines:** Opt-in engine packages — LiteRT-LM, MediaPipe, ONNX Runtime, built-in OS AI — registered via `FlutterEdgeAi.initialize(...)`. See [Packages](/docs/packages).
-- **Multimodal Support:** Text + image input with Gemma 4, Gemma3n, FastVLM, Qwen2-VL, SmolVLM2, and LLaVA-OneVision vision models. See [Multimodal](/docs/multimodal).
+- **Pluggable Engines:** Opt-in engine packages — LiteRT-LM, MediaPipe, ONNX Runtime, llama.cpp (GGUF), built-in OS AI — registered via `FlutterEdgeAi.initialize(...)`. See [Packages](/docs/packages).
+- **Multimodal Support:** Text + image input with vision models (the Vision column on [Models](/docs/models)), including Gemini Nano on Android through built-in AI. See [Multimodal](/docs/multimodal).
 - **Audio Input:** Record and send audio messages with Gemma 4 and Gemma3n models (Android, iOS device, Desktop).
 - **Function Calling:** Let models call external functions and integrate with other services. See [Function Calling](/docs/function-calling).
 - **Agent Skills:** Give the model a catalog of `SKILL.md` skills it picks and runs itself — text, JS, native intents, or MCP tools. See [Agent Skills](/docs/agent).
 - **Speech & Voice (STT + TTS + voice loop):** Transcribe audio, synthesize speech, and run a full on-device speech-to-speech voice loop (`VoiceSession`) via `flutter_edge_ai_speech` — STT (moonshine/Whisper/Parakeet) + TTS (Matcha/Qwen3/Inflect) today. See [Speech](/docs/speech).
-- **Thinking Mode:** View the reasoning process of DeepSeek, Gemma 4, Qwen3 and Qwen3.5 models. See [Thinking Mode](/docs/thinking-mode).
+- **Thinking Mode:** View the reasoning process of thinking models — see [Thinking Mode](/docs/thinking-mode).
 - **Stop Generation:** Cancel text generation mid-process on Android, iOS, Web, and Desktop.
 - **Backend Switching:** Choose CPU or GPU where supported, plus NPU for
-  `.litertlm` on Qualcomm Android devices and Qualcomm Linux arm64 boards
-  (opt-in, see [LiteRT-LM](/docs/litertlm)) and on Intel LunarLake/PantherLake
-  Windows PCs.
-- **LoRA Support:** Efficient fine-tuning and integration of LoRA (Low-Rank Adaptation) weights.
+  `.litertlm` on Qualcomm Android devices, Qualcomm Linux arm64 boards and
+  Google Tensor G5/G6 Pixels (opt-in, see [LiteRT-LM](/docs/litertlm)) and on
+  Intel LunarLake/PantherLake Windows PCs.
+- **LoRA (MediaPipe `.task`):** Efficient fine-tuning and integration of LoRA (Low-Rank Adaptation) weights.
 - **Enhanced Downloads:** Smart retry logic with exponential backoff and automatic restart of interrupted downloads.
 - **Android Foreground Service:** opt in with `foreground: true` for large downloads to bypass the 9-minute timeout.
-- **Text Embeddings & RAG:** Generate vectors with pluggable embedding runtimes,
+- **Embeddings (text, images, audio) & RAG:** Generate vectors with pluggable embedding runtimes,
   then use independent `flutter_edge_ai_rag` indexes with Qdrant or SQLite
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
+## What's new in 2.4
+
+- **Decider** (experimental, `flutter_edge_ai` 2.4.0):
+  `EmbeddingModel.createDecider` picks one of N options for an input — an
+  intent, an action, a route, a tool — or says "none of these". See
+  [Decisions](/docs/decisions).
+- **Order of images, audio and text** (`flutter_edge_ai_litertlm` 1.14.0):
+  Gemma 4 gets its audio after the text, as its model card asks, and
+  `getActiveModel(multimodalOrder:)` sets another order. See
+  [Multimodal](/docs/multimodal#order-of-images-audio-and-text).
+- **Structured tool calls** (`flutter_edge_ai` 2.4.0): `Message.toolCall(calls:)`
+  keeps the calls with their ids, `Message.toolResponse(toolCallId:)` names the
+  call a result answers, and a sentence Gemma 4 writes before a call no longer
+  streams the call's JSON as text. See
+  [Function Calling](/docs/function-calling#tool-calls-in-a-saved-history).
+- **Backends from the model file** (`flutter_edge_ai_litertlm` 1.14.0): the
+  engine reads a `.litertlm` before it loads it — a bundle compiled for an NPU
+  runs there, each encoder runs where its section says (`activeVisionBackend`,
+  `activeAudioBackend`), and a file that cannot run as asked is refused with
+  the reason. `readLiteRtLmBundleInfo(path)` shows what it reads, and
+  `LiteRtLmEngine(backendFallback: false)` makes one attempt that fails with
+  LiteRT-LM's own reason. See [LiteRT-LM](/docs/litertlm#where-a-model-runs).
+- **requireWeightCache** (`flutter_edge_ai_litertlm` 1.14.0):
+  `LiteRtEmbeddingBackend(requireWeightCache: true)` fails an EmbeddingGemma 2
+  load that wrote no weight cache instead of running it slower and larger. See
+  [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
+- **Agent skills 0.3.0** (`flutter_edge_ai_agent`): an empty answer right after
+  `loadSkill` is asked again (`EmptyAnswerRetryEvent`, an event an exhaustive
+  `switch` must now handle), intents the app adds get `validators:`, and
+  SKILL.md parsing is fixed. See
+  [Agent Skills](/docs/agent#when-the-model-answers-nothing).
+- **Genkit 0.10.0** (`genkit_flutter_edge_ai`): tool `ref`s travel as call ids
+  both ways; it requires `flutter_edge_ai` 2.4.0. See
+  [Genkit](/docs/genkit#tool-calls).
+- **2.4.1 / `flutter_edge_ai_litertlm` 1.15.0:** Google Tensor G5/G6 NPUs on
+  Pixels, opt-in with `google_tensor_npu: true`; a stopped turn is rewound in
+  place, so the chat keeps earlier images and audio; the Intel NPU on Windows
+  loads its model again; a raw Gemma 4 tool call runs with typed arguments or
+  not at all. See [LiteRT-LM](/docs/litertlm).
+- **Agent skills 0.4.0** (`flutter_edge_ai_agent`, breaking):
+  `schedule_notification` runs only with `NativeIntentExecutor(notifications:)`.
+  See [Migration](/docs/migration).
+- **llama.cpp engine** (`flutter_edge_ai_llama` 0.0.1): GGUF models, on
+  pub.dev. See [llama.cpp](/docs/llama).
+
+Upgrading from 2.3: see [Migration](/docs/migration).
+
 ## What's new in 2.3
 
+- **2.3.2:** the active model keeps its LoRA across an app restart, and
+  `ModelFileType.gguf` selects the optional [llama.cpp engine](/docs/llama),
+  `flutter_edge_ai_llama`, on pub.dev since 0.0.1.
+- **EmbeddingGemma 2 on an Intel NPU** (`flutter_edge_ai_litertlm` 1.13.2): the
+  Panther Lake bundles run on Windows x64 with
+  `preferredBackend: PreferredBackend.npu`. See
+  [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
+- **Audio turns** (`flutter_edge_ai_speech` 0.5.7, `flutter_edge_ai_agent`
+  0.2.10): `VoiceSession.runAudioTurn` gives the model the recording itself,
+  with no speech-to-text, and `AgentSession.ask(audioBytes:)` asks an agent
+  with a recording. See
+  [Speech](/docs/speech#audio-turns-the-model-hears-the-recording) and
+  [Agent Skills](/docs/agent#asking-with-a-recording).
+- **`flutter_edge_ai_diagnostics` 0.3.0:** macOS support and
+  `anonymousPeakBytes`, the lifetime footprint peak on iOS and macOS. See
+  [Diagnostics](/docs/diagnostics).
 - **EmbeddingGemma 2** (`flutter_edge_ai_litertlm` 1.13.0): text embeddings
   from one `.litertlm` bundle with its own tokenizer, on Android, iOS, macOS,
   Linux and Windows; up to 1024 tokens per input. See
@@ -56,7 +119,7 @@ only the engines, stores and features your app uses — see
   [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-audio-and-combined-inputs).
 - **EmbeddingGemma 2 on the Web** (`flutter_edge_ai_litertlm` 1.13.1): text
   and images in the browser through `@litert-lm/core`, on WebGPU (the
-  browser needs it); add `window.EmbeddingEngine = m.EmbeddingEngine;` to
+  browser needs it), and from 1.13.2 audio and combined inputs; add `window.EmbeddingEngine = m.EmbeddingEngine;` to
   `web/index.html`. See
   [Installation → Web](/docs/installation#web).
 - **EmbeddingGemma 2 images** (`flutter_edge_ai_litertlm` 1.13.1): the 440m
@@ -124,11 +187,11 @@ only the engines, stores and features your app uses — see
 
 - **flutter_gemma is now Flutter Edge AI.** Every package has a new name — `flutter_edge_ai`, `flutter_edge_ai_litertlm`, … Installed models, vector stores and platform setup carry over, and `dart fix --apply` renames the old Dart names. See [Migration](/docs/migration).
 
-Core through 1.11.3 (`flutter_gemma_litertlm` through 1.8.5) shipped under the `flutter_gemma*` names; the new names continue the same numbering (the table is in [Migration](/docs/migration)).
+Core through 1.11.4 (`flutter_gemma_litertlm` through 1.8.6) shipped under the `flutter_gemma*` names; the new names continue the same numbering (the table is in [Migration](/docs/migration)).
 
 ## What's new in 1.9
 
-- **`embeddingTokenizers:`** — embedding backends no longer bring a tokenizer. Add `flutter_edge_ai_embeddings` and pass `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` beside `embeddingBackends:`, or the first embedding throws a `StateError`. Breaking for every app that computes embeddings. See [Migration](/docs/migration).
+- **`embeddingTokenizers:`** — embedding backends no longer bring a tokenizer. Add `flutter_edge_ai_embeddings` and pass `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` beside `embeddingBackends:`, or the first embedding throws a `StateError` (since 2.3, `getActiveEmbedder()` throws an `EmbeddingLoadException` with that cause). Breaking for every app that computes embeddings. See [Migration](/docs/migration).
 - **Engines no longer pull the tokenizer package** — `flutter_edge_ai_litertlm` and `flutter_edge_ai_onnx` no longer depend on `flutter_edge_ai_embeddings`. Speech intentionally still depends on LiteRT-LM to share its native bundle. See [Packages](/docs/packages).
 - **Web embeddings run** — the LiteRT.js bundle was rebuilt on `@litertjs/core` 2.5.3 and all four JS files now ship together in `flutter_edge_ai_litertlm/web/`. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **SQLite RAG on web drains for real** — `flutter_gemma_rag_sqlite` 1.4.0 requires sqlite3 3.6.0 and Flutter 3.47; a Flutter 3.44 app stays on 1.3.2. See [Embeddings & RAG](/docs/embeddings-and-rag).
@@ -225,7 +288,8 @@ await FlutterEdgeAi.installModel(
 
 <Info>
 
-**MediaPipe alternative:** on mobile you can install the `.task` build of the
+**MediaPipe alternative:** Google's LLM Inference API is maintenance-only, so
+new apps should prefer `.litertlm`. On mobile you can install the `.task` build of the
 same model instead — drop `fileType` (it defaults to `ModelFileType.task`) and
 register `MediaPipeEngine()` from `flutter_edge_ai_mediapipe`. On iOS, run the
 `.task` build on `PreferredBackend.cpu`: on the GPU it is killed for memory
@@ -307,6 +371,8 @@ final chat = await model.createChat(
 **Platform support:**
 
 - **`.litertlm` on every platform, native and web**: passed as a real system turn.
+- **ONNX (native and web)**: passed as a `system` message.
+- **Built-in AI**: handed to the OS model as its instructions.
 - **MediaPipe `.task` (Android, iOS, web)**: prepended to the first user message as a fallback.
 
 ### Changing a runtime parameter reloads the model
@@ -334,6 +400,11 @@ await quick.close();
 final deep = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
 ```
 
+An app that needs several models loaded at once, such as one per backend,
+opens them with `FlutterEdgeAi.openModel` instead: each call builds a model
+the app owns and closes, which a `getActiveModel` rebuild never touches. See
+[Desktop → Several models at once](/docs/desktop#several-models-at-once).
+
 To serve several dialogues from one loaded model, do not reload it — open
 several sessions instead (next section).
 
@@ -360,7 +431,8 @@ On native `.litertlm` (except the NPU) a `maxTokens` below 1024 is clamped up to
 A single loaded model can serve several **independent** dialogues at once.
 `openSession()` returns a session with its own conversation history, detached
 from the legacy `model.session` singleton; `openChat()` is the same for the
-higher-level chat API.
+higher-level chat API. ONNX models and MediaPipe on web do not support it:
+`openSession()` throws `UnsupportedError` there.
 
 The model weights (the big, expensive part — hundreds of MB to several GB) are
 loaded **once** and shared across every session; each session only adds its own
@@ -390,7 +462,7 @@ await chatA.session.close();  // closing one leaves the others usable
 
 **Concurrent contexts, serialized inference.** The sessions are logically
 independent, but **only one session generates at a time** — calling
-`generateResponse()` on a second session while another is still running blocks
+`getResponse()` or `generateChatResponse()` on a second session while another is still running blocks
 until the first finishes. Generation is *not* parallel. This is intentional:
 parallel on-device inference would contend for the accelerator and risk OOM.
 
@@ -528,6 +600,11 @@ chat.generateChatResponseAsync().listen((response) {
     print('Function: ${response.name}');
     print('Arguments: ${response.args}');
     _handleFunctionCall(response);
+  } else if (response is ParallelFunctionCallResponse) {
+    // Several calls in one reply
+    for (final call in response.calls) {
+      _handleFunctionCall(call);
+    }
   } else if (response is ThinkingResponse) {
     // Model's reasoning process
     print('Thinking: ${response.content}');
@@ -538,6 +615,7 @@ chat.generateChatResponseAsync().listen((response) {
 
 - **`TextResponse`** — contains a text token (`response.token`) for regular model output.
 - **`FunctionCallResponse`** — contains function name (`response.name`) and arguments (`response.args`). See [Function Calling](/docs/function-calling).
+- **`ParallelFunctionCallResponse`** — several calls in one reply (`response.calls`, each a `FunctionCallResponse`).
 - **`ThinkingResponse`** — contains the model's reasoning process (`response.content`). See [Thinking Mode](/docs/thinking-mode).
 
 ## Next Steps

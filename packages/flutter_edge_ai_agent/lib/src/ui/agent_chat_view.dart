@@ -149,6 +149,21 @@ class _AgentChatViewState extends State<AgentChatView> {
           }
         case TextChunkEvent(:final text):
           turn.text += text;
+        case EmptyAnswerRetryEvent(:final skillName):
+          turn.steps.add(
+            _ProgressStep(
+              Icons.replay,
+              'No answer after loading "$skillName", asking again',
+            ),
+          );
+        case EmptyAnswerEvent(:final skillName):
+          turn.steps.add(
+            _ProgressStep(
+              Icons.error_outline,
+              'The model gave no answer after loading "$skillName"',
+              isError: true,
+            ),
+          );
         case DoneEvent(:final text):
           if (turn.text.isEmpty) turn.text = text;
         case MaxIterationsEvent(:final iterations):

@@ -47,6 +47,36 @@ void main() {
     expect('$target', 'Qualcomm SM8850');
   });
 
+  test("Google's Intel bundles, stamped IntelOpenVINO / PTL in each tower, "
+      'are Intel, not Qualcomm', () async {
+    final path = write(
+      'eg2_ptl.litertlm',
+      eg2Container(
+        textStamp: ('IntelOpenVINO', 'PTL'),
+        vision: true,
+        visionStamp: ('IntelOpenVINO', 'PTL'),
+      ),
+    );
+    final target = await readLiteRtLmNpuTarget(path);
+    expect(
+      target,
+      const LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL'),
+    );
+    expect(target!.isIntel, isTrue);
+    expect(target.isQualcomm, isFalse);
+    expect('$target', 'IntelOpenVINO PTL');
+    expect(sm8850.isIntel, isFalse);
+    // Any case, as isQualcomm; a bare "Intel" is not LiteRT's OpenVINO stamp.
+    expect(
+      const LiteRtLmNpuTarget(vendor: 'INTELOPENVINO', soc: 'PTL').isIntel,
+      isTrue,
+    );
+    expect(
+      const LiteRtLmNpuTarget(vendor: 'Intel', soc: 'PTL').isIntel,
+      isFalse,
+    );
+  });
+
   test(
     'a stamp in any compiled section counts, not only the text encoder',
     () async {

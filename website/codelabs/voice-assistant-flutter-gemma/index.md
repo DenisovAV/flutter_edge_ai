@@ -31,8 +31,8 @@ between them:
 
 * why a recognizer takes **16 kHz mono PCM** and nothing else, and how to get
   exactly that out of the microphone without converting anything
-* why a model that is already downloaded still has to be **installed again** on
-  every launch
+* what `install()` does to a model that is already downloaded, and what the
+  app remembers across a restart
 * why the reply audio needs a WAV header before a player will touch it, and why
   its sample rate is not the one you recorded at
 * what changes when every word the model writes is going to be **heard**, not
@@ -47,7 +47,9 @@ between them:
 * Flutter **3.44** or newer
 * An arm64 Android device or emulator, an iOS device, or an Apple-silicon Mac.
   Speech runs through `dart:ffi`, which the browser does not have, so there is
-  no web target in this codelab
+  no web target in this codelab; and the player Step 3 adds, `just_audio`
+  0.10.6, has no Windows or Linux implementation of its own, so there is none
+  for those two either
 * About 2.8 GB free: Gemma 4 E2B is 2.59 GB, speech recognition 109 MB and the
   voice about 36 MB. On a phone, **6 GB of RAM or more** — the language model
   alone takes about 2.4 GB of it
@@ -56,7 +58,7 @@ between them:
   downloads that codelab's licence-gated Gemma 3 1B — Step 1 shows how to run
   it with a token, or without one
 
-**Watch out:** This codelab starts from the finished app of [Getting Started with On-Device LLMs](/codelabs/getting-started-flutter-gemma) — byte for byte, a CI check enforces it. If you have not done that codelab, `step_01_starter` still runs on its own; you will just be meeting the download-and-chat code for the first time.
+**Watch out:** This codelab starts from the finished app of [Getting Started with On-Device LLMs](/codelabs/getting-started-flutter-gemma) — its `lib/` and `test/` byte for byte, a CI check enforces it. If you have not done that codelab, `step_01_starter` still runs on its own; you will just be meeting the download-and-chat code for the first time.
 
 ### Get the code
 
@@ -128,8 +130,10 @@ Point the app at it in `lib/main.dart`:
 const _model = Models.gemma4;
 ```
 
-The web branch goes away with this line. Speech runs through `dart:ffi`, which
-the browser does not have, so from here on the app is Android, iOS and macOS.
+The web branch goes away with this line: speech runs through `dart:ffi`, which
+the browser does not have. Windows and Linux drop out in Step 3, whose player,
+`just_audio` 0.10.6, has no implementation of its own there — so from here on
+the app is Android, iOS and macOS.
 
 ### Add the packages
 
@@ -164,7 +168,7 @@ abstract final class Moonshine {
       'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/'
       'moonshine_tiny_5s_f32.tflite';
   static const tokenizerUrl =
-      'https://huggingface.co/UsefulSensors/moonshine/resolve/main/'
+      'https://huggingface.co/moonshine-ai/moonshine/resolve/main/'
       'ctranslate2/tiny/tokenizer.json';
   static const fileName = 'moonshine_tiny_5s_f32.tflite';
   static const maxRecording = Duration(seconds: 5);
@@ -216,10 +220,11 @@ final stt = await FlutterEdgeAi.getActiveStt();
 ```
 
 The gate already made sure the files are here, so this downloads nothing.
-What it does is make moonshine the **active** speech model again. That choice
-lives in memory and does not survive a restart, and `getActiveStt()` throws
-without it. `install()` is idempotent: on files that are already there, it only
-re-activates them.
+What it does is make moonshine the **active** speech model. That choice is
+saved, and `FlutterEdgeAi.initialize()` restores it on the next launch — but
+the gate checks files, not which model is active, and this call makes sure
+`getActiveStt()` returns moonshine whatever was active before. `install()` is
+idempotent: on files that are already there, it only re-activates them.
 
 ### Record exactly what the model takes
 
@@ -246,8 +251,15 @@ No file, no WAV to parse, no resampling — the bytes that arrive are the bytes
 await _recorder.stop();
 await _micDone?.future;
 final text = (await _stt!.transcribe(_pcm!.takeBytes())).trim();
+if (text.isEmpty) {
+  _say("Didn't catch that — try again a little closer to the mic.");
+  return;
+}
 await _send(text);
 ```
+
+In `step_02_hear` this runs inside a `try`/`catch`, and a failed transcription
+is shown as a message.
 
 Waiting for `_micDone` is not ceremony: `stop()` closes the stream, and the last
 chunk lands in the buffer just before it ends. Read the buffer on `stop()` alone
@@ -441,12 +453,15 @@ await for (final event in _session!.runTurn(audio)) {
   switch (event) {
     case VoiceTranscriptEvent(:final text):
       // show what the user said
+      break;
     case VoiceReplyTextEvent(:final chunk):
       // append to the reply bubble
+      break;
     case VoiceReplyAudioEvent(:final pcm, :final sampleRate):
       await _play(pcm, sampleRate);
     case VoiceTurnCompleteEvent(:final transcript):
       // an empty transcript means nothing was heard
+      break;
     case VoiceTurnInterruptedEvent():
     case VoiceErrorEvent():
       break;
@@ -593,10 +608,11 @@ what it had already said. Your next question is answered on top of that.
 **Good to know:** The interrupted-chat fix shipped in the legacy
 `flutter_gemma_litertlm` **1.8.1** package and is present in the current
 `flutter_edge_ai_litertlm`. Before that fix, a `.litertlm` chat stopped
-mid-reply answered every later message with nothing. The package now rebuilds
-the conversation from the chat's history on the first turn after a stop. That
-history is replayed as text: an image or a recording sent in an earlier turn is
-not part of it, so ask about it again with the image attached.
+mid-reply answered every later message with nothing. Since 1.15.0, releases
+rewind the conversation to before the stopped turn and put that turn back, so
+the model keeps the whole chat, including images and recordings from earlier
+turns. Earlier releases, and the NPU, rebuild the conversation from the chat's
+text instead, and those are gone.
 
 ### Run it
 

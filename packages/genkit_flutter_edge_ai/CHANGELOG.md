@@ -1,3 +1,12 @@
+## 0.10.1
+- README: the llama.cpp engine, and engine errors arrive in `ai.generate`'s result.
+
+## 0.10.0
+- Tool `ref`s travel as call ids both ways and never repeat in a turn; require `flutter_edge_ai` ^2.4.0.
+
+## 0.9.2
+- README: any engine's models; Quick Start installs Gemma 4 E2B .litertlm.
+
 ## 0.9.1
 - The embedder calls `embedAll` and re-resolves a closed embedder; require `flutter_edge_ai` ^2.3.0.
 

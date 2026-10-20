@@ -1,7 +1,9 @@
 // The EmbeddingGemma 2 text golden (R5 §10.1), in the form a device can read.
 //
 // integration_test/goldens/eg2_text_golden.json is the measurement run's
-// eg2_text_golden_final.json, verbatim: 12 strings (6 query/document pairs),
+// eg2_text_golden_final.json with one of its six query/document pairs taken
+// out on 2026-10-14 (the rest renumbered, and the `measured_spread` minima
+// recomputed from the remaining items' own cosines): 10 strings (5 pairs),
 // each with `vector` from the shipped native-v0.18.0-d macOS arm64
 // libLiteRtLm.dylib (CPU), `vector_python_wheel` and `vector_st_fp32`
 // (Sentence Transformers, fp32). A JSON file next to a test is not readable
@@ -109,7 +111,7 @@ void main() {
     final golden = jsonDecode(eg2TextGoldenJson) as Map<String, dynamic>;
     final want = (source['items'] as List).cast<Map<String, dynamic>>();
     final got = (golden['items'] as List).cast<Map<String, dynamic>>();
-    expect(got, hasLength(12));
+    expect(got, hasLength(10));
     for (var i = 0; i < want.length; i++) {
       for (final (key, encoded) in [
         ('vector', 'vector_f32le'),

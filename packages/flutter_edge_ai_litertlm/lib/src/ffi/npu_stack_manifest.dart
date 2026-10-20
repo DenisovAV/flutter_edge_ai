@@ -6,8 +6,12 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../npu_stacks.dart';
 
-/// Whether this build bundles the Qualcomm NPU stack (Android, Linux arm64),
-/// and why not.
+/// Whether this build carries a vendor's NPU stack ([NpuVendor]) where LiteRT
+/// will load it, and why not: from NativeAssetsManifest.json for a stack the
+/// build registers ([checkNpuStackInManifest]; Qualcomm on Android and Linux
+/// arm64), by file presence for Intel's beside the Windows executable
+/// (`checkIntelNpuStack`). The LLM engine and the EmbeddingGemma 2 placement
+/// both ask, through `npuStackOf`.
 final class NpuStackCheck {
   const NpuStackCheck.bundled() : bundled = true, known = true, reason = null;
   const NpuStackCheck.missing(String this.reason)
@@ -39,9 +43,10 @@ typedef NativeAssetsManifestReader = Future<String> Function();
 Future<String> _readFromBundle() =>
     rootBundle.loadString('NativeAssetsManifest.json', cache: false);
 
-NpuStackCheck? _cached;
+final _cached = <NpuVendor, NpuStackCheck>{};
 
-/// Whether this build registered the Qualcomm NPU stack.
+/// Whether this build registered [vendor]'s NPU stack on [operatingSystem]
+/// ([npuStackLibs]).
 ///
 /// The authority is `NativeAssetsManifest.json`, which Flutter regenerates on
 /// every build and the engine itself reads at startup to resolve native
@@ -51,20 +56,24 @@ NpuStackCheck? _cached;
 ///
 /// Only a successful read is cached. A failed read is not an answer about the
 /// build either, so it is [NpuStackCheck.unknown], not "not enabled".
-Future<NpuStackCheck> checkQualcommNpuStack({
+Future<NpuStackCheck> checkNpuStackInManifest(
+  NpuVendor vendor, {
   NativeAssetsManifestReader? read,
   String? abi,
   String? operatingSystem,
 }) async {
-  final stack = qualcommNpuLibsFor(operatingSystem ?? Platform.operatingSystem);
-  if (read == null && _cached != null) return _cached!;
+  final stack = npuStackLibs(
+    vendor,
+    operatingSystem ?? Platform.operatingSystem,
+  );
+  if (read == null && _cached[vendor] != null) return _cached[vendor]!;
   final String text;
   try {
     text = await (read ?? _readFromBundle)();
   } on Object catch (e) {
     return NpuStackCheck.unknown(
       'NativeAssetsManifest.json could not be read ($e), so whether this '
-      'build bundles the Qualcomm NPU stack is unknown',
+      'build bundles the ${vendor.label} NPU stack is unknown',
     );
   }
   final NpuStackCheck result;
@@ -78,25 +87,46 @@ Future<NpuStackCheck> checkQualcommNpuStack({
         if (!(assets?.containsKey(nativeAssetId(name)) ?? false))
           androidLibFileName(name),
     ];
-    result = stack.isEmpty
-        ? const NpuStackCheck.missing('no Qualcomm NPU stack exists here')
-        : missing.isEmpty
+    result = missing.isEmpty
         ? const NpuStackCheck.bundled()
         : missing.length == stack.length
-        ? const NpuStackCheck.missing(qualcommNpuNotEnabledReason)
+        ? NpuStackCheck.missing(npuNotBundledReason(vendor))
         : NpuStackCheck.missing(
-            'this build bundles only part of the Qualcomm NPU stack (missing '
-            '${missing.join(', ')})',
+            'this build bundles only part of the ${vendor.label} NPU stack '
+            '(missing ${missing.join(', ')})',
           );
   } on Object catch (e) {
     return NpuStackCheck.unknown(
       'NativeAssetsManifest.json is not in a format this version understands '
-      '($e), so whether this build bundles the Qualcomm NPU stack is unknown',
+      '($e), so whether this build bundles the ${vendor.label} NPU stack is '
+      'unknown',
     );
   }
-  if (read == null) _cached = result;
+  if (read == null) _cached[vendor] = result;
   return result;
 }
+
+/// Why a build that carries none of [vendor]'s stack cannot use its NPU: how
+/// to opt in, for a stack that is opt-in; a broken native bundle otherwise,
+/// since every build for the vendor's ABIs is meant to carry it.
+String npuNotBundledReason(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm => qualcommNpuNotEnabledReason,
+  NpuVendor.googleTensor => googleTensorNpuNotEnabledReason,
+  NpuVendor.intel =>
+    'this build carries none of the Intel NPU stack; use a '
+        'flutter_edge_ai_litertlm whose native release bundles it and rebuild',
+};
+
+/// What an app that did not opt in to Google Tensor sees when it asks for npu.
+const googleTensorNpuNotEnabledReason =
+    'this app was built without the Google Tensor NPU dispatch. It is '
+    'opt-in: add\n'
+    '  hooks:\n'
+    '    user_defines:\n'
+    '      flutter_edge_ai_litertlm:\n'
+    '        $googleTensorNpuUserDefine: true\n'
+    "to the app's pubspec.yaml (the workspace root pubspec if the app is a "
+    'pub workspace member) and rebuild';
 
 /// What an app that did not opt in sees when it asks for npu.
 const qualcommNpuNotEnabledReason =

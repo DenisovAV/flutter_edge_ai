@@ -1,36 +1,73 @@
+// The decider SPI (OptionScoringModel) is @experimental; this model is its
+// LiteRT-LM implementation.
+// ignore_for_file: experimental_member_use
+
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter_edge_ai/engine.dart';
 
 import 'package:flutter/foundation.dart';
 
+import '../litertlm_decision_section.dart';
+import '../option_scoring_self_check.dart';
 import 'litert_lm_client.dart';
+import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
-class FfiInferenceModel extends InferenceModel with CloseNotifier {
+///
+/// Scores options for `createDecider` ([OptionScoringModel]) on the CPU
+/// backend, from the decision litetune wrote into the model file
+/// ([decisionRead], read when the model was loaded).
+base class FfiInferenceModel extends InferenceModel
+    with CloseNotifier, OptionScoringModel {
   FfiInferenceModel({
     required this.ffiClient,
     required this.maxTokens,
     required this.modelType,
     required this.activeBackend,
+    this.decisionRead,
+    this.activeVisionBackend,
+    this.activeAudioBackend,
     this.fileType = ModelFileType.litertlm,
     this.supportImage = false,
     this.supportAudio = false,
+    MultimodalOrder? multimodalOrder,
     this.maxConcurrentSessions,
     required this.onClose,
-  });
+  }) : multimodalOrder =
+           multimodalOrder ?? MultimodalOrder.forModelType(modelType);
 
   final LiteRtLmFfiClient ffiClient;
   final ModelType modelType;
+
+  /// The decision the loaded `.litertlm` carries, read with the model so
+  /// that a decider reads the file the engine loaded; null only for a model
+  /// built without one (tests), which then cannot read its decision.
+  final LitetuneDecisionRead? decisionRead;
+
+  /// How this engine scores right after a prefill, found by the self-check
+  /// before the first decision on this model; null until then.
+  LiteRtLmScoringMode? get scoringMode => _scoringMode;
+  LiteRtLmScoringMode? _scoringMode;
+  Future<LiteRtLmScoringMode>? _scoringCheck;
   @override
   final ModelFileType fileType;
   @override
   final int maxTokens;
   @override
   final PreferredBackend? activeBackend;
+  @override
+  final PreferredBackend? activeVisionBackend;
+  @override
+  final PreferredBackend? activeAudioBackend;
   final bool supportImage;
   final bool supportAudio;
+
+  /// Where a message's images and audio go around its text. Concurrent
+  /// [openSession] sessions take no media, so only [createSession] reads it.
+  final MultimodalOrder multimodalOrder;
 
   /// Cap on concurrent [openSession] sessions; null = unlimited.
   final int? maxConcurrentSessions;
@@ -49,6 +86,111 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
 
   @override
   InferenceModelSession? get session => _session;
+
+  @override
+  Future<String?> readDecisionSection() async {
+    final read = decisionRead;
+    if (read == null) {
+      throw const DeciderUnsupportedException(
+        'This model was built without reading its file, so it has no '
+        'decision to read.',
+      );
+    }
+    if (read.error case final error?) throw error;
+    return read.payload;
+  }
+
+  /// The self-check, once per model; a check that failed runs again next
+  /// time (it may have failed on a model that was closing). Its runs belong
+  /// to [scorer]: closing that scorer stops them, and another scorer waiting
+  /// on the same check then runs it again for itself.
+  Future<LiteRtLmScoringMode> _scoringModeFor(
+    _LiteRtLmOptionScorer scorer,
+    List<String> targets,
+  ) async {
+    while (true) {
+      final known = _scoringCheck;
+      if (known == null) return _runScoringCheck(scorer, targets);
+      try {
+        return await known;
+      } on ScoringStoppedError {
+        // Stopped by the scorer that ran it, or by this model's close: run
+        // it again unless this scorer or the model is the one closed. A
+        // native failure is not retried here: it reaches this caller.
+        scorer._client;
+      }
+    }
+  }
+
+  Future<LiteRtLmScoringMode> _runScoringCheck(
+    _LiteRtLmOptionScorer scorer,
+    List<String> targets,
+  ) {
+    List<double> single(OptionScoringRun run, List<String> tokens) => [
+      for (var i = 0; i < tokens.length; i++)
+        if (run.tokenScores[i].length == 1)
+          run.tokenScores[i].single
+        else
+          throw DeciderUnsupportedException(
+            'The self-check\'s one-token target "${tokens[i]}" scored '
+            '${run.tokenScores[i].length} tokens.',
+          ),
+    ];
+    final check = liteRtLmScoringSelfCheck(
+      targets: targets,
+      tokenize: scorer.tokenize,
+      detokenize: scorer.detokenize,
+      scoreOneToken: (prompt, token) async => single(
+        await scorer._client.scoreTargets(prompt, [
+          token,
+        ], stops: scorer._stops),
+        [token],
+      ).single,
+      scoreInMode: (mode, prompt, tokens) async {
+        final client = scorer._client;
+        String? reprefill;
+        if (mode == LiteRtLmScoringMode.once) {
+          try {
+            reprefill = await scorer._reprefillFor(prompt);
+          } on DeciderUnsupportedException catch (e) {
+            throw DeciderUnsupportedException(
+              'The scoring self-check\'s own prompt: ${e.message}',
+            );
+          }
+        }
+        return single(
+          await client.scoreTargets(
+            prompt,
+            tokens,
+            reprefill: reprefill,
+            stops: scorer._stops,
+          ),
+          tokens,
+        );
+      },
+    );
+    _scoringCheck = check;
+    return check.then(
+      (mode) => _scoringMode = mode,
+      onError: (Object e, StackTrace st) {
+        if (identical(_scoringCheck, check)) _scoringCheck = null;
+        Error.throwWithStackTrace(e, st);
+      },
+    );
+  }
+
+  @override
+  Future<OptionScorer> openOptionScorer() async {
+    if (_isClosed) throw StateError('The model is closed.');
+    if (activeBackend != PreferredBackend.cpu) {
+      throw DeciderUnsupportedException(
+        'Option scoring is measured on the CPU backend only, and this model '
+        'runs on ${activeBackend?.name ?? 'an unknown backend'}. Load it with '
+        'preferredBackend: PreferredBackend.cpu to create a decider from it.',
+      );
+    }
+    return _LiteRtLmOptionScorer(this);
+  }
 
   @override
   List<InferenceModelSession> get sessions =>
@@ -143,10 +285,13 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
             sampling: sampling,
             samplingExplicit: !explicit.isEmpty,
             maxOutputTokens: maxOutputTokens,
+            multimodalOrder: multimodalOrder,
           );
       final handle = RecoveringConversationHandle(
         await open(),
         reopen: (messagesJson) => open(messagesJson: messagesJson),
+        // The NPU executor rolls back one token at most.
+        canRewind: activeBackend != PreferredBackend.npu,
       );
       edgeAiLog(
         '[FfiInferenceModel/perf] createConversation (FFI): ${sessionSw.elapsedMilliseconds - beforeConv}ms',
@@ -743,16 +888,23 @@ class FfiInferenceModelSession extends InferenceModelSession
 /// the same bound VoiceSession gives a stopped reply to drain.
 const _windDownTimeout = Duration(seconds: 5);
 
-/// The single-session lane's handle: one real native conversation, rebuilt
-/// after a turn is stopped.
+/// How [LiteRtLmFfiClient.extractTextFromResponse] marks a thought chunk.
+@visibleForTesting
+const thoughtChunkPrefix = '<|channel>thought\n';
+
+/// The single-session lane's handle: one real native conversation, made to
+/// answer again after a turn is stopped.
 ///
 /// A conversation whose generation was cancelled mid-turn answers every later
 /// message with nothing — zero chunks in about a millisecond, on every turn
-/// after, measured on native 0.16.0 through 0.17.1. A fresh conversation on the
-/// same engine answers normally. So this handle records each turn the way the
-/// virtual-session multiplexer does, and the first turn after a stop replaces
-/// the conversation with a new one seeded with that history as a
-/// `messages_json` preface — one prefill, paid only after a stop.
+/// after, measured on native 0.16.0 through 0.17.1. So the first turn after a
+/// stop first rewinds the conversation to before the stopped turn and puts that
+/// turn back, partial reply included ([ConversationHandle.rewindStoppedTurn]):
+/// the model keeps everything, images and audio too. Where it cannot — on the
+/// NPU, whose executor rolls back one token at most, or on a libLiteRtLm
+/// without the rewind — it replaces the conversation with a new one seeded
+/// with the history this handle records, as a `messages_json` preface, which
+/// keeps the text of earlier turns only.
 ///
 /// A cancel that arrives after a turn has finished does not count: Dart
 /// delivers a stream's `done` by cancelling its subscription, which cancels
@@ -764,8 +916,13 @@ class RecoveringConversationHandle implements ConversationHandle {
   RecoveringConversationHandle(
     this._live, {
     required this.reopen,
+    this.canRewind = true,
     this.windDownTimeout = _windDownTimeout,
   });
+
+  /// Whether a stopped turn is rewound before falling back to a rebuild. False
+  /// on the NPU, where the rewind cannot succeed.
+  final bool canRewind;
 
   /// How long a turn waits for a stopped one to record itself. See [_turn].
   final Duration windDownTimeout;
@@ -786,13 +943,35 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// A cancel landed inside the current turn. Reset when the next turn starts.
   bool _stopRequested = false;
 
-  /// Completes when the current turn's `finally` has run, so a turn that
-  /// starts before a stopped one has wound down can wait for its history.
+  /// Completes when the latest turn to start has run its `finally`: each turn
+  /// waits for the one before it, so turns take the conversation one at a
+  /// time, and a stopped turn's end is known before the next one decides how
+  /// to recover.
   Future<void>? _turnDone;
 
+  /// The turn that holds the conversation — past its wait — and so owns
+  /// [_inFlight], [_stopRequested] and the stop it may leave behind.
+  Completer<void>? _current;
+
+  /// Counts [cancelGeneration] calls, so a turn still waiting for the one
+  /// before it can tell that a stop came meanwhile.
+  int _stopEpoch = 0;
+
   /// Set when a turn that reached the model was cut off; the next turn
-  /// rebuilds before it runs.
+  /// recovers the conversation before it runs.
   bool _stopped = false;
+
+  /// The reply the stopped turn had produced, which a rewind puts back after
+  /// its message. Null when the next recovery must rebuild instead.
+  Map<String, Object?>? _stoppedReply;
+
+  /// Why a conversation that can rewind is rebuilt instead, for the warning
+  /// release builds print when that loses earlier images and audio.
+  String? _rebuildBecause;
+
+  /// True while the conversation is being rewound or rebuilt. Nothing is
+  /// generating then, and a native cancel would abort the rewind's prefill.
+  bool _recovering = false;
 
   /// Images and audio are not replayed — the preface is text — so a rebuild
   /// after a multimodal turn says so once instead of silently forgetting.
@@ -826,7 +1005,79 @@ class RecoveringConversationHandle implements ConversationHandle {
     }
   }
 
-  /// Runs one turn on the live conversation, rebuilding it first if the
+  /// The recovery in progress. A turn that starts meanwhile waits for it, and
+  /// its wind-down bound does not run out while a long rewind (an audio clip
+  /// re-encoded on a phone CPU) still uses the conversation.
+  Future<void>? _recovery;
+
+  /// Makes the conversation answer again after a stopped turn: rewinds it when
+  /// it can, and rebuilds it when it cannot or the rewind fails.
+  Future<void> _recover() async {
+    final reply = _stoppedReply;
+    final rebuildBecause = _rebuildBecause;
+    _stoppedReply = null;
+    _rebuildBecause = null;
+    _recovering = true;
+    try {
+      if (canRewind && reply != null) {
+        StoppedTurnRewind? result;
+        StoppedTurnRewindException? failure;
+        try {
+          result = await _live.rewindStoppedTurn(reply);
+        } on StoppedTurnRewindException catch (e) {
+          failure = e;
+        } catch (_) {
+          // Not a rewind failure (a closed client, a bug): the conversation is
+          // as the stop left it, so the next turn tries again from the start.
+          _stoppedReply = reply;
+          _rebuildBecause = rebuildBecause;
+          rethrow;
+        }
+        if (_closed) throw StateError('Conversation handle is closed');
+        switch (result) {
+          case StoppedTurnRewind.rewound:
+            _stopped = false;
+            edgeAiLog(
+              '[FfiInferenceModel] rewound the conversation after a stopped '
+              'turn',
+            );
+            return;
+          case StoppedTurnRewind.notCancelled:
+            _stopped = false;
+            edgeAiLog(
+              '[FfiInferenceModel] the stopped turn had ended natively before '
+              'the stop; the conversation is kept as it is',
+            );
+            return;
+          case StoppedTurnRewind.unsupported:
+          case null:
+            break;
+        }
+        // Printed in release builds too. An unsupported rewind (an older
+        // libLiteRtLm) is not a failure and rebuilds quietly.
+        if (failure != null) {
+          // ignore: avoid_print
+          print(
+            '[flutter_edge_ai_litertlm] could not rewind the conversation '
+            'after a stopped turn ($failure); rebuilding it'
+            '${_historyHasMedia ? ', without the images and audio of earlier '
+                      'turns' : ''}',
+          );
+        }
+      } else if (canRewind && rebuildBecause != null && _historyHasMedia) {
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai_litertlm] rebuilding the conversation, without '
+          'the images and audio of earlier turns: $rebuildBecause',
+        );
+      }
+      await _rebuild();
+    } finally {
+      _recovering = false;
+    }
+  }
+
+  /// Runs one turn on the live conversation, recovering it first if the
   /// previous turn was stopped, and records the turn for the next rebuild.
   /// [raw] says whether [send] yields raw SDK JSON or plain text.
   Stream<String> _turn(
@@ -835,72 +1086,117 @@ class RecoveringConversationHandle implements ConversationHandle {
     required bool raw,
   }) async* {
     if (_closed) throw StateError('Conversation handle is closed');
-    // A turn that starts while a stopped one is still winding down — which
-    // VoiceSession does after a bounded drain — waits for its `finally`, or
-    // the rebuild would replay a history that is missing the stopped exchange.
-    // Bounded: a consumer that pauses the stopped stream and never resumes it
-    // would otherwise block every later turn. Past the bound the stopped turn
-    // is treated as having damaged the conversation, and the rebuild goes
-    // ahead without its exchange rather than not at all.
-    if (_stopRequested) {
-      await _turnDone?.timeout(
-        windDownTimeout,
-        onTimeout: () {
-          _stopped = true;
-          edgeAiLog(
-            '[FfiInferenceModel] a stopped turn did not wind down within '
-            '${windDownTimeout.inSeconds}s (is its stream paused?); rebuilding '
-            'without it',
-          );
-        },
-      );
-    }
+    final epoch = _stopEpoch;
+    final previous = _turnDone;
     final done = Completer<void>();
     _turnDone = done.future;
-    _inFlight = true;
-    _stopRequested = false;
-    final text = StringBuffer();
+    // What the reply showed: thought chunks are left out, as native leaves a
+    // finished turn's thoughts out of the context.
+    final visible = StringBuffer();
     final rawReply = StringBuffer();
     var sent = false;
     var finished = false;
     var failed = false;
+    var poisoned = false;
     try {
-      if (_stopped) await _rebuild();
-      // Stopped while the conversation was being rebuilt: nothing has reached
-      // the model, so there is nothing to generate and nothing to record.
-      if (_stopRequested) return;
+      if (previous != null) {
+        // The turn before this one decides whether this one recovers first,
+        // and a rebuild must replay its exchange, so wait for its `finally`.
+        // Bounded: a consumer that pauses a stream and never resumes it would
+        // otherwise block every later turn. Past the bound, a stopped turn is
+        // treated as having damaged the conversation, which is rebuilt without
+        // its exchange; a turn that is still generating normally is left
+        // alone, and the native lock queues this one behind it.
+        await previous.timeout(
+          windDownTimeout,
+          onTimeout: () {
+            if (!_stopRequested) {
+              edgeAiLog(
+                '[FfiInferenceModel] the previous turn is still generating '
+                'after ${windDownTimeout.inSeconds}s; this one waits for it',
+              );
+              return;
+            }
+            _stopped = true;
+            _stoppedReply = null;
+            _rebuildBecause =
+                'the previous turn did not wind down within '
+                '${windDownTimeout.inSeconds}s';
+            edgeAiLog(
+              '[FfiInferenceModel] a stopped turn did not wind down within '
+              '${windDownTimeout.inSeconds}s (is its stream paused?); '
+              'rebuilding without it',
+            );
+          },
+        );
+      }
+      // A recovery cannot be cut short (native bounds it); one that started
+      // while this turn waited is still using the conversation.
+      for (var r = _recovery; r != null; r = _recovery) {
+        await r.catchError((Object _) {});
+      }
+      if (_closed) throw StateError('Conversation handle is closed');
+      _current = done;
+      _inFlight = true;
+      _stopRequested = false;
+      if (_stopped) {
+        final recovery = _recovery = _recover();
+        try {
+          await recovery;
+        } finally {
+          if (identical(_recovery, recovery)) _recovery = null;
+        }
+      }
+      // Stopped while this turn waited for the one before it, or while the
+      // conversation was being recovered: nothing has reached the model, so
+      // there is nothing to generate and nothing to record.
+      if (_stopEpoch != epoch) return;
       sent = true;
       await for (final chunk in send(_live)) {
-        if (raw) {
-          text.write(LiteRtLmFfiClient.extractTextFromResponse(chunk));
-          rawReply.write(chunk);
-        } else {
-          text.write(chunk);
-        }
+        final text = raw
+            ? LiteRtLmFfiClient.extractTextFromResponse(chunk)
+            : chunk;
+        if (!text.startsWith(thoughtChunkPrefix)) visible.write(text);
+        if (raw) rawReply.write(chunk);
         yield chunk;
       }
       finished = true;
+    } on LiteRtLmTurnCancelledException {
+      // Native cancelled a turn nobody stopped: an earlier cancel poisoned the
+      // conversation. The model saw nothing of this turn; the next one rebuilds.
+      poisoned = true;
+      rethrow;
     } catch (_) {
       // A failed turn is not a stopped one: rebuilding would replay the same
       // context into the same failure.
       failed = true;
       rethrow;
     } finally {
-      _inFlight = false;
-      if (sent) {
+      // A turn that winds down after the next one took the conversation (past
+      // its bound) leaves the shared state to that one.
+      final latest = identical(_current, done);
+      if (latest) _inFlight = false;
+      if (poisoned) {
+        if (latest) {
+          _stopped = true;
+          _stoppedReply = null;
+          _rebuildBecause = 'native cancelled a turn that was not stopped';
+        }
+      } else if (sent) {
         // Stopped by cancelGeneration, or abandoned mid-turn — which cancels
         // native the same way — leaves the conversation answering nothing.
-        if (_stopRequested || (!finished && !failed)) _stopped = true;
+        final stopped = _stopRequested || (!finished && !failed);
+        if (stopped && latest) _stopped = true;
+        final reply = _VirtualConversationHandle._assistantTurn(
+          visible.toString(),
+          rawReply.toString(),
+        );
+        if (stopped && latest) _stoppedReply = reply;
         // The message reached the model either way, so it belongs in the
         // history a rebuild replays — with whatever of the reply was produced.
         _history
           ..add(message)
-          ..add(
-            _VirtualConversationHandle._assistantTurn(
-              text.toString(),
-              rawReply.toString(),
-            ),
-          );
+          ..add(reply);
       }
       done.complete();
     }
@@ -969,11 +1265,22 @@ class RecoveringConversationHandle implements ConversationHandle {
 
   @override
   void cancelGeneration() {
+    // A turn still waiting for the one before it hears of this and does not
+    // start.
+    _stopEpoch++;
     // Only a cancel that lands inside a turn damages the conversation. The
-    // turn's `finally` turns this into a rebuild if generation had begun.
+    // turn's `finally` turns this into a recovery if generation had begun.
     if (_inFlight) _stopRequested = true;
+    // The turn returns after the recovery instead of generating.
+    if (_recovering) return;
     _live.cancelGeneration();
   }
+
+  /// Recovery after a stop is this handle's own job, done at the next turn.
+  @override
+  Future<StoppedTurnRewind> rewindStoppedTurn(
+    Map<String, Object?> partialReply,
+  ) async => StoppedTurnRewind.unsupported;
 
   @override
   SessionMetrics getSessionMetrics() => _live.getSessionMetrics();
@@ -983,6 +1290,8 @@ class RecoveringConversationHandle implements ConversationHandle {
     if (_closed) return;
     _closed = true;
     _history.clear();
+    // The native handle waits for an operation still running on it (a rewind,
+    // a generation) before it deletes the conversation.
     _live.close();
   }
 }
@@ -1194,6 +1503,13 @@ class _VirtualConversationHandle implements ConversationHandle {
     client.cancelVirtualTurn(token);
   }
 
+  /// The multiplexer rebuilds a stopped conversation from this session's
+  /// history at its next turn; there is no media to keep.
+  @override
+  Future<StoppedTurnRewind> rewindStoppedTurn(
+    Map<String, Object?> partialReply,
+  ) async => StoppedTurnRewind.unsupported;
+
   @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
@@ -1203,5 +1519,91 @@ class _VirtualConversationHandle implements ConversationHandle {
     _closed = true;
     _history.clear();
     client.releaseVirtualConversation(token);
+  }
+}
+
+/// [OptionScorer] over the engine an [FfiInferenceModel] loaded. Holds no
+/// native resource between calls: each scoring pass opens and deletes its own
+/// session.
+final class _LiteRtLmOptionScorer extends OptionScorer {
+  _LiteRtLmOptionScorer(this._model);
+
+  final FfiInferenceModel _model;
+  bool _closed = false;
+
+  /// The stop flags of this scorer's native runs, its share of the self-check
+  /// included: [close] stops them.
+  final ScoringStops _stops = ScoringStops();
+
+  /// Every call goes through here, so a scorer or model closed between calls
+  /// is a stop, not a failure: a scorer waiting on this one's self-check runs
+  /// it again for itself (see `_scoringModeFor`).
+  LiteRtLmFfiClient get _client {
+    if (_closed) throw ScoringStoppedError('The option scorer is closed.');
+    if (_model.isClosed) throw ScoringStoppedError('The model is closed.');
+    return _model.ffiClient;
+  }
+
+  @override
+  Future<List<int>> tokenize(String text) => _client.tokenIds(text);
+
+  @override
+  Future<String> detokenize(List<int> ids) => _client.detokenizeIds(ids);
+
+  @override
+  Future<String> renderUserMessage(String content) =>
+      _client.renderUserMessage(content);
+
+  @override
+  Future<void> prepare(List<String> targets) =>
+      _model._scoringModeFor(this, targets);
+
+  @override
+  Future<OptionScoringRun> score(
+    String prompt,
+    List<String> targets, {
+    CancelToken? cancelToken,
+  }) async {
+    final mode = await _model._scoringModeFor(this, targets);
+    // The session adds BOS itself, in either mode, so a prompt that starts
+    // with its text would carry two.
+    if (prompt.startsWith('<bos>')) {
+      throw const DeciderUnsupportedException(
+        'The rendered prompt starts with <bos>, which the scoring session '
+        'adds itself.',
+      );
+    }
+    return _client.scoreTargets(
+      prompt,
+      targets,
+      reprefill: mode == LiteRtLmScoringMode.once
+          ? await _reprefillFor(prompt)
+          : null,
+      cancelToken: cancelToken,
+      stops: _stops,
+    );
+  }
+
+  /// The text of [prompt]'s last token, which mode `once` prefills again.
+  Future<String> _reprefillFor(String prompt) async {
+    final ids = await tokenize(prompt);
+    final last = await detokenize([ids.last]);
+    final back = await tokenize(last);
+    if (!prompt.endsWith(last) || back.length != 1 || back.single != ids.last) {
+      throw DeciderUnsupportedException(
+        'The prompt\'s last token ${ids.last} does not round-trip as '
+        '"$last", so it cannot be prefilled again on its own.',
+      );
+    }
+    return last;
+  }
+
+  /// Also stops this scorer's native runs in flight — a decision's, or the
+  /// self-check it started — at their next check, so a closed decider does
+  /// not keep the engine busy scoring options nobody will read.
+  @override
+  Future<void> close() async {
+    _closed = true;
+    _stops.stopAll();
   }
 }

@@ -39,7 +39,7 @@ void main() {
     });
 
     test('unicode strings hash without errors', () {
-      final uuid1 = PointIdHasher.hash('Привет, мир!');
+      final uuid1 = PointIdHasher.hash('Γειά σου, Κόσμε!');
       final uuid2 = PointIdHasher.hash('你好世界');
       final uuid3 = PointIdHasher.hash('emoji 🦀');
       expect(uuid1.length, equals(36));

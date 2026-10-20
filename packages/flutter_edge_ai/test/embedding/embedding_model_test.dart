@@ -1,9 +1,5 @@
-// EmbeddingModel's defaulted members and its deprecated forwarders (R5 §2.1):
-// what a test fake gets for free, and that the 2.1 methods are exactly the new
-// ones under their old names.
-
-// The forwarders are deprecated; calling them is what this file tests.
-// ignore_for_file: deprecated_member_use_from_same_package
+// EmbeddingModel's defaulted members (R5 §2.1): what a test fake gets for
+// free.
 
 import 'dart:async';
 
@@ -97,53 +93,6 @@ void main() {
 
       await expectLater(all, throwsA(isA<EmbeddingCancelledException>()));
       expect(model.calls, hasLength(1));
-    });
-  });
-
-  group('deprecated forwarders are the new API under the old names', () {
-    test('generateEmbedding is embed(EmbeddingInput.text(t))', () async {
-      final model = _Fake();
-      final vector = await model.generateEmbedding(
-        'hello',
-        taskType: TaskType.retrievalDocument,
-      );
-
-      expect(identical(vector, model.returned.single), isTrue);
-      final (input, taskType) = model.calls.single;
-      expect(input.text, 'hello');
-      expect(input.modalities, {EmbeddingModality.text});
-      expect(taskType, TaskType.retrievalDocument);
-    });
-
-    test('generateEmbedding keeps its 2.1 default task', () async {
-      final model = _Fake();
-      await model.generateEmbedding('q');
-      expect(model.calls.single.$2, TaskType.retrievalQuery);
-    });
-
-    test('generateEmbeddings is embedAll over text inputs', () async {
-      final model = _Fake();
-      final vectors = await model.generateEmbeddings(['x', 'y']);
-
-      expect(vectors, hasLength(2));
-      expect(identical(vectors[0], model.returned[0]), isTrue);
-      expect(identical(vectors[1], model.returned[1]), isTrue);
-      expect(model.calls.map((c) => c.$1.text), ['x', 'y']);
-      expect(model.calls.map((c) => c.$2).toSet(), {TaskType.retrievalQuery});
-    });
-
-    test('getDimension is dimension', () async {
-      expect(await _Fake().getDimension(), 3);
-    });
-
-    test('getDimension on a closed model fails as a future', () async {
-      final model = _Fake();
-      await model.close();
-
-      late final Future<int> result;
-      // Not thrown synchronously: the call itself must return.
-      expect(() => result = model.getDimension(), returnsNormally);
-      await expectLater(result, throwsA(isA<EmbedderClosedException>()));
     });
   });
 }

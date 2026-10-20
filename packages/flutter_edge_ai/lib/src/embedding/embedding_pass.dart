@@ -57,7 +57,14 @@ final class EmbeddingPassInfo {
     this.audioFormats = const {},
     this.combinedInputs = false,
     this.visionTokensPerImage,
+    this.activeBackend,
   });
+
+  /// Accelerator reported by the loaded runtime, authoritative after load.
+  /// A provider advertising GPU through honouredBackends must supply this;
+  /// core refuses a missing answer rather than guessing from the descriptor.
+  /// Providers using the legacy default retain descriptor fallback.
+  final PreferredBackend? activeBackend;
 
   /// Length of every vector [EmbeddingPass.embed] returns. Must be > 0.
   final int dimension;
@@ -65,8 +72,9 @@ final class EmbeddingPassInfo {
   /// What THIS engine version serves for THIS model file.
   final Set<EmbeddingModality> modalities;
 
-  /// Longest input in tokens, prefix and terminators included, read from the
-  /// model file. Null when the file declares no limit.
+  /// Longest input in tokens, prefix and terminators included, that the
+  /// loaded engine can accept. Include configured context and single-pass
+  /// batch limits; null when no effective limit is known.
   final int? maxInputTokens;
 
   /// Image containers the engine decodes. Non-empty exactly when
@@ -94,7 +102,7 @@ final class EmbeddingPassInfo {
       'EmbeddingPassInfo(dimension: $dimension, modalities: $modalities, '
       'maxInputTokens: $maxInputTokens, imageFormats: $imageFormats, '
       'audioFormats: $audioFormats, combinedInputs: $combinedInputs, '
-      'visionTokensPerImage: $visionTokensPerImage)';
+      'visionTokensPerImage: $visionTokensPerImage, activeBackend: $activeBackend)';
 }
 
 /// Everything core needs to build an engine's [EmbeddingPass], with the
@@ -121,9 +129,10 @@ final class EmbeddingPassDescriptor<C extends Object> {
   /// The engine's configuration, handed to the factory.
   final C config;
 
-  /// The backend the pass really runs on, surfaced as
-  /// `EmbeddingModel.activeBackend`. Null means "unknown" — never read it as
-  /// CPU.
+  /// Pre-load placement claim. The pass's loaded activeBackend takes
+  /// precedence. Retained as fallback for providers using the legacy default;
+  /// a provider advertising GPU must report placement from load instead.
+  /// Null means unknown, never CPU.
   final PreferredBackend? activeBackend;
 
   final EmbeddingPass Function(C config) _factory;

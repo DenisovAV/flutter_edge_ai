@@ -142,6 +142,34 @@ replaced the model before it ran (`EmbedderClosedException`) is retried once.
 Queries over text documents use `TaskType.retrievalQuery`; pass `queryTask:`
 for another task, e.g. `TaskType.questionAnswering`.
 
+## Custom embedding providers (core 2.5.0)
+
+Engine authors import the SPI:
+
+```dart
+import 'package:flutter_edge_ai/engine.dart';
+```
+
+Core accepts self-contained `.gguf` embedding files without a separate
+tokenizer. When backends are registered, installation requires one that can run
+the file; with none registered, installation can proceed. No GGUF embedding
+backend ships yet. `flutter_edge_ai_embeddings` remains the tokenizer package;
+runtime passes belong to their engine packages.
+
+Providers declare explicit accelerator capabilities with `honouredBackends(spec)`;
+core computes the cache key. Automatic requests reuse only a non-NPU embedder
+for the same installed model, while NPU requests always retain a separate key.
+Repeated explicit CPU/GPU requests reuse their originating fallback until a
+rebuild is needed or the model is closed.
+GPU-capable providers must report their actual loaded accelerator through
+`EmbeddingPassInfo.activeBackend`; legacy fixed descriptors remain compatible.
+Reporting providers print one release-visible WARNING per new fallback load,
+including an NPU request; reuse does not repeat it.
+`EmbeddingModel.maxInputTokens` is the effective loaded context/single-pass batch
+capacity, including task prefixes and special tokens. A GGUF profile configured
+with a 1024-token micro-batch cannot embed a longer chunk even if the file names
+a larger context. Core hosts, caches and closes the pass.
+
 ## EmbeddingGemma 2 (one `.litertlm` file)
 
 EmbeddingGemma 2 ships as one `.litertlm` bundle that carries its own
@@ -567,8 +595,8 @@ Chunk text below the embedder's input limit,
 EmbeddingGemma seq256 file above, task prefix, BOS and EOS included. A longer
 chunk or query is never truncated: `add` and `search` throw
 `EmbeddingInputTooLongException`, whose `maxInputTokens` and `actualTokens`
-say by how much. A null `maxInputTokens` means the model file declares no
-limit.
+say by how much. A null `maxInputTokens` means the loaded pass cannot establish
+an effective limit, not that input is unlimited.
 
 ## Image and audio documents
 

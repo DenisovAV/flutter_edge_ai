@@ -13,7 +13,6 @@ import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 
 import 'package:flutter_edge_ai/src/model_management/managers/web_model_manager.dart';
-import 'package:flutter_edge_ai/src/embedding/embedder_backend_notice.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_loader.dart';
 
@@ -215,13 +214,6 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     bool supportImage = false,
     bool supportAudio = false,
   }) {
-    // FIRST statement, before every guard. It is idempotent and one-shot, so
-    // it needs neither resolved paths nor cache state — and putting it in a
-    // branch is what made it unreachable twice: once behind the singleton
-    // cache, once behind "only on reuse". The ordinary shape is a single call
-    // held for the app's lifetime; if it does not speak here it never speaks.
-    noticeWebEmbedderBackendIgnored(preferredBackend);
-
     // Serialised, so that resolving paths, comparing them and constructing the
     // model are one step — which is what stops two concurrent first callers from
     // each building one, the defect this shell actually had. On web the pass

@@ -1,5 +1,32 @@
 # Migration guide
 
+## flutter_edge_ai 2.5.0: self-contained embedding providers
+
+Embedding specs accept `.gguf` without a separate tokenizer. For an opaque URL,
+use `modelFromNetwork(url, filename: 'model.gguf')`. Old `.gguf` plus tokenizer
+specs are now refused during installation and stored-identity restoration; no
+published backend produced those pairs. Other model/tokenizer pairs and existing
+`.litertlm` identity schemas keep their behavior. No GGUF embedding backend ships
+yet; a separate engine package is required to execute these files.
+
+Engine authors declare explicit accelerator capabilities through
+`EmbeddingBackendProvider.honouredBackends(spec)`; core computes cache identity.
+Automatic requests reuse only a non-NPU embedder for the same installed model
+and media; explicit NPU requests always retain a separate key. Repeated explicit
+CPU/GPU requests reuse their originating model, including a fallback, until a
+rebuild is needed or the model is closed. A fallback warning is printed once per
+new load, including reporting-provider NPU fallbacks. GPU-capable
+providers must report the loaded accelerator in `EmbeddingPassInfo.activeBackend`.
+Existing providers using the default capability set retain descriptor fallback,
+including the fixed WebGPU-only LiteRT-LM path.
+
+`maxInputTokens` is the effective limit accepted by the loaded pass, including
+context and single-pass batch limits, task prefixes and special tokens. A null
+limit means unknown, not unlimited. GGUF's configured 1024-token context and
+micro-batch can be smaller than a model file's theoretical limit; advertising
+that larger limit would let RAG choose chunks the runtime cannot execute.
+Existing providers' numeric limits do not change. Inputs are never truncated.
+
 ## flutter_edge_ai 2.4.1 / flutter_edge_ai_litertlm 1.15.0: `npu` on a generic bundle runs on the GPU or the CPU
 
 ```yaml

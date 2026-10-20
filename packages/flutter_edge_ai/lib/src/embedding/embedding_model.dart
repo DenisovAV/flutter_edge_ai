@@ -39,28 +39,24 @@ abstract base class EmbeddingModel {
   Set<EmbeddingModality> get modalities => const {EmbeddingModality.text};
 
   /// Longest input in tokens — task prefix, BOS and EOS included — as the
-  /// engine read it from the MODEL FILE at load. Null when the file declares
-  /// no limit. Longer inputs fail with `EmbeddingInputTooLongException`; they
-  /// are never truncated.
+  /// loaded engine can accept it, including any configured context or batch
+  /// limit. Null when the engine cannot establish a limit. Longer inputs fail with `EmbeddingInputTooLongException`; they
+  /// are never truncated. Null does not mean unlimited.
   int? get maxInputTokens => null;
 
   /// Backend this embedder actually uses, when known — the counterpart of
   /// `InferenceModel.activeBackend`, and the answer to
   /// `getActiveEmbedder(preferredBackend:)` that survives a release build.
   ///
-  /// Native backends answer [PreferredBackend.cpu], except an EmbeddingGemma 2
-  /// per-SoC `.litertlm` bundle, which runs on the NPU and answers
-  /// [PreferredBackend.npu]. LiteRT `.tflite` stays on CPU because its GPU
-  /// delegate returns all-zero vectors for EmbeddingGemma's int4 weights, ONNX
-  /// because it appends no execution provider. So a caller who passed `gpu`
-  /// can read here that it did not happen, instead of learning it from a
-  /// debug-only log line.
+  /// Providers report the loaded accelerator. CPU-only LiteRT and ONNX
+  /// providers answer CPU: LiteRT's int4 GPU delegate returns all-zero
+  /// vectors, and native ONNX uses no GPU execution provider.
+  /// EmbeddingGemma 2 per-SoC `.litertlm` bundles can
+  /// answer NPU. GPU-capable providers can report GPU after loading.
   ///
-  /// On web, EmbeddingGemma 2 `.litertlm` reports [PreferredBackend.gpu]: it
-  /// runs on WebGPU or refuses to load. Other web embedders report null,
-  /// because their runtime picks the accelerator and does not report back.
-  /// Null also means "this engine did not say". Treat null as unknown, never
-  /// as CPU.
+  /// On web, EmbeddingGemma 2 `.litertlm` reports GPU or refuses to load.
+  /// LiteRT.js and ONNX web do not report their selection and leave this null. Treat
+  /// null as unknown, never as CPU.
   PreferredBackend? get activeBackend => null;
 
   /// Whether [close] has been called, or the model can no longer be used

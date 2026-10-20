@@ -102,6 +102,7 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     required String label,
     List<InstalledEmbedderFile>? installedFiles,
     EmbedderReplacement? replacement,
+    bool requireReportedBackend = false,
     void Function(Future<void> cleanup)? onFailedLoadCleanup,
   }) async {
     final running = await host.startEmbeddingHost(
@@ -110,9 +111,29 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
       label: label,
       onFailedLoadCleanup: onFailedLoadCleanup,
     );
+    if (requireReportedBackend && running.info.activeBackend == null) {
+      // A failed placement check follows the same asynchronous cleanup gate as
+      // a failed load: fail this caller now, but never overlap the next model.
+      final cleanup = Future<void>.sync(running.close).catchError((
+        Object e,
+        StackTrace st,
+      ) {
+        warnEmbeddingHost(
+          '${descriptor.engineTag} failed to close after missing '
+          'loaded accelerator information for $label: $e\n$st',
+        );
+      });
+      onFailedLoadCleanup?.call(cleanup);
+      unawaited(cleanup);
+      throw EmbeddingLoadException(
+        '${descriptor.engineTag} advertises GPU support but did not report '
+        'EmbeddingPassInfo.activeBackend for $label.',
+        engine: descriptor.engineTag,
+      );
+    }
     return CommonEmbeddingModel._(
       running,
-      activeBackend: descriptor.activeBackend,
+      activeBackend: running.info.activeBackend ?? descriptor.activeBackend,
       engine: descriptor.engineTag,
       label: label,
       installedFiles: installedFiles,

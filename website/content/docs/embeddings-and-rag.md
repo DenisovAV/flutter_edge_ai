@@ -18,6 +18,31 @@ RAG can borrow the active core embedder, use an application-provided
 **RagEmbedder**, or run entirely on precomputed vectors. It does not require an
 inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 
+## Custom embedding providers (core 2.5.0)
+
+Core accepts self-contained `.gguf` files without a separate tokenizer. When
+backends are registered, installation checks that one can serve the file; with
+none registered, installation can still proceed. No GGUF embedding backend ships
+yet; executing these files requires a supporting engine package.
+`flutter_edge_ai_embeddings` supplies tokenizers; engine packages own runtime
+passes, and core hosts, caches and closes those passes.
+
+Backend authors declare supported explicit requests through
+`EmbeddingBackendProvider.honouredBackends(spec)`. Core computes cache identity:
+automatic requests reuse only a non-NPU embedder for the same installed model,
+explicit NPU requests retain their own key, and automatic builds of GPU-capable
+providers are recorded under the loaded accelerator. GPU-capable providers must
+report it through `EmbeddingPassInfo.activeBackend`; a descriptor alone is not
+proof of placement. Existing providers retain their fixed descriptor fallback.
+Repeated explicit CPU/GPU requests reuse their originating model, including a
+fallback, until a rebuild is needed or it is closed. Reporting providers print
+one release-visible WARNING per new fallback load, including an NPU request;
+reuse does not repeat it.
+`EmbeddingModel.maxInputTokens` is the effective loaded context/single-pass batch
+limit, including task prefixes and special tokens; null means unknown, not
+unlimited. A GGUF pass configured with a 1024-token micro-batch cannot accept a
+larger chunk just because the model file declares a larger context.
+
 ## Packages
 
 ```
@@ -512,7 +537,7 @@ print('${embedder.dimension} dimensions, up to ${embedder.maxInputTokens} tokens
 - An input longer than **maxInputTokens** — task prefix, BOS and EOS
   included — is never truncated: it fails with
   **EmbeddingInputTooLongException**. A null **maxInputTokens** means the
-  model file declares no limit.
+  loaded pass cannot establish an effective limit; it does not mean unlimited.
 - Every error of **embed** and **embedAll** arrives as a failed future and is
   an **EmbeddingException**: a closed model gives **EmbedderClosedException**.
   **getActiveEmbedder()** fails with **EmbeddingLoadException** for a model

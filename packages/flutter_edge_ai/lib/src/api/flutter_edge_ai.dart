@@ -770,22 +770,20 @@ class FlutterEdgeAi {
   ///   `EmbeddingModalityNotLoadedException`. The embedder already loaded is
   ///   reused when it covers the request; otherwise it is rebuilt with the
   ///   UNION of what it had and what is asked, so declarations only widen.
-  /// - [preferredBackend]: [PreferredBackend.npu] runs an EmbeddingGemma 2
-  ///   per-SoC `.litertlm` bundle on the NPU (flutter_edge_ai_litertlm: on
-  ///   Qualcomm Android and Qualcomm Linux arm64, and from 1.13.2 on Intel
-  ///   Panther Lake with Windows x64). Such a bundle runs nowhere
-  ///   else, and its vectors are not the CPU bundle's, so the backend refuses
-  ///   rather than switches: an NPU bundle without `npu`, `npu` with the
-  ///   generic bundle, and `npu` where no NPU can run it are
-  ///   `EmbeddingLoadException`s, and an embedder cached for one side is never
-  ///   handed to a request for the other. Every other embedder runs on CPU on
-  ///   native — LiteRT's GPU delegate returns all-zero vectors for
-  ///   EmbeddingGemma's int4 weights, and the ONNX client appends no execution
-  ///   provider — so `gpu` is **not applied**, and neither is `npu` for them.
-  ///   On web the runtime chooses for itself. A request that is not applied
-  ///   logs a line once per isolate in debug builds; read
-  ///   [EmbeddingModel.activeBackend] for the backend in use, which is
-  ///   available in release builds too.
+  /// - [preferredBackend]: explicit accelerator preference. Providers declare
+  ///   what they honour for the installed spec. Automatic (null) reuses a
+  ///   current non-NPU embedder for that model and media. A repeated explicit
+  ///   CPU/GPU request reuses the model it loaded, including a fallback; it
+  ///   does not retry the accelerator until a rebuild is needed or the model
+  ///   is closed. An explicit switch otherwise replaces it. NPU requests keep
+  ///   a separate cache identity and automatic requests never borrow an NPU
+  ///   entry, since NPU vectors need not match CPU/GPU vectors. Existing
+  ///   CPU-only providers ignore GPU with a once-only diagnostic; legacy web
+  ///   runtimes choose their own placement. GPU-capable providers report the
+  ///   loaded backend and print one release-visible warning when a new
+  ///   explicit load falls back, including an NPU request; reuse is quiet.
+  ///   Read [EmbeddingModel.activeBackend] for the actual placement; null is
+  ///   unknown, not CPU. Provider constructors own any strict fallback policy.
   ///
   /// Fails (as a failed future) with:
   /// - [StateError] if no active embedding model is set

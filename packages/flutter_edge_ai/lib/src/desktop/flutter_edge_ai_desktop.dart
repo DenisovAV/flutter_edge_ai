@@ -34,7 +34,6 @@ import '../mobile/flutter_edge_ai_mobile.dart' show MobileModelManager;
 
 import '../model_management/constants/preferences_keys.dart';
 
-import 'package:flutter_edge_ai/src/embedding/embedder_backend_notice.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_loader.dart';
 
@@ -290,13 +289,6 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     bool supportImage = false,
     bool supportAudio = false,
   }) {
-    // FIRST statement, before every guard. It is idempotent and one-shot, so
-    // it needs neither resolved paths nor cache state — and putting it in a
-    // branch is what made it unreachable twice: once behind the singleton
-    // cache, once behind "only on reuse". The ordinary shape is a single call
-    // held for the app's lifetime; if it does not speak here it never speaks.
-    noticeEmbedderBackendIgnored(preferredBackend);
-
     // Serialised, because this shell resolves paths from preferences before it
     // can compare them — an await between "decide" and "record" that two
     // callers can both slip through. Moving that resolution earlier once

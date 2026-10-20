@@ -1,9 +1,10 @@
 // The one path every shell (mobile, desktop, web) builds the active embedder
 // through (R5 §4.2, §5.5). The shells keep only their platform wiring — the
-// manager they own, the cache they own, the debug notice — and call this
+// manager and cache they own — and call this
 // inside `EmbedderCache.serialize`, so resolving paths, deciding on reuse and
 // building stay one indivisible step on every platform.
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
 import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.dart'
@@ -18,7 +19,7 @@ import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 
 import 'common_embedding_model.dart';
-import 'embedder_backend_notice.dart' show noticeEmbedderNpuNotApplied;
+import 'embedder_backend_notice.dart';
 import 'embedder_cache.dart';
 import 'embedding_exceptions.dart';
 import 'embedding_modality.dart';
@@ -102,6 +103,69 @@ Future<EmbeddingModel> loadActiveEmbedder({
     '${tokenizerPath == null ? '' : ', tokenizer: $tokenizerPath'}',
   );
 
+  final backends = EmbeddingRegistry.instance;
+  final backend = backends.findFor(active);
+  if (backend == null) {
+    throw StateError(
+      backends.hasAny
+          ? 'No registered embedding backend can run '
+                '${active.files.first.filename}. Registered backends: '
+                '${backends.registered.map((b) => b.name).join(', ')}.'
+          : 'No embedding backend registered. Add flutter_edge_ai_litertlm '
+                'to pubspec.yaml and pass LiteRtEmbeddingBackend() in '
+                'embeddingBackends: of FlutterEdgeAi.initialize(...).',
+    );
+  }
+  final honoured = await _asLoadFailure(
+    backend.name,
+    'could not resolve accelerator capabilities for',
+    modelPath,
+    () async =>
+        Set<PreferredBackend>.unmodifiable(backend.honouredBackends(active)),
+  );
+  final reportsPlacement = honoured.contains(PreferredBackend.gpu);
+  // Preserve the existing native/web ignored-request notices for legacy
+  // providers. Accelerator-aware providers report any actual fallback below.
+  if (!reportsPlacement) {
+    if (kIsWeb) {
+      noticeWebEmbedderBackendIgnored(preferredBackend);
+    } else if (preferredBackend != null &&
+        !honoured.contains(preferredBackend)) {
+      noticeEmbedderBackendIgnored(preferredBackend);
+    }
+  }
+
+  final cached = cache.params;
+  final sameModel =
+      cached != null &&
+      cached.modelPath == modelPath &&
+      cached.tokenizerPath == tokenizerPath;
+  // Both the reserved NPU identity and actual NPU placement require an
+  // explicit NPU request. Automatic selection must not depend on a warm NPU
+  // cache; an NPU-only bundle gets the same preflight refusal as a cold load.
+  final nonNpu =
+      sameModel &&
+      cached.activeBackend != PreferredBackend.npu &&
+      cache.model?.activeBackend != PreferredBackend.npu;
+  final automaticReuse = preferredBackend == null && nonNpu;
+  // Remember a successful fallback for its originating request. Do not turn
+  // an unrelated CPU load into a reason to skip the first GPU attempt.
+  final sameRequestReuse =
+      preferredBackend != null &&
+      preferredBackend != PreferredBackend.npu &&
+      nonNpu &&
+      cache.requestedBackend == preferredBackend;
+  final key = preferredBackend == PreferredBackend.npu
+      ? PreferredBackend.npu
+      : automaticReuse || sameRequestReuse
+      ? cached.activeBackend
+      : reportsPlacement && preferredBackend == PreferredBackend.gpu
+      ? PreferredBackend.gpu
+      : PreferredBackend.cpu;
+  // Automatic media widening preserves a non-NPU accelerator already chosen.
+  // An explicit request that needs a new model tries that request again.
+  final buildBackend = automaticReuse ? cached.activeBackend : preferredBackend;
+
   // Steps 2–3: the cache decides — reuse, or what to build (widened media) —
   // and, for a build, the backend describes the pass BEFORE the cached
   // embedder is closed. A request the backend refuses (media an engine has no
@@ -113,7 +177,8 @@ Future<EmbeddingModel> loadActiveEmbedder({
   final requested = ActiveEmbedderParams(
     modelPath: modelPath,
     tokenizerPath: tokenizerPath,
-    preferredBackend: preferredBackend,
+    preferredBackend: key,
+    normalizeBackend: false,
     media: {
       if (supportImage) EmbeddingModality.image,
       if (supportAudio) EmbeddingModality.audio,
@@ -123,6 +188,9 @@ Future<EmbeddingModel> loadActiveEmbedder({
   final decision = await cache.reuseOrInvalidate(
     requested,
     label: active.name,
+    allowReuse:
+        preferredBackend != null ||
+        cache.model?.activeBackend != PreferredBackend.npu,
     prepare: (build) async {
       if (verifyInstalled && !await manager.isModelInstalled(active)) {
         throw StateError(
@@ -130,12 +198,27 @@ Future<EmbeddingModel> loadActiveEmbedder({
           'installed. Install it again with `FlutterEdgeAi.installEmbedder()`.',
         );
       }
-      described = await _describe(active, build, preferredBackend);
+      final config = RuntimeConfig(
+        maxTokens: 0,
+        modelPath: build.modelPath,
+        tokenizerPath: build.tokenizerPath,
+        preferredBackend: buildBackend,
+        supportImage: build.media.contains(EmbeddingModality.image),
+        supportAudio: build.media.contains(EmbeddingModality.audio),
+      );
+      described = await _asLoadFailure(
+        backend.name,
+        'could not describe a pass for',
+        build.modelPath,
+        () => backend.describe(active, config),
+      );
     },
   );
   final reused = decision.reuse;
   if (reused != null) {
-    noticeEmbedderNpuNotApplied(preferredBackend, reused.activeBackend);
+    if (!reportsPlacement) {
+      noticeEmbedderNpuNotApplied(preferredBackend, reused.activeBackend);
+    }
     return reused;
   }
   final build = decision.build;
@@ -153,6 +236,7 @@ Future<EmbeddingModel> loadActiveEmbedder({
     final EmbeddingModel model = await CommonEmbeddingModel.start(
       descriptor,
       declaredMedia: build.media,
+      requireReportedBackend: reportsPlacement,
       label: modelPath,
       installedFiles: [
         for (final file in active.files)
@@ -175,8 +259,23 @@ Future<EmbeddingModel> loadActiveEmbedder({
 
     // Core owns the lifecycle: the cache tracks the model, forgets it when it
     // closes (identity-guarded) and records what it was built from.
-    await cache.adopt(model, build);
-    noticeEmbedderNpuNotApplied(preferredBackend, model.activeBackend);
+    final recorded = reportsPlacement && key != PreferredBackend.npu
+        ? ActiveEmbedderParams(
+            modelPath: build.modelPath,
+            tokenizerPath: build.tokenizerPath,
+            preferredBackend: model.activeBackend,
+            normalizeBackend: false,
+            media: build.media,
+          )
+        : build;
+    await cache.adopt(model, recorded, requestedBackend: preferredBackend);
+    // Warn when a new fallback is established, once for this loaded model.
+    // Legacy providers retain their existing debug-only notice.
+    if (reportsPlacement) {
+      noticeEmbedderBackendFallback(preferredBackend, model.activeBackend);
+    } else {
+      noticeEmbedderNpuNotApplied(preferredBackend, model.activeBackend);
+    }
     return model;
   } catch (_) {
     // FIX #170: leave no bookkeeping behind, so a retry is a fresh decision
@@ -184,44 +283,6 @@ Future<EmbeddingModel> loadActiveEmbedder({
     cache.invalidate();
     rethrow;
   }
-}
-
-/// Finds the backend for [spec] and has it describe the pass for [build]
-/// ([preferredBackend] is the raw request, which [build] does not keep):
-/// nothing loaded, nothing closed. Refusals surface here, before any isolate
-/// exists.
-Future<EmbeddingPassDescriptor<Object>> _describe(
-  EmbeddingModelSpec spec,
-  ActiveEmbedderParams build,
-  PreferredBackend? preferredBackend,
-) async {
-  final backends = EmbeddingRegistry.instance;
-  final backend = backends.findFor(spec);
-  if (backend == null) {
-    throw StateError(
-      backends.hasAny
-          ? 'No registered embedding backend can run '
-                '${spec.files.first.filename}. Registered backends: '
-                '${backends.registered.map((b) => b.name).join(', ')}.'
-          : 'No embedding backend registered. Add flutter_edge_ai_litertlm '
-                'to pubspec.yaml and pass LiteRtEmbeddingBackend() in '
-                'embeddingBackends: of FlutterEdgeAi.initialize(...).',
-    );
-  }
-  final config = RuntimeConfig(
-    maxTokens: 0,
-    modelPath: build.modelPath,
-    tokenizerPath: build.tokenizerPath,
-    preferredBackend: preferredBackend,
-    supportImage: build.media.contains(EmbeddingModality.image),
-    supportAudio: build.media.contains(EmbeddingModality.audio),
-  );
-  return _asLoadFailure(
-    backend.name,
-    'could not describe a pass for',
-    build.modelPath,
-    () => backend.describe(spec, config),
-  );
 }
 
 /// Runs a backend's [step]; anything it throws other than an

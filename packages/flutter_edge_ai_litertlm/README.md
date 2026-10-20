@@ -42,13 +42,29 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.5.0`,
-`flutter_edge_ai_litertlm: ^1.16.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.5.1`,
+`flutter_edge_ai_litertlm: ^1.16.1`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
+**The model catalog (1.16.1).** Every LiteRT build this package offers is
+listed as `LiteRtLmModels` (language models) and `LiteRtEmbedders`, each pinned
+to a Hugging Face commit with its size and install file name, and installs by
+name with its model type and file type:
+
+```dart
+await FlutterEdgeAi.installFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
+    .withProgress((percent) => print('downloading: $percent%'))
+    .install();
+```
+
+`FlutterEdgeAi.catalog` lists them once `LiteRtLmEngine` and
+`LiteRtEmbeddingBackend` are registered, and `variantFor` picks the build this
+device runs. Every build, and where each has been run:
+[Model Registry](https://flutteredge.ai/docs/registry).
+
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.16.1), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
@@ -127,7 +143,7 @@ the chat had tools:
 |---|---|---|---|
 | Gemma 4 E2B, Galaxy S24, GPU, chat with two tools | 56 | 44 | 50 |
 | Gemma 4 E2B, Galaxy S24, GPU, plain chat | 32 | 29 | 29 |
-| Gemma 4 E2B, Galaxy S24, NPU (SM8650), plain chat | 32 | 29 | 32 |
+| Gemma 4 E2B, Galaxy S24, generic bundle with `npu` requested (no SM8650 build exists; it did not run on the NPU), plain chat | 32 | 29 | 32 |
 | Gemma 4 E4B, Galaxy S25 Ultra, GPU, chat with two tools | 56 | 45 | 53 |
 | Gemma 4 E4B, Galaxy S25 Ultra, GPU, plain chat | 32 | 29 | 32 |
 | Gemma 3n E2B, Galaxy S24, GPU, plain chat | 32 | 32 | 32 |
@@ -235,7 +251,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in; G5 not run) and Intel Panther Lake NPUs (Windows x64; not run) | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -303,12 +319,12 @@ final vector = await embedder.embed(
 );
 ```
 
-- **Android, iOS, macOS, Linux and Windows, and the web (1.13.1).** On the web
+- **Android, iOS, macOS, Linux and Windows (1.13.0), and the web (1.13.1).** On the web
   the bundle runs through `@litert-lm/core`'s `EmbeddingEngine` on WebGPU,
   which needs one more line in `web/index.html` — see
   [Web setup](#web-setup-early-preview) — and a browser with WebGPU.
 - **Text on every bundle; images on the 440m and the 740m; audio on the
-  740m.** Natively all from 1.13.1; on the web text and images from 1.13.1,
+  740m.** Natively text from 1.13.0, images and audio from 1.13.1; on the web text and images from 1.13.1,
   audio and combined inputs from 1.13.2. On the 270m,
   `getActiveEmbedder(supportImage: true)` fails with `EmbeddingLoadException`
   naming the 440m bundle — natively from the bundle's ModelInfo before any
@@ -596,16 +612,18 @@ assert(embedder.activeBackend == PreferredBackend.npu);
 - **Opt in to the Qualcomm stack**, as for the LLM NPU path:
   `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:`
   ([Qualcomm NPU](#qualcomm-npu-on-android-and-linux-arm64-opt-in)).
-- **Pick the bundle for the device's SoC.** Verified on device: SM8850
+- **Pick the bundle for the device's SoC.** Run on device: SM8850
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
   VENTUNO Q). Google also publishes SM8550, SM8750, Tensor G5/G6, MediaTek
-  MT6991/MT6993 and Intel PTL builds; the Qualcomm ones load here but are not
-  verified by us, Tensor G5/G6 runs on matching Pixels in apps built with
-  `google_tensor_npu` ([below](#google-tensor-npu-on-android-opt-in)), the
-  G6 270m and 440m run on a Pixel 11, Intel PTL runs on Windows
-  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek is
-  refused (no dispatch for it ships). What a bundle is compiled for is read
-  from the bundle itself, not from its name.
+  MT6991/MT6993 and Intel PTL builds. The loader accepts the SM8550 and SM8750
+  ones, but we have not run them; it accepts Tensor G5/G6 on matching Pixels
+  in apps built with `google_tensor_npu`
+  ([below](#google-tensor-npu-on-android-opt-in)), and the G6 270m and 440m
+  run on a Pixel 11 (G5 not run); it accepts Intel PTL on Windows
+  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), not yet run on Intel
+  NPU hardware; MediaTek is refused (no dispatch for it ships). Per build:
+  https://flutteredge.ai/docs/registry. What a bundle is compiled for is
+  read from the bundle itself, not from its name.
 - **Fast, and close to — not equal to — the CPU vectors.** Measured on an
   SM8650 (Galaxy S24): a text in about 9 ms (53 ms on its CPU), an image in
   about 0.31 s, the 270m loaded in 0.85 s. Against the CPU bundle, the cosine is
@@ -638,7 +656,8 @@ assert(embedder.activeBackend == PreferredBackend.npu);
 ### EmbeddingGemma 2 on an Intel NPU (Windows)
 
 Google's `…_Intel_PTL.litertlm` bundles are compiled for the Intel Panther Lake
-NPU. From 1.13.2 this package runs them on **Windows x64** with
+NPU. From 1.13.2 this package loads them on **Windows x64** (not yet run on
+Intel NPU hardware) with
 `PreferredBackend.npu`, through the Intel stack (`LiteRtDispatch.dll`, OpenVINO
 and TBB) that every Windows x64 build already carries beside the executable — no
 opt-in flag:
@@ -1032,8 +1051,11 @@ S24). So `npu` falls back to
 GPU, then CPU, for it, and the log says why.
 
 **Linux arm64.** The same flag bundles the stack into Linux arm64 builds, for
-Qualcomm Linux boards with a Hexagon V68–V81 compute DSP (QCS6490, QCS8275,
-QCS9075, …). Qualcomm publishes no Maven artifact for Linux, so the hook reads
+Qualcomm Linux boards with a Hexagon V68–V81 compute DSP. That is the stack,
+not model support: a model needs a bundle compiled for the board's SoC, and
+the registry lists such bundles for the QCS8275 only
+(https://flutteredge.ai/docs/registry). Qualcomm publishes no Maven artifact
+for Linux, so the hook reads
 the fourteen libraries it needs (libQnnHtp, libQnnSystem and a Stub/Skel pair
 per Hexagon version) out of Qualcomm's public QAIRT 2.50 SDK zip with HTTP range
 requests — about 32 MB of a 2.6 GB archive — checks each against a pinned
@@ -1053,8 +1075,10 @@ Ubuntu; Qualcomm's images ship it) and the user must be in group `fastrpc`
 (`sudo usermod -aG fastrpc $USER`, then log in again). If either is missing, a
 bundle compiled for an NPU is refused with a `BackendInitException` that names
 what to fix. Use the model compiled for your SoC, e.g.
-`gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux x64 build ignores the
-flag.
+`LiteRtLmModels.gemma4E2bIt.npuQcs8275` from the catalog: Google removed the
+Gemma 4 E2B Qualcomm bundles from the repository's `main` on 2026-10-19, and
+the catalog installs them from the commit that has them. A Linux x64 build
+ignores the flag.
 
 **Embeddings.** The same flag runs EmbeddingGemma 2 per-SoC bundles on the NPU
 ([EmbeddingGemma 2 on a Qualcomm NPU](#embeddinggemma-2-on-a-qualcomm-npu));

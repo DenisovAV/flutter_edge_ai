@@ -43,10 +43,9 @@ await FlutterEdgeAi.initialize(
   ttsBackends: [LiteRtTtsBackend()],
 );
 
-// Text-to-speech (Matcha): install the bundle once, then synthesize.
-await FlutterEdgeAi.installTts()
-    .fromNetwork('https://huggingface.co/litert-community/Matcha-TTS/resolve/main/')
-    .ofType(TtsModelType.matcha)
+// Text-to-speech (Matcha): install the registry's bundle once (pinned to a
+// Hugging Face commit), then synthesize.
+await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.matchaTts.bundle)
     .install();
 
 final synth = await FlutterEdgeAi.getActiveTts();
@@ -67,15 +66,18 @@ A voice can also ship with the app: `fromAsset(directory)` and
 `<type>__<file>` (`matcha__config.json`). See
 [Voice files shipped with the app](https://flutteredge.ai/docs/speech#voice-files-shipped-with-the-app).
 
-Speech-to-text installs a model and a tokenizer:
+Speech-to-text installs a model and a tokenizer; a catalog build carries both:
 
 ```dart
-await FlutterEdgeAi.installStt()
-    .modelFromNetwork('https://huggingface.co/litert-community/whisper-tiny/resolve/main/whisper_tiny_30s_f32.tflite')
-    .tokenizerFromNetwork('https://huggingface.co/openai/whisper-tiny/resolve/main/tokenizer.json')
-    .ofType(SttModelType.whisper)
+await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.whisperTiny.f32)
     .install();
 ```
+
+`LiteRtSpeechModels` (0.5.10, with `flutter_edge_ai` 2.5.1 and
+`flutter_edge_ai_litertlm` 1.16.1) lists every speech-to-text and
+text-to-speech build, each pinned to a Hugging Face commit; `installStt()` and
+`installTts()` still install your own files. Every build, and where each has
+been run: [Model Registry](https://flutteredge.ai/docs/registry).
 
 `transcribe` takes raw 16 kHz mono 16-bit little-endian PCM (`Uint8List`), not a
 WAV file. Each model has a fixed window — 5 s for moonshine and Parakeet, 30 s
@@ -142,7 +144,7 @@ await for (final event in session.runTurn(pcm16kMono)) {
 
 ### Audio turns: the model hears the recording
 
-A model with an audio encoder (Gemma 4 E2B/E4B) can take the recording itself.
+A model with an audio encoder (Gemma 4 or Gemma 3n E2B/E4B, as `.litertlm`) can take the recording itself.
 `runAudioTurn` skips speech-to-text: it wraps the PCM in a WAV header,
 `fromChat` sends that to the chat, and the reply is spoken as in `runTurn`. Load the
 model and create the chat with `supportAudio: true`:
@@ -181,7 +183,11 @@ Audio input is native-only.
 |----------|-----|-----|
 | Android / iOS | ✅ FFI (Android: `arm64-v8a`, `minSdk 30`) | ✅ FFI (Android: `arm64-v8a`, `minSdk 30`) |
 | macOS / Linux / Windows | ✅ FFI | ✅ FFI |
-| Web | 🚧 stub `UnsupportedError` | 🚧 stub `UnsupportedError` |
+| Web | ❌ stub `UnsupportedError` | ❌ stub `UnsupportedError` |
+
+The grid is where the package runs, not where each model has been run:
+Parakeet CTC (2.35 GB) is documented on desktop only and Qwen3-TTS on macOS
+only. Per build and platform: https://flutteredge.ai/docs/registry.
 
 No `hook/build.dart` of its own — the native library is bundled by
 `flutter_edge_ai_litertlm`'s Native Assets hook and shared transitively.

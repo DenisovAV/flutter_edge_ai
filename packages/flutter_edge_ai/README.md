@@ -80,8 +80,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_litertlm: ^1.16.0   # or any other engine from the table
+  flutter_edge_ai: ^2.5.1
+  flutter_edge_ai_litertlm: ^1.16.1   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with
@@ -280,14 +280,25 @@ Installing a name again from another source replaces it; core never deletes a
 file you installed with `fromFile`.
 
 ```dart
+// A build from the model catalog (2.5.1): model type, file type and a
+// commit-pinned URL come with it.
+await FlutterEdgeAi.installFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
+    .withProgress((progress) => print('Downloading: $progress%'))
+    .install();
+
+// Your own file: say which engine runs it.
 await FlutterEdgeAi.installModel(
   modelType: ModelType.gemmaIt,
   fileType: ModelFileType.litertlm, // selects the engine — declare it
 ).fromNetwork(
-  'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
+  'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
 ).withProgress((progress) => print('Downloading: $progress%')).install();
 ```
 
+`FlutterEdgeAi.catalog` lists every build the registered packages offer
+(`LiteRtLmModels`, `LiteRtEmbedders`, `LiteRtSpeechModels`), each pinned to a
+Hugging Face commit; every build and where it has been run is on the
+[Model Registry](https://flutteredge.ai/docs/registry).
 `litert-community/Gemma3-1B-IT` is gated: accept its license on Hugging Face, then pass your token with `--dart-define=HUGGINGFACE_TOKEN=…`.
 
 ### Chat

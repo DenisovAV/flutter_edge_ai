@@ -36,13 +36,10 @@ Speech runs on the same native libraries as the `.litertlm` engine. Its build se
 
 ## Speech-to-text
 
-An STT model is two files — the model and its tokenizer — usually from different repos. `install()` skips files already on disk.
+An STT model is two files — the model and its tokenizer — usually from different repos. A catalog build (`LiteRtSpeechModels`, `flutter_edge_ai_speech` 0.5.10) carries both, pinned to their Hugging Face commits; `install()` skips files already on disk. `FlutterEdgeAi.installStt()` installs your own files.
 
 ```dart
-await FlutterEdgeAi.installStt()
-    .modelFromNetwork('https://huggingface.co/litert-community/whisper-tiny/resolve/main/whisper_tiny_30s_f32.tflite')
-    .tokenizerFromNetwork('https://huggingface.co/openai/whisper-tiny/resolve/main/tokenizer.json')
-    .ofType(SttModelType.whisper)
+await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.whisperTiny.f32)
     .install();
 
 final SpeechRecognizer recognizer = await FlutterEdgeAi.getActiveStt(language: 'de');
@@ -62,7 +59,7 @@ try {
 
 **Audio longer than the window is silently truncated**, not rejected: it is zero-padded when shorter and cut when longer, so a 40-second clip on Whisper returns the first 30 seconds with no error. Split long recordings yourself.
 
-Whisper tiny is weak outside English. Whisper base int8 is the next size up in the catalog; install it the same way from `https://huggingface.co/litert-community/whisper-base/resolve/main/whisper_base_30s_i8.tflite` with the tokenizer `https://huggingface.co/openai/whisper-base/resolve/main/tokenizer.json`.
+Whisper tiny is weak outside English. Whisper base int8 is the next size up in the catalog: `LiteRtSpeechModels.whisperBase.i8`. Every speech build and where it has been run: https://flutteredge.ai/docs/registry.
 
 ## Getting 16 kHz mono PCM
 
@@ -136,9 +133,7 @@ A file recorded at another rate or channel count — 44.1 kHz stereo, say — ha
 ## Text-to-speech
 
 ```dart
-await FlutterEdgeAi.installTts()
-    .fromNetwork('https://huggingface.co/litert-community/Matcha-TTS/resolve/main/')
-    .ofType(TtsModelType.matcha)
+await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.matchaTts.bundle)
     .install();
 
 final SpeechSynthesizer synth = await FlutterEdgeAi.getActiveTts();
@@ -214,7 +209,7 @@ await for (final event in voice.runTurn(pcm16kMono)) {
 
 ### Audio turns: no speech-to-text
 
-A model that hears audio (Gemma 4 E2B or E4B as `.litertlm`, native platforms only) can take the recording itself: `runAudioTurn` skips the transcription and sends the PCM to the chat. Set `supportAudio: true` on `getActiveModel`, which loads the audio encoder; `createChat` takes the flag from the model unless you pass it, and on a chat whose `supportAudio` is false `runAudioTurn` throws `StateError`. It takes the same 16 kHz mono 16-bit PCM as `runTurn`, and wraps it in a WAV header, because a `.litertlm` model decodes an audio file; a custom `VoiceResponder.respondToAudio` gets that WAV and can pass it to `AgentSession.ask(audioBytes:)` as is. There is no `VoiceTranscriptEvent`, the complete and interrupted events carry an empty transcript, and a recording under 2 bytes completes without asking the model. After a barge-in the chat keeps earlier audio turns with `flutter_edge_ai_litertlm` 1.15.0 and later; with 1.14.0 and earlier, and on the NPU, it is rebuilt from text and forgets them. Requires `flutter_edge_ai_speech` 0.5.7.
+A model that hears audio (Gemma 4 or Gemma 3n E2B/E4B as `.litertlm`, native platforms only) can take the recording itself: `runAudioTurn` skips the transcription and sends the PCM to the chat. Set `supportAudio: true` on `getActiveModel`, which loads the audio encoder; `createChat` takes the flag from the model unless you pass it, and on a chat whose `supportAudio` is false `runAudioTurn` throws `StateError`. It takes the same 16 kHz mono 16-bit PCM as `runTurn`, and wraps it in a WAV header, because a `.litertlm` model decodes an audio file; a custom `VoiceResponder.respondToAudio` gets that WAV and can pass it to `AgentSession.ask(audioBytes:)` as is. There is no `VoiceTranscriptEvent`, the complete and interrupted events carry an empty transcript, and a recording under 2 bytes completes without asking the model. After a barge-in the chat keeps earlier audio turns with `flutter_edge_ai_litertlm` 1.15.0 and later; with 1.14.0 and earlier, and on the NPU, it is rebuilt from text and forgets them. Requires `flutter_edge_ai_speech` 0.5.7.
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(

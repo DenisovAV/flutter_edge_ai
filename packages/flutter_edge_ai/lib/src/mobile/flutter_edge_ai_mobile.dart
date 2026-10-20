@@ -114,7 +114,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     List<int>? loraRanks,
     int? maxNumImages,
     bool supportImage = false,
-    bool supportAudio = false, // Enabling audio support (Gemma 3n E4B)
+    bool supportAudio = false, // e.g. Gemma 4 / Gemma 3n .litertlm
     MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,

@@ -410,7 +410,8 @@ class FlutterEdgeAi {
   /// - [preferredAudioBackend]: audio-encoder backend override; null as for
   /// [preferredVisionBackend] (optional)
   /// - [supportImage]: Enable multimodal image support (default: false)
-  /// - [supportAudio]: Enable audio input support for Gemma 3n E4B (default: false)
+  /// - [supportAudio]: Enable audio input, for a model with an audio encoder,
+  ///   e.g. Gemma 4 or Gemma 3n `.litertlm` (E2B, E4B); native only (default: false)
   /// - [maxNumImages]: Maximum number of images if supportImage is true
   /// - [multimodalOrder]: the order in which a user message's images, audio
   ///   and text reach the model. Null picks the order of the active model's
@@ -462,7 +463,7 @@ class FlutterEdgeAi {
   ///   preferredBackend: PreferredBackend.gpu,
   /// );
   ///
-  /// // Create with audio support (Gemma 3n E4B only)
+  /// // Create with audio support (e.g. Gemma 4 or Gemma 3n .litertlm, native)
   /// final audioModel = await FlutterEdgeAi.getActiveModel(
   ///   supportAudio: true,
   /// );

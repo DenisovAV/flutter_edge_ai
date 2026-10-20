@@ -1373,7 +1373,7 @@ class MobileModelManager extends ModelFileManager
   /// Example:
   /// ```dart
   /// final spec = MobileModelManager.createBundledEmbeddingSpec(
-  ///   modelResourceName: 'embeddinggemma-300M.tflite',
+  ///   modelResourceName: 'embeddinggemma-300M_seq256_mixed-precision.tflite',
   ///   tokenizerResourceName: 'sentencepiece.model',
   /// );
   /// await manager.ensureModelReadyFromSpec(spec);

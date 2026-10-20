@@ -109,7 +109,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     List<int>? loraRanks,
     int? maxNumImages,
     bool supportImage = false, // Enabling image support
-    bool supportAudio = false, // Enabling audio support (Gemma 3n E4B)
+    bool supportAudio = false, // No web engine takes audio input
     MultimodalOrder? multimodalOrder, // Compared, but no web engine reads it.
     bool? enableSpeculativeDecoding, // Ignored on web (MediaPipe path).
     ActivationDataType? activationDataType, // Not read by the web engines.

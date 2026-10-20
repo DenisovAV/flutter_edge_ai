@@ -66,14 +66,14 @@ enum SttModel {
   whisperTinyInt8(
     variant: _whisperTinyInt8,
     displayName: 'Whisper Tiny (int8)',
-    size: '39MB',
+    size: '41MB',
     isSupported: true,
   ),
 
   whisperBaseInt8(
     variant: _whisperBaseInt8,
     displayName: 'Whisper Base (int8)',
-    size: '73MB',
+    size: '77MB',
     isSupported: true,
   );
 

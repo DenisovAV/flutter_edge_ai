@@ -14,22 +14,27 @@ library;
 /// - [cpu]: All platforms
 /// - [gpu]: All platforms (Metal on macOS, DirectX on Windows, Vulkan on Linux,
 ///   OpenCL on Android)
-/// - [npu]: With LiteRT-LM (.litertlm models) — Android (Qualcomm Snapdragon
-///   only: the Android archive ships the Qualcomm QNN dispatch stack and
-///   nothing for MediaTek or Google Tensor) and Windows (Intel
-///   LunarLake/PantherLake). Asking for it elsewhere falls back rather than
-///   throwing; read `InferenceModel.activeBackend` for what actually ran.
-///   On Windows the check is per OS, not per device: a PC without an Intel
-///   NPU is still offered npu, and has been measured reporting
-///   `activeBackend == npu` while running elsewhere. There, npu is a request,
-///   not a proof.
+/// - [npu]: LiteRT-LM (.litertlm) bundles compiled for an NPU: Android with
+///   Qualcomm Snapdragon or Google Tensor (each opt-in in the app's pubspec:
+///   `qualcomm_npu`, `google_tensor_npu`), Qualcomm Linux arm64 boards
+///   (`qualcomm_npu`), and Windows x64 (Intel). No MediaTek NPU. For a
+///   language model, `npu` on a bundle compiled for no NPU runs on the GPU,
+///   then the CPU (flutter_edge_ai_litertlm 1.15.0 and later); an
+///   EmbeddingGemma 2 embedder refuses it, because NPU and CPU vectors
+///   differ. A bundle compiled for an NPU this device cannot run is refused
+///   with an error, never moved to the GPU or the CPU. Read
+///   `InferenceModel.activeBackend` for what actually ran. Windows has no
+///   device probe for a language model: a bundle compiled for the Intel NPU
+///   is not refused on a PC without one, and what LiteRT does then is not
+///   measured. Which builds have run where:
+///   https://flutteredge.ai/docs/registry
 ///
-/// [gpu] and [npu] fall back if unavailable — GPU, then CPU. [cpu] does not
-/// fall back: it is the last resort already.
+/// [gpu] falls back to the CPU when the GPU is unavailable; [npu] as above.
+/// [cpu] does not fall back: it is the last resort already.
 enum PreferredBackend {
   cpu,
   gpu,
-  npu, // Android (Qualcomm only) + Windows (Intel LunarLake/PantherLake)
+  npu, // .litertlm NPU bundles: Android, Linux arm64, Windows x64 (see above)
 }
 
 /// Numeric type of the model's activations, for native `.litertlm` models

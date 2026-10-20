@@ -561,7 +561,8 @@ enum Model implements InferenceModelInterface {
     supportsFunctionCalls: false,
   ),
 
-  // FastVLM 0.5B (Vision-Language Model, desktop only - litertlm)
+  // FastVLM 0.5B (vision-language, .litertlm): offered on every native
+  // platform; documented on desktop GPU only (see the model registry).
   fastVLM_0_5B(
     catalog: _fastvlm0_5bGeneric,
     displayName: 'FastVLM 0.5B (Vision)',

@@ -92,7 +92,8 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// [loraRanks] — optional supported LoRA ranks.
   /// [maxNumImages] — maximum number of images (for multimodal models).
   /// [supportImage] — whether the model supports images.
-  /// [supportAudio] — whether the model supports audio (Gemma 3n E4B only).
+  /// [supportAudio] — whether to load the audio encoder (e.g. Gemma 4 or
+  /// Gemma 3n `.litertlm`, E2B and E4B; native only).
   /// [multimodalOrder] — the order of a user message's images, audio and
   /// text; null = [MultimodalOrder.forModelType] of the active model's type.
   /// Honored by the native LiteRT-LM engine.
@@ -125,7 +126,7 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
     List<int>? loraRanks,
     int? maxNumImages, // Add image support
     bool supportImage = false, // Add image support flag
-    bool supportAudio = false, // Add audio support flag (Gemma 3n E4B)
+    bool supportAudio = false, // e.g. Gemma 4 / Gemma 3n .litertlm, native
     MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,
@@ -305,7 +306,8 @@ abstract class InferenceModel {
   /// values needs the model reloaded.
   /// [loraPath] — optional path to LoRA model.
   /// [enableVisionModality] — enable vision modality for multimodal models.
-  /// [enableAudioModality] — enable audio modality for Gemma 3n E4B models.
+  /// [enableAudioModality] — enable audio modality (e.g. Gemma 4 or Gemma 3n
+  /// `.litertlm`).
   ///
   /// [maxOutputTokens] — optional cap on how many tokens this session
   /// *generates* per response. This is the GENERATION length, distinct from
@@ -324,7 +326,7 @@ abstract class InferenceModel {
     double? topP,
     String? loraPath,
     bool? enableVisionModality, // Add vision modality support
-    bool? enableAudioModality, // Add audio modality support (Gemma 3n E4B)
+    bool? enableAudioModality, // e.g. Gemma 4 / Gemma 3n .litertlm
     String? systemInstruction,
     bool enableThinking =
         false, // Enable thinking mode (Gemma 4 via extraContext)

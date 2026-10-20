@@ -17,16 +17,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
+    show LiteRtLmModels;
 // ignore: implementation_imports — reads core's file-system service to check install paths
 import 'package:flutter_edge_ai/src/di/service_registry.dart'
     show ServiceRegistry;
 import 'inference_test_helpers.dart' show registerTestEngines;
-
-// ── Model URLs (for iOS download, macOS/Android use local files) ──
-const _gemma4Url =
-    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
-
-const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
+import 'registry_evidence.dart';
 
 // ── Local paths ──
 String get _androidDir => '/data/local/tmp/flutter_gemma_test';
@@ -38,21 +35,42 @@ String get _windowsDir => '${Platform.environment['USERPROFILE']}\\models';
 Uint8List _testImage = Uint8List(0);
 Uint8List _testAudio = Uint8List(0);
 
-/// Install model: from file on macOS/Android, from network on iOS.
-Future<void> _install({
-  required String? localPath,
-  required String networkUrl,
-}) async {
+/// The Gemma 4 E2B file the group installed, or null when it installed the
+/// registry build from Hugging Face.
+String? _gemma4Path;
+
+/// Install Gemma 4 E2B: a staged file on macOS/Android/desktop, otherwise the
+/// registry's generic build (pinned to its Hugging Face commit).
+Future<void> _installGemma4(String? localPath) async {
   if (localPath != null && File(localPath).existsSync()) {
     await FlutterEdgeAi.installModel(
       modelType: ModelType.gemmaIt,
       fileType: ModelFileType.litertlm,
     ).fromFile(localPath).install();
+    _gemma4Path = localPath;
   } else {
-    await FlutterEdgeAi.installModel(
-      modelType: ModelType.gemmaIt,
-      fileType: ModelFileType.litertlm,
-    ).fromNetwork(networkUrl, token: _token).install();
+    // Gemma 4 is not gated.
+    await FlutterEdgeAi.installFromCatalog(
+      LiteRtLmModels.gemma4E2bIt.generic,
+    ).install();
+    _gemma4Path = null;
+  }
+}
+
+/// Registry evidence that [check] passed on the shared Gemma 4 E2B model, on
+/// the backend that ran.
+Future<void> _gemma4Evidence(String check) async {
+  final backend = _sharedModel?.activeBackend;
+  if (backend == null) return;
+  final path = _gemma4Path;
+  if (path != null) {
+    await recordEvidence(path: path, backend: backend, check: check);
+  } else {
+    recordCatalogEvidence(
+      LiteRtLmModels.gemma4E2bIt.generic,
+      backend: backend,
+      check: check,
+    );
   }
 }
 
@@ -275,10 +293,7 @@ void main() {
   // ══════════════════════════════════════════════════════════════════
   group('Gemma4-E2B', () {
     setUpAll(() async {
-      await _install(
-        localPath: _localPath('gemma-4-E2B-it.litertlm'),
-        networkUrl: _gemma4Url,
-      );
+      await _installGemma4(_localPath('gemma-4-E2B-it.litertlm'));
     });
 
     tearDownAll(_closeSharedModel);
@@ -287,12 +302,14 @@ void main() {
       final r = await _chat(PreferredBackend.cpu, 4096, 'Say hi');
       print('[Gemma4 CPU] $r');
       expect(r, isNotEmpty);
+      await _gemma4Evidence('text');
     });
 
     testWidgets('GPU text', (t) async {
       final r = await _chat(PreferredBackend.gpu, 4096, 'What is 2+2?');
       print('[Gemma4 GPU] $r');
       expect(r, isNotEmpty);
+      await _gemma4Evidence('text');
     });
 
     testWidgets('GPU streaming', (t) async {
@@ -315,6 +332,7 @@ void main() {
       );
       print('[Gemma4 vision] $r');
       expect(r, isNotEmpty);
+      await _gemma4Evidence('vision');
     });
 
     testWidgets('GPU audio', (t) async {
@@ -331,6 +349,7 @@ void main() {
       );
       print('[Gemma4 audio] $r');
       expect(r, isNotEmpty);
+      await _gemma4Evidence('audio');
     });
 
     testWidgets('GPU thinking', (t) async {
@@ -687,6 +706,9 @@ void main() {
   group('Gemma4-E2B NPU', () {
     tearDownAll(_closeSharedModel);
 
+    /// The NPU bundle the group staged, for the registry evidence.
+    String? npuPath;
+
     // Real NPU tests need a model precompiled for the target NPU (Intel
     // LunarLake / PantherLake or Qualcomm QNN). Generic Gemma 4 from HF
     // doesn't carry NPU executor sections. Whether `engine_create` rejects it
@@ -728,6 +750,7 @@ void main() {
 
     Future<InferenceModel?> _installAndGetNpu() async {
       final npuModelPath = _findNpuModel();
+      npuPath = npuModelPath;
       if (npuModelPath == null) {
         // A skip the report shows as one, not a pass: a bare `return` from the
         // test read as PASSED, which is how a missing model looked green.
@@ -828,6 +851,12 @@ void main() {
         r1,
         equals(r2),
         reason: 'NPU should ignore seed and produce deterministic output',
+      );
+      // _installAndGetNpu asserted that the NPU ran.
+      await recordEvidence(
+        path: npuPath!,
+        backend: PreferredBackend.npu,
+        check: 'deterministic text',
       );
     });
 

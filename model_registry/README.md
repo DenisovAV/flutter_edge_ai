@@ -20,6 +20,7 @@ text-to-speech) in the repositories below. The schema already admits `task`,
 | `published/<package>/<version>.json` | the frozen fields a release shipped | the release |
 | `hosts.yaml` | the platforms the website shows a status for, in its column order | hand |
 | `documented_claims.yaml` | what the docs and release notes say works, with the source | hand |
+| `evidence/<date>_<host>_<device>.json` | what a recorded integration run passed, and on which native build | `registry.dart evidence` |
 
 Generated from it, checked in, never edited by hand:
 - `packages/flutter_edge_ai_litertlm/lib/src/catalog/generated/litert_catalog.g.dart`:
@@ -37,7 +38,8 @@ Generated from it, checked in, never edited by hand:
 
   | Status | From |
   |---|---|
-  | verified | a run recorded with its log (not yet collected) |
+  | verified | a run under `evidence/` on the native build the packages ship now |
+  | stale | the same, on an earlier native build or minor version |
   | documented | a claim in `documented_claims.yaml` |
   | untested | the package's snapshot runs it there and nothing says more |
   | refused | the snapshot does not run it there: a native backend the package rules out, or an NPU build on its vendor's platform |
@@ -134,6 +136,39 @@ kilobytes per file) and writes `derived/<sha256>.json` for each file:
 - for a `.litertlm`, also its sections, `LlmMetadata.max_num_tokens` and the
   KV-cache length of its decode graph.
 
+## Evidence
+
+The integration tests that the release runs print one line per check that
+passed, naming the registry build by the sha256 of the file they installed
+(`packages/flutter_edge_ai/example/integration_test/registry_evidence.dart`):
+
+```
+FEA_EVIDENCE v1 {"variant":"gemma-4-e2b-it/generic","host":"macos_arm64","backend":"gpu","check":"text"}
+```
+
+Today: `litertlm_ffi_test.dart` (Gemma 4 E2B text, vision and audio on CPU
+and GPU, and the staged NPU bundle), `embeddinggemma2_test.dart`,
+`stt_moonshine_test.dart` and `tts_smoke_test.dart`. Turn a run's log into an
+evidence file at the commit that ran, then generate:
+
+```sh
+cd packages/flutter_edge_ai/example
+flutter test integration_test/litertlm_ffi_test.dart -d macos 2>&1 | tee /tmp/run.log
+cd ../../../tool/model_registry
+dart run bin/registry.dart evidence --device "MacBook Pro M4 Pro" /tmp/run.log
+dart run bin/registry.dart generate
+```
+
+A run is one host. The file records the commit, the package versions, the log's
+sha256 (and `--log-url` when the log is published) and the native build: the
+sha256 of the host's archive in `flutter_edge_ai_litertlm/hook/build.dart`, or
+on the web the litertlm version. A cell is verified while that is still the
+build the packages ship and the variant's package is on the same minor
+version; after either moves it is stale until the next run. `evidence` refuses
+a log from more than one host or from a simulator, uncommitted changes under
+`packages/*/lib`, `hook` or `native`, and a cell the package's snapshot does
+not run there.
+
 ## Check
 
 ```sh
@@ -173,6 +208,9 @@ UPDATE_GOLDENS=1 flutter test test/catalog/litert_catalog_test.dart
 - a frozen field changed after a release, or a published variant deleted;
 - a claim on a variant, host or backend that does not exist, on a withheld
   variant, or on a cell the package's snapshot does not run;
+- an evidence file that is malformed, names an unknown host or variant or a
+  withheld one, a cell the package's snapshot does not run, or a cell a broken
+  claim says fails;
 - a claim whose source is neither `"PR #<n> ..."` nor
   `website/content/docs/<page>.md:<line>` with that line present (quote a
   pull request source: ` #` starts a YAML comment), or a broken claim without

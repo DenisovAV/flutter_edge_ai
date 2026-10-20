@@ -1,6 +1,7 @@
 {
  "schema_version": 1,
  "packages": {
+  "flutter_edge_ai": "2.5.1",
   "flutter_edge_ai_litertlm": "1.16.1",
   "flutter_edge_ai_speech": "0.5.10"
  },
@@ -35,7 +36,8 @@
   }
  ],
  "statuses": {
-  "verified": "Run on that host and backend, recorded with its log",
+  "verified": "Passed on that host and backend with the native build the packages ship now",
+  "stale": "Passed there on an earlier native build; not run since it changed",
   "documented": "Documented as working; not yet re-run with a recorded log",
   "untested": "The package runs it there; nobody has recorded a run",
   "refused": "This version of the package does not run it there",

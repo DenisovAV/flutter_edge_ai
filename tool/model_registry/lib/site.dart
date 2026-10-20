@@ -18,6 +18,7 @@ import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
 
 import 'check.dart';
+import 'evidence.dart';
 
 const backends = ['gpu', 'cpu', 'npu'];
 
@@ -44,20 +45,32 @@ typedef Claim = ({
 
 /// What is known about one variant on one host and backend.
 final class Cell {
-  const Cell(this.status, {this.source, this.note, this.issue, this.refusedBy});
+  const Cell(
+    this.status, {
+    this.source,
+    this.note,
+    this.issue,
+    this.refusedBy,
+    this.log,
+  });
 
-  /// verified, documented, untested, refused or broken.
+  /// verified, stale, documented, untested, refused or broken.
   final String status;
 
-  /// Where the status comes from: a pull request or a docs line.
+  /// Where the status comes from: a pull request, a docs line, or a run
+  /// under evidence/.
   final String? source;
 
-  /// What is broken, for a broken cell.
+  /// What is broken, for a broken cell; the device, date and version, for a
+  /// verified or stale one.
   final String? note;
   final String? issue;
 
   /// The package version that does not run it, for a refused cell.
   final String? refusedBy;
+
+  /// The run's published log, for a verified or stale cell.
+  final String? log;
 
   Map<String, Object?> toJson() => {
     'status': status,
@@ -65,6 +78,7 @@ final class Cell {
     if (note != null) 'note': note,
     if (issue != null) 'issue': issue,
     if (refusedBy != null) 'refused_by': refusedBy,
+    if (log != null) 'log': log,
   };
 }
 
@@ -89,7 +103,11 @@ final class SiteInputs {
     this.claims,
     this.snapshots,
     this.versions,
-  );
+    this.evidence,
+  ) : natives = {
+        for (final h in hosts)
+          if (nativeKey(repoRoot, h.id, versions) case final key?) h.id: key,
+      };
 
   final String repoRoot;
 
@@ -99,8 +117,15 @@ final class SiteInputs {
   /// Package → variant id → host → backends it runs there.
   final Map<String, Map<String, Map<String, List<String>>>> snapshots;
 
-  /// Package → version, from its pubspec.
+  /// Package → version, from its pubspec: core and the packages with a
+  /// snapshot.
   final Map<String, String> versions;
+
+  /// The recorded runs, oldest first.
+  final List<EvidenceRun> evidence;
+
+  /// Host → the native build the packages ship for it now ([nativeKey]).
+  final Map<String, String> natives;
 
   static SiteInputs read(Directory registryDir, List<Problem> problems) {
     List<Object?> list(String name) {
@@ -109,7 +134,13 @@ final class SiteInputs {
         problems.add(Problem(name, '-', 'missing'));
         return const [];
       }
-      final doc = loadYaml(file.readAsStringSync());
+      final Object? doc;
+      try {
+        doc = loadYaml(file.readAsStringSync());
+      } on YamlException catch (e) {
+        problems.add(Problem(name, '-', 'not YAML: ${e.message}'));
+        return const [];
+      }
       if (doc is! YamlList) {
         problems.add(Problem(name, '-', 'not a list'));
         return const [];
@@ -169,7 +200,7 @@ final class SiteInputs {
     }
     final repoRoot = p.dirname(p.absolute(registryDir.path));
     final versions = <String, String>{};
-    for (final package in snapshots.keys) {
+    for (final package in ['flutter_edge_ai', ...snapshots.keys]) {
       final pubspec = File(
         p.join(repoRoot, 'packages', package, 'pubspec.yaml'),
       );
@@ -178,7 +209,14 @@ final class SiteInputs {
         versions[package] = '${yaml['version']}';
       }
     }
-    return SiteInputs._(repoRoot, hosts, claims, snapshots, versions);
+    return SiteInputs._(
+      repoRoot,
+      hosts,
+      claims,
+      snapshots,
+      versions,
+      readEvidence(registryDir, problems),
+    );
   }
 
   final _pages = <String, List<String>?>{};
@@ -348,14 +386,17 @@ Map<String, Map<String, Map<String, Cell>>> cells(
           }
         } else if ((runs[h] ?? const []).contains(b)) {
           final claim = claimed[(id, h, b)];
-          cell = claim == null
-              ? const Cell('untested')
-              : Cell(
-                  claim.status,
-                  source: claim.source,
-                  note: claim.status == 'broken' ? claim.what : null,
+          cell = claim?.status == 'broken'
+              ? Cell(
+                  'broken',
+                  source: claim!.source,
+                  note: claim.what,
                   issue: claim.issue,
-                );
+                )
+              : _proven(inputs, id, package, h, b) ??
+                    (claim == null
+                        ? const Cell('untested')
+                        : Cell(claim.status, source: claim.source));
         } else if (withheldBackends[b] case final Map<String, Object?> w
             when h != 'web') {
           cell = Cell(
@@ -377,6 +418,101 @@ Map<String, Map<String, Map<String, Cell>>> cells(
     out[id] = row;
   }
   return out;
+}
+
+/// The cell's status from recorded runs: verified when a run passed on the
+/// native build the packages ship for [host] now and the variant's package is
+/// on the same minor version, stale when every such run predates that. Null
+/// when nothing was recorded.
+Cell? _proven(
+  SiteInputs inputs,
+  String id,
+  String package,
+  String host,
+  String backend,
+) {
+  final passed = [
+    for (final run in inputs.evidence)
+      if (run.host == host && (run.cells[id]?.containsKey(backend) ?? false))
+        run,
+  ]..sort((a, b) => b.date.compareTo(a.date));
+  if (passed.isEmpty) return null;
+  String? minor(String? v) => v?.split('.').take(2).join('.');
+  bool current(EvidenceRun run) =>
+      run.native == inputs.natives[host] &&
+      minor(run.packages[package]) == minor(inputs.versions[package]);
+  final run = passed.firstWhere(current, orElse: () => passed.first);
+  return Cell(
+    current(run) ? 'verified' : 'stale',
+    source: 'evidence/${run.file}',
+    note: '${run.device}, ${run.date}, $package ${run.packages[package]}',
+    log: run.logUrl,
+  );
+}
+
+/// Problems with the recorded runs: an unknown host, a variant that does not
+/// exist or is withheld, a cell the package's snapshot does not run, or a
+/// cell a broken claim says fails.
+///
+/// [runs] defaults to the recorded ones; `registry.dart evidence` passes the
+/// run it is about to write.
+void checkEvidence(
+  SiteInputs inputs,
+  List<Entry> entries,
+  List<Problem> problems, {
+  List<EvidenceRun>? runs,
+}) {
+  final variants = variantsById(entries);
+  final hostIds = {for (final h in inputs.hosts) h.id};
+  final broken = {
+    for (final c in inputs.claims)
+      if (c.status == 'broken')
+        for (final v in c.variants)
+          for (final h in c.hosts)
+            for (final b in c.backends) (v, h, b),
+  };
+  for (final run in runs ?? inputs.evidence) {
+    _checkRun(inputs, variants, hostIds, broken, run, problems);
+  }
+}
+
+/// [checkEvidence] for one run.
+void _checkRun(
+  SiteInputs inputs,
+  Map<String, (Entry, Map<String, Object?>)> variants,
+  Set<String> hostIds,
+  Set<(String, String, String)> broken,
+  EvidenceRun run,
+  List<Problem> problems,
+) {
+  void error(String m) => problems.add(Problem('evidence/${run.file}', '-', m));
+  if (!hostIds.contains(run.host)) {
+    error('unknown host "${run.host}"');
+    return;
+  }
+  for (final MapEntry(key: id, value: byBackend) in run.cells.entries) {
+    final found = variants[id];
+    if (found == null) {
+      error('no variant "$id"');
+      continue;
+    }
+    final (entry, variant) = found;
+    if (variant['withhold'] != null) {
+      error('"$id" is withheld from the release');
+      continue;
+    }
+    final runs = inputs.snapshots['${entry.data['package']}']?[id] ?? const {};
+    for (final b in byBackend.keys) {
+      if (!(runs[run.host] ?? const []).contains(b)) {
+        error('the package does not run "$id" on ${run.host} $b');
+      } else if (broken.contains((id, run.host, b))) {
+        error(
+          '"$id" passed on ${run.host} $b, which documented_claims.yaml '
+          'says is broken; settle which is right',
+        );
+      }
+    }
+  }
 }
 
 /// website/web/models.json.
@@ -453,7 +589,14 @@ String _url(Map<String, Object?> a) =>
 
 /// Status → (mark, meaning).
 const _legend = {
-  'verified': ('✅', 'Run on that host and backend, recorded with its log'),
+  'verified': (
+    '✅',
+    'Passed on that host and backend with the native build the packages ship now',
+  ),
+  'stale': (
+    '🕓',
+    'Passed there on an earlier native build; not run since it changed',
+  ),
   'documented': (
     '📝',
     'Documented as working; not yet re-run with a recorded log',
@@ -582,6 +725,13 @@ void _modelSection(
       ];
       row.write(' ${parts.join(' ')} |');
       for (final c in byBackend.values) {
+        if (c.status == 'verified' || c.status == 'stale') {
+          final log = c.log == null ? '' : ' ([log](${c.log}))';
+          notes.add(
+            '${c.status == 'verified' ? 'Verified' : 'Stale'} on '
+            '${host.label}: ${c.note}$log.',
+          );
+        }
         if (c.status == 'documented' && c.source != null) {
           notes.add('Documented: ${_source(inputs, c.source!)}.');
         }
@@ -671,7 +821,14 @@ void checkBlocks(SiteInputs inputs, List<Problem> problems) {
 }
 
 /// The best status first: a summary cell shows the best a model has.
-const _rank = ['verified', 'documented', 'untested', 'broken', 'refused'];
+const _rank = [
+  'verified',
+  'stale',
+  'documented',
+  'untested',
+  'broken',
+  'refused',
+];
 
 /// The models page's platform table: one row per language model, and per
 /// host the best status each backend has over the model's builds. A backend

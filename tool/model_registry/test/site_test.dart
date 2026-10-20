@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:model_registry/check.dart';
+import 'package:model_registry/evidence.dart';
 import 'package:model_registry/site.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -124,6 +125,7 @@ const _docClaim = '''
   String claims,
   List<Problem> problems, {
   Map<String, Object?> snapshot = _snapshot,
+  List<Map<String, Object?>> evidence = const [],
 }) {
   final root = Directory.systemTemp.createTempSync('site_test');
   addTearDown(() => root.deleteSync(recursive: true));
@@ -160,6 +162,20 @@ const _docClaim = '''
     'model_registry/snapshots/flutter_edge_ai_litertlm.json',
     jsonEncode(snapshot),
   );
+  write(
+    'packages/flutter_edge_ai_litertlm/pubspec.yaml',
+    'name: flutter_edge_ai_litertlm\nversion: 1.16.1\n',
+  );
+  write(
+    'packages/flutter_edge_ai_litertlm/hook/build.dart',
+    "  checksums: {\n"
+        "    'litertlm-macos_arm64.tar.gz':\n        '$_macNative',\n"
+        "    'litertlm-android_arm64.tar.gz':\n        '${'b' * 64}',\n"
+        '  },\n',
+  );
+  for (final (i, run) in evidence.indexed) {
+    write('model_registry/evidence/run$i.json', jsonEncode(run));
+  }
   final inputs = SiteInputs.read(
     Directory(p.join(root.path, 'model_registry')),
     problems,
@@ -171,7 +187,36 @@ SiteInputs _inputs(
   String claims,
   List<Problem> problems, {
   Map<String, Object?> snapshot = _snapshot,
-}) => _repo(claims, problems, snapshot: snapshot).$1;
+  List<Map<String, Object?>> evidence = const [],
+}) => _repo(claims, problems, snapshot: snapshot, evidence: evidence).$1;
+
+/// The fixture hook's macOS archive.
+final _macNative = 'a' * 64;
+
+/// One evidence file: a macOS run of the fixture's native build and package
+/// version, unless told otherwise.
+Map<String, Object?> _run({
+  String host = 'macos_arm64',
+  String? native,
+  String version = '1.16.1',
+  String date = '2026-10-20',
+  Map<String, Object?> cells = const {
+    'tiny/generic': {
+      'gpu': ['text'],
+    },
+  },
+}) => {
+  'schema_version': 1,
+  'date': date,
+  'host': host,
+  'device': 'Test Mac',
+  'commit': 'c' * 40,
+  'packages': {'flutter_edge_ai_litertlm': version},
+  'native': native ?? _macNative,
+  'log_sha256': 'd' * 64,
+  'log_url': null,
+  'cells': cells,
+};
 
 /// The claim problems, with the fixture's commit written as COMMIT.
 List<String> _claimProblems(String claims) {
@@ -185,9 +230,12 @@ List<String> _claimProblems(String claims) {
 }
 
 /// variant → host → backend → status, n/a cells left out.
-Map<String, Map<String, Map<String, String>>> _statuses(String claims) {
+Map<String, Map<String, Map<String, String>>> _statuses(
+  String claims, {
+  List<Map<String, Object?>> evidence = const [],
+}) {
   final problems = <Problem>[];
-  final all = cells(_inputs(claims, problems), [_llm()]);
+  final all = cells(_inputs(claims, problems, evidence: evidence), [_llm()]);
   expect(problems, isEmpty);
   return {
     for (final MapEntry(key: id, value: hosts) in all.entries)
@@ -448,6 +496,170 @@ void main() {
         ]),
       );
       expect(cells['Android'], 'GPU&nbsp;⚪ CPU&nbsp;⚪');
+    });
+  });
+
+  group('evidence', () {
+    String macGpu(
+      List<Map<String, Object?>> evidence, {
+      String claims = '[]',
+    }) => _statuses(
+      claims,
+      evidence: evidence,
+    )['tiny/generic']!['macos_arm64']!['gpu']!;
+
+    test('a run on the native build shipped now verifies its cell', () {
+      expect(macGpu([_run()]), 'verified');
+      expect(macGpu([_run(version: '1.16.0')]), 'verified');
+    });
+
+    test('a run on another native build or minor version is stale', () {
+      expect(macGpu([_run(native: 'e' * 64)]), 'stale');
+      expect(macGpu([_run(version: '1.15.0')]), 'stale');
+      expect(
+        macGpu([_run(native: 'e' * 64), _run(date: '2026-01-01')]),
+        'verified',
+      );
+    });
+
+    test('a run outranks a documented claim', () {
+      expect(macGpu([_run()], claims: _docClaim), 'verified');
+    });
+
+    test('a verified cell is the best in the summary', () {
+      final problems = <Problem>[];
+      final block = llmPlatformsBlock(
+        _inputs('[]', problems, evidence: [_run()]),
+        [_llm()],
+      );
+      expect(block, contains('GPU&nbsp;✅'));
+    });
+
+    List<String> evidenceProblems(
+      List<Map<String, Object?>> evidence, {
+      String claims = '[]',
+    }) {
+      final problems = <Problem>[];
+      final inputs = _inputs(claims, problems, evidence: evidence);
+      checkEvidence(inputs, [_llm()], problems);
+      return [for (final problem in problems) problem.message];
+    }
+
+    test('check: the fixture run passes', () {
+      expect(evidenceProblems([_run()]), isEmpty);
+    });
+
+    test('check: a cell the package does not run', () {
+      expect(
+        evidenceProblems([
+          _run(
+            cells: const {
+              'tiny/generic': {
+                'npu': ['text'],
+              },
+            },
+          ),
+        ]),
+        ['the package does not run "tiny/generic" on macos_arm64 npu'],
+      );
+    });
+
+    test('check: a withheld variant, an unknown variant, an unknown host', () {
+      expect(
+        evidenceProblems([
+          _run(
+            cells: const {
+              'tiny/old': {
+                'gpu': ['text'],
+              },
+              'tiny/nope': {
+                'gpu': ['text'],
+              },
+            },
+          ),
+          _run(host: 'windows_arm64'),
+        ]),
+        [
+          '"tiny/old" is withheld from the release',
+          'no variant "tiny/nope"',
+          'unknown host "windows_arm64"',
+        ],
+      );
+    });
+
+    test('check: a pass where a claim says broken', () {
+      final broken = _docClaim
+          .replaceFirst('documented', 'broken')
+          .replaceFirst('  source:', '  issue: https://x/5\n  source:');
+      // Until it is settled, the site keeps the warning.
+      expect(macGpu([_run()], claims: broken), 'broken');
+      expect(evidenceProblems([_run()], claims: broken), [
+        '"tiny/generic" passed on macos_arm64 gpu, which '
+            'documented_claims.yaml says is broken; settle which is right',
+      ]);
+    });
+
+    test('check: a malformed file', () {
+      final run = _run()
+        ..remove('commit')
+        ..['extra'] = 1;
+      expect(evidenceProblems([run]), [
+        'unknown key "extra"',
+        'commit: required',
+      ]);
+    });
+
+    test('a log: lines anywhere in it, logcat prefixes, bad lines named', () {
+      final errors = <String>[];
+      final lines = parseEvidenceLog(
+        'noise\n'
+        'I/flutter (123): FEA_EVIDENCE v1 {"variant":"a/b","host":"android_arm64",'
+        '"backend":"gpu","check":"text"}\n'
+        'FEA_EVIDENCE v1 {"variant":"a/b"}\n'
+        'FEA_EVIDENCE v1 not json\n'
+        'FEA_EVIDENCE_SKIP {"file":"x"}\n',
+        (line, m) => errors.add('$line: $m'),
+      );
+      expect(lines, hasLength(1));
+      expect(lines.single.host, 'android_arm64');
+      expect(errors, hasLength(2));
+      expect(errors.first, startsWith('3: needs variant'));
+      expect(errors.last, startsWith('4: not JSON'));
+    });
+
+    test('a run is one host, on a device, with a native build', () {
+      EvidenceLine line(String host, {bool simulator = false}) => (
+        variant: 'tiny/generic',
+        host: host,
+        backend: 'gpu',
+        check: 'text',
+        simulator: simulator,
+      );
+      String? why(List<EvidenceLine> lines, {String? native = 'n'}) {
+        String? error;
+        runFromLines(
+          lines,
+          file: 'f.json',
+          date: '2026-10-20',
+          device: 'd',
+          commit: 'c' * 40,
+          packages: const {},
+          native: native,
+          logSha256: 'd' * 64,
+          logUrl: null,
+          error: (m) => error = m,
+        );
+        return error;
+      }
+
+      expect(why([]), contains('no "FEA_EVIDENCE v1 " line'));
+      expect(
+        why([line('macos_arm64'), line('ios_arm64')]),
+        contains('one run is one host'),
+      );
+      expect(why([line('ios_arm64', simulator: true)]), contains('simulator'));
+      expect(why([line('macos_arm64')], native: null), contains('no native'));
+      expect(why([line('macos_arm64')]), isNull);
     });
   });
 

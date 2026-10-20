@@ -18,6 +18,7 @@ import '../litert_lm_load_errors.dart' show NpuDispatchUnavailableException;
 import '../npu_stacks.dart';
 import 'backend_preference.dart'
     show npuNoVendorReason, npuUnreachable, platformNpuProbes;
+import 'intel_weight_banks.dart';
 import 'npu_stack_manifest.dart';
 
 /// What choosing an NPU vendor asks of the host. The real one is
@@ -197,7 +198,7 @@ Future<String> prepareNpuDispatchDir(
     ),
   },
   NpuVendor.intel => switch (operatingSystem ?? Platform.operatingSystem) {
-    'windows' => windowsNpuDispatchDir,
+    'windows' => _prepareIntelDispatchDir(),
     final os => throw StateError(
       'NpuVendor.intel has no dispatch directory on $os',
     ),
@@ -301,6 +302,18 @@ String prepareLinuxNpuDispatchDir() {
     }
   }
   return libDir;
+}
+
+/// [windowsNpuDispatchDir], after deleting the weight banks earlier processes
+/// left behind ([sweepStaleIntelWeightBanks]): before this load stages its
+/// own, so on a disk the last ones filled, the next one fits.
+String _prepareIntelDispatchDir() {
+  if (Platform.isWindows) {
+    sweepStaleIntelWeightBanks(
+      keep: Platform.environment['LITERT_OV_WEIGHTS_PATH'],
+    );
+  }
+  return windowsNpuDispatchDir;
 }
 
 /// The directory of the running executable: where Native Assets puts a

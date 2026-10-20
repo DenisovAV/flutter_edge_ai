@@ -228,8 +228,8 @@ shader compiler and NPU runtime — are bundled at build time.
 
 - Windows: `x64` only — no Windows on Arm build. End users need no VC++
   redistributable installed. (In the legacy `flutter_gemma_litertlm` package
-  this arrived in 1.7.1.) Measured on `native-v0.18.0`:
-  16 of the bundle's 24 DLLs import no C++ runtime; the other eight, the Intel
+  this arrived in 1.7.1.) Measured on `native-v0.18.0-g`:
+  17 of the bundle's 25 DLLs import no C++ runtime; the other eight, the Intel
   NPU stack, import only `msvcp140`, `vcruntime140` and `vcruntime140_1`,
   which every Flutter Windows app already resolves.
 - Linux: `x64` and `arm64`. Building needs

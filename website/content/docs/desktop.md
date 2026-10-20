@@ -301,7 +301,7 @@ for secondary `LoadLibrary` calls — they would fail to find the GPU accelerato
 DLL and silently fall back to CPU.
 
 End-users need nothing installed. `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
-measured on `native-v0.18.0-f`, 16 of its 24 DLLs import none.
+measured on `native-v0.18.0-g`, 17 of its 25 DLLs import none.
 
 The other eight are the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus

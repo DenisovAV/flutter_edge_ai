@@ -15,6 +15,7 @@ import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
 import 'native_turns.dart';
+import 'stream_start_failure.dart';
 import 'npu_vendor_host.dart';
 import 'option_scoring_ffi.dart';
 import '../litertlm_bundle_sampler.dart';
@@ -535,6 +536,14 @@ class LiteRtLmFfiClient {
   /// `litert_lm_conversation_rewind_cancelled_turn` (`patch_c_api.sh` section
   /// 16); false on one built before it.
   bool _hasTurnRewind = false;
+
+  /// LiteRT-LM's thread-local last error (`litert_lm_get_last_error_message`),
+  /// null on a library that does not export it.
+  Pointer<Char> Function()? _lastErrorMessage;
+
+  /// Conversations on which a send has started, so that a refused send can
+  /// say whether it was the first.
+  final Set<Pointer<LiteRtLmConversation>> _sentConvs = {};
   _ProxyFreeStringDart? _proxyFreeString;
   Pointer<LiteRtLmEngine>? _engine;
   bool _isInitialized = false;
@@ -923,6 +932,12 @@ class LiteRtLmFfiClient {
     _hasTurnRewind = lib.providesSymbol(
       'litert_lm_conversation_rewind_cancelled_turn',
     );
+    if (lib.providesSymbol('litert_lm_get_last_error_message')) {
+      _lastErrorMessage = lib
+          .lookupFunction<Pointer<Char> Function(), Pointer<Char> Function()>(
+            'litert_lm_get_last_error_message',
+          );
+    }
     _proxyFreeString = proxyLib
         .lookupFunction<_ProxyFreeStringNative, _ProxyFreeStringDart>(
           'stream_proxy_free_string',
@@ -2136,11 +2151,28 @@ class LiteRtLmFfiClient {
       proxyData,
     );
 
+    // A refused send leaves its status in LiteRT-LM's thread-local last
+    // error (`c/conversation.cc`); read it before any other native call.
+    final nativeError = result == 0 ? nullptr : _lastErrorMessage?.call();
     b.litert_lm_conversation_optional_args_delete(optionalArgs);
-    if (result == 0) _noteGeneration(conv);
+    if (result == 0) {
+      _noteGeneration(conv);
+      _sentConvs.add(conv);
+    }
 
     if (result != 0) {
-      send.failed(Exception('Failed to start streaming (code: $result)'));
+      send.failed(
+        Exception(
+          streamStartFailureMessage(
+            code: result,
+            nativeMessage: nativeError == null || nativeError == nullptr
+                ? null
+                : _decodeNativeString(nativeError),
+            npu: _backend == 'npu',
+            laterMessage: _sentConvs.contains(conv),
+          ),
+        ),
+      );
       releaseNative();
     }
 
@@ -2322,6 +2354,7 @@ class LiteRtLmFfiClient {
       return;
     }
     _conversationSampling.remove(conv);
+    _sentConvs.remove(conv);
     if (_bindings != null) {
       _bindings!.litert_lm_conversation_delete(conv);
       edgeAiLog('[LiteRtLmFfi] Conversation closed');

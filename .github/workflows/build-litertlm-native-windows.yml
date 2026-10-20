@@ -245,6 +245,9 @@ jobs:
             'openvino_intel_npu_plugin.dll',
             'openvino_intel_npu_compiler.dll',
             'openvino_intel_npu_compiler_loader.dll',
+            # 2026.4: the NPU plugin loads it to run Intel's newer blobs
+            # (metadata 2.7, Gemma 4 12B for Panther Lake).
+            'openvino_intel_npu_vm_runtime.dll',
             'openvino_tensorflow_lite_frontend.dll'
           )
           # Release TBB only: the '*_debug.dll' variants are a full parallel set

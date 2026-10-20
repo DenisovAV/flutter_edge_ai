@@ -822,6 +822,38 @@ void main() {
       skip: skip,
     );
 
+    test('a scorer closed during the shared self-check does not fail the '
+        'scorer waiting on it', () async {
+      final targets = [
+        for (final o in _listedOptions(trained))
+          '${o.id}${trained['terminator']}',
+      ];
+      // Close at once (the check is still tokenizing) and later (it scores).
+      for (final delay in const [Duration.zero, Duration(milliseconds: 30)]) {
+        // A fresh model, so that its self-check has not run yet.
+        await (await model()).close();
+        final m = await model() as OptionScoringModel;
+        final a = await m.openOptionScorer();
+        final b = await m.openOptionScorer();
+        final aPrepared = expectLater(
+          a.prepare(targets),
+          throwsA(isA<StateError>()),
+        );
+        final bPrepared = b.prepare(targets);
+        await Future<void>.delayed(delay);
+        await a.close();
+        await aPrepared;
+        await bPrepared;
+        // ignore: avoid_print
+        print(
+          '[decider] scorer closed at ${delay.inMilliseconds} ms during the '
+          'self-check: the other one got mode ${_modeOf(m as InferenceModel)}',
+        );
+        expect(_modeOf(m as InferenceModel), 'once');
+        await b.close();
+      }
+    }, skip: skip);
+
     test('a model without a decision section is refused', () async {
       final path = '$_documents/functiongemma-270M-it.litertlm';
       if (!File(path).existsSync()) {

@@ -1535,9 +1535,12 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
   /// included: [close] stops them.
   final ScoringStops _stops = ScoringStops();
 
+  /// Every call goes through here, so a scorer or model closed between calls
+  /// is a stop, not a failure: a scorer waiting on this one's self-check runs
+  /// it again for itself (see `_scoringModeFor`).
   LiteRtLmFfiClient get _client {
-    if (_closed) throw StateError('The option scorer is closed.');
-    if (_model.isClosed) throw StateError('The model is closed.');
+    if (_closed) throw ScoringStoppedError('The option scorer is closed.');
+    if (_model.isClosed) throw ScoringStoppedError('The model is closed.');
     return _model.ffiClient;
   }
 

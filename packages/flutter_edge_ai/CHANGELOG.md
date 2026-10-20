@@ -1,9 +1,11 @@
+## Unreleased
+- Model catalog: `FlutterEdgeAi.catalog` lists the models registered packages offer, pinned to Hugging Face commits, and `installFromCatalog` installs one.
+
 ## 2.5.0
 - **Breaking:** remove the members deprecated for 2.5.0 (listed in MIGRATION.md).
 - `FlutterEdgeAi.openModel`: several caller-owned models at once; `FlutterEdgeAiPlugin.createModel` deprecated.
-- Experimental: `InferenceModel.createDecider` scores options on a model trained on it, Noul and Score too.
-- Self-contained GGUF embedders, provider-aware accelerator caching, and loaded backend reporting.
-- Model catalog: `FlutterEdgeAi.catalog` lists the models registered packages offer, pinned to Hugging Face commits, and `installFromCatalog` installs one.
+- Experimental: `InferenceModel.createDecider` scores options on a model trained on the decision, Noul and Score too.
+- Embedding SPI: `honouredBackends`, the loaded backend reported, `.gguf` installs without a tokenizer.
 
 ## 2.4.1
 - Android NPU: one vendor's dispatch per load; the manifest declares Google Tensor's runtime libraries.

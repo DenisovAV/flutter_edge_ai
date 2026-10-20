@@ -79,15 +79,12 @@ if its adapter is missing; Web LoRA execution remains unsupported.
 
 ## Add it to your app
 
-Published version 0.0.1 uses llamadart 0.13.1. This source branch qualifies
-llamadart 0.15.0 for the next adapter release; use a path dependency on this
-checkout until that release is published. Adjust the path for your app:
+Version 0.0.2 uses llamadart 0.15.0 (0.0.1 used 0.13.1).
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.4.1
-  flutter_edge_ai_llama:
-    path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
+  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai_llama: ^0.0.2
 ```
 
 Core 2.4.0+ supplies the typed tool history used by this connector.

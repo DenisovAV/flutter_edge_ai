@@ -93,6 +93,10 @@ Other sources on the same builder: `.fromAsset(path)` for a model bundled in the
 - Symptom: `Target of URI doesn't exist: 'package:flutter_edge_ai/core/model.dart'` — or any other `package:flutter_edge_ai/core/…`, `/mobile/…`, `/web/…`, `/desktop/…` or `flutter_edge_ai_interface.dart` import.
 - Fix: since `flutter_edge_ai` 2.3.0 core's internals are private under `lib/src`. Apps import `package:flutter_edge_ai/flutter_edge_ai.dart`; an engine or tokenizer package imports `package:flutter_edge_ai/engine.dart`. The deprecated members went in the same release — `setModelPath`, `installModelFromAsset`, `initialize(enableWebCache:)` and the rest; core's MIGRATION.md lists each with its replacement.
 
+**After upgrading to 2.5**
+- Symptom: `The method 'fromLegacyUrl' isn't defined for the type 'InferenceModelSpec'`, `generateEmbedding`/`generateEmbeddings`/`getDimension` undefined, or a deprecation warning on `FlutterEdgeAiPlugin.instance.createModel`.
+- Fix: build the spec as `InferenceModelSpec(name:, modelSource: ModelSource.network(url) /.asset/.bundled/.file, modelType:)`; `fromLegacyUrl` defaulted to `ModelType.general`, so pass a model type explicitly. Replace `createModel(...)` (removed in 2.6.0) with `FlutterEdgeAi.getActiveModel(...)` — on Android, iOS and desktop it ignored `modelType` and `fileType` and returned the active model anyway — or with `FlutterEdgeAi.openModel` for several models. Embeddings: `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)`, `embedAll`, `dimension` (see the flutter-edge-ai-rag skill and core's MIGRATION.md).
+
 **No engine registered**
 - Symptom: `StateError: No inference engine can handle this model (ModelFileType.litertlm). Add the engine package to pubspec.yaml and pass it in inferenceEngines: of FlutterEdgeAi.initialize(...)`
 - Fix: add the engine package and register its provider — or fix `fileType` if the wrong engine is registered.
@@ -265,7 +269,20 @@ The `.litertlm` engine sends a Gemma 4 message as images, text, then audio, as t
 
 `getActiveModel` returns one model per process. Calling it again with the same arguments returns that model, on every platform (web since 2.2.1). Different runtime arguments, or another active model, rebuild it and close the previous one — a handle still held stops working; `model.isClosed` says so from the moment `close()` starts, and a `getActiveModel` call made meanwhile waits for the close to finish before it builds the next model. With no model installed it throws `NoActiveModelError`, a `StateError`. Load it once, then create and close sessions per conversation.
 
-For several models loaded at once (one file on CPU and GPU, or two files), use `FlutterEdgeAi.openModel(spec, …)` (2.5.0, mobile and desktop) with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0); other engines throw `UnsupportedError`. Install the file with `install(activate: false)` and pass the returned `spec`. Every call builds a new model that the app closes: it is never cached, a `getActiveModel` rebuild leaves it open, and the plugin has no memory policy (on iOS a process past its memory limit is killed, not thrown at). An `activate: false` install that would replace the active model's file throws `StateError`, and `openModel` refuses a spec that is not the installed one. Measured on macOS only (CPU and GPU engines, two GPU engines); see the desktop docs for what is not.
+For several models loaded at once (one file on CPU and GPU, or two files), use `FlutterEdgeAi.openModel(spec, …)` (2.5.0, mobile and desktop) with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0); other engines throw `UnsupportedError`. Install the file with `install(activate: false)` and pass the returned `spec`. Every call builds a new model that the app closes: it is never cached, a `getActiveModel` rebuild leaves it open, and the plugin has no memory policy (on iOS a process past its memory limit is killed, not thrown at). An `activate: false` install that would replace the active model's file throws `StateError`, and `openModel` refuses a spec that is not the installed one. Its parameters mean what they do on `getActiveModel`; a model's sampler is fixed by its first generation, so sessions sharing one model use the same sampling; uninstalling a model does not close the models opened on it. Measured on macOS (CPU and GPU engines on one file, two GPU engines) and on Windows Lunar Lake (CPU, GPU and NPU engines together). Not measured: Android, iOS, Linux, and two GPU engines on Windows, where a second one can fail with `wgpu::Instance already set` (https://flutteredge.ai/docs/desktop).
+
+```dart
+final spec = (await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm,
+).fromFile(path).install(activate: false)).spec;
+
+final cpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.cpu);
+final gpu = await FlutterEdgeAi.openModel(spec, preferredBackend: PreferredBackend.gpu);
+// ... generate on either ...
+await gpu.close();
+await cpu.close();
+```
 
 ## Backends
 

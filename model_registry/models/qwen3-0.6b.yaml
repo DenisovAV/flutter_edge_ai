@@ -40,8 +40,10 @@ variants:
     size: 613722264
     install_filename: Qwen3-0.6B.litertlm
   withhold:
-    reason: Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on
-      2026-10-13; the example offers the dynamic INT4 build instead.
+    reason: The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm
+      1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement,
+      which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before
+      2026-10-13 still fails.
     issue: https://github.com/DenisovAV/flutter_edge_ai/issues/659
 - slug: mixed-int4
   file_type: litertlm

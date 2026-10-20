@@ -41,6 +41,7 @@
   "documented": "Documented as working; not yet re-run with a recorded log",
   "untested": "The package runs it there; nobody has recorded a run",
   "refused": "This version of the package does not run it there",
+  "withheld": "Left out of the catalog; the note says why",
   "broken": "Known not to work there; see the issue"
  },
  "models": [
@@ -4648,7 +4649,8 @@
       },
       "linux_arm64": {
        "gpu": {
-        "status": "untested"
+        "status": "documented",
+        "source": "PR #602, VENTUNO Q run (native-v0.18.0-c, litertlm 1.11.0)"
        },
        "cpu": {
         "status": "documented",
@@ -4862,7 +4864,8 @@
       },
       "linux_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "documented",
+        "source": "PR #602, VENTUNO Q run (native-v0.18.0-c, litertlm 1.11.0)"
        }
       }
      }
@@ -7655,73 +7658,73 @@
      "cells": {
       "android_arm64": {
        "gpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        },
        "cpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        }
       },
       "ios_arm64": {
        "gpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        },
        "cpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        }
       },
       "macos_arm64": {
        "gpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        },
        "cpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        }
       },
       "windows_x64": {
        "gpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        },
        "cpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        }
       },
       "linux_x64": {
        "gpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        },
        "cpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        }
       },
       "linux_arm64": {
        "gpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        },
        "cpu": {
-        "status": "broken",
-        "note": "Failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the example offers the dynamic INT4 build instead.",
+        "status": "withheld",
+        "note": "The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails.",
         "issue": "https://github.com/DenisovAV/flutter_edge_ai/issues/659"
        }
       }

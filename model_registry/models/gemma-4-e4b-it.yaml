@@ -53,6 +53,6 @@ variants:
     image: false
     audio: false
     function_calls: true
-    thinking: false
+    thinking: true
   example:
   - gemma4_E4B_litertlm

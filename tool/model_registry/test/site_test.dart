@@ -286,7 +286,7 @@ void main() {
       });
     });
 
-    test('a withheld build is broken wherever it would run', () {
+    test('a withheld build says so wherever it would run', () {
       final s = _statuses('[]');
       expect(s['tiny/old']!.keys, [
         'android_arm64',
@@ -294,13 +294,13 @@ void main() {
         'linux_arm64',
       ]);
       for (final byBackend in s['tiny/old']!.values) {
-        expect(byBackend, {'gpu': 'broken', 'cpu': 'broken'});
+        expect(byBackend, {'gpu': 'withheld', 'cpu': 'withheld'});
       }
     });
 
-    test('a withheld web export is broken on the web only', () {
+    test('a withheld web export says so on the web only', () {
       expect(_statuses('[]')['tiny/web-old'], {
-        'web': {'gpu': 'broken'},
+        'web': {'gpu': 'withheld'},
       });
     });
 
@@ -357,7 +357,7 @@ void main() {
       ),
       'a withheld variant': (
         _docClaim.replaceFirst('tiny/generic', 'tiny/old'),
-        '"tiny/old" is withheld from the release; its cells are broken',
+        '"tiny/old" is withheld from the catalog; its cells say why',
       ),
       'a bad status': (
         _docClaim.replaceFirst('documented', 'verified'),
@@ -580,7 +580,7 @@ void main() {
           _run(host: 'windows_arm64'),
         ]),
         [
-          '"tiny/old" is withheld from the release',
+          '"tiny/old" is withheld from the catalog',
           'no variant "tiny/nope"',
           'unknown host "windows_arm64"',
         ],

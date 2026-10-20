@@ -317,7 +317,7 @@ void checkClaims(
       }
       final (entry, variant) = found;
       if (variant['withhold'] != null) {
-        error('"$id" is withheld from the release; its cells are broken');
+        error('"$id" is withheld from the catalog; its cells say why');
         continue;
       }
       final runs = inputs.snapshots['${entry.data['package']}']?[id];
@@ -371,7 +371,7 @@ Map<String, Map<String, Map<String, Cell>>> cells(
       for (final b in backends) {
         Cell? cell;
         if (withhold != null) {
-          // Withheld: every cell the build would run on is broken.
+          // Withheld: every cell the build would run on says why.
           final wouldRun = npu != null
               ? b == 'npu' && (natural?.contains(h) ?? false)
               : web
@@ -379,7 +379,7 @@ Map<String, Map<String, Map<String, Cell>>> cells(
               : h != 'web' && b != 'npu';
           if (wouldRun) {
             cell = Cell(
-              'broken',
+              'withheld',
               note: '${withhold['reason']}',
               issue: withhold['issue'] as String?,
             );
@@ -498,7 +498,7 @@ void _checkRun(
     }
     final (entry, variant) = found;
     if (variant['withhold'] != null) {
-      error('"$id" is withheld from the release');
+      error('"$id" is withheld from the catalog');
       continue;
     }
     final runs = inputs.snapshots['${entry.data['package']}']?[id] ?? const {};
@@ -603,6 +603,7 @@ const _legend = {
   ),
   'untested': ('⚪', 'The package runs it there; nobody has recorded a run'),
   'refused': ('⛔', 'This version of the package does not run it there'),
+  'withheld': ('⏸️', 'Left out of the catalog; the note says why'),
   'broken': ('❌', 'Known not to work there; see the issue'),
 };
 
@@ -712,9 +713,14 @@ void _modelSection(
     final link = v['files'] != null
         ? 'https://huggingface.co/${f['repo']}/tree/${f['revision']}'
         : 'https://huggingface.co/${f['repo']}/blob/${f['revision']}/${f['path']}';
-    // The slug names the NPU (npu-sm8750); the cell gives the size.
+    // The slug names the NPU (npu-sm8750); the cell gives the size and, for
+    // a build compiled for one, the KV-cache length that bounds maxTokens.
+    final context = v['fixed_max_tokens'] == null
+        ? ''
+        : ' · context&nbsp;${v['fixed_max_tokens']}';
     final row = StringBuffer(
-      '| [${v['slug']}]($link)<br>${_size(size).replaceAll(' ', '&nbsp;')} |',
+      '| [${v['slug']}]($link)<br>'
+      '${_size(size).replaceAll(' ', '&nbsp;')}$context |',
     );
     for (final host in inputs.hosts) {
       final byBackend = all[id]![host.id] ?? const {};
@@ -734,6 +740,10 @@ void _modelSection(
         }
         if (c.status == 'documented' && c.source != null) {
           notes.add('Documented: ${_source(inputs, c.source!)}.');
+        }
+        if (c.status == 'withheld') {
+          final note = _markdownText(c.note!.replaceFirst(RegExp(r'\.$'), ''));
+          notes.add('Withheld: $note. [Issue](${c.issue}).');
         }
         if (c.status == 'broken') {
           final from = c.source == null
@@ -826,6 +836,7 @@ const _rank = [
   'stale',
   'documented',
   'untested',
+  'withheld',
   'broken',
   'refused',
 ];

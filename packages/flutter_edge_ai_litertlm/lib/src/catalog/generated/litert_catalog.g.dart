@@ -1282,7 +1282,7 @@ const _gemma4E2bIt$web = LiteRtLmVariant._(
   supportsImage: false,
   supportsAudio: false,
   supportsFunctionCalls: true,
-  supportsThinking: false,
+  supportsThinking: true,
   isWebBundle: true,
   textBackends: {PreferredBackend.gpu, PreferredBackend.cpu},
 );
@@ -1555,7 +1555,7 @@ const _gemma4E4bIt$web = LiteRtLmVariant._(
   supportsImage: false,
   supportsAudio: false,
   supportsFunctionCalls: true,
-  supportsThinking: false,
+  supportsThinking: true,
   isWebBundle: true,
   textBackends: {PreferredBackend.gpu, PreferredBackend.cpu},
 );

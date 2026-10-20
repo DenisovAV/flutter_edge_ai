@@ -13,7 +13,8 @@
 #
 # Left out on purpose, as the documentation review found them unrun: Intel
 # PTL bundles, Google Tensor G5 bundles, the Qualcomm SM8550 and SM8750
-# EmbeddingGemma 2 bundles, and Linux arm64 for anything but the CPU.
+# EmbeddingGemma 2 bundles, and on Linux arm64 everything but the CPU and what
+# the Arduino VENTUNO Q (QCS8275) runs below.
 
 # --- The native-v0.18.0-f release run (PR #688, 2026-10-19) ---------------
 - what: Gemma 4 E2B, litertlm_ffi_test on CPU and GPU
@@ -66,6 +67,18 @@
   source: "PR #688, device matrix (native-v0.18.0-f)"
 
 # --- Other runs ---------------------------------------------------------------
+- what: Gemma 4 E2B on an Arduino VENTUNO Q (QCS8275), Adreno GPU, litertlm_ffi_test 27/27
+  variants: [gemma-4-e2b-it/generic]
+  hosts: [linux_arm64]
+  backends: [gpu]
+  status: documented
+  source: "PR #602, VENTUNO Q run (native-v0.18.0-c, litertlm 1.11.0)"
+- what: Gemma 4 E2B on the QCS8275 NPU (Arduino VENTUNO Q), text, vision and audio
+  variants: [gemma-4-e2b-it/npu-qcs8275]
+  hosts: [linux_arm64]
+  backends: [npu]
+  status: documented
+  source: "PR #602, VENTUNO Q run (native-v0.18.0-c, litertlm 1.11.0)"
 - what: Qwen3-TTS from a clean install, English and German
   variants: [qwen3-tts-0.6b/bundle]
   hosts: [macos_arm64]

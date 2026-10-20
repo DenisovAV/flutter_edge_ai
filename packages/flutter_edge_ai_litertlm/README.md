@@ -1022,8 +1022,15 @@ The AAR's `LICENSE` and `THIRD_PARTY_NOTICE.txt` stay in the hook's cache (the
 build prints where); an app that lists the open-source licences it ships should
 add them.
 
-Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug build: Gemma 3 1B (`…_mt6989`) generates on the NPU. Not run yet: EmbeddingGemma 2 on an MT6991/MT6993 and a release-signed build. Google publishes Gemma 3 1B (MT6989, MT6991,
-MT6993), Gemma 3 270M (MT6991, MT6993), Qwen3 0.6B (MT6993) and EmbeddingGemma 2
+Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug
+build: Gemma 3 1B (`…_mt6989`) generates on the NPU. Bundles for another SoC
+are refused when the engine is created, and nothing else is tried: Gemma 3 1B
+`…_mt6991` and EmbeddingGemma 2 270m `…_MT6991` (NeuroPilot: unsupported target
+`EDPA_1_2`), EmbeddingGemma 2 440m `…_MT6993` (Neuron SDK major version
+mismatch). Qwen3 0.6B `…mediatek.mt6993` fails before the NPU, on its tokenizer
+(`piece must not include null character`, LiteRT-LM#3865). Not run yet: a
+bundle on an MT6991/MT6993 phone, and a release-signed build. Google publishes
+Gemma 3 1B (MT6989, MT6991, MT6993), Gemma 3 270M (MT6991, MT6993), Qwen3 0.6B (MT6993) and EmbeddingGemma 2
 (MT6991, MT6993) bundles; Gemma 4 has none.
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)

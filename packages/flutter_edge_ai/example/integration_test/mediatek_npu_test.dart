@@ -5,8 +5,9 @@
 //    whether this build carries the dispatch. Needs no model.
 // 2. A MediaTek LLM bundle staged in /data/local/tmp/flutter_gemma_test/ and
 //    named by MTK_MODEL: generates on the NPU when it is compiled for this
-//    phone's SoC, else is refused when the engine is created (NeuroPilot
-//    rejects the other SoC's graph) and nothing else is tried; skipped
+//    phone's SoC, else is refused when the engine is created and nothing
+//    else is tried (the reason is LiteRT-LM's; NeuroPilot rejecting the other
+//    SoC's graph is in logcat, not in what the test asserts); skipped
 //    without it.
 // 3. An EmbeddingGemma 2 MediaTek bundle named by MTK_EG2: embeds on the NPU
 //    when it is compiled for this phone's SoC, else is refused with the
@@ -112,8 +113,8 @@ void main() {
     } on BackendInitException catch (e) {
       print('[mtk] refused after ${load.elapsedMilliseconds} ms: $e');
       expect(same, isFalse, reason: '$e');
-      // Refused by NeuroPilot at engine create, nothing else tried; not by
-      // a missing stack, adapter or dispatch directory before it.
+      // Refused at engine create with nothing else tried, not by a missing
+      // stack, adapter or dispatch directory before it.
       expect('$e', contains('Failed to create engine on npu'));
       expect('$e', contains('compiled for the MediaTek'));
       return;
@@ -173,8 +174,8 @@ void main() {
       } on EmbeddingLoadException catch (e) {
         print('[mtk] eg2 refused after ${load.elapsedMilliseconds} ms: $e');
         expect(same, isFalse, reason: '$e');
-        // Refused by NeuroPilot at engine create, not by a missing stack,
-        // adapter or dispatch directory before it.
+        // Refused at engine create, not by a missing stack, adapter or
+        // dispatch directory before it.
         expect('$e', contains('could not create the embedding engine'));
         expect('$e', contains('on the MediaTek'));
         return;

@@ -184,7 +184,12 @@ NeuroPilot SDK, whose licence lets it reach users only inside an app. The
 NeuroPilot runtime it drives is part of the phone; a phone whose vendor does
 not expose it to apps is refused with that reason. Offline, download the AAR
 and add `mediatek_npu_aar: <path>`; `mediatek_npu_maven_url` names a mirror.
-Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug build: Gemma 3 1B (`…_mt6989`) generates on the NPU.
+Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug
+build: Gemma 3 1B (`…_mt6989`) generates on the NPU; Gemma 3 1B and
+EmbeddingGemma 2 bundles for MT6991/MT6993 are refused when the engine is
+created. The Qwen3 0.6B MT6993 bundle fails on its tokenizer
+([LiteRT-LM#3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865))
+before the NPU. Not run on an MT6991/MT6993 phone yet.
 
 **Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
 Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino

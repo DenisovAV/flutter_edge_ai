@@ -296,7 +296,9 @@ the device runs Android below 12 (API 31) or its SoC manufacturer is not
 MediaTek; or none of the phone's NeuroPilot adapters (`libneuron_adapter_mgvi.so`,
 `libneuronusdk_adapter*.mtk.so`, …) opened in the app, which means the phone's
 vendor does not expose NeuroPilot to apps. A bundle compiled for another SoC is
-refused when the engine is created. It never falls back to the GPU or the CPU.
+refused when the engine is created (measured on an MT6989 with MT6991 and MT6993
+bundles: NeuroPilot reports an unsupported target or a Neuron SDK version
+mismatch). It never falls back to the GPU or the CPU.
 A build without network access fails while fetching the dispatch AAR: download
 it and set `mediatek_npu_aar: <path>`.
 

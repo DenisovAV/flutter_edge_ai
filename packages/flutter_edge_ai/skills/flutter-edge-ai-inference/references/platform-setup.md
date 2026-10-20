@@ -73,8 +73,11 @@ bundles its dispatch (about 330 KB); the NeuroPilot runtime it drives is part of
 the phone. A bundle compiled for a MediaTek SoC (Google publishes Gemma 3 1B,
 Gemma 3 270M, Qwen3 0.6B and EmbeddingGemma 2 ones; no Gemma 4) runs on a phone
 with that SoC and Android 12 or later whose vendor exposes NeuroPilot to apps;
-anything else is refused before any engine, and it never moves to the GPU or
-the CPU. Offline: `mediatek_npu_aar: <path>`. Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug build: Gemma 3 1B (`…_mt6989`) generates on the NPU.
+any other device is refused before any engine, a bundle for another SoC when
+the engine is created, and it never moves to the GPU or the CPU. Offline:
+`mediatek_npu_aar: <path>`. Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989,
+Android 16) with a debug build: Gemma 3 1B (`…_mt6989`) generates on the NPU;
+MT6991/MT6993 bundles are refused there.
 
 ## iOS
 

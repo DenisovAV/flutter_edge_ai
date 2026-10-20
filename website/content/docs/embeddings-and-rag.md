@@ -519,8 +519,8 @@ print('${embedder.dimension} dimensions, up to ${embedder.maxInputTokens} tokens
   that cannot load, and with **StateError** when no embedder is installed or
   no registered backend can run it. An **EmbeddingInput** with no part or
   empty bytes throws **ArgumentError** when it is built.
-- **generateEmbedding**, **generateEmbeddings** and **getDimension** still
-  compile as deprecated forwarders and are removed in 2.5.0.
+- **generateEmbedding**, **generateEmbeddings** and **getDimension** were
+  removed in 2.5.0; see [Migration](/docs/migration).
 
 ## RAG with the active core embedder
 

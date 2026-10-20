@@ -18,6 +18,8 @@ text-to-speech) in the repositories below. The schema already admits `task`,
 | `derived/<sha256>.json` | facts read from a file's bytes | `inspect_bundle_test.dart` |
 | `snapshots/<package>.json` | where each variant runs on each host, as the package answers | the package's catalog test |
 | `published/<package>/<version>.json` | the frozen fields a release shipped | the release |
+| `hosts.yaml` | the platforms the website shows a status for, in its column order | hand |
+| `documented_claims.yaml` | what the docs and release notes say works, with the source | hand |
 
 Generated from it, checked in, never edited by hand:
 - `packages/flutter_edge_ai_litertlm/lib/src/catalog/generated/litert_catalog.g.dart`:
@@ -29,6 +31,20 @@ Generated from it, checked in, never edited by hand:
   (`LiteRtSpeechModels.moonshineTiny.f32`). A TTS bundle's files are in the
   order of `TtsModelType.manifest`; the package's test checks that core
   fetches each of them from its pinned URL.
+- `website/content/docs/registry.md` (the site's Model Registry page) and
+  `website/web/models.json` (the same data): every variant, and on every
+  host and backend one status:
+
+  | Status | From |
+  |---|---|
+  | verified | a run recorded with its log (not yet collected) |
+  | documented | a claim in `documented_claims.yaml` |
+  | untested | the package's snapshot runs it there and nothing says more |
+  | refused | the snapshot does not run it there: a native backend the package rules out, or an NPU build on its vendor's platform |
+  | broken | `withhold`, `withhold_backends`, or a broken claim, with its issue |
+
+  A combination that does not exist (an NPU build on another vendor's
+  platform, a web export on a phone, a native build on the web) has no cell.
 
 ## An entry
 
@@ -155,6 +171,12 @@ UPDATE_GOLDENS=1 flutter test test/catalog/litert_catalog_test.dart
   clashes;
 - a generated file that is not what `generate` writes;
 - a frozen field changed after a release, or a published variant deleted;
+- a claim on a variant, host or backend that does not exist, on a withheld
+  variant, or on a cell the package's snapshot does not run;
+- a claim whose source is neither `"PR #<n> ..."` nor
+  `website/content/docs/<page>.md:<line>` with that line present (quote a
+  pull request source: ` #` starts a YAML comment), or a broken claim without
+  its issue;
 - Cyrillic text.
 
 `dart test` proves each of those rules fails its own fixture, and that this

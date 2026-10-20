@@ -11,6 +11,7 @@ import 'dart:io';
 
 import 'package:model_registry/check.dart';
 import 'package:model_registry/generate.dart';
+import 'package:model_registry/site.dart';
 import 'package:path/path.dart' as p;
 
 Future<void> main(List<String> args) async {
@@ -27,6 +28,9 @@ Future<void> main(List<String> args) async {
   );
   final repoRoot = p.dirname(p.absolute(registry.path));
   final result = checkRegistry(registry);
+  final site = SiteInputs.read(registry, result.problems);
+  checkClaims(site, result.entries, result.problems);
+  checkBlocks(site, result.problems);
   for (final problem in result.problems) {
     stdout.writeln(problem);
   }
@@ -36,9 +40,14 @@ Future<void> main(List<String> args) async {
   }
 
   var stale = 0;
-  for (final file in generateAll(registry, result.entries)) {
+  for (final file in [
+    ...generateAll(registry, result.entries),
+    ...generateSite(site, result.entries),
+  ]) {
     final target = File(p.join(repoRoot, file.path));
-    final content = await formatDart(file.content);
+    final content = file.path.endsWith('.dart')
+        ? await formatDart(file.content)
+        : file.content;
     final current = target.existsSync() ? target.readAsStringSync() : null;
     if (current == content) continue;
     if (command == 'generate') {

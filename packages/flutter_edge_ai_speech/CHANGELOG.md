@@ -1,6 +1,6 @@
-## Unreleased
+## 0.5.10
 - Model catalog: `LiteRtSpeechModels`, every STT and TTS build pinned to its Hugging Face commit, in `FlutterEdgeAi.catalog`.
-- Require the `flutter_edge_ai` and `flutter_edge_ai_litertlm` releases that add the model catalog.
+- Require `flutter_edge_ai` ^2.5.1 and `flutter_edge_ai_litertlm` ^1.16.1.
 
 ## 0.5.9
 - README: which engines default `supportAudio` from the model.

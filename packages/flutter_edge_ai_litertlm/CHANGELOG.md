@@ -1,5 +1,6 @@
-## Unreleased
+## 1.16.1
 - Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every `.litertlm` and `.tflite` build pinned to its Hugging Face commit, in `FlutterEdgeAi.catalog`.
+- Require `flutter_edge_ai` ^2.5.1.
 
 ## 1.16.0
 - `InferenceModel.createDecider` on CPU, natively, from a `.litertlm`'s `litetune.decision` section.

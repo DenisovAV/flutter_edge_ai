@@ -139,7 +139,7 @@ With CocoaPods, paste this into `macos/Podfile`, replacing any existing
 `post_install` block; the next build runs `pod install` itself. A green build
 proves nothing: without it the first model load fails with
 `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. From
-`flutter_edge_ai_litertlm` 1.16.0 that error starts with
+`flutter_edge_ai_litertlm` 1.16.0 that error contains
 `flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names this fix.
 
 **A Swift Package Manager app has no `macos/Podfile` to paste into.** SPM is the

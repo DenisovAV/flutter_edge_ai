@@ -163,8 +163,9 @@ flutter:
 Run `flutter pub get` (it writes `macos/Podfile`), then replace that Podfile's
 `post_install` block with the one below; the next build runs `pod install`
 itself. A green build proves nothing: without the block the first model load
-fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. If your app already has a `macos/Podfile` (another plugin
-needs CocoaPods), keep SPM on and just paste the block. Prefer the pubspec
+fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`; from `flutter_edge_ai_litertlm` 1.16.0
+the error says why and names this fix. If your app already has a `macos/Podfile` (another plugin
+needs CocoaPods), keep SPM on and only replace its `post_install` block. Prefer the pubspec
 setting to `flutter config --no-enable-swift-package-manager`, which changes
 only your machine — not your teammates' or CI. `flutter_edge_ai_llama` needs
 Swift Package Manager on instead (⁴).

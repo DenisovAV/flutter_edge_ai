@@ -1,15 +1,18 @@
-// Says why libLiteRtLm did not load in a macOS app, and what fixes it (#689).
+// Opens LiteRT-LM on macOS and, when it does not load, says why and what fixes
+// it (#689).
 //
 // dyld's own error names the cause, but in words that do not say what to do:
 // "Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib" is what a
 // Swift Package Manager app shows, because nothing copies LiteRT-LM's
-// companion libraries into it. Every macOS open of LiteRtLm.framework goes
-// through this file, so the LLM, the EmbeddingGemma 2 pass and the `.tflite`
-// path (embeddings, speech) say the same thing, and dyld's text is kept.
+// companion libraries into it. The LLM and EmbeddingGemma 2 paths open the
+// framework with [openMacOSLiteRtLm], the `.tflite` path (embeddings, speech)
+// with [openMacOSLiteRtLmForTflite]. Both build their message here, so every
+// path says the same thing, and dyld's text is kept.
 //
 // Package-private.
 
 import 'dart:ffi';
+import 'dart:io';
 
 /// The macOS LiteRT-LM framework, as Native Assets bundles it in an app.
 const macOSLiteRtLmFramework = 'LiteRtLm.framework/LiteRtLm';
@@ -21,6 +24,9 @@ enum MacOSLoadCause {
 
   /// The process is not arm64 (an Intel Mac, or Rosetta).
   wrongArchitecture,
+
+  /// macOS refused the library by system policy (quarantine, notarization).
+  blockedByPolicy,
 
   /// macOS library validation refused the library.
   libraryValidation,
@@ -34,31 +40,37 @@ enum MacOSLoadCause {
 
 /// Reads the cause from [dyldText], the error `DynamicLibrary.open` reports.
 ///
-/// The phrases are dyld's (measured on macOS 26.5, except the Team ID one,
-/// which is Apple's documented text). Architecture is checked before
-/// [MacOSLoadCause.notBundled] because its text also lists paths that do not
-/// exist.
+/// The phrases are dyld's, measured on macOS 26.5, except the policy and Team
+/// ID ones, which are Apple's documented text. The order matters: a companion
+/// that is refused or built for another architecture is also "Library not
+/// loaded", and dyld lists "(no such file)" for the paths it tried on the way
+/// in almost every failure, so [MacOSLoadCause.notBundled] needs the app's own
+/// Frameworks path to be the one that is missing.
 MacOSLoadCause diagnoseMacOSLoadError(String dyldText) {
-  if (dyldText.contains('Library not loaded') &&
-      dyldText.contains('GemmaModelConstraintProvider')) {
-    return MacOSLoadCause.missingCompanion;
-  }
   if (dyldText.contains('incompatible architecture')) {
     return MacOSLoadCause.wrongArchitecture;
+  }
+  if (dyldText.contains('disallowed by system policy')) {
+    return MacOSLoadCause.blockedByPolicy;
   }
   if (dyldText.contains('different Team IDs') ||
       dyldText.contains('not valid for use in process')) {
     return MacOSLoadCause.libraryValidation;
   }
-  if (!dyldText.contains('Library not loaded') &&
-      dyldText.contains("$macOSLiteRtLmFramework' (no such file")) {
+  if (dyldText.contains('Library not loaded') &&
+      dyldText.contains('GemmaModelConstraintProvider')) {
+    return MacOSLoadCause.missingCompanion;
+  }
+  if (dyldText.contains(
+    "Contents/Frameworks/$macOSLiteRtLmFramework' (no such file",
+  )) {
     return MacOSLoadCause.notBundled;
   }
   return MacOSLoadCause.unknown;
 }
 
-/// The message for a failed macOS load: what broke, the cause and its fix,
-/// then dyld's own text.
+/// The message for a failed load in a macOS app: what broke, the cause and
+/// its fix, then dyld's own text.
 String macOSLoadErrorMessage(String dyldText) {
   final String fix = switch (diagnoseMacOSLoadError(dyldText)) {
     MacOSLoadCause.missingCompanion =>
@@ -67,13 +79,19 @@ String macOSLoadErrorMessage(String dyldText) {
           '(https://github.com/DenisovAV/flutter_edge_ai/issues/689). Until '
           'that is fixed, set `enable-swift-package-manager: false` under '
           "`flutter: config:` in the app's pubspec.yaml, run `flutter pub get`, "
-          'paste the post_install block from '
-          'https://flutteredge.ai/docs/desktop#macos into macos/Podfile, and '
-          'build again. An app that already has a macos/Podfile keeps Swift '
-          'Package Manager on and only needs the block.',
+          'and replace the post_install block in macos/Podfile with the one '
+          'from https://flutteredge.ai/docs/desktop#macos. An app that already '
+          'had a macos/Podfile keeps Swift Package Manager on and only needs '
+          'that block. If the block is already there, run `flutter clean` and '
+          'build again.',
     MacOSLoadCause.wrongArchitecture =>
       'LiteRT-LM ships for Apple silicon (arm64) only; it does not run on an '
           'Intel Mac or in an x86_64 (Rosetta) process.',
+    MacOSLoadCause.blockedByPolicy =>
+      'macOS refused the library by system policy: the app or the library is '
+          'quarantined or not notarized. Notarize the app; for a local test '
+          'build, remove the quarantine attribute with '
+          '`xattr -dr com.apple.quarantine` on the app.',
     MacOSLoadCause.libraryValidation =>
       'macOS library validation refused the library. Sign the app and its '
           'frameworks with the same team, or add the '
@@ -82,8 +100,9 @@ String macOSLoadErrorMessage(String dyldText) {
       'LiteRtLm.framework is not in the app. Run `flutter clean` and build '
           'again; the flutter_edge_ai_litertlm build hook bundles it.',
     MacOSLoadCause.unknown =>
-      'If the text below does not say why, please open an issue at '
-          'https://github.com/DenisovAV/flutter_edge_ai/issues with it.',
+      'Run `flutter clean` and build again. If it still fails, please open an '
+          'issue at https://github.com/DenisovAV/flutter_edge_ai/issues with the '
+          'text below.',
   };
   return 'flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS, so no '
       'LiteRT feature works in this app (LLM, embeddings, speech). $fix\n'
@@ -92,9 +111,9 @@ String macOSLoadErrorMessage(String dyldText) {
 
 /// dyld's text from what `DynamicLibrary.open` threw.
 String dyldErrorText(Object error) =>
-    error is ArgumentError ? '${error.message}' : '$error';
+    error is ArgumentError ? '${error.message ?? error}' : '$error';
 
-/// Opens LiteRtLm.framework in a macOS app.
+/// Opens LiteRtLm.framework in a macOS app, for the LLM and EmbeddingGemma 2.
 ///
 /// A failure is an [ArgumentError], as from `DynamicLibrary.open`, so the
 /// backend fallback (which retries on an [Exception] only) does not turn it
@@ -113,18 +132,61 @@ DynamicLibrary openMacOSLiteRtLm({DynamicLibrary Function(String path)? open}) {
   }
 }
 
-/// Whether [executable] runs from inside a macOS `.app` bundle.
+/// Opens libLiteRtLm on macOS for the `.tflite` path (embeddings, speech).
 ///
-/// Inside one, LiteRT-LM must come from the bundle: a copy from the build
-/// cache or a dev checkout may be any version, and makes an app that is broken
-/// for its users work on the developer's Mac.
-bool isInsideMacOSAppBundle(String executable) =>
-    executable.contains('.app/Contents/MacOS/');
-
-/// The copies of libLiteRtLm to try when LiteRtLm.framework did not load:
-/// none inside an app ([isInsideMacOSAppBundle]), [devCandidates] outside one
-/// (the macOS host test suites load the hook's cache copy this way).
-List<String> macOSFallbackCandidates({
-  required String executable,
+/// LiteRtLm.framework first. Inside an app that is the only place it may come
+/// from: a copy from the build cache or a dev checkout may be any version, and
+/// makes an app that is broken for its users work on the developer's Mac.
+/// Outside one (the macOS host test suites) the copies [devCandidates] names
+/// are tried next, the build hook's cache among them.
+///
+/// A failure is an [UnsupportedError]: inside an app its message is
+/// [macOSLoadErrorMessage]; outside one it names each copy that exists with
+/// dyld's reason, because there the framework is never present and its error
+/// says nothing. [executable], [open] and [exists] are for tests.
+DynamicLibrary openMacOSLiteRtLmForTflite({
   required List<String> Function() devCandidates,
-}) => isInsideMacOSAppBundle(executable) ? const <String>[] : devCandidates();
+  String? executable,
+  DynamicLibrary Function(String path)? open,
+  bool Function(String path)? exists,
+}) {
+  final DynamicLibrary Function(String path) opener =
+      open ?? DynamicLibrary.open;
+  final String bundledError;
+  try {
+    return opener(macOSLiteRtLmFramework);
+  } catch (error) {
+    bundledError = dyldErrorText(error);
+  }
+  if ((executable ?? Platform.resolvedExecutable).contains(
+    '.app/Contents/MacOS/',
+  )) {
+    throw UnsupportedError(macOSLoadErrorMessage(bundledError));
+  }
+
+  final bool Function(String path) fileExists =
+      exists ?? (path) => File(path).existsSync();
+  final missing = <String>[];
+  final failed = <String>[];
+  for (final path in devCandidates()) {
+    if (!fileExists(path)) {
+      missing.add(path);
+      continue;
+    }
+    try {
+      return opener(path);
+    } catch (error) {
+      // Keep going: a copy that exists but does not load (wrong arch, a
+      // missing companion, a stale build) must not hide a later one that
+      // does, the build hook's cache included.
+      failed.add('$path: ${dyldErrorText(error)}');
+    }
+  }
+  throw UnsupportedError(
+    'flutter_edge_ai_litertlm: LiteRT-LM did not load. Outside an app it is '
+    "loaded from the flutter_edge_ai_litertlm build hook's cache, which a "
+    'build or `flutter test` of a package that depends on it fills. '
+    '${failed.isEmpty ? 'No copy exists.' : 'These copies did not load:\n${failed.join('\n')}'}'
+    '${missing.isEmpty ? '' : '\nNot found: ${missing.join(', ')}'}',
+  );
+}

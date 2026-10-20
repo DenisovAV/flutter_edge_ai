@@ -815,7 +815,7 @@ time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and on macOS Swift Package Manager turned off for the app and a
 `post_install` block in `macos/Podfile` ([Desktop → macOS](https://flutteredge.ai/docs/desktop#macos)).
-Without them the first model load fails; the error starts with
+Without them the first model load fails; the error contains
 `flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names the fix
 ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)). See
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).

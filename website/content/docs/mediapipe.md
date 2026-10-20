@@ -122,8 +122,10 @@ needed as well — see [Installation → Web](/docs/installation#web).
 > iPhone's 6655 MB per-process memory limit while loading (memory entitlements
 > present), and iOS terminated the app without a crash report;
 > `gemma-3n-E2B-it-int4.task` failed to initialize the GPU delegate. The same
-> Gemma 3 1B `.task` runs on CPU, and `gemma3-1b-it-int4.litertlm` runs on the
-> iPhone GPU through LiteRT-LM in under 1 GB.
+> Gemma 3 1B `.task` runs on CPU, and the same model as `.litertlm` runs on the
+> iPhone GPU through LiteRT-LM in under 1 GB (measured with
+> `gemma3-1b-it-int4.litertlm`, byte-identical to the registry's
+> [`Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm`](/docs/registry#gemma-3-1b-it)).
 
 Pass the backend when you open the model:
 

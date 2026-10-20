@@ -96,13 +96,16 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 devices. The Simulator stays CPU-only because Metal sim has a 256 MB
 single-allocation cap.
 
-² Web `.litertlm` is an **early preview** via `@litert-lm/core` — text, function calling and
-thinking. Only dedicated web exports (`-web.litertlm`) load — Gemma 4 and Gemma
-3n today; a native `.litertlm` installs on web and then fails at the first
-generation. No vision or audio. See the feature matrix in
-[Troubleshooting](/docs/troubleshooting). For image input on web use a
-MediaPipe `-web.task` build; no web engine takes audio. LoRA works only on
-MediaPipe `.task`.
+² Web `.litertlm` is an **early preview** via `@litert-lm/core`. A language
+model gets text, function calling and thinking, and only from a dedicated web
+export (`-web.litertlm`) — Gemma 4 and Gemma 3n today; a native language-model
+`.litertlm` installs on web and then fails at the first generation, and no
+`.litertlm` language model takes images or audio on web. EmbeddingGemma 2 is
+the exception: its generic `.litertlm` bundles embed text and images on web
+through WebGPU, and the 740m audio from litertlm 1.13.2 (see
+[Embedding models](#embedding-models)). See the feature matrix in
+[Troubleshooting](/docs/troubleshooting). For image input to a chat model on
+web use a MediaPipe `-web.task` build. LoRA works only on MediaPipe `.task`.
 
 ³ On desktop the OS model exists on **macOS** (Apple Foundation Models) and
 **Windows** (AI Foundry; Windows 11 25H2+ on Copilot+-class hardware, packaged
@@ -127,16 +130,16 @@ killed for memory while loading even Gemma 3 1B. See
 | **VibeVoice-ASR 2.2B (BitNet)** | Speech to text: a spoken clip in, its transcript out | ❌ | ❌ | ❌ | en, zh, fr, it, ko, pt, vi | 2.0GB |
 | **Phi-4 Mini** | Advanced reasoning and instruction following | ✅ | ❌ | ❌ | Multilingual | 3.9GB |
 | **Phi-4 Mini Reasoning** | Step-by-step reasoning | ❌ | ⚠️ ‡ | ❌ | Multilingual | 2.8GB |
-| **DeepSeek R1** | High-performance reasoning and code generation | ✅ | ✅ | ❌ | Multilingual | 1.7GB |
+| **DeepSeek R1** | High-performance reasoning and code generation | ✅ | ✅ | ❌ | Multilingual | 1.8–1.9GB |
 | **Qwen3 0.6B** | Compact multilingual chat with function calling | ✅ | ✅ | ❌ | Multilingual | 345MB |
 | **Qwen 2.5** | Strong multilingual chat and instruction following | ✅ | ❌ | ❌ | Multilingual | 0.5-1.6GB |
-| **Gemma 3 1B** | Balanced and efficient text generation | ❌ | ❌ | ❌ | Multilingual | 0.5GB |
+| **Gemma 3 1B** | Balanced and efficient text generation | ❌ | ❌ | ❌ | Multilingual | 0.6GB |
 | **Gemma 3 270M** | Ideal for fine-tuning (LoRA on the `.task` build) for specific tasks | ❌ | ❌ | ❌ | Multilingual | 0.3GB |
 | **FunctionGemma 270M** | Specialized for function calling on-device | ✅ | ❌ | ❌ | Multilingual | 284MB |
 | **SmolLM 135M** | Ultra-compact, resource-constrained devices | ❌ | ❌ | ❌ | English | 167MB |
 | **LFM2.5 230M (Liquid AI)** | Smallest desktop entry; no HF token needed | ❌ | ❌ | ❌ | Multilingual | 177MB |
 | **SmolLM3 3B** | Multilingual small LLM with reasoning mode | ❌ | ⚠️ ‡ | ❌ | Multilingual | 2.0GB |
-| **TranslateGemma 4B** † | Single-shot 55-language translation | ❌ | ❌ | ❌ | 55 languages | 2-4GB |
+| **TranslateGemma 4B** † | Single-shot 55-language translation | ❌ | ❌ | ❌ | 55 languages | 2.0–3.9GB |
 | **Phi-3.5 Mini (ONNX)** | Text chat through ORT-GenAI on native platforms | — | ❌ | ❌ | Multilingual | 2.8GB |
 | **Qwen 2.5 0.5B (ONNX)** | Text chat in the browser through Transformers.js | — | ❌ | ❌ | Multilingual | 0.5GB |
 | **Gemini Nano** (built-in) | The OS model on Android, and in Chrome | ✅ prompt-based | ❌ | ✅ Android | varies | system |
@@ -291,8 +294,8 @@ copy downloaded before that still fails — uninstall it and install it again.
 
 ### Other formats
 
-Not in the registry yet: MediaPipe `.task` files, ONNX models, the OS models,
-and VibeVoice.
+Not in the registry: MediaPipe `.task` files, ONNX models, the OS models, and
+VibeVoice.
 
 | Model | Format | Size | Desktop | Mobile | Web | HF token |
 |---|---|---|:---:|:---:|:---:|:---:|
@@ -302,7 +305,7 @@ and VibeVoice.
 | [Gemma3n E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-preview) | `.task` | 4.4GB | ❌ | ✅ | ❌ | yes |
 | [Gemma 3 1B](https://huggingface.co/litert-community/Gemma3-1B-IT) | `.task` | 0.5GB | ❌ | ✅ | ✅ | yes |
 | [Gemma 3 270M](https://huggingface.co/litert-community/gemma-3-270m-it) | `.task` | 0.3GB | ❌ | ✅ | ✅ | yes |
-| [DeepSeek R1 Distill Qwen 1.5B](https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B) | `.task` | 1.7GB | ❌ | ✅ | ❌ | no |
+| [DeepSeek R1 Distill Qwen 1.5B](https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B) | `.task` | 1.86GB | ❌ | ✅ | ❌ | no |
 | [Qwen 2.5 1.5B](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct) | `.task` | 1.6GB | ❌ | ✅ | ❌ | no |
 | [Qwen 2.5 0.5B](https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct) | `.task` | 0.5GB | ❌ | ✅ | ❌ | no |
 | [SmolLM 135M](https://huggingface.co/litert-community/SmolLM-135M-Instruct) | `.task` | 167MB | ❌ | ✅ | ❌ | no |
@@ -347,6 +350,40 @@ decided by the device at run time, and Edge runs Phi-4-mini through the same
 Prompt API — see [Built-in AI](/docs/builtin-ai).
 
 ## Installation sources
+
+### From the model catalog
+
+`flutter_edge_ai` 2.5.1 with `flutter_edge_ai_litertlm` 1.16.1 (and
+`flutter_edge_ai_speech` 0.5.10 for speech) installs a
+[Model Registry](/docs/registry) build by name. Each build carries its model
+type, file type, Hugging Face commit, file size and install file name, so
+there is no URL to copy and nothing to keep in step:
+
+```dart
+// A language model, an embedder, a speech model: the same call.
+await FlutterEdgeAi.installFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
+    .withProgress((percent) => print('downloading: $percent%'))
+    .install();
+await FlutterEdgeAi.installFromCatalog(LiteRtEmbedders.embeddinggemma300m.seq256)
+    .withToken(huggingFaceToken) // the repository is gated
+    .install();
+await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.whisperTiny.f32)
+    .install();
+
+// Every model the registered packages offer, and the build for this device.
+for (final model in FlutterEdgeAi.catalog.models) {
+  final variant = model.variantFor(backend: PreferredBackend.gpu);
+  print('${model.id}: ${variant?.id ?? 'nothing for the GPU here'}');
+}
+```
+
+`variantFor` leaves out a build this device cannot run: a build compiled for
+another NPU, a web export on a phone. A build compiled for an NPU names the
+context it was compiled for (`requiredMaxTokens`); keep `maxTokens` at or below
+it. After the download the file's size is checked against the registry.
+`install(activate: false)` installs without making the model active.
+
+### From a URL, an asset or a file
 
 ```dart
 // Network — .litertlm is the cross-platform default (Android/iOS/Desktop).
@@ -518,18 +555,23 @@ On-device speech via the opt-in [`flutter_edge_ai_speech`](/docs/speech) package
 selectable, profile-driven pipelines (you pick the model with `SttModelType` /
 `TtsModelType`). **moonshine-tiny**, **Whisper**, and **Parakeet** (STT) and
 **Matcha**, **Qwen3-TTS** (multilingual), and **Inflect-Nano-v2** (fast) TTS work
-end-to-end today; kokoro / supertonic TTS voices are follow-ons. Native only (no
+end-to-end today. `TtsModelType.kokoro` and `TtsModelType.supertonic` have no pipeline: using either throws `UnimplementedError`. Native only (no
 Web). See [Speech](/docs/speech) for usage.
 A `VoiceSession` also chains STT → LLM → TTS into a push-to-talk voice loop —
 see [Speech](/docs/speech).
 
 **Speech-to-text**
 
-| Model | Input | Size | Status | Auth |
+| Model | Input | Builds (size) | Documented on (CPU) | Auth |
 |---|---|---|---|---|
-| **[moonshine-tiny](https://huggingface.co/litert-community/moonshine-tiny)** | raw 16 kHz PCM | ~104 MB | ✅ end-to-end | ❌ |
-| **[Whisper](https://huggingface.co/litert-community/whisper-tiny)** (tiny / base) | log-mel | — | ✅ end-to-end | ❌ |
-| **[Parakeet](https://huggingface.co/litert-community/parakeet-ctc-0.6b)** (CTC 0.6B) | log-mel | — | ✅ end-to-end | ❌ |
+| **[Moonshine Tiny](/docs/registry#moonshine-tiny)** | raw 16 kHz PCM | f32 109 MB, int8 52 MB | Android, iOS, macOS, Windows x64, Linux x64; f32 also Linux arm64 | ❌ |
+| **[Whisper Tiny](/docs/registry#whisper-tiny)** | log-mel | f32 151 MB, int8 41 MB | Android, iOS, macOS, Windows x64, Linux x64 | ❌ |
+| **[Whisper Base](/docs/registry#whisper-base)** | log-mel | int8 77 MB | Android, iOS, macOS, Windows x64, Linux x64 | ❌ |
+| **[Parakeet CTC 0.6B](/docs/registry#parakeet-ctc-0.6b)** | log-mel | f32 2.35 GB | macOS, Windows x64, Linux x64; not run on phones | ❌ |
+
+Sizes are the model file; the tokenizer adds 0.4–2.5 MB. The registry also
+lists Whisper Base f32 (290 MB) and Parakeet CTC int8 (596 MB), which have not
+been run, and per-SoC NPU builds, which `flutter_edge_ai_speech` refuses.
 
 Whisper is **multilingual** — the shipped checkpoints are the multilingual ones
 (no `.en` suffix), so all 99 of Whisper's languages are available. Set a default
@@ -559,11 +601,11 @@ are English-only.
 
 **Text-to-speech**
 
-| Model | Output | Size | Status | Auth |
+| Model | Output | Size | Documented on (CPU) | Auth |
 |---|---|---|---|---|
-| **[Matcha](https://huggingface.co/litert-community/Matcha-TTS)** | 16-bit PCM @ 22050 Hz | ~90 MB | ✅ end-to-end | ❌ |
-| **[Qwen3-TTS](https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base)** (10 langs + `auto`) | 16-bit PCM | ~1.9 GB | ✅ end-to-end | ❌ |
-| **[Inflect-Nano-v2](https://huggingface.co/sasha-denisov/inflect-nano-v2-litert)** (fast) | 16-bit PCM @ 24 kHz | ~36 MB | ✅ end-to-end | ❌ |
+| **[Matcha-TTS](/docs/registry#matcha-tts)** | 16-bit PCM @ 22050 Hz | 94 MB | Android, iOS, macOS, Windows x64, Linux x64, Linux arm64 | ❌ |
+| **[Qwen3-TTS 0.6B](/docs/registry#qwen3-tts-0.6b)** (10 languages + `auto`) | 16-bit PCM | 1.89 GB | macOS; not run elsewhere | ❌ |
+| **[Inflect-Nano-v2](/docs/registry#inflect-nano-v2)** (fast) | 16-bit PCM @ 24 kHz | 36 MB | Android, iOS, macOS, Windows x64, Linux x64 | ❌ |
 
 ## Embedding models
 
@@ -576,17 +618,17 @@ the maximum is never truncated: it throws `EmbeddingInputTooLongException`.
 
 | Model | Parameters | Dimensions | Max Seq Length | Size | Auth Required |
 |---|---|---|---|---|---|
-| **[EmbeddingGemma 2 text](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm)** (`.litertlm`; web from litertlm 1.13.1) | 270M | 768D | 1024 tokens | 165MB + 71MB weight cache (native) | ❌ |
-| **[EmbeddingGemma 2 text + vision](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm)** (`.litertlm`, text and images; web from litertlm 1.13.1) | 440M | 768D | 1024 tokens | 388MB + 71MB + 218MB weight caches (native) | ❌ |
-| **[EmbeddingGemma 2 text + vision + audio](https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm)** (`.litertlm`, text, images and audio, from litertlm 1.13.1; web audio from 1.13.2) | 740M | 768D | 1024 tokens | 485MB + 385MB weight caches (native) | ❌ |
-| **[Gecko 64](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 64 tokens | 110MB | ❌ |
-| **[Gecko 256](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 256 tokens | 114MB | ❌ |
-| **[Gecko 512](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 512 tokens | 116MB | ❌ |
-| **[EmbeddingGemma 256](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 256 tokens | 179MB | ✅ |
-| **[EmbeddingGemma 512](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 512 tokens | 179MB | ✅ |
-| **[EmbeddingGemma 1024](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 1024 tokens | 183MB | ✅ |
-| **[EmbeddingGemma 2048](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 2048 tokens | 196MB | ✅ |
-| **[all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)** (ONNX; native and web) | 22M | 384D | the graph's | 90MB (`model.onnx`) | ❌ |
+| **[EmbeddingGemma 2 text](/docs/registry#embeddinggemma-2-text-270m)** (`.litertlm`; web from litertlm 1.13.1) | 270M | 768D | 1024 tokens | 165MB + 71MB weight cache (native) | ❌ |
+| **[EmbeddingGemma 2 text + vision](/docs/registry#embeddinggemma-2-text-vision-440m)** (`.litertlm`, text and images; web from litertlm 1.13.1) | 440M | 768D | 1024 tokens | 388MB + 71MB + 218MB weight caches (native) | ❌ |
+| **[EmbeddingGemma 2 text + vision + audio](/docs/registry#embeddinggemma-2-740m)** (`.litertlm`, text, images and audio, from litertlm 1.13.1; web audio from 1.13.2) | 740M | 768D | 1024 tokens | 485MB + 385MB weight caches (native) | ❌ |
+| **[Gecko 64](/docs/registry#gecko-110m-en)** | 110M | 768D | 64 tokens | 112MB | ❌ |
+| **[Gecko 256](/docs/registry#gecko-110m-en)** | 110M | 768D | 256 tokens | 114MB | ❌ |
+| **[Gecko 512](/docs/registry#gecko-110m-en)** | 110M | 768D | 512 tokens | 120MB | ❌ |
+| **[EmbeddingGemma 256](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 256 tokens | 179MB | ✅ |
+| **[EmbeddingGemma 512](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 512 tokens | 179MB | ✅ |
+| **[EmbeddingGemma 1024](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 1024 tokens | 183MB | ✅ |
+| **[EmbeddingGemma 2048](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 2048 tokens | 196MB | ✅ |
+| **[all-MiniLM-L6-v2](https://huggingface.co/Xenova/all-MiniLM-L6-v2)** (ONNX; native and web) | 22M | 384D | the graph's | 90MB (`onnx/model.onnx`) | ❌ |
 | **[EmbeddingGemma-300M ONNX](https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX)** (ONNX; native only) | 300M | 768D | the graph's | 175MB–1.2GB by variant | ❌ |
 
 EmbeddingGemma 2 is one `.litertlm` file with its own tokenizer (no

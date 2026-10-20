@@ -32,8 +32,9 @@ only the engines, stores and features your app uses — see
 - **Stop Generation:** Cancel text generation mid-process on Android, iOS, Web, and Desktop.
 - **Backend Switching:** Choose CPU or GPU where supported, plus NPU for
   `.litertlm` on Qualcomm Android devices, Qualcomm Linux arm64 boards and
-  Google Tensor G5/G6 Pixels (opt-in, see [LiteRT-LM](/docs/litertlm)) and on
-  Intel LunarLake/PantherLake Windows PCs.
+  Google Tensor Pixels (opt-in, see [LiteRT-LM](/docs/litertlm)) and on Intel
+  NPUs on Windows. The Tensor G5 and Panther Lake builds are not run yet: see
+  the [Model Registry](/docs/registry).
 - **LoRA (MediaPipe `.task`):** Efficient fine-tuning and integration of LoRA (Low-Rank Adaptation) weights.
 - **Enhanced Downloads:** Smart retry logic with exponential backoff and automatic restart of interrupted downloads.
 - **Android Foreground Service:** opt in with `foreground: true` for large downloads to bypass the 9-minute timeout.
@@ -76,8 +77,8 @@ only the engines, stores and features your app uses — see
 - **Genkit 0.10.0** (`genkit_flutter_edge_ai`): tool `ref`s travel as call ids
   both ways; it requires `flutter_edge_ai` 2.4.0. See
   [Genkit](/docs/genkit#tool-calls).
-- **2.4.1 / `flutter_edge_ai_litertlm` 1.15.0:** Google Tensor G5/G6 NPUs on
-  Pixels, opt-in with `google_tensor_npu: true`; a stopped turn is rewound in
+- **2.4.1 / `flutter_edge_ai_litertlm` 1.15.0:** Google Tensor NPUs on
+  Pixels (run on G6, G5 not run), opt-in with `google_tensor_npu: true`; a stopped turn is rewound in
   place, so the chat keeps earlier images and audio; the Intel NPU on Windows
   loads its model again; a raw Gemma 4 tool call runs with typed arguments or
   not at all. See [LiteRT-LM](/docs/litertlm).
@@ -95,8 +96,8 @@ Upgrading from 2.3: see [Migration](/docs/migration).
   `ModelFileType.gguf` selects the optional [llama.cpp engine](/docs/llama),
   `flutter_edge_ai_llama`, on pub.dev since 0.0.1.
 - **EmbeddingGemma 2 on an Intel NPU** (`flutter_edge_ai_litertlm` 1.13.2): the
-  Panther Lake bundles run on Windows x64 with
-  `preferredBackend: PreferredBackend.npu`. See
+  Panther Lake bundles load on Windows x64 with
+  `preferredBackend: PreferredBackend.npu` (not yet run on an Intel NPU). See
   [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 - **Audio turns** (`flutter_edge_ai_speech` 0.5.7, `flutter_edge_ai_agent`
   0.2.10): `VoiceSession.runAudioTurn` gives the model the recording itself,

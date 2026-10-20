@@ -322,7 +322,7 @@ generic bundle never runs on the NPU, flag or not. See
 dispatch, built from LiteRT and covered by Google's Tensor SDK terms; the
 runtime it drives is part of the Pixel system image. It runs on a Pixel with
 that Tensor generation and Android 16 or later, except on a build whose ID
-starts with `BP2A`, which LiteRT does not run the NPU on. See [LiteRT-LM](/docs/litertlm).
+starts with `BP2A`, which LiteRT does not run the NPU on. Run so far on Tensor G6 only, with debug builds. See [LiteRT-LM](/docs/litertlm).
 
 **ProGuard/R8 (only if you use `flutter_edge_ai_mediapipe`):** the package ships
 its own consumer ProGuard rules, so a release build needs no rules in your app

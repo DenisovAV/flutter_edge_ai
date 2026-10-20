@@ -58,7 +58,7 @@ library loading sequence differs per platform.
 
 **Model format (LiteRT-LM engine):** the LiteRT-LM engine on desktop accepts only
 `.litertlm` files. MediaPipe `.bin` / `.task` models used on web won't load on
-desktop. Any `.litertlm` model works; see [Models](/docs/models). (The
+desktop. A generic `.litertlm` build runs on every desktop. A build compiled for an NPU runs only on its vendor's platform: Intel on Windows x64, Qualcomm on Linux arm64 with `qualcomm_npu`. MediaTek builds are refused everywhere, and the `-web.litertlm` exports are for the web. The [Model Registry](/docs/registry) shows where each build runs. (The
 [ONNX engine](/docs/onnx) uses its own `.onnx` model directories instead.)
 
 </Warning>
@@ -96,8 +96,8 @@ chunk after the first — the reply is fluent, answers from the opening of your
 prompt and never mentions the rest, with no error raised
 ([LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508)).
 
-EmbeddingGemma 2's Panther Lake bundles (`…_Intel_PTL.litertlm`) run on the
-same stack from `flutter_edge_ai_litertlm` 1.13.2:
+EmbeddingGemma 2's Panther Lake bundles (`…_Intel_PTL.litertlm`) load on the
+same stack from `flutter_edge_ai_litertlm` 1.13.2, not yet run on an Intel NPU:
 see [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 
 </Info>

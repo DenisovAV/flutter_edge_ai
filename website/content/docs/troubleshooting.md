@@ -56,7 +56,7 @@ Auth errors (401/403/404) fail fast after one attempt — they are not retried. 
 - **iOS:** ensure `Runner.entitlements` contains the memory entitlements and the deployment target is at least 15.0 (16.0 with `flutter_edge_ai_mediapipe`, 16.4 with `flutter_edge_ai_llama`) — in Xcode on the Runner target under SPM, or in the `Podfile` when one exists. See [Installation → iOS](/docs/installation#ios).
 - **iOS, MediaPipe `.task` on GPU:** the app is terminated while the model loads, with the entitlements present and no crash report. Run `.task` models on `PreferredBackend.cpu` on iOS, or use the `.litertlm` build. See [MediaPipe → Backends](/docs/mediapipe#backends).
 - Reduce `maxTokens` if you hit memory pressure — but **keep it at 1024 or higher for `.litertlm` models** (see "maxTokens vs maxOutputTokens" below). To shorten replies, use `maxOutputTokens`, not a smaller `maxTokens`.
-- Use smaller models (1B-2B parameters) for devices with <6GB RAM. Multimodal models (Gemma 4, Gemma3n) need 8GB+.
+- Use smaller models (1B-2B parameters) for devices with <6GB RAM. Gemma 4 E2B needs 6 GB or more (a 4 GB phone is killed while it loads); the larger Gemma 4 E4B and Gemma 3n files have no measured floor.
 - Close sessions and models when not needed; monitor usage with `sizeInTokens()`.
 - To see what a model actually costs, measure the memory the OS cannot reclaim before and after loading it with [`flutter_edge_ai_diagnostics`](/docs/diagnostics) (Android + iOS + macOS). The RSS a profiler shows also counts mmapped weights the OS can drop, so it does not show that cost.
 
@@ -239,14 +239,15 @@ logged: every prefill chunk after the first is dropped, so the model genuinely
 never saw the end of your prompt. On Qualcomm it is a size threshold in the
 compiled bundle's prefill mask (~1 MiB; at prefill 128 the largest working
 `cache_length` for Gemma 3 — 4 attention heads per KV head — is 896, and every published
-`qualcomm.*` Gemma 3 bundle is built above it); on Intel it happens regardless
+Gemma 3 bundle for a Qualcomm NPU (270M and 1B) is built above it); on Intel it happens regardless
 of size, through a different defect. Run a **Gemma 4** bundle on the NPU, or move
 that model to `PreferredBackend.cpu` / `.gpu`. Upstream:
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).
 
 Note that `maxTokens` is **not** clamped up to 1024 on the NPU attempt the way
-it is on CPU and GPU — the safe context is baked into the compiled bundle, so
-pass the `cache_length` it was built for. A generic bundle is never tried on
+it is on CPU and GPU — the context is baked into the compiled bundle (4096 for
+the Gemma 4 E2B NPU builds, 1280 for Gemma 3 1B and FastVLM, 4096 for Gemma 3
+270M; the catalog's `requiredMaxTokens`), so keep `maxTokens` at or below it. A generic bundle is never tried on
 the NPU (it has no NPU graph: LiteRT-LM would run it on the CPU and report
 `npu`), and a bundle compiled for an NPU never runs on the GPU or CPU, so the
 floor applies only to the GPU and CPU attempts of a generic bundle.

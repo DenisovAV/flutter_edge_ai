@@ -75,7 +75,7 @@ LiteRT.js loader and **rag/sqlite3.wasm**; EmbeddingGemma 2 needs only the
 
 | Model | Files | Platforms | Tokenizer | Longest input |
 |---|---|---|---|---|
-| EmbeddingGemma 2 (text, images, audio) | one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web on WebGPU; per-SoC bundles on Qualcomm NPUs, on Google Tensor G5/G6 (Android, opt-in), and on Intel Panther Lake NPUs on Windows | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 (text, images, audio) | one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web on WebGPU; per-SoC bundles on Qualcomm NPUs, on Google Tensor G5/G6 (Android, opt-in; G5 not run) and on Intel Panther Lake NPUs on Windows (not run) | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko | `.tflite` + tokenizer file | Android, iOS, macOS, Linux, Windows, Web | `flutter_edge_ai_embeddings` | the model's sequence length |
 | MiniLM, EmbeddingGemma ONNX | `.onnx` + `tokenizer.json` | native via **flutter_edge_ai_onnx**; Web for WordPiece models | `flutter_edge_ai_embeddings` | the graph's static length, or none |
 
@@ -385,13 +385,15 @@ print(embedder.activeBackend); // PreferredBackend.npu
 - **The app opts in to Qualcomm's stack** with the flag the LLM NPU path uses,
   **qualcomm_npu: true** under **hooks: user_defines: flutter_edge_ai_litertlm:**
   ([LiteRT-LM](/docs/litertlm)).
-- **Use the bundle for the device's SoC.** Verified on device: SM8850
-  (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
-  VENTUNO Q). Google also publishes SM8550, SM8750, Google Tensor G5/G6,
-  MediaTek MT6991/MT6993 and Intel PTL builds: the Qualcomm ones load but are
-  not verified by us, Tensor G5/G6 runs on matching Pixels
-  ([below](#embeddinggemma-2-on-a-google-tensor-npu)), Intel PTL runs on Windows
-  ([below](#embeddinggemma-2-on-an-intel-npu)), and MediaTek is refused. The
+- **Use the bundle for the device's SoC.** Run on device: SM8850 (Snapdragon 8
+  Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino VENTUNO Q).
+  Google also publishes SM8550, SM8750, Google Tensor G5/G6, MediaTek
+  MT6991/MT6993 and Intel PTL builds: the Qualcomm ones load but have not been
+  run by us, Tensor G6 runs on a Pixel 11 and G5 is not run
+  ([below](#embeddinggemma-2-on-a-google-tensor-npu)), Intel PTL loads on
+  Windows x64 but is not run on an Intel NPU
+  ([below](#embeddinggemma-2-on-an-intel-npu)), and MediaTek is refused. Every
+  build and where it has been run: the [Model Registry](/docs/registry). The
   package reads what a bundle is compiled for from the bundle, not from its
   file name.
 - **Fast, and close to the CPU vectors, not equal to them.** On an SM8650
@@ -421,32 +423,35 @@ print(embedder.activeBackend); // PreferredBackend.npu
 ### EmbeddingGemma 2 on a Google Tensor NPU
 
 Google's `…_Google_Tensor_G5.litertlm` and `…_Google_Tensor_G6.litertlm`
-bundles (270m, 440m) run from flutter_edge_ai_litertlm 1.15.0 on a **Pixel with
+bundles (270m, 440m, 740m) load from flutter_edge_ai_litertlm 1.15.0 on a **Pixel with
 that Tensor generation and Android 16 or later** (not a BP2A build), with
 **PreferredBackend.npu**, in an app whose pubspec sets **google_tensor_npu:
 true** under **hooks: user_defines: flutter_edge_ai_litertlm:**
-([LiteRT-LM](/docs/litertlm)). Install the bundle from the same repository and
-revision as above, and load it as above.
+([LiteRT-LM](/docs/litertlm)). Install the bundle from its model's repository at
+the revision the [Model Registry](/docs/registry) pins (each size has its own),
+and load it as above.
 
 - Run on a Pixel 11 (Tensor G6) with a debug build: the 270m embeds text and
-  the 440m images on the NPU. A Tensor G5 and a release-signed build are not run
-  yet.
+  the 440m images on the NPU. A Tensor G5, the 740m and a release-signed build
+  are not run yet.
 - The same rules as on Qualcomm: refused without **npu**, off Android, without
   the flag, or on a device outside LiteRT's rule; LiteRT refuses the other
   Tensor generation's bundle when the engine is created. Never moved to CPU.
 - **Its own profile id**: the CPU text id plus **-npu-tensor_g6** (and
-  **…-vis140** for an image index), shared by the 270m and the 440m, whose text
-  towers are byte-identical.
+  **…-vis140** for an image index), shared by the 270m, the 440m and the 740m,
+  whose text towers are byte-identical.
 
 ### EmbeddingGemma 2 on an Intel NPU
 
 Google's `…_Intel_PTL.litertlm` bundles are compiled for the Intel Panther Lake
-NPU. From flutter_edge_ai_litertlm 1.13.2 they run on **Windows x64** with
+NPU. From flutter_edge_ai_litertlm 1.13.2 they load on **Windows x64** (not
+yet run on an Intel NPU) with
 **PreferredBackend.npu**, through the Intel stack (**LiteRtDispatch.dll**,
 OpenVINO and TBB) that every Windows x64 build already carries beside the
 executable — no opt-in flag. Install
-`embeddinggemma-2-text-270m_Intel_PTL.litertlm` (or the 440m's) from the same
-repository and revision as above, and load it as above.
+`embeddinggemma-2-text-270m_Intel_PTL.litertlm` (or the 440m's or the 740m's,
+each from its own repository at the revision the [Model Registry](/docs/registry)
+pins), and load it as above.
 
 - **The load checks the NPU.** It embeds one test text and refuses unless it
   gets a valid vector, so a PC without an Intel NPU, or one the stack cannot
@@ -456,8 +461,8 @@ repository and revision as above, and load it as above.
   refused with the reason when **LiteRtDispatch.dll** is not beside the
   executable, and never moved to CPU.
 - **Its own profile id**: the CPU text id plus **-npu-ptl** (and **…-vis140**
-  for an image index), shared by the 270m and the 440m, whose text towers are
-  byte-identical.
+  for an image index), shared by the 270m, the 440m and the 740m, whose text
+  towers are byte-identical.
 
 ## EmbeddingGemma 1 (`.tflite` + tokenizer)
 

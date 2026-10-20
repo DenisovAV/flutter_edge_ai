@@ -222,7 +222,7 @@ DynamicLibrary _openLiteRt() {
     // message actively misleading on the one occasion someone reads it.
     try {
       return DynamicLibrary.open('LiteRtLm.framework/LiteRtLm');
-    } catch (error) {
+    } on ArgumentError catch (error) {
       throw UnsupportedError(
         'LiteRtLm.framework/LiteRtLm did not load. On iOS the app bundle is '
         'the only place it can come from. dyld: ${dyldErrorText(error)}',

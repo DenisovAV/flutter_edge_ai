@@ -554,7 +554,9 @@ holds across all of desktop: there is no MediaPipe engine on desktop — `.task`
 
 **macOS needs one extra step:** turn Swift Package Manager off for the app
 (`flutter: config: enable-swift-package-manager: false` in `pubspec.yaml`) and
-replace the `post_install` block of the generated `macos/Podfile` — see
+replace the `post_install` block of the generated `macos/Podfile` (an app that
+already had a `macos/Podfile` keeps Swift Package Manager on and only replaces
+the block) — see
 [Desktop → macOS](/docs/desktop#macos). Without it the build succeeds and the
 first model load fails.
 

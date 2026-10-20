@@ -40,8 +40,9 @@ enum MacOSLoadCause {
 
 /// Reads the cause from [dyldText], the error `DynamicLibrary.open` reports.
 ///
-/// The phrases are dyld's, measured on macOS 26.5, except the policy and Team
-/// ID ones, which are Apple's documented text. The order matters: a companion
+/// The phrases are dyld's, measured on macOS 26.5, except the policy and code
+/// signature ones, which are Apple's documented text (every library
+/// validation refusal says "not valid for use in process"). The order matters: a companion
 /// that is refused or built for another architecture is also "Library not
 /// loaded", and dyld lists "(no such file)" for the paths it tried on the way
 /// in almost every failure, so [MacOSLoadCause.notBundled] needs the app's own
@@ -53,8 +54,7 @@ MacOSLoadCause diagnoseMacOSLoadError(String dyldText) {
   if (dyldText.contains('disallowed by system policy')) {
     return MacOSLoadCause.blockedByPolicy;
   }
-  if (dyldText.contains('different Team IDs') ||
-      dyldText.contains('not valid for use in process')) {
+  if (dyldText.contains('not valid for use in process')) {
     return MacOSLoadCause.libraryValidation;
   }
   if (dyldText.contains('Library not loaded') &&
@@ -80,7 +80,8 @@ String macOSLoadErrorMessage(String dyldText) {
           'that is fixed, set `enable-swift-package-manager: false` under '
           "`flutter: config:` in the app's pubspec.yaml, run `flutter pub get`, "
           'and replace the post_install block in macos/Podfile with the one '
-          'from https://flutteredge.ai/docs/desktop#macos. An app that already '
+          'from https://flutteredge.ai/docs/desktop#macos, keeping any lines of '
+          'your own inside it. An app that already '
           'had a macos/Podfile keeps Swift Package Manager on and only needs '
           'that block. If the block is already there, run `flutter clean` and '
           'build again.',
@@ -143,7 +144,8 @@ DynamicLibrary openMacOSLiteRtLm({DynamicLibrary Function(String path)? open}) {
 /// A failure is an [UnsupportedError]: inside an app its message is
 /// [macOSLoadErrorMessage]; outside one it names each copy that exists with
 /// dyld's reason, because there the framework is never present and its error
-/// says nothing. [executable], [open] and [exists] are for tests.
+/// says nothing. Any other error goes through unchanged. [executable],
+/// [open] and [exists] are for tests.
 DynamicLibrary openMacOSLiteRtLmForTflite({
   required List<String> Function() devCandidates,
   String? executable,
@@ -155,7 +157,7 @@ DynamicLibrary openMacOSLiteRtLmForTflite({
   final String bundledError;
   try {
     return opener(macOSLiteRtLmFramework);
-  } catch (error) {
+  } on ArgumentError catch (error) {
     bundledError = dyldErrorText(error);
   }
   if ((executable ?? Platform.resolvedExecutable).contains(
@@ -175,7 +177,7 @@ DynamicLibrary openMacOSLiteRtLmForTflite({
     }
     try {
       return opener(path);
-    } catch (error) {
+    } on ArgumentError catch (error) {
       // Keep going: a copy that exists but does not load (wrong arch, a
       // missing companion, a stale build) must not hide a later one that
       // does, the build hook's cache included.
@@ -184,9 +186,11 @@ DynamicLibrary openMacOSLiteRtLmForTflite({
   }
   throw UnsupportedError(
     'flutter_edge_ai_litertlm: LiteRT-LM did not load. Outside an app it is '
-    "loaded from the flutter_edge_ai_litertlm build hook's cache, which a "
-    'build or `flutter test` of a package that depends on it fills. '
+    'loaded from a local prebuilt or from the flutter_edge_ai_litertlm build '
+    "hook's cache, which a build or `flutter test` of a package that depends "
+    'on it fills. '
     '${failed.isEmpty ? 'No copy exists.' : 'These copies did not load:\n${failed.join('\n')}'}'
-    '${missing.isEmpty ? '' : '\nNot found: ${missing.join(', ')}'}',
+    '${missing.isEmpty ? '' : '\nNot found: ${missing.join(', ')}'}'
+    '\n$macOSLiteRtLmFramework: $bundledError',
   );
 }

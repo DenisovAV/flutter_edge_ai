@@ -181,8 +181,8 @@ flutter:
     enable-swift-package-manager: false
 ```
 
-2. Replace that Podfile's `post_install` block with the one below; the next
-   build runs `pod install` itself.
+2. Replace that Podfile's `post_install` block with the one below, keeping any
+   lines of your own inside it; the next build runs `pod install` itself.
 
 A green build proves nothing: without the block the first model load fails with
 `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. If the app already has a `macos/Podfile` (another plugin needs

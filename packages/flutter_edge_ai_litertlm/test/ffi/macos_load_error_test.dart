@@ -1,8 +1,9 @@
 // The macOS load error names the cause and the fix (#689).
 //
 // The dyld texts below were measured on macOS 26.5 with the native-v0.18.0-f
-// libLiteRtLm, in a Swift Package Manager app (paths shortened). The Team ID
-// and policy ones are assembled from Apple's documented wording.
+// libLiteRtLm, in a Swift Package Manager app (paths shortened), or are built
+// around a measured fragment where marked. The code signature, policy and
+// symbol ones are assembled from Apple's documented wording.
 
 import 'dart:ffi';
 import 'dart:io';
@@ -21,6 +22,7 @@ const _missingCompanion =
     "  Reason: tried: '$_app/Frameworks/LiteRtLm.framework/Versions/A/"
     "libGemmaModelConstraintProvider.dylib' (no such file)";
 
+// Built around the measured "incompatible architecture" fragment.
 const _wrongArchitecture =
     "dlopen(LiteRtLm.framework/LiteRtLm, 0x0002): tried: "
     "'LiteRtLm.framework/LiteRtLm' (no such file), "
@@ -36,6 +38,7 @@ const _notBundled =
     "file), '/usr/lib/LiteRtLm.framework/LiteRtLm' (no such file, not in dyld "
     "cache), 'LiteRtLm.framework/LiteRtLm' (no such file)";
 
+// Built around the measured "slice is not valid mach-o file" fragment.
 const _corruptFramework =
     "dlopen(LiteRtLm.framework/LiteRtLm, 0x0002): tried: "
     "'LiteRtLm.framework/LiteRtLm' (no such file), "
@@ -50,8 +53,8 @@ const _libraryValidation =
     "framework/LiteRtLm' not valid for use in process: mapping process and "
     'mapped file (non-platform) have different Team IDs)';
 
-// The companion is in the app but refused, e.g. after the workaround under
-// Hardened Runtime: the advice must not be the workaround again.
+// The companion is in the app but signed by another team: the advice must not
+// be the workaround again.
 const _companionRefused =
     "dlopen(LiteRtLm.framework/LiteRtLm, 0x0002): Library not loaded: "
     '@rpath/GemmaModelConstraintProvider.framework/Versions/A/'
@@ -69,6 +72,45 @@ const _blockedByPolicy =
     "<0D589743-9A44-3E57-A0AF-BC3EFE258BA3> '$_app/Frameworks/LiteRtLm."
     "framework/LiteRtLm' not valid for use in process: library load "
     'disallowed by system policy)';
+
+// An ad-hoc-signed framework under Hardened Runtime without the library
+// validation exception.
+const _adHocRefused =
+    "dlopen(LiteRtLm.framework/LiteRtLm, 0x0002): tried: "
+    "'$_app/Frameworks/LiteRtLm.framework/LiteRtLm' (code signature in "
+    "<0D589743-9A44-3E57-A0AF-BC3EFE258BA3> '$_app/Frameworks/LiteRtLm."
+    "framework/LiteRtLm' not valid for use in process: mapped file has no "
+    'Team ID and is not a platform binary (signed with custom identity or '
+    'adhoc?))';
+
+const _companionWrongArchitecture =
+    "dlopen(LiteRtLm.framework/LiteRtLm, 0x0002): Library not loaded: "
+    '@rpath/libGemmaModelConstraintProvider.dylib\n'
+    "  Reason: tried: '$_app/Frameworks/LiteRtLm.framework/Versions/A/"
+    "libGemmaModelConstraintProvider.dylib' (mach-o file, but is an "
+    "incompatible architecture (have 'x86_64', need 'arm64'))";
+
+const _companionBlocked =
+    "dlopen(LiteRtLm.framework/LiteRtLm, 0x0002): Library not loaded: "
+    '@rpath/GemmaModelConstraintProvider.framework/Versions/A/'
+    'GemmaModelConstraintProvider\n'
+    "  Reason: tried: '$_app/Frameworks/GemmaModelConstraintProvider.framework/"
+    "Versions/A/GemmaModelConstraintProvider' (code signature in "
+    "<0D589743-9A44-3E57-A0AF-BC3EFE258BA3> '$_app/Frameworks/"
+    "GemmaModelConstraintProvider.framework/Versions/A/"
+    "GemmaModelConstraintProvider' not valid for use in process: library "
+    'load disallowed by system policy)';
+
+// A companion from another native version: the provider loads, a symbol
+// does not resolve.
+const _symbolNotFound =
+    'dlopen(LiteRtLm.framework/LiteRtLm, 0x0002): Symbol not found: '
+    '__ZN6litert2lm28GemmaModelConstraintProvider6CreateEv\n'
+    '  Referenced from: <0D589743-9A44-3E57-A0AF-BC3EFE258BA3> '
+    '$_app/Frameworks/LiteRtLm.framework/Versions/A/LiteRtLm\n'
+    '  Expected in:     <4C4C4472-5555-3144-A1A2-2E0A54650C0F> '
+    '$_app/Frameworks/GemmaModelConstraintProvider.framework/Versions/A/'
+    'GemmaModelConstraintProvider';
 
 ArgumentError _loadFailure(String dyldText) =>
     ArgumentError("Failed to load dynamic library 'x': $dyldText");
@@ -109,6 +151,25 @@ void main() {
         diagnoseMacOSLoadError(_companionRefused),
         MacOSLoadCause.libraryValidation,
       );
+      expect(
+        diagnoseMacOSLoadError(_companionBlocked),
+        MacOSLoadCause.blockedByPolicy,
+      );
+      expect(
+        diagnoseMacOSLoadError(_companionWrongArchitecture),
+        MacOSLoadCause.wrongArchitecture,
+      );
+    });
+
+    test('an ad-hoc signature refused is library validation', () {
+      expect(
+        diagnoseMacOSLoadError(_adHocRefused),
+        MacOSLoadCause.libraryValidation,
+      );
+    });
+
+    test('a companion from another version is not a missing one', () {
+      expect(diagnoseMacOSLoadError(_symbolNotFound), MacOSLoadCause.unknown);
     });
 
     test('a framework that is there but broken is not a missing one', () {
@@ -139,12 +200,16 @@ void main() {
       // Flutter's generated Podfile has a post_install already; a second one
       // fails `pod install`.
       expect(message, contains('replace the post_install block'));
+      expect(message, contains('keeping any lines of your own'));
       expect(message, contains('https://flutteredge.ai/docs/desktop#macos'));
       expect(message, endsWith('dyld: $_missingCompanion'));
     });
 
     test('each cause gets its own fix', () {
-      expect(macOSLoadErrorMessage(_wrongArchitecture), contains('arm64'));
+      expect(
+        macOSLoadErrorMessage(_wrongArchitecture),
+        contains('Apple silicon (arm64) only'),
+      );
       expect(
         macOSLoadErrorMessage(_libraryValidation),
         contains('com.apple.security.cs.disable-library-validation'),
@@ -306,6 +371,41 @@ void main() {
       final message = '${(thrown! as UnsupportedError).message}';
       expect(message, contains('No copy exists.'));
       expect(message, contains('Not found: /cache/libLiteRtLm.dylib'));
+      // The framework's own reason is kept, in case it is there but broken.
+      expect(
+        message,
+        contains(
+          '\nLiteRtLm.framework/LiteRtLm: Failed to load dynamic library',
+        ),
+      );
+    });
+
+    test('by default reads the running executable and the disk', () {
+      // flutter_tester, which runs this file, is not inside an app, so the
+      // copies are tried; the existence check is the real one.
+      final dir = Directory.systemTemp.createTempSync('tflite_open');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final copy = File('${dir.path}/libLiteRtLm.dylib')..writeAsStringSync('');
+      expect(
+        openMacOSLiteRtLmForTflite(
+          devCandidates: () => ['${dir.path}/missing.dylib', copy.path],
+          open: (path) =>
+              path == copy.path ? process : throw _loadFailure(_notBundled),
+        ),
+        same(process),
+      );
+    });
+
+    test('lets any other error through unchanged', () {
+      final error = StateError('not a load failure');
+      expect(
+        () => openMacOSLiteRtLmForTflite(
+          devCandidates: () => fail('not reached'),
+          executable: tester,
+          open: (_) => throw error,
+        ),
+        throwsA(same(error)),
+      );
     });
   });
 

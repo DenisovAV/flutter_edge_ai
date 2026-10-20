@@ -85,7 +85,7 @@ checkout until that release is published. Adjust the path for your app:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.4.1
+  flutter_edge_ai: ^2.5.0
   flutter_edge_ai_llama:
     path: ../flutter_edge_ai/packages/flutter_edge_ai_llama
 ```

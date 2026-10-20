@@ -21,7 +21,7 @@ CI that fails on warnings fail.
    model on the web, throws `DeciderUnsupportedException`. Both return a `Decider` whose `DeciderAnswer` reads the same, so code
    that reads answers (choice, ranked, abstainReason, provenance) needs no
    change when one replaces the other; check `decider.capabilities`
-   (`supportsAmong`, `storable`, `calibratedProbabilities`, `modalities`)
+   (`supportsAmong`, `storable`, `calibratedProbabilities`, `modalities`, `questionType`)
    before using what only one kind has.
 2. Options and requests are embedded with `TaskType.sentenceSimilarity`. Give
    each option 5–30 example requests (`examples:`); a `description` alone is
@@ -370,6 +370,12 @@ switch (answer.questionType) {
   answer abstains with `AbstainReason.noneOption`.
 - The decider borrows the active model: when core closes it (another model or
   another `maxTokens` requested), the decider is closed too; create it again.
+  On a model from `FlutterEdgeAi.openModel`, closing that model closes it.
+- Options carry no `examples:`: a language-model decider refuses them with
+  `ArgumentError`.
+- A decision whose question and options alone exceed `maxTokens` fails
+  `createDecider` with `DeciderUnsupportedException`; load the model with a
+  larger `maxTokens`.
 - Noul (`no`/`yes`) and Score (levels `0`…`K − 1`) questions never abstain.
 - Text input only, no `among`, no `context`. Input containing chat-template
   control text (`<start_of_turn>`, `<end_of_turn>`, `<bos>`, …), or whose

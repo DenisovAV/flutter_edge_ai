@@ -281,6 +281,9 @@ void main() {
       'context',
       'dimension',
       'zero',
+      'nan',
+      'infinity',
+      'non-unit',
     ]) {
       test('refuses unqualified $scenario and closes its runtime', () async {
         switch (scenario) {
@@ -296,6 +299,12 @@ void main() {
             engine.metadata['gemma-embedding2.embedding_length_out'] = '512';
           case 'zero':
             engine.vector = [0, 0];
+          case 'nan':
+            engine.vector = [double.nan, 0];
+          case 'infinity':
+            engine.vector = [double.infinity, 0];
+          case 'non-unit':
+            engine.vector = [0.5, 0];
         }
         final p = await pass();
         await expectLater(p.load(), throwsA(isA<EmbeddingLoadException>()));

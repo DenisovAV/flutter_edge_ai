@@ -813,9 +813,11 @@ Native platforms need no web setup.
 The native library (`native-v0.18.0-f`, LiteRT-LM v0.18.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
-entitlements, and on macOS a `post_install` block in `macos/Podfile`, without
-which the first model load fails with
-`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. See
+entitlements, and on macOS a `post_install` block in `macos/Podfile`, with Swift
+Package Manager turned off for an app that had no Podfile ([Desktop → macOS](https://flutteredge.ai/docs/desktop#macos)).
+Without them the first model load fails; the error contains
+`flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names the fix
+([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)). See
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
 `PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and

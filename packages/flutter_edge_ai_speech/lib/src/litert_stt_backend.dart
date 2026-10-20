@@ -1,4 +1,6 @@
 import 'package:flutter_edge_ai/engine.dart';
+
+import 'catalog/speech_catalog.dart' show LiteRtSpeechModels;
 import 'litert/litert_speech_recognizer.dart';
 import 'model/stt_model_profile.dart';
 
@@ -8,11 +10,17 @@ import 'model/stt_model_profile.dart';
 ///
 /// Pure factory; core owns the singleton lifecycle via
 /// [SpeechRecognizer.addCloseListener]. Mirrors `LiteRtEmbeddingBackend`.
-class LiteRtSttBackend implements SttBackendProvider {
+class LiteRtSttBackend implements SttBackendProvider, ModelCatalogSource {
   const LiteRtSttBackend();
 
   @override
   String get name => 'LiteRT STT';
+
+  /// The speech-to-text models this backend runs, pinned to Hugging Face commits:
+  /// [LiteRtSpeechModels.sttCatalog]. `FlutterEdgeAi.catalog` includes it once
+  /// the backend is passed to `initialize`.
+  @override
+  ModelCatalog get modelCatalog => LiteRtSpeechModels.sttCatalog;
 
   @override
   int get priority => 0;

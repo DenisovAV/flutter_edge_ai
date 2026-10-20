@@ -1,3 +1,7 @@
+## 0.5.9
+- Model catalog: `LiteRtSpeechModels`, every STT and TTS build pinned to its Hugging Face commit, in `FlutterEdgeAi.catalog`.
+- Require `flutter_edge_ai` ^2.5.0 and `flutter_edge_ai_litertlm` ^1.16.0.
+
 ## 0.5.8
 - Docs: after a barge-in, earlier audio turns stay in context with `flutter_edge_ai_litertlm` 1.15.0.
 

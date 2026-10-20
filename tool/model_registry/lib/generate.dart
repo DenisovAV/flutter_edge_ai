@@ -23,6 +23,12 @@ List<GeneratedFile> generateAll(Directory registryDir, List<Entry> entries) {
           'litert_catalog.g.dart',
       content: generateLiteRtCatalog(entries, derived),
     ),
+    (
+      path:
+          'packages/flutter_edge_ai_speech/lib/src/catalog/generated/'
+          'speech_catalog.g.dart',
+      content: generateSpeechCatalog(entries),
+    ),
   ];
 }
 
@@ -181,10 +187,18 @@ void _modelClass(
     ..writeln('        ],')
     ..writeln('      );');
   for (final v in offered) {
-    final file = v['file']! as Map<String, Object?>;
+    final file = v['file'] as Map<String, Object?>?;
+    final files = [
+      for (final f in (v['files'] as List? ?? const []))
+        f as Map<String, Object?>,
+    ];
+    final doc = file != null
+        ? '`${file['path']}`, ${_size(file['size']! as int)}'
+        : '${files.length} files, '
+              '${_size(files.fold(0, (sum, f) => sum + (f['size']! as int)))}';
     out
       ..writeln()
-      ..writeln('  /// `${file['path']}`, ${_size(file['size']! as int)}.')
+      ..writeln('  /// $doc.')
       ..writeln(
         '  $variantType get ${dartMemberName(v['slug']! as String)} => '
         '${constName(v)};',
@@ -302,6 +316,152 @@ void _embedderModel(StringBuffer out, Map<String, Object?> m) {
           '  modalities: {${modalities.map((x) => 'EmbeddingModality.$x').join(', ')}},',
         );
       if (npu != null) out.writeln('  npuTarget: ${_npuTarget(npu)},');
+      out
+        ..writeln(');')
+        ..writeln();
+    },
+  );
+}
+
+/// `flutter_edge_ai_speech`'s catalog part: its STT and TTS models.
+String generateSpeechCatalog(List<Entry> entries) {
+  final mine =
+      entries
+          .where((e) => e.data['package'] == 'flutter_edge_ai_speech')
+          .toList()
+        ..sort((a, b) => a.id.compareTo(b.id));
+  final stt = [
+    for (final e in mine)
+      if (e.data['kind'] == 'stt') e.data,
+  ];
+  final tts = [
+    for (final e in mine)
+      if (e.data['kind'] == 'tts') e.data,
+  ];
+  final out = StringBuffer(_header)
+    ..writeln()
+    ..writeln("part of '../speech_catalog.dart';")
+    ..writeln()
+    ..writeln(
+      '/// The speech models `flutter_edge_ai_speech` runs: speech-to-text '
+      '`.tflite` models with their tokenizers, and text-to-speech bundles, '
+      'pinned to Hugging Face commits.',
+    )
+    ..writeln('abstract final class LiteRtSpeechModels {')
+    ..writeln('  /// Every speech-to-text model, in one catalog.')
+    ..writeln(
+      "  static const sttCatalog = LiteRtSpeechCatalog._('flutter_edge_ai_speech', stt);",
+    )
+    ..writeln()
+    ..writeln('  /// Every text-to-speech model, in one catalog.')
+    ..writeln(
+      "  static const ttsCatalog = LiteRtSpeechCatalog._('flutter_edge_ai_speech', tts);",
+    )
+    ..writeln()
+    ..writeln('  /// Every speech-to-text model.')
+    ..writeln('  static const List<LiteRtSttModel> stt = [');
+  for (final m in stt) {
+    out.writeln('    ${dartMemberName(m['id']! as String)},');
+  }
+  out
+    ..writeln('  ];')
+    ..writeln()
+    ..writeln('  /// Every text-to-speech model.')
+    ..writeln('  static const List<LiteRtTtsModel> tts = [');
+  for (final m in tts) {
+    out.writeln('    ${dartMemberName(m['id']! as String)},');
+  }
+  out
+    ..writeln('  ];')
+    ..writeln()
+    ..writeln('  /// The speech-to-text model with [id], or null.')
+    ..writeln('  static LiteRtSttModel? sttById(String id) {')
+    ..writeln('    for (final m in stt) {')
+    ..writeln('      if (m.id == id) return m;')
+    ..writeln('    }')
+    ..writeln('    return null;')
+    ..writeln('  }')
+    ..writeln()
+    ..writeln('  /// The text-to-speech model with [id], or null.')
+    ..writeln('  static LiteRtTtsModel? ttsById(String id) {')
+    ..writeln('    for (final m in tts) {')
+    ..writeln('      if (m.id == id) return m;')
+    ..writeln('    }')
+    ..writeln('    return null;')
+    ..writeln('  }');
+  for (final (models, prefix) in [(stt, 'LiteRtStt'), (tts, 'LiteRtTts')]) {
+    for (final m in models) {
+      final id = m['id']! as String;
+      out
+        ..writeln()
+        ..writeln('  /// ${m['display_name']} (`$id`).')
+        ..writeln(
+          '  static const ${dartMemberName(id)} = '
+          '${dartClassName(prefix, id)}._();',
+        );
+    }
+  }
+  out
+    ..writeln('}')
+    ..writeln();
+  for (final m in stt) {
+    _speechModel(out, m, stt: true);
+  }
+  for (final m in tts) {
+    _speechModel(out, m, stt: false);
+  }
+  return out.toString();
+}
+
+void _speechModel(
+  StringBuffer out,
+  Map<String, Object?> m, {
+  required bool stt,
+}) {
+  final id = m['id']! as String;
+  final type = stt
+      ? 'SttModelType.${m['stt_type']}'
+      : 'TtsModelType.${m['tts_type']}';
+  _modelClass(
+    out,
+    m,
+    base: stt ? 'LiteRtSttModel' : 'LiteRtTtsModel',
+    variantType: stt ? 'LiteRtSttVariant' : 'LiteRtTtsVariant',
+    classPrefix: stt ? 'LiteRtStt' : 'LiteRtTts',
+    extraSuper: const [],
+    variant: (v, name) {
+      out
+        ..writeln(
+          'const $name = ${stt ? 'LiteRtSttVariant' : 'LiteRtTtsVariant'}._(',
+        )
+        ..writeln("  id: ${_str('$id/${v['slug']}')},")
+        ..writeln('  modelId: ${_str(id)},')
+        ..writeln('  type: $type,');
+      if (stt) {
+        final npu = v['npu'] as Map<String, Object?>?;
+        out
+          ..writeln(
+            '  model: ${_artifact(v['file']! as Map<String, Object?>)},',
+          )
+          ..writeln(
+            '  tokenizer: ${_artifact(v['tokenizer']! as Map<String, Object?>)},',
+          );
+        if (npu != null) out.writeln('  npuTarget: ${_npuTarget(npu)},');
+      } else {
+        final files = [
+          for (final f in v['files']! as List) f as Map<String, Object?>,
+        ];
+        final first = files.first;
+        out
+          ..writeln(
+            "  baseUrl: ${_str('https://huggingface.co/${first['repo']}/resolve/${first['revision']}/')},",
+          )
+          ..writeln('  files: [');
+        for (final f in files) {
+          out.writeln('    ${_artifact(f)},');
+        }
+        out.writeln('  ],');
+      }
       out
         ..writeln(');')
         ..writeln();

@@ -24,6 +24,11 @@ Generated from it, checked in, never edited by hand:
   `LiteRtLmModels` and `LiteRtEmbedders`, a class per model with a getter
   per variant (`LiteRtLmModels.gemma4E2bIt.npuSm8750`). A variant withheld
   from a release is left out.
+- `packages/flutter_edge_ai_speech/lib/src/catalog/generated/speech_catalog.g.dart`:
+  `LiteRtSpeechModels`, speech-to-text and text-to-speech in one namespace
+  (`LiteRtSpeechModels.moonshineTiny.f32`). A TTS bundle's files are in the
+  order of `TtsModelType.manifest`; the package's test checks that core
+  fetches each of them from its pinned URL.
 
 ## An entry
 

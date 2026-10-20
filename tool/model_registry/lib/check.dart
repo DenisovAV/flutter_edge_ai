@@ -218,7 +218,12 @@ void _checkDartNames(List<Entry> entries, List<Problem> problems) {
   final taken = <String, Map<String, String>>{};
   for (final e in entries) {
     if (!_idPattern.hasMatch(e.id)) continue;
-    final scope = '${e.data['package']}/${e.data['kind']}';
+    // litertlm has a namespace per kind (LiteRtLmModels, LiteRtEmbedders);
+    // speech keeps STT and TTS in one (LiteRtSpeechModels).
+    final package = '${e.data['package']}';
+    final scope = package == 'flutter_edge_ai_speech'
+        ? package
+        : '$package/${e.data['kind']}';
     final names = taken[scope] ??= {};
     final name = dartMemberName(e.id);
     final problem = dartNameProblem(name, {

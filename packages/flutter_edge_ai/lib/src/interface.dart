@@ -21,6 +21,8 @@ import 'decision/decider.dart' show Decider;
 import 'decision/decider_exceptions.dart' show DeciderUnsupportedException;
 import 'decision/decider_method.dart' show InferenceDeciderCalibration;
 import 'decision/inference_decider.dart' show checkInferenceDeciderArguments;
+import 'decision/option_scoring.dart' show OptionScoringModel;
+import 'decision/option_scoring_decider.dart' show createOptionScoringDecider;
 import 'decision/decider_option.dart' show DeciderOption;
 import 'model_management/cancel_token.dart' show CancelToken;
 import 'model_management/model_specs.dart' show InferenceModelSpec;
@@ -552,33 +554,60 @@ abstract class InferenceModel {
 
   /// A decider that answers [question] by scoring each of [options] as this
   /// model's reply (`DeciderMethod.optionScoring`). It is meant for a model
-  /// TRAINED on exactly this question and these options, in this order;
-  /// [calibration] carries the values fitted with that training (a softmax
-  /// temperature, an abstain threshold, the "none of these" option). Its
-  /// answers have the shape of an embedding decider's, so an app reads them
-  /// the same way: `ScoreKind.logprob` scores,
-  /// `AbstainSignalKind.topProbability` as the abstain signal.
+  /// TRAINED on exactly this question and these options; [calibration]
+  /// carries the values fitted with that training (a softmax temperature, an
+  /// abstain threshold, the "none of these" option). Its answers have the
+  /// shape of an embedding decider's, so an app reads them the same way:
+  /// `ScoreKind.logprob` scores, `AbstainSignalKind.topProbability` as the
+  /// abstain signal.
+  ///
+  /// The model file says what it was trained on: a `.litertlm` tuned by
+  /// LiteTune carries a `litetune.decision` section with the question, the
+  /// options, the temperature and the threshold. Pass the question and the
+  /// options it was trained with, and
+  /// `const InferenceDeciderCalibration.fromModel()` to take the file's
+  /// temperature, threshold and none option (the none option may then be
+  /// left out of [options]). Another question, an option it was not trained
+  /// on, a subset of its options, or another description (one equal to the
+  /// id is accepted) fails with [ArgumentError] naming the trained value, as
+  /// do explicit calibration values other than the file's. The options may
+  /// come in any order; the prompt lists them as trained. A Noul or Score
+  /// question answers with [DeciderAnswer.questionType] set (also
+  /// `capabilities.questionType`), and never abstains.
   ///
   /// Fails with [ArgumentError] (a failed future), before anything else, for
   /// a blank [question], no [options], two options with one id, an option
   /// with examples (it is listed by id and description; examples are refused
   /// rather than ignored), a temperature that is not positive and finite, an
   /// `abstainBelow` outside (0, 1) or without a temperature, and a
-  /// `noneOption` that is not an option. These checks need no engine, so an
-  /// argument refused today is refused the same way once an engine scores
-  /// options.
+  /// `noneOption` that is not an option. These checks need no engine, so a
+  /// wrong argument fails the same way on every model.
   ///
-  /// [cancelToken] stops the creation (the prompt's checks and its prefill)
-  /// and fails the call with `DeciderCancelledException`, as it does for
+  /// [cancelToken] stops the creation and fails the call with
+  /// `DeciderCancelledException`, as it does for
   /// `EmbeddingModel.createDecider`; no decider is returned.
   ///
+  /// Fails with `DeciderUnsupportedException` for a model whose engine does
+  /// not score options (every model on the web), a model file without a
+  /// decision (an ordinary chat model), a decision this release does not
+  /// read, a backend option scoring is not measured on (LiteRT-LM scores on
+  /// the CPU only), a decision whose prompt cannot fit [maxTokens], and an
+  /// engine that cannot tell how it scores. Each `choose` refuses an input
+  /// whose prompt does not fit [maxTokens] with [ArgumentError]: it is never
+  /// truncated.
+  ///
+  /// The decider borrows this model: when it is closed — core closes the
+  /// active model when another one is requested — the decider is closed too
+  /// (`isClosed`), and `choose` fails with [StateError].
+  ///
   /// Core implements this once for every engine that extends this class
-  /// (`@nonVirtual`): an engine will supply the scoring through an interface
-  /// of its own, not by overriding this. In this release no engine scores
-  /// options, so after the checks above it fails with
-  /// `DeciderUnsupportedException`; use `EmbeddingModel.createDecider`, which
-  /// every embedding backend supports. `implements` does not inherit this
-  /// body: such a class has to declare the method, and should fail it with
+  /// (`@nonVirtual`); an engine supplies the scoring through
+  /// `OptionScoringModel` (`package:flutter_edge_ai/engine.dart`), not by
+  /// overriding this. `flutter_edge_ai_litertlm` scores on the CPU from
+  /// 1.16.0, natively (measured on macOS). Use
+  /// `EmbeddingModel.createDecider` for a model that was not trained on the
+  /// decision. `implements` does not inherit this body: such a class has to
+  /// declare the method, and should fail it with
   /// `DeciderUnsupportedException`.
   ///
   /// Experimental: may change in a minor release while the API settles.
@@ -596,10 +625,21 @@ abstract class InferenceModel {
       calibration: calibration,
       cancelToken: cancelToken,
     );
-    throw DeciderUnsupportedException(
-      '$runtimeType does not score options: no engine in this release does. '
-      'Create the decider from an EmbeddingModel instead: '
-      'EmbeddingModel.createDecider().',
+    final self = this;
+    if (self is OptionScoringModel) {
+      return createOptionScoringDecider(
+        self,
+        question: question,
+        options: options,
+        calibration: calibration,
+        cancelToken: cancelToken,
+      );
+    }
+    throw const DeciderUnsupportedException(
+      'This model does not score options: only a model trained on the '
+      'decision, on an engine that scores options (flutter_edge_ai_litertlm, '
+      'natively, on the CPU), does. Create the decider from an EmbeddingModel '
+      'instead: EmbeddingModel.createDecider().',
     );
   }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """The LiteRT-LM main library must export every C function the EmbeddingGemma 2
-pass calls (R5 §4.11).
+pass calls (R5 §4.11), and every one option scoring calls (SCORING_SYMBOLS).
 
 flutter_edge_ai_litertlm's `.litertlm` embedding pass binds the EmbeddingEngine,
 ModelInfo and error-reporter C API out of libLiteRtLm. Nothing else gates those
@@ -60,6 +60,50 @@ REQUIRED = [
     "litert_lm_embedding_response_get_input_length",
     "litert_lm_embedding_response_get_truncated_length",
     "litert_lm_embedding_response_delete",
+]
+
+# Every C function InferenceModel.createDecider's option scoring calls
+# (lib/src/ffi/option_scoring_ffi.dart, and the tokenizer calls of
+# litert_lm_client.dart's tokenIds / detokenizeIds); a VM test compares them.
+# Missing one, every decision fails at its first scoring pass.
+SCORING_SYMBOLS = [
+    "litert_lm_clear_last_error",
+    "litert_lm_conversation_config_create",
+    "litert_lm_conversation_config_delete",
+    "litert_lm_conversation_config_set_session_config",
+    "litert_lm_conversation_create",
+    "litert_lm_conversation_delete",
+    "litert_lm_conversation_render_message_to_string",
+    "litert_lm_engine_create_session",
+    "litert_lm_get_last_error_message",
+    "litert_lm_input_data_create",
+    "litert_lm_input_data_delete",
+    "litert_lm_responses_delete",
+    "litert_lm_responses_get_num_token_scores_at",
+    "litert_lm_responses_get_token_scores_at",
+    "litert_lm_sampler_params_create",
+    "litert_lm_sampler_params_delete",
+    "litert_lm_sampler_params_set_seed",
+    "litert_lm_sampler_params_set_temperature",
+    "litert_lm_sampler_params_set_top_k",
+    "litert_lm_sampler_params_set_top_p",
+    "litert_lm_session_config_create",
+    "litert_lm_session_config_delete",
+    "litert_lm_session_config_set_apply_prompt_template",
+    "litert_lm_session_config_set_max_output_tokens",
+    "litert_lm_session_config_set_sampler_params",
+    "litert_lm_session_delete",
+    "litert_lm_session_rewind_to_checkpoint",
+    "litert_lm_session_run_prefill",
+    "litert_lm_session_run_text_scoring",
+    "litert_lm_session_save_checkpoint",
+    "litert_lm_detokenize_result_delete",
+    "litert_lm_detokenize_result_get_string",
+    "litert_lm_engine_detokenize",
+    "litert_lm_engine_tokenize",
+    "litert_lm_tokenize_result_delete",
+    "litert_lm_tokenize_result_get_num_tokens",
+    "litert_lm_tokenize_result_get_tokens",
 ]
 
 MAIN_LIBRARY = ("libLiteRtLm.dylib", "libLiteRtLm.so", "LiteRtLm.dll")
@@ -229,18 +273,22 @@ def main(argv):
         print(f"  [FAIL] {label} — cannot read the exports of "
               f"{os.path.basename(library)}: {e}")
         return 1
-    wanted = REQUIRED
-    missing = [s for s in wanted if s not in names]
-    if missing:
-        print(f"  [FAIL] {label} — {os.path.basename(library)} does not export "
-              f"{len(missing)} of the {len(wanted)} EmbeddingEngine functions "
-              f"the EmbeddingGemma 2 pass calls:")
-        for symbol in missing:
-            print(f"         {symbol}")
-        return 1
-    print(f"  [ok]   {label} — {os.path.basename(library)} exports all "
-          f"{len(wanted)} EmbeddingEngine functions")
-    return 0
+    failed = False
+    for wanted, what in ((REQUIRED, "EmbeddingEngine functions the "
+                          "EmbeddingGemma 2 pass calls"),
+                         (SCORING_SYMBOLS, "functions option scoring "
+                          "(createDecider) calls")):
+        missing = [s for s in wanted if s not in names]
+        if missing:
+            failed = True
+            print(f"  [FAIL] {label} — {os.path.basename(library)} does not "
+                  f"export {len(missing)} of the {len(wanted)} {what}:")
+            for symbol in missing:
+                print(f"         {symbol}")
+        else:
+            print(f"  [ok]   {label} — {os.path.basename(library)} exports all "
+                  f"{len(wanted)} {what}")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
 ## 1.16.0
-- Several open models at once (`FlutterEdgeAi.openModel`); require `flutter_edge_ai` ^2.5.0.
+- `InferenceModel.createDecider` on CPU, natively, from a `.litertlm`'s `litetune.decision` section.
+- Several open models at once (`FlutterEdgeAi.openModel`).
 - `LiteRtLmEngine(nativeLogLevel:)` sets LiteRT-LM's native log level.
+- Require `flutter_edge_ai` ^2.5.0.
 
 ## 1.15.0
 - Google Tensor NPU on Android, opt-in with `google_tensor_npu: true` (#670).

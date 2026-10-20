@@ -25,11 +25,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # ^2.5.0: `LiteRtLmEngine` implements `MultiModelEngine`, which arrives in
-  # 2.5.0 with `FlutterEdgeAi.openModel`. 2.4.0: this version fills `InferenceModel.activeVisionBackend` /
+  # ^2.5.0: this version implements the option-scoring SPI
+  # (`OptionScoringModel`, `OptionScorer`) and `MultiModelEngine` (for
+  # `FlutterEdgeAi.openModel`), which arrive in 2.5.0. 2.4.0 brought
+  # what it fills: `InferenceModel.activeVisionBackend` /
   # `activeAudioBackend`, sends a message's media in the
   # `RuntimeConfig.multimodalOrder` (`MultimodalOrder`, `MediaPosition`) and
-  # reports `EmbeddingPassInfo.visionTokensPerImage`, all of which arrive in
+  # reports `EmbeddingPassInfo.visionTokensPerImage`, all of which arrived in
   # 2.4.0. 2.3.1 brought the public `EmbeddingInput(text:, images:, audio:)`
   # constructor for the combined EmbeddingGemma 2 inputs it embeds. 2.3.0 brought
   # what it implements — `package:flutter_edge_ai/

@@ -52,3 +52,7 @@ export 'src/embedding/forward_result.dart'
 export 'src/embedding/pooling.dart' show meanPoolAndNormalize;
 export 'src/embedding/tokenizer_adapter.dart'
     show EmbeddingTokenizer, EmbeddingTokenizerFactory, TokenizedInput;
+// What an engine implements so that InferenceModel.createDecider can score
+// options with it (core runs the decider itself).
+export 'src/decision/option_scoring.dart'
+    show OptionScorer, OptionScoringModel, OptionScoringRun;

@@ -16,6 +16,7 @@ import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
 import 'native_turns.dart';
 import 'npu_vendor_host.dart';
+import 'option_scoring_ffi.dart';
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
@@ -583,7 +584,8 @@ class LiteRtLmFfiClient {
   Future<T> _guardCreate<T>(Future<T> Function() body) async {
     if (_isShuttingDown) {
       throw StateError(
-        'Client is shutting down; cannot create or rewind a conversation',
+        'Client is shutting down; cannot create or rewind a conversation, '
+        'or score options',
       );
     }
     _enterCreate();
@@ -2346,6 +2348,11 @@ class LiteRtLmFfiClient {
   /// timeout escape hatch.
   Future<void> shutdown() async {
     _isShuttingDown = true;
+    // A scoring run in flight stops at its next target instead of running all
+    // of them first.
+    for (final stop in _scoringStops) {
+      stop.value = 1;
+    }
     if (_createsInFlight > 0) {
       _createsQuiescent ??= Completer<void>();
       await _createsQuiescent!.future;
@@ -2479,6 +2486,205 @@ class LiteRtLmFfiClient {
     });
   }
 
+  /// The engine's token ids for [text], with no BOS added: what the option
+  /// scorer of `InferenceModel.createDecider` compares. Unlike [tokenCount]
+  /// it throws: a [StateError] without a loaded engine, and when the native
+  /// call fails. Holds [_nativeMutex].
+  Future<List<int>> tokenIds(String text) => _nativeMutex.protect(() async {
+    final b = _bindings;
+    final engine = _engine;
+    if (b == null || engine == null || engine == nullptr) {
+      throw StateError('The LiteRT-LM engine is not loaded.');
+    }
+    final textPtr = text.toNativeUtf8();
+    Pointer<LiteRtLmTokenizeResult> result = nullptr;
+    try {
+      result = b.litert_lm_engine_tokenize(engine, textPtr.cast<Char>());
+      if (result == nullptr) {
+        throw StateError(
+          'litert_lm_engine_tokenize failed for a text of ${text.length} '
+          'characters',
+        );
+      }
+      final n = b.litert_lm_tokenize_result_get_num_tokens(result);
+      final ids = b.litert_lm_tokenize_result_get_tokens(result);
+      // Non-empty text cannot tokenise to nothing (see [tokenCount]).
+      if (n < 0 || (n == 0 && text.isNotEmpty) || (n > 0 && ids == nullptr)) {
+        throw StateError(
+          'litert_lm_engine_tokenize returned $n tokens for a text of '
+          '${text.length} characters',
+        );
+      }
+      return [for (var i = 0; i < n; i++) ids[i]];
+    } finally {
+      if (result != nullptr) b.litert_lm_tokenize_result_delete(result);
+      calloc.free(textPtr);
+    }
+  });
+
+  /// The text of [ids], from the engine's tokenizer, malformed UTF-8 (a
+  /// token that ends inside a character) replaced rather than thrown. Throws
+  /// as [tokenIds].
+  Future<String> detokenizeIds(List<int> ids) => _nativeMutex.protect(() async {
+    final b = _bindings;
+    final engine = _engine;
+    if (b == null || engine == null || engine == nullptr) {
+      throw StateError('The LiteRT-LM engine is not loaded.');
+    }
+    final tokens = calloc<Int>(ids.isEmpty ? 1 : ids.length);
+    Pointer<LiteRtLmDetokenizeResult> result = nullptr;
+    try {
+      for (var i = 0; i < ids.length; i++) {
+        tokens[i] = ids[i];
+      }
+      result = b.litert_lm_engine_detokenize(engine, tokens, ids.length);
+      if (result == nullptr) {
+        throw StateError('litert_lm_engine_detokenize failed for $ids');
+      }
+      final text = b.litert_lm_detokenize_result_get_string(result);
+      if (text == nullptr) {
+        throw StateError('litert_lm_engine_detokenize returned no text');
+      }
+      return nativeText(text.cast());
+    } finally {
+      if (result != nullptr) b.litert_lm_detokenize_result_delete(result);
+      calloc.free(tokens);
+    }
+  });
+
+  /// [content] as one user message, rendered by the model's chat template up
+  /// to where its reply begins. On a spawned isolate, under [_nativeMutex];
+  /// [shutdown] waits for it.
+  Future<String> renderUserMessage(String content) => _guardCreate(
+    () => _nativeMutex.protect(() async {
+      final engine = _engine;
+      if (_isShuttingDown || engine == null || engine == nullptr) {
+        throw StateError('The LiteRT-LM engine is not loaded.');
+      }
+      return renderUserMessageOffMainIsolate(
+        engineAddr: engine.address,
+        content: content,
+      );
+    }),
+  );
+
+  /// The stop flags of the scoring runs in flight; [shutdown] sets them.
+  final Set<Pointer<Int32>> _scoringStops = {};
+
+  /// Scores [targets] as the model's continuation of [prompt] in one fresh
+  /// session without a prompt template (`OptionScorer.score`). On a spawned
+  /// isolate, under [_nativeMutex], so it runs between turns of any
+  /// conversation on this engine; [shutdown] waits for it.
+  ///
+  /// [cancelToken], [stops] and [shutdown] stop the run before its prefill or
+  /// between targets: a cancel fails it with `DeciderCancelledException`, a
+  /// stop of [stops] (its scorer closed) and a shutdown with [StateError]. A
+  /// cancel while the run still waits for [_nativeMutex] — behind a chat turn,
+  /// which holds it until the turn ends — fails it at once; the run then
+  /// never starts.
+  // The decider SPI is @experimental.
+  // ignore: experimental_member_use
+  Future<OptionScoringRun> scoreTargets(
+    String prompt,
+    List<String> targets, {
+    String? reprefill,
+    CancelToken? cancelToken,
+    ScoringStops? stops,
+  }) {
+    final run = _guardCreate(
+      () => _nativeMutex.protect(() async {
+        final engine = _engine;
+        if (_isShuttingDown || engine == null || engine == nullptr) {
+          throw StateError('The LiteRT-LM engine is not loaded.');
+        }
+        if (cancelToken?.isCancelled ?? false) {
+          // ignore: experimental_member_use
+          throw const DeciderCancelledException('The decision was cancelled.');
+        }
+        if (stops?.isStopped ?? false) {
+          throw ScoringStoppedError('The option scorer is closed.');
+        }
+        final stop = calloc<Int32>();
+        _scoringStops.add(stop);
+        stops?.track(stop);
+        var running = true;
+        if (cancelToken != null) {
+          unawaited(
+            cancelToken.whenCancelled.then((_) {
+              if (running) stop.value = 1;
+            }),
+          );
+        }
+        try {
+          return await scoreTargetsOffMainIsolate(
+            engineAddr: engine.address,
+            prompt: prompt,
+            targets: targets,
+            stopFlagAddr: stop.address,
+            reprefill: reprefill,
+          );
+          // ignore: experimental_member_use
+        } on DeciderCancelledException {
+          if (cancelToken?.isCancelled ?? false) rethrow;
+          if (_isShuttingDown) {
+            throw ScoringStoppedError(
+              'The model was closed while it scored options.',
+            );
+          }
+          if (stops?.isStopped ?? false) {
+            throw ScoringStoppedError(
+              'The option scorer was closed while it scored.',
+            );
+          }
+          rethrow;
+        } finally {
+          running = false;
+          _scoringStops.remove(stop);
+          stops?.untrack(stop);
+          calloc.free(stop);
+        }
+      }),
+    );
+    if (cancelToken == null) return run;
+    // Answer a cancel now even while the run waits for the mutex; the run
+    // itself then fails at its first check, and nobody reads that.
+    // ignore: experimental_member_use
+    final cancelled = Completer<OptionScoringRun>();
+    unawaited(
+      cancelToken.whenCancelled.then((_) {
+        if (!cancelled.isCompleted) {
+          cancelled.completeError(
+            // ignore: experimental_member_use
+            const DeciderCancelledException('The decision was cancelled.'),
+          );
+        }
+      }),
+    );
+    unawaited(
+      run.then(
+        (value) {
+          if (!cancelled.isCompleted) cancelled.complete(value);
+        },
+        onError: (Object e, StackTrace st) {
+          if (!cancelled.isCompleted) {
+            cancelled.completeError(e, st);
+            // ignore: experimental_member_use
+          } else if (e is! DeciderCancelledException &&
+              e is! ScoringStoppedError) {
+            // The caller already has its cancel; a run that then failed for
+            // a reason of its own is still said, release builds included.
+            // ignore: avoid_print
+            print(
+              '[flutter_edge_ai] a scoring run cancelled by its caller then '
+              'failed: $e',
+            );
+          }
+        },
+      ),
+    );
+    return cancelled.future;
+  }
+
   /// Get session metrics from the given conversation including token usage.
   /// Returns empty SessionMetrics if benchmark unavailable.
   SessionMetrics _getMetricsOn(Pointer<LiteRtLmConversation> conv) {
@@ -2587,3 +2793,40 @@ String _activationName(int value) => switch (value) {
   3 => 'int8',
   _ => 'type $value',
 };
+
+/// A scoring run stopped on purpose — its scorer or its model closed — as
+/// opposed to a native call that failed (a plain [StateError]). Main isolate
+/// only, like [ScoringStops].
+final class ScoringStoppedError extends StateError {
+  ScoringStoppedError(super.message);
+}
+
+/// The stop flags of one owner's scoring runs — an option scorer's — so that
+/// closing it stops what it has in flight and refuses what it starts later.
+/// Main isolate only: the flags are set and freed there.
+final class ScoringStops {
+  final Set<Pointer<Int32>> _flags = {};
+  bool _stopped = false;
+
+  /// Whether [stopAll] ran.
+  bool get isStopped => _stopped;
+
+  /// Adds a run's flag, set at once if [stopAll] already ran.
+  void track(Pointer<Int32> flag) {
+    if (_stopped) flag.value = 1;
+    _flags.add(flag);
+  }
+
+  /// Removes a run's flag; call it before freeing the flag, so [stopAll]
+  /// never writes to freed memory.
+  void untrack(Pointer<Int32> flag) => _flags.remove(flag);
+
+  /// Stops every run in flight at its next check and every later run before
+  /// it starts.
+  void stopAll() {
+    _stopped = true;
+    for (final flag in _flags) {
+      flag.value = 1;
+    }
+  }
+}

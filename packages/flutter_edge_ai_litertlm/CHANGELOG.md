@@ -1,5 +1,7 @@
-## 1.16.0
+## 1.16.1
 - A macOS app that cannot load LiteRT-LM is told why and how to fix it (#689).
+
+## 1.16.0
 - `InferenceModel.createDecider` on CPU, natively, from a `.litertlm`'s `litetune.decision` section.
 - Several open models at once (`FlutterEdgeAi.openModel`).
 - `LiteRtLmEngine(nativeLogLevel:)` sets LiteRT-LM's native log level.

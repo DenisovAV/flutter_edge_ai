@@ -1,3 +1,7 @@
+// The decider SPI (OptionScoringModel) is @experimental; this model is its
+// LiteRT-LM implementation.
+// ignore_for_file: experimental_member_use
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -5,17 +9,25 @@ import 'package:flutter_edge_ai/engine.dart';
 
 import 'package:flutter/foundation.dart';
 
+import '../litertlm_decision_section.dart';
+import '../option_scoring_self_check.dart';
 import 'litert_lm_client.dart';
 import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
-class FfiInferenceModel extends InferenceModel with CloseNotifier {
+///
+/// Scores options for `createDecider` ([OptionScoringModel]) on the CPU
+/// backend, from the decision litetune wrote into the model file
+/// ([decisionRead], read when the model was loaded).
+base class FfiInferenceModel extends InferenceModel
+    with CloseNotifier, OptionScoringModel {
   FfiInferenceModel({
     required this.ffiClient,
     required this.maxTokens,
     required this.modelType,
     required this.activeBackend,
+    this.decisionRead,
     this.activeVisionBackend,
     this.activeAudioBackend,
     this.fileType = ModelFileType.litertlm,
@@ -29,6 +41,17 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
 
   final LiteRtLmFfiClient ffiClient;
   final ModelType modelType;
+
+  /// The decision the loaded `.litertlm` carries, read with the model so
+  /// that a decider reads the file the engine loaded; null only for a model
+  /// built without one (tests), which then cannot read its decision.
+  final LitetuneDecisionRead? decisionRead;
+
+  /// How this engine scores right after a prefill, found by the self-check
+  /// before the first decision on this model; null until then.
+  LiteRtLmScoringMode? get scoringMode => _scoringMode;
+  LiteRtLmScoringMode? _scoringMode;
+  Future<LiteRtLmScoringMode>? _scoringCheck;
   @override
   final ModelFileType fileType;
   @override
@@ -63,6 +86,111 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
 
   @override
   InferenceModelSession? get session => _session;
+
+  @override
+  Future<String?> readDecisionSection() async {
+    final read = decisionRead;
+    if (read == null) {
+      throw const DeciderUnsupportedException(
+        'This model was built without reading its file, so it has no '
+        'decision to read.',
+      );
+    }
+    if (read.error case final error?) throw error;
+    return read.payload;
+  }
+
+  /// The self-check, once per model; a check that failed runs again next
+  /// time (it may have failed on a model that was closing). Its runs belong
+  /// to [scorer]: closing that scorer stops them, and another scorer waiting
+  /// on the same check then runs it again for itself.
+  Future<LiteRtLmScoringMode> _scoringModeFor(
+    _LiteRtLmOptionScorer scorer,
+    List<String> targets,
+  ) async {
+    while (true) {
+      final known = _scoringCheck;
+      if (known == null) return _runScoringCheck(scorer, targets);
+      try {
+        return await known;
+      } on ScoringStoppedError {
+        // Stopped by the scorer that ran it, or by this model's close: run
+        // it again unless this scorer or the model is the one closed. A
+        // native failure is not retried here: it reaches this caller.
+        scorer._client;
+      }
+    }
+  }
+
+  Future<LiteRtLmScoringMode> _runScoringCheck(
+    _LiteRtLmOptionScorer scorer,
+    List<String> targets,
+  ) {
+    List<double> single(OptionScoringRun run, List<String> tokens) => [
+      for (var i = 0; i < tokens.length; i++)
+        if (run.tokenScores[i].length == 1)
+          run.tokenScores[i].single
+        else
+          throw DeciderUnsupportedException(
+            'The self-check\'s one-token target "${tokens[i]}" scored '
+            '${run.tokenScores[i].length} tokens.',
+          ),
+    ];
+    final check = liteRtLmScoringSelfCheck(
+      targets: targets,
+      tokenize: scorer.tokenize,
+      detokenize: scorer.detokenize,
+      scoreOneToken: (prompt, token) async => single(
+        await scorer._client.scoreTargets(prompt, [
+          token,
+        ], stops: scorer._stops),
+        [token],
+      ).single,
+      scoreInMode: (mode, prompt, tokens) async {
+        final client = scorer._client;
+        String? reprefill;
+        if (mode == LiteRtLmScoringMode.once) {
+          try {
+            reprefill = await scorer._reprefillFor(prompt);
+          } on DeciderUnsupportedException catch (e) {
+            throw DeciderUnsupportedException(
+              'The scoring self-check\'s own prompt: ${e.message}',
+            );
+          }
+        }
+        return single(
+          await client.scoreTargets(
+            prompt,
+            tokens,
+            reprefill: reprefill,
+            stops: scorer._stops,
+          ),
+          tokens,
+        );
+      },
+    );
+    _scoringCheck = check;
+    return check.then(
+      (mode) => _scoringMode = mode,
+      onError: (Object e, StackTrace st) {
+        if (identical(_scoringCheck, check)) _scoringCheck = null;
+        Error.throwWithStackTrace(e, st);
+      },
+    );
+  }
+
+  @override
+  Future<OptionScorer> openOptionScorer() async {
+    if (_isClosed) throw StateError('The model is closed.');
+    if (activeBackend != PreferredBackend.cpu) {
+      throw DeciderUnsupportedException(
+        'Option scoring is measured on the CPU backend only, and this model '
+        'runs on ${activeBackend?.name ?? 'an unknown backend'}. Load it with '
+        'preferredBackend: PreferredBackend.cpu to create a decider from it.',
+      );
+    }
+    return _LiteRtLmOptionScorer(this);
+  }
 
   @override
   List<InferenceModelSession> get sessions =>
@@ -1391,5 +1519,91 @@ class _VirtualConversationHandle implements ConversationHandle {
     _closed = true;
     _history.clear();
     client.releaseVirtualConversation(token);
+  }
+}
+
+/// [OptionScorer] over the engine an [FfiInferenceModel] loaded. Holds no
+/// native resource between calls: each scoring pass opens and deletes its own
+/// session.
+final class _LiteRtLmOptionScorer extends OptionScorer {
+  _LiteRtLmOptionScorer(this._model);
+
+  final FfiInferenceModel _model;
+  bool _closed = false;
+
+  /// The stop flags of this scorer's native runs, its share of the self-check
+  /// included: [close] stops them.
+  final ScoringStops _stops = ScoringStops();
+
+  /// Every call goes through here, so a scorer or model closed between calls
+  /// is a stop, not a failure: a scorer waiting on this one's self-check runs
+  /// it again for itself (see `_scoringModeFor`).
+  LiteRtLmFfiClient get _client {
+    if (_closed) throw ScoringStoppedError('The option scorer is closed.');
+    if (_model.isClosed) throw ScoringStoppedError('The model is closed.');
+    return _model.ffiClient;
+  }
+
+  @override
+  Future<List<int>> tokenize(String text) => _client.tokenIds(text);
+
+  @override
+  Future<String> detokenize(List<int> ids) => _client.detokenizeIds(ids);
+
+  @override
+  Future<String> renderUserMessage(String content) =>
+      _client.renderUserMessage(content);
+
+  @override
+  Future<void> prepare(List<String> targets) =>
+      _model._scoringModeFor(this, targets);
+
+  @override
+  Future<OptionScoringRun> score(
+    String prompt,
+    List<String> targets, {
+    CancelToken? cancelToken,
+  }) async {
+    final mode = await _model._scoringModeFor(this, targets);
+    // The session adds BOS itself, in either mode, so a prompt that starts
+    // with its text would carry two.
+    if (prompt.startsWith('<bos>')) {
+      throw const DeciderUnsupportedException(
+        'The rendered prompt starts with <bos>, which the scoring session '
+        'adds itself.',
+      );
+    }
+    return _client.scoreTargets(
+      prompt,
+      targets,
+      reprefill: mode == LiteRtLmScoringMode.once
+          ? await _reprefillFor(prompt)
+          : null,
+      cancelToken: cancelToken,
+      stops: _stops,
+    );
+  }
+
+  /// The text of [prompt]'s last token, which mode `once` prefills again.
+  Future<String> _reprefillFor(String prompt) async {
+    final ids = await tokenize(prompt);
+    final last = await detokenize([ids.last]);
+    final back = await tokenize(last);
+    if (!prompt.endsWith(last) || back.length != 1 || back.single != ids.last) {
+      throw DeciderUnsupportedException(
+        'The prompt\'s last token ${ids.last} does not round-trip as '
+        '"$last", so it cannot be prefilled again on its own.',
+      );
+    }
+    return last;
+  }
+
+  /// Also stops this scorer's native runs in flight — a decision's, or the
+  /// self-check it started — at their next check, so a closed decider does
+  /// not keep the engine busy scoring options nobody will read.
+  @override
+  Future<void> close() async {
+    _closed = true;
+    _stops.stopAll();
   }
 }

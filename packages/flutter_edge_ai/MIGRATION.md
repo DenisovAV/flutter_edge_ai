@@ -652,16 +652,16 @@ dependencies:
   flutter_gemma: ^0.16.3
 ```
 
-**Current equivalents (2.4):**
+**Current equivalents (2.5):**
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.4.1                 # core — always required
-  flutter_edge_ai_litertlm: ^1.15.0       # .litertlm + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.2.2       # .task / .bin
-  flutter_edge_ai_embeddings: ^2.3.0      # tokenizer providers
-  flutter_edge_ai_rag: ^1.1.0             # RAG orchestration + contracts
-  flutter_edge_ai_qdrant: ^2.1.0          # native qdrant provider
-  flutter_edge_ai_sqlite: ^2.1.0          # sqlite-vec provider; needs Flutter 3.47
+  flutter_edge_ai: ^2.5.0                 # core — always required
+  flutter_edge_ai_litertlm: ^1.16.0       # .litertlm + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.2.3       # .task / .bin
+  flutter_edge_ai_embeddings: ^2.3.2      # tokenizer providers
+  flutter_edge_ai_rag: ^1.1.2             # RAG orchestration + contracts
+  flutter_edge_ai_qdrant: ^2.1.1          # native qdrant provider
+  flutter_edge_ai_sqlite: ^2.1.1          # sqlite-vec provider; needs Flutter 3.47
 ```
 
 Pick by what you actually used in 0.16.x:

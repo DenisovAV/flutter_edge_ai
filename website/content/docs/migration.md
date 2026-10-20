@@ -1,12 +1,12 @@
 ---
 title: Migration
-description: Upgrade to Flutter Edge AI 2.5 (openModel, createModel deprecated, members deprecated for 2.5 removed), flutter_edge_ai_litertlm 1.16 (language-model deciders, openModel) and 1.15 (npu on a generic bundle runs on the GPU, opt-in Google Tensor NPU), flutter_edge_ai_agent 0.4 (notifications are opt-in), Flutter Edge AI 2.4 (backends follow the .litertlm file, Gemma 4 audio after the text, agent 0.3), 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
+description: Upgrade to Flutter Edge AI 2.5 (openModel, createModel deprecated, members deprecated for 2.5 removed), flutter_edge_ai_litertlm 1.16 (openModel) and 1.15 (npu on a generic bundle runs on the GPU, opt-in Google Tensor NPU), flutter_edge_ai_agent 0.4 (notifications are opt-in), Flutter Edge AI 2.4 (backends follow the .litertlm file, Gemma 4 audio after the text, agent 0.3), 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
 
-## flutter_edge_ai 2.5.0: several open models, removed and deprecated members
+## flutter_edge_ai 2.5.0: several open models, removed and deprecated members, embedding providers
 
 ### Removed members
 

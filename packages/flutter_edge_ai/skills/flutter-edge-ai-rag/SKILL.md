@@ -151,8 +151,8 @@ import 'package:flutter_edge_ai/engine.dart';
 ```
 
 Core accepts self-contained `.gguf` embedding files without a separate
-tokenizer. A `.gguf` carries its own tokenizer: `tokenizerFrom…()` on it throws
-`ArgumentError`, as on a `.litertlm`. When backends are registered, installation requires one that can run
+tokenizer. A `.gguf` carries its own tokenizer: adding a `tokenizerFrom…()` makes
+`install()` throw `ArgumentError`, as on a `.litertlm`. When backends are registered, installation requires one that can run
 the file; with none registered, installation can proceed. No GGUF embedding
 backend ships yet. `flutter_edge_ai_embeddings` remains the tokenizer package;
 runtime passes belong to their engine packages.

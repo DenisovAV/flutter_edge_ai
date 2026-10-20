@@ -15,23 +15,9 @@ import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 /// the isolate that owns the singleton, so in practice it is said once.
 bool _warned = false;
 
-/// Says out loud that `getActiveEmbedder(preferredBackend:)` did not reach the
-/// embedder, from ONE place that every shell calls.
-///
-/// It lives here rather than in a backend because a backend cannot see the
-/// singleton cache: the shells serve a second `getActiveEmbedder` from the
-/// cached instance without asking the backend at all, so a notice inside a
-/// backend is unreachable in the most ordinary sequence — build an embedder,
-/// then ask for one with a backend.
-///
-/// CPU is not a fallback here and this is not a warning about degradation: it
-/// is the only correct answer, because LiteRT's GPU delegate returns all-zero
-/// vectors for EmbeddingGemma's int4 weights and the ONNX client appends no
-/// execution provider. What was wrong was accepting the argument in silence.
-///
-/// `npu` is not said here: an EmbeddingGemma 2 per-SoC bundle runs on it, so
-/// whether it was applied is known only once the embedder exists — see
-/// [noticeEmbedderNpuNotApplied].
+/// Says once that a legacy CPU-only provider ignores a GPU request.
+/// Accelerator-aware providers use [noticeEmbedderBackendFallback] after load.
+/// LiteRT's int4 GPU delegate returns all-zero vectors; native ONNX uses CPU.
 void noticeEmbedderBackendIgnored(PreferredBackend? requested) {
   if (!ActiveEmbedderParams.isIgnoredBackend(requested) || _warned) return;
   // Spend the one shot only on a line that can actually appear. `gemmaLog`
@@ -74,15 +60,8 @@ void noticeEmbedderNpuNotApplied(
   );
 }
 
-/// The web counterpart of [noticeEmbedderBackendIgnored], with a different
-/// rule as well as different words.
-///
-/// On web NO value of `preferredBackend` reaches an embedder — `cpu`
-/// included, which the native rule rightly stays quiet about because native
-/// embeddings do run on CPU. Here the runtime chooses: LiteRT.js asks for
-/// WebGPU and falls back to WASM, and onnxruntime-web tries `webgpu` then
-/// `wasm`. The native line said "Embeddings run on CPU" to a caller whose
-/// embeddings were running on WebGPU — a backend reported that did not run.
+/// The legacy web notice: the runtime chooses placement, not this request.
+/// New GPU-capable providers report their loaded placement instead.
 void noticeWebEmbedderBackendIgnored(PreferredBackend? requested) {
   if (requested == null || _warned) return;
   if (!kDebugMode || edgeAiLogLevel == EdgeAiLogLevel.none) return;
@@ -95,6 +74,22 @@ void noticeWebEmbedderBackendIgnored(PreferredBackend? requested) {
     'runtime does not report one; with LiteRT.js, '
     'window.getLiteRtEmbeddingAccelerator() names it after the first '
     'embedding.',
+  );
+}
+
+/// An explicit request loaded on a different accelerator. Called once after
+/// a new placement-reporting model is adopted, never on reuse. Unlike legacy
+/// ignored-request diagnostics, fallback must be visible in release builds.
+void noticeEmbedderBackendFallback(
+  PreferredBackend? requested,
+  PreferredBackend? active,
+) {
+  if (requested == null || requested == active) return;
+  // ignore: avoid_print
+  print(
+    '[flutter_edge_ai] WARNING: embedding preferredBackend ${requested.name} '
+    'fell back to ${active?.name ?? "an unknown accelerator"}. '
+    'Read EmbeddingModel.activeBackend for the backend in use.',
   );
 }
 

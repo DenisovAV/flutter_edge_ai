@@ -21,12 +21,12 @@ void _checkEmbeddingSpec(EmbeddingModelSpec spec) {
   }
   final files = spec.files;
   final modelFilename = files[0].filename;
-  if (isLiteRtLmFilename(modelFilename)) {
+  if (isSelfContainedEmbeddingFilename(modelFilename)) {
     if (spec._tokenizerSource != null) {
       throw ArgumentError.value(
         spec._tokenizerSource,
         'tokenizerSource',
-        "'$modelFilename' is a .litertlm bundle and carries its own "
+        "'$modelFilename' is self-contained and carries its own "
             'tokenizer; do not pass one',
       );
     }
@@ -36,7 +36,7 @@ void _checkEmbeddingSpec(EmbeddingModelSpec spec) {
     throw ArgumentError.value(
       null,
       'tokenizerSource',
-      "'$modelFilename' needs a tokenizer (only a .litertlm bundle carries "
+      "'$modelFilename' needs a tokenizer (only .litertlm and .gguf containers carry "
           'its own)',
     );
   }
@@ -116,7 +116,7 @@ class EmbeddingTokenizerFile extends ModelFile {
 }
 
 /// Specification for an embedding model: a model file plus its tokenizer
-/// (`.tflite`, `.onnx`, …), or a single `.litertlm` bundle that carries its
+/// (`.tflite`, `.onnx`, …), or a single `.litertlm` or `.gguf` file that carries its
 /// own tokenizer ([isSelfContained]).
 final class EmbeddingModelSpec extends ModelSpec {
   final String _name;
@@ -131,8 +131,8 @@ final class EmbeddingModelSpec extends ModelSpec {
   /// immutable/versioned artifacts. Each must be a plain basename; when
   /// omitted, the historical source-derived namespacing behavior is retained.
   ///
-  /// Throws [ArgumentError] when the resolved model filename is a `.litertlm`
-  /// bundle (ASCII case-insensitive) and a tokenizer is given — the bundle
+  /// Throws [ArgumentError] when the resolved model filename is a `.litertlm` or `.gguf`
+  /// container (ASCII case-insensitive) and a tokenizer is given — the bundle
   /// carries its own — or is anything else and no tokenizer is given; when
   /// [tokenizerFilename] is given without [tokenizerSource]; and when the
   /// model and the tokenizer resolve to the same filename.
@@ -202,7 +202,7 @@ final class EmbeddingModelSpec extends ModelSpec {
   String? get tokenizerFilename => _tokenizerFilename;
 
   /// True exactly when there is no separate tokenizer file
-  /// (`tokenizerSource == null`). In 2.3.0 that means a `.litertlm` bundle.
+  /// (`tokenizerSource == null`). This means a `.litertlm` or `.gguf` container.
   /// Which engine runs it is each engine's own business.
   bool get isSelfContained => _tokenizerSource == null;
 

@@ -394,6 +394,18 @@ through `flutter_edge_ai_litertlm`; MiniLM-class
 per platform, embedding and speech models:
 [models](https://flutteredge.ai/docs/models).
 
+Core 2.5.0 lets embedding providers accept self-contained `.gguf` files without
+a separate tokenizer. No GGUF embedding backend ships yet; execution requires
+an engine package that supports the file. Providers declare capabilities with
+`EmbeddingBackendProvider.honouredBackends(spec)` and report the loaded
+accelerator through `EmbeddingPassInfo.activeBackend`. Automatic requests reuse
+the current non-NPU embedder for the same model. Repeated explicit CPU/GPU
+requests reuse the model they loaded, including a fallback, until a rebuild is
+needed or the model is closed; the fallback warning is printed once per load.
+Core keeps ownership of
+the model cache, worker and close lifecycle. Existing providers keep their
+CPU/NPU cache behavior.
+
 ## Going further
 
 - [Getting started](https://flutteredge.ai/docs/getting-started) — sessions, system instructions, removing models

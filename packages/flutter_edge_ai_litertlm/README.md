@@ -235,7 +235,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in), MediaTek MT6991/MT6993 (Android, opt-in, not run on device yet) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -559,7 +559,8 @@ final note = await embedder.embed(
 
 `EmbeddingModel.activeBackend` is `cpu` on native and `gpu` for EmbeddingGemma
 2 on the web, and `npu` for an EmbeddingGemma 2 per-SoC bundle on a Google
-Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), Qualcomm NPU
+Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), MediaTek NPU
+([below](#mediatek-npu-on-android-opt-in)), Qualcomm NPU
 ([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
 ([below](#embeddinggemma-2-on-an-intel-npu-windows)); any other
 `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
@@ -603,9 +604,12 @@ assert(embedder.activeBackend == PreferredBackend.npu);
   verified by us, Tensor G5/G6 runs on matching Pixels in apps built with
   `google_tensor_npu` ([below](#google-tensor-npu-on-android-opt-in)), the
   G6 270m and 440m run on a Pixel 11, Intel PTL runs on Windows
-  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek is
-  refused (no dispatch for it ships). What a bundle is compiled for is read
-  from the bundle itself, not from its name.
+  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek
+  MT6991/MT6993 are accepted in apps built with `mediatek_npu`
+  ([below](#mediatek-npu-on-android-opt-in)) but not run on such a device
+  yet.
+  What a bundle is compiled for is read from the bundle itself, not from its
+  name.
 - **Fast, and close to — not equal to — the CPU vectors.** Measured on an
   SM8650 (Galaxy S24): a text in about 9 ms (53 ms on its CPU), an image in
   about 0.31 s, the 270m loaded in 0.85 s. Against the CPU bundle, the cosine is
@@ -815,7 +819,7 @@ Native platforms need no web setup.
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ FFI (GPU via OpenCL; NPU on Qualcomm or Google Tensor G5/G6 — both opt-in, below) |
+| Android  | ✅ FFI (GPU via OpenCL; NPU on Qualcomm, Google Tensor G5/G6 or MediaTek — each opt-in, below) |
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
@@ -833,9 +837,11 @@ Without them the first model load fails; the error contains
 
 `PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and
 only on Windows, on Google Tensor G5/G6 Pixels with Android 16 or later (not a
-`BP2A` build), on
+`BP2A` build), on MediaTek Android devices (Android 12 or later) whose
+NeuroPilot adapters open in the app, on
 Android devices with Qualcomm FastRPC (`libcdsprpc.so`), and on Qualcomm Linux
-arm64 boards; the Tensor and Qualcomm paths only in apps that opted in (below). A
+arm64 boards; the Tensor, MediaTek and Qualcomm paths only in apps that opted
+in (below). A
 generic bundle falls back to GPU, then CPU, and prints why; a bundle compiled
 for an NPU is refused elsewhere ([Where a model runs](#where-a-model-runs)).
 Windows has no device probe: a bundle compiled for the Intel NPU is not refused
@@ -889,7 +895,8 @@ chosen, and are null for a bundle without that encoder.
 A refusal is a `LiteRtLmBundleException` with a `problem`
 (`incomplete`, `wrongBackend`, `unsupportedNpu` for a text model, or an encoder
 the load turns on, compiled for an NPU this package has no dispatch for here —
-MediaTek, a Qualcomm bundle on Windows, or a Google Tensor bundle off Android —
+a bundle of an NPU vendor this package does not know, a Qualcomm bundle on
+Windows, or a Google Tensor or MediaTek bundle off Android —
 or for an NPU encoder next to a text model that is not on the NPU) and a
 message that says
 what to do; no engine is created. An NPU bundle, or an encoder the load turns
@@ -996,6 +1003,51 @@ E2B text, images and audio on the NPU, and EmbeddingGemma 2 270m and 440m (text
 and an image). Not run yet: a
 Tensor G5 and a release-signed build. On one Pixel the EdgeTPU service logged
 that the app is not on its allowlist; that did not stop the debug run.
+
+### MediaTek NPU on Android (opt-in)
+
+A bundle compiled ahead of time for a MediaTek SoC (`…_mt6991.litertlm`,
+`…_MediaTek_MT6991.litertlm`; its `LiteRtStamp` names `MediaTek` and the SoC,
+the file name is not read) runs on the APU of a phone with that SoC, Android
+12 or later: LiteRT's own requirement (a `Mediatek` or `MTK` SoC
+manufacturer), checked before any engine, together with whether one of the
+phone's NeuroPilot adapters opens in the app. The load is NPU-only: a device
+that cannot run it is refused, never moved to the GPU or the CPU. A generic
+bundle is not compiled on the device.
+
+The dispatch is opt-in:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      mediatek_npu: true
+```
+
+With it the build fetches Google's `litert-npu-runtime-mediatek` 2.3.0 AAR from
+Google Maven (checksum-pinned; `mediatek_npu_maven_url` names a mirror,
+`mediatek_npu_aar` a downloaded copy) and bundles its
+`libLiteRtDispatch_MediaTek.so` (Apache 2.0), about 330 KB, into every Android
+arm64 build of the app. It is not in this package's release: building it needs
+MediaTek's NeuroPilot SDK, whose licence lets it reach users only inside an
+application. The NeuroPilot runtime it drives is part of the phone's system,
+is never redistributed, and core declares its libraries as optional; a phone
+whose vendor does not expose them to apps is refused with the reason. An app
+can set this with the other opt-ins: the bundle's stamp picks the vendor.
+The AAR's `LICENSE` and `THIRD_PARTY_NOTICE.txt` stay in the hook's cache (the
+build prints where); an app that lists the open-source licences it ships should
+add them.
+
+Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug
+build: Gemma 3 1B (`…_mt6989`) generates on the NPU. Bundles for another SoC
+are refused when the engine is created, and nothing else is tried: Gemma 3 1B
+`…_mt6991` and EmbeddingGemma 2 270m `…_MT6991` (NeuroPilot: unsupported target
+`EDPA_1_2`), EmbeddingGemma 2 440m `…_MT6993` (Neuron SDK major version
+mismatch). Qwen3 0.6B `…mediatek.mt6993` fails before the NPU, on its tokenizer
+(`piece must not include null character`, LiteRT-LM#3865). Not run yet: a
+bundle on an MT6991/MT6993 phone, and a release-signed build. Google publishes
+Gemma 3 1B (MT6989, MT6991, MT6993), Gemma 3 270M (MT6991, MT6993), Qwen3 0.6B (MT6993) and EmbeddingGemma 2
+(MT6991, MT6993) bundles; Gemma 4 has none.
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)
 

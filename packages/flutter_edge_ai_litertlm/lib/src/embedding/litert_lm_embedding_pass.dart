@@ -221,6 +221,9 @@ String liteRtLmNpuProbeFailureCauses(LiteRtLmNpuTarget target) =>
       NpuVendor.googleTensor =>
         'on another Tensor generation (G5 and G6 bundles are not '
             'interchangeable), or without a compatible Pixel system runtime',
+      NpuVendor.mediatek =>
+        'on another SoC, or with a NeuroPilot runtime on this device that '
+            "does not match the bundle's NeuroPilot SDK version",
       // The placement refuses a bundle of a vendor with no dispatch here
       // before any probe embed.
       null => throw StateError('$target: no NPU vendor of this package'),

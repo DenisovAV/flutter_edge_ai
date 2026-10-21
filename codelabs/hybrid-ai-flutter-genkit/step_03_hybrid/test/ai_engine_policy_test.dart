@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genkit/genkit.dart';
+import 'package:genkit_google_genai/genkit_google_genai.dart' show googleAI;
 import 'package:genkit_hybrid/genkit_hybrid.dart';
 import 'package:workshop_genkit_flutter_hybrid_ai/services/ai_engine.dart';
 
@@ -136,7 +137,7 @@ void main() {
       ),
       PolicyMode.cascade: (
         'Cascade (escalate on quality)',
-        true,
+        false,
         [false, false, false, true],
       ),
       PolicyMode.budget: (
@@ -204,12 +205,27 @@ void main() {
       expect(models.localSeen, isEmpty);
     });
 
-    test('the cloud is out of reach without the router', () async {
+    test('the router does not hand its cloud plugin to the app', () async {
       final models = _Models();
       final engine = _engine(models);
       final r = await engine.ai.generate(model: _cloudRef, prompt: 'hi');
       expect(r.finishReason, FinishReason.failed);
       expect(models.cloudSeen, isEmpty);
+    });
+
+    test('the app\'s own Genkit cannot resolve the cloud model', () async {
+      final ai = AiEngine.appGenkit(embedders: false);
+      addTearDown(ai.shutdown);
+      final gemini = googleAI.gemini(kCloudModel).name;
+      expect(await ai.registry.lookupAction(ActionType.model, gemini), isNull);
+    });
+
+    test('cascade sends an image straight to the cloud', () async {
+      final models = _Models();
+      final r = await _send(_engine(models), PolicyMode.cascade, withImage: true);
+      expect(r.text, 'CLOUD');
+      expect(r.route!.attempts, [kCloud]);
+      expect(models.localSeen, isEmpty);
     });
   });
 

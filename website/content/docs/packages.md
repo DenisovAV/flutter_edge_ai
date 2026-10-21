@@ -146,7 +146,7 @@ Two companion packages integrate flutter_edge_ai with [Genkit](https://pub.dev/p
 
 | Package | What it does | Depends on |
 |---|---|---|
-| **`genkit_flutter_edge_ai`** | Exposes flutter_edge_ai as a Genkit model/embedder provider — call `ai.generate(model: flutterEdgeAi.model(...))` and `ai.embed(...)` through the standard Genkit API. | `flutter_edge_ai` + `genkit` |
-| **`genkit_hybrid`** | Hybrid on-device/cloud routing: one decision per call, rules then a classifier, the cloud reachable only through the router. | `genkit` only (no flutter_edge_ai) |
+| **`genkit_flutter_edge_ai`** | Exposes flutter_edge_ai as a Genkit model/embedder provider — call `ai.generate(model: flutterEdgeAi.model(...))` and `ai.embed(...)` through the standard Genkit API; `deciderRouteClassifier` lets a `genkit_hybrid` router decide on the device. | `flutter_edge_ai` + `genkit` + `genkit_hybrid` |
+| **`genkit_hybrid`** | Hybrid on-device/cloud routing: one decision per call, rules then a classifier, the cloud reachable only through the router. | `genkit` (+ `schemantic`); no flutter_edge_ai |
 
 See [Genkit](/docs/genkit) for setup and examples.

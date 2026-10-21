@@ -336,6 +336,25 @@ targets:
 // ignore_for_file: experimental_member_use
 Future<Decider>? intents; // created once, cached
 
+Future<Decider> loadIntents() async {
+  try {
+    final embedder = await FlutterEdgeAi.getActiveEmbedder();
+    return await embedder.createDecider(options: [
+      DeciderOption('smalltalk', examples: [
+        EmbeddingInput.text('how are you today?'),
+        EmbeddingInput.text('tell me something nice'),
+      ]),
+      DeciderOption('code', examples: [
+        EmbeddingInput.text('write a parser in Rust'),
+        EmbeddingInput.text('why does this SQL query time out?'),
+      ]),
+    ]);
+  } catch (_) {
+    intents = null; // the failed load fails this call; the next one retries
+    rethrow;
+  }
+}
+
 final router = defineHybridRouter(
   ai, // a Genkit with GenkitFlutterEdgeAiPlugin and no default model
   targets: {
@@ -346,33 +365,25 @@ final router = defineHybridRouter(
   policies: {
     'smart': RoutePolicy(
       rules: [RouteRule.inputSize(maxChars: 3000, small: kOnDevice, large: kCloud)],
-      classifier: deciderRouteClassifier(
-        () => intents ??= FlutterEdgeAi.getActiveEmbedder().then(
-          (embedder) => embedder.createDecider(options: [
-            DeciderOption('smalltalk', examples: [
-              EmbeddingInput.text('how are you today?'),
-              EmbeddingInput.text('tell me something nice'),
-            ]),
-            DeciderOption('code', examples: [
-              EmbeddingInput.text('write a parser in Rust'),
-              EmbeddingInput.text('why does this SQL query time out?'),
-            ]),
-          ]),
-        ),
-      ),
-      labels: {'smalltalk': kOnDevice, 'code': kCloud},
+      classifier: deciderRouteClassifier(() => intents ??= loadIntents()),
+      labels: {
+        'smalltalk': RouteDecision.prefer(kOnDevice),
+        'code': RouteDecision.prefer(kCloud),
+      },
     ),
   },
   defaultPolicy: 'smart',
 );
 ```
 
-- The last user message's text is classified; none is an abstain (`noText`), which goes to the
-  policy's `onAbstain` (default `kOnDevice`).
-- The provider is called per request. Return the pending Future while the decider loads (the
-  request waits); return null when there is none, which makes the classifier unavailable — the
-  call fails unless the policy sets `onUnavailable`. A decider closed by a refit is asked for
-  once more. The classifier never closes the decider.
+- The last user message's text is classified (or what `text:` picks); none is an abstain
+  (`noText`), which goes to the policy's `onAbstain` (default `RouteDecision.only(kOnDevice)`).
+- The provider is called per request. Return the pending Future while the decider loads: the
+  request waits, with no limit unless the call has a Genkit cancel token. Return null when there
+  is none, which makes the classifier unavailable — the call fails unless the policy sets
+  `onUnavailable`. A Future that fails fails the call with its error; drop it from your cache, as
+  above, so the next request retries the load. A decider closed by a refit (or whose embedder was
+  closed) is asked for once more. The classifier never closes the decider.
 - Every other decider error fails the call, never an abstain — an input over the embedder's
   limit included, so keep `RouteRule.inputSize` before the classifier.
 - The route info carries the label, the decider's abstain signal as `score`, the margin, and its

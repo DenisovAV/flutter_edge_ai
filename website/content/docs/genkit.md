@@ -317,8 +317,9 @@ turn of the tool loop, and keeps it there for the whole loop. Deterministic
 rules decide first; a classifier, such as an on-device decider, decides the
 rest.
 
-`genkit_hybrid` depends only on `genkit` — it has no dependency on
-flutter_edge_ai and works with any Genkit models.
+`genkit_hybrid` depends only on `genkit` (and `schemantic`, which Genkit itself
+is built on) — it has no dependency on flutter_edge_ai and works with any
+Genkit models.
 
 ### Add to pubspec.yaml
 
@@ -352,7 +353,11 @@ final router = defineHybridRouter(
         RouteRule.inputSize(maxChars: 3000, small: kOnDevice, large: kCloud),
       ],
       classifier: myClassifier,
-      labels: {'smalltalk': kOnDevice, 'code': kCloud},
+      labels: {
+        'private': RouteDecision.only(kOnDevice), // never leaves the device
+        'smalltalk': RouteDecision.prefer(kOnDevice),
+        'code': RouteDecision.prefer(kCloud),
+      },
       fallback: [kOnDevice],
     ),
   },
@@ -374,9 +379,12 @@ The cloud plugins go to the router, which keeps them in a Genkit instance of
 its own. The app's `ai` gets one proxy model per cloud target, which serves a
 request only when the router chose that target for that call: a direct call to
 it, or an app middleware that switches a device decision to it, fails with
-`PERMISSION_DENIED`. `defineHybridRouter` refuses a Genkit created with a
-default `model:`, and on every cloud call the router checks that the app's `ai`
-cannot resolve the cloud model itself.
+`PERMISSION_DENIED`. The decision ends with its attempt, so a zone kept from it
+no longer reaches the cloud, and the caller's `onChunk` runs outside it.
+`defineHybridRouter` refuses a Genkit created with a default `model:`, and on
+every cloud call the router checks that the app's `ai` cannot resolve the cloud
+model itself. Define one router per Genkit: Genkit cannot unregister it, and its
+name cannot be reused.
 
 ### Policies, rules and decisions
 
@@ -384,33 +392,40 @@ cannot resolve the cloud model itself.
 |---|---|
 | `rules` | synchronous rules, in order; the first decision wins |
 | `classifier` | asked only when no rule decided |
-| `labels` | classifier label → target; an unknown label fails the call |
-| `onAbstain` | where an abstain goes; default `kOnDevice` |
-| `onUnavailable` | where a call goes while the classifier is not ready; default: the call fails |
-| `fallback` | targets tried after a transient first-turn failure, a missing capability or a rejected cascade |
+| `labels` | classifier label → `RouteDecision`; an unknown label fails the call |
+| `onAbstain` | the decision for an abstain; default `RouteDecision.only(kOnDevice)` |
+| `onUnavailable` | the decision while the classifier is not ready; default: the call fails |
+| `fallback` | targets a `prefer` decision may move to: after a transient failure, for a missing capability, after a rejected cascade |
 | `cascade` | a check on the result; false escalates along `fallback` |
 
 Built-in rules: `RouteRule.custom(name, fn)`, `RouteRule.offline(isOnline:)`,
 `RouteRule.inputSize(maxChars:, small:, large:)` and
 `RouteRule.budget(available:, premium:, cheap:)`. A decision is
 `RouteDecision.prefer(target)`, which may move to another target, or
-`RouteDecision.only(target)`, which never does; `pin:` on a call is `only`.
-`HybridTarget(…, supports: {ModelCapability.vision, …})` declares what a target
-can do, and a request that needs more moves a `prefer` decision to the first
-capable fallback target.
+`RouteDecision.only(target)`, which never does; `pin:` on a call is `only`. Map
+a label that must stay on the device to `only(kOnDevice)`.
+`HybridTarget.onDevice(…, supports: {ModelCapability.vision, …})` (or `.cloud`)
+declares what a target can do, and a request that needs more moves a `prefer`
+decision to the first capable fallback target. `RouteClassifier` and
+`RouteRule` are abstract base classes: extend them, as `final` classes.
 
 ### Fallback, cascade and consent
 
 Fallback and cascade happen only at the first turn, for a `prefer` decision,
 never on a resume, and only while nothing ran: no chunk reached the caller and
-no tool ran, since re-running a tool loop would re-run its tools. A fallback
-needs a transient error: any non-Genkit error, or `UNAVAILABLE`,
-`DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`, `INTERNAL` or `UNIMPLEMENTED`. A
-streamed cascade attempt holds its chunks until the verdict.
+no tool ran, since re-running a tool loop would re-run its tools. A failure
+moves the call to a device target when it is transient (`UNAVAILABLE`,
+`DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`, `INTERNAL`, `UNIMPLEMENTED`, or an
+error without a Genkit status), and to a cloud target only on `UNAVAILABLE`,
+`DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED` or `UNIMPLEMENTED`: `INTERNAL` and
+errors without a status are what a device bug or an over-long input raises on
+every request. `route.reason` says why the call moved. A streamed cascade
+attempt holds its chunks until the verdict, or until a tool runs.
 
-`confirmCloud: (request) => …` is asked once per call that is about to go to
-the cloud. False keeps the call on the device, or fails it when there is no
-`kOnDevice` target.
+`confirmCloud: (request) => …` is asked once per call for each cloud target it
+is about to use; a cancel ends the wait. False on the decided target keeps a
+`prefer` call on the device, and fails a pin, an `only` decision and a router
+without a `kOnDevice` target; false on a fallback target skips it.
 
 ### Decide on the device with a Decider
 
@@ -418,23 +433,36 @@ the cloud. False keeps the call on the device, or fails it when there is no
 decider into the router's classifier; its options are the labels:
 
 ```dart
-classifier: deciderRouteClassifier(
-  () => intents ??= FlutterEdgeAi.getActiveEmbedder().then(
-    (embedder) => embedder.createDecider(options: intentOptions),
-  ),
-),
-labels: {'smalltalk': kOnDevice, 'code': kCloud},
+Future<Decider>? intents;
+
+Future<Decider> loadIntents() async {
+  try {
+    final embedder = await FlutterEdgeAi.getActiveEmbedder();
+    return await embedder.createDecider(options: intentOptions);
+  } catch (_) {
+    intents = null; // the failed load fails this call; the next one retries
+    rethrow;
+  }
+}
+
+// In the policy:
+classifier: deciderRouteClassifier(() => intents ??= loadIntents()),
+labels: {
+  'smalltalk': RouteDecision.prefer(kOnDevice),
+  'code': RouteDecision.prefer(kCloud),
+},
 ```
 
 The provider is called per request: return the pending Future while the
-decider loads. A decider error fails the call, never an abstain — an input over
-the embedder's limit included, so keep `RouteRule.inputSize` before the
-classifier. See [Decisions](/docs/decisions).
+decider loads. A decider error fails the call, never an abstain — a failed load
+and an input over the embedder's limit included, so keep `RouteRule.inputSize`
+before the classifier. See [Decisions](/docs/decisions).
 
 ### Errors
 
 `router.generate`, `generateStream` and a routed prompt's `call`/`stream` throw
-`HybridRoutingException` when the router refuses. Other failures stay what
+`HybridRoutingException` when the router refuses; a sub-agent's refusal inside
+a tool fails the outer call as a tool failure instead. Other failures stay what
 Genkit makes of them: a result with `finishReason: FinishReason.failed`, the
 error in `error` and the original exception in `cause`; a cancel or a
 `maxTurns` overrun ends with `FinishReason.aborted`. A cloud model can also
@@ -480,5 +508,5 @@ could switch models between turns.
 | `CostStrategy(...)` | `RouteRule.budget(...)` |
 | `FirstMatch([...])` | `RoutePolicy.rules` |
 | `FallbackStrategy(order)` / `WithFallback` | a rule's `prefer` + `RoutePolicy.fallback` |
-| `CapabilityStrategy(supports:)` | `HybridTarget(…, supports:)` |
+| `CapabilityStrategy(supports:)` | `HybridTarget.onDevice/.cloud(…, supports:)` |
 | `cascadeModel(accept:)` | `RoutePolicy.cascade` |

@@ -488,8 +488,8 @@ Add `genkit_flutter_edge_ai` and `flutter_edge_ai`:
 
 ```yaml
   # Step 3: On-device AI (LiteRT-LM engine)
-  genkit_flutter_edge_ai: ^0.10.0
-  flutter_edge_ai: ^2.4.0
+  genkit_flutter_edge_ai: ^0.11.0
+  flutter_edge_ai: ^2.5.0
   # flutter_edge_ai registers no engine by default — opt into LiteRT-LM
   # (.litertlm inference) here.
   flutter_edge_ai_litertlm: ^1.14.0
@@ -736,10 +736,10 @@ ai.generateStream(model: flutterEdgeAi.model('gemma-3-1b-it'), prompt: prompt)
 Same API. Different backends.
 
 > **Coming up**: In Step 4 we retire `CloudAIService` and `LocalAIService` as
-> separate classes. A single `AiEngine` builds one `Genkit` with both plugins
-> registered, and `genkit_hybrid` composes the two resolved models into one
-> routable `Model` — the app still calls `ai.generateStream(model: ..., ...)`,
-> it just gets that one `Model` from `AiEngine` instead of picking a service.
+> separate classes. A single `AiEngine` builds the app's `Genkit` with the
+> on-device plugin and one `genkit_hybrid` router over both targets, which
+> owns the Gemini plugin — the app calls `engine.router.generateStream(...)`
+> and the router picks the model, instead of the app picking a service.
 
 ## Step 4: Hybrid Strategy
 Duration: 15
@@ -822,7 +822,7 @@ enum PolicyMode {
   cloud('Cloud', needsLocal: false),
   local('Local', needsCloud: false, textOnly: true),
   smart('Smart (image-aware)'),
-  cascade('Cascade (escalate on quality)', textOnly: true),
+  cascade('Cascade (escalate on quality)'),
   budget('Budget (cost-gated)');
 
   const PolicyMode(
@@ -839,8 +839,9 @@ enum PolicyMode {
   final bool needsCloud;
   final bool needsLocal;
 
-  /// True when the primary route starts on the text-only on-device model, so
-  /// an attached image cannot be handled (the UI blocks send with a hint).
+  /// True when every route of the policy ends on the text-only on-device
+  /// model, so an attached image cannot be handled (the UI blocks send with a
+  /// hint).
   final bool textOnly;
 
   bool availableWith({required bool cloud, required bool local}) =>
@@ -938,27 +939,9 @@ class AiEngine {
     // embeddings off here is the test seam.
     final embeddingsSupported = downloadEmbedder;
 
-    // The app's Genkit gets the on-device plugin ONLY, and no default `model:`
-    // — the router refuses one, because a call that forgot the router would go
-    // there. Gemini goes to the router below. The plugin list is declarative
-    // (no I/O), so building Genkit first keeps `ai` available whatever the
-    // installs below do.
-    _ai = Genkit(
-      plugins: [
-        GenkitFlutterEdgeAiPlugin(
-          models: [
-            FlutterEdgeAiModelConfig(
-              name: kLocalModel,
-              modelType: _modelType,
-              fileType: ModelFileType.litertlm,
-            ),
-          ],
-          embedders: embeddingsSupported
-              ? [FlutterEdgeAiEmbedderConfig(name: kEmbedder)]
-              : const [],
-        ),
-      ],
-    );
+    // Building Genkit first keeps `ai` available whatever the installs below
+    // do: its plugin list is declarative (no I/O).
+    _ai = appGenkit(embedders: embeddingsSupported);
 
     // CLOUD: needs no install; the key is all it takes.
     cloudReady = _geminiApiKey.isNotEmpty;
@@ -1031,12 +1014,41 @@ class AiEngine {
       }
     }
 
-    _defineRouter(
-      local: localReady ? onDeviceModel(kLocalModel) : null,
-      cloud: cloudReady ? googleAI.gemini(kCloudModel) : null,
-      cloudPlugins: [if (cloudReady) googleAI(apiKey: _geminiApiKey)],
-    );
+    try {
+      _defineRouter(
+        local: localReady ? onDeviceModel(kLocalModel) : null,
+        cloud: cloudReady ? googleAI.gemini(kCloudModel) : null,
+        cloudPlugins: [if (cloudReady) googleAI(apiKey: _geminiApiKey)],
+      );
+    } catch (e) {
+      // A policy naming a target the router lacks, say: nothing can be sent,
+      // so nothing may look ready.
+      cloudReady = false;
+      localReady = false;
+      rethrow;
+    }
   }
+
+  /// The app's Genkit: the on-device plugin ONLY, and no default `model:` —
+  /// the router refuses one, because a call that forgot the router would go
+  /// there. Gemini goes to the router alone (see [initialize]).
+  @visibleForTesting
+  static Genkit appGenkit({required bool embedders}) => Genkit(
+    plugins: [
+      GenkitFlutterEdgeAiPlugin(
+        models: [
+          FlutterEdgeAiModelConfig(
+            name: kLocalModel,
+            modelType: _modelType,
+            fileType: ModelFileType.litertlm,
+          ),
+        ],
+        embedders: embedders
+            ? [FlutterEdgeAiEmbedderConfig(name: kEmbedder)]
+            : const [],
+      ),
+    ],
+  );
 
   /// Defines the router over whichever targets are available, with the
   /// policies of the modes they allow. With neither target there is no router.
@@ -1079,7 +1091,9 @@ class AiEngine {
   }
 
   /// Pure mode → [RoutePolicy] mapping (no models needed), so the routing
-  /// decisions are unit-testable.
+  /// decisions are unit-testable. Cascade starts on the device; an image
+  /// skips it, because the router moves a `prefer` decision past a target
+  /// that cannot see to the first fallback that can.
   RoutePolicy policyFor(PolicyMode mode) => switch (mode) {
     PolicyMode.cloud => RoutePolicy(
       rules: [
@@ -1094,6 +1108,9 @@ class AiEngine {
     // Cloud first, on-device when the cloud fails transiently (offline). An
     // image never falls back: the on-device target declares no vision, so
     // offline + image fails loudly instead of silently dropping the picture.
+    // Toward the device any transient failure moves the call, offline
+    // included; toward the cloud only an UNAVAILABLE-style Genkit status
+    // does, never INTERNAL.
     PolicyMode.smart => RoutePolicy(
       rules: [
         RouteRule.custom(
@@ -1155,7 +1172,9 @@ have to go back and edit it. `AiEngine.forTest` and `initialize`'s
 `test/ai_engine_policy_test.dart` define the real router over fake models
 without a 550 MB download, and `localModelPath` lets
 `integration_test/smoke_test.dart` install a model file staged on the device
-instead of downloading it. `onDeviceModel`'s `maxTokens` is Step 6's, and
+instead of downloading it. (`appGenkit` is split out of `initialize` for the
+same unit test, which checks that the app's own `Genkit` cannot resolve
+Gemini.) `onDeviceModel`'s `maxTokens` is Step 6's, and
 Step 6 explains it; until RAG inflates the prompt it changes nothing you can
 observe.
 
@@ -1228,7 +1247,9 @@ final userMessage = Message(
 // the result (`result.route`). A refusal (say, an image on a text-only
 // target) is thrown as a HybridRoutingException.
 final stream = _engine.router.generateStream(
-  policy: _engine.policyName(_policy),
+  // `policy` is `_policy` read at the top of _sendMessage(), before any
+  // await: the dropdown stays live while a message runs.
+  policy: _engine.policyName(policy),
   messages: [userMessage],
 );
 await for (final chunk in stream) {
@@ -1249,7 +1270,7 @@ if (reason != FinishReason.stop &&
 // The budget demo counts the Cloud and Budget calls that really ran in
 // the cloud: the router reports the target each call ended on, so a
 // Budget call that fell back to the device is not counted.
-if ((_policy == PolicyMode.cloud || _policy == PolicyMode.budget) &&
+if ((policy == PolicyMode.cloud || policy == PolicyMode.budget) &&
     result.route?.target == kCloud) {
   _engine.cloudCallsSpent++;
 }
@@ -1468,13 +1489,14 @@ running the call again elsewhere would run its tools again.
 
 ### The capability block
 
-An image can't reach a policy whose primary route is the text-only on-device
-model — which is exactly the `textOnly` flag each `PolicyMode` already
-carries, so there's no helper to write and no second list of modes to keep in
+An image can't reach a policy whose every route ends on the text-only
+on-device model — which is exactly the `textOnly` flag each `PolicyMode`
+already carries, so there's no helper to write and no second list of modes to keep in
 sync. `_sendMessage()` checks it before doing anything else:
 
 ```dart
-if (_attachedImage != null && _policy.textOnly) {
+final policy = _policy; // this send's mode, read before any await
+if (_attachedImage != null && policy.textOnly) {
   ScaffoldMessenger.of(context).showSnackBar(
     const SnackBar(
       content: Text(
@@ -1486,9 +1508,11 @@ if (_attachedImage != null && _policy.textOnly) {
 }
 ```
 
-`local` always starts on-device; `cascade`'s first hop is always on-device
-too — both are declared `textOnly: true` and blocked. `smart` and `cloud`
-send an image to `kCloud` and nowhere else, so they're let through.
+`local` always runs on-device — it is declared `textOnly: true` and blocked.
+`smart` and `cloud` send an image to `kCloud` and nowhere else, so they're let
+through. So is `cascade`: it starts on the device, but the router moves a
+`prefer` decision past a target that cannot see to the first fallback that
+can, so an image skips the phone and goes straight to `kCloud`.
 `budget` is let through as well, but that's the one optimistic case: once
 `cloudCallsSpent` hits `budgetCap`, the budget rule answers `only(kOnDevice)`
 — `textOnly` is a fact about the policy, not about its current spend, so an
@@ -1872,12 +1896,12 @@ The old approach needed two completely different APIs — Firebase AI Logic for
 cloud and raw flutter_edge_ai calls for local. With Genkit:
 
 ```dart
-// Both use the same API — only model: changes
-ai.generateStream(model: googleAI.gemini('gemini-3.7-flash'), prompt: prompt)
+// Every backend is a Genkit model or embedder behind the same API:
 ai.generateStream(model: flutterEdgeAi.model('gemma-3-1b-it'), prompt: prompt)
 ai.embed(embedder: flutterEdgeAi.embedder('embedding-gemma-300m'), document: ...)
 
-// genkit_hybrid routes each message — the same call, through the router:
+// Gemini sits behind the router, which owns its plugin: the same call
+// reaches either model.
 engine.router.generateStream(policy: policyName, messages: [userMessage])
 ```
 

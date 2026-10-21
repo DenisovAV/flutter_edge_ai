@@ -49,7 +49,7 @@ enum PolicyMode {
   cloud('Cloud', needsLocal: false),
   local('Local', needsCloud: false, textOnly: true),
   smart('Smart (image-aware)'),
-  cascade('Cascade (escalate on quality)', textOnly: true),
+  cascade('Cascade (escalate on quality)'),
   budget('Budget (cost-gated)');
 
   const PolicyMode(
@@ -66,8 +66,9 @@ enum PolicyMode {
   final bool needsCloud;
   final bool needsLocal;
 
-  /// True when the primary route starts on the text-only on-device model, so
-  /// an attached image cannot be handled (the UI blocks send with a hint).
+  /// True when every route of the policy ends on the text-only on-device
+  /// model, so an attached image cannot be handled (the UI blocks send with a
+  /// hint).
   final bool textOnly;
 
   bool availableWith({required bool cloud, required bool local}) =>
@@ -165,27 +166,9 @@ class AiEngine {
     // embeddings off here is the test seam.
     final embeddingsSupported = downloadEmbedder;
 
-    // The app's Genkit gets the on-device plugin ONLY, and no default `model:`
-    // — the router refuses one, because a call that forgot the router would go
-    // there. Gemini goes to the router below. The plugin list is declarative
-    // (no I/O), so building Genkit first keeps `ai` available whatever the
-    // installs below do.
-    _ai = Genkit(
-      plugins: [
-        GenkitFlutterEdgeAiPlugin(
-          models: [
-            FlutterEdgeAiModelConfig(
-              name: kLocalModel,
-              modelType: _modelType,
-              fileType: ModelFileType.litertlm,
-            ),
-          ],
-          embedders: embeddingsSupported
-              ? [FlutterEdgeAiEmbedderConfig(name: kEmbedder)]
-              : const [],
-        ),
-      ],
-    );
+    // Building Genkit first keeps `ai` available whatever the installs below
+    // do: its plugin list is declarative (no I/O).
+    _ai = appGenkit(embedders: embeddingsSupported);
 
     // CLOUD: needs no install; the key is all it takes.
     cloudReady = _geminiApiKey.isNotEmpty;
@@ -258,12 +241,41 @@ class AiEngine {
       }
     }
 
-    _defineRouter(
-      local: localReady ? onDeviceModel(kLocalModel) : null,
-      cloud: cloudReady ? googleAI.gemini(kCloudModel) : null,
-      cloudPlugins: [if (cloudReady) googleAI(apiKey: _geminiApiKey)],
-    );
+    try {
+      _defineRouter(
+        local: localReady ? onDeviceModel(kLocalModel) : null,
+        cloud: cloudReady ? googleAI.gemini(kCloudModel) : null,
+        cloudPlugins: [if (cloudReady) googleAI(apiKey: _geminiApiKey)],
+      );
+    } catch (e) {
+      // A policy naming a target the router lacks, say: nothing can be sent,
+      // so nothing may look ready.
+      cloudReady = false;
+      localReady = false;
+      rethrow;
+    }
   }
+
+  /// The app's Genkit: the on-device plugin ONLY, and no default `model:` —
+  /// the router refuses one, because a call that forgot the router would go
+  /// there. Gemini goes to the router alone (see [initialize]).
+  @visibleForTesting
+  static Genkit appGenkit({required bool embedders}) => Genkit(
+    plugins: [
+      GenkitFlutterEdgeAiPlugin(
+        models: [
+          FlutterEdgeAiModelConfig(
+            name: kLocalModel,
+            modelType: _modelType,
+            fileType: ModelFileType.litertlm,
+          ),
+        ],
+        embedders: embedders
+            ? [FlutterEdgeAiEmbedderConfig(name: kEmbedder)]
+            : const [],
+      ),
+    ],
+  );
 
   /// Defines the router over whichever targets are available, with the
   /// policies of the modes they allow. With neither target there is no router.
@@ -306,7 +318,9 @@ class AiEngine {
   }
 
   /// Pure mode → [RoutePolicy] mapping (no models needed), so the routing
-  /// decisions are unit-testable.
+  /// decisions are unit-testable. Cascade starts on the device; an image
+  /// skips it, because the router moves a `prefer` decision past a target
+  /// that cannot see to the first fallback that can.
   RoutePolicy policyFor(PolicyMode mode) => switch (mode) {
     PolicyMode.cloud => RoutePolicy(
       rules: [
@@ -321,6 +335,9 @@ class AiEngine {
     // Cloud first, on-device when the cloud fails transiently (offline). An
     // image never falls back: the on-device target declares no vision, so
     // offline + image fails loudly instead of silently dropping the picture.
+    // Toward the device any transient failure moves the call, offline
+    // included; toward the cloud only an UNAVAILABLE-style Genkit status
+    // does, never INTERNAL.
     PolicyMode.smart => RoutePolicy(
       rules: [
         RouteRule.custom(

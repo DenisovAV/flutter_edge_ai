@@ -154,8 +154,10 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _isGenerating) return;
+    // The mode of this send: the dropdown stays live while it runs.
+    final policy = _policy;
 
-    if (_attachedImage != null && _policy.textOnly) {
+    if (_attachedImage != null && policy.textOnly) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -200,7 +202,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // the result (`result.route`). A refusal (say, an image on a text-only
       // target) is thrown as a HybridRoutingException.
       final stream = _engine.router.generateStream(
-        policy: _engine.policyName(_policy),
+        policy: _engine.policyName(policy),
         messages: [userMessage],
       );
       await for (final chunk in stream) {
@@ -233,7 +235,7 @@ class _ChatScreenState extends State<ChatScreen> {
       // The budget demo counts the Cloud and Budget calls that really ran in
       // the cloud: the router reports the target each call ended on, so a
       // Budget call that fell back to the device is not counted.
-      if ((_policy == PolicyMode.cloud || _policy == PolicyMode.budget) &&
+      if ((policy == PolicyMode.cloud || policy == PolicyMode.budget) &&
           result.route?.target == kCloud) {
         _engine.cloudCallsSpent++;
       }

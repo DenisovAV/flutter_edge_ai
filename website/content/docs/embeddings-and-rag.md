@@ -457,6 +457,17 @@ repository and revision as above, and load it as above.
 - **The load checks the NPU.** It embeds one test text and refuses unless it
   gets a valid vector, so a PC without an Intel NPU, or one the stack cannot
   drive, gets **EmbeddingLoadException** rather than wrong vectors.
+- **Measured on a Panther Lake PC** (2026-10-21, OpenVINO 2026.4.1): the 270m
+  loads in about 0.9 s (the generic bundle: 0.3 s on the same PC's CPU) and
+  returns 768-dimensional vectors; a matching pair scores cos 0.913 (0.914 on
+  the CPU), an unrelated one 0.629 (0.628). These are similarities within
+  each backend: how close an NPU vector is to the CPU one is not measured. The
+  440m is not measured.
+- **A weight bank in %TEMP%.** The load copies the bundle's weights to
+  **litert_ov_bank_&lt;hex&gt;.bin** (74.5 MB for the 270m) and the close deletes
+  it. From 1.17.0 the embedder marks it as its own while it is open, so the
+  next Intel NPU load can delete one an app left behind; see
+  [Windows NPU](/docs/desktop).
 - The same rules as on Qualcomm: refused without **npu**, refused on any other
   platform (an Intel bundle on Android or Linux, a Qualcomm one on Windows),
   refused with the reason when **LiteRtDispatch.dll** is not beside the

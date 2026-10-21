@@ -40,14 +40,16 @@ DXC_ZIP = (
     "https://github.com/microsoft/DirectXShaderCompiler/releases/download/"
     "v1.9.2602/dxc_2026_02_20.zip"
 )
-# Windows bundle: OpenVINO + oneTBB, the build LiteRT pins in
-# third_party/intel_openvino/openvino_version.bzl at the LiteRT ref.
+# Windows bundle: OpenVINO + oneTBB, the build LiteRT's
+# third_party/intel_openvino/openvino_version.bzl names once
+# patches/litert_openvino_2026_4_1.patch is applied over the LiteRT ref (the
+# workflows' $ovRelease).
+OPENVINO_VERSION = "2026.4.1"
+OPENVINO_ROOT = "openvino_toolkit_windows_2026.4.1.22982.07f9c262b05_x86_64/"
 OPENVINO_ZIP = (
     "https://storage.openvinotoolkit.org/repositories/openvino/packages/"
-    "2026.3.1/windows/"
-    "openvino_toolkit_windows_2026.3.1.22476.56d9685302d_x86_64.zip"
+    f"{OPENVINO_VERSION}/windows/{OPENVINO_ROOT[:-1]}.zip"
 )
-OPENVINO_ROOT = "openvino_toolkit_windows_2026.3.1.22476.56d9685302d_x86_64/"
 # Android opt-in: what the hook fetches (lib/src/hook/qnn_runtime.dart).
 QNN_AAR = (
     "https://repo1.maven.org/maven2/com/qualcomm/qti/qnn-runtime/2.50.0/"
@@ -186,7 +188,8 @@ def main():
             ["OpenVINO"],
             "The openvino*.dll libraries in the Windows bundle (the Intel NPU "
             "path) are Redistributables of the Intel Distribution of OpenVINO "
-            "toolkit 2026.3.1, unmodified, and are licensed under the Intel "
+            f"toolkit {OPENVINO_VERSION}, unmodified, and are licensed under the "
+            "Intel "
             "OpenVINO Distribution License below. Their third-party programs "
             "follow it.",
             _section("EULA.txt", ov[lic + "EULA.txt"]),
@@ -197,7 +200,7 @@ def main():
         _entry(
             ["oneTBB"],
             "The tbb*.dll libraries in the Windows bundle come unmodified from "
-            "the same OpenVINO 2026.3.1 distribution.",
+            f"the same OpenVINO {OPENVINO_VERSION} distribution.",
             _section("TBB-LICENSE", ov[OPENVINO_ROOT + "runtime/3rdparty/tbb/TBB-LICENSE"]),
             _section("onetbb_third-party-programs.txt",
                      ov[lic + "onetbb_third-party-programs.txt"]),

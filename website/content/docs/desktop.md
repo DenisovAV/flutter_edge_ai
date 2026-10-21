@@ -91,6 +91,23 @@ need `flutter_edge_ai_litertlm` 1.15.0: every release from
 or ended the process with `0xC0000409`
 ([LiteRT-LM#4023](https://github.com/google-ai-edge/LiteRT-LM/issues/4023)).
 
+Intel's Gemma 4 12B for Panther Lake needs `flutter_edge_ai_litertlm` 1.17.0:
+its NPU blobs carry metadata 2.7, which the OpenVINO 2026.3 of earlier releases
+refuses. 1.17.0 ships OpenVINO 2026.4.1. Measured with Intel NPU driver
+32.0.100.4778 on both PCs.
+
+A bundle whose NPU blobs carry no weights makes the dispatch copy them to
+`%TEMP%\litert_ov_bank_<hex>.bin` at every load: 5.55 GB for Intel's 12B, 74.5
+MB for EmbeddingGemma 2 270m `_Intel_PTL`. Keep that much free on the system
+drive. The dispatch deletes the file when the model is closed, so an app that
+exits without closing the model leaves it behind. From 1.17.0 each app marks
+its banks with a `<bank>.<pid>.owner` file it keeps open while the model is
+loaded. The next NPU load deletes the banks whose owner is gone, and the
+unmarked ones written before the PC last started, and prints how much it freed.
+Windows' Fast Startup shutdown does not count as a start. An unmarked bank
+written since the start is kept, because an app on an older release or another
+LiteRT program may still be using it.
+
 Run **Gemma 4** there. On the Intel NPU a Gemma 3 bundle loses every prefill
 chunk after the first — the reply is fluent, answers from the opening of your
 prompt and never mentions the rest, with no error raised
@@ -306,11 +323,11 @@ for secondary `LoadLibrary` calls — they would fail to find the GPU accelerato
 DLL and silently fall back to CPU.
 
 End-users need nothing installed. `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
-measured on `native-v0.18.0-f`, 16 of its 24 DLLs import none.
+measured on `native-v0.18.0-g`, 17 of its 25 DLLs import none.
 
 The other eight are the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus
-three of Intel's five `openvino*` (the NPU compiler and its loader import none)
+three of Intel's six `openvino*` (the NPU compiler, its loader and the NPU VM runtime import none)
 and its four `tbb*`. Each imports some of `msvcp140`,
 `vcruntime140` and `vcruntime140_1` — the runtimes any Flutter Windows app already
 resolves — and none imports `vcruntime140_threads.dll`, the Visual Studio 2022 17.8

@@ -664,6 +664,17 @@ final embedder = await FlutterEdgeAi.getActiveEmbedder(
 - **The load checks the NPU.** It embeds one test text and refuses unless it
   gets a valid vector, so a PC without an Intel NPU, or one the stack cannot
   drive, gets an `EmbeddingLoadException` rather than wrong vectors.
+- **Measured on a Panther Lake PC** (2026-10-21, OpenVINO 2026.4.1): the 270m
+  loads in about 0.9 s (the generic bundle: 0.3 s on the same PC's CPU) and
+  returns 768-dimensional vectors; a matching pair scores cos 0.913 (0.914 on
+  the CPU), an unrelated one 0.629 (0.628). These are similarities within
+  each backend: how close an NPU vector is to the CPU one is not measured. The
+  440m is not measured.
+- **A weight bank in `%TEMP%`.** The load copies the bundle's weights to
+  `litert_ov_bank_<hex>.bin` (74.5 MB for the 270m) and the close deletes it.
+  From 1.17.0 the embedder marks it as its own while it is open, so the next
+  Intel NPU load can delete one an app left behind; see
+  [Windows NPU](https://flutteredge.ai/docs/desktop).
 - The same rules as on Qualcomm: refused without `npu`, refused on any other
   platform (an Intel bundle on Android or Linux, a Qualcomm bundle on Windows),
   refused with the reason when `LiteRtDispatch.dll` is not beside the
@@ -814,7 +825,7 @@ Native platforms need no web setup.
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
 | Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
-The native library (`native-v0.18.0-f`, LiteRT-LM v0.18.0) is fetched at build
+The native library (`native-v0.18.0-g`, LiteRT-LM v0.18.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and on macOS a `post_install` block in `macos/Podfile`, with Swift
@@ -935,7 +946,9 @@ sets the minimum severity of LiteRT-LM's own native log before each engine
 is created (`litert_lm_set_min_log_level`). The level is
 process-wide; null leaves the level the process has, LiteRT-LM's default until
 an engine sets one. `silent` silences LiteRT-LM, not the other native loggers
-in the process.
+in the process. On Windows, when the app's output is redirected
+(`app.exe 2> err.log`), the lines follow the redirect from 1.17.0; before
+that the Flutter runner's `AttachConsole` sent them to the parent's console.
 
 ### Inspecting a model file
 

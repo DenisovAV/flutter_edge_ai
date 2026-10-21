@@ -1,5 +1,6 @@
 ## 1.17.0
 - MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).
+- A macOS app that cannot load LiteRT-LM is told why and how to fix it (#689).
 - Require `flutter_edge_ai` ^2.5.1.
 
 ## 1.16.0

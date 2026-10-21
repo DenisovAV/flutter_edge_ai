@@ -80,6 +80,13 @@ final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
 - **Build issues:** ensure the minimum iOS version is at least 15.0 (16.0 with `flutter_edge_ai_mediapipe`, 16.4 with `flutter_edge_ai_llama`). If the app has a `Podfile` (any app using `flutter_edge_ai_mediapipe` does — it ships no `Package.swift`), also use static linking (`use_frameworks! :linkage => :static`) and reinstall with `cd ios && pod install --repo-update`. An SPM-only app has no `Podfile`; there the deployment target lives on the Runner target in Xcode.
 - **Simulator GPU disabled:** iOS Simulator's Metal has a 256 MB single-allocation cap that LLM weight tensors exceed (e.g. Gemma 3 1B's KV cache alone is 288 MB). Use CPU on the simulator, or test GPU on a physical iPhone. This is a simulator limit, not a plugin bug.
 
+## macOS
+
+- **`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`** (from `flutter_edge_ai_litertlm` 1.16.0 inside an error that says `LiteRT-LM did not load on macOS` and names this cause): the app is built with Swift Package Manager, the default since Flutter 3.44, so nothing copied LiteRT-LM's companion libraries into it. Every LiteRT feature fails to load (LLM, embeddings, speech), on every backend, and the build itself succeeds. Turn Swift Package Manager off for the app in `pubspec.yaml` and replace the `post_install` block of `macos/Podfile` with ours (an app that already has a `macos/Podfile` keeps Swift Package Manager on and only needs the block), see [Desktop → macOS](/docs/desktop#macos). If the block is already there, run `flutter clean` and build again. A route without a Podfile is tracked in [#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689).
+- **`incompatible architecture (have 'arm64', need 'x86_64')`:** LiteRT-LM ships for Apple silicon only. It does not run on an Intel Mac or in an x86_64 (Rosetta) process.
+- **`library load disallowed by system policy`:** macOS refused a quarantined or un-notarized library. Notarize the app; for a local test build, remove the quarantine attribute with `xattr -dr com.apple.quarantine` on the app.
+- **`have different Team IDs`:** macOS library validation refused a library. Sign the app and its frameworks with the same team, or add the `com.apple.security.cs.disable-library-validation` entitlement.
+
 ## Android
 
 - **`.litertlm` models require minSdk 30.** `libLiteRtLm.so` depends on API 30+ Bionic syscalls (`pthread_cond_clockwait`, `sem_clockwait`) that can't be shimmed on older devices. MediaPipe `.task` models work on lower API levels.

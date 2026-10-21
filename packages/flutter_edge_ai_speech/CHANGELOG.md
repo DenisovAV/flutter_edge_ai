@@ -1,3 +1,6 @@
+## 0.5.10
+- Docs: the macOS app setup STT and TTS need (#689).
+
 ## 0.5.9
 - README: which engines default `supportAudio` from the model.
 

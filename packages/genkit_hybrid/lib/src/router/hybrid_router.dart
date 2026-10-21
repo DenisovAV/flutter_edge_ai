@@ -528,6 +528,10 @@ final class _RouterMiddleware extends GenerateMiddleware {
   /// A chunk of this call reached the caller.
   bool _chunkSent = false;
 
+  /// Sends the chunks the running attempt holds for a cascade verdict and
+  /// stops holding; null when no attempt runs.
+  void Function()? _release;
+
   RoutePolicy get _policy => router.policies[policyName]!;
 
   @override
@@ -541,6 +545,8 @@ final class _RouterMiddleware extends GenerateMiddleware {
     next,
   ) {
     _toolRan = true;
+    // The cascade no longer applies: what was held is the answer's.
+    _release?.call();
     // A tool runs outside the decision and the call: a sub-agent that calls
     // the router is routed on its own, its refusals are not this call's, and
     // a tool cannot reach a proxy on this decision.
@@ -1105,15 +1111,26 @@ final class _RouterMiddleware extends GenerateMiddleware {
         },
       }),
     );
+    void send(ModelResponseChunk chunk) {
+      _chunkSent = true;
+      outside.run(() => ctx.sendChunk(chunk));
+    }
+
+    var holding = held;
+    _release = () {
+      final chunks = holding;
+      holding = null;
+      chunks?.forEach(send);
+      chunks?.clear();
+    };
     final routedCtx = ctx.copyWith(
       sendChunk: (chunk) {
         // A chunk sent after its attempt ended belongs to no answer.
         if (!decision.active) return;
-        if (held != null) {
-          held.add(chunk);
+        if (holding case final h?) {
+          h.add(chunk);
         } else {
-          _chunkSent = true;
-          outside.run(() => ctx.sendChunk(chunk));
+          send(chunk);
         }
       },
     );
@@ -1124,6 +1141,7 @@ final class _RouterMiddleware extends GenerateMiddleware {
       );
     } finally {
       decision.active = false;
+      _release = null;
     }
   }
 

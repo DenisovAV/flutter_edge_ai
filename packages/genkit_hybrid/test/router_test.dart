@@ -21,6 +21,9 @@ class _World {
   /// When set, every cloud call returns this same object, as a plugin cache
   /// would.
   ModelResponse? cloudResponse;
+
+  /// When set, a streamed cloud call throws it after its first chunk.
+  Object? cloudThrowsAfterChunk;
 }
 
 ModelResponse _reply(ModelRequest req, String who) {
@@ -80,6 +83,7 @@ class _CloudPlugin extends GenkitPlugin {
         if (world.cloudThrows case final e?) throw e;
         if (ctx.streamingRequested) {
           ctx.sendChunk(ModelResponseChunk(content: [TextPart(text: 'c1 ')]));
+          if (world.cloudThrowsAfterChunk case final e?) throw e;
           if (world.cloudGate case final gate? when world.cloudCalls == 1) {
             await gate.future;
           }
@@ -723,6 +727,73 @@ void main() {
       expect(r.text, 'cloud plain');
       expect(chunks.join(), 'c1 c2', reason: 'no on-device chunk leaked');
       expect(r.route!.attempts, [kOnDevice, kCloud]);
+    });
+
+    test('no cascade once a tool ran', () async {
+      var judged = 0;
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          fallback: const [kCloud],
+          cascade: (_) {
+            judged++;
+            return false;
+          },
+        ).withRule(kOnDevice),
+      );
+      final r = await router.generate(prompt: 'hi', toolNames: ['lookup']);
+      expect(r.text, 'local answer');
+      expect(world.cloudCalls, 0);
+      expect(judged, 0);
+    });
+
+    test('the held chunks of a tool loop reach the caller when the tool '
+        'runs', () async {
+      final seenBeforeTool = <String>[];
+      final streamed = <String>[];
+      ai.defineTool(
+        name: 'peek',
+        description: 'records what the caller has seen',
+        inputSchema: .map(.string(), .dynamicSchema()),
+        fn: (input, _) async {
+          seenBeforeTool.addAll(streamed);
+          return .response('ok');
+        },
+      );
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          fallback: const [kCloud],
+          cascade: (_) => true,
+        ).withRule(kOnDevice),
+      );
+      await router.generate(
+        prompt: 'hi',
+        toolNames: ['peek'],
+        onChunk: (c) => streamed.add(c.text),
+      );
+      expect(seenBeforeTool, ['l1']);
+      expect(streamed.where((t) => t.isNotEmpty), ['l1', 'l1']);
+    });
+
+    test('no fallback once a chunk was sent', () async {
+      world.cloudThrowsAfterChunk = GenkitException(
+        'cut',
+        status: StatusCode.unavailable,
+      );
+      final router = _router(
+        ai,
+        world,
+        policy: const RoutePolicy(fallback: [kOnDevice]).withRule(kCloud),
+      );
+      final stream = router.generateStream(prompt: 'hi');
+      final chunks = [await for (final c in stream) c.text];
+      final r = await stream.onResult;
+      expect(r.finishReason, FinishReason.failed);
+      expect(chunks.join(), 'c1 ');
+      expect(world.localCalls, 0);
     });
 
     test('an accepted result flushes its held chunks', () async {

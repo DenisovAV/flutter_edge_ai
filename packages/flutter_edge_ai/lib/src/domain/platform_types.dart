@@ -14,11 +14,13 @@ library;
 /// - [cpu]: All platforms
 /// - [gpu]: All platforms (Metal on macOS, DirectX on Windows, Vulkan on Linux,
 ///   OpenCL on Android)
-/// - [npu]: With LiteRT-LM (.litertlm models) — Android (Qualcomm Snapdragon
-///   only: the Android archive ships the Qualcomm QNN dispatch stack and
-///   nothing for MediaTek or Google Tensor) and Windows (Intel
-///   LunarLake/PantherLake). Asking for it elsewhere falls back rather than
-///   throwing; read `InferenceModel.activeBackend` for what actually ran.
+/// - [npu]: With LiteRT-LM (.litertlm models) and a bundle compiled for the
+///   device's NPU — Android (Qualcomm, Google Tensor G5/G6 and MediaTek, each
+///   opt-in through a `flutter_edge_ai_litertlm` user_define), Linux arm64
+///   (Qualcomm) and Windows (Intel LunarLake/PantherLake). Asking for it
+///   with a generic bundle falls back where the NPU cannot run it; a bundle
+///   compiled for an NPU runs there or is refused. Read
+///   `InferenceModel.activeBackend` for what actually ran.
 ///   On Windows the check is per OS, not per device: a PC without an Intel
 ///   NPU is still offered npu, and has been measured reporting
 ///   `activeBackend == npu` while running elsewhere. There, npu is a request,
@@ -29,7 +31,7 @@ library;
 enum PreferredBackend {
   cpu,
   gpu,
-  npu, // Android (Qualcomm only) + Windows (Intel LunarLake/PantherLake)
+  npu, // Android (Qualcomm, Google Tensor, MediaTek), Linux arm64, Windows
 }
 
 /// Numeric type of the model's activations, for native `.litertlm` models

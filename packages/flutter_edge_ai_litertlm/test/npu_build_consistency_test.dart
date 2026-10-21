@@ -11,17 +11,18 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// `REQUIRED=( … )` of verify_tarball_manifest.sh, as `<tarball>:<path>`.
-Set<String> _requiredInTarballs() {
+/// `[array]=( … )` (REQUIRED or FORBIDDEN) of verify_tarball_manifest.sh, as
+/// `<tarball>:<path>`.
+Set<String> _tarballRules(String array) {
   final script = File(
     'native/litert_lm/verify_tarball_manifest.sh',
   ).readAsStringSync();
   final block = RegExp(
-    r'^REQUIRED=\(\n(.*?)^\)',
+    '^$array=\\(\n(.*?)^\\)',
     multiLine: true,
     dotAll: true,
   ).firstMatch(script);
-  expect(block, isNotNull, reason: 'REQUIRED=( … ) not found');
+  expect(block, isNotNull, reason: '$array=( … ) not found');
   return {
     for (final line in block!.group(1)!.split('\n'))
       if (RegExp(r'^\s*"([^"]+)"').firstMatch(line) case final m?) m.group(1)!,
@@ -39,14 +40,25 @@ String _fileOf(String name, String os) =>
     os == 'windows' ? '$name.dll' : 'lib$name.so';
 
 void main() {
-  test('every vendor\'s dispatch is a required file of the tarball of each of '
-      'its ABIs', () {
-    final required = _requiredInTarballs();
+  test('a dispatch built from the pin is a required file of the tarball of '
+      'each of its vendor\'s ABIs; one the hook fetches is forbidden there', () {
+    final required = _tarballRules('REQUIRED');
+    final forbidden = _tarballRules('FORBIDDEN');
     for (final vendor in NpuVendor.values) {
       for (final abi in vendor.abis) {
         final entry =
             '${_tarballOf(abi)}:${_fileOf(npuDispatchLib(vendor), _osOf(abi))}';
-        expect(required, contains(entry), reason: '${vendor.name} on $abi');
+        final inTarball = npuDispatchInNativeTarball(vendor);
+        expect(
+          required,
+          inTarball ? contains(entry) : isNot(contains(entry)),
+          reason: '${vendor.name} on $abi',
+        );
+        expect(
+          forbidden,
+          inTarball ? isNot(contains(entry)) : contains(entry),
+          reason: '${vendor.name} on $abi',
+        );
       }
     }
   });

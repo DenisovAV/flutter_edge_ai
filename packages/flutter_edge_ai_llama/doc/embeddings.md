@@ -65,7 +65,7 @@ until a rebuild is needed or the model is closed. A CPU model loaded by an
 unrelated CPU/automatic request does not suppress the first explicit GPU attempt.
 Other explicit CPU/GPU switches replace the current model. The backend declares `{cpu, gpu}` through
 `honouredBackends(spec)` and reports actual loaded placement. Unknown placement
-is refused. Explicit GPU embeddings are refused on Android and iOS simulators
+is refused. Explicit GPU embeddings are refused on Android (every device) and on iOS simulators
 before SDK loading or the qualification probe. With fallback enabled, that refusal
 allows one CPU attempt. Physical iOS and macOS retain GPU support; physical iOS
 embedding execution still needs qualification.
@@ -75,7 +75,7 @@ may retry once on CPU. Its warning retains the first error; if CPU also fails,
 the final load error includes both failures and preserves the CPU cause and stack.
 Automatic requests retain SDK automatic selection and never retry load errors.
 An automatic load that requested GPU layers but reports CPU emits one
-release-visible warning per new successful load, except on Android and iOS
+release-visible warning per new successful load, except on Android (every device) and on iOS
 simulators, where llamadart's automatic placement is CPU by design. Core
 continues to report an explicit GPU fallback once when it is loaded; reuse
 repeats neither warning.

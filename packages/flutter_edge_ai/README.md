@@ -27,8 +27,8 @@ runtimes and stores your app uses.
 - **Pluggable engines:** LiteRT-LM (`.litertlm`), MediaPipe (`.task`), ONNX Runtime, llama.cpp (`.gguf`), and the OS's own models (Gemini Nano, Apple Foundation Models, Windows AI Foundry, Chrome Prompt API).
 - **Multimodal:** image and audio input on the models that support it.
 - **Function calling** and **thinking mode** on the models that support them.
-- **CPU, GPU and NPU** backends — Qualcomm on Android and Linux arm64 and
-  Google Tensor on Android (both opt-in), and Intel on Windows.
+- **CPU, GPU and NPU** backends — Qualcomm on Android and Linux arm64, Google
+  Tensor and MediaTek on Android (all opt-in), and Intel on Windows.
 - **Embeddings and on-device RAG:** text, image and audio embeddings (EmbeddingGemma 2 and 1, Gecko, ONNX models — [models](https://flutteredge.ai/docs/models)) with nine task types, stored in Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
 - **Speech:** on-device STT, TTS and a push-to-talk voice loop.
 - **Agent skills:** `SKILL.md` tools the model invokes through function calling.
@@ -80,8 +80,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_litertlm: ^1.16.0   # or any other engine from the table
+  flutter_edge_ai: ^2.5.1
+  flutter_edge_ai_litertlm: ^1.17.0   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with
@@ -163,7 +163,7 @@ flutter:
 Run `flutter pub get` (it writes `macos/Podfile`), then replace that Podfile's
 `post_install` block with the one below, keeping any lines of your own inside
 it; the next build runs `pod install` itself. A green build proves nothing: without the block the first model load
-fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`; from `flutter_edge_ai_litertlm` 1.16.0
+fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`; from `flutter_edge_ai_litertlm` 1.17.0
 the error says why and names this fix. If your app already has a `macos/Podfile` (another plugin
 needs CocoaPods), keep SPM on and only replace its `post_install` block. Prefer the pubspec
 setting to `flutter config --no-enable-swift-package-manager`, which changes

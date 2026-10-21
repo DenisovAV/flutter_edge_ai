@@ -187,7 +187,7 @@ On macOS the app needs the same setup as every LiteRT-LM feature: Swift Package
 Manager turned off for the app in `pubspec.yaml` and the `post_install` block in
 `macos/Podfile` (an app that already has a `macos/Podfile` keeps Swift Package
 Manager on and only needs the block), see [Desktop → macOS](https://flutteredge.ai/docs/desktop#macos).
-Without it STT and TTS fail to load, and since `flutter_edge_ai_litertlm` 1.16.0
+Without it STT and TTS fail to load, and since `flutter_edge_ai_litertlm` 1.17.0
 the error says so ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 
 No `hook/build.dart` of its own — the native library is bundled by

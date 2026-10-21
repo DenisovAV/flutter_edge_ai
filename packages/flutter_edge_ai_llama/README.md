@@ -20,8 +20,13 @@ companion **0.15.0**. Connector CI uses Flutter
 [the embedding guide](doc/embeddings.md). macOS CPU/Metal and Linux/Windows CPU
 have been measured; Android has a maintainer Pixel 8a diagnostic and iOS remains
 unqualified. See the [per-platform evidence](doc/platforms.md#embedding-qualification-by-platform).
-Explicit GPU embeddings on Android and iOS simulators fall back to CPU by
-default; `backendFallback: false` refuses those requests before loading.
+Explicit GPU embeddings on Android (every device) and on iOS simulators fall
+back to CPU by default; `backendFallback: false` refuses those requests before
+loading. Register it with
+`FlutterEdgeAi.initialize(embeddingBackends: const [LlamaEmbeddingBackend()])`
+and install the `.gguf` alone with
+`FlutterEdgeAi.installEmbedder().modelFromFile(path).install()`; no tokenizer
+file.
 Media and Web embeddings are deferred.
 
 ## Try a chat in a few minutes
@@ -99,7 +104,7 @@ Add these hosted dependencies to your app:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai: ^2.5.1
   flutter_edge_ai_llama: ^0.0.3
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.15.0

@@ -27,8 +27,10 @@ should use LiteRT-LM (`.litertlm`). The packages are
 `flutter_edge_ai_onnx`, `flutter_edge_ai_mediapipe` and
 `flutter_edge_ai_builtin_ai`.
 
-So text generation has five interchangeable runtimes (the fifth is llama.cpp through `flutter_edge_ai_llama`, for GGUF models, with image and audio input through a compatible GGUF projector; see [llama.cpp](/docs/llama)), embeddings have two
-(LiteRT and ONNX, both on every platform), and speech has one (LiteRT, on
+So text generation has five interchangeable runtimes (the fifth is llama.cpp through `flutter_edge_ai_llama`, for GGUF models, with image and audio input through a compatible GGUF projector; see [llama.cpp](/docs/llama)), embeddings have three
+(LiteRT and ONNX on every platform, and llama.cpp for EmbeddingGemma 2 GGUF text
+natively through `flutter_edge_ai_llama` 0.0.3, measured on macOS, Linux and
+Windows; Android and iOS not qualified), and speech has one (LiteRT, on
 native platforms).
 
 - **Embeddings**: LiteRT runs `.tflite` models (EmbeddingGemma 1, Gecko) and

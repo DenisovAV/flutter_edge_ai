@@ -42,13 +42,13 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.5.0`,
-`flutter_edge_ai_litertlm: ^1.16.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.5.1`,
+`flutter_edge_ai_litertlm: ^1.17.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
@@ -847,7 +847,18 @@ for an NPU is refused elsewhere ([Where a model runs](#where-a-model-runs)).
 Windows has no device probe: a bundle compiled for the Intel NPU is not refused
 on a PC without one, and what LiteRT does then is not measured.
 
-Run a Gemma 4 bundle on the NPU: most Gemma 3 bundles drop every prefill chunk
+Intel's Gemma 4 12B for Panther Lake needs 1.17.0: its NPU blobs carry metadata
+2.7, which the OpenVINO 2026.3 of earlier releases refuses; 1.17.0 ships
+OpenVINO 2026.4.1. A bundle whose NPU blobs carry no weights makes the dispatch
+copy them to `%TEMP%\litert_ov_bank_<hex>.bin` at every load (5.55 GB for the
+12B); from 1.17.0 the next Intel NPU load deletes the banks an exited 1.17.0
+app left behind, and banks no app claimed (an older release, the LiteRT-LM CLI)
+once the PC has restarted since they were written, and prints how much it
+freed. See
+[Desktop → Windows NPU](https://flutteredge.ai/docs/desktop).
+
+Run a Gemma 4 bundle on the NPU (none is published for MediaTek: whether its Gemma 3 bundles
+keep their chunks is not measured): most Gemma 3 bundles drop every prefill chunk
 after the first, with no error, and answer from the start of the prompt alone;
 of the published Qualcomm 1B files only `…_sm8850` keeps them
 ([LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508)).
@@ -945,8 +956,12 @@ closes it. Engine creations run one at a time. Measured on macOS only; see
 sets the minimum severity of LiteRT-LM's own native log before each engine
 is created (`litert_lm_set_min_log_level`). The level is
 process-wide; null leaves the level the process has, LiteRT-LM's default until
-an engine sets one. `silent` silences LiteRT-LM, not the other native loggers
-in the process. On Windows, when the app's output is redirected
+an engine sets one. `silent` silences LiteRT-LM's library, its absl, LiteRT and TFLite logging included
+(upstream `SetMinLogSeverity`); other native libraries keep their own logs (the
+GPU accelerator, the NPU dispatch, drivers, the separately loaded `LiteRt`
+library). Native platforms only: the web engine accepts it and ignores it.
+Above `info`, debug builds lose the INFO lines from which a failed create names
+the backend a model requires. On Windows, when the app's output is redirected
 (`app.exe 2> err.log`), the lines follow the redirect from 1.17.0; before
 that the Flutter runner's `AttachConsole` sent them to the parent's console.
 

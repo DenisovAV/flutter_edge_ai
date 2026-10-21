@@ -73,4 +73,121 @@ void main() {
       0,
     );
   });
+
+  group('owner locks', () {
+    const name = 'litert_ov_bank_0123456789abcdef.bin';
+    File lock(String bankName, int ownerPid) =>
+        File('${temp.path}/$bankName.$ownerPid.owner')..writeAsStringSync('');
+
+    // POSIX deletes an open file, so a held lock is simulated: on Windows,
+    // where the sweep runs, the delete of a lock someone holds is refused.
+    bool Function(File) refusing(Set<String> held) => (f) {
+      if (held.contains(f.uri.pathSegments.last)) return false;
+      f.deleteSync();
+      return true;
+    };
+
+    test('a bank whose locks all delete is its dead owner\'s, deleted even '
+        'when fresh', () {
+      final b = bank(name, modified: now, size: 7);
+      final l = lock(name, 4242);
+
+      expect(
+        sweepStaleIntelWeightBanks(
+          temp: temp,
+          now: now,
+          deleteLock: refusing({}),
+        ),
+        7,
+      );
+      expect(b.existsSync(), isFalse);
+      expect(l.existsSync(), isFalse);
+    });
+
+    test('a bank with a held lock is a live process\'s, kept however old', () {
+      final b = bank(name, modified: old);
+      final l = lock(name, 4242);
+
+      expect(
+        sweepStaleIntelWeightBanks(
+          temp: temp,
+          now: now,
+          deleteLock: refusing({'$name.4242.owner'}),
+        ),
+        0,
+      );
+      expect(b.existsSync(), isTrue);
+      expect(l.existsSync(), isTrue);
+    });
+
+    test(
+      'one live owner among dead ones keeps the bank; the dead locks go',
+      () {
+        final b = bank(name, modified: old);
+        final dead = lock(name, 1);
+        final live = lock(name, 2);
+
+        expect(
+          sweepStaleIntelWeightBanks(
+            temp: temp,
+            now: now,
+            deleteLock: refusing({'$name.2.owner'}),
+          ),
+          0,
+        );
+        expect(b.existsSync(), isTrue);
+        expect(dead.existsSync(), isFalse);
+        expect(live.existsSync(), isTrue);
+      },
+    );
+
+    test('a lock whose bank is gone is deleted', () {
+      final l = lock(name, 4242);
+
+      expect(
+        sweepStaleIntelWeightBanks(
+          temp: temp,
+          now: now,
+          deleteLock: refusing({}),
+        ),
+        0,
+      );
+      expect(l.existsSync(), isFalse);
+    });
+
+    test('the staged bank and its locks are left alone', () {
+      final staged = bank(name, modified: old);
+      final l = lock(name, 4242);
+
+      expect(
+        sweepStaleIntelWeightBanks(
+          temp: temp,
+          now: now,
+          keep: staged.path,
+          deleteLock: refusing({}),
+        ),
+        0,
+      );
+      expect(staged.existsSync(), isTrue);
+      expect(l.existsSync(), isTrue);
+    });
+
+    test('a claim locks only the banks that appeared since the listing, and '
+        'release removes its locks', () {
+      bank(name, modified: old);
+      final before = listIntelWeightBanks(temp: temp);
+      const fresh = 'litert_ov_bank_fedcba9876543210.bin';
+      bank(fresh, modified: now);
+
+      final claim = IntelWeightBankClaim.newSince(before, temp: temp);
+      expect(claim.banks, [fresh]);
+      final mine = File('${temp.path}/$fresh.$pid.owner');
+      expect(mine.existsSync(), isTrue);
+      expect(File('${temp.path}/$name.$pid.owner').existsSync(), isFalse);
+
+      claim.release();
+      expect(mine.existsSync(), isFalse);
+      expect(claim.banks, isEmpty);
+    });
+  });
 }

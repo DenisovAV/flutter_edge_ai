@@ -20,9 +20,10 @@ import 'npu_vendor_host.dart';
 import 'option_scoring_ffi.dart';
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
+import 'intel_weight_banks.dart';
 import 'sigprof_mask.dart';
-import '../thinking_context.dart';
 import 'windows_std_handles.dart';
+import '../thinking_context.dart';
 import '../litert_lm_load_errors.dart';
 import '../litert_lm_log_level.dart';
 
@@ -547,6 +548,10 @@ class LiteRtLmFfiClient {
   final Set<Pointer<LiteRtLmConversation>> _sentConvs = {};
   _ProxyFreeStringDart? _proxyFreeString;
   Pointer<LiteRtLmEngine>? _engine;
+
+  /// The Intel NPU weight banks this engine's load wrote, held until
+  /// [shutdown] deletes the engine (intel_weight_banks.dart).
+  IntelWeightBankClaim? _intelBanks;
   bool _isInitialized = false;
   String? _nativeLogPath;
 
@@ -1214,6 +1219,11 @@ class LiteRtLmFfiClient {
       // The QNN backend's init fails under the debug VM's SIGPROF sampling on
       // Linux (see withSigprofBlocked); Android's FastRPC client survives it.
       final blockSigprof = npuDispatchDir != null && Platform.isLinux;
+      // The Intel dispatch writes a bundle's weights to a bank in the temp
+      // directory during the create: the ones new after it are this load's.
+      final banksBefore = npuDispatchDir != null && Platform.isWindows
+          ? listIntelWeightBanks()
+          : null;
       final engineAddr = await Isolate.run(() {
         edgeAiLogLevel = isolateLogLevel;
         final isolateSw = Stopwatch()..start();
@@ -1276,6 +1286,16 @@ class LiteRtLmFfiClient {
         );
       });
       _engine = Pointer<LiteRtLmEngine>.fromAddress(engineAddr.address);
+      if (banksBefore != null && engineAddr.address != 0) {
+        final claim = IntelWeightBankClaim.newSince(banksBefore);
+        _intelBanks = claim;
+        if (claim.banks.isNotEmpty) {
+          edgeAiLog(
+            '[LiteRtLmFfi] Intel NPU weight bank(s) of this engine: '
+            '${claim.banks.join(', ')}',
+          );
+        }
+      }
       sw.stop();
       edgeAiLog(
         '[LiteRtLmFfi/perf] === END litert_lm_engine_create: ${sw.elapsedMilliseconds}ms (includes isolate spawn ~50-200ms) ===',
@@ -2430,6 +2450,9 @@ class LiteRtLmFfiClient {
       _engine = null;
       edgeAiLog('[LiteRtLmFfi] Engine deleted');
     }
+    // After the delete, which removes the banks the dispatch wrote.
+    _intelBanks?.release();
+    _intelBanks = null;
     // engine_delete bulk-frees every remaining conversation at once; the
     // handle/virtual drains above already emptied the registry, but clear it so
     // no address can linger as a dangling "live" entry after a bulk free.

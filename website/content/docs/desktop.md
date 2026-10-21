@@ -94,9 +94,11 @@ or ended the process with `0xC0000409`
 A bundle compiled without its weights (Intel's Gemma 4 12B for Panther Lake)
 makes the dispatch write them to `%TEMP%\litert_ov_bank_<hex>.bin` at every
 load, 5.55 GB for that model, and delete the file when the model is closed. An
-app that exits without closing the model leaves it behind; from
-`flutter_edge_ai_litertlm` 1.17.0 the next NPU load deletes the banks older
-than ten minutes that no process holds and prints how much it freed.
+app that exits without closing the model leaves it behind. From
+`flutter_edge_ai_litertlm` 1.17.0 each app marks its banks with a
+`<bank>.<pid>.owner` file it keeps open while the model is loaded, and the next
+NPU load deletes the banks whose owner is gone, plus the unmarked ones older
+than ten minutes, and prints how much it freed.
 
 Run **Gemma 4** there. On the Intel NPU a Gemma 3 bundle loses every prefill
 chunk after the first — the reply is fluent, answers from the opening of your

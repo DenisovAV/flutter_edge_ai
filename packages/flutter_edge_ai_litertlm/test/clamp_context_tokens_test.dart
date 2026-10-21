@@ -57,12 +57,12 @@ void main() {
     });
   });
 
-  // LiteRT-LM#3508: an NPU bundle is compiled for one cache_length, and on
-  // Qualcomm the prefill mask inside the compiled graph has to stay at or under
-  // ~1 MiB or every chunk after the first is silently dropped. For the 4-head
-  // Gemma 3 bundles the largest working cache_length is 896 — below the #318
-  // floor — so clamping up to 1024 would hand the engine the one value that
-  // breaks them. The caller's number has to survive.
+  // LiteRT-LM#3508: an NPU bundle is compiled for one cache_length. In a
+  // Gemma 3 bundle built with npu_export for the Qualcomm NPU, the prefill mask
+  // inside the compiled graph has to stay at or under ~1 MiB or every chunk
+  // after the first is silently dropped, so the largest working cache_length is
+  // 896 — below the #318 floor. Clamping would replace the value the bundle was
+  // compiled for with one it was not. The caller's number has to survive.
   group('clampLitertlmContextTokens leaves NPU alone (LiteRT-LM#3508)', () {
     test('896 — the measured Gemma 3 Qualcomm value — is passed through', () {
       expect(

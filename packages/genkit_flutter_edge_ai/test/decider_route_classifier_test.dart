@@ -17,6 +17,9 @@ final class _FakeDecider extends Decider {
   final DeciderQuestionType questionType;
   Object? throws;
   bool closeOnChoose = false;
+
+  /// Closes the decider as it throws [throws], as a close mid-choose does.
+  bool closeOnThrow = false;
   int calls = 0;
   DeciderRequest? lastRequest;
   Completer<void>? gate;
@@ -50,7 +53,10 @@ final class _FakeDecider extends Decider {
       _closed = true;
       throw const DeciderCancelledException('The decider was closed.');
     }
-    if (throws case final e?) throw e;
+    if (throws case final e?) {
+      if (closeOnThrow) _closed = true;
+      throw e;
+    }
     return answer!(request);
   }
 
@@ -191,7 +197,9 @@ void main() {
     final result = deciderRouteClassifier(
       () => decider,
     ).classify(_request('hi'), cancel: controller.token);
-    await Future<void>.delayed(Duration.zero);
+    for (var i = 0; decider.lastRequest == null && i < 100; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
     controller.cancel('stop');
     expect(decider.lastRequest!.cancelToken!.isCancelled, isTrue);
     decider.gate!.complete();
@@ -228,6 +236,39 @@ void main() {
       deciderRouteClassifier(() => decider).classify(_request('hi')),
       throwsA(isA<RouteClassifierUnavailableException>()),
     );
+  });
+
+  for (final (name, error) in <(String, Object)>[
+    ('a StateError', StateError('closed')),
+    ('an EmbedderClosedException', const EmbedderClosedException('closed')),
+  ]) {
+    test('$name from a decider closed mid-choose is unavailable', () {
+      final decider = _FakeDecider(answer: (_) => _chose('easy'))
+        ..throws = error
+        ..closeOnThrow = true;
+      expect(
+        deciderRouteClassifier(() => decider).classify(_request('hi')),
+        throwsA(isA<RouteClassifierUnavailableException>()),
+      );
+    });
+  }
+
+  test('a provider whose load failed fails the call with its error', () {
+    expect(
+      deciderRouteClassifier(
+        () => Future<Decider?>.error(StateError('load failed')),
+      ).classify(_request('hi')),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('text picks what is classified', () async {
+    final decider = _FakeDecider(answer: (_) => _chose('easy'));
+    await deciderRouteClassifier(
+      () => decider,
+      text: (request) => 'picked: ${request.lastUserText}',
+    ).classify(_request('hi'));
+    expect(decider.lastRequest!.input.input.text, 'picked: hi');
   });
 
   test('any other error propagates, never an abstain', () {
@@ -278,7 +319,7 @@ void main() {
           classifier: deciderRouteClassifier(
             () => _FakeDecider(answer: (_) => _chose('easy')),
           ),
-          labels: const {'easy': kOnDevice},
+          labels: const {'easy': RouteDecision.only(kOnDevice)},
         ),
       },
       defaultPolicy: 'smart',

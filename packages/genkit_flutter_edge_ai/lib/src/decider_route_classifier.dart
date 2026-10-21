@@ -15,11 +15,14 @@ import 'package:genkit_hybrid/genkit_hybrid.dart';
 ///
 /// [decider] is asked on every request, because a decider loads for seconds
 /// and is replaced on refit. While it loads, return the pending Future: the
-/// request waits for it (a Genkit cancel ends the wait). Return null when
-/// there is none to wait for (not configured, its load failed): the
-/// classifier is then unavailable, and the policy's `onUnavailable` decides.
-/// The decider is borrowed — this classifier never closes it — so cache the
-/// Future, and never hand out a decider you closed.
+/// request waits for it, with no limit unless the call has a Genkit cancel
+/// token, which ends the wait. Return null when there is none (not
+/// configured): the classifier is then unavailable, and the policy's
+/// `onUnavailable` decides. A Future that fails fails the call with its
+/// error, never routed around; to retry a failed load, drop the cached
+/// Future when it fails. The decider is borrowed — this classifier never
+/// closes it — so cache the Future, and never hand out a decider you
+/// closed.
 ///
 /// [text] picks what is classified; by default the last user message's
 /// text. No text is an abstain (`noText`). Everything else the decider
@@ -81,16 +84,30 @@ final class _DeciderRouteClassifier extends RouteClassifier {
     if (cancel == null) {
       decider = await pending;
     } else {
-      final first = await Future.any<Object?>([
-        pending,
-        cancel.whenCancelled.then((_) => _cancelled),
-      ]);
+      // onCancel, not whenCancelled: an app may reuse one token for many
+      // calls, and a listener on it must go when the wait ends.
+      final done = Completer<Decider?>();
+      final detach = cancel.onCancel(() {
+        if (!done.isCompleted) done.complete(null);
+      });
+      pending.then(
+        (d) {
+          if (!done.isCompleted) done.complete(d);
+        },
+        onError: (Object e, StackTrace s) {
+          if (!done.isCompleted) done.completeError(e, s);
+        },
+      );
+      try {
+        decider = await done.future;
+      } finally {
+        detach();
+      }
       cancel.throwIfCancelled();
-      decider = first as Decider?;
     }
     if (decider == null) {
       throw const RouteClassifierUnavailableException(
-        'No decider: it is not configured, or its load failed.',
+        'No decider: it is not configured.',
       );
     }
     if (!identical(
@@ -126,6 +143,9 @@ final class _DeciderRouteClassifier extends RouteClassifier {
     } on DeciderCancelledException {
       // Without a Genkit cancel it means the decider closed mid-choose.
       if (cancel?.isCancelled ?? false) rethrow;
+      throw const _DeciderClosed();
+    } on EmbedderClosedException {
+      // Its embedder was closed under it: as good as a closed decider.
       throw const _DeciderClosed();
     } on StateError {
       if (decider.isClosed) throw const _DeciderClosed();
@@ -173,8 +193,6 @@ final class _DeciderRouteClassifier extends RouteClassifier {
   /// a one-option decider's margin is one.
   static double? _finite(double? v) => v != null && v.isFinite ? v : null;
 }
-
-const Object _cancelled = Object();
 
 final class _DeciderClosed implements Exception {
   const _DeciderClosed();

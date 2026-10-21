@@ -125,6 +125,11 @@ final class HybridRouter {
 
   /// Target key → its config as JSON text, encoded once at definition.
   final Map<String, String> _configJson = {};
+
+  /// The last lookup in the private Genkit. Lookups run one after another:
+  /// its registry initialises a plugin on every lookup that starts before
+  /// the first one finished.
+  Future<void> _cloudLookups = Future.value();
   final CloudConsent? _confirmCloud;
 
   /// The middleware's name in the app's Genkit.
@@ -450,10 +455,12 @@ final class HybridRouter {
         status: StatusCode.permissionDenied,
       );
     }
-    final cloud = await _cloudAi!.registry.lookupAction(
-      ActionType.model,
-      target.model.name,
+    final lookup = _cloudLookups.then(
+      (_) =>
+          _cloudAi!.registry.lookupAction(ActionType.model, target.model.name),
     );
+    _cloudLookups = lookup.then((_) {}, onError: (Object _) {});
+    final cloud = await lookup;
     if (cloud is! Model) {
       throw HybridRoutingException(
         'Cloud model "${target.model.name}" is not resolved by any of the '

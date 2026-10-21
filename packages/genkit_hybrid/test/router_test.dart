@@ -24,6 +24,9 @@ class _World {
 
   /// When set, a streamed cloud call throws it after its first chunk.
   Object? cloudThrowsAfterChunk;
+
+  /// How often the cloud plugin was initialised.
+  int cloudInits = 0;
 }
 
 ModelResponse _reply(ModelRequest req, String who) {
@@ -71,6 +74,13 @@ class _CloudPlugin extends GenkitPlugin {
 
   @override
   String get name => 'fakecloud';
+
+  @override
+  Future<List<Action>> init() async {
+    world.cloudInits++;
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    return const [];
+  }
 
   @override
   Action? resolve(ActionType actionType, String name) {
@@ -221,6 +231,17 @@ void main() {
       expect(world.localCalls, 0);
       expect(r.route!.target, kCloud);
       expect(r.route!.model, 'fakecloud/big');
+    });
+
+    test('concurrent first cloud calls initialise the cloud plugin '
+        'once', () async {
+      final router = _router(ai, world);
+      final results = await Future.wait([
+        router.generate(prompt: 'a', pin: kCloud),
+        router.generate(prompt: 'b', pin: kCloud),
+      ]);
+      expect(results.map((r) => r.text), ['cloud plain', 'cloud plain']);
+      expect(world.cloudInits, 1);
     });
 
     test('streaming goes through the proxy', () async {

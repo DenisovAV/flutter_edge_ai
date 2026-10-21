@@ -192,6 +192,7 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
     requested: config.preferredBackend,
   );
   final onGpu = placement.backend == PreferredBackend.gpu;
+  if (onGpu) requireLiteRtLmTextOnlyBundle(config.modelPath);
   if (onGpu && (config.supportImage || config.supportAudio)) {
     // Measured for text only: the vision and audio towers would run on the
     // GPU too (NULL tower backends follow the main one), and nobody has.
@@ -213,8 +214,8 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   }
   if (requireWeightCache && onGpu) {
     noticeRequireWeightCacheNotApplied(
-      '$file runs on the GPU, which writes its own shader cache, not the '
-      'XNNPack weight cache the flag checks',
+      '$file runs on the GPU, which writes its own weight and program caches '
+      '(ML Drift), not the XNNPack weight cache the flag checks',
     );
   }
   // The platform CACHE directory, not application support: iOS backs that up

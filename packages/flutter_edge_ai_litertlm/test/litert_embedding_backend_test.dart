@@ -701,9 +701,10 @@ void main() {
       addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
     }
 
+    // eg2_text.litertlm is the 270m's shape: text encoder and embedder only.
     Future<EmbeddingPassDescriptor<Object>> describeGpu({
       LiteRtEmbeddingBackend b = backend,
-      String model = 'eg2.litertlm',
+      String model = 'eg2_text.litertlm',
       bool supportImage = false,
       bool supportAudio = false,
     }) => b.describe(
@@ -752,8 +753,8 @@ void main() {
       expect((d.config as LiteRtLmEmbeddingConfig).gpu, isFalse);
     });
 
-    test('images or audio on the GPU are refused: measured for text only, '
-        'and the refusal says how to embed them', () async {
+    test('images on the GPU are refused: measured for text only, and the '
+        'refusal says how to embed them', () async {
       hostIs(_IntelWindows());
       await expectLater(
         describeGpu(supportImage: true),
@@ -766,13 +767,41 @@ void main() {
           ),
         ),
       );
-      await expectLater(
-        describeGpu(model: 'eg2_audio.litertlm', supportAudio: true),
-        _loadRefusal(
-          'LiteRT-LM',
-          allOf(contains('text only'), contains('audio')),
-        ),
-      );
+    });
+
+    test('a bundle with vision or audio towers is refused on the GPU even for '
+        'text: LiteRT-LM would compile those towers there too', () async {
+      hostIs(_IntelWindows());
+      for (final (model, audio) in [
+        ('eg2.litertlm', false),
+        ('eg2_audio.litertlm', false),
+        ('eg2_audio.litertlm', true),
+      ]) {
+        await expectLater(
+          describeGpu(model: model, supportAudio: audio),
+          _loadRefusal(
+            'LiteRT-LM',
+            allOf(
+              contains('vision or audio encoders'),
+              contains('embeddinggemma-2-text-270m'),
+              contains('preferredBackend: cpu'),
+            ),
+          ),
+          reason: '$model audio=$audio',
+        );
+      }
+    });
+
+    test('on the real headers: the 270m passes the text-only check, the 440m '
+        'and the 740m do not', () {
+      requireLiteRtLmTextOnlyBundle(_header270m);
+      for (final header in [_header440m, _header740m]) {
+        expect(
+          () => requireLiteRtLmTextOnlyBundle(header),
+          throwsA(isA<EmbeddingLoadException>()),
+          reason: header,
+        );
+      }
     });
 
     test(
@@ -801,7 +830,11 @@ void main() {
       await describeGpu(b: strict);
       await describeGpu(b: strict);
       expect(logged.where((line) => line.contains('requireWeightCache')), [
-        allOf(contains('eg2.litertlm'), contains('GPU'), contains('XNNPack')),
+        allOf(
+          contains('eg2_text.litertlm'),
+          contains('GPU'),
+          contains('XNNPack'),
+        ),
       ]);
     });
   });

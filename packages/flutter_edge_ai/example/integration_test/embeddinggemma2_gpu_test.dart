@@ -11,7 +11,15 @@
 // - every query ranks its document first;
 // - a second gpu request and an automatic one reuse the GPU embedder;
 // - images on the GPU are refused before anything is loaded, and the GPU
-//   embedder keeps working.
+//   embedder keeps working;
+// - GPU, then CPU, then GPU again in one process gives the first GPU vectors
+//   back (cos >= 0.9999), and a GPU embedder closed and loaded again works;
+// - a ~900-token text stays close to its CPU vector (the GPU runs FP16
+//   activations by default);
+// - with GPU_LLM_MODEL_FILE (a Gemma 4 E2B .litertlm) a GPU LLM and a GPU
+//   embedder run in one process, the embedder loaded before and after the LLM.
+// The backend is registered with requireWeightCache: true, so a CPU load that
+// wrote no cache, or a GPU load that checked for one, fails the run.
 //
 // Run: flutter test integration_test/embeddinggemma2_gpu_test.dart -d windows
 // (or -d linux, under xvfb-run on a headless box). EG2_MODEL_FILE or
@@ -35,6 +43,7 @@ import 'goldens/eg2_text_golden.dart';
 const _eg2 = catalog.EmbeddingModel.embeddingGemma2Text270m;
 const _urlOverride = String.fromEnvironment('EG2_MODEL_URL');
 const _fileOverride = String.fromEnvironment('EG2_MODEL_FILE');
+const _llmFile = String.fromEnvironment('GPU_LLM_MODEL_FILE');
 
 final _gpuHost =
     (Platform.isWindows && Abi.current() == Abi.windowsX64) ||
@@ -46,7 +55,10 @@ bool _initialized = false;
 Future<void> _ensureEg2() async {
   if (!_initialized) {
     await FlutterEdgeAi.initialize(
-      embeddingBackends: const [LiteRtEmbeddingBackend()],
+      inferenceEngines: const [LiteRtLmEngine()],
+      embeddingBackends: const [
+        LiteRtEmbeddingBackend(requireWeightCache: true),
+      ],
     );
     _initialized = true;
   }
@@ -195,5 +207,128 @@ void main() {
       expect(vector, hasLength(768));
     },
     skip: !_gpuHost,
+  );
+
+  testWidgets(
+    'GPU, CPU, GPU again: the same GPU vectors; closed and loaded again, the '
+    'GPU embedder works',
+    (tester) async {
+      await _ensureEg2();
+      final first = await FlutterEdgeAi.getActiveEmbedder(
+        preferredBackend: PreferredBackend.gpu,
+      );
+      final a = await _embedGolden(first);
+      final cpu = await FlutterEdgeAi.getActiveEmbedder(
+        preferredBackend: PreferredBackend.cpu,
+      );
+      expect(cpu.activeBackend, PreferredBackend.cpu);
+      expect(first.isClosed, isTrue, reason: 'core replaced the GPU embedder');
+      final second = await FlutterEdgeAi.getActiveEmbedder(
+        preferredBackend: PreferredBackend.gpu,
+      );
+      expect(second.activeBackend, PreferredBackend.gpu);
+      final b = await _embedGolden(second);
+      var worst = 1.0;
+      for (final item in _golden) {
+        worst = math.min(worst, _cos(a[item.id]!, b[item.id]!));
+      }
+      debugPrint('EG2 GPU re-create: min cos to the first GPU run $worst');
+      expect(worst, greaterThanOrEqualTo(0.9999));
+      await second.close();
+      expect(second.isClosed, isTrue);
+      final third = await FlutterEdgeAi.getActiveEmbedder(
+        preferredBackend: PreferredBackend.gpu,
+      );
+      expect(third, isNot(same(second)));
+      final c = await _embedGolden(third);
+      expect(_cos(c['q0']!, a['q0']!), greaterThanOrEqualTo(0.9999));
+    },
+    skip: !_gpuHost,
+  );
+
+  testWidgets('a ~900-token text on the GPU stays close to its CPU vector', (
+    tester,
+  ) async {
+    await _ensureEg2();
+    final long = EmbeddingInput.text(
+      List.filled(
+        60,
+        'The northern lights are caused by charged particles from the sun.',
+      ).join(' '),
+    );
+    final cpu = await (await FlutterEdgeAi.getActiveEmbedder(
+      preferredBackend: PreferredBackend.cpu,
+    )).embed(long, taskType: TaskType.retrievalDocument);
+    final gpuModel = await FlutterEdgeAi.getActiveEmbedder(
+      preferredBackend: PreferredBackend.gpu,
+    );
+    final gpu = await gpuModel.embed(
+      long,
+      taskType: TaskType.retrievalDocument,
+    );
+    final cos = _cos(cpu, gpu);
+    debugPrint('EG2 GPU long text: cos to CPU $cos');
+    expect(cos, greaterThanOrEqualTo(0.99));
+  }, skip: !_gpuHost);
+
+  testWidgets(
+    'a GPU LLM and a GPU embedder in one process, the embedder loaded before '
+    'and after the LLM',
+    (tester) async {
+      await _ensureEg2();
+      final before = await FlutterEdgeAi.getActiveEmbedder(
+        preferredBackend: PreferredBackend.gpu,
+      );
+      final q0 = await before.embed(
+        EmbeddingInput.text(_golden.first.text),
+        taskType: TaskType.retrievalQuery,
+      );
+      await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemma4,
+        fileType: ModelFileType.litertlm,
+      ).fromFile(_llmFile).install();
+      final llm = await FlutterEdgeAi.getActiveModel(
+        preferredBackend: PreferredBackend.gpu,
+        maxTokens: 1024,
+      );
+      addTearDown(llm.close);
+      expect(llm.activeBackend, PreferredBackend.gpu);
+      Future<String> ask() async {
+        final session = await llm.createSession(topK: 1, maxOutputTokens: 24);
+        try {
+          await session.addQueryChunk(
+            const Message(
+              text: 'Reply with one word: the capital of France?',
+              isUser: true,
+            ),
+          );
+          return (await session.getResponse()).trim();
+        } finally {
+          await session.close();
+        }
+      }
+
+      final reply1 = await ask();
+      final again = await before.embed(
+        EmbeddingInput.text(_golden.first.text),
+        taskType: TaskType.retrievalQuery,
+      );
+      expect(_cos(again, q0), greaterThanOrEqualTo(0.9999));
+      await before.close();
+      final after = await FlutterEdgeAi.getActiveEmbedder(
+        preferredBackend: PreferredBackend.gpu,
+      );
+      expect(after.activeBackend, PreferredBackend.gpu);
+      final q0After = await after.embed(
+        EmbeddingInput.text(_golden.first.text),
+        taskType: TaskType.retrievalQuery,
+      );
+      expect(_cos(q0After, q0), greaterThanOrEqualTo(0.9999));
+      final reply2 = await ask();
+      debugPrint('EG2 GPU + LLM GPU: "$reply1" / "$reply2"');
+      expect(reply1.toLowerCase(), contains('paris'));
+      expect(reply2.toLowerCase(), contains('paris'));
+    },
+    skip: !_gpuHost || _llmFile.isEmpty,
   );
 }

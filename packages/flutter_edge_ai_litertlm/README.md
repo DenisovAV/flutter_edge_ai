@@ -329,18 +329,40 @@ final vector = await embedder.embed(
 - **CPU natively, WebGPU on the web, GPU on Windows and Linux x64 when asked
   (1.18.0).** `activeBackend` is `PreferredBackend.cpu` natively and
   `PreferredBackend.gpu` on the web. On Windows x64 and Linux x64,
-  `preferredBackend: PreferredBackend.gpu` runs the text on the GPU (LiteRT-LM's
-  GPU executor over WebGPU: DX12, Vulkan), measured 2026-10-22 on the 270m: Windows on Lunar Lake (Arc iGPU) 22 ms per text vs 83-90 ms on its CPU, Linux on a Tesla T4 32-64 ms vs 232-308 ms; min cos 0.997 to the CPU vectors. Text only:
-  `gpu` with `supportImage` or `supportAudio` is refused. No fallback: a GPU
-  that cannot create the engine fails the load. A load writes a shader cache
-  instead of the XNNPack weight cache, so `requireWeightCache` does not apply
-  there. The first load compiles shaders (5.9 s on Lunar Lake, 8.2 s on the
-  T4); later loads take 1.7-2.5 s, against 0.3-0.6 s on CPU.
-  Elsewhere `gpu` is not applied: macOS and iOS end the process inside
-  LiteRT-LM's Metal path at engine create, and Android is not measured.
-  Automatic placement stays on CPU everywhere. `npu` is refused for this
-  bundle: the NPU runs the per-SoC bundles
-  ([below](#embeddinggemma-2-on-a-qualcomm-npu)). The web has no CPU path for
+  `preferredBackend: PreferredBackend.gpu` runs the text-only 270m bundle on
+  the GPU (LiteRT-LM's GPU executor over WebGPU: DX12, Vulkan). Measured
+  2026-10-22: Windows on Lunar Lake (Arc iGPU) 22 ms per text vs 83-90 ms on
+  its CPU, Linux on a Tesla T4 32-64 ms vs 232-308 ms; min cos 0.997 to the
+  CPU vectors (0.998 for a ~900-token text: the GPU runs FP16 activations),
+  and the CPU's distance to Sentence Transformers fp32. A load takes 1.7-3.6 s
+  against 0.3-0.6 s on CPU; the very first also builds the GPU caches (5.9 s
+  on Lunar Lake, 8.2 s on the T4). Measured in one process with a GPU LLM
+  (Gemma 4 E2B), the embedder loaded before and after it.
+  - Only the 270m: the 440m and 740m bundles are refused on the GPU even for
+    text, because LiteRT-LM compiles their vision and audio towers on the
+    main backend at create, and nobody has measured those there. `gpu` with
+    `supportImage` or `supportAudio` is refused too. Both throw
+    `EmbeddingLoadException` before the loaded embedder is closed.
+  - No fallback: LiteRT runs the GPU graph without a CPU accelerator, so a
+    GPU that cannot create the engine fails the load, and every GPU load
+    embeds one probe text and refuses a non-finite or zero vector. The
+    adapter is Dawn's choice; a software Vulkan or DX12 adapter is not
+    excluded.
+  - The GPU writes its own caches beside the CPU's: ML Drift's
+    `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
+    (9 MB). `requireWeightCache` checks the XNNPack cache only and does not
+    apply there.
+  - A cold load without `preferredBackend` runs on CPU; a later automatic
+    request reuses whatever embedder is loaded, the GPU one included. In RAG
+    that means a text index on `gpu` and an image index without a backend
+    share the GPU embedder, and the image index is refused: give the image
+    index its own `PreferredBackend.cpu` embedder (the two then reload each
+    other on every switch), or keep both on CPU.
+  - Elsewhere `gpu` is not applied (CPU, with core's notice): on macOS and
+    iOS the Metal accelerator ends the process in LiteRT's external weight
+    loader at engine create, and Android is not measured. `npu` is refused
+    for this bundle: the NPU runs the per-SoC bundles
+    ([below](#embeddinggemma-2-on-a-qualcomm-npu)). The web has no CPU path for
   these bundles: the CPU (WebAssembly) backend of `@litert-lm/core` 0.18.0
   cannot read their external weights, so a browser without WebGPU (no
   `navigator.gpu`, or no GPU adapter) fails `getActiveEmbedder()` with an
@@ -572,8 +594,9 @@ final note = await embedder.embed(
 Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), MediaTek NPU
 ([below](#mediatek-npu-on-android-opt-in)), Qualcomm NPU
 ([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
-([below](#embeddinggemma-2-on-an-intel-npu-windows)), and `gpu` for EmbeddingGemma 2
-text asked for with `gpu` on Windows x64 and Linux x64 (1.18.0); any other
+([below](#embeddinggemma-2-on-an-intel-npu-windows)), and `gpu` for the
+EmbeddingGemma 2 270m asked for with `gpu` on Windows x64 and Linux x64
+(1.18.0); any other
 `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
 the output buffer lived after the first embedding, and

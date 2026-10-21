@@ -1,5 +1,5 @@
 ## 1.18.0
-- EmbeddingGemma 2 text on the GPU on Windows x64 and Linux x64 with `preferredBackend: gpu`.
+- EmbeddingGemma 2 270m on the GPU on Windows and Linux x64 (`gpu`); `gpu` with media now throws there.
 
 ## 1.17.0
 - MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).

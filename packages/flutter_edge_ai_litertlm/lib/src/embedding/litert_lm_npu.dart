@@ -57,8 +57,11 @@ LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 /// iGPU, DX12) 22 ms per embedding vs 83-90 ms on its CPU, Linux x64 on a
 /// Tesla T4 (Vulkan) 32-64 ms vs 232-308 ms; min cos 0.997 to the CPU vectors
 /// on both, and to Sentence Transformers fp32 0.9765-0.9767 vs 0.9763 on CPU.
-/// macOS and iOS are not here: their Metal accelerator ends the process with a
-/// SIGBUS in LiteRT-LM's external-weights path at engine create (measured on
+/// Only the text-only 270m bundle: the 440m and 740m would compile their
+/// vision and audio towers on the GPU too (`requireLiteRtLmTextOnlyBundle`).
+/// The GPU runs FP16 activations by default. macOS and iOS are not here: their
+/// Metal accelerator ends the process with a SIGBUS in LiteRT's external
+/// weight loader (`PrepareAccessForBuffer`) at engine create (measured on
 /// macOS), which no Dart code can catch. Android's OpenCL accelerator and
 /// Linux arm64 are not measured. Elsewhere a `gpu` request runs on CPU, with
 /// core's not-applied notice, as before.

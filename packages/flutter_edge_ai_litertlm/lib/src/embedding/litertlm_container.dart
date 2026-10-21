@@ -104,6 +104,18 @@ List<String> litertlmModelTypes(Uint8List header) {
   }
 }
 
+/// Whether a bundle whose `TFLiteModel` sections have [modelTypes] carries a
+/// vision or audio tower (`tf_lite_vision_*`, `tf_lite_audio_*`,
+/// `tf_lite_end_of_*`): the 440m and the 740m do, the 270m has only
+/// `tf_lite_text_encoder` and `tf_lite_embedder`. LiteRT-LM compiles every
+/// present tower on the main backend at create, declared or not.
+bool litertlmHasMediaTowers(Iterable<String> modelTypes) => modelTypes.any(
+  (type) =>
+      type.startsWith('tf_lite_vision') ||
+      type.startsWith('tf_lite_audio') ||
+      type.startsWith('tf_lite_end_of'),
+);
+
 /// Whether a bundle whose `TFLiteModel` sections have [modelTypes] carries an
 /// audio encoder.
 bool litertlmHasAudioEncoder(Iterable<String> modelTypes) =>

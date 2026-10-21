@@ -134,6 +134,9 @@ Embedding execution has been measured on macOS CPU/Metal and Linux/Windows CPU.
 Android has a maintainer Pixel 8a CPU/Vulkan diagnostic; full Android qualification
 and iOS embedding execution remain unqualified. See the
 [per-platform embedding evidence](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md#embedding-qualification-by-platform).
+Explicit GPU embeddings on Android and iOS simulators fall back to CPU by
+default. Register `LlamaEmbeddingBackend(backendFallback: false)` to refuse
+those requests before loading. Automatic requests keep SDK automatic selection.
 Media and Web embeddings remain unavailable in the initial profile.
 
 ## Capabilities and qualification

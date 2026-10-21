@@ -65,15 +65,23 @@ until a rebuild is needed or the model is closed. A CPU model loaded by an
 unrelated CPU/automatic request does not suppress the first explicit GPU attempt.
 Other explicit CPU/GPU switches replace the current model. The backend declares `{cpu, gpu}` through
 `honouredBackends(spec)` and reports actual loaded placement. Unknown placement
-is refused. By default automatic and explicit GPU requests retry once on CPU
-when the SDK reports an unsupported backend or initialization failure. Before
-an automatic retry the backend emits a release-visible WARNING; an ordinary
-automatic load that selects CPU stays quiet. Core continues to report an explicit
-GPU fallback once when it is loaded; reuse does not repeat that warning.
+is refused. Explicit GPU embeddings are refused on Android and iOS simulators
+before SDK loading or the qualification probe. With fallback enabled, that refusal
+allows one CPU attempt. Physical iOS and macOS retain GPU support; physical iOS
+embedding execution still needs qualification.
+
+Only an explicit GPU attempt that throws the SDK's `LlamaUnsupportedException`
+may retry once on CPU. Its warning retains the first error; if CPU also fails,
+the final load error includes both failures and preserves the CPU cause and stack.
+Automatic requests retain SDK automatic selection and never retry load errors.
+An automatic load that requested GPU layers but reports CPU emits one
+release-visible warning per new successful load. Core continues to report an
+explicit GPU fallback once when it is loaded; reuse repeats neither warning.
 `activeBackend` always reports the verified loaded placement. Register
 `LlamaEmbeddingBackend(backendFallback: false)` for exactly one load attempt;
 an explicit placement mismatch fails with `EmbeddingLoadException`. Model
-validation failures are never retried as GPU availability failures. Other model architectures and pooling conventions,
+validation failures and worker initialization failures/timeouts are never retried
+as GPU availability failures. Other model architectures and pooling conventions,
 NPU, image/audio input and Web embeddings are refused. Browser registration does
 not claim GGUF embedding files, so an unsupported install can fail its pre-check.
 Inference remains independently available on the package's existing platforms.

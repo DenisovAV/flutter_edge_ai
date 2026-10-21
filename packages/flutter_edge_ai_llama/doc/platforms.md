@@ -157,8 +157,8 @@ checks and standalone hosted-consumer checks remain separate gates.
 | macOS | CPU and Metal measured; packaged lifecycle and CPU/Metal cosine 0.99994 | Other devices, models and quantizations |
 | Linux | Packaged CPU embeddings measured | GPU and other hardware |
 | Windows | Packaged CPU embeddings measured | GPU and other hardware |
-| Android | Maintainer diagnostic on Pixel 8a CPU and explicit Vulkan GPU; see below | Full Android embedding qualification and other devices/GPUs |
-| iOS | Unqualified | Physical-device and simulator embedding execution |
+| Android | Maintainer diagnostic on Pixel 8a CPU and explicit Vulkan GPU; see below | CPU qualification on other devices; explicit GPU embeddings are refused |
+| iOS | Unqualified; simulator GPU embeddings are refused | Physical-device CPU/Metal and simulator CPU embedding execution |
 | Web | Unavailable | No GGUF embedding implementation |
 
 Sasha Denisov [reported on 2026-10-21](https://github.com/DenisovAV/flutter_edge_ai/pull/691#pullrequestreview-5597154060)
@@ -188,6 +188,10 @@ report does not establish the warm-up state. Correct normalized vectors on
 this phone do not qualify other GPUs: the ggml-vulkan small-matmul-tile defect
 can produce incorrect unit-norm embeddings on affected devices
 ([llama.cpp #28637](https://github.com/ggml-org/llama.cpp/issues/28637)).
+The adapter therefore refuses explicit GPU embeddings on Android and iOS
+simulators before loading. With `backendFallback: true`, an explicit GPU
+request can load CPU instead; with `false`, the request fails. The diagnostic
+GPU timings above describe the measured unguarded path.
 See the [embedding guide](embeddings.md) for the supported model profile and
 reproducible checks.
 

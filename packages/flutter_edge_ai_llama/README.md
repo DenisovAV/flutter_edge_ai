@@ -20,6 +20,8 @@ companion **0.15.0**. Connector CI uses Flutter
 [the embedding guide](doc/embeddings.md). macOS CPU/Metal and Linux/Windows CPU
 have been measured; Android has a maintainer Pixel 8a diagnostic and iOS remains
 unqualified. See the [per-platform evidence](doc/platforms.md#embedding-qualification-by-platform).
+Explicit GPU embeddings on Android and iOS simulators fall back to CPU by
+default; `backendFallback: false` refuses those requests before loading.
 Media and Web embeddings are deferred.
 
 ## Try a chat in a few minutes

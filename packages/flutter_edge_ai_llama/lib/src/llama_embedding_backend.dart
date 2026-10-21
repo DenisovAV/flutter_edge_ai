@@ -3,6 +3,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:llamadart/llamadart.dart' as llama;
 
 import 'backend_config.dart';
+import 'embedding_platform.dart';
 
 const _engineTag = 'llamadart GGUF embeddings';
 const _contextTokens = 1024;
@@ -53,19 +54,25 @@ typedef _EngineLoader =
 /// profile ID; equal dimensions do not make it interchangeable with LiteRT.
 final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
   /// Creates the qualified native text embedding provider.
-  /// With [backendFallback] true, automatic and explicit GPU requests may
-  /// retry on CPU after an unsupported-backend or initialization failure.
-  /// An automatic retry logs a release-visible warning from this backend;
-  /// core reports an explicit GPU fallback once per new fallback load.
-  /// With false, exactly one load attempt is allowed and an explicit placement
-  /// mismatch fails as EmbeddingLoadException.
-  /// Automatic selection accepts CPU or GPU; unknown placement is refused.
-  const LlamaEmbeddingBackend({this.backendFallback = true}) : _loader = null;
+  /// With [backendFallback] true, an explicit GPU request may retry once on
+  /// CPU after LlamaUnsupportedException. Android and iOS simulators refuse
+  /// explicit GPU attempts before loading. Other load errors are not retried.
+  /// Automatic selection accepts CPU or GPU and warns when it selects CPU.
+  /// With false, explicit placement mismatches fail as EmbeddingLoadException.
+  /// Unknown placement is always refused.
+  const LlamaEmbeddingBackend({this.backendFallback = true})
+    : _loader = null,
+      _gpuRefusal = null;
 
-  const LlamaEmbeddingBackend._(this._loader, {this.backendFallback = true});
+  const LlamaEmbeddingBackend._(
+    this._loader,
+    this._gpuRefusal, {
+    this.backendFallback = true,
+  });
+  final String? Function()? _gpuRefusal;
   final _EngineLoader? _loader;
 
-  /// Whether an automatic or explicit GPU request may retry on CPU.
+  /// Whether an unsupported explicit GPU request may retry once on CPU.
   final bool backendFallback;
 
   @override
@@ -130,6 +137,7 @@ final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
         config.preferredBackend,
         _loader,
         backendFallback,
+        _gpuRefusal,
       ),
       activeBackend: null,
     );
@@ -137,7 +145,14 @@ final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
 }
 
 final class _PassConfig {
-  const _PassConfig(this.path, this.backend, this.loader, this.backendFallback);
+  const _PassConfig(
+    this.path,
+    this.backend,
+    this.loader,
+    this.backendFallback,
+    this.gpuRefusal,
+  );
+  final String? Function()? gpuRefusal;
   final String path;
   final PreferredBackend? backend;
   final _EngineLoader? loader;
@@ -249,6 +264,15 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
         engine: _engineTag,
       );
     }
+    if (params.device == llama.ComputeDevice.auto &&
+        params.gpuLayers > 0 &&
+        activeBackend == PreferredBackend.cpu) {
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_llama] WARNING: automatic GGUF embedding '
+        'load requested GPU layers but selected CPU.',
+      );
+    }
     _dimension = probe.length;
     return EmbeddingPassInfo(
       dimension: probe.length,
@@ -263,28 +287,41 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
     // never overlaps a partial GPU engine. Model/metadata validation below is
     // outside this retry boundary and is never retried.
     final loader = _config.loader ?? _loadEngine;
-    try {
-      return await loader(_config.path, params);
-    } catch (error) {
-      final backendUnavailable =
-          error is llama.LlamaUnsupportedException ||
-          error is llama.LlamaBackendInitializationException;
-      final canRetryOnCpu =
-          _config.backend == null || _config.backend == PreferredBackend.gpu;
-      if (!_config.backendFallback || !canRetryOnCpu || !backendUnavailable) {
-        rethrow;
+    Future<llama.LlamaEngine> attempt(llama.ModelParams attemptParams) async {
+      if (attemptParams.device == llama.ComputeDevice.gpu) {
+        final refusal = (_config.gpuRefusal ?? nativeEmbeddingGpuRefusal)();
+        if (refusal != null) throw llama.LlamaUnsupportedException(refusal);
       }
-      if (_config.backend == null) {
-        // ignore: avoid_print
-        print(
-          '[flutter_edge_ai_llama] WARNING: automatic GGUF embedding '
-          'backend loading failed; retrying on CPU.',
+      return loader(_config.path, attemptParams);
+    }
+
+    try {
+      return await attempt(params);
+    } catch (first, firstStack) {
+      if (!_config.backendFallback ||
+          params.device != llama.ComputeDevice.gpu ||
+          first is! llama.LlamaUnsupportedException) {
+        Error.throwWithStackTrace(first, firstStack);
+      }
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_llama] WARNING: GPU embedding load unavailable: '
+        '$first; retrying on CPU.',
+      );
+      try {
+        return await attempt(
+          params.copyWith(device: llama.ComputeDevice.cpu, gpuLayers: 0),
+        );
+      } catch (second, secondStack) {
+        Error.throwWithStackTrace(
+          EmbeddingLoadException(
+            'GPU attempt failed: $first. CPU retry failed: $second.',
+            engine: _engineTag,
+            cause: second,
+          ),
+          secondStack,
         );
       }
-      return loader(
-        _config.path,
-        params.copyWith(device: llama.ComputeDevice.cpu, gpuLayers: 0),
-      );
     }
   }
 
@@ -352,4 +389,9 @@ Future<llama.LlamaEngine> _loadEngine(String path, llama.ModelParams params) =>
 LlamaEmbeddingBackend createLlamaEmbeddingBackendForTest({
   required Future<llama.LlamaEngine> Function(String, llama.ModelParams) loader,
   bool backendFallback = true,
-}) => LlamaEmbeddingBackend._(loader, backendFallback: backendFallback);
+  String? Function()? gpuRefusal,
+}) => LlamaEmbeddingBackend._(
+  loader,
+  gpuRefusal,
+  backendFallback: backendFallback,
+);

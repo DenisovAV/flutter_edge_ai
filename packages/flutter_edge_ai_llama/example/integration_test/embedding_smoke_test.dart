@@ -225,11 +225,11 @@ double _dot(List<double> a, List<double> b) =>
 // Expected vectors are Sentence Transformers fp32, never this backend's output.
 Future<void> _checkCpuGolden(edge.EmbeddingModel model) async {
   expect(model.activeBackend, edge.PreferredBackend.cpu);
-  final golden = jsonDecode(
-    await rootBundle.loadString(
-      'assets/goldens/eg2_text_golden.json',
-    ),
-  ) as Map<String, dynamic>;
+  final golden =
+      jsonDecode(
+            await rootBundle.loadString('assets/goldens/eg2_text_golden.json'),
+          )
+          as Map<String, dynamic>;
   final items = (golden['items'] as List).cast<Map<String, dynamic>>();
   expect(items.where((item) => item['role'] == 'query'), hasLength(5));
   expect(items.where((item) => item['role'] == 'document'), hasLength(5));

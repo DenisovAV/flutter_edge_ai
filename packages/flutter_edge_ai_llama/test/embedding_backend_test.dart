@@ -285,6 +285,8 @@ void main() {
         for (final cause in [
           llama.LlamaUnsupportedException('backend unavailable'),
           llama.LlamaBackendInitializationException('backend unavailable'),
+          llama.LlamaContextException('context unavailable'),
+          TimeoutException('worker initialization timed out'),
         ]) {
           test(
             '${request?.name ?? "auto"}, fallback=$fallback, '
@@ -293,7 +295,10 @@ void main() {
               final events = <String>[];
               final paramsSeen = <llama.ModelParams>[];
               final messages = <String>[];
-              final retries = fallback && request != PreferredBackend.cpu;
+              final retries =
+                  fallback &&
+                  request == PreferredBackend.gpu &&
+                  cause is llama.LlamaUnsupportedException;
               final candidate = createLlamaEmbeddingBackendForTest(
                 backendFallback: fallback,
                 loader: (path, params) async {
@@ -310,12 +315,7 @@ void main() {
                     throw cause;
                   }
                   events.add('retry');
-                  expect(
-                    events,
-                    request == null
-                        ? ['load', 'cleanup', 'warning', 'retry']
-                        : ['load', 'cleanup', 'retry'],
-                  );
+                  expect(events, ['load', 'cleanup', 'warning', 'retry']);
                   expect(params.device, llama.ComputeDevice.cpu);
                   expect(params.gpuLayers, 0);
                   return engine;
@@ -367,12 +367,15 @@ void main() {
                     ? 0
                     : llama.ModelParams.maxGpuLayers,
               );
-              if (retries && request == null) {
+              if (retries) {
                 expect(messages, hasLength(1));
-                expect(messages.single, contains('WARNING: automatic'));
+                expect(messages.single, contains('WARNING: GPU'));
                 expect(
                   messages.single,
-                  contains('loading failed; retrying on CPU'),
+                  allOf(
+                    contains(cause.toString()),
+                    contains('retrying on CPU'),
+                  ),
                 );
               } else {
                 expect(messages, isEmpty);
@@ -384,7 +387,53 @@ void main() {
       }
     }
 
-    test('successful automatic CPU selection stays quiet', () async {
+    for (final fallback in [false, true]) {
+      test('guard refuses GPU before loader; fallback=$fallback', () async {
+        final paramsSeen = <llama.ModelParams>[];
+        var guards = 0;
+        final candidate = createLlamaEmbeddingBackendForTest(
+          backendFallback: fallback,
+          gpuRefusal: () {
+            guards++;
+            return 'guarded platform';
+          },
+          loader: (path, params) async {
+            expect(path, '/models/eg2.gguf');
+            paramsSeen.add(params);
+            expect(params.device, llama.ComputeDevice.cpu);
+            expect(params.gpuLayers, 0);
+            expect(params.contextSize, 1024);
+            expect(params.batchSize, 1024);
+            expect(params.microBatchSize, 1024);
+            expect(params.maxParallelSequences, 1);
+            return engine;
+          },
+        );
+        final p = (await candidate.describe(
+          _spec('eg2.gguf'),
+          _config(backend: PreferredBackend.gpu),
+        )).build();
+        addTearDown(p.close);
+        if (fallback) {
+          expect((await p.load()).activeBackend, PreferredBackend.cpu);
+        } else {
+          await expectLater(
+            p.load(),
+            throwsA(
+              isA<EmbeddingLoadException>().having(
+                (e) => e.cause,
+                'guard error',
+                isA<llama.LlamaUnsupportedException>(),
+              ),
+            ),
+          );
+        }
+        expect(guards, 1);
+        expect(paramsSeen, hasLength(fallback ? 1 : 0));
+      });
+    }
+
+    test('successful automatic CPU selection warns once', () async {
       final messages = <String>[];
       await runZoned(
         () async {
@@ -399,7 +448,11 @@ void main() {
           },
         ),
       );
-      expect(messages, isEmpty);
+      expect(messages, hasLength(1));
+      expect(
+        messages.single,
+        contains('requested GPU layers but selected CPU'),
+      );
     });
 
     test(
@@ -557,36 +610,47 @@ void main() {
       await p.close();
     });
 
-    test('CPU retry failure is a load exception with its cause', () async {
-      var attempts = 0;
-      final cause = llama.LlamaBackendInitializationException(
-        'CPU unavailable',
-      );
-      final candidate = createLlamaEmbeddingBackendForTest(
-        loader: (_, _) async {
-          if (++attempts == 1) {
-            throw llama.LlamaUnsupportedException('GPU unavailable');
-          }
-          throw cause;
-        },
-      );
-      final p = (await candidate.describe(
-        _spec('eg2.gguf'),
-        _config(backend: PreferredBackend.gpu),
-      )).build();
-      await expectLater(
-        p.load(),
-        throwsA(
-          isA<EmbeddingLoadException>().having(
-            (e) => e.cause,
-            'cause',
-            same(cause),
+    test(
+      'CPU retry failure preserves both errors, second cause and stack',
+      () async {
+        var attempts = 0;
+        final cause = llama.LlamaBackendInitializationException(
+          'CPU unavailable',
+        );
+        final secondStack = StackTrace.fromString('cpu-retry-original-stack');
+        final candidate = createLlamaEmbeddingBackendForTest(
+          loader: (_, _) async {
+            if (++attempts == 1) {
+              throw llama.LlamaUnsupportedException('GPU unavailable');
+            }
+            Error.throwWithStackTrace(cause, secondStack);
+          },
+        );
+        final p = (await candidate.describe(
+          _spec('eg2.gguf'),
+          _config(backend: PreferredBackend.gpu),
+        )).build();
+        await expectLater(
+          p.load().catchError((Object error, StackTrace stack) {
+            expect(stack.toString(), secondStack.toString());
+            expect(
+              (error as EmbeddingLoadException).message,
+              allOf(contains('GPU unavailable'), contains('CPU unavailable')),
+            );
+            Error.throwWithStackTrace(error, stack);
+          }),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.cause,
+              'cause',
+              same(cause),
+            ),
           ),
-        ),
-      );
-      expect(attempts, 2);
-      await p.close();
-    });
+        );
+        expect(attempts, 2);
+        await p.close();
+      },
+    );
 
     for (final metadata in [
       (

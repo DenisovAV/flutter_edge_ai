@@ -512,27 +512,15 @@ final class HybridRouter {
 /// The generate middleware of one routed call (Genkit creates one per ref
 /// per call, and reuses it for every turn and a restart's re-entry).
 final class _RouterMiddleware extends GenerateMiddleware {
-  _RouterMiddleware(this.router, Map<String, dynamic>? config, this._ai)
-    : policyName = config?['policy'] as String? ?? router.defaultPolicy,
-      pin = config?['pin'] as String? {
-    if (!router.policies.containsKey(policyName)) {
-      throw HybridRoutingException(
-        'Router "${router.name}" has no policy "$policyName".',
-        status: StatusCode.invalidArgument,
-      );
-    }
-    if (pin != null && !router.targets.containsKey(pin)) {
-      throw HybridRoutingException(
-        'Router "${router.name}" has no target "$pin" to pin to.',
-        status: StatusCode.invalidArgument,
-      );
-    }
-  }
-
+  _RouterMiddleware(this.router, this._config, this._ai);
   final HybridRouter router;
-  final String policyName;
-  final String? pin;
+  final Map<String, dynamic>? _config;
   final GenkitAI _ai;
+
+  /// The call's policy and pin, read from the ref's config by
+  /// [_readConfig] at the first turn.
+  late final String policyName;
+  late final String? pin;
 
   /// A tool of this call ran (a restarted one included).
   bool _toolRan = false;
@@ -583,8 +571,15 @@ final class _RouterMiddleware extends GenerateMiddleware {
         status: StatusCode.failedPrecondition,
       );
     }
-    if (envelope.currentTurn != 0) return next(envelope, ctx);
-    if (envelope.request.config != null) {
+    if (envelope.currentTurn != 0) {
+      throw HybridRoutingException(
+        'Router "${router.name}" did not see the first turn of this call: '
+        'put it first in `use:`.',
+        status: StatusCode.failedPrecondition,
+      );
+    }
+    _readConfig();
+    if (envelope.request.config?.isNotEmpty ?? false) {
       throw HybridRoutingException(
         'A routed call takes no config: each target owns its own '
         '(HybridTarget.model.config).',
@@ -604,6 +599,28 @@ final class _RouterMiddleware extends GenerateMiddleware {
       return decided.info.toJson();
     });
     return _run(decided, routeRequest, envelope, ctx, next, clock);
+  }
+
+  /// Reads and checks [policyName] and [pin]. Here, not in the
+  /// constructor: Genkit creates middleware outside the code that turns a
+  /// throw into a `failed` result.
+  void _readConfig() {
+    final policy = _config?['policy'] ?? router.defaultPolicy;
+    final pin = _config?['pin'];
+    if (policy is! String || !router.policies.containsKey(policy)) {
+      throw HybridRoutingException(
+        'Router "${router.name}" has no policy "$policy".',
+        status: StatusCode.invalidArgument,
+      );
+    }
+    if (pin != null && (pin is! String || !router.targets.containsKey(pin))) {
+      throw HybridRoutingException(
+        'Router "${router.name}" has no target "$pin" to pin to.',
+        status: StatusCode.invalidArgument,
+      );
+    }
+    policyName = policy;
+    this.pin = pin as String?;
   }
 
   Future<_Decided> _decide(
@@ -711,7 +728,12 @@ final class _RouterMiddleware extends GenerateMiddleware {
       if (cancel?.isCancelled ?? false) rethrow;
       throw HybridRoutingException(
         'Classifier "${classifier.name}" failed: $e',
-        status: e is GenkitException ? e.status : StatusCode.internal,
+        status: switch (e) {
+          GenkitException(:final status) => status,
+          // The request's text, which the user typed, is what it rejected.
+          ArgumentError() => StatusCode.invalidArgument,
+          _ => StatusCode.internal,
+        },
         cause: e,
       );
     }

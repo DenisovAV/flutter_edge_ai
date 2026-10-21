@@ -354,6 +354,52 @@ void main() {
       expect(world.cloudCalls, 0);
     });
 
+    test('a bad policy or pin in a plain call fails it, it does not '
+        'throw', () async {
+      _router(ai, world);
+      for (final config in [
+        {'policy': 'nope'},
+        {'pin': 'nope'},
+        {'pin': 3},
+      ]) {
+        final r = await ai.generate(
+          prompt: 'hi',
+          use: [middlewareRef(name: 'hybrid-router', config: config)],
+        );
+        expect(r.finishReason, FinishReason.failed, reason: '$config');
+        expect(r.cause, isA<HybridRoutingException>(), reason: '$config');
+      }
+      expect(world.localCalls + world.cloudCalls, 0);
+    });
+
+    test('a later turn without the decision is refused', () async {
+      final router = _router(ai, world);
+      ai.defineGenerateMiddleware<Object?>(
+        name: 'turn1',
+        create: (_, _) => _LaterTurn(),
+      );
+      final r = await ai.generate(
+        prompt: 'hi',
+        use: [
+          middlewareRef(name: 'turn1'),
+          router(),
+        ],
+      );
+      expect(r.finishReason, FinishReason.failed);
+      expect(r.cause, isA<HybridRoutingException>());
+      expect(world.localCalls + world.cloudCalls, 0);
+    });
+
+    test('an empty config is no config', () async {
+      final router = _router(ai, world);
+      final r = await ai.generate(
+        prompt: 'hi',
+        config: <String, dynamic>{},
+        use: [router()],
+      );
+      expect(r.text, 'local plain');
+    });
+
     test('a caller config is refused', () async {
       final router = _router(ai, world);
       final r = await ai.generate(
@@ -460,6 +506,27 @@ void main() {
       final r = await router.generate(prompt: 'hi');
       expect(r.text, 'local plain');
       expect(r.route!.source, RouteSource.unavailable);
+    });
+
+    test('an ArgumentError from the classifier is INVALID_ARGUMENT', () async {
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          classifier: _Classifier(world, throws: ArgumentError('bad text')),
+          labels: const {'easy': RouteDecision.prefer(kOnDevice)},
+        ),
+      );
+      await expectLater(
+        router.generate(prompt: 'hi'),
+        throwsA(
+          isA<HybridRoutingException>().having(
+            (e) => e.status,
+            'status',
+            StatusCode.invalidArgument,
+          ),
+        ),
+      );
     });
 
     test('a classifier error fails the call and is never an abstain', () async {
@@ -1374,6 +1441,20 @@ extension on RoutePolicy {
     fallback: fallback,
     cascade: cascade,
   );
+}
+
+/// Hands the rest of the chain a later turn than the one it got.
+class _LaterTurn extends GenerateMiddleware {
+  @override
+  Future<GenerateResult> generate(
+    GenerateTurnState envelope,
+    ActionFnArg<ModelResponseChunk, GenerateActionOptions, void> ctx,
+    Future<GenerateResult> Function(
+      GenerateTurnState envelope,
+      ActionFnArg<ModelResponseChunk, GenerateActionOptions, void> ctx,
+    )
+    next,
+  ) => next(envelope.copyWith(currentTurn: 1), ctx);
 }
 
 /// A config whose toJson() throws.

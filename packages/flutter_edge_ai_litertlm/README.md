@@ -660,6 +660,10 @@ final embedder = await FlutterEdgeAi.getActiveEmbedder(
 - **The load checks the NPU.** It embeds one test text and refuses unless it
   gets a valid vector, so a PC without an Intel NPU, or one the stack cannot
   drive, gets an `EmbeddingLoadException` rather than wrong vectors.
+- **Measured on a Panther Lake PC** (2026-10-21, OpenVINO 2026.4.1): the 270m
+  loads in about 0.9 s (0.3 s on its CPU) and returns 768-dimensional vectors;
+  a matching pair scores cos 0.913 (0.914 on the CPU), an unrelated one 0.629
+  (0.628). The 440m is not measured.
 - The same rules as on Qualcomm: refused without `npu`, refused on any other
   platform (an Intel bundle on Android or Linux, a Qualcomm bundle on Windows),
   refused with the reason when `LiteRtDispatch.dll` is not beside the

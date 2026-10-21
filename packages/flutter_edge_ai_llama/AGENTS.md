@@ -32,3 +32,6 @@ LlamaEmbeddingBackend registers self-contained GGUF through core's embedding SPI
   `>=0.15.0 <0.16.0`; preserve the tested 0.15.1 / 0.15.0 pair.
   Pub enforces the companion/core minor pairing, backed by Apple build guards; SDK 0.15.1 also constrains workspace
   hooks/code_assets below 3.0. Never silently widen these constraints.
+  On an SDK upgrade, recheck that llamadart's automatic CPU targets
+  (`resolvePreferredBackendForLoad`) still equal `nativeEmbeddingGpuRefusal`:
+  the automatic-CPU warning is silenced on exactly that set.

@@ -20,6 +20,7 @@ void main() {
     final bank = File('${dir.path}\\litert_ov_bank_0123456789abcdef.bin')
       ..writeAsBytesSync([1, 2, 3]);
     final claim = IntelWeightBankClaim.newSince({}, {bank.path});
+    addTearDown(claim.release);
     expect(claim.banks, [bank.path]);
     final lock = File('${bank.path}.$pid.owner');
     expect(lock.existsSync(), isTrue);

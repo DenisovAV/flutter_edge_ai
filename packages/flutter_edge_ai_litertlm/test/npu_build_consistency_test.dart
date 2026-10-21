@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 Set<String> _requiredInTarballs() {
   final script = File(
     'native/litert_lm/verify_tarball_manifest.sh',
-  ).readAsStringSync();
+  ).readAsStringSync().replaceAll('\r\n', '\n');
   final block = RegExp(
     r'^REQUIRED=\(\n(.*?)^\)',
     multiLine: true,
@@ -111,7 +111,7 @@ void main() {
       'declared in the core plugin manifest', () {
     final manifest = File(
       '../flutter_edge_ai/android/src/main/AndroidManifest.xml',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
     final declared = {
       for (final m in RegExp(
         r'<uses-native-library\s+android:name="([^"]+)"',
@@ -176,7 +176,7 @@ void main() {
       'LiteRT patch pins', () {
     final patch = File(
       'native/litert_lm/patches/litert_openvino_2026_4_1.patch',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
     final version = RegExp(
       r'^\+OPENVINO_PEP440_VERSION = "([^"]+)"',
       multiLine: true,

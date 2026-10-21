@@ -13,7 +13,7 @@ void main() {
   tearDown(() => temp.deleteSync(recursive: true));
 
   File bank(String name, {required DateTime modified, int size = 4}) =>
-      File('${temp.path}/$name')
+      File('${temp.path}${Platform.pathSeparator}$name')
         ..writeAsBytesSync(List.filled(size, 0))
         ..setLastModifiedSync(modified);
 
@@ -181,6 +181,8 @@ void main() {
         before,
         listIntelWeightBanks(dirs: [temp]),
       );
+      // Before tearDown: on Windows a held lock keeps the directory.
+      addTearDown(claim.release);
       expect(claim.banks, [freshBank.path]);
       final mine = File('${freshBank.path}.$pid.owner');
       expect(mine.existsSync(), isTrue);

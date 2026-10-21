@@ -12,6 +12,8 @@ class _Example {
     required this.blurb,
     required this.accent,
     required this.videoBase,
+    required this.width,
+    required this.height,
     required this.ctaLabel,
     required this.ctaHref,
   });
@@ -24,6 +26,11 @@ class _Example {
   /// Base path under /demos without extension, e.g. `/demos/multimodal`.
   /// Loads `<base>.webm` + `<base>.mp4` with `<base>-poster.jpg`.
   final String videoBase;
+
+  /// Pixel size of the recording, written on the `<video>` so the phone
+  /// frame has its height before the poster arrives (no layout shift).
+  final int width;
+  final int height;
 
   final String ctaLabel;
   final String ctaHref;
@@ -42,6 +49,8 @@ class Examples extends StatelessComponent {
           'fully on-device.',
       accent: Brand.blue,
       videoBase: '/demos/thinking',
+      width: 480,
+      height: 1066,
       ctaLabel: '▶ Try it live',
       ctaHref: '/try',
     ),
@@ -53,6 +62,8 @@ class Examples extends StatelessComponent {
           'no server in the loop.',
       accent: Brand.green,
       videoBase: '/demos/function-calling',
+      width: 480,
+      height: 1076,
       ctaLabel: '▶ Try it live',
       ctaHref: '/try',
     ),
@@ -64,6 +75,8 @@ class Examples extends StatelessComponent {
           'running locally with Gemma 4.',
       accent: Brand.orange,
       videoBase: '/demos/multimodal',
+      width: 480,
+      height: 1044,
       // The web app has no audio input, so point at the docs instead of /try.
       ctaLabel: 'Learn more →',
       ctaHref: '/docs/multimodal',
@@ -76,6 +89,8 @@ class Examples extends StatelessComponent {
           'them through the tool-calling loop — text, JS, native intents, MCP.',
       accent: Brand.blueLight,
       videoBase: '/demos/agent',
+      width: 492,
+      height: 1066,
       ctaLabel: 'Learn more →',
       ctaHref: '/docs/agent',
     ),
@@ -107,6 +122,8 @@ class Examples extends StatelessComponent {
             source(src: '${item.videoBase}.mp4', type: 'video/mp4'),
           ],
           classes: 'example-video',
+          width: item.width,
+          height: item.height,
           // No `autoplay`, and `preload="none"`: a video with `autoplay`
           // downloads in full whatever `preload` says, so the four demos
           // (3.3 MB together) cost every visitor before this section was
@@ -119,7 +136,6 @@ class Examples extends StatelessComponent {
           preload: Preload.none,
           attributes: const {
             'playsinline': '',
-            'muted': '',
             'data-play-when-visible': '',
           },
         ),

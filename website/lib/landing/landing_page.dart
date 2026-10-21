@@ -17,14 +17,22 @@ import '../theme/brand.dart';
 
 /// Starts every `<video data-play-when-visible>` when it scrolls into view and
 /// pauses it when it leaves, so a demo is downloaded only once a visitor gets
-/// to it. The videos carry `preload="none"` and no `autoplay`; the `play()`
-/// call turns preloading on. Muted inline video may be started from a script
-/// without a user gesture in every current browser. A browser without
-/// IntersectionObserver gets the old behaviour: every video plays at once.
+/// to it and nothing decodes off screen. The demos carry `preload="none"` and
+/// no `autoplay`; the `play()` call turns preloading on. The hero keeps
+/// `autoplay` (it is above the fold and must run without JavaScript) and is
+/// only paused by this script. Under `prefers-reduced-motion: reduce` every
+/// video stays on its poster, since none has controls to stop it with. Muted
+/// inline video may be started from a script without a user gesture in every
+/// current browser. A browser without IntersectionObserver gets the old
+/// behaviour: every video plays at once.
 const String _playWhenVisibleScript = '''
 (function () {
   var videos = document.querySelectorAll('video[data-play-when-visible]');
   if (!videos.length) return;
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    videos.forEach(function (v) { v.removeAttribute('autoplay'); v.pause(); });
+    return;
+  }
   function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
   if (!('IntersectionObserver' in window)) {
     videos.forEach(play);

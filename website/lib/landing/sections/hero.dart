@@ -57,13 +57,20 @@ class Hero extends StatelessComponent {
                   source(src: '/demos/hero.mp4', type: 'video/mp4'),
                 ],
                 classes: 'hero-video',
+                // Intrinsic size, so the frame holds its height before the
+                // poster arrives instead of growing under the page.
+                width: 600,
+                height: 1344,
+                // `autoplay` starts it without JavaScript; the marker lets
+                // the landing page's script pause it once it is scrolled
+                // out of view and under reduced motion.
                 autoplay: true,
                 loop: true,
                 muted: true,
                 poster: '/demos/hero-poster.jpg',
                 attributes: const {
                   'playsinline': '',
-                  'muted': '',
+                  'data-play-when-visible': '',
                   'aria-label': 'flutter_edge_ai demo running on a device',
                 },
               ),

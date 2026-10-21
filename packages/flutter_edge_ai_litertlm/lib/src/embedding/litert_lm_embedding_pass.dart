@@ -150,6 +150,7 @@ final class LiteRtLmEmbeddingConfig {
     this.requireWeightCache = false,
     this.npuTarget,
     this.npuDispatchDir,
+    this.gpu = false,
   }) : assert(
          (npuTarget == null) == (npuDispatchDir == null),
          'an NPU bundle runs with a dispatch directory, a CPU one without',
@@ -196,9 +197,18 @@ final class LiteRtLmEmbeddingConfig {
   /// none of). Set with [npuTarget].
   final String? npuDispatchDir;
 
+  /// A generic bundle on the GPU (LiteRT-LM's GPU executor, which LiteRT runs
+  /// on the GPU alone, never falling back to CPU), asked for with
+  /// `preferredBackend: gpu` on a `liteRtLmEmbeddingGpuAbis` host, text only.
+  /// Never set with [npuTarget].
+  final bool gpu;
+
   /// The backend the engine is created on.
-  PreferredBackend get backend =>
-      npuTarget == null ? PreferredBackend.cpu : PreferredBackend.npu;
+  PreferredBackend get backend => npuTarget != null
+      ? PreferredBackend.npu
+      : gpu
+      ? PreferredBackend.gpu
+      : PreferredBackend.cpu;
 }
 
 /// The descriptor factory: a top-level tear-off, so it survives the trip into
@@ -391,14 +401,15 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       // Every tower on CPU writes a weight cache. On the NPU the text and
       // vision towers write none (upstream gives an NPU graph no XNNPack
       // cache), but declared audio runs on CPU (see _createEngine) and writes
-      // one. Inside the try: a refusal deletes the engine and the options it
-      // made.
-      if (!_onNpu || audio) {
+      // one. The GPU writes its own shader cache instead, and runs text only.
+      // Inside the try: a refusal deletes the engine and the options it made.
+      final onCpu = _config.backend == PreferredBackend.cpu;
+      if (onCpu || (_onNpu && audio)) {
         _checkWeightCache(
           cacheDir,
           modelSize: modelSize,
-          text: !_onNpu,
-          vision: !_onNpu && _hasVision(info),
+          text: onCpu,
+          vision: onCpu && _hasVision(info),
           audio: audio,
         );
       }
@@ -424,7 +435,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       '[LiteRtLmEmbeddingPass] loaded $_file: dim=${info.dimension}, '
       'maxInputTokens=$maxInputTokens, '
       'backend=${_onNpu ? 'npu (${_config.npuTarget}, dispatch '
-                '${_config.npuDispatchDir})' : 'cpu'}, '
+                '${_config.npuDispatchDir})' : _config.backend.name}, '
       'vision=${vision ? info.visionSignatures : 'none'}'
       '${images ? ', ${_config.visionTokensPerImage} tokens/image' : ''}, '
       'audio=${audio ? 'yes' : 'not declared'}, '
@@ -444,6 +455,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       // The budget the engine was created with: only when images were
       // declared (it is not set otherwise, see _createEngine).
       visionTokensPerImage: images ? _config.visionTokensPerImage : null,
+      // Required by core on the hosts where this backend honours the GPU,
+      // and true everywhere: the engine runs where it was created or fails.
+      activeBackend: _config.backend,
     );
   }
 
@@ -1076,7 +1090,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     required bool audio,
   }) {
     final path = _config.modelPath.toNativeUtf8(allocator: _alloc);
-    final backend = (_onNpu ? 'npu' : 'cpu').toNativeUtf8(allocator: _alloc);
+    final backend = _config.backend.name.toNativeUtf8(allocator: _alloc);
     // Tower backends NULL (D26): present towers run on the main backend, and
     // naming one the bundle lacks fails create with code 5. One exception:
     // the per-SoC 740m bundles compile the audio encoder for cpu/gpu only —

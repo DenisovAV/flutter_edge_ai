@@ -148,7 +148,24 @@ final vector = await embedder.embed(
   an over-long input costs one full embedding before it is refused.
 - **CPU natively, WebGPU on the Web.** **activeBackend** is
   **PreferredBackend.cpu** natively and **PreferredBackend.gpu** on the Web.
-  The NPU runs the per-SoC bundles
+- **GPU on Windows and Linux x64, when asked (litertlm 1.18.0).**
+  **preferredBackend: PreferredBackend.gpu** runs the text on the GPU there
+  (WebGPU over DX12 or Vulkan). Measured 2026-10-22 on the 270m: Windows on
+  Lunar Lake (Arc iGPU) 22 ms per text vs 83-90 ms on its CPU, Linux on a
+  Tesla T4 32-64 ms vs 232-308 ms, min cos 0.997 to the CPU vectors and the
+  same distance to Sentence Transformers fp32 as the CPU. A load takes
+  1.7-2.5 s (0.3-0.6 s on CPU); the very first compiles shaders, 5.9-8.2 s.
+  Text only: **gpu** with images or
+  audio throws **EmbeddingLoadException**, and an embedder already on the GPU
+  keeps that backend when a later request adds a medium. A GPU that cannot
+  create the engine fails the load; nothing falls back to CPU.
+  **requireWeightCache** does not apply on the GPU, which writes a shader
+  cache instead. On macOS, iOS and Android **gpu** is not applied: the Metal
+  path ends the process at engine create, and Android is not measured.
+  Without **preferredBackend** the embedder runs on CPU everywhere. GPU and
+  CPU vectors are close, not equal: keep one backend per index if you need
+  the exact vectors back.
+- The NPU runs the per-SoC bundles
   ([below](#embeddinggemma-2-on-a-qualcomm-npu)); this bundle refuses
   **PreferredBackend.npu**. The Web has no CPU path for these bundles — the
   CPU (WebAssembly) backend of `@litert-lm/core` 0.18.0 cannot read their

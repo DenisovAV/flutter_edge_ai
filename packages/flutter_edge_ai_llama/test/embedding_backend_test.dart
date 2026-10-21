@@ -456,6 +456,30 @@ void main() {
     });
 
     test(
+      'automatic CPU selection is silent where llamadart picks CPU',
+      () async {
+        final messages = <String>[];
+        final candidate = createLlamaEmbeddingBackendForTest(
+          gpuRefusal: () => 'guarded platform',
+          loader: (path, params) async => engine,
+        );
+        final p = (await candidate.describe(
+          _spec('eg2.gguf'),
+          _config(),
+        )).build();
+        addTearDown(p.close);
+        await runZoned(
+          () async =>
+              expect((await p.load()).activeBackend, PreferredBackend.cpu),
+          zoneSpecification: ZoneSpecification(
+            print: (_, _, _, message) => messages.add(message),
+          ),
+        );
+        expect(messages, isEmpty);
+      },
+    );
+
+    test(
       'CPU request refuses GPU placement and disposes exactly once',
       () async {
         engine.backendName = 'Metal';

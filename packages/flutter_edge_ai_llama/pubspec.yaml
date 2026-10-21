@@ -1,6 +1,6 @@
 name: flutter_edge_ai_llama
-description: Cross-platform GGUF inference for Flutter Edge AI, powered by llamadart with tools, thinking, multimodal input and native LoRA.
-version: 0.0.2
+description: Cross-platform GGUF inference and native EmbeddingGemma 2 text embeddings for Flutter Edge AI, powered by llamadart.
+version: 0.0.3
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_llama
 
@@ -20,10 +20,11 @@ environment:
   flutter: '>=3.44.0'
 
 dependencies:
+  ffi: ^2.1.4
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.4.0
-  llamadart: '>=0.15.0 <0.15.1'
+  flutter_edge_ai: ^2.5.0
+  llamadart: '>=0.15.1 <0.15.2'
 
 dev_dependencies:
   shared_preferences: ^2.5.2

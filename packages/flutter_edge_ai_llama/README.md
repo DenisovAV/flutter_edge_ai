@@ -9,9 +9,20 @@ Tools, thinking, images/audio and native LoRA require compatible models and
 runtimes. See [advanced usage](doc/advanced_usage.md) and the
 [platform qualification matrix](doc/platforms.md) for their limits.
 
-The minimum is Flutter **3.44 / Dart 3.12**, with core **2.4.0+**,
-llamadart **0.15.0** and Apple companion **0.15.0**. Connector CI uses Flutter
-3.47.1 / Dart 3.13.1 for reproducible checks. GGUF embeddings are deferred.
+Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
+Version 0.0.3 adds native text embeddings with llamadart 0.15.1.
+The consumer setup below targets version 0.0.3.
+
+The minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**,
+published llamadart **0.15.1** with typed overflow reporting and Apple
+companion **0.15.0**. Connector CI uses Flutter
+3.47.1 / Dart 3.13.1 for reproducible checks. Native EmbeddingGemma 2 text embeddings are described in
+[the embedding guide](doc/embeddings.md). macOS CPU/Metal and Linux/Windows CPU
+have been measured; Android has a maintainer Pixel 8a diagnostic and iOS remains
+unqualified. See the [per-platform evidence](doc/platforms.md#embedding-qualification-by-platform).
+Explicit GPU embeddings on Android and iOS simulators fall back to CPU by
+default; `backendFallback: false` refuses those requests before loading.
+Media and Web embeddings are deferred.
 
 ## Try a chat in a few minutes
 
@@ -81,14 +92,15 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-Version 0.0.2 uses llamadart 0.15.0 (0.0.1 used 0.13.1).
+Version 0.0.3 requires core 2.5.0+ and llamadart 0.15.1.
+Add these hosted dependencies to your app:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
   flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_llama: ^0.0.2
+  flutter_edge_ai_llama: ^0.0.3
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.15.0
 
@@ -99,15 +111,15 @@ hooks:
 ```
 
 Merge the hook settings into your **application's** pubspec, or its workspace
-root. Dependency settings do not propagate. llamadart 0.15.0 selects llama.cpp
+root. Dependency settings do not propagate. llamadart 0.15.1 selects llama.cpp
 only when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph.
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-The connector constrains llamadart to the selected 0.15.0 patch; update that
-constraint only after validating it with the matching Apple companion.
-SDK 0.15.0 uses companion 0.15.0; companion patches are versioned independently
-within the SDK minor.
+The SDK constraint is bounded to published patch 0.15.1. Version 0.0.3
+retains the tested SDK 0.15.1 / companion 0.15.0 pair. Companion 0.15.0 and
+0.15.1 both accept SDK `>=0.15.0 <0.16.0`; companion patches are versioned
+independently, so an SDK patch does not require a companion upgrade.
 Android apps must exclude `armeabi-v7a`: llama.cpp supplies arm64-v8a and x86_64.
 For fat APKs and app bundles, clear inherited `ndk.abiFilters` before setting
 those two ABIs. With `--split-per-abi`, let Flutter own the filters and pass
@@ -130,7 +142,7 @@ Companion 0.15.0 includes the framework metadata fix from
 [llamadart-native #110](https://github.com/leehack/llamadart-native/issues/110);
 App Store submission remains **unvalidated**.
 
-Apple workspace apps can use the companion with llamadart 0.15.0. Declare
+Apple workspace apps can use the companion with llamadart 0.15.1. Declare
 `llamadart_llama_cpp_flutter: 0.15.0` directly in the **app member's** dependencies
 and put the `hooks` selection in the **workspace root**. Run `flutter pub get`
 from the root, then build from the app directory. The SDK discovers the member
@@ -199,13 +211,14 @@ conversation can continue. Close the model when your feature is finished.
 
 ## Contribution scope
 
-This contribution provides inference only. GGUF embeddings are deferred to a
-[follow-up](doc/deferred_embeddings.md) against core's new embedding SPI.
+This contribution provides inference and a native EmbeddingGemma 2 text
+[embedding backend](doc/embeddings.md) in the same package. Media and Web
+embeddings remain follow-ups.
 
 The connector uses core 2.3's public `engine.dart` / `engine_web.dart` APIs.
 Dedicated GGUF identity removes the routing conflict with MediaPipe. Core restores
 paired LoRA adapters after restart and refuses restoration if an adapter is missing.
-They shipped in core 2.3.2; this connector requires core 2.4.0 for typed tool history.
+They shipped in core 2.3.2; typed tool history requires core 2.4.0; this embedding contribution raises the minimum to 2.5.0.
 
 ## Troubleshooting
 

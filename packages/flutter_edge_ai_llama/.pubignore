@@ -23,3 +23,6 @@ tool/serve_web_fixture.py
 tool/smoke_result.py
 coverage/
 pubspec_overrides.yaml
+
+tool/verify_embeddings.py
+tool/embedding_model.json

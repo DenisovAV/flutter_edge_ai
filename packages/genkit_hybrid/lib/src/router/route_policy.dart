@@ -8,7 +8,8 @@ import 'route_rule.dart';
 
 /// Judges a cascade attempt's result: true keeps it, false escalates to the
 /// next target of the policy's `fallback`. Runs outside the router's
-/// decision, so a judge that calls the router itself is routed on its own.
+/// decision, so a judge that calls the router itself is routed on its own;
+/// a cancel of the call ends the wait for it.
 typedef CascadeCheck = FutureOr<bool> Function(GenerateResult result);
 
 /// How a router decides. A router holds several, by name; a call picks one.

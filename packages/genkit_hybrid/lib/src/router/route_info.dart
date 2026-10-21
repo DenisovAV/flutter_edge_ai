@@ -28,7 +28,8 @@ final class RouteSource {
   /// The classifier was unavailable; the policy's `onUnavailable`.
   static const unavailable = RouteSource._('unavailable');
 
-  /// `confirmCloud` refused the cloud; the on-device target.
+  /// `confirmCloud` refused the cloud for a `prefer` decision; the
+  /// on-device target.
   static const consentRefused = RouteSource._('consentRefused');
 
   /// Every source this release knows.
@@ -234,7 +235,10 @@ final class CloudConsentRequest {
   final RouteInfo route;
 }
 
-/// Asked once per routed call that is about to go to the cloud (a resume
-/// included), outside the router's decision. False keeps the call on the
-/// device when the router has a `kOnDevice` target, else fails it.
+/// Asked once per call for each cloud target it is about to use (a resume
+/// included), outside the router's decision; a cancel of the call ends the
+/// wait. False on the decided target keeps a `prefer` call on the device
+/// when the router has a `kOnDevice` target, and fails a pin, an `only`
+/// decision and a router without that target; false on a fallback target
+/// skips it.
 typedef CloudConsent = FutureOr<bool> Function(CloudConsentRequest request);

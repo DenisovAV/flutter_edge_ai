@@ -764,7 +764,17 @@ void main() {
       expect(world.cloudCalls, 0);
     });
 
-    test('a refusal keeps the call on the device, asked once', () async {
+    test('a refusal keeps a prefer call on the device', () async {
+      world.nextLabel = 'hard';
+      final router = _router(ai, world, confirmCloud: (_) => false);
+      final r = await router.generate(prompt: 'hi');
+      expect(r.text, 'local plain');
+      expect(r.route!.source, RouteSource.consentRefused);
+      expect(r.route!.target, kOnDevice);
+      expect(world.cloudCalls, 0);
+    });
+
+    test('is asked once per call, not per turn', () async {
       world.nextLabel = 'hard';
       var asked = 0;
       final router = _router(
@@ -772,13 +782,136 @@ void main() {
         world,
         confirmCloud: (_) {
           asked++;
+          return true;
+        },
+      );
+      final r = await router.generate(prompt: 'hi', toolNames: ['lookup']);
+      expect(r.text, 'cloud answer');
+      expect(world.cloudCalls, 2);
+      expect(asked, 1);
+    });
+
+    test('is asked for each cloud target', () async {
+      world.cloudThrows = GenkitException(
+        'down',
+        status: StatusCode.unavailable,
+      );
+      final asked = <String>[];
+      final router = _router(
+        ai,
+        world,
+        targets: {
+          kOnDevice: HybridTarget.onDevice(localRef),
+          kCloud: HybridTarget.cloud(cloudRef),
+          'other': HybridTarget.cloud(modelRef('fakecloud/other')),
+        },
+        policy: const RoutePolicy(fallback: ['other']).withRule(kCloud),
+        confirmCloud: (request) {
+          asked.add(request.target);
+          return true;
+        },
+      );
+      final r = await router.generate(prompt: 'hi');
+      expect(r.finishReason, FinishReason.failed);
+      expect(asked, [kCloud, 'other']);
+    });
+
+    test('a refusal that moved the call keeps it on the device', () async {
+      world.localThrows = GenkitException(
+        'down',
+        status: StatusCode.unavailable,
+      );
+      final asked = <String>[];
+      final router = _router(
+        ai,
+        world,
+        targets: {
+          kOnDevice: HybridTarget.onDevice(localRef),
+          kCloud: HybridTarget.cloud(cloudRef),
+          'other': HybridTarget.cloud(modelRef('fakecloud/other')),
+        },
+        policy: const RoutePolicy(fallback: ['other']).withRule(kCloud),
+        confirmCloud: (request) {
+          asked.add(request.target);
           return false;
         },
       );
       final r = await router.generate(prompt: 'hi');
-      expect(r.text, 'local plain');
-      expect(r.route!.source, RouteSource.consentRefused);
-      expect(asked, 1);
+      expect(r.finishReason, FinishReason.failed);
+      expect(asked, [kCloud]);
+      expect(world.cloudCalls, 0);
+    });
+
+    for (final (name, pin, policy) in [
+      ('a pin to the cloud', kCloud, null),
+      (
+        'an only decision for the cloud',
+        null,
+        RoutePolicy(
+          rules: [
+            RouteRule.custom('c', (_) => const RouteDecision.only(kCloud)),
+          ],
+        ),
+      ),
+    ]) {
+      test('a refusal fails $name, it does not move', () async {
+        final router = _router(
+          ai,
+          world,
+          policy: policy,
+          confirmCloud: (_) => false,
+        );
+        await expectLater(
+          router.generate(prompt: 'hi', pin: pin),
+          throwsA(
+            isA<HybridRoutingException>().having(
+              (e) => e.status,
+              'status',
+              StatusCode.permissionDenied,
+            ),
+          ),
+        );
+        expect(world.localCalls + world.cloudCalls, 0);
+      });
+    }
+
+    test('a cancel while it is asked aborts the call', () async {
+      world.localThrows = GenkitException(
+        'down',
+        status: StatusCode.unavailable,
+      );
+      final controller = CancellationController();
+      final never = Completer<bool>();
+      final router = _router(
+        ai,
+        world,
+        policy: const RoutePolicy(fallback: [kCloud]).withRule(kOnDevice),
+        confirmCloud: (_) {
+          controller.cancel('stop');
+          return never.future;
+        },
+      );
+      final r = await router.generate(prompt: 'hi', cancel: controller.token);
+      expect(r.finishReason, FinishReason.aborted);
+      expect(world.cloudCalls, 0);
+    });
+
+    test('a cancel while the cascade judges aborts the call', () async {
+      final controller = CancellationController();
+      final never = Completer<bool>();
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          fallback: const [kCloud],
+          cascade: (_) {
+            controller.cancel('stop');
+            return never.future;
+          },
+        ).withRule(kOnDevice),
+      );
+      final r = await router.generate(prompt: 'hi', cancel: controller.token);
+      expect(r.finishReason, FinishReason.aborted);
       expect(world.cloudCalls, 0);
     });
 

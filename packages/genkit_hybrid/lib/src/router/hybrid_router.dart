@@ -827,7 +827,6 @@ final class _RouterMiddleware extends GenerateMiddleware {
         for (final t in policy.fallback)
           if (t != first && router.targets[t]!.canServe(requires)) t,
     ];
-    bool? cloudConsent;
     final attempts = <String>[];
     // The last attempt the loop moved on from (failed, or rejected by the
     // cascade), returned as it is when no later target runs.
@@ -840,11 +839,18 @@ final class _RouterMiddleware extends GenerateMiddleware {
       final isFirst = i == 0;
       if (moveFailure != null && !_mayMoveTo(key, moveFailure)) continue;
       if (router.targets[key]!.isCloud) {
-        cloudConsent ??= await _askConsent(key, info);
-        if (!cloudConsent) {
+        if (!await _askConsent(key, info, ctx.cancel)) {
           if (!isFirst) continue; // never move to the cloud without consent
+          if (decision.isOnly) {
+            throw HybridRoutingException(
+              'confirmCloud refused "$key", the only target this call may '
+              'use.',
+              status: StatusCode.permissionDenied,
+              route: info,
+            );
+          }
           final onDevice = router.targets[kOnDevice];
-          if (onDevice == null || onDevice.isCloud) {
+          if (onDevice == null) {
             throw HybridRoutingException(
               'confirmCloud refused the cloud and there is no "$kOnDevice" '
               'target.',
@@ -920,9 +926,10 @@ final class _RouterMiddleware extends GenerateMiddleware {
         return _finish(attempt, ctx);
       }
       if (cascade != null && hasNext && movable && !_toolRan) {
-        ctx.cancel?.throwIfCancelled();
-        final accepted = await cascade(result!);
-        ctx.cancel?.throwIfCancelled();
+        final accepted = await _untilCancelled(
+          () => cascade(result!),
+          ctx.cancel,
+        );
         if (!accepted) {
           passed = attempt;
           moveFailure = null;
@@ -962,17 +969,26 @@ final class _RouterMiddleware extends GenerateMiddleware {
     return _decorate(attempt.result!, attempt.info, attempt.key);
   }
 
-  Future<bool> _askConsent(String key, RouteInfo info) async {
+  Future<bool> _askConsent(
+    String key,
+    RouteInfo info,
+    CancellationToken? cancel,
+  ) async {
     final confirm = router._confirmCloud;
     if (confirm == null) return true;
     try {
-      return await confirm(
-        CloudConsentRequest(
-          target: key,
-          model: router.targets[key]!.model.name,
-          route: info,
+      return await _untilCancelled(
+        () => confirm(
+          CloudConsentRequest(
+            target: key,
+            model: router.targets[key]!.model.name,
+            route: info,
+          ),
         ),
+        cancel,
       );
+    } on CancelledException {
+      rethrow;
     } catch (e) {
       throw HybridRoutingException(
         'confirmCloud failed: $e',
@@ -980,6 +996,38 @@ final class _RouterMiddleware extends GenerateMiddleware {
         cause: e,
         route: info,
       );
+    }
+  }
+
+  /// [body]'s value, unless [cancel] fires first: an app callback (a consent
+  /// dialog, a cascade judge) must not keep a cancelled call waiting, nor
+  /// turn it into a result.
+  static Future<T> _untilCancelled<T>(
+    FutureOr<T> Function() body,
+    CancellationToken? cancel,
+  ) async {
+    cancel?.throwIfCancelled();
+    if (cancel == null) return body();
+    final done = Completer<T>();
+    final detach = cancel.onCancel(() {
+      if (!done.isCompleted) {
+        done.completeError(CancelledException(token: cancel));
+      }
+    });
+    try {
+      Future.sync(body).then(
+        (v) {
+          if (!done.isCompleted) done.complete(v);
+        },
+        onError: (Object e, StackTrace s) {
+          if (!done.isCompleted) done.completeError(e, s);
+        },
+      );
+      final value = await done.future;
+      cancel.throwIfCancelled();
+      return value;
+    } finally {
+      detach();
     }
   }
 

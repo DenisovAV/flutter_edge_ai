@@ -151,7 +151,7 @@ With CocoaPods, paste this into `macos/Podfile`, replacing any existing
 `post_install` block; the next build runs `pod install` itself. A green build
 proves nothing: without it the first model load fails with
 `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. From
-`flutter_edge_ai_litertlm` 1.16.0 that error contains
+`flutter_edge_ai_litertlm` 1.17.0 that error contains
 `flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names this fix.
 
 **A Swift Package Manager app has no `macos/Podfile` to paste into.** SPM is the
@@ -246,6 +246,11 @@ shader compiler and NPU runtime — are bundled at build time.
   17 of the bundle's 25 DLLs import no C++ runtime; the other eight, the Intel
   NPU stack, import only `msvcp140`, `vcruntime140` and `vcruntime140_1`,
   which every Flutter Windows app already resolves.
+- Windows Intel NPU: a bundle whose NPU blobs carry no weights (Intel's Gemma 4
+  12B for Panther Lake, EmbeddingGemma 2 `_Intel_PTL`) makes the dispatch copy
+  them to `%TEMP%\litert_ov_bank_<hex>.bin` at every load (5.55 GB and 74.5
+  MB); closing the model deletes it. From `flutter_edge_ai_litertlm` 1.17.0 the
+  next Intel NPU load deletes the banks of processes that are gone.
 - Linux: `x64` and `arm64`. Building needs
   `clang cmake ninja-build libgtk-3-dev lld`. GPU needs the vendor Vulkan
   driver; Mesa's `llvmpipe` software fallback cannot run Gemma 4.

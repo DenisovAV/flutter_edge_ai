@@ -82,7 +82,7 @@ final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
 
 ## macOS
 
-- **`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`** (from `flutter_edge_ai_litertlm` 1.16.0 inside an error that says `LiteRT-LM did not load on macOS` and names this cause): the app is built with Swift Package Manager, the default since Flutter 3.44, so nothing copied LiteRT-LM's companion libraries into it. Every LiteRT feature fails to load (LLM, embeddings, speech), on every backend, and the build itself succeeds. Turn Swift Package Manager off for the app in `pubspec.yaml` and replace the `post_install` block of `macos/Podfile` with ours (an app that already has a `macos/Podfile` keeps Swift Package Manager on and only needs the block), see [Desktop → macOS](/docs/desktop#macos). If the block is already there, run `flutter clean` and build again. A route without a Podfile is tracked in [#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689).
+- **`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`** (from `flutter_edge_ai_litertlm` 1.17.0 inside an error that says `LiteRT-LM did not load on macOS` and names this cause): the app is built with Swift Package Manager, the default since Flutter 3.44, so nothing copied LiteRT-LM's companion libraries into it. Every LiteRT feature fails to load (LLM, embeddings, speech), on every backend, and the build itself succeeds. Turn Swift Package Manager off for the app in `pubspec.yaml` and replace the `post_install` block of `macos/Podfile` with ours (an app that already has a `macos/Podfile` keeps Swift Package Manager on and only needs the block), see [Desktop → macOS](/docs/desktop#macos). If the block is already there, run `flutter clean` and build again. A route without a Podfile is tracked in [#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689).
 - **`incompatible architecture (have 'arm64', need 'x86_64')`:** LiteRT-LM ships for Apple silicon only. It does not run on an Intel Mac or in an x86_64 (Rosetta) process.
 - **`library load disallowed by system policy`:** macOS refused a quarantined or un-notarized library. Notarize the app; for a local test build, remove the quarantine attribute with `xattr -dr com.apple.quarantine` on the app.
 - **`have different Team IDs`:** macOS library validation refused a library. Sign the app and its frameworks with the same team, or add the `com.apple.security.cs.disable-library-validation` entitlement.
@@ -252,7 +252,8 @@ build calibrated only on short prompts loses a longer prompt past ~450 tokens
 (Gemma 3 1B,
 [litert-torch#1344](https://github.com/google-ai-edge/litert-torch/issues/1344)).
 On Intel it happens regardless of size, through a different defect. Run a
-**Gemma 4** bundle on the NPU, or the same model's generic bundle on
+**Gemma 4** bundle on the NPU (MediaTek has none: whether its Gemma 3 bundles keep
+their chunks is not measured), or the same model's generic bundle on
 `PreferredBackend.cpu` / `.gpu` — a bundle compiled for an NPU is refused there
 with a `LiteRtLmBundleException`. Upstream:
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).

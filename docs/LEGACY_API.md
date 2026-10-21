@@ -194,9 +194,9 @@ final inferenceModel = await FlutterEdgeAiPlugin.instance.createModel(
 |---------|---------|-----|-----|---------|
 | `cpu` | ✅ | ✅ | ❌ | ✅ |
 | `gpu` | ✅ | ✅ | ✅ (required) | ✅ |
-| `npu` | ✅ (.litertlm) | ❌ | ❌ | ❌ |
+| `npu` | ✅ (.litertlm) | ❌ | ❌ | ✅ Windows (Intel), Linux arm64 (Qualcomm) |
 
-- **NPU**: Qualcomm Snapdragon only — the Android archive ships the Qualcomm QNN dispatch stack and nothing for MediaTek or Google Tensor.
+- **NPU**: see the current [LiteRT-LM docs](https://flutteredge.ai/docs/litertlm) — Qualcomm, Google Tensor and MediaTek on Android (opt-in), Qualcomm on Linux arm64, Intel on Windows.
 - **Web**: GPU only (MediaPipe limitation). CPU models will fail to initialize.
 - **Desktop**: GPU uses Metal (macOS), DirectX 12 (Windows), Vulkan (Linux).
 

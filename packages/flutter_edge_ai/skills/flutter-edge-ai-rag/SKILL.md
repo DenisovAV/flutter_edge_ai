@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-rag
-description: Use when adding or debugging on-device RAG, semantic search, embeddings (EmbeddingGemma 2 .litertlm, EmbeddingGemma 1 or Gecko .tflite, ONNX models such as MiniLM), metadata filters, embedding profiles, image or audio document indexes, or pluggable sqlite-vec/qdrant-edge storage in a flutter_edge_ai app with flutter_edge_ai_rag, flutter_edge_ai_sqlite or flutter_edge_ai_qdrant. Also use when moving RAG code to flutter_edge_ai 2.0 or to flutter_edge_ai_rag 1.1 — FlutterEdgeAi.rag is undefined, initialize(vectorStore:) was removed, addText/searchText/activeEmbedderProfileId are undefined, or open() throws "No vector-store provider can handle providerId" or "is bound to" — and when QdrantLegacyStoreException or an embedding-profile mismatch is thrown.
+description: Use when adding or debugging on-device RAG, semantic search, embeddings (EmbeddingGemma 2 .litertlm or .gguf through flutter_edge_ai_llama, EmbeddingGemma 1 or Gecko .tflite, ONNX models such as MiniLM), metadata filters, embedding profiles, image or audio document indexes, or pluggable sqlite-vec/qdrant-edge storage in a flutter_edge_ai app with flutter_edge_ai_rag, flutter_edge_ai_sqlite or flutter_edge_ai_qdrant. Also use when moving RAG code to flutter_edge_ai 2.0 or to flutter_edge_ai_rag 1.1 — FlutterEdgeAi.rag is undefined, initialize(vectorStore:) was removed, addText/searchText/activeEmbedderProfileId are undefined, or open() throws "No vector-store provider can handle providerId" or "is bound to" — and when QdrantLegacyStoreException or an embedding-profile mismatch is thrown.
 ---
 
 # On-device RAG with Flutter Edge AI
@@ -154,8 +154,11 @@ Core accepts self-contained `.gguf` embedding files without a separate
 tokenizer. A `.gguf` carries its own tokenizer: adding a `tokenizerFrom…()` makes
 `install()` throw `ArgumentError`, as on a `.litertlm`. When backends are registered, installation requires one that can run
 the file; with none registered, installation can proceed. The opt-in
-`LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3
-runs native EmbeddingGemma 2 GGUF text embeddings:
+`LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3 (core 2.5.0, llamadart
+0.15.1) runs EmbeddingGemma 2 GGUF text embeddings natively (measured on macOS
+CPU/Metal and Linux/Windows CPU; iOS not qualified). It claims no file on Web.
+Its app setup (the `hooks: user_defines: llamadart:` block, the Apple companion
+package, Android ABIs) is in that package's README and `doc/embeddings.md`.
 
 ```dart
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -164,7 +167,18 @@ import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 await FlutterEdgeAi.initialize(
   embeddingBackends: const [LlamaEmbeddingBackend()],
 );
+await FlutterEdgeAi.installEmbedder()
+    .modelFromFile('/models/embeddinggemma-2-Q8_0.gguf') // no tokenizer
+    .install();
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
 ```
+
+- Text only: `supportImage`, `supportAudio` and `PreferredBackend.npu` throw
+  `EmbeddingLoadException`. CPU and GPU are honoured, and `activeBackend`
+  reports what loaded. Only the `gemma-embedding2` architecture loads.
+- `maxInputTokens` is 1024, task prefix and special tokens included. A longer
+  input throws `EmbeddingInputTooLongException` and is never truncated.
+- A URL that does not end in `.gguf` needs an installed file name that does.
 
 Keep GGUF and LiteRT under separate RAG vector profile IDs, even for equal dimensions.
 `flutter_edge_ai_embeddings` contains tokenizer implementations only; runtime
@@ -330,11 +344,12 @@ final npuIndex = await rag.open(
   holds (text → image 10/10).
 - Nothing falls back: a per-SoC bundle without `npu`, the generic bundle with
   `npu`, `npu` on iOS/macOS/Linux x64/Web, a Qualcomm bundle on Windows, a
-  Tensor bundle off Android, a build without the bundle vendor's flag
+  Tensor or MediaTek bundle off Android, a build without the bundle vendor's flag
   (`qualcomm_npu`, `google_tensor_npu`, `mediatek_npu`), a device without a
   reachable NPU of
   that vendor (for Tensor: not a Tensor Pixel on Android 16 or later, or a BP2A
-  build), and a bundle the NPU cannot run (another SoC's or Tensor
+  build; for MediaTek: below Android 12, or no NeuroPilot adapter opens in the
+  app), and a bundle the NPU cannot run (another SoC's or Tensor
   generation's) each throw
   `EmbeddingLoadException` with the fix. A loaded embedder is never reused for
   the other backend.
@@ -346,7 +361,11 @@ final npuIndex = await rag.open(
   every Windows x64 build carries the Intel stack (LiteRtDispatch.dll,
   OpenVINO, TBB) beside the executable, and its absence is refused by name.
   Profile id: the CPU text id plus `-npu-ptl`, shared by the 270m and the 440m.
-  An Intel bundle on Android or Linux is refused.
+  An Intel bundle on Android or Linux is refused. The 270m was measured on a
+  Panther Lake PC (2026-10-21, OpenVINO 2026.4.1, the stack of
+  `flutter_edge_ai_litertlm` 1.17.0): 768-dimensional vectors, load about
+  0.9 s; the 440m is not measured. Each load writes a 74.5 MB weight bank to
+  `%TEMP%`, deleted when the embedder closes.
 - **Google Tensor G5/G6 (Android arm64, `flutter_edge_ai_litertlm` 1.15.0).**
   `…_Google_Tensor_G5.litertlm` / `…_Google_Tensor_G6.litertlm` (270m, 440m)
   load the same way with `preferredBackend: PreferredBackend.npu`, in an app
@@ -656,7 +675,7 @@ final matches = await photos.search(query: EmbeddingInput.text('a red bicycle'))
 
 The active embedder embeds images with the EmbeddingGemma 2 440m or 740m
 bundle (above; on Web from `flutter_edge_ai_litertlm` 1.13.1). With any other
-model — the 270m, EmbeddingGemma 1, Gecko, ONNX —
+model — the 270m, EmbeddingGemma 1, Gecko, ONNX, a GGUF —
 `getActiveEmbedder(supportImage: true)`, and therefore `open()` of an image
 index with the active embedder, fails with `EmbeddingLoadException`. A
 custom `RagEmbedder` can embed media with any model. A text index and an image

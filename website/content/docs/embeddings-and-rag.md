@@ -51,8 +51,8 @@ larger chunk just because the model file declares a larger context.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_litertlm: ^1.16.0
+  flutter_edge_ai: ^2.5.1
+  flutter_edge_ai_litertlm: ^1.17.0
   flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.1.2
   flutter_edge_ai_sqlite: ^2.1.1 # all six platforms, including Web
@@ -79,11 +79,13 @@ LiteRT.js loader and **rag/sqlite3.wasm**; EmbeddingGemma 2 needs only the
 
 | Model | Files | Platforms | Tokenizer | Longest input |
 |---|---|---|---|---|
-| EmbeddingGemma 2 (text, images, audio) | one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web on WebGPU; per-SoC bundles on Qualcomm NPUs, on Google Tensor G5/G6 (Android, opt-in), and on Intel Panther Lake NPUs on Windows | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 (text, images, audio) | one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web on WebGPU; per-SoC bundles on Qualcomm NPUs, on Google Tensor G5/G6 (Android, opt-in), on MediaTek MT6991/MT6993 (Android, opt-in, not run on such a phone yet), and on Intel Panther Lake NPUs on Windows | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 GGUF (text) | one `.gguf` | native (macOS CPU/Metal, Linux and Windows CPU measured; Android and iOS not qualified); no Web | inside the file | 1024 tokens |
 | EmbeddingGemma 1, Gecko | `.tflite` + tokenizer file | Android, iOS, macOS, Linux, Windows, Web | `flutter_edge_ai_embeddings` | the model's sequence length |
 | MiniLM, EmbeddingGemma ONNX | `.onnx` + `tokenizer.json` | native via **flutter_edge_ai_onnx**; Web for WordPiece models | `flutter_edge_ai_embeddings` | the graph's static length, or none |
 
-The first two run on **LiteRtEmbeddingBackend** from **flutter_edge_ai_litertlm**;
+The first two run on **LiteRtEmbeddingBackend** from **flutter_edge_ai_litertlm**,
+the GGUF one on **LlamaEmbeddingBackend** from **flutter_edge_ai_llama**,
 the ONNX ones on **OnnxEmbeddingBackend** from **flutter_edge_ai_onnx**. LiteRT
 EmbeddingGemma (1 and 2) and Gecko produce 768-dimensional vectors;
 all-MiniLM-L6-v2 produces 384. A number such as 256 in an artifact name is the
@@ -520,7 +522,8 @@ await FlutterEdgeAi.installEmbedder()
 On native, current LiteRT and ONNX embedding paths run on CPU, except the
 EmbeddingGemma 2 per-SoC bundles, which run on a Qualcomm NPU
 ([above](#embeddinggemma-2-on-a-qualcomm-npu)), a Google Tensor one
-([above](#embeddinggemma-2-on-a-google-tensor-npu)) or, on Windows, an Intel one
+([above](#embeddinggemma-2-on-a-google-tensor-npu)), a MediaTek one (with
+`mediatek_npu: true`, see [LiteRT-LM](/docs/litertlm)) or, on Windows, an Intel one
 ([above](#embeddinggemma-2-on-an-intel-npu)). On Web the `.tflite` and ONNX
 paths try WebGPU and can fall back to WASM; EmbeddingGemma 2 runs on WebGPU
 only, with no fallback. **preferredBackend** reaches the embedder only as

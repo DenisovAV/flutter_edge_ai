@@ -84,9 +84,11 @@ LiteRT.js loader and **rag/sqlite3.wasm**; EmbeddingGemma 2 needs only the
 | EmbeddingGemma 1, Gecko | `.tflite` + tokenizer file | Android, iOS, macOS, Linux, Windows, Web | `flutter_edge_ai_embeddings` | the model's sequence length |
 | MiniLM, EmbeddingGemma ONNX | `.onnx` + `tokenizer.json` | native via **flutter_edge_ai_onnx**; Web for WordPiece models | `flutter_edge_ai_embeddings` | the graph's static length, or none |
 
-The first two run on **LiteRtEmbeddingBackend** from **flutter_edge_ai_litertlm**,
-the GGUF one on **LlamaEmbeddingBackend** from **flutter_edge_ai_llama**,
-the ONNX ones on **OnnxEmbeddingBackend** from **flutter_edge_ai_onnx**. LiteRT
+The `.litertlm` and `.tflite` models run on **LiteRtEmbeddingBackend** from
+**flutter_edge_ai_litertlm**, the GGUF one on **LlamaEmbeddingBackend** from
+**flutter_edge_ai_llama** (on macOS, LiteRT-LM's CocoaPods recipe and
+llama.cpp's Swift Package Manager companion are not qualified in one app), the
+ONNX ones on **OnnxEmbeddingBackend** from **flutter_edge_ai_onnx**. LiteRT
 EmbeddingGemma (1 and 2) and Gecko produce 768-dimensional vectors;
 all-MiniLM-L6-v2 produces 384. A number such as 256 in an artifact name is the
 maximum input length in tokens, not the vector dimension. See
@@ -523,7 +525,8 @@ On native, current LiteRT and ONNX embedding paths run on CPU, except the
 EmbeddingGemma 2 per-SoC bundles, which run on a Qualcomm NPU
 ([above](#embeddinggemma-2-on-a-qualcomm-npu)), a Google Tensor one
 ([above](#embeddinggemma-2-on-a-google-tensor-npu)), a MediaTek one (with
-`mediatek_npu: true`, see [LiteRT-LM](/docs/litertlm)) or, on Windows, an Intel one
+`mediatek_npu: true`, see [LiteRT-LM](/docs/litertlm); not run on an MT6991/MT6993
+phone yet) or, on Windows, an Intel one
 ([above](#embeddinggemma-2-on-an-intel-npu)). On Web the `.tflite` and ONNX
 paths try WebGPU and can fall back to WASM; EmbeddingGemma 2 runs on WebGPU
 only, with no fallback. **preferredBackend** reaches the embedder only as

@@ -104,7 +104,7 @@ Add these hosted dependencies to your app:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai: ^2.5.1
   flutter_edge_ai_llama: ^0.0.3
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.15.0

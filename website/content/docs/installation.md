@@ -54,7 +54,7 @@ dependencies:
 | Generate text embeddings with EmbeddingGemma 2 (`.litertlm`) | `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
 | Embed images with EmbeddingGemma 2 (the 440m or 740m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
 | Embed audio, or several parts in one vector, with EmbeddingGemma 2 (the 740m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) with `flutter_edge_ai` 2.3.1; 1.13.2 on Web |
-| Generate text embeddings with EmbeddingGemma 2 (`.gguf`, native) | `flutter_edge_ai_llama` 0.0.3 (`LlamaEmbeddingBackend`) alone; see [llama.cpp](/docs/llama) |
+| Generate text embeddings with EmbeddingGemma 2 (`.gguf`, native) | `flutter_edge_ai_llama` 0.0.3 (`LlamaEmbeddingBackend`), no tokenizer package; on iOS/macOS also `llamadart_llama_cpp_flutter`; see [llama.cpp](/docs/llama) |
 | Generate text embeddings with EmbeddingGemma 1 / Gecko (`.tflite`) | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
 | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_embeddings` + `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
 | On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
@@ -144,7 +144,7 @@ void main() async {
 | `inferenceEngines: [LlamaEngineProvider()]` | `flutter_edge_ai_llama` | `.gguf` models via llama.cpp, `ModelFileType.gguf` (mobile + desktop + web) — [llama.cpp](/docs/llama) |
 | `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | embeddings: EmbeddingGemma 2 `.litertlm` (text, images, audio; native and WebGPU) and `.tflite` models |
 | `embeddingBackends: [OnnxEmbeddingBackend()]` | `flutter_edge_ai_onnx` | text embeddings from ONNX/ORT models |
-| `embeddingBackends: [LlamaEmbeddingBackend()]` | `flutter_edge_ai_llama` | EmbeddingGemma 2 `.gguf` text embeddings, native only; the GGUF carries its own tokenizer |
+| `embeddingBackends: [LlamaEmbeddingBackend()]` | `flutter_edge_ai_llama` | EmbeddingGemma 2 `.gguf` text embeddings, native only (GPU on Apple, CPU on Android); the GGUF carries its own tokenizer — see [llama.cpp](/docs/llama) |
 | `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by `LiteRtEmbeddingBackend` and `OnnxEmbeddingBackend` for `.tflite` and `.onnx` models — on the web for `.onnx` only, since LiteRT.js tokenizes `.tflite` in the browser; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |
 | `sttBackends: [LiteRtSttBackend()]` | `flutter_edge_ai_speech` | speech-to-text (native only) |
 | `ttsBackends: [LiteRtTtsBackend()]` | `flutter_edge_ai_speech` | text-to-speech (native only) |

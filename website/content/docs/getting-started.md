@@ -48,7 +48,8 @@ only the engines, stores and features your app uses — see
   1.16.0): `FlutterEdgeAi.openModel(spec)` builds a caller-owned model on every
   call, so one file can be open on CPU and GPU, or two files at once. See
   [Desktop](/docs/desktop#several-models-at-once).
-- **Deciders from a language model** (experimental, `flutter_edge_ai` 2.5.0):
+- **Deciders from a language model** (experimental, `flutter_edge_ai` 2.5.0 with
+  `flutter_edge_ai_litertlm` 1.16.0, native, `PreferredBackend.cpu` only):
   `InferenceModel.createDecider` scores the options on a `.litertlm` trained on
   the decision with LiteTune. See
   [Decisions](/docs/decisions#deciders-from-a-language-model).
@@ -56,8 +57,9 @@ only the engines, stores and features your app uses — see
   on MediaTek Android devices, opt-in with `mediatek_npu: true`. See
   [LiteRT-LM](/docs/litertlm).
 - **Intel's Gemma 4 12B on the Windows NPU** (`flutter_edge_ai_litertlm`
-  1.17.0): OpenVINO 2026.4.1, and the weight banks a killed app left
-  in `%TEMP%` are deleted. See [Desktop](/docs/desktop).
+  1.17.0): OpenVINO 2026.4.1, and the next NPU load deletes the `%TEMP%` weight
+  banks a killed 1.17.0 app left (older ones after a restart). See
+  [Desktop](/docs/desktop).
 - **GGUF embeddings** (`flutter_edge_ai_llama` 0.0.3): `LlamaEmbeddingBackend`
   runs EmbeddingGemma 2 `.gguf` text embeddings natively. See
   [llama.cpp](/docs/llama).

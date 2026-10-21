@@ -186,7 +186,9 @@ NeuroPilot runtime it drives is part of the phone; a phone whose vendor does
 not expose it to apps is refused with that reason. Offline, download the AAR
 and add `mediatek_npu_aar: <path>`; `mediatek_npu_maven_url` names a mirror.
 Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug
-build: Gemma 3 1B (`…_mt6989`) generates on the NPU; Gemma 3 1B `…_mt6991` and
+build: Gemma 3 1B (`…_mt6989`) generates on the NPU (load 6.6 s, about 5 s of
+it waiting for NeuroPilot's `INeuronService`, absent on that tablet; first token
+115 ms); Gemma 3 1B `…_mt6991` and
 EmbeddingGemma 2 `…_MT6991`/`…_MT6993` bundles are refused when the engine is
 created. The Qwen3 0.6B MT6993 bundle fails on its tokenizer
 ([LiteRT-LM#3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865))
@@ -221,8 +223,8 @@ On Windows x64 the Intel Panther Lake bundles need no flag (from 1.13.2): see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 
 **For LLMs, NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
-those work on Qualcomm, Intel and Google Tensor G6. MediaTek has no Gemma 4
-bundle: Gemma 3 1B `…_mt6989` generates on a Dimensity 9300+, and whether it
+those work on Qualcomm, Intel and Google Tensor G6. Google publishes no Gemma 4
+bundle for MediaTek: Gemma 3 1B `…_mt6989` generates on a Dimensity 9300+, and whether it
 keeps its prefill chunks is not measured. Most **Gemma 3** bundles
 do not on Qualcomm or Intel (Tensor not measured), and they fail
 silently — the model answers from the first prefill chunk alone, fluently,
@@ -333,7 +335,12 @@ bundle compiled for an NPU there, with or without the flag.
 minimum severity of LiteRT-LM's own native log before each engine is created
 (`litert_lm_set_min_log_level`). The level is process-wide; null leaves the
 level the process has, LiteRT-LM's default until an engine sets one. `silent`
-silences LiteRT-LM, not the other native loggers in the process. On Windows,
+silences LiteRT-LM's library, its absl, LiteRT and TFLite logging included
+(upstream `SetMinLogSeverity`); other native libraries keep their own logs (the
+GPU accelerator, the NPU dispatch, drivers, the separately loaded `LiteRt`
+library). Native platforms only: the web engine accepts it and ignores it.
+Above `info`, debug builds lose the INFO lines from which a failed create names
+the backend a model requires. On Windows,
 when the app's output is redirected (`app.exe 2> err.log`), the lines follow
 the redirect from 1.17.0; before that the Flutter runner's `AttachConsole` sent
 them to the parent's console.

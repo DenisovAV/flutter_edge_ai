@@ -252,7 +252,7 @@ build calibrated only on short prompts loses a longer prompt past ~450 tokens
 (Gemma 3 1B,
 [litert-torch#1344](https://github.com/google-ai-edge/litert-torch/issues/1344)).
 On Intel it happens regardless of size, through a different defect. Run a
-**Gemma 4** bundle on the NPU (MediaTek has none: whether its Gemma 3 bundles keep
+**Gemma 4** bundle on the NPU (none is published for MediaTek: whether its Gemma 3 bundles keep
 their chunks is not measured), or the same model's generic bundle on
 `PreferredBackend.cpu` / `.gpu` — a bundle compiled for an NPU is refused there
 with a `LiteRtLmBundleException`. Upstream:

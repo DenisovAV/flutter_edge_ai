@@ -851,11 +851,13 @@ Intel's Gemma 4 12B for Panther Lake needs 1.17.0: its NPU blobs carry metadata
 2.7, which the OpenVINO 2026.3 of earlier releases refuses; 1.17.0 ships
 OpenVINO 2026.4.1. A bundle whose NPU blobs carry no weights makes the dispatch
 copy them to `%TEMP%\litert_ov_bank_<hex>.bin` at every load (5.55 GB for the
-12B); from 1.17.0 the next Intel NPU load deletes the banks an exited app left
-behind and prints how much it freed. See
+12B); from 1.17.0 the next Intel NPU load deletes the banks an exited 1.17.0
+app left behind, and banks no app claimed (an older release, the LiteRT-LM CLI)
+once the PC has restarted since they were written, and prints how much it
+freed. See
 [Desktop → Windows NPU](https://flutteredge.ai/docs/desktop).
 
-Run a Gemma 4 bundle on the NPU (MediaTek has none: whether its Gemma 3 bundles
+Run a Gemma 4 bundle on the NPU (none is published for MediaTek: whether its Gemma 3 bundles
 keep their chunks is not measured): most Gemma 3 bundles drop every prefill chunk
 after the first, with no error, and answer from the start of the prompt alone;
 of the published Qualcomm 1B files only `…_sm8850` keeps them
@@ -954,8 +956,12 @@ closes it. Engine creations run one at a time. Measured on macOS only; see
 sets the minimum severity of LiteRT-LM's own native log before each engine
 is created (`litert_lm_set_min_log_level`). The level is
 process-wide; null leaves the level the process has, LiteRT-LM's default until
-an engine sets one. `silent` silences LiteRT-LM, not the other native loggers
-in the process. On Windows, when the app's output is redirected
+an engine sets one. `silent` silences LiteRT-LM's library, its absl, LiteRT and TFLite logging included
+(upstream `SetMinLogSeverity`); other native libraries keep their own logs (the
+GPU accelerator, the NPU dispatch, drivers, the separately loaded `LiteRt`
+library). Native platforms only: the web engine accepts it and ignores it.
+Above `info`, debug builds lose the INFO lines from which a failed create names
+the backend a model requires. On Windows, when the app's output is redirected
 (`app.exe 2> err.log`), the lines follow the redirect from 1.17.0; before
 that the Flutter runner's `AttachConsole` sent them to the parent's console.
 

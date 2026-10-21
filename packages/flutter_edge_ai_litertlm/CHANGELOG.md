@@ -1,7 +1,6 @@
 ## 1.17.0
 - MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).
-- Windows Intel NPU on OpenVINO 2026.4.1 (`native-v0.18.0-g`): Intel's Gemma 4 12B for Panther Lake loads.
-- Windows: an Intel NPU load deletes the `%TEMP%` weight banks that exited apps left.
+- Windows Intel NPU on OpenVINO 2026.4.1 (`native-v0.18.0-g`): Intel's 12B loads; stale `%TEMP%` banks are deleted.
 - Windows: LiteRT-LM's native log follows a redirected stderr (`app.exe 2> err.log`).
 - A macOS app that cannot load LiteRT-LM is told why and how to fix it (#689).
 - Docs: which Gemma 3 bundles lose prefill chunks on the NPU (LiteRT-LM#3508).

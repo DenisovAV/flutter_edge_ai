@@ -142,23 +142,22 @@ replaced the model before it ran (`EmbedderClosedException`) is retried once.
 Queries over text documents use `TaskType.retrievalQuery`; pass `queryTask:`
 for another task, e.g. `TaskType.questionAnswering`.
 
-## Custom embedding providers (core 2.5.0)
+## GGUF embeddings (`flutter_edge_ai_llama` 0.0.3)
 
-Engine authors import the SPI:
-
-```dart
-import 'package:flutter_edge_ai/engine.dart';
-```
-
-Core accepts self-contained `.gguf` embedding files without a separate
-tokenizer. A `.gguf` carries its own tokenizer: adding a `tokenizerFrom…()` makes
-`install()` throw `ArgumentError`, as on a `.litertlm`. When backends are registered, installation requires one that can run
-the file; with none registered, installation can proceed. The opt-in
 `LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3 (core 2.5.0, llamadart
-0.15.1) runs EmbeddingGemma 2 GGUF text embeddings natively (measured on macOS
-CPU/Metal and Linux/Windows CPU; iOS not qualified). It claims no file on Web.
-Its app setup (the `hooks: user_defines: llamadart:` block, the Apple companion
-package, Android ABIs) is in that package's README and `doc/embeddings.md`.
+0.15.1) runs EmbeddingGemma 2 GGUF text embeddings natively: measured on macOS
+CPU/Metal and Linux/Windows CPU; Android (CPU only) and iOS are not qualified,
+and only the Q8_0 file below is numerically qualified. A `.gguf` carries its own
+tokenizer: a `tokenizerFrom…()` makes `install()` throw `ArgumentError`.
+
+App setup (that package's README, *Add it to your app*, and `doc/platforms.md`):
+`hooks: user_defines: llamadart: llamadart_native_runtimes: [llama_cpp]` in the
+app's pubspec, or the workspace root's; on iOS/macOS also
+`llamadart_llama_cpp_flutter: 0.15.0` in the app's own dependencies,
+`flutter config --enable-swift-package-manager`, and iOS 16.4 / macOS 14
+deployment targets; on Android arm64-v8a and x86_64 only. LiteRT-LM's macOS
+CocoaPods recipe turns Swift Package Manager off, so GGUF and LiteRT-LM in one
+macOS app are not qualified.
 
 ```dart
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -168,19 +167,45 @@ await FlutterEdgeAi.initialize(
   embeddingBackends: const [LlamaEmbeddingBackend()],
 );
 await FlutterEdgeAi.installEmbedder()
-    .modelFromFile('/models/embeddinggemma-2-Q8_0.gguf') // no tokenizer
+    .modelFromNetwork(
+      'https://huggingface.co/ggml-org/embeddinggemma-2-GGUF/resolve/'
+      'bfcd298762cc34d0357ece5ebdd31791a3a374d8/embeddinggemma-2-Q8_0.gguf',
+    ) // no tokenizer
     .install();
 final embedder = await FlutterEdgeAi.getActiveEmbedder();
 ```
 
 - Text only: `supportImage`, `supportAudio` and `PreferredBackend.npu` throw
-  `EmbeddingLoadException`. CPU and GPU are honoured, and `activeBackend`
-  reports what loaded. Only the `gemma-embedding2` architecture loads.
+  `EmbeddingLoadException`. On Android (every device) and iOS simulators an
+  explicit `gpu` falls back to CPU with a warning, or throws with
+  `LlamaEmbeddingBackend(backendFallback: false)`; `activeBackend` reports what
+  loaded.
+- Only a mean-pooled `gemma-embedding2` GGUF loads; any other architecture or
+  pooling throws `EmbeddingLoadException`.
 - `maxInputTokens` is 1024, task prefix and special tokens included. A longer
   input throws `EmbeddingInputTooLongException` and is never truncated.
-- A URL that does not end in `.gguf` needs an installed file name that does.
+- A URL that does not end in `.gguf` needs
+  `modelFromNetwork(url, filename: '<name>.gguf')`; without it `install()`
+  throws `StateError` asking for a tokenizer.
+- On Web it claims no file: with it the only backend registered, installing a
+  `.gguf` throws `UnsupportedError` before anything is downloaded.
+- Keep GGUF and LiteRT under separate profile ids, even at 768 dimensions.
+  `FlutterEdgeAiActiveEmbedder.forActiveModel(namespace:)` does it by itself,
+  because the file names differ; with an explicit `profileId`, name the format
+  and quantization (e.g. `embeddinggemma2-gguf-q8_0`). A store bound to the
+  LiteRT id refuses to open with the GGUF embedder.
 
-Keep GGUF and LiteRT under separate RAG vector profile IDs, even for equal dimensions.
+## Custom embedding providers (core 2.5.0)
+
+Engine authors import the SPI:
+
+```dart
+import 'package:flutter_edge_ai/engine.dart';
+```
+
+Core accepts self-contained `.gguf` embedding files without a separate
+tokenizer (the app recipe is the GGUF embeddings section above). When backends are registered, installation requires one that can run
+the file; with none registered, installation can proceed.
 `flutter_edge_ai_embeddings` contains tokenizer implementations only; runtime
 passes belong to their engine packages.
 
@@ -293,7 +318,8 @@ final eg2Index = await rag.open(
 The same repos hold each bundle compiled for one SoC's NPU
 (`embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm`,
 `embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275.litertlm`, …). It runs on
-Qualcomm Android (arm64) and Qualcomm Linux arm64, in an app whose pubspec sets
+Qualcomm Android (arm64) and Qualcomm Linux arm64, in an app whose pubspec (the
+workspace root's, for a workspace member) sets
 `hooks: user_defines: flutter_edge_ai_litertlm: qualcomm_npu: true` (the flag
 the LLM NPU path uses), loaded with `preferredBackend: PreferredBackend.npu`:
 
@@ -348,8 +374,8 @@ final npuIndex = await rag.open(
   (`qualcomm_npu`, `google_tensor_npu`, `mediatek_npu`), a device without a
   reachable NPU of
   that vendor (for Tensor: not a Tensor Pixel on Android 16 or later, or a BP2A
-  build; for MediaTek: below Android 12, or no NeuroPilot adapter opens in the
-  app), and a bundle the NPU cannot run (another SoC's or Tensor
+  build; for MediaTek: below Android 12, a SoC manufacturer other than
+  Mediatek or MTK, or no NeuroPilot adapter opens in the app), and a bundle the NPU cannot run (another SoC's or Tensor
   generation's) each throw
   `EmbeddingLoadException` with the fix. A loaded embedder is never reused for
   the other backend.
@@ -364,20 +390,23 @@ final npuIndex = await rag.open(
   An Intel bundle on Android or Linux is refused. The 270m was measured on a
   Panther Lake PC (2026-10-21, OpenVINO 2026.4.1, the stack of
   `flutter_edge_ai_litertlm` 1.17.0): 768-dimensional vectors, load about
-  0.9 s; the 440m is not measured. Each load writes a 74.5 MB weight bank to
-  `%TEMP%`, deleted when the embedder closes.
+  0.9 s; the 440m is not measured. Each 270m load writes a 74.5 MB weight bank
+  to `%TEMP%` (the 440m's is not measured), deleted when the embedder closes.
 - **Google Tensor G5/G6 (Android arm64, `flutter_edge_ai_litertlm` 1.15.0).**
   `…_Google_Tensor_G5.litertlm` / `…_Google_Tensor_G6.litertlm` (270m, 440m)
   load the same way with `preferredBackend: PreferredBackend.npu`, in an app
-  whose pubspec sets `google_tensor_npu: true` (the flag the LLM path uses), on
+  whose pubspec (the workspace root's, for a workspace member) sets
+  `hooks: user_defines: flutter_edge_ai_litertlm: google_tensor_npu: true` (the
+  flag the LLM path uses), on
   a Pixel with that Tensor generation and Android 16 or later, not a BP2A
   build. Profile id: the CPU text id plus the SoC, e.g. `-npu-tensor_g6`,
   shared by the 270m and the 440m. Run on a Pixel 11 (Tensor G6) with a debug
   build; a Tensor G5 and a release-signed build are not run yet.
 - **MediaTek MT6991/MT6993 (Android arm64, `flutter_edge_ai_litertlm` 1.17.0).**
   `…_MediaTek_MT6991.litertlm` / `…_MediaTek_MT6993.litertlm` are accepted the
-  same way with `preferredBackend: PreferredBackend.npu`, in an app whose pubspec sets
-  `mediatek_npu: true`, on a phone with that SoC, Android 12 or later, whose
+  same way with `preferredBackend: PreferredBackend.npu`, in an app whose pubspec
+  (the workspace root's, for a workspace member) sets
+  `hooks: user_defines: flutter_edge_ai_litertlm: mediatek_npu: true`, on a phone with that SoC, Android 12 or later, whose
   vendor exposes NeuroPilot to apps. Profile id: the CPU text id plus the SoC,
   e.g. `-npu-mt6991`. Not run on an MT6991/MT6993 phone yet; the LLM path
   runs on an MT6989.

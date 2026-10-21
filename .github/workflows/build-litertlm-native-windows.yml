@@ -245,8 +245,11 @@ jobs:
             'openvino_intel_npu_plugin.dll',
             'openvino_intel_npu_compiler.dll',
             'openvino_intel_npu_compiler_loader.dll',
-            # 2026.4: the NPU plugin loads it to run Intel's newer blobs
-            # (metadata 2.7, Gemma 4 12B for Panther Lake).
+            # 2026.4: the NPU plugin loads it by name, at run time, for blobs
+            # that run on Intel's NPU VM runtime. Gemma 4 E2B and Intel's 12B
+            # for Panther Lake load without it (LNL + PTL, 2026-10-20); it
+            # ships because Intel's own kit does. intelNpuLibs (npu_stacks.dart)
+            # names it too, or it would never reach the app.
             'openvino_intel_npu_vm_runtime.dll',
             'openvino_tensorflow_lite_frontend.dll'
           )

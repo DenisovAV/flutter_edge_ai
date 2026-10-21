@@ -38,6 +38,24 @@ String _osOf(String abi) => abi.split('_').first;
 String _fileOf(String name, String os) =>
     os == 'windows' ? '$name.dll' : 'lib$name.so';
 
+/// `$ovWanted = @( … )` of a Windows native workflow: the OpenVINO DLLs CI
+/// copies into the tarball (TBB is matched by wildcard there, not listed).
+Set<String> _ovWanted(String workflow) {
+  final yaml = File('../../.github/workflows/$workflow').readAsStringSync();
+  // Up to the line that is only `)`: the comments inside the list hold
+  // parentheses of their own.
+  final block = RegExp(
+    r'\$ovWanted = @\(\n(.*?)^\s*\)\s*$',
+    multiLine: true,
+    dotAll: true,
+  ).firstMatch(yaml);
+  expect(block, isNotNull, reason: '\$ovWanted not found in $workflow');
+  return {
+    for (final line in block!.group(1)!.split('\n'))
+      if (RegExp(r"^\s*'([^']+)'").firstMatch(line) case final m?) m.group(1)!,
+  };
+}
+
 void main() {
   test('every vendor\'s dispatch is a required file of the tarball of each of '
       'its ABIs', () {
@@ -99,6 +117,22 @@ void main() {
       } else {
         expect(reason, contains('$define: true'), reason: vendor.name);
       }
+    }
+  });
+
+  test('the OpenVINO DLLs the Windows workflows put in the tarball are the '
+      'ones intelNpuLibs bundles into the app', () {
+    // One set in two places (npu_stacks.dart): a DLL only in $ovWanted reaches
+    // the cache and never the app, as openvino_intel_npu_vm_runtime did.
+    final bundled = {
+      for (final lib in intelNpuLibs)
+        if (lib != intelDispatchLib && !lib.startsWith('tbb')) '$lib.dll',
+    };
+    for (final workflow in const [
+      'build-litertlm-native-windows.yml',
+      'build-litertlm-native.yml',
+    ]) {
+      expect(_ovWanted(workflow), bundled, reason: workflow);
     }
   });
 }

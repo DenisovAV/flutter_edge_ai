@@ -222,7 +222,8 @@ const qualcommNpuLibsLinux = [
 /// 78.8 MB of the stack, allow-listed and `throw`-guarded in CI, silently not
 /// bundled, so openvino_intel_npu_plugin could not resolve its compiler and
 /// backend=npu stayed broken in the release that set out to fix it. Change
-/// one, change the other. Release TBB only: the debug variants were once
+/// one, change the other; test/npu_build_consistency_test.dart fails when
+/// they differ. Release TBB only: the debug variants were once
 /// registered into user apps — 1.8 MB of parallel debug builds beside the
 /// release set, the mis-binding hazard the workflow's allow-list exists to
 /// avoid.
@@ -232,6 +233,7 @@ const intelNpuLibs = [
   'openvino_intel_npu_plugin',
   'openvino_intel_npu_compiler',
   'openvino_intel_npu_compiler_loader',
+  'openvino_intel_npu_vm_runtime',
   'openvino_tensorflow_lite_frontend',
   'tbb12',
   'tbbbind_2_5',

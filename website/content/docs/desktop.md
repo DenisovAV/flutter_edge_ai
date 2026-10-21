@@ -190,12 +190,12 @@ flutter:
     enable-swift-package-manager: false
 ```
 
-2. Replace that Podfile's `post_install` block with the one below; the next
-   build runs `pod install` itself.
+2. Replace that Podfile's `post_install` block with the one below, keeping any
+   lines of your own inside it; the next build runs `pod install` itself.
 
 A green build proves nothing: without the block the first model load fails with
 `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. If the app already has a `macos/Podfile` (another plugin needs
-CocoaPods), keep SPM on and just paste the block. Use the pubspec setting rather
+CocoaPods), keep SPM on and only replace its `post_install` block. Use the pubspec setting rather
 than `flutter config --no-enable-swift-package-manager`, which changes only one
 machine — not your teammates' or CI.
 
@@ -263,6 +263,11 @@ post_install do |installer|
   end
 end
 ```
+
+From Flutter 3.50 (a beta at the time of writing) a build with the setting off prints `Enabling Swift Package
+Manager will be required in a future version of Flutter.`; the setting still
+works. A route that needs no Podfile is tracked in
+[#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689).
 
 **Entitlements** — add to both `macos/Runner/DebugProfile.entitlements` and
 `Release.entitlements`:

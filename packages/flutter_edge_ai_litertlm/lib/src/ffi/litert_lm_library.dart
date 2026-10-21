@@ -15,6 +15,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'litert_default_scope.dart';
+import 'macos_load_error.dart';
 import 'windows_std_handles.dart';
 
 /// Opens the LiteRT-LM shared library for the current platform.
@@ -29,16 +30,15 @@ import 'windows_std_handles.dart';
 /// embeddings-only app must not fail over a condition it does not depend on.
 ///
 /// Throws [UnsupportedError] on an Android ABI LiteRT-LM ships nothing for, and
-/// whatever `DynamicLibrary.open` throws when the library is not in the app.
+/// whatever `DynamicLibrary.open` throws when the library is not in the app
+/// (on macOS with a message that names the cause, [openMacOSLiteRtLm]).
 DynamicLibrary openLiteRtLmLibrary() {
   if (Platform.isIOS) {
     return DynamicLibrary.open(
       '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm',
     );
   }
-  if (Platform.isMacOS) {
-    return DynamicLibrary.open('LiteRtLm.framework/LiteRtLm');
-  }
+  if (Platform.isMacOS) return openMacOSLiteRtLm();
   if (Platform.isAndroid) {
     // LiteRT-LM ships android_arm64 only. Without this guard an x86_64
     // emulator's failure would name libStreamProxy, the first library the

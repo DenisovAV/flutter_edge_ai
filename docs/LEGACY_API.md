@@ -571,6 +571,8 @@ final chat = await model.createChat(
 
 #### Fine-tuning FunctionGemma
 
+> **⚠️ Outdated, no longer maintained.** The Colab notebooks below are kept for reference only. To fine-tune FunctionGemma or another small model into a `.litertlm` that Flutter Edge AI runs, use **[LiteTune](https://litetune.dev)** (`pip install litetune`; source on [GitHub](https://github.com/DenisovAV/litetune)). The [function-calling codelab](https://flutteredge.ai/codelabs/function-calling-flutter-gemma) walks through it end to end.
+
 You can fine-tune FunctionGemma for your custom functions using the provided Colab notebooks:
 
 **Pipeline:**

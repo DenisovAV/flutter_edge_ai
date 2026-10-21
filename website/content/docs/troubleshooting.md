@@ -80,6 +80,13 @@ final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
 - **Build issues:** ensure the minimum iOS version is at least 15.0 (16.0 with `flutter_edge_ai_mediapipe`, 16.4 with `flutter_edge_ai_llama`). If the app has a `Podfile` (any app using `flutter_edge_ai_mediapipe` does — it ships no `Package.swift`), also use static linking (`use_frameworks! :linkage => :static`) and reinstall with `cd ios && pod install --repo-update`. An SPM-only app has no `Podfile`; there the deployment target lives on the Runner target in Xcode.
 - **Simulator GPU disabled:** iOS Simulator's Metal has a 256 MB single-allocation cap that LLM weight tensors exceed (e.g. Gemma 3 1B's KV cache alone is 288 MB). Use CPU on the simulator, or test GPU on a physical iPhone. This is a simulator limit, not a plugin bug.
 
+## macOS
+
+- **`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`** (from `flutter_edge_ai_litertlm` 1.16.0 inside an error that says `LiteRT-LM did not load on macOS` and names this cause): the app is built with Swift Package Manager, the default since Flutter 3.44, so nothing copied LiteRT-LM's companion libraries into it. Every LiteRT feature fails to load (LLM, embeddings, speech), on every backend, and the build itself succeeds. Turn Swift Package Manager off for the app in `pubspec.yaml` and replace the `post_install` block of `macos/Podfile` with ours (an app that already has a `macos/Podfile` keeps Swift Package Manager on and only needs the block), see [Desktop → macOS](/docs/desktop#macos). If the block is already there, run `flutter clean` and build again. A route without a Podfile is tracked in [#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689).
+- **`incompatible architecture (have 'arm64', need 'x86_64')`:** LiteRT-LM ships for Apple silicon only. It does not run on an Intel Mac or in an x86_64 (Rosetta) process.
+- **`library load disallowed by system policy`:** macOS refused a quarantined or un-notarized library. Notarize the app; for a local test build, remove the quarantine attribute with `xattr -dr com.apple.quarantine` on the app.
+- **`have different Team IDs`:** macOS library validation refused a library. Sign the app and its frameworks with the same team, or add the `com.apple.security.cs.disable-library-validation` entitlement.
+
 ## Android
 
 - **`.litertlm` models require minSdk 30.** `libLiteRtLm.so` depends on API 30+ Bionic syscalls (`pthread_cond_clockwait`, `sem_clockwait`) that can't be shimmed on older devices. MediaPipe `.task` models work on lower API levels.
@@ -234,14 +241,20 @@ same way (`ModelType.qwen3`, `ModelFileType.litertlm`). See [#659](https://githu
 ## NPU
 
 **The model answers, fluently, about the beginning of a long prompt and ignores
-the rest.** That is the Gemma 3 family on an NPU. Nothing raises, nothing is
+the rest.** That is most Gemma 3 bundles on an NPU. Nothing raises, nothing is
 logged: every prefill chunk after the first is dropped, so the model genuinely
-never saw the end of your prompt. On Qualcomm it is a size threshold in the
-compiled bundle's prefill mask (~1 MiB; at prefill 128 the largest working
-`cache_length` for Gemma 3 — 4 attention heads per KV head — is 896, and every published
-`qualcomm.*` Gemma 3 bundle is built above it); on Intel it happens regardless
-of size, through a different defect. Run a **Gemma 4** bundle on the NPU, or move
-that model to `PreferredBackend.cpu` / `.gpu`. Upstream:
+never saw the end of your prompt. On Qualcomm the published 270M bundles for
+SM8750 and SM8850 and the 1B `…_sm8750` and `…_sm8550` do it; the 1B
+`…_sm8850` does not. In a bundle you build with `npu_export` it is a size
+threshold in the prefill mask (~1 MiB; at prefill 128 the largest working
+`cache_length` for Gemma 3 — 4 attention heads per KV head — is 896), and a
+build calibrated only on short prompts loses a longer prompt past ~450 tokens
+(Gemma 3 1B,
+[litert-torch#1344](https://github.com/google-ai-edge/litert-torch/issues/1344)).
+On Intel it happens regardless of size, through a different defect. Run a
+**Gemma 4** bundle on the NPU, or the same model's generic bundle on
+`PreferredBackend.cpu` / `.gpu` — a bundle compiled for an NPU is refused there
+with a `LiteRtLmBundleException`. Upstream:
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).
 
 Note that `maxTokens` is **not** clamped up to 1024 on the NPU attempt the way

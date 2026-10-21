@@ -14,6 +14,7 @@ import 'package:mutex/mutex.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
+import 'macos_load_error.dart';
 import 'native_turns.dart';
 import 'stream_start_failure.dart';
 import 'npu_vendor_host.dart';
@@ -815,7 +816,7 @@ class LiteRtLmFfiClient {
         '@executable_path/Frameworks/StreamProxy.framework/StreamProxy',
       );
     } else if (Platform.isMacOS) {
-      lib = DynamicLibrary.open('LiteRtLm.framework/LiteRtLm');
+      lib = openMacOSLiteRtLm();
       proxyLib = DynamicLibrary.open('StreamProxy.framework/StreamProxy');
     } else if (Platform.isLinux) {
       // Load order matters: libLiteRt.so must be loaded first with

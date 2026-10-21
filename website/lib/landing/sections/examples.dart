@@ -107,14 +107,20 @@ class Examples extends StatelessComponent {
             source(src: '${item.videoBase}.mp4', type: 'video/mp4'),
           ],
           classes: 'example-video',
-          autoplay: true,
+          // No `autoplay`, and `preload="none"`: a video with `autoplay`
+          // downloads in full whatever `preload` says, so the four demos
+          // (3.3 MB together) cost every visitor before this section was
+          // on screen. The landing page's play-when-visible script starts
+          // each one as its card scrolls into view and pauses it when it
+          // leaves; without JavaScript the poster stands in.
           loop: true,
           muted: true,
           poster: '${item.videoBase}-poster.jpg',
+          preload: Preload.none,
           attributes: const {
             'playsinline': '',
             'muted': '',
-            'preload': 'metadata',
+            'data-play-when-visible': '',
           },
         ),
       ]),

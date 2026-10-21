@@ -925,9 +925,9 @@ sets the minimum severity of LiteRT-LM's own native log before each engine
 is created (`litert_lm_set_min_log_level`). The level is
 process-wide; null leaves the level the process has, LiteRT-LM's default until
 an engine sets one. `silent` silences LiteRT-LM, not the other native loggers
-in the process. On Windows the lines go to the process's standard error and to
-an attached debugger (`OutputDebugString`) from 1.17.0; before that they
-reached neither.
+in the process. On Windows, when the app's output is redirected
+(`app.exe 2> err.log`), the lines follow the redirect from 1.17.0; before
+that the Flutter runner's `AttachConsole` sent them to the parent's console.
 
 ### Inspecting a model file
 

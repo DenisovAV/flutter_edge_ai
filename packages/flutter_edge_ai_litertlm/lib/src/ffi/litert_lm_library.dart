@@ -15,6 +15,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'litert_default_scope.dart';
+import 'windows_std_handles.dart';
 
 /// Opens the LiteRT-LM shared library for the current platform.
 ///
@@ -55,7 +56,9 @@ DynamicLibrary openLiteRtLmLibrary() {
     // libGemmaModelConstraintProvider.so resolve from the bundle's lib/.
     return DynamicLibrary.open('libLiteRtLm.so');
   }
-  if (Platform.isWindows) return DynamicLibrary.open('LiteRtLm.dll');
+  // Through the std-handle realignment: the embedding pass can be the first
+  // to load this static-CRT DLL (windows_std_handles.dart).
+  if (Platform.isWindows) return openBundledWindowsLibrary('LiteRtLm.dll');
   throw UnsupportedError(
     'LiteRT-LM is not available on ${Platform.operatingSystem}',
   );

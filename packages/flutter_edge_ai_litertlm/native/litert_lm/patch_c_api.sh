@@ -717,40 +717,4 @@ grep -qF 'absl::Status LlmLiteRtCompiledModelExecutorBase::SetCurrentStep(int ne
   "$DIR/runtime/executor/llm_litert_compiled_model_executor.cc" ||
   rewind_fail "the compiled-model executor's SetCurrentStep moved"
 
-# ── 17. Windows: LiteRT-LM's log reaches the process's stderr ──
-# LiteRtLm.dll links the C runtime statically (#456), and that runtime's
-# stderr reaches neither a file nor a console in a Flutter Windows app, even
-# when the process starts with stderr redirected: with nativeLogLevel verbose,
-# absl wrote nothing, an ERROR line included, while the Intel dispatch DLL's
-# lines arrived (Panther Lake, native-v0.18.0-f). c/windows_log_sink.cc adds
-# an absl LogSink that litert_lm_set_min_log_level installs on Windows: it
-# writes each line with WriteFile to GetStdHandle(STD_ERROR_HANDLE) and to
-# OutputDebugStringA, at the threshold that call set, and turns absl's own
-# stderr output off so no line is written twice. Other platforms compile it
-# out, and an app that never sets a level is unchanged.
-#
-# A real diff, applied like section 11, plus an anchor on the function it
-# extends.
-#
-# --ignore-whitespace: the Windows runner checks LiteRT-LM out with CRLF, and
-# the sed insertions of sections 1 and 4b/4c leave c/BUILD and c/engine.cc with
-# mixed line endings, which git does not normalise before applying. Content
-# must still match, so a moved upstream line still fails here.
-LOGSINK_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/windows_log_sink.patch"
-if git -C "$DIR" apply --check --ignore-whitespace "$LOGSINK_PATCH" 2>/dev/null; then
-  git -C "$DIR" apply --ignore-whitespace "$LOGSINK_PATCH"
-  echo "  OK: LiteRT-LM's log reaches stderr on Windows"
-elif git -C "$DIR" apply --reverse --check --ignore-whitespace "$LOGSINK_PATCH" 2>/dev/null; then
-  echo "  SKIP: Windows log sink already applied"
-else
-  echo "  ERROR: $LOGSINK_PATCH does not apply to this LiteRT-LM revision —" >&2
-  echo "         c/engine.cc or c/BUILD moved; re-create the patch against it." >&2
-  git -C "$DIR" apply --check --ignore-whitespace "$LOGSINK_PATCH" >&2 || true
-  exit 1
-fi
-grep -qF 'litert::lm::c::InstallWindowsStderrLogSink();' "$DIR/c/engine.cc" || {
-  echo "  ERROR: section 17: litert_lm_set_min_log_level does not install the sink" >&2
-  exit 1
-}
-
 echo "Patch complete."

@@ -22,6 +22,7 @@ import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'sigprof_mask.dart';
 import '../thinking_context.dart';
+import 'windows_std_handles.dart';
 import '../litert_lm_load_errors.dart';
 import '../litert_lm_log_level.dart';
 
@@ -869,8 +870,10 @@ class LiteRtLmFfiClient {
       // Preload LiteRt.dll first so the WebGPU accelerator and TopK sampler
       // can resolve LiteRt* C API + their own exports through the process
       // module list before sampler_factory does its LoadLibrary lookup
-      // (mirrors the Linux/Android RTLD_GLOBAL pattern).
-      proxyLib = DynamicLibrary.open('StreamProxy.dll');
+      // (mirrors the Linux/Android RTLD_GLOBAL pattern). StreamProxy.dll goes
+      // through the std-handle realignment, before any static-CRT DLL loads
+      // (windows_std_handles.dart).
+      proxyLib = openBundledWindowsLibrary('StreamProxy.dll');
       final loadGlobal = proxyLib
           .lookupFunction<
             Pointer Function(Pointer<Utf8>),

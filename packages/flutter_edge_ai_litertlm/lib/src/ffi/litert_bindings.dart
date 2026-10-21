@@ -23,6 +23,7 @@ import 'package:flutter_edge_ai/engine_io.dart';
 import 'package:ffi/ffi.dart';
 
 import 'litert_default_scope.dart';
+import 'windows_std_handles.dart';
 
 // ----- Opaque handle typedefs ------------------------------------------------
 
@@ -281,7 +282,9 @@ DynamicLibrary _openLiteRt() {
   // reachable through the loaded-module list regardless. See the header of
   // litert_default_scope.dart.
   if (Platform.isLinux) return DynamicLibrary.open('libLiteRt.so');
-  if (Platform.isWindows) return DynamicLibrary.open('LiteRt.dll');
+  // Windows does need the std-handle realignment: embeddings or speech can be
+  // the first to load this static-CRT DLL (windows_std_handles.dart).
+  if (Platform.isWindows) return openBundledWindowsLibrary('LiteRt.dll');
   throw UnsupportedError(
     'LiteRT is not available on ${Platform.operatingSystem}',
   );

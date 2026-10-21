@@ -5,7 +5,6 @@ import 'package:genkit/genkit.dart';
 import 'package:schemantic/schemantic.dart';
 
 import '../attempts.dart' show isTransient;
-import '../hybrid_model.dart' show kOnDevice;
 import 'hybrid_prompt.dart';
 import 'hybrid_routing_exception.dart';
 import 'hybrid_target.dart';
@@ -120,7 +119,10 @@ final class HybridRouter {
   }
 
   final Genkit _ai;
-  Genkit? _cloudAi;
+
+  /// The private Genkit of the cloud plugins; set when there is a cloud
+  /// target, and read only by a cloud target's proxy.
+  late final Genkit _cloudAi;
   final Map<String, Model> _proxies = {};
 
   /// Target key → its config as JSON text, encoded once at definition.
@@ -410,7 +412,7 @@ final class HybridRouter {
     List<String>? toolNames,
     ToolChoice? toolChoice,
     List<GenerateMiddlewareRef>? use,
-  }) => HybridPrompt(
+  }) => routedPrompt(
     _ai.definePrompt<Input, Output, Object?>(
       name: name,
       variant: variant,
@@ -457,7 +459,7 @@ final class HybridRouter {
     }
     final lookup = _cloudLookups.then(
       (_) =>
-          _cloudAi!.registry.lookupAction(ActionType.model, target.model.name),
+          _cloudAi.registry.lookupAction(ActionType.model, target.model.name),
     );
     _cloudLookups = lookup.then((_) {}, onError: (Object _) {});
     final cloud = await lookup;
@@ -851,12 +853,12 @@ final class _RouterMiddleware extends GenerateMiddleware {
     final requires = request.requires;
 
     // The chosen target must be able to serve the request.
-    if (!router.targets[decision.target]!.canServe(requires)) {
+    if (!canServe(router.targets[decision.target]!, requires)) {
       final chosen = decision.target;
       String? capable;
       if (movable) {
         for (final t in policy.fallback) {
-          if (t != chosen && router.targets[t]!.canServe(requires)) {
+          if (t != chosen && canServe(router.targets[t]!, requires)) {
             capable = t;
             break;
           }
@@ -884,7 +886,7 @@ final class _RouterMiddleware extends GenerateMiddleware {
       first,
       if (movable)
         for (final t in policy.fallback)
-          if (t != first && router.targets[t]!.canServe(requires)) t,
+          if (t != first && canServe(router.targets[t]!, requires)) t,
     ];
     final attempts = <String>[];
     // The last attempt the loop moved on from (failed, or rejected by the
@@ -917,7 +919,7 @@ final class _RouterMiddleware extends GenerateMiddleware {
               route: info,
             );
           }
-          if (!onDevice.canServe(requires)) {
+          if (!canServe(onDevice, requires)) {
             throw HybridRoutingException(
               'confirmCloud refused the cloud and "$kOnDevice" cannot serve '
               'this request.',

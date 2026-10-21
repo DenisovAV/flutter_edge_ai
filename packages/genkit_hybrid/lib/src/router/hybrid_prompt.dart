@@ -12,7 +12,7 @@ import 'hybrid_routing_exception.dart';
 /// interrupted with `router.generate(messages:, toolNames:,
 /// interruptRespond:)`, which keeps the router's decision.
 final class HybridPrompt<Input, Output> {
-  HybridPrompt(this.prompt);
+  HybridPrompt._(this.prompt);
 
   /// The registered Genkit prompt, for APIs that take a [Prompt]. Called
   /// directly it returns Genkit's `failed` result on a refusal instead of
@@ -126,3 +126,9 @@ final class HybridPrompt<Input, Output> {
     return ActionStream.withResult(chunks.stream, result);
   }
 }
+
+/// [prompt], which `HybridRouter.definePrompt` defined with the router first
+/// in its `use:`, as a [HybridPrompt]. Not exported.
+HybridPrompt<Input, Output> routedPrompt<Input, Output>(
+  Prompt<Input, Output> prompt,
+) => HybridPrompt._(prompt);

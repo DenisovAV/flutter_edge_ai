@@ -59,8 +59,10 @@ final class RouteSource {
   String toString() => 'RouteSource.$name';
 }
 
-/// How the router routed a call: on `GenerateResult.custom['hybrid']`, on a
-/// [HybridRoutingException], and as the output of the `hybrid/route` span.
+/// How the router routed a call: on `GenerateResult.custom['hybrid']` and on
+/// a [HybridRoutingException]. The `hybrid/route` span's output is the first
+/// decision, before a capability, consent, fallback or cascade move; the
+/// result's says where the call ended.
 final class RouteInfo {
   const RouteInfo({
     required this.router,

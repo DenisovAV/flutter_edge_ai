@@ -105,7 +105,7 @@ class _CloudPlugin extends GenkitPlugin {
   }
 }
 
-class _Classifier extends RouteClassifier {
+final class _Classifier extends RouteClassifier {
   _Classifier(this.world, {this.throws, this.verdict});
 
   final _World world;

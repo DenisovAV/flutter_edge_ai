@@ -9,8 +9,9 @@ import '../model_capability.dart';
 final class RouteRequest {
   RouteRequest(this.request, {this.isStreaming = false, this.context});
 
-  /// The request as the router received it. Its `model` is replaced by the
-  /// chosen target's; a prompt may have named one.
+  /// The request as the router received it, the call's own: read it, do not
+  /// change it. Its `model` is replaced by the chosen target's; a prompt may
+  /// have named one.
   final GenerateActionOptions request;
 
   /// Whether the caller streams the response.
@@ -33,7 +34,9 @@ final class RouteRequest {
   }();
 
   /// What the request needs from a model: vision/audio for its media, tools
-  /// when it offers any, json for structured output.
+  /// when it offers any, json for structured output. Read from the request
+  /// as the router receives it: tools a middleware after the router adds are
+  /// not counted.
   late final Set<ModelCapability> requires = () {
     final caps = mediaCapabilities(request.messages);
     if (request.tools?.isNotEmpty ?? false) caps.add(ModelCapability.tools);

@@ -9,10 +9,9 @@ import 'route_request.dart';
 /// genkit_flutter_edge_ai's `deciderRouteClassifier` implements it over an
 /// on-device decider; an app can implement it over anything.
 ///
-/// An abstract class rather than an interface, so a member can be added
-/// later with a default without breaking implementations: always `extend`
-/// it.
-abstract class RouteClassifier {
+/// An `abstract base class`, so a member can be added later with a default
+/// without breaking a classifier: extend it, as a `final` or `base` class.
+abstract base class RouteClassifier {
   const RouteClassifier();
 
   /// Shown in the route info and the trace.
@@ -27,7 +26,8 @@ abstract class RouteClassifier {
   });
 }
 
-/// What a [RouteClassifier] answered.
+/// What a [RouteClassifier] answered. Sealed, so a `switch` over it is
+/// exhaustive; a verdict kind added later is a breaking change.
 sealed class RouteVerdict {
   const RouteVerdict({this.details = const {}});
 
@@ -46,7 +46,8 @@ sealed class RouteVerdict {
   }) = AbstainVerdict;
 
   /// Classifier-specific values for the route info and the trace. Must be
-  /// JSON-encodable.
+  /// JSON-encodable; the router copies them, and fails the call when they
+  /// are not.
   final Map<String, Object?> details;
 }
 
@@ -57,9 +58,11 @@ final class LabelVerdict extends RouteVerdict {
   final String label;
 
   /// How confident, higher is more confident; the classifier's own scale.
+  /// Finite or null: the router fails the call on NaN or infinity.
   final double? score;
 
-  /// How clearly [label] won over the runner-up; finite or null.
+  /// How clearly [label] won over the runner-up; finite or null, like
+  /// [score].
   final double? margin;
 }
 

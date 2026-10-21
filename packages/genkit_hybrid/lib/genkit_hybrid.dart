@@ -14,7 +14,7 @@ export 'src/model_capability.dart' show ModelCapability;
 export 'src/router/hybrid_prompt.dart' show HybridPrompt;
 export 'src/router/hybrid_router.dart' show HybridRouter, defineHybridRouter;
 export 'src/router/hybrid_routing_exception.dart' show HybridRoutingException;
-export 'src/router/hybrid_target.dart' show HybridTarget;
+export 'src/router/hybrid_target.dart' show HybridTarget, kCloud, kOnDevice;
 export 'src/router/route_classifier.dart'
     show
         AbstainVerdict,
@@ -37,8 +37,7 @@ export 'src/router/route_rule.dart' show RouteRule;
 // Deprecated in 0.4.0, removed in 0.5.0.
 export 'src/routing_context.dart';
 export 'src/routing_strategy.dart';
-export 'src/hybrid_model.dart'
-    show hybridModel, hybridModelOnDeviceCloud, kOnDevice, kCloud;
+export 'src/hybrid_model.dart' show hybridModel, hybridModelOnDeviceCloud;
 export 'src/strategies/pre_routing.dart';
 export 'src/strategies/fallback.dart';
 export 'src/strategies/connectivity.dart';

@@ -1,4 +1,4 @@
-import '../hybrid_model.dart' show kOnDevice;
+import 'hybrid_target.dart' show kOnDevice;
 import 'route_decision.dart';
 import 'route_request.dart';
 
@@ -7,9 +7,13 @@ import 'route_request.dart';
 /// decision, ask the next".
 ///
 /// Deterministic constraints belong here, not in a classifier: what must
-/// stay on the device, what cannot run offline, what is too long. The
-/// built-ins are the 0.3 strategies of the same names.
-abstract class RouteRule {
+/// stay on the device, what cannot run offline, what is too long. Each
+/// built-in names the 0.3 strategy it replaces.
+///
+/// An `abstract base class`, so a member can be added later with a default
+/// without breaking a rule: extend it, as a `final` or `base` class, or use
+/// [RouteRule.custom].
+abstract base class RouteRule {
   const RouteRule();
 
   /// Any app rule: [decide] returns a decision or null. Was

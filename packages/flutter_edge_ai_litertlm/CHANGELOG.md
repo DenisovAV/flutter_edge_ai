@@ -1,6 +1,8 @@
-## 1.16.1
+## 1.17.0
+- MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).
 - A macOS app that cannot load LiteRT-LM is told why and how to fix it (#689).
 - Docs: which Gemma 3 bundles lose prefill chunks on the NPU (LiteRT-LM#3508).
+- Require `flutter_edge_ai` ^2.5.1.
 
 ## 1.16.0
 - `InferenceModel.createDecider` on CPU, natively, from a `.litertlm`'s `litetune.decision` section.

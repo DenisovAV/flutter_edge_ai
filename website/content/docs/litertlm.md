@@ -27,7 +27,7 @@ EmbeddingGemma 1 / Gecko
 
 | Platform | Support |
 |----------|---------|
-| Android | ✅ FFI (GPU via OpenCL; NPU on Qualcomm or Google Tensor G5/G6 — opt-in via `qualcomm_npu` / `google_tensor_npu`) |
+| Android | ✅ FFI (GPU via OpenCL; NPU on Qualcomm, Google Tensor G5/G6 or MediaTek — opt-in via `qualcomm_npu` / `google_tensor_npu` / `mediatek_npu`) |
 | iOS | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in via `qualcomm_npu`) |
 | Windows | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
@@ -171,6 +171,26 @@ far on Tensor G6 Pixels with debug builds (Gemma 4 E2B text, images and audio;
 EmbeddingGemma 2 270m and 440m); a Tensor G5 and a release-signed build are not
 run yet.
 
+**MediaTek has its own flag too.** A bundle compiled ahead of time for a
+MediaTek SoC (Google publishes Gemma 3 1B for MT6989/MT6991/MT6993, Gemma 3
+270M for MT6991/MT6993, Qwen3 0.6B for MT6993 and EmbeddingGemma 2 for
+MT6991/MT6993; nothing for Gemma 4) runs on a phone with that SoC and Android
+12 or later when the app sets `mediatek_npu: true` in the same `user_defines`
+block (from flutter_edge_ai_litertlm 1.17.0). The build then fetches Google's
+`litert-npu-runtime-mediatek` 2.3.0 AAR from Google Maven, checks its pinned
+checksum and bundles its `libLiteRtDispatch_MediaTek.so` (Apache 2.0, about
+330 KB). It is not in our release because building it needs MediaTek's
+NeuroPilot SDK, whose licence lets it reach users only inside an app. The
+NeuroPilot runtime it drives is part of the phone; a phone whose vendor does
+not expose it to apps is refused with that reason. Offline, download the AAR
+and add `mediatek_npu_aar: <path>`; `mediatek_npu_maven_url` names a mirror.
+Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug
+build: Gemma 3 1B (`…_mt6989`) generates on the NPU; Gemma 3 1B and
+EmbeddingGemma 2 bundles for MT6991/MT6993 are refused when the engine is
+created. The Qwen3 0.6B MT6993 bundle fails on its tokenizer
+([LiteRT-LM#3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865))
+before the NPU. Not run on an MT6991/MT6993 phone yet.
+
 **Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
 Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino
 VENTUNO Q — QCS9075, …), `qualcomm_npu: true` bundles the stack into the
@@ -194,6 +214,8 @@ Linux arm64, with the per-SoC bundles, and never falls back: see
 Google Tensor G5/G6 bundles (270m, 440m) take `google_tensor_npu: true` instead
 (from 1.15.0): see
 [EmbeddingGemma 2 on a Google Tensor NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-google-tensor-npu).
+MediaTek MT6991/MT6993 bundles take `mediatek_npu: true` (from 1.17.0; not run
+on such a phone yet).
 On Windows x64 the Intel Panther Lake bundles need no flag (from 1.13.2): see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 
@@ -233,9 +255,10 @@ plugin, which no NPU stack here ships, and run it on the CPU while reporting
 S24), so `npu` falls back to GPU and then CPU for it, and the floor applies to
 those attempts. A bundle compiled for an NPU runs only on Windows, on Android
 phones with Qualcomm FastRPC, on Qualcomm Linux arm64 boards that pass the
-FastRPC checks above, and on Google Tensor G5/G6 Pixels with Android 16 or
-later, not a `BP2A` build — the last three only when the app sets `qualcomm_npu` or
-`google_tensor_npu`;
+FastRPC checks above, on Google Tensor G5/G6 Pixels with Android 16 or
+later, not a `BP2A` build, and on MediaTek phones with Android 12 or later whose
+NeuroPilot adapters open in the app — the last four only when the app sets
+`qualcomm_npu`, `google_tensor_npu` or `mediatek_npu`;
 anywhere else it is refused, because nothing there can run it (on macOS the
 native runtime was measured accepting `npu` anyway, which made `activeBackend`
 report an NPU that does not exist on the machine). On Windows the check is per
@@ -269,9 +292,9 @@ excludes — the GPU for the published Gemma 4 and Gemma 3n audio encoders,
 which declare cpu — is refused. `model.activeVisionBackend` and
 `model.activeAudioBackend` report the choice (null for a bundle without that
 encoder). A refusal is a `LiteRtLmBundleException` whose `problem`
-says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a MediaTek bundle,
-a Qualcomm one on Windows or a Google Tensor one off Android), thrown before any engine
-exists. The device's SoC is not read up front: a bundle built for another
+says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a bundle of an NPU
+vendor this package does not know, a Qualcomm one on Windows or a Google Tensor
+or MediaTek one off Android), thrown before any engine exists. The device's SoC is not read up front: a bundle built for another
 Qualcomm SoC fails at engine create, and the error names the SoC it was built
 for.
 

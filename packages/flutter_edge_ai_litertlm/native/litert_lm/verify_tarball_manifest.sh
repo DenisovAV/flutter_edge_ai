@@ -254,6 +254,10 @@ FORBIDDEN=(
   # arm64: from the QAIRT SDK zip, since native-v0.18.0-c).
   "android_arm64:libQnn*"
   "linux_arm64:libQnn*"
+  # Built against MediaTek's NeuroPilot SDK, whose licence allows it only
+  # inside an application: apps fetch Google's build through `mediatek_npu`.
+  "android_arm64:libLiteRtDispatch_MediaTek.so"
+  "android_arm64:libLiteRtCompilerPlugin_MediaTek*"
   # Need libwebgpu_dawn.so, which no Android bundle carries (native-v0.18.0).
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"

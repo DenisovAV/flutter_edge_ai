@@ -1,6 +1,7 @@
 ## 1.17.0
 - MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).
 - A macOS app that cannot load LiteRT-LM is told why and how to fix it (#689).
+- macOS and Linux debug builds: `print` output stays in `flutter run` after a model loads.
 - Docs: which Gemma 3 bundles lose prefill chunks on the NPU (LiteRT-LM#3508).
 - Require `flutter_edge_ai` ^2.5.1.
 

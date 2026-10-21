@@ -23,6 +23,7 @@ import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'intel_weight_banks.dart';
 import 'sigprof_mask.dart';
+import 'stderr_redirect.dart';
 import 'windows_std_handles.dart';
 import '../thinking_context.dart';
 import '../litert_lm_load_errors.dart';
@@ -972,14 +973,31 @@ class LiteRtLmFfiClient {
             int Function(Pointer<Utf8>)
           >('stream_proxy_redirect_stderr');
       final pathPtr = _nativeLogPath!.toNativeUtf8();
-      final rc = redirect(pathPtr);
-      calloc.free(pathPtr);
+      // The native redirect moves stdout too; put it back, or every print
+      // after this load leaves `flutter run` on macOS and Linux.
+      final StderrRedirectResult r;
+      try {
+        r = redirectStderrKeepingStdout(() => redirect(pathPtr));
+      } finally {
+        calloc.free(pathPtr);
+      }
+      if (r.restoreError != null) {
+        edgeAiLog(
+          '[LiteRtLmFfi] WARNING: stdout was not restored after the native '
+          'log redirect (${r.restoreError}); print output now goes to '
+          '$_nativeLogPath',
+        );
+      }
+      final rc = r.rc;
       if (rc != 0) {
         // Log capture is best-effort but its failure makes _dumpNativeLog
         // useless. Surface it instead of silently continuing.
         edgeAiLog(
-          '[LiteRtLmFfi] WARNING: stderr redirect failed (rc=$rc) — '
-          'native log dumps will be empty',
+          rc == null
+              ? '[LiteRtLmFfi] WARNING: stdout could not be saved, so native '
+                    'stderr was not redirected — native log dumps will be empty'
+              : '[LiteRtLmFfi] WARNING: stderr redirect failed (rc=$rc) — '
+                    'native log dumps will be empty',
         );
         _nativeLogPath = null;
       } else {

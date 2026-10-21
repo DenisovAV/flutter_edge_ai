@@ -528,7 +528,9 @@ exceed. Use CPU on the simulator, or test on a physical iPhone for GPU validatio
 
 In **debug builds** `flutter_edge_ai_litertlm` redirects native stderr to
 `<tmpdir>/litertlm_native.log` and dumps it via `debugPrint` after a failed
-`engine_create`. In release builds stderr goes to the systemd journal / app's own
+`engine_create`. Stdout stays where it was, so `print` keeps reaching
+`flutter run` (from litertlm 1.17.0; earlier debug builds on macOS and Linux
+sent it to the same file after the first model load). In release builds stderr goes to the systemd journal / app's own
 stderr.
 
 ### `glibc 2.38 not found` on Linux

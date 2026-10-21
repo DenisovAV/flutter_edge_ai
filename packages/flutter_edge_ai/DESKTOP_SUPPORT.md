@@ -464,7 +464,9 @@ simulator, or test on a physical iPhone for GPU validation.
 
 In **debug builds** `flutter_edge_ai_litertlm` redirects native stderr to
 `<tmpdir>/litertlm_native.log` and dumps it via `debugPrint` after a failed
-`engine_create`. If you don't see a dump, make sure the app runs as a debug
+`engine_create`. Stdout stays where it was, so `print` keeps reaching
+`flutter run` (from litertlm 1.17.0; earlier debug builds on macOS and Linux
+sent it to the same file after the first model load). If you don't see a dump, make sure the app runs as a debug
 build (`flutter run --debug`).
 
 In release builds stderr goes to systemd journal / app's own stderr — check

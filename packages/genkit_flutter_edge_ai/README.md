@@ -22,10 +22,11 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Parallel tool calls — several calls in one response, each with a `ref` that no other call of the turn has, so Genkit pairs every tool response with its request; the refs stay in the history as call ids
 - Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt and Genkit parses `response.output`
 - Context-window trimmer middleware (`trimContext`) — drops oldest turns to fit the on-device KV budget
+- On-device routing decisions — `deciderRouteClassifier` turns a flutter_edge_ai `Decider` into a `genkit_hybrid` router classifier
 - Thinking mode on models that support it
 - `latencyMs`, and token usage in `response.usage` where the engine counts tokens, with time to first token and tokens/s under `usage.custom`. A single-turn model's chat (FunctionGemma) opens a fresh session after each answer and reports none
 - Configurable via `@Schema()`-annotated options, validated before a model loads
-- Errors a router can act on: a bad request is `INVALID_ARGUMENT`; no model installed is `UNAVAILABLE`; tools or media on a model configured without them, or an engine that cannot do this here, are `UNIMPLEMENTED` — `genkit_hybrid` hands both to its next branch; an installed model the app cannot run (no engine registered for it) is `FAILED_PRECONDITION`
+- Errors a router can act on: a bad request is `INVALID_ARGUMENT`; no model installed is `UNAVAILABLE`; tools or media on a model configured without them, or an engine that cannot do this here, are `UNIMPLEMENTED` — a `genkit_hybrid` router falls back on both; an installed model the app cannot run (no engine registered for it) is `FAILED_PRECONDITION`
 
 ## Supported Model Architectures
 
@@ -323,6 +324,59 @@ final documentVectors = await ai.embed(
 The embedder takes text only: a document with no text part is an
 `INVALID_ARGUMENT`. It resolves the active embedder again for each request,
 so it follows a model that core replaced or closed in between.
+
+## Routing with a Decider (experimental)
+
+`deciderRouteClassifier` lets a [genkit_hybrid](https://pub.dev/packages/genkit_hybrid) router
+decide on the device, with an EmbeddingGemma 2 decider (or `InferenceModel.createDecider`), which
+of its targets a request goes to. The decider's options are the labels; the policy maps them to
+targets:
+
+```dart
+// ignore_for_file: experimental_member_use
+Future<Decider>? intents; // created once, cached
+
+final router = defineHybridRouter(
+  ai, // a Genkit with GenkitFlutterEdgeAiPlugin and no default model
+  targets: {
+    kOnDevice: HybridTarget.onDevice(flutterEdgeAi.model('gemma-4-e2b')),
+    kCloud: HybridTarget.cloud(googleAI.gemini('gemini-2.5-flash')),
+  },
+  cloudPlugins: [googleAI(apiKey: apiKey)],
+  policies: {
+    'smart': RoutePolicy(
+      rules: [RouteRule.inputSize(maxChars: 3000, small: kOnDevice, large: kCloud)],
+      classifier: deciderRouteClassifier(
+        () => intents ??= FlutterEdgeAi.getActiveEmbedder().then(
+          (embedder) => embedder.createDecider(options: [
+            DeciderOption('smalltalk', examples: [
+              EmbeddingInput.text('how are you today?'),
+              EmbeddingInput.text('tell me something nice'),
+            ]),
+            DeciderOption('code', examples: [
+              EmbeddingInput.text('write a parser in Rust'),
+              EmbeddingInput.text('why does this SQL query time out?'),
+            ]),
+          ]),
+        ),
+      ),
+      labels: {'smalltalk': kOnDevice, 'code': kCloud},
+    ),
+  },
+  defaultPolicy: 'smart',
+);
+```
+
+- The last user message's text is classified; none is an abstain (`noText`), which goes to the
+  policy's `onAbstain` (default `kOnDevice`).
+- The provider is called per request. Return the pending Future while the decider loads (the
+  request waits); return null when there is none, which makes the classifier unavailable — the
+  call fails unless the policy sets `onUnavailable`. A decider closed by a refit is asked for
+  once more. The classifier never closes the decider.
+- Every other decider error fails the call, never an abstain — an input over the embedder's
+  limit included, so keep `RouteRule.inputSize` before the classifier.
+- The route info carries the label, the decider's abstain signal as `score`, the margin, and its
+  method, calibration, space id and timings under `details`.
 
 ## Known Limitations
 

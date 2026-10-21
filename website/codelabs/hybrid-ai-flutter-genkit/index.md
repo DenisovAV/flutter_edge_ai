@@ -29,7 +29,7 @@ screen exists to make *where the answer came from* visible.
   Rio, Singapore, Sydney. A `Sources: Paris` banner under the policy picker is
   the only place you can see that the answer was grounded in a guide rather
   than invented.
-- **Image attachment** — a photo goes to the cloud, the only branch that
+- **Image attachment** — a photo goes to the cloud, the only target that
   declares vision; on the text-only policies the send is blocked with a hint.
 - A **budget** policy that spends three cloud calls, then quietly drops to the
   device. The app counts those calls in code; the screen does not show the
@@ -61,7 +61,7 @@ Six increments, each a directory you can open and run:
 
 1. **Cloud Chat** — Streaming responses from Gemini via `genkit_google_genai`
 2. **Local Inference** — On-device AI with Gemma 3 1B via `genkit_flutter_edge_ai`
-3. **Hybrid Strategy** — Cloud/local routing via `genkit_hybrid` (fallback, capability, cascade, budget)
+3. **Hybrid Strategy** — one `genkit_hybrid` router over cloud and device (rules, fallback, capability, cascade, budget)
 4. **Smart Routing & Images** — multimodal input and image-aware policy routing
 5. **Embeddings** — Semantic vector representations with EmbeddingGemma via Genkit
 6. **RAG** — Context-augmented generation using a local tourist guide
@@ -69,8 +69,9 @@ Six increments, each a directory you can open and run:
 ### What you'll learn
 
 - How to use the Genkit Dart framework for AI inference in Flutter
-- How to route between cloud and on-device models using a single `Genkit`
-  instance and `genkit_hybrid`'s routing strategies
+- How to route between cloud and on-device models with a `genkit_hybrid`
+  router that decides once per message, and keeps the cloud out of reach of
+  any call that skips it
 - How to run AI models locally on device with `genkit_flutter_edge_ai`
 - How to send images to a vision-capable model and gate routing on model
   capabilities
@@ -98,10 +99,11 @@ Six increments, each a directory you can open and run:
 │              Flutter App                 │
 ├──────────────────────────────────────────┤
 │                AiEngine                  │
-│          one Genkit, two plugins         │
+│   the app's Genkit + one hybrid router   │
 ├──────────────────┬───────────────────────┤
-│  googleAI plugin │  GenkitFlutterEdgeAi   │
-│  gemini-3.7-flash│  Gemma 3 1B +         │
+│ router's own     │  app's Genkit:        │
+│ googleAI plugin  │  GenkitFlutterEdgeAi  │
+│ gemini-3.7-flash │  Gemma 3 1B +         │
 │     (kCloud)     │  EmbeddingGemma       │
 │                  │    (kOnDevice)        │
 └──────────────────┴───────────────────────┘
@@ -112,19 +114,17 @@ On the web, `kOnDevice` is a different, larger model — Gemma 3 1B has no
 instead. Step 3 covers why. EmbeddingGemma is part of that plugin on every
 platform, the web included — Step 5 lists the four files a browser needs for it.
 
-`genkit_hybrid` composes both branches into one routable `Model` —
-`hybridModel()` / `cascadeModel()` — selected by a `PolicyMode`: cloud, local,
-smart, cascade, budget.
+`genkit_hybrid` puts one router in front of both targets. The router holds a
+policy per `PolicyMode` — cloud, local, smart, cascade, budget — and decides
+where each message runs, once, before the model is called.
 
-The key insight: `AiEngine` builds a single `Genkit` instance with both
-plugins registered, resolves the cloud and on-device models once, and hands
-them to `genkit_hybrid` as a `Map<String, Model>` of branches. For each
-`PolicyMode` it composes one branch map into an ordinary Genkit `Model` and
-registers it on `ai.registry` — once, during `initialize()`. `engine.modelFor(policy)`
-just returns that already-registered `Model`. The chat screen always calls
-the same
-`ai.generateStream(model: engine.modelFor(policy), messages: [...])`; only
-which `Model` `modelFor` returns changes with the policy.
+The key insight: the app's `Genkit` gets the on-device plugin only. The Gemini
+plugin is handed to the router, which keeps it in a Genkit of its own, so the
+cloud is reachable only through the router: a call that forgets it has nowhere
+to go. The chat screen always calls the same
+`engine.router.generateStream(policy: ..., messages: [...])`; only the policy
+name changes, and the result says where the answer came from
+(`result.route`).
 
 ## Step 1: Starter Project
 Duration: 5
@@ -144,7 +144,7 @@ ls
 step_00_starter/         the shell you start from
 step_01_cloud_ai/        after Step 2 — Gemini, streaming
 step_02_local_ai/        after Step 3 — Gemma 3 1B on the device
-step_03_hybrid/          after Step 4 — one AiEngine, two branches
+step_03_hybrid/          after Step 4 — one AiEngine, one router
 step_04_smart_routing/   after Step 4.5 — images and the routing policies
 step_05_embeddings/      after Step 5 — on-device embeddings
 complete/                after Step 6 — the finished app, with RAG
@@ -480,7 +480,7 @@ required for it. `LocalAIService` and `AiEngine` below both switch `_hfRepo`,
 
 The web arm is an early preview: WebGPU, and text only. That matters for one
 policy in particular — an image on **Smart** still routes to the cloud, which
-is the only branch that declares vision anywhere.
+is the only target that declares vision anywhere.
 
 ### Update dependencies
 
@@ -751,7 +751,7 @@ plugins and `flutter_edge_ai_litertlm`) is already in place from Steps 2–3:
 
 ```yaml
   # Hybrid on-device ↔ cloud routing
-  genkit_hybrid: ^0.3.0
+  genkit_hybrid: ^0.4.0
 ```
 
 Run `flutter pub get`.
@@ -763,8 +763,8 @@ rm lib/services/ai_service.dart lib/services/cloud_ai_service.dart \
    lib/services/local_ai_service.dart
 ```
 
-They're replaced by one `AiEngine` that owns a single `Genkit` instance for
-both plugins.
+They're replaced by one `AiEngine` that owns the app's `Genkit` (the on-device
+plugin) and one `genkit_hybrid` router (which owns the Gemini plugin).
 
 ### Create AiEngine
 
@@ -806,18 +806,18 @@ const kLocalModel = 'gemma-3-1b-it';
 const kCloudModel = 'gemini-3.7-flash';
 const kEmbedder = 'embedding-gemma-300m';
 
-/// Context window for the on-device branch, in tokens. `maxTokens` is the
+/// Context window for the on-device target, in tokens. `maxTokens` is the
 /// WHOLE window (input + output) and genkit_flutter_edge_ai defaults it to 1024.
 /// RagService's take(3) of ~600-token city guides alone is ~1.7k tokens —
 /// measured on device: "Input token ids are too long … 1713 >= 1024". The
 /// bundled Gemma-3-1B `.litertlm` is built for 4096 (`ekv4096`), so use it.
 const kOnDeviceContextTokens = 4096;
 
-/// The five routing policies the chat exposes. Each maps to one genkit_hybrid
-/// construct (see [modelFor] / [strategyFor]), and carries the UI facts about
-/// itself — its label, which branches it needs, whether it is text-only — so
-/// the screen renders the dropdown from `PolicyMode.values` instead of
-/// restating all five modes by hand.
+/// The five routing policies the chat exposes. Each is one genkit_hybrid
+/// [RoutePolicy] of the engine's router (see [AiEngine.policyFor]), and
+/// carries the UI facts about itself — its label, which targets it needs,
+/// whether it is text-only — so the screen renders the dropdown from
+/// `PolicyMode.values` instead of restating all five modes by hand.
 enum PolicyMode {
   cloud('Cloud', needsLocal: false),
   local('Local', needsCloud: false, textOnly: true),
@@ -835,7 +835,7 @@ enum PolicyMode {
   /// Dropdown text.
   final String label;
 
-  /// Which branches the composite for this mode requires.
+  /// Which targets the policy for this mode requires.
   final bool needsCloud;
   final bool needsLocal;
 
@@ -847,19 +847,24 @@ enum PolicyMode {
       (!needsCloud || cloud) && (!needsLocal || local);
 }
 
-/// Owns a single Genkit instance with both plugins (cloud + on-device),
-/// resolves the two base models, and composes them via genkit_hybrid per the
-/// selected [PolicyMode]. Replaces the old Cloud/Local/HybridAIService trio.
+/// The on-device model as a router target sees it: the plugin's model, with
+/// the context window the RAG prompt needs as its config. A routed call
+/// carries no config of its own — each target owns its own — so this is the
+/// one place the window is set, and Gemini never sees it.
+ModelRef<FlutterEdgeAiModelOptions> onDeviceModel(String name) =>
+    modelRef<FlutterEdgeAiModelOptions>(
+      flutterEdgeAi.model(name).name,
+      customOptions: FlutterEdgeAiModelOptions.$schema,
+      config: FlutterEdgeAiModelOptions(maxTokens: kOnDeviceContextTokens),
+    );
+
+/// Owns the app's Genkit instance (the on-device plugin only) and one
+/// genkit_hybrid router over the two targets, with one policy per
+/// [PolicyMode]. The Gemini plugin is handed to the router alone: the app's
+/// Genkit cannot reach the cloud without it.
 class AiEngine {
   Genkit? _ai;
-  Model? _local;
-  Model? _cloud;
-
-  /// One composite [Model] per policy, built AND registered once by
-  /// [_registerPolicyModels] — genkit reduces `generate(model: ...)` to the
-  /// model's name and looks it up in the registry, so a freshly built,
-  /// never-registered composite would fail every call with NOT_FOUND.
-  final Map<PolicyMode, Model> _models = {};
+  HybridRouter? _router;
 
   bool cloudReady = false;
   bool localReady = false;
@@ -869,7 +874,7 @@ class AiEngine {
   /// embedder active, and RAG must not quietly run on that one.
   String? embedderError;
 
-  // CostStrategy demo signal: the app counts cloud calls against a small cap.
+  // Budget demo signal: the app counts cloud calls against a small cap.
   int cloudCallsSpent = 0;
   int budgetCap = 3;
   bool get budgetAvailable => cloudCallsSpent < budgetCap;
@@ -877,26 +882,43 @@ class AiEngine {
   AiEngine();
 
   /// Test seam: skips [FlutterEdgeAi.initialize]/`installModel` (real I/O that
-  /// can't run in a unit test) and takes already-resolved branch models
-  /// directly, then runs the same build+register path [initialize] uses — so
-  /// a test driving [modelFor] through `ai.generate` here exercises the real
-  /// registration wiring, not just [strategyFor]. [local] is nullable —
-  /// mirrors [cloud] — so a cloud-only engine (the symmetric mirror of the
-  /// cloud-absent case) is constructible too.
+  /// can't run in a unit test). [ai] must already serve [localModel], the
+  /// plugin model name, and [cloudPlugin] must resolve [cloudModel]; either
+  /// side may be absent. Then it defines the router the way [initialize]
+  /// does, so a test driving [router] exercises the real wiring.
   @visibleForTesting
-  AiEngine.forTest({required Genkit ai, Model? local, Model? cloud}) {
+  AiEngine.forTest({
+    required Genkit ai,
+    String? localModel,
+    ModelRef? cloudModel,
+    GenkitPlugin? cloudPlugin,
+  }) {
     _ai = ai;
-    _local = local == null ? null : _withContextBudget(local);
-    _cloud = cloud;
-    localReady = local != null;
-    cloudReady = cloud != null;
-    _registerPolicyModels();
+    localReady = localModel != null;
+    cloudReady = cloudModel != null;
+    _defineRouter(
+      local: localModel == null ? null : onDeviceModel(localModel),
+      cloud: cloudModel,
+      cloudPlugins: [?cloudPlugin],
+    );
   }
 
   Genkit get ai {
     final ai = _ai;
     if (ai == null) throw StateError('AiEngine not initialized');
     return ai;
+  }
+
+  /// The router every chat message goes through.
+  HybridRouter get router {
+    final router = _router;
+    if (router == null) {
+      throw StateError(
+        'No router — call initialize() first; it needs at least one of the '
+        'on-device model or a cloud API key.',
+      );
+    }
+    return router;
   }
 
   String get embedderName => kEmbedder;
@@ -916,49 +938,35 @@ class AiEngine {
     // embeddings off here is the test seam.
     final embeddingsSupported = downloadEmbedder;
 
-    // Declarative plugin config — always includes the on-device plugin (its
-    // models/embedders are looked up by name later, independent of whether
-    // the install below actually succeeds).
-    final plugins = <GenkitPlugin>[
-      if (_geminiApiKey.isNotEmpty) googleAI(apiKey: _geminiApiKey),
-      GenkitFlutterEdgeAiPlugin(
-        models: [
-          FlutterEdgeAiModelConfig(
-            name: kLocalModel,
-            modelType: _modelType,
-            fileType: ModelFileType.litertlm,
-          ),
-        ],
-        embedders: embeddingsSupported
-            ? [FlutterEdgeAiEmbedderConfig(name: kEmbedder)]
-            : const [],
-      ),
-    ];
+    // The app's Genkit gets the on-device plugin ONLY, and no default `model:`
+    // — the router refuses one, because a call that forgot the router would go
+    // there. Gemini goes to the router below. The plugin list is declarative
+    // (no I/O), so building Genkit first keeps `ai` available whatever the
+    // installs below do.
+    _ai = Genkit(
+      plugins: [
+        GenkitFlutterEdgeAiPlugin(
+          models: [
+            FlutterEdgeAiModelConfig(
+              name: kLocalModel,
+              modelType: _modelType,
+              fileType: ModelFileType.litertlm,
+            ),
+          ],
+          embedders: embeddingsSupported
+              ? [FlutterEdgeAiEmbedderConfig(name: kEmbedder)]
+              : const [],
+        ),
+      ],
+    );
 
-    // Build Genkit BEFORE any on-device engine registration/install so `_ai`
-    // (and `_resolve`, and the `ai` getter) are always available afterward —
-    // the plugin list above is purely declarative (no I/O, no dependency on
-    // FlutterEdgeAi.initialize() having run), so cloud resolution below needs
-    // no on-device engine and must not be taken down by a failure
-    // registering/installing it.
-    _ai = Genkit(plugins: plugins);
+    // CLOUD: needs no install; the key is all it takes.
+    cloudReady = _geminiApiKey.isNotEmpty;
 
-    // CLOUD: needs no install, so its readiness never depends on the local
-    // LLM or the (optional) embedder below.
-    if (_geminiApiKey.isNotEmpty) {
-      try {
-        _cloud = await _resolve(googleAI.gemini(kCloudModel));
-        cloudReady = true;
-      } catch (e) {
-        debugPrint('⚠️ AiEngine: CLOUD backend unavailable — $e');
-        cloudReady = false;
-      }
-    }
-
-    // LOCAL: register the on-device engine, then install + resolve the LLM.
+    // LOCAL: register the on-device engine, then install the LLM.
     // flutter_edge_ai registers no engines by default; that registration
-    // now lives inside this try/catch (not before Genkit is built) so an
-    // engine-init failure only suppresses localReady, never cloud.
+    // lives inside this try/catch so an engine-init failure only suppresses
+    // localReady, never cloud.
     try {
       // Opt into LiteRT-LM (.litertlm inference) and its LiteRT embedding
       // backend, on every platform (see embeddingsSupported above). `webStorageMode:
@@ -997,9 +1005,6 @@ class AiEngine {
             .withProgress((p) => onProgress?.call(p)) // p is int 0..100
             .install();
       }
-      _local = _withContextBudget(
-        await _resolve(flutterEdgeAi.model(kLocalModel)),
-      );
       localReady = true;
     } catch (e) {
       debugPrint('⚠️ AiEngine: on-device backend unavailable — $e');
@@ -1026,185 +1031,150 @@ class AiEngine {
       }
     }
 
-    _registerPolicyModels();
-  }
-
-  // A plugin model is registered by name; genkit's `Model` is an `Action`, so
-  // look the concrete model up from the registry and cast.
-  Future<Model> _resolve(ModelRef ref) async {
-    final action = await ai.registry.lookupAction(ActionType.model, ref.name);
-    if (action == null) {
-      throw StateError('model "${ref.name}" is not registered');
-    }
-    return action as Model;
-  }
-
-  /// Wraps the on-device branch so every request carries the context budget
-  /// unless the caller set one. Copies the request rather than mutating it:
-  /// genkit_hybrid hands the SAME ModelRequest to the next branch when
-  /// cascade escalates, so an in-place write would leak a Gemma-only
-  /// maxTokens into the Gemini call. The metadata copy is required too —
-  /// genkit's Model constructor writes into the map it is handed.
-  Model _withContextBudget(Model inner) => Model(
-    name: '${inner.name}/ctx',
-    metadata: {...inner.metadata},
-    fn: (request, context) {
-      // Run [inner] the way genkit_hybrid runs a branch: as an action, with
-      // the caller's streaming callback, context and cancellation.
-      forward(ModelRequest r) => inner(
-        r,
-        onChunk: context.streamingRequested ? context.sendChunk : null,
-        context: context.context,
-        cancel: context.cancel,
-      );
-      if (request.config?['maxTokens'] != null) return forward(request);
-      final budgeted = ModelRequest.fromJson({
-        ...request.toJson(),
-        'config': {...?request.config, 'maxTokens': kOnDeviceContextTokens},
-      });
-      return forward(budgeted);
-    },
-  );
-
-  Map<String, Model> get _branches => {kOnDevice: ?_local, kCloud: ?_cloud};
-
-  /// Builds AND registers one composite [Model] per [PolicyMode] whose
-  /// required branches are available, populating [_models]. A mode that needs
-  /// `kCloud` (every mode but `local`) is skipped when there's no API key, so
-  /// a missing cloud branch degrades to a clear [modelFor] error instead of
-  /// crashing here on a half-built `cascadeModel` (its `order` validates
-  /// eagerly against `branches`, unlike `hybridModel`).
-  void _registerPolicyModels() {
-    for (final mode in PolicyMode.values) {
-      if (!mode.availableWith(cloud: _cloud != null, local: _local != null)) {
-        continue;
-      }
-      final model = _buildModel(mode);
-      ai.registry.register(model);
-      _models[mode] = model;
-    }
-  }
-
-  /// The composable Genkit `Model` for [mode]. Cascade is a `cascadeModel`;
-  /// every other mode is `hybridModel(strategy: strategyFor(mode))`. Called
-  /// once per mode by [_registerPolicyModels] — not a per-request factory.
-  Model _buildModel(PolicyMode mode) {
-    if (mode == PolicyMode.cascade) {
-      return cascadeModel(
-        branches: _branches,
-        order: const [kOnDevice, kCloud],
-        // DEMO PROXY — not a real quality signal. A production cascade
-        // escalates on model *confidence*; the best training-free signal is
-        // the reply's average token log-probability. We can't use it here:
-        // LiteRT-LM gives `accept` only decoded text (no per-token
-        // probabilities), and asking a ~1B model to self-rate confidence is
-        // unreliable — small models are confidently wrong. So we escalate on a
-        // crude "too short to be a real answer" check. See the codelab's
-        // "A real cascade signal" note.
-        accept: (r) => r.text.trim().length > 20,
-        name: 'cascade',
-      );
-    }
-    return hybridModel(
-      branches: _branches,
-      strategy: strategyFor(mode),
-      name: mode.name,
+    _defineRouter(
+      local: localReady ? onDeviceModel(kLocalModel) : null,
+      cloud: cloudReady ? googleAI.gemini(kCloudModel) : null,
+      cloudPlugins: [if (cloudReady) googleAI(apiKey: _geminiApiKey)],
     );
   }
 
-  /// The registered, resolvable `Model` for [mode] — built once by
-  /// [_registerPolicyModels] during [initialize] (or [AiEngine.forTest]).
-  Model modelFor(PolicyMode mode) {
-    final model = _models[mode];
-    if (model == null) {
-      throw StateError(
-        'No model registered for $mode — call initialize() first (or, if '
-        'this mode needs the cloud branch, make sure a cloud API key is set).',
-      );
-    }
-    return model;
+  /// Defines the router over whichever targets are available, with the
+  /// policies of the modes they allow. With neither target there is no router.
+  void _defineRouter({
+    required ModelRef? local,
+    required ModelRef? cloud,
+    required List<GenkitPlugin> cloudPlugins,
+  }) {
+    final targets = {
+      // Gemma 3 1B reads text only: declaring no capability keeps an image
+      // away from it, so Smart sends a photo to Gemini and never falls back.
+      kOnDevice: ?(local == null
+          ? null
+          : HybridTarget.onDevice(local, supports: const {})),
+      kCloud: ?(cloud == null ? null : HybridTarget.cloud(cloud)),
+    };
+    if (targets.isEmpty) return;
+    final policies = {
+      for (final mode in PolicyMode.values)
+        if (mode.availableWith(cloud: cloud != null, local: local != null))
+          mode.name: policyFor(mode),
+    };
+    _router = defineHybridRouter(
+      ai,
+      targets: targets,
+      cloudPlugins: cloudPlugins,
+      policies: policies,
+      defaultPolicy: policies.keys.first,
+    );
   }
 
-  /// Pure policy → RoutingStrategy mapping (no models needed), so the routing
-  /// decisions are unit-testable. [PolicyMode.cascade] has no strategy — it is
-  /// a Model, built in [_buildModel].
-  RoutingStrategy strategyFor(PolicyMode mode) {
-    switch (mode) {
-      case PolicyMode.cloud:
-        return PreRoutingStrategy((_) => kCloud);
-      case PolicyMode.local:
-        return PreRoutingStrategy((_) => kOnDevice);
-      case PolicyMode.smart:
-        // Image → cloud only (only it declares vision). Text → both qualify,
-        // cloud-first in `supports` insertion order, on-device as the tail.
-        // No WithFallback: CapabilityStrategy already yields the on-device
-        // tail for text, and for an image a forced on-device tail would hand
-        // the picture to a model that cannot see it. Offline + image should
-        // fail loudly, not silently degrade to text-only.
-        return CapabilityStrategy(
-          supports: {
-            kCloud: {ModelCapability.vision},
-            kOnDevice: <ModelCapability>{},
-          },
-        );
-      case PolicyMode.budget:
-        return CostStrategy(
-          budgetAvailable: () => budgetAvailable,
+  /// The router's policy name for [mode]; throws a [StateError] when the
+  /// mode needs a target this engine does not have.
+  String policyName(PolicyMode mode) {
+    if (_router?.policies.containsKey(mode.name) ?? false) return mode.name;
+    throw StateError(
+      'No policy for $mode — call initialize() first (or, if this mode needs '
+      'the cloud target, make sure a cloud API key is set).',
+    );
+  }
+
+  /// Pure mode → [RoutePolicy] mapping (no models needed), so the routing
+  /// decisions are unit-testable.
+  RoutePolicy policyFor(PolicyMode mode) => switch (mode) {
+    PolicyMode.cloud => RoutePolicy(
+      rules: [
+        RouteRule.custom('cloud', (_) => const RouteDecision.only(kCloud)),
+      ],
+    ),
+    PolicyMode.local => RoutePolicy(
+      rules: [
+        RouteRule.custom('local', (_) => const RouteDecision.only(kOnDevice)),
+      ],
+    ),
+    // Cloud first, on-device when the cloud fails transiently (offline). An
+    // image never falls back: the on-device target declares no vision, so
+    // offline + image fails loudly instead of silently dropping the picture.
+    PolicyMode.smart => RoutePolicy(
+      rules: [
+        RouteRule.custom(
+          'cloud-first',
+          (_) => const RouteDecision.prefer(kCloud),
+        ),
+      ],
+      fallback: const [kOnDevice],
+    ),
+    PolicyMode.cascade => RoutePolicy(
+      rules: [
+        RouteRule.custom(
+          'device-first',
+          (_) => const RouteDecision.prefer(kOnDevice),
+        ),
+      ],
+      fallback: const [kCloud],
+      // DEMO PROXY — not a real quality signal. A production cascade
+      // escalates on model *confidence*; the best training-free signal is
+      // the reply's average token log-probability. We can't use it here:
+      // LiteRT-LM gives the check only decoded text (no per-token
+      // probabilities), and asking a ~1B model to self-rate confidence is
+      // unreliable — small models are confidently wrong. So we escalate on a
+      // crude "too short to be a real answer" check. See the codelab's
+      // "A real cascade signal" note.
+      cascade: (result) => result.text.trim().length > 20,
+    ),
+    PolicyMode.budget => RoutePolicy(
+      rules: [
+        RouteRule.budget(
+          available: () => budgetAvailable,
           premium: kCloud,
           cheap: kOnDevice,
-        );
-      case PolicyMode.cascade:
-        throw ArgumentError('cascade has no RoutingStrategy; use modelFor');
-    }
-  }
+        ),
+      ],
+      fallback: const [kOnDevice],
+    ),
+  };
 
   void dispose() {
     _ai = null;
-    _local = null;
-    _cloud = null;
-    _models.clear();
+    _router = null;
   }
 }
 ```
 
-`kOnDevice` and `kCloud` are branch-key constants exported by `genkit_hybrid`
-itself — reuse them instead of inventing your own strings so every strategy
-agrees on the same keys.
+`kOnDevice` and `kCloud` are target-key constants exported by `genkit_hybrid`
+itself — reuse them instead of inventing your own strings, so every rule and
+policy agrees on the same keys.
 
-For **Step 4** we only need `PolicyMode.cloud` and `PolicyMode.local`:
-`strategyFor` maps each straight to a `PreRoutingStrategy` that always
-returns one key. `smart`, `cascade`, and `budget` are covered in Step 4.5 —
-`strategyFor(PolicyMode.cascade)` deliberately throws, because cascade isn't
-a `RoutingStrategy` at all; `_buildModel` builds it as a `cascadeModel`
-directly.
+For **Step 4** we only need `PolicyMode.cloud` and `PolicyMode.local`: each
+policy has one rule that always answers `RouteDecision.only(...)` — this
+target and nowhere else. `smart`, `cascade`, and `budget` are covered in
+Step 4.5.
 
 Three things in that file run ahead of this step, and are there so you never
 have to go back and edit it. `AiEngine.forTest` and `initialize`'s
 `localModelPath` are test seams: `AiEngine.forTest` lets
-`test/ai_engine_policy_test.dart` drive the real registration path without a
-550 MB download, and `localModelPath` lets `integration_test/smoke_test.dart`
-install a model file staged on the device instead of downloading it.
-`_withContextBudget` is Step 6's, and Step 6 explains it; until RAG inflates
-the prompt it changes nothing you can observe.
+`test/ai_engine_policy_test.dart` define the real router over fake models
+without a 550 MB download, and `localModelPath` lets
+`integration_test/smoke_test.dart` install a model file staged on the device
+instead of downloading it. `onDeviceModel`'s `maxTokens` is Step 6's, and
+Step 6 explains it; until RAG inflates the prompt it changes nothing you can
+observe.
 
-### The hybrid is itself a Model
+### One router, one decision per message
 
-> **The punchline**: `hybridModel()` (and `cascadeModel()`) return an
-> ordinary Genkit `Model`. Nothing downstream needs to know routing
-> happened — the result composes with everything a normal model composes
-> with: streaming, a RAG-augmented prompt, images. `AiEngine.modelFor(mode)`
-> is a drop-in replacement for `googleAI.gemini(...)` or
-> `flutterEdgeAi.model(...)`.
+> **The router decides before the model runs, once.** `router.generateStream`
+> is `ai.generateStream` with the router first in its `use:` list: a Genkit
+> middleware that picks the target at the first turn of the call, sets it as
+> the call's model with that target's own config, and keeps it there for the
+> whole call — a tool loop included. Nothing downstream needs to know routing
+> happened: streaming, a RAG-augmented prompt and images all work the way they
+> do with a plain model.
 >
-> **But an ordinary `Model` still has to be registered.** genkit resolves
-> `generate(model: ...)` (and `generateStream`) by reducing it to its `.name`
-> and looking that name up in `ai.registry` — a `Model` you built but never
-> registered fails every call with `NOT_FOUND`. That's why `initialize()`
-> calls `_registerPolicyModels()` right after resolving `_local`/`_cloud`:
-> it builds and registers all five policy composites *once*, up front, and
-> `modelFor` just returns the already-registered instance from `_models`.
-> Building a fresh `hybridModel`/`cascadeModel` inside `modelFor` itself —
-> without registering it — is the one thing to avoid here.
+> **The cloud is out of reach without it.** `googleAI(...)` is not in the
+> app's `Genkit`; it goes to `defineHybridRouter(cloudPlugins: ...)`. The app's
+> `Genkit` sees a proxy model instead, which serves a request only when the
+> router chose the cloud for that message. And the app's `Genkit` has no
+> default `model:` — the router refuses one — so a call that forgets the
+> router names no model and fails, instead of quietly going somewhere.
 
 ### Add the policy picker
 
@@ -1243,10 +1213,10 @@ Padding(
 **Local** is selectable, and until the on-device model finishes downloading
 only **Cloud** is.
 
-### Drive generateStream from modelFor
+### Drive generateStream through the router
 
 `_sendMessage()` no longer picks between two services — it always calls the
-same `Genkit`, and lets `AiEngine.modelFor(_policy)` decide who answers:
+same router, and the policy decides who answers:
 
 ```dart
 final userMessage = Message(
@@ -1254,13 +1224,11 @@ final userMessage = Message(
   content: [TextPart(text: text)],
 );
 // ...
-// Captured before the call: genkit_hybrid doesn't report which branch
-// actually ran, so this is a best-effort demo counter, not an exact
-// count of cloud calls — see the accounting comment below.
-final wasBudgetAvailable = _engine.budgetAvailable;
-
-final stream = _engine.ai.generateStream(
-  model: _engine.modelFor(_policy),
+// The router decides where the message runs, once, and reports it on
+// the result (`result.route`). A refusal (say, an image on a text-only
+// target) is thrown as a HybridRoutingException.
+final stream = _engine.router.generateStream(
+  policy: _engine.policyName(_policy),
   messages: [userMessage],
 );
 await for (final chunk in stream) {
@@ -1278,38 +1246,36 @@ if (reason != FinishReason.stop &&
       StateError(result.finishMessage ?? 'The model stopped: $reason');
 }
 // ...
-// Best-effort demo counter for CostStrategy: genkit_hybrid exposes no
-// "which branch ran" signal, so a Budget call that transiently fell
-// back to on-device still counts here as spent; Budget stops climbing
-// once the cap is hit either way.
-if (_policy == PolicyMode.cloud) {
-  _engine.cloudCallsSpent++;
-} else if (_policy == PolicyMode.budget && wasBudgetAvailable) {
+// The budget demo counts the Cloud and Budget calls that really ran in
+// the cloud: the router reports the target each call ended on, so a
+// Budget call that fell back to the device is not counted.
+if ((_policy == PolicyMode.cloud || _policy == PolicyMode.budget) &&
+    result.route?.target == kCloud) {
   _engine.cloudCallsSpent++;
 }
 ```
 
 `text` goes straight to the model here. In Step 6 RAG rewrites it first,
 and the local is renamed `prompt` to say so — the call itself does not
-change.
+change. `result.route` also carries the policy, the rule that decided and how
+long deciding took — print it once to see what the router did.
 
 ### Test it
 
 1. Switch to **Cloud** and send a message — Gemini answers.
 2. Switch to **Local** and send a message — Gemma 3 1B answers.
-3. Leave **Smart**, **Cascade**, and **Budget** for Step 4.5 — right now
-   `strategyFor` treats them correctly, but nothing exercises their
-   interesting behavior (an image, a bad on-device answer, a spent budget)
-   until then.
+3. Leave **Smart**, **Cascade**, and **Budget** for Step 4.5 — their
+   policies are already defined, but nothing exercises their interesting
+   behavior (an image, a bad on-device answer, a spent budget) until then.
 
 ## Step 4.5: Smart routing & images
 Duration: 20
 
 Three of the five `PolicyMode` values only get interesting once the app can
 send more than plain text, and once there's a signal to route on besides "the
-user picked cloud or local." This step adds image input, wires it through
-`CapabilityStrategy`, and walks through what `smart`, `cascade`, and `budget`
-actually decide.
+user picked cloud or local." This step adds image input, lets the router match
+it against what each target can do, and walks through what `smart`, `cascade`,
+and `budget` actually decide.
 
 ### Update dependencies
 
@@ -1385,7 +1351,7 @@ final content = <Part>[TextPart(text: text)];
 if (_attachedImage != null) {
   final mime = _attachedMime ?? 'image/jpeg';
   final dataUri = 'data:$mime;base64,${base64Encode(_attachedImage!)}';
-  // Gemini, the on-device plugin and CapabilityStrategy all read the type
+  // Gemini, the on-device plugin and the router all read the type
   // from the data: URI as well; contentType states it outright.
   content.add(
     MediaPart(
@@ -1400,60 +1366,78 @@ final userMessage = Message(role: Role.user, content: content);
 `genkit_flutter_edge_ai` types a `MediaPart` from its `data:` URI, its file
 extension or its bytes, and answers a part it still cannot type with an
 `INVALID_ARGUMENT` error rather than dropping it; the Gemini plugin reads the
-`data:` URI's type too, and `CapabilityStrategy` (below) recognizes vision
-from a `data:image/…` URL or a recognized image file extension. An
+`data:` URI's type too, and the router (below) recognizes vision from a
+`data:image/…` URL or a recognized image file extension. An
 `image_picker` file with no MIME type falls back to `'image/jpeg'`, so the
 URI and `contentType` always agree.
 
 ### Smart, Cascade, and Budget
 
-Back in `AiEngine.strategyFor`, the three remaining cases:
+Back in `AiEngine.policyFor`, the three remaining policies:
 
 ```dart
-case PolicyMode.smart:
-  // Image → cloud only (only it declares vision). Text → both qualify,
-  // cloud-first in `supports` insertion order, on-device as the tail.
-  // No WithFallback: CapabilityStrategy already yields the on-device
-  // tail for text, and for an image a forced on-device tail would hand
-  // the picture to a model that cannot see it. Offline + image should
-  // fail loudly, not silently degrade to text-only.
-  return CapabilityStrategy(
-    supports: {
-      kCloud: {ModelCapability.vision},
-      kOnDevice: <ModelCapability>{},
-    },
-  );
-case PolicyMode.budget:
-  return CostStrategy(
-    budgetAvailable: () => budgetAvailable,
-    premium: kCloud,
-    cheap: kOnDevice,
-  );
+// Cloud first, on-device when the cloud fails transiently (offline). An
+// image never falls back: the on-device target declares no vision, so
+// offline + image fails loudly instead of silently dropping the picture.
+PolicyMode.smart => RoutePolicy(
+  rules: [
+    RouteRule.custom(
+      'cloud-first',
+      (_) => const RouteDecision.prefer(kCloud),
+    ),
+  ],
+  fallback: const [kOnDevice],
+),
+PolicyMode.cascade => RoutePolicy(
+  rules: [
+    RouteRule.custom(
+      'device-first',
+      (_) => const RouteDecision.prefer(kOnDevice),
+    ),
+  ],
+  fallback: const [kCloud],
+  cascade: (result) => result.text.trim().length > 20,
+),
+PolicyMode.budget => RoutePolicy(
+  rules: [
+    RouteRule.budget(
+      available: () => budgetAvailable,
+      premium: kCloud,
+      cheap: kOnDevice,
+    ),
+  ],
+  fallback: const [kOnDevice],
+),
 ```
 
-- **Smart** — `CapabilityStrategy` inspects the outgoing `ModelRequest` for
-  media parts and keeps the branches that declare what the request needs. A
-  text-only request needs nothing, so both branches qualify and it returns
-  `[kCloud, kOnDevice]` (cloud-first, in `supports`' insertion order) — the
-  on-device tail is already there, for free, and `hybridModel` uses it when
-  the cloud call throws. An image request requires `vision`, which only
-  `kCloud` declares, so it returns `[kCloud]` and nothing else: there is no
-  second branch to fall to, by design.
-- **Cascade** — built in `_buildModel`, not `strategyFor`:
-  `cascadeModel(branches: _branches, order: [kOnDevice, kCloud], accept: (r) => r.text.trim().length > 20)`.
-  It tries the on-device model first; if the response passes `accept` (here,
-  "longer than 20 characters") it's returned as-is, otherwise it escalates to
-  cloud. `cascadeModel` is **non-streaming internally** — even through
-  `ai.generateStream`, a cascade-routed request buffers the whole winning
-  response and emits it as a single chunk.
-- **Budget** — `CostStrategy` returns `[premium, cheap]` while
-  `budgetAvailable()` is true, `[cheap]` once it isn't. `AiEngine` owns the
-  budget itself: `cloudCallsSpent` is a plain int the app increments after
-  every `cloud`/`budget` call (see the `_sendMessage` snippet above) and
+A decision is `prefer` — it may move to the policy's `fallback` — or `only`,
+which never moves. And the targets say what they can do:
+`HybridTarget.onDevice(local, supports: const {})` declares that Gemma 3 1B
+takes no image, so the router never sends one there.
+
+- **Smart** — `prefer(kCloud)` with `kOnDevice` as the fallback. A text
+  request falls back to the phone when the cloud call fails with a transient
+  error — offline, say. An image request needs vision, which the on-device
+  target does not declare, so the router drops it from the fallback list:
+  there is no second target to fall to, by design.
+- **Cascade** — `prefer(kOnDevice)`, then the `cascade` check judges the
+  answer: "longer than 20 characters" keeps it, anything shorter escalates to
+  the cloud. While the check is pending the on-device chunks are held back, so
+  the chat never shows an answer that gets replaced; an accepted answer is
+  sent at once, a rejected one is dropped and the cloud streams live.
+- **Budget** — `RouteRule.budget` answers `prefer(kCloud)` while
+  `budgetAvailable()` is true, and `only(kOnDevice)` once it isn't. `AiEngine`
+  owns the budget itself: `cloudCallsSpent` is a plain int the app increments
+  after every Cloud or Budget call that ran in the cloud (see the
+  `_sendMessage` snippet above — `result.route` says where it ran) and
   compares against `budgetCap` (3 by default). `genkit_hybrid` has no billing
   SDK — it only ever sees the resulting `bool`.
 
-> **A real cascade signal.** That `accept` predicate is a *deliberately crude*
+Fallback and cascade both stop the moment anything has run: once a chunk
+reached the chat or a tool ran, the router keeps the answer it has, because
+running the call again elsewhere would run its tools again.
+
+> **A real cascade signal.** That `cascade` check is a *deliberately crude*
 > demo proxy — "long enough" is a poor stand-in for "good enough" (a correct
 > `"Paris."` escalates needlessly; 25 characters of nonsense passes). A
 > production cascade escalates on model **confidence**, and a strong
@@ -1461,7 +1445,7 @@ case PolicyMode.budget:
 > surprised the model was by its own tokens; with no training data it matches
 > or beats supervised routers, and holds up out-of-distribution. We fall back
 > to a length check for one honest reason: the on-device runtime (LiteRT-LM)
-> returns only decoded text, so `accept` never sees per-token probabilities.
+> returns only decoded text, so the check never sees per-token probabilities.
 > Asking the model to state its own confidence is no safe shortcut either: how
 > well that separates right answers from wrong ones varies widely between
 > small models, and one model studied gave an almost constant confidence. (See
@@ -1469,17 +1453,13 @@ case PolicyMode.budget:
 > [Do Small LMs Know When They're Wrong?](https://arxiv.org/abs/2604.19781).)
 
 > **Smart + image on a cloud outage fails, and that's the point**: with an
-> attached image, `CapabilityStrategy` returns `[kCloud]` — the only branch
-> that declares vision — and nothing behind it. Offline, that call throws and
-> the error reaches the chat as `Error: ...`. An earlier version of this app
-> wrapped Smart in `WithFallback(..., fallbackOrder: [kOnDevice])`, which
-> appended the on-device model as a tail for *both* shapes of request; the
-> picture then went to a model that can't see it and got answered from the
-> question's text alone — a confident, plausible reply about a photo nobody
-> read. A wrong answer nobody flags is worse than a visible failure, so the
-> wrapper is gone. Text is unaffected: `CapabilityStrategy` puts `kOnDevice`
-> behind `kCloud` on its own, so an offline text question still lands on the
-> phone.
+> attached image, the only target that can take it is `kCloud`, and nothing
+> stands behind it. Offline, that call fails and the error reaches the chat as
+> `Error: ...`. Falling back to the phone would hand the picture to a model
+> that can't see it, which answers from the question's text alone — a
+> confident, plausible reply about a photo nobody read. A wrong answer nobody
+> flags is worse than a visible failure. Text is unaffected: an offline text
+> question still lands on the phone.
 >
 > **Budget shares its counter with Cloud**: `cloudCallsSpent` is one counter,
 > not one per policy — a Cloud-mode send also spends the Budget allowance.
@@ -1510,38 +1490,36 @@ if (_attachedImage != null && _policy.textOnly) {
 too — both are declared `textOnly: true` and blocked. `smart` and `cloud`
 send an image to `kCloud` and nowhere else, so they're let through.
 `budget` is let through as well, but that's the one optimistic case: once
-`cloudCallsSpent` hits `budgetCap`, `CostStrategy` routes to `[kOnDevice]`
-only — `textOnly` is a fact about the policy, not about its current spend, so
-an image sent on a spent budget still isn't guaranteed a vision-capable
-branch.
+`cloudCallsSpent` hits `budgetCap`, the budget rule answers `only(kOnDevice)`
+— `textOnly` is a fact about the policy, not about its current spend, so an
+image sent on a spent budget is refused by the router (`Error: ...`), not
+answered by a model that can't see it.
 
 ### Manual runbook
 
 1. Send a text message in each of the five modes — Cloud, Local, Smart,
    Cascade, Budget — and confirm each one answers.
 2. Attach an image, switch to **Smart**, and send — the response comes from
-   Gemini (`CapabilityStrategy` routes the vision request straight to
-   `kCloud`).
+   Gemini (the only target that declares vision).
 3. Turn off WiFi, stay on **Smart**, and send a text message — the cloud
-   attempt fails and `hybridModel` moves on to `kOnDevice`, the tail
-   `CapabilityStrategy` returned for a text request (slower, but it answers).
-   Now attach an image and send that instead: this one fails with
-   `Error: ...`, because a vision request has no on-device tail to move on
-   to.
+   attempt fails and the router falls back to `kOnDevice` (slower, but it
+   answers). Now attach an image and send that instead: this one fails with
+   `Error: ...`, because a vision request has no on-device fallback.
 4. Turn WiFi back on, switch to **Budget**, and keep sending text messages.
-   `cloudCallsSpent` counts every completed Cloud- or Budget-mode call
-   cumulatively for the whole session — including the Cloud-mode message
-   from step 1 — so it may already be close to `budgetCap` (3) by the time
-   you get here. Once it reaches the cap, routing flips to on-device only
-   (`CostStrategy` sees `budgetAvailable == false`); a hot restart resets
-   the counter to 0 if you want to watch it flip from a clean count.
+   `cloudCallsSpent` counts every Cloud- or Budget-mode call that ran in the
+   cloud, cumulatively for the whole session — including the Cloud-mode
+   message from step 1 — so it may already be close to `budgetCap` (3) by
+   the time you get here. Once it reaches the cap, routing flips to
+   on-device only (the budget rule sees `budgetAvailable == false`); a hot
+   restart resets the counter to 0 if you want to watch it flip from a clean
+   count.
 5. Switch to **Local** and attach an image — send is blocked before any
    request goes out, with the "can't see images" snackbar.
 
-`flutter test test/ai_engine_policy_test.dart` exercises the same
-`strategyFor` routes and `PolicyMode` facts as a fast, deviceless unit test —
-useful to rerun after touching routing logic instead of redoing the whole
-runbook by hand.
+`flutter test test/ai_engine_policy_test.dart` defines the same router over
+fake models and runs these routes — fallback, the image block, cascade, the
+budget flip — as a fast, deviceless unit test, useful to rerun after touching
+routing logic instead of redoing the whole runbook by hand.
 
 ## Step 5: Embeddings with Genkit
 Duration: 20
@@ -1798,11 +1776,11 @@ rather than asserting it — an `assert` is compiled out of a release build,
 which is precisely where a mismatched embedder would otherwise return
 silent nonsense.
 
-### Give the on-device branch room to read
+### Give the on-device target room to read
 
 `kTopK` is the first knob in this codelab that can break a working app.
 Retrieval doesn't just improve the prompt, it *inflates* it — and the
-on-device branch is answering inside a fixed window.
+on-device target is answering inside a fixed window.
 
 > **`maxTokens` is the whole context window, not the reply length.** It is the
 > KV-cache budget: everything the model reads *plus* everything it writes.
@@ -1813,63 +1791,36 @@ on-device branch is answering inside a fixed window.
 > `Input token ids are too long ... 1713 >= 1024` — a native error, not a bad
 > answer. The fix isn't a smaller `kTopK`: the bundled Gemma 3 1B was built
 > for a 4096-token window, which is what the `ekv4096` in its file name means.
-> Give the on-device branch the window it already has.
+> Give the on-device target the window it already has.
 
-Back in `AiEngine`, wrap the resolved on-device model so every request it
-receives carries that budget:
+Back in `AiEngine`, the on-device target already carries that budget — it is
+the config of the model the router hands the target:
 
 ```dart
-/// Context window for the on-device branch, in tokens. `maxTokens` is the
+/// Context window for the on-device target, in tokens. `maxTokens` is the
 /// WHOLE window (input + output) and genkit_flutter_edge_ai defaults it to 1024.
 /// RagService's take(3) of ~600-token city guides alone is ~1.7k tokens —
 /// measured on device: "Input token ids are too long … 1713 >= 1024". The
 /// bundled Gemma-3-1B `.litertlm` is built for 4096 (`ekv4096`), so use it.
 const kOnDeviceContextTokens = 4096;
 
-// ... in initialize(), where the on-device model is resolved:
-_local = _withContextBudget(
-  await _resolve(flutterEdgeAi.model(kLocalModel)),
-);
-
-// ...
-
-/// Wraps the on-device [inner] model so every request reaching it carries a
-/// context window big enough for the RAG prompt. genkit_flutter_edge_ai reads
-/// `maxTokens` ONLY from the per-request `request.config` (defaulting to 1024)
-/// — registration-time [FlutterEdgeAiModelConfig] has no options field — so the
-/// budget has to ride along with each request. genkit_hybrid runs a branch as
-/// an action, so forwarding the caller's streaming callback, context and
-/// cancellation leaves streaming and fallback untouched. Only the on-device
-/// branch is wrapped: Gemini's config has no `maxTokens` key. An explicit
-/// request `maxTokens` wins. The request is COPIED, never mutated — cascade
-/// hands the very same object to the cloud branch next. [inner]'s metadata is
-/// forwarded as a COPY too: genkit's `Model` constructor writes into the map it
-/// is handed, so passing `inner.metadata` itself would rewrite the wrapped
-/// model's own metadata.
-Model _withContextBudget(Model inner) => Model(
-  name: '${inner.name}/ctx',
-  metadata: {...inner.metadata},
-  fn: (request, context) {
-    // Run [inner] the way genkit_hybrid runs a branch: as an action, with
-    // the caller's streaming callback, context and cancellation.
-    forward(ModelRequest r) => inner(
-      r,
-      onChunk: context.streamingRequested ? context.sendChunk : null,
-      context: context.context,
-      cancel: context.cancel,
+/// The on-device model as a router target sees it: the plugin's model, with
+/// the context window the RAG prompt needs as its config. A routed call
+/// carries no config of its own — each target owns its own — so this is the
+/// one place the window is set, and Gemini never sees it.
+ModelRef<FlutterEdgeAiModelOptions> onDeviceModel(String name) =>
+    modelRef<FlutterEdgeAiModelOptions>(
+      flutterEdgeAi.model(name).name,
+      customOptions: FlutterEdgeAiModelOptions.$schema,
+      config: FlutterEdgeAiModelOptions(maxTokens: kOnDeviceContextTokens),
     );
-    if (request.config?['maxTokens'] != null) return forward(request);
-    final budgeted = ModelRequest.fromJson({
-      ...request.toJson(),
-      'config': {...?request.config, 'maxTokens': kOnDeviceContextTokens},
-    });
-    return forward(budgeted);
-  },
-);
 ```
 
-The cloud branch is untouched — Gemini's window is orders of magnitude
-larger, and the wrapper only ever sees requests already routed on-device.
+A routed call takes no `config:` of its own — the router refuses one —
+because each target owns its config: the router sends `maxTokens: 4096` with
+every request that runs on the phone, and nothing with the ones that run in
+the cloud, whose window is orders of magnitude larger. A cascade that
+escalates from the phone to the cloud can't carry the phone's config along.
 
 ### Add RAG toggle to the UI
 
@@ -1900,7 +1851,7 @@ Duration: 10
 - Disable a policy the app can't serve — that's `mode.availableWith(...)` in
   the picker
 - Gate *every* send entry point, the button and `TextField.onSubmitted` alike,
-  on the same condition — nothing in flight, and at least one branch ready
+  on the same condition — nothing in flight, and at least one target ready
 - Show "Generating..." indicator during streaming
 - Graceful error messages in the chat
 
@@ -1910,8 +1861,8 @@ Duration: 10
 |------------|-----------|
 | Cloud inference | `genkit_google_genai` → Gemini 3.7 Flash |
 | On-device inference | `genkit_flutter_edge_ai` → Gemma 3 1B |
-| Hybrid routing | `genkit_hybrid` — `hybridModel`/`cascadeModel` (cloud, local, smart, cascade, budget) |
-| Multimodal input | `image_picker` + `MediaPart`, routed by `CapabilityStrategy` |
+| Hybrid routing | `genkit_hybrid` — one router, one policy per mode (cloud, local, smart, cascade, budget) |
+| Multimodal input | `image_picker` + `MediaPart`, routed by the targets' declared capabilities |
 | On-device embeddings | `genkit_flutter_edge_ai` → EmbeddingGemma 300M, including Web |
 | RAG pipeline | Genkit `embed()` + in-memory cosine search, including Web |
 
@@ -1926,8 +1877,8 @@ ai.generateStream(model: googleAI.gemini('gemini-3.7-flash'), prompt: prompt)
 ai.generateStream(model: flutterEdgeAi.model('gemma-3-1b-it'), prompt: prompt)
 ai.embed(embedder: flutterEdgeAi.embedder('embedding-gemma-300m'), document: ...)
 
-// genkit_hybrid composes both into one routable model — still the same call:
-ai.generateStream(model: engine.modelFor(policy), messages: [userMessage])
+// genkit_hybrid routes each message — the same call, through the router:
+engine.router.generateStream(policy: policyName, messages: [userMessage])
 ```
 
 Routing, fallback and observability all work the same way regardless of which
@@ -1942,6 +1893,9 @@ Gemma 3 1B does not.
   complex queries, or add a second on-device model for specialized tasks
 - **Genkit flows**: Wrap the hybrid routing in a `defineFlow` to add
   observability, retries, and structured output
+- **Decide on the device**: give a policy a classifier —
+  `genkit_flutter_edge_ai`'s `deciderRouteClassifier` turns an EmbeddingGemma
+  decider into one — and map its labels to targets, after your rules
 - **On-device RAG with Qdrant**: Replace the in-memory store with
   [Qdrant](https://qdrant.tech) for persistent, scalable vector search
 

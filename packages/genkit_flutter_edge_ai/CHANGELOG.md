@@ -1,3 +1,6 @@
+## 0.11.0
+- `deciderRouteClassifier` routes genkit_hybrid calls with a Decider; require `flutter_edge_ai` 2.5.x.
+
 ## 0.10.1
 - README: the llama.cpp engine, and engine errors arrive in `ai.generate`'s result.
 

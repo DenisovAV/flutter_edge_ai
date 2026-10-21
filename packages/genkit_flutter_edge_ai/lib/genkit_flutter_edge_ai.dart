@@ -47,6 +47,7 @@ import 'package:genkit/genkit.dart';
 import 'src/flutter_edge_ai_options.dart';
 import 'src/flutter_edge_ai_plugin.dart';
 
+export 'src/decider_route_classifier.dart' show deciderRouteClassifier;
 export 'src/flutter_edge_ai_options.dart'
     show FlutterEdgeAiModelOptions, FlutterEdgeAiEmbedConfig;
 export 'src/flutter_edge_ai_plugin.dart'

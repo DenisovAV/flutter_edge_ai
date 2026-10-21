@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:genkit/genkit.dart';
+import 'package:genkit_hybrid/genkit_hybrid.dart';
 
 import '../models/message_model.dart';
 import '../services/ai_engine.dart';
@@ -113,13 +114,11 @@ class _ChatScreenState extends State<ChatScreen> {
       final buffer = StringBuffer();
       _lastUiUpdate = DateTime.now();
 
-      // Captured before the call: genkit_hybrid doesn't report which branch
-      // actually ran, so this is a best-effort demo counter, not an exact
-      // count of cloud calls — see the accounting comment below.
-      final wasBudgetAvailable = _engine.budgetAvailable;
-
-      final stream = _engine.ai.generateStream(
-        model: _engine.modelFor(_policy),
+      // The router decides where the message runs, once, and reports it on
+      // the result (`result.route`). A refusal (say, an image on a text-only
+      // target) is thrown as a HybridRoutingException.
+      final stream = _engine.router.generateStream(
+        policy: _engine.policyName(_policy),
         messages: [userMessage],
       );
       await for (final chunk in stream) {
@@ -149,13 +148,11 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       generationSucceeded = true;
 
-      // Best-effort demo counter for CostStrategy: genkit_hybrid exposes no
-      // "which branch ran" signal, so a Budget call that transiently fell
-      // back to on-device still counts here as spent; Budget stops climbing
-      // once the cap is hit either way.
-      if (_policy == PolicyMode.cloud) {
-        _engine.cloudCallsSpent++;
-      } else if (_policy == PolicyMode.budget && wasBudgetAvailable) {
+      // The budget demo counts the Cloud and Budget calls that really ran in
+      // the cloud: the router reports the target each call ended on, so a
+      // Budget call that fell back to the device is not counted.
+      if ((_policy == PolicyMode.cloud || _policy == PolicyMode.budget) &&
+          result.route?.target == kCloud) {
         _engine.cloudCallsSpent++;
       }
 

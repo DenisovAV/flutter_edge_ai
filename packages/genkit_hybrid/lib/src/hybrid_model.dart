@@ -17,6 +17,7 @@ const String kCloud = 'cloud';
 ///
 /// The optional [name] is used as the returned [Model]'s name (and registry
 /// key). Defaults to `'hybrid'` so existing call sites require no changes.
+@Deprecated('Use defineHybridRouter; removed in 0.5.0.')
 Model hybridModel({
   required Map<String, Model> branches,
   required RoutingStrategy strategy,
@@ -92,6 +93,7 @@ Model hybridModel({
 ///
 /// The optional [name] is forwarded to [hybridModel] as the returned [Model]'s
 /// name (and registry key). Defaults to `'hybrid'`.
+@Deprecated('Use defineHybridRouter; removed in 0.5.0.')
 Model hybridModelOnDeviceCloud({
   required Model onDevice,
   required Model cloud,

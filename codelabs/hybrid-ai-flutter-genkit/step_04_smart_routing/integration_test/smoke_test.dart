@@ -46,8 +46,8 @@ void main() {
       );
 
       if (engine.localReady) {
-        final resp = await engine.ai.generate(
-          model: engine.modelFor(PolicyMode.local),
+        final resp = await engine.router.generate(
+          policy: engine.policyName(PolicyMode.local),
           messages: [msg],
         );
         expect(
@@ -60,8 +60,8 @@ void main() {
       }
 
       if (engine.cloudReady) {
-        final resp = await engine.ai.generate(
-          model: engine.modelFor(PolicyMode.cloud),
+        final resp = await engine.router.generate(
+          policy: engine.policyName(PolicyMode.cloud),
           messages: [msg],
         );
         expect(

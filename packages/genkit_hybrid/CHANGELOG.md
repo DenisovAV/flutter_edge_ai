@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- `defineHybridRouter`: one decision per call, rules then a classifier, cloud reachable only through it.
+- Deprecate `hybridModel`, `cascadeModel` and the `RoutingStrategy` family; removed in 0.5.0.
+
 ## 0.3.1
 
 - A cancel ends a cascade before or during its `accept`, never with a success.

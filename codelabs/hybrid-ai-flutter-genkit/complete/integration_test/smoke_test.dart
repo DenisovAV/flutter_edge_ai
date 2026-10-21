@@ -45,8 +45,8 @@ void main() {
         content: [TextPart(text: 'Reply with a short greeting.')],
       );
 
-      final resp = await engine.ai.generate(
-        model: engine.modelFor(PolicyMode.local),
+      final resp = await engine.router.generate(
+        policy: engine.policyName(PolicyMode.local),
         messages: [msg],
       );
       expect(
@@ -58,8 +58,8 @@ void main() {
       print('[smoke] LOCAL ok (chars=${resp.text.trim().length})');
 
       if (engine.cloudReady) {
-        final cloudResp = await engine.ai.generate(
-          model: engine.modelFor(PolicyMode.cloud),
+        final cloudResp = await engine.router.generate(
+          policy: engine.policyName(PolicyMode.cloud),
           messages: [msg],
         );
         expect(

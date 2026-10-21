@@ -223,8 +223,8 @@ metadata says so, and a request that needs them fails with `UNIMPLEMENTED`
 instead of reaching a model that would ignore them. Options are checked before
 anything loads, so a bad value, a `maxOutputTokens` larger than `maxTokens`
 among them, is an `INVALID_ARGUMENT`. An engine that cannot do what was asked
-on this platform is `UNIMPLEMENTED`, which `genkit_hybrid` hands to its next
-branch. An installed model the app cannot run (no engine registered for it) is
+on this platform is `UNIMPLEMENTED`, which a `genkit_hybrid` router falls back
+on. An installed model the app cannot run (no engine registered for it) is
 `FAILED_PRECONDITION`, which no router hides.
 
 </Info>
@@ -311,18 +311,20 @@ held back as well, since it is written into the prompt after the trimmer runs.
 
 ## genkit_hybrid
 
-Provider-agnostic hybrid routing for Genkit. Combine any two existing Genkit
-models — on-device, cloud, or anything else — behind one routing policy. The
-result is an ordinary `Model`, so your app still calls a single `ai.generate`.
+Hybrid on-device/cloud routing for Genkit. A router sends each generate call to
+one of its targets — a model on the device or in the cloud — once, at the first
+turn of the tool loop, and keeps it there for the whole loop. Deterministic
+rules decide first; a classifier, such as an on-device decider, decides the
+rest.
 
 `genkit_hybrid` depends only on `genkit` — it has no dependency on
-flutter_edge_ai and works with **any** pair of Genkit models.
+flutter_edge_ai and works with any Genkit models.
 
 ### Add to pubspec.yaml
 
 ```
 dependencies:
-  genkit_hybrid: ^0.3.1
+  genkit_hybrid: ^0.4.0
   genkit: ^1.0.0
 ```
 
@@ -332,164 +334,120 @@ dependencies:
 import 'package:genkit/genkit.dart';
 import 'package:genkit_hybrid/genkit_hybrid.dart';
 
-final ai = Genkit();
+// The on-device plugin only, and no `model:`: a call that forgets the router
+// must have nowhere to go.
+final ai = Genkit(plugins: [edgeAi]);
 
-// onDeviceModel and cloudModel are ordinary Genkit Models you already have.
-final smart = hybridModelOnDeviceCloud(
-  onDevice: onDeviceModel,
-  cloud: cloudModel,
-  strategy: ConnectivityStrategy(
-    isOnline: () => connectivity.isOnline,
-    online: kCloud,
-    offline: kOnDevice,
-  ),
+final router = defineHybridRouter(
+  ai,
+  targets: {
+    kOnDevice: HybridTarget.onDevice(flutterEdgeAi.model('gemma-4-e2b')),
+    kCloud: HybridTarget.cloud(googleAI.gemini('gemini-2.5-flash')),
+  },
+  cloudPlugins: [googleAI(apiKey: apiKey)], // given to the router only
+  policies: {
+    'smart': RoutePolicy(
+      rules: [
+        RouteRule.offline(isOnline: () => net.isOnline),
+        RouteRule.inputSize(maxChars: 3000, small: kOnDevice, large: kCloud),
+      ],
+      classifier: myClassifier,
+      labels: {'smalltalk': kOnDevice, 'code': kCloud},
+      fallback: [kOnDevice],
+    ),
+  },
+  defaultPolicy: 'smart',
 );
 
-// A hybrid model is an ordinary Model — register it, then use it like any other.
-ai.registry.register(smart);
-
-final response = await ai.generate(model: smart, prompt: 'Hello!');
+final response = await router.generate(prompt: 'Hello!');
+print(response.route); // target, model, source, label, score, routeTime
 ```
 
-A branch is a `Model`, not the `ModelRef` that `flutterEdgeAi.model()` returns.
-Keep the `GenkitFlutterEdgeAiPlugin` you pass to `Genkit` and ask it for the
-`Model` by the name you configured (see [Setup](#setup)):
+`router.generate` and `router.generateStream` take what `ai.generate` takes
+except `model` and `config` — each target carries its own config on its
+`ModelRef` — plus `policy:` and `pin:`. `router.definePrompt` defines a prompt
+routed with a fixed policy.
 
-```dart
-final edgeAi = GenkitFlutterEdgeAiPlugin(
-  models: [
-    FlutterEdgeAiModelConfig(name: 'gemma-4-e2b', modelType: ModelType.gemma4),
-  ],
-);
-final ai = Genkit(plugins: [edgeAi]); // and your cloud plugin
+### The cloud is reachable only through the router
 
-final onDeviceModel = edgeAi.model('gemma-4-e2b'); // NOT_FOUND for a name not configured
-```
+The cloud plugins go to the router, which keeps them in a Genkit instance of
+its own. The app's `ai` gets one proxy model per cloud target, which serves a
+request only when the router chose that target for that call: a direct call to
+it, or an app middleware that switches a device decision to it, fails with
+`PERMISSION_DENIED`. `defineHybridRouter` refuses a Genkit created with a
+default `model:`, and on every cloud call the router checks that the app's `ai`
+cannot resolve the cloud model itself.
 
-A model of any plugin registered with `ai` can also be looked up by its ref's
-name: `await ai.registry.lookupAction(ActionType.model, ref.name) as Model`.
+### Policies, rules and decisions
 
-### Routing strategies
-
-| Strategy | Routes on |
+| `RoutePolicy` field | Meaning |
 |---|---|
-| `PreRoutingStrategy(fn)` | your own function (privacy, cost, user tier…) |
-| `FallbackStrategy(order)` | fixed priority order — `kOnDevice` first or `kCloud` first |
-| `ConnectivityStrategy(...)` | network availability |
-| `InputSizeStrategy(...)` | prompt length |
-| `CapabilityStrategy(supports: {...})` | the capabilities a request needs — vision / audio / tools / json — routing to branches that declare them |
-| `CostStrategy(budgetAvailable:, premium:, cheap:)` | a budget signal — the premium branch while the budget holds, the cheap branch once it's spent |
-| `FirstMatch([...])` | first child strategy that decides (chain of rules) |
-| `WithFallback(s, fallbackOrder: order)` | any strategy's pick + a guaranteed fallback tail |
+| `rules` | synchronous rules, in order; the first decision wins |
+| `classifier` | asked only when no rule decided |
+| `labels` | classifier label → target; an unknown label fails the call |
+| `onAbstain` | where an abstain goes; default `kOnDevice` |
+| `onUnavailable` | where a call goes while the classifier is not ready; default: the call fails |
+| `fallback` | targets tried after a transient first-turn failure, a missing capability or a rejected cascade |
+| `cascade` | a check on the result; false escalates along `fallback` |
 
-### Prefer on-device, fall back to cloud
+Built-in rules: `RouteRule.custom(name, fn)`, `RouteRule.offline(isOnline:)`,
+`RouteRule.inputSize(maxChars:, small:, large:)` and
+`RouteRule.budget(available:, premium:, cheap:)`. A decision is
+`RouteDecision.prefer(target)`, which may move to another target, or
+`RouteDecision.only(target)`, which never does; `pin:` on a call is `only`.
+`HybridTarget(…, supports: {ModelCapability.vision, …})` declares what a target
+can do, and a request that needs more moves a `prefer` decision to the first
+capable fallback target.
+
+### Fallback, cascade and consent
+
+Fallback and cascade happen only at the first turn, for a `prefer` decision,
+never on a resume, and only while nothing ran: no chunk reached the caller and
+no tool ran, since re-running a tool loop would re-run its tools. A fallback
+needs a transient error: any non-Genkit error, or `UNAVAILABLE`,
+`DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`, `INTERNAL` or `UNIMPLEMENTED`. A
+streamed cascade attempt holds its chunks until the verdict.
+
+`confirmCloud: (request) => …` is asked once per call that is about to go to
+the cloud. False keeps the call on the device, or fails it when there is no
+`kOnDevice` target.
+
+### Decide on the device with a Decider
+
+`genkit_flutter_edge_ai`'s `deciderRouteClassifier` turns an EmbeddingGemma 2
+decider into the router's classifier; its options are the labels:
 
 ```dart
-hybridModelOnDeviceCloud(
-  onDevice: onDeviceModel,
-  cloud: cloudModel,
-  strategy: FallbackStrategy([kOnDevice, kCloud]),
-);
-```
-
-### Chain multiple rules
-
-```dart
-hybridModelOnDeviceCloud(
-  onDevice: onDeviceModel,
-  cloud: cloudModel,
-  strategy: WithFallback(
-    FirstMatch([
-      PreRoutingStrategy((c) => userOptedOutOfCloud ? kOnDevice : ''),
-      ConnectivityStrategy(
-        isOnline: () => net.isOnline,
-        online: kCloud,
-        offline: kOnDevice,
-      ),
-    ]),
-    fallbackOrder: [kOnDevice],
+classifier: deciderRouteClassifier(
+  () => intents ??= FlutterEdgeAi.getActiveEmbedder().then(
+    (embedder) => embedder.createDecider(options: intentOptions),
   ),
-);
+),
+labels: {'smalltalk': kOnDevice, 'code': kCloud},
 ```
 
-### Route by required capabilities
+The provider is called per request: return the pending Future while the
+decider loads. A decider error fails the call, never an abstain — an input over
+the embedder's limit included, so keep `RouteRule.inputSize` before the
+classifier. See [Decisions](/docs/decisions).
 
-`CapabilityStrategy` inspects what the request actually needs — an image or
-audio part, tool definitions, or JSON output — and keeps only the branches that
-declare those capabilities (or `[]` when none qualifies, so compose it with
-`WithFallback`). Capabilities are declared explicitly per branch; nothing is
-inferred from model metadata.
+### Errors
 
-```dart
-final smart = hybridModel(
-  branches: {'onDevice': onDeviceModel, 'cloud': cloudModel},
-  strategy: WithFallback(
-    CapabilityStrategy(supports: {
-      'onDevice': {},                                   // text only
-      'cloud': {ModelCapability.vision, ModelCapability.tools},
-    }),
-    fallbackOrder: ['cloud'],
-  ),
-);
-```
-
-A plain-text request can use either branch; a request carrying an image or tool
-definitions is routed to `cloud`, the only branch that declares those
-capabilities.
-
-### Budget-gate a paid branch
-
-`CostStrategy` sends traffic to a premium branch only while an app-supplied
-budget signal holds, and falls back to the cheap branch once it's spent. Your
-app owns the accounting (running spend, a daily cap, a quota) and reduces it to
-one `bool` — the package depends on no billing SDK.
+`router.generate`, `generateStream` and a routed prompt's `call`/`stream` throw
+`HybridRoutingException` when the router refuses. Other failures stay what
+Genkit makes of them: a result with `finishReason: FinishReason.failed`, the
+error in `error` and the original exception in `cause`; a cancel or a
+`maxTurns` overrun ends with `FinishReason.aborted`. A cloud model can also
+stop on its own terms: `genkit_google_genai` reports a safety block as
+`FinishReason.blocked`. Treat every finish other than `stop`, `length` and
+`unknown` as a failure, after handling `FinishReason.interrupted`:
 
 ```dart
-hybridModel(
-  branches: {'onDevice': onDeviceModel, 'cloud': cloudModel},
-  strategy: CostStrategy(
-    budgetAvailable: () => spend.today < dailyCap,
-    premium: 'cloud',
-    cheap: 'onDevice',
-  ),
-);
-```
-
-### Error policy and fallback
-
-Fallback is error-driven: the strategy picks an order, and the next branch is
-tried only when the current one **throws**, and only on a transient failure —
-any non-`GenkitException` error (network, timeout, OOM), or a `GenkitException`
-with `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED` or `INTERNAL` —
-or on `UNIMPLEMENTED`: a capability one model lacks (tools, images, audio on
-this platform) another branch's model may have. Permanent errors —
-`INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`,
-`FAILED_PRECONDITION`, `NOT_FOUND` — propagate immediately, since they would
-fail the same way on every branch. A `GenkitException` thrown without an
-explicit status defaults to `INTERNAL`, so it *is* retried. After a cancel no
-other branch is tried: the error of the branch that was running is the one
-reported.
-
-The error that propagates does not leave `ai.generate` as an exception. In
-genkit 1.0 a failed generation comes back as a result with
-`finishReason: FinishReason.failed`, the error in `error` and the original
-exception in `cause`; `ai.generateStream` ends normally with that result in
-`onResult`. A cancel or a `maxTurns` overrun ends the same way with
-`FinishReason.aborted`, often with no `cause`; `error` is set in both cases.
-A cloud branch can also stop on its own terms without any error:
-`genkit_google_genai` reports a safety block as `FinishReason.blocked` and a
-reason it does not know as `FinishReason.other`. Treat every finish other than
-`stop`, `length` and `unknown` as a failure. The exception is
-`FinishReason.interrupted` when your tools interrupt (`ai.defineInterrupt`,
-`ToolResult.interrupt`): the generation waits for a follow-up `generate` with
-`interruptRespond`, so handle it before this check:
-
-```dart
-await for (final chunk in stream) { /* ... */ }
-final result = await stream.onResult;
+final result = await router.generate(prompt: 'Hi');
 final reason = result.finishReason;
 if (reason == FinishReason.interrupted) {
-  // Answer the interrupts with a follow-up generate(..., interruptRespond: ...).
+  // Answer with router.generate(messages: result.messages, interruptRespond: ...):
+  // the router resumes on the target that was interrupted.
 } else if (reason != FinishReason.stop &&
     reason != FinishReason.length &&
     reason != FinishReason.unknown) {
@@ -498,41 +456,29 @@ if (reason == FinishReason.interrupted) {
 }
 ```
 
-During **streaming** the same policy applies plus a hard cut-off: fallback is
-possible only before the first token. Once a branch has emitted a chunk, any
-later failure propagates — a partially delivered response cannot be silently
-re-routed.
-
-### Escalate on a quality check with `cascadeModel`
-
-`cascadeModel` is a `Model` (not a strategy): it runs branches in order and
-escalates to the next one only when your `accept` predicate rejects the
-response — "try the cheap on-device model; go to the cloud only if the answer
-isn't good enough". `accept` is any check you like (a length or regex test, a
-JSON-parses check) and may be async, e.g. an LLM-as-judge. A request cancelled
-while an async `accept` runs ends with the cancellation, whatever the verdict.
-
-```dart
-import 'package:genkit_hybrid/genkit_hybrid.dart';
-
-final smart = cascadeModel(
-  branches: {'onDevice': onDeviceModel, 'cloud': cloudModel},
-  order: ['onDevice', 'cloud'],
-  accept: (r) => r.text.trim().length > 20,
-);
-ai.registry.register(smart); // generate looks the model up by name
-
-final response = await ai.generate(model: smart, prompt: 'Explain quantum tunnelling.');
-```
-
-> **`cascadeModel` is non-streaming in v1.** A quality verdict needs the whole
-> response, and a streamed response can't be un-sent, so a streaming request is
-> run non-streamed and the accepted response is emitted as a single final chunk.
-
 <Info>
 
-`genkit_hybrid` works with **any** Genkit models, not just flutter_edge_ai. You
-can combine `gemini-2.5-flash` (cloud) with a model from any other Genkit
-plugin.
+Genkit's tracing records the full prompt on every span. An exporter with
+content capture on sends the text of every request off the device, the
+on-device ones included: in a hybrid app keep content capture off, or redact.
 
 </Info>
+
+### Migrating from 0.3
+
+`hybridModel`, `hybridModelOnDeviceCloud`, `cascadeModel` and the
+`RoutingStrategy` family are deprecated in 0.4.0 and removed in 0.5.0. They
+routed per model call, so inside a tool loop a fallback or a network change
+could switch models between turns.
+
+| 0.3 | 0.4 |
+|---|---|
+| `hybridModel` / `hybridModelOnDeviceCloud` | `defineHybridRouter` + `router.generate` |
+| `PreRoutingStrategy(fn)` | `RouteRule.custom(name, fn)` |
+| `ConnectivityStrategy(...)` | `RouteRule.offline(isOnline:)` |
+| `InputSizeStrategy(threshold:, ...)` | `RouteRule.inputSize(maxChars:, ...)` |
+| `CostStrategy(...)` | `RouteRule.budget(...)` |
+| `FirstMatch([...])` | `RoutePolicy.rules` |
+| `FallbackStrategy(order)` / `WithFallback` | a rule's `prefer` + `RoutePolicy.fallback` |
+| `CapabilityStrategy(supports:)` | `HybridTarget(…, supports:)` |
+| `cascadeModel(accept:)` | `RoutePolicy.cascade` |

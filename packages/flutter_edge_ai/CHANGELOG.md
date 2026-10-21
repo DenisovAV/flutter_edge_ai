@@ -1,6 +1,7 @@
 ## 2.5.1
 - Android: the manifest declares MediaTek's NeuroPilot libraries for the MediaTek NPU.
 - Docs: the macOS setup replaces the generated `post_install` block, and the LiteRT-LM load error names the fix (#689).
+- Docs: which Gemma 3 bundles lose prefill chunks on the NPU (LiteRT-LM#3508).
 
 ## 2.5.0
 - **Breaking:** remove the members deprecated for 2.5.0 (listed in MIGRATION.md).

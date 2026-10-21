@@ -37,17 +37,21 @@ const int kMinLitertlmContextTokens = 1024;
 ///
 /// **Not applied on [PreferredBackend.npu].** The floor above is a CPU/GPU
 /// fact: those bundles bake `kv_cache_max_len` 1024 and underflow below it.
-/// NPU bundles are compiled for one `cache_length`, and on Qualcomm the
-/// prefill mask the compiled graph carries
+/// NPU bundles are compiled for one `cache_length`, which can sit BELOW this
+/// floor. In a Gemma 3 bundle built with litert-torch's `npu_export` for the
+/// Qualcomm NPU, the prefill mask the compiled graph carries
 /// (`2 B x (attention heads / KV heads) x prefill x (cache_length + prefill)`)
 /// must stay at or under ~1 MiB or every prefill chunk after the first is
-/// dropped — the model answers from chunk 0 alone, with no error. For the
-/// Gemma 3 bundles (4 attention heads per KV head) that puts the largest
-/// working value at prefill 128 at **896**, i.e. BELOW this floor; clamping up
-/// to 1024 is exactly the setting that breaks them (LiteRT-LM#3508). Garbled
-/// Qwen3 output on the NPU is a different bug (LiteRT-LM#3846). So on NPU the
-/// caller's number is passed through untouched: the safe context is a property
-/// of the bundle, and only the caller knows it.
+/// dropped — the model answers from chunk 0 alone, with no error. With 4
+/// attention heads per KV head that puts the largest working `cache_length` at
+/// prefill 128 at **896** (LiteRT-LM#3508). That limit is set when the bundle
+/// is built, not by `maxTokens`: LiteRT-LM's NPU executor (v0.18.0,
+/// `DetermineMaxSequenceLengthStaticModel`) lowers a larger value to the
+/// compiled limit of a bundle with a static KV cache, with a warning, so
+/// raising 896 to 1024 would not break it. Garbled Qwen3 output on the NPU is
+/// a different bug (LiteRT-LM#3846). The floor is skipped on NPU because it is
+/// a CPU/GPU fact: the caller's number is passed through untouched, since the
+/// context is a property of the bundle and only the caller knows it.
 ///
 /// Pass the backend of the ATTEMPT, not the one the caller asked for. A
 /// requested NPU falls back npu -> gpu -> cpu, and the floor still has to apply

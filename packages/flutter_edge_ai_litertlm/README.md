@@ -836,8 +836,9 @@ for an NPU is refused elsewhere ([Where a model runs](#where-a-model-runs)).
 Windows has no device probe: a bundle compiled for the Intel NPU is not refused
 on a PC without one, and what LiteRT does then is not measured.
 
-Run a Gemma 4 bundle on the NPU: a Gemma 3 bundle drops every prefill chunk
-after the first, with no error, and answers from the start of the prompt alone
+Run a Gemma 4 bundle on the NPU: most Gemma 3 bundles drop every prefill chunk
+after the first, with no error, and answer from the start of the prompt alone;
+of the published Qualcomm 1B files only `…_sm8850` keeps them
 ([LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508)).
 
 On macOS, App Nap throttles an app that is in the background: after about a

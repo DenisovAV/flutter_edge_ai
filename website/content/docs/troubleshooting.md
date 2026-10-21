@@ -241,14 +241,20 @@ same way (`ModelType.qwen3`, `ModelFileType.litertlm`). See [#659](https://githu
 ## NPU
 
 **The model answers, fluently, about the beginning of a long prompt and ignores
-the rest.** That is the Gemma 3 family on an NPU. Nothing raises, nothing is
+the rest.** That is most Gemma 3 bundles on an NPU. Nothing raises, nothing is
 logged: every prefill chunk after the first is dropped, so the model genuinely
-never saw the end of your prompt. On Qualcomm it is a size threshold in the
-compiled bundle's prefill mask (~1 MiB; at prefill 128 the largest working
-`cache_length` for Gemma 3 — 4 attention heads per KV head — is 896, and every published
-`qualcomm.*` Gemma 3 bundle is built above it); on Intel it happens regardless
-of size, through a different defect. Run a **Gemma 4** bundle on the NPU, or move
-that model to `PreferredBackend.cpu` / `.gpu`. Upstream:
+never saw the end of your prompt. On Qualcomm the published 270M bundles for
+SM8750 and SM8850 and the 1B `…_sm8750` and `…_sm8550` do it; the 1B
+`…_sm8850` does not. In a bundle you build with `npu_export` it is a size
+threshold in the prefill mask (~1 MiB; at prefill 128 the largest working
+`cache_length` for Gemma 3 — 4 attention heads per KV head — is 896), and a
+build calibrated only on short prompts loses a longer prompt past ~450 tokens
+(Gemma 3 1B,
+[litert-torch#1344](https://github.com/google-ai-edge/litert-torch/issues/1344)).
+On Intel it happens regardless of size, through a different defect. Run a
+**Gemma 4** bundle on the NPU, or the same model's generic bundle on
+`PreferredBackend.cpu` / `.gpu` — a bundle compiled for an NPU is refused there
+with a `LiteRtLmBundleException`. Upstream:
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).
 
 Note that `maxTokens` is **not** clamped up to 1024 on the NPU attempt the way

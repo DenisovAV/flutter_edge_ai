@@ -220,21 +220,28 @@ On Windows x64 the Intel Panther Lake bundles need no flag (from 1.13.2): see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 
 **For LLMs, NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
-those work on Qualcomm, Intel and Google Tensor G6. The **Gemma 3** family
-does not on Qualcomm or Intel (Tensor not measured), and it fails
+those work on Qualcomm, Intel and Google Tensor G6. Most **Gemma 3** bundles
+do not on Qualcomm or Intel (Tensor not measured), and they fail
 silently — the model answers from the first prefill chunk alone, fluently,
 with no error and nothing in the log:
 
-- **Qualcomm.** A compiled bundle carries a prefill mask of
-  `2 B × (attention heads ÷ KV heads) × prefill × (cache_length + prefill)`. Above
-  ~1 MiB every chunk after the first is dropped. For Gemma 3 (4 attention heads
-  per KV head) that makes **896** the largest working `cache_length` at prefill
-  128 — and *every* published `qualcomm.*` Gemma 3 bundle is built above the line
-  (270M at cache 4096 is 4.125 MiB, 1B ekv1280 is 1.375 MiB). Garbled Qwen3
-  output on the NPU is a different bug
+- **Qualcomm.** The published 270M bundles for SM8750 and SM8850 lose every
+  chunk after the first, and so do the 1B `…_ekv1280_sm8750` and `…_sm8550`;
+  the 1B `…_sm8850` kept its chunks on a Galaxy S26. In a bundle built with
+  litert-torch's `npu_export`, the loss follows the prefill mask the compiled
+  graph carries,
+  `2 B × (attention heads ÷ KV heads) × prefill × (cache_length + prefill)`:
+  above ~1 MiB every chunk after the first is dropped. For Gemma 3 (4 attention
+  heads per KV head) that makes **896** the largest working `cache_length` at
+  prefill 128. Such a build also needs calibration prompts as long as the
+  prompts it will get: with the default calibration a Gemma 3 1B build lost
+  everything past ~450 tokens
+  ([litert-torch#1344](https://github.com/google-ai-edge/litert-torch/issues/1344)).
+  Garbled Qwen3 output on the NPU is a different bug
   ([LiteRT-LM#3846](https://github.com/google-ai-edge/LiteRT-LM/issues/3846)).
 - **Intel.** The second chunk is lost regardless of mask size — a different
-  defect on the OpenVINO path, which Gemma 4 bundles do not hit.
+  defect on the OpenVINO path, which Gemma 4 bundles do not hit (measured on a
+  Gemma 3 270M built for Lunar Lake; no Gemma 3 Intel bundle is published).
 
 Both are tracked upstream in
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).

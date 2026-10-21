@@ -21,6 +21,17 @@ bool _isQualifiedVector(List<double> vector, int? dimension) {
   return (normSquared - 1).abs() <= 0.001;
 }
 
+String _vectorFailureDetails(List<double> vector, int? dimension) {
+  final finite = vector.every((value) => value.isFinite);
+  final normSquared = vector.fold<double>(
+    0,
+    (sum, value) => sum + value * value,
+  );
+  return 'expected dimension: ${dimension ?? "missing or invalid"}, '
+      'actual dimension: ${vector.length}, finite: $finite, '
+      'squared norm: $normSquared (required |squared norm - 1| <= 0.001)';
+}
+
 typedef _EngineLoader =
     Future<llama.LlamaEngine> Function(String path, llama.ModelParams params);
 
@@ -185,8 +196,10 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
     final metadata = await engine.getMetadata();
     if (metadata['general.architecture'] != 'gemma-embedding2' ||
         metadata['gemma-embedding2.pooling_type'] != '1') {
-      throw const EmbeddingLoadException(
+      throw EmbeddingLoadException(
         'Only mean-pooled EmbeddingGemma 2 GGUF is qualified. '
+        'Found architecture: ${metadata["general.architecture"] ?? "missing"}, '
+        'pooling type: ${metadata["gemma-embedding2.pooling_type"] ?? "missing"}. '
         'Other models require their own prompting and pooling qualification.',
         engine: _engineTag,
       );
@@ -228,8 +241,11 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
       metadata['gemma-embedding2.embedding_length_out'] ?? '',
     );
     if (!_isQualifiedVector(probe, declared)) {
-      throw const EmbeddingLoadException(
-        'The GGUF runtime did not return the declared finite, normalized embedding.',
+      throw EmbeddingLoadException(
+        'The GGUF runtime did not return the declared finite, normalized embedding: '
+        '${_vectorFailureDetails(probe, declared)}; '
+        'declared embedding_length_out: '
+        '${metadata["gemma-embedding2.embedding_length_out"] ?? "missing"}.',
         engine: _engineTag,
       );
     }
@@ -284,22 +300,29 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
         '${taskType.prefix}${input.text!}',
         normalize: true,
       );
-    } on llama.LlamaEmbeddingInputTooLongException catch (error) {
-      throw EmbeddingInputTooLongException(
-        error.message,
-        maxInputTokens: error.maxInputTokens,
-        actualTokens: error.actualTokens,
+    } on llama.LlamaEmbeddingInputTooLongException catch (error, stack) {
+      Error.throwWithStackTrace(
+        EmbeddingInputTooLongException(
+          error.message,
+          maxInputTokens: error.maxInputTokens,
+          actualTokens: error.actualTokens,
+        ),
+        stack,
       );
-    } catch (error) {
-      throw EmbeddingEngineException(
-        'GGUF embedding failed.',
-        engine: _engineTag,
-        cause: error,
+    } catch (error, stack) {
+      Error.throwWithStackTrace(
+        EmbeddingEngineException(
+          'GGUF embedding failed.',
+          engine: _engineTag,
+          cause: error,
+        ),
+        stack,
       );
     }
     if (!_isQualifiedVector(vector, _dimension)) {
-      throw const EmbeddingEngineException(
-        'The GGUF runtime returned an invalid embedding vector.',
+      throw EmbeddingEngineException(
+        'The GGUF runtime returned an invalid embedding vector: '
+        '${_vectorFailureDetails(vector, _dimension)}.',
         engine: _engineTag,
       );
     }

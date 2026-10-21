@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,6 +72,10 @@ void main() {
           );
           expect(await edge.FlutterEdgeAi.getActiveEmbedder(), same(model));
           expect(model.isClosed, isFalse);
+        }
+
+        if (cycle == 0 && model.activeBackend == edge.PreferredBackend.cpu) {
+          await _checkCpuGolden(model);
         }
 
         final query = await model.embed(
@@ -213,3 +219,48 @@ void _checkVector(List<double> vector) {
 
 double _dot(List<double> a, List<double> b) =>
     List.generate(a.length, (i) => a[i] * b[i]).fold(0.0, (sum, v) => sum + v);
+
+// Exact copy of core example/integration_test/goldens/eg2_text_golden.json.
+// Source SHA-256: 073425b5f44b9e7980410b63e4305436c816bf933ab032bd269069499bfb8e7a
+// Expected vectors are Sentence Transformers fp32, never this backend's output.
+Future<void> _checkCpuGolden(edge.EmbeddingModel model) async {
+  expect(model.activeBackend, edge.PreferredBackend.cpu);
+  final golden = jsonDecode(
+    await rootBundle.loadString(
+      'assets/goldens/eg2_text_golden.json',
+    ),
+  ) as Map<String, dynamic>;
+  final items = (golden['items'] as List).cast<Map<String, dynamic>>();
+  expect(items.where((item) => item['role'] == 'query'), hasLength(5));
+  expect(items.where((item) => item['role'] == 'document'), hasLength(5));
+  expect(items, hasLength(10));
+  for (final item in items) {
+    final task = switch (item['role']) {
+      'query' => edge.TaskType.retrievalQuery,
+      'document' => edge.TaskType.retrievalDocument,
+      _ => throw StateError('Unknown golden role: ${item['role']}'),
+    };
+    expect(task.prefix, item['prefix']);
+    expect('${task.prefix}${item['text']}', item['input']);
+    final expected = (item['vector_st_fp32'] as List)
+        .cast<num>()
+        .map((value) => value.toDouble())
+        .toList();
+    final actual = await model.embed(
+      edge.EmbeddingInput.text(item['text'] as String),
+      taskType: task,
+    );
+    _checkVector(actual);
+    expect(expected, hasLength(actual.length));
+    final cosine =
+        _dot(actual, expected) /
+        math.sqrt(_dot(actual, actual) * _dot(expected, expected));
+    expect(
+      cosine,
+      greaterThanOrEqualTo(0.999),
+      reason:
+          '${item['id']} CPU embedding drifted from Sentence Transformers fp32',
+    );
+    debugPrint('GGUF embedding fp32 golden=${item['id']} cosine=$cosine');
+  }
+}

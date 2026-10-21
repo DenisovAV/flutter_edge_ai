@@ -5,6 +5,8 @@ on:
     paths:
       - 'packages/flutter_edge_ai/**'
       - 'packages/flutter_edge_ai_llama/**'
+      - '.github/actions/setup-flutter-llama/**'
+      - 'pubspec.yaml'
       - '.github/workflows/gguf-source-qualification.yml'
   workflow_dispatch:
 

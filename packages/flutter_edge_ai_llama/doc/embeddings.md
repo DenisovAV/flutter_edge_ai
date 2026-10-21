@@ -1,12 +1,11 @@
 # GGUF text embeddings
 
 Version 0.0.3 adds `LlamaEmbeddingBackend` to the existing llama engine package.
-It requires published core 2.5.0 and llamadart
+It requires core 2.5.0 and llamadart
 0.15.1 with typed native overflow reporting. The core foundation is
 [flutter_edge_ai #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685);
 the typed SDK error is [llamadart #1201](https://github.com/leehack/llamadart/pull/1201).
-Core 2.5.0 and adapter 0.0.2 are already published; the new embedding feature
-belongs to 0.0.3. The manifest bounds the published SDK to `>=0.15.1 <0.15.2`.
+The manifest bounds the published SDK to `>=0.15.1 <0.15.2`.
 Source qualification does not replace standalone hosted qualification. Do not
 use a dependency override in production.
 
@@ -80,10 +79,12 @@ not claim GGUF embedding files, so an unsupported install can fail its pre-check
 Inference remains independently available on the package's existing platforms.
 
 Source qualification uses the pinned fixture in `tool/embedding_model.json`,
-published llamadart 0.15.1 and the merged core source. The contribution PR records
-per-platform execution results; the dedicated source CI covers Linux/Windows CPU
-embeddings and Flutter 3.44 resolution. Hosted package qualification remains a
-separate release gate against the published core.
+published llamadart 0.15.1 and the core source. macOS CPU/Metal and Linux/Windows
+CPU embeddings have been measured. Android has an attributed Pixel 8a diagnostic;
+iOS embeddings remain unqualified. See the [per-platform results](platforms.md#embedding-qualification-by-platform).
+The dedicated source CI covers Linux/Windows CPU embeddings and Flutter 3.44
+resolution. Hosted package qualification remains a separate release gate against
+the published core.
 Other EG2 quantizations need their own numerical qualification.
 
 ## RAG identity and lifecycle
@@ -101,8 +102,8 @@ API in this adapter.
 
 ## Reproducible qualification
 
-Core embedding SPI #685 and core 2.5.0 are published. Repository development
-uses the monorepo workspace and the example's checkout-only core path override.
+Repository development uses the monorepo workspace and the example's
+checkout-only core path override.
 Resolve llamadart normally from pub.dev; no SDK override is needed. Source CI
 stages core, the adapter and the app in a temporary directory and retains only
 that core path override. This proves source compatibility; the hosted package

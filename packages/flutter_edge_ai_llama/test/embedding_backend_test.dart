@@ -125,8 +125,9 @@ void main() {
       engine = _Engine();
       loadAttempts = 0;
       backend = createLlamaEmbeddingBackendForTest(
-        loader: (_, params) async {
+        loader: (path, params) async {
           loadAttempts++;
+          expect(path, '/models/eg2.gguf');
           expect(params.contextSize, 1024);
           expect(params.batchSize, 1024);
           expect(params.microBatchSize, 1024);
@@ -234,6 +235,51 @@ void main() {
       },
     );
 
+    for (final placement in [
+      (
+        request: PreferredBackend.cpu,
+        loaded: 'CPU',
+        active: PreferredBackend.cpu,
+      ),
+      (
+        request: PreferredBackend.gpu,
+        loaded: 'Metal',
+        active: PreferredBackend.gpu,
+      ),
+      (request: null, loaded: 'CPU', active: PreferredBackend.cpu),
+      (request: null, loaded: 'Metal', active: PreferredBackend.gpu),
+    ]) {
+      test(
+        'strict ${placement.request?.name ?? "auto"} accepts ${placement.loaded}',
+        () async {
+          engine.backendName = placement.loaded;
+          var attempts = 0;
+          final strict = createLlamaEmbeddingBackendForTest(
+            backendFallback: false,
+            loader: (path, _) async {
+              expect(path, '/models/strict embedding.gguf');
+              attempts++;
+              return engine;
+            },
+          );
+          final p = (await strict.describe(
+            _spec('eg2.gguf'),
+            _config(
+              backend: placement.request,
+              modelPath: '/models/strict embedding.gguf',
+            ),
+          )).build();
+          addTearDown(p.close);
+          expect((await p.load()).activeBackend, placement.active);
+          expect(attempts, 1);
+          expect(await p.embed(EmbeddingInput.text('valid'), TaskType.none), [
+            1,
+            0,
+          ]);
+        },
+      );
+    }
+
     for (final request in [null, PreferredBackend.gpu, PreferredBackend.cpu]) {
       for (final fallback in [false, true]) {
         for (final cause in [
@@ -250,7 +296,12 @@ void main() {
               final retries = fallback && request != PreferredBackend.cpu;
               final candidate = createLlamaEmbeddingBackendForTest(
                 backendFallback: fallback,
-                loader: (_, params) async {
+                loader: (path, params) async {
+                  expect(path, '/models/installed embedding.gguf');
+                  expect(params.contextSize, 1024);
+                  expect(params.batchSize, 1024);
+                  expect(params.microBatchSize, 1024);
+                  expect(params.maxParallelSequences, 1);
                   paramsSeen.add(params);
                   if (paramsSeen.length == 1) {
                     events.add('load');
@@ -272,7 +323,10 @@ void main() {
               );
               final p = (await candidate.describe(
                 _spec('eg2.gguf'),
-                _config(backend: request),
+                _config(
+                  backend: request,
+                  modelPath: '/models/installed embedding.gguf',
+                ),
               )).build();
               await runZoned(
                 () async {
@@ -374,6 +428,7 @@ void main() {
       'nan': [double.nan, 0],
       'infinity': [double.infinity, 0],
       'non-unit': [0.5, 0],
+      'near-unit outside tolerance': [1.01, 0],
       'wrong dimension': [1, 0, 0],
     }.entries) {
       test(
@@ -400,6 +455,80 @@ void main() {
         },
       );
     }
+
+    for (final overflow in [false, true]) {
+      test(
+        'preserves the SDK ${overflow ? "overflow" : "failure"} stack',
+        () async {
+          final p = await pass();
+          await p.load();
+          final originalStack = StackTrace.fromString(
+            'embedding-sdk-original-stack',
+          );
+          final original = overflow
+              ? llama.LlamaEmbeddingInputTooLongException(
+                  'overflow',
+                  maxInputTokens: 1024,
+                  actualTokens: 1027,
+                )
+              : llama.LlamaInferenceException('SDK failure');
+          engine.failure = original;
+          engine.failureStack = originalStack;
+          try {
+            await p.embed(EmbeddingInput.text('text'), TaskType.none);
+            fail('The SDK failure must be reported');
+          } catch (error, stack) {
+            if (overflow) {
+              expect(error, isA<EmbeddingInputTooLongException>());
+            } else {
+              expect(
+                error,
+                isA<EmbeddingEngineException>().having(
+                  (e) => e.cause,
+                  'original SDK cause',
+                  same(original),
+                ),
+              );
+            }
+            expect(stack.toString(), originalStack.toString());
+          }
+        },
+      );
+    }
+
+    test(
+      'invalid runtime vector reports dimension, finiteness and norm',
+      () async {
+        final p = await pass();
+        await p.load();
+        engine.vector = [1.01, 0];
+        await expectLater(
+          p.embed(EmbeddingInput.text('bad'), TaskType.none),
+          throwsA(
+            isA<EmbeddingEngineException>().having(
+              (e) => e.message,
+              'vector diagnostics',
+              allOf(
+                contains('expected dimension: 2'),
+                contains('actual dimension: 2'),
+                contains('finite: true'),
+                contains('squared norm: 1.0201'),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    test('accepts vectors within the tight unit-norm tolerance', () async {
+      engine.vector = [1.0004, 0];
+      final p = await pass();
+      expect((await p.load()).dimension, 2);
+      expect(await p.embed(EmbeddingInput.text('valid'), TaskType.none), [
+        1.0004,
+        0,
+      ]);
+    });
 
     test('corrupt model load is not retried as GPU availability', () async {
       var attempts = 0;
@@ -459,12 +588,47 @@ void main() {
       await p.close();
     });
 
+    for (final metadata in [
+      (
+        key: 'general.architecture',
+        value: 'bert',
+        detail: 'architecture: bert',
+      ),
+      (
+        key: 'gemma-embedding2.pooling_type',
+        value: '3',
+        detail: 'pooling type: 3',
+      ),
+      (
+        key: 'gemma-embedding2.embedding_length_out',
+        value: '512',
+        detail: 'declared embedding_length_out: 512',
+      ),
+    ]) {
+      test('load refusal reports ${metadata.key}', () async {
+        engine.metadata[metadata.key] = metadata.value;
+        final p = await pass();
+        await expectLater(
+          p.load(),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.message,
+              'observed metadata',
+              contains(metadata.detail),
+            ),
+          ),
+        );
+      });
+    }
+
     for (final scenario in [
       'architecture',
       'pooling',
       'capability',
       'context',
       'dimension',
+      'missing output dimension',
+      'near-unit outside tolerance',
       'zero',
       'nan',
       'infinity',
@@ -482,6 +646,10 @@ void main() {
             engine.context = 512;
           case 'dimension':
             engine.metadata['gemma-embedding2.embedding_length_out'] = '512';
+          case 'missing output dimension':
+            engine.metadata.remove('gemma-embedding2.embedding_length_out');
+          case 'near-unit outside tolerance':
+            engine.vector = [1.01, 0];
           case 'zero':
             engine.vector = [0, 0];
           case 'nan':
@@ -515,6 +683,7 @@ final class _Engine extends llama.LlamaEngine {
   int context = 1024;
   int disposals = 0;
   Object? failure;
+  StackTrace? failureStack;
   List<double> vector = [1, 0];
   final inputs = <String>[];
   @override
@@ -532,7 +701,9 @@ final class _Engine extends llama.LlamaEngine {
   Future<List<double>> embed(String text, {bool normalize = true}) async {
     expect(normalize, isTrue);
     inputs.add(text);
-    if (failure case final error?) throw error;
+    if (failure case final error?) {
+      Error.throwWithStackTrace(error, failureStack ?? StackTrace.current);
+    }
     return vector;
   }
 

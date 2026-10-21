@@ -260,7 +260,74 @@ void main() {
       _router(ai, world);
       final r = await ai.generate(prompt: 'hi');
       expect(r.finishReason, FinishReason.failed);
+      // Nor does the app's Genkit resolve the cloud model itself.
+      final direct = await ai.generate(model: cloudRef, prompt: 'hi');
+      expect(direct.finishReason, FinishReason.failed);
       expect(world.cloudCalls + world.localCalls, 0);
+    });
+
+    test('a proxy refuses another router\'s decision', () async {
+      final a = _router(ai, world, name: 'a');
+      _router(ai, world, name: 'b');
+      ai.defineGenerateMiddleware<Object?>(
+        name: 'to-b',
+        create: (_, _) => _SwitchModel('b/$kCloud'),
+      );
+      await expectLater(
+        a.generate(
+          prompt: 'hi',
+          pin: kCloud,
+          use: [middlewareRef(name: 'to-b')],
+        ),
+        throwsA(
+          isA<HybridRoutingException>().having(
+            (e) => e.status,
+            'status',
+            StatusCode.permissionDenied,
+          ),
+        ),
+      );
+      expect(world.cloudCalls, 0);
+    });
+
+    test('a replaced proxy is refused', () async {
+      final router = _router(ai, world);
+      var replaced = 0;
+      ai.defineModel(
+        name: 'hybrid-router/$kCloud',
+        fn: (req, _) async {
+          replaced++;
+          return _reply(req, 'impostor');
+        },
+      );
+      await expectLater(
+        router.generate(prompt: 'hi', pin: kCloud),
+        throwsA(
+          isA<HybridRoutingException>().having(
+            (e) => e.status,
+            'status',
+            StatusCode.failedPrecondition,
+          ),
+        ),
+      );
+      expect(replaced + world.cloudCalls, 0);
+    });
+
+    test('a refusal fails the chunk stream and the result', () async {
+      final router = _router(
+        ai,
+        world,
+        policies: {'none': const RoutePolicy()},
+      );
+      final stream = router.generateStream(prompt: 'hi');
+      await expectLater(
+        stream.toList(),
+        throwsA(isA<HybridRoutingException>()),
+      );
+      await expectLater(
+        stream.onResult,
+        throwsA(isA<HybridRoutingException>()),
+      );
     });
 
     test('the proxy refuses a direct call', () async {
@@ -466,11 +533,94 @@ void main() {
     });
 
     test('a pin skips rules and classifier', () async {
-      final router = _router(ai, world);
+      var ruled = 0;
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          rules: [
+            RouteRule.custom('dev', (_) {
+              ruled++;
+              return const RouteDecision.only(kOnDevice);
+            }),
+          ],
+          classifier: _Classifier(world),
+          labels: const {'easy': RouteDecision.prefer(kOnDevice)},
+        ),
+      );
       final r = await router.generate(prompt: 'hi', pin: kCloud);
       expect(r.text, 'cloud plain');
       expect(r.route!.source, RouteSource.pin);
+      expect(ruled, 0);
       expect(world.classifyCalls, 0);
+    });
+
+    test('a rule naming an unknown target fails the call', () async {
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          rules: [
+            RouteRule.custom('x', (_) => const RouteDecision.only('nowhere')),
+          ],
+        ),
+      );
+      await expectLater(
+        router.generate(prompt: 'hi'),
+        throwsA(
+          isA<HybridRoutingException>().having(
+            (e) => e.status,
+            'status',
+            StatusCode.invalidArgument,
+          ),
+        ),
+      );
+    });
+
+    test('no capable target is refused', () async {
+      final router = _router(
+        ai,
+        world,
+        targets: {
+          kOnDevice: HybridTarget.onDevice(localRef, supports: const {}),
+          kCloud: HybridTarget.cloud(cloudRef, supports: const {}),
+        },
+        policy: const RoutePolicy(fallback: [kCloud]).withRule(kOnDevice),
+      );
+      await expectLater(
+        router.generate(prompt: 'hi', toolNames: ['lookup']),
+        throwsA(
+          isA<HybridRoutingException>().having(
+            (e) => e.status,
+            'status',
+            StatusCode.unimplemented,
+          ),
+        ),
+      );
+      expect(world.localCalls + world.cloudCalls, 0);
+    });
+
+    test('a cancel while classifying aborts the call with the classifier\'s '
+        'own error', () async {
+      final controller = CancellationController();
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          classifier: _Classifier(
+            world,
+            verdict: () {
+              controller.cancel(); // no reason: Genkit reports the error
+              throw StateError('interrupted');
+            },
+          ),
+          labels: const {'easy': RouteDecision.prefer(kOnDevice)},
+        ),
+      );
+      final r = await router.generate(prompt: 'hi', cancel: controller.token);
+      expect(r.finishReason, FinishReason.aborted);
+      expect(r.cause, isA<StateError>());
+      expect(world.localCalls, 0);
     });
 
     test('an abstain goes on the device by default', () async {
@@ -1202,6 +1352,34 @@ void main() {
       expect(r2.route!.reason, 'no stamp');
     });
 
+    for (final (name, stamp) in [
+      ('another router\'s', {'router': 'other', 'target': kCloud}),
+      ('an unknown target\'s', {'router': 'hybrid-router', 'target': 'x'}),
+    ]) {
+      test('$name stamp reads as no stamp', () async {
+        world.nextLabel = 'hard';
+        final router = _router(ai, world);
+        final r1 = await router.generate(
+          prompt: 'please confirm',
+          toolNames: ['confirm'],
+        );
+        final foreign = [
+          ...r1.messages.take(r1.messages.length - 1),
+          Message.fromJson({
+            ...r1.messages.last.toJson(),
+            'metadata': {'hybrid': stamp},
+          }),
+        ];
+        final r2 = await router.generate(
+          messages: foreign,
+          toolNames: ['confirm'],
+          interruptRespond: [InterruptResponse(r1.interrupts.first, 'ok')],
+        );
+        expect(r2.route!.target, kOnDevice);
+        expect(r2.route!.reason, 'no stamp');
+      });
+    }
+
     test('without a stamp and without a device target is refused', () async {
       final router = _router(
         ai,
@@ -1470,10 +1648,142 @@ void main() {
         use: [router()],
       );
       await expectLater(bad.call(null), throwsA(isA<HybridRoutingException>()));
+      final stream = bad.stream(null);
+      await expectLater(
+        stream.toList(),
+        throwsA(isA<HybridRoutingException>()),
+      );
+      await expectLater(
+        stream.onResult,
+        throwsA(isA<HybridRoutingException>()),
+      );
+    });
+  });
+
+  group('built-in rules', () {
+    RoutePolicy sized() => RoutePolicy(
+      rules: [
+        RouteRule.inputSize(maxChars: 5, small: kOnDevice, large: kCloud),
+      ],
+    );
+
+    test('inputSize: at most maxChars is small, one more is large', () async {
+      final router = _router(ai, world, policy: sized());
+      expect((await router.generate(prompt: 'hello')).route!.target, kOnDevice);
+      expect((await router.generate(prompt: 'hello!')).route!.target, kCloud);
+    });
+
+    test('inputSize counts the system prompt and the history', () async {
+      final router = _router(ai, world, policy: sized());
+      final r = await router.generate(system: 'abcd', prompt: 'de');
+      expect(r.route!.target, kCloud);
+      expect(r.route!.reason, 'over 5 characters');
+    });
+
+    test('inputSize rejects a negative maxChars', () {
+      expect(
+        () =>
+            RouteRule.inputSize(maxChars: -1, small: kOnDevice, large: kCloud),
+        throwsArgumentError,
+      );
+    });
+
+    test(
+      'offline: online decides nothing, offline only on the device',
+      () async {
+        var online = true;
+        world.localThrows = GenkitException(
+          'down',
+          status: StatusCode.unavailable,
+        );
+        final router = _router(
+          ai,
+          world,
+          policy: RoutePolicy(
+            rules: [
+              RouteRule.offline(isOnline: () => online),
+              RouteRule.custom('next', (_) => const RouteDecision.only(kCloud)),
+            ],
+            fallback: const [kCloud],
+          ),
+        );
+        final up = await router.generate(prompt: 'hi');
+        expect(up.route!.rule, 'next');
+        online = false;
+        final down = await router.generate(prompt: 'hi');
+        expect(down.finishReason, FinishReason.failed);
+        expect(world.cloudCalls, 1, reason: 'only the online call');
+      },
+    );
+
+    test('budget: prefer the premium target while it holds, only the cheap '
+        'one once spent', () async {
+      var available = true;
+      world.cloudThrows = GenkitException(
+        'down',
+        status: StatusCode.unavailable,
+      );
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          rules: [
+            RouteRule.budget(
+              available: () => available,
+              premium: kCloud,
+              cheap: kOnDevice,
+            ),
+          ],
+          fallback: const [kOnDevice],
+        ),
+      );
+      final held = await router.generate(prompt: 'hi');
+      expect(held.route!.attempts, [kCloud, kOnDevice]);
+      available = false;
+      world.cloudThrows = null;
+      final spent = await router.generate(prompt: 'hi');
+      expect(spent.route!.attempts, [kOnDevice]);
+      expect(spent.route!.reason, 'budget spent');
     });
   });
 
   group('definition', () {
+    for (final (name, policy) in [
+      (
+        'a built-in rule',
+        RoutePolicy(
+          rules: [
+            RouteRule.inputSize(maxChars: 1, small: kOnDevice, large: 'x'),
+          ],
+        ),
+      ),
+      (
+        'a label',
+        RoutePolicy(
+          classifier: _Classifier(_World()),
+          labels: const {'a': RouteDecision.only('x')},
+        ),
+      ),
+      (
+        'onAbstain',
+        RoutePolicy(
+          classifier: _Classifier(_World()),
+          onAbstain: const RouteDecision.only('x'),
+        ),
+      ),
+      (
+        'onUnavailable',
+        RoutePolicy(
+          classifier: _Classifier(_World()),
+          onUnavailable: const RouteDecision.only('x'),
+        ),
+      ),
+    ]) {
+      test('rejects $name naming an unknown target', () {
+        expect(() => _router(ai, world, policy: policy), throwsArgumentError);
+      });
+    }
+
     test('rejects unknown targets and missing abstain targets', () {
       expect(
         () => _router(

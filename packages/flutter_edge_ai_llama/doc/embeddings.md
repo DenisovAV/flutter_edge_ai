@@ -75,8 +75,10 @@ may retry once on CPU. Its warning retains the first error; if CPU also fails,
 the final load error includes both failures and preserves the CPU cause and stack.
 Automatic requests retain SDK automatic selection and never retry load errors.
 An automatic load that requested GPU layers but reports CPU emits one
-release-visible warning per new successful load. Core continues to report an
-explicit GPU fallback once when it is loaded; reuse repeats neither warning.
+release-visible warning per new successful load, except on Android and iOS
+simulators, where llamadart's automatic placement is CPU by design. Core
+continues to report an explicit GPU fallback once when it is loaded; reuse
+repeats neither warning.
 `activeBackend` always reports the verified loaded placement. Register
 `LlamaEmbeddingBackend(backendFallback: false)` for exactly one load attempt;
 an explicit placement mismatch fails with `EmbeddingLoadException`. Model

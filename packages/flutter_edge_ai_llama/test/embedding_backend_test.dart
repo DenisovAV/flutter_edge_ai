@@ -433,21 +433,33 @@ void main() {
       });
     }
 
-    test('successful automatic CPU selection warns once', () async {
+    Future<List<String>> autoCpuLoadMessages(String? refusal) async {
       final messages = <String>[];
-      await runZoned(
-        () async {
-          expect(
-            (await (await pass()).load()).activeBackend,
-            PreferredBackend.cpu,
-          );
+      final candidate = createLlamaEmbeddingBackendForTest(
+        gpuRefusal: () => refusal,
+        loader: (path, params) async {
+          expect(params.device, llama.ComputeDevice.auto);
+          expect(params.gpuLayers, greaterThan(0));
+          return engine;
         },
+      );
+      final p = (await candidate.describe(
+        _spec('eg2.gguf'),
+        _config(),
+      )).build();
+      addTearDown(p.close);
+      await runZoned(
+        () async =>
+            expect((await p.load()).activeBackend, PreferredBackend.cpu),
         zoneSpecification: ZoneSpecification(
-          print: (_, _, _, message) {
-            messages.add(message);
-          },
+          print: (_, _, _, message) => messages.add(message),
         ),
       );
+      return messages;
+    }
+
+    test('successful automatic CPU selection warns once', () async {
+      final messages = await autoCpuLoadMessages(null);
       expect(messages, hasLength(1));
       expect(
         messages.single,
@@ -458,24 +470,7 @@ void main() {
     test(
       'automatic CPU selection is silent where llamadart picks CPU',
       () async {
-        final messages = <String>[];
-        final candidate = createLlamaEmbeddingBackendForTest(
-          gpuRefusal: () => 'guarded platform',
-          loader: (path, params) async => engine,
-        );
-        final p = (await candidate.describe(
-          _spec('eg2.gguf'),
-          _config(),
-        )).build();
-        addTearDown(p.close);
-        await runZoned(
-          () async =>
-              expect((await p.load()).activeBackend, PreferredBackend.cpu),
-          zoneSpecification: ZoneSpecification(
-            print: (_, _, _, message) => messages.add(message),
-          ),
-        );
-        expect(messages, isEmpty);
+        expect(await autoCpuLoadMessages('guarded platform'), isEmpty);
       },
     );
 

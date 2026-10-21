@@ -57,7 +57,9 @@ final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
   /// With [backendFallback] true, an explicit GPU request may retry once on
   /// CPU after LlamaUnsupportedException. Android and iOS simulators refuse
   /// explicit GPU attempts before loading. Other load errors are not retried.
-  /// Automatic selection accepts CPU or GPU and warns when it selects CPU.
+  /// Automatic selection accepts CPU or GPU and warns when it selects CPU,
+  /// except on Android and iOS simulators, where llamadart's automatic
+  /// placement is CPU by design.
   /// With false, explicit placement mismatches fail as EmbeddingLoadException.
   /// Unknown placement is always refused.
   const LlamaEmbeddingBackend({this.backendFallback = true})

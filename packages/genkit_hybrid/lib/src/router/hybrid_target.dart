@@ -28,3 +28,14 @@ final class HybridTarget {
   bool canServe(Set<ModelCapability> required) =>
       supports == null || supports!.containsAll(required);
 }
+
+/// [target] with its own unmodifiable copy of `supports`. Not exported.
+HybridTarget frozenTarget(HybridTarget target) {
+  final supports = switch (target.supports) {
+    final s? => Set<ModelCapability>.unmodifiable(s),
+    null => null,
+  };
+  return target.isCloud
+      ? HybridTarget.cloud(target.model, supports: supports)
+      : HybridTarget.onDevice(target.model, supports: supports);
+}

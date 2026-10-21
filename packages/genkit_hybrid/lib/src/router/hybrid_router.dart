@@ -1,9 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:genkit/genkit.dart';
 import 'package:schemantic/schemantic.dart';
 
-import '../attempts.dart' show canFallBack;
+import '../attempts.dart' show isTransient;
 import '../hybrid_model.dart' show kOnDevice;
 import 'hybrid_prompt.dart';
 import 'hybrid_routing_exception.dart';
@@ -15,17 +16,27 @@ import 'route_policy.dart';
 import 'route_request.dart';
 import 'route_rule.dart';
 
-/// Zone key of the router's decision: a [_ZoneDecision] while a routed call
-/// runs, null inside a tool of one. Private to this library, so nothing else
-/// can fake a decision.
+/// Zone key of the router's decision: a [_ZoneDecision] while an attempt of
+/// a routed call runs, null inside a tool of one. Private to this library,
+/// so nothing else can fake a decision.
 final Object _decisionKey = Object();
 
 final class _ZoneDecision {
-  const _ZoneDecision(this.middleware, this.target);
+  _ZoneDecision(this.middleware, this.target);
 
   final _RouterMiddleware middleware;
   final String target;
+
+  /// False once the attempt it was made for has ended, so a zone kept from
+  /// it (a stored `Zone`, a timer) no longer authorises anything.
+  bool active = true;
 }
+
+/// The decision in force in the current zone, if any.
+_ZoneDecision? _currentDecision() => switch (Zone.current[_decisionKey]) {
+  final _ZoneDecision d when d.active => d,
+  _ => null,
+};
 
 /// The key of the decision stamped on an interrupted model message.
 const _stampKey = 'hybrid';
@@ -76,8 +87,14 @@ final class HybridRouter {
     required Map<String, RoutePolicy> policies,
     required this.defaultPolicy,
     this._confirmCloud,
-  }) : targets = Map.unmodifiable(targets),
-       policies = Map.unmodifiable(policies) {
+  }) : targets = Map.unmodifiable({
+         for (final MapEntry(:key, :value) in targets.entries)
+           key: frozenTarget(value),
+       }),
+       policies = Map.unmodifiable({
+         for (final MapEntry(:key, :value) in policies.entries)
+           key: frozenPolicy(value),
+       }) {
     _validate(cloudPlugins);
     if (targets.values.any((t) => t.isCloud)) {
       // No reflection server (the Dev UI would list the cloud models), no
@@ -105,6 +122,9 @@ final class HybridRouter {
   final Genkit _ai;
   Genkit? _cloudAi;
   final Map<String, Model> _proxies = {};
+
+  /// Target key → its config as JSON text, encoded once at definition.
+  final Map<String, String> _configJson = {};
   final CloudConsent? _confirmCloud;
 
   /// The middleware's name in the app's Genkit.
@@ -144,13 +164,17 @@ final class HybridRouter {
       if (key.isEmpty) {
         throw ArgumentError.value(key, 'targets', 'a key must not be empty');
       }
-      final config = value.model.config;
-      if (config != null && _configToMap(config) == null) {
-        throw ArgumentError(
-          'Target "$key": its config cannot be sent as JSON (a Map or a '
-          'type with toJson()).',
-        );
+      if (_encodeConfig(key, value.model.config) case final json?) {
+        _configJson[key] = json;
       }
+    }
+    if (targets[kOnDevice]?.isCloud ?? false) {
+      throw ArgumentError.value(
+        kOnDevice,
+        'targets',
+        'must be an on-device target: an abstain and a resume without a '
+            'stamp go there',
+      );
     }
     if (targets.values.any((t) => t.isCloud) && cloudPlugins.isEmpty) {
       throw ArgumentError(
@@ -180,12 +204,18 @@ final class HybridRouter {
         }
       }
       for (final MapEntry(:key, :value) in p.labels.entries) {
-        check(value, 'label "$key"');
+        check(value.target, 'label "$key"');
       }
-      if (p.onAbstain case final t?) check(t, 'onAbstain');
-      if (p.onUnavailable case final t?) check(t, 'onUnavailable');
+      if (p.onAbstain case final d?) check(d.target, 'onAbstain');
+      if (p.onUnavailable case final d?) check(d.target, 'onUnavailable');
       for (final t in p.fallback) {
         check(t, 'fallback');
+      }
+      if (p.fallback.toSet().length != p.fallback.length) {
+        throw ArgumentError(
+          'Policy "$policyName": fallback names a target twice '
+          '(${p.fallback.join(', ')}).',
+        );
       }
       if (p.classifier != null &&
           p.onAbstain == null &&
@@ -251,33 +281,37 @@ final class HybridRouter {
     List<InterruptResponse>? interruptRespond,
     List<ToolRequestPart>? interruptRestart,
   }) async {
-    final result = await _ai.generate<Output, Object?>(
-      system: system,
-      prompt: prompt,
-      promptParts: promptParts,
-      messages: messages,
-      tools: tools,
-      toolNames: toolNames,
-      toolChoice: toolChoice,
-      returnToolRequests: returnToolRequests,
-      maxTurns: maxTurns,
-      outputSchema: outputSchema,
-      outputFormat: outputFormat,
-      outputConstrained: outputConstrained,
-      outputInstructions: outputInstructions,
-      outputNoInstructions: outputNoInstructions,
-      outputContentType: outputContentType,
-      context: context,
-      onChunk: onChunk,
-      use: [
-        call(policy: policy, pin: pin),
-        ...?use,
-      ],
-      cancel: cancel,
-      interruptRespond: interruptRespond,
-      interruptRestart: interruptRestart,
+    final owner = Object();
+    final result = await inRoutedCall(
+      owner,
+      () => _ai.generate<Output, Object?>(
+        system: system,
+        prompt: prompt,
+        promptParts: promptParts,
+        messages: messages,
+        tools: tools,
+        toolNames: toolNames,
+        toolChoice: toolChoice,
+        returnToolRequests: returnToolRequests,
+        maxTurns: maxTurns,
+        outputSchema: outputSchema,
+        outputFormat: outputFormat,
+        outputConstrained: outputConstrained,
+        outputInstructions: outputInstructions,
+        outputNoInstructions: outputNoInstructions,
+        outputContentType: outputContentType,
+        context: context,
+        onChunk: onChunk,
+        use: [
+          call(policy: policy, pin: pin),
+          ...?use,
+        ],
+        cancel: cancel,
+        interruptRespond: interruptRespond,
+        interruptRestart: interruptRestart,
+      ),
     );
-    return checkedRoutingResult(result);
+    return checkedRoutingResult(result, owner);
   }
 
   /// `ai.generateStream` routed by this router; see [generate]. A refusal
@@ -406,8 +440,8 @@ final class HybridRouter {
     ActionFnArg<ModelResponseChunk, ModelRequest, void> ctx,
   ) async {
     final target = targets[key]!;
-    final decision = Zone.current[_decisionKey];
-    if (decision is! _ZoneDecision ||
+    final decision = _currentDecision();
+    if (decision == null ||
         !identical(decision.middleware.router, this) ||
         decision.target != key) {
       throw HybridRoutingException(
@@ -471,9 +505,8 @@ final class HybridRouter {
     }
   }
 
-  /// The target a resume with no usable stamp goes to.
-  String? _safeTarget(RoutePolicy policy) =>
-      targets.containsKey(kOnDevice) ? kOnDevice : policy.onAbstain;
+  /// The target a resume with no usable stamp goes to: only the device.
+  String? get _safeTarget => targets.containsKey(kOnDevice) ? kOnDevice : null;
 }
 
 /// The generate middleware of one routed call (Genkit creates one per ref
@@ -520,9 +553,13 @@ final class _RouterMiddleware extends GenerateMiddleware {
     next,
   ) {
     _toolRan = true;
-    // A tool runs outside the decision: a sub-agent that calls the router is
-    // routed on its own, and a tool cannot reach a proxy on this decision.
-    return runZoned(() => next(request, ctx), zoneValues: {_decisionKey: null});
+    // A tool runs outside the decision and the call: a sub-agent that calls
+    // the router is routed on its own, its refusals are not this call's, and
+    // a tool cannot reach a proxy on this decision.
+    return outsideRoutedCalls(
+      () =>
+          runZoned(() => next(request, ctx), zoneValues: {_decisionKey: null}),
+    );
   }
 
   @override
@@ -535,12 +572,12 @@ final class _RouterMiddleware extends GenerateMiddleware {
     )
     next,
   ) async {
-    final current = Zone.current[_decisionKey];
+    final current = _currentDecision();
     // Later turns, and a restart re-running the chain from inside `next`.
-    if (current is _ZoneDecision && identical(current.middleware, this)) {
+    if (current != null && identical(current.middleware, this)) {
       return next(envelope, ctx);
     }
-    if (current is _ZoneDecision) {
+    if (current != null) {
       throw HybridRoutingException(
         'A second hybrid router in the chain of one generate call.',
         status: StatusCode.failedPrecondition,
@@ -609,11 +646,11 @@ final class _RouterMiddleware extends GenerateMiddleware {
     }
     if (request.request.resume != null) {
       final stamped = _stampedTarget(request.request.messages);
-      final target = stamped ?? router._safeTarget(policy);
+      final target = stamped ?? router._safeTarget;
       if (target == null) {
         throw HybridRoutingException(
-          'A resume without the router\'s stamp, and no "$kOnDevice" or '
-          'onAbstain target to send it to.',
+          'A resume without the router\'s stamp, and no "$kOnDevice" target '
+          'to send it to.',
           status: StatusCode.failedPrecondition,
         );
       }
@@ -652,8 +689,8 @@ final class _RouterMiddleware extends GenerateMiddleware {
     try {
       verdict = await classifier.classify(request, cancel: cancel);
     } on RouteClassifierUnavailableException catch (e) {
-      final target = policy.onUnavailable;
-      if (target == null) {
+      final decision = policy.onUnavailable;
+      if (decision == null) {
         throw HybridRoutingException(
           'Classifier "${classifier.name}" is unavailable (${e.message}) and '
           'policy "$policyName" has no onUnavailable.',
@@ -662,8 +699,12 @@ final class _RouterMiddleware extends GenerateMiddleware {
         );
       }
       return _Decided(
-        RouteDecision.prefer(target),
-        info(target, RouteSource.unavailable, reason: e.message),
+        decision,
+        info(
+          decision.target,
+          RouteSource.unavailable,
+          reason: decision.reason ?? e.message,
+        ),
       );
     } catch (e) {
       // A cancel is Genkit's to report as `aborted`.
@@ -676,8 +717,8 @@ final class _RouterMiddleware extends GenerateMiddleware {
     }
     switch (verdict) {
       case final LabelVerdict verdict:
-        final target = policy.labels[verdict.label];
-        if (target == null) {
+        final decision = policy.labels[verdict.label];
+        if (decision == null) {
           throw HybridRoutingException(
             'Classifier "${classifier.name}" answered "${verdict.label}", '
             'which policy "$policyName" maps to no target.',
@@ -685,14 +726,25 @@ final class _RouterMiddleware extends GenerateMiddleware {
           );
         }
         return _Decided(
-          RouteDecision.prefer(target),
-          info(target, RouteSource.classifier, label: verdict),
+          decision,
+          info(
+            decision.target,
+            RouteSource.classifier,
+            label: verdict,
+            reason: decision.reason,
+          ),
         );
       case final AbstainVerdict verdict:
-        final target = policy.onAbstain ?? kOnDevice;
+        final decision =
+            policy.onAbstain ?? const RouteDecision.only(kOnDevice);
         return _Decided(
-          RouteDecision.prefer(target),
-          info(target, RouteSource.abstain, abstain: verdict),
+          decision,
+          info(
+            decision.target,
+            RouteSource.abstain,
+            abstain: verdict,
+            reason: decision.reason,
+          ),
         );
     }
   }
@@ -780,9 +832,13 @@ final class _RouterMiddleware extends GenerateMiddleware {
     // The last attempt the loop moved on from (failed, or rejected by the
     // cascade), returned as it is when no later target runs.
     _Attempt? passed;
+    // Why the loop moved on from it, and the failure that made it, if one.
+    String? moveReason;
+    Object? moveFailure;
     for (var i = 0; i < order.length; i++) {
       var key = order[i];
       final isFirst = i == 0;
+      if (moveFailure != null && !_mayMoveTo(key, moveFailure)) continue;
       if (router.targets[key]!.isCloud) {
         cloudConsent ??= await _askConsent(key, info);
         if (!cloudConsent) {
@@ -821,6 +877,7 @@ final class _RouterMiddleware extends GenerateMiddleware {
         target: key,
         model: router.targets[key]!.model.name,
         attempts: List.unmodifiable(attempts),
+        reason: moveReason,
       );
 
       final hasNext = i < order.length - 1;
@@ -848,12 +905,16 @@ final class _RouterMiddleware extends GenerateMiddleware {
           (result!.finishReason == FinishReason.failed ? result.cause : null);
       final attempt = _Attempt(key, info, result, error, stack, held);
       if (failure != null) {
-        if (hasNext &&
-            movable &&
+        // A cancelled call is Genkit's to report; after a tool ran or a
+        // chunk was sent, the next target would repeat them.
+        if (movable &&
             !_toolRan &&
             !_chunkSent &&
-            canFallBack(failure, ctx.cancel)) {
+            !(ctx.cancel?.isCancelled ?? false) &&
+            order.skip(i + 1).any((t) => _mayMoveTo(t, failure))) {
           passed = attempt;
+          moveFailure = failure;
+          moveReason = 'fallback: $key failed with ${_statusOf(failure)}';
           continue;
         }
         return _finish(attempt, ctx);
@@ -864,6 +925,8 @@ final class _RouterMiddleware extends GenerateMiddleware {
         ctx.cancel?.throwIfCancelled();
         if (!accepted) {
           passed = attempt;
+          moveFailure = null;
+          moveReason = 'cascade: $key rejected';
           continue;
         }
       }
@@ -872,6 +935,18 @@ final class _RouterMiddleware extends GenerateMiddleware {
     // Every later target was skipped (no consent for the cloud): the last
     // attempt that ran is the answer.
     return _finish(passed!, ctx);
+  }
+
+  /// Whether a call whose attempt failed with [failure] may move to [key]:
+  /// on a transient failure, and to the cloud only on one Genkit reports as
+  /// transient. INTERNAL and errors without a Genkit status are what a
+  /// device bug or an over-long input raises on every request; they must not
+  /// send every request to the cloud.
+  bool _mayMoveTo(String key, Object failure) {
+    if (!isTransient(failure)) return false;
+    if (!router.targets[key]!.isCloud) return true;
+    return failure is GenkitException &&
+        _cloudMoveStatuses.contains(failure.status);
   }
 
   /// Ends the call with [attempt]: its error rethrown, or its result with
@@ -908,7 +983,9 @@ final class _RouterMiddleware extends GenerateMiddleware {
     }
   }
 
-  /// One attempt on [key], inside this router's decision for it.
+  /// One attempt on [key], inside this router's decision for it. The
+  /// decision ends with the attempt; the caller's chunk callback runs
+  /// outside it.
   Future<GenerateResult> _attempt(
     String key,
     GenerateTurnState envelope,
@@ -919,35 +996,49 @@ final class _RouterMiddleware extends GenerateMiddleware {
     )
     next, {
     List<ModelResponseChunk>? held,
-  }) {
+  }) async {
     final target = router.targets[key]!;
+    final decision = _ZoneDecision(this, key);
+    final outside = Zone.current;
     final routed = envelope.copyWith(
       request: GenerateActionOptions.fromJson({
         ...envelope.request.toJson(),
         'model': target.isCloud ? router._proxyName(key) : target.model.name,
-        'config': _configToMap(target.model.config),
+        // A copy per request: a model may edit the config it is given.
+        'config': switch (router._configJson[key]) {
+          final json? => jsonDecode(json),
+          null => null,
+        },
       }),
     );
     final routedCtx = ctx.copyWith(
       sendChunk: (chunk) {
+        // A chunk sent after its attempt ended belongs to no answer.
+        if (!decision.active) return;
         if (held != null) {
           held.add(chunk);
         } else {
           _chunkSent = true;
-          ctx.sendChunk(chunk);
+          outside.run(() => ctx.sendChunk(chunk));
         }
       },
     );
-    return runZoned(
-      () => next(routed, routedCtx),
-      zoneValues: {_decisionKey: _ZoneDecision(this, key)},
-    );
+    try {
+      return await runZoned(
+        () => next(routed, routedCtx),
+        zoneValues: {_decisionKey: decision},
+      );
+    } finally {
+      decision.active = false;
+    }
   }
 
   /// [result] with the route info on `custom` and, when it stopped on an
   /// interrupt, this router's stamp on the interrupted message.
   GenerateResult _decorate(GenerateResult result, RouteInfo info, String key) {
-    final json = result.modelResponse.toJson();
+    // toJson() is the response's own map: a provider may hand the same
+    // response out again.
+    final json = {...result.modelResponse.toJson()};
     json['custom'] = {
       ...?(json['custom'] as Map?)?.cast<String, dynamic>(),
       kHybridRouteKey: info.toJson(),
@@ -970,6 +1061,19 @@ final class _RouterMiddleware extends GenerateMiddleware {
     );
   }
 }
+
+/// The failures that may move a call to a cloud target.
+const _cloudMoveStatuses = {
+  StatusCode.unavailable,
+  StatusCode.deadlineExceeded,
+  StatusCode.resourceExhausted,
+  StatusCode.unimplemented,
+};
+
+/// [failure]'s Genkit status, or its type when it has none.
+String _statusOf(Object failure) => failure is GenkitException
+    ? failure.status.wireName
+    : '${failure.runtimeType}';
 
 final class _Attempt {
   const _Attempt(
@@ -998,15 +1102,28 @@ final class _Decided {
   final RouteInfo info;
 }
 
-/// A target's config as the request carries it, as Genkit converts a call's
-/// config.
-Map<String, dynamic>? _configToMap(Object? config) {
+/// [config] of target [key] as JSON text, as Genkit converts a call's
+/// config (a Map, or an object whose toJson() returns one); null for none.
+/// Throws [ArgumentError] when it cannot be sent.
+String? _encodeConfig(String key, Object? config) {
   if (config == null) return null;
-  if (config is Map) return config.cast<String, dynamic>();
-  if (config is String || config is num || config is bool) return null;
+  final Object? map;
   try {
-    return (config as dynamic).toJson() as Map<String, dynamic>?;
-  } catch (_) {
-    return null;
+    map = config is Map ? config : (config as dynamic).toJson();
+  } catch (e) {
+    throw ArgumentError(
+      'Target "$key": its config is not a Map and its toJson() failed: $e',
+    );
+  }
+  if (map is! Map) {
+    throw ArgumentError(
+      'Target "$key": its config must be a Map or have a toJson() that '
+      'returns one.',
+    );
+  }
+  try {
+    return jsonEncode(map);
+  } catch (e) {
+    throw ArgumentError('Target "$key": its config is not JSON: $e');
   }
 }

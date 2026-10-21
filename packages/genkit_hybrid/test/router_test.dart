@@ -13,6 +13,14 @@ class _World {
   Object? cloudThrows;
   Object? localThrows;
   final log = <String>[];
+
+  /// When set, the first streamed cloud call waits for it after its first
+  /// chunk.
+  Completer<void>? cloudGate;
+
+  /// When set, every cloud call returns this same object, as a plugin cache
+  /// would.
+  ModelResponse? cloudResponse;
 }
 
 ModelResponse _reply(ModelRequest req, String who) {
@@ -72,9 +80,12 @@ class _CloudPlugin extends GenkitPlugin {
         if (world.cloudThrows case final e?) throw e;
         if (ctx.streamingRequested) {
           ctx.sendChunk(ModelResponseChunk(content: [TextPart(text: 'c1 ')]));
+          if (world.cloudGate case final gate? when world.cloudCalls == 1) {
+            await gate.future;
+          }
           ctx.sendChunk(ModelResponseChunk(content: [TextPart(text: 'c2')]));
         }
-        return _reply(req, 'cloud');
+        return world.cloudResponse ?? _reply(req, 'cloud');
       },
     );
   }
@@ -158,7 +169,10 @@ HybridRouter _router(
             policy ??
             RoutePolicy(
               classifier: _Classifier(world),
-              labels: const {'easy': kOnDevice, 'hard': kCloud},
+              labels: const {
+                'easy': RouteDecision.prefer(kOnDevice),
+                'hard': RouteDecision.prefer(kCloud),
+              },
             ),
       },
   defaultPolicy: policies?.keys.first ?? 'smart',
@@ -254,6 +268,52 @@ void main() {
       expect(world.cloudCalls, 0);
     });
 
+    test('a zone captured in a cloud call cannot reach the cloud '
+        'afterwards', () async {
+      final router = _router(ai, world);
+      ai.defineGenerateMiddleware<Object?>(
+        name: 'capture',
+        create: (_, _) => _CaptureZone(),
+      );
+      await router.generate(
+        prompt: 'hi',
+        pin: kCloud,
+        use: [middlewareRef(name: 'capture')],
+      );
+      expect(world.cloudCalls, 1);
+      final replay = await _CaptureZone.captured!.run(
+        () => ai.generate(
+          model: modelRef('hybrid-router/$kCloud'),
+          prompt: 'replay',
+        ),
+      );
+      expect(replay.finishReason, FinishReason.failed);
+      expect(replay.finishMessage, contains('without the hybrid router'));
+      expect(world.cloudCalls, 1);
+    });
+
+    test('onChunk runs outside the decision', () async {
+      final router = _router(ai, world);
+      world.cloudGate = Completer<void>();
+      Future<GenerateResult>? sneak;
+      final r = await router.generate(
+        prompt: 'hi',
+        pin: kCloud,
+        onChunk: (_) {
+          sneak ??= ai
+              .generate(
+                model: modelRef('hybrid-router/$kCloud'),
+                prompt: 'sneak',
+              )
+              .whenComplete(world.cloudGate!.complete);
+        },
+      );
+      expect(r.text, 'cloud plain');
+      final s = await sneak!;
+      expect(s.finishReason, FinishReason.failed);
+      expect(world.cloudCalls, 1);
+    });
+
     test('a second ref of the router is refused', () async {
       final router = _router(ai, world);
       await expectLater(
@@ -317,7 +377,10 @@ void main() {
             RouteRule.custom('never', (_) => const RouteDecision.only(kCloud)),
           ],
           classifier: _Classifier(world),
-          labels: const {'easy': kOnDevice, 'hard': kCloud},
+          labels: const {
+            'easy': RouteDecision.prefer(kOnDevice),
+            'hard': RouteDecision.prefer(kCloud),
+          },
         ),
       );
       final r = await router.generate(prompt: 'hi');
@@ -364,7 +427,7 @@ void main() {
               world,
               throws: const RouteClassifierUnavailableException('loading'),
             ),
-            labels: const {'easy': kOnDevice},
+            labels: const {'easy': RouteDecision.prefer(kOnDevice)},
           ),
         );
         await expectLater(
@@ -390,8 +453,8 @@ void main() {
             world,
             throws: const RouteClassifierUnavailableException('loading'),
           ),
-          labels: const {'easy': kOnDevice},
-          onUnavailable: kOnDevice,
+          labels: const {'easy': RouteDecision.prefer(kOnDevice)},
+          onUnavailable: const RouteDecision.prefer(kOnDevice),
         ),
       );
       final r = await router.generate(prompt: 'hi');
@@ -405,7 +468,7 @@ void main() {
         world,
         policy: RoutePolicy(
           classifier: _Classifier(world, throws: StateError('broken')),
-          labels: const {'easy': kOnDevice},
+          labels: const {'easy': RouteDecision.prefer(kOnDevice)},
         ),
       );
       await expectLater(
@@ -552,6 +615,118 @@ void main() {
     });
   });
 
+  group('privacy of moves', () {
+    test('a label mapped to only stays on the device when it fails', () async {
+      world.localThrows = GenkitException(
+        'busy',
+        status: StatusCode.unavailable,
+      );
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          classifier: _Classifier(world),
+          labels: const {
+            'easy': RouteDecision.only(kOnDevice),
+            'hard': RouteDecision.prefer(kCloud),
+          },
+          fallback: const [kCloud],
+        ),
+      );
+      final r = await router.generate(prompt: 'hi');
+      expect(r.finishReason, FinishReason.failed);
+      expect(world.cloudCalls, 0);
+    });
+
+    test('an abstain stays on the device by default', () async {
+      world.nextLabel = '-';
+      world.localThrows = GenkitException(
+        'busy',
+        status: StatusCode.unavailable,
+      );
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          classifier: _Classifier(world),
+          labels: const {'hard': RouteDecision.prefer(kCloud)},
+          fallback: const [kCloud],
+        ),
+      );
+      final r = await router.generate(prompt: 'hi');
+      expect(r.finishReason, FinishReason.failed);
+      expect(world.cloudCalls, 0);
+    });
+
+    test('an explicit onAbstain is used', () async {
+      world.nextLabel = '-';
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          classifier: _Classifier(world),
+          labels: const {'easy': RouteDecision.prefer(kOnDevice)},
+          onAbstain: const RouteDecision.only(kCloud, reason: 'unsure'),
+        ),
+      );
+      final r = await router.generate(prompt: 'hi');
+      expect(r.text, 'cloud plain');
+      expect(r.route!.source, RouteSource.abstain);
+      expect(r.route!.reason, 'unsure');
+    });
+
+    for (final (name, error) in [
+      ('INTERNAL', GenkitException('bug', status: StatusCode.internal)),
+      ('a non-Genkit error', StateError('too long')),
+    ]) {
+      test('$name on the device does not move to the cloud', () async {
+        world.localThrows = error;
+        final router = _router(
+          ai,
+          world,
+          policy: const RoutePolicy(fallback: [kCloud]).withRule(kOnDevice),
+        );
+        final r = await router.generate(prompt: 'hi');
+        expect(r.finishReason, FinishReason.failed);
+        expect(world.cloudCalls, 0);
+      });
+    }
+
+    test('a non-Genkit cloud failure moves to the device, and says '
+        'why', () async {
+      world.cloudThrows = TimeoutException('no network');
+      final router = _router(
+        ai,
+        world,
+        policy: const RoutePolicy(fallback: [kOnDevice]).withRule(kCloud),
+      );
+      final r = await router.generate(prompt: 'hi');
+      expect(r.text, 'local plain');
+      expect(r.route!.target, kOnDevice);
+      expect(r.route!.model, 'local');
+      expect(r.route!.attempts, [kCloud, kOnDevice]);
+      expect(r.route!.reason, 'fallback: cloud failed with TimeoutException');
+    });
+
+    test('a transient device failure moves to the cloud and records the '
+        'status', () async {
+      world.localThrows = GenkitException(
+        'down',
+        status: StatusCode.unavailable,
+      );
+      final router = _router(
+        ai,
+        world,
+        policy: const RoutePolicy(fallback: [kCloud]).withRule(kOnDevice),
+      );
+      final r = await router.generate(prompt: 'hi');
+      expect(r.text, 'cloud plain');
+      expect(r.route!.target, kCloud);
+      expect(r.route!.model, 'fakecloud/big');
+      expect(r.route!.reason, 'fallback: onDevice failed with UNAVAILABLE');
+    });
+  });
+
   group('consent', () {
     test('a fallback refused the cloud reports the original failure', () async {
       world.localThrows = GenkitException(
@@ -676,6 +851,45 @@ void main() {
       expect(r2.route!.reason, 'no stamp');
     });
 
+    test('without a stamp and without a device target is refused', () async {
+      final router = _router(
+        ai,
+        world,
+        targets: {kCloud: HybridTarget.cloud(cloudRef)},
+        policy: RoutePolicy(
+          rules: [
+            RouteRule.custom('c', (_) => const RouteDecision.prefer(kCloud)),
+          ],
+        ),
+      );
+      final r1 = await router.generate(
+        prompt: 'please confirm',
+        toolNames: ['confirm'],
+      );
+      final unstamped = [
+        ...r1.messages.take(r1.messages.length - 1),
+        Message.fromJson({
+          ...r1.messages.last.toJson(),
+          'metadata': <String, dynamic>{},
+        }),
+      ];
+      await expectLater(
+        router.generate(
+          messages: unstamped,
+          toolNames: ['confirm'],
+          interruptRespond: [InterruptResponse(r1.interrupts.first, 'ok')],
+        ),
+        throwsA(
+          isA<HybridRoutingException>().having(
+            (e) => e.status,
+            'status',
+            StatusCode.failedPrecondition,
+          ),
+        ),
+      );
+      expect(world.cloudCalls, 1);
+    });
+
     test('a stamp in the history does not pin a fresh turn', () async {
       world.nextLabel = 'hard';
       final router = _router(ai, world);
@@ -737,6 +951,157 @@ void main() {
     });
   });
 
+  group('route info', () {
+    test('is added to a copy, keeping the provider\'s custom and '
+        'metadata', () async {
+      final cached = ModelResponse(
+        finishReason: FinishReason.stop,
+        message: Message(
+          role: Role.model,
+          content: [TextPart(text: 'cached')],
+          metadata: {'provider': 'm'},
+        ),
+        custom: {'provider': 'c'},
+      );
+      world.cloudResponse = cached;
+      final router = _router(ai, world);
+      final r = await router.generate(prompt: 'hi', pin: kCloud);
+      expect(r.text, 'cached');
+      expect(r.custom!['provider'], 'c');
+      expect(r.message!.metadata!['provider'], 'm');
+      expect(r.route!.target, kCloud);
+      expect(cached.custom, {'provider': 'c'});
+      await router.generate(prompt: 'again', pin: kCloud);
+      expect(cached.custom, {'provider': 'c'});
+    });
+  });
+
+  group('target config', () {
+    test('each request gets its own copy', () async {
+      final seen = <Object?>[];
+      ai.defineModel(
+        name: 'configured',
+        fn: (req, _) async {
+          seen.add(req.config?['maxTokens']);
+          req.config!['maxTokens'] = 1; // a model that edits its config
+          return _reply(req, 'configured');
+        },
+      );
+      final router = _router(
+        ai,
+        world,
+        targets: {
+          kOnDevice: HybridTarget.onDevice(
+            modelRef('configured', config: {'maxTokens': 4096}),
+          ),
+        },
+        policy: RoutePolicy(
+          rules: [
+            RouteRule.custom('dev', (_) => const RouteDecision.only(kOnDevice)),
+          ],
+        ),
+      );
+      await router.generate(prompt: 'one');
+      await router.generate(prompt: 'two');
+      expect(seen, [4096, 4096]);
+    });
+
+    test('a config that cannot be JSON is refused at definition', () {
+      expect(
+        () => _router(
+          ai,
+          world,
+          targets: {
+            kOnDevice: HybridTarget.onDevice(
+              modelRef('local', config: _BrokenConfig()),
+            ),
+          },
+          policy: RoutePolicy(
+            rules: [
+              RouteRule.custom(
+                'dev',
+                (_) => const RouteDecision.only(kOnDevice),
+              ),
+            ],
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            contains('no toJson here'),
+          ),
+        ),
+      );
+    });
+  });
+
+  group('ownership of refusals', () {
+    test('a refusal inside a tool fails the outer call, not as its '
+        'refusal', () async {
+      final router = _router(
+        ai,
+        world,
+        policies: {
+          'dev': RoutePolicy(
+            rules: [
+              RouteRule.custom(
+                'dev',
+                (_) => const RouteDecision.only(kOnDevice),
+              ),
+            ],
+          ),
+          'none': const RoutePolicy(),
+        },
+      );
+      ai.defineTool(
+        name: 'sub',
+        description: 'asks the router with a policy that decides nothing',
+        inputSchema: .map(.string(), .dynamicSchema()),
+        fn: (input, _) async {
+          final inner = await router.generate(policy: 'none', prompt: 'x');
+          return .response(inner.text);
+        },
+      );
+      final r = await router.generate(prompt: 'hi', toolNames: ['sub']);
+      expect(r.finishReason, FinishReason.failed);
+      expect(r.finishMessage, contains('decided nothing'));
+    });
+
+    test('a refusal a tool rethrows from a plain call is not the outer '
+        'call\'s', () async {
+      final router = _router(
+        ai,
+        world,
+        policies: {
+          'dev': RoutePolicy(
+            rules: [
+              RouteRule.custom(
+                'dev',
+                (_) => const RouteDecision.only(kOnDevice),
+              ),
+            ],
+          ),
+          'none': const RoutePolicy(),
+        },
+      );
+      ai.defineTool(
+        name: 'sub',
+        description: 'rethrows what a plain routed call failed on',
+        inputSchema: .map(.string(), .dynamicSchema()),
+        fn: (input, _) async {
+          final inner = await ai.generate(
+            prompt: 'x',
+            use: [router(policy: 'none')],
+          );
+          throw inner.cause!;
+        },
+      );
+      final r = await router.generate(prompt: 'hi', toolNames: ['sub']);
+      expect(r.finishReason, FinishReason.failed);
+    });
+  });
+
   group('prompts', () {
     test('a routed prompt is routed and throws a refusal', () async {
       final router = _router(ai, world);
@@ -774,8 +1139,76 @@ void main() {
           targets: {kCloud: HybridTarget.cloud(cloudRef)},
           policy: RoutePolicy(
             classifier: _Classifier(world),
-            labels: const {'hard': kCloud},
+            labels: const {'hard': RouteDecision.prefer(kCloud)},
           ),
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('keeps its own frozen copy of targets and policies', () async {
+      final labels = <String, RouteDecision>{
+        'easy': const RouteDecision.only(kOnDevice),
+      };
+      final fallback = <String>[kCloud];
+      final supports = <ModelCapability>{ModelCapability.tools};
+      final router = _router(
+        ai,
+        world,
+        targets: {
+          kOnDevice: HybridTarget.onDevice(localRef, supports: supports),
+          kCloud: HybridTarget.cloud(cloudRef),
+        },
+        policy: RoutePolicy(
+          classifier: _Classifier(world),
+          labels: labels,
+          fallback: fallback,
+        ),
+      );
+      labels['easy'] = const RouteDecision.only(kCloud);
+      fallback.add('nowhere');
+      supports.clear();
+      final r = await router.generate(prompt: 'hi', toolNames: ['lookup']);
+      expect(r.route!.target, kOnDevice);
+      expect(world.cloudCalls, 0);
+      expect(
+        () => router.policies['smart']!.labels['x'] = const RouteDecision.only(
+          kCloud,
+        ),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => router.policies['smart']!.fallback.add(kCloud),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => router.targets[kOnDevice]!.supports!.add(ModelCapability.json),
+        throwsUnsupportedError,
+      );
+    });
+
+    test('rejects a cloud target under the on-device key', () {
+      expect(
+        () => _router(
+          ai,
+          world,
+          targets: {kOnDevice: HybridTarget.cloud(cloudRef)},
+          policy: RoutePolicy(
+            rules: [
+              RouteRule.custom('c', (_) => const RouteDecision.only(kOnDevice)),
+            ],
+          ),
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('rejects a target named twice in a fallback', () {
+      expect(
+        () => _router(
+          ai,
+          world,
+          policy: const RoutePolicy(fallback: [kCloud, kCloud]),
         ),
         throwsArgumentError,
       );
@@ -808,6 +1241,30 @@ extension on RoutePolicy {
     fallback: fallback,
     cascade: cascade,
   );
+}
+
+/// A config whose toJson() throws.
+class _BrokenConfig {
+  Map<String, dynamic> toJson() => throw StateError('no toJson here');
+}
+
+/// Keeps the zone the model hook of the last call ran in.
+class _CaptureZone extends GenerateMiddleware {
+  static Zone? captured;
+
+  @override
+  Future<ModelResponse> model(
+    ModelRequest request,
+    ActionFnArg<ModelResponseChunk, ModelRequest, void> ctx,
+    Future<ModelResponse> Function(
+      ModelRequest request,
+      ActionFnArg<ModelResponseChunk, ModelRequest, void> ctx,
+    )
+    next,
+  ) {
+    captured = Zone.current;
+    return next(request, ctx);
+  }
 }
 
 /// An app middleware that switches the model, as a model-level fallback

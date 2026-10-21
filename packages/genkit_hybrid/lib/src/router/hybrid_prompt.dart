@@ -56,21 +56,26 @@ final class HybridPrompt<Input, Output> {
     Map<String, dynamic>? context,
     List<GenerateMiddlewareRef>? use,
     CancellationToken? cancel,
-  }) async => checkedRoutingResult(
-    await prompt.call<Object?>(
-      input,
-      messages: messages,
-      tools: tools,
-      toolNames: toolNames,
-      toolChoice: toolChoice,
-      returnToolRequests: returnToolRequests,
-      maxTurns: maxTurns,
-      output: output,
-      context: context,
-      use: use,
-      cancel: cancel,
-    ),
-  );
+  }) async {
+    final owner = Object();
+    final result = await inRoutedCall(
+      owner,
+      () => prompt.call<Object?>(
+        input,
+        messages: messages,
+        tools: tools,
+        toolNames: toolNames,
+        toolChoice: toolChoice,
+        returnToolRequests: returnToolRequests,
+        maxTurns: maxTurns,
+        output: output,
+        context: context,
+        use: use,
+        cancel: cancel,
+      ),
+    );
+    return checkedRoutingResult(result, owner);
+  }
 
   /// Streams the prompt; a refusal fails both the chunk stream and
   /// `onResult`.
@@ -87,21 +92,25 @@ final class HybridPrompt<Input, Output> {
     List<GenerateMiddlewareRef>? use,
     CancellationToken? cancel,
   }) {
-    final inner = prompt.stream<Object?>(
-      input,
-      messages: messages,
-      tools: tools,
-      toolNames: toolNames,
-      toolChoice: toolChoice,
-      returnToolRequests: returnToolRequests,
-      maxTurns: maxTurns,
-      output: output,
-      context: context,
-      use: use,
-      cancel: cancel,
+    final owner = Object();
+    final inner = inRoutedCall(
+      owner,
+      () => prompt.stream<Object?>(
+        input,
+        messages: messages,
+        tools: tools,
+        toolNames: toolNames,
+        toolChoice: toolChoice,
+        returnToolRequests: returnToolRequests,
+        maxTurns: maxTurns,
+        output: output,
+        context: context,
+        use: use,
+        cancel: cancel,
+      ),
     );
     final chunks = StreamController<GenerateResponseChunk<Output>>();
-    final result = inner.onResult.then(checkedRoutingResult);
+    final result = inner.onResult.then((r) => checkedRoutingResult(r, owner));
     inner.listen(
       chunks.add,
       // The same error completes `onResult`, which reports it below.

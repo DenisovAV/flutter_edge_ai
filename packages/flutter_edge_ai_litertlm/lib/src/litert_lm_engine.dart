@@ -44,11 +44,14 @@ const int kMinLitertlmContextTokens = 1024;
 /// must stay at or under ~1 MiB or every prefill chunk after the first is
 /// dropped — the model answers from chunk 0 alone, with no error. With 4
 /// attention heads per KV head that puts the largest working `cache_length` at
-/// prefill 128 at **896** (LiteRT-LM#3508). What a `maxTokens` of 1024 does to
-/// a bundle compiled for 896 has not been measured. Garbled Qwen3 output on
-/// the NPU is a different bug (LiteRT-LM#3846). So on NPU the caller's number
-/// is passed through untouched: the context is a property of the bundle, and
-/// only the caller knows it.
+/// prefill 128 at **896** (LiteRT-LM#3508). That limit is set when the bundle
+/// is built, not by `maxTokens`: LiteRT-LM's NPU executor (v0.18.0,
+/// `DetermineMaxSequenceLengthStaticModel`) lowers a larger value to the
+/// compiled limit of a bundle with a static KV cache, with a warning, so
+/// raising 896 to 1024 would not break it. Garbled Qwen3 output on the NPU is
+/// a different bug (LiteRT-LM#3846). The floor is skipped on NPU because it is
+/// a CPU/GPU fact: the caller's number is passed through untouched, since the
+/// context is a property of the bundle and only the caller knows it.
 ///
 /// Pass the backend of the ATTEMPT, not the one the caller asked for. A
 /// requested NPU falls back npu -> gpu -> cpu, and the floor still has to apply

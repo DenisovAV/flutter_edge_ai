@@ -1222,11 +1222,12 @@ class LiteRtLmFfiClient {
       final blockSigprof = npuDispatchDir != null && Platform.isLinux;
       // The Intel dispatch writes a bundle's weights to a bank in the temp
       // directory during the create: the ones new after it are this load's.
-      final banksBefore = npuDispatchDir != null && Platform.isWindows
-          ? listIntelWeightBanks()
-          : null;
+      // Listed on the create's isolate; claimed here, where the lock handles
+      // live as long as the engine.
+      final claimBanks = backend == 'npu' && npuDispatch!.stagesWeightBanks;
       final engineAddr = await Isolate.run(() {
         edgeAiLogLevel = isolateLogLevel;
+        final banksBefore = claimBanks ? listIntelWeightBanks() : null;
         final isolateSw = Stopwatch()..start();
         // Plain open (litert_lm_library.dart): `_ensureBindings()` above
         // already loaded it with the preloads and, on Android, the strict
@@ -1268,8 +1269,11 @@ class LiteRtLmFfiClient {
           '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
           level: EdgeAiLogLevel.verbose,
         );
+        final banks = claimBanks && ptr != 0
+            ? (before: banksBefore, after: listIntelWeightBanks())
+            : null;
         if (ptr != 0 || !lastError) {
-          return (address: ptr, code: 0, message: null);
+          return (address: ptr, code: 0, message: null, banks: banks);
         }
         final code = lib.lookupFunction<Int32 Function(), int Function()>(
           'litert_lm_get_last_error_code',
@@ -1284,11 +1288,15 @@ class LiteRtLmFfiClient {
           message: code == 0 || message == nullptr
               ? null
               : message.toDartString(),
+          banks: null,
         );
       });
       _engine = Pointer<LiteRtLmEngine>.fromAddress(engineAddr.address);
-      if (banksBefore != null && engineAddr.address != 0) {
-        final claim = IntelWeightBankClaim.newSince(banksBefore);
+      if (engineAddr.banks case (:final before, :final after)) {
+        // shutdown() released the last engine's claim; a second initialize
+        // without it would leak those handles.
+        assert(_intelBanks == null);
+        final claim = IntelWeightBankClaim.newSince(before, after);
         _intelBanks = claim;
         if (claim.banks.isNotEmpty) {
           edgeAiLog(
@@ -2458,6 +2466,7 @@ class LiteRtLmFfiClient {
     // handle/virtual drains above already emptied the registry, but clear it so
     // no address can linger as a dangling "live" entry after a bulk free.
     _liveConvs.clear();
+    _sentConvs.clear();
 
     _isInitialized = false;
     _backend = null;

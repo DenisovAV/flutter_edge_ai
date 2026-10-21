@@ -232,6 +232,22 @@ Nothing statically imports `LiteRtDispatch.dll` either, and `litert_dispatch_lib
 is set only for that backend, so an app that never asks for the Intel NPU never loads
 them at all.
 
+**Weight banks in `%TEMP%`.** For a bundle whose NPU blobs carry no weights (Intel's
+Gemma 4 12B for Panther Lake, EmbeddingGemma 2 `_Intel_PTL`), the dispatch copies them
+to `%TEMP%\litert_ov_bank_<hex>.bin` at every load (5.55 GB and 74.5 MB) and deletes the
+file when the model is closed. From `flutter_edge_ai_litertlm` 1.17.0 each process holds a
+`<bank>.<pid>.owner` file open beside its banks, and every Intel NPU load deletes, off the
+UI isolate, the banks whose lock file deletes (the owner is gone) and the unmarked ones
+written before the PC last started. It prints what it freed and what it could not delete,
+in release builds too. It never deletes an unmarked bank written since the last start
+(an app on an older release, the LiteRT-LM CLI), nor `LITERT_OV_WEIGHTS_PATH`.
+Deleting a live bank is harmless after the load: the dispatch reads it only during the
+create. That was measured on Panther Lake on 2026-10-20: a 12B whose bank was deleted
+went on generating. Both temp paths are covered: `GetTempPathW` and, for a process
+running as SYSTEM, `GetTempPath2W`. Intel's 12B needs 1.17.0's OpenVINO 2026.4.1,
+because its blobs carry metadata 2.7, which 2026.3 refuses. Measured with Intel NPU
+driver 32.0.100.4778.
+
 ### Linux
 
 The bundle includes:

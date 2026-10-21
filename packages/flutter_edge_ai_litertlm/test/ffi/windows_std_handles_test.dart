@@ -2,7 +2,8 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/windows_std_handles.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 // Handle values for the fake process. Only the console answers
-// GetConsoleMode; NUL is a character device that does not.
+// GetConsoleMode; NUL is a character device that does not (the real call is
+// held to that in windows_std_handles_windows_test.dart).
 const _console = 0x254;
 const _file = 0x70;
 const _otherFile = 0x88;
@@ -70,7 +71,7 @@ void main() {
     expect(p.duplicated, [_otherFile, _file]);
   });
 
-  test('2>NUL is a redirect, not a console', () {
+  test('2>NUL: a non-console fd is repointed to like a file', () {
     final p = _FakeProcess(
       crt: {1: _console, 2: _nul},
       std: {stdOutputHandle: _console, stdErrorHandle: _console},

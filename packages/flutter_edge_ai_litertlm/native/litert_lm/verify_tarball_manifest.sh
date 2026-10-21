@@ -275,8 +275,10 @@ REQUIRED=(
   # Intel's dispatch (NpuVendor.intel), in every Windows x64 build: rebuilt
   # from the pin every release, never carried forward unchecked.
   "windows_x86_64:LiteRtDispatch.dll"
-  # OpenVINO 2026.4: the NPU plugin needs it for blob metadata 2.7 (Intel's
-  # Gemma 4 12B for Panther Lake).
+  # OpenVINO 2026.4: the NPU plugin loads it by name for blobs that run on
+  # Intel's NPU VM runtime. Gemma 4 E2B and Intel's 12B for Panther Lake load
+  # without it; it ships because Intel's own kit does, and intelNpuLibs
+  # bundles it.
   "windows_x86_64:openvino_intel_npu_vm_runtime.dll"
   "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"

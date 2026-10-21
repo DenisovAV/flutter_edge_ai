@@ -38,23 +38,49 @@ String _osOf(String abi) => abi.split('_').first;
 String _fileOf(String name, String os) =>
     os == 'windows' ? '$name.dll' : 'lib$name.so';
 
+/// A workflow file with CRLF folded: a Windows checkout may carry either.
+String _workflow(String name) => File(
+  '../../.github/workflows/$name',
+).readAsStringSync().replaceAll('\r\n', '\n');
+
 /// `$ovWanted = @( … )` of a Windows native workflow: the OpenVINO DLLs CI
 /// copies into the tarball (TBB is matched by wildcard there, not listed).
 Set<String> _ovWanted(String workflow) {
-  final yaml = File('../../.github/workflows/$workflow').readAsStringSync();
   // Up to the line that is only `)`: the comments inside the list hold
   // parentheses of their own.
   final block = RegExp(
     r'\$ovWanted = @\(\n(.*?)^\s*\)\s*$',
     multiLine: true,
     dotAll: true,
-  ).firstMatch(yaml);
+  ).firstMatch(_workflow(workflow));
   expect(block, isNotNull, reason: '\$ovWanted not found in $workflow');
   return {
     for (final line in block!.group(1)!.split('\n'))
       if (RegExp(r"^\s*'([^']+)'").firstMatch(line) case final m?) m.group(1)!,
   };
 }
+
+/// The names of `$ovSha256 = @{ … }`: every OpenVINO and TBB DLL the workflow
+/// stages, exactly, each with its pinned sha256.
+Set<String> _ovPinned(String workflow) {
+  final block = RegExp(
+    r'\$ovSha256 = @\{\n(.*?)^\s*\}\s*$',
+    multiLine: true,
+    dotAll: true,
+  ).firstMatch(_workflow(workflow));
+  expect(block, isNotNull, reason: '\$ovSha256 not found in $workflow');
+  return {
+    for (final line in block!.group(1)!.split('\n'))
+      if (RegExp(r"^\s*'([^']+)' = '[0-9a-f]{64}'$").firstMatch(line)
+          case final m?)
+        m.group(1)!,
+  };
+}
+
+const _windowsWorkflows = [
+  'build-litertlm-native-windows.yml',
+  'build-litertlm-native.yml',
+];
 
 void main() {
   test('every vendor\'s dispatch is a required file of the tarball of each of '
@@ -128,11 +154,43 @@ void main() {
       for (final lib in intelNpuLibs)
         if (lib != intelDispatchLib && !lib.startsWith('tbb')) '$lib.dll',
     };
-    for (final workflow in const [
-      'build-litertlm-native-windows.yml',
-      'build-litertlm-native.yml',
-    ]) {
+    for (final workflow in _windowsWorkflows) {
       expect(_ovWanted(workflow), bundled, reason: workflow);
+    }
+  });
+
+  test('the Windows workflows pin a sha256 for every OpenVINO and TBB DLL '
+      'intelNpuLibs bundles, and no other', () {
+    // TBB is staged by wildcard: a renamed one would reach the cache and
+    // never the app, unless the pinned set names it.
+    final bundled = {
+      for (final lib in intelNpuLibs)
+        if (lib != intelDispatchLib) '$lib.dll',
+    };
+    for (final workflow in _windowsWorkflows) {
+      expect(_ovPinned(workflow), bundled, reason: workflow);
+    }
+  });
+
+  test('the OpenVINO release the Windows workflows require is the one the '
+      'LiteRT patch pins', () {
+    final patch = File(
+      'native/litert_lm/patches/litert_openvino_2026_4_1.patch',
+    ).readAsStringSync();
+    final version = RegExp(
+      r'^\+OPENVINO_PEP440_VERSION = "([^"]+)"',
+      multiLine: true,
+    ).firstMatch(patch)!.group(1)!;
+    final build = RegExp(
+      '^\\+.*"windows": ".*_${RegExp.escape(version)}\\.(\\d+)\\.',
+      multiLine: true,
+    ).firstMatch(patch)!.group(1)!;
+    for (final workflow in _windowsWorkflows) {
+      expect(
+        _workflow(workflow),
+        contains("\$ovRelease = '$version-$build'"),
+        reason: workflow,
+      );
     }
   });
 }

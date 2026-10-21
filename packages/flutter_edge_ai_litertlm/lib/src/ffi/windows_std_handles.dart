@@ -2,8 +2,10 @@
 // starts. When the parent redirected the app's output without
 // STARTF_USESTDHANDLES (cmd.exe's `app.exe > out.log 2> err.log`), that
 // replaces the process's standard handles with the parent's console, while
-// fd 1 and 2 of the shared UCRT (Dart's stdout and stderr, the Flutter
-// engine's own log) keep the files they were given at start. LiteRt.dll,
+// the C runtimes initialised before it keep the files they were given at
+// start: fd 1 and 2 of the shared UCRT (the runner's and the plugins'; the
+// reference this file reads) and the Flutter engine's static one, which
+// loads with the runner and carries Dart's `print`. LiteRt.dll,
 // LiteRtLm.dll, StreamProxy.dll, the WebGPU accelerator and the samplers each
 // link the C runtime statically, and a static C runtime copies the standard
 // handles once, when its DLL loads: LiteRT-LM's whole log (absl, LiteRT's
@@ -14,6 +16,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
 const stdOutputHandle = 0xFFFFFFF5; // (DWORD)-11
@@ -67,22 +70,34 @@ List<int> alignStdHandles(StdHandleCalls calls) {
 bool _alignedInThisIsolate = false;
 
 /// Opens one of the bundled DLLs on Windows, after [alignStdHandles] has run
-/// once in this isolate. Every Windows open of a bundled library goes through
-/// here: a library that loads first keeps the handles it copied.
+/// once in this isolate. Every first open of a bundled library goes through
+/// here (a later plain open of one already loaded changes nothing): a library
+/// that loads first keeps the handles it copied. The alignment only moves
+/// where the native log goes, so a failure in it is printed and the library
+/// opens anyway.
 DynamicLibrary openBundledWindowsLibrary(String name) {
   if (!_alignedInThisIsolate) {
     _alignedInThisIsolate = true;
-    final calls = _win32StdHandleCalls();
-    if (calls != null) {
-      for (final which in alignStdHandles(calls)) {
-        edgeAiLog(
-          '[flutter_edge_ai_litertlm] Windows: '
-          '${which == stdErrorHandle ? 'STD_ERROR_HANDLE' : 'STD_OUTPUT_HANDLE'} '
-          "was the parent's console while the app's "
-          "${which == stdErrorHandle ? 'stderr' : 'stdout'} is redirected; "
-          'pointed it at the redirect so the native log follows it.',
-        );
+    try {
+      final calls = win32StdHandleCalls();
+      if (calls != null) {
+        for (final which in alignStdHandles(calls)) {
+          edgeAiLog(
+            '[flutter_edge_ai_litertlm] Windows: '
+            '${which == stdErrorHandle ? 'STD_ERROR_HANDLE' : 'STD_OUTPUT_HANDLE'} '
+            "was the parent's console while the app's "
+            "${which == stdErrorHandle ? 'stderr' : 'stdout'} is redirected; "
+            'pointed it at the redirect so the native log follows it.',
+          );
+        }
       }
+    } on Object catch (e) {
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_litertlm] Windows: could not align the standard '
+        "handles with the app's redirected output ($e); the native log may go "
+        "to the parent's console.",
+      );
     }
   }
   return DynamicLibrary.open(name);
@@ -105,10 +120,11 @@ void _ignoreInvalidParameter(
   int reserved,
 ) {}
 
-/// Null when the process has no ucrtbase.dll loaded: then nothing in it
-/// writes through the shared UCRT, and loading it now would build its fd
-/// table from the handles AttachConsole already replaced.
-StdHandleCalls? _win32StdHandleCalls() {
+/// The real calls. Null when the process has no ucrtbase.dll loaded: then
+/// nothing in it writes through the shared UCRT, and loading it now would
+/// build its fd table from the handles AttachConsole already replaced.
+@visibleForTesting
+StdHandleCalls? win32StdHandleCalls() {
   if (!Platform.isWindows) return null;
   final kernel32 = DynamicLibrary.open('kernel32.dll');
   final getModuleHandle = kernel32
@@ -193,6 +209,9 @@ StdHandleCalls? _win32StdHandleCalls() {
         calloc.free(mode);
       }
     },
+    // Inheritable, as the handle it replaces was: a child started with
+    // inherited handles and no STARTF_USESTDHANDLES gets the standard
+    // handles' values, which are only valid in it if they were inherited.
     duplicate: (h) {
       final out = calloc<IntPtr>();
       try {

@@ -91,14 +91,22 @@ need `flutter_edge_ai_litertlm` 1.15.0: every release from
 or ended the process with `0xC0000409`
 ([LiteRT-LM#4023](https://github.com/google-ai-edge/LiteRT-LM/issues/4023)).
 
-A bundle compiled without its weights (Intel's Gemma 4 12B for Panther Lake)
-makes the dispatch write them to `%TEMP%\litert_ov_bank_<hex>.bin` at every
-load, 5.55 GB for that model, and delete the file when the model is closed. An
-app that exits without closing the model leaves it behind. From
-`flutter_edge_ai_litertlm` 1.17.0 each app marks its banks with a
-`<bank>.<pid>.owner` file it keeps open while the model is loaded, and the next
-NPU load deletes the banks whose owner is gone, plus the unmarked ones older
-than ten minutes, and prints how much it freed.
+Intel's Gemma 4 12B for Panther Lake needs `flutter_edge_ai_litertlm` 1.17.0:
+its NPU blobs carry metadata 2.7, which the OpenVINO 2026.3 of earlier releases
+refuses. 1.17.0 ships OpenVINO 2026.4.1. Measured with Intel NPU driver
+32.0.100.4778 on both PCs.
+
+A bundle whose NPU blobs carry no weights makes the dispatch copy them to
+`%TEMP%\litert_ov_bank_<hex>.bin` at every load: 5.55 GB for Intel's 12B, 74.5
+MB for EmbeddingGemma 2 270m `_Intel_PTL`. Keep that much free on the system
+drive. The dispatch deletes the file when the model is closed, so an app that
+exits without closing the model leaves it behind. From 1.17.0 each app marks
+its banks with a `<bank>.<pid>.owner` file it keeps open while the model is
+loaded. The next NPU load deletes the banks whose owner is gone, and the
+unmarked ones written before the PC last started, and prints how much it freed.
+Windows' Fast Startup shutdown does not count as a start. An unmarked bank
+written since the start is kept, because an app on an older release or another
+LiteRT program may still be using it.
 
 Run **Gemma 4** there. On the Intel NPU a Gemma 3 bundle loses every prefill
 chunk after the first — the reply is fluent, answers from the opening of your

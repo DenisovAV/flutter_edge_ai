@@ -8,6 +8,7 @@
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/engine.dart' show edgeAiLog;
@@ -140,8 +141,13 @@ Future<NpuChoice> chooseNpuVendor({
 }
 
 /// What an NPU attempt hands LiteRT-LM: the `dispatch_lib_dir` its vendor
-/// prepared, and whether to turn LiteRT's HW mask update path off.
-typedef NpuDispatch = ({String dir, bool disableHwMasking});
+/// prepared, whether to turn LiteRT's HW mask update path off, and whether
+/// the load's weight banks are to be claimed ([npuStagesWeightBanks]).
+typedef NpuDispatch = ({
+  String dir,
+  bool disableHwMasking,
+  bool stagesWeightBanks,
+});
 
 /// Whether an LLM engine on [vendor]'s NPU turns `use_hw_masking_for_npu`
 /// off. Intel: with it on, LiteRT sets up the kWH HW mask method, which Intel
@@ -153,12 +159,22 @@ bool npuDisablesHwMasking(NpuVendor vendor) => switch (vendor) {
   NpuVendor.intel => true,
 };
 
+/// Whether a load on [vendor]'s NPU writes weight banks to the temp directory
+/// that its process must claim (intel_weight_banks.dart). Intel: the Windows
+/// dispatch copies a bundle's shared weight pool there during the create.
+bool npuStagesWeightBanks(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm => false,
+  NpuVendor.googleTensor => false,
+  NpuVendor.intel => true,
+};
+
 /// Whether this build carries [vendor]'s NPU stack where LiteRT will load it:
 /// for Qualcomm, what NativeAssetsManifest.json says the build bundled
 /// ([checkNpuStackInManifest]); for Intel, whether its dispatch is beside the
 /// executable ([checkIntelNpuStack]) — the directory LiteRT is pointed at, and
 /// a stack that answers [NpuStackCheck.unknown] there would go unchecked:
-/// Intel's [prepareNpuDispatchDir] checks nothing.
+/// Intel's [prepareNpuDispatchDir] checks nothing (it only sweeps stale weight
+/// banks).
 Future<NpuStackCheck> npuStackOf(NpuVendor vendor) async => switch (vendor) {
   NpuVendor.qualcomm => await checkNpuStackInManifest(vendor),
   NpuVendor.googleTensor => await checkNpuStackInManifest(vendor),
@@ -167,7 +183,8 @@ Future<NpuStackCheck> npuStackOf(NpuVendor vendor) async => switch (vendor) {
 
 /// The `dispatch_lib_dir` to hand LiteRT for [vendor] on this host: the
 /// prepared Qualcomm libraries on Android ([prepareAndroidNpuDispatchDir]) and
-/// on Linux ([prepareLinuxNpuDispatchDir]), [windowsNpuDispatchDir] for Intel.
+/// on Linux ([prepareLinuxNpuDispatchDir]), [windowsNpuDispatchDir] for Intel,
+/// after deleting the weight banks of Intel loads whose process is gone.
 /// Throws [NpuDispatchUnavailableException] when the stack cannot be prepared.
 ///
 /// [operatingSystem] is `Platform.operatingSystem` unless a test names one:
@@ -198,7 +215,7 @@ Future<String> prepareNpuDispatchDir(
     ),
   },
   NpuVendor.intel => switch (operatingSystem ?? Platform.operatingSystem) {
-    'windows' => _prepareIntelDispatchDir(),
+    'windows' => await _prepareIntelDispatchDir(),
     final os => throw StateError(
       'NpuVendor.intel has no dispatch directory on $os',
     ),
@@ -306,11 +323,14 @@ String prepareLinuxNpuDispatchDir() {
 
 /// [windowsNpuDispatchDir], after deleting the weight banks earlier processes
 /// left behind ([sweepStaleIntelWeightBanks]): before this load stages its
-/// own, so on a disk the last ones filled, the next one fits.
-String _prepareIntelDispatchDir() {
+/// own, so on a disk the last ones filled, the next one fits. On another
+/// isolate: it lists the temp directory and can delete gigabytes.
+Future<String> _prepareIntelDispatchDir() async {
   if (Platform.isWindows) {
-    sweepStaleIntelWeightBanks(
-      keep: Platform.environment['LITERT_OV_WEIGHTS_PATH'],
+    await Isolate.run(
+      () => sweepStaleIntelWeightBanks(
+        keep: Platform.environment['LITERT_OV_WEIGHTS_PATH'],
+      ),
     );
   }
   return windowsNpuDispatchDir;

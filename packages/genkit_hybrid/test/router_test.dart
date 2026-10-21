@@ -92,10 +92,13 @@ class _CloudPlugin extends GenkitPlugin {
 }
 
 class _Classifier extends RouteClassifier {
-  _Classifier(this.world, {this.throws});
+  _Classifier(this.world, {this.throws, this.verdict});
 
   final _World world;
   final Object? throws;
+
+  /// Answered instead of the world's label, when set.
+  final RouteVerdict Function()? verdict;
 
   @override
   String get name => 'fake';
@@ -107,6 +110,7 @@ class _Classifier extends RouteClassifier {
   }) async {
     world.classifyCalls++;
     if (throws case final e?) throw e;
+    if (verdict case final v?) return v();
     if (world.nextLabel == '-') return const RouteVerdict.abstain('nothing');
     return RouteVerdict.label(world.nextLabel, score: 0.9, margin: 0.2);
   }
@@ -527,6 +531,61 @@ void main() {
           ),
         ),
       );
+    });
+
+    for (final (name, verdict) in <(String, RouteVerdict Function())>[
+      (
+        'a NaN margin',
+        () => const RouteVerdict.label('easy', margin: double.nan),
+      ),
+      (
+        'an infinite score',
+        () => const RouteVerdict.label('easy', score: double.infinity),
+      ),
+      (
+        'details that are not JSON',
+        () => RouteVerdict.abstain('x', details: {'at': DateTime(2026)}),
+      ),
+    ]) {
+      test('a verdict with $name fails the call', () async {
+        final router = _router(
+          ai,
+          world,
+          policy: RoutePolicy(
+            classifier: _Classifier(world, verdict: verdict),
+            labels: const {'easy': RouteDecision.prefer(kOnDevice)},
+          ),
+        );
+        await expectLater(
+          router.generate(prompt: 'hi'),
+          throwsA(
+            isA<HybridRoutingException>().having(
+              (e) => e.message,
+              'message',
+              contains('Classifier "fake"'),
+            ),
+          ),
+        );
+        expect(world.localCalls, 0);
+      });
+    }
+
+    test('the route keeps its own copy of the verdict details', () async {
+      final details = <String, Object?>{'n': 1};
+      final router = _router(
+        ai,
+        world,
+        policy: RoutePolicy(
+          classifier: _Classifier(
+            world,
+            verdict: () => RouteVerdict.label('easy', details: details),
+          ),
+          labels: const {'easy': RouteDecision.prefer(kOnDevice)},
+        ),
+      );
+      final r = await router.generate(prompt: 'hi');
+      details['n'] = 2;
+      expect(r.route!.details, {'n': 1});
     });
 
     test('a classifier error fails the call and is never an abstain', () async {

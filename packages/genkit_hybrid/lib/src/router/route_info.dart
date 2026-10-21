@@ -46,11 +46,13 @@ final class RouteSource {
   /// Stable name, as in the route info's JSON.
   final String name;
 
-  static RouteSource? _byName(String? name) {
+  /// The source named [name]; one this release does not know (written by a
+  /// later one) is kept by its name.
+  static RouteSource _byName(String name) {
     for (final s in values) {
       if (s.name == name) return s;
     }
-    return null;
+    return RouteSource._(name);
   }
 
   @override
@@ -167,41 +169,57 @@ final class RouteInfo {
     if (details.isNotEmpty) 'details': details,
   };
 
-  /// Reads [toJson]'s output; null when [json] is not one.
+  /// Reads [toJson]'s output; null when [json] is not one. An optional
+  /// field of the wrong type reads as absent.
   static RouteInfo? fromJson(Object? json) {
     if (json is! Map) return null;
-    final source = RouteSource._byName(json['source'] as String?);
+    final source = json['source'];
     final router = json['router'];
     final policy = json['policy'];
     final target = json['target'];
     final model = json['model'];
-    if (source == null ||
+    if (source is! String ||
         router is! String ||
         policy is! String ||
         target is! String ||
         model is! String) {
       return null;
     }
-    final ms = json['routeMs'];
+    String? text(String key) => switch (json[key]) {
+      final String v => v,
+      _ => null,
+    };
+    double? number(String key) => switch (json[key]) {
+      final num v => v.toDouble(),
+      _ => null,
+    };
+    final ms = number('routeMs');
     return RouteInfo(
       router: router,
       policy: policy,
       target: target,
       model: model,
-      source: source,
-      routeTime: Duration(microseconds: ms is num ? (ms * 1000).round() : 0),
-      attempts: [
-        for (final a in (json['attempts'] as List?) ?? const [])
-          if (a is String) a,
-      ],
-      rule: json['rule'] as String?,
-      classifier: json['classifier'] as String?,
-      label: json['label'] as String?,
-      score: (json['score'] as num?)?.toDouble(),
-      margin: (json['margin'] as num?)?.toDouble(),
-      abstainReason: json['abstainReason'] as String?,
-      reason: json['reason'] as String?,
-      details: (json['details'] as Map?)?.cast<String, Object?>() ?? const {},
+      source: RouteSource._byName(source),
+      routeTime: Duration(microseconds: ms == null ? 0 : (ms * 1000).round()),
+      attempts: List.unmodifiable([
+        if (json['attempts'] case final List attempts)
+          for (final a in attempts)
+            if (a is String) a,
+      ]),
+      rule: text('rule'),
+      classifier: text('classifier'),
+      label: text('label'),
+      score: number('score'),
+      margin: number('margin'),
+      abstainReason: text('abstainReason'),
+      reason: text('reason'),
+      details: switch (json['details']) {
+        final Map d => Map.unmodifiable({
+          for (final MapEntry(:key, :value) in d.entries)
+            if (key is String) key: value,
+        }),
+        _ => const {},
+      },
     );
   }
 

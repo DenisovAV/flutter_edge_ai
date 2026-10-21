@@ -22,6 +22,16 @@ final class RouteDecision {
   final String? reason;
 
   @override
+  bool operator ==(Object other) =>
+      other is RouteDecision &&
+      other.target == target &&
+      other.isOnly == isOnly &&
+      other.reason == reason;
+
+  @override
+  int get hashCode => Object.hash(target, isOnly, reason);
+
+  @override
   String toString() =>
       'RouteDecision.${isOnly ? 'only' : 'prefer'}($target'
       '${reason == null ? '' : ', reason: $reason'})';

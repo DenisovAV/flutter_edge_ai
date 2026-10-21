@@ -636,6 +636,7 @@ final class _RouterMiddleware extends GenerateMiddleware {
       String? reason,
       LabelVerdict? label,
       AbstainVerdict? abstain,
+      Map<String, Object?> details = const {},
     }) => RouteInfo(
       router: router.name,
       policy: policyName,
@@ -655,7 +656,7 @@ final class _RouterMiddleware extends GenerateMiddleware {
       margin: label?.margin,
       abstainReason: abstain?.reason,
       reason: reason,
-      details: label?.details ?? abstain?.details ?? const {},
+      details: details,
     );
 
     if (pin case final pin?) {
@@ -737,6 +738,27 @@ final class _RouterMiddleware extends GenerateMiddleware {
         cause: e,
       );
     }
+    // Checked and copied before anything reads it: the route info and the
+    // trace are JSON, and a classifier may reuse its details map.
+    final Map<String, Object?> details;
+    try {
+      if (verdict case LabelVerdict(
+        :final score,
+        :final margin,
+      ) when !(score?.isFinite ?? true) || !(margin?.isFinite ?? true)) {
+        throw ArgumentError('score $score, margin $margin: not finite');
+      }
+      details = Map.unmodifiable(
+        jsonDecode(jsonEncode(verdict.details)) as Map<String, Object?>,
+      );
+    } catch (e) {
+      throw HybridRoutingException(
+        'Classifier "${classifier.name}" answered a verdict the route info '
+        'cannot hold: $e',
+        status: StatusCode.internal,
+        cause: e,
+      );
+    }
     switch (verdict) {
       case final LabelVerdict verdict:
         final decision = policy.labels[verdict.label];
@@ -753,6 +775,7 @@ final class _RouterMiddleware extends GenerateMiddleware {
             decision.target,
             RouteSource.classifier,
             label: verdict,
+            details: details,
             reason: decision.reason,
           ),
         );
@@ -765,6 +788,7 @@ final class _RouterMiddleware extends GenerateMiddleware {
             decision.target,
             RouteSource.abstain,
             abstain: verdict,
+            details: details,
             reason: decision.reason,
           ),
         );

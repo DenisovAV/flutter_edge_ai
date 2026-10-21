@@ -433,7 +433,12 @@ void main() {
       });
     }
 
-    Future<List<String>> autoCpuLoadMessages(String? refusal) async {
+    Future<List<String>> autoLoadMessages(
+      String? refusal, {
+      String backendName = 'CPU',
+      PreferredBackend expected = PreferredBackend.cpu,
+    }) async {
+      engine.backendName = backendName;
       final messages = <String>[];
       final candidate = createLlamaEmbeddingBackendForTest(
         gpuRefusal: () => refusal,
@@ -449,8 +454,7 @@ void main() {
       )).build();
       addTearDown(p.close);
       await runZoned(
-        () async =>
-            expect((await p.load()).activeBackend, PreferredBackend.cpu),
+        () async => expect((await p.load()).activeBackend, expected),
         zoneSpecification: ZoneSpecification(
           print: (_, _, _, message) => messages.add(message),
         ),
@@ -459,7 +463,7 @@ void main() {
     }
 
     test('successful automatic CPU selection warns once', () async {
-      final messages = await autoCpuLoadMessages(null);
+      final messages = await autoLoadMessages(null);
       expect(messages, hasLength(1));
       expect(
         messages.single,
@@ -470,9 +474,20 @@ void main() {
     test(
       'automatic CPU selection is silent where llamadart picks CPU',
       () async {
-        expect(await autoCpuLoadMessages('guarded platform'), isEmpty);
+        expect(await autoLoadMessages('guarded platform'), isEmpty);
       },
     );
+
+    test('automatic GPU selection does not warn', () async {
+      expect(
+        await autoLoadMessages(
+          null,
+          backendName: 'Metal',
+          expected: PreferredBackend.gpu,
+        ),
+        isEmpty,
+      );
+    });
 
     test(
       'CPU request refuses GPU placement and disposes exactly once',

@@ -223,7 +223,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 final _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0-f',
+  version: '0.18.0-g',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -234,6 +234,15 @@ final _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.18.0-g changes the Windows archive and nothing else: the Intel NPU
+  // stack moves from OpenVINO 2026.3.1 to 2026.4.1 (LiteRT 991d15588a,
+  // patches/litert_openvino_2026_4_1.patch) — Intel's Gemma 4 12B for Panther
+  // Lake carries blob metadata 2.7, which the 2026.3 NPU plugin refuses — and
+  // openvino_intel_npu_vm_runtime.dll joins it. LiteRtDispatch.dll, LiteRtLm.dll,
+  // StreamProxy.dll, OpenVINO and TBB are CI run 39573062034's, the bytes run
+  // on Lunar Lake and Panther Lake; the other twelve Windows files and the six
+  // other archives are byte-identical to 0.18.0-f.
+  //
   // 0.18.0-f rebuilds libLiteRtLm and StreamProxy on all seven targets and
   // adds the Google Tensor dispatch to the Android archive:
   // stream_proxy_create2 takes the chunk accessors from Dart (#453, #668);
@@ -316,7 +325,7 @@ final _litertlmBundle = _NativeBundle(
     'litertlm-linux_arm64.tar.gz':
         'd437293a4a83a6502e393c99b17f8962eb66d4579361d3bab9c863d4a4724698',
     'litertlm-windows_x86_64.tar.gz':
-        'd945c2d05ebcb624af8da4ee2d71ba1069b29584e41f5105f9118f8ffb44d315',
+        '218eb6c006d53f2e4db26527e279601d97f087a0307f7a7e08347fc5df8a20e6',
     'litertlm-macos_arm64.tar.gz':
         'f95b27723324217f41a5b0b7aa04a24755e237f75b64ed37d852da8c249bfb67',
     'litertlm-ios_arm64.tar.gz':

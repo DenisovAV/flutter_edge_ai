@@ -1,0 +1,111 @@
+name: GGUF source qualification
+
+on:
+  pull_request:
+    paths:
+      - 'packages/flutter_edge_ai/**'
+      - 'packages/flutter_edge_ai_llama/**'
+      - '.github/actions/setup-flutter-llama/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/gguf-source-qualification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-qualification:
+    name: GGUF source (${{ matrix.platform }}, Flutter ${{ matrix.flutter }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform: linux, runner: ubuntu-latest, flutter: '3.47.1', runtime: true}
+          - {platform: windows, runner: windows-latest, flutter: '3.47.1', runtime: true}
+          - {platform: minimum-sdk, runner: ubuntu-latest, flutter: '3.44.0', runtime: false}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    env:
+      # Dart emits UTF-8 JSON and Unicode diagnostics on Windows too.
+      PYTHONUTF8: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: ./.github/actions/setup-flutter-llama
+        with:
+          flutter-version: ${{ matrix.flutter }}
+      - name: Stage only core, adapter and app for source qualification
+        run: |
+          python - <<'PYTHON'
+          import os, pathlib, shutil, subprocess
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'gguf-source-qualification'
+          for name in ('flutter_edge_ai', 'flutter_edge_ai_llama'):
+              source = pathlib.Path('packages') / name
+              target = root / 'packages' / name
+              shutil.copytree(source, target, ignore=shutil.ignore_patterns(
+                  '.dart_tool', 'build', 'coverage', '__pycache__', '*.pyc',
+                  'pubspec.lock', 'Pods', 'ephemeral', '.symlinks', '.gradle'))
+              pubspec = target / 'pubspec.yaml'
+              pubspec.write_text(pubspec.read_text().replace('resolution: workspace\n', ''))
+          # The example already has a checkout-only path override to its sibling
+          # core. It is retained ONLY inside this temporary source test stage.
+          # verify.py package and minimum-sdk in llama.yml stay unchanged and
+          # continue to require the published hosted core package.
+          app = root / 'packages/flutter_edge_ai_llama/example'
+          subprocess.run([shutil.which('flutter') or 'flutter', 'pub', 'get'], cwd=app, check=True)
+          PYTHON
+      - name: Linux desktop dependencies
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev xvfb
+      - name: Read the pinned embedding fixture digest
+        if: matrix.runtime
+        id: embedding-fixture
+        run: |
+          python - <<'PYTHON'
+          import json, os, pathlib
+          spec = json.loads(pathlib.Path('packages/flutter_edge_ai_llama/tool/embedding_model.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"sha256={spec['sha256']}\n")
+          PYTHON
+      - name: Cache the pinned embedding fixture
+        if: matrix.runtime
+        id: embedding-fixture-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/gguf-source-qualification/packages/flutter_edge_ai_llama/embedding.gguf
+          key: gguf-embedding-${{ runner.os }}-${{ steps.embedding-fixture.outputs.sha256 }}
+      - name: Fetch the pinned embedding fixture
+        if: matrix.runtime && steps.embedding-fixture-cache.outputs.cache-hit != 'true'
+        run: |
+          python - <<'PYTHON'
+          import json, os, pathlib, urllib.request
+          package = pathlib.Path(os.environ['RUNNER_TEMP']) / 'gguf-source-qualification/packages/flutter_edge_ai_llama'
+          spec = json.loads((package / 'tool/embedding_model.json').read_text())
+          target = package / 'embedding.gguf'
+          with urllib.request.urlopen(spec['url'], timeout=120) as source, target.open('wb') as output:
+              while block := source.read(1024 * 1024):
+                  output.write(block)
+          # verify_embeddings.py checks size and SHA-256 on both downloads and
+          # cache hits before running; cached bytes are never trusted blindly.
+          PYTHON
+      - name: Packaged CPU embeddings against source core
+        if: matrix.runtime
+        env:
+          GGUF_DEVICE: ${{ matrix.platform }}
+        run: |
+          qualification_root="$RUNNER_TEMP/gguf-source-qualification"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            qualification_root="$(cygpath -u "$RUNNER_TEMP")/gguf-source-qualification"
+          fi
+          cd "$qualification_root/packages/flutter_edge_ai_llama"
+          flutter_executable="$(python -c 'import shutil; print(shutil.which("flutter"))')"
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            xvfb-run -a python tool/verify_embeddings.py --model-path embedding.gguf --backend cpu --device "$GGUF_DEVICE" --flutter "$flutter_executable"
+          else
+            python tool/verify_embeddings.py --model-path embedding.gguf --backend cpu --device "$GGUF_DEVICE" --flutter "$flutter_executable"
+          fi

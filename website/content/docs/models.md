@@ -551,6 +551,7 @@ the maximum is never truncated: it throws `EmbeddingInputTooLongException`.
 | **[EmbeddingGemma 512](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 512 tokens | 179MB | ✅ |
 | **[EmbeddingGemma 1024](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 1024 tokens | 183MB | ✅ |
 | **[EmbeddingGemma 2048](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 2048 tokens | 196MB | ✅ |
+| **[EmbeddingGemma 2 GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF)** (`.gguf` Q8_0, text; native, through `flutter_edge_ai_llama`) | text tower of google/embeddinggemma-2 | 768D | 1024 tokens | 310MB | ❌ |
 | **[all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)** (ONNX; native and web) | 22M | 384D | the graph's | 90MB (`model.onnx`) | ❌ |
 | **[EmbeddingGemma-300M ONNX](https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX)** (ONNX; native only) | 300M | 768D | the graph's | 175MB–1.2GB by variant | ❌ |
 

@@ -382,12 +382,19 @@ else:
     # shell below). Bazel applies `patches` BEFORE `patch_cmds`, and fails the
     # fetch when a hunk does not apply — the loud failure a moved upstream
     # line has to produce. The macro it uses is defined by the awk above.
+    # patches/litert_openvino_2026_4_1.patch is upstream LiteRT 991d15588a
+    # verbatim: the OpenVINO SDK the Windows Intel dispatch builds against and
+    # ships with moves from 2026.3.1 to 2026.4.1. Intel's Gemma 4 12B bundle
+    # for Panther Lake carries blob metadata 2.7, which the 2026.3 NPU plugin
+    # refuses ("Imported blob metadata version: 2.7 but the current version
+    # is: 2.6"). Drop the patch once the LiteRT pin contains 991d15588a.
     content = content.replace(
         '    name = "litert",\n',
         '    name = "litert",\n'
         '    patches = [\n'
         '        "//:flutter_gemma_litert_gpu_registry.patch",\n'
         '        "//:flutter_gemma_litert_google_tensor_dispatch_oss.patch",\n'
+        '        "//:flutter_gemma_litert_openvino_2026_4_1.patch",\n'
         '    ],\n'
         '    patch_args = ["-p1"],\n', 1)
     if 'flutter_gemma_litert_gpu_registry.patch' not in content:
@@ -397,11 +404,14 @@ else:
     print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
     print("  OK: litert archive applies patches/litert_gpu_registry_apple.patch")
     print("  OK: LiteRT Google Tensor dispatch drops its unused internal hooks dependency")
+    print("  OK: LiteRT pins OpenVINO 2026.4.1 (upstream 991d15588a)")
 PYEOF
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
     "$DIR/flutter_gemma_litert_gpu_registry.patch"
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
     "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
+  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_openvino_2026_4_1.patch" \
+    "$DIR/flutter_gemma_litert_openvino_2026_4_1.patch"
 else
   if [ -f "$WORKSPACE_FILE" ]; then
     # A tree patched by an older patch_c_api.sh has the sed but not the diff:
@@ -421,8 +431,16 @@ else
     fi
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
       "$DIR/flutter_gemma_litert_gpu_registry.patch"
+    if ! grep -q "flutter_gemma_litert_openvino_2026_4_1.patch" \
+        "$WORKSPACE_FILE"; then
+      echo "  ERROR: $WORKSPACE_FILE has no OpenVINO 2026.4.1 patch;" \
+        "start from a fresh LiteRT-LM tree" >&2
+      exit 1
+    fi
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
       "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
+    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_openvino_2026_4_1.patch" \
+      "$DIR/flutter_gemma_litert_openvino_2026_4_1.patch"
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
     echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2

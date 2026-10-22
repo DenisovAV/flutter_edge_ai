@@ -43,7 +43,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 ```
 
 **Native libraries** are fetched at build time by `hook/build.dart` from the
-GitHub release `native-v0.18.0-f`, SHA256-verified, and bundled by Flutter
+GitHub release `native-v0.18.0-g`, SHA256-verified, and bundled by Flutter
 [Native Assets](https://docs.flutter.dev/development/platform-integration/c-interop)
 into the application bundle. End-users only need to add a small
 `post_install` snippet to their **macOS** `Podfile` so the upstream companion
@@ -101,8 +101,8 @@ No Java/JVM/JRE required.
 ```yaml
 # pubspec.yaml
 dependencies:
-  flutter_edge_ai: ^2.4.1            # core
-  flutter_edge_ai_litertlm: ^1.15.0  # .litertlm engine
+  flutter_edge_ai: ^2.5.1            # core
+  flutter_edge_ai_litertlm: ^1.17.0  # .litertlm engine
 ```
 
 ```dart
@@ -218,11 +218,11 @@ DLL and silently fall back to CPU. (Mirrors the Linux `RTLD_GLOBAL` pattern.)
 
 Your end-users need nothing installed. Since `flutter_gemma_litertlm` 1.7.1
 `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
-measured on `native-v0.18.0-f`, 16 of its 24 DLLs import none.
+measured on `native-v0.18.0-g`, 17 of its 25 DLLs import none.
 
 The other eight belong to the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus
-three of Intel's five `openvino*` (the NPU compiler and its loader import none) and
+three of Intel's six `openvino*` (the NPU compiler, its loader and the NPU VM runtime import none) and
 its four `tbb*`. Each imports some of `msvcp140`,
 `vcruntime140` and `vcruntime140_1` — the runtimes any Flutter Windows app already
 resolves — and none imports `vcruntime140_threads.dll`, the Visual Studio 2022 17.8
@@ -231,6 +231,22 @@ Store certification VM ([#456](https://github.com/DenisovAV/flutter_edge_ai/issu
 Nothing statically imports `LiteRtDispatch.dll` either, and `litert_dispatch_lib_dir`
 is set only for that backend, so an app that never asks for the Intel NPU never loads
 them at all.
+
+**Weight banks in `%TEMP%`.** For a bundle whose NPU blobs carry no weights (Intel's
+Gemma 4 12B for Panther Lake, EmbeddingGemma 2 `_Intel_PTL`), the dispatch copies them
+to `%TEMP%\litert_ov_bank_<hex>.bin` at every load (5.55 GB and 74.5 MB) and deletes the
+file when the model is closed. From `flutter_edge_ai_litertlm` 1.17.0 each process holds a
+`<bank>.<pid>.owner` file open beside its banks, and every Intel NPU load deletes, off the
+UI isolate, the banks whose lock file deletes (the owner is gone) and the unmarked ones
+written before the PC last started. It prints what it freed and what it could not delete,
+in release builds too. It never deletes an unmarked bank written since the last start
+(an app on an older release, the LiteRT-LM CLI), nor `LITERT_OV_WEIGHTS_PATH`.
+Deleting a live bank is harmless after the load: the dispatch reads it only during the
+create. That was measured on Panther Lake on 2026-10-20: a 12B whose bank was deleted
+went on generating. Both temp paths are covered: `GetTempPathW` and, for a process
+running as SYSTEM, `GetTempPath2W`. Intel's 12B needs 1.17.0's OpenVINO 2026.4.1,
+because its blobs carry metadata 2.7, which 2026.3 refuses. Measured with Intel NPU
+driver 32.0.100.4778.
 
 ### Linux
 
@@ -448,7 +464,9 @@ simulator, or test on a physical iPhone for GPU validation.
 
 In **debug builds** `flutter_edge_ai_litertlm` redirects native stderr to
 `<tmpdir>/litertlm_native.log` and dumps it via `debugPrint` after a failed
-`engine_create`. If you don't see a dump, make sure the app runs as a debug
+`engine_create`. Stdout stays where it was, so `print` keeps reaching
+`flutter run` (from litertlm 1.17.0; earlier debug builds on macOS and Linux
+sent it to the same file after the first model load). If you don't see a dump, make sure the app runs as a debug
 build (`flutter run --debug`).
 
 In release builds stderr goes to systemd journal / app's own stderr — check

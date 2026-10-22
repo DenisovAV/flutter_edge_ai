@@ -15,6 +15,44 @@ import 'sections/trust_bar.dart';
 import 'sections/why_on_device.dart';
 import '../theme/brand.dart';
 
+/// Starts every `<video data-play-when-visible>` when it scrolls into view and
+/// pauses it when it leaves, so a demo is downloaded only once a visitor gets
+/// to it and nothing decodes off screen. The demos carry `preload="none"` and
+/// no `autoplay`; the `play()` call turns preloading on. The hero keeps
+/// `autoplay` (it is above the fold and must run without JavaScript) and is
+/// only paused by this script. Under `prefers-reduced-motion: reduce` every
+/// video stays on its poster, since none has controls to stop it with. Muted
+/// inline video may be started from a script without a user gesture in every
+/// current browser. A browser without IntersectionObserver gets the old
+/// behaviour: every video plays at once.
+const String _playWhenVisibleScript = '''
+(function () {
+  var videos = document.querySelectorAll('video[data-play-when-visible]');
+  if (!videos.length) return;
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    videos.forEach(function (v) { v.removeAttribute('autoplay'); v.pause(); });
+    return;
+  }
+  function play(v) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+  if (!('IntersectionObserver' in window)) {
+    videos.forEach(play);
+    return;
+  }
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      var v = entry.target;
+      if (entry.isIntersecting) {
+        if (v.preload === 'none') v.preload = 'auto';
+        play(v);
+      } else if (!v.paused) {
+        v.pause();
+      }
+    });
+  }, { rootMargin: '200px 0px', threshold: 0 });
+  videos.forEach(function (v) { observer.observe(v); });
+})();
+''';
+
 /// The hand-built marketing landing page served at `/`.
 ///
 /// Sections are composed here; each lives in its own file under
@@ -39,6 +77,13 @@ class LandingPage extends StatelessComponent {
       const WhyOnDevice(),
       const CtaSection(),
       const SiteFooter(),
+      // Plain inline script, not a `@client` component: this site is static
+      // mode and `@client` components do not hydrate on the deployed build
+      // (see nav_bar.dart).
+      Component.element(
+        tag: 'script',
+        children: [RawText(_playWhenVisibleScript)],
+      ),
     ]);
   }
 

@@ -302,6 +302,7 @@ void main() {
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/qualcomm',
         disableHwMasking: false,
+        stagesWeightBanks: false,
       ));
       await stamped.close();
 
@@ -350,6 +351,7 @@ void main() {
         expect(host.npuDispatches.single, (
           dir: '/fake/npu/googleTensor',
           disableHwMasking: false,
+          stagesWeightBanks: false,
         ));
       }
     },
@@ -386,12 +388,14 @@ void main() {
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/mediatek',
         disableHwMasking: false,
+        stagesWeightBanks: false,
       ));
     },
   );
 
   test('Windows x64: the Intel stack is checked before the NPU is tried, and '
-      'an Intel attempt turns the HW mask update path off', () async {
+      'an Intel attempt turns the HW mask update path off and claims its '
+      'weight banks', () async {
     host = _FakeHost(os: 'windows', abiName: 'windows_x64', npuShips: true);
     debugLiteRtLmEngineHost = host;
     final path = writeUnread('unread.task');
@@ -401,6 +405,7 @@ void main() {
     expect(host.npuDispatches.single, (
       dir: '/fake/npu/intel',
       disableHwMasking: true,
+      stagesWeightBanks: true,
     ));
     await model.close();
 

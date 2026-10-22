@@ -34,8 +34,8 @@ inference.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_speech: ^0.5.9
+  flutter_edge_ai: ^2.5.1
+  flutter_edge_ai_speech: ^0.5.10
 ```
 
 ## Register the backend
@@ -397,7 +397,7 @@ On macOS the app needs the same setup as every LiteRT-LM feature: Swift Package
 Manager turned off for the app in `pubspec.yaml` and the `post_install` block in
 `macos/Podfile` (an app that already has a `macos/Podfile` keeps Swift Package
 Manager on and only needs the block), see [Desktop → macOS](/docs/desktop#macos). Without it STT and
-TTS fail to load, and since `flutter_edge_ai_litertlm` 1.16.0 the error says so
+TTS fail to load, and since `flutter_edge_ai_litertlm` 1.17.0 the error says so
 ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 
 On Android, speech (STT + TTS), like everything backed by `libLiteRtLm`, is **arm64-only** and

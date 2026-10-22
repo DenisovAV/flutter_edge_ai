@@ -6,7 +6,7 @@ Windows, Linux and Web runners.
 
 ## First run
 
-The package needs Flutter 3.44 / Dart 3.12 and core 2.4.0+. For the repository's
+The package needs Flutter 3.44 / Dart 3.12 and core 2.5.0+. For the repository's
 reproducible checks use Flutter 3.47.1; ordinary app development can use a newer
 compatible stable SDK. The workspace example resolves core locally.
 

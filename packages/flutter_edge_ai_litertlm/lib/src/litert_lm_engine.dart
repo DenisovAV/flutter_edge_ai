@@ -324,6 +324,7 @@ class LiteRtLmEngine
                 NpuChosen(:final vendor) => (
                   dir: await host.prepareDispatchDir(vendor),
                   disableHwMasking: npuDisablesHwMasking(vendor),
+                  stagesWeightBanks: npuStagesWeightBanks(vendor),
                 ),
                 _ => throw StateError(
                   'an npu attempt without a chosen NPU vendor',

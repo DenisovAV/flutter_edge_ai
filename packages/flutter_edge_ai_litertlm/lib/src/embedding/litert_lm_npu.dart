@@ -58,7 +58,8 @@ LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 /// Tesla T4 (Vulkan) 32-64 ms vs 232-308 ms; min cos 0.997 to the CPU vectors
 /// on both, and to Sentence Transformers fp32 0.9765-0.9767 vs 0.9763 on CPU.
 /// The adapter is Dawn's choice: with no GPU driver loaded, Linux ran it on
-/// Mesa's llvmpipe (software Vulkan), reported as gpu, 37-48 s per load.
+/// Mesa's llvmpipe (software Vulkan), reported as gpu, 37-48 s per load, and
+/// a ~900-token text failed there with DEADLINE_EXCEEDED.
 /// Only the text-only 270m bundle: the 440m and 740m would compile their
 /// vision and audio towers on the GPU too (`requireLiteRtLmTextOnlyBundle`).
 /// The GPU runs FP16 activations by default. macOS and iOS are not here: their

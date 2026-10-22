@@ -349,8 +349,9 @@ final vector = await embedder.embed(
     adapter is Dawn's choice, and a software one is not excluded: on a Linux
     box whose NVIDIA driver was not loaded, Vulkan offered only Mesa's
     llvmpipe and `gpu` ran there, reported as `gpu`, with correct vectors
-    (min cos 0.997 to CPU) and a 37-48 s load (measured 2026-10-22). Ask for
-    `gpu` only where a real GPU driver is installed.
+    (min cos 0.997 to CPU), a 37-48 s load, and a ~900-token text failed
+    with `DEADLINE_EXCEEDED` (measured 2026-10-22). Ask for `gpu` only where
+    a real GPU driver is installed.
   - The GPU writes its own caches beside the CPU's: ML Drift's
     `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
     (9 MB). `requireWeightCache` checks the XNNPack cache only and does not

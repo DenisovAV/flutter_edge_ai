@@ -23,6 +23,9 @@ class _ChatScreenState extends State<ChatScreen> {
   double _downloadProgress = 0;
   String _statusMessage = 'Initializing...';
 
+  /// Why AiEngine.initialize() failed, shown instead of a bare "no services".
+  String? _initError;
+
   late final AiEngine _engine;
 
   PolicyMode _policy = PolicyMode.cloud;
@@ -50,6 +53,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     } catch (e) {
       debugPrint('AiEngine init failed: $e');
+      _initError = '$e';
     }
 
     if (!mounted) return;
@@ -66,7 +70,9 @@ class _ChatScreenState extends State<ChatScreen> {
       _isInitializing = false;
       _policy = defaultPolicy;
       _statusMessage = parts.isEmpty
-          ? 'No services available'
+          ? (_initError == null
+                ? 'No services available'
+                : 'Setup failed: $_initError')
           : '${parts.join(', ')} ready';
     });
   }

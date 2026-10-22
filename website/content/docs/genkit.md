@@ -394,7 +394,7 @@ name cannot be reused.
 | `classifier` | asked only when no rule decided |
 | `labels` | classifier label → `RouteDecision`; an unknown label fails the call |
 | `onAbstain` | the decision for an abstain; default `RouteDecision.only(kOnDevice)` |
-| `onUnavailable` | the decision while the classifier is not ready; default: the call fails |
+| `onUnavailable` | the decision while the classifier is unavailable (not ready yet, or its decider closed); default: the call fails; `route.reason` keeps why |
 | `fallback` | targets a `prefer` decision may move to: after a transient failure, for a missing capability, after a rejected cascade |
 | `cascade` | a check on the result; false escalates along `fallback` |
 
@@ -435,14 +435,16 @@ decider into the router's classifier; its options are the labels:
 ```dart
 Future<Decider>? intents;
 
-Future<Decider> loadIntents() async {
-  try {
-    final embedder = await FlutterEdgeAi.getActiveEmbedder();
-    return await embedder.createDecider(options: intentOptions);
-  } catch (_) {
-    intents = null; // the failed load fails this call; the next one retries
-    rethrow;
-  }
+Future<Decider> loadIntents() {
+  final load = FlutterEdgeAi.getActiveEmbedder().then(
+    (embedder) => embedder.createDecider(options: intentOptions),
+  );
+  // A failed load fails this call and the next one retries. Only this load
+  // is dropped: a refit may have cached a newer one meanwhile.
+  load.then((_) {}, onError: (Object _) {
+    if (identical(intents, load)) intents = null;
+  });
+  return load;
 }
 
 // In the policy:

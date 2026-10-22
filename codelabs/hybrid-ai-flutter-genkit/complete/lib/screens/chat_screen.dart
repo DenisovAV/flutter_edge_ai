@@ -27,6 +27,9 @@ class _ChatScreenState extends State<ChatScreen> {
   double _downloadProgress = 0;
   String _statusMessage = 'Initializing...';
 
+  /// Why AiEngine.initialize() failed, shown instead of a bare "no services".
+  String? _initError;
+
   bool _ragReady = false;
   // Set when RAG cannot start: the embedder did not install
   // (AiEngine.embedderError), or RagService.initialize() threw — a missing JS
@@ -68,6 +71,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     } catch (e) {
       debugPrint('AiEngine init failed: $e');
+      _initError = '$e';
     }
 
     if (_engine.localReady) {
@@ -116,7 +120,9 @@ class _ChatScreenState extends State<ChatScreen> {
       _isInitializing = false;
       _policy = defaultPolicy;
       _statusMessage = parts.isEmpty
-          ? 'No services available'
+          ? (_initError == null
+                ? 'No services available'
+                : 'Setup failed: $_initError')
           : '${parts.join(', ')} ready';
     });
   }

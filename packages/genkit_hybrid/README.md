@@ -79,7 +79,7 @@ A router holds named policies; a call picks one with `policy:`, or gets `default
 | `classifier` | a `RouteClassifier`, asked only when no rule decided |
 | `labels` | classifier label → `RouteDecision`; an unknown label fails the call |
 | `onAbstain` | the `RouteDecision` for an abstain; default `RouteDecision.only(kOnDevice)` |
-| `onUnavailable` | the `RouteDecision` while the classifier is not ready; default: the call fails |
+| `onUnavailable` | the `RouteDecision` while the classifier is unavailable (not ready yet, or its decider closed); default: the call fails; `route.reason` keeps why |
 | `fallback` | targets a `prefer` decision may move to: after a transient failure, for a missing capability, after a rejected cascade |
 | `cascade` | `(GenerateResult) => bool`: false escalates along `fallback` |
 
@@ -105,7 +105,8 @@ re-run its tools. A failure moves the call to a device target when it is transie
 without a Genkit status, such as a network error), and to a cloud target only on `UNAVAILABLE`,
 `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED` or `UNIMPLEMENTED`: `INTERNAL` and errors without a
 status are what a device bug or an over-long input raises on every request. `route.reason` says
-why the call moved (`fallback: onDevice failed with UNAVAILABLE`, `cascade: onDevice rejected`).
+why the call moved (`fallback: onDevice failed with UNAVAILABLE: <message>`, `cascade: onDevice
+rejected`) and, when no later target ran, what was skipped (`…; cloud refused by confirmCloud`).
 
 A streamed cascade attempt holds its chunks until the verdict: accepted, they are sent; rejected,
 they are dropped and the next target streams live. A tool that runs releases them, since the

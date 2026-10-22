@@ -336,10 +336,9 @@ targets:
 // ignore_for_file: experimental_member_use
 Future<Decider>? intents; // created once, cached
 
-Future<Decider> loadIntents() async {
-  try {
-    final embedder = await FlutterEdgeAi.getActiveEmbedder();
-    return await embedder.createDecider(options: [
+Future<Decider> loadIntents() {
+  final load = FlutterEdgeAi.getActiveEmbedder().then(
+    (embedder) => embedder.createDecider(options: [
       DeciderOption('smalltalk', examples: [
         EmbeddingInput.text('how are you today?'),
         EmbeddingInput.text('tell me something nice'),
@@ -348,11 +347,14 @@ Future<Decider> loadIntents() async {
         EmbeddingInput.text('write a parser in Rust'),
         EmbeddingInput.text('why does this SQL query time out?'),
       ]),
-    ]);
-  } catch (_) {
-    intents = null; // the failed load fails this call; the next one retries
-    rethrow;
-  }
+    ]),
+  );
+  // A failed load fails this call and the next one retries. Only this load
+  // is dropped: a refit may have cached a newer one meanwhile.
+  load.then((_) {}, onError: (Object _) {
+    if (identical(intents, load)) intents = null;
+  });
+  return load;
 }
 
 final router = defineHybridRouter(
@@ -382,8 +384,9 @@ final router = defineHybridRouter(
   request waits, with no limit unless the call has a Genkit cancel token. Return null when there
   is none, which makes the classifier unavailable — the call fails unless the policy sets
   `onUnavailable`. A Future that fails fails the call with its error; drop it from your cache, as
-  above, so the next request retries the load. A decider closed by a refit (or whose embedder was
-  closed) is asked for once more. The classifier never closes the decider.
+  above, so the next request retries the load. A decider closed by a refit is asked for once more;
+  one whose embedder was replaced under it chooses once more. Still closed, the classifier is
+  unavailable, and `route.reason` says why. The classifier never closes the decider.
 - Every other decider error fails the call, never an abstain — an input over the embedder's
   limit included, so keep `RouteRule.inputSize` before the classifier.
 - The route info carries the label, the decider's abstain signal as `score`, the margin, and its

@@ -24,6 +24,11 @@ abstract base class RouteClassifier {
     RouteRequest request, {
     CancellationToken? cancel,
   });
+
+  /// Gets ready to classify (loads a model, fits a decider) so the first
+  /// request does not wait for it; `HybridRouter.warmUp` calls it. A failure
+  /// is thrown, never hidden. Does nothing unless overridden.
+  Future<void> warmUp({CancellationToken? cancel}) async {}
 }
 
 /// What a [RouteClassifier] answered. Sealed, so a `switch` over it is

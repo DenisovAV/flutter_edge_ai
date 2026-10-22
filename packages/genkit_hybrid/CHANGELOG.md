@@ -3,6 +3,7 @@
 ## 0.4.0
 
 - `defineHybridRouter`: one decision per call, rules then a classifier, cloud reachable only through it.
+- `HybridRouter.warmUp()` loads classifiers and on-device targets before the first request.
 - Deprecate `hybridModel`, `cascadeModel` and the `RoutingStrategy` family; removed in 0.5.0.
 
 ## 0.3.1

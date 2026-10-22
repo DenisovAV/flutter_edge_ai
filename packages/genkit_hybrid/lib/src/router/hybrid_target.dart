@@ -14,12 +14,19 @@ const String kCloud = 'cloud';
 final class HybridTarget {
   /// A model registered in the app's Genkit, e.g. an on-device model of
   /// genkit_flutter_edge_ai. The router calls it directly.
-  const HybridTarget.onDevice(this.model, {this.supports}) : isCloud = false;
+  ///
+  /// [warmUp], when given, loads the model ahead of the first request;
+  /// `HybridRouter.warmUp` calls it with [model], config included, e.g.
+  /// genkit_flutter_edge_ai's `flutterEdgeAi.warmUp`.
+  const HybridTarget.onDevice(this.model, {this.supports, this.warmUp})
+    : isCloud = false;
 
   /// A model one of the router's `cloudPlugins` resolves. The app's Genkit
   /// never sees it: the router registers a proxy there that serves a request
   /// only when the router chose this target.
-  const HybridTarget.cloud(this.model, {this.supports}) : isCloud = true;
+  const HybridTarget.cloud(this.model, {this.supports})
+    : isCloud = true,
+      warmUp = null;
 
   /// The model, with the `config` this target runs with. The caller's call
   /// passes no config: each target owns its own.
@@ -31,6 +38,10 @@ final class HybridTarget {
   /// What the model can do. Null means not declared: the router does not
   /// filter this target by capability.
   final Set<ModelCapability>? supports;
+
+  /// Loads [model] ahead of the first request; null for none. Never set on a
+  /// cloud target.
+  final Future<void> Function(ModelRef model)? warmUp;
 }
 
 /// Whether [target] can serve a request that needs [required]. Not exported.
@@ -45,5 +56,9 @@ HybridTarget frozenTarget(HybridTarget target) {
   };
   return target.isCloud
       ? HybridTarget.cloud(target.model, supports: supports)
-      : HybridTarget.onDevice(target.model, supports: supports);
+      : HybridTarget.onDevice(
+          target.model,
+          supports: supports,
+          warmUp: target.warmUp,
+        );
 }

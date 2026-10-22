@@ -24,7 +24,10 @@ final ai = Genkit(plugins: [edgeAiPlugin]); // the on-device plugin only
 final router = defineHybridRouter(
   ai,
   targets: {
-    kOnDevice: HybridTarget.onDevice(flutterEdgeAi.model('gemma-4-e2b')),
+    kOnDevice: HybridTarget.onDevice(
+      flutterEdgeAi.model('gemma-4-e2b'),
+      warmUp: flutterEdgeAi.warmUp, // loads the model with this target's config
+    ),
     kCloud: HybridTarget.cloud(googleAI.gemini('gemini-2.5-flash')),
   },
   // The cloud plugin goes to the router only, never to `ai`.
@@ -46,6 +49,7 @@ final router = defineHybridRouter(
   },
   defaultPolicy: 'smart',
 );
+await router.warmUp(); // at app start: the classifier and the model load now
 
 final result = await router.generate(prompt: 'Hello!');
 print(result.text);
@@ -95,6 +99,15 @@ on-device), `RouteRule.inputSize(maxChars:, small:, large:)`,
 `HybridTarget.onDevice(…, supports: {ModelCapability.vision, …})` (or `.cloud`) declares what a
 target can do; a request that needs more moves a `prefer` decision to the first capable
 `fallback` target. `kOnDevice` must hold an on-device target.
+
+## Warm-up
+
+`router.warmUp()` warms every policy's classifier (`RouteClassifier.warmUp`, once however many
+policies share it) and every on-device target given a `warmUp`, all at once; with
+genkit_flutter_edge_ai, `HybridTarget.onDevice(ref, warmUp: flutterEdgeAi.warmUp)` loads the model
+with the target's config, so the first request reuses it. Call it when the app starts and the
+first request waits for none of it. It completes when all have ended, with the first failure if
+one failed; a request that needs what failed tries again.
 
 ## Fallback and cascade
 

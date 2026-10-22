@@ -1922,6 +1922,88 @@ void main() {
     );
   });
 
+  group('warm-up', () {
+    RoutePolicy byClassifier(RouteClassifier c) => RoutePolicy(
+      classifier: c,
+      labels: const {'easy': RouteDecision.prefer(kOnDevice)},
+    );
+
+    test('warms each classifier once and each on-device target with its '
+        'model, all at once', () async {
+      final shared = _WarmClassifier();
+      final other = _WarmClassifier();
+      final warmed = <ModelRef>[];
+      final gate = Completer<void>();
+      final router = _router(
+        ai,
+        world,
+        targets: {
+          kOnDevice: HybridTarget.onDevice(
+            localRef,
+            warmUp: (model) async {
+              warmed.add(model);
+              await gate.future;
+            },
+          ),
+          kCloud: HybridTarget.cloud(cloudRef),
+        },
+        policies: {
+          'a': byClassifier(shared),
+          'b': byClassifier(shared),
+          'c': byClassifier(other),
+        },
+      );
+      var finished = false;
+      final done = router.warmUp().then((_) => finished = true);
+      await pumpEventQueue();
+      expect(shared.warmUps, 1);
+      expect(other.warmUps, 1);
+      expect(warmed.map((m) => m.name), ['local']);
+      expect(finished, isFalse, reason: 'the target is still warming');
+      gate.complete();
+      await done;
+      expect(finished, isTrue);
+      expect(world.localCalls + world.cloudCalls, 0);
+    });
+
+    test('a failed warm-up fails warmUp once every warm-up ended', () async {
+      final slow = Completer<void>();
+      var slowEnded = false;
+      final router = _router(
+        ai,
+        world,
+        targets: {
+          kOnDevice: HybridTarget.onDevice(
+            localRef,
+            warmUp: (_) async {
+              await slow.future;
+              slowEnded = true;
+            },
+          ),
+          kCloud: HybridTarget.cloud(cloudRef),
+        },
+        policy: byClassifier(_WarmClassifier(fails: StateError('no model'))),
+      );
+      final done = router.warmUp();
+      var ended = false;
+      unawaited(done.then((_) {}, onError: (Object _) => ended = true));
+      await pumpEventQueue();
+      expect(ended, isFalse, reason: 'it waits for the slow target');
+      slow.complete();
+      await expectLater(done, throwsStateError);
+      expect(slowEnded, isTrue);
+    });
+
+    test(
+      'a classifier and targets without a warm-up warm as nothing',
+      () async {
+        final router = _router(ai, world);
+        await router.warmUp();
+        expect(world.classifyCalls, 0);
+      },
+    );
+  });
+
   group('re-entry', () {
     test(
       'an app middleware before the router may run the call twice',
@@ -2286,6 +2368,29 @@ class _CaptureZone extends GenerateMiddleware {
     captured = Zone.current;
     return next(request, ctx);
   }
+}
+
+/// A classifier that counts its warm-ups, or fails them with [fails].
+final class _WarmClassifier extends RouteClassifier {
+  _WarmClassifier({this.fails});
+
+  final Object? fails;
+  int warmUps = 0;
+
+  @override
+  String get name => 'warm';
+
+  @override
+  Future<void> warmUp({CancellationToken? cancel}) async {
+    warmUps++;
+    if (fails case final e?) throw e;
+  }
+
+  @override
+  Future<RouteVerdict> classify(
+    RouteRequest request, {
+    CancellationToken? cancel,
+  }) async => const RouteVerdict.label('easy');
 }
 
 /// An app middleware that answers in place of the model, after running

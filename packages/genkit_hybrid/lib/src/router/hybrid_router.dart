@@ -240,6 +240,21 @@ final class HybridRouter {
     }
   }
 
+  /// Warms every policy's classifier (each once, however many policies share
+  /// it) and every target with a `warmUp`, all at once, so the first request
+  /// waits for none of them; start it when the app starts. Completes when
+  /// all have ended, with the first failure if one failed: a failed warm-up
+  /// is not hidden, and the request that needs it tries again.
+  Future<void> warmUp() async {
+    final classifiers = Set<RouteClassifier>.identity()
+      ..addAll([for (final p in policies.values) ?p.classifier]);
+    await Future.wait([
+      for (final c in classifiers) Future.sync(c.warmUp),
+      for (final t in targets.values)
+        if (t.warmUp case final warmUp?) Future.sync(() => warmUp(t.model)),
+    ]);
+  }
+
   /// A ref to this router for `use:`, which must put it first. [policy] and
   /// [pin] name one of [policies] and of [targets]; a pin sends the call to
   /// that target only, skipping rules and classifier.

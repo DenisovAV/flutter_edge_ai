@@ -161,7 +161,10 @@ final vector = await embedder.embed(
     compile their vision and audio towers there too, and nobody has measured
     that. **gpu** with images or audio is refused as well.
   - A GPU that cannot create the engine fails the load, and every GPU load
-    checks one probe embedding; nothing falls back to CPU.
+    checks one probe embedding; nothing falls back to CPU. A software adapter
+    is not excluded, though: on a Linux box with no GPU driver loaded,
+    Vulkan's llvmpipe ran it, reported as **gpu**, with correct vectors and a
+    37-48 s load. Ask for **gpu** only where a real GPU driver is installed.
   - The GPU writes its own caches next to the CPU one: about 68 MB of weights
     and 9 MB of programs. **requireWeightCache** does not apply on the GPU.
   - A cold load without **preferredBackend** runs on CPU, but a later

@@ -346,8 +346,11 @@ final vector = await embedder.embed(
   - No fallback: LiteRT runs the GPU graph without a CPU accelerator, so a
     GPU that cannot create the engine fails the load, and every GPU load
     embeds one probe text and refuses a non-finite or zero vector. The
-    adapter is Dawn's choice; a software Vulkan or DX12 adapter is not
-    excluded.
+    adapter is Dawn's choice, and a software one is not excluded: on a Linux
+    box whose NVIDIA driver was not loaded, Vulkan offered only Mesa's
+    llvmpipe and `gpu` ran there, reported as `gpu`, with correct vectors
+    (min cos 0.997 to CPU) and a 37-48 s load (measured 2026-10-22). Ask for
+    `gpu` only where a real GPU driver is installed.
   - The GPU writes its own caches beside the CPU's: ML Drift's
     `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
     (9 MB). `requireWeightCache` checks the XNNPack cache only and does not

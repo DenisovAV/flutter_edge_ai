@@ -24,7 +24,7 @@ notes below).
 ```
 dependencies:
   genkit: ^1.0.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.10.1
+  genkit_flutter_edge_ai: ^0.11.0
   flutter_edge_ai: ^2.5.1
   # Add the inference engine(s) you need:
   flutter_edge_ai_litertlm: ^1.17.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend

@@ -39,8 +39,10 @@ final class RoutePolicy {
   /// never moves; the router must then have a `kOnDevice` target.
   final RouteDecision? onAbstain;
 
-  /// Where a request goes while the classifier is unavailable. Null: the
-  /// call fails, so a classifier that never loads is not hidden.
+  /// Where a request goes while the classifier is unavailable: not ready
+  /// yet, or its decider closed for good, which looks the same. Null: the
+  /// call fails, so a classifier that never loads is not hidden. The route's
+  /// `reason` keeps why it was unavailable.
   final RouteDecision? onUnavailable;
 
   /// Targets a `prefer` decision may move to, in order: when its target

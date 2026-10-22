@@ -462,7 +462,19 @@ final class HybridRouter {
           _cloudAi.registry.lookupAction(ActionType.model, target.model.name),
     );
     _cloudLookups = lookup.then((_) {}, onError: (Object _) {});
-    final cloud = await lookup;
+    // A lookup may queue behind a slow one: a cancel ends the wait, and the
+    // decision is checked again once it is over.
+    final cloud = await _RouterMiddleware._untilCancelled(
+      () => lookup,
+      ctx.cancel,
+    );
+    if (!decision.active) {
+      throw HybridRoutingException(
+        'Cloud model "${target.model.name}" reached after the hybrid router '
+        '"$name"\'s decision for it ended.',
+        status: StatusCode.permissionDenied,
+      );
+    }
     if (cloud is! Model) {
       throw HybridRoutingException(
         'Cloud model "${target.model.name}" is not resolved by any of the '
@@ -527,9 +539,10 @@ final class _RouterMiddleware extends GenerateMiddleware {
   final GenkitAI _ai;
 
   /// The call's policy and pin, read from the ref's config by
-  /// [_readConfig] at the first turn.
-  late final String policyName;
-  late final String? pin;
+  /// [_readConfig] at the first turn, again when an app middleware before
+  /// the router runs the call once more.
+  late String policyName;
+  String? pin;
 
   /// A tool of this call ran (a restarted one included).
   bool _toolRan = false;
@@ -736,7 +749,11 @@ final class _RouterMiddleware extends GenerateMiddleware {
         info(
           decision.target,
           RouteSource.unavailable,
-          reason: decision.reason ?? e.message,
+          // Why it is unavailable stays visible: a decider that closed for
+          // good looks the same to the policy as one still loading.
+          reason: decision.reason == null
+              ? e.message
+              : '${decision.reason} (${e.message})',
         ),
       );
     } catch (e) {
@@ -746,6 +763,8 @@ final class _RouterMiddleware extends GenerateMiddleware {
         'Classifier "${classifier.name}" failed: $e',
         status: switch (e) {
           GenkitException(:final status) => status,
+          // An index out of range is the classifier's bug.
+          RangeError() => StatusCode.internal,
           // The request's text, which the user typed, is what it rejected.
           ArgumentError() => StatusCode.invalidArgument,
           _ => StatusCode.internal,
@@ -781,7 +800,8 @@ final class _RouterMiddleware extends GenerateMiddleware {
           throw HybridRoutingException(
             'Classifier "${classifier.name}" answered "${verdict.label}", '
             'which policy "$policyName" maps to no target.',
-            status: StatusCode.invalidArgument,
+            // The classifier and the policy disagree, not the request.
+            status: StatusCode.failedPrecondition,
           );
         }
         return _Decided(
@@ -865,10 +885,15 @@ final class _RouterMiddleware extends GenerateMiddleware {
         }
       }
       if (capable == null) {
+        final why = movable
+            ? 'no fallback target can'
+            : decision.isOnly
+            ? 'the decision is only("$chosen"), which never moves (route '
+                  'such requests with a rule or onAbstain)'
+            : 'a resume stays on the target it was stamped with';
         throw HybridRoutingException(
           'Target "$chosen" cannot serve a request that needs '
-          '${requires.map((c) => c.name).join(', ')}, and no fallback target '
-          'can.',
+          '${requires.map((c) => c.name).join(', ')}, and $why.',
           status: StatusCode.unimplemented,
           route: info,
         );
@@ -895,13 +920,29 @@ final class _RouterMiddleware extends GenerateMiddleware {
     // Why the loop moved on from it, and the failure that made it, if one.
     String? moveReason;
     Object? moveFailure;
+    // The later targets it did not try, and why.
+    final skipped = <String>[];
     for (var i = 0; i < order.length; i++) {
       var key = order[i];
       final isFirst = i == 0;
-      if (moveFailure != null && !_mayMoveTo(key, moveFailure)) continue;
+      if (moveFailure != null && !_mayMoveTo(key, moveFailure)) {
+        skipped.add('$key not tried after ${_statusName(moveFailure)}');
+        continue;
+      }
       if (router.targets[key]!.isCloud) {
-        if (!await _askConsent(key, info, ctx.cancel)) {
-          if (!isFirst) continue; // never move to the cloud without consent
+        final asked = isFirst
+            ? info
+            : info.copyWith(
+                target: key,
+                model: router.targets[key]!.model.name,
+                reason: moveReason,
+              );
+        if (!await _askConsent(key, asked, ctx.cancel)) {
+          if (!isFirst) {
+            // Never move to the cloud without consent.
+            skipped.add('$key refused by confirmCloud');
+            continue;
+          }
           if (decision.isOnly) {
             throw HybridRoutingException(
               'confirmCloud refused "$key", the only target this call may '
@@ -981,14 +1022,15 @@ final class _RouterMiddleware extends GenerateMiddleware {
             order.skip(i + 1).any((t) => _mayMoveTo(t, failure))) {
           passed = attempt;
           moveFailure = failure;
-          moveReason = 'fallback: $key failed with ${_statusOf(failure)}';
+          moveReason = 'fallback: $key failed with ${_describe(failure)}';
           continue;
         }
         return _finish(attempt, ctx);
       }
       if (cascade != null && hasNext && movable && !_toolRan) {
+        // The judge is app code: a refusal it meets is not this call's.
         final accepted = await _untilCancelled(
-          () => cascade(result!),
+          () => outsideRoutedCalls(() => cascade(result!)),
           ctx.cancel,
         );
         if (!accepted) {
@@ -1001,8 +1043,14 @@ final class _RouterMiddleware extends GenerateMiddleware {
       return _finish(attempt, ctx);
     }
     // Every later target was skipped (no consent for the cloud): the last
-    // attempt that ran is the answer.
-    return _finish(passed!, ctx);
+    // attempt that ran is the answer, and its route says what was not tried.
+    final last = passed!;
+    return _finish(
+      last.withInfo(
+        last.info.copyWith(reason: [?moveReason, ...skipped].join('; ')),
+      ),
+      ctx,
+    );
   }
 
   /// Whether a call whose attempt failed with [failure] may move to [key]:
@@ -1039,11 +1087,14 @@ final class _RouterMiddleware extends GenerateMiddleware {
     if (confirm == null) return true;
     try {
       return await _untilCancelled(
-        () => confirm(
-          CloudConsentRequest(
-            target: key,
-            model: router.targets[key]!.model.name,
-            route: info,
+        // App code: a refusal it meets is not this call's.
+        () => outsideRoutedCalls(
+          () => confirm(
+            CloudConsentRequest(
+              target: key,
+              model: router.targets[key]!.model.name,
+              route: info,
+            ),
           ),
         ),
         cancel,
@@ -1122,7 +1173,9 @@ final class _RouterMiddleware extends GenerateMiddleware {
     );
     void send(ModelResponseChunk chunk) {
       _chunkSent = true;
-      outside.run(() => ctx.sendChunk(chunk));
+      // The caller's chunk callback is app code: outside the decision, and a
+      // refusal it meets is not this call's.
+      outside.run(() => outsideRoutedCalls(() => ctx.sendChunk(chunk)));
     }
 
     var holding = held;
@@ -1192,9 +1245,19 @@ const _cloudMoveStatuses = {
 };
 
 /// [failure]'s Genkit status, or its type when it has none.
-String _statusOf(Object failure) => failure is GenkitException
+String _statusName(Object failure) => failure is GenkitException
     ? failure.status.wireName
     : '${failure.runtimeType}';
+
+/// [failure] for a route reason: its Genkit status and message, or what it
+/// prints, on one line and at most 200 characters.
+String _describe(Object failure) {
+  final text = failure is GenkitException
+      ? '${failure.status.wireName}: ${failure.message}'
+      : '$failure';
+  final line = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return line.length <= 200 ? line : '${line.substring(0, 197)}...';
+}
 
 final class _Attempt {
   const _Attempt(
@@ -1214,6 +1277,10 @@ final class _Attempt {
 
   /// Chunks held back for a cascade verdict.
   final List<ModelResponseChunk> held;
+
+  /// This attempt with [info] as its route.
+  _Attempt withInfo(RouteInfo info) =>
+      _Attempt(key, info, result, error, stack, held);
 }
 
 final class _Decided {

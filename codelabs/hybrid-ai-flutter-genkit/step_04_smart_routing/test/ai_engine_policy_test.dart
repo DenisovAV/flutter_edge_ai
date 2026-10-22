@@ -222,7 +222,11 @@ void main() {
 
     test('cascade sends an image straight to the cloud', () async {
       final models = _Models();
-      final r = await _send(_engine(models), PolicyMode.cascade, withImage: true);
+      final r = await _send(
+        _engine(models),
+        PolicyMode.cascade,
+        withImage: true,
+      );
       expect(r.text, 'CLOUD');
       expect(r.route!.attempts, [kCloud]);
       expect(models.localSeen, isEmpty);

@@ -57,20 +57,16 @@ final class _DeciderRouteClassifier extends RouteClassifier {
     final first = await _current(cancel);
     try {
       return await _choose(first, text, cancel);
-    } on _DeciderClosed {
+    } on _DeciderClosed catch (closed) {
       // A refit closed it: the provider may already hand out the new one.
       final second = await _current(cancel);
       if (identical(second, first)) {
-        throw const RouteClassifierUnavailableException(
-          'The decider was closed.',
-        );
+        throw RouteClassifierUnavailableException(closed.message);
       }
       try {
         return await _choose(second, text, cancel);
-      } on _DeciderClosed {
-        throw const RouteClassifierUnavailableException(
-          'The decider was closed.',
-        );
+      } on _DeciderClosed catch (again) {
+        throw RouteClassifierUnavailableException(again.message);
       }
     }
   }
@@ -114,7 +110,8 @@ final class _DeciderRouteClassifier extends RouteClassifier {
       decider.capabilities.questionType,
       DeciderQuestionType.choice,
     )) {
-      throw ArgumentError(
+      // The app's configuration, not the user's request.
+      throw StateError(
         'A ${decider.capabilities.questionType.name} decider cannot route: '
         'it never chooses one option.',
       );
@@ -132,13 +129,22 @@ final class _DeciderRouteClassifier extends RouteClassifier {
     // choose, so a shared one would collect listeners.
     final token = CancelToken();
     final detach = cancel?.onCancel(() => token.cancel('Genkit cancelled'));
+    Future<DeciderAnswer> choose() => decider.choose(
+      DeciderInput(EmbeddingInput.text(text)),
+      cancelToken: token,
+    );
     try {
       // No await between the isClosed check and choose, so a close cannot
       // slip in between.
-      final answer = await decider.choose(
-        DeciderInput(EmbeddingInput.text(text)),
-        cancelToken: token,
-      );
+      DeciderAnswer answer;
+      try {
+        answer = await choose();
+      } on EmbedderClosedException {
+        // A decider on core's active embedder moves to its replacement, and
+        // one closed while it moved is gone at the next choose.
+        if (decider.isClosed) rethrow;
+        answer = await choose();
+      }
       return _verdict(answer);
     } on DeciderCancelledException {
       // Without a Genkit cancel it means the decider closed mid-choose.
@@ -146,7 +152,9 @@ final class _DeciderRouteClassifier extends RouteClassifier {
       throw const _DeciderClosed();
     } on EmbedderClosedException {
       // Its embedder was closed under it: as good as a closed decider.
-      throw const _DeciderClosed();
+      throw decider.isClosed
+          ? const _DeciderClosed()
+          : const _DeciderClosed('The decider\'s embedder was closed.');
     } on StateError {
       if (decider.isClosed) throw const _DeciderClosed();
       rethrow;
@@ -195,5 +203,8 @@ final class _DeciderRouteClassifier extends RouteClassifier {
 }
 
 final class _DeciderClosed implements Exception {
-  const _DeciderClosed();
+  const _DeciderClosed([this.message = 'The decider was closed.']);
+
+  /// Why the classifier is unavailable, if no other decider takes over.
+  final String message;
 }

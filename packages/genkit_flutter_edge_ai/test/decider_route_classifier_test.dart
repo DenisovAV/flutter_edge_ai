@@ -20,6 +20,9 @@ final class _FakeDecider extends Decider {
 
   /// Closes the decider as it throws [throws], as a close mid-choose does.
   bool closeOnThrow = false;
+
+  /// Throws [throws] on the first choose only.
+  bool throwOnce = false;
   int calls = 0;
   DeciderRequest? lastRequest;
   Completer<void>? gate;
@@ -55,6 +58,7 @@ final class _FakeDecider extends Decider {
     }
     if (throws case final e?) {
       if (closeOnThrow) _closed = true;
+      if (throwOnce) throws = null;
       throw e;
     }
     return answer!(request);
@@ -253,11 +257,52 @@ void main() {
     });
   }
 
+  test('an open decider whose embedder closed once answers on the next '
+      'choose', () async {
+    final decider = _FakeDecider(answer: (_) => _chose('easy'))
+      ..throws = const EmbedderClosedException('replaced')
+      ..throwOnce = true;
+    final verdict = await deciderRouteClassifier(
+      () => decider,
+    ).classify(_request('hi'));
+    expect(verdict, isA<LabelVerdict>());
+    expect(decider.calls, 2);
+  });
+
+  test('an open decider whose embedder stays closed is unavailable, and '
+      'says so', () {
+    final decider = _FakeDecider(answer: (_) => _chose('easy'))
+      ..throws = const EmbedderClosedException('closed');
+    expect(
+      deciderRouteClassifier(() => decider).classify(_request('hi')),
+      throwsA(
+        isA<RouteClassifierUnavailableException>().having(
+          (e) => e.message,
+          'message',
+          "The decider's embedder was closed.",
+        ),
+      ),
+    );
+  });
+
   test('a provider whose load failed fails the call with its error', () {
     expect(
       deciderRouteClassifier(
         () => Future<Decider?>.error(StateError('load failed')),
       ).classify(_request('hi')),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('a provider whose load failed fails a call with a cancel token '
+      'too', () {
+    final controller = CancellationController();
+    expect(
+      deciderRouteClassifier(
+            () => Future<Decider?>.error(StateError('load failed')),
+          )
+          .classify(_request('hi'), cancel: controller.token)
+          .timeout(const Duration(seconds: 5)),
       throwsA(isA<StateError>()),
     );
   });
@@ -290,11 +335,12 @@ void main() {
     );
   });
 
-  test('a decider that is not a choice is refused', () {
+  test('a decider that is not a choice is refused as the app\'s '
+      'mistake', () {
     final noul = _FakeDecider(questionType: DeciderQuestionType.noul);
     expect(
       deciderRouteClassifier(() => noul).classify(_request('hi')),
-      throwsArgumentError,
+      throwsStateError,
     );
   });
 

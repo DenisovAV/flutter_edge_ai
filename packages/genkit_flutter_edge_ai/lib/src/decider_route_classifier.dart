@@ -29,6 +29,10 @@ import 'package:genkit_hybrid/genkit_hybrid.dart';
 /// throws fails the call, never an abstain: an over-long request included,
 /// so put `RouteRule.inputSize` before the classifier.
 ///
+/// `warmUp` waits for the provider's decider, so a router's warm-up loads
+/// it before the first request. To have the classifier make and keep the
+/// decider itself, use [DeciderRouteClassifier.load].
+///
 /// Experimental, like the Decider API it adapts.
 RouteClassifier deciderRouteClassifier(
   FutureOr<Decider?> Function() decider, {
@@ -44,6 +48,9 @@ final class _DeciderRouteClassifier extends RouteClassifier {
 
   @override
   final String name;
+
+  @override
+  Future<void> warmUp({CancellationToken? cancel}) => _current(cancel);
 
   @override
   Future<RouteVerdict> classify(
@@ -207,4 +214,109 @@ final class _DeciderClosed implements Exception {
 
   /// Why the classifier is unavailable, if no other decider takes over.
   final String message;
+}
+
+/// A genkit_hybrid [RouteClassifier] that owns its decider: [load] makes it,
+/// starting when the classifier is created, and the classifier keeps it for
+/// every request, as `deciderRouteClassifier` does over a provider.
+///
+/// A load that fails fails the requests waiting for it, never routed around,
+/// and the next request loads again. [reload] makes a new decider (a refit)
+/// and closes the old one once the new one is ready; the old one answers
+/// until then, and a failed reload keeps it. [close] closes the decider;
+/// the classifier is unavailable afterwards.
+///
+/// Experimental, like the Decider API it adapts.
+final class DeciderRouteClassifier extends RouteClassifier {
+  /// Starts [load] now. [name] and [text] are `deciderRouteClassifier`'s.
+  DeciderRouteClassifier.load(
+    Future<Decider> Function() load, {
+    String name = 'flutter-edge-ai/decider',
+    String? Function(RouteRequest request)? text,
+  }) : _load = load {
+    _inner = _DeciderRouteClassifier(_provide, name, text);
+    _start();
+  }
+
+  final Future<Decider> Function() _load;
+  late final _DeciderRouteClassifier _inner;
+
+  /// The decider in use, or the load that is making it; null after a failed
+  /// load, until the next request starts one.
+  Future<Decider>? _decider;
+
+  /// Counts reloads: only the latest one may install its decider.
+  int _generation = 0;
+  bool _closed = false;
+
+  @override
+  String get name => _inner.name;
+
+  @override
+  Future<void> warmUp({CancellationToken? cancel}) =>
+      _inner.warmUp(cancel: cancel);
+
+  @override
+  Future<RouteVerdict> classify(
+    RouteRequest request, {
+    CancellationToken? cancel,
+  }) => _inner.classify(request, cancel: cancel);
+
+  /// Makes a new decider and, once it is ready, uses it and closes the old
+  /// one. Throws what the load threw, and the old decider stays in use.
+  Future<void> reload() async {
+    if (_closed) throw StateError('The classifier was closed.');
+    final generation = ++_generation;
+    final decider = await Future.sync(_load);
+    if (_closed || generation != _generation) {
+      // Closed meanwhile, or a later reload replaced this one.
+      await decider.close();
+      return;
+    }
+    final old = _decider;
+    _decider = Future.value(decider);
+    if (old != null) await _closeWhenLoaded(old, keep: decider);
+  }
+
+  /// Closes the decider. Requests are unavailable afterwards.
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    final current = _decider;
+    _decider = null;
+    if (current != null) await _closeWhenLoaded(current);
+  }
+
+  Future<Decider?> _provide() {
+    if (_closed) {
+      return Future.error(
+        const RouteClassifierUnavailableException('The classifier was closed.'),
+      );
+    }
+    return _decider ?? _start();
+  }
+
+  Future<Decider> _start() {
+    final load = Future.sync(_load);
+    _decider = load;
+    // A failed load is dropped, so the next request loads again; the error
+    // reaches the requests waiting for it through the Future itself.
+    load.then(
+      (_) {},
+      onError: (Object _) {
+        if (identical(_decider, load)) _decider = null;
+      },
+    );
+    return load;
+  }
+
+  /// Closes the decider [pending] makes, unless it is [keep]. One that failed
+  /// to load has nothing to close: its error went to its requests.
+  static Future<void> _closeWhenLoaded(
+    Future<Decider> pending, {
+    Decider? keep,
+  }) => pending.then(
+    (d) => identical(d, keep) ? null : d.close(),
+    onError: (Object _) {},
+  );
 }

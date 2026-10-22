@@ -46,8 +46,12 @@ import 'package:genkit/genkit.dart';
 
 import 'src/flutter_edge_ai_options.dart';
 import 'src/flutter_edge_ai_plugin.dart';
+import 'src/flutter_edge_ai_runtime.dart';
+import 'src/model_options_parse.dart';
+import 'src/model_slot.dart';
 
-export 'src/decider_route_classifier.dart' show deciderRouteClassifier;
+export 'src/decider_route_classifier.dart'
+    show DeciderRouteClassifier, deciderRouteClassifier;
 export 'src/flutter_edge_ai_options.dart'
     show FlutterEdgeAiModelOptions, FlutterEdgeAiEmbedConfig;
 export 'src/flutter_edge_ai_plugin.dart'
@@ -82,6 +86,30 @@ class FlutterEdgeAiPluginHandle {
         '${GenkitFlutterEdgeAiPlugin.prefix}/$name',
         customOptions: FlutterEdgeAiModelOptions.$schema,
       );
+
+  /// Loads the active on-device model with [model]'s config ahead of the
+  /// first request, which then reuses it: a genkit_hybrid target's warm-up,
+  /// `HybridTarget.onDevice(ref, warmUp: flutterEdgeAi.warmUp)`. An invalid
+  /// config is INVALID_ARGUMENT and a failed load fails as a request's would.
+  /// [runtime] is for tests.
+  Future<void> warmUp(
+    ModelRef model, {
+    FlutterEdgeAiRuntime runtime = const DefaultFlutterEdgeAiRuntime(),
+  }) async {
+    final config = model.config;
+    final Map<String, dynamic>? json = switch (config) {
+      null => null,
+      final Map map => map.cast<String, dynamic>(),
+      final FlutterEdgeAiModelOptions options => options.toJson(),
+      _ => throw GenkitException(
+        'Model "${model.name}": its config is neither a Map nor '
+        'FlutterEdgeAiModelOptions.',
+        status: StatusCode.invalidArgument,
+      ),
+    };
+    final options = await parseModelOptions(json);
+    await FlutterEdgeAiModelSlot(runtime).load(loadParamsOf(options));
+  }
 
   /// Returns an [EmbedderRef] for the given embedder name registered by this plugin.
   EmbedderRef<FlutterEdgeAiEmbedConfig> embedder(String name) =>

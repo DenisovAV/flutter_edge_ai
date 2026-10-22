@@ -344,6 +344,162 @@ void main() {
     );
   });
 
+  group('warmUp', () {
+    test('waits for the provider\'s decider', () async {
+      final pending = Completer<Decider?>();
+      var warmed = false;
+      final classifier = deciderRouteClassifier(() => pending.future);
+      final warming = classifier.warmUp().then((_) => warmed = true);
+      await pumpEventQueue();
+      expect(warmed, isFalse);
+      pending.complete(_FakeDecider(answer: (_) => _chose('easy')));
+      await warming;
+      expect(warmed, isTrue);
+    });
+
+    test('a decider that is not a choice fails the warm-up', () {
+      final noul = _FakeDecider(questionType: DeciderQuestionType.noul);
+      expect(deciderRouteClassifier(() => noul).warmUp(), throwsStateError);
+    });
+  });
+
+  group('DeciderRouteClassifier.load', () {
+    test('starts loading when created and keeps the decider', () async {
+      var loads = 0;
+      final decider = _FakeDecider(answer: (_) => _chose('easy'));
+      final classifier = DeciderRouteClassifier.load(() async {
+        loads++;
+        return decider;
+      });
+      expect(loads, 1, reason: 'loading starts at once');
+      await classifier.classify(_request('a'));
+      await classifier.classify(_request('b'));
+      expect(loads, 1);
+      expect(decider.calls, 2);
+    });
+
+    test('warmUp waits for the load', () async {
+      final gate = Completer<void>();
+      var warmed = false;
+      final classifier = DeciderRouteClassifier.load(() async {
+        await gate.future;
+        return _FakeDecider(answer: (_) => _chose('easy'));
+      });
+      final warming = classifier.warmUp().then((_) => warmed = true);
+      await pumpEventQueue();
+      expect(warmed, isFalse);
+      gate.complete();
+      await warming;
+      expect(warmed, isTrue);
+    });
+
+    test('a failed load fails the requests waiting for it, and the next one '
+        'loads again', () async {
+      var loads = 0;
+      final classifier = DeciderRouteClassifier.load(() async {
+        loads++;
+        if (loads == 1) throw StateError('no embedder yet');
+        return _FakeDecider(answer: (_) => _chose('easy'));
+      });
+      await expectLater(classifier.classify(_request('a')), throwsStateError);
+      expect(await classifier.classify(_request('b')), isA<LabelVerdict>());
+      expect(loads, 2);
+    });
+
+    test('reload swaps in the new decider and closes the old one once the '
+        'new one is ready', () async {
+      final first = _FakeDecider(answer: (_) => _chose('easy'));
+      final second = _FakeDecider(answer: (_) => _chose('hard'));
+      final gate = Completer<void>();
+      var loads = 0;
+      final classifier = DeciderRouteClassifier.load(() async {
+        loads++;
+        if (loads == 1) return first;
+        await gate.future;
+        return second;
+      });
+      await classifier.warmUp();
+      final reloading = classifier.reload();
+      final before = await classifier.classify(_request('a'));
+      expect((before as LabelVerdict).label, 'easy');
+      expect(first.isClosed, isFalse);
+      gate.complete();
+      await reloading;
+      final after = await classifier.classify(_request('b'));
+      expect((after as LabelVerdict).label, 'hard');
+      expect(first.isClosed, isTrue);
+      expect(second.isClosed, isFalse);
+    });
+
+    test('a failed reload keeps the current decider', () async {
+      final first = _FakeDecider(answer: (_) => _chose('easy'));
+      var loads = 0;
+      final classifier = DeciderRouteClassifier.load(() async {
+        loads++;
+        if (loads == 1) return first;
+        throw StateError('refit failed');
+      });
+      await classifier.warmUp();
+      await expectLater(classifier.reload(), throwsStateError);
+      final verdict = await classifier.classify(_request('a'));
+      expect((verdict as LabelVerdict).label, 'easy');
+      expect(first.isClosed, isFalse);
+    });
+
+    test('of two reloads the later one wins, and the other decider is '
+        'closed', () async {
+      final first = _FakeDecider(answer: (_) => _chose('easy'));
+      final slow = _FakeDecider(answer: (_) => _chose('slow'));
+      final fast = _FakeDecider(answer: (_) => _chose('fast'));
+      final slowGate = Completer<void>();
+      var loads = 0;
+      final classifier = DeciderRouteClassifier.load(() async {
+        loads++;
+        if (loads == 1) return first;
+        if (loads == 2) {
+          await slowGate.future;
+          return slow;
+        }
+        return fast;
+      });
+      await classifier.warmUp();
+      final a = classifier.reload();
+      final b = classifier.reload();
+      await b;
+      slowGate.complete();
+      await a;
+      final verdict = await classifier.classify(_request('x'));
+      expect((verdict as LabelVerdict).label, 'fast');
+      expect(first.isClosed, isTrue);
+      expect(slow.isClosed, isTrue);
+      expect(fast.isClosed, isFalse);
+    });
+
+    test('close closes the decider; the classifier is then '
+        'unavailable', () async {
+      final first = _FakeDecider(answer: (_) => _chose('easy'));
+      var loads = 0;
+      final classifier = DeciderRouteClassifier.load(() async {
+        loads++;
+        return loads == 1 ? first : _FakeDecider(answer: (_) => _chose('easy'));
+      });
+      await classifier.warmUp();
+      await classifier.close();
+      expect(first.isClosed, isTrue);
+      await expectLater(
+        classifier.classify(_request('a')),
+        throwsA(
+          isA<RouteClassifierUnavailableException>().having(
+            (e) => e.message,
+            'message',
+            'The classifier was closed.',
+          ),
+        ),
+      );
+      expect(loads, 1, reason: 'a closed classifier loads nothing');
+    });
+  });
+
   test('routes a hybrid router call end to end', () async {
     final ai = Genkit(isDevEnv: false, promptDir: null);
     addTearDown(ai.shutdown);

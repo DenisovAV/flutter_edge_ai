@@ -342,7 +342,10 @@ final ai = Genkit(plugins: [edgeAi]);
 final router = defineHybridRouter(
   ai,
   targets: {
-    kOnDevice: HybridTarget.onDevice(flutterEdgeAi.model('gemma-4-e2b')),
+    kOnDevice: HybridTarget.onDevice(
+      flutterEdgeAi.model('gemma-4-e2b'),
+      warmUp: flutterEdgeAi.warmUp, // loads the model with this target's config
+    ),
     kCloud: HybridTarget.cloud(googleAI.gemini('gemini-2.5-flash')),
   },
   cloudPlugins: [googleAI(apiKey: apiKey)], // given to the router only
@@ -363,6 +366,7 @@ final router = defineHybridRouter(
   },
   defaultPolicy: 'smart',
 );
+await router.warmUp(); // at app start: the classifier and the model load now
 
 final response = await router.generate(prompt: 'Hello!');
 print(response.route); // target, model, source, label, score, routeTime
@@ -372,6 +376,10 @@ print(response.route); // target, model, source, label, score, routeTime
 except `model` and `config` — each target carries its own config on its
 `ModelRef` — plus `policy:` and `pin:`. `router.definePrompt` defines a prompt
 routed with a fixed policy.
+
+`router.warmUp()` warms every policy's classifier and every on-device target
+given a `warmUp` at once, so the first request waits for none of them; it
+completes when all have ended, with the first failure if one failed.
 
 ### The cloud is reachable only through the router
 
@@ -429,36 +437,30 @@ without a `kOnDevice` target; false on a fallback target skips it.
 
 ### Decide on the device with a Decider
 
-`genkit_flutter_edge_ai`'s `deciderRouteClassifier` turns an EmbeddingGemma 2
+`genkit_flutter_edge_ai`'s `DeciderRouteClassifier.load` turns an EmbeddingGemma 2
 decider into the router's classifier; its options are the labels:
 
 ```dart
-Future<Decider>? intents;
-
-Future<Decider> loadIntents() {
-  final load = FlutterEdgeAi.getActiveEmbedder().then(
-    (embedder) => embedder.createDecider(options: intentOptions),
-  );
-  // A failed load fails this call and the next one retries. Only this load
-  // is dropped: a refit may have cached a newer one meanwhile.
-  load.then((_) {}, onError: (Object _) {
-    if (identical(intents, load)) intents = null;
-  });
-  return load;
-}
+final intents = DeciderRouteClassifier.load(() async {
+  final embedder = await FlutterEdgeAi.getActiveEmbedder();
+  return embedder.createDecider(options: intentOptions);
+}); // loading starts now; router.warmUp() waits for it
 
 // In the policy:
-classifier: deciderRouteClassifier(() => intents ??= loadIntents()),
+classifier: intents,
 labels: {
   'smalltalk': RouteDecision.prefer(kOnDevice),
   'code': RouteDecision.prefer(kCloud),
 },
 ```
 
-The provider is called per request: return the pending Future while the
-decider loads. A decider error fails the call, never an abstain — a failed load
-and an input over the embedder's limit included, so keep `RouteRule.inputSize`
-before the classifier. See [Decisions](/docs/decisions).
+`DeciderRouteClassifier.load` keeps the decider; a failed load fails the
+requests waiting for it and runs again at the next one, and `reload()` refits,
+closing the old decider once the new one is ready. To keep the decider
+yourself, `deciderRouteClassifier(() => decider)` asks your provider per
+request. A decider error fails the call, never an abstain — an input over the
+embedder's limit included, so keep `RouteRule.inputSize` before the classifier.
+See [Decisions](/docs/decisions).
 
 ### Errors
 

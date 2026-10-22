@@ -48,6 +48,7 @@ void main() {
     test(
       'runs on CPU for every request but npu, asking the host nothing',
       () async {
+        // The fake host is android_arm64, where the GPU is not measured.
         for (final requested in [
           null,
           PreferredBackend.cpu,
@@ -61,6 +62,50 @@ void main() {
         expect(host.asked, isEmpty);
       },
     );
+
+    for (final abi in liteRtLmEmbeddingGpuAbis) {
+      test(
+        'with gpu on $abi runs on the GPU; null and cpu stay on CPU',
+        () async {
+          host
+            ..abi = abi
+            ..operatingSystem = abi.split('_').first;
+          expect(
+            (await place(
+              target: null,
+              requested: PreferredBackend.gpu,
+            )).backend,
+            PreferredBackend.gpu,
+          );
+          for (final requested in [null, PreferredBackend.cpu]) {
+            expect(
+              (await place(target: null, requested: requested)).backend,
+              PreferredBackend.cpu,
+              reason: '$requested',
+            );
+          }
+          expect(host.asked, isEmpty);
+        },
+      );
+    }
+
+    for (final abi in [
+      'macos_arm64',
+      'ios_arm64',
+      'android_arm64',
+      'linux_arm64',
+      'windows_arm64',
+    ]) {
+      test('with gpu on $abi stays on CPU: the GPU is not measured there '
+          '(Metal ends the process at create on Apple)', () async {
+        host.abi = abi;
+        final placement = await place(
+          target: null,
+          requested: PreferredBackend.gpu,
+        );
+        expect(placement.backend, PreferredBackend.cpu);
+      });
+    }
 
     test(
       'with npu is refused, naming the per-SoC bundles — never run on CPU',

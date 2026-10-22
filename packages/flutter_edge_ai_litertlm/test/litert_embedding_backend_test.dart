@@ -353,7 +353,12 @@ void main() {
 
   group('describe() places the bundle from its own bytes: CPU or its NPU, '
       'never a switch', () {
-    test('the generic bundle runs on CPU for every request but npu', () async {
+    test('the generic bundle runs on CPU for every request but npu, on a '
+        'host without GPU embeddings', () async {
+      // Pinned: on a Windows or Linux x64 runner gpu goes to the GPU (the
+      // GPU group below).
+      liteRtLmNpuHost = _QualcommAndroid();
+      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
       for (final requested in [
         null,
         PreferredBackend.cpu,
@@ -694,6 +699,167 @@ void main() {
       );
     });
   });
+
+  group('EmbeddingGemma 2 on the GPU (Windows and Linux x64, measured)', () {
+    void hostIs(LiteRtLmNpuHost host) {
+      liteRtLmNpuHost = host;
+      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+    }
+
+    // eg2_text.litertlm is the 270m's shape: text encoder and embedder only.
+    Future<EmbeddingPassDescriptor<Object>> describeGpu({
+      LiteRtEmbeddingBackend b = backend,
+      String model = 'eg2_text.litertlm',
+      bool supportImage = false,
+      bool supportAudio = false,
+    }) => b.describe(
+      _bundle(model: model),
+      _config(
+        '$bundles/$model',
+        preferredBackend: PreferredBackend.gpu,
+        supportImage: supportImage,
+        supportAudio: supportAudio,
+      ),
+    );
+
+    for (final host in [_IntelWindows(), _LinuxX64()]) {
+      test('${host.abi}: a bundle honours gpu, a .tflite spec does not', () {
+        hostIs(host);
+        expect(backend.honouredBackends(_bundle()), {
+          PreferredBackend.cpu,
+          PreferredBackend.gpu,
+          PreferredBackend.npu,
+        });
+        expect(backend.honouredBackends(_tflite()), {
+          PreferredBackend.cpu,
+          PreferredBackend.npu,
+        });
+      });
+
+      test('${host.abi}: gpu hands the pass the GPU and declares it', () async {
+        hostIs(host);
+        final d = await describeGpu();
+        final config = d.config as LiteRtLmEmbeddingConfig;
+        expect(d.activeBackend, PreferredBackend.gpu);
+        expect(config.gpu, isTrue);
+        expect(config.backend, PreferredBackend.gpu);
+        expect(config.npuTarget, isNull);
+      });
+    }
+
+    test('elsewhere a bundle keeps the default and gpu runs on CPU', () async {
+      hostIs(_QualcommAndroid());
+      expect(backend.honouredBackends(_bundle()), {
+        PreferredBackend.cpu,
+        PreferredBackend.npu,
+      });
+      final d = await describeGpu();
+      expect(d.activeBackend, PreferredBackend.cpu);
+      expect((d.config as LiteRtLmEmbeddingConfig).gpu, isFalse);
+    });
+
+    test('images on the GPU are refused: measured for text only, and the '
+        'refusal says how to embed them', () async {
+      hostIs(_IntelWindows());
+      await expectLater(
+        describeGpu(supportImage: true),
+        _loadRefusal(
+          'LiteRT-LM',
+          allOf(
+            contains('runs on the GPU for text only'),
+            contains('preferredBackend: cpu'),
+            contains('images'),
+          ),
+        ),
+      );
+    });
+
+    test('a bundle with vision or audio towers is refused on the GPU even for '
+        'text: LiteRT-LM would compile those towers there too', () async {
+      hostIs(_IntelWindows());
+      for (final (model, audio) in [
+        ('eg2.litertlm', false),
+        ('eg2_audio.litertlm', false),
+        ('eg2_audio.litertlm', true),
+      ]) {
+        await expectLater(
+          describeGpu(model: model, supportAudio: audio),
+          _loadRefusal(
+            'LiteRT-LM',
+            allOf(
+              contains('vision or audio encoders'),
+              contains('embeddinggemma-2-text-270m'),
+              contains('preferredBackend: cpu'),
+            ),
+          ),
+          reason: '$model audio=$audio',
+        );
+      }
+    });
+
+    test('on the real headers: the 270m passes the text-only check, the 440m '
+        'and the 740m do not', () {
+      requireLiteRtLmTextOnlyBundle(_header270m);
+      for (final header in [_header440m, _header740m]) {
+        expect(
+          () => requireLiteRtLmTextOnlyBundle(header),
+          throwsA(isA<EmbeddingLoadException>()),
+          reason: header,
+        );
+      }
+    });
+
+    test(
+      'a per-SoC bundle with gpu is still refused: it runs on its NPU',
+      () async {
+        hostIs(_IntelWindows());
+        await expectLater(
+          describeGpu(model: 'eg2_ptl.litertlm'),
+          throwsA(isA<EmbeddingLoadException>()),
+        );
+      },
+    );
+
+    test('requireWeightCache on the GPU is said once: it checks the XNNPack '
+        'cache, which the GPU does not write', () async {
+      hostIs(_LinuxX64());
+      resetRequireWeightCacheNotice();
+      final logged = <String>[];
+      final original = debugPrint;
+      debugPrint = (message, {wrapWidth}) => logged.add(message ?? '');
+      addTearDown(() {
+        debugPrint = original;
+        resetRequireWeightCacheNotice();
+      });
+      const strict = LiteRtEmbeddingBackend(requireWeightCache: true);
+      await describeGpu(b: strict);
+      await describeGpu(b: strict);
+      expect(logged.where((line) => line.contains('requireWeightCache')), [
+        allOf(
+          contains('eg2_text.litertlm'),
+          contains('GPU'),
+          contains('XNNPack'),
+        ),
+      ]);
+    });
+  });
+}
+
+/// A Linux x64 desktop: no NPU vendor runs there, so nothing may be asked.
+final class _LinuxX64 implements LiteRtLmNpuHost {
+  @override
+  String get operatingSystem => 'linux';
+  @override
+  String get abi => 'linux_x64';
+  @override
+  Future<NpuStackCheck> stack(NpuVendor vendor) async =>
+      throw StateError('linux_x64 has no NPU stack to ask about');
+  @override
+  String? unreachable(NpuVendor vendor) =>
+      throw StateError('linux_x64 has no NPU to probe');
+  @override
+  Future<String> prepareDispatchDir(NpuVendor vendor) async =>
+      throw StateError('linux_x64 has no NPU dispatch');
 }
 
 /// Counts every time an engine asks for a tokenizer.

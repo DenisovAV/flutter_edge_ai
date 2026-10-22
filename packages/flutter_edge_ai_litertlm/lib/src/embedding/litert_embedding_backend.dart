@@ -96,6 +96,18 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
       spec.tokenizerSource != null ||
       isLiteRtLmFilename(spec.files.first.filename);
 
+  /// GPU joins CPU and NPU for a `.litertlm` bundle on the hosts where
+  /// EmbeddingGemma 2 is measured on the GPU ([liteRtLmEmbeddingGpuAbis]):
+  /// core then keys the cache by the backend each load reports. A `.tflite`
+  /// embedder and every other host keep the default, so a `gpu` request there
+  /// still runs on CPU with core's not-applied notice.
+  @override
+  Set<PreferredBackend> honouredBackends(EmbeddingModelSpec spec) =>
+      isLiteRtLmFilename(spec.files.first.filename) &&
+          liteRtLmEmbeddingGpuHost()
+      ? const {PreferredBackend.cpu, PreferredBackend.gpu, PreferredBackend.npu}
+      : super.honouredBackends(spec);
+
   @override
   Future<EmbeddingPassDescriptor<Object>> describe(
     EmbeddingModelSpec spec,
@@ -179,10 +191,31 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
     target: target,
     requested: config.preferredBackend,
   );
+  final onGpu = placement.backend == PreferredBackend.gpu;
+  if (onGpu) requireLiteRtLmTextOnlyBundle(config.modelPath);
+  if (onGpu && (config.supportImage || config.supportAudio)) {
+    // Measured for text only: the vision and audio towers would run on the
+    // GPU too (NULL tower backends follow the main one), and nobody has.
+    // An embedder already loaded on the GPU keeps that backend when a later
+    // request adds a medium without naming one (core widens it in place).
+    throw EmbeddingLoadException(
+      '$file runs on the GPU for text only: images and audio on the GPU are '
+      'not measured. Load the embedder with preferredBackend: cpu to embed '
+      '${config.supportImage ? 'images' : 'audio'}; an embedder already on '
+      'the GPU stays there when media are added without a backend.',
+      engine: _liteRtLm,
+    );
+  }
   if (requireWeightCache && placement.target != null && !config.supportAudio) {
     noticeRequireWeightCacheNotApplied(
       '$file runs on the ${placement.target} NPU, whose text and vision '
       'towers write no weight cache, and no audio was declared',
+    );
+  }
+  if (requireWeightCache && onGpu) {
+    noticeRequireWeightCacheNotApplied(
+      '$file runs on the GPU, which writes its own weight and program caches '
+      '(ML Drift), not the XNNPack weight cache the flag checks',
     );
   }
   // The platform CACHE directory, not application support: iOS backs that up
@@ -210,8 +243,9 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
       requireWeightCache: requireWeightCache,
       npuTarget: placement.target,
       npuDispatchDir: placement.dispatchDir,
+      gpu: onGpu,
     ),
-    // `settings_create(path, "cpu" | "npu", NULL, NULL)`: the text tower on
+    // `settings_create(path, "cpu" | "gpu" | "npu", NULL, NULL)`: the text tower on
     // that backend, and the vision and audio towers with it (NULL tower
     // backends run on the main one, D26). The pass refuses to load rather
     // than fall back, so this is what runs.

@@ -148,7 +148,35 @@ final vector = await embedder.embed(
   an over-long input costs one full embedding before it is refused.
 - **CPU natively, WebGPU on the Web.** **activeBackend** is
   **PreferredBackend.cpu** natively and **PreferredBackend.gpu** on the Web.
-  The NPU runs the per-SoC bundles
+- **GPU on Windows and Linux x64, when asked (litertlm 1.18.0).**
+  **preferredBackend: PreferredBackend.gpu** runs the text-only 270m bundle on
+  the GPU there (WebGPU over DX12 or Vulkan). Measured 2026-10-22: Windows on
+  Lunar Lake (Arc iGPU) 22 ms per text vs 83-90 ms on its CPU, Linux on a
+  Tesla T4 32-64 ms vs 232-308 ms, min cos 0.997 to the CPU vectors (0.998 for
+  a ~900-token text; the GPU computes in FP16) and the same distance to
+  Sentence Transformers fp32 as the CPU. A load takes 1.7-3.6 s (0.3-0.6 s on
+  CPU); the very first also builds the GPU caches, 5.9-8.2 s. A GPU LLM and
+  the GPU embedder run together in one process (measured with Gemma 4 E2B).
+  - The 440m and 740m are refused on the GPU even for text: the engine would
+    compile their vision and audio towers there too, and nobody has measured
+    that. **gpu** with images or audio is refused as well.
+  - A GPU that cannot create the engine fails the load, and every GPU load
+    checks one probe embedding; nothing falls back to CPU. A software adapter
+    is not excluded, though: on a Linux box with no GPU driver loaded,
+    Vulkan's llvmpipe ran it, reported as **gpu**, with correct vectors, a
+    37-48 s load and a ~900-token text failing with **DEADLINE_EXCEEDED**.
+    Ask for **gpu** only where a real GPU driver is installed.
+  - The GPU writes its own caches next to the CPU one: about 68 MB of weights
+    and 9 MB of programs. **requireWeightCache** does not apply on the GPU.
+  - A cold load without **preferredBackend** runs on CPU, but a later
+    automatic request reuses whatever embedder is loaded, the GPU one
+    included. In RAG, an image index next to a text index on **gpu** needs
+    its own **PreferredBackend.cpu** embedder; the two then reload each other.
+  - On macOS, iOS and Android **gpu** is not applied: the Metal path ends the
+    process inside LiteRT at engine create, and Android is not measured.
+  - GPU and CPU vectors are close, not equal: keep one backend per index if
+    you need the exact vectors back.
+- The NPU runs the per-SoC bundles
   ([below](#embeddinggemma-2-on-a-qualcomm-npu)); this bundle refuses
   **PreferredBackend.npu**. The Web has no CPU path for these bundles — the
   CPU (WebAssembly) backend of `@litert-lm/core` 0.18.0 cannot read their

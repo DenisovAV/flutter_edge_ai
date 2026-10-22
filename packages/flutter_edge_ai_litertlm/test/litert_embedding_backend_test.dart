@@ -353,7 +353,12 @@ void main() {
 
   group('describe() places the bundle from its own bytes: CPU or its NPU, '
       'never a switch', () {
-    test('the generic bundle runs on CPU for every request but npu', () async {
+    test('the generic bundle runs on CPU for every request but npu, on a '
+        'host without GPU embeddings', () async {
+      // Pinned: on a Windows or Linux x64 runner gpu goes to the GPU (the
+      // GPU group below).
+      liteRtLmNpuHost = _QualcommAndroid();
+      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
       for (final requested in [
         null,
         PreferredBackend.cpu,

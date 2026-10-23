@@ -625,7 +625,7 @@ dependencies:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.1                 # core — always required
+  flutter_edge_ai: ^2.5.2                 # core — always required
   flutter_edge_ai_litertlm: ^1.17.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
   flutter_edge_ai_mediapipe: ^1.2.3       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.3.2      # add if you compute embeddings with a tokenizer file (needs a backend, see above)

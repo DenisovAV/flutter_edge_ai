@@ -1,6 +1,7 @@
 import 'package:genkit/genkit.dart';
 
 /// What a [RoutingStrategy] sees when deciding where to route a request.
+@Deprecated('Use RouteRequest (defineHybridRouter); removed in 0.5.0.')
 class RoutingContext {
   const RoutingContext({
     required this.request,

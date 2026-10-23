@@ -7,6 +7,7 @@ import '../routing_strategy.dart';
 /// user tier, etc.) that the package cannot compute itself.
 ///
 /// Return an empty string to mean 'no decision' (useful inside [FirstMatch]).
+@Deprecated('Use RouteRule.custom; removed in 0.5.0.')
 class PreRoutingStrategy implements RoutingStrategy {
   PreRoutingStrategy(this._select);
 

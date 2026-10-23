@@ -1,6 +1,9 @@
 import 'routing_context.dart';
 
 /// Decides which branch(es) to try for a request.
+@Deprecated(
+  'Use RouteRule and RoutePolicy (defineHybridRouter); removed in 0.5.0.',
+)
 abstract class RoutingStrategy {
   /// Returns branch keys to try, in priority order.
   ///

@@ -1,3 +1,6 @@
+## 2.5.2
+- `InferenceModel.createDecider` reads LiteTune 0.6.0 files; one scored `fresh_engine` is refused by name.
+
 ## 2.5.1
 - Android: the manifest declares MediaTek's NeuroPilot libraries for the MediaTek NPU.
 - Docs: macOS setup replaces the generated `post_install` block; the load error names the fix (#689).

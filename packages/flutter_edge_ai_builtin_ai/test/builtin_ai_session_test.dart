@@ -82,6 +82,21 @@ void main() {
     expect(await session.getResponse(), 'Hello from Nano');
   });
 
+  test('getResponse preserves the native generation error metadata', () async {
+    final error = LocalAiGenerationException(
+      'model busy',
+      errorCode: 9,
+      retryDelay: const Duration(seconds: 2),
+    );
+    host.generateResponseError = error;
+    final session = await newSession();
+
+    await expectLater(session.getResponse(), throwsA(same(error)));
+    expect(error.code, 'GENERATION_ERROR');
+    expect(error.errorCode, 9);
+    expect(error.retryDelay, const Duration(seconds: 2));
+  });
+
   test('getResponseAsync yields partials, filters foreign sessionId, closes '
       'on done', () async {
     final session = await newSession();
@@ -116,16 +131,25 @@ void main() {
     );
     await pumpEventQueue();
 
-    host.emitError(id, 'boom');
+    host.emitError(
+      id,
+      'boom',
+      errorCode: 'rateLimited',
+      retryDelay: const Duration(milliseconds: 750),
+    );
     await closed.future;
 
     expect(
       errors.single,
-      isA<LocalAiGenerationException>().having(
-        (e) => e.message,
-        'message',
-        'boom',
-      ),
+      isA<LocalAiGenerationException>()
+          .having((e) => e.message, 'message', 'boom')
+          .having((e) => e.code, 'code', 'GENERATION_ERROR')
+          .having((e) => e.errorCode, 'errorCode', 'rateLimited')
+          .having(
+            (e) => e.retryDelay,
+            'retryDelay',
+            const Duration(milliseconds: 750),
+          ),
     );
   });
 

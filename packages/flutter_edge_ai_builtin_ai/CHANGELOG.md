@@ -1,3 +1,6 @@
+## 0.3.6
+- Require `flutter_local_ai` ^0.3.0 and preserve native generation error metadata.
+
 ## 0.3.5
 - Require `flutter_edge_ai` ^2.3.0 (imports its engine library).
 

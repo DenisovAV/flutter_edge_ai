@@ -32,6 +32,10 @@ Since **0.3.0** this package is a **thin adapter, not a Flutter plugin**. It dec
 and maps onto flutter_edge_ai's `InferenceEngineProvider` / `InferenceModel` / `InferenceModelSession`
 contracts.
 
+Version **0.3.6** requires `flutter_local_ai ^0.3.0`. Generation failures now
+keep the platform's error code and, when Android supplies one, its suggested
+retry delay through both `getResponse()` and `getResponseAsync()`.
+
 **Your Dart code does not change.** `BuiltInAi`, `BuiltInAiEngine`, `BuiltInAiModels`,
 `BuiltInAiAvailability`, `BuiltInAiUnavailableException` and `BuiltInAiHuggingFaceResolver` keep
 their names, members and signatures; only the import moves with the rename, from

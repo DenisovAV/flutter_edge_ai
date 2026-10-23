@@ -1,6 +1,6 @@
 name: flutter_edge_ai_builtin_ai
 description: "Opt-in flutter_edge_ai engine for the OS built-in model: Gemini Nano (Android), Apple Foundation Models (iOS/macOS), Windows AI Foundry, Chrome's Prompt API on Web."
-version: 0.3.5
+version: 0.3.6
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_builtin_ai
 topics: [gemma, llm, gemini-nano, on-device, prompt-api]
@@ -32,7 +32,7 @@ dependencies:
   # is older than either.
   flutter_edge_ai: ^2.3.0
   # Supplies the whole native/web layer this package used to ship itself.
-  flutter_local_ai: ^0.2.1
+  flutter_local_ai: ^0.3.0
   meta: ^1.15.0
 
 dev_dependencies:

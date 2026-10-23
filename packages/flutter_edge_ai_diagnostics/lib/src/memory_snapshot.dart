@@ -19,10 +19,10 @@ final class MemorySnapshot {
     this.anonymousPeakBytes,
   });
 
-  /// Process memory measured as the iOS and macOS footprint or Android's
-  /// `Private_Dirty + SwapPss`.
+  /// Process memory measured as the iOS and macOS footprint or the Android
+  /// and Linux `Private_Dirty + SwapPss`.
   ///
-  /// On both platforms, weights read from an mmapped model file are clean
+  /// On every platform, weights read from an mmapped model file are clean
   /// file pages and are not counted.
   ///
   /// - **iOS:** `phys_footprint` from `task_info(TASK_VM_INFO)`, the value
@@ -41,8 +41,14 @@ final class MemorySnapshot {
   ///   smaps, so memory a model holds on the GPU is largely not counted here;
   ///   on Adreno most of it is counted in [fileBackedBytes] instead.
   ///
-  /// Null only on an Android kernel without `smaps_rollup`. Vendor kernels
-  /// may backport it. On iOS and macOS it is never null.
+  /// - **Linux:** the same two `/proc/self/smaps_rollup` fields as Android.
+  ///   GPU memory is in neither field on desktop Linux, and on an integrated
+  ///   GPU it is system RAM that this snapshot does not show: a FunctionGemma
+  ///   270M on the GPU cost 700 to 835 MiB of Intel `drm-resident-system0`
+  ///   with the device mappings at 0 MiB.
+  ///
+  /// Null only on an Android or Linux kernel without `smaps_rollup`. Vendor
+  /// kernels may backport it. On iOS and macOS it is never null.
   final int? anonymousBytes;
 
   /// Memory still available before the OS starts reclaiming or killing.
@@ -56,13 +62,17 @@ final class MemorySnapshot {
   ///   of memory available on *the whole device*. Android has no per-app hard
   ///   limit. Treat it as an optimistic upper bound: lmkd starts killing well
   ///   before it reaches zero.
+  /// - **Linux:** the same `MemAvailable`, machine-wide. It ignores a cgroup
+  ///   `memory.max` (a container or a systemd scope with a limit): the limit
+  ///   is the cgroup's, not this number.
   ///
   /// - **macOS:** null. `os_proc_available_memory()` is iOS-only and macOS has
   ///   no per-app limit to measure headroom against.
   ///
   /// Null on macOS, and on iOS when the call returns 0: Apple returns 0 both
   /// when no limit applies (the simulator) and when the limit is already
-  /// exceeded, and the two cannot be told apart. On Android it is never null.
+  /// exceeded, and the two cannot be told apart. On Android and Linux it is
+  /// never null.
   final int? availableBytes;
 
   /// Resident clean pages: mostly mapped files on a CPU backend, and GPU
@@ -97,10 +107,17 @@ final class MemorySnapshot {
   ///   Reclaimable file pages are not a kill threshold, but are not free:
   ///   weights read on every token must be read back from storage if dropped.
   ///   Android lmkd can treat that refault thrashing as a reason to kill.
-  /// - **iOS:** null. This package does not read a corresponding value yet;
-  ///   `TASK_VM_INFO.external` is a possible follow-up.
+  /// - **Linux:** `Private_Clean + Shared_Clean`, as on Android, with the same
+  ///   caveat about clean anonymous pages: a page read back from swap and not
+  ///   written since is in `Private_Clean`, not in `SwapPss` (measured on
+  ///   Linux 7.0: 512 MiB swapped out and read back showed as 512 MiB
+  ///   `Private_Clean`, `Swap` 0), which moves memory from [anonymousBytes]
+  ///   into this field, as zram readback does on Android.
+  /// - **iOS and macOS:** null. This package does not read a corresponding
+  ///   value yet; `TASK_VM_INFO.external` is a possible follow-up.
   ///
-  /// Null on iOS, and on an Android kernel without `smaps_rollup`.
+  /// Null on iOS and macOS, and on an Android or Linux kernel without
+  /// `smaps_rollup`.
   final int? fileBackedBytes;
 
   /// The highest [anonymousBytes] this process has reached since it started.
@@ -111,11 +128,12 @@ final class MemorySnapshot {
   ///   load and its prompts, so a spike that happened before you started
   ///   measuring is in it. To attribute a peak to one operation, take a
   ///   snapshot before and compare, and treat the value as an upper bound.
-  /// - **Android:** null. The kernel keeps no peak of anonymous memory;
-  ///   `VmHWM` includes file-backed pages and would be a different number.
+  /// - **Android and Linux:** null. The kernel keeps no peak of anonymous
+  ///   memory; `VmHWM` includes file-backed pages and would be a different
+  ///   number.
   ///
-  /// Null on Android, and on an iOS or macOS version whose `task_info` reply
-  /// predates the field.
+  /// Null on Android and Linux, and on an iOS or macOS version whose
+  /// `task_info` reply predates the field.
   final int? anonymousPeakBytes;
 
   /// When this snapshot was taken.

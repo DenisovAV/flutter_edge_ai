@@ -82,6 +82,7 @@ def run_smoke(command, directory, expected, timeout=None):
         if code:
             raise subprocess.CalledProcessError(code, command, output=report)
         require_smoke_success(report, expected)
+        return report
     finally:
         process.stdout.close()
 

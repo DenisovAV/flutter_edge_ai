@@ -1159,9 +1159,11 @@ Cause: there is no `windows_arm64` LiteRT-LM archive. Upstream does not build
 LiteRT-LM for Windows ARM64, so there is nothing to package. The hook skips the
 target instead of failing, so an app that uses another engine still builds.
 
-What works today: MediaPipe has no desktop engine and the ONNX engine is
-Windows x64 only (ARM64 is not released), so the option is to build the app for
-x64, which runs under Windows x64 emulation. See
+What works today: MediaPipe has no desktop engine. The ONNX engine
+(`flutter_edge_ai_onnx`, ONNX models, not `.litertlm`) bundles Windows ARM64
+archives and passed generation and embedding smoke tests on a Windows 11 ARM64
+runner. The other option is to
+build the app for x64, which runs under Windows x64 emulation. See
 [#326](https://github.com/DenisovAV/flutter_edge_ai/issues/326).
 
 ### FunctionGemma answers with nothing, or only `<pad>`, on the GPU

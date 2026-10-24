@@ -521,7 +521,7 @@ List<String> get qnnLibFileNames => [
 /// restored from somewhere else — would otherwise pass forever without ever
 /// meeting the AAR's checksum again. Hashing the ~83 MB costs a fraction of a
 /// second, and only on the builds where the hook runs at all.
-bool isCompleteQnnCache(Directory dir, {List<String>? fileNames}) {
+bool isCompleteQnnCache(Directory dir, {required List<String> fileNames}) {
   final marker = File('${dir.path}/$qnnCacheMarker');
   if (!marker.existsSync()) return false;
   final Map<String, Object?> recorded;
@@ -531,7 +531,7 @@ bool isCompleteQnnCache(Directory dir, {List<String>? fileNames}) {
   } on Object {
     return false;
   }
-  for (final name in fileNames ?? qnnLibFileNames) {
+  for (final name in fileNames) {
     final entry = recorded[name];
     if (entry is! Map) return false;
     final size = entry['size'], hash = entry['sha256'];
@@ -626,7 +626,7 @@ Directory writeQnnCacheEntry(
     }
     if (!isCompleteQnnCache(target, fileNames: fileNames)) {
       throw StateError(
-        'QNN cache at ${target.path} is incomplete after writing',
+        'NPU runtime cache at ${target.path} is incomplete after writing',
       );
     }
     return target;

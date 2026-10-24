@@ -406,18 +406,38 @@ void main() {
     });
 
     test('a quick load and a quick close() say nothing', () async {
+      // Quick by construction, not by the wall clock: the notices are this
+      // zone's timers, which never fire on their own. Each must be cancelled
+      // by the time its call returns; then the test lets them all elapse.
+      // With real 200 ms timers this failed whenever spawn or close took
+      // longer than that on a loaded machine.
       final log = logFor('quick_close');
-      final printed = await capturePrints(() async {
+      final printed = <String>[];
+      final notices = <ManualTimer>[];
+      await runZoned(() async {
         final worker = await spawn(
           _Mode.fast,
           log,
-          slowLoadNotice: _shortNotice,
-          slowCloseNotice: _shortNotice,
+          slowLoadNotice: manualNotice,
+          slowCloseNotice: manualNotice,
+        );
+        expect(notices, hasLength(1), reason: 'spawn() set its notice');
+        expect(
+          notices[0].isActive,
+          isFalse,
+          reason: 'spawn() cancelled its notice when it returned',
         );
         await worker.close();
-        // Past both notices: a timer left running would fire by now.
-        await Future<void>.delayed(_shortNotice * 3);
-      });
+        expect(notices, hasLength(2), reason: 'close() set its notice');
+        expect(
+          notices[1].isActive,
+          isFalse,
+          reason: 'close() cancelled its notice when it returned',
+        );
+        for (final notice in notices) {
+          notice.elapse();
+        }
+      }, zoneSpecification: capturePrintsWithManualNotices(printed, notices));
       expect(printed.where((l) => l.contains('has taken')), isEmpty);
     });
   });

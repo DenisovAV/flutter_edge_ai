@@ -4,6 +4,7 @@ import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/src/lifecycle/inference_model_cache.dart';
 
 import 'package:flutter/foundation.dart';
+import 'package:meta/meta.dart' show internal;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
 import 'package:flutter_edge_ai/src/registry/stt_registry.dart';
@@ -12,7 +13,6 @@ import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.
 import 'package:flutter_web_plugins/flutter_web_plugins.dart';
 
 import 'package:flutter_edge_ai/src/model_management/managers/web_model_manager.dart';
-import 'package:flutter_edge_ai/src/embedding/embedder_backend_notice.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_loader.dart';
 
@@ -60,6 +60,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
   /// The embedder's params live in [_embedderCache]; STT still keeps its own.
   ({String? modelPath, String? tokenizerPath})? _lastSttPaths;
 
+  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 2.6.0.')
   @override
   Future<InferenceModel> createModel({
     required ModelType modelType,
@@ -70,8 +71,46 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     PreferredBackend? preferredAudioBackend,
     List<int>? loraRanks,
     int? maxNumImages,
+    bool supportImage = false,
+    bool supportAudio = false,
+    MultimodalOrder? multimodalOrder,
+    bool? enableSpeculativeDecoding,
+    ActivationDataType? activationDataType,
+    int? maxConcurrentSessions,
+  }) => obtainActiveModel(
+    modelType: modelType,
+    fileType: fileType,
+    maxTokens: maxTokens,
+    preferredBackend: preferredBackend,
+    preferredVisionBackend: preferredVisionBackend,
+    preferredAudioBackend: preferredAudioBackend,
+    loraRanks: loraRanks,
+    maxNumImages: maxNumImages,
+    supportImage: supportImage,
+    supportAudio: supportAudio,
+    multimodalOrder: multimodalOrder,
+    enableSpeculativeDecoding: enableSpeculativeDecoding,
+    activationDataType: activationDataType,
+    maxConcurrentSessions: maxConcurrentSessions,
+  );
+
+  /// Web takes [modelType] and [fileType] from the caller (the engines read
+  /// only those two from the spec they get); mobile and desktop take them
+  /// from the active spec.
+  @internal
+  @override
+  Future<InferenceModel> obtainActiveModel({
+    required ModelType modelType,
+    ModelFileType fileType = ModelFileType.task,
+    int maxTokens = 1024,
+    PreferredBackend? preferredBackend,
+    PreferredBackend? preferredVisionBackend,
+    PreferredBackend? preferredAudioBackend,
+    List<int>? loraRanks,
+    int? maxNumImages,
     bool supportImage = false, // Enabling image support
     bool supportAudio = false, // Enabling audio support (Gemma 3n E4B)
+    MultimodalOrder? multimodalOrder, // Compared, but no web engine reads it.
     bool? enableSpeculativeDecoding, // Ignored on web (MediaPipe path).
     ActivationDataType? activationDataType, // Not read by the web engines.
     int? maxConcurrentSessions,
@@ -126,6 +165,8 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
         supportImage: supportImage,
         supportAudio: supportAudio,
         maxNumImages: maxNumImages,
+        multimodalOrder:
+            multimodalOrder ?? MultimodalOrder.forModelType(modelType),
         enableSpeculativeDecoding: enableSpeculativeDecoding,
         activationDataType: activationDataType,
         maxConcurrentSessions: maxConcurrentSessions,
@@ -173,13 +214,6 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     bool supportImage = false,
     bool supportAudio = false,
   }) {
-    // FIRST statement, before every guard. It is idempotent and one-shot, so
-    // it needs neither resolved paths nor cache state — and putting it in a
-    // branch is what made it unreachable twice: once behind the singleton
-    // cache, once behind "only on reuse". The ordinary shape is a single call
-    // held for the app's lifetime; if it does not speak here it never speaks.
-    noticeWebEmbedderBackendIgnored(preferredBackend);
-
     // Serialised, so that resolving paths, comparing them and constructing the
     // model are one step — which is what stops two concurrent first callers from
     // each building one, the defect this shell actually had. On web the pass
@@ -192,6 +226,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
         preferredBackend: preferredBackend,
         supportImage: supportImage,
         supportAudio: supportAudio,
+        entryPoint: createEmbeddingModel,
       ),
     );
   }

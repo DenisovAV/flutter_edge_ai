@@ -32,7 +32,7 @@ void main() {
     });
 
     test('leaves valid emoji / multi-byte text untouched', () {
-      const s = 'привет 🚀 你好';
+      const s = 'Grüße 🚀 你好 Καλημέρα';
       expect(sanitizeForLog(s), s);
     });
 

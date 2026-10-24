@@ -196,9 +196,9 @@ bundles it:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.2.0
-  flutter_edge_ai_litertlm: ^1.12.0
-  flutter_edge_ai_agent: ^0.2.8
+  flutter_edge_ai: ^2.4.0
+  flutter_edge_ai_litertlm: ^1.14.0
+  flutter_edge_ai_agent: ^0.4.0
 
 flutter:
   assets:
@@ -332,6 +332,8 @@ void _apply(_Turn reply, AgentEvent event) {
       if (text.trim().isEmpty) {
         reply.steps.add('∅ the model ended the turn without an answer');
       }
+    case EmptyAnswerRetryEvent():
+      reply.steps.add('↻ asked again');
     case MaxIterationsEvent(:final iterations):
       reply.steps.add('⏹ stopped after $iterations steps');
     case AgentErrorEvent(:final message):
@@ -342,7 +344,8 @@ void _apply(_Turn reply, AgentEvent event) {
 
 `AgentEvent` is sealed, so the switch is exhaustive: a new kind of event in a
 later version of the package is a compile error here, not a step that goes
-missing from the screen.
+missing from the screen. `EmptyAnswerRetryEvent` is one, from 0.3.0: the model
+loaded a skill and then said nothing, and the package asks it once more.
 
 Three rules shape it:
 
@@ -406,12 +409,13 @@ how to run on each platform:
 | `create_calendar_event` | opens the calendar's event editor, filled in |
 | `send_email` | opens the mail composer with recipient, subject and text |
 | `send_text` | opens the SMS composer |
-| `schedule_notification` | schedules a local notification |
+| `schedule_notification` | schedules a local notification, once the app turns it on |
 | `read_calendar_events` | answers only if you inject a handler for it |
 
 This app sets up the three its skills use. `send_text` needs the `sms` scheme
-declared the way `mailto` is below, and `schedule_notification` needs
-`flutter_local_notifications`' own platform setup.
+declared the way `mailto` is below, and `schedule_notification` stays off
+until the app initializes `flutter_local_notifications` itself and passes
+`NativeIntentExecutor(notifications:)` (see the [agent docs](/docs/agent#setup)).
 
 An intent that changes something opens an OS screen and stops there. The
 model fills in the event or the email; the user presses Save or Send. An
@@ -455,11 +459,15 @@ throws and says which.
 
 On iOS 15 and 16 the calendar editor asks for calendar access first, and iOS
 stops an app that asks without a usage description. (From iOS 17 the editor
-opens without asking.) Add to `ios/Runner/Info.plist`:
+opens without asking.) Its location field suggests places from the contacts,
+and `add_2_calendar` warns that the app may crash there without a contacts
+usage description. Add both to `ios/Runner/Info.plist`:
 
 ```xml
 <key>NSCalendarsUsageDescription</key>
 <string>The agent opens the calendar's event editor for events you ask it to create.</string>
+<key>NSContactsUsageDescription</key>
+<string>The calendar's event editor suggests locations from your contacts.</string>
 ```
 
 The mail composer opens through a `mailto:` link, and the agent first asks
@@ -552,12 +560,12 @@ with exactly one of:
 * `error` — what went wrong, which the model reads too
 
 The package tells a JS skill from a text-only one by its instructions: they
-have to say `run_js`. A `SKILL.md` that names the tool `runSkill` instead —
-the name the steps under a reply show — loads as text-only, and its script
-never runs.
+have to name the tool, in any case — `run_js`, `runJs`, or `runSkill`, the
+name the steps under a reply show. A `SKILL.md` that names none of them loads
+as text-only, and its script never runs.
 
-The name is the one Google's AI Edge Gallery uses, so its skills run here
-unmodified.
+The name `run_js` is the one Google's AI Edge Gallery uses, so its skills run
+here unmodified.
 
 ### The skill
 
@@ -793,12 +801,12 @@ bubble — when the device is online, since its library comes from a CDN.
 
 A JS skill can also need an API key — a weather service, say. Its `SKILL.md`
 declares `require-secret: true` under `metadata`. The app stores the key with
-`SecretStore.set(skillName, key)` (`SecretEditorDialog` asks the user for it)
-and passes the store to `AgentSession.fromModel(secretStore: ...)`; the agent
-hands the key to your function as `secret`. It never goes into the prompt. In
-0.2.8 it does go into the page the loopback server sends to the webview, and
-that server does not check who asks while the skill runs: treat such a key as
-one another app on the same device could read.
+`set(skillName, key)` on a `SecretStore` (`SecretEditorDialog` asks the user
+for it) and passes that store to `AgentSession.fromModel(secretStore: ...)`;
+the agent hands the key to your function as `secret`. It never goes into the
+prompt. Through 0.4.0 it does go into the page the loopback server sends to
+the webview, and that server does not check who asks while the skill runs:
+treat such a key as one another app on the same device could read.
 
 ## Step 5: Skills on a server, with MCP
 Duration: 5

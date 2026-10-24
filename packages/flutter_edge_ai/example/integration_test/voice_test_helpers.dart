@@ -10,8 +10,8 @@ import 'package:path_provider/path_provider.dart';
 /// Resolve a device-local staged model file (no network, no token) — the same
 /// convention [voice_loop_test.dart]'s `_stagedLlmPath` uses, so these tests run
 /// on every platform, not just Android. Desktop/iOS read it from the app
-/// documents dir; Android (Firebase Test Lab) reads it from
-/// `/data/local/tmp/flutter_gemma_test/` (pushed via `--other-files`). Returns
+/// documents dir; Android reads it from `/data/local/tmp/flutter_gemma_test/`
+/// (adb push, or the ddp-device-test skill on a DDP phone). Returns
 /// null when no staged file is present.
 Future<String?> stagedModelPath(String filename) async {
   if (Platform.isAndroid) {

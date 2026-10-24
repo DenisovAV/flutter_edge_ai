@@ -56,16 +56,20 @@ a resolution already demonstrably works somewhere (Dart holds a `DynamicLibrary`
 that resolved dozens of symbols), decide there and pass the verdict down, rather
 than re-inferring from ambient scope.
 
-Note that `cpp-coder.md` still recommends the bare `dlsym(RTLD_DEFAULT, …)`
-probe as the pattern to follow. It is the pattern that broke; if you are asked
-about runtime ABI selection, say so.
+The fix, in every archive since `native-v0.18.0-f` and required by the Dart
+client since litertlm 1.15.0 (#453, #668): `stream_proxy_create2` takes the three
+accessors from Dart, which resolves them on the library it drives, so the shim
+keeps no process-global state at all. The bare `dlsym(RTLD_DEFAULT, …)` probe in
+`stream_proxy_create` is the pattern that broke; if you are asked about runtime
+ABI selection, say so.
 
 **Process-global state written from two languages.** The shim's probe results
 and library handles are file-scope statics, set from C and from Dart-invoked
 entry points, read from whichever thread LiteRT-LM calls back on. A "done" flag
 published before the values it guards is a real race, not a theoretical one. Any
-such state needs a once-guard (`pthread_once` / `InitOnceExecuteOnce`) or
-release/acquire ordering — decide which, and say why plain statics are not enough.
+such state needs a lock, a once-guard (`pthread_once` / `InitOnceExecuteOnce`) or
+release/acquire ordering — decide which, and say why plain statics are not
+enough. Better still is no such state: have the caller pass what it resolved.
 
 **Ownership across the FFI edge.** The stream proxy `strdup`s chunk text so it
 survives until Dart's `NativeCallable.listener` runs, and frees its context only

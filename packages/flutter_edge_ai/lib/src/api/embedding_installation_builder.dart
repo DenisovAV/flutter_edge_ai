@@ -6,7 +6,7 @@ import 'package:flutter_edge_ai/src/registry/embedding_registry.dart';
 import 'package:flutter_edge_ai/src/utils/file_name_utils.dart';
 import 'package:flutter_edge_ai/src/model_management/install_rule.dart';
 import 'package:flutter_edge_ai/src/utils/file_names.dart'
-    show isLiteRtLmFilename;
+    show isSelfContainedEmbeddingFilename;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 
@@ -17,7 +17,7 @@ bool _noBackendNoticed = false;
 /// Fluent builder for embedding model installation
 ///
 /// Installs a model plus its tokenizer (`.tflite`, `.onnx`, …), or a single
-/// `.litertlm` bundle, which carries its own tokenizer. Automatically sets
+/// `.litertlm` or `.gguf` container, which carries its own tokenizer. Automatically sets
 /// the installed model as the active embedding model.
 ///
 /// Usage:
@@ -190,8 +190,8 @@ class EmbeddingInstallationBuilder {
   /// Throws, before anything is downloaded:
   /// - [DownloadCancelledException] if the cancel token is already cancelled
   /// - [StateError] if no model source is set, or no tokenizer source for a
-  ///   model that needs one (anything but a `.litertlm` bundle)
-  /// - [ArgumentError] if a tokenizer is set for a `.litertlm` bundle, which
+  ///   model that needs one (anything but a `.litertlm` or `.gguf` container)
+  /// - [ArgumentError] if a tokenizer is set for a self-contained container, which
   ///   carries its own
   /// - [UnsupportedError] if embedding backends are registered and none of
   ///   them can run the model on this platform — so an embedder that cannot
@@ -225,13 +225,14 @@ class EmbeddingInstallationBuilder {
     final modelFile = _modelFilename == null
         ? EmbeddingModelFile.fromSource(modelSource)
         : EmbeddingModelFile(source: modelSource, filename: _modelFilename!);
-    if (!isLiteRtLmFilename(modelFile.filename) && _tokenizerSource == null) {
+    if (!isSelfContainedEmbeddingFilename(modelFile.filename) &&
+        _tokenizerSource == null) {
       throw StateError(
         'Both model and tokenizer required. Use modelFromNetwork() and tokenizerFromNetwork().',
       );
     }
 
-    // Throws ArgumentError for a .litertlm bundle given a tokenizer.
+    // Throws ArgumentError for a self-contained container given a tokenizer.
     final spec = EmbeddingModelSpec(
       name: FileNameUtils.getBaseName(modelFile.filename),
       modelSource: modelSource,

@@ -69,7 +69,8 @@ silently do the other thing.
         #9 NPU result written into its table (device, date, pass count), #10
         matrix (LLM + embeddings + speech, CPU AND GPU) pasted into the PR body,
         one row per device with codename + GPU.
-        Android GPU = at least one Adreno AND one Mali (FTL akita / a34x).
+        Android GPU = at least one Adreno AND one Mali, on DDP (skill
+        ddp-device-test): e1q-34 Adreno + akita-35 or a34x-36 Mali.
 [ ] 1b-ter an upstream pin moved → read upstream's open issues filed since that
         tag (`gh issue list --repo google-ai-edge/LiteRT-LM --search "created:>=<tag-date>"`)
         and list in the PR body the ones that touch us by number, or
@@ -86,6 +87,14 @@ silently do the other thing.
         apps, README, desktop.md and the inference skill's
         references/platform-setup.md; the script prints the count, do not hardcode
         one here) — RUN it, do not eyeball
+[ ] 1f-ter  litertlm or speech in the release → macOS SwiftPM gate (#689), else N/A:
+        a fresh `flutter create` app on litertlm's Flutter floor (3.44.0) and on
+        current stable, RUN, not just built. SwiftPM default → the error contains
+        `LiteRT-LM did not load on macOS` and names the companions; SwiftPM off +
+        the desktop.md post_install block → STT, embeddings, LLM on GPU and one
+        tool call work. Paste the result rows into the PR body. If
+        flutter#193978 / #193975 have dated the removal of the SwiftPM opt-out,
+        reopen the #689 bridge decision first
 [ ] 1g  each changed satellite's flutter_edge_ai: floor >= the core version it now needs
 [ ] 2   versions bumped: pubspec + podspec (if any) + AGENTS.md Current-Version line
 [ ] 7   CHANGELOG: one short line per package, every published package
@@ -801,7 +810,7 @@ Update each `^X.Y.Z` for EVERY package the site pins — `flutter_edge_ai`, `flu
 
 ### 12d. Update the shipped agent skills — they are read by a MACHINE
 
-`packages/flutter_edge_ai/skills/` holds eight `SKILL.md` files that ship inside
+`packages/flutter_edge_ai/skills/` holds nine `SKILL.md` files that ship inside
 the core archive and are installed into users' coding agents by
 `dart run skills@ get --all`. They are not a nice-to-have copy of the docs: an agent
 follows them literally when writing code against this package.
@@ -823,6 +832,7 @@ Map the change to the skill that covers it:
 | STT, TTS, `VoiceSession` | `flutter-edge-ai-speech` |
 | embeddings, vector stores | `flutter-edge-ai-rag` |
 | `MemorySnapshot`, memory diagnostics | `flutter-edge-ai-diagnostics` |
+| `Decider`, `createDecider`/`loadDecider`, `DeciderOption`, `EmbeddingDeciderCalibration`, `InferenceDeciderCalibration`, Jev Choice JSON | `flutter-edge-ai-decisions` |
 
 **Do not go looking by hand.** Ask the diff which skills it puts in doubt:
 

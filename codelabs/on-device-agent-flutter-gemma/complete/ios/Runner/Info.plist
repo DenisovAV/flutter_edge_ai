@@ -8,6 +8,8 @@
 	</array>
 	<key>NSCalendarsUsageDescription</key>
 	<string>The agent opens the calendar's event editor for events you ask it to create.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>The calendar's event editor suggests locations from your contacts.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

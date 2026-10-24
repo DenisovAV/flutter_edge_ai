@@ -190,8 +190,9 @@ flutter pub add image_picker
 ```
 
 `image_picker` declares all six platforms: a photo gallery on Android and iOS,
-and a file dialog — through `file_selector` — on macOS, Windows, Linux and the
-web. That single call is why this step needs no platform branching in the UI.
+a file dialog — through `file_selector` — on macOS, Windows and Linux, and the
+browser's own file picker on the web. That single call is why this step needs
+no platform branching in the UI.
 
 ### One platform change
 
@@ -209,9 +210,12 @@ you ship, and an entitlement added to only the first works perfectly until the
 day it matters.
 
 Android needs nothing — the system photo picker hands back a URI without a
-permission. iOS needs nothing either: since iOS 14 `image_picker` uses
-`PHPicker`, which runs out of process and requires no
-`NSPhotoLibraryUsageDescription`. Windows, Linux and the web need nothing.
+permission. iOS needs nothing either to run it: since iOS 14 `image_picker`
+uses `PHPicker`, which runs out of process and never asks for photo-library
+permission. Before an App Store submission, though, add an
+`NSPhotoLibraryUsageDescription` string to `ios/Runner/Info.plist`:
+`image_picker`'s README says App Store policy requires the entry even when the
+permission is never requested. Windows, Linux and the web need nothing.
 
 ### The model
 
@@ -226,8 +230,8 @@ that can see:
   /// and then it is looking at your photograph.
   ///
   /// It cannot hear, and that is not a gap in this step: it is a
-  /// vision-language model, and the plugin lists audio input for Gemma 4 and
-  /// Gemma 3n only (`flutter_edge_ai/README.md`). A session flag cannot switch
+  /// vision-language model, and the plugin's docs name Gemma 4, Gemma 3n and
+  /// VibeVoice-ASR for audio input. A session flag cannot switch
   /// on an encoder the checkpoint does not carry. It is why Step 3
   /// changes models, and it is the model half of the question `complete` asks
   /// at the end — a half that says no here while the device, happily holding
@@ -305,9 +309,9 @@ on iOS — before the legacy `flutter_gemma` 1.8.3 release the SDK still wrapped
 by hand there, a leftover from when iOS ran the format through MediaPipe, so
 the markers reached the model twice. Fixed now, everywhere.)
 
-What `modelType` still decides for a `.litertlm` reply: which reasoning blocks
-the SDK strips out of it — `<think>...</think>` for `deepSeek`, `qwen` and
-`qwen3`, the `<|channel>thought` block for `gemmaIt` and `gemma4` — and which
+What `modelType` still decides for a `.litertlm` reply: whether the SDK also
+strips `<think>...</think>` out of it — for `deepSeek`, `qwen`, `qwen3` and
+`qwen35`; the `<|channel>thought` block goes for every family — and which
 format a tool call in the response is parsed with. SmolVLM2 reasons in neither
 form and calls no tools, which is the real reason `general` is right here, not
 a guard against a prompt that was never going to be corrupted.
@@ -401,7 +405,7 @@ described:
 
 Worth knowing that images are not free inside that window: `InferenceChat`
 charges a message carrying an image a flat **257 tokens** against `maxTokens`
-in its own bookkeeping (`lib/core/chat.dart`), and trims the oldest history
+in its own bookkeeping (`lib/src/chat.dart`), and trims the oldest history
 when the total gets close. That is the SDK's accounting, not a measurement of
 the model.
 
@@ -448,7 +452,9 @@ failure; an app that shows an error there is an app people learn to distrust.
 
 ### Send it
 
-One line changes in `_send`: which factory builds the message.
+The line that matters in `_send` is which factory builds the message; the
+rest of the change there lets a picture alone count as a turn and clears the
+picture once it is sent.
 
 ```dart
       await chat.addQueryChunk(
@@ -981,7 +987,10 @@ this device, and what its memory and hardware will stand — and `Capability`
 says out loud that it does not model it.
 
 **Android, a real iPhone, and the three desktops** are the unrestricted case:
-both modalities, GPU accelerated, no caveats.
+both modalities, no caveats. The text decoder runs on the GPU there, while
+Gemma 4's vision and audio encoders run on the CPU, where the model file puts
+them (from `flutter_edge_ai_litertlm` 1.14.0, `activeVisionBackend` and
+`activeAudioBackend` report it).
 
 ### Try it end to end
 

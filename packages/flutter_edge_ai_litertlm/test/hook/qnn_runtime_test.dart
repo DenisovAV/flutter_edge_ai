@@ -278,6 +278,9 @@ void main() {
         '0.18.0-c': '2.50.0',
         '0.18.0-d': '2.50.0',
         '0.18.0-e': '2.50.0',
+        '0.18.0-f': '2.50.0',
+        // Android archive byte-identical to 0.18.0-f.
+        '0.18.0-g': '2.50.0',
       };
       final hook = File('hook/build.dart').readAsStringSync();
       final bundle = RegExp(
@@ -309,7 +312,7 @@ void main() {
       final cacheRoot = Directory('${root.path}/cache');
       final entry = promoteQnnCache(cacheRoot, aar);
       expect(entry.path, endsWith(qnnCacheEntryName()));
-      expect(isCompleteQnnCache(entry), isTrue);
+      expect(isCompleteQnnCache(entry, fileNames: qnnLibFileNames), isTrue);
       for (final f in qnnLibFileNames) {
         expect(File('${entry.path}/$f').existsSync(), isTrue, reason: f);
       }
@@ -349,9 +352,9 @@ void main() {
       final stale = Directory('${cacheRoot.path}/${qnnCacheEntryName()}')
         ..createSync(recursive: true);
       File('${stale.path}/libQnnHtp.so').writeAsBytesSync([1, 2, 3]);
-      expect(isCompleteQnnCache(stale), isFalse);
+      expect(isCompleteQnnCache(stale, fileNames: qnnLibFileNames), isFalse);
       final entry = promoteQnnCache(cacheRoot, aar);
-      expect(isCompleteQnnCache(entry), isTrue);
+      expect(isCompleteQnnCache(entry, fileNames: qnnLibFileNames), isTrue);
     });
 
     test('a same-length change invalidates the entry', () {
@@ -361,7 +364,7 @@ void main() {
       bytes[bytes.length - 1] ^= 0xff;
       f.writeAsBytesSync(bytes);
       expect(f.lengthSync(), bytes.length);
-      expect(isCompleteQnnCache(entry), isFalse);
+      expect(isCompleteQnnCache(entry, fileNames: qnnLibFileNames), isFalse);
     });
 
     test('an entry from the previous cache format is not reused', () {
@@ -373,13 +376,13 @@ void main() {
             n: File('${entry.path}/$n').lengthSync(),
         }),
       );
-      expect(isCompleteQnnCache(entry), isFalse);
+      expect(isCompleteQnnCache(entry, fileNames: qnnLibFileNames), isFalse);
     });
 
     test('a truncated file invalidates the entry', () {
       final entry = promoteQnnCache(Directory('${root.path}/cache'), aar);
       File('${entry.path}/libQnnSystem.so').writeAsBytesSync([0]);
-      expect(isCompleteQnnCache(entry), isFalse);
+      expect(isCompleteQnnCache(entry, fileNames: qnnLibFileNames), isFalse);
     });
 
     test('temp dirs of a killed build go once old; young ones stay', () {

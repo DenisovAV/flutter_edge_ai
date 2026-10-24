@@ -79,6 +79,18 @@ class CodelabsPage extends StatelessComponent {
       href: '/codelabs/package-skills-flutter-gemma',
     ),
     _Codelab(
+      title: 'Built-in AI in Flutter: Your First Prompt with the OS Model',
+      blurb:
+          'Check whether the device supplies a language model, prepare it, '
+          'send one prompt and stream the answer through the same Dart API on '
+          'Android, Apple platforms and the web.',
+      duration: '48 min',
+      level: 'Beginner',
+      tags: ['built-in AI', 'Gemini Nano', 'Apple Intelligence'],
+      accent: Brand.green,
+      href: '/codelabs/builtin-ai-flutter',
+    ),
+    _Codelab(
       title: 'Inference Engines in Flutter: From a Downloaded Model to Built-in AI',
       blurb:
           'LiteRT-LM runs a .litertlm file you ship or download. Built-in AI '
@@ -134,7 +146,8 @@ class CodelabsPage extends StatelessComponent {
       title: 'On-Device RAG in Flutter: Embeddings and Vector Search',
       blurb:
           'Embed your own documents with EmbeddingGemma, store the vectors in '
-          'sqlite-vec, and ground the answers — no network at any step.',
+          'sqlite-vec, and ground the answers — no network once the models '
+          'are downloaded.',
       duration: '60 min',
       level: 'Advanced',
       tags: ['embeddings', 'sqlite-vec', 'RAG'],
@@ -182,8 +195,7 @@ class CodelabsPage extends StatelessComponent {
             Component.text(
               'Hands-on, step-by-step guides for running language models '
               'inside a Flutter app, ordered from first run to full '
-              'pipelines. Start with the quickstart; the ones marked '
-              '"Coming soon" are still being written.',
+              'pipelines. Start with the quickstart.',
             ),
           ]),
         ]),

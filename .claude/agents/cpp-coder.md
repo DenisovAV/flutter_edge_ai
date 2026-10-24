@@ -18,7 +18,7 @@ find packages -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' \
 
 | File | What it is |
 |---|---|
-| `packages/flutter_edge_ai_litertlm/native/litert_lm/stream_proxy.c` | The one piece of C we author and ship. Adapts LiteRT-LM's streaming callback to the shape our Dart `NativeCallable` expects, choosing the shape at **runtime**. |
+| `packages/flutter_edge_ai_litertlm/native/litert_lm/stream_proxy.c` | The one piece of C we author and ship. Adapts LiteRT-LM's streaming callback to the shape our Dart `NativeCallable` expects. `stream_proxy_create` (what Dart used up to litertlm 1.14.0; still in the source until the next native tag) picks the shape by probing at runtime; `stream_proxy_create2` (every archive since `native-v0.18.0-f`, required by the Dart client) takes the accessors from Dart and probes nothing. |
 | `packages/flutter_edge_ai_litertlm/native/litert_lm/include/engine.h` | The LiteRT-LM C API header our `litert_lm_bindings.dart` is generated from. |
 | `packages/flutter_edge_ai_sqlite/native/sqlite_vec/src/sqlite-vec.{c,h}` | Vendored sqlite-vec amalgamation, built into the `vec0` loadable extension. |
 | `packages/flutter_edge_ai_sqlite/tool/sqlite_vec_patches/{getentropy.c,os_web.c}` | Patches so the amalgamation builds for wasm. |
@@ -45,7 +45,9 @@ Windows, malformed UTF-8 on macOS, zero chunks then SIGABRT on Android, at the
 first token. So probing beats `#ifdef` on a version you cannot see.
 
 **Probe through a HANDLE, not `dlsym(RTLD_DEFAULT, …)`.** This is #447, and
-`stream_proxy.c` still carries the mistake: an ambient lookup answers "is this
+`stream_proxy_create` still carries the mistake (the fix, #453/#668, is
+`stream_proxy_create2`: Dart resolves the accessors on the library it drives and
+passes them in, and nothing is recorded in C): an ambient lookup answers "is this
 symbol reachable from the default search scope", which is NOT the question. On
 Android the answer is decided by whoever `dlopen`s the library FIRST — bionic
 files a soinfo's `RTLD_GLOBAL` flag at creation and never promotes it, so one
@@ -59,7 +61,8 @@ library you are about to call — `dlopen(path, RTLD_LAZY | RTLD_NOLOAD)` then
 `dlsym(handle, …)`, or better, have the caller pass the pointers it already
 resolved. `dlsym_handle_lookup` ignores `RTLD_GLOBAL` entirely, so the answer is
 a fact about the binary rather than about load order. Windows already does this
-(`GetModuleHandleA` + `GetProcAddress`); POSIX should match it.
+(`GetModuleHandleA` + `GetProcAddress`). Do not record a handle in the shim
+either: the first one wins, and a wrong first one is kept silently.
 
 And when the shape genuinely cannot be determined, say so — return NULL and let
 the caller throw. "Could not determine" must not be spelled the same way as

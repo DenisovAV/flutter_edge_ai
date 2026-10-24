@@ -39,6 +39,16 @@ const _mediaPermits = 2;
 /// almost everything.
 const _embedAllWindow = 2;
 
+/// One installed file of the spec a model runs: its install name and, where
+/// core can read it, its size in bytes (null on web, where the bytes live in
+/// the browser's storage and their size is not read).
+typedef InstalledEmbedderFile = ({String name, int? bytes});
+
+/// How a model core built is replaced once closed: the shell entry point it
+/// was built through (`createEmbeddingModel`), asked again for what it was
+/// built with. The embedder cache's own rule decides what that returns.
+typedef EmbedderReplacement = Future<EmbeddingModel> Function();
+
 /// The embedding model core hands out. See [EmbeddingModel] for the contract.
 final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
   CommonEmbeddingModel._(
@@ -46,7 +56,11 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     required this.activeBackend,
     required this._engine,
     required this._label,
-  }) {
+    List<InstalledEmbedderFile>? installedFiles,
+    this.replacement,
+  }) : installedFiles = installedFiles == null
+           ? null
+           : List.unmodifiable(installedFiles) {
     // A host that dies on its own (a crashed worker) turns this model closed
     // and tells its listeners, so the embedder cache evicts it and the next
     // caller gets a fresh one — instead of this one, whose every call fails.
@@ -60,11 +74,24 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     PreferredBackend? activeBackend,
     String engine = 'Test',
     String label = 'test-model',
-  }) : this._(host, activeBackend: activeBackend, engine: engine, label: label);
+    List<InstalledEmbedderFile>? installedFiles,
+    EmbedderReplacement? replacement,
+  }) : this._(
+         host,
+         activeBackend: activeBackend,
+         engine: engine,
+         label: label,
+         installedFiles: installedFiles,
+         replacement: replacement,
+       );
 
   /// Starts [descriptor]'s pass on this platform's host (§4.2 step 4) and
   /// returns the model once it is loaded and checked against
   /// [declaredMedia]. [label] — the model file — names it in messages.
+  /// [installedFiles] are the installed files of the spec it runs — names,
+  /// and sizes where known — which name its embedding space for deciders.
+  /// [replacement] gets the model core serves in its place once it is
+  /// closed; the loader sets it.
   ///
   /// Fails with `EmbeddingLoadException`. A pass whose load failed is closed
   /// behind the error; [onFailedLoadCleanup] gets a future that ends when it
@@ -73,6 +100,9 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
     EmbeddingPassDescriptor<Object> descriptor, {
     required Set<EmbeddingModality> declaredMedia,
     required String label,
+    List<InstalledEmbedderFile>? installedFiles,
+    EmbedderReplacement? replacement,
+    bool requireReportedBackend = false,
     void Function(Future<void> cleanup)? onFailedLoadCleanup,
   }) async {
     final running = await host.startEmbeddingHost(
@@ -81,11 +111,33 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
       label: label,
       onFailedLoadCleanup: onFailedLoadCleanup,
     );
+    if (requireReportedBackend && running.info.activeBackend == null) {
+      // A failed placement check follows the same asynchronous cleanup gate as
+      // a failed load: fail this caller now, but never overlap the next model.
+      final cleanup = Future<void>.sync(running.close).catchError((
+        Object e,
+        StackTrace st,
+      ) {
+        warnEmbeddingHost(
+          '${descriptor.engineTag} failed to close after missing '
+          'loaded accelerator information for $label: $e\n$st',
+        );
+      });
+      onFailedLoadCleanup?.call(cleanup);
+      unawaited(cleanup);
+      throw EmbeddingLoadException(
+        '${descriptor.engineTag} advertises GPU support but did not report '
+        'EmbeddingPassInfo.activeBackend for $label.',
+        engine: descriptor.engineTag,
+      );
+    }
     return CommonEmbeddingModel._(
       running,
-      activeBackend: descriptor.activeBackend,
+      activeBackend: running.info.activeBackend ?? descriptor.activeBackend,
       engine: descriptor.engineTag,
       label: label,
+      installedFiles: installedFiles,
+      replacement: replacement,
     );
   }
 
@@ -95,6 +147,18 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
 
   @override
   final PreferredBackend? activeBackend;
+
+  /// The installed files of the spec this model runs — model first, then its
+  /// tokenizer — with their sizes in bytes where core read them at load, or
+  /// null for a model built without one (tests). The embedding-space identity
+  /// of the deciders created from it.
+  final List<InstalledEmbedderFile>? installedFiles;
+
+  /// Gets the embedder core serves in this one's place — through the shell
+  /// entry point that built this one, asked for the backend and media it was
+  /// built with — or null for a model built without a shell (tests). A
+  /// decider created from this model calls it once this model is closed.
+  final EmbedderReplacement? replacement;
 
   bool _isClosed = false;
   String? _deathReason;
@@ -115,6 +179,10 @@ final class CommonEmbeddingModel extends EmbeddingModel with CloseNotifier {
 
   @override
   int? get maxInputTokens => _host.info.maxInputTokens;
+
+  /// What the engine reported as [EmbeddingPassInfo.visionTokensPerImage]:
+  /// the decider keys image-fitted deciders by it.
+  int? get visionTokensPerImage => _host.info.visionTokensPerImage;
 
   @override
   bool get isClosed => _isClosed;

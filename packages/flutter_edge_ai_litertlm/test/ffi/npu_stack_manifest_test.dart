@@ -18,6 +18,8 @@ String _manifest(Map<String, Iterable<String>> idsByAbi) => jsonEncode({
 
 final _base = [nativeAssetId('LiteRtLm'), nativeAssetId('StreamProxy')];
 final _stack = [for (final n in qualcommNpuLibs) nativeAssetId(n)];
+final _googleStack = [for (final n in googleTensorNpuLibs) nativeAssetId(n)];
+final _mediatekStack = [for (final n in mediatekNpuLibs) nativeAssetId(n)];
 
 final _linuxStack = [for (final n in qualcommNpuLibsLinux) nativeAssetId(n)];
 
@@ -25,7 +27,8 @@ Future<NpuStackCheck> _check(
   String text, {
   String abi = 'android_arm64',
   String os = 'android',
-}) => checkQualcommNpuStack(
+}) => checkNpuStackInManifest(
+  NpuVendor.qualcomm,
   read: () async => text,
   abi: abi,
   operatingSystem: os,
@@ -66,6 +69,52 @@ void main() {
     expect(r.reason, isNot(contains('libQnnHtp.so,')));
   });
 
+  test('Google Tensor is opt-in: a build without it names its own flag, '
+      'not Qualcomm\'s', () async {
+    final bundled = await checkNpuStackInManifest(
+      NpuVendor.googleTensor,
+      read: () async => _manifest({
+        'android_arm64': [..._base, ..._googleStack],
+      }),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(bundled.bundled, isTrue);
+
+    final missing = await checkNpuStackInManifest(
+      NpuVendor.googleTensor,
+      read: () async => _manifest({'android_arm64': _base}),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(missing.bundled, isFalse);
+    expect(missing.reason, contains('google_tensor_npu: true'));
+    expect(missing.reason, isNot(contains('qualcomm_npu')));
+  });
+
+  test('MediaTek is opt-in: a build without it names its own flag, not '
+      'Qualcomm\'s', () async {
+    final bundled = await checkNpuStackInManifest(
+      NpuVendor.mediatek,
+      read: () async => _manifest({
+        'android_arm64': [..._base, ..._mediatekStack],
+      }),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(bundled.bundled, isTrue);
+
+    final missing = await checkNpuStackInManifest(
+      NpuVendor.mediatek,
+      read: () async => _manifest({'android_arm64': _base}),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(missing.bundled, isFalse);
+    expect(missing.reason, contains('mediatek_npu: true'));
+    expect(missing.reason, isNot(contains('qualcomm_npu')));
+  });
+
   test('the stack under another ABI does not count', () async {
     final r = await _check(
       _manifest({
@@ -78,10 +127,12 @@ void main() {
 
   test('an unreadable manifest is unknown, not "not enabled"', () async {
     // What rootBundle throws in a background isolate with no binding.
-    final r = await checkQualcommNpuStack(
+    final r = await checkNpuStackInManifest(
+      NpuVendor.qualcomm,
       read: () async =>
           throw StateError('Binding has not yet been initialized'),
       abi: 'android_arm64',
+      operatingSystem: 'android',
     );
     expect(r.bundled, isFalse);
     expect(r.known, isFalse, reason: 'the platform side decides instead');
@@ -135,14 +186,16 @@ void main() {
     });
   });
 
-  test('a host with no Qualcomm stack is a definite no', () async {
-    final r = await _check(
-      _manifest({'macos_arm64': _base}),
-      abi: 'macos_arm64',
-      os: 'macos',
+  test('asking about a host the vendor has no stack for is a programming '
+      'error: chooseNpuVendor never asks it', () async {
+    await expectLater(
+      _check(
+        _manifest({'macos_arm64': _base}),
+        abi: 'macos_arm64',
+        os: 'macos',
+      ),
+      throwsArgumentError,
     );
-    expect(r.bundled, isFalse);
-    expect(r.known, isTrue);
   });
 
   test('ids match what the hook registers', () {

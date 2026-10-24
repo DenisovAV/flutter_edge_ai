@@ -32,7 +32,8 @@ import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
     show LiteRtTtsBackend;
 
 const _modelUrl =
-    'https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/main/';
+    // Pinned: upstream moved these files under legacy/ on 2026-10-16.
+    'https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/';
 const _text = 'Hello from on device text to speech.';
 
 double _rms(Uint8List pcm) {
@@ -68,7 +69,9 @@ void main() {
           .ofType(TtsModelType.qwen3)
           .install();
 
-      final englishSynth = await FlutterEdgeAi.getActiveTts(language: 'english');
+      final englishSynth = await FlutterEdgeAi.getActiveTts(
+        language: 'english',
+      );
       Uint8List englishPcm;
       try {
         englishPcm = await englishSynth.synthesize(_text);

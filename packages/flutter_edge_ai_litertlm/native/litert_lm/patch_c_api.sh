@@ -5,6 +5,8 @@
 # 2. set_use_hw_masking_for_npu setter (Intel LunarLake/PantherLake NPU)
 # 3. GPU smooth-UI knobs — gpu_context_low_priority + kernel_batch_size (#364)
 # 4. gpu_registry.cc dlopen rewrite for App-Store-safe framework paths (Apple)
+# 16. litert_lm_conversation_rewind_cancelled_turn: a stopped turn is rewound
+#     instead of leaving the conversation poisoned
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -63,6 +65,11 @@ LDSEOF
   # The EmbeddingEngine C API leaves the DLL through LITERT_LM_C_API_EXPORT;
   # the two response getters section 14 adds are also named here, so a tree
   # that lost section 14 fails the Windows link instead of shipping without.
+  # The three stream-chunk accessors are named for the same reason: the Dart
+  # client resolves them with GetProcAddress on this DLL and hands them to
+  # stream_proxy_create2, which refuses to build a proxy without all three, so a
+  # tree that stopped exporting them should fail the link, not ship a client that
+  # throws on the first send. Section 16's rewind is named for the same reason.
   cat > "$DIR/c/windows_exports.def" << 'DEFEOF'
 LIBRARY "LiteRtLm"
 EXPORTS
@@ -87,6 +94,7 @@ EXPORTS
   litert_lm_conversation_create
   litert_lm_conversation_delete
   litert_lm_conversation_get_benchmark_info
+  litert_lm_conversation_rewind_cancelled_turn
   litert_lm_conversation_send_message
   litert_lm_conversation_send_message_stream
   litert_lm_embedding_response_get_input_length
@@ -133,6 +141,9 @@ EXPORTS
   litert_lm_session_generate_content_stream
   litert_lm_session_get_benchmark_info
   litert_lm_set_min_log_level
+  litert_lm_stream_chunk_get_error
+  litert_lm_stream_chunk_get_text
+  litert_lm_stream_chunk_is_final
 DEFEOF
 
   cat >> "$DIR/c/BUILD" << 'BUILDEOF'
@@ -371,10 +382,20 @@ else:
     # shell below). Bazel applies `patches` BEFORE `patch_cmds`, and fails the
     # fetch when a hunk does not apply — the loud failure a moved upstream
     # line has to produce. The macro it uses is defined by the awk above.
+    # patches/litert_openvino_2026_4_1.patch is upstream LiteRT 991d15588a
+    # verbatim: the OpenVINO SDK the Windows Intel dispatch builds against and
+    # ships with moves from 2026.3.1 to 2026.4.1. Intel's Gemma 4 12B bundle
+    # for Panther Lake carries blob metadata 2.7, which the 2026.3 NPU plugin
+    # refuses ("Imported blob metadata version: 2.7 but the current version
+    # is: 2.6"). Drop the patch once the LiteRT pin contains 991d15588a.
     content = content.replace(
         '    name = "litert",\n',
         '    name = "litert",\n'
-        '    patches = ["//:flutter_gemma_litert_gpu_registry.patch"],\n'
+        '    patches = [\n'
+        '        "//:flutter_gemma_litert_gpu_registry.patch",\n'
+        '        "//:flutter_gemma_litert_google_tensor_dispatch_oss.patch",\n'
+        '        "//:flutter_gemma_litert_openvino_2026_4_1.patch",\n'
+        '    ],\n'
         '    patch_args = ["-p1"],\n', 1)
     if 'flutter_gemma_litert_gpu_registry.patch' not in content:
         raise SystemExit("  ERROR: could not add the gpu_registry patch to the litert archive")
@@ -382,9 +403,15 @@ else:
         f.write(content)
     print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
     print("  OK: litert archive applies patches/litert_gpu_registry_apple.patch")
+    print("  OK: LiteRT Google Tensor dispatch drops its unused internal hooks dependency")
+    print("  OK: LiteRT pins OpenVINO 2026.4.1 (upstream 991d15588a)")
 PYEOF
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
     "$DIR/flutter_gemma_litert_gpu_registry.patch"
+  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
+    "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
+  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_openvino_2026_4_1.patch" \
+    "$DIR/flutter_gemma_litert_openvino_2026_4_1.patch"
 else
   if [ -f "$WORKSPACE_FILE" ]; then
     # A tree patched by an older patch_c_api.sh has the sed but not the diff:
@@ -396,8 +423,24 @@ else
         "(no gpu_registry diff); start from a fresh LiteRT-LM tree" >&2
       exit 1
     fi
+    if ! grep -q "flutter_gemma_litert_google_tensor_dispatch_oss.patch" \
+        "$WORKSPACE_FILE"; then
+      echo "  ERROR: $WORKSPACE_FILE has no Google Tensor OSS dispatch patch;" \
+        "start from a fresh LiteRT-LM tree" >&2
+      exit 1
+    fi
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
       "$DIR/flutter_gemma_litert_gpu_registry.patch"
+    if ! grep -q "flutter_gemma_litert_openvino_2026_4_1.patch" \
+        "$WORKSPACE_FILE"; then
+      echo "  ERROR: $WORKSPACE_FILE has no OpenVINO 2026.4.1 patch;" \
+        "start from a fresh LiteRT-LM tree" >&2
+      exit 1
+    fi
+    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
+      "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
+    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_openvino_2026_4_1.patch" \
+      "$DIR/flutter_gemma_litert_openvino_2026_4_1.patch"
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
     echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2
@@ -575,5 +618,103 @@ for field in input_length truncated_length; do
     exit 1
   }
 done
+
+# ── 15. Windows: no C runtime descriptor crosses into libLiteRt.dll ──
+# Since LiteRT-LM 9589b6b4 (first in v0.17.0) a bundle with a non-empty
+# TF_LITE_AUX (every AOT NPU bundle) is loaded file-backed:
+# CreateModelFromFileSection passes litert::Model::CreateFromFd a CRT
+# descriptor. On Windows that is an index into one CRT's table; LiteRtLm.dll
+# and the prebuilt libLiteRt.dll each link their own, so the runtime has no
+# such descriptor. v0.17.0 failed engine_create ("Failed to load model from
+# fd"); v0.18.0 ends the process in libLiteRt.dll with 0xC0000409. Reproduced
+# on upstream's own litert_lm_advanced_main (LiteRT-LM #4023). Windows takes
+# the buffer-backed path, as v0.16.0 did for every bundle. Android, Apple and
+# Linux are unchanged: there a descriptor belongs to the process.
+#
+# A real diff on top of section 13's (same file), plus an anchor: a second
+# caller of CreateFromFd would hand the runtime a descriptor again.
+NOFD_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/windows_no_fd_model_loading.patch"
+if git -C "$DIR" apply --check "$NOFD_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$NOFD_PATCH"
+  echo "  OK: Windows loads .litertlm sections buffer-backed, never by descriptor"
+elif git -C "$DIR" apply --reverse --check "$NOFD_PATCH" 2>/dev/null; then
+  echo "  SKIP: Windows buffer-backed section loading already applied"
+else
+  echo "  ERROR: $NOFD_PATCH does not apply to this LiteRT-LM revision —" >&2
+  echo "         model_resources_litert_lm.cc moved; re-create the patch against it." >&2
+  exit 1
+fi
+nofd_callers="$(grep -rlE 'CreateFromFd\(|LiteRtCreateModelFromFd\(' --include='*.cc' \
+  "$DIR/runtime" "$DIR/c" | grep -v '_test\.cc$' | sed "s|^$DIR/||" | sort | tr '\n' ' ')"
+[ "$nofd_callers" = "runtime/components/model_resources_litert_lm.cc " ] || {
+  echo "  ERROR: section 15: unexpected CreateFromFd callers: $nofd_callers" >&2
+  exit 1
+}
+echo "  OK: section 15 anchors hold"
+
+# ── 16. Rewind a cancelled conversation turn ──
+# Conversation::CancelProcess leaves the session poisoned: every later task
+# depends on the cancelled one and ends as cancelled too, so after "stop" the
+# conversation answers nothing (upstream documents it as unsupported, still so
+# on main). A session can undo that — RewindToCheckpoint restores the step and
+# the task dependencies — but the Conversation hides its session. The patch:
+# - saves a checkpoint right before each send's own prefill (after a thinking
+#   refill, whose own rewind would otherwise erase it);
+# - records in the C wrapper how each send ended (completed, cancelled,
+#   failed), numbered so a late callback of an older send cannot overwrite it;
+# - adds litert_lm_conversation_rewind_cancelled_turn (LITERT_LM_C_API_EXPORT,
+#   and section 1's Windows .def): cancel whatever still runs, wait until every
+#   task has ended (Conversation::WaitUntilDone, backported from upstream main),
+#   and only then decide — completed: nothing to do; cancelled: rewind to the
+#   checkpoint and prefill the stopped exchange without decoding; anything
+#   else: the caller deletes the conversation. Deciding before the wait read a
+#   cancel that had not landed yet as "not cancelled" (#682 review).
+# The NPU executor rolls back one token at most, so the rewind fails there;
+# the Dart client does not call it on the NPU and rebuilds instead.
+#
+# A real diff, applied like section 11, plus anchors on what it relies on: a
+# moved upstream line fails the build here, not a user's next turn.
+REWIND_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/conversation_rewind_cancelled_turn.patch"
+if git -C "$DIR" apply --check "$REWIND_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$REWIND_PATCH"
+  echo "  OK: a cancelled conversation turn can be rewound"
+elif git -C "$DIR" apply --reverse --check "$REWIND_PATCH" 2>/dev/null; then
+  echo "  SKIP: cancelled-turn rewind already applied"
+else
+  echo "  ERROR: $REWIND_PATCH does not apply to this LiteRT-LM revision —" >&2
+  echo "         runtime/conversation/conversation.{h,cc} or" >&2
+  echo "         c/conversation{.h,.cc,_internal.h} moved (re-create the patch)," >&2
+  echo "         or the tree carries an older version of it (start from a clean" >&2
+  echo "         checkout)." >&2
+  git -C "$DIR" apply --check "$REWIND_PATCH" >&2 || true
+  exit 1
+fi
+rewind_fail() {
+  echo "  ERROR: section 16: $1" >&2
+  exit 1
+}
+grep -qF 'absl::Status RewindCancelledTurn(' \
+  "$DIR/runtime/conversation/conversation.h" ||
+  rewind_fail "Conversation::RewindCancelledTurn is not in the tree after applying"
+# The rewind un-poisons the session only because the checkpoint carries the
+# task dependencies back; without that every later task still ends cancelled.
+grep -qF 'last_task_ids_ = it->second.last_task_ids;' \
+  "$DIR/runtime/core/session_advanced.cc" ||
+  rewind_fail "SessionAdvanced::RewindToCheckpoint no longer restores last_task_ids_"
+# The wait must not open before the callbacks have run: Conversation's
+# WaitUntilDone is the session's, which waits for its active-task list to
+# empty, and a task leaves it at its end state, which is set after its
+# callback.
+grep -qF 'return execution_manager_lock->WaitUntilSessionDone(' \
+  "$DIR/runtime/core/session_advanced.h" ||
+  rewind_fail "SessionAdvanced::WaitUntilDone no longer waits for the session's tasks"
+grep -qF 'session_lookup_.at(session_id)->active_tasks.empty();' \
+  "$DIR/runtime/framework/resource_management/threaded_execution_manager.cc" ||
+  rewind_fail "WaitUntilSessionDone no longer waits for the session's active tasks"
+# The CPU/GPU executor moves its step back by any number of tokens (the NPU
+# one does not, and is never asked to).
+grep -qF 'absl::Status LlmLiteRtCompiledModelExecutorBase::SetCurrentStep(int new_step) {' \
+  "$DIR/runtime/executor/llm_litert_compiled_model_executor.cc" ||
+  rewind_fail "the compiled-model executor's SetCurrentStep moved"
 
 echo "Patch complete."

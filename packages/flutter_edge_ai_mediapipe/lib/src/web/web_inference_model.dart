@@ -124,9 +124,9 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     }
 
     // Web images work, but through the model's supportImage, which sets
-    // maxNumImages on the LlmInference below; enableVisionModality is not
-    // read. An image sent to a model created without supportImage throws
-    // ArgumentError in addQueryChunk.
+    // maxNumImages on the LlmInference below; enableVisionModality does not
+    // turn them on. An image sent to a model created without supportImage
+    // throws ArgumentError in addQueryChunk.
     if (enableVisionModality == true && !supportImage) {
       if (kDebugMode) {
         edgeAiLog(

@@ -10,6 +10,8 @@
 @TestOn('browser')
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
@@ -55,16 +57,25 @@ void main() {
 
   test('supportImage and maxNumImages reach the engine, and core logs nothing '
       'about images', () async {
+    // Both channels: edgeAiLog goes through debugPrint, and a warning meant
+    // for release builds goes through print.
     final logged = <String>[];
     final original = debugPrint;
     debugPrint = (String? message, {int? wrapWidth}) {
       if (message != null) logged.add(message);
     };
     try {
-      await FlutterEdgeAi.getActiveModel(
-        maxTokens: 4096,
-        supportImage: true,
-        maxNumImages: 4,
+      await runZoned(
+        () => FlutterEdgeAi.getActiveModel(
+          maxTokens: 4096,
+          supportImage: true,
+          maxNumImages: 4,
+          // Logged on web: proves the capture sees the shell's own lines.
+          activationDataType: ActivationDataType.float16,
+        ),
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => logged.add(line),
+        ),
       );
     } finally {
       debugPrint = original;
@@ -74,7 +85,17 @@ void main() {
     expect(engine.configs.single.supportImage, isTrue);
     expect(engine.configs.single.maxNumImages, 4);
     expect(
-      logged.where((line) => line.toLowerCase().contains('image')),
+      logged,
+      contains(contains('[FlutterEdgeAiWeb] activationDataType')),
+      reason: 'the capture must see what the shell logs',
+    );
+    expect(
+      logged.where(
+        (line) => RegExp(
+          'image|vision|multimodal',
+          caseSensitive: false,
+        ).hasMatch(line),
+      ),
       isEmpty,
     );
   });

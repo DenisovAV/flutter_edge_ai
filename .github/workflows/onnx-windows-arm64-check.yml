@@ -94,6 +94,10 @@ jobs:
 
       - name: flutter build windows (example)
         working-directory: packages/flutter_edge_ai/example
+        env:
+          # flutter_inappwebview_windows still includes <experimental/coroutine>,
+          # which the VS 2026 toolset rejects without this define.
+          CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
         run: |
           flutter build windows --release 2>&1 | Tee-Object build.log
           if ($LASTEXITCODE -ne 0) { throw 'flutter build windows failed' }

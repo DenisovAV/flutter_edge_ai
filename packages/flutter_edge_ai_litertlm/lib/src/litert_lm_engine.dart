@@ -129,7 +129,11 @@ class LiteRtLmEngine
         InferenceEngineProvider,
         HuggingFaceResolverSource,
         MultiModelEngine {
-  const LiteRtLmEngine({this.backendFallback = true, this.nativeLogLevel});
+  const LiteRtLmEngine({
+    this.backendFallback = true,
+    this.nativeLogLevel,
+    this.thinkingTokenBudget,
+  });
 
   /// Whether a model that fails to load on its backend is tried on the next
   /// one: npu → gpu → cpu, gpu → cpu (the default).
@@ -157,6 +161,21 @@ class LiteRtLmEngine
   /// failed create names the backend a model requires.
   final LiteRtLmLogLevel? nativeLogLevel;
 
+  /// The most tokens a turn may spend thinking, in every model this engine
+  /// builds, on the CPU, the GPU and the NPU alike; null (the default) sets no
+  /// budget. It applies only to a turn with thinking on (`enableThinking:
+  /// true`): when the thinking reaches the budget, LiteRT-LM closes the
+  /// thought channel and the model goes on to the answer or the tool call.
+  /// Without one, a model can think until `maxOutputTokens` and end the turn
+  /// with an empty answer (measured on Intel's Gemma 4 26B for its NPU).
+  ///
+  /// The thinking tokens still count towards `maxOutputTokens`, so the budget
+  /// should leave room below it for the answer. LiteRT-LM applies the budget
+  /// to a bundle that streams its thinking through the `thought` channel, as
+  /// the Gemma 4 bundles do; other bundles ignore it. Must be positive. Native
+  /// only: the web runtime has no such setting.
+  final int? thinkingTokenBudget;
+
   @override
   String get name => 'LiteRT-LM';
 
@@ -182,6 +201,14 @@ class LiteRtLmEngine
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
+    final budget = thinkingTokenBudget;
+    if (budget != null && budget <= 0) {
+      throw ArgumentError.value(
+        budget,
+        'thinkingTokenBudget',
+        'must be positive; null sets no budget',
+      );
+    }
     final host = liteRtLmEngineHost;
     final cacheDir = await host.cacheDir();
 
@@ -330,6 +357,7 @@ class LiteRtLmEngine
                   'an npu attempt without a chosen NPU vendor',
                 ),
               };
+        client.thinkingTokenBudget = thinkingTokenBudget;
         try {
           await host.initializeClient(
             client,

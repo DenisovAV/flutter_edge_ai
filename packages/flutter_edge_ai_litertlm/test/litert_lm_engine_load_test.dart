@@ -63,6 +63,9 @@ class _FakeHost extends LiteRtLmEngineHost {
   final npuDispatches = <NpuDispatch?>[];
   final nativeLogLevels = <LiteRtLmLogLevel?>[];
 
+  /// The client's thinking budget at each attempt.
+  final thinkingBudgets = <int?>[];
+
   /// Creates running at this moment, and the most there ever were.
   int creating = 0;
   int mostCreatingAtOnce = 0;
@@ -114,6 +117,7 @@ class _FakeHost extends LiteRtLmEngineHost {
     LiteRtLmLogLevel? nativeLogLevel,
   }) async {
     nativeLogLevels.add(nativeLogLevel);
+    thinkingBudgets.add(client.thinkingTokenBudget);
     mostCreatingAtOnce = max(mostCreatingAtOnce, ++creating);
     // A create takes time; another one started meanwhile would overlap it.
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -211,10 +215,12 @@ void main() {
     bool supportAudio = false,
     bool backendFallback = true,
     LiteRtLmLogLevel? nativeLogLevel,
+    int? thinkingTokenBudget,
   }) =>
       LiteRtLmEngine(
         backendFallback: backendFallback,
         nativeLogLevel: nativeLogLevel,
+        thinkingTokenBudget: thinkingTokenBudget,
       ).createModel(
         InferenceModelSpec(
           name: 'test',
@@ -274,6 +280,38 @@ void main() {
     expect(host.nativeLogLevels, [LiteRtLmLogLevel.silent, null]);
     await quiet.close();
     await plain.close();
+  });
+
+  test('thinkingTokenBudget reaches the client of every attempt, a fallback '
+      'included; unset stays null', () async {
+    final path = write('gpu.litertlm', _bundle(text: 'gpu,cpu'));
+    host = _FakeHost(
+      failures: const {'gpu': LiteRtLmEngineCreateException('no GPU')},
+    );
+    debugLiteRtLmEngineHost = host;
+    final budgeted = await load(path, thinkingTokenBudget: 2048);
+    final plain = await load(path);
+    expect(host.attempts.map((a) => a.backend), ['gpu', 'cpu', 'gpu', 'cpu']);
+    expect(host.thinkingBudgets, [2048, 2048, null, null]);
+    await budgeted.close();
+    await plain.close();
+  });
+
+  test('a thinkingTokenBudget below 1 is refused before any engine', () async {
+    final path = write('gpu.litertlm', _bundle(text: 'gpu,cpu'));
+    for (final budget in [0, -1]) {
+      await expectLater(
+        load(path, thinkingTokenBudget: budget),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.name,
+            'name',
+            'thinkingTokenBudget',
+          ),
+        ),
+      );
+    }
+    expect(host.attempts, isEmpty);
   });
 
   test(

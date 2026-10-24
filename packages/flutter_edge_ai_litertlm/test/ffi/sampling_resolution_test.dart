@@ -42,6 +42,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     required ResolvedSampling sampling,
     required bool samplingExplicit,
     String? extraContext,
+    bool thinking = false,
     int? maxOutputTokens,
   }) {
     this.sampling = sampling;

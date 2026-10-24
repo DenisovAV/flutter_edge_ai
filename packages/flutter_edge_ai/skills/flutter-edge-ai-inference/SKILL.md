@@ -222,6 +222,12 @@ core also parses Qwen3's emitted `<think>` tags there. MediaPipe Web has no
 thinking API, ONNX Web ignores `enableThinking`, and DeepSeek R1 thinks on
 Android and iOS only — it ships as a mobile `.task` build.
 
+A model that thinks until `maxOutputTokens` ends the turn with an empty answer.
+On `.litertlm` (native, `flutter_edge_ai_litertlm` 1.18.0+) cap the thinking
+with `LiteRtLmEngine(thinkingTokenBudget: 2048)` in `initialize`: every turn
+with `enableThinking: true` then stops thinking at the budget and answers. It
+is set per engine, not per chat, and the web engine ignores it.
+
 ```dart
 final chat = await model.createChat(enableThinking: true, modelType: ModelType.qwen3);
 final answer = StringBuffer();

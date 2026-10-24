@@ -37,6 +37,37 @@ export '../litert_lm_load_errors.dart'
 String thinkingExtraContext(bool enableThinking) =>
     jsonEncode(thinkingContext(enableThinking));
 
+/// Gives one send's [optionalArgs] a thinking token budget of [budget] when
+/// the send [thinking]s and a budget is set; otherwise touches nothing, so a
+/// send without a budget reaches LiteRT-LM exactly as before.
+///
+/// LiteRT-LM applies the budget at decode time to the conversation's first
+/// channel (`thought` on the Gemma 4 bundles); a bundle without that channel
+/// ignores it. The args keep a copy of the config, which is deleted here.
+@visibleForTesting
+void applyThinkingTokenBudget(
+  LiteRtLmBindings b,
+  Pointer<LiteRtLmConversationOptionalArgs> optionalArgs, {
+  required bool thinking,
+  required int? budget,
+}) {
+  if (!thinking || budget == null) return;
+  final config = b.litert_lm_thinking_config_create();
+  if (config == nullptr) {
+    throw StateError('litert_lm_thinking_config_create returned null');
+  }
+  try {
+    b.litert_lm_thinking_config_set_enable_thinking(config, true);
+    b.litert_lm_thinking_config_set_thinking_token_budget(config, budget);
+    b.litert_lm_conversation_optional_args_set_thinking_config(
+      optionalArgs,
+      config,
+    );
+  } finally {
+    b.litert_lm_thinking_config_delete(config);
+  }
+}
+
 /// Callback typedef with Uint8 for bool (C _Bool = 1 byte)
 typedef _StreamCallbackNative =
     Void Function(
@@ -267,13 +298,18 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   /// Null after a send that ended by itself, which needs no rewind.
   ({String messageJson, String? extraContext})? _lastSend;
 
-  Stream<String> _send(String messageJson, String? extraContext) {
+  Stream<String> _send(
+    String messageJson,
+    String? extraContext, {
+    required bool thinking,
+  }) {
     final record = (messageJson: messageJson, extraContext: extraContext);
     _lastSend = _client._hasTurnRewind ? record : null;
     return _client._sendMessageStreamRawOn(
       _conversation!,
       messageJson,
       extraContext: extraContext,
+      thinking: thinking,
       onEnded: (how) {
         // Kept only after a cancelled send, the one a rewind puts back.
         if (how != NativeTurnEnd.cancelled && identical(_lastSend, record)) {
@@ -314,6 +350,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
         order: _multimodalOrder,
       ),
       thinkingExtraContext(enableThinking),
+      thinking: enableThinking,
     );
   }
 
@@ -323,7 +360,11 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     bool enableThinking = false,
   }) {
     _assertOpen();
-    return _send(messageJson, thinkingExtraContext(enableThinking));
+    return _send(
+      messageJson,
+      thinkingExtraContext(enableThinking),
+      thinking: enableThinking,
+    );
   }
 
   Future<String> sendMessage(String messageJson, {String? extraContext}) {
@@ -343,7 +384,8 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     String? extraContext,
   }) {
     _assertOpen();
-    return _send(messageJson, extraContext);
+    // The caller writes its own extra_context, so no budget goes with it.
+    return _send(messageJson, extraContext, thinking: false);
   }
 
   @override
@@ -517,6 +559,10 @@ class LiteRtLmFfiClient {
 
   /// The sampler of the engine's first generation, which LiteRT-LM keeps for
   /// every later conversation (google-ai-edge/LiteRT-LM#2080).
+  /// The thinking token budget each send with thinking on carries
+  /// (`LiteRtLmEngine.thinkingTokenBudget`); null sends none.
+  int? thinkingTokenBudget;
+
   final _samplerLatch = EngineSamplerLatch();
   bool _warnedNpuSampling = false;
 
@@ -1811,12 +1857,14 @@ class LiteRtLmFfiClient {
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? extraContext,
+    bool thinking = false,
     void Function(NativeTurnEnd how)? onEnded,
   }) => heldUntilNativeEnd(_nativeMutex, () {
     final send = _doSendMessageStreamRawOn(
       conv,
       messageJson,
       extraContext: extraContext,
+      thinking: thinking,
     );
     if (onEnded != null) unawaited(send.turn.ended.then(onEnded));
     return send;
@@ -1868,6 +1916,7 @@ class LiteRtLmFfiClient {
     required ResolvedSampling sampling,
     required bool samplingExplicit,
     String? extraContext,
+    bool thinking = false,
     int? maxOutputTokens,
   }) {
     // StreamController (not async*) so the mutex release is tied to the native
@@ -1961,6 +2010,7 @@ class LiteRtLmFfiClient {
           _virtualConv!,
           messageJson,
           extraContext: extraContext,
+          thinking: thinking,
         );
         // The lock goes when native has ended the turn, not when the consumer
         // stops listening: until then the conversation is still in use.
@@ -2065,6 +2115,7 @@ class LiteRtLmFfiClient {
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? extraContext,
+    bool thinking = false,
   }) {
     _assertInitialized();
     final b = _bindings!;
@@ -2190,6 +2241,19 @@ class LiteRtLmFfiClient {
         'litert_lm_conversation_optional_args_create returned null — '
         'native libLiteRtLm.dylib initialization failure',
       );
+    }
+    try {
+      applyThinkingTokenBudget(
+        b,
+        optionalArgs,
+        thinking: thinking,
+        budget: thinkingTokenBudget,
+      );
+    } catch (e) {
+      b.litert_lm_conversation_optional_args_delete(optionalArgs);
+      releaseNative();
+      send.failed(e);
+      rethrow;
     }
 
     final result = b.litert_lm_conversation_send_message_stream(

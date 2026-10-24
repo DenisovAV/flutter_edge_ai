@@ -51,6 +51,29 @@ Strip them yourself, or don't advertise a thinking UI for those models.
 
 </Warning>
 
+## Thinking budget
+
+`LiteRtLmEngine(thinkingTokenBudget: 2048)` (`flutter_edge_ai_litertlm` 1.18.0)
+caps how many tokens a turn with `enableThinking: true` spends thinking, in
+every model that engine builds, on the CPU, the GPU and the NPU. Null, the
+default, sets no budget. At the budget LiteRT-LM closes the thought channel and
+the model goes on to its answer or tool call:
+
+```dart
+await FlutterEdgeAi.initialize(
+  inferenceEngines: const [LiteRtLmEngine(thinkingTokenBudget: 2048)],
+);
+```
+
+Without a budget a model can think until `maxOutputTokens` and end the turn
+with an empty answer: Intel's Gemma 4 26B for its NPU did. Thinking tokens still
+count towards `maxOutputTokens`, so leave room for the answer. The budget
+applies to `.litertlm` bundles that stream their thinking through the `thought`
+channel, as Gemma 4 does; the web engine accepts it and ignores it. Measured on
+macOS with Gemma 4 E2B, greedy: a budget of 64 cut the thinking from 1724 to 198
+characters on the CPU and from 1465 to 198 on the GPU, and the model still
+answered.
+
 ## Handling thinking responses
 
 The model emits a `ThinkingResponse` (with `response.content`) for its reasoning,

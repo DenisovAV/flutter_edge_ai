@@ -11,7 +11,11 @@ import 'web/litert_lm_web_inference.dart';
 /// — core owns the singleton lifecycle via [InferenceModel.addCloseListener].
 class LiteRtLmEngine
     implements InferenceEngineProvider, HuggingFaceResolverSource {
-  const LiteRtLmEngine({this.backendFallback = true, this.nativeLogLevel});
+  const LiteRtLmEngine({
+    this.backendFallback = true,
+    this.nativeLogLevel,
+    this.thinkingTokenBudget,
+  });
 
   /// Read by the native engine only. The web engine runs on WebGPU and has no
   /// backend to fall back to.
@@ -19,6 +23,10 @@ class LiteRtLmEngine
 
   /// Read by the native engine only: the web runtime has no such setting.
   final LiteRtLmLogLevel? nativeLogLevel;
+
+  /// Read by the native engine only: `@litert-lm/core` 0.18.0 takes no
+  /// thinking budget.
+  final int? thinkingTokenBudget;
 
   @override
   String get name => 'LiteRT-LM';

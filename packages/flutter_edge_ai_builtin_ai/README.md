@@ -32,10 +32,6 @@ Since **0.3.0** this package is a **thin adapter, not a Flutter plugin**. It dec
 and maps onto flutter_edge_ai's `InferenceEngineProvider` / `InferenceModel` / `InferenceModelSession`
 contracts.
 
-Version **0.3.6** requires `flutter_local_ai ^0.3.0`. Generation failures now
-keep the platform's error code and, when Android supplies one, its suggested
-retry delay through both `getResponse()` and `getResponseAsync()`.
-
 **Your Dart code does not change.** `BuiltInAi`, `BuiltInAiEngine`, `BuiltInAiModels`,
 `BuiltInAiAvailability`, `BuiltInAiUnavailableException` and `BuiltInAiHuggingFaceResolver` keep
 their names, members and signatures; only the import moves with the rename, from
@@ -54,6 +50,16 @@ their names, members and signatures; only the import moves with the rename, from
 - **Windows is newly supported**, through `flutter_local_ai`'s Windows AI Foundry backend, and
   `BuiltInAiModels` gains `windowsAiFoundry`, `chromePromptApi`, `all` and `forCurrentPlatform`
   alongside the two specs it already had.
+
+## Generation errors in 0.3.7
+
+Version **0.3.7** requires `flutter_local_ai ^0.3.0`. On Android, generation failures can be
+caught as `LocalAiGenerationException` from `package:flutter_local_ai`; its `errorCode` and
+`retryDelay` expose the metadata supplied by ML Kit GenAI. On Apple, recognized FoundationModels
+generation failures use the same type and expose the native case through `errorCode`; other Apple
+errors remain `PlatformException('ERROR')`. On Windows, one-shot `PROMPT_TOO_LONG` and
+`GENERATION_BLOCKED` failures retain their codes, while the streaming path currently reports only
+the message.
 
 ## Supported platforms & OS floors
 

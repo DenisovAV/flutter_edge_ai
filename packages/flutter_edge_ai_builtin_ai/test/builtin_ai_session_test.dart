@@ -82,7 +82,7 @@ void main() {
     expect(await session.getResponse(), 'Hello from Nano');
   });
 
-  test('getResponse preserves the native generation error metadata', () async {
+  test('getResponse passes through the one-shot generation error', () async {
     final error = LocalAiGenerationException(
       'model busy',
       errorCode: 9,
@@ -92,9 +92,10 @@ void main() {
     final session = await newSession();
 
     await expectLater(session.getResponse(), throwsA(same(error)));
-    expect(error.code, 'GENERATION_ERROR');
-    expect(error.errorCode, 9);
-    expect(error.retryDelay, const Duration(seconds: 2));
+    expect(
+      host.calls.where((call) => call == 'generateResponse'),
+      hasLength(1),
+    );
   });
 
   test('getResponseAsync yields partials, filters foreign sessionId, closes '

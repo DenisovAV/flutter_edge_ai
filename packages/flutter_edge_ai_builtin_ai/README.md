@@ -51,6 +51,16 @@ their names, members and signatures; only the import moves with the rename, from
   `BuiltInAiModels` gains `windowsAiFoundry`, `chromePromptApi`, `all` and `forCurrentPlatform`
   alongside the two specs it already had.
 
+## Generation errors in 0.3.7
+
+Version **0.3.7** requires `flutter_local_ai ^0.3.0`. On Android, generation failures can be
+caught as `LocalAiGenerationException` from `package:flutter_local_ai`; its `errorCode` and
+`retryDelay` expose the metadata supplied by ML Kit GenAI. On Apple, recognized FoundationModels
+generation failures use the same type and expose the native case through `errorCode`; other Apple
+errors remain `PlatformException('ERROR')`. On Windows, one-shot `PROMPT_TOO_LONG` and
+`GENERATION_BLOCKED` failures retain their codes, while the streaming path currently reports only
+the message.
+
 ## Supported platforms & OS floors
 
 Every row is a property of the running device, OS and build — not of the package. Probe it with

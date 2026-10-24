@@ -1,0 +1,112 @@
+# Temporary: runs PR #656 (ONNX on Windows ARM64) on a real Windows ARM64
+# runner. Lives only on the ci/onnx-win-arm64-check branch; never merged.
+name: ONNX Windows ARM64 check
+
+on:
+  push:
+    branches: [ci/onnx-win-arm64-check]
+  workflow_dispatch:
+
+jobs:
+  arm64:
+    runs-on: windows-11-arm
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      LIBS: ${{ github.workspace }}\..\ortlibs
+      MODELS: ${{ github.workspace }}\..\models
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host
+        run: |
+          Get-CimInstance Win32_Processor | Select-Object Name, Architecture, NumberOfLogicalProcessors | Format-List
+          [System.Environment]::OSVersion
+          $env:PROCESSOR_ARCHITECTURE
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Flutter 3.47.0
+        run: |
+          git clone --depth 1 -b 3.47.0 https://github.com/flutter/flutter.git "$env:RUNNER_TEMP\flutter"
+          "$env:RUNNER_TEMP\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          & "$env:RUNNER_TEMP\flutter\bin\flutter.bat" --version
+          & "$env:RUNNER_TEMP\flutter\bin\dart.bat" --version
+
+      - name: Dart sees Abi.windowsArm64
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\abi" | Out-Null
+          Set-Content "$env:RUNNER_TEMP\abi\abi.dart" "import 'dart:ffi'; void main() { print(Abi.current()); if (Abi.current() != Abi.windowsArm64) throw 'not windowsArm64'; }"
+          dart run "$env:RUNNER_TEMP\abi\abi.dart"
+
+      - name: Microsoft archives (SHA-256 = hook pins)
+        run: |
+          New-Item -ItemType Directory -Force $env:LIBS, "$env:RUNNER_TEMP\zips" | Out-Null
+          $z = @(
+            @{u='https://github.com/microsoft/onnxruntime/releases/download/v1.27.0/onnxruntime-win-arm64-1.27.0.zip'; s='a32f2650575b3c20df462e337519fd1cc4105356130d11dba9771c6f374d952f'; d='onnxruntime-win-arm64-1.27.0/lib/onnxruntime.dll'},
+            @{u='https://github.com/microsoft/onnxruntime-genai/releases/download/v0.14.0/onnxruntime-genai-0.14.0-win-arm64.zip'; s='b6daeedb6395406e4cefbd6577a0d2196611e360086f7767c153b1d4b3cb3f1b'; d='onnxruntime-genai-0.14.0-win-arm64/lib/onnxruntime-genai.dll'}
+          )
+          foreach ($a in $z) {
+            $f = "$env:RUNNER_TEMP\zips\" + [IO.Path]::GetFileName($a.u)
+            Invoke-WebRequest $a.u -OutFile $f
+            $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
+            "$f $h"
+            if ($h -ne $a.s) { throw "sha mismatch $f" }
+            Expand-Archive $f -DestinationPath "$env:RUNNER_TEMP\zips" -Force
+            Copy-Item "$env:RUNNER_TEMP\zips\$($a.d)" $env:LIBS
+          }
+          Get-ChildItem $env:LIBS
+
+      - name: Models
+        run: |
+          python -m pip install -q -U huggingface_hub
+          hf download microsoft/Phi-3.5-mini-instruct-onnx --include "cpu_and_mobile/cpu-int4-awq-block-128-acc-level-4/*" --local-dir "$env:MODELS\phi"
+          hf download sentence-transformers/all-MiniLM-L6-v2 onnx/model.onnx tokenizer.json --local-dir "$env:MODELS\minilm_raw"
+          New-Item -ItemType Directory -Force "$env:MODELS\minilm" | Out-Null
+          Copy-Item "$env:MODELS\minilm_raw\onnx\model.onnx", "$env:MODELS\minilm_raw\tokenizer.json" "$env:MODELS\minilm"
+          Get-ChildItem "$env:MODELS\phi\cpu_and_mobile\cpu-int4-awq-block-128-acc-level-4"
+
+      - name: pub get
+        run: flutter pub get
+
+      - name: Generation smoke (Phi-3.5-mini, ORT-GenAI)
+        working-directory: packages/flutter_edge_ai_onnx
+        run: |
+          $env:FLUTTER_GEMMA_ORT_GENAI_LIBS = (Resolve-Path $env:LIBS).Path
+          $env:ONNX_SMOKE_GENAI_MODEL_DIR = (Resolve-Path "$env:MODELS\phi\cpu_and_mobile\cpu-int4-awq-block-128-acc-level-4").Path
+          flutter test test/onnx_generation_host_smoke_test.dart --reporter expanded 2>&1 | Tee-Object gen.log
+          if ($LASTEXITCODE -ne 0) { throw 'generation smoke failed' }
+          if (Select-String -Path gen.log -Pattern 'Skip:|\(skipped\)' -Quiet) { throw 'generation smoke was skipped' }
+          if (-not (Select-String -Path gen.log -Pattern '\[onnx smoke\] turn 1 metrics' -Quiet)) { throw 'generation smoke did not run' }
+
+      - name: Embedding smoke (MiniLM, ORT)
+        working-directory: packages/flutter_edge_ai_onnx
+        run: |
+          $env:FLUTTER_GEMMA_ORT_LIBRARY = (Resolve-Path "$env:LIBS\onnxruntime.dll").Path
+          $env:ONNX_SMOKE_MINILM_DIR = (Resolve-Path "$env:MODELS\minilm").Path
+          flutter test test/embedding/onnx_embedding_host_smoke_test.dart --plain-name "Model A" --reporter expanded 2>&1 | Tee-Object emb.log
+          if ($LASTEXITCODE -ne 0) { throw 'embedding smoke failed' }
+          if (-not (Select-String -Path emb.log -Pattern 'ONNX MiniLM smoke:' -Quiet)) { throw 'embedding smoke did not run' }
+
+      - name: flutter build windows (example)
+        working-directory: packages/flutter_edge_ai/example
+        run: |
+          flutter build windows --release 2>&1 | Tee-Object build.log
+          if ($LASTEXITCODE -ne 0) { throw 'flutter build windows failed' }
+
+      - name: Bundled DLLs are ARM64 and the Microsoft bytes
+        working-directory: packages/flutter_edge_ai/example
+        run: |
+          Get-ChildItem -Recurse build\windows -Filter 'onnxruntime*.dll' | ForEach-Object {
+            $b = [IO.File]::ReadAllBytes($_.FullName)
+            $pe = [BitConverter]::ToInt32($b, 0x3C)
+            $m = '{0:X4}' -f [BitConverter]::ToUInt16($b, $pe + 4)
+            $src = Join-Path $env:LIBS $_.Name
+            $same = (Get-FileHash $_.FullName).Hash -eq (Get-FileHash $src).Hash
+            "$($_.FullName) machine=$m size=$($_.Length) sameAsArchive=$same"
+            if ($m -ne 'AA64') { throw "$($_.Name) is not ARM64" }
+          }

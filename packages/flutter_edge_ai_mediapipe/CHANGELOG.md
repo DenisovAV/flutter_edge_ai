@@ -1,3 +1,6 @@
+## 1.2.4
+- Web: a multi-turn chat keeps the model's replies; each turn resends the conversation (#705).
+
 ## 1.2.3
 - README: `flutter_edge_ai_llama` needs iOS 16.4.
 

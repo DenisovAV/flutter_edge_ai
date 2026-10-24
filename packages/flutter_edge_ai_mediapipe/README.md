@@ -35,7 +35,7 @@ On Android and iOS, pass `supportImage: true` to `createChat` as well as to `get
 
 ## Sampling
 
-A `.task` file ships no sampler, so an unset `temperature`, `topK` or `topP` comes from the model family's defaults (`SamplingParams.forModelType`), with an unset `topK` capped at 40, MediaPipe's own default; an unset `randomSeed` is 1. `topK: 1` or `temperature: 0` decodes greedily, as Phi and Hammer do by default; before 1.2.0 every family did. On Android and iOS each session starts from its seed, so vary `randomSeed` for a different answer to the same prompt. On web the model keeps its first session, so the sampling of a later `createSession` is not applied; web also has no top-p, and a `topP` you pass is ignored with a one-time warning.
+A `.task` file ships no sampler, so an unset `temperature`, `topK` or `topP` comes from the model family's defaults (`SamplingParams.forModelType`), with an unset `topK` capped at 40, MediaPipe's own default; an unset `randomSeed` is 1. `topK: 1` or `temperature: 0` decodes greedily, as Phi and Hammer do by default; before 1.2.0 every family did. On Android and iOS each session starts from its seed, so vary `randomSeed` for a different answer to the same prompt. On web the loaded model keeps the sampling of its first session, so the sampling of a later `createSession` is not applied; web also has no top-p, and a `topP` you pass is ignored with a one-time warning.
 
 ## Web setup
 
@@ -50,6 +50,8 @@ window.LlmInference = LlmInference;
 ```
 
 Load the model's `-web.task` build (e.g. `gemma3-1b-it-int4-web.task`); mobile `.task` files generally do not run on web. Also copy `cache_api.js` and `opfs_helper.js` from the `flutter_edge_ai` package's `web/` directory into your app's `web/` and load them with `<script src="cache_api.js"></script>` and `<script src="opfs_helper.js"></script>` — see [Installation → Web](https://flutteredge.ai/docs/installation#web). Web runs on the GPU only.
+
+On web, MediaPipe keeps nothing between calls, so the session keeps the conversation itself and sends all of it with every turn: each answer re-reads the whole history, and its time grows with the chat. Past turns stay in it with the model's replies, images and audio included, so `maxNumImages` counts every image of the conversation, not one prompt. A turn that would go past it fails with an error that names `maxNumImages`; nothing is dropped. Each `createSession` (or `createChat`) starts a new conversation and closes the previous session. The turn markers are read from the `.task` file's own metadata (Gemma 4 declares `<|turn>`), and a file that declares none falls back to its model type.
 
 (Android needs no extra setup — the MediaPipe Gradle deps are bundled by this package.)
 

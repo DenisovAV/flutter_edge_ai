@@ -23,14 +23,16 @@ API. Either arm can be registered on its own — they don't depend on each other
 
 ## Platforms
 
-Native support is **arm64/x64-gated** — each host is device-verified end-to-end
-(generation + embeddings):
+Native support is **arm64/x64-gated**. Windows ARM64 generation, embeddings,
+and the example build were verified on a GitHub-hosted Windows 11 ARM64 runner
+(Azure Cobalt 100):
 
 | Platform | Runtime | `OnnxEngine` / `OnnxEmbeddingBackend` |
 |----------|---------|----------------------------------------|
 | macOS (Apple Silicon) | ORT-GenAI + ORT via `dart:ffi` | ✅ ~54 tok/s (M4 Pro) |
 | Linux x64 | ORT-GenAI + ORT via `dart:ffi` | ✅ ~5.3–5.8 tok/s |
 | Windows x64 | ORT-GenAI + ORT via `dart:ffi` | ✅ ~3.3 tok/s |
+| Windows ARM64 | ORT-GenAI + ORT via `dart:ffi` | ✅ 10.9 tok/s (Azure Cobalt 100) |
 | Android (arm64) | ORT-GenAI + ORT via `dart:ffi` | ✅ ~10.4 tok/s (Pixel 8 Pro) |
 | iOS (arm64) | ORT-GenAI + ORT via `dart:ffi` | ✅ device-verified |
 | Web | Transformers.js + onnxruntime-web (WebGPU/WASM) | ✅ both arms |

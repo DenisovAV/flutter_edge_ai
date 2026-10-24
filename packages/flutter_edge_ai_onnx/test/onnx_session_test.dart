@@ -29,6 +29,13 @@ OnnxSession _session(
 
 typedef VoidCallback = void Function();
 
+/// A client whose countTokens throws from the call itself, as a GenAiClient
+/// handed to OnnxEngine(clientFactory:) may.
+class _SyncThrowingCountClient extends FakeGenAiClient {
+  @override
+  Future<int> countTokens(String text) => throw StateError('count refused');
+}
+
 void main() {
   group('streaming', () {
     test('getResponseAsync yields chunks in fake-emission order', () async {
@@ -350,7 +357,33 @@ void main() {
       // The call itself must return: a caller that chains handlers instead
       // of awaiting inside a `try` never sees a synchronous throw.
       final future = session.sizeInTokens('abcdefgh');
-      await expectLater(future, throwsA(isA<StateError>()));
+      await expectLater(
+        future,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'GenAiFfiClient is not loaded',
+          ),
+        ),
+      );
+    });
+
+    test('sizeInTokens fails through its Future even over a client that '
+        'throws synchronously', () async {
+      final session = _session(_SyncThrowingCountClient());
+
+      final future = session.sizeInTokens('abcdefgh');
+      await expectLater(
+        future,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'count refused',
+          ),
+        ),
+      );
     });
 
     test('getSessionMetrics is empty before any generation', () {

@@ -727,6 +727,20 @@ void main() {
       expect(linesOf(log), isNot(contains('run')));
     });
 
+    test('synthesize sends its request during the call, before a close() '
+        'right after it', () async {
+      final log = logFor('synthesizer_send_order');
+      final tts = await synthesizer(_Mode.fast, log);
+
+      final result = outcomeOf(tts.synthesize(_text));
+      await tts.close();
+
+      // The worker had the request before it began closing: it ran it or
+      // turned it away itself. "TtsWorker is closed" would mean the request
+      // reached the worker only after close() had started.
+      expect(await result, anyOf(equals(_pcm), closedBeforeRun('TtsWorker')));
+    });
+
     test('a caller that retries from its error handler finds the synthesizer '
         'already closed', () async {
       final log = logFor('synthesizer_retry');

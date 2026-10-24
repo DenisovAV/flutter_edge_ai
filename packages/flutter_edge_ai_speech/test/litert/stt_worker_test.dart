@@ -742,6 +742,20 @@ void main() {
       expect(linesOf(log), isNot(contains('run')));
     });
 
+    test('transcribe sends its request during the call, before a close() '
+        'right after it', () async {
+      final log = logFor('recognizer_send_order');
+      final stt = await recognizer(_Mode.fast, log);
+
+      final result = outcomeOf(stt.transcribe(Uint8List(32)));
+      await stt.close();
+
+      // The worker had the request before it began closing: it ran it or
+      // turned it away itself. "SttWorker is closed" would mean the request
+      // reached the worker only after close() had started.
+      expect(await result, anyOf(_transcript, closedBeforeRun('SttWorker')));
+    });
+
     test('a caller that retries from its error handler finds the recognizer '
         'already closed', () async {
       final log = logFor('recognizer_retry');

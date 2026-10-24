@@ -1,7 +1,9 @@
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit/plugin.dart';
 
+import 'backend_parse.dart';
 import 'flutter_edge_ai_options.dart';
+import 'model_slot.dart';
 
 /// The context window a request gets when its config sets no `maxTokens`:
 /// flutter_edge_ai's own default.
@@ -56,3 +58,25 @@ Future<FlutterEdgeAiModelOptions?> parseModelOptions(
   }
   return options;
 }
+
+/// The arguments a request with [config] loads the model with. The one place
+/// they are read, for a request and for a warm-up alike, so a warmed model is
+/// the one the first request reuses.
+ModelLoadParams loadParamsOf(FlutterEdgeAiModelOptions? config) => (
+  maxTokens: config?.maxTokens ?? kDefaultMaxTokens,
+  supportImage: config?.supportImage ?? false,
+  supportAudio: config?.supportAudio ?? false,
+  enableSpeculativeDecoding: config?.enableSpeculativeDecoding,
+  preferredBackend: parsePreferredBackend(
+    config?.preferredBackend,
+    field: 'preferredBackend',
+  ),
+  preferredVisionBackend: parsePreferredBackend(
+    config?.preferredVisionBackend,
+    field: 'preferredVisionBackend',
+  ),
+  preferredAudioBackend: parsePreferredBackend(
+    config?.preferredAudioBackend,
+    field: 'preferredAudioBackend',
+  ),
+);

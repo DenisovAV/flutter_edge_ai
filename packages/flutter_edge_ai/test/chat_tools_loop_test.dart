@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter_edge_ai/engine.dart' show edgeAiLogLevel;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -57,6 +61,25 @@ class _ScriptChat extends InferenceChat {
   Future<void> close() async {}
 }
 
+/// Runs [body] with edgeAiLog silenced, as in a release build, and returns
+/// what it printed.
+Future<List<String>> _releasePrints(Future<void> Function() body) async {
+  final printed = <String>[];
+  final level = edgeAiLogLevel;
+  edgeAiLogLevel = EdgeAiLogLevel.none;
+  try {
+    await runZoned(
+      body,
+      zoneSpecification: ZoneSpecification(
+        print: (_, _, _, line) => printed.add(line),
+      ),
+    );
+  } finally {
+    edgeAiLogLevel = level;
+  }
+  return printed;
+}
+
 void main() {
   test(
     'runs onToolCall, feeds Message.toolResponse back, yields the final text',
@@ -85,6 +108,46 @@ void main() {
       expect(chat.fedBack.where((m) => m.toolName == 'get_time'), hasLength(1));
     },
   );
+
+  test('each tool response names the call it answers', () async {
+    final chat = _ScriptChat([
+      const [
+        ParallelFunctionCallResponse(
+          calls: [
+            FunctionCallResponse(name: 'search', args: {'q': 'a'}, id: 'a'),
+            FunctionCallResponse(name: 'search', args: {'q': 'b'}, id: 'b'),
+            FunctionCallResponse(name: 'clock', args: {}),
+          ],
+        ),
+      ],
+      const [
+        FunctionCallResponse(name: 'search', args: {'q': 'c'}, id: 'c'),
+        FunctionCallResponse(name: 'search', args: {'q': 'd'}, id: 'd'),
+      ],
+    ]);
+    var runs = 0;
+
+    await expectLater(
+      chat
+          .generateChatResponseWithTools(
+            onToolCall: (c) {
+              // The second turn's first tool fails; its sibling is not run.
+              if (++runs == 4) throw StateError('tool failed');
+              return {'q': c.args['q']};
+            },
+          )
+          .toList(),
+      throwsStateError,
+    );
+
+    expect(
+      [
+        for (final m in chat.fedBack)
+          if (m.type == MessageType.toolResponse) m.toolCallId,
+      ],
+      ['a', 'b', null, 'c', 'd'],
+    );
+  });
 
   test('parallel calls each get a tool response, in order', () async {
     final chat = _ScriptChat([
@@ -178,6 +241,87 @@ void main() {
       reason: 'failed call must be answered to balance history',
     );
   });
+
+  test('a throwing tool keeps its own error when the session rejects the '
+      'balancing feed too', () async {
+    final chat = _ScriptChat([
+      const [
+        ParallelFunctionCallResponse(
+          calls: [
+            FunctionCallResponse(name: 'boom', args: {}),
+            FunctionCallResponse(name: 'sibling', args: {}),
+            FunctionCallResponse(name: 'sibling2', args: {}),
+          ],
+        ),
+      ],
+    ])..failToolResponseFeed = true;
+
+    final printed = await _releasePrints(
+      () => expectLater(
+        chat
+            .generateChatResponseWithTools(
+              onToolCall: (c) => throw ArgumentError('tool failed'),
+            )
+            .toList(),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            'tool failed',
+          ),
+        ),
+        reason: 'the feed error must not mask the tool error',
+      ),
+    );
+    expect(
+      chat.toolResponseFeedAttempts,
+      3,
+      reason: 'every sibling is still answered after a feed fails',
+    );
+    expect(
+      printed,
+      contains(contains('unbalanced')),
+      reason: 'a release build must see the unbalanced history',
+    );
+  });
+
+  test(
+    'a tool result that is not JSON is answered as ran, then rethrown',
+    () async {
+      final chat = _ScriptChat([
+        const [
+          ParallelFunctionCallResponse(
+            calls: [
+              FunctionCallResponse(name: 'clock', args: {}),
+              FunctionCallResponse(name: 'sibling', args: {}),
+            ],
+          ),
+        ],
+      ]);
+      final ran = <String>[];
+
+      await expectLater(
+        chat
+            .generateChatResponseWithTools(
+              onToolCall: (c) {
+                ran.add(c.name);
+                return {'now': DateTime(2026, 10, 16)};
+              },
+            )
+            .toList(),
+        throwsA(isA<JsonUnsupportedObjectError>()),
+      );
+      expect(ran, [
+        'clock',
+      ], reason: 'the sibling does not run after a failure');
+      expect(chat.fedBack.map((m) => m.toolName), ['clock', 'sibling']);
+      expect(
+        jsonDecode(chat.fedBack.first.text),
+        containsPair('status', 'ran'),
+        reason: 'the tool ran: the model must not be told to run it again',
+      );
+    },
+  );
 
   test(
     'cancel after generation balances the pending call before stopping',
@@ -287,18 +431,21 @@ void main() {
       )..failToolResponseFeed = true;
       // The mid-stream decode error must surface — NOT the balancing failure,
       // which would mask the real cause.
-      await expectLater(
-        chat
-            .generateChatResponseWithTools(onToolCall: (c) => {'result': 'x'})
-            .toList(),
-        throwsA(
-          isA<StateError>().having(
-            (e) => e.message,
-            'message',
-            contains('native decode failed'),
+      final printed = await _releasePrints(
+        () => expectLater(
+          chat
+              .generateChatResponseWithTools(onToolCall: (c) => {'result': 'x'})
+              .toList(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('native decode failed'),
+            ),
           ),
         ),
       );
+      expect(printed, contains(contains('unbalanced')));
       // Prove balancing was actually ATTEMPTED (not a false-green via an empty
       // pending list): the feed was tried once for the committed call.
       expect(chat.toolResponseFeedAttempts, greaterThanOrEqualTo(1));

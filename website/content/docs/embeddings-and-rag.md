@@ -1,6 +1,6 @@
 ---
 title: Embeddings & RAG
-description: Embed text with EmbeddingGemma 1 and 2 across nine task types, and build profile-safe on-device RAG with pluggable SQLite or Qdrant storage.
+description: Embed text, images and audio with EmbeddingGemma 2, EmbeddingGemma 1, Gecko or ONNX models across nine task types, and build profile-safe on-device RAG with pluggable SQLite or Qdrant storage.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
@@ -18,16 +18,45 @@ RAG can borrow the active core embedder, use an application-provided
 **RagEmbedder**, or run entirely on precomputed vectors. It does not require an
 inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 
+## Custom embedding providers (core 2.5.0)
+
+Core accepts self-contained `.gguf` files without a separate tokenizer. When
+backends are registered, installation checks that one can serve the file; with
+none registered, installation can still proceed. The opt-in
+`LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3
+runs native EmbeddingGemma 2 GGUF text embeddings with core 2.5.0 and llamadart
+0.15.1. Register it in `FlutterEdgeAi.initialize(embeddingBackends:)`; GGUF needs
+no external tokenizer. Use separate GGUF and LiteRT RAG vector profile IDs,
+even when dimensions match. See [llama.cpp](/docs/llama).
+`flutter_edge_ai_embeddings` supplies tokenizer implementations only; engine
+packages own runtime passes, and core hosts, caches and closes those passes.
+
+Backend authors declare supported explicit requests through
+`EmbeddingBackendProvider.honouredBackends(spec)`. Core computes cache identity:
+automatic requests reuse only a non-NPU embedder for the same installed model,
+explicit NPU requests retain their own key, and automatic builds of GPU-capable
+providers are recorded under the loaded accelerator. GPU-capable providers must
+report it through `EmbeddingPassInfo.activeBackend`; a descriptor alone is not
+proof of placement. Existing providers retain their fixed descriptor fallback.
+Repeated explicit CPU/GPU requests reuse their originating model, including a
+fallback, until a rebuild is needed or it is closed. Reporting providers print
+one release-visible WARNING per new fallback load, including an NPU request;
+reuse does not repeat it.
+`EmbeddingModel.maxInputTokens` is the effective loaded context/single-pass batch
+limit, including task prefixes and special tokens; null means unknown, not
+unlimited. A GGUF pass configured with a 1024-token micro-batch cannot accept a
+larger chunk just because the model file declares a larger context.
+
 ## Packages
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.3.1
-  flutter_edge_ai_litertlm: ^1.13.1
-  flutter_edge_ai_embeddings: ^2.3.0 # tokenizers for .tflite / .onnx models
-  flutter_edge_ai_rag: ^1.1.0
-  flutter_edge_ai_sqlite: ^2.1.0 # all six platforms, including Web
-  # flutter_edge_ai_qdrant: ^2.1.0 # native alternative
+  flutter_edge_ai: ^2.5.2
+  flutter_edge_ai_litertlm: ^1.17.0
+  flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
+  flutter_edge_ai_rag: ^1.1.2
+  flutter_edge_ai_sqlite: ^2.1.1 # all six platforms, including Web
+  # flutter_edge_ai_qdrant: ^2.1.1 # native alternative
 ```
 
 <Warning>
@@ -39,24 +68,31 @@ engine or store fails to compile against 2.3.0.
 
 </Warning>
 
-**flutter_edge_ai_sqlite** needs Flutter 3.47 or later. On Web, embeddings
-and SQLite RAG need files copied into your app's **web/** — the LiteRT.js loader
-and **rag/sqlite3.wasm**; see [Installation → Web](/docs/installation#web).
+**flutter_edge_ai_sqlite** needs Flutter 3.47 or later. On Web, `.tflite`
+embeddings and SQLite RAG need files copied into your app's **web/** — the
+LiteRT.js loader and **rag/sqlite3.wasm**; EmbeddingGemma 2 needs only the
+`@litert-lm/core` module script, with its **window.EmbeddingEngine** line, in
+`web/index.html`; see
+[Installation → Web](/docs/installation#web).
 
 ## Embedding models
 
 | Model | Files | Platforms | Tokenizer | Longest input |
 |---|---|---|---|---|
-| EmbeddingGemma 2 text | one `.litertlm` | Android, iOS, macOS, Linux, Windows; per-SoC bundles on Qualcomm NPUs | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 (text, images, audio) | one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web on WebGPU; per-SoC bundles on Qualcomm NPUs, on Google Tensor G5/G6 (Android, opt-in), on MediaTek MT6991/MT6993 (Android, opt-in, not run on such a phone yet), and on Intel Panther Lake NPUs on Windows | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 GGUF (text) | one `.gguf` | native (macOS CPU/Metal, Linux and Windows CPU measured; Android and iOS not qualified); no Web | inside the file | 1024 tokens |
 | EmbeddingGemma 1, Gecko | `.tflite` + tokenizer file | Android, iOS, macOS, Linux, Windows, Web | `flutter_edge_ai_embeddings` | the model's sequence length |
 | MiniLM, EmbeddingGemma ONNX | `.onnx` + `tokenizer.json` | native via **flutter_edge_ai_onnx**; Web for WordPiece models | `flutter_edge_ai_embeddings` | the graph's static length, or none |
 
-The first two run on **LiteRtEmbeddingBackend** from **flutter_edge_ai_litertlm**;
-the ONNX ones on **OnnxEmbeddingBackend** from **flutter_edge_ai_onnx**. LiteRT
+The `.litertlm` and `.tflite` models run on **LiteRtEmbeddingBackend** from
+**flutter_edge_ai_litertlm**, the GGUF one on **LlamaEmbeddingBackend** from
+**flutter_edge_ai_llama** (on macOS, LiteRT-LM's CocoaPods recipe and
+llama.cpp's Swift Package Manager companion are not qualified in one app), the
+ONNX ones on **OnnxEmbeddingBackend** from **flutter_edge_ai_onnx**. LiteRT
 EmbeddingGemma (1 and 2) and Gecko produce 768-dimensional vectors;
 all-MiniLM-L6-v2 produces 384. A number such as 256 in an artifact name is the
 maximum input length in tokens, not the vector dimension. See
-[Models](/docs/models#text-embedding-models) for download links.
+[Models](/docs/models#embedding-models) for download links.
 
 ## EmbeddingGemma 2
 
@@ -90,17 +126,19 @@ final vector = await embedder.embed(
 ```
 
 - **Every platform**: Android, iOS, macOS, Linux and Windows
-  (flutter_edge_ai_litertlm 1.13.0 for text, 1.13.1 for images), and the Web
-  (1.13.1, text and images), where it runs through `@litert-lm/core`'s
-  EmbeddingEngine on WebGPU and needs **window.EmbeddingEngine =
-  m.EmbeddingEngine;** in `web/index.html`
-  ([Installation](/docs/installation#web)).
-- **Text on every bundle, images on the 440m and the 740m, audio on the 740m
-  (native, litertlm 1.13.1).** On the 270m,
-  **getActiveEmbedder(supportImage: true)** throws **EmbeddingLoadException**
-  naming the 440m bundle, and on the 270m and the 440m
-  **supportAudio: true** throws naming the 740m — natively before any engine
-  or cache is made. On the Web **supportAudio: true** throws on every bundle.
+  (flutter_edge_ai_litertlm 1.13.0 for text, 1.13.1 for images and audio),
+  and the Web (1.13.1 for text and images, 1.13.2 for audio and combined
+  inputs), where it runs through `@litert-lm/core`'s EmbeddingEngine on
+  WebGPU and needs **window.EmbeddingEngine = m.EmbeddingEngine;** in
+  `web/index.html` ([Installation](/docs/installation#web)).
+- **Text on every bundle, images on the 440m and the 740m, audio on the
+  740m.** On the 270m, **getActiveEmbedder(supportImage: true)** throws
+  **EmbeddingLoadException** naming the 440m bundle — natively from the
+  bundle's model info before any engine or cache is made; on the Web the
+  engine create refuses it, and the message suggests the 440m.
+  On the 270m and the 440m **supportAudio: true** throws naming the 740m —
+  read from the bundle's own header before any engine or cache is made, on
+  the Web too.
 - **At most 1024 tokens per input**, task prefix, BOS and EOS included
   (**maxInputTokens** is 1024). Keep chunks at 512 tokens or fewer: memory
   grows with the input length — on an M4 Pro Mac about +170 MB at 128 tokens,
@@ -125,8 +163,30 @@ final vector = await embedder.embed(
   its first load (the 440m bundle adds 218 MB for vision, the 740m bundle
   writes 385 MB in total, even for text-only use). The cache lives in the app's
   cache directory: never backed up, and rebuilt at the next load if the OS
-  clears it. The Web keeps no weight cache: the bundle sits in the browser's
+  clears it. The engine opens one cache file per tower when it loads; when it
+  cannot create one (a path too long for the platform, such as past Windows'
+  260-character MAX_PATH, a directory the app cannot write to, or possibly no
+  free space at all) that tower runs anyway, slower to load and, measured on
+  the 270m, with about 290 MB more memory, and the package only prints a
+  warning. A disk that fills while the cache is being written ends the
+  process instead: the engine (XNNPack) aborts in native code, and no flag can
+  catch that. The Web keeps no weight cache: the bundle sits in the browser's
   storage.
+- **requireWeightCache (flutter_edge_ai_litertlm 1.14.0).** Register
+  **LiteRtEmbeddingBackend(requireWeightCache: true)** to make a load that
+  wrote no weight cache a failure: **getActiveEmbedder()** throws
+  **EmbeddingLoadException** naming the cache directory, the length of the
+  cache file path and the likely causes, and no engine is left running. One
+  tower's cache missing beside the others stays a printed warning. It applies
+  on CPU, and on the NPU only with declared audio, whose tower runs on CPU;
+  the Web and a **.tflite** embedder (EmbeddingGemma 1, Gecko) accept it and
+  ignore it, and a debug build says so once in the log. The warning is a **print**, which a
+  Windows release build started from Explorer shows nowhere (it has no
+  console): Windows desktop apps that care should pass
+  **requireWeightCache: true**. A refusal comes after core has closed the
+  embedder it held, and the RAG **FlutterEdgeAiActiveEmbedder** re-resolves
+  the model for every operation, so each call repeats the engine create
+  before it refuses.
 - EmbeddingGemma 1 and 2 are different embedding spaces with the same
   dimension: give each its own vector-store location and profile.
 
@@ -134,7 +194,7 @@ final vector = await embedder.embed(
 
 The 440m bundle has the 270m's text tower (the same text vectors) plus a vision
 encoder, so one model embeds text and photos, and a text finds photos. It needs
-flutter_edge_ai_litertlm 1.13.1 (1.13.1 on the Web). Declare images when you get
+flutter_edge_ai_litertlm 1.13.1, on the Web too. Declare images when you get
 the embedder, and keep the photos in an image index:
 
 ```dart
@@ -213,7 +273,8 @@ the Web, where the browser decodes (CanvasKit or skwasm) on the page itself.
   **EmbeddingEngineException** (native code 3; on the Web the message carries
   the runtime's reason) and the embedder keeps working.
   One image per vector, unless you send several as one combined input
-  (natively, litertlm 1.13.1; [below](#embeddinggemma-2-audio-and-combined-inputs)).
+  (natively from litertlm 1.13.1, on the Web from 1.13.2;
+  [below](#embeddinggemma-2-audio-and-combined-inputs)).
 - **Vision budget:** 140 tokens per image by default, the closest to the
   reference model (min cos 0.985 on our test images).
   **LiteRtEmbeddingBackend(visionTokensPerImage: 70)** — what the model card
@@ -246,8 +307,8 @@ the Web, where the browser decodes (CanvasKit or skwasm) on the page itself.
 The 740m bundle has the 440m's text and vision towers (the same text and image
 vectors) plus an audio encoder: a text finds a spoken sentence or a sound, and
 one vector can hold several parts — a photo with its caption, a clip with a
-note. Native platforms, **flutter_edge_ai_litertlm** 1.13.1; combined inputs
-need **flutter_edge_ai** 2.3.1. On the Web **supportAudio: true** is refused.
+note. Native platforms from **flutter_edge_ai_litertlm** 1.13.1, the Web
+(WebGPU) from 1.13.2; combined inputs need **flutter_edge_ai** 2.3.1.
 
 ```dart
 const audioRevision = '24d962e906c7d332c6428e71c9676855024569e2';
@@ -276,28 +337,31 @@ final note = await embedder.embed(
 - **Formats:** WAV, MP3 and FLAC at any sample rate and channel count — the
   engine mixes down to mono and resamples to 16 kHz. Ogg and M4A throw
   **EmbeddingFormatNotSupportedException** before anything is sent; a corrupt
-  file of an accepted type throws **EmbeddingEngineException** (native code 2)
-  and the embedder keeps working. One clip per vector.
+  file of an accepted type throws **EmbeddingEngineException** (native code 2;
+  on the Web the runtime's message) and the embedder keeps working. One clip
+  per vector.
 - **Length:** about 25 tokens per second of audio, so up to about 40 seconds
   fit the 1024-token cap; a 60-second clip throws
-  **EmbeddingInputTooLongException** with **actualTokens** 1504.
+  **EmbeddingInputTooLongException** with **actualTokens** 1504, on the Web
+  too.
 - **Combined inputs:** **EmbeddingInput(text:, images:, audio:)** puts the
   text (with its task prefix), then the images, then the audio into one
   vector, in that order; several images in one input are a combined input
   too. Declare every medium you send (**supportImage: true,
   supportAudio: true**); the cap counts all parts (about 140 tokens per
-  image). On the Web, one part per vector: an input with more than one throws
-  **UnsupportedEmbeddingCombinationException** before anything is sent.
+  image).
 - **Cost** (CPU, M4 Pro Mac): a 485 MB bundle and 385 MB of weight caches
   written at every load (text 71 MB, vision 218 MB, audio 95 MB), also for
-  text-only use; about 0.2–0.3 s per 3-second clip. For text use the 270m,
-  for text and images the 440m.
+  text-only use; about 0.2–0.3 s per 3-second clip. On the Web (WebGPU,
+  Tesla T4): about 0.3 s per 3-second clip after a first one of about 4 s,
+  and no weight cache. For text use the 270m, for text and images the 440m.
 - **Audio vectors are not bit-portable.** The audio encoder quantizes its
   activations to 8 bits, so another CPU kernel's last bit, or one sample
   changed by 1, can move a clip's vector by up to cos 0.05; text and image
   vectors do not move that way. What holds across builds is retrieval: in our
-  test set every spoken sentence is found by its text query, natively and with
-  Google's Python wheel.
+  test set every spoken sentence is found by its text query, natively, with
+  Google's Python wheel and on the Web, whose audio vectors are within cos
+  0.97 of the native ones.
 - An audio index keeps the text profile id (audio vectors do not depend on the
   vision budget); a text query over it is sent raw (**TaskType.none**).
 
@@ -333,8 +397,13 @@ print(embedder.activeBackend); // PreferredBackend.npu
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
   VENTUNO Q). Google also publishes SM8550, SM8750, Google Tensor G5/G6,
   MediaTek MT6991/MT6993 and Intel PTL builds: the Qualcomm ones load but are
-  not verified by us, the others are refused. The package reads what a bundle
-  is compiled for from the bundle, not from its file name.
+  not verified by us, Tensor G5/G6 runs on matching Pixels
+  ([below](#embeddinggemma-2-on-a-google-tensor-npu)), Intel PTL runs on Windows
+  ([below](#embeddinggemma-2-on-an-intel-npu)), and MediaTek MT6991/MT6993 are
+  accepted in apps built with **mediatek_npu: true** but not run on an
+  MT6991/MT6993 phone yet. The
+  package reads what a bundle is compiled for from the bundle, not from its
+  file name.
 - **Fast, and close to the CPU vectors, not equal to them.** On an SM8650
   (Galaxy S24): about 9 ms per text (53 ms on its CPU), 0.31 s per image, 0.85 s
   to load the 270m. Cosine against the CPU bundle: 0.79–0.86 for sentences of a
@@ -344,10 +413,10 @@ print(embedder.activeBackend); // PreferredBackend.npu
 - **Nothing switches backend.** NPU and CPU vectors are not interchangeable,
   so each mismatch throws **EmbeddingLoadException** with what to do instead:
   a per-SoC bundle without **npu**; the generic bundle with **npu**; **npu** on
-  iOS, macOS, Windows, Linux x64 or the Web; an app built without
-  **qualcomm_npu**; no reachable Qualcomm NPU on the device; a bundle the NPU
-  cannot run (another SoC's — the load embeds one test text to find out). A
-  loaded embedder is never handed to a request for the other backend.
+  iOS, macOS, Linux x64 or the Web; a Qualcomm bundle on Windows; an app built
+  without **qualcomm_npu**; no reachable Qualcomm NPU on the device; a bundle
+  the NPU cannot run (another SoC's — the load embeds one test text to find
+  out). A loaded embedder is never handed to a request for the other backend.
 - **An NPU index has its own profile id.** The example app uses the CPU text id
   plus **-npu-&lt;soc&gt;**
   (**embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850**, and
@@ -355,8 +424,61 @@ print(embedder.activeBackend); // PreferredBackend.npu
   their text towers being byte-identical.
   **FlutterEdgeAiActiveEmbedder.forActiveModel** keys on the installed file
   name, so it keeps them apart by itself.
-- Text up to 1024 tokens, images on the 440m, as on CPU. The 740m per-SoC
-  bundles are not verified.
+- Text up to 1024 tokens, images on the 440m, as on CPU; audio on the 740m
+  per-SoC bundles from 1.13.2, with their audio encoder on the CPU (verified on
+  SM8850, Galaxy S26+).
+
+### EmbeddingGemma 2 on a Google Tensor NPU
+
+Google's `…_Google_Tensor_G5.litertlm` and `…_Google_Tensor_G6.litertlm`
+bundles (270m, 440m) run from flutter_edge_ai_litertlm 1.15.0 on a **Pixel with
+that Tensor generation and Android 16 or later** (not a BP2A build), with
+**PreferredBackend.npu**, in an app whose pubspec sets **google_tensor_npu:
+true** under **hooks: user_defines: flutter_edge_ai_litertlm:**
+([LiteRT-LM](/docs/litertlm)). Install the bundle from the same repository and
+revision as above, and load it as above.
+
+- Run on a Pixel 11 (Tensor G6) with a debug build: the 270m embeds text and
+  the 440m images on the NPU. A Tensor G5 and a release-signed build are not run
+  yet.
+- The same rules as on Qualcomm: refused without **npu**, off Android, without
+  the flag, or on a device outside LiteRT's rule; LiteRT refuses the other
+  Tensor generation's bundle when the engine is created. Never moved to CPU.
+- **Its own profile id**: the CPU text id plus **-npu-tensor_g6** (and
+  **…-vis140** for an image index), shared by the 270m and the 440m, whose text
+  towers are byte-identical.
+
+### EmbeddingGemma 2 on an Intel NPU
+
+Google's `…_Intel_PTL.litertlm` bundles are compiled for the Intel Panther Lake
+NPU. From flutter_edge_ai_litertlm 1.13.2 they run on **Windows x64** with
+**PreferredBackend.npu**, through the Intel stack (**LiteRtDispatch.dll**,
+OpenVINO and TBB) that every Windows x64 build already carries beside the
+executable — no opt-in flag. Install
+`embeddinggemma-2-text-270m_Intel_PTL.litertlm` (or the 440m's) from the same
+repository and revision as above, and load it as above.
+
+- **The load checks the NPU.** It embeds one test text and refuses unless it
+  gets a valid vector, so a PC without an Intel NPU, or one the stack cannot
+  drive, gets **EmbeddingLoadException** rather than wrong vectors.
+- **Measured on a Panther Lake PC** (2026-10-21, OpenVINO 2026.4.1): the 270m
+  loads in about 0.9 s (the generic bundle: 0.3 s on the same PC's CPU) and
+  returns 768-dimensional vectors; a matching pair scores cos 0.913 (0.914 on
+  the CPU), an unrelated one 0.629 (0.628). These are similarities within
+  each backend: how close an NPU vector is to the CPU one is not measured. The
+  440m is not measured.
+- **A weight bank in %TEMP%.** The load copies the bundle's weights to
+  **litert_ov_bank_&lt;hex&gt;.bin** (74.5 MB for the 270m) and the close deletes
+  it. From 1.17.0 the embedder marks it as its own while it is open, so the
+  next Intel NPU load can delete one an app left behind; see
+  [Windows NPU](/docs/desktop).
+- The same rules as on Qualcomm: refused without **npu**, refused on any other
+  platform (an Intel bundle on Android or Linux, a Qualcomm one on Windows),
+  refused with the reason when **LiteRtDispatch.dll** is not beside the
+  executable, and never moved to CPU.
+- **Its own profile id**: the CPU text id plus **-npu-ptl** (and **…-vis140**
+  for an image index), shared by the 270m and the 440m, whose text towers are
+  byte-identical.
 
 ## EmbeddingGemma 1 (`.tflite` + tokenizer)
 
@@ -401,10 +523,15 @@ await FlutterEdgeAi.installEmbedder()
 
 On native, current LiteRT and ONNX embedding paths run on CPU, except the
 EmbeddingGemma 2 per-SoC bundles, which run on a Qualcomm NPU
-([above](#embeddinggemma-2-on-a-qualcomm-npu)). On Web the `.tflite` and ONNX
+([above](#embeddinggemma-2-on-a-qualcomm-npu)), a Google Tensor one
+([above](#embeddinggemma-2-on-a-google-tensor-npu)), a MediaTek one (with
+`mediatek_npu: true`, see [LiteRT-LM](/docs/litertlm); not run on an MT6991/MT6993
+phone yet) or, on Windows, an Intel one
+([above](#embeddinggemma-2-on-an-intel-npu)). On Web the `.tflite` and ONNX
 paths try WebGPU and can fall back to WASM; EmbeddingGemma 2 runs on WebGPU
 only, with no fallback. **preferredBackend** reaches the embedder only as
-**npu** for the per-SoC bundles; otherwise it is not applied. Inspect
+**npu** for the per-SoC bundles; **npu** on a generic EmbeddingGemma 2 bundle
+throws **EmbeddingLoadException**, and any other request is not applied. Inspect
 **EmbeddingModel.activeBackend** when the selected backend matters.
 
 ## Embedding API
@@ -433,12 +560,15 @@ print('${embedder.dimension} dimensions, up to ${embedder.maxInputTokens} tokens
 - An input longer than **maxInputTokens** — task prefix, BOS and EOS
   included — is never truncated: it fails with
   **EmbeddingInputTooLongException**. A null **maxInputTokens** means the
-  model file declares no limit.
-- Every error arrives as a failed future and is an **EmbeddingException**: a
-  closed model gives **EmbedderClosedException**, a model that cannot load
-  **EmbeddingLoadException**.
-- **generateEmbedding**, **generateEmbeddings** and **getDimension** still
-  compile as deprecated forwarders and are removed in 2.5.0.
+  loaded pass cannot establish an effective limit; it does not mean unlimited.
+- Every error of **embed** and **embedAll** arrives as a failed future and is
+  an **EmbeddingException**: a closed model gives **EmbedderClosedException**.
+  **getActiveEmbedder()** fails with **EmbeddingLoadException** for a model
+  that cannot load, and with **StateError** when no embedder is installed or
+  no registered backend can run it. An **EmbeddingInput** with no part or
+  empty bytes throws **ArgumentError** when it is built.
+- **generateEmbedding**, **generateEmbeddings** and **getDimension** were
+  removed in 2.5.0; see [Migration](/docs/migration).
 
 ## RAG with the active core embedder
 
@@ -605,10 +735,12 @@ A location holds documents of one modality, declared in
 An image or audio index needs an embedder whose **modalities** include it; its
 documents carry a **content** reference (a URI, file path or asset id), never
 the media bytes. A text query over an image index is text-to-image search.
-With the active embedder, an image index needs the EmbeddingGemma 2 440m
-bundle ([above](#embeddinggemma-2-images); on the Web from litertlm 1.13.1);
-with any other model, and for audio, the index fails to open with
-**EmbeddingLoadException**.
+With the active embedder (**FlutterEdgeAiActiveEmbedder(supportImage: true)**
+or **supportAudio: true**), an image index needs the EmbeddingGemma 2 440m or
+740m bundle ([above](#embeddinggemma-2-images)) and an audio index the 740m
+([above](#embeddinggemma-2-audio-and-combined-inputs)); on the Web from
+litertlm 1.13.1 for images, 1.13.2 for audio. With any other model the index
+fails to open with **EmbeddingLoadException**.
 A custom **RagEmbedder** can embed media with any model. Cross-modal scores are not on one scale:
 mixed corpora use one index per modality.
 
@@ -667,7 +799,7 @@ The shutdown order is therefore:
 ```dart
 await index.flush();
 await index.dispose();
-await FlutterEdgeAi.dispose(); // or dispose the custom embedder
+await embedder.close(); // the EmbeddingModel from getActiveEmbedder(), or your custom embedder
 ```
 
 Keep one app-owned index per persistent location. Make opening single-flight and

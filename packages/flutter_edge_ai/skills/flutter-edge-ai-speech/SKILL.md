@@ -211,3 +211,24 @@ await for (final event in voice.runTurn(pcm16kMono)) {
 ```
 
 `chat` is an `InferenceChat` from the flutter-edge-ai-inference skill. A chat created with tools also needs `onToolCall:` — without it `fromChat` throws.
+
+### Audio turns: no speech-to-text
+
+A model that hears audio (Gemma 4 E2B or E4B as `.litertlm`, native platforms only) can take the recording itself: `runAudioTurn` skips the transcription and sends the PCM to the chat. Set `supportAudio: true` on `getActiveModel`, which loads the audio encoder; `createChat` takes the flag from the model unless you pass it, and on a chat whose `supportAudio` is false `runAudioTurn` throws `StateError`. It takes the same 16 kHz mono 16-bit PCM as `runTurn`, and wraps it in a WAV header, because a `.litertlm` model decodes an audio file; a custom `VoiceResponder.respondToAudio` gets that WAV and can pass it to `AgentSession.ask(audioBytes:)` as is. There is no `VoiceTranscriptEvent`, the complete and interrupted events carry an empty transcript, and a recording under 2 bytes completes without asking the model. After a barge-in the chat keeps earlier audio turns with `flutter_edge_ai_litertlm` 1.15.0 and later; with 1.14.0 and earlier, and on the NPU, it is rebuilt from text and forgets them. Requires `flutter_edge_ai_speech` 0.5.7.
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true,
+);
+final chat = await model.createChat(supportAudio: true, maxOutputTokens: 128);
+final voice = VoiceSession.fromChat(
+  recognizer: recognizer,
+  chat: chat,
+  synthesizer: synth,
+);
+
+await for (final event in voice.runAudioTurn(pcm16kMono)) {
+  if (event is VoiceReplyTextEvent) print(event.chunk);
+}
+```

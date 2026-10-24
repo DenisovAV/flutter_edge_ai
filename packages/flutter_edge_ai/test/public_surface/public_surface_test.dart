@@ -7,6 +7,9 @@
 // not. Any change to what an app or an engine package can name is therefore a
 // visible diff in review.
 //
+// `deprecated` and `experimental` are recorded among the modifiers, so
+// dropping or adding either annotation is a reviewed change too.
+//
 // Regenerate after an intended change (refused when CI is set):
 //   UPDATE_GOLDENS=1 flutter test test/public_surface/public_surface_test.dart
 //
@@ -135,5 +138,6 @@ String _describe(Element element) {
       kind = element.kind.name.toLowerCase();
   }
   if (element.metadata.hasDeprecated) modifiers.add('deprecated');
+  if (element.metadata.hasExperimental) modifiers.add('experimental');
   return modifiers.isEmpty ? kind : '$kind ${modifiers.join(' ')}';
 }

@@ -115,10 +115,10 @@ class _DownloadPageState extends State<DownloadPage> {
                 const SizedBox(height: 24),
                 if (_running) ...[
                   // A file download reports bytes, so it gets a real bar. The
-                  // OS feature download reports no total at all — Android
-                  // sends a running byte count with `bytesTotal: 0` and Apple
-                  // sends nothing — so a determinate bar there would sit at
-                  // 0% and read as a frozen app.
+                  // OS feature download does not everywhere — Android and
+                  // Chrome report a percentage, but Apple sends nothing — so a
+                  // determinate bar there would sit at 0% and read as a frozen
+                  // app.
                   LinearProgressIndicator(
                     value: model.isBuiltIn ? null : _percent / 100,
                   ),

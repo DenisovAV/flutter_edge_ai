@@ -75,6 +75,11 @@ class _FakeConversationHandle implements ConversationHandle {
   void cancelGeneration() => cancelCount++;
 
   @override
+  Future<StoppedTurnRewind> rewindStoppedTurn(
+    Map<String, Object?> partialReply,
+  ) async => StoppedTurnRewind.unsupported;
+
+  @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
   @override

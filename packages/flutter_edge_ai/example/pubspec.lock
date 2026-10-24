@@ -9,6 +9,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.1"
+  archive:
+    dependency: transitive
+    description:
+      name: archive
+      sha256: "0d58d1fa1fddf6588251ccf2819f3fb3b6d0452c1b2813ac7413a05592bfbefe"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.5.2"
   args:
     dependency: transitive
     description:
@@ -121,6 +129,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  data_assets:
+    dependency: transitive
+    description:
+      name: data_assets
+      sha256: "8bfdbf25ec8a0f4b5a3c993042c4ab9996ba354f0b03d40f4e360f3730d71cae"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.20.0"
   dbus:
     dependency: transitive
     description:
@@ -217,6 +233,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.1"
+  flat_buffers:
+    dependency: transitive
+    description:
+      name: flat_buffers
+      sha256: "7c1de2d6eb5f3e61e5c50040841109f509deaaf2b12ec0d57b92456d9ea50345"
+      url: "https://pub.dev"
+    source: hosted
+    version: "25.9.23"
   flutter:
     dependency: "direct main"
     description: flutter
@@ -241,84 +265,97 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "2.3.1"
+    version: "2.5.1"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_agent"
       relative: true
     source: path
-    version: "0.2.9"
+    version: "0.4.1"
   flutter_edge_ai_builtin_ai:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_builtin_ai"
       relative: true
     source: path
-    version: "0.3.5"
+    version: "0.3.6"
   flutter_edge_ai_diagnostics:
     dependency: "direct dev"
     description:
       path: "../../flutter_edge_ai_diagnostics"
       relative: true
     source: path
-    version: "0.2.2"
+    version: "0.4.0"
   flutter_edge_ai_embeddings:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_embeddings"
       relative: true
     source: path
-    version: "2.3.0"
+    version: "2.3.2"
   flutter_edge_ai_litertlm:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.13.1"
+    version: "1.16.1"
   flutter_edge_ai_mediapipe:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_mediapipe"
       relative: true
     source: path
-    version: "1.2.2"
+    version: "1.2.3"
   flutter_edge_ai_onnx:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_onnx"
       relative: true
     source: path
-    version: "0.5.8"
+    version: "0.5.10"
   flutter_edge_ai_qdrant:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_qdrant"
       relative: true
     source: path
-    version: "2.1.0"
+    version: "2.1.1"
   flutter_edge_ai_rag:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_rag"
       relative: true
     source: path
-    version: "1.1.0"
+    version: "1.1.2"
   flutter_edge_ai_speech:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_speech"
       relative: true
     source: path
-    version: "0.5.6"
+    version: "0.5.10"
   flutter_edge_ai_sqlite:
     dependency: "direct main"
     description:
       path: "../../flutter_edge_ai_sqlite"
       relative: true
     source: path
-    version: "2.1.0"
+    version: "2.1.1"
+  flutter_gpu:
+    dependency: transitive
+    description: flutter
+    source: sdk
+    version: "0.0.0"
+  flutter_gpu_shaders:
+    dependency: transitive
+    description:
+      name: flutter_gpu_shaders
+      sha256: "1e8c5438c24e79629f5688c7b5dfd2b7cf09b36b443a806bc8c083cd8c04644a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.5.2"
   flutter_inappwebview:
     dependency: transitive
     description:
@@ -455,6 +492,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.35"
+  flutter_scene:
+    dependency: "direct main"
+    description:
+      name: flutter_scene
+      sha256: "6d2a4acb76307b2cf45a6e458fdf61c6bcf02693514656433e5ae67eda9d4056"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.24.3"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -487,7 +532,7 @@ packages:
     source: hosted
     version: "2.1.3"
   hooks:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: hooks
       sha256: eaac480a35ec0814146c2c48d96aaa829e0e44a7662c88ae84c9edf4bc35651f
@@ -510,6 +555,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
+  image:
+    dependency: transitive
+    description:
+      name: image
+      sha256: "89ed75b2f8231fe676808c5564f9590d728024ded7ac782a7ed8474f1c95b72a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.12.0"
   image_picker:
     dependency: "direct main"
     description:
@@ -899,6 +952,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.8"
+  posix:
+    dependency: transitive
+    description:
+      name: posix
+      sha256: bc1bad54ad2b735816e31f8d4600cfde6c7839975085ddfbca48b6c9f7c4044e
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.5.2"
   process:
     dependency: transitive
     description:
@@ -1019,6 +1080,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.28.0"
+  scene:
+    dependency: transitive
+    description:
+      name: scene
+      sha256: "2e80649db2f492eed634a656efb924b43ec8b02a985f92a21d86ab2591583f30"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.4.1"
   shared_preferences:
     dependency: "direct main"
     description:
@@ -1241,7 +1310,7 @@ packages:
     source: hosted
     version: "4.6.0"
   vector_math:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: vector_math
       sha256: f36f9f3be64c6198714492bb455c11056e33e2f85d9a0b676a48301e44fdcf47
@@ -1296,6 +1365,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.3"
+  yaml_edit:
+    dependency: transitive
+    description:
+      name: yaml_edit
+      sha256: "07c9e63ba42519745182b88ca12264a7ba2484d8239958778dfe4d44fe760488"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.4"
 sdks:
   dart: ">=3.12.0 <4.0.0"
   flutter: ">=3.47.0"

@@ -47,12 +47,12 @@ point.
   [Getting Started with On-Device LLMs in Flutter](/codelabs/getting-started-flutter-gemma)
   — or just its `complete/` directory, which is this codelab's starter
 * Anything the app runs on — all six Flutter platforms. The package can use a
-  built-in model on five: **Android** (Pixel 9+, Galaxy S25+), **iOS** (iPhone 15 Pro+
-  with Apple Intelligence on), **macOS** (an Apple-silicon Mac with Apple
-  Intelligence on) and the **web** (desktop Chrome with the Prompt API enabled —
-  `chrome://flags/#prompt-api-for-gemini-nano` for local development, an
-  [origin trial](https://developer.chrome.com/origintrials) token for a real
-  site), plus **Windows** through Windows AI Foundry. This codelab's model
+  built-in model on five: **Android** (a phone on
+  [Google's Prompt API device list](https://developers.google.com/ml-kit/genai#prompt-device)),
+  **iOS** (iPhone 15 Pro+ with Apple Intelligence on), **macOS** (an
+  Apple-silicon Mac with Apple Intelligence on) and the **web** (desktop Chrome
+  148 or newer, which ships the Prompt API with no flag or origin-trial token),
+  plus **Windows** through Windows AI Foundry. This codelab's model
   picker deliberately implements only the first four, so Windows exercises its
   downloaded-model fallback even though `flutter_edge_ai_builtin_ai` itself
   supports Windows. One of the implemented four lets you watch both engines
@@ -180,6 +180,10 @@ defaultConfig {
 If you are adding built-in AI to an app that has *no* LiteRT-LM engine in it,
 26 is enough.
 
+The Prompt API's Android artifact also carries Kotlin 2.3 metadata, so the app
+needs Kotlin 2.3.21 or newer. The step apps declare 2.4.0 in
+`android/settings.gradle.kts`; an app on an older Kotlin raises it there.
+
 iOS needs nothing beyond what Getting Started already set up — the iOS 15.0
 deployment target and the three memory entitlements. `flutter_edge_ai_builtin_ai`
 itself is pure Dart; its native layer is `flutter_local_ai`, which builds from
@@ -193,10 +197,8 @@ build stops on the package. Below macOS 26 the probe reports the model as
 unavailable, exactly as on iOS. The **web** needs nothing
 in the app either — unlike LiteRT-LM's browser arm there is no script tag to
 add, because Chrome's Prompt API is a bare global the browser exposes. What it
-needs is the browser to have the feature switched on: the
-`chrome://flags/#prompt-api-for-gemini-nano` flag for local development, an
-[origin trial](https://developer.chrome.com/origintrials) token for a site you
-ship. The package's **Windows** arm delegates to `flutter_local_ai` and Windows
+needs is a browser that ships it: desktop Chrome 148 or newer, with no flag and
+no origin-trial token. The package's **Windows** arm delegates to `flutter_local_ai` and Windows
 AI Foundry; this codelab does not add that model to its picker, so Windows takes
 the downloaded fallback. **Linux** has no OS built-in model at all.
 
@@ -389,12 +391,11 @@ the identity; there is no file to fetch, so `fromBundled(model.id)` is just a
 name.
 
 That OS download is the reason the setup screen's progress bar is
-*indeterminate* for a built-in model and determinate for a file: Android
-reports a running byte count with `bytesTotal: 0`, and Apple reports nothing at
-all, so there is no percentage to draw. A determinate bar pinned at 0% for
-minutes reads as a frozen app, which is worse than admitting you do not know.
-Chrome is the exception — its Prompt API does report a real percentage — and the
-app still draws the indeterminate bar there rather than branch a third way.
+*indeterminate* for a built-in model and determinate for a file: Apple reports
+nothing at all, so there is no percentage to draw. A determinate bar pinned at
+0% for minutes reads as a frozen app, which is worse than admitting you do not
+know. Android and Chrome do report a real percentage, and the app still draws
+the indeterminate bar there rather than branch per platform.
 
 The gate from Getting Started therefore grows a branch, not a line — it asks a
 different *question* per kind of model:
@@ -573,8 +574,8 @@ model…* screen for that window.
 `downloadable` is the interesting one: the OS *can* have a model but hasn't
 fetched the feature yet, so the gate's built-in branch answers "not ready", the
 app lands on the setup screen, and pressing the button there runs
-`ensureReady()` — with the indeterminate bar from Step 2, because that download
-has no total to report.
+`ensureReady()` — with the indeterminate bar from Step 2, which the app draws
+for every OS download.
 
 The manual switch from Step 2 stays in the menu, so you can override the app's
 choice and compare. Neither route is one-way. When the probe lands the app on
@@ -655,7 +656,8 @@ That is the finished app. Run `complete` on whatever you have:
   model*, and Gemma downloads the same way. On Windows this is a sample choice,
   not a package limitation; `flutter_edge_ai_builtin_ai` supports Windows AI
   Foundry through `flutter_local_ai`
-* Chrome without the Prompt API flag or origin trial → the same fallback, but
+* A browser without the Prompt API (another browser, or Chrome before 148) →
+  the same fallback, but
   the model that downloads is `Models.gemma4Web` (2.0 GB, ungated) rather than
   Gemma 3 1B — the browser engine cannot open the native file at all
 
@@ -672,6 +674,8 @@ extends further than these two engines:
 * **ONNX Runtime** (`flutter_edge_ai_onnx`) opens ONNX model directories on
   macOS, Linux, Windows, Android and iOS, and runs on the web through
   Transformers.js
+* **llama.cpp** (`flutter_edge_ai_llama`) opens `.gguf` files on Android, iOS,
+  macOS, Windows, Linux and the web
 * **LiteRT-LM** — the engine you already registered — has a **web** arm too,
   running `.litertlm` in the browser through `@litert-lm/core`, which is what
   makes this app's fallback work in Chrome as well. It only runs a `.litertlm`

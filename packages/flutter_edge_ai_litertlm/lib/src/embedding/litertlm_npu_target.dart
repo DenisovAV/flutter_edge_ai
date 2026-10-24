@@ -15,43 +15,23 @@
 // with a `LiteRtStamp` metadata entry (`litert/core/build_stamp.h`, LiteRT pin
 // 26895c9f): a 250-byte buffer of two NUL-padded fields, the SoC manufacturer
 // (125 bytes) and the SoC model (125 bytes) — `Qualcomm` / `SM8850` in the
-// SM8850 bundles. The generic bundles carry no stamp in any section.
+// SM8850 bundles, `IntelOpenVINO` / `PTL` in the Intel ones. The generic
+// bundles carry no stamp in any section.
 //
 // How it is read: the container header (LiteRT-LM `litertlm_header_schema.fbs`,
 // pin b2f686e2) lists the sections; each `TFLiteModel` section is a TFLite
 // flatbuffer whose `Model.metadata` (field 6) names its entries and whose
 // `Model.buffers` (field 4) holds their bytes. Only the few hundred bytes those
-// lookups touch are read — the compiled sections are 127-259 MB — so this is
+// lookups touch are read — the compiled sections are 127-434 MB — so this is
 // cheap enough for every load (a few dozen small reads).
 
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
 import '../litertlm_bundle_sampler.dart' show litertlmHeaderEnd;
 
-/// The SoC a `.litertlm` bundle's compiled sections target.
-final class LiteRtLmNpuTarget {
-  const LiteRtLmNpuTarget({required this.vendor, required this.soc});
-
-  /// The SoC manufacturer as the compiler stamped it: `Qualcomm`, `Google`,
-  /// `MediaTek`, `Intel`.
-  final String vendor;
-
-  /// The SoC model as the compiler stamped it, e.g. `SM8850`, `QCS8275`.
-  final String soc;
-
-  bool get isQualcomm => vendor.toLowerCase() == 'qualcomm';
-
-  @override
-  bool operator ==(Object other) =>
-      other is LiteRtLmNpuTarget && other.vendor == vendor && other.soc == soc;
-
-  @override
-  int get hashCode => Object.hash(vendor, soc);
-
-  @override
-  String toString() => '$vendor $soc';
-}
+export '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
 
 /// The NPU [modelPath] was compiled for, or null for a bundle with no
 /// compiled section (the generic CPU bundles).
@@ -87,6 +67,23 @@ Future<LiteRtLmNpuTarget?> readLiteRtLmNpuTarget(String modelPath) async {
   } finally {
     await file.close();
   }
+}
+
+/// The stamp of each of [sections] (`[begin, end)` of `TFLiteModel`
+/// sections) in the open [file] of [length] bytes, by range: null for a
+/// section that is not compiled for an NPU. A section that ends past the end
+/// of the file is left out. Throws [FormatException] for a stamp this reader
+/// cannot read and [RangeError] for a structure out of range.
+Future<Map<(int, int), LiteRtLmNpuTarget?>> readLiteRtLmSectionStamps(
+  RandomAccessFile file,
+  int length,
+  Iterable<(int, int)> sections,
+) async {
+  final reader = _FileReader(file, length);
+  return {
+    for (final (begin, end) in sections)
+      if (end <= length) (begin, end): await _stampOf(reader, begin, end),
+  };
 }
 
 /// The `[begin, end)` ranges of the `TFLiteModel` sections listed in a

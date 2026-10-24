@@ -5,16 +5,17 @@
 [![pub package](https://img.shields.io/pub/v/flutter_edge_ai.svg)](https://pub.dev/packages/flutter_edge_ai)
 
 On-device AI for Flutter on Android, iOS, Web, macOS, Windows and Linux. Run
-Gemma and other open models, or the model the operating system already ships,
-with text, vision, audio, function calling, embeddings, RAG and speech — no
-server, no cloud. The core is small: you add only the runtimes and stores your
-app uses.
+any model a registered engine supports
+([models](https://flutteredge.ai/docs/models)), or the model the operating
+system already ships, with text, vision, audio, function calling, embeddings,
+RAG and speech — no server, no cloud. The core is small: you add only the
+runtimes and stores your app uses.
 
 <p align="center">
   <img src="https://flutteredge.ai/images/readme-banner.png" alt="Flutter Edge AI — on-device LLMs in your Flutter app">
 </p>
 
-> **Formerly `flutter_gemma`.** Through 1.11.3 this package shipped as
+> **Formerly `flutter_gemma`.** Through 1.11.4 this package shipped as
 > `flutter_gemma`. Version 2.0 also moves RAG out of core into
 > `flutter_edge_ai_rag`, and 2.3.0 changes the embedding API. See the
 > [migration guide](MIGRATION.md).
@@ -23,14 +24,15 @@ app uses.
 
 ## Features
 
-- **Pluggable engines:** LiteRT-LM (`.litertlm`), MediaPipe (`.task`), ONNX Runtime, and the OS's own models (Gemini Nano, Apple Foundation Models, Windows AI Foundry, Chrome Prompt API).
-- **Multimodal:** image and audio input with Gemma 4, Gemma 3n and other vision models.
+- **Pluggable engines:** LiteRT-LM (`.litertlm`), MediaPipe (`.task`), ONNX Runtime, llama.cpp (`.gguf`), and the OS's own models (Gemini Nano, Apple Foundation Models, Windows AI Foundry, Chrome Prompt API).
+- **Multimodal:** image and audio input on the models that support it.
 - **Function calling** and **thinking mode** on the models that support them.
-- **CPU, GPU and NPU** backends — Qualcomm NPU on Android (opt-in), Intel NPU on Windows.
-- **Embeddings and on-device RAG:** EmbeddingGemma 1 and 2 with nine task types, stored in Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
+- **CPU, GPU and NPU** backends — Qualcomm on Android and Linux arm64, Google
+  Tensor and MediaTek on Android (all opt-in), and Intel on Windows.
+- **Embeddings and on-device RAG:** text, image and audio embeddings (EmbeddingGemma 2 and 1, Gecko, ONNX models — [models](https://flutteredge.ai/docs/models)) with nine task types, stored in Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
 - **Speech:** on-device STT, TTS and a push-to-talk voice loop.
 - **Agent skills:** `SKILL.md` tools the model invokes through function calling.
-- **Model management:** installs from the network, assets, bundled files or local paths; Hugging Face installs in one call; retries, typed download errors, LoRA weights.
+- **Model management:** installs from the network, assets, bundled files or local paths; Hugging Face installs in one call; retries, typed download errors, LoRA weights (MediaPipe `.task` models, and GGUF models through llama.cpp on native platforms).
 - **Genkit** integration for on-device and hybrid cloud flows.
 
 ## Packages
@@ -39,11 +41,12 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 
 | You want to… | Add |
 |---|---|
-| Run `.litertlm` models (Gemma 4, Qwen3, FastVLM; all desktop) and LiteRT embeddings | [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm) |
-| Run `.task` / `.bin` models (MediaPipe; mobile and web) | [`flutter_edge_ai_mediapipe`](https://pub.dev/packages/flutter_edge_ai_mediapipe) |
+| Run any `.litertlm` model, and LiteRT embeddings | [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm) |
+| Run `.task` / `.bin` models (MediaPipe; mobile and web; maintenance-only upstream, prefer `.litertlm`) | [`flutter_edge_ai_mediapipe`](https://pub.dev/packages/flutter_edge_ai_mediapipe) |
+| Run GGUF chat and native EmbeddingGemma 2 text embeddings through llama.cpp | [`flutter_edge_ai_llama`](https://pub.dev/packages/flutter_edge_ai_llama) |
 | Run ONNX models — text generation and embeddings | [`flutter_edge_ai_onnx`](https://pub.dev/packages/flutter_edge_ai_onnx) |
 | Use the model built into the OS or browser | [`flutter_edge_ai_builtin_ai`](https://pub.dev/packages/flutter_edge_ai_builtin_ai) |
-| Tokenizers for text embeddings (needed with the LiteRT or ONNX embedding backend) | [`flutter_edge_ai_embeddings`](https://pub.dev/packages/flutter_edge_ai_embeddings) |
+| Tokenizers for text embeddings (needed for `.tflite` / `.onnx` embedders; an EmbeddingGemma 2 `.litertlm` carries its own) | [`flutter_edge_ai_embeddings`](https://pub.dev/packages/flutter_edge_ai_embeddings) |
 | On-device RAG | [`flutter_edge_ai_rag`](https://pub.dev/packages/flutter_edge_ai_rag) + [`flutter_edge_ai_qdrant`](https://pub.dev/packages/flutter_edge_ai_qdrant) (native) or [`flutter_edge_ai_sqlite`](https://pub.dev/packages/flutter_edge_ai_sqlite) (all six platforms) |
 | Speech-to-text, text-to-speech, voice loop | [`flutter_edge_ai_speech`](https://pub.dev/packages/flutter_edge_ai_speech) |
 | Agent skills over function calling | [`flutter_edge_ai_agent`](https://pub.dev/packages/flutter_edge_ai_agent) |
@@ -55,11 +58,18 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 | Engine | Android | iOS | Web | macOS | Windows | Linux |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
 | LiteRT-LM (`.litertlm`) | ✅ | ✅ | ⚠️ preview ¹ | ✅ | ✅ | ✅ |
-| MediaPipe (`.task`) | ✅ | ✅ | ✅ | — | — | — |
+| MediaPipe (`.task`) | ✅ | ✅ ² | ✅ | — | — | — |
 | ONNX Runtime | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| llama.cpp (`.gguf`) ³ | ✅ | ✅ ⁴ | ✅ | ✅ ⁴ | ✅ | ✅ |
 | Built-in AI | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 
 ¹ Web `.litertlm` takes text input only — an image or audio message throws `UnsupportedError`; function calling and thinking work.
+
+² CPU only: a GPU `.task` does not load on iOS; use a `.litertlm` for the iOS GPU.
+
+³ Through llamadart; CI covers the CPU lifecycle — see its [qualification matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md).
+
+⁴ iOS 16.4+ and macOS 14+, with Flutter's Swift Package Manager on and the `llamadart_llama_cpp_flutter` companion. The LiteRT-LM macOS setup below (CocoaPods, usually with Swift Package Manager off) is not qualified together with it: use separate apps. See the [`flutter_edge_ai_llama` README](https://pub.dev/packages/flutter_edge_ai_llama).
 
 LiteRT-LM ships `arm64` on Android, iOS and macOS, `x86_64` on Windows and `x86_64` / `arm64`
 on Linux; on Android, MediaPipe `.task` also runs on `x86_64` / `armeabi-v7a`, and on Linux
@@ -70,8 +80,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.3.1
-  flutter_edge_ai_litertlm: ^1.13.1   # or any other engine from the table
+  flutter_edge_ai: ^2.5.2
+  flutter_edge_ai_litertlm: ^1.17.0   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with
@@ -81,7 +91,11 @@ dependencies:
 > `flutter_edge_ai_agent` 0.2.9 · `flutter_edge_ai_rag` 1.1.0 ·
 > `flutter_edge_ai_sqlite` 2.1.0 · `flutter_edge_ai_qdrant` 2.1.0 ·
 > `genkit_flutter_edge_ai` 0.9.1. An older engine or store fails to compile
-> against 2.3.0; see the [migration guide](MIGRATION.md).
+> against 2.3.0; see the [migration guide](MIGRATION.md). With core 2.4.0,
+> `getActiveModel(multimodalOrder:)` and `activeVisionBackend` /
+> `activeAudioBackend` need `flutter_edge_ai_litertlm` 1.14.0, and Genkit tool
+> call ids need `genkit_flutter_edge_ai` 0.10.0; older versions compile against
+> 2.4.0 but ignore them.
 
 Then complete the platform setup below.
 
@@ -90,7 +104,8 @@ Then complete the platform setup below.
 ### iOS
 
 Set the deployment target to **15.0** (**16.0** if you use
-`flutter_edge_ai_mediapipe`) and link pods statically in `ios/Podfile`:
+`flutter_edge_ai_mediapipe`, **16.4** with `flutter_edge_ai_llama` ⁴) and link
+pods statically in `ios/Podfile`:
 
 ```ruby
 platform :ios, '15.0'
@@ -146,12 +161,14 @@ flutter:
 ```
 
 Run `flutter pub get` (it writes `macos/Podfile`), then replace that Podfile's
-`post_install` block with the one below; the next build runs `pod install`
-itself. A green build proves nothing: without the block the first model load
-fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. If your app already has a `macos/Podfile` (another plugin
-needs CocoaPods), keep SPM on and just paste the block. Prefer the pubspec
+`post_install` block with the one below, keeping any lines of your own inside
+it; the next build runs `pod install` itself. A green build proves nothing: without the block the first model load
+fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`; from `flutter_edge_ai_litertlm` 1.17.0
+the error says why and names this fix. If your app already has a `macos/Podfile` (another plugin
+needs CocoaPods), keep SPM on and only replace its `post_install` block. Prefer the pubspec
 setting to `flutter config --no-enable-swift-package-manager`, which changes
-only your machine — not your teammates' or CI.
+only your machine — not your teammates' or CI. `flutter_edge_ai_llama` needs
+Swift Package Manager on instead (⁴).
 
 ```ruby
 post_install do |installer|
@@ -166,7 +183,7 @@ post_install do |installer|
   # build phase to stage them.
   #
   # The phase only LOCATES and RUNS a script; the staging logic itself lives in
-  # flutter_gemma_litertlm and is delivered next to the dylibs it stages. That
+  # flutter_edge_ai_litertlm and is delivered next to the dylibs it stages. That
   # is deliberate: this block is frozen into your Xcode project, and a copy of
   # the logic frozen there cannot be fixed by upgrading the package.
   installer.aggregate_targets.each do |aggregate_target|
@@ -205,7 +222,7 @@ post_install do |installer|
         STAGER="${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh"
         if [ ! -f "${STAGER}" ]; then
           echo "[flutter_gemma] ERROR: ${STAGER} not found." >&2
-          echo "  flutter_gemma_litertlm 1.6.2+ installs it there from its build hook." >&2
+          echo "  flutter_edge_ai_litertlm installs it there from its build hook." >&2
           echo "  Upgrade the package, then: flutter clean && flutter pub get" >&2
           exit 1
         fi
@@ -298,11 +315,59 @@ and closes the previous handle. A model is closed from the moment its
 finish, then builds a new model. With no model installed it throws
 `NoActiveModelError`, a `StateError`.
 
+To keep several models loaded at once, such as one file on CPU and GPU, open
+them with `FlutterEdgeAi.openModel(spec, …)` on a spec from
+`installModel(…).install(activate: false)`, with `LiteRtLmEngine`
+(`flutter_edge_ai_litertlm` 1.16.0) on Android, iOS and desktop. Each call
+builds a model the app owns and closes; see
+[Desktop → Several models at once](https://flutteredge.ai/docs/desktop#several-models-at-once).
+
 Sampling left unset comes from the model: the sampler a native `.litertlm` file
 ships, else the defaults its family publishes (`SamplingParams.forModelType`),
 else `topK: 40`. Pass `topK: 1` for greedy decoding. What each engine reads,
 and why `.litertlm` keeps the first session's values:
 [Sampling](https://flutteredge.ai/docs/getting-started#sampling).
+
+### Decide (experimental)
+
+Pick one of N options — an intent, an action, a screen, a tool — for an input,
+or abstain when none fits. Every embedding model can do it:
+
+```dart
+// ignore_for_file: experimental_member_use
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
+final decider = await embedder.createDecider(options: [
+  DeciderOption('set_timer', examples: [
+    EmbeddingInput.text('set a timer for ten minutes'),
+    EmbeddingInput.text('wake me in half an hour'),
+  ]),
+  DeciderOption('call_contact', examples: [
+    EmbeddingInput.text('call mum'),
+    EmbeddingInput.text('ring Alex on his mobile'),
+  ]),
+]);
+final answer = await decider.choose(
+  DeciderInput(EmbeddingInput.text('remind me in 20 minutes')),
+);
+print(answer.choice ?? 'none of these (${answer.abstainReason})');
+```
+
+Options and inputs are embedded with `TaskType.sentenceSimilarity`; an option
+is the centroid of its examples (and description). The decider abstains when the
+input's best cosine is below a threshold cross-fitted on the options' own
+examples. Store a fitted decider with `toArtifact()` and restore it with
+`loadDecider` — pinned to its embedding space, so a CPU-fitted decider is never
+loaded onto an NPU bundle. Measured with EmbeddingGemma 2 on CLINC150 and
+HWU64, the numbers and their limits:
+[Decisions](https://flutteredge.ai/docs/decisions).
+`InferenceModel.createDecider(question:, options:, calibration:)` is the
+language-model kind, with answers of the same shape: a small `.litertlm` tuned
+for the decision by LiteTune carries the question, options, temperature and
+threshold in the file; pass the question and the options, with
+`InferenceDeciderCalibration.fromModel()` for the rest. Each option's id is
+scored as the model's reply, on the CPU, natively (`flutter_edge_ai_litertlm`
+1.16.0). It answers Choice, Noul (`answer.noul`, P(yes)) and Score
+(`answer.expectedLevel`) questions.
 
 ## Three things that fail quietly
 
@@ -316,39 +381,42 @@ and why `.litertlm` keeps the first session's values:
 
 ## Supported models
 
-| Model | `ModelType` | Function calling | Thinking | Vision / audio |
-|---|---|:---:|:---:|:---:|
-| Gemma 4 E2B / E4B ² | `gemma4` | ✅ | ✅ | ✅ / ✅ |
-| Gemma 3n E2B / E4B ² | `gemmaIt` | ✅ ¹ | — | ✅ / ✅ |
-| Gemma 3 1B, Gemma 3 270M | `gemmaIt` | — | — | — |
-| FunctionGemma 270M | `functionGemma` | ✅ | — | — |
-| Qwen3 0.6B | `qwen3` | ✅ | ✅ | — |
-| Qwen3.5 / 3.6 / 3.8 | `qwen35` | — | — | — |
-| Qwen 2.5 0.5B / 1.5B | `qwen` | ✅ | — | — |
-| DeepSeek R1 | `deepSeek` | ✅ | ✅ | — |
-| Phi-4 Mini | `phi` | ✅ | — | — |
-| FastVLM, Qwen2-VL, SmolVLM2, LLaVA-OneVision | `general` | — | — | ✅ / — |
-| SmolLM, SmolLM3, LFM2.5, Phi-4 Mini Reasoning | `general` | — | — | — |
+Any model a registered engine runs. Which models run on which engine and
+platform, the `ModelType` to install each with, function calling, thinking,
+vision and audio support, and download links:
+[models](https://flutteredge.ai/docs/models).
 
-¹ The downloadable E4B `.litertlm`.
-
-² On Web: no audio input; Gemma 4 vision needs the `-web.task` build, while thinking and function calling need the `.litertlm` one; Gemma 3n vision is native-only.
-
-Embedding models: EmbeddingGemma 1 (`.tflite` plus a tokenizer, every
-platform) and EmbeddingGemma 2 (one `.litertlm` file: text and images, plus,
-on Android, iOS, macOS, Linux and Windows, audio and several parts in one
-vector with `EmbeddingInput(text:, images:, audio:)`), both through
-`flutter_edge_ai_litertlm`; MiniLM-class
+Embedding models: EmbeddingGemma 1 and Gecko (`.tflite` plus a tokenizer,
+every platform) and EmbeddingGemma 2 (one `.litertlm` file: text, images on
+the 440m and 740m bundles, audio on the 740m, and several parts in one vector
+with `EmbeddingInput(text:, images:, audio:)`, natively and on the Web), all
+through `flutter_edge_ai_litertlm`; MiniLM-class
 `.onnx` models through `flutter_edge_ai_onnx`. Download links, sizes, formats
 per platform, embedding and speech models:
 [models](https://flutteredge.ai/docs/models).
+
+Core 2.5.0 lets embedding providers accept self-contained `.gguf` files without
+a separate tokenizer. The opt-in `LlamaEmbeddingBackend` in
+`flutter_edge_ai_llama` 0.0.3 runs native EmbeddingGemma 2
+text embeddings through llamadart. Give GGUF its own RAG vector profile;
+equal dimensions do not make GGUF and LiteRT vectors interchangeable.
+`flutter_edge_ai_embeddings` supplies tokenizers only and owns no runtime.
+Providers declare capabilities with
+`EmbeddingBackendProvider.honouredBackends(spec)` and report the loaded
+accelerator through `EmbeddingPassInfo.activeBackend`. Automatic requests reuse
+the current non-NPU embedder for the same model. Repeated explicit CPU/GPU
+requests reuse the model they loaded, including a fallback, until a rebuild is
+needed or the model is closed; the fallback warning is printed once per load.
+Core keeps ownership of
+the model cache, worker and close lifecycle. Existing providers keep their
+CPU/NPU cache behavior.
 
 ## Going further
 
 - [Getting started](https://flutteredge.ai/docs/getting-started) — sessions, system instructions, removing models
 - [Models](https://flutteredge.ai/docs/models) — model sources, Hugging Face installs
 - [Function calling](https://flutteredge.ai/docs/function-calling) · [Multimodal](https://flutteredge.ai/docs/multimodal) · [Thinking mode](https://flutteredge.ai/docs/thinking-mode)
-- [Embeddings & RAG](https://flutteredge.ai/docs/embeddings-and-rag) · [Speech](https://flutteredge.ai/docs/speech) · [Agent skills](https://flutteredge.ai/docs/agent)
+- [Embeddings & RAG](https://flutteredge.ai/docs/embeddings-and-rag) · [Decisions](https://flutteredge.ai/docs/decisions) · [Speech](https://flutteredge.ai/docs/speech) · [Agent skills](https://flutteredge.ai/docs/agent)
 - [Built-in AI](https://flutteredge.ai/docs/builtin-ai) · [ONNX Runtime](https://flutteredge.ai/docs/onnx) · [Genkit](https://flutteredge.ai/docs/genkit) · [Memory diagnostics](https://flutteredge.ai/docs/diagnostics)
 - [Desktop](https://flutteredge.ai/docs/desktop) · [Troubleshooting](https://flutteredge.ai/docs/troubleshooting)
 - Fine-tune a small model and convert it to `.litertlm` with [litetune](https://litetune.dev) (alpha).

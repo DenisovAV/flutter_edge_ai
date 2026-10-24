@@ -1,0 +1,53 @@
+{
+  "durationMs": 35153,
+  "lines": [
+    {
+      "speaker": "A",
+      "text": "Okay, quick sync before the weekend.",
+      "startMs": 600,
+      "endMs": 3204
+    },
+    {
+      "speaker": "B",
+      "text": "First, the numbers: revenue grew every quarter, and Q3 was our best.",
+      "startMs": 3854,
+      "endMs": 9067
+    },
+    {
+      "speaker": "A",
+      "text": "Nice. Put the quarterly revenue chart in the deck.",
+      "startMs": 9717,
+      "endMs": 13170
+    },
+    {
+      "speaker": "B",
+      "text": "Also, the office kitchen lights keep flickering again.",
+      "startMs": 13820,
+      "endMs": 17332
+    },
+    {
+      "speaker": "A",
+      "text": "I'll call the electrician on Thursday.",
+      "startMs": 17982,
+      "endMs": 20501
+    },
+    {
+      "speaker": "B",
+      "text": "I'm filing the London trip expenses today, with the taxi receipt.",
+      "startMs": 21151,
+      "endMs": 25890
+    },
+    {
+      "speaker": "A",
+      "text": "Wait, how much did the airport taxi cost?",
+      "startMs": 26540,
+      "endMs": 29852
+    },
+    {
+      "speaker": "B",
+      "text": "Let me check. Okay, that is all for today.",
+      "startMs": 30502,
+      "endMs": 33953
+    }
+  ]
+}

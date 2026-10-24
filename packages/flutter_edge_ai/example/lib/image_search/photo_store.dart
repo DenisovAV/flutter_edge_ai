@@ -23,6 +23,10 @@ abstract interface class PhotoStore {
   /// The image a reference from [keep], or an asset reference, points to.
   ImageProvider imageFor(String reference);
 
+  /// The encoded bytes of a photo [keep] stored under [reference]. Asset
+  /// references are read from the bundle by the caller, not here.
+  Future<Uint8List> read(String reference);
+
   /// Deletes the photo [keep] stored under [reference] (one that could not
   /// be indexed). Asset references are left alone.
   Future<void> forget(String reference);

@@ -136,6 +136,15 @@ class _ModelSelectionScreenState extends State<ModelSelectionScreen> {
       return true;
     }).toList();
 
+    // A bundle compiled for the Google Tensor NPU runs on a Pixel only.
+    models = models
+        .where(
+          (model) =>
+              model != Model.gemma4_E2B_google_tensor_G6 ||
+              (!kIsWeb && defaultTargetPlatform == TargetPlatform.android),
+        )
+        .toList();
+
     // On desktop, only show models with desktopUrl (litertlm format required)
     if (_isDesktop) {
       models = models

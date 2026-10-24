@@ -1,6 +1,7 @@
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_web.dart';
 
+import 'litert_lm_log_level.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 import 'web/litert_lm_web_inference.dart';
 
@@ -10,7 +11,14 @@ import 'web/litert_lm_web_inference.dart';
 /// — core owns the singleton lifecycle via [InferenceModel.addCloseListener].
 class LiteRtLmEngine
     implements InferenceEngineProvider, HuggingFaceResolverSource {
-  const LiteRtLmEngine();
+  const LiteRtLmEngine({this.backendFallback = true, this.nativeLogLevel});
+
+  /// Read by the native engine only. The web engine runs on WebGPU and has no
+  /// backend to fall back to.
+  final bool backendFallback;
+
+  /// Read by the native engine only: the web runtime has no such setting.
+  final LiteRtLmLogLevel? nativeLogLevel;
 
   @override
   String get name => 'LiteRT-LM';
@@ -35,6 +43,9 @@ class LiteRtLmEngine
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
+    // config.multimodalOrder is not read: the web session sends text only and
+    // throws on an image or audio message (LiteRtLmWebSession.addQueryChunk).
+    // A web path that sends media must put them where the order says.
     return LiteRtLmWebInferenceModel(
       sourceResolver: WebModelSourceResolver.forActiveModel(),
       maxTokens: config.maxTokens,

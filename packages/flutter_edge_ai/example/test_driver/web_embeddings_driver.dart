@@ -1,12 +1,13 @@
 // Driver for the web embedding drive suites
 // (integration_test/web_embeddings_test.dart, web_embeddings_streaming_test.dart,
-// web_eg2_test.dart, web_eg2_llm_test.dart).
+// web_eg2_test.dart, web_eg2_audio_test.dart, web_eg2_llm_test.dart).
 //
 // Each suite names its own response file in the data it reports
 // (`reportTo` in integration_test/web_embeddings_support.dart), and this
 // driver writes the data there: build/web_embeddings_response.json for
 // web_embeddings_test.dart, build/web_embeddings_streaming_response.json for
 // the streaming suite, build/web_eg2_response.json for EmbeddingGemma 2,
+// build/web_eg2_audio_response.json for its audio and combined inputs,
 // build/web_eg2_llm_response.json for the LLM + EmbeddingGemma 2 page.
 // Running one never overwrites another's record.
 //

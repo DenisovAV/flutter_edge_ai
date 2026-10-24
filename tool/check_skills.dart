@@ -44,8 +44,7 @@ import 'dart:io';
 
 const _skillsDir = 'packages/flutter_edge_ai/skills';
 
-/// Where the generated files are analysed. The example app depends on every
-/// package in the workspace, so any import a skill shows can resolve there.
+/// Most skills also use app dependencies such as record from this example.
 const _hostPackage = 'packages/flutter_edge_ai/example';
 
 const _preamble = '''
@@ -100,8 +99,16 @@ Future<void> main() async {
           .toList()
         ..sort((a, b) => a.path.compareTo(b.path));
 
-  final work = Directory('$_hostPackage/tool/_skills_check_$pid');
-  work.createSync(recursive: true);
+  // The opt-in llama engine is deliberately absent from the core example.
+  // Check skills importing it against the real workspace instead; keep the
+  // example context for skills that also need app-only dependencies.
+  final hosts = <String, Directory>{
+    _hostPackage: Directory('$_hostPackage/tool/_skills_check_$pid'),
+    '.': Directory('tool/_skills_check_$pid'),
+  };
+  for (final work in hosts.values) {
+    work.createSync(recursive: true);
+  }
 
   // generated file path -> (generated line -> where it came from)
   final origins = <String, Map<int, _Origin>>{};
@@ -191,6 +198,13 @@ Future<void> main() async {
       }
       emit('}');
 
+      final host =
+          imports.any(
+            (line) => line.contains("'package:flutter_edge_ai_llama/"),
+          )
+          ? '.'
+          : _hostPackage;
+      final work = hosts[host]!;
       final file = File('${work.path}/${skill.replaceAll('-', '_')}.dart');
       file.writeAsStringSync(out.toString());
       origins[file.absolute.path] = map;
@@ -203,25 +217,27 @@ Future<void> main() async {
       exit(2);
     }
 
-    final result = await Process.run('dart', [
-      'analyze',
-      '--format=machine',
-      work.absolute.path,
-    ], workingDirectory: _hostPackage);
-
     final problems = <String>[];
-    for (final row in '${result.stdout}\n${result.stderr}'.split('\n')) {
-      final cols = row.split('|');
-      if (cols.length < 8 || cols[0] != 'ERROR') continue;
-      final code = cols[2].toLowerCase();
-      // Only emitted when the member exists: an instance member named in prose
-      // as `Type.member`. Found, not missing.
-      if (code == 'static_access_to_instance_member') continue;
-      final origin = origins[cols[3]]?[int.parse(cols[4])];
-      final where = origin == null
-          ? '${cols[3]}:${cols[4]}'
-          : '${origin.skill}/SKILL.md:${origin.line}  (${origin.what})';
-      problems.add('  $where\n      ${cols.sublist(7).join('|')}');
+    for (final host in hosts.entries) {
+      if (host.value.listSync().isEmpty) continue;
+      final result = await Process.run('dart', [
+        'analyze',
+        '--format=machine',
+        host.value.absolute.path,
+      ], workingDirectory: host.key);
+      for (final row in '${result.stdout}\n${result.stderr}'.split('\n')) {
+        final cols = row.split('|');
+        if (cols.length < 8 || cols[0] != 'ERROR') continue;
+        final code = cols[2].toLowerCase();
+        // Only emitted when the member exists: an instance member named in prose
+        // as `Type.member`. Found, not missing.
+        if (code == 'static_access_to_instance_member') continue;
+        final origin = origins[cols[3]]?[int.parse(cols[4])];
+        final where = origin == null
+            ? '${cols[3]}:${cols[4]}'
+            : '${origin.skill}/SKILL.md:${origin.line}  (${origin.what})';
+        problems.add('  $where\n      ${cols.sublist(7).join('|')}');
+      }
     }
 
     for (final p in problems) {
@@ -233,6 +249,8 @@ Future<void> main() async {
     );
     exitCode = problems.isEmpty ? 0 : 1;
   } finally {
-    work.deleteSync(recursive: true);
+    for (final work in hosts.values) {
+      work.deleteSync(recursive: true);
+    }
   }
 }

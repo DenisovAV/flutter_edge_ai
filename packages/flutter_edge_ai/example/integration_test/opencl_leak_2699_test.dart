@@ -15,9 +15,8 @@
 /// getResponse(), and maxTokens 1024 — a different code path with a 4x smaller
 /// KV cache. It showed no growth, which said nothing about the reported bug.
 ///
-/// Model is pushed by Firebase Test Lab via
-///   --other-files /data/local/tmp/flutter_gemma_test/Qwen3-0.6B.litertlm=<local>
-/// Locally: adb push Qwen3-0.6B.litertlm /data/local/tmp/flutter_gemma_test/
+/// Stage the model in /data/local/tmp/flutter_gemma_test/Qwen3-0.6B.litertlm:
+/// locally `adb push`; on a DDP phone see the ddp-device-test skill.
 library;
 
 import 'dart:io';

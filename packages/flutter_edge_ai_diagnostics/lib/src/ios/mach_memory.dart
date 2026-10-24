@@ -1,4 +1,5 @@
 import 'dart:ffi';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -19,6 +20,21 @@ const int physFootprintOffset = 144;
 /// reply that contains `phys_footprint`. A kernel that fills less has not
 /// written the field.
 const int taskVmInfoRev1Count = 38;
+
+/// Byte offset of `ledger_phys_footprint_peak` in `task_vm_info_data_t`: the
+/// lifetime high-water mark of `phys_footprint`. It follows `phys_footprint`
+/// (144) and the revision 2 fields `min_address` and `max_address`, two 8-byte
+/// fields (144 + 8 + 2 * 8 = 168), and arrived with revision 3.
+const int physFootprintPeakOffset = 168;
+
+/// The smallest `task_info` reply, in `natural_t` units, that contains
+/// `ledger_phys_footprint_peak`: its offset plus its 8 bytes, over 4.
+///
+/// The kernel reports whole revisions, so a reply of exactly this size never
+/// occurs: revision 2 is 42 (`TASK_VM_INFO_REV2_COUNT`, ending where the peak
+/// begins) and revision 3 is 84 (`TASK_VM_INFO_REV3_COUNT`). The value is the
+/// least a reply must hold to contain the field, which is what the guard asks.
+const int taskVmInfoPeakCount = (physFootprintPeakOffset + 8) ~/ 4;
 
 /// Room for later revisions of the struct. The kernel writes what it has and
 /// reports how much through the count, so a larger buffer is safe.
@@ -58,6 +74,29 @@ int physFootprintFromTaskInfoReply(
   return info.getUint64(physFootprintOffset, Endian.host);
 }
 
+/// `ledger_phys_footprint_peak` out of a `task_info(TASK_VM_INFO)` reply: the
+/// highest `phys_footprint` this process has reached since it started.
+///
+/// Null when the reply is too short to contain it, which is an OS older than
+/// revision 3 of the struct and not a failed read: `phys_footprint` is still
+/// there. A failed call throws, as in [physFootprintFromTaskInfoReply].
+int? physFootprintPeakFromTaskInfoReply(
+  int kernReturn,
+  ByteData info,
+  int returnedCount,
+) {
+  if (kernReturn != 0) {
+    throw MemoryReadException(
+      'task_info(TASK_VM_INFO) failed with kern_return_t $kernReturn',
+    );
+  }
+  if (returnedCount < taskVmInfoPeakCount ||
+      info.lengthInBytes < physFootprintPeakOffset + 8) {
+    return null;
+  }
+  return info.getUint64(physFootprintPeakOffset, Endian.host);
+}
+
 /// `os_proc_available_memory()` mapped to the snapshot's contract: 0 means
 /// either "no limit applies" or "limit already exceeded", which cannot be
 /// told apart, so it becomes null.
@@ -69,21 +108,25 @@ typedef _TaskInfoDart = int Function(int, int, Pointer<Int32>, Pointer<Uint32>);
 typedef _OsProcAvailableNative = Size Function();
 typedef _OsProcAvailableDart = int Function();
 
-/// Reads both values from the Mach kernel and libsystem.
+/// Reads the values from the Mach kernel and libsystem.
 ///
-/// Only runs on iOS; the FFI calls are exercised by
+/// Runs on iOS and macOS; the FFI calls are exercised by
 /// `flutter_edge_ai/example/integration_test/diagnostics_memory_test.dart`.
-/// Throws [MemoryReadException] when a symbol is missing or a call fails.
+/// `os_proc_available_memory()` is iOS-only (macOS has no per-app limit), so
+/// `availableBytes` is null on macOS. Throws [MemoryReadException] when a
+/// symbol is missing or a call fails.
 MemorySnapshot readMachMemorySnapshot() {
   final process = DynamicLibrary.process();
+  final vm = _readTaskVmInfo(process);
   return MemorySnapshot(
-    anonymousBytes: _readPhysFootprint(process),
-    availableBytes: _readAvailable(process),
+    anonymousBytes: vm.footprint,
+    anonymousPeakBytes: vm.peak,
+    availableBytes: Platform.isIOS ? _readAvailable(process) : null,
     takenAt: DateTime.now(),
   );
 }
 
-int _readPhysFootprint(DynamicLibrary process) {
+({int footprint, int? peak}) _readTaskVmInfo(DynamicLibrary process) {
   // `mach_task_self()` is a macro over this global.
   final taskSelf = _lookup(
     () => process.lookup<Uint32>('mach_task_self_').value,
@@ -99,10 +142,10 @@ int _readPhysFootprint(DynamicLibrary process) {
   try {
     final kr = taskInfo(taskSelf, taskVmInfoFlavor, info, count);
     final bytes = info.cast<Uint8>().asTypedList(_bufferCountNatural * 4);
-    return physFootprintFromTaskInfoReply(
-      kr,
-      ByteData.sublistView(bytes),
-      count.value,
+    final data = ByteData.sublistView(bytes);
+    return (
+      footprint: physFootprintFromTaskInfoReply(kr, data, count.value),
+      peak: physFootprintPeakFromTaskInfoReply(kr, data, count.value),
     );
   } finally {
     calloc

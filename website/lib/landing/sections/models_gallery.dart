@@ -24,7 +24,7 @@ const _models = [
   _ModelData(
     name: 'Gemma 4 E2B',
     bestFor: 'Next-gen multimodal — text, image & audio',
-    size: '2.4 GB',
+    size: '2.6 GB',
     fc: true,
     thinking: true,
     vision: true,
@@ -32,7 +32,7 @@ const _models = [
   _ModelData(
     name: 'Gemma 4 E4B',
     bestFor: 'Next-gen multimodal — higher capacity',
-    size: '4.3 GB',
+    size: '3.7 GB',
     fc: true,
     thinking: true,
     vision: true,
@@ -40,14 +40,14 @@ const _models = [
   _ModelData(
     name: 'Gemma3n E2B/E4B',
     bestFor: 'Multimodal chat — image & audio; function calling on E4B .litertlm',
-    size: '3–6 GB',
+    size: '3.1–4.9 GB',
     fc: true,
     vision: true,
   ),
   _ModelData(
     name: 'FastVLM 0.5B',
     bestFor: 'Fast vision-language on desktop',
-    size: '0.5 GB',
+    size: '1.2 GB',
     vision: true,
   ),
   _ModelData(
@@ -66,7 +66,7 @@ const _models = [
   _ModelData(
     name: 'Qwen3 0.6B',
     bestFor: 'Compact multilingual with thinking',
-    size: '586 MB',
+    size: '345 MB',
     fc: true,
     thinking: true,
   ),
@@ -95,7 +95,7 @@ const _models = [
   _ModelData(
     name: 'SmolLM 135M',
     bestFor: 'Ultra-compact for edge devices',
-    size: '135 MB',
+    size: '167 MB',
   ),
 ];
 
@@ -112,7 +112,12 @@ class ModelsGallery extends StatelessComponent {
         div(classes: 'models-inner', [
           h2(classes: 'section-title', [Component.text('Supported models')]),
           p(classes: 'models-lead', [
-            Component.text('All models run entirely on-device. Pick by capability, size, or platform support.'),
+            Component.text(
+              'Highlights from the example catalog. Any model a registered engine runs works, '
+              'entirely on-device — see ',
+            ),
+            a(href: '/docs/models', classes: 'models-lead-link', [Component.text('Models')]),
+            Component.text(' for the full list.'),
           ]),
           div(
             classes: 'models-grid',
@@ -142,6 +147,14 @@ class ModelsGallery extends StatelessComponent {
       color: Brand.white70,
       textAlign: TextAlign.center,
       margin: Margin.only(bottom: 3.rem, top: 0.px),
+    ),
+    css('.models-lead-link').styles(
+      color: Brand.blueLight,
+      textDecoration: TextDecoration.none,
+      fontWeight: FontWeight.w600,
+    ),
+    css('.models-lead-link:hover').styles(
+      textDecoration: TextDecoration(line: TextDecorationLine.underline),
     ),
     css('.models-grid').styles(
       display: Display.grid,

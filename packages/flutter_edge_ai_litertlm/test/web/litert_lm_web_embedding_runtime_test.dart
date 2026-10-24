@@ -17,7 +17,13 @@
 // - each request: a text part is the prefixed string, an image part is
 //   `{type: 'image', data: ArrayBuffer}` of exactly the file's bytes, options
 //   `{normalize: true, insertSpecialTokens: true, inputOverflowStrategy: 1}`;
-// - `truncatedLength` absent vs present, and JS rejections as typed errors.
+// - `truncatedLength` absent vs present, and JS rejections as typed errors;
+// - audio (1.13.2): describe() reads the bundle's container header through
+//   the page's own `fetch()` (`readPrefix`, over a `blob:` URL as the Cache
+//   API and OPFS copies are) and refuses a bundle without an audio encoder
+//   before anything is created; `audioBackend: 4` only when audio is
+//   declared; an audio part is `{type: 'audio', data: ArrayBuffer}` of exactly
+//   the clip, and a combined input one JS array of its parts in order.
 //
 // Not run by tool/test_all.sh or CI, which run on the VM. Run on the GCE VM:
 //   flutter test --platform chrome test/web/litert_lm_web_embedding_runtime_test.dart
@@ -38,6 +44,8 @@ import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_backend_
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_runtime.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'eg2_header_fixtures.dart';
 
 void _js(String source) => globalContext.callMethod('eval'.toJS, source.toJS);
 
@@ -74,7 +82,8 @@ int get _gpuRequests => (globalContext['__gpuRequests']! as JSArray).length;
 
 /// A stub `EmbeddingEngine` of 0.18.0's shape that records what it is given.
 /// A text "token" is a space-separated word, plus BOS and EOS; an image is
-/// 140 tokens. Inputs over `__eg2.maxSeq` under TRUNCATE come back with
+/// 140 tokens, an audio clip one per byte; an array of parts is the sum.
+/// Inputs over `__eg2.maxSeq` under TRUNCATE come back with
 /// `truncatedLength`, as the runtime's do.
 void _installEngine() => _js('''
   window.__eg2 = { settings: [], inputs: [], options: [], deletes: 0,
@@ -89,8 +98,12 @@ void _installEngine() => _js('''
         s.inputs.push(input);
         s.options.push(options);
         if (s.computeError) throw new Error(s.computeError);
-        const tokens = (typeof input === 'string'
-            ? input.split(' ').length : 140) + 2;
+        const count = (part) => typeof part === 'string'
+            ? part.split(' ').length
+            : part.type === 'audio' ? part.data.byteLength : 140;
+        const tokens = (Array.isArray(input)
+            ? input.reduce((sum, part) => sum + count(part), 0)
+            : count(input)) + 2;
         const response = { embedding: [0.5, 0.5, 0.5, 0.5],
                            inputLength: tokens, numChunks: 1 };
         if (tokens > s.maxSeq && options.inputOverflowStrategy === 1) {
@@ -110,21 +123,40 @@ final _bundle440m = EmbeddingModelSpec(
   ),
 );
 
-RuntimeConfig _config({bool supportImage = false, bool supportAudio = false}) =>
-    RuntimeConfig(
-      maxTokens: 0,
-      modelPath: 'blob:https://example.com/eg2',
-      supportImage: supportImage,
-      supportAudio: supportAudio,
-    );
+RuntimeConfig _config({
+  bool supportImage = false,
+  bool supportAudio = false,
+  String modelPath = 'blob:https://example.com/eg2',
+}) => RuntimeConfig(
+  maxTokens: 0,
+  modelPath: modelPath,
+  supportImage: supportImage,
+  supportAudio: supportAudio,
+);
 
-/// The model an app gets: describe() → the pass → core's inline host.
-Future<EmbeddingModel> _start({bool images = false}) async {
+/// A `blob:` URL of [bytes], as the Cache API and OPFS copies are served.
+String _blobUrl(Uint8List bytes) {
+  globalContext['__bytes'] = bytes.toJS;
+  return _eval<JSString>(
+    'URL.createObjectURL(new Blob([window.__bytes]))',
+  ).toDart;
+}
+
+/// The model an app gets: describe() → the pass → core's inline host. With
+/// [audio], [modelPath] must be a URL the page can read (a bundle header).
+Future<EmbeddingModel> _start({
+  bool images = false,
+  bool audio = false,
+  String modelPath = 'blob:https://example.com/eg2',
+}) async {
   final descriptor = await const LiteRtEmbeddingBackend().describe(
     _bundle440m,
-    _config(supportImage: images),
+    _config(supportImage: images, supportAudio: audio, modelPath: modelPath),
   );
-  final media = {if (images) EmbeddingModality.image};
+  final media = {
+    if (images) EmbeddingModality.image,
+    if (audio) EmbeddingModality.audio,
+  };
   final host = await inline.startEmbeddingHost(
     descriptor,
     declaredMedia: media,
@@ -303,6 +335,7 @@ void main() {
       expect((settings['maxInputLength']! as JSNumber).toDartInt, 1024);
       for (final key in [
         'visionBackend',
+        'audioBackend',
         'visionTokensPerImage',
         'minInputLength',
       ]) {
@@ -424,5 +457,112 @@ void main() {
     } finally {
       await model.close();
     }
+  });
+
+  group('readPrefix (the page\'s fetch)', () {
+    const runtime = WindowLiteRtLmWebRuntime();
+
+    test('reads exactly the first bytes of a large blob, and the whole of a '
+        'shorter one', () async {
+      final big = Uint8List(1 << 20);
+      for (var i = 0; i < big.length; i++) {
+        big[i] = i % 251;
+      }
+      final url = _blobUrl(big);
+      expect(await runtime.readPrefix(url, 32), big.sublist(0, 32));
+      expect(await runtime.readPrefix(url, 70000), big.sublist(0, 70000));
+      final small = _blobUrl(eg2Header740m);
+      expect(await runtime.readPrefix(small, 1 << 16), eg2Header740m);
+    });
+
+    test('a URL the page cannot read throws', () async {
+      final url = _blobUrl(eg2Header740m);
+      _js('URL.revokeObjectURL("$url")');
+      await expectLater(runtime.readPrefix(url, 32), throwsA(anything));
+    });
+  });
+
+  test('audio on the 740m: describe() reads its container header through '
+      'the page, create gets audioBackend 4 (GPU) and no vision keys; a clip '
+      'reaches the engine as {type: "audio", data: ArrayBuffer} of exactly '
+      'its bytes; a combined input as one array of its parts in '
+      'order', () async {
+    _installEngine();
+    _stubGpu();
+    final model = await _start(
+      images: true,
+      audio: true,
+      modelPath: _blobUrl(eg2Header740m),
+    );
+    try {
+      final settings = _recordedObject('settings', 0);
+      expect((settings['backend']! as JSNumber).toDartInt, 4);
+      expect((settings['audioBackend']! as JSNumber).toDartInt, 4);
+      expect((settings['visionBackend']! as JSNumber).toDartInt, 4);
+      expect(model.modalities, EmbeddingModality.values.toSet());
+
+      // A RIFF/WAVE header: core sniffs WAV before anything is sent.
+      final clip = Uint8List.fromList([
+        ...'RIFF'.codeUnits, 0, 0, 0, 0, ...'WAVEfmt '.codeUnits, 1, 2, 3, //
+      ]);
+      expect(
+        await model.embed(EmbeddingInput.audio(clip), taskType: TaskType.none),
+        [0.5, 0.5, 0.5, 0.5],
+      );
+      final part = _recordedObject('inputs', _count('inputs') - 1);
+      expect((part['type']! as JSString).toDart, 'audio');
+      expect(
+        _eval<JSBoolean>(
+          'window.__eg2.inputs[window.__eg2.inputs.length - 1].data '
+          'instanceof ArrayBuffer',
+        ).toDart,
+        isTrue,
+      );
+      expect((part['data']! as JSArrayBuffer).toDart.asUint8List(), clip);
+
+      await model.embed(
+        EmbeddingInput(text: 'a trip', images: [_png], audio: clip),
+        taskType: TaskType.retrievalDocument,
+      );
+      final parts =
+          (_recorded('inputs', _count('inputs') - 1) as JSArray<JSAny>).toDart;
+      expect(parts, hasLength(3));
+      expect(
+        (parts[0] as JSString).toDart,
+        '${TaskType.retrievalDocument.prefix}a trip',
+      );
+      expect(((parts[1] as JSObject)['type']! as JSString).toDart, 'image');
+      expect(
+        ((parts[1] as JSObject)['data']! as JSArrayBuffer).toDart.asUint8List(),
+        _png,
+      );
+      expect(((parts[2] as JSObject)['type']! as JSString).toDart, 'audio');
+      expect(
+        ((parts[2] as JSObject)['data']! as JSArrayBuffer).toDart.asUint8List(),
+        clip,
+      );
+    } finally {
+      await model.close();
+    }
+  });
+
+  test('audio on the 270m: describe() refuses it from the container header, '
+      'naming the 740m — nothing is created', () async {
+    _installEngine();
+    _stubGpu();
+    await expectLater(
+      _start(audio: true, modelPath: _blobUrl(eg2Header270m)),
+      throwsA(
+        isA<EmbeddingLoadException>()
+            .having((e) => e.engine, 'engine', 'LiteRT-LM')
+            .having(
+              (e) => e.message,
+              'message',
+              'embeddinggemma-2-text-vision-440m.litertlm has no audio '
+                  'encoder; install embeddinggemma-2-740m',
+            ),
+      ),
+    );
+    expect(_count('settings'), 0, reason: 'create was called');
   });
 }

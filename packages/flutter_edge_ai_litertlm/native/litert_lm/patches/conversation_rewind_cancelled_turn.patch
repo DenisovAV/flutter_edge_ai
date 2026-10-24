@@ -1,0 +1,429 @@
+--- a/c/conversation.cc
++++ b/c/conversation.cc
+@@ -40,9 +40,36 @@
+ 
+ namespace {
+ 
++// flutter_edge_ai (patch_c_api.sh section 16): numbers a send and marks it
++// running; EndTurn records how it ended unless a later send has begun.
++uint64_t BeginTurn(LiteRtLmConversation* conversation) {
++  std::lock_guard<std::mutex> lock(conversation->turn_mutex);
++  conversation->last_turn_end = kLiteRtLmTurnEndRunning;
++  return ++conversation->turn_seq;
++}
++
++void EndTurn(LiteRtLmConversation* conversation, uint64_t turn,
++             const absl::Status& status) {
++  std::lock_guard<std::mutex> lock(conversation->turn_mutex);
++  if (conversation->turn_seq != turn) return;
++  conversation->last_turn_end =
++      status.ok()                 ? kLiteRtLmTurnEndCompleted
++      : absl::IsCancelled(status) ? kLiteRtLmTurnEndCancelled
++                                  : kLiteRtLmTurnEndFailed;
++}
++
+ absl::AnyInvocable<void(absl::StatusOr<litert::lm::Message>)>
+-CreateConversationCallback(LiteRtLmStreamCallback callback, void* user_data) {
+-  return [callback, user_data](absl::StatusOr<litert::lm::Message> message) {
++CreateConversationCallback(LiteRtLmStreamCallback callback, void* user_data,
++                           LiteRtLmConversation* conversation, uint64_t turn) {
++  return [callback, user_data, conversation,
++          turn](absl::StatusOr<litert::lm::Message> message) {
++    // Recorded before the caller hears of the end, so a caller that waits for
++    // the final chunk reads a settled state.
++    if (!message.ok()) {
++      EndTurn(conversation, turn, message.status());
++    } else if (message->empty()) {
++      EndTurn(conversation, turn, absl::OkStatus());
++    }
+     if (!message.ok()) {
+       std::string error_str = message.status().ToString();
+       LiteRtLmStreamChunk chunk;
+@@ -559,8 +586,10 @@ LiteRtLmJsonResponse* litert_lm_conversation_send_message(
+   OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
+       conversation->conversation.get(), extra_context, optional_args);
+ 
++  const uint64_t turn = BeginTurn(conversation);
+   auto response = conversation->conversation->SendMessage(
+       json_message, std::move(litert_lm_optional_args));
++  EndTurn(conversation, turn, response.status());
+   if (!response.ok()) {
+     ABSL_LOG(ERROR) << "Failed to send message: " << response.status();
+     SetLastError(response.status());
+@@ -605,9 +634,12 @@ int litert_lm_conversation_send_message_stream(
+   litert::lm::OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
+       conversation->conversation.get(), extra_context, optional_args);
+ 
++  const uint64_t turn = BeginTurn(conversation);
+   absl::Status status = conversation->conversation->SendMessageAsync(
+-      json_message, CreateConversationCallback(callback, callback_data),
++      json_message,
++      CreateConversationCallback(callback, callback_data, conversation, turn),
+       std::move(litert_lm_optional_args));
++  if (!status.ok()) EndTurn(conversation, turn, status);
+ 
+   if (!status.ok()) {
+     ABSL_LOG(ERROR) << "Failed to start message stream: " << status;
+@@ -669,6 +701,69 @@ void litert_lm_conversation_cancel_process(LiteRtLmConversation* conversation) {
+   conversation->conversation->CancelProcess();
+ }
+ 
++int litert_lm_conversation_rewind_cancelled_turn(
++    LiteRtLmConversation* conversation, const char* messages_json,
++    const char* extra_context,
++    const LiteRtLmConversationOptionalArgs* optional_args,
++    int* out_last_turn_end) {
++  if (out_last_turn_end) *out_last_turn_end = kLiteRtLmTurnEndNone;
++  if (!conversation || !conversation->conversation) {
++    SetLastError(absl::StatusCode::kInvalidArgument, "Invalid conversation.");
++    return static_cast<int>(absl::StatusCode::kInvalidArgument);
++  }
++  std::optional<litert::lm::Message> stopped_exchange;
++  if (messages_json) {
++    auto json = nlohmann::ordered_json::parse(messages_json, /*cb=*/nullptr,
++                                              /*allow_exceptions=*/false);
++    if (json.is_discarded()) {
++      SetLastError(absl::StatusCode::kInvalidArgument,
++                   "Failed to parse messages JSON.");
++      return static_cast<int>(absl::StatusCode::kInvalidArgument);
++    }
++    stopped_exchange = std::move(json);
++  }
++
++  // The stop may not have reached the running task yet (a caller that stopped
++  // listening without waiting), and its callbacks may still be queued: cancel
++  // again, then wait until every task has ended. Only then is the recorded end
++  // final, and only then has the cancel callback removed the stopped message.
++  conversation->conversation->CancelProcess();
++  absl::Status waited = conversation->conversation->WaitUntilDone();
++  int end;
++  {
++    std::lock_guard<std::mutex> lock(conversation->turn_mutex);
++    end = waited.ok() ? conversation->last_turn_end : kLiteRtLmTurnEndRunning;
++  }
++  if (out_last_turn_end) *out_last_turn_end = end;
++  if (!waited.ok()) {
++    SetLastError(waited);
++    return static_cast<int>(waited.code());
++  }
++  if (end == kLiteRtLmTurnEndNone || end == kLiteRtLmTurnEndCompleted) {
++    return 0;
++  }
++  if (end != kLiteRtLmTurnEndCancelled) {
++    SetLastError(absl::StatusCode::kInternal,
++                 "The last turn failed; the conversation cannot continue.");
++    return static_cast<int>(absl::StatusCode::kInternal);
++  }
++
++  absl::Status status = conversation->conversation->RewindCancelledTurn(
++      stopped_exchange,
++      CreateOptionalArgs(conversation->conversation.get(), extra_context,
++                         optional_args));
++  if (!status.ok()) {
++    ABSL_LOG(ERROR) << "Failed to rewind the cancelled turn: " << status;
++    SetLastError(status);
++    return static_cast<int>(status.code());
++  }
++  {
++    std::lock_guard<std::mutex> lock(conversation->turn_mutex);
++    conversation->last_turn_end = kLiteRtLmTurnEndNone;
++  }
++  return 0;
++}
++
+ LiteRtLmBenchmarkInfo* litert_lm_conversation_get_benchmark_info(
+     LiteRtLmConversation* conversation) {
+   if (!conversation || !conversation->conversation) {
+--- a/c/conversation.h
++++ b/c/conversation.h
+@@ -484,6 +484,41 @@ const char* litert_lm_conversation_render_preface_to_string(
+ LITERT_LM_C_API_EXPORT
+ void litert_lm_conversation_cancel_process(LiteRtLmConversation* conversation);
+ 
++// flutter_edge_ai (patch_c_api.sh section 16): how the last send on a
++// conversation ended.
++typedef enum {
++  kLiteRtLmTurnEndNone = 0,       // nothing was sent, or it was rewound
++  kLiteRtLmTurnEndCompleted = 1,  // the reply ended by itself
++  kLiteRtLmTurnEndCancelled = 2,  // cancelled; the conversation is poisoned
++  kLiteRtLmTurnEndFailed = 3,     // ended with an error
++  kLiteRtLmTurnEndRunning = 4,    // had not ended when the wait timed out
++} LiteRtLmTurnEnd;
++
++// flutter_edge_ai (patch_c_api.sh section 16). Makes a conversation whose last
++// send was stopped usable again, without deleting it. It cancels whatever of
++// that send still runs and waits, up to 10 minutes, until every task of the
++// conversation has ended and its callbacks have run; never call it from a
++// stream callback. Then, by how the last send ended:
++// - none or completed: nothing changes;
++// - cancelled: the conversation is rewound to just before that send's own
++//   prefill, which also undoes the poisoning, and when `messages_json` is not
++//   NULL those messages (a JSON array, for example the stopped message and the
++//   part of the reply that was produced) are prefilled without generating and
++//   added to the history;
++// - failed or still running: the conversation must be deleted.
++// `extra_context` and `optional_args` (both may be NULL) are what the stopped
++// send was given. `out_last_turn_end` (may be NULL) receives the
++// LiteRtLmTurnEnd seen after the wait.
++//
++// Returns 0 when the conversation can be used, otherwise an absl::StatusCode
++// with the last error set, and the conversation must be deleted.
++LITERT_LM_C_API_EXPORT
++int litert_lm_conversation_rewind_cancelled_turn(
++    LiteRtLmConversation* conversation, const char* messages_json,
++    const char* extra_context,
++    const LiteRtLmConversationOptionalArgs* optional_args,
++    int* out_last_turn_end);
++
+ // Retrieves the benchmark information from the conversation. The caller is
+ // responsible for destroying the benchmark info using
+ // `litert_lm_benchmark_info_delete`.
+--- a/c/conversation_internal.h
++++ b/c/conversation_internal.h
+@@ -15,7 +15,9 @@
+ #ifndef THIRD_PARTY_ODML_LITERT_LM_C_CONVERSATION_INTERNAL_H_
+ #define THIRD_PARTY_ODML_LITERT_LM_C_CONVERSATION_INTERNAL_H_
+ 
++#include <cstdint>
+ #include <memory>
++#include <mutex>  // NOLINT
+ #include <optional>
+ #include <string>
+ 
+@@ -43,6 +45,14 @@ struct LiteRtLmConversationOptionalArgs {
+ };
+ 
+ struct LiteRtLmConversation {
++  // flutter_edge_ai (patch_c_api.sh section 16): how the last send ended, a
++  // LiteRtLmTurnEnd, written by that send's own callback. turn_seq numbers the
++  // sends, so a late callback of an earlier send cannot overwrite it. Declared
++  // before `conversation`, whose destructor waits for the callbacks that write
++  // them, so they outlive it.
++  std::mutex turn_mutex;
++  uint64_t turn_seq = 0;
++  int last_turn_end = kLiteRtLmTurnEndNone;
+   std::unique_ptr<litert::lm::Conversation> conversation;
+   // This field stores the result of the last call to
+   // `litert_lm_conversation_render_message_to_string`. This ties the lifetime
+--- a/runtime/conversation/conversation.cc
++++ b/runtime/conversation/conversation.cc
+@@ -72,6 +72,9 @@ constexpr absl::string_view kChannelContentCheckpoint =
+     "channel_content_checkpoint";
+ constexpr absl::string_view kStartContentCheckpoint =
+     "start_content_checkpoint";
++// flutter_edge_ai section 16: the step before a send's own prefill.
++constexpr absl::string_view kTurnStartCheckpoint =
++    "flutter_edge_ai_turn_start_checkpoint";
+ 
+ bool IsEmptyInputError(const absl::Status& status) {
+   return absl::IsInvalidArgument(status) &&
+@@ -576,6 +579,11 @@ absl::Status Conversation::SendMessageAsync(
+   {
+     absl::MutexLock lock(history_mutex_);  // NOLINT
+     prev_is_appending_message = is_appending_message_;
++    // flutter_edge_ai section 16: a new send ends the previous turn's chance
++    // to be rewound.
++    turn_checkpoint_saved_ = false;
++    turn_checkpoint_error_ = absl::OkStatus();
++    last_turn_cancelled_ = false;
+   }
+   ABSL_ASSIGN_OR_RETURN(std::string single_turn_text,
+                         GetSingleTurnText(message, optional_args));
+@@ -607,6 +615,7 @@ absl::Status Conversation::SendMessageAsync(
+       history_.pop_back();
+     }
+     is_appending_message_ = prev_is_appending_message;
++    last_turn_cancelled_ = true;  // flutter_edge_ai section 16
+   };
+ 
+   if (!config_.enable_rewinding() && was_history_empty) {
+@@ -747,6 +756,20 @@ absl::Status Conversation::SendMessageAsync(
+                       internal_callback, decode_config,
+                       optional_args =
+                           std::move(optional_args)]() -> absl::Status {
++    // flutter_edge_ai section 16: the step RewindCancelledTurn() returns to,
++    // taken after any refill, so the refill's own rewind cannot erase it. Not
++    // fatal: a turn without it runs as before and cannot be rewound.
++    if (absl::Status saved = session_->SaveCheckpoint(kTurnStartCheckpoint);
++        saved.ok()) {
++      absl::MutexLock lock(history_mutex_);
++      turn_checkpoint_saved_ = true;
++      turn_checkpoint_message_index_ = checkpoint_message_index_;
++      turn_channel_content_since_last_user_message_ =
++          channel_content_since_last_user_message_;
++    } else {
++      absl::MutexLock lock(history_mutex_);
++      turn_checkpoint_error_ = saved;
++    }
+     ABSL_ASSIGN_OR_RETURN(
+         auto prefill_task_controller,
+         session_->RunPrefillAsync(
+@@ -866,6 +889,109 @@ absl::Status Conversation::RunTextScoringAsync(
+   return absl::OkStatus();
+ }
+ 
++absl::Status Conversation::RewindCancelledTurn(
++    const std::optional<Message>& stopped_exchange,
++    const OptionalArgs& optional_args) {
++  if (stopped_exchange.has_value() &&
++      (!stopped_exchange->is_array() || stopped_exchange->empty())) {
++    return absl::InvalidArgumentError(
++        "The stopped exchange must be a non-empty JSON array of messages.");
++  }
++  if (!config_.enable_rewinding()) {
++    return absl::UnimplementedError(
++        "Rewinding is disabled for this conversation.");
++  }
++  {
++    absl::MutexLock lock(history_mutex_);
++    if (!last_turn_cancelled_) {
++      return absl::FailedPreconditionError("The last turn was not cancelled.");
++    }
++    if (!turn_checkpoint_saved_) {
++      return absl::NotFoundError(
++          turn_checkpoint_error_.ok()
++              ? std::string("The last turn was cancelled before its own "
++                            "prefill was scheduled.")
++              : absl::StrCat("The last turn's checkpoint was not saved: ",
++                             turn_checkpoint_error_.ToString()));
++    }
++    // One rewind per cancelled turn.
++    last_turn_cancelled_ = false;
++    turn_checkpoint_saved_ = false;
++  }
++  ABSL_RETURN_IF_ERROR(session_->RewindToCheckpoint(kTurnStartCheckpoint));
++
++  std::vector<Message> old_messages;
++  {
++    absl::MutexLock lock(history_mutex_);
++    // The cancel callback removed the message; these two still describe the
++    // cancelled send.
++    checkpoint_message_index_ = turn_checkpoint_message_index_;
++    channel_content_since_last_user_message_ =
++        turn_channel_content_since_last_user_message_;
++    if (!stopped_exchange.has_value()) {
++      return absl::OkStatus();
++    }
++    old_messages = history_;
++  }
++
++  std::vector<Message> new_messages(stopped_exchange->begin(),
++                                    stopped_exchange->end());
++  ABSL_ASSIGN_OR_RETURN(
++      std::string prefill_text,
++      GetPrefillTextForMessages(
++          old_messages, new_messages, optional_args,
++          /*include_preface=*/!config_.prefill_preface_on_init()));
++  // When the history is empty the text carries the preface, so its messages
++  // are converted too, as on the first send: their media fills placeholders.
++  nlohmann::ordered_json messages_for_conversion =
++      nlohmann::ordered_json::array();
++  if (old_messages.empty() && !config_.prefill_preface_on_init() &&
++      std::holds_alternative<JsonPreface>(preface_)) {
++    const auto& preface_messages = std::get<JsonPreface>(preface_).messages;
++    if (preface_messages.is_array()) {
++      for (const auto& message : preface_messages) {
++        messages_for_conversion.push_back(message);
++      }
++    } else if (!preface_messages.is_null()) {
++      messages_for_conversion.push_back(preface_messages);
++    }
++  }
++  for (const auto& message : new_messages) {
++    messages_for_conversion.push_back(message);
++  }
++  ABSL_ASSIGN_OR_RETURN(
++      std::vector<InputData> session_inputs,
++      model_data_processor_->ToInputDataVector(
++          prefill_text, messages_for_conversion,
++          optional_args.args.value_or(std::monostate())));
++
++  // RunPrefill() reports a cancelled or failed task as OK; read its state. On
++  // the heap: after a timed-out wait the callback can still run.
++  auto prefill_status = std::make_shared<absl::Status>();
++  ABSL_ASSIGN_OR_RETURN(
++      auto task_controller,
++      session_->RunPrefillAsync(
++          session_inputs,
++          [prefill_status](absl::StatusOr<Responses> responses) {
++            if (!responses.ok()) {
++              *prefill_status = responses.status();
++            } else if (IsTaskEndState(responses->GetTaskState()) &&
++                       responses->GetTaskState() != TaskState::kDone) {
++              *prefill_status = absl::InternalError(
++                  absl::StrCat("Prefill ended with task state: ",
++                               TaskStateToString(responses->GetTaskState())));
++            }
++          }));
++  ABSL_RETURN_IF_ERROR(task_controller->WaitUntilDone(Engine::kDefaultTimeout));
++  ABSL_RETURN_IF_ERROR(*prefill_status);
++
++  absl::MutexLock lock(history_mutex_);
++  for (auto& message : new_messages) {
++    history_.push_back(std::move(message));
++  }
++  return absl::OkStatus();
++}
++
+ absl::StatusOr<int> Conversation::GetTokenCount() const {
+   return session_->GetCurrentStep();
+ }
+--- a/runtime/conversation/conversation.h
++++ b/runtime/conversation/conversation.h
+@@ -637,6 +637,33 @@ class Conversation {
+   // on the same Conversation will fail.
+   void CancelProcess();
+ 
++  // Waits until every task of the session has ended, its callbacks included.
++  // flutter_edge_ai (patch_c_api.sh section 16): upstream added the same method
++  // after the v0.18.0 pin; drop this copy at the next pin bump.
++  absl::Status WaitUntilDone() { return session_->WaitUntilDone(); }
++
++  // flutter_edge_ai (patch_c_api.sh section 16). Rewinds a conversation whose
++  // last SendMessageAsync was cancelled (CancelProcess, CancelGroup, or the
++  // token limit with return_error_on_max_tokens_reached) to the step right
++  // before that send's own prefill. This also restores the task dependencies
++  // the cancel poisoned, so the conversation accepts messages again. The
++  // cancelled message is already gone from the history. When
++  // `stopped_exchange` is set it must be a non-empty JSON array of messages:
++  // they are prefilled, without decoding, and added to the history.
++  // `optional_args` is what the cancelled send was given; only its
++  // extra_context, args and thinking_config are read. Call it only once the
++  // cancelled send has ended (CancelProcess, then WaitUntilDone): it reads
++  // what that send's callbacks recorded.
++  //
++  // Returns an error, with nothing changed, when there is nothing to rewind to:
++  // rewinding is disabled, the last send was not cancelled, or it was
++  // cancelled before its own prefill was scheduled (a thinking turn still
++  // refilling the history). An error after the rewind has begun leaves the
++  // conversation unusable. Either way the C API's caller deletes it.
++  absl::Status RewindCancelledTurn(
++      const std::optional<Message>& stopped_exchange,
++      const OptionalArgs& optional_args = OptionalArgs());
++
+   // Clones the conversation. The cloned conversation will be independent of the
+   // original conversation, including the history, state, etc.
+   //
+@@ -799,6 +826,22 @@ class Conversation {
+       std::vector<std::unique_ptr<Engine::Session::TaskController>>>
+       task_controllers_ ABSL_GUARDED_BY(task_controllers_mutex_);
+ 
++  // flutter_edge_ai section 16: what RewindCancelledTurn() returns to, declared
++  // before session_ so it outlives the callbacks ~session_ waits for. Cleared
++  // at the start of every send; set when that send's own prefill is scheduled,
++  // with checkpoint_message_index_ and
++  // channel_content_since_last_user_message_ as they were at that moment.
++  bool turn_checkpoint_saved_ ABSL_GUARDED_BY(history_mutex_) = false;
++  // Why the checkpoint of the last send could not be saved, if it was not.
++  absl::Status turn_checkpoint_error_ ABSL_GUARDED_BY(history_mutex_);
++  std::optional<int> turn_checkpoint_message_index_
++      ABSL_GUARDED_BY(history_mutex_) = std::nullopt;
++  bool turn_channel_content_since_last_user_message_
++      ABSL_GUARDED_BY(history_mutex_) = false;
++  // Set by the last send's cancel callback, which has removed its messages
++  // from the history.
++  bool last_turn_cancelled_ ABSL_GUARDED_BY(history_mutex_) = false;
++
+   // Declare the session after model_data_processor_ and other members it
+   // depends on so that the session is destroyed before them. This is to avoid
+   // memory corruption and null-pointer deference issues.

@@ -39,7 +39,7 @@ final class EmbeddingInput {
   /// part per vector refuses it with
   /// `UnsupportedEmbeddingCombinationException`, before anything is sent.
   /// Which engines combine parts is engine-defined (EmbeddingGemma 2 through
-  /// flutter_edge_ai_litertlm does, on native platforms).
+  /// flutter_edge_ai_litertlm does, natively and, from 1.13.2, on the web).
   factory EmbeddingInput({
     String? text,
     List<Uint8List> images = const [],

@@ -11,27 +11,53 @@ import 'package:web/web.dart' as web;
 import 'photo_store.dart';
 
 /// The web [PhotoStore]: picked photos are copied into the origin private
-/// file system (OPFS), directory `image_search_photos/`, so a reference
-/// outlives the page like the RAG index that stores it. Needs a browser with
+/// file system (OPFS), directory `<directoryName>/`, so a reference outlives
+/// the page like the RAG index that stores it. Needs a browser with
 /// `FileSystemFileHandle.createWritable` (Chrome, Edge, Firefox).
-PhotoStore createPhotoStore() => _OpfsPhotoStore();
+PhotoStore createPhotoStore({String directoryName = 'image_search_photos'}) =>
+    _OpfsPhotoStore(directoryName);
 
-/// The reference of a photo this store kept: `opfs-photo:<file name>`.
+/// The reference of a photo this store kept: `opfs-photo:<file name>`, or
+/// `opfs-photo:<directory>/<file name>` outside the default directory.
 const _scheme = 'opfs-photo:';
-const _directoryName = 'image_search_photos';
+const _defaultDirectory = 'image_search_photos';
 
 Future<web.FileSystemDirectoryHandle> _root() =>
     web.window.navigator.storage.getDirectory().toDart;
 
-Future<web.FileSystemDirectoryHandle> _directory() async => (await _root())
-    .getDirectoryHandle(
-      _directoryName,
-      web.FileSystemGetDirectoryOptions(create: true),
-    )
-    .toDart;
+Future<web.FileSystemDirectoryHandle> _directory(String name) async =>
+    (await _root())
+        .getDirectoryHandle(
+          name,
+          web.FileSystemGetDirectoryOptions(create: true),
+        )
+        .toDart;
+
+/// The directory and file name of a reference this store kept.
+({String directory, String file}) _locate(String reference) {
+  final path = reference.substring(_scheme.length);
+  final slash = path.indexOf('/');
+  return slash < 0
+      ? (directory: _defaultDirectory, file: path)
+      : (directory: path.substring(0, slash), file: path.substring(slash + 1));
+}
+
+Future<Uint8List> _readFile(String reference) async {
+  final (:directory, :file) = _locate(reference);
+  final handle = await (await _directory(directory)).getFileHandle(file).toDart;
+  final blob = await handle.getFile().toDart;
+  return (await blob.arrayBuffer().toDart).toDart.asUint8List();
+}
 
 final class _OpfsPhotoStore implements PhotoStore {
+  _OpfsPhotoStore(this._directoryName);
+
+  final String _directoryName;
   int _counter = 0;
+
+  String _referenceTo(String fileName) => _directoryName == _defaultDirectory
+      ? '$_scheme$fileName'
+      : '$_scheme$_directoryName/$fileName';
 
   @override
   Future<String> keep(Uint8List data, {required String name}) async {
@@ -40,7 +66,7 @@ final class _OpfsPhotoStore implements PhotoStore {
     final extension = sniffEncodedMediaFormat(data)?.name ?? 'bin';
     final stamp = DateTime.now().microsecondsSinceEpoch;
     final fileName = 'photo-$stamp-${_counter++}.$extension';
-    final directory = await _directory();
+    final directory = await _directory(_directoryName);
     final handle = await directory
         .getFileHandle(fileName, web.FileSystemGetFileOptions(create: true))
         .toDart;
@@ -61,22 +87,32 @@ final class _OpfsPhotoStore implements PhotoStore {
       );
       rethrow;
     }
-    return '$_scheme$fileName';
+    return _referenceTo(fileName);
   }
 
   @override
   ImageProvider imageFor(String reference) =>
       assetImageFor(reference) ??
       (reference.startsWith(_scheme)
-          ? _OpfsImage(reference.substring(_scheme.length))
+          ? _OpfsImage(reference)
           : throw ArgumentError.value(reference, 'reference', 'not a photo'));
+
+  @override
+  Future<Uint8List> read(String reference) {
+    if (!reference.startsWith(_scheme)) {
+      return Future.error(
+        ArgumentError.value(reference, 'reference', 'not a kept photo'),
+      );
+    }
+    return _readFile(reference);
+  }
 
   @override
   Future<void> forget(String reference) async {
     if (!reference.startsWith(_scheme)) return; // an asset, or not ours
-    await (await _directory())
-        .removeEntry(reference.substring(_scheme.length))
-        .toDart;
+    final (:directory, :file) = _locate(reference);
+    if (directory != _directoryName) return; // another store's
+    await (await _directory(directory)).removeEntry(file).toDart;
   }
 
   @override
@@ -108,13 +144,13 @@ Future<void> _quietly(String what, Future<Object?> step) async {
   }
 }
 
-/// A photo the store kept in OPFS, read when it is first shown. Equal by file
-/// name, so the image cache decodes each one once.
+/// A photo the store kept in OPFS, read when it is first shown. Equal by
+/// reference, so the image cache decodes each one once.
 @immutable
 final class _OpfsImage extends ImageProvider<_OpfsImage> {
-  const _OpfsImage(this.fileName);
+  const _OpfsImage(this.reference);
 
-  final String fileName;
+  final String reference;
 
   @override
   Future<_OpfsImage> obtainKey(ImageConfiguration configuration) =>
@@ -125,20 +161,17 @@ final class _OpfsImage extends ImageProvider<_OpfsImage> {
       MultiFrameImageStreamCompleter(
         codec: _codec(decode),
         scale: 1,
-        debugLabel: fileName,
+        debugLabel: reference,
       );
 
-  Future<ui.Codec> _codec(ImageDecoderCallback decode) async {
-    final handle = await (await _directory()).getFileHandle(fileName).toDart;
-    final file = await handle.getFile().toDart;
-    final bytes = (await file.arrayBuffer().toDart).toDart.asUint8List();
-    return decode(await ui.ImmutableBuffer.fromUint8List(bytes));
-  }
+  Future<ui.Codec> _codec(ImageDecoderCallback decode) async => decode(
+    await ui.ImmutableBuffer.fromUint8List(await _readFile(reference)),
+  );
 
   @override
   bool operator ==(Object other) =>
-      other is _OpfsImage && other.fileName == fileName;
+      other is _OpfsImage && other.reference == reference;
 
   @override
-  int get hashCode => fileName.hashCode;
+  int get hashCode => reference.hashCode;
 }

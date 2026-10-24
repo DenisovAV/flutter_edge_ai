@@ -16,13 +16,14 @@
 // header is small (880 to 2176 bytes on the three EmbeddingGemma 2 bundles);
 // nothing past it is read.
 //
-// Synchronous on purpose: the pass reads it inside core's embedding worker,
-// where blocking costs no frame.
+// Web-safe: the parsing is pure Dart over the header bytes, and the bytes come
+// from whoever can read the file — `litertlm_container_io.dart` natively
+// (synchronous on purpose: the pass reads it inside core's embedding worker,
+// where blocking costs no frame), the page's `fetch()` on the web
+// ([readLitertlmModelTypesFrom]).
 
-import 'dart:io';
 import 'dart:typed_data';
 
-import '../litertlm_bundle_sampler.dart' show litertlmHeaderEnd;
 import '../litertlm_flatbuffer.dart';
 
 /// `AnySectionDataType.TFLiteModel`.
@@ -34,21 +35,31 @@ const _stringValue = 9;
 /// The `model_type` that marks an audio encoder section, as a prefix.
 const _audioEncoderPrefix = 'tf_lite_audio_encoder';
 
-/// The `model_type` of every `TFLiteModel` section of [path], lowercased (as
-/// LiteRT-LM compares them), in file order. A section without one is left
-/// out.
+/// The `model_type` of every `TFLiteModel` section of a `.litertlm` file,
+/// lowercased, in file order, from [prefix] — a reader of the file's first
+/// `length` bytes (fewer when the file is shorter). It is asked for the
+/// 32-byte preamble, then for everything up to the header end.
 ///
-/// Throws [FileSystemException] when the file cannot be read and
-/// [FormatException] when it is not a `.litertlm` container this reader
-/// understands.
-List<String> readLitertlmModelTypes(String path) {
-  final file = File(path).openSync();
-  try {
-    final headerEnd = litertlmHeaderEnd(_readExactly(file, 0, 32));
-    return litertlmModelTypes(_readExactly(file, 32, headerEnd - 32));
-  } finally {
-    file.closeSync();
+/// Throws [FormatException] when the file is not a `.litertlm` container this
+/// reader understands, or ends inside its header; whatever [prefix] throws
+/// passes through.
+Future<List<String>> readLitertlmModelTypesFrom(
+  Future<Uint8List> Function(int length) prefix,
+) async {
+  final preamble = await prefix(32);
+  if (preamble.length < 32) {
+    throw FormatException(
+      '.litertlm file ends at ${preamble.length}, expected 32',
+    );
   }
+  final headerEnd = litertlmHeaderEnd(preamble);
+  final head = await prefix(headerEnd);
+  if (head.length < headerEnd) {
+    throw FormatException(
+      '.litertlm file ends at ${head.length}, expected $headerEnd',
+    );
+  }
+  return litertlmModelTypes(Uint8List.sublistView(head, 32, headerEnd));
 }
 
 /// The `model_type` of every `TFLiteModel` section in [header] — the
@@ -87,6 +98,8 @@ List<String> litertlmModelTypes(Uint8List header) {
     }
     return types;
   } on RangeError {
+    // LitertlmFlatBuffer checks every offset itself, so this is a Dart
+    // RangeError on every compiler (dart2js and dart2wasm included).
     throw const FormatException('.litertlm header flatbuffer is truncated');
   }
 }
@@ -95,15 +108,3 @@ List<String> litertlmModelTypes(Uint8List header) {
 /// audio encoder.
 bool litertlmHasAudioEncoder(Iterable<String> modelTypes) =>
     modelTypes.any((type) => type.startsWith(_audioEncoderPrefix));
-
-Uint8List _readExactly(RandomAccessFile file, int position, int length) {
-  file.setPositionSync(position);
-  final bytes = file.readSync(length);
-  if (bytes.length != length) {
-    throw FormatException(
-      '.litertlm file ends at ${position + bytes.length}, '
-      'expected ${position + length}',
-    );
-  }
-  return bytes;
-}

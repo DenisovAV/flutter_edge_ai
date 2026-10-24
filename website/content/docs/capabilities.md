@@ -19,20 +19,26 @@ add brings its own capabilities. This page shows what you can swap for what.
 | **Text-to-speech** | ✅ Native | — | — | — |
 
 All means Android, iOS, macOS, Windows, Linux and Web; Native means all of
-them except Web; Mobile means Android and iOS. The packages are
+them except Web; Mobile means Android and iOS. On the Web, LiteRT-LM text
+generation runs only dedicated `-web.litertlm` exports (Gemma 4 and Gemma 3n
+today). MediaPipe's LLM Inference API is maintenance-only upstream, so new apps
+should use LiteRT-LM (`.litertlm`). The packages are
 `flutter_edge_ai_litertlm` (plus `flutter_edge_ai_speech` for speech),
 `flutter_edge_ai_onnx`, `flutter_edge_ai_mediapipe` and
 `flutter_edge_ai_builtin_ai`.
 
-So text generation has four interchangeable runtimes, embeddings have two
-(LiteRT and ONNX, both on every platform), and speech has one (LiteRT, on
+So text generation has five interchangeable runtimes (the fifth is llama.cpp through `flutter_edge_ai_llama`, for GGUF models, with image and audio input through a compatible GGUF projector; see [llama.cpp](/docs/llama)), embeddings have three
+(LiteRT and ONNX on every platform, and llama.cpp for EmbeddingGemma 2 GGUF text
+natively through `flutter_edge_ai_llama` 0.0.3, measured on macOS, Linux and
+Windows; Android and iOS not qualified), and speech has one (LiteRT, on
 native platforms).
 
 - **Embeddings**: LiteRT runs `.tflite` models (EmbeddingGemma 1, Gecko) and
   EmbeddingGemma 2 `.litertlm` bundles — text, and JPEG/PNG/GIF/BMP images
   with the 440m and 740m bundles, on native platforms and (since litertlm
   1.13.1, on WebGPU) on the Web; WAV/MP3/FLAC audio with the 740m bundle and
-  several parts in one vector, on native platforms (litertlm 1.13.1); ONNX runs `.onnx`
+  several parts in one vector, on native platforms (litertlm 1.13.1) and on
+  the Web (1.13.2, WebGPU); ONNX runs `.onnx`
   models (MiniLM, EmbeddingGemma). The `.tflite` and `.onnx` models take their
   tokenizer from `flutter_edge_ai_embeddings`; an EmbeddingGemma 2 bundle
   carries its own. On the Web, ONNX embeddings accept WordPiece (BERT-style)
@@ -51,7 +57,7 @@ native platforms).
 | | LiteRT-LM | MediaPipe | ONNX | Built-in AI |
 |---|---|---|---|---|
 | **Vision** | ✅ Native | ✅ | — | ✅ Android |
-| **Audio** | ✅ Native | ✅ Mobile | — | — |
+| **Audio** | ✅ Native | — | — | — |
 | **Function calling** | ✅ Native/Prompt | ✅ Prompt | ✅ Prompt | ✅ Prompt |
 | **Thinking** | ✅ Full | ✅ Tags | ✅ Tags | — |
 
@@ -63,6 +69,9 @@ native platforms).
   the format.
 - **Gemma 4 function calling** needs LiteRT-LM (`.litertlm`). On MediaPipe and
   ONNX the tools do not reach a Gemma 4 model.
+- **Audio on MediaPipe**: the engine passes audio on Android and iOS, but the
+  `.task` files carry no audio encoder (Gemma 3n included); use a `.litertlm`
+  model for audio.
 - **Thinking.** *Tags*: models that write their reasoning between `<think>`
   tags (Qwen3, DeepSeek R1). Core parses the tags, so this works on any engine.
   *Full* adds Gemma 4's separate thinking channel, which needs LiteRT-LM
@@ -84,7 +93,8 @@ places.
 
 **Which runtime runs a model** follows the file type you declare when you
 install it (`ModelFileType`). If no registered engine can run it, creating the
-model throws a `StateError` that names the package to add. Embedding and speech
+model throws a `StateError` that names the `ModelFileType` and the registered
+engines. Embedding and speech
 backends are chosen the same way; a vector store is chosen by its
 `VectorStoreSpec.providerId` among the providers passed to `FlutterEdgeAiRag`.
 
@@ -106,9 +116,15 @@ final canOpen = rag.canOpen(spec);
 ```
 
 **Model features are flags you set**: `supportImage` and `supportAudio` on
-`getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `createChat`.
+`getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `createChat`
+(a MediaPipe chat on Android or iOS also needs `supportImage: true` on
+`createChat`, or the image is dropped).
 ONNX and Built-in AI, and LiteRT-LM on web, throw `UnsupportedError` for image
 or audio input they cannot take.
 
 After a model loads, `InferenceModel.activeBackend` and
-`EmbeddingModel.activeBackend` report the accelerator it actually runs on.
+`EmbeddingModel.activeBackend` report the accelerator it actually runs on, and
+`InferenceModel.activeVisionBackend` and `activeAudioBackend` where its vision
+and audio encoders run (`flutter_edge_ai` 2.4.0, filled by
+`flutter_edge_ai_litertlm` 1.14.0; null when the model has no such encoder or
+the engine does not say).

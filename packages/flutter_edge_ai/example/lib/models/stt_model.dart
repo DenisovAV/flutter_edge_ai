@@ -23,7 +23,7 @@ enum SttModel {
     modelUrl:
         'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite',
     tokenizerUrl:
-        'https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
+        'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
     displayName: 'Moonshine Tiny',
     size: '109MB',
     sttModelType: SttModelType.moonshine,
@@ -61,9 +61,9 @@ enum SttModel {
     modelUrl:
         'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_i8.tflite',
     tokenizerUrl:
-        'https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
+        'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
     displayName: 'Moonshine Tiny (int8)',
-    size: '28MB',
+    size: '52MB',
     sttModelType: SttModelType.moonshine,
     needsAuth: false,
     // Selectable, but int8 accuracy is materially lower than the f32 moonshine

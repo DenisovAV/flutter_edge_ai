@@ -44,7 +44,7 @@ await FlutterEdgeAi.initialize(
 
 Either arm can be registered on its own — they don't depend on each other.
 
-> **0.5.8 needs `flutter_edge_ai` 2.3.0, and 2.3.0 needs every
+> **Since 0.5.8 this package needs `flutter_edge_ai` 2.3.0, and 2.3.0 needs every
 > flutter_edge_ai package upgraded together:** `flutter_edge_ai_litertlm`
 > 1.13.0 · `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_mediapipe`
 > 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 · `flutter_edge_ai_speech` 0.5.6 ·
@@ -113,7 +113,8 @@ profile, not of the output's name, and should move there.
 
 ## Inference — `OnnxEngine`
 
-Text-only, one session at a time (v1). No vision, no audio, no LoRA. Sampling
+Text-only, one session at a time (v1): `openSession` and `openChat` throw
+`UnsupportedError`. No vision, no audio, no LoRA. Sampling
 follows the model's `genai_config.json` (greedy unless it sets `do_sample`);
 the `temperature`, `topK`, `topP` and `randomSeed` you pass override it, and
 `temperature: 0` or `topK: 1` keeps decoding greedy. Natively, a temperature
@@ -124,9 +125,11 @@ when set. Models install as `ModelFileType.onnx` and use ORT-GenAI's own chat
 template (`OgaTokenizerApplyChatTemplate`) — the engine never builds turn
 markers itself.
 
-`activeBackend` is `null`: ORT-GenAI picks the execution provider from the
-model's `genai_config.json`, which the plugin never reads, so there is no honest
-answer to report.
+Natively `activeBackend` is `null`: ORT-GenAI picks the execution provider from the
+model's `genai_config.json`, whose execution-provider section the plugin does
+not read, so there is no honest answer to report. On web it is `null` until the
+first `createSession` loads the Transformers.js pipeline, then `gpu` (WebGPU)
+or `cpu` (WASM).
 
 ### Model layout: a directory, not a file
 
@@ -216,8 +219,9 @@ LoRA. See [Web setup](#web-setup) for the required `web/index.html` shim.
 
 ## Embeddings — `OnnxEmbeddingBackend`
 
-A plain ONNX Runtime forward pass (no ORT-GenAI, no text generation) over an
-`.onnx`/`.ort` embedding model directory. One factory handles both:
+A plain ONNX Runtime forward pass (no ORT-GenAI, no text generation) over one
+`.onnx`/`.ort` embedding model file and its tokenizer — not a directory, unlike
+the generation arm. One factory handles both:
 
 - **WordPiece / BERT-style** models (e.g. all-MiniLM-L6-v2) — `tokenLevel`
   output contract, mean-pooled + normalized client-side.
@@ -267,7 +271,8 @@ are native-only. See [Web setup](#web-setup).
 - No vision, no audio, no multimodal input on the inference arm — text only.
 - No LoRA.
 - One inference session at a time (`createSession` closes any live session
-  before opening a new one, same as every other engine in this monorepo).
+  before opening a new one, same as every other engine in this monorepo);
+  `openSession` and `openChat` throw `UnsupportedError`.
 
 ## Web setup
 

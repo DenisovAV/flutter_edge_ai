@@ -28,5 +28,10 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Speech is recorded on this device: voice memos, speech to transcribe and spoken commands.</string>
+	<!-- Flutter GPU, for the Tiny Island 3D scene (flutter_scene). -->
+	<key>FLTEnableFlutterGPU</key>
+	<true/>
 </dict>
 </plist>

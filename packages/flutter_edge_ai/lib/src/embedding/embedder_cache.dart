@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter_edge_ai/src/domain/platform_types.dart'
+    show PreferredBackend;
 import 'package:flutter_edge_ai/src/embedding/embedding_exceptions.dart'
     show EmbedderCloseTimeoutException;
 import 'package:flutter_edge_ai/src/embedding/embedding_model.dart'
@@ -100,6 +102,11 @@ class EmbedderCache {
   /// included, so the two getters never describe different models.
   ActiveEmbedderParams? get params => model == null ? null : _cached!.params;
 
+  /// The request that produced [model], separate from its cache identity.
+  /// Reusing the model never changes this; eviction drops it with the model.
+  PreferredBackend? get requestedBackend =>
+      model == null ? null : _cached!.requestedBackend;
+
   /// Runs [body] after every earlier `serialize` call on this cache has
   /// settled, so that resolving paths, deciding on reuse and building are one
   /// indivisible step.
@@ -137,6 +144,10 @@ class EmbedderCache {
   ///     embedder for good, and declarations only ever widen;
   ///  4. a different identity → close it and build [requested].
   ///
+  /// [allowReuse] can refuse an otherwise matching model when its reported
+  /// placement requires an explicit request. Identity equality stays intact;
+  /// preflight, media union and close ordering still apply to its replacement.
+  ///
   /// A mismatch closes the cached model before returning, so the caller only
   /// ever has to handle "reuse this" or "build that".
   ///
@@ -169,6 +180,7 @@ class EmbedderCache {
     ActiveEmbedderParams requested, {
     required String label,
     Future<void> Function(ActiveEmbedderParams build)? prepare,
+    bool allowReuse = true,
   }) async {
     // A close that outlived an earlier caller's wait is still running. With it
     // pending there is no cached model, so this caller would build — and must
@@ -200,7 +212,7 @@ class EmbedderCache {
       return EmbedderCacheDecision._(null, requested);
     }
 
-    if (cached.params.canServe(requested)) {
+    if (allowReuse && cached.params.canServe(requested)) {
       edgeAiLog('ℹ️  Reusing existing embedding model instance for $label');
       return EmbedderCacheDecision._(cached.model, cached.params);
     }
@@ -213,9 +225,12 @@ class EmbedderCache {
         ...requested.media,
       });
       edgeAiLog(
-        '⚠️  Embedder for $label must also serve '
-        '${requested.media.difference(cached.params.media).map((m) => m.name).join(', ')}'
-        ' — rebuilding with ${build.media.map((m) => m.name).join(', ')}',
+        !allowReuse
+            ? '⚠️  Cached embedder placement requires an explicit request '
+                  'for $label — rebuilding'
+            : '⚠️  Embedder for $label must also serve '
+                  '${requested.media.difference(cached.params.media).map((m) => m.name).join(', ')}'
+                  ' — rebuilding with ${build.media.map((m) => m.name).join(', ')}',
       );
     } else {
       build = requested;
@@ -340,7 +355,11 @@ class EmbedderCache {
   }
 
   /// Records a freshly built [model] and what it was built from.
-  void record(EmbeddingModel model, ActiveEmbedderParams params) {
+  void record(
+    EmbeddingModel model,
+    ActiveEmbedderParams params, {
+    PreferredBackend? requestedBackend,
+  }) {
     // Listener first, cache second. `addCloseListener` is abstract on the
     // published interface, not inherited from `CloseNotifier`, so a third-party
     // model may throw here — and with the assignment first, the shells' `catch`
@@ -355,7 +374,11 @@ class EmbedderCache {
       if (!identical(_cached?.model, model)) return;
       _cached = null;
     });
-    _cached = _CachedEmbedder(model, params);
+    _cached = _CachedEmbedder(
+      model,
+      params,
+      requestedBackend: requestedBackend,
+    );
   }
 
   /// Records [model], or closes it when the cache cannot take custody.
@@ -365,9 +388,13 @@ class EmbedderCache {
   /// interface, and dropping it then would leave a live worker nobody can
   /// reach. One place, not three — the shells each had a copy, and each copy
   /// let a throwing `close()` replace the error that explains the failure.
-  Future<void> adopt(EmbeddingModel model, ActiveEmbedderParams params) async {
+  Future<void> adopt(
+    EmbeddingModel model,
+    ActiveEmbedderParams params, {
+    PreferredBackend? requestedBackend,
+  }) async {
     try {
-      record(model, params);
+      record(model, params, requestedBackend: requestedBackend);
     } catch (error, stack) {
       try {
         await model.close();
@@ -412,8 +439,9 @@ class _PendingClose {
 /// A built embedder and the params it was built from, which only ever travel
 /// together.
 class _CachedEmbedder {
-  const _CachedEmbedder(this.model, this.params);
+  const _CachedEmbedder(this.model, this.params, {this.requestedBackend});
 
   final EmbeddingModel model;
   final ActiveEmbedderParams params;
+  final PreferredBackend? requestedBackend;
 }

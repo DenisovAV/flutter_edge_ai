@@ -10,12 +10,18 @@ ChatMessage chatMessageFromChunk(ModelResponse chunk) {
       parts.add(TextPart(token));
     case ThinkingResponse(:final content):
       parts.add(ThinkingPart(content));
-    case FunctionCallResponse(:final name, :final args):
-      parts.add(ToolPart.call(callId: name, toolName: name, arguments: args));
+    case FunctionCallResponse(:final name, :final args, :final id):
+      parts.add(
+        ToolPart.call(callId: id ?? name, toolName: name, arguments: args),
+      );
     case ParallelFunctionCallResponse(:final calls):
       for (final c in calls) {
         parts.add(
-          ToolPart.call(callId: c.name, toolName: c.name, arguments: c.args),
+          ToolPart.call(
+            callId: c.id ?? c.name,
+            toolName: c.name,
+            arguments: c.args,
+          ),
         );
       }
   }
@@ -28,9 +34,9 @@ ChatMessage chatMessageFromChunk(ModelResponse chunk) {
 /// preamble ("Let me check…") that accompanies a tool call is kept, not dropped
 /// — matching what [chatMessageFromChunk] emits on the streaming path.
 ///
-/// `callId` mirrors `toolName`: flutter_edge_ai's tool protocol is name-keyed
-/// ([FunctionCallResponse] carries no independent id), so parallel calls to the
-/// same tool share a callId and callId is ignored when a result is fed back in.
+/// `callId` is the call's [FunctionCallResponse.id]. A call the engine gave no
+/// id gets its `toolName` instead, so parallel calls to the same tool share it;
+/// fed back in, such a callId means "no id" and the result pairs by name.
 ChatMessage chatMessageFromParts({
   String? text,
   List<FunctionCallResponse> calls = const [],
@@ -46,7 +52,11 @@ ChatMessage chatMessageFromParts({
   }
   for (final c in calls) {
     parts.add(
-      ToolPart.call(callId: c.name, toolName: c.name, arguments: c.args),
+      ToolPart.call(
+        callId: c.id ?? c.name,
+        toolName: c.name,
+        arguments: c.args,
+      ),
     );
   }
   return ChatMessage(

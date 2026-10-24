@@ -74,13 +74,16 @@ abstract class $FlutterEdgeAiModelOptions {
   @StringField(enumValues: ['cpu', 'gpu', 'npu'])
   String? get preferredBackend;
 
-  /// Backend for the vision encoder. Null defaults to CPU (the Metal/WebGPU
-  /// delegates can't prepare its ops). Ignored by MediaPipe.
+  /// Backend for the vision encoder. Null follows the bundle: its section's
+  /// `backend_constraint`, else the NPU it is compiled for, else CPU (the
+  /// Metal/WebGPU delegates can't prepare its ops). Set one only where the
+  /// section allows it. Ignored by MediaPipe.
   @StringField(enumValues: ['cpu', 'gpu', 'npu'])
   String? get preferredVisionBackend;
 
-  /// Backend for the audio encoder. Null defaults to CPU; set 'gpu' for
-  /// faster audio (Gemma 3n ~2x on Metal). Ignored by MediaPipe.
+  /// Backend for the audio encoder. Null follows the bundle, as for the
+  /// vision encoder; the published Gemma 4 and Gemma 3n audio encoders
+  /// declare cpu and refuse 'gpu'. Ignored by MediaPipe.
   @StringField(enumValues: ['cpu', 'gpu', 'npu'])
   String? get preferredAudioBackend;
 }

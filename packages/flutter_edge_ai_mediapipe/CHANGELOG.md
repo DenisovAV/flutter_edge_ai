@@ -1,3 +1,6 @@
+## 1.2.3
+- README: `flutter_edge_ai_llama` needs iOS 16.4.
+
 ## 1.2.2
 - Require `flutter_edge_ai` ^2.3.0 (imports its engine library).
 

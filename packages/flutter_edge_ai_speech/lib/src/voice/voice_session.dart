@@ -15,6 +15,7 @@ import 'package:flutter_edge_ai/engine.dart'
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'clause_splitter.dart';
+import 'pcm_wav.dart';
 import 'voice_event.dart';
 import 'voice_responder.dart';
 
@@ -54,6 +55,10 @@ class VoiceSession {
   /// construction — the requirement is lifetime-wide, not one-shot: mutating
   /// `chat.tools` after construction re-enters the unsupported state without
   /// this constructor catching it again.
+  ///
+  /// A chat created with `supportAudio: true` also serves [runAudioTurn]: the
+  /// recording goes to the chat as a WAV (16 kHz mono 16-bit PCM), with no
+  /// speech-to-text. Without `supportAudio`, [runAudioTurn] throws.
   factory VoiceSession.fromChat({
     required SpeechRecognizer recognizer,
     required InferenceChat chat,
@@ -67,7 +72,11 @@ class VoiceSession {
       return VoiceSession.custom(
         recognizer: recognizer,
         responder: VoiceResponder(
-          respond: (userText) => _chatRespond(chat, userText),
+          respond: (userText) =>
+              _chatRespond(chat, Message(text: userText, isUser: true)),
+          respondToAudio: chat.supportAudio
+              ? (wav) => _chatRespond(chat, _audioMessage(wav))
+              : null,
           stop: chat.stopGeneration,
         ),
         synthesizer: synthesizer,
@@ -93,10 +102,10 @@ class VoiceSession {
     // chat concurrently with the new turn. A prior turn's token, once
     // cancelled, stays cancelled forever.
     _CancelToken? activeToken;
-    Stream<String> respondWithTools(String userText) async* {
+    Stream<String> respondWithTools(Message message) async* {
       final token = _CancelToken();
       activeToken = token;
-      await chat.addQueryChunk(Message(text: userText, isUser: true));
+      await chat.addQueryChunk(message);
       yield* textTokensOf(
         chat.generateChatResponseWithTools(
           onToolCall: onToolCall,
@@ -109,7 +118,11 @@ class VoiceSession {
     return VoiceSession.custom(
       recognizer: recognizer,
       responder: VoiceResponder(
-        respond: respondWithTools,
+        respond: (userText) =>
+            respondWithTools(Message(text: userText, isUser: true)),
+        respondToAudio: chat.supportAudio
+            ? (wav) => respondWithTools(_audioMessage(wav))
+            : null,
         stop: () async {
           activeToken?.cancel();
           await chat.stopGeneration();
@@ -122,11 +135,16 @@ class VoiceSession {
 
   static Stream<String> _chatRespond(
     InferenceChat chat,
-    String userText,
+    Message message,
   ) async* {
-    await chat.addQueryChunk(Message(text: userText, isUser: true));
+    await chat.addQueryChunk(message);
     yield* textTokensOf(chat.generateChatResponseAsync());
   }
+
+  /// The user message of an audio turn: the recording (a WAV, which a
+  /// `.litertlm` chat decodes) and no text.
+  static Message _audioMessage(Uint8List wav) =>
+      Message.withAudio(text: '', audioBytes: wav, isUser: true);
 
   /// Keep only [TextResponse] tokens from a chat response stream. Thinking and
   /// function-call parsing already happened inside the chat, so this neither
@@ -177,8 +195,9 @@ class VoiceSession {
   /// Sample rate of emitted reply audio (delegates to the synthesizer).
   int get replySampleRate => _synthesizer.sampleRate;
 
-  /// True while a turn is in flight (a second [runTurn] would throw
-  /// StateError, and [interrupt] is a genuine no-op only when this is false).
+  /// True while a turn is in flight (a second [runTurn] or [runAudioTurn]
+  /// would throw StateError, and [interrupt] is a genuine no-op only when this
+  /// is false).
   bool get isTurnInFlight => _activeController != null;
 
   /// Run one push-to-talk turn on a recorded utterance (16 kHz mono 16-bit LE
@@ -198,9 +217,52 @@ class VoiceSession {
   /// - Calling runTurn while a turn is in flight throws StateError.
   /// - STT truncates audio beyond its fixed window (~5 s for moonshine) and can
   ///   hallucinate text on near-silence — both are STT-model properties.
-  Stream<VoiceEvent> runTurn(Uint8List pcm16kMono) {
+  Stream<VoiceEvent> runTurn(Uint8List pcm16kMono) =>
+      _startTurn('runTurn', pcm16kMono, null);
+
+  /// Run one push-to-talk turn whose recording goes to the model itself, with
+  /// no speech-to-text — for a responder whose model hears audio (see
+  /// [VoiceResponder.respondToAudio]; [VoiceSession.fromChat] wires it for a
+  /// chat created with `supportAudio: true`). [pcm16kMono] is the same 16 kHz
+  /// mono 16-bit LE PCM [runTurn] takes; the responder gets it as a WAV.
+  ///
+  /// The same contract as [runTurn] minus the STT stage: no
+  /// VoiceTranscriptEvent; the reply text and audio exactly as in [runTurn]
+  /// (one-shot, or clause by clause with streamAudio); VoiceTurnCompleteEvent
+  /// and VoiceTurnInterruptedEvent carry an empty transcript. [interrupt], the
+  /// bounded drain and the one-turn-in-flight rule are the same. A recording
+  /// without a whole sample (under 2 bytes: a push-to-talk tap) ends the turn
+  /// with an empty VoiceTurnCompleteEvent and the model is not asked, as an
+  /// empty transcript does in [runTurn].
+  ///
+  /// After a stopped turn (an [interrupt] during the reply), a `.litertlm`
+  /// chat keeps what was said in earlier audio turns with
+  /// `flutter_edge_ai_litertlm` 1.15.0 and later. With 1.14.0 and
+  /// earlier, and on the NPU, it rebuilds its conversation from the turns'
+  /// text; an audio turn has none, so there the model loses what was said and
+  /// its own replies stay.
+  ///
+  /// Throws [StateError] when the responder has no respondToAudio, or a turn
+  /// is in flight.
+  Stream<VoiceEvent> runAudioTurn(Uint8List pcm16kMono) {
+    final respondToAudio = _responder.respondToAudio;
+    if (respondToAudio == null) {
+      throw StateError(
+        'VoiceSession.runAudioTurn needs a responder with respondToAudio. '
+        'For VoiceSession.fromChat, create the chat with supportAudio: true, '
+        'on a model that hears audio.',
+      );
+    }
+    return _startTurn('runAudioTurn', pcm16kMono, respondToAudio);
+  }
+
+  Stream<VoiceEvent> _startTurn(
+    String caller,
+    Uint8List pcm16kMono,
+    Stream<String> Function(Uint8List)? respondToAudio,
+  ) {
     if (_activeController != null) {
-      throw StateError('VoiceSession.runTurn called while a turn is in flight');
+      throw StateError('VoiceSession.$caller called while a turn is in flight');
     }
     final controller = StreamController<VoiceEvent>();
     _activeController = controller;
@@ -209,7 +271,7 @@ class VoiceSession {
     _turnDone = Completer<void>();
     controller.onListen = () {
       // Fire-and-forget driver — it is the SOLE writer of events (§12 B3).
-      _drive(controller, pcm16kMono);
+      _drive(controller, pcm16kMono, respondToAudio);
     };
     return controller.stream;
   }
@@ -293,9 +355,13 @@ class VoiceSession {
     });
   }
 
+  /// One turn. With [respondToAudio] the recording goes to the model as it
+  /// is (an audio turn) and the STT stage is skipped; everything after it —
+  /// reply, synthesis, barge-in, drain — is shared by both kinds of turn.
   Future<void> _drive(
     StreamController<VoiceEvent> controller,
     Uint8List pcm,
+    Stream<String> Function(Uint8List)? respondToAudio,
   ) async {
     void finish(VoiceEvent terminal) {
       controller.add(terminal);
@@ -309,9 +375,19 @@ class VoiceSession {
     var stopPump = false;
 
     try {
-      // ---- STT ----
-      final transcript = await _recognizer.transcribe(pcm);
-      controller.add(VoiceTranscriptEvent(transcript, isFinal: true));
+      // ---- STT (none in an audio turn: the model hears the recording) ----
+      final String transcript;
+      if (respondToAudio != null) {
+        transcript = '';
+        // Yield once, as runTurn does while it transcribes: an interrupt()
+        // made right after listen() must be seen by the check below, before
+        // the responder starts. Without it the reply (and its tool calls)
+        // runs although the turn was interrupted.
+        await Future<void>.value();
+      } else {
+        transcript = await _recognizer.transcribe(pcm);
+        controller.add(VoiceTranscriptEvent(transcript, isFinal: true));
+      }
       if (_interruptRequested) {
         finish(
           VoiceTurnInterruptedEvent(
@@ -321,7 +397,9 @@ class VoiceSession {
         );
         return;
       }
-      if (transcript.trim().isEmpty) {
+      // Nothing to answer: STT heard nothing, or the recording has no whole
+      // 16-bit sample (a push-to-talk tap), which the model cannot decode.
+      if (respondToAudio == null ? transcript.trim().isEmpty : pcm.length < 2) {
         finish(const VoiceTurnCompleteEvent('', ''));
         return;
       }
@@ -404,45 +482,46 @@ class VoiceSession {
         }();
       }
 
-      final sub = _responder
-          .respond(transcript)
-          .listen(
-            (token) {
-              if (controller.isClosed) return; // detached / torn-down turn
-              buffer.write(token);
-              controller.add(VoiceReplyTextEvent(token));
-              if (splitter != null) {
-                for (final clause in splitter.feed(token)) {
-                  enqueueClause(clause);
-                }
-              }
-            },
-            onError: (Object e, StackTrace st) {
-              replyError = e;
-              replyStack = st;
-              if (drained.isCompleted) {
-                // The bounded drain already force-completed (barge-in
-                // detach, R1) — this generation is no longer observed by
-                // anyone. Log so a genuinely-fatal detached error isn't a
-                // fully silent swallow.
-                edgeAiLog(
-                  'VoiceSession: detached LLM stream errored after '
-                  'barge-in: $e',
-                  level: EdgeAiLogLevel.info,
-                );
-              }
-              if (!drained.isCompleted) drained.complete();
-            },
-            onDone: () {
-              // ONLY complete `drained` here. The splitter flush + queue close +
-              // pump join all happen in the driver body after `await
-              // drained.future` — which the bounded drain guarantees resumes
-              // within drainTimeout even if this onDone never fires (detach). A
-              // detached onDone must not touch the queue/pump (they may be gone).
-              if (!drained.isCompleted) drained.complete();
-            },
-            cancelOnError: false,
-          );
+      final replyTokens = respondToAudio != null
+          ? respondToAudio(wavFromPcm16kMono(pcm))
+          : _responder.respond(transcript);
+      final sub = replyTokens.listen(
+        (token) {
+          if (controller.isClosed) return; // detached / torn-down turn
+          buffer.write(token);
+          controller.add(VoiceReplyTextEvent(token));
+          if (splitter != null) {
+            for (final clause in splitter.feed(token)) {
+              enqueueClause(clause);
+            }
+          }
+        },
+        onError: (Object e, StackTrace st) {
+          replyError = e;
+          replyStack = st;
+          if (drained.isCompleted) {
+            // The bounded drain already force-completed (barge-in
+            // detach, R1) — this generation is no longer observed by
+            // anyone. Log so a genuinely-fatal detached error isn't a
+            // fully silent swallow.
+            edgeAiLog(
+              'VoiceSession: detached LLM stream errored after '
+              'barge-in: $e',
+              level: EdgeAiLogLevel.info,
+            );
+          }
+          if (!drained.isCompleted) drained.complete();
+        },
+        onDone: () {
+          // ONLY complete `drained` here. The splitter flush + queue close +
+          // pump join all happen in the driver body after `await
+          // drained.future` — which the bounded drain guarantees resumes
+          // within drainTimeout even if this onDone never fires (detach). A
+          // detached onDone must not touch the queue/pump (they may be gone).
+          if (!drained.isCompleted) drained.complete();
+        },
+        cancelOnError: false,
+      );
       await drained.future;
       _drainTimer?.cancel();
       // Natural end / fatal error → safe to cancel. Forced timeout → DETACH:

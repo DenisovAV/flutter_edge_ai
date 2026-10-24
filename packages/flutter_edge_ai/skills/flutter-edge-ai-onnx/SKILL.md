@@ -11,7 +11,7 @@ description: Use when running ONNX models with flutter_edge_ai_onnx (ModelFileTy
 2. Declare `fileType: ModelFileType.onnx`. Without it the install defaults to `task` and never reaches `OnnxEngine`.
 3. An ORT-GenAI model is a directory — `genai_config.json`, the `.onnx` graph, its weights and a tokenizer. Install it with `fromHuggingFace(repo)`, which downloads the whole folder, or point `fromFile` at a local `genai_config.json`. A single-file download or a Flutter asset cannot produce it.
 4. Native generation runs on macOS arm64, Linux x64, Windows x64, Android arm64 and iOS arm64. On any other native host no engine accepts the model and `getActiveModel` throws `No inference engine can handle this model`. Web is a separate arm with its own rules (below).
-5. Android needs `minSdk 24` — the build hook fails the build below it. Phi-3.5-mini peaks near 3.7 GB of RAM, so target 8 GB devices.
+5. Android needs `minSdk 24` — the build hook fails the build below it. Phi-3.5-mini peaks near 3.7 GB of RAM, so target devices with 6 GB of RAM or more.
 6. Text only: no images, no audio, no LoRA.
 7. Sampling follows the model's own config — `genai_config.json` natively, `generation_config.json` on web — which is greedy unless it sets `do_sample`. A `temperature`, `topK` or `topP` you pass overrides it and switches sampling on; `temperature: 0` or `topK: 1` keeps it greedy, natively, a `temperature` or `topP` without `topK` over a config with `top_k: 1` also gets a top-k (the family's, else 40); on web the seed is not applied yet and `topP` is ignored (Transformers.js samples with top-k only). On native `activeBackend` is `null` — ORT-GenAI picks the execution provider from `genai_config.json`, which the engine does not read; on web it reports the backend that loaded.
 
@@ -51,7 +51,7 @@ await FlutterEdgeAi.installModel(
 ).fromFile('$path/genai_config.json').install();
 ```
 
-Sessions, chats and streaming work as in the flutter-edge-ai-inference skill, except `openSession` / `openChat`, which throw `UnsupportedError` here — one conversation at a time. Pass `modelType` to `createChat` for function calling; ONNX falls back to `ModelType.gemmaIt`.
+Sessions, chats and streaming work as in the flutter-edge-ai-inference skill, except `openSession` / `openChat`, which throw `UnsupportedError` here — one conversation at a time. `FlutterEdgeAi.openModel` is not supported either (`UnsupportedError` before anything loads; on a host outside ONNX's platforms no engine claims the spec, so `StateError`): use `getActiveModel`. Pass `modelType` to `createChat` for function calling; ONNX falls back to `ModelType.gemmaIt`.
 
 ## Web
 

@@ -313,9 +313,10 @@ Two arguments on `createChat`:
         // And the switch that turns the machinery on. `tools` without this is
         // the quiet failure worth knowing about: `InferenceChat` logs
         // "Model does not support function calls, but tools were provided.
-        // Tools will be ignored", never renders the declarations, and the
-        // model answers every question out of its own head — fluently, and
-        // with arithmetic it made up.
+        // Tools will be ignored", but on a `.litertlm` the declarations still
+        // reach LiteRT-LM and the model may still call. Nothing reads the
+        // call: it lands in the bubble as raw `tool_calls` JSON, and
+        // `runMultiply` never runs.
         supportsFunctionCalls: true,
         maxOutputTokens: 256,
       );
@@ -329,7 +330,7 @@ turn. There is no second place here:
 ```dart
       final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: 1024,
-        preferredBackend: PreferredBackend.cpu,
+        activationDataType: ActivationDataType.float32,
       );
 ```
 
@@ -337,16 +338,22 @@ turn. There is no second place here:
 you declare a function. Tools belong to the session.
 
 The two arguments it *does* take are worth a moment. `maxTokens: 1024` is what
-this checkpoint is built for. The CPU backend is a workaround for **this file**,
-and the distinction matters more than the workaround does.
+this checkpoint is built for. `activationDataType: ActivationDataType.float32` is
+about **this file**, and the distinction matters more than the argument does.
+With `flutter_edge_ai_litertlm` 1.14.0 or later the argument is redundant: the
+engine picks float32 for this file on its own. It stays because it still works
+and helps an app on an older version.
 
 The `.litertlm` you just downloaded was converted before litetune began setting
 `prefer_activation_type=fp32`. Without that key the GPU path answers every
 prompt with `<pad>` repeated to the token limit — measured on Android and on
 macOS Metal alike, with no exception, no warning, and a chat that looks alive
-while it returns filler. On CPU the same weights ask for `multiply` correctly.
+while it returns filler. Asking for float32 activations fixes it: the same
+weights call `multiply` correctly on the GPU. From litertlm 1.14.0 the engine
+reads the bundle's header and asks for them itself when a
+`ModelType.functionGemma` file declares no activation type.
 
-So this is not "FunctionGemma needs a CPU", and it is not a platform bug. It is
+So this is not "FunctionGemma cannot use a GPU", and it is not a platform bug. It is
 one published artifact carrying a conversion setting that predates the fix. Step
 4 converts the model again with a current litetune, and that artifact scores the
 same on GPU as on CPU and runs about 1.5× faster — which is a fair summary of
@@ -592,8 +599,9 @@ It takes a Hugging Face checkpoint through LoRA fine-tuning, merges, exports to
 `.litertlm`, and bundles the result with metadata — five commands, because each
 stage fails differently and a single `run` would hide which one you are in.
 
-The commands below are verified against **litetune 0.4.1**, the current PyPI
-release, run end to end on 2026-10-12. It pins LiteRT-LM 0.18.0 for
+The commands below are checked against **litetune 0.5.1**: run end to end on
+2026-10-12 with 0.4.1, and every option and value they use is accepted by 0.5.1
+(checked against its `--help` on 2026-10-20). It pins LiteRT-LM 0.18.0 for
 verification and the matching 0.18.0 builder for conversion. The source is
 available on [GitHub](https://github.com/DenisovAV/litetune).
 
@@ -1105,15 +1113,16 @@ disk records which family a `.litertlm` belongs to. Tune a different base and
 `ModelChoice.fromDisk` is the line to change.
 
 The three also disagree about how to be opened, so each `ModelChoice` carries
-that too. FunctionGemma's download keeps Step 2's `maxTokens: 1024` on the CPU
-— the `<pad>` workaround belongs to that one file — while Gemma 4 and a model
-you converted in Step 4 get a 4096-token context and the engine's default
-backend:
+that too. FunctionGemma's download keeps Step 2's `maxTokens: 1024` and float32
+activations — the `<pad>` workaround belongs to that one file — while Gemma 4
+and a model you converted in Step 4 get a 4096-token context and the engine's
+defaults:
 
 ```dart
       final inference = await FlutterEdgeAi.getActiveModel(
         maxTokens: widget.model.maxTokens,
         preferredBackend: widget.model.preferredBackend,
+        activationDataType: widget.model.activationDataType,
       );
 ```
 

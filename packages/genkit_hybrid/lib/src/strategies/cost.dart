@@ -11,6 +11,7 @@ import '../routing_strategy.dart';
 /// free; there is nothing to fall back to from free, so a spent budget returns
 /// `[cheap]` alone). A request-aware cost *estimator* is a deferred, different
 /// strategy — keep the signal a bare `bool Function()`.
+@Deprecated('Use RouteRule.budget; removed in 0.5.0.')
 class CostStrategy implements RoutingStrategy {
   CostStrategy({
     required this._budgetAvailable,

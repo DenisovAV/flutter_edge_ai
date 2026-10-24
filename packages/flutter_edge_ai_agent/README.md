@@ -22,7 +22,7 @@ unmodified, and their JavaScript skills run as-is (the
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
 | **text-only** | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
 | **MCP** (Streamable HTTP) | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
-| **native-intent** | ✅ | ✅ | ✅ | ✅ | ❌³ | ✅ |
+| **native-intent** | ✅ | ✅ | ✅⁴ | ✅⁴ | ❌³ | ✅⁴ |
 | **JS** (webview) | ✅ | ✅ | ✅ | ✅¹ | ❌³ | ❌² |
 
 ¹ Windows JS skills need the [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
@@ -32,6 +32,9 @@ unmodified, and their JavaScript skills run as-is (the
 (`isAvailable` is false). text / native-intent / MCP skills work on Linux.
 ³ Not supported on Web — never verified end-to-end, and the example app
 disables it (see the note below).
+⁴ Only Android and iOS open the OS calendar editor; macOS, Windows and Linux
+open a Google Calendar event page in the browser, and Linux cannot schedule a
+notification.
 
 JS skills run in a headless, sandboxed webview. To grant a secure context (so
 skills using `crypto.subtle` and other secure-context Web APIs work), the
@@ -66,12 +69,12 @@ WebView), verified on hardware. On web the skill runs in a sandboxed `<iframe>`.
   confirm), `McpSkillExecutor` (MCP tools over Streamable HTTP).
 - `AgentLoop` + `AgentSession` — the orchestrator over flutter_edge_ai's existing
   function-calling, emitting a `Stream<AgentEvent>` (skill loads, tool calls,
-  inline results, streamed text).
+  inline results, streamed text, a retry after an empty answer).
 - Cross-platform UI: `AgentChatView`, adaptive `SkillManagerView` /
   `McpManagerView`, `McpToolCallPermissionDialog`, `SecretEditorDialog`,
   `SkillTesterView`, and the add-skill disclaimer.
-- **Bundled starter skills** (ported verbatim from Gallery, Apache-2.0) — see
-  below.
+- **Bundled starter skills** (seven ported from Gallery, Apache-2.0, some
+  modified, plus `get-current-time`, written here) — see below.
 
 ## Bundled starter skills
 
@@ -90,7 +93,7 @@ text-only mechanisms (write your own `SKILL.md` for MCP):
 | `query-wikipedia` | JS (data) | Summarize a Wikipedia topic |
 | `interactive-map` | JS (webview) | Show a location on an embedded map |
 | `send-email` | intent | Open the OS mail composer |
-| `create-calendar-event` | intent | Open the calendar event editor |
+| `create-calendar-event` | intent | Open the calendar event editor (on desktop, a Google Calendar page) |
 | `get-current-time` | intent | Report the current local date and time |
 | `kitchen-adventure` | text-only | A text-adventure dungeon-master persona |
 
@@ -115,9 +118,9 @@ which provides `LiteRtLmEngine`:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.3.0
-  flutter_edge_ai_agent: ^0.2.9
-  flutter_edge_ai_litertlm: ^1.13.0
+  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai_agent: ^0.4.1
+  flutter_edge_ai_litertlm: ^1.16.0
 ```
 
 ```dart
@@ -195,6 +198,112 @@ returned stream with an `ArgumentError` instead of quietly answering as if there
 were no image — the flag is what's checked; that the model is actually
 multimodal stays your responsibility (it can't be introspected from Dart).
 
+## Asking with a recording
+
+`ask` also takes the recording itself, for a model with an audio encoder
+(Gemma 4 E2B/E4B): the spoken question goes to the model as audio, with no
+speech-to-text. Load the model and build the session with `supportAudio: true`:
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 4096,
+  supportAudio: true, // loads the audio encoder
+);
+final session = await AgentSession.fromModel(
+  model,
+  registry: registry,
+  supportAudio: true, // required
+);
+
+// wav: a WAV file, 16 kHz mono 16-bit PCM
+await for (final event in session.ask('', audioBytes: wav)) {
+  // …
+}
+```
+
+The text may be empty or add to the recording, and an image can go with it. A
+`.litertlm` model decodes an audio file, so pass a WAV, not bare PCM samples.
+A session built without `supportAudio: true` fails the stream with an
+`ArgumentError`, as do empty bytes; nothing reaches the chat history. Audio
+input is native-only. After a stopped turn (a cancelled subscription) a
+`.litertlm` chat keeps the recordings of earlier turns with
+`flutter_edge_ai_litertlm` 1.15.0 and later. With 1.14.0 and earlier, and
+on the NPU, it is rebuilt from text and they are gone from its context.
+
+## When the model answers nothing
+
+Right after `loadSkill` a small model sometimes ends the turn without a word:
+the generation that should answer has no text. The loop then asks once more:
+it emits an `EmptyAnswerRetryEvent`, adds a user message to the same chat and
+generates again with the same tools. If the answer is still empty, the turn
+ends with an `EmptyAnswerEvent` instead of a plain `DoneEvent`.
+
+```dart
+final session = await AgentSession.fromModel(
+  model,
+  registry: registry,
+  emptyAfterSkillRetries: 1, // the default; 0 turns the retry off
+  emptyAfterSkillNudge: defaultEmptyAfterSkillNudge, // or your own text
+);
+
+await for (final event in session.ask(question)) {
+  switch (event) {
+    case EmptyAnswerRetryEvent(:final nudge):
+      // The nudge is in the chat's history now; mirror it if you keep one.
+      history.add(Message(text: nudge, isUser: true));
+    case EmptyAnswerEvent(:final skillName):
+      showError('No answer after loading $skillName');
+    case DoneEvent(:final text):
+      showAnswer(text);
+    default:
+      break;
+  }
+}
+```
+
+- `EmptyAnswerEvent` extends `DoneEvent` (with empty `text`), so a `DoneEvent`
+  case still matches it; put its case first to tell the two apart.
+  `EmptyAnswerRetryEvent` is new in 0.3.0: an exhaustive `switch` over
+  `AgentEvent` with no `default` needs a case for it.
+- The retry counts against `maxIterations`; when no generation is left there
+  is none.
+- Only an empty answer right after a `loadSkill` that found its skill is
+  retried. One after an intent, JS or MCP result ends with a plain
+  `DoneEvent('')`, as before. With 0 retries such a turn still ends with an
+  `EmptyAnswerEvent`.
+- To stop a turn, flip `ask`'s `isCancelled` or cancel the subscription
+  before `chat.stopGeneration()`; a stopped empty generation is otherwise
+  retried.
+- FunctionGemma apps should pass `emptyAfterSkillRetries: 0`: core clears a
+  FunctionGemma chat's history after every text reply, so the nudge reaches a
+  blank session and is answered without the question.
+
+## Choosing the system prompt
+
+`AgentSession.fromModel` builds the system prompt from `systemPromptTemplate`,
+replacing its `__SKILLS__` placeholder with the selected skills' names and
+descriptions (`AgentSession.buildSystemPrompt`). Two templates ship:
+
+- `defaultAgentSystemPrompt` (the default) — Gallery's prompt: look for a skill
+  on every request, load it, follow it. For an agent whose requests are mostly
+  skill requests.
+- `onDemandAgentSystemPrompt` — call `loadSkill` only when a request needs one
+  of the skills, and answer everything else directly with no tool call. For an
+  assistant that also answers plain questions and questions about a photo, on
+  a small model that otherwise calls tools for them (Gemma 4 E2B invented
+  intents such as `get_country_capital` under the default).
+
+```dart
+final session = await AgentSession.fromModel(
+  model,
+  registry: registry,
+  systemPromptTemplate: onDemandAgentSystemPrompt,
+);
+```
+
+Neither template is benchmarked here: try both on your model and your
+requests. Any template of your own works as long as it keeps `__SKILLS__`.
+
 ## SKILL.md format
 
 ```yaml
@@ -205,16 +314,34 @@ metadata:
   homepage: https://optional
   require-secret: true
   require-secret-description: how to obtain the key
+  my-app-option: true   # any key of your own, see below
 ---
 # Title
 ## Instructions
 Call the `run_js` tool with: skillName: kebab-case-id, data: a JSON string { field: Type }
 ```
 
-The skill's type comes from the tool its body names: `run_js` → JS,
-`run_intent` → intent, `run_mcp` → MCP, none → text-only. A
+The skill's type comes from the tool its body names, in any letter case:
+`run_js`, `runSkill` or `runJs` → JS; `run_intent` or `runIntent` → intent;
+`run_mcp` or `runMcp` → MCP (checked in that order); none → text-only. A
 `scriptName: other.html` in the body picks a script other than
-`scripts/index.html`.
+`scripts/index.html`. The loop takes those spellings as call names too: a call
+to `run_js` or Gallery's `runJs` runs as `runSkill`, `run_intent` as
+`runIntent`, and `run_mcp` or Gallery's `runMcpTool` as `runMcp`.
+
+Every other key under `metadata:` is kept in `skill.metadata.extra` with its
+YAML type: strings, numbers, booleans, and lists and maps as unmodifiable Dart
+`List`s and `Map`s. The package reads none of them; your app owns the keys it
+reads (for example an opt-in of its own, such as "this skill's result may be
+shown as is"). A frontmatter that is not valid YAML is read by a tolerant line
+parser instead, which yields strings only.
+
+A text-only skill calls no tool. When the model loads one and then calls
+`runIntent` with an intent the app cannot run, the tool result says the skill
+calls no tool and asks for the answer from its instructions, rather than
+listing the intents it could try next. This works only with
+`NativeIntentExecutor` (or with no intent executor at all): an intent executor
+of your own has its errors reach the model unchanged.
 
 JS skills additionally ship `scripts/index.html` exposing
 `window.ai_edge_gallery_get_result(data, secret)` returning a JSON string
@@ -227,6 +354,85 @@ by `JsSkillExecutor`. Its tool, `runSkill` (the `run_js` spelling SKILL.md uses
 is accepted too), therefore takes only `skillName` and `data`, with no
 `scriptName`: a required script-name field only made the model invent a
 filename, and honouring one would let it name any file under `scripts/`.
+
+## Adding your own intents
+
+`NativeIntentExecutor` runs six built-in intents (`send_email`, `send_text`,
+`create_calendar_event`, `read_calendar_events`, `schedule_notification`,
+`get_current_date_and_time`); `schedule_notification` runs only once the app
+turns it on (see [Setup](#setup)), and the built-in `read_calendar_events`
+reads no calendar: it answers with an error that asks for a handler of your
+own. An app adds its own through `handlers:`; the
+built-ins keep running next to them. `validators:` checks an intent's
+parameters before its handler runs: return null when they are valid,
+otherwise the reason, which goes back to the model.
+
+```dart
+final intents = NativeIntentExecutor(
+  handlers: {
+    'start_timer': (params) async {
+      final seconds = params['seconds'] as int;
+      await timers.start(Duration(seconds: seconds));
+      return TextResult('Timer set for $seconds seconds.');
+    },
+  },
+  validators: {
+    'start_timer': (params) =>
+        params['seconds'] is int ? null : 'missing integer "seconds".',
+  },
+);
+// get_current_date_and_time, send_email, … still run next to start_timer.
+```
+
+- An added intent without a validator is not checked: its handler gets the
+  decoded parameters as the model sent them.
+- A built-in intent keeps its own checks (`validateIntentParams`), also when
+  you replace its handler; a validator you give for it runs after them, and
+  both must pass.
+- A validator for an intent with no handler throws `ArgumentError`.
+
+The skill that uses the intent names it in its body, e.g. ``Call the
+`runIntent` tool with intent: start_timer and parameters: {"seconds": 60}``.
+When the model also passes the loaded skill's `skillName` to `runIntent`
+(small models often do), the intent it names still runs, and the skill is the
+one whose secret the executor gets. With `intent` present the executor always
+gets a stand-in `Skill(name: intent)` with no instructions or metadata, even
+when `skillName` names a registered skill (`runMcp` does the same with
+`toolName`).
+
+## Skills or a knowledge base?
+
+An app with skills and a knowledge base can decide before `ask()` whether a
+question is for a skill or for the documents, so a device question does not
+arrive with documentation excerpts the model then answers from. Core's
+experimental `Decider` (`flutter_edge_ai` 2.4.0, `EmbeddingModel.createDecider`)
+picks one of several options for an input; this package does not depend on it.
+
+```dart
+// Decider is @experimental: its use draws the experimental_member_use warning.
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
+final route = await embedder.createDecider(
+  options: [
+    for (final skill in registry.getSelected())
+      DeciderOption(skill.name, description: skill.description),
+    DeciderOption('docs', description: 'Questions the app documentation answers'),
+  ],
+  // Descriptions alone cannot calibrate an abstain threshold.
+  calibration: const EmbeddingDeciderCalibration.none(),
+);
+
+final answer = await route.choose(DeciderInput(EmbeddingInput.text(question)));
+final prompt = answer.choice == 'docs'
+    ? '${await excerptsFor(question)}\n\n$question'
+    : question;
+await for (final event in session.ask(prompt)) {
+  // …
+}
+```
+
+A few example requests per option (`examples:`) make the choice far more
+accurate than descriptions alone; the `flutter-edge-ai-decisions` package skill
+covers options, calibration and abstaining.
 
 ## Registering executors
 
@@ -247,20 +453,121 @@ final session = await AgentSession.fromModel(model, registry: registry);
 
 ## Setup
 
-Most skills need no platform setup. For the platform-specific bits:
+Most skills need no platform setup. The intents open OS surfaces, and those
+need declarations in the app:
 
-- **Windows** — JS skills require the
-  [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
-  (pre-installed on Windows 11; bundle the bootstrapper for Windows 10).
-- **iOS** — the `create-calendar-event` intent opens the calendar editor via
-  `add_2_calendar`, which needs a usage description in `ios/Runner/Info.plist`:
+- **Android 11 and newer** — `send_email` and `send_text` ask url_launcher
+  whether an app can open the link, and `create_calendar_event` asks
+  `add_2_calendar` whether a calendar can insert the event. Both answers are
+  "no" unless the app declares them in `android/app/src/main/AndroidManifest.xml`,
+  as a child of `<manifest>`; the mail and SMS intents then report that no app
+  is available, the calendar one that it could not open the event editor:
   ```xml
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="mailto" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.VIEW" />
+      <data android:scheme="sms" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.INSERT" />
+      <data android:mimeType="vnd.android.cursor.dir/event" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.INSERT" />
+      <data android:mimeType="vnd.android.cursor.item/event" />
+    </intent>
+  </queries>
+  ```
+- **iOS** — the same check for mail and SMS, plus `add_2_calendar`'s usage
+  descriptions (it recommends the contacts one: Apple's event editor offers
+  location autocomplete), in `ios/Runner/Info.plist`:
+  ```xml
+  <key>LSApplicationQueriesSchemes</key>
+  <array>
+    <string>mailto</string>
+    <string>sms</string>
+  </array>
   <key>NSCalendarsUsageDescription</key>
   <string>Create calendar events from the agent.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>Suggest locations for calendar events.</string>
   ```
-  Local notifications (`schedule_notification`) prompt for permission at runtime.
+- **Notifications** — since 0.4.0 `schedule_notification` is off until the
+  app turns it on. The app sets up `flutter_local_notifications` itself and
+  passes `NotificationIntentSettings`; without them the intent returns an error
+  that says so and makes no plugin call. The agent never calls `initialize`: a
+  second call would replace the app's notification callbacks, default icon and
+  presentation options. It never asks for a permission either.
+  ```dart
+  // Once at startup, with the app's own callbacks and default icon.
+  // initialize throws ArgumentError on a platform whose settings are missing.
+  await FlutterLocalNotificationsPlugin().initialize(
+    settings: const InitializationSettings(
+      android: AndroidInitializationSettings('app_icon'),
+      iOS: DarwinInitializationSettings(),
+      macOS: DarwinInitializationSettings(),
+      linux: LinuxInitializationSettings(defaultActionName: 'Open'),
+      windows: WindowsInitializationSettings(
+        appName: 'My App',
+        appUserModelId: 'Com.Example.MyApp',
+        guid: 'a GUID of your own',
+      ),
+    ),
+  );
+
+  final intents = NativeIntentExecutor(
+    notifications: const NotificationIntentSettings(
+      androidSmallIcon: 'ic_reminder', // optional; null = initialize's icon
+    ),
+  );
+  ```
+  Passing the settings without calling `initialize` crashes the app: on macOS
+  when the intent schedules, on Android when a reminder without
+  `androidSmallIcon` fires. An empty string in the settings throws
+  `ArgumentError` when the executor is built.
+  - Before it schedules, the intent checks the permissions and refuses, with a
+    reason the model can pass on, when notifications are off for the app
+    (Android `areNotificationsEnabled()`; iOS and macOS `checkPermissions()`
+    with neither full nor provisional permission), when the user turned off its
+    Android channel, or, on Android 12 and newer, when the app may not schedule
+    exact alarms. Asking is the app's job: `requestNotificationsPermission()`
+    on Android 13 and newer, `DarwinInitializationSettings()` or
+    `requestPermissions()` on iOS and macOS. With provisional permission the
+    reminder arrives quietly, with no banner or sound, and the intent's answer
+    says so.
+  - On Android the intent schedules an exact alarm (`exactAllowWhileIdle`). The
+    app declares `SCHEDULE_EXACT_ALARM` in its manifest, and on Android 14 and
+    newer the user must also grant it: it is off by default there, and the app
+    asks with `requestExactAlarmsPermission()`. `USE_EXACT_ALARM` (Android 13
+    and newer) needs no grant, but Google Play allows it only for alarm and
+    calendar apps. With `NotificationIntentSettings(androidExactAlarm: false)`
+    the intent schedules `inexactAllowWhileIdle` instead, which needs neither
+    and may fire up to an hour late (later under battery saver or Doze); the
+    intent never switches on its own. The plugin's receivers and
+    `RECEIVE_BOOT_COMPLETED` go in the manifest as well: see
+    [flutter_local_notifications' Android setup](https://pub.dev/packages/flutter_local_notifications#androidmanifestxml-setup).
+    Its icon must survive resource shrinking in a release build: a drawable
+    named only from Dart needs a `keep.xml`.
+  - On iOS the plugin's setup also needs one line in `AppDelegate.swift`, in
+    `didFinishLaunchingWithOptions`; without it iOS shows no reminder while the
+    app is in the foreground:
+    ```swift
+    UNUserNotificationCenter.current().delegate = self as? UNUserNotificationCenterDelegate
+    ```
+  - The intent refuses on the web and on Linux, where the plugin cannot
+    schedule a notification, and a date and time that have already passed. A
+    time without a date that has passed today is scheduled for tomorrow. On
+    Windows it has no permission to check and relies on the app's `initialize`.
+  - It schedules the instant in UTC and leaves the time zone database and
+    `tz.local` to the app.
+  - `notifications:` together with a `schedule_notification` entry in
+    `handlers:` throws `ArgumentError`.
 - **Android** — `flutter_local_notifications` requires core-library desugaring in
-  `android/app/build.gradle(.kts)`:
+  `android/app/build.gradle(.kts)`, whether or not the app uses the intent:
   ```kotlin
   android { compileOptions { isCoreLibraryDesugaringEnabled = true } }
   dependencies { coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4") }
@@ -273,14 +580,26 @@ Most skills need no platform setup. For the platform-specific bits:
   android.r8.proguardAndroidTxt.disallowed=false
   ```
   AGP deprecates this opt-out and plans to remove it in AGP 10.
+- **Windows** — JS skills require the
+  [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+  (pre-installed on Windows 11; bundle the bootstrapper for Windows 10). The
+  webview plugin fetches its native dependencies with the
+  [NuGet CLI](https://learn.microsoft.com/nuget/install-nuget-client-tools)
+  while the app builds, so `nuget` has to be on the `PATH`.
 
 ## Third-party attribution
 
-The bundled starter skills (`calculate-hash`, `qr-code`, `query-wikipedia`,
-`interactive-map`, `send-email`, `create-calendar-event`, `get-current-time`,
+Seven of the bundled starter skills (`calculate-hash`, `qr-code`,
+`query-wikipedia`, `interactive-map`, `send-email`, `create-calendar-event`,
 `kitchen-adventure`) and the `SKILL.md` format are derived from
 [google-ai-edge/gallery](https://github.com/google-ai-edge/gallery), licensed
 under the [Apache License 2.0](https://github.com/google-ai-edge/gallery/blob/main/LICENSE).
+`send-email` and `kitchen-adventure` are unchanged. The four JS skills tell the
+model to pass their `skillName` to `run_js`; beyond that, `qr-code` waits for
+its CDN library to load, `query-wikipedia` validates the language code before
+building the request URL, and `create-calendar-event` asks the model for a
+relative `day_offset` and `hour` instead of ISO start and end times.
+`get-current-time` was written for this package.
 
 ## License
 

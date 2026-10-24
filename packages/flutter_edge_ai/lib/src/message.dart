@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'model_response.dart';
+
 enum MessageType {
   text,
   toolResponse,
@@ -18,6 +20,8 @@ class Message {
     this.audioBytes,
     this.type = MessageType.text,
     this.toolName,
+    this.toolCalls = const [],
+    this.toolCallId,
   });
 
   final String text;
@@ -27,6 +31,21 @@ class Message {
   final Uint8List? audioBytes;
   final MessageType type;
   final String? toolName;
+
+  /// The calls a [MessageType.toolCall] message carries, or empty when it was
+  /// built from [text] alone; ignored on any other type. An engine reads them
+  /// through `toolCallsOf` (`package:flutter_edge_ai/engine.dart`), which also
+  /// parses [text] for a message saved with text alone. One model turn may be
+  /// several consecutive toolCall messages (genai writes one per call, and a
+  /// streamed text call is recorded as it completes); an engine that replays
+  /// calls merges such a run into one turn.
+  final List<FunctionCallResponse> toolCalls;
+
+  /// The [FunctionCallResponse.id] a [MessageType.toolResponse] answers, or
+  /// null when its call had none; ignored on any other type. Only
+  /// `flutter_edge_ai_llama` reads it; the other engines pair a result with its
+  /// call by [toolName], in order.
+  final String? toolCallId;
 
   bool get hasImage => imageBytes != null || images.isNotEmpty;
   bool get hasAudio => audioBytes != null;
@@ -39,6 +58,8 @@ class Message {
     Uint8List? audioBytes,
     MessageType? type,
     String? toolName,
+    List<FunctionCallResponse>? toolCalls,
+    String? toolCallId,
   }) {
     return Message(
       text: text ?? this.text,
@@ -48,6 +69,8 @@ class Message {
       audioBytes: audioBytes ?? this.audioBytes,
       type: type ?? this.type,
       toolName: toolName ?? this.toolName,
+      toolCalls: toolCalls ?? this.toolCalls,
+      toolCallId: toolCallId ?? this.toolCallId,
     );
   }
 
@@ -123,9 +146,13 @@ class Message {
     return Message(text: text, audioBytes: audioBytes, isUser: isUser);
   }
 
+  /// A tool result. [toolCallId] names the call it answers when that call had
+  /// an id. Only `flutter_edge_ai_llama` reads it; the other engines pair the
+  /// result with its call by [toolName], in order.
   factory Message.toolResponse({
     required String toolName,
     required Map<String, dynamic> response,
+    String? toolCallId,
   }) {
     // Tool responses are sent from the user's side.
     return Message(
@@ -133,12 +160,42 @@ class Message {
       toolName: toolName,
       type: MessageType.toolResponse,
       isUser: true,
+      toolCallId: toolCallId,
     );
   }
 
-  factory Message.toolCall({required String text}) {
+  /// The model's tool call(s) in a history.
+  ///
+  /// [calls] are the calls themselves, stored as a frozen copy. [text] is what
+  /// text engines replay: the model's output as the engine returned it (for a
+  /// LiteRT-LM call, its `tool_calls` objects without the text written before
+  /// them), or the JSON a converter wrote. When it is null, it is
+  /// `{"tool_calls":[{"id","name","arguments"}]}` built from [calls] (an `id`
+  /// only for a call that has one), which the text formats also read back.
+  /// Give at least one of the two.
+  factory Message.toolCall({
+    String? text,
+    List<FunctionCallResponse> calls = const [],
+  }) {
+    if (text == null && calls.isEmpty) {
+      throw ArgumentError('Message.toolCall needs text or at least one call.');
+    }
     // Tool calls are from the model.
-    return Message(text: text, type: MessageType.toolCall, isUser: false);
+    return Message(
+      text: text ?? _toolCallsJson(calls),
+      type: MessageType.toolCall,
+      isUser: false,
+      toolCalls: List.unmodifiable([
+        for (final call in calls)
+          FunctionCallResponse(
+            name: call.name,
+            args: Map<String, dynamic>.unmodifiable({
+              for (final e in call.args.entries) e.key: _frozen(e.value),
+            }),
+            id: call.id,
+          ),
+      ]),
+    );
   }
 
   factory Message.systemInfo({required String text, String? icon}) {
@@ -156,7 +213,9 @@ class Message {
 
   @override
   String toString() {
-    return 'Message(text: $text, isUser: $isUser, imageCount: ${images.isNotEmpty ? images.length : (imageBytes == null ? 0 : 1)}, hasAudio: $hasAudio, type: $type, toolName: $toolName)';
+    final calls = toolCalls.isEmpty ? '' : ', toolCalls: $toolCalls';
+    final callId = toolCallId == null ? '' : ', toolCallId: $toolCallId';
+    return 'Message(text: $text, isUser: $isUser, imageCount: ${images.isNotEmpty ? images.length : (imageBytes == null ? 0 : 1)}, hasAudio: $hasAudio, type: $type, toolName: $toolName$calls$callId)';
   }
 
   @override
@@ -169,7 +228,9 @@ class Message {
         _listEquals(other.images, images) &&
         _listEquals(other.audioBytes, audioBytes) &&
         other.type == type &&
-        other.toolName == toolName;
+        other.toolName == toolName &&
+        _listEquals(other.toolCalls, toolCalls) &&
+        other.toolCallId == toolCallId;
   }
 
   @override
@@ -180,7 +241,9 @@ class Message {
       Object.hashAll(images) ^
       audioBytes.hashCode ^
       type.hashCode ^
-      toolName.hashCode;
+      toolName.hashCode ^
+      Object.hashAll(toolCalls) ^
+      toolCallId.hashCode;
 
   bool _listEquals<T>(List<T>? a, List<T>? b) {
     if (a == null) return b == null;
@@ -191,3 +254,24 @@ class Message {
     return true;
   }
 }
+
+/// A deep copy that cannot be changed: a history keeps the arguments the call
+/// had, whatever the app later does to the map it received.
+Object? _frozen(Object? value) => switch (value) {
+  Map() => Map<Object?, Object?>.unmodifiable({
+    for (final e in value.entries) e.key: _frozen(e.value),
+  }),
+  List() => List<Object?>.unmodifiable([for (final v in value) _frozen(v)]),
+  _ => value,
+};
+
+String _toolCallsJson(List<FunctionCallResponse> calls) => jsonEncode({
+  'tool_calls': [
+    for (final call in calls)
+      {
+        if (call.id != null) 'id': call.id,
+        'name': call.name,
+        'arguments': call.args,
+      },
+  ],
+});

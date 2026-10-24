@@ -4,6 +4,7 @@ import '../routing_strategy.dart';
 /// Wraps an [inner] strategy and appends a fixed [fallbackOrder] tail to its
 /// pick, turning a pure pick into pick + fallback. Keys already produced by
 /// [inner] are not duplicated (inner order preserved, then remaining tail).
+@Deprecated('Use RoutePolicy.fallback; removed in 0.5.0.')
 class WithFallback implements RoutingStrategy {
   WithFallback(this._inner, {required List<String> fallbackOrder})
     : _fallbackOrder = List.unmodifiable(fallbackOrder);

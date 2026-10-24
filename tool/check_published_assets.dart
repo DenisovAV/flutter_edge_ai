@@ -51,6 +51,12 @@ const publishedTrees = {
   ],
   // Apps copy the vec0-enabled sqlite3.wasm into their web root.
   'packages/flutter_edge_ai_sqlite': ['web'],
+  // GGUF consumers copy the bootstrap/helper and run both shipped asset tools.
+  'packages/flutter_edge_ai_llama': [
+    'tool/fetch_web_assets.py',
+    'tool/validate_web_build.py',
+    'example/web',
+  ],
 };
 
 /// Packages that declare `flutter: assets:` today. One of them being skipped

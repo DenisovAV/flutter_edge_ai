@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yaml/yaml.dart' show YamlList, YamlMap;
 
 String _fixture(String name) =>
     File('test/fixtures/skills/$name.SKILL.md').readAsStringSync();
@@ -81,6 +82,34 @@ void main() {
     test('inferSkillType is case-insensitive', () {
       expect(inferSkillType('RUN_JS now'), SkillType.js);
     });
+
+    // The names the tools are declared under, which the model sees and the
+    // README's tool table shows.
+    test('runSkill / runJs → js', () {
+      expect(parse('Call the `runSkill` tool.').type, SkillType.js);
+      expect(parse('Call `runJs` with the data.').type, SkillType.js);
+    });
+
+    test('runIntent → intent', () {
+      expect(parse('Call the `runIntent` tool.').type, SkillType.intent);
+      expect(inferSkillType('Call RUNINTENT now'), SkillType.intent);
+    });
+
+    test('runMcp → mcp', () {
+      expect(parse('Call the `runMcp` tool.').type, SkillType.mcp);
+    });
+
+    test('order is js, intent, mcp whatever the spelling', () {
+      expect(inferSkillType('runMcp, then runIntent'), SkillType.intent);
+      expect(inferSkillType('runIntent, then runSkill'), SkillType.js);
+    });
+
+    test('a body naming only loadSkill stays textOnly', () {
+      expect(
+        parse('After loadSkill, answer the user directly.').type,
+        SkillType.textOnly,
+      );
+    });
   });
 
   group('parseSkillMd — metadata', () {
@@ -158,6 +187,124 @@ body
     });
   });
 
+  group('parseSkillMd — extra metadata', () {
+    const md = '''
+---
+name: device-info
+description: Report the device's model.
+metadata:
+  homepage: https://example.com
+  require_secret: false
+  requireSecretDescription: none
+  speak-verbatim: true
+  max-items: 3
+  ratio: 0.5
+  owner: app
+  nothing:
+  tags: [device, info]
+  limits:
+    per-day: 10
+    windows: [morning, evening]
+---
+Call the `runIntent` tool.
+''';
+
+    test('keeps every unknown key with its YAML type', () {
+      final metadata = parseSkillMd(md).metadata;
+
+      expect(metadata.homepage, 'https://example.com');
+      expect(metadata.secretDescription, 'none');
+      expect(metadata.extra, {
+        'speak-verbatim': true,
+        'max-items': 3,
+        'ratio': 0.5,
+        'owner': 'app',
+        'nothing': null,
+        'tags': ['device', 'info'],
+        'limits': {
+          'per-day': 10,
+          'windows': ['morning', 'evening'],
+        },
+      });
+    });
+
+    test('no spelling of a known key lands in extra', () {
+      final extra = parseSkillMd(md).metadata.extra;
+
+      for (final key in [
+        'homepage',
+        'require_secret',
+        'requireSecretDescription',
+      ]) {
+        expect(extra.containsKey(key), isFalse, reason: key);
+      }
+    });
+
+    test('nested values are plain unmodifiable Dart maps and lists', () {
+      final extra = parseSkillMd(md).metadata.extra;
+      final limits = extra['limits'];
+      final tags = extra['tags'];
+
+      expect(limits, isA<Map<String, Object?>>());
+      expect(limits, isNot(isA<YamlMap>()));
+      expect(tags, isA<List<Object?>>());
+      expect(tags, isNot(isA<YamlList>()));
+      expect((limits! as Map)['windows'], isNot(isA<YamlList>()));
+      expect(() => extra['x'] = 1, throwsUnsupportedError);
+      expect(() => (limits as Map)['x'] = 1, throwsUnsupportedError);
+      expect(() => (tags! as List).add('x'), throwsUnsupportedError);
+    });
+
+    test('extra alone makes the metadata non-empty and shows in toString', () {
+      final metadata = parseSkillMd('''
+---
+name: x
+description: d
+metadata:
+  speak-verbatim: true
+---
+body
+''').metadata;
+
+      expect(metadata.isEmpty, isFalse);
+      expect(metadata.toString(), contains('speak-verbatim: true'));
+    });
+
+    test('no metadata block → extra is empty', () {
+      final metadata = parseSkillMd(_fixture('calculate-hash')).metadata;
+
+      expect(metadata.extra, isEmpty);
+    });
+
+    test('extra is read-only on a metadata built in code too', () {
+      final source = <String, Object?>{'a': 1};
+      final metadata = SkillMetadata(extra: source);
+
+      expect(metadata.extra, {'a': 1});
+      expect(() => metadata.extra['b'] = 2, throwsUnsupportedError);
+    });
+
+    test('frontmatter that is not YAML yields strings in extra', () {
+      // The tab-indented `bad:` line is not valid YAML, so the tolerant line
+      // parser takes over.
+      final metadata = parseSkillMd('''
+---
+name: x
+description: d
+metadata:
+  homepage: https://h.example
+  speak-verbatim: true
+	bad: [unclosed
+---
+body
+''').metadata;
+
+      expect(metadata.homepage, 'https://h.example');
+      expect(metadata.extra['speak-verbatim'], 'true');
+      expect(metadata.extra['bad'], '[unclosed');
+    });
+  });
+
   group('parseSkillMd — scriptName inference', () {
     test('explicit scriptName extracted', () {
       const md = '''
@@ -198,6 +345,26 @@ Call the `run_js` tool with script name: `index.html`.
     test('missing description throws', () {
       const md = '---\nname: x\n---\nbody';
       expect(() => parseSkillMd(md), throwsA(isA<SkillMdParseException>()));
+    });
+
+    test('a name or description that is not a string throws', () {
+      // A YAML list or map used to escape as a TypeError.
+      for (final md in [
+        '---\nname: [a, b]\ndescription: d\n---\nbody',
+        '---\nname: x\ndescription:\n  text: d\n---\nbody',
+      ]) {
+        expect(
+          () => parseSkillMd(md),
+          throwsA(
+            isA<SkillMdParseException>().having(
+              (e) => e.errors.join(' '),
+              'errors',
+              contains('must be a string'),
+            ),
+          ),
+          reason: md,
+        );
+      }
     });
 
     test('error message lists the missing field', () {

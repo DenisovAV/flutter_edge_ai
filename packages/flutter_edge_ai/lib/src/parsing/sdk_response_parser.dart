@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_edge_ai/src/model_response.dart';
 import 'package:flutter_edge_ai/src/tool.dart';
 
+import 'escaped_call_syntax.dart';
 import 'function_gemma_format.dart';
 import 'function_gemma_wire.dart';
 
@@ -47,13 +48,14 @@ class SdkResponseParser {
       }
       _harvestCalls(json, result);
     }
-    // Web fallback: `@litert-lm/core` (0.12.1 / 0.14.0) does NOT convert Gemma 4
-    // `<|tool_call>call:NAME{...}<tool_call|>` tokens into structured
-    // `tool_calls` JSON — they stay as raw text (verified with Gemma 4 E4B on
-    // web). Native (C++ liblitert_lm) does convert, so this only fires when the
-    // structured pass found nothing but raw tokens are present.
+    // Raw Gemma 4 `<|tool_call>call:NAME{...}<tool_call|>` tokens, when the
+    // structured pass found nothing. `@litert-lm/core` 0.12.1 and 0.14.0 left
+    // every web call as text (verified with Gemma 4 E4B); from 0.18.0 the web
+    // runtime, like native, converts a complete call itself, so this reads a
+    // block the runtime did not convert (cut off or malformed) and history
+    // text that carries the tokens.
     if (result.isEmpty && jsonStr.contains(_rawToolCallOpen)) {
-      _harvestRawTokenCalls(jsonStr, result);
+      result.addAll(_rawTokenCalls(_responseText(jsonStr)));
     }
     // FunctionGemma, same reason: when its call comes back as text rather than
     // `tool_calls` — the web SDK, or a `.litertlm` exported without the
@@ -66,7 +68,10 @@ class SdkResponseParser {
   }
 
   /// The text a raw response carries: the `content` string or text items of
-  /// every concatenated fragment, or [jsonStr] itself when none of it is JSON.
+  /// every concatenated fragment, or [jsonStr] itself when no fragment is a
+  /// response. A fragment with neither `content` nor `role` is not one: the
+  /// `{}` of a FunctionGemma call with no arguments is valid JSON too. A
+  /// response without `content` (a thought alone) carries no text.
   static String _responseText(String jsonStr) {
     final text = StringBuffer();
     var parsedAny = false;
@@ -78,6 +83,9 @@ class SdkResponseParser {
         continue;
       }
       if (parsed is! Map<String, dynamic>) continue;
+      if (!parsed.containsKey('content') && !parsed.containsKey('role')) {
+        continue;
+      }
       parsedAny = true;
       final content = parsed['content'];
       if (content is String) text.write(content);
@@ -93,35 +101,35 @@ class SdkResponseParser {
   }
 
   static const _rawToolCallOpen = '<|tool_call>';
+  static const _gemma4Escape = '<|"|>';
 
-  /// Parse the raw Gemma 4 tool-call token stream the web SDK leaves untouched:
-  /// `<|tool_call>call:NAME{key:<|"|>value<|"|>,...}<tool_call|>`. The closing
-  /// `<tool_call|>` may be cut off by the stop token, so it's optional. Values
-  /// are wrapped in `<|"|>...<|"|>` escape tokens (stripped here).
-  static void _harvestRawTokenCalls(
-    String text,
-    List<FunctionCallResponse> out,
-  ) {
-    final callRegex = RegExp(
-      r'<\|tool_call>call:([\w-]+)\{(.*?)\}(?:<tool_call\|>|$)',
-      dotAll: true,
-    );
-    // The `<|"|>` escape may arrive raw or JSON-escaped as `<|\"|>` (web
-    // stringifies the Message object, so the quote inside the content string
-    // gets a backslash). Accept an optional backslash before the quote.
-    final paramRegex = RegExp(
-      r'([\w-]+):<\|\\?"\|>(.*?)<\|\\?"\|>',
-      dotAll: true,
-    );
-    for (final match in callRegex.allMatches(text)) {
-      final name = match.group(1)!;
-      final paramsStr = match.group(2)!;
-      final args = <String, dynamic>{};
-      for (final p in paramRegex.allMatches(paramsStr)) {
-        args[p.group(1)!] = p.group(2)!;
-      }
-      out.add(FunctionCallResponse(name: name, args: args));
+  /// Parse the raw Gemma 4 tool-call tokens the web SDK leaves untouched:
+  /// `<|tool_call>call:NAME{key:value,...}<tool_call|>`, written by Gemma 4's
+  /// `format_argument` — strings between `<|"|>`, numbers, booleans and null
+  /// bare, objects and lists nested (see `escaped_call_syntax.dart`). The
+  /// closing `<tool_call|>` may be cut off by the stop token.
+  ///
+  /// [text] is the decoded response text, so a string value carries its quotes
+  /// and newlines, not their JSON escapes. All or nothing: a call that does not
+  /// parse in full returns no calls, and the chat then surfaces the raw text
+  /// instead of running the other calls of that turn.
+  static List<FunctionCallResponse> _rawTokenCalls(String text) {
+    final calls = <FunctionCallResponse>[];
+    var from = text.indexOf(_rawToolCallOpen);
+    while (from != -1) {
+      final call = findEscapedCall(
+        text,
+        start: _rawToolCallOpen,
+        escape: _gemma4Escape,
+        from: from,
+      );
+      if (call == null) return const [];
+      final args = parseEscapedCallArguments(call.body, escape: _gemma4Escape);
+      if (args == null) return const [];
+      calls.add(FunctionCallResponse(name: call.name, args: args));
+      from = text.indexOf(_rawToolCallOpen, call.end);
     }
+    return calls;
   }
 
   /// Split a string that may be one JSON object or a concatenation of multiple
@@ -174,17 +182,26 @@ class SdkResponseParser {
         fn = raw;
       }
       if (fn == null) return;
-      final name = fn['name'] as String?;
-      if (name == null) return;
+      final name = fn['name'];
+      if (name is! String) return;
       final rawArgs = fn['arguments'];
       final args = rawArgs is Map<String, dynamic>
           ? _stripEscapeTokens(rawArgs) as Map<String, dynamic>
           : <String, dynamic>{};
-      out.add(FunctionCallResponse(name: name, args: args));
+      // The call's id, OpenAI-style on the call object or flat beside the
+      // name, read as toolCallsOf reads it.
+      final id = raw['id'] ?? fn['id'];
+      out.add(
+        FunctionCallResponse(
+          name: name,
+          args: args,
+          id: id is String && id.isNotEmpty ? id : null,
+        ),
+      );
     }
 
-    final topLevel = json['tool_calls'] as List<dynamic>?;
-    if (topLevel != null) {
+    final topLevel = json['tool_calls'];
+    if (topLevel is List) {
       for (final call in topLevel) {
         addFromCallObject(call);
       }
@@ -210,7 +227,7 @@ class SdkResponseParser {
   /// `"<|\"|>red<|\"|>"` instead of `"red"`). Walks Maps and Lists so nested
   /// argument values are also cleaned.
   static dynamic _stripEscapeTokens(dynamic value) {
-    if (value is String) return value.replaceAll('<|"|>', '');
+    if (value is String) return value.replaceAll(_gemma4Escape, '');
     if (value is Map) {
       return value.map((k, v) => MapEntry(k as String, _stripEscapeTokens(v)));
     }
@@ -291,3 +308,51 @@ class SdkResponseParser {
     }
   }
 }
+
+/// The text `InferenceChat` records for a turn's tool calls: the raw
+/// response's `tool_calls` objects (role and calls only), each cleaned as by
+/// [SdkResponseParser.cleanRawForHistory], without the text chunks streamed
+/// before them and without any text a call chunk carries itself.
+///
+/// A Gemma 4 turn can be a sentence and then a call; its raw response is then
+/// one JSON object per streamed chunk, and recorded whole it put every text
+/// chunk into the call's history entry. The sentence is not kept: a call turn
+/// is recorded as its calls only, as the LiteRT-LM virtual session replays one
+/// and as `toolCallsOf` reads one. An empty `tool_calls` list is no call. A raw
+/// response with no `tool_calls` object (calls inside `content`, or raw call
+/// tokens on the web) is kept as [SdkResponseParser.cleanRawForHistory] returns
+/// it, which leaves a response of several chunks unchanged.
+///
+/// Internal to core: `engine.dart` exports only [SdkResponseParser].
+String toolCallsRawForHistory(String raw) {
+  final calls = StringBuffer();
+  for (final fragment in SdkResponseParser._splitConcatenatedJson(raw)) {
+    final Object? parsed;
+    try {
+      parsed = jsonDecode(fragment);
+    } on FormatException {
+      continue;
+    }
+    if (parsed case {
+      'tool_calls': final List toolCalls,
+    } when toolCalls.isNotEmpty) {
+      // Role and calls only: a chunk can carry text or reasoning next to its
+      // calls, and neither is the call.
+      final callOnly = <String, Object?>{
+        if (parsed case {'role': final Object? role}) 'role': role,
+        'tool_calls': toolCalls,
+      };
+      calls.write(jsonEncode(SdkResponseParser._stripEscapeTokens(callOnly)));
+    }
+  }
+  return calls.isEmpty
+      ? SdkResponseParser.cleanRawForHistory(raw)
+      : calls.toString();
+}
+
+/// The JSON documents of [input], one object or several back to back
+/// (`{...}{...}`), as [SdkResponseParser] splits a raw response.
+///
+/// Internal to core: `engine.dart` exports only [SdkResponseParser].
+Iterable<String> splitSdkJsonDocuments(String input) =>
+    SdkResponseParser._splitConcatenatedJson(input);

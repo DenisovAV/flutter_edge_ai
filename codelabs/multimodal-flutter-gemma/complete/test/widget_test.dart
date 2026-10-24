@@ -83,9 +83,11 @@ void main() {
     expect(wav.length, 44 + pcm.length);
     expect(String.fromCharCodes(wav.sublist(0, 4)), 'RIFF');
     expect(String.fromCharCodes(wav.sublist(8, 12)), 'WAVE');
+    expect(String.fromCharCodes(wav.sublist(12, 16)), 'fmt ');
     expect(String.fromCharCodes(wav.sublist(36, 40)), 'data');
     // RIFF size counts everything after its own 8 bytes.
     expect(view.getUint32(4, Endian.little), 36 + pcm.length);
+    expect(view.getUint32(16, Endian.little), 16); // fmt chunk length
     expect(view.getUint16(20, Endian.little), 1); // uncompressed PCM
     expect(view.getUint16(22, Endian.little), 1); // mono
     expect(view.getUint32(24, Endian.little), 16000);

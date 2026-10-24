@@ -32,7 +32,14 @@ void main() {
       for (final model in catalog.EmbeddingModel.values)
         if (model.npuSoc case final soc?) soc: model.ragProfileId,
     };
-    expect(npu.keys, ['SM8850', 'SM8650', 'QCS8275', 'PTL']);
+    expect(npu.keys, [
+      'SM8850',
+      'SM8650',
+      'QCS8275',
+      'PTL',
+      'Tensor_G6',
+      'MT6991',
+    ]);
     ids.addAll(npu.values);
 
     expect(ids.toSet(), hasLength(ids.length));
@@ -223,6 +230,9 @@ void main() {
       'embeddingGemma2TextVision440mQcs8275',
       'embeddingGemma2Text270mPtl',
       'embeddingGemma2TextVision440mPtl',
+      'embeddingGemma2Text270mTensorG6',
+      'embeddingGemma2TextVision440mTensorG6',
+      'embeddingGemma2Text270mMt6991',
     ]);
     const cpuTextId = 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1';
     for (final model in npu) {
@@ -230,8 +240,20 @@ void main() {
       final vendor = switch (model.npuVendor) {
         catalog.EmbeddingNpuVendor.qualcomm => 'Qualcomm',
         catalog.EmbeddingNpuVendor.intel => 'Intel',
+        catalog.EmbeddingNpuVendor.googleTensor => 'Google',
+        catalog.EmbeddingNpuVendor.mediatek => 'MediaTek',
       };
-      expect(vendor, soc == 'PTL' ? 'Intel' : 'Qualcomm', reason: model.name);
+      expect(
+        vendor,
+        soc == 'PTL'
+            ? 'Intel'
+            : soc.startsWith('Tensor_')
+            ? 'Google'
+            : soc.startsWith('MT')
+            ? 'MediaTek'
+            : 'Qualcomm',
+        reason: model.name,
+      );
       final repo = model.embedsAudio
           ? 'embeddinggemma-2-740m-litert-lm/resolve/'
                 '24d962e906c7d332c6428e71c9676855024569e2/'
@@ -323,7 +345,7 @@ void main() {
   });
 
   test('the Qualcomm NPU bundles are listed on Android and Linux only, the '
-      'Intel ones on Windows only', () {
+      'Intel ones on Windows only, the Google Tensor ones on Android only', () {
     addTearDown(() => debugDefaultTargetPlatformOverride = null);
     for (final platform in TargetPlatform.values) {
       debugDefaultTargetPlatformOverride = platform;
@@ -337,6 +359,18 @@ void main() {
       expect(
         listed.where((m) => m.npuVendor == catalog.EmbeddingNpuVendor.qualcomm),
         hasLength(qualcomm ? 7 : 0),
+        reason: '$platform',
+      );
+      expect(
+        listed.where(
+          (m) => m.npuVendor == catalog.EmbeddingNpuVendor.googleTensor,
+        ),
+        hasLength(platform == TargetPlatform.android ? 2 : 0),
+        reason: '$platform',
+      );
+      expect(
+        listed.where((m) => m.npuVendor == catalog.EmbeddingNpuVendor.mediatek),
+        hasLength(platform == TargetPlatform.android ? 1 : 0),
         reason: '$platform',
       );
       expect(

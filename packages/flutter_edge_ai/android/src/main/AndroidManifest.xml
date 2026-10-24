@@ -14,18 +14,60 @@
              libcdsprpc.so from the vendor partition when
              libLiteRtDispatch_Qualcomm.so is loaded. -->
         <uses-native-library android:name="libcdsprpc.so" android:required="false"/>
+        <!-- Google Tensor dispatch late-binds the Pixel system runtime. Optional
+             so non-Tensor devices install normally. -->
+        <uses-native-library android:name="libedgetpu_litert.so" android:required="false"/>
+        <!-- Declared because Google's litert-npu-runtime-google-tensor AAR and
+             LiteRT's own Kotlin manifest declare it too. Not measured as needed:
+             a Tensor G6 run worked without it. -->
+        <uses-native-library android:name="libedgetpu_util.so" android:required="false"/>
+        <!-- MediaTek NPU (flutter_edge_ai_litertlm with mediatek_npu): the
+             dispatch opens the device's NeuroPilot adapters and runtime. The
+             list is what Google's litert-npu-runtime-mediatek AAR declares,
+             plus libneuronusdk_adapter.10.mtk.so, which the dispatch asks for
+             on NeuroPilot 10 devices and the AAR does not declare. The two
+             generic adapter names the dispatch also tries are left out: it
+             keeps the last adapter that opens, so declaring them could replace
+             the device's own adapter with an older generic one. -->
+        <uses-native-library android:name="libneuron_adapter_mgvi.so" android:required="false"/>
+        <uses-native-library android:name="libneuronusdk_adapter.10.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libneuronusdk_adapter.9.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libneuronusdk_adapter.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libneuron_sys_util.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libapuwareutils_v2.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libapuwareutils.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libapuwareapusys_v2.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop_mtk_nn.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop_mtk_cv.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_runtime_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_engine_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_pattern_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop25_mtk_nn.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop25_mtk_cv.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_runtime_25_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_engine_25_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_pattern_25_pub.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_config.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpup30_mtk_nn.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpup30_mtk_cv.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_runtime_30.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_engine_30.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpu_pattern_30.mtk.so" android:required="false"/>
+        <uses-native-library android:name="libmvpuop30_mtk_nn.mtk.so" android:required="false"/>
         <!-- Required for the GPU backend on Android 12+: the LiteRT-LM OpenCL
              loader (v0.13.x) uses libvndksupport.so's android_load_sphal_library()
              to dlopen the vendor OpenCL ICD from the app's linker namespace.
-             Without it OpenCL fails to load and the engine falls back to WebGPU,
-             which hard-freezes some Mali GPU drivers compiling the vision
-             encoder (#324). Merged into every consumer app via manifest merger
+             Without it OpenCL fails to load, and OpenCL is the only Android GPU
+             path: no WebGPU library ships for Android since native-v0.18.0
+             (native-v0.13.x and earlier fell back to WebGPU, which hard-froze
+             some Mali drivers on the vision encoder, #324). Merged into every
+             consumer app via manifest merger
              so the GPU path works without each app re-declaring it. -->
         <uses-native-library android:name="libvndksupport.so" android:required="false"/>
         <!-- libvndksupport.so only opens the door to the SP-HAL namespace; the
              OpenCL ICD itself must ALSO be declared or the second hop
-             (android_load_sphal_library("libOpenCL.so")) is denied, OpenCL
-             still fails to load, and the Mali freeze persists (#324). Declare
+             (android_load_sphal_library("libOpenCL.so")) is denied and OpenCL
+             still fails to load (#324). Declare
              the base loader name plus the two vendor-specific ICD names some
              devices use. All required="false" — pure namespace declarations,
              inert on devices that lack them, never block install. -->

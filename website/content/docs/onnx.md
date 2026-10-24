@@ -40,8 +40,9 @@ Native support is **arm64/x64-gated** — each host is device-verified end-to-en
 > take over. Android needs **`minSdk 24`** (both ORT and ORT-GenAI AARs declare
 > `minSdkVersion=24`). The native library co-location — ORT loaded next to
 > ORT-GenAI — is handled for you: the build hook bundles the two libraries side
-> by side, and on macOS and Linux the package points ORT-GenAI at the bundled
-> ORT at run time. You don't configure anything.
+> by side (on iOS it is one self-contained framework with ORT linked in), and
+> on macOS and Linux the package points ORT-GenAI at the bundled ORT at run
+> time. You don't configure anything.
 
 ## Setup
 
@@ -134,7 +135,8 @@ so it samples. On Web the seed is not applied yet and `topP` is ignored
 `chat_template` on Web) — the engine never builds turn markers itself.
 On native, `preferredBackend` is not applied at all: neither ORT client appends an
 execution provider. For inference, ORT-GenAI picks the provider from the model
-directory's `genai_config.json`, which `flutter_edge_ai_onnx` never reads, so the inference
+directory's `genai_config.json`, whose execution-provider section
+`flutter_edge_ai_onnx` never reads (it reads only `search.top_k`), so the inference
 model's `activeBackend` is `null` rather than a guess. Embeddings run on plain
 ORT with no provider appended, which is CPU, and the embedder reports `cpu`.
 

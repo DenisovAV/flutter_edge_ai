@@ -34,8 +34,8 @@ inference.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.3.2
-  flutter_edge_ai_speech: ^0.5.7
+  flutter_edge_ai: ^2.5.2
+  flutter_edge_ai_speech: ^0.5.10
 ```
 
 ## Register the backend
@@ -65,7 +65,7 @@ await FlutterEdgeAi.installStt()
       'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite',
     )
     .tokenizerFromNetwork(
-      'https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
+      'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
     )
     .ofType(SttModelType.moonshine)
     .install();
@@ -168,13 +168,15 @@ codec-LM (`litert-community/Qwen3-TTS-12Hz-0.6B-Base`, ~1.9 GB) that speaks 10
 languages plus `'auto'` detection, picked with `getActiveTts(language:)`. Unlike
 STT, the language is fixed when the synthesizer is created — `synthesize()` takes
 no language — and `getActiveTts` returns a singleton, so asking it for a different
-language throws `StateError` until you `close()` the current one. Same
+language throws `StateError` until you `close()` the current one (Matcha and
+Inflect ignore the language, but this check applies to them too). Same
 install/synthesize API as Matcha, but heavier: CPU-only, 24 kHz output, RTF≈3
 (~3 s of compute per 1 s of audio), and needs a 6 GB-RAM-class device.
 
 ```dart
+// A pinned revision: the repo's main branch has moved these files to legacy/.
 await FlutterEdgeAi.installTts()
-    .fromNetwork('https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/main/')
+    .fromNetwork('https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/')
     .ofType(TtsModelType.qwen3)
     .install();
 
@@ -281,6 +283,11 @@ await for (final event in session.runTurn(pcm16kMono)) {
 }
 ```
 
+A failed stage — transcribe, generate or synthesize — arrives as a stream
+error, so the `await for` throws: wrap it in `try`/`catch`. `VoiceErrorEvent`
+is reserved in this release and never emitted; its `case` is there because the
+switch must be exhaustive.
+
 `VoiceSession` owns no microphone or player — the app captures and plays PCM
 itself, same as the STT/TTS sections above. For barge-in, call
 `await session.interrupt()` while a turn is in flight: it stops generation,
@@ -355,12 +362,12 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
   empty `VoiceTurnCompleteEvent` without asking the model, as an empty
   transcript does. The recognizer is still required, and `runTurn` still uses
   it.
-- **Barge-in forgets the recordings.** After an interrupted reply, a
-  `.litertlm` chat rebuilds its conversation from the turns' text, and an
-  audio turn has none: the model keeps its own replies but loses what was said
-  in earlier audio turns. Measured on Gemma 4 E2B: told a secret word in an
-  audio turn, it named it after an uninterrupted second turn, and not after an
-  interrupted one.
+- **Barge-in keeps the recordings (`flutter_edge_ai_litertlm` 1.15.0).**
+  After an interrupted reply, a `.litertlm` chat is rewound to before the
+  stopped turn and keeps what was said in earlier audio turns. With 1.14.0 and
+  earlier, and on the NPU, it rebuilds its conversation from the turns' text,
+  and an audio turn has none: the model keeps its own replies but loses what
+  was said.
 - **The format.** `runAudioTurn` takes the same 16 kHz mono 16-bit PCM as
   `runTurn`. `runAudioTurn` adds the WAV header, because a `.litertlm` model
   decodes an audio file, not bare samples.
@@ -385,6 +392,13 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
 | Windows | ✅ FFI |
 | Linux | ✅ FFI |
 | Web | 🚧 follow-on (the web arm is a stub that throws `UnsupportedError`) |
+
+On macOS the app needs the same setup as every LiteRT-LM feature: Swift Package
+Manager turned off for the app in `pubspec.yaml` and the `post_install` block in
+`macos/Podfile` (an app that already has a `macos/Podfile` keeps Swift Package
+Manager on and only needs the block), see [Desktop → macOS](/docs/desktop#macos). Without it STT and
+TTS fail to load, and since `flutter_edge_ai_litertlm` 1.17.0 the error says so
+([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 
 On Android, speech (STT + TTS), like everything backed by `libLiteRtLm`, is **arm64-only** and
 requires **minSdk 30** — see

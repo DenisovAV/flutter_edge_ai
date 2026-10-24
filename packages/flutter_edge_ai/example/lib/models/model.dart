@@ -31,7 +31,7 @@ enum Model implements InferenceModelInterface {
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
     filename: 'gemma-4-E2B-it.litertlm',
     displayName: 'Gemma 4 E2B IT',
-    size: '2.4GB',
+    size: '2.6GB',
     licenseUrl: '',
     needsAuth: false,
     preferredBackend: PreferredBackend.gpu,
@@ -59,7 +59,7 @@ enum Model implements InferenceModelInterface {
         'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm',
     filename: 'gemma-4-E4B-it.litertlm',
     displayName: 'Gemma 4 E4B IT',
-    size: '4.3GB',
+    size: '3.7GB',
     licenseUrl: '',
     needsAuth: false,
     preferredBackend: PreferredBackend.gpu,
@@ -123,17 +123,37 @@ enum Model implements InferenceModelInterface {
     isThinking: true,
   ),
 
+  // Gemma 4 E2B compiled for the Google Tensor G6 NPU (PreferredBackend.npu):
+  // a Pixel with Tensor G6 and Android 16 or later, in an app built with
+  // `google_tensor_npu: true` (this one is). Listed on Android only. Run on a
+  // Pixel 11 with a debug build: text, images and audio on the NPU, context
+  // 1024. Source: litert-community/gemma-4-E2B-it-litert-lm.
+  gemma4_E2B_google_tensor_G6(
+    baseUrl:
+        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it_Google_Tensor_G6.litertlm',
+    filename: 'gemma-4-E2B-it_Google_Tensor_G6.litertlm',
+    displayName: 'Gemma 4 E2B IT (Google Tensor G6 NPU)',
+    size: '3.31GB',
+    licenseUrl: '',
+    needsAuth: false,
+    preferredBackend: PreferredBackend.npu,
+    modelType: ModelType.gemma4,
+    fileType: ModelFileType.litertlm,
+    temperature: 1.0,
+    topK: 64,
+    topP: 0.95,
+    supportImage: true,
+    supportAudio: true,
+    maxTokens: 1024,
+  ),
+
   // Gemma 4 E2B/E4B — WEB-ONLY MediaPipe (.task) builds, right below their
   // LiteRT-LM twins. HuggingFace only ships a `-web.task` for Gemma 4 (no
   // mobile/desktop .task — those are .litertlm only, see the *_litertlm
   // entries above). So these run on web only, through the MediaPipe
   // `@mediapipe/tasks-genai` path. fileType is `task` to match the file —
   // mixing it with `litertlm` routed the .task blob into the LiteRT-LM engine
-  // and failed with "Invalid magic number". Vision works here; thinking and
-  // function calling do not: MediaPipe web has no thinking API (enableThinking
-  // is only logged), and Gemma 4's tools reach the model only through the
-  // runtime, which MediaPipe web does not do — core weaves no tools prompt for
-  // Gemma 4. Both live on the *_litertlm entries.
+  // and failed with "Invalid magic number".
   gemma4_E2B_web(
     baseUrl:
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.task',
@@ -154,8 +174,8 @@ enum Model implements InferenceModelInterface {
     supportAudio: false, // .task has no audio encoder
     maxTokens: 4096,
     maxNumImages: 4,
-    // MediaPipe web has no thinking API and ignores `tools` (see above).
-    isThinking: false,
+    isThinking: false, // MediaPipe web has no thinking API
+    // Gemma 4 tool calls come from the runtime (LiteRT-LM); MediaPipe has none.
     supportsFunctionCalls: false,
   ),
   gemma4_E4B_web(
@@ -178,8 +198,8 @@ enum Model implements InferenceModelInterface {
     supportAudio: false, // .task has no audio encoder
     maxTokens: 4096,
     maxNumImages: 4,
-    // MediaPipe web has no thinking API and ignores `tools` (see above).
-    isThinking: false,
+    isThinking: false, // MediaPipe web has no thinking API
+    // Gemma 4 tool calls come from the runtime (LiteRT-LM); MediaPipe has none.
     supportsFunctionCalls: false,
   ),
 
@@ -216,7 +236,7 @@ enum Model implements InferenceModelInterface {
         'https://huggingface.co/google/gemma-3n-E4B-it-litert-preview/resolve/main/gemma-3n-E4B-it-int4.task',
     filename: 'gemma-3n-E4B-it-int4.task',
     displayName: 'Gemma 3 Nano E4B IT (MediaPipe)',
-    size: '6.5GB',
+    size: '4.4GB',
     licenseUrl: 'https://huggingface.co/google/gemma-3n-E4B-it-litert-preview',
     needsAuth: true,
     preferredBackend: PreferredBackend.gpu,
@@ -277,8 +297,8 @@ enum Model implements InferenceModelInterface {
     supportsFunctionCalls: false,
   ),
 
-  // LFM2.5 230M — the smallest entry here (int4, 168 MB) and the only one that
-  // needs no HuggingFace token. LiquidAI's lfm2 architecture, a ShortConv /
+  // LFM2.5 230M (int4, 177 MB), from a repo that is not gated, so it installs
+  // with no HuggingFace token. LiquidAI's lfm2 architecture, a ShortConv /
   // attention hybrid (14 layers: 8 conv + 6 GQA) rather than a plain
   // transformer, which is what makes it viable on low-end hardware.
   //
@@ -304,7 +324,7 @@ enum Model implements InferenceModelInterface {
         'https://huggingface.co/litert-community/LFM2.5-230M/resolve/main/LFM2.5-230M_int4.litertlm',
     filename: 'LFM2.5-230M_int4.litertlm',
     displayName: 'LFM2.5 230M (int4)',
-    size: '0.17GB',
+    size: '177MB',
     licenseUrl: 'https://huggingface.co/litert-community/LFM2.5-230M',
     needsAuth: false,
     preferredBackend: PreferredBackend.gpu,
@@ -332,7 +352,7 @@ enum Model implements InferenceModelInterface {
         'https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm',
     filename: 'gemma-3n-E2B-it-int4.litertlm',
     displayName: 'Gemma 3 Nano E2B IT',
-    size: '3.1GB',
+    size: '3.7GB',
     licenseUrl: 'https://huggingface.co/google/gemma-3n-E2B-it-litert-lm',
     needsAuth: true,
     preferredBackend: PreferredBackend.gpu,
@@ -341,9 +361,10 @@ enum Model implements InferenceModelInterface {
     temperature: 1.0,
     topK: 64,
     topP: 0.95,
-    supportImage:
-        false, // Disabled: MediaPipe iOS can't find Vision/Audio calculators for .litertlm
-    supportAudio: false, // Disabled: testing text-only mode first
+    // The .litertlm carries tf_lite_vision_encoder and tf_lite_audio_encoder_hw
+    // sections, as the E4B one does.
+    supportImage: true,
+    supportAudio: true,
     maxTokens: 4096,
   ),
 
@@ -358,7 +379,7 @@ enum Model implements InferenceModelInterface {
         'https://huggingface.co/google/gemma-3n-E4B-it-litert-lm/resolve/main/gemma-3n-E4B-it-int4.litertlm',
     filename: 'gemma-3n-E4B-it-int4.litertlm',
     displayName: 'Gemma 3 Nano E4B IT',
-    size: '6.5GB',
+    size: '4.9GB',
     licenseUrl: 'https://huggingface.co/google/gemma-3n-E4B-it-litert-lm',
     needsAuth: true,
     preferredBackend: PreferredBackend.gpu,
@@ -430,17 +451,18 @@ enum Model implements InferenceModelInterface {
 
   // === OTHER MODELS ===
 
-  // Qwen3 0.6B (LiteRT-LM format for web/desktop)
+  // Qwen3 0.6B (LiteRT-LM, native only: the repo has no web export). The
+  // dynamic INT4 bundle (345 MB), measured loading on native-v0.18.0-e (#659).
+  // The repo's Qwen3-0.6B.litertlm (614 MB) loads again since its tokenizer
+  // was replaced on 2026-10-13.
   qwen3_0_6B(
     baseUrl:
-        'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm',
-    webUrl:
-        'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm',
+        'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm',
     desktopUrl:
-        'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm',
-    filename: 'Qwen3-0.6B.litertlm',
+        'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm',
+    filename: 'Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm',
     displayName: 'Qwen3 0.6B',
-    size: '586MB',
+    size: '345MB',
     licenseUrl: 'https://huggingface.co/litert-community/Qwen3-0.6B',
     needsAuth: false,
     preferredBackend: PreferredBackend.cpu,
@@ -545,7 +567,7 @@ enum Model implements InferenceModelInterface {
         'https://huggingface.co/litert-community/SmolLM-135M-Instruct/resolve/main/SmolLM-135M-Instruct_multi-prefill-seq_q8_ekv1280.task',
     filename: 'SmolLM-135M-Instruct_multi-prefill-seq_q8_ekv1280.task',
     displayName: 'SmolLM 135M Instruct',
-    size: '135MB',
+    size: '167MB',
     licenseUrl: 'https://huggingface.co/litert-community/SmolLM-135M-Instruct',
     needsAuth: false,
     preferredBackend: PreferredBackend.cpu,
@@ -565,7 +587,7 @@ enum Model implements InferenceModelInterface {
         'https://huggingface.co/litert-community/FastVLM-0.5B/resolve/main/FastVLM-0.5B.litertlm',
     filename: 'FastVLM-0.5B.litertlm',
     displayName: 'FastVLM 0.5B (Vision)',
-    size: '0.5GB',
+    size: '1.2GB',
     licenseUrl: 'https://huggingface.co/litert-community/FastVLM-0.5B',
     needsAuth: false,
     preferredBackend: PreferredBackend.gpu,
@@ -694,8 +716,6 @@ enum Model implements InferenceModelInterface {
   phi4_mini(
     baseUrl:
         'https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task',
-    webUrl:
-        'https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm',
     desktopUrl:
         'https://huggingface.co/litert-community/Phi-4-mini-instruct/resolve/main/Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm',
     filename: 'Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.task',
@@ -714,12 +734,11 @@ enum Model implements InferenceModelInterface {
 
   // === FUNCTIONGEMMA MODELS ===
 
-  // FunctionGemma 270M IT (LiteRT-LM) — used to probe tool-calling support on
-  // the @litert-lm/core web path; small enough to validate end-to-end quickly.
+  // FunctionGemma 270M IT (LiteRT-LM, native only: a native export does not
+  // run on the web engine); small enough to validate tool calls end-to-end
+  // quickly.
   functionGemma_270M_litertlm(
     baseUrl:
-        'https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm',
-    webUrl:
         'https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm',
     desktopUrl:
         'https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm',

@@ -53,7 +53,8 @@ window.litertLmReady = (async () => {
   <!-- LiteRT.js embeddings bundle. The four files beside this one are copied
        from flutter_edge_ai_litertlm/web/ — that package owns them since 1.8.0.
        The WASM runtime they need is fetched from a CDN, so nothing else to
-       host. Without this the first embedding on web fails in the console. -->
+       host. Without this getActiveEmbedder() fails on web with an
+       EmbeddingLoadException that names litert_embeddings.js. -->
   <script type="module" src="litert_embeddings.js"></script>
 
   <!-- web/rag/sqlite3.wasm is a SQLite build with sqlite-vec linked in,

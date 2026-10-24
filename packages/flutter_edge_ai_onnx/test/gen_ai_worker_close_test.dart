@@ -79,13 +79,57 @@ class _Turn {
   Object? error;
   final _done = Completer<void>();
   Future<void> get done => _done.future.timeout(const Duration(seconds: 10));
+
+  /// [done] without its timeout, for a caller that sets its own.
+  Future<void> get ended => _done.future;
 }
+
+/// [future], or a failure that says what the worker last logged. A worker
+/// that stops answering otherwise shows up only as the test's own 30 s
+/// timeout, which names no step and nothing of what ran in the worker.
+Future<T> _orReport<T>(Future<T> future, File log, String what) =>
+    future.timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => fail(
+        '$what had not finished after 10 s; the worker logged '
+        '${_linesOf(log)}',
+      ),
+    );
 
 GenAiTurn _script(Map<String, Object> script) =>
     GenAiTurn(userContent: jsonEncode(script));
 
 final _manyChunks = [for (var i = 0; i < 50; i++) 'c$i'];
 const _shortNotice = Duration(milliseconds: 200);
+
+/// A notice length no other timer in these tests uses, so a zone can tell
+/// the client's notice timers apart and replace them with [_ManualTimer]s.
+const _manualNotice = Duration(hours: 1);
+
+/// A timer that fires only when the test calls [elapse]. The client creates
+/// its notices with `Timer(...)`, which asks the current zone for the timer.
+class _ManualTimer implements Timer {
+  _ManualTimer(this._callback);
+
+  final void Function() _callback;
+  bool _active = true;
+
+  /// What the timer does once its time has passed: fire, unless cancelled.
+  void elapse() {
+    if (!_active) return;
+    _active = false;
+    _callback();
+  }
+
+  @override
+  bool get isActive => _active;
+
+  @override
+  int get tick => 0;
+
+  @override
+  void cancel() => _active = false;
+}
 
 final _closedBeforeRun = isA<StateError>().having(
   (e) => e.message,
@@ -228,19 +272,31 @@ void main() {
     });
 
     test('a reset stops the turn in flight at its next token', () async {
+      // The reset is sent only once the worker has started the turn, so it
+      // is filed after the turn's request and its stop cannot be cleared.
+      // Every wait is bounded and reports the worker's log: this test once
+      // hung on CI until its 30 s timeout, which said nothing of where.
       final log = logFor('reset_stops');
-      final client = await loaded(log);
-      try {
-        final turn = _Turn(client.generate(_script({'untilStopped': true})));
-        await _waitForLine(log, 'generate');
-        await client.resetSession();
-        await turn.done;
-        expect(turn.error, isNull);
-        expect(_linesOf(log), ['load', 'generate', 'reset']);
-      } finally {
-        await client.shutdown();
-      }
-    });
+      final client = await _orReport(loaded(log), log, 'load()');
+      // A teardown, not a finally: a shutdown that fails in a finally replaces
+      // the body's failure, which names the step that stalled.
+      addTearDown(() => _orReport(client.shutdown(), log, 'shutdown()'));
+      final turn = _Turn(client.generate(_script({'untilStopped': true})));
+      await _waitForLine(log, 'generate');
+      await client.resetSession();
+      await _orReport(turn.ended, log, 'the turn');
+      expect(turn.error, isNull);
+      // The worker logs the reset one yield after the turn ends.
+      await _waitForLine(log, 'reset');
+      expect(_linesOf(log), [
+        'load',
+        'generate',
+        'stopped',
+        'reset',
+      ], reason: 'the turn ends because it saw the reset, then the reset runs');
+      // The bounds above add up to 35 s, past the default 30 s timeout, which
+      // would fire first and name no step.
+    }, timeout: const Timeout(Duration(seconds: 60)));
 
     test('a turn the worker had not started when shutdown() arrived gets the '
         "worker's own answer", () async {
@@ -368,17 +424,50 @@ void main() {
     });
 
     test('a quick load and a quick shutdown() say nothing', () async {
+      // Quick by construction, not by the wall clock: the notices are this
+      // zone's timers, which never fire on their own. Each must be cancelled
+      // by the time its call returns; then the test lets them all elapse.
+      // With real 200 ms timers this failed whenever load or shutdown took
+      // longer than that on a loaded machine.
       final log = logFor('quick_shutdown');
-      final printed = await _capturePrints(() async {
-        final client = await loaded(
-          log,
-          slowLoadNotice: _shortNotice,
-          slowCloseNotice: _shortNotice,
-        );
-        await client.shutdown();
-        // Past both notices: a timer left running would fire by now.
-        await Future<void>.delayed(_shortNotice * 3);
-      });
+      final printed = <String>[];
+      final notices = <_ManualTimer>[];
+      await runZoned(
+        () async {
+          final client = await loaded(
+            log,
+            slowLoadNotice: _manualNotice,
+            slowCloseNotice: _manualNotice,
+          );
+          expect(notices, hasLength(1), reason: 'load() set its notice');
+          expect(
+            notices[0].isActive,
+            isFalse,
+            reason: 'load() cancelled its notice when it returned',
+          );
+          await client.shutdown();
+          expect(notices, hasLength(2), reason: 'shutdown() set its notice');
+          expect(
+            notices[1].isActive,
+            isFalse,
+            reason: 'shutdown() cancelled its notice when it returned',
+          );
+          for (final notice in notices) {
+            notice.elapse();
+          }
+        },
+        zoneSpecification: ZoneSpecification.from(
+          _capturePrintsInto(printed),
+          createTimer: (self, parent, zone, duration, callback) {
+            if (duration != _manualNotice) {
+              return parent.createTimer(zone, duration, callback);
+            }
+            final notice = _ManualTimer(callback);
+            notices.add(notice);
+            return notice;
+          },
+        ),
+      );
       expect(printed.where((l) => l.contains('has taken')), isEmpty);
     });
   });
@@ -527,11 +616,12 @@ void main() {
           );
           await later.done;
           laterGenerate = later.error;
-          try {
-            await client.countTokens('later');
-          } on StateError catch (e) {
-            laterCount = e;
-          }
+          // A chained handler, not `await` inside a `try`: the refusal must
+          // come through the Future, which a `try` could not tell from a
+          // synchronous throw.
+          laterCount = await client
+              .countTokens('later')
+              .then<Object?>((_) => null, onError: (Object e) => e);
           await client.shutdown().timeout(const Duration(seconds: 5));
         });
 

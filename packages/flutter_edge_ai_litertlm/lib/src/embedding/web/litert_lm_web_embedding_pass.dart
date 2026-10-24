@@ -544,6 +544,7 @@ final class LiteRtLmWebEmbeddingPass extends EmbeddingPass {
       imageFormats: images ? liteRtLmImageFormats : const {},
       audioFormats: audio ? liteRtLmAudioFormats : const {},
       combinedInputs: true,
+      visionTokensPerImage: images ? _config.visionTokensPerImage : null,
     );
   }
 

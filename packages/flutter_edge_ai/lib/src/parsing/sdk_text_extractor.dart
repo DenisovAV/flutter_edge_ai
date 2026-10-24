@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'sdk_response_parser.dart' show splitSdkJsonDocuments;
+
 /// Pure-Dart extractor for LiteRT-LM SDK JSON response chunks.
 ///
 /// Lives in core, not in flutter_edge_ai_litertlm's native `lib/src/ffi/`, so
@@ -8,12 +10,19 @@ import 'dart:convert';
 /// Completions chunk JSON shape produced by `liblitert_lm` and
 /// `@litert-lm/core` respectively.
 ///
-/// Handles two response formats:
+/// Handles these response formats:
 /// - Text: `{"role":"assistant","content":[{"type":"text","text":"hello"}]}`
 ///   → returns `"hello"`
 /// - Thinking: `{"role":"assistant","channels":{"thought":"reasoning..."}}`
 ///   → returns `<|channel>thought\nreasoning...<channel|>`
 ///   (compatible with `ThinkingFilter` in `core/extensions.dart`)
+/// - An object without content, a tool call
+///   (`{"role":"assistant","tool_calls":[...]}`) included → returns the
+///   chunk's JSON unchanged.
+/// - A content list keeps only its text parts, so `[]` gives `""`.
+///
+/// Text that is not JSON passes through. JSON that is not an object, or a
+/// content of another type, throws: that is a contract change with LiteRT-LM.
 class SdkTextExtractor {
   /// Extract text from a LiteRT-LM JSON response chunk.
   ///
@@ -61,4 +70,40 @@ class SdkTextExtractor {
         );
     }
   }
+}
+
+/// Whether [token] is one LiteRT-LM chunk that carries tool calls and no text:
+/// what [SdkTextExtractor.extractTextFromResponse] returns for a call. Gemma 4
+/// can write a sentence and then call a tool in the same generation; the call
+/// then arrives as a chunk of its own, after the text. `InferenceChat` takes
+/// such a chunk out of the text when it handles calls; otherwise the call stays
+/// visible as JSON. Assumes a session token holds whole LiteRT-LM chunks, as
+/// the FFI and web sessions deliver them; several call chunks joined into one
+/// token count when every one is a call. An empty `tool_calls` list is no call.
+///
+/// Internal to core: `engine.dart` exports only [SdkTextExtractor].
+bool isSdkToolCallChunk(String token) {
+  final trimmed = token.trim();
+  if (!trimmed.startsWith('{')) return false;
+  final documents = splitSdkJsonDocuments(trimmed).toList();
+  var rest = trimmed;
+  for (final document in documents) {
+    rest = rest.replaceFirst(document, '');
+  }
+  // Text around the objects, or an object that never closes, is not a call.
+  if (documents.isEmpty || rest.trim().isNotEmpty) return false;
+  return documents.every(_isCallDocument);
+}
+
+bool _isCallDocument(String document) {
+  final Object? json;
+  try {
+    json = jsonDecode(document);
+  } on FormatException {
+    return false;
+  }
+  return json is Map<String, dynamic> &&
+      json['tool_calls'] is List &&
+      (json['tool_calls'] as List).isNotEmpty &&
+      json['content'] == null;
 }

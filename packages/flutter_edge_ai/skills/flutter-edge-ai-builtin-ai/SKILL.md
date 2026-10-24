@@ -51,8 +51,8 @@ if (spec == null) {
   try {
     // The first await in the tap handler: on web the browser starts the
     // download only inside a user gesture, so nothing slow may run before it.
-    // onProgress reports real percentages on web only: ML Kit gives no byte
-    // total on Android, and Apple downloads nothing — ensureReady just waits.
+    // onProgress reports real percentages on Android and the web; Apple
+    // downloads nothing and reports none — ensureReady just waits.
     await BuiltInAi.ensureReady(onProgress: (int percent) => print('$percent%'));
     await FlutterEdgeAi.installModel(
       modelType: ModelType.general,
@@ -87,7 +87,7 @@ final usable = availability == BuiltInAiAvailability.available ||
 
 | State | Meaning |
 | --- | --- |
-| `BuiltInAiAvailability.unavailableDeviceUnsupported` | the hardware cannot run it — and on web, that the browser exposes no Prompt API at all, including desktop Chrome with the flag off |
+| `BuiltInAiAvailability.unavailableDeviceUnsupported` | the hardware cannot run it — and on web, that the browser exposes no Prompt API at all, including desktop Chrome before 148 with neither the flag nor an origin-trial token |
 | `BuiltInAiAvailability.unavailableOsTooOld` | an OS update would enable it; on Apple the floor is OS 26 |
 | `BuiltInAiAvailability.unavailableDisabled` | the user can turn it on in system settings (Apple Intelligence on Apple devices) |
 | `BuiltInAiAvailability.unavailableOther` | anything else: a probe that timed out after 20 seconds, or Chrome's reasonless "unavailable", which in practice is its disk and VRAM floor — worth asking again later |
@@ -96,26 +96,21 @@ final usable = availability == BuiltInAiAvailability.available ||
 
 | Platform | Model | Needs |
 | --- | --- | --- |
-| Android | Gemini Nano (AICore) | Pixel 9+, Galaxy S25+; `minSdk 26` |
-| iOS, macOS | Apple Foundation Models | iOS 26+ / macOS 26+ on an iPhone 15 Pro or newer, or an Apple Silicon Mac, with Apple Intelligence on. It builds from iOS 13 / macOS 12, so a macOS app needs a 12.0 deployment target; below OS 26 it reports `unavailableOsTooOld` |
+| Android | Gemini Nano (AICore) | a device on [Google's Prompt API device list](https://developers.google.com/ml-kit/genai#prompt-device); `minSdk 26` |
+| iOS, macOS | Apple Foundation Models | iOS 26+ / macOS 26+ on an iPhone 15 Pro or newer, or an Apple Silicon Mac, with Apple Intelligence on; below OS 26 it reports `unavailableOsTooOld`. flutter_local_ai builds from iOS 13 / macOS 12; with core the app needs iOS 15.0 and a macOS 12.0 deployment target |
 | Windows | Phi Silica (Windows AI Foundry) | Windows 11 25H2+ on a Copilot+ PC or a supported GPU, in a packaged app. Streams one final chunk and ignores `maxOutputTokens` |
-| Web | Gemini Nano (Chrome Prompt API) | desktop Chrome — not mobile browsers, Firefox or Safari |
+| Web | Gemini Nano (Chrome Prompt API) | desktop Chrome 148+ — not mobile browsers, Firefox or Safari |
 | Web | Phi-4-mini (Edge Prompt API) | Microsoft Edge with the Prompt API flag on; Edge Dev 154–155 exposes the API but cannot run the model |
 
 Images work on Android, one per message, and only when asked for: pass `supportImage: true` to `getActiveModel` (`getActiveModel(maxTokens: 4096, supportImage: true)`); chats from `createChat` and sessions inherit it. An image sent to a model loaded without it throws `UnsupportedError`. Windows and web are text-only, and Apple is text-only on OS 26: `supportImage: true` there fails when `getActiveModel` creates the model, not mid-conversation — so do not build an image path there.
 
 ## Web
 
-There is no script to add: the Prompt API is part of the browser. It has to be enabled.
+There is no script to add: the Prompt API is part of the browser.
 
-- Production — register the origin for the Prompt API origin trial and add the token to `web/index.html`:
-
-```html
-<meta http-equiv="origin-trial" content="YOUR_TOKEN_HERE">
-```
-
-- Local development — enable `chrome://flags/#prompt-api-for-gemini-nano` and restart Chrome.
+- Chrome — since Chrome 148 the Prompt API is available to ordinary web pages: no origin-trial token and no `chrome://flags` entry.
 - Microsoft Edge — enable `edge://flags` → "Prompt API for on-device language model" and restart. Both browsers use `BuiltInAiModels.chromePromptApi`, which is what `forCurrentPlatform` returns on web: the spec names the API, and the browser picks the model.
+- Sampling — on web, `topP` and `maxOutputTokens` are ignored (warned once); on web pages Chrome ignores `temperature` and `topK` too (they work in Chrome Extensions only) and logs a deprecation warning, so a `topK: 1` there is not greedy.
 
 ## Trade-offs
 

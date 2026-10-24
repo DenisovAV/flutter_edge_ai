@@ -136,8 +136,9 @@ await for (final event in session.runTurn(pcm16kMono)) {
 ```
 
 `VoiceSession` owns no microphone or player — the app captures PCM
-(`package:record`) and plays the reply (`pcmToWav` + `package:just_audio`),
-exactly as the example `stt_screen`/`tts_screen` do.
+(`package:record`) and plays the reply (the example's own
+`AudioConverter.pcmToWav` helper + `package:just_audio`), exactly as the example
+`stt_screen`/`tts_screen` do.
 
 ### Audio turns: the model hears the recording
 
@@ -162,10 +163,13 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
 
 Barge-in and the one-turn-at-a-time rule work as in `runTurn`; the complete and
 interrupted events carry an empty transcript, and a recording under 2 bytes (a
-push-to-talk tap) completes without asking the model. One difference: after a
-barge-in, a `.litertlm` chat rebuilds its conversation from text, so the model
-forgets what was said in earlier audio turns. `createChat` takes
-`supportAudio` from the model unless you pass it; on a chat whose
+push-to-talk tap) completes without asking the model. After a barge-in a
+`.litertlm` chat keeps what was said in earlier audio turns with
+`flutter_edge_ai_litertlm` 1.15.0 and later; with 1.14.0 and earlier, and
+on the NPU, it rebuilds its conversation from text and forgets it. `createChat` takes
+`supportAudio` from the model unless you pass it on native `.litertlm`, MediaPipe
+Android/iOS and `flutter_edge_ai_llama` models; other engines default it to
+false. On a chat whose
 `supportAudio` is false, `runAudioTurn` throws a `StateError`. With
 `VoiceSession.custom`, pass `respondToAudio` to the `VoiceResponder`: it gets
 the recording as that WAV, which `AgentSession.ask(audioBytes:)` takes as is.
@@ -178,6 +182,13 @@ Audio input is native-only.
 | Android / iOS | ✅ FFI (Android: `arm64-v8a`, `minSdk 30`) | ✅ FFI (Android: `arm64-v8a`, `minSdk 30`) |
 | macOS / Linux / Windows | ✅ FFI | ✅ FFI |
 | Web | 🚧 stub `UnsupportedError` | 🚧 stub `UnsupportedError` |
+
+On macOS the app needs the same setup as every LiteRT-LM feature: Swift Package
+Manager turned off for the app in `pubspec.yaml` and the `post_install` block in
+`macos/Podfile` (an app that already has a `macos/Podfile` keeps Swift Package
+Manager on and only needs the block), see [Desktop → macOS](https://flutteredge.ai/docs/desktop#macos).
+Without it STT and TTS fail to load, and since `flutter_edge_ai_litertlm` 1.17.0
+the error says so ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 
 No `hook/build.dart` of its own — the native library is bundled by
 `flutter_edge_ai_litertlm`'s Native Assets hook and shared transitively.

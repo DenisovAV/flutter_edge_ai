@@ -7,15 +7,20 @@ import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:meta/meta.dart' show internal;
 import 'package:path/path.dart' as path;
 
 import '../interface.dart';
 import '../model_file_manager_interface.dart';
+import '../domain/multimodal_order.dart';
 import '../domain/platform_types.dart';
 
 import '../model.dart';
 import '../domain/model_source.dart';
 import '../registry/engine_registry.dart';
+import '../model_management/install_rule.dart' show requireInstalledAsSpecified;
+import '../registry/inference_engine_provider.dart';
+import '../registry/multi_model_engine.dart';
 import '../registry/stt_registry.dart';
 import '../registry/stt_backend_provider.dart';
 import '../registry/tts_registry.dart';
@@ -28,7 +33,7 @@ import '../model_management/model_specs.dart'
 import '../mobile/flutter_edge_ai_mobile.dart' show MobileModelManager;
 
 import '../model_management/constants/preferences_keys.dart';
-import 'package:flutter_edge_ai/src/embedding/embedder_backend_notice.dart';
+
 import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_loader.dart';
 
@@ -107,6 +112,7 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
   @override
   EmbeddingModel? get initializedEmbeddingModel => _embedderCache.model;
 
+  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 2.6.0.')
   @override
   Future<InferenceModel> createModel({
     required ModelType modelType,
@@ -119,6 +125,41 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     int? maxNumImages,
     bool supportImage = false,
     bool supportAudio = false,
+    MultimodalOrder? multimodalOrder,
+    bool? enableSpeculativeDecoding,
+    ActivationDataType? activationDataType,
+    int? maxConcurrentSessions,
+  }) => obtainActiveModel(
+    modelType: modelType,
+    fileType: fileType,
+    maxTokens: maxTokens,
+    preferredBackend: preferredBackend,
+    preferredVisionBackend: preferredVisionBackend,
+    preferredAudioBackend: preferredAudioBackend,
+    loraRanks: loraRanks,
+    maxNumImages: maxNumImages,
+    supportImage: supportImage,
+    supportAudio: supportAudio,
+    multimodalOrder: multimodalOrder,
+    enableSpeculativeDecoding: enableSpeculativeDecoding,
+    activationDataType: activationDataType,
+    maxConcurrentSessions: maxConcurrentSessions,
+  );
+
+  @internal
+  @override
+  Future<InferenceModel> obtainActiveModel({
+    required ModelType modelType,
+    ModelFileType fileType = ModelFileType.task,
+    int maxTokens = 1024,
+    PreferredBackend? preferredBackend,
+    PreferredBackend? preferredVisionBackend,
+    PreferredBackend? preferredAudioBackend,
+    List<int>? loraRanks,
+    int? maxNumImages,
+    bool supportImage = false,
+    bool supportAudio = false,
+    MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,
     int? maxConcurrentSessions,
@@ -147,6 +188,9 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
         supportImage: supportImage,
         supportAudio: supportAudio,
         maxNumImages: maxNumImages,
+        multimodalOrder:
+            multimodalOrder ??
+            MultimodalOrder.forModelType(requestedSpec.modelType),
         enableSpeculativeDecoding: enableSpeculativeDecoding,
         activationDataType: activationDataType,
         maxConcurrentSessions: maxConcurrentSessions,
@@ -160,69 +204,83 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
           fileType: requestedSpec.fileType,
         ),
         params: requestedParams,
-        build: () async {
-          final isBuiltIn = requestedSpec.fileType == ModelFileType.builtIn;
-
-          String modelPath = '';
-          if (!isBuiltIn) {
-            // Verify model is installed
-            final isInstalled = await _modelManager.isModelInstalled(
-              activeModel,
-            );
-            if (!isInstalled) {
-              throw Exception('Active model is no longer installed');
-            }
-
-            // Get model file path
-            final modelFilePaths = await _modelManager.getModelFilePaths(
-              activeModel,
-            );
-            if (modelFilePaths == null || modelFilePaths.isEmpty) {
-              throw Exception('Model file paths not found');
-            }
-
-            modelPath = modelFilePaths.values.first;
-            edgeAiLog('[FlutterEdgeAiDesktop] Using model: $modelPath');
-          } else {
-            edgeAiLog(
-              '[FlutterEdgeAiDesktop] Built-in model ${requestedSpec.name}: '
-              'skipping file/installed checks (no on-disk file)',
-            );
-          }
-
-          // Core resolves the model path + owns the singleton lifecycle, then
-          // dispatches construction polymorphically through the EngineRegistry.
-          // Desktop registers NO default engine — the LiteRtLmEngine is supplied
-          // via FlutterEdgeAi.initialize(inferenceEngines:). If the registry is
-          // empty (or no engine canHandle the spec), the findFor==null StateError
-          // below fires. Desktop is litertlm-only; a `.task` request would simply
-          // find no matching engine.
-          final spec = requestedSpec;
-          final config = runtimeConfigFor(
-            requestedParams,
-            modelPath: modelPath,
-          );
-          final engine = EngineRegistry.instance.findFor(spec);
-          if (engine == null) {
-            throw StateError(
-              'No inference engine can handle this model (ModelFileType.${spec.fileType.name}). '
-              'Add the engine package to pubspec.yaml and pass it in inferenceEngines: '
-              'of FlutterEdgeAi.initialize(...). Registered engines: '
-              '${EngineRegistry.instance.registered.map((e) => e.name).join(", ")}.',
-            );
-          }
-          if (activationDataType != null &&
-              spec.fileType != ModelFileType.litertlm) {
-            edgeAiLog(
-              '[FlutterEdgeAi] activationDataType (${activationDataType.name}) is '
-              'read only by the .litertlm engine; ${engine.name} ignores it for '
-              'ModelFileType.${spec.fileType.name}.',
-            );
-          }
-          return engine.createModel(spec, config);
-        },
+        build: () => _buildModel(requestedSpec, requestedParams, active: true),
       );
     });
+  }
+
+  @internal
+  @override
+  Future<InferenceModel> openModel(
+    InferenceModelSpec spec,
+    ActiveModelParams params,
+  ) async {
+    // The engine checked is the engine that builds: the registry is asked
+    // once, before the awaits of the install checks.
+    final engine = requireMultiModelEngine(spec);
+    if (spec.fileType != ModelFileType.builtIn) {
+      await requireInstalledAsSpecified(spec);
+    }
+    return _buildModel(spec, params, active: false, engine: engine);
+  }
+
+  /// Builds a model for [spec]: the cached active model ([active]) or one the
+  /// caller owns (`FlutterEdgeAi.openModel`), with [engine] when the caller
+  /// already chose it, else the registry's.
+  Future<InferenceModel> _buildModel(
+    InferenceModelSpec spec,
+    ActiveModelParams params, {
+    required bool active,
+    InferenceEngineProvider? engine,
+  }) async {
+    final isBuiltIn = spec.fileType == ModelFileType.builtIn;
+
+    String modelPath = '';
+    if (!isBuiltIn) {
+      // Verify model is installed
+      final isInstalled = await _modelManager.isModelInstalled(spec);
+      if (!isInstalled) {
+        throw Exception(
+          active
+              ? 'Active model is no longer installed'
+              : 'Model ${spec.name} is not installed',
+        );
+      }
+
+      // Get model file path
+      final modelFilePaths = await _modelManager.getModelFilePaths(spec);
+      if (modelFilePaths == null || modelFilePaths.isEmpty) {
+        throw Exception('Model file paths not found');
+      }
+
+      modelPath = modelFilePaths.values.first;
+      edgeAiLog('[FlutterEdgeAiDesktop] Using model: $modelPath');
+    } else {
+      edgeAiLog(
+        '[FlutterEdgeAiDesktop] Built-in model ${spec.name}: '
+        'skipping file/installed checks (no on-disk file)',
+      );
+    }
+
+    // Core resolves the model path + owns the singleton lifecycle, then
+    // dispatches construction polymorphically through the EngineRegistry.
+    // Desktop registers NO default engine — the LiteRtLmEngine is supplied
+    // via FlutterEdgeAi.initialize(inferenceEngines:). If the registry is
+    // empty (or no engine canHandle the spec), the findFor==null StateError
+    // below fires. Desktop is litertlm-only; a `.task` request would simply
+    // find no matching engine.
+    final config = runtimeConfigFor(params, modelPath: modelPath);
+    engine ??= EngineRegistry.instance.findFor(spec);
+    if (engine == null) throw noInferenceEngineError(spec);
+    final activationDataType = params.activationDataType;
+    if (activationDataType != null && spec.fileType != ModelFileType.litertlm) {
+      edgeAiLog(
+        '[FlutterEdgeAi] activationDataType (${activationDataType.name}) is '
+        'read only by the .litertlm engine; ${engine.name} ignores it for '
+        'ModelFileType.${spec.fileType.name}.',
+      );
+    }
+    return engine.createModel(spec, config);
   }
 
   @override
@@ -231,13 +289,6 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
     bool supportImage = false,
     bool supportAudio = false,
   }) {
-    // FIRST statement, before every guard. It is idempotent and one-shot, so
-    // it needs neither resolved paths nor cache state — and putting it in a
-    // branch is what made it unreachable twice: once behind the singleton
-    // cache, once behind "only on reuse". The ordinary shape is a single call
-    // held for the app's lifetime; if it does not speak here it never speaks.
-    noticeEmbedderBackendIgnored(preferredBackend);
-
     // Serialised, because this shell resolves paths from preferences before it
     // can compare them — an await between "decide" and "record" that two
     // callers can both slip through. Moving that resolution earlier once
@@ -249,6 +300,7 @@ class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
         preferredBackend: preferredBackend,
         supportImage: supportImage,
         supportAudio: supportAudio,
+        entryPoint: createEmbeddingModel,
       ),
     );
   }

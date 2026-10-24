@@ -162,7 +162,7 @@ class SiteFooter extends StatelessComponent {
                   a(href: '/docs/embeddings-and-rag', classes: 'footer-link', [Component.text('Embeddings & RAG')]),
                 ]),
                 li([
-                  a(href: '/docs/migration', classes: 'footer-link', [Component.text('Migration (1.x → 2.0)')]),
+                  a(href: '/docs/migration', classes: 'footer-link', [Component.text('Migration')]),
                 ]),
               ]),
             ]),
@@ -193,6 +193,9 @@ class SiteFooter extends StatelessComponent {
                     attributes: {'target': '_blank', 'rel': 'noopener'},
                     [Component.text('Medium blog')],
                   ),
+                ]),
+                li([
+                  a(href: '/contributors', classes: 'footer-link', [Component.text('Contributors')]),
                 ]),
                 li([
                   a(

@@ -147,6 +147,10 @@ class _AgentPageState extends State<AgentPage> {
         if (text.trim().isEmpty) {
           reply.steps.add('∅ the model ended the turn without an answer');
         }
+      case EmptyAnswerRetryEvent():
+        // The model loaded a skill and then said nothing; the package asks
+        // it once more on the same chat.
+        reply.steps.add('↻ asked again');
       case MaxIterationsEvent(:final iterations):
         reply.steps.add('⏹ stopped after $iterations steps');
       case AgentErrorEvent(:final message):

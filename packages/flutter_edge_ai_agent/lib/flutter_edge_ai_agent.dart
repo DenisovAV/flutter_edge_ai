@@ -34,6 +34,7 @@ export 'src/agent_tools.dart';
 export 'src/executors/js_skill_executor.dart';
 export 'src/executors/mcp_skill_executor.dart';
 export 'src/executors/native_intent_executor.dart';
+export 'src/executors/notification_intent_settings.dart';
 export 'src/executors/text_skill_executor.dart';
 export 'src/mcp/mcp_client.dart';
 export 'src/mcp/mcp_server_config.dart';

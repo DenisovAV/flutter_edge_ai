@@ -34,3 +34,43 @@ pass tells a bundle with an audio encoder (R5 D23).
 ```bash
 head -c 2176 embeddinggemma-2-740m.litertlm > embeddinggemma2_740m_header.litertlm
 ```
+
+## Activation-type headers
+
+The container header only (preamble and header flatbuffer, no section data) of
+two real bundles, to read whether any `TFLiteModel` section declares
+`prefer_activation_type`. `litertlm_bundle_activation_test.dart` reads them.
+
+| File | Source | Header end | `prefer_activation_type` |
+|---|---|---|---|
+| `functiongemma_270m_header.litertlm` | `sasha-denisov/function-gemma-270M-it`, `functiongemma-270M-it.litertlm` (sha256 `680fead1…`) | 368 | none |
+| `gemma4_e2b_header.litertlm` | `litert-community/gemma-4-E2B-it-litert-lm`, `gemma-4-E2B-it.litertlm` (2026-10-13) | 1872 | on `tf_lite_prefill_decode` and the vision encoder |
+
+```bash
+head -c 368 functiongemma-270M-it.litertlm > functiongemma_270m_header.litertlm
+```
+
+## Gemma 4 E2B per-SoC headers
+
+The container header only (preamble and header flatbuffer, no section data)
+of three public NPU bundles from `litert-community/gemma-4-E2B-it-litert-lm`
+@ `b3ca0d2f`, fetched with an HTTP range request.
+`test/bundle/litertlm_bundle_info_test.dart` reads their sections, declared
+backends and `tf_lite_aux`; the compiler stamps live inside the sections and
+are tested on synthetic containers.
+
+| File | Source file (LFS sha256) | Header end | What it shows |
+|---|---|---|---|
+| `gemma4_e2b_qualcomm_sm8750_header.litertlm` | `gemma-4-E2B-it_qualcomm_sm8750.litertlm` (`41dd675f…`) | 1520 | no `backend_constraint` anywhere; `tf_lite_aux` |
+| `gemma4_e2b_qualcomm_qcs8275_header.litertlm` | `gemma-4-E2B-it_qualcomm_qcs8275.litertlm` (`ebc103e5…`) | 1616 | text `npu`, audio and vision adapter `cpu`; `tf_lite_aux` |
+| `gemma4_e2b_google_tensor_g5_header.litertlm` | `gemma-4-E2B-it_Google_Tensor_G5.litertlm` (`af108298…`) | 1736 | an MTP drafter; `tf_lite_aux` |
+
+Read from the full files over HTTP (2026-10-15): the SM8750 and QCS8275
+bundles stamp only `tf_lite_prefill_decode` and `tf_lite_aux`
+(`Qualcomm`/`SM8750`, `Qualcomm`/`QCS8275`), so their encoders are not
+compiled for the NPU; the Tensor G5 bundle stamps the text model, the MTP
+drafter and both encoders (`Google`/`Tensor_G5`).
+
+```bash
+curl -sL -r 0-1519 https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_qualcomm_sm8750.litertlm > gemma4_e2b_qualcomm_sm8750_header.litertlm
+```

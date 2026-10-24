@@ -20,6 +20,7 @@ import 'attempts.dart';
 /// a streaming UI will see no intermediate tokens and sits idle for up to one
 /// full sequential model run per branch in `order`. (Streaming the accepted
 /// branch after a buffered verdict is a non-breaking follow-up.)
+@Deprecated('Use RoutePolicy.cascade; removed in 0.5.0.')
 Model cascadeModel({
   required Map<String, Model> branches,
   required List<String> order,

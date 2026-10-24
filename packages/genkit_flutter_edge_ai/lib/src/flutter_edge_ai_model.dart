@@ -5,7 +5,6 @@ import 'package:genkit/genkit.dart'
     show SimulateConstrainedGenerationMiddleware;
 import 'package:genkit/plugin.dart';
 
-import 'backend_parse.dart';
 import 'converters/request_converter.dart';
 import 'converters/response_converter.dart';
 import 'converters/tool_converter.dart';
@@ -195,24 +194,7 @@ Future<_PreparedRequest> _prepare(
   final systemInstruction = configSystemInstruction == null
       ? extractSystemInstruction(request.messages)
       : _withOutputInstructions(configSystemInstruction, request.messages);
-  final load = (
-    maxTokens: config?.maxTokens ?? kDefaultMaxTokens,
-    supportImage: supportImage,
-    supportAudio: supportAudio,
-    enableSpeculativeDecoding: config?.enableSpeculativeDecoding,
-    preferredBackend: parsePreferredBackend(
-      config?.preferredBackend,
-      field: 'preferredBackend',
-    ),
-    preferredVisionBackend: parsePreferredBackend(
-      config?.preferredVisionBackend,
-      field: 'preferredVisionBackend',
-    ),
-    preferredAudioBackend: parsePreferredBackend(
-      config?.preferredAudioBackend,
-      field: 'preferredAudioBackend',
-    ),
-  );
+  final load = loadParamsOf(config);
   final tools = convertTools(request.tools);
 
   final messages = await convertMessages(request.messages, cancel: cancel);
@@ -435,10 +417,10 @@ Future<ModelResponse> _generateBlocking(
   switch (response) {
     case gemma.TextResponse(:final token):
       return convertFinalResponse(token, latencyMs: latencyMs);
-    case gemma.FunctionCallResponse(:final name, :final args):
+    case final gemma.FunctionCallResponse call:
       return convertFinalResponse(
         '',
-        functionCalls: [gemma.FunctionCallResponse(name: name, args: args)],
+        functionCalls: [call],
         latencyMs: latencyMs,
       );
     case gemma.ParallelFunctionCallResponse(:final calls):
@@ -476,9 +458,7 @@ Future<ModelResponse> _generateStreaming(
   await for (final chunk in chat.generateChatResponseAsync()) {
     if (cancel?.isCancelled ?? false) break;
     try {
-      sendChunk(
-        convertStreamChunk(chunk, firstToolCallIndex: functionCalls.length),
-      );
+      sendChunk(convertStreamChunk(chunk, earlierCalls: functionCalls));
     } catch (_) {
       onSendChunkFailure();
       rethrow;
@@ -487,8 +467,8 @@ Future<ModelResponse> _generateStreaming(
     switch (chunk) {
       case gemma.TextResponse(:final token):
         fullText.write(token);
-      case gemma.FunctionCallResponse(:final name, :final args):
-        functionCalls.add(gemma.FunctionCallResponse(name: name, args: args));
+      case final gemma.FunctionCallResponse call:
+        functionCalls.add(call);
       case gemma.ParallelFunctionCallResponse(:final calls):
         functionCalls.addAll(calls);
       case gemma.ThinkingResponse(:final content):

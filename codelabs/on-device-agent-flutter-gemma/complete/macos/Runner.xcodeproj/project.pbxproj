@@ -412,7 +412,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\nSTAGER=\"${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh\"\nif [ ! -f \"${STAGER}\" ]; then\n  echo \"[flutter_gemma] ERROR: ${STAGER} not found.\" >&2\n  echo \"  flutter_gemma_litertlm 1.6.2+ installs it there from its build hook.\" >&2\n  echo \"  Upgrade the package, then: flutter clean && flutter pub get\" >&2\n  exit 1\nfi\nsh \"${STAGER}\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks\"\nmkdir -p \"$(dirname \"${SCRIPT_OUTPUT_FILE_0}\")\"\ntouch \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			shellScript = "set -e\nSTAGER=\"${HOME}/Library/Caches/flutter_gemma/native/macos_arm64/stage_macos_companions.sh\"\nif [ ! -f \"${STAGER}\" ]; then\n  echo \"[flutter_gemma] ERROR: ${STAGER} not found.\" >&2\n  echo \"  flutter_edge_ai_litertlm installs it there from its build hook.\" >&2\n  echo \"  Upgrade the package, then: flutter clean && flutter pub get\" >&2\n  exit 1\nfi\nsh \"${STAGER}\" \"${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/Contents/Frameworks\"\nmkdir -p \"$(dirname \"${SCRIPT_OUTPUT_FILE_0}\")\"\ntouch \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 		};
 		F491AFDCDC4607DC3602C236 /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;

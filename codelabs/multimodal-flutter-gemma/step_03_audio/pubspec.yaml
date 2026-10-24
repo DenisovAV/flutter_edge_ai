@@ -42,7 +42,8 @@ dependencies:
   flutter_edge_ai_litertlm: ^1.13.0
 
   # Picks a photo on all six platforms: a gallery on Android and iOS, a file
-  # dialog (via file_selector) on macOS, Windows, Linux and the web.
+  # dialog (via file_selector) on macOS, Windows and Linux, and the browser's
+  # file picker on the web.
   image_picker: ^1.2.3
 
   # Captures the clip. `startStream` gives raw PCM straight to Dart, so the

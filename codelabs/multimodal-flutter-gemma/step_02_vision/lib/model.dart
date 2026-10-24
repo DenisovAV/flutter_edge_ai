@@ -59,8 +59,8 @@ abstract final class Models {
   /// and then it is looking at your photograph.
   ///
   /// It cannot hear, and that is not a gap in this step: it is a
-  /// vision-language model, and the plugin lists audio input for Gemma 4 and
-  /// Gemma 3n only (`flutter_edge_ai/README.md`). A session flag cannot switch
+  /// vision-language model, and the plugin's docs name Gemma 4, Gemma 3n and
+  /// VibeVoice-ASR for audio input. A session flag cannot switch
   /// on an encoder the checkpoint does not carry. It is why Step 3
   /// changes models, and it is the model half of the question `complete` asks
   /// at the end — a half that says no here while the device, happily holding

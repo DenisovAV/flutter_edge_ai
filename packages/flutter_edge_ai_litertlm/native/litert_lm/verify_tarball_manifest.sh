@@ -254,6 +254,10 @@ FORBIDDEN=(
   # arm64: from the QAIRT SDK zip, since native-v0.18.0-c).
   "android_arm64:libQnn*"
   "linux_arm64:libQnn*"
+  # Built against MediaTek's NeuroPilot SDK, whose licence allows it only
+  # inside an application: apps fetch Google's build through `mediatek_npu`.
+  "android_arm64:libLiteRtDispatch_MediaTek.so"
+  "android_arm64:libLiteRtCompilerPlugin_MediaTek*"
   # Need libwebgpu_dawn.so, which no Android bundle carries (native-v0.18.0).
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
@@ -264,11 +268,22 @@ FORBIDDEN=(
   "macos_arm64:libLiteRtMetalAccelerator.dylib"
 )
 REQUIRED=(
+  # Google Tensor G5/G6 AOT bundles use LiteRT's generic NPU executor plus
+  # this open-source bridge, which late-binds the Pixel system runtime.
+  "android_arm64:libLiteRtDispatch_GoogleTensor.so"
   "android_arm64:libLiteRtDispatch_Qualcomm.so"
   # native-v0.18.0-c: Qualcomm NPU on Linux arm64 — our dispatch and the
   # libcdsprpc.so shim the QNN Stubs need (build_qualcomm_dispatch.sh).
   "linux_arm64:libLiteRtDispatch_Qualcomm.so"
   "linux_arm64:libcdsprpc.so"
+  # Intel's dispatch (NpuVendor.intel), in every Windows x64 build: rebuilt
+  # from the pin every release, never carried forward unchecked.
+  "windows_x86_64:LiteRtDispatch.dll"
+  # OpenVINO 2026.4: the NPU plugin loads it by name for blobs that run on
+  # Intel's NPU VM runtime. Gemma 4 E2B and Intel's 12B for Panther Lake load
+  # without it; it ships because Intel's own kit does, and intelNpuLibs
+  # bundles it.
+  "windows_x86_64:openvino_intel_npu_vm_runtime.dll"
   "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
   "macos_arm64:libLiteRtLmMetalAccelerator.dylib"
@@ -419,6 +434,58 @@ if [[ $emb_fail -eq 1 ]]; then
   echo "❌ EMBEDDING EXPORTS CHECK FAILED — EmbeddingGemma 2 cannot load on that"
   echo "   platform. Export the missing functions (Windows: they need"
   echo "   LITERT_LM_C_API_EXPORT or a .def entry) and rebuild."
+  exit 1
+fi
+
+echo
+echo "==> Checking every libLiteRtLm exports the stopped-turn rewind"
+# patch_c_api.sh section 16. A library without it still answers after a stop:
+# RecoveringConversationHandle rebuilds the conversation from text instead,
+# so that platform alone would silently lose earlier images and audio.
+rewind_fail=0
+for d in "$align_tmp"/litertlm-*; do
+  [[ -d "$d" ]] || continue
+  if ! python3 - "$(dirname "$0")" "$d" "$(basename "$d")" <<'PYEOF_REWIND'
+import os
+import struct
+import sys
+sys.path.insert(0, sys.argv[1])
+from check_embedding_exports import FormatError, exports, find_main_library
+symbol = "litert_lm_conversation_rewind_cancelled_turn"
+label = sys.argv[3]
+libraries = find_main_library(sys.argv[2])
+if len(libraries) != 1:
+    print(f"  [FAIL] {label} — expected one main library, found {libraries}")
+    sys.exit(1)
+library = libraries[0]
+shown = os.path.relpath(library, sys.argv[2])
+try:
+    names = exports(library)
+except (FormatError, struct.error, ValueError, IndexError) as e:
+    print(f"  [FAIL] {label} — cannot read the exports of {shown}: {e}")
+    sys.exit(1)
+if symbol not in names:
+    print(f"  [FAIL] {label} — {shown} does not export {symbol}")
+    sys.exit(1)
+# The symbol kept its name when its contract changed (three arguments, then
+# five), so the name alone cannot tell the builds apart; this message exists
+# only in the current one.
+contract = b"The last turn failed; the conversation cannot continue."
+with open(library, "rb") as f:
+    if contract not in f.read():
+        print(f"  [FAIL] {label} — {shown} exports {symbol} from an older "
+              f"build of the patch")
+        sys.exit(1)
+print(f"  [ok]   {label} — {shown} exports {symbol} (current contract)")
+PYEOF_REWIND
+  then
+    rewind_fail=1
+  fi
+done
+if [[ $rewind_fail -eq 1 ]]; then
+  echo
+  echo "❌ REWIND EXPORT CHECK FAILED — patch_c_api.sh section 16 did not reach"
+  echo "   that library. Rebuild it from a patched tree."
   exit 1
 fi
 

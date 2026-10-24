@@ -6,11 +6,12 @@ meta:
     content: https://flutteredge.ai/images/og-image.png
 ---
 
-flutter_edge_ai supports Gemma 4, Gemma3n, FastVLM, Qwen2-VL, SmolVLM2,
-LLaVA-OneVision, Gemma 3, FunctionGemma, Qwen3, Qwen 2.5, Phi-4 (incl. Phi-4 Mini
-Reasoning), DeepSeek R1, SmolLM, SmolLM3 and more. On desktop (macOS, Windows,
-Linux) LiteRT-LM models must be `.litertlm` — there is no MediaPipe engine there;
-ONNX models and the OS built-in model also run on desktop.
+flutter_edge_ai runs any model a registered engine runs: `.litertlm`
+(LiteRT-LM), `.task`/`.bin` (MediaPipe), ONNX (ORT-GenAI natively,
+Transformers.js on web), GGUF (llama.cpp), or the OS model (built-in AI). The tables below list the
+models we have run. On desktop (macOS, Windows, Linux) LiteRT-LM models must be
+`.litertlm` — there is no MediaPipe engine there; ONNX models and the OS
+built-in model also run on desktop.
 
 For a small custom model, [LiteTune](https://litetune.dev) provides the easier
 end-to-end path from Hugging Face data/checkpoints through fine-tuning,
@@ -24,20 +25,27 @@ based on how chat templates are handled.
 
 ### Type 1: SDK-managed templates
 
+- **`.gguf` files:** llama.cpp through the optional [llama engine](/docs/llama);
+  the GGUF supplies its own chat template.
 - **`.task` files:** MediaPipe-optimized format for mobile (Android/iOS) and web.
 - **`.litertlm` files:** LiteRT-LM format for Android, iOS, Desktop, and web
   (early preview). Never handled by MediaPipe — the two formats go to different
   engines.
+- **ONNX models (`ModelFileType.onnx`):** an ORT-GenAI model directory on
+  native platforms, a Hugging Face repo through Transformers.js on web.
 
 Chat templates are applied by the runtime rather than by your code — MediaPipe
-for `.task`, LiteRT-LM for `.litertlm` — on every platform, iOS included.
+for `.task`, LiteRT-LM for `.litertlm`, ORT-GenAI or Transformers.js for ONNX —
+on every platform, iOS included.
 
-### Type 2: Manual template formatting
+### Type 2: Template from the model type
 
 - **`.bin` files:** standard binary format.
 - **`.tflite` files:** LiteRT format (formerly TensorFlow Lite).
 
-Both formats require **manual chat template formatting** in your code.
+The runtime applies no template to these. Core wraps each message in the turn
+markers of the `ModelType` you install with, so declare the right one (see the
+[ModelType reference](#modeltype-reference)).
 
 ### Type 3: System OS models (no file)
 
@@ -47,7 +55,7 @@ via the browser Prompt API** (Web — Gemini Nano in Chrome, Phi-4-mini in Edge)
 OS/browser** — there is no model file to bundle or download; the platform owns the
 weights. Add [`flutter_edge_ai_builtin_ai`](/docs/packages), register
 `BuiltInAiEngine()`, and use `ModelFileType.builtIn`. Availability is
-device-gated — Gemini Nano needs Pixel 9+/Galaxy S25+, Apple FM needs Apple
+device-gated — Gemini Nano needs a phone on [Google's Prompt API device list](https://developers.google.com/ml-kit/genai#prompt-device), Apple FM needs Apple
 Intelligence enabled on iPhone 15 Pro+/M-series, and Windows needs Windows 11
 25H2+ on Copilot+-class hardware and a packaged app (nothing to configure to
 build — `flutter_local_ai` resolves the Windows App SDK projection itself). On Android
@@ -64,9 +72,10 @@ name. `installModel` defaults it to `ModelFileType.task`, so declare it
 explicitly: `ModelFileType.litertlm` for `.litertlm` files (omitting it routes the
 model to MediaPipe, which cannot read that format), `ModelFileType.task` for
 `.task`, `ModelFileType.binary` for `.bin` and `.tflite`, `ModelFileType.onnx`
-for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), `ModelFileType.gguf` for
-`.gguf` files, which a llama.cpp engine runs, and `ModelFileType.builtIn` for
-OS-provided models.
+for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
+`ModelFileType.builtIn` for OS-provided models. `ModelFileType.gguf` (core
+2.3.2) selects the optional [llama.cpp engine](/docs/llama),
+`flutter_edge_ai_llama`.
 
 </Info>
 
@@ -74,10 +83,11 @@ OS-provided models.
 
 | Format | Android | iOS | Web | Desktop | Use Case |
 |---|:---:|:---:|:---:|:---:|---|
-| `.task` | ✅ | ✅ ⁴ | ✅ | ❌ | Older models (Gemma3n, Gemma 3, DeepSeek, Qwen 2.5, Phi-4) |
-| `.litertlm` | ✅ | ✅ ¹ | ⚠️ ² | ✅ | Newer models (Gemma 4, Qwen3, FastVLM + desktop for all); EmbeddingGemma 2 embeddings (every platform; web from litertlm 1.13.1) |
+| `.gguf` | ✅ | ✅ | ✅ | ✅ | Optional llama.cpp engine; model-provided templates, [qualification limits](/docs/llama) |
+| `.task` | ✅ | ✅ ⁴ | ✅ | ❌ | Every model shipped as `.task` (see the tables below). MediaPipe is maintenance-only — new apps should use `.litertlm` |
+| `.litertlm` | ✅ | ✅ ¹ | ⚠️ ² | ✅ | Every model shipped as `.litertlm` (see the tables below); EmbeddingGemma 2 embeddings (every platform; web from litertlm 1.13.1) |
 | `-web.task` | ❌ | ❌ | ✅ | ❌ | Web-specific MediaPipe builds (Gemma 4, Gemma 3 1B and Gemma 3 270M in the current catalog) |
-| `.bin` | ✅ | ✅ | ✅ | ❌ | Manual chat template formatting required |
+| `.bin` | ✅ | ✅ | ✅ | ❌ | Core formats the prompt from the `ModelType` |
 | `.tflite` | ✅ | ✅ | ✅ | ✅ | LLM via `ModelFileType.binary` (MediaPipe, mobile and web), and LiteRT embedding models (EmbeddingGemma, Gecko) on every platform |
 | `onnx` | ✅ | ✅ | ✅ | ✅ | ONNX models — an ORT-GenAI model directory on native, a Hugging Face repo via Transformers.js on Web — [ONNX](/docs/onnx) |
 | `builtIn` (no file) | ✅ | ✅ | ✅ | ⚠️ ³ | OS/browser model — [Built-in AI](/docs/builtin-ai) |
@@ -87,10 +97,12 @@ devices. The Simulator stays CPU-only because Metal sim has a 256 MB
 single-allocation cap.
 
 ² Web `.litertlm` is an **early preview** via `@litert-lm/core` — text, function calling and
-thinking. No vision, audio or LoRA; Qwen3 reasoning tags are parsed when the
-model emits them. See the feature matrix in
-[Troubleshooting](/docs/troubleshooting). For full multimodal on web, use a
-MediaPipe `.task` build.
+thinking. Only dedicated web exports (`-web.litertlm`) load — Gemma 4 and Gemma
+3n today; a native `.litertlm` installs on web and then fails at the first
+generation. No vision or audio. See the feature matrix in
+[Troubleshooting](/docs/troubleshooting). For image input on web use a
+MediaPipe `-web.task` build; no web engine takes audio. LoRA works only on
+MediaPipe `.task`.
 
 ³ On desktop the OS model exists on **macOS** (Apple Foundation Models) and
 **Windows** (AI Foundry; Windows 11 25H2+ on Copilot+-class hardware, packaged
@@ -105,25 +117,31 @@ killed for memory while loading even Gemma 3 1B. See
 
 | Model Family | Best For | Function Calling | Thinking Mode | Vision | Languages | Size |
 |---|---|:---:|:---:|:---:|---|---|
-| **Gemma 4 E2B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ⁵ | ✅ | Multilingual | 2.4GB |
-| **Gemma 4 E4B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ⁵ | ✅ | Multilingual | 4.3GB |
-| **Gemma3n** | On-device multimodal chat and image analysis | ⚠️ ⁶ | ❌ | ✅ | Multilingual | 3-6GB |
-| **FastVLM 0.5B** | Fast vision-language inference | ❌ | ❌ | ✅ | Multilingual | 0.5GB |
+| **Gemma 4 E2B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ⁵ | ✅ | Multilingual | 2.6GB |
+| **Gemma 4 E4B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ⁵ | ✅ | Multilingual | 3.7GB |
+| **Gemma3n** | On-device multimodal chat and image analysis | ⚠️ ⁶ | ❌ | ✅ | Multilingual | 3.1-4.9GB |
+| **FastVLM 0.5B** | Fast vision-language inference | ❌ | ❌ | ✅ | Multilingual | 1.2GB |
 | **Qwen2-VL 2B** | Vision-language chat (image + text) | ❌ | ❌ | ✅ | Multilingual | 1.8GB |
 | **SmolVLM2 500M** | Compact vision-language model | ❌ | ❌ | ✅ | Multilingual | 0.36GB |
 | **LLaVA-OneVision 0.5B** | Compact vision-language model | ❌ | ❌ | ✅ | Multilingual | 0.83GB |
+| **VibeVoice-ASR 2.2B (BitNet)** | Speech to text: a spoken clip in, its transcript out | ❌ | ❌ | ❌ | en, zh, fr, it, ko, pt, vi | 2.0GB |
 | **Phi-4 Mini** | Advanced reasoning and instruction following | ✅ | ❌ | ❌ | Multilingual | 3.9GB |
 | **Phi-4 Mini Reasoning** | Step-by-step reasoning | ❌ | ⚠️ ‡ | ❌ | Multilingual | 2.8GB |
 | **DeepSeek R1** | High-performance reasoning and code generation | ✅ | ✅ | ❌ | Multilingual | 1.7GB |
-| **Qwen3 0.6B** | Compact multilingual chat with function calling | ✅ | ✅ | ❌ | Multilingual | 586MB |
+| **Qwen3 0.6B** | Compact multilingual chat with function calling | ✅ | ✅ | ❌ | Multilingual | 345MB |
 | **Qwen 2.5** | Strong multilingual chat and instruction following | ✅ | ❌ | ❌ | Multilingual | 0.5-1.6GB |
 | **Gemma 3 1B** | Balanced and efficient text generation | ❌ | ❌ | ❌ | Multilingual | 0.5GB |
-| **Gemma 3 270M** | Ideal for fine-tuning (LoRA) for specific tasks | ❌ | ❌ | ❌ | Multilingual | 0.3GB |
+| **Gemma 3 270M** | Ideal for fine-tuning (LoRA on the `.task` build) for specific tasks | ❌ | ❌ | ❌ | Multilingual | 0.3GB |
 | **FunctionGemma 270M** | Specialized for function calling on-device | ✅ | ❌ | ❌ | Multilingual | 284MB |
-| **SmolLM 135M** | Ultra-compact, resource-constrained devices | ❌ | ❌ | ❌ | English | 135MB |
-| **LFM2.5 230M** | Smallest entry; no HF token needed | ❌ | ❌ | ❌ | Multilingual | 168MB |
+| **SmolLM 135M** | Ultra-compact, resource-constrained devices | ❌ | ❌ | ❌ | English | 167MB |
+| **LFM2.5 230M (Liquid AI)** | Smallest desktop entry; no HF token needed | ❌ | ❌ | ❌ | Multilingual | 177MB |
 | **SmolLM3 3B** | Multilingual small LLM with reasoning mode | ❌ | ⚠️ ‡ | ❌ | Multilingual | 2.0GB |
 | **TranslateGemma 4B** † | Single-shot 55-language translation | ❌ | ❌ | ❌ | 55 languages | 2-4GB |
+| **Phi-3.5 Mini (ONNX)** | Text chat through ORT-GenAI on native platforms | — | ❌ | ❌ | Multilingual | 2.8GB |
+| **Qwen 2.5 0.5B (ONNX)** | Text chat in the browser through Transformers.js | — | ❌ | ❌ | Multilingual | 0.5GB |
+| **Gemini Nano** (built-in) | The OS model on Android, and in Chrome | ✅ prompt-based | ❌ | ✅ Android | varies | system |
+| **Apple Foundation Models** (built-in) | The OS model on iOS and macOS | ✅ prompt-based | ❌ | ⚠️ OS 27 | varies | system |
+| **Phi Silica** (built-in) | The OS model on Windows | ✅ prompt-based | ❌ | ❌ | varies | system |
 
 ⁵ Gemma 4 **Thinking Mode** needs LiteRT-LM (`.litertlm`): Android, iOS, Desktop
 and Web (measured on Gemma 4 E2B in Chrome). MediaPipe Web cannot enable it and
@@ -134,7 +152,14 @@ including Web.
 ⁶ Gemma3n function calling: the downloadable catalog enables it only on the E4B
 `.litertlm` build.
 
-‡ Runs as `ModelType.general`. These `.litertlm` bundles stream their reasoning
+— not run. The ONNX engine is text-only and ignores `enableThinking`; see
+[ONNX](/docs/onnx). Built-in AI calls functions through the prompt; Apple
+Foundation Models takes images only on OS 27 with an OS 27 SDK (not verified on
+a device yet), and the Chrome Prompt API and Phi Silica are text-only — see
+[Built-in AI](/docs/builtin-ai), which also covers Phi-4-mini in Edge.
+
+‡ SmolLM3 runs as `ModelType.general`, Phi-4 Mini Reasoning as
+`ModelType.phi`. These `.litertlm` bundles stream their reasoning
 on a thought channel, which arrives as `ThinkingResponse`; a model without such a
 channel keeps its raw thinking text inside the answer. See
 [Thinking Mode](/docs/thinking-mode).
@@ -182,14 +207,16 @@ When installing models, specify the correct `ModelType`:
 | Model Family | ModelType | Examples |
 |---|---|---|
 | **Gemma 4** | `ModelType.gemma4` | Gemma 4 E2B, Gemma 4 E4B (native function-call tokens) |
-| **Gemma 3 / Gemma3n** | `ModelType.gemmaIt` | Gemma 3 1B, Gemma 3 270M, Gemma3n E2B/E4B |
+| **Gemma 3 / Gemma3n** | `ModelType.gemmaIt` | Gemma 3 1B, Gemma 3 270M, Gemma3n E2B/E4B, TranslateGemma 4B |
 | **DeepSeek** | `ModelType.deepSeek` | DeepSeek R1 |
 | **Qwen 2.5, Qwen3-2507** | `ModelType.qwen` | Qwen 2.5 1.5B, Qwen 2.5 0.5B, Qwen3 4B Instruct/Thinking 2507 (installed from a Hugging Face manifest, 2507 still resolves to `qwen3`; pass `qwen` yourself) |
 | **Qwen 3** (the original hybrid) | `ModelType.qwen3` | Qwen3 0.6B |
 | **Qwen 3.5 / 3.6 / 3.8** | `ModelType.qwen35` | Qwen3.5 0.8B, 2B, 4B |
-| **Phi-4** | `ModelType.phi` | Phi-4 Mini (parses Phi's own tool-call markers) |
+| **Phi-4** | `ModelType.phi` | Phi-4 Mini (parses Phi's own tool-call markers), Phi-4 Mini Reasoning |
+| **Llama** | `ModelType.llama` | Llama 3.2 Instruct (its sampling defaults; not in the tables above) |
+| **Hammer** | `ModelType.hammer` | Hammer 2.1 (its sampling defaults; not in the tables above) |
 | **FunctionGemma** | `ModelType.functionGemma` | FunctionGemma 270M IT |
-| **General** | `ModelType.general` | FastVLM 0.5B, SmolLM 135M, LFM2.5 230M, SmolLM3 3B, Phi-4 Mini Reasoning, Qwen2-VL 2B, SmolVLM2 500M, LLaVA-OneVision 0.5B |
+| **General** | `ModelType.general` | FastVLM 0.5B, SmolLM 135M, LFM2.5 230M (Liquid AI), SmolLM3 3B, Qwen2-VL 2B, SmolVLM2 500M, LLaVA-OneVision 0.5B, VibeVoice-ASR, Phi-3.5 Mini (ONNX), the built-in OS models |
 
 <Info>
 
@@ -218,28 +245,71 @@ await FlutterEdgeAi.installModel(modelType: ModelType.phi)
 
 ## Supported models & platforms
 
-| Model | Size | Desktop | Mobile | Web |
-|---|---|:---:|:---:|:---:|
-| [Gemma 4 E2B](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm) | 2.4GB | ✅ | ✅ | ✅ |
-| [Gemma 4 E4B](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) | 4.3GB | ✅ | ✅ | ✅ |
-| [Gemma3n E2B](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm) | 3.1GB | ✅ | ✅ | ✅ |
-| [Gemma3n E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-lm) | 6.5GB | ✅ | ✅ | ✅ |
-| [FastVLM 0.5B](https://huggingface.co/litert-community/FastVLM-0.5B) | 0.5GB | ✅ | ❌ | ❌ |
-| [Qwen2-VL 2B](https://huggingface.co/litert-community/Qwen2-VL-2B) | 1.8GB | ✅ | ✅ | ❌ |
-| [SmolVLM2 500M](https://huggingface.co/litert-community/SmolVLM2-500M) | 0.36GB | ✅ | ✅ | ❌ |
-| [LLaVA-OneVision 0.5B](https://huggingface.co/litert-community/LLaVA-OneVision-0.5B) | 0.83GB | ✅ | ✅ | ❌ |
-| [Gemma-3 1B](https://huggingface.co/litert-community/Gemma3-1B-IT) | 0.5GB | ✅ | ✅ | ✅ |
-| [Gemma 3 270M](https://huggingface.co/litert-community/gemma-3-270m-it) | 0.3GB | ✅ | ✅ | ✅ |
-| [FunctionGemma 270M](https://huggingface.co/sasha-denisov/function-gemma-270M-it) | 284MB | ✅ | ✅ | ✅ |
-| [Qwen3 0.6B](https://huggingface.co/litert-community/Qwen3-0.6B) | 586MB | ✅ | ✅ | ✅ |
-| [Qwen 2.5 1.5B](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct) | 1.6GB | ✅ | ✅ | ❌ |
-| [Qwen 2.5 0.5B](https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct) | 0.5GB | ❌ | ✅ | ❌ |
-| [SmolLM 135M](https://huggingface.co/litert-community/SmolLM-135M-Instruct) | 135MB | ❌ | ✅ | ❌ |
-| [LFM2.5 230M](https://huggingface.co/litert-community/LFM2.5-230M) | 168MB | ✅ | ✅ | ❌ |
-| [SmolLM3 3B](https://huggingface.co/litert-community/SmolLM3-3B) | 2.0GB | ✅ | ✅ | ❌ |
-| [Phi-4 Mini](https://huggingface.co/litert-community/Phi-4-mini-instruct) | 3.9GB | ✅ | ✅ | ✅ |
-| [Phi-4 Mini Reasoning](https://huggingface.co/litert-community/Phi-4-mini-reasoning) | 2.8GB | ✅ | ✅ | ❌ |
-| [DeepSeek R1](https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B) | 1.7GB | ❌ | ✅ | ❌ |
+| Model | Size | Desktop | Mobile | Web | HF token |
+|---|---|:---:|:---:|:---:|:---:|
+| [Gemma 4 E2B](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm) | 2.6GB | ✅ | ✅ | ✅ | ❌ |
+| [Gemma 4 E4B](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) | 3.7GB | ✅ | ✅ | ✅ | ❌ |
+| [Gemma3n E2B](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm) | 3.7GB | ✅ | ✅ | ✅ | ✅ |
+| [Gemma3n E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-lm) | 4.9GB | ✅ | ✅ | ✅ | ✅ |
+| [FastVLM 0.5B](https://huggingface.co/litert-community/FastVLM-0.5B) | 1.2GB | ✅ | ❌ | ❌ | ❌ |
+| [Qwen2-VL 2B](https://huggingface.co/litert-community/Qwen2-VL-2B) | 1.8GB | ✅ | ✅ | ❌ | ❌ |
+| [SmolVLM2 500M](https://huggingface.co/litert-community/SmolVLM2-500M) | 0.36GB | ✅ | ✅ | ❌ | ❌ |
+| [LLaVA-OneVision 0.5B](https://huggingface.co/litert-community/LLaVA-OneVision-0.5B) | 0.83GB | ✅ | ✅ | ❌ | ❌ |
+| [VibeVoice-ASR-BitNet](https://huggingface.co/litert-community/VibeVoice-ASR-BitNet) ¹⁰ | 2.0GB | ✅ macOS | ✅ Android | ❌ | ❌ |
+| [Gemma-3 1B](https://huggingface.co/litert-community/Gemma3-1B-IT) | 0.5GB | ✅ | ✅ | ✅ | ✅ |
+| [Gemma 3 270M](https://huggingface.co/litert-community/gemma-3-270m-it) | 0.3GB | ✅ | ✅ | ✅ | ✅ |
+| [FunctionGemma 270M](https://huggingface.co/sasha-denisov/function-gemma-270M-it) | 284MB | ✅ | ✅ | ❌ | ❌ |
+| [Qwen3 0.6B](https://huggingface.co/litert-community/Qwen3-0.6B) ⁷ | 345MB | ✅ | ✅ | ❌ | ❌ |
+| [Qwen 2.5 1.5B](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct) | 1.6GB | ✅ | ✅ | ❌ | ❌ |
+| [Qwen 2.5 0.5B](https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct) | 0.5GB | ❌ | ✅ | ✅ ⁸ | ❌ |
+| [SmolLM 135M](https://huggingface.co/litert-community/SmolLM-135M-Instruct) | 167MB | ❌ | ✅ | ❌ | ❌ |
+| [LFM2.5 230M (Liquid AI)](https://huggingface.co/litert-community/LFM2.5-230M) | 177MB | ✅ | ✅ | ❌ | ❌ |
+| [SmolLM3 3B](https://huggingface.co/litert-community/SmolLM3-3B) | 2.0GB | ✅ | ✅ | ❌ | ❌ |
+| [Phi-4 Mini](https://huggingface.co/litert-community/Phi-4-mini-instruct) | 3.9GB | ✅ | ✅ | ❌ | ❌ |
+| [Phi-4 Mini Reasoning](https://huggingface.co/litert-community/Phi-4-mini-reasoning) | 2.8GB | ✅ | ✅ | ❌ | ❌ |
+| [DeepSeek R1](https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B) | 1.7GB | ❌ | ✅ | ❌ | ❌ |
+| [TranslateGemma 4B](https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized) † | 1.9-4GB | ✅ | ✅ | ❌ | ❌ |
+| [Phi-3.5 Mini (ONNX)](https://huggingface.co/microsoft/Phi-3.5-mini-instruct-onnx) ⁹ | 2.8GB | ✅ | ✅ | — | ❌ |
+| [Qwen 2.5 0.5B (ONNX)](https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct) ⁸ | 0.5GB | ❌ | ❌ | ✅ | ❌ |
+| [Gemini Nano](/docs/builtin-ai) (built-in) | system | ❌ | ✅ Android | ✅ Chrome | — |
+| [Apple Foundation Models](/docs/builtin-ai) (built-in) | system | ✅ macOS | ✅ iOS | ❌ | — |
+| [Phi Silica](/docs/builtin-ai) (built-in) | system | ✅ Windows | ❌ | ❌ | — |
+
+⁷ `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` (345 MB) from that repo is the
+catalog's file. `Qwen3-0.6B.litertlm` (614 MB) failed to load from
+`flutter_edge_ai_litertlm` 1.7.0 until the repo replaced its tokenizer on
+2026-10-13 at 15:53 UTC ([#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659), upstream
+[LiteRT-LM #3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865)); a
+copy downloaded before that still fails — uninstall it and install it again.
+Both are native exports, so neither runs on web.
+
+⁸ On web, Qwen 2.5 0.5B runs as the ONNX build from `onnx-community`, through
+Transformers.js ([`flutter_edge_ai_onnx`](/docs/onnx)). That build is web-only.
+
+⁹ An ORT-GenAI model directory — `fromHuggingFace` installs its CPU folder,
+`cpu_and_mobile/cpu-int4-awq-block-128-acc-level-4` — run on macOS arm64,
+Linux x64, Windows x64, Android arm64 and iOS arm64. It peaks at about 3.7 GB
+of RAM, so plan for a 6 GB+ phone. — means not run.
+
+¹⁰ Speech recognition, not chat: install it as `ModelType.general` (the
+repo's `litertlm_manifest.json` sets `maxTokens: 2048` and audio — pass
+`getActiveModel(defaults: r.runtime)`), send the clip as `audioBytes` with the
+text `This is a X.XX seconds audio, please transcribe it.` (the clip's length),
+and decode greedily (`topK: 1`). Leave `preferredAudioBackend` unset: the audio
+encoder has to run on the CPU, and on a GPU delegate it returns an empty
+transcript; the language model may run on the GPU. `ModelType.general` sends
+the audio before the text, which this model needs
+([multimodal order](/docs/multimodal#order-of-images-audio-and-text)).
+Measured with the language model on the GPU of a Galaxy S24, 80 synthesized
+clips of 0.8–3.9 s: word error rate 0.32 under 1.5 s, 0.18 at 1.5–2.5 s and
+0.07 from 2.5 s, with 9–11 s to the first token whatever the length, because
+the audio encoder always processes a 30 s window on the CPU. On macOS, with
+the language model on Metal, 8 of those clips were transcribed the same way.
+Web cannot send audio to an LLM.
+
+The built-in models download nothing and need no token; availability is
+decided by the device at run time, and Edge runs Phi-4-mini through the same
+Prompt API — see [Built-in AI](/docs/builtin-ai).
 
 ## Installation sources
 
@@ -291,11 +361,11 @@ Install a model straight from a Hugging Face repo. The resolver that reads a rep
 await FlutterEdgeAi.initialize(inferenceEngines: [LiteRtLmEngine()]);
 
 final install = await FlutterEdgeAi.installModel(
-  modelType: ModelType.general,     // fallback — the manifest overrides it
+  modelType: ModelType.qwen,        // a specific type wins over the manifest's
   fileType: ModelFileType.litertlm, // selects the litertlm resolver
 )
   // The manifest types this repo `qwen3`; 2507 is a `qwen` model (see the
-  // ModelType table) — use the inspect-first flow below to pass it yourself.
+  // ModelType table). `ModelType.general` would take the manifest's type.
   .fromHuggingFace('litert-community/Qwen3-4B-Thinking-2507')
   .install();
 
@@ -317,7 +387,7 @@ await FlutterEdgeAi.installModel(
   modelType: ModelType.gemmaIt,
   fileType: ModelFileType.litertlm,
 )
-  .fromHuggingFace('litert-community/Gemma3-1B-IT', file: 'model.litertlm', token: 'optional')
+  .fromHuggingFace('litert-community/Gemma3-1B-IT', file: 'gemma3-1b-it-int4.litertlm', token: 'optional')
   .install();
 ```
 
@@ -460,12 +530,12 @@ are English-only.
 | **[Qwen3-TTS](https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base)** (10 langs + `auto`) | 16-bit PCM | ~1.9 GB | ✅ end-to-end | ❌ |
 | **[Inflect-Nano-v2](https://huggingface.co/sasha-denisov/inflect-nano-v2-litert)** (fast) | 16-bit PCM @ 24 kHz | ~36 MB | ✅ end-to-end | ❌ |
 
-## Text embedding models
+## Embedding models
 
 The LiteRT embedding models below generate **768-dimensional vectors**. The
 numbers in names (64/256/512/1024/2048) indicate **maximum input sequence length
-in tokens**, not embedding dimension. (With the ONNX backend the dimension is
-model-dependent — e.g. all-MiniLM-L6-v2 is 384-dim.) See
+in tokens**, not embedding dimension. An ONNX model's dimension is its own —
+all-MiniLM-L6-v2 is 384-dim. See
 [Embeddings & RAG](/docs/embeddings-and-rag) for usage. An input longer than
 the maximum is never truncated: it throws `EmbeddingInputTooLongException`.
 
@@ -481,6 +551,9 @@ the maximum is never truncated: it throws `EmbeddingInputTooLongException`.
 | **[EmbeddingGemma 512](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 512 tokens | 179MB | ✅ |
 | **[EmbeddingGemma 1024](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 1024 tokens | 183MB | ✅ |
 | **[EmbeddingGemma 2048](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 2048 tokens | 196MB | ✅ |
+| **[EmbeddingGemma 2 GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF)** (`.gguf` Q8_0, text; native, through `flutter_edge_ai_llama`) | text tower of google/embeddinggemma-2 | 768D | 1024 tokens | 310MB | ❌ |
+| **[all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)** (ONNX; native and web) | 22M | 384D | the graph's | 90MB (`model.onnx`) | ❌ |
+| **[EmbeddingGemma-300M ONNX](https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX)** (ONNX; native only) | 300M | 768D | the graph's | 175MB–1.2GB by variant | ❌ |
 
 EmbeddingGemma 2 is one `.litertlm` file with its own tokenizer (no
 `tokenizerFrom…()`) and runs on CPU on Android, iOS, macOS, Linux and Windows,
@@ -492,20 +565,29 @@ vectors); the 440m and the 740m also embed JPEG, PNG, GIF and BMP images
 (1.13.1; per image about 0.35 s on an Apple-silicon Mac and about 2 s on an
 Android flagship, and about 400–500 MB more RAM from the first image); the 740m
 also embeds WAV, MP3 and FLAC audio of up to about 40 seconds, natively (1.13.1;
-about 0.2–0.3 s per 3-second clip on an Apple-silicon Mac), and any of them
-together in one vector. Keep chunks at
+about 0.2–0.3 s per 3-second clip on an Apple-silicon Mac) and on the web from
+1.13.2, and any of them together in one vector. Keep chunks at
 512 tokens or fewer, and use the 270m when you embed only text; see
 [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2).
 The same repositories hold each bundle compiled for one SoC's NPU
 (`…_Qualcomm_SM8850.litertlm`, `…_Qualcomm_SM8650.litertlm`,
-`…_Qualcomm_QCS8275.litertlm`, 202–466 MB),
+`…_Qualcomm_QCS8275.litertlm`, 202–563 MB),
 which `flutter_edge_ai_litertlm` 1.13.1 runs on Qualcomm Android and Qualcomm
 Linux arm64 with `preferredBackend: PreferredBackend.npu`; see
 [EmbeddingGemma 2 on a Qualcomm NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-qualcomm-npu).
-From 1.13.2 the Intel Panther Lake bundles (`…_Intel_PTL.litertlm`, 317–752 MB)
+From 1.13.2 the Intel Panther Lake bundles (`…_Intel_PTL.litertlm`, 317–856 MB)
 run on Windows x64 the same way; see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
-Every other row is a `.tflite` model plus a tokenizer file.
+From 1.15.0 the Google Tensor G5/G6 bundles (`…_Google_Tensor_G6.litertlm`,
+166–658 MB) run on matching Pixels with `google_tensor_npu: true`; see
+[EmbeddingGemma 2 on a Google Tensor NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-google-tensor-npu).
+From 1.17.0 the MediaTek MT6991/MT6993 bundles (`…_MediaTek_MT6991.litertlm`)
+are accepted with `mediatek_npu: true` for phones with that SoC, but not run
+on such a phone yet; see [LiteRT-LM](/docs/litertlm).
+The Gecko and EmbeddingGemma 1 rows are a `.tflite` model plus a tokenizer
+file; the ONNX rows are an `.onnx` model plus its tokenizer file, run by
+`OnnxEmbeddingBackend` ([ONNX](/docs/onnx)). An ONNX model's input limit is its
+graph's static sequence length, or none for a dynamic-shape graph.
 
 **Performance (Android Pixel 8):**
 

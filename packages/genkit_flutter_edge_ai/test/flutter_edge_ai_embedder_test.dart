@@ -134,11 +134,12 @@ void main() {
         ),
       );
 
-      // What 0.8.0 called: the deprecated forwarder, with its default task.
-      // ignore: deprecated_member_use
-      final before = await model.generateEmbeddings(texts);
-      expect([for (final e in response.embeddings) e.embedding], before);
+      // What 0.8.0 called: embedAll over text inputs, as a query.
       expect(model.lastTaskType, gemma.TaskType.retrievalQuery);
+      final before = await model.embedAll([
+        for (final t in texts) gemma.EmbeddingInput.text(t),
+      ], taskType: gemma.TaskType.retrievalQuery);
+      expect([for (final e in response.embeddings) e.embedding], before);
     });
 
     test('a model closed before the request ran is resolved again and the '

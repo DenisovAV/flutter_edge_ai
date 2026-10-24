@@ -73,6 +73,11 @@ jobs:
       - name: Web import graph
         run: dart tool/check_web_graph.dart
 
+      # The C shim between LiteRT-LM and Dart has its own host test: fake
+      # libraries opened the way Dart opens the real one, under ThreadSanitizer.
+      - name: StreamProxy host test
+        run: packages/flutter_edge_ai_litertlm/native/litert_lm/run_stream_proxy_test.sh
+
       # Every package that has tests, each run from its OWN directory. The loop
       # lives in tool/test_all.sh so CI and the local "before committing"
       # command are the same code — a second copy here would drift, which is
@@ -91,8 +96,8 @@ jobs:
   # agents, so a wrong name there becomes confident, broken code in someone
   # else's app. Two gates, both fail-closed, and neither ran in CI before:
   #   check_skills.dart compiles every ```dart fence and every inline type in
-  #   the prose against the real packages — it analyses inside the example app
-  #   because that is the package depending on all of them;
+  #   the prose against the real packages using the core example and workspace
+  #   contexts, including opt-in engines absent from the core example app;
   #   skills_lint checks the files themselves (frontmatter, name, description
   #   budget, relative links), with the rules set in skills_lint.yaml.
   skills:

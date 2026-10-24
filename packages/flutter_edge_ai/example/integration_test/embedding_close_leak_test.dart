@@ -5,7 +5,9 @@
 // gave up after 5 s and killed the isolate, and a killed isolate never runs
 // `pass.close()`. The LiteRT model stayed resident for the life of the
 // process. This measures that from the OS side with
-// `flutter_edge_ai_diagnostics`, so it runs on Android and iOS only.
+// `flutter_edge_ai_diagnostics`. Its thresholds were tuned on Android and iOS,
+// so it is skipped on macOS: the package reads `phys_footprint` there too, but
+// nobody has measured this leak check's margins on a Mac.
 //
 // What is measured, and why:
 // - Every snapshot except "busy" follows a forced full GC. The worker isolate
@@ -25,8 +27,8 @@
 //
 // Model: EmbeddingGemma 300M seq256 (the files the litertlm_ffi_test #299
 // group uses). The Hugging Face repo is gated, so the files are staged:
-//   Android: /data/local/tmp/flutter_gemma_test/ (adb push, or FTL
-//            --other-files).
+//   Android: /data/local/tmp/flutter_gemma_test/ (adb push, or on a DDP
+//            phone the ddp-device-test skill).
 //   iOS:     copy both files into example/assets/test/ (gitignored); the
 //            test reads them in place from the app bundle.
 //
@@ -165,7 +167,8 @@ void main() {
     expect(
       FlutterEdgeAiDiagnostics.isSupported,
       isTrue,
-      reason: 'memorySnapshot() reads Android /proc or iOS Mach counters only',
+      reason:
+          'memorySnapshot() reads Android /proc or Apple Mach counters only',
     );
 
     final vm = await _Vm.connect();
@@ -316,5 +319,5 @@ void main() {
     } finally {
       await vm.dispose();
     }
-  });
+  }, skip: !(Platform.isAndroid || Platform.isIOS));
 }

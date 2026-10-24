@@ -45,11 +45,10 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 **Native libraries** are fetched at build time by `hook/build.dart` from the
 GitHub release `native-v0.18.0-g`, SHA256-verified, and bundled by Flutter
 [Native Assets](https://docs.flutter.dev/development/platform-integration/c-interop)
-into the application bundle. End-users only need to add a small
-`post_install` snippet to their **macOS** `Podfile` so the upstream companion
-dylibs get wrapped into `.framework` bundles (and re-signed) inside the app's
-`Contents/Frameworks/` for LiteRT-LM's `gpu_registry` to find them — see
-[macOS setup in the README](README.md#macos) for the exact block.
+into the application bundle. On **macOS** the two upstream companion libraries
+come from `flutter_edge_ai_litertlm`'s Swift package with Swift Package Manager
+on, and from a `post_install` block in `macos/Podfile` with it off — see
+[macOS setup in the README](README.md#macos).
 Linux and Windows are fully self-contained (no manual setup).
 
 The Dart FFI layer is shared with mobile — Android and iOS use the same
@@ -152,39 +151,43 @@ For the high-level chat API with history + thinking + tool calling, use
 
 ### macOS
 
-Native libs are fetched and bundled automatically via Native Assets. Two
-steps are manual: the entitlements below, and a `post_install` block in your
-app's `macos/Podfile` so the upstream companion dylibs get wrapped into
-`.framework` bundles (and re-signed) inside `Contents/Frameworks/`, and
-`LiteRtLm.dylib`'s `LC_LOAD_DYLIB` reference is re-pointed at the new
-framework path (LiteRT-LM's `gpu_registry` resolves the Metal accelerator
-through that framework). See the
-[macOS setup snippet in the README](README.md#macos) for the exact
-block. Without it the companion dylibs are never bundled, and
-`LiteRtLm.dylib` — which links `libGemmaModelConstraintProvider.dylib`
-directly — fails to load on every backend, CPU included. Flutter 3.44+ uses
-Swift Package Manager by default, so a new app has no `macos/Podfile` until
-its `pubspec.yaml` sets `enable-swift-package-manager: false` under
-`flutter: config:` (same README section). `flutter_edge_ai_llama` needs Swift
-Package Manager on, so this setup is not qualified together with it: use
-separate apps.
+The app's deployment target must be macOS 14.0 or later: LiteRT-LM's companion
+libraries are built for macOS 14.
+
+Native libs are fetched and bundled automatically via Native Assets, except the
+two upstream companion libraries (`GemmaModelConstraintProvider`, which
+`LiteRtLm` links, and the Metal accelerator `LiteRtLmMetalAccelerator`), which
+Native Assets cannot relocate (#247). The hook points `LiteRtLm` at them as
+`@rpath/<X>.framework/Versions/A/<X>`, and they reach the app one of two ways:
+
+- **Swift Package Manager on** (Flutter's default since 3.44):
+  `flutter_edge_ai_litertlm`'s Swift package
+  (`macos/flutter_edge_ai_litertlm/Package.swift`) declares them as binary
+  targets fetched from the native release, and Xcode embeds and signs them
+  with the app's identity. Nothing to set up (#689).
+- **Swift Package Manager off**: a `post_install` block in `macos/Podfile`
+  installs a build phase that wraps them into `.framework` bundles inside
+  `Contents/Frameworks/` and signs them ad hoc. See the
+  [macOS setup snippet in the README](README.md#macos) for the exact block.
+
+Without them `LiteRtLm` fails to load on every backend, CPU included.
+`flutter_edge_ai_llama` needs Swift Package Manager on; both libraries load in
+one such app.
 
 **Entitlements** in both `macos/Runner/DebugProfile.entitlements` and
 `Release.entitlements`, beside the `com.apple.security.app-sandbox` key that
 `flutter create` already writes:
 
 ```xml
-<key>com.apple.security.cs.disable-library-validation</key>
-<true/>
 <key>com.apple.security.network.client</key>
 <true/>
 ```
 
-`network.client` lets the sandboxed app download a model.
-`disable-library-validation` takes effect once Hardened Runtime is on, which
-notarization requires: the build phase signs LiteRT-LM and its companion
-libraries ad hoc, and library validation refuses code not signed by Apple or by
-the app's own team.
+`network.client` lets the sandboxed app download a model. With Swift Package
+Manager off, also add `com.apple.security.cs.disable-library-validation`. It
+takes effect once Hardened Runtime is on, which notarization requires: the
+build phase signs the companion libraries ad hoc, and library validation
+refuses code not signed by Apple or by the app's own team.
 
 Do not add the iOS `com.apple.developer.kernel.*` memory entitlements — they are
 iOS-only. Without a signing team the build fails with `"Runner" has entitlements

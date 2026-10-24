@@ -395,25 +395,24 @@ carries them:
 `network.client` is what lets a sandboxed macOS app reach Gemini and Hugging
 Face at all. `disable-library-validation` does nothing yet: it matters once
 Hardened Runtime is on, which notarizing the app for distribution requires. The
-build phase below signs LiteRT-LM and its companion libraries ad hoc, and library
-validation refuses code not signed by Apple or by your own team. The iOS keys
+build phase below signs the companion libraries ad hoc, and library validation
+refuses code not signed by Apple or by your own team. The iOS keys
 above are deliberately **not** here: they are iOS entitlements. On macOS a build
 with no signing team fails outright with `"Runner" has entitlements that require
 signing with a development certificate`, and a team-signed build silently drops
 them. macOS support is Apple Silicon only.
 
 The build phase is the part unique to macOS. Every step app from this one on
-ships a `macos/Podfile` whose `post_install` block stages the runtime's
-companion libraries into the built `.app`. A macOS build that succeeds proves
-nothing here — the app compiles, links, signs and launches without the staging
-too, and the failure arrives at the first model load. One trap, measured:
-Flutter 3.44+ uses Swift Package Manager by default, and an app with no
-CocoaPods plugin gets no `macos/Podfile`, so nothing runs the block. The step
-apps' `pubspec.yaml` sets `flutter: config: enable-swift-package-manager: false`
-for that reason; an app of your own needs the same lines, then
-`flutter pub get` (which writes the Podfile) and the block. Prefer that to
-`flutter config --no-enable-swift-package-manager`, which changes only your
-machine.
+targets macOS 14.0 (LiteRT-LM's companion libraries are built for it), turns
+Swift Package Manager off in `pubspec.yaml`
+(`flutter: config: enable-swift-package-manager: false`), and ships a
+`macos/Podfile` whose `post_install` block stages those libraries into the
+built `.app`. A macOS build that succeeds proves nothing here — the app
+compiles, links, signs and launches without the staging too, and the failure
+arrives at the first model load. An app of your own can keep Swift Package
+Manager on, Flutter's default since 3.44: from `flutter_edge_ai_litertlm` 1.18.0
+its Swift package brings the libraries, and the app needs only the 14.0
+deployment target and `network.client`.
 
 **Windows** — nothing in the app, and x86_64 only: there is no Windows arm64
 build of the runtime. Nothing needs installing: nothing in the bundle needs a C++

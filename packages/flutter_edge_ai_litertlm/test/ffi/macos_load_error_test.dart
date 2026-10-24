@@ -196,6 +196,10 @@ void main() {
       );
       expect(message, contains('LLM, embeddings, speech'));
       expect(message, contains('Swift Package Manager'));
+      // With it on, the Swift package brings them: a stale build, not a
+      // missing setup step (#689).
+      expect(message, contains("Swift Package Manager on (Flutter's default)"));
+      expect(message, contains('flutter clean'));
       expect(message, contains('enable-swift-package-manager: false'));
       // Flutter's generated Podfile has a post_install already; a second one
       // fails `pod install`.
@@ -410,7 +414,8 @@ void main() {
   });
 
   // The real thing: libLiteRtLm without its constraint provider beside it, the
-  // situation of an app built with Swift Package Manager. LiteRT-LM ships
+  // situation of an app that has neither the Swift package's companions nor
+  // the Podfile block's. LiteRT-LM ships
   // macOS arm64 only, so another host has nothing to load.
   final String? dylib = Platform.isMacOS && Abi.current() == Abi.macosArm64
       ? firstExistingPath(

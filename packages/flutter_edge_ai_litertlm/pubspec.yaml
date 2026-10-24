@@ -1,6 +1,6 @@
 name: flutter_edge_ai_litertlm
 description: "LiteRT-LM (.litertlm) engine for flutter_edge_ai: dart:ffi on 5 native platforms plus web, CPU/GPU/NPU, and the LiteRT embedding backend."
-version: 1.17.0
+version: 1.18.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_litertlm
 topics: [gemma, llm, litert, on-device, ffi]
@@ -58,5 +58,13 @@ dev_dependencies:
   # in-memory mock store. The registration contract is tested in core.
   shared_preferences: ^2.5.2
 
-# No flutter: plugin/asset block — the native lib is delivered as a CodeAsset by
-# hook/build.dart (Native Assets). This package OWNS the litertlm bundle.
+# The native libraries are delivered as CodeAssets by hook/build.dart (Native
+# Assets); this package OWNS the litertlm bundle. The macOS plugin carries no
+# code: its Swift package brings the two companion libraries LiteRtLm needs as
+# binary targets, so an app with Swift Package Manager on embeds them with no
+# Podfile (#689). Its podspec only keeps an app with it off building.
+flutter:
+  plugin:
+    platforms:
+      macos:
+        ffiPlugin: true

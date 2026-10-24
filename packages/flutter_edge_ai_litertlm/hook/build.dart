@@ -361,19 +361,19 @@ final _litertlmBundle = _NativeBundle(
   // bundling (#247). The companion dylibs Google ships in
   // `prebuilt/macos_arm64/` (`libGemmaModelConstraintProvider.dylib`,
   // `libLiteRtMetalAccelerator.dylib`, shipped as `libLiteRtLmMetalAccelerator`;
-  // the Metal sampler is not shipped at
-  // all) were linked without `-Wl,-headerpad_max_install_names`, leaving only
-  // 32 bytes of slack in the load-commands area. Dart Native Assets'
-  // JIT path (`dart run`, `dart build_runner`, `flutter test` on a pure
-  // Dart library) calls `install_name_tool -id <absolute_path>` with paths
-  // 80–110 chars long, which doesn't fit and aborts the whole bundling
-  // step. By dropping these from the asset list, Native Assets never
-  // touches them — instead `example/macos/Podfile` post_install copies
-  // each dylib into `App.app/Contents/Frameworks/<X>.framework/` itself
-  // and patches LiteRtLm.dylib's `LC_LOAD_DYLIB` reference to the new
-  // framework path. iOS / Linux / Windows / Android are unaffected: their
-  // Native Assets paths (Xcode build phases on iOS, no install_name_tool
-  // on Linux/Windows/Android) don't trigger the bug.
+  // the Metal sampler is not shipped at all) were linked without
+  // `-Wl,-headerpad_max_install_names`, leaving 64 and 56 bytes of slack in
+  // the load-commands area (native-v0.18.0-g). That fits the app's
+  // `@rpath/<X>.framework/<X>`, but not the absolute path `flutter test` gives
+  // every code asset, and a failed rewrite aborts the whole bundling step. So
+  // Native Assets never touches them: the app gets them as frameworks from
+  // this package's macOS Swift package (`macos/flutter_edge_ai_litertlm/
+  // Package.swift`, #689), or, with Swift Package Manager off, from the
+  // macos/Podfile block (`tool/stage_macos_companions.sh`), and
+  // [_stagePointedAtCompanionFrameworks] points LiteRtLm at them. iOS / Linux /
+  // Windows / Android are unaffected: their Native Assets paths (Xcode build
+  // phases on iOS, no install_name_tool on Linux/Windows/Android) don't
+  // trigger the bug.
   skipCompanionsOn: {OS.macOS},
   // Windows: LiteRtLm.dll references companion DLLs by their original
   // Google filenames with "lib" prefix (libLiteRt.dll etc.) via PE imports.
@@ -943,12 +943,26 @@ Future<void> _processBundle({
     return destUri;
   }
 
+  // macOS: the companions reach the app as frameworks (#689), from the
+  // plugin's Swift package or from the Podfile block, so LiteRtLm is pointed at
+  // them here, before Flutter copies it into the app and Xcode signs it.
+  final Uri mainStaged;
+  if (os == OS.macOS && bundle.skipCompanionsOn.contains(os)) {
+    consumed.add(mainFileUri);
+    mainStaged = _stagePointedAtCompanionFrameworks(
+      mainFileUri,
+      input.outputDirectory,
+      bundle.companions,
+    );
+  } else {
+    mainStaged = stage(mainFileUri);
+  }
   output.assets.code.add(
     CodeAsset(
       package: _packageName,
       name: 'src/native/${bundle.mainLibName}',
       linkMode: DynamicLoadingBundled(),
-      file: stage(mainFileUri),
+      file: mainStaged,
     ),
   );
 
@@ -1562,12 +1576,10 @@ typedef _StagedScript = ({Uri source, Uri destination});
 
 /// Copy `tool/[_stagerFileName]` next to the dylibs it stages.
 ///
-/// The app's Xcode build phase cannot locate a file inside this package:
-/// `flutter_edge_ai_litertlm` declares no macOS plugin, so Flutter creates no
-/// `.symlinks/plugins/` entry for it, and the pub-cache path is not knowable
-/// from a Podfile. The flat native cache dir is the one location the phase
-/// already resolves — it reads the companion dylibs from there — so the script
-/// travels with them.
+/// The app's Xcode build phase reads the companion dylibs from the flat native
+/// cache dir, so the script travels with them. The phase predates this
+/// package's macOS plugin (#689), and blocks pasted into Podfiles before it
+/// look only there.
 ///
 /// Returns null when the script is absent (a consumer on an older plugin
 /// version), leaving the phase to report the missing file itself.
@@ -1607,4 +1619,64 @@ Directory _watchableAncestor(Directory dir) {
     d = parent;
   }
   return d;
+}
+
+/// Copies the macOS [src] LiteRtLm into [outDir] with its references to the
+/// [companions] pointed at their frameworks: `@rpath/lib<X>.dylib` becomes
+/// `@rpath/<X>.framework/Versions/A/<X>`, the install name the plugin's
+/// Swift package and `tool/stage_macos_companions.sh` both give them. The copy
+/// is then signed ad hoc; the app's build signs it again with its own identity.
+///
+/// libLiteRtLm is built with `-headerpad_max_install_names`, so the longer
+/// names fit. A `<name>.source-sha256` file beside the copy records which
+/// source, patched by which version of this step, it was made from, so an
+/// unchanged source is not patched again: a fresh copy on every run would
+/// change the file Flutter embeds each time.
+Uri _stagePointedAtCompanionFrameworks(
+  Uri src,
+  Uri outDir,
+  List<String> companions,
+) {
+  final source = File.fromUri(src);
+  final dest = File.fromUri(outDir.resolve(src.pathSegments.last));
+  final marker = File('${dest.path}.source-sha256');
+  final sourceSum =
+      '${sha256.convert(source.readAsBytesSync())} framework-refs-1';
+  if (dest.existsSync() &&
+      marker.existsSync() &&
+      marker.readAsStringSync() == sourceSum) {
+    return dest.uri;
+  }
+  dest.parent.createSync(recursive: true);
+  source.copySync(dest.path);
+
+  final listing = _run('otool', ['-L', dest.path]);
+  final args = <String>[];
+  for (final line in listing.split('\n').skip(1)) {
+    final ref = line.trim().split(' ').first;
+    for (final name in companions) {
+      if (ref.endsWith('/lib$name.dylib')) {
+        args.addAll([
+          '-change',
+          ref,
+          '@rpath/$name.framework/Versions/A/$name',
+        ]);
+      }
+    }
+  }
+  if (args.isNotEmpty) {
+    _run('install_name_tool', [...args, dest.path]);
+    _run('codesign', ['--force', '--sign', '-', dest.path]);
+  }
+  marker.writeAsStringSync(sourceSum);
+  return dest.uri;
+}
+
+/// Runs [executable] and returns its stdout; a non-zero exit fails the build.
+String _run(String executable, List<String> args) {
+  final r = Process.runSync(executable, args);
+  if (r.exitCode != 0) {
+    throw StateError('$executable ${args.join(' ')} failed: ${r.stderr}');
+  }
+  return r.stdout as String;
 }

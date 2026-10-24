@@ -2,9 +2,10 @@
 // it (#689).
 //
 // dyld's own error names the cause, but in words that do not say what to do:
-// "Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib" is what a
-// Swift Package Manager app shows, because nothing copies LiteRT-LM's
-// companion libraries into it. The LLM and EmbeddingGemma 2 paths open the
+// "Library not loaded: @rpath/GemmaModelConstraintProvider.framework/…" is
+// what an app shows when LiteRT-LM's companion libraries are not in it (with
+// Swift Package Manager off, the macos/Podfile block copies them; with it on,
+// the plugin's Swift package does). The LLM and EmbeddingGemma 2 paths open the
 // framework with [openMacOSLiteRtLm], the `.tflite` path (embeddings, speech)
 // with [openMacOSLiteRtLmForTflite]. Both build their message here, so every
 // path says the same thing, and dyld's text is kept.
@@ -74,17 +75,14 @@ MacOSLoadCause diagnoseMacOSLoadError(String dyldText) {
 String macOSLoadErrorMessage(String dyldText) {
   final String fix = switch (diagnoseMacOSLoadError(dyldText)) {
     MacOSLoadCause.missingCompanion =>
-      'Flutter 3.44 and later build macOS apps with Swift Package Manager, '
-          "and nothing copied LiteRT-LM's companion libraries into the app "
-          '(https://github.com/DenisovAV/flutter_edge_ai/issues/689). Until '
-          'that is fixed, set `enable-swift-package-manager: false` under '
-          "`flutter: config:` in the app's pubspec.yaml, run `flutter pub get`, "
-          'and replace the post_install block in macos/Podfile with the one '
-          'from https://flutteredge.ai/docs/desktop#macos, keeping any lines of '
-          'your own inside it. An app that already '
-          'had a macos/Podfile keeps Swift Package Manager on and only needs '
-          'that block. If the block is already there, run `flutter clean` and '
-          'build again.',
+      "LiteRT-LM's companion libraries are not in the app. With Swift Package "
+          "Manager on (Flutter's default), flutter_edge_ai_litertlm's Swift "
+          'package embeds them: run `flutter clean` and build again. With '
+          '`enable-swift-package-manager: false`, the post_install block in '
+          'macos/Podfile copies them: replace the post_install block with the '
+          'one from https://flutteredge.ai/docs/desktop#macos, keeping any '
+          'lines of your own inside it, then run `flutter clean` and build '
+          'again.',
     MacOSLoadCause.wrongArchitecture =>
       'LiteRT-LM ships for Apple silicon (arm64) only; it does not run on an '
           'Intel Mac or in an x86_64 (Rosetta) process.',

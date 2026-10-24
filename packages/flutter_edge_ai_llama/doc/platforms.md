@@ -51,10 +51,12 @@ platforms; apps choose backend packaging in their own hook settings.
 Apple applications add `llamadart_llama_cpp_flutter: 0.15.0` directly and enable
 Flutter SwiftPM. Use iOS 16.4+ and macOS 14+. iOS applications enable the
 extended-virtual-addressing and increased-memory-limit entitlements; the example
-includes both. Do not apply those kernel entitlements on macOS. The published
-LiteRT-LM macOS CocoaPods setup disables SwiftPM, so combining that setup with this
-SwiftPM companion is not qualified; use separate apps until a shared recipe is
-validated. Windows needs the matching Visual C++ runtime. Android's example uses
+includes both. Do not apply those kernel entitlements on macOS. From
+`flutter_edge_ai_litertlm` 1.18.0 LiteRT-LM keeps SwiftPM on too (its macOS
+companions come from its own Swift package): an app with this connector, its
+companion and `flutter_edge_ai_litertlm` builds and loads both native libraries
+(macOS, 2026-10-24). Running both engines' models in one app is not qualified.
+Windows needs the matching Visual C++ runtime. Android's example uses
 API 28+ and includes arm64-v8a / x86_64 only; 32-bit armeabi-v7a is unsupported.
 The emulator lane runs x86_64. A maintainer-run Galaxy S24 ARM64 CPU smoke passed
 on the earlier 0.12.2/0.0.23 pair (see the dated PR record). This is not a recurring

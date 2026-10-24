@@ -56,6 +56,13 @@ enum NpuVendor {
   /// runtime stays on the system image.
   googleTensor('Google Tensor', stampVendor: 'google', abis: {'android_arm64'}),
 
+  /// MediaTek APUs (Dimensity) through NeuroPilot, in apps that opt in with
+  /// [mediatekNpuUserDefine]. The dispatch is Google's, from its
+  /// `litert-npu-runtime-mediatek` AAR, fetched by the build hook; the
+  /// NeuroPilot runtime stays on the device (MediaTek's licence lets it reach
+  /// users only inside an app).
+  mediatek('MediaTek', stampVendor: 'mediatek', abis: {'android_arm64'}),
+
   /// Intel NPUs (Lunar Lake, Panther Lake) through OpenVINO, in every Windows
   /// x64 build. Google's `…_Intel_PTL` bundles are stamped `IntelOpenVINO` /
   /// `PTL` (read from the published 270m, 440m and 740m, revisions 9be6e8b9,
@@ -138,6 +145,76 @@ const googleTensorSystemRuntime = 'libedgetpu_litert.so';
 
 /// The complete app-bundled Google Tensor stack: the bridge only.
 const googleTensorNpuLibs = [googleTensorDispatchLib];
+
+/// The user_define that bundles the MediaTek NPU dispatch into an Android
+/// app. Opt-in, as for Qualcomm: the dispatch is fetched at build time from
+/// Google's `com.google.ai.edge.litert:litert-npu-runtime-mediatek` AAR, and
+/// it drives MediaTek's NeuroPilot runtime on the device, which is under
+/// MediaTek's licence.
+const mediatekNpuUserDefine = 'mediatek_npu';
+
+/// Optional Maven repository to fetch the MediaTek dispatch AAR from instead
+/// of Google Maven (a mirror). The pinned checksum is verified either way.
+const mediatekNpuMavenUrlUserDefine = 'mediatek_npu_maven_url';
+
+/// Optional path to a pre-downloaded `litert-npu-runtime-mediatek-<version>.aar`,
+/// resolved against the pubspec that declares it — for offline builds and for
+/// mirrors that need credentials.
+const mediatekNpuAarUserDefine = 'mediatek_npu_aar';
+
+/// Google's MediaTek dispatch, from the AAR (Apache 2.0). Not in this
+/// package's native tarball: the hook fetches it for [mediatekNpuUserDefine].
+const mediatekDispatchLib = 'LiteRtDispatch_MediaTek';
+
+/// The complete app-bundled MediaTek stack: the dispatch only. The AAR's
+/// compiler plugin is left out: only bundles compiled ahead of time for a
+/// MediaTek SoC run here, never an on-device compile.
+const mediatekNpuLibs = [mediatekDispatchLib];
+
+/// The NeuroPilot adapters the MediaTek dispatch opens from the device, in the
+/// order it tries them (`neuron_adapter_api.cc` at the LiteRT pin: the mgvi
+/// adapter, then one of the three `.mtk.so` chosen by the NeuroPilot
+/// version). The device probe asks for any of them. The dispatch also tries
+/// `libneuronusdk_adapter.so` and `libneuron_adapter.so` last and keeps the
+/// last adapter that opens; those two are not declared, so an app never
+/// opens a generic adapter in place of the device's own.
+const mediatekNeuronAdapters = [
+  'libneuron_adapter_mgvi.so',
+  'libneuronusdk_adapter.10.mtk.so',
+  'libneuronusdk_adapter.9.mtk.so',
+  'libneuronusdk_adapter.mtk.so',
+];
+
+/// The device libraries the MediaTek dispatch or NeuroPilot open: the
+/// adapters, the utility library the dispatch reads the NeuroPilot version
+/// from, and the APU/MVPU set Google's AAR declares (its AndroidManifest.xml
+/// at 2.3.0). `libneuronusdk_adapter.10.mtk.so`, which the dispatch asks for
+/// on NeuroPilot 10 devices and the AAR does not declare, is among the
+/// adapters.
+const mediatekAndroidSystemLibs = [
+  ...mediatekNeuronAdapters,
+  'libneuron_sys_util.mtk.so',
+  'libapuwareutils_v2.mtk.so',
+  'libapuwareutils.mtk.so',
+  'libapuwareapusys_v2.mtk.so',
+  'libmvpuop_mtk_nn.mtk.so',
+  'libmvpuop_mtk_cv.mtk.so',
+  'libmvpu_runtime_pub.mtk.so',
+  'libmvpu_engine_pub.mtk.so',
+  'libmvpu_pattern_pub.mtk.so',
+  'libmvpuop25_mtk_nn.mtk.so',
+  'libmvpuop25_mtk_cv.mtk.so',
+  'libmvpu_runtime_25_pub.mtk.so',
+  'libmvpu_engine_25_pub.mtk.so',
+  'libmvpu_pattern_25_pub.mtk.so',
+  'libmvpu_config.mtk.so',
+  'libmvpup30_mtk_nn.mtk.so',
+  'libmvpup30_mtk_cv.mtk.so',
+  'libmvpu_runtime_30.mtk.so',
+  'libmvpu_engine_30.mtk.so',
+  'libmvpu_pattern_30.mtk.so',
+  'libmvpuop30_mtk_nn.mtk.so',
+];
 
 /// Qualcomm's QNN runtime, taken from `com.qualcomm.qti:qnn-runtime` on Maven
 /// Central at build time — never shipped in this package's own release.
@@ -222,7 +299,8 @@ const qualcommNpuLibsLinux = [
 /// 78.8 MB of the stack, allow-listed and `throw`-guarded in CI, silently not
 /// bundled, so openvino_intel_npu_plugin could not resolve its compiler and
 /// backend=npu stayed broken in the release that set out to fix it. Change
-/// one, change the other. Release TBB only: the debug variants were once
+/// one, change the other; test/npu_build_consistency_test.dart fails when
+/// they differ. Release TBB only: the debug variants were once
 /// registered into user apps — 1.8 MB of parallel debug builds beside the
 /// release set, the mis-binding hazard the workflow's allow-list exists to
 /// avoid.
@@ -232,6 +310,7 @@ const intelNpuLibs = [
   'openvino_intel_npu_plugin',
   'openvino_intel_npu_compiler',
   'openvino_intel_npu_compiler_loader',
+  'openvino_intel_npu_vm_runtime',
   'openvino_tensorflow_lite_frontend',
   'tbb12',
   'tbbbind_2_5',
@@ -247,16 +326,30 @@ const intelDispatchLib = 'LiteRtDispatch';
 String? npuUserDefine(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => qualcommNpuUserDefine,
   NpuVendor.googleTensor => googleTensorNpuUserDefine,
+  NpuVendor.mediatek => mediatekNpuUserDefine,
   NpuVendor.intel => null,
 };
 
 /// [vendor]'s dispatch library, as a CodeAsset name: what LiteRT finds in the
-/// dispatch directory, and what every native tarball of the vendor's ABIs
-/// must carry (`verify_tarball_manifest.sh` REQUIRED).
+/// dispatch directory, and — when [npuDispatchInNativeTarball] — what every
+/// native tarball of the vendor's ABIs must carry
+/// (`verify_tarball_manifest.sh` REQUIRED).
 String npuDispatchLib(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => qualcommDispatchLib,
   NpuVendor.googleTensor => googleTensorDispatchLib,
+  NpuVendor.mediatek => mediatekDispatchLib,
   NpuVendor.intel => intelDispatchLib,
+};
+
+/// Whether [vendor]'s dispatch ships in this package's native tarball (built
+/// from the LiteRT pin), rather than being fetched by the build hook from the
+/// vendor's own publication (MediaTek: Google's AAR, whose build needs
+/// MediaTek's NeuroPilot SDK, which may not be redistributed on its own).
+bool npuDispatchInNativeTarball(NpuVendor vendor) => switch (vendor) {
+  NpuVendor.qualcomm => true,
+  NpuVendor.googleTensor => true,
+  NpuVendor.mediatek => false,
+  NpuVendor.intel => true,
 };
 
 /// Every library of [vendor]'s stack on [operatingSystem]
@@ -282,6 +375,14 @@ List<String> npuStackLibs(NpuVendor vendor, String operatingSystem) =>
           'NpuVendor.googleTensor has no stack here',
         ),
       },
+      NpuVendor.mediatek => switch (operatingSystem) {
+        'android' => mediatekNpuLibs,
+        _ => throw ArgumentError.value(
+          operatingSystem,
+          'operatingSystem',
+          'NpuVendor.mediatek has no stack here',
+        ),
+      },
       NpuVendor.intel => switch (operatingSystem) {
         'windows' => intelNpuLibs,
         _ => throw ArgumentError.value(
@@ -305,6 +406,7 @@ const qualcommAndroidFastRpcLib = 'libcdsprpc.so';
 List<String> npuAndroidSystemLibs(NpuVendor vendor) => switch (vendor) {
   NpuVendor.qualcomm => const [qualcommAndroidFastRpcLib],
   NpuVendor.googleTensor => const [googleTensorSystemRuntime],
+  NpuVendor.mediatek => mediatekAndroidSystemLibs,
   NpuVendor.intel => const [],
 };
 

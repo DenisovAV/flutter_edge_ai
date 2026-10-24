@@ -1,8 +1,18 @@
+## 2.5.2
+- `InferenceModel.createDecider` reads LiteTune 0.6.0 files; one scored `fresh_engine` is refused by name.
+
+## 2.5.1
+- Android: the manifest declares MediaTek's NeuroPilot libraries for the MediaTek NPU.
+- Docs: macOS setup replaces the generated `post_install` block; the load error names the fix (#689).
+- Docs: which Gemma 3 bundles lose prefill chunks on the NPU (LiteRT-LM#3508).
+- Docs: EmbeddingGemma 2 GGUF text embeddings with `flutter_edge_ai_llama` 0.0.3.
+- Docs: Intel's Gemma 4 12B on the Windows NPU needs `flutter_edge_ai_litertlm` 1.17.0.
+
 ## 2.5.0
 - **Breaking:** remove the members deprecated for 2.5.0 (listed in MIGRATION.md).
 - `FlutterEdgeAi.openModel`: several caller-owned models at once; `FlutterEdgeAiPlugin.createModel` deprecated.
-- Experimental: `InferenceModel.createDecider` scores options on a model trained on it, Noul and Score too.
-- Self-contained GGUF embedders, provider-aware accelerator caching, and loaded backend reporting.
+- Experimental: `InferenceModel.createDecider` scores options on a model trained on the decision, Noul and Score too.
+- Embedding SPI: `honouredBackends`, the loaded backend reported, `.gguf` installs without a tokenizer.
 
 ## 2.4.1
 - Android NPU: one vendor's dispatch per load; the manifest declares Google Tensor's runtime libraries.

@@ -11,17 +11,18 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// `REQUIRED=( … )` of verify_tarball_manifest.sh, as `<tarball>:<path>`.
-Set<String> _requiredInTarballs() {
+/// `[array]=( … )` (REQUIRED or FORBIDDEN) of verify_tarball_manifest.sh, as
+/// `<tarball>:<path>`.
+Set<String> _tarballRules(String array) {
   final script = File(
     'native/litert_lm/verify_tarball_manifest.sh',
-  ).readAsStringSync();
+  ).readAsStringSync().replaceAll('\r\n', '\n');
   final block = RegExp(
-    r'^REQUIRED=\(\n(.*?)^\)',
+    '^$array=\\(\n(.*?)^\\)',
     multiLine: true,
     dotAll: true,
   ).firstMatch(script);
-  expect(block, isNotNull, reason: 'REQUIRED=( … ) not found');
+  expect(block, isNotNull, reason: '$array=( … ) not found');
   return {
     for (final line in block!.group(1)!.split('\n'))
       if (RegExp(r'^\s*"([^"]+)"').firstMatch(line) case final m?) m.group(1)!,
@@ -38,15 +39,70 @@ String _osOf(String abi) => abi.split('_').first;
 String _fileOf(String name, String os) =>
     os == 'windows' ? '$name.dll' : 'lib$name.so';
 
+/// A workflow file with CRLF folded: a Windows checkout may carry either.
+String _workflow(String name) => File(
+  '../../.github/workflows/$name',
+).readAsStringSync().replaceAll('\r\n', '\n');
+
+/// `$ovWanted = @( … )` of a Windows native workflow: the OpenVINO DLLs CI
+/// copies into the tarball (TBB is matched by wildcard there, not listed).
+Set<String> _ovWanted(String workflow) {
+  // Up to the line that is only `)`: the comments inside the list hold
+  // parentheses of their own.
+  final block = RegExp(
+    r'\$ovWanted = @\(\n(.*?)^\s*\)\s*$',
+    multiLine: true,
+    dotAll: true,
+  ).firstMatch(_workflow(workflow));
+  expect(block, isNotNull, reason: '\$ovWanted not found in $workflow');
+  return {
+    for (final line in block!.group(1)!.split('\n'))
+      if (RegExp(r"^\s*'([^']+)'").firstMatch(line) case final m?) m.group(1)!,
+  };
+}
+
+/// The names of `$ovSha256 = @{ … }`: every OpenVINO and TBB DLL the workflow
+/// stages, exactly, each with its pinned sha256.
+Set<String> _ovPinned(String workflow) {
+  final block = RegExp(
+    r'\$ovSha256 = @\{\n(.*?)^\s*\}\s*$',
+    multiLine: true,
+    dotAll: true,
+  ).firstMatch(_workflow(workflow));
+  expect(block, isNotNull, reason: '\$ovSha256 not found in $workflow');
+  return {
+    for (final line in block!.group(1)!.split('\n'))
+      if (RegExp(r"^\s*'([^']+)' = '[0-9a-f]{64}'$").firstMatch(line)
+          case final m?)
+        m.group(1)!,
+  };
+}
+
+const _windowsWorkflows = [
+  'build-litertlm-native-windows.yml',
+  'build-litertlm-native.yml',
+];
+
 void main() {
-  test('every vendor\'s dispatch is a required file of the tarball of each of '
-      'its ABIs', () {
-    final required = _requiredInTarballs();
+  test('a dispatch built from the pin is a required file of the tarball of '
+      'each of its vendor\'s ABIs; one the hook fetches is forbidden there', () {
+    final required = _tarballRules('REQUIRED');
+    final forbidden = _tarballRules('FORBIDDEN');
     for (final vendor in NpuVendor.values) {
       for (final abi in vendor.abis) {
         final entry =
             '${_tarballOf(abi)}:${_fileOf(npuDispatchLib(vendor), _osOf(abi))}';
-        expect(required, contains(entry), reason: '${vendor.name} on $abi');
+        final inTarball = npuDispatchInNativeTarball(vendor);
+        expect(
+          required,
+          inTarball ? contains(entry) : isNot(contains(entry)),
+          reason: '${vendor.name} on $abi',
+        );
+        expect(
+          forbidden,
+          inTarball ? isNot(contains(entry)) : contains(entry),
+          reason: '${vendor.name} on $abi',
+        );
       }
     }
   });
@@ -67,7 +123,7 @@ void main() {
       'declared in the core plugin manifest', () {
     final manifest = File(
       '../flutter_edge_ai/android/src/main/AndroidManifest.xml',
-    ).readAsStringSync();
+    ).readAsStringSync().replaceAll('\r\n', '\n');
     final declared = {
       for (final m in RegExp(
         r'<uses-native-library\s+android:name="([^"]+)"',
@@ -99,6 +155,54 @@ void main() {
       } else {
         expect(reason, contains('$define: true'), reason: vendor.name);
       }
+    }
+  });
+
+  test('the OpenVINO DLLs the Windows workflows put in the tarball are the '
+      'ones intelNpuLibs bundles into the app', () {
+    // One set in two places (npu_stacks.dart): a DLL only in $ovWanted reaches
+    // the cache and never the app, as openvino_intel_npu_vm_runtime did.
+    final bundled = {
+      for (final lib in intelNpuLibs)
+        if (lib != intelDispatchLib && !lib.startsWith('tbb')) '$lib.dll',
+    };
+    for (final workflow in _windowsWorkflows) {
+      expect(_ovWanted(workflow), bundled, reason: workflow);
+    }
+  });
+
+  test('the Windows workflows pin a sha256 for every OpenVINO and TBB DLL '
+      'intelNpuLibs bundles, and no other', () {
+    // TBB is staged by wildcard: a renamed one would reach the cache and
+    // never the app, unless the pinned set names it.
+    final bundled = {
+      for (final lib in intelNpuLibs)
+        if (lib != intelDispatchLib) '$lib.dll',
+    };
+    for (final workflow in _windowsWorkflows) {
+      expect(_ovPinned(workflow), bundled, reason: workflow);
+    }
+  });
+
+  test('the OpenVINO release the Windows workflows require is the one the '
+      'LiteRT patch pins', () {
+    final patch = File(
+      'native/litert_lm/patches/litert_openvino_2026_4_1.patch',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    final version = RegExp(
+      r'^\+OPENVINO_PEP440_VERSION = "([^"]+)"',
+      multiLine: true,
+    ).firstMatch(patch)!.group(1)!;
+    final build = RegExp(
+      '^\\+.*"windows": ".*_${RegExp.escape(version)}\\.(\\d+)\\.',
+      multiLine: true,
+    ).firstMatch(patch)!.group(1)!;
+    for (final workflow in _windowsWorkflows) {
+      expect(
+        _workflow(workflow),
+        contains("\$ovRelease = '$version-$build'"),
+        reason: workflow,
+      );
     }
   });
 }

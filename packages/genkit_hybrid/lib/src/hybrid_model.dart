@@ -2,14 +2,11 @@ import 'package:genkit/genkit.dart';
 import 'package:genkit/plugin.dart';
 
 import 'attempts.dart';
+import 'router/hybrid_target.dart' show kCloud, kOnDevice;
 import 'routing_context.dart';
 import 'routing_strategy.dart';
 
-/// Branch key for the on-device model in the binary façade.
-const String kOnDevice = 'onDevice';
-
-/// Branch key for the cloud model in the binary façade.
-const String kCloud = 'cloud';
+export 'router/hybrid_target.dart' show kCloud, kOnDevice;
 
 /// Builds a hybrid [Model] that routes each request to one of [branches]
 /// according to [strategy]. The result is an ordinary [Model]: callers use it
@@ -17,6 +14,7 @@ const String kCloud = 'cloud';
 ///
 /// The optional [name] is used as the returned [Model]'s name (and registry
 /// key). Defaults to `'hybrid'` so existing call sites require no changes.
+@Deprecated('Use defineHybridRouter; removed in 0.5.0.')
 Model hybridModel({
   required Map<String, Model> branches,
   required RoutingStrategy strategy,
@@ -92,6 +90,7 @@ Model hybridModel({
 ///
 /// The optional [name] is forwarded to [hybridModel] as the returned [Model]'s
 /// name (and registry key). Defaults to `'hybrid'`.
+@Deprecated('Use defineHybridRouter; removed in 0.5.0.')
 Model hybridModelOnDeviceCloud({
   required Model onDevice,
   required Model cloud,

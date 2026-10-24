@@ -1,5 +1,8 @@
 ## 0.6.0
-- Windows ARM64: bundle the ORT and ORT-GenAI archives and enable both engines (hardware smoke test pending, #326).
+- Windows ARM64: bundle ORT and ORT-GenAI archives for both engines (#326).
+
+## 0.5.10
+- README: what `activeBackend` reports, natively and on the web.
 
 ## 0.5.9
 - README: which part of genai_config.json the engine reads.

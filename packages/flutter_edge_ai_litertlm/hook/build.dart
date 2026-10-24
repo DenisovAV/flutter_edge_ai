@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart';
 // The hook's helpers live in lib/src/hook/, not hook/src/: pub.dev accepts
 // only hook/build.dart under hook/ ("Hook files are experimental").
 import 'package:flutter_edge_ai_litertlm/src/hook/download.dart';
+import 'package:flutter_edge_ai_litertlm/src/hook/mediatek_runtime.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/qairt_linux.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/qnn_runtime.dart';
 import 'package:flutter_edge_ai_litertlm/src/hook/unsupported_target.dart';
@@ -222,7 +223,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 final _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0-f',
+  version: '0.18.0-g',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -233,6 +234,15 @@ final _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.18.0-g changes the Windows archive and nothing else: the Intel NPU
+  // stack moves from OpenVINO 2026.3.1 to 2026.4.1 (LiteRT 991d15588a,
+  // patches/litert_openvino_2026_4_1.patch) — Intel's Gemma 4 12B for Panther
+  // Lake carries blob metadata 2.7, which the 2026.3 NPU plugin refuses — and
+  // openvino_intel_npu_vm_runtime.dll joins it. LiteRtDispatch.dll, LiteRtLm.dll,
+  // StreamProxy.dll, OpenVINO and TBB are CI run 39573062034's, the bytes run
+  // on Lunar Lake and Panther Lake; the other twelve Windows files and the six
+  // other archives are byte-identical to 0.18.0-f.
+  //
   // 0.18.0-f rebuilds libLiteRtLm and StreamProxy on all seven targets and
   // adds the Google Tensor dispatch to the Android archive:
   // stream_proxy_create2 takes the chunk accessors from Dart (#453, #668);
@@ -315,7 +325,7 @@ final _litertlmBundle = _NativeBundle(
     'litertlm-linux_arm64.tar.gz':
         'd437293a4a83a6502e393c99b17f8962eb66d4579361d3bab9c863d4a4724698',
     'litertlm-windows_x86_64.tar.gz':
-        'd945c2d05ebcb624af8da4ee2d71ba1069b29584e41f5105f9118f8ffb44d315',
+        '218eb6c006d53f2e4db26527e279601d97f087a0307f7a7e08347fc5df8a20e6',
     'litertlm-macos_arm64.tar.gz':
         'f95b27723324217f41a5b0b7aa04a24755e237f75b64ed37d852da8c249bfb67',
     'litertlm-ios_arm64.tar.gz':
@@ -1051,6 +1061,12 @@ Future<void> _processBundle({
         );
       case NpuVendor.googleTensor:
         throw StateError('NpuVendor.googleTensor has no stack for $targetAbi');
+      // Not from the native bundle: Google's AAR, fetched (see
+      // mediatek_runtime.dart for why).
+      case NpuVendor.mediatek when os == OS.android:
+        await _registerMediatekNpu(input: input, output: output, stage: stage);
+      case NpuVendor.mediatek:
+        throw StateError('NpuVendor.mediatek has no stack for $targetAbi');
       // In every Windows x64 build, through windowsExtraLibs above.
       case NpuVendor.intel:
         break;
@@ -1102,6 +1118,11 @@ void _registerBundledNpuStack({
   required Uri prebuiltDir,
   required Uri Function(Uri) stage,
 }) {
+  if (!npuDispatchInNativeTarball(vendor)) {
+    throw StateError(
+      '${vendor.label}: its dispatch is not in the native bundle',
+    );
+  }
   for (final name in npuStackLibs(vendor, 'android')) {
     final fileName = _dylibFileName(OS.android, name);
     final file = prebuiltDir.resolve(fileName);
@@ -1121,6 +1142,113 @@ void _registerBundledNpuStack({
         file: stage(file),
       ),
     );
+  }
+}
+
+// ============================================================================
+// Opt-in MediaTek NPU dispatch (Android)
+// ============================================================================
+
+/// Registers the MediaTek dispatch, for an app that set `mediatek_npu`
+/// (checked by the caller's vendor loop, from the table): Google's build of
+/// it, from the `litert-npu-runtime-mediatek` AAR via the cache.
+Future<void> _registerMediatekNpu({
+  required BuildInput input,
+  required BuildOutputBuilder output,
+  required Uri Function(Uri) stage,
+}) async {
+  if (npuDispatchInNativeTarball(NpuVendor.mediatek)) {
+    throw StateError(
+      'MediaTek: its dispatch is in the native bundle, not fetched',
+    );
+  }
+  final dir = await _ensureMediatekRuntime(input, output);
+  for (final name in mediatekNpuLibs) {
+    output.assets.code.add(
+      CodeAsset(
+        package: _packageName,
+        name: 'src/native/$name',
+        linkMode: DynamicLoadingBundled(),
+        file: stage(dir.uri.resolve(_dylibFileName(OS.android, name))),
+      ),
+    );
+  }
+  // Said once per hook run (the hook is cached, so not on every build).
+  stderr.writeln(
+    '[$_packageName] $mediatekNpuUserDefine: bundling the MediaTek NPU '
+    'dispatch from litert-npu-runtime-mediatek $mediatekRuntimeVersion '
+    '(Apache 2.0; LICENSE and THIRD_PARTY_NOTICE.txt in ${dir.path}). It runs '
+    "the device's NeuroPilot runtime, under MediaTek's licence.",
+  );
+}
+
+/// Returns the cache directory holding the MediaTek dispatch, fetching and
+/// preparing it first if needed.
+Future<Directory> _ensureMediatekRuntime(
+  BuildInput input,
+  BuildOutputBuilder output,
+) async {
+  final root = _npuCacheRoot(input, 'mediatek', 'android_arm64');
+  final entry = Directory('${root.path}/${mediatekCacheEntryName()}');
+  if (isCompleteQnnCache(entry, fileNames: mediatekLibFileNames)) return entry;
+
+  final rawAar = input.userDefines[mediatekNpuAarUserDefine];
+  if (rawAar != null && rawAar is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$mediatekNpuAarUserDefine must be a path string',
+    );
+  }
+  final localAar = input.userDefines.path(mediatekNpuAarUserDefine);
+  if (localAar != null) {
+    output.dependencies.add(localAar);
+    final aar = File.fromUri(localAar);
+    if (!aar.existsSync()) {
+      throw StateError(
+        '[$_packageName] $mediatekNpuAarUserDefine points at '
+        '${aar.path}, which does not exist.',
+      );
+    }
+    final actual = (await sha256.bind(aar.openRead()).first).toString();
+    if (actual != mediatekRuntimeSha256) {
+      throw StateError(
+        '[$_packageName] ${aar.path} is not '
+        'litert-npu-runtime-mediatek-$mediatekRuntimeVersion.aar '
+        '(sha256 $actual, expected $mediatekRuntimeSha256).',
+      );
+    }
+    return promoteMediatekCache(root, aar);
+  }
+
+  final mirror = input.userDefines[mediatekNpuMavenUrlUserDefine];
+  if (mirror != null && mirror is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$mediatekNpuMavenUrlUserDefine must '
+      'be a URL string',
+    );
+  }
+  final url = mediatekRuntimeAarUrl(
+    (mirror as String?) ?? mediatekDefaultMavenBase,
+  );
+  root.createSync(recursive: true);
+  final download = root.createTempSync(qnnDownloadTempPrefix);
+  try {
+    final aar = File(
+      '${download.path}/litert-npu-runtime-mediatek-$mediatekRuntimeVersion.aar',
+    );
+    try {
+      await downloadVerified(url, aar, mediatekRuntimeSha256);
+    } on Object catch (e) {
+      throw StateError(
+        '[$_packageName] $mediatekNpuUserDefine is set, but the MediaTek '
+        'dispatch could not be fetched: ${redactUserInfoIn('$e', url)}\n'
+        'Without network access, download ${redactUserInfo(url)} yourself and '
+        'set hooks.user_defines.$_packageName.$mediatekNpuAarUserDefine to its '
+        'path.',
+      );
+    }
+    return promoteMediatekCache(root, aar);
+  } finally {
+    download.deleteSync(recursive: true);
   }
 }
 
@@ -1180,8 +1308,14 @@ Future<Directory> _ensureQnnRuntime(
 ) async {
   final root = _qnnCacheRoot(input);
   final entry = Directory('${root.path}/${qnnCacheEntryName()}');
-  if (isCompleteQnnCache(entry)) return entry;
+  if (isCompleteQnnCache(entry, fileNames: qnnLibFileNames)) return entry;
 
+  final rawAar = input.userDefines[qualcommNpuAarUserDefine];
+  if (rawAar != null && rawAar is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$qualcommNpuAarUserDefine must be a path string',
+    );
+  }
   final localAar = input.userDefines.path(qualcommNpuAarUserDefine);
   if (localAar != null) {
     // The app points at an AAR it has (offline builds, mirrors that need
@@ -1239,9 +1373,15 @@ Future<Directory> _ensureQnnRuntime(
 /// `linux_arm64`) is cached: beside the native bundles, or — when that is not
 /// writable (a container with no HOME, a read-only home) — in the hook's
 /// shared output directory for this project.
-Directory _qnnCacheRoot(BuildInput input, [String target = 'android_arm64']) {
+Directory _qnnCacheRoot(BuildInput input, [String target = 'android_arm64']) =>
+    _npuCacheRoot(input, 'qnn', target);
+
+/// Where a vendor's prepared NPU libraries ([name]: `qnn`, `mediatek`) for
+/// [target] are cached: beside the native bundles, or — when that is not
+/// writable — in the hook's shared output directory for this project.
+Directory _npuCacheRoot(BuildInput input, String name, String target) {
   final preferred = Directory(
-    '${_cacheBaseDir().path}${Platform.pathSeparator}qnn'
+    '${_cacheBaseDir().path}${Platform.pathSeparator}$name'
     '${Platform.pathSeparator}$target',
   );
   try {
@@ -1255,7 +1395,7 @@ Directory _qnnCacheRoot(BuildInput input, [String target = 'android_arm64']) {
     return preferred;
   } on FileSystemException {
     return Directory.fromUri(
-      input.outputDirectoryShared.resolve('qnn/$target/'),
+      input.outputDirectoryShared.resolve('$name/$target/'),
     );
   }
 }

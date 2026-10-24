@@ -1,3 +1,6 @@
+## 2.1.1
+- README: the offline cache needs its version marker.
+
 ## 2.1.0
 - **Breaking:** the store persists the document modality (`VectorStoreBinding`); require `flutter_edge_ai_rag` ^1.1.0.
 

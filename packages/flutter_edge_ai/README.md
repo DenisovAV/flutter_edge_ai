@@ -27,8 +27,8 @@ runtimes and stores your app uses.
 - **Pluggable engines:** LiteRT-LM (`.litertlm`), MediaPipe (`.task`), ONNX Runtime, llama.cpp (`.gguf`), and the OS's own models (Gemini Nano, Apple Foundation Models, Windows AI Foundry, Chrome Prompt API).
 - **Multimodal:** image and audio input on the models that support it.
 - **Function calling** and **thinking mode** on the models that support them.
-- **CPU, GPU and NPU** backends — Qualcomm on Android and Linux arm64 and
-  Google Tensor on Android (both opt-in), and Intel on Windows.
+- **CPU, GPU and NPU** backends — Qualcomm on Android and Linux arm64, Google
+  Tensor and MediaTek on Android (all opt-in), and Intel on Windows.
 - **Embeddings and on-device RAG:** text, image and audio embeddings (EmbeddingGemma 2 and 1, Gecko, ONNX models — [models](https://flutteredge.ai/docs/models)) with nine task types, stored in Qdrant Edge or SQLite + `sqlite-vec`, payload filters included.
 - **Speech:** on-device STT, TTS and a push-to-talk voice loop.
 - **Agent skills:** `SKILL.md` tools the model invokes through function calling.
@@ -43,7 +43,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 |---|---|
 | Run any `.litertlm` model, and LiteRT embeddings | [`flutter_edge_ai_litertlm`](https://pub.dev/packages/flutter_edge_ai_litertlm) |
 | Run `.task` / `.bin` models (MediaPipe; mobile and web; maintenance-only upstream, prefer `.litertlm`) | [`flutter_edge_ai_mediapipe`](https://pub.dev/packages/flutter_edge_ai_mediapipe) |
-| Run GGUF models through llama.cpp | [`flutter_edge_ai_llama`](https://pub.dev/packages/flutter_edge_ai_llama) |
+| Run GGUF chat and native EmbeddingGemma 2 text embeddings through llama.cpp | [`flutter_edge_ai_llama`](https://pub.dev/packages/flutter_edge_ai_llama) |
 | Run ONNX models — text generation and embeddings | [`flutter_edge_ai_onnx`](https://pub.dev/packages/flutter_edge_ai_onnx) |
 | Use the model built into the OS or browser | [`flutter_edge_ai_builtin_ai`](https://pub.dev/packages/flutter_edge_ai_builtin_ai) |
 | Tokenizers for text embeddings (needed for `.tflite` / `.onnx` embedders; an EmbeddingGemma 2 `.litertlm` carries its own) | [`flutter_edge_ai_embeddings`](https://pub.dev/packages/flutter_edge_ai_embeddings) |
@@ -80,8 +80,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_litertlm: ^1.16.0   # or any other engine from the table
+  flutter_edge_ai: ^2.5.2
+  flutter_edge_ai_litertlm: ^1.17.0   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with
@@ -161,10 +161,11 @@ flutter:
 ```
 
 Run `flutter pub get` (it writes `macos/Podfile`), then replace that Podfile's
-`post_install` block with the one below; the next build runs `pod install`
-itself. A green build proves nothing: without the block the first model load
-fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. If your app already has a `macos/Podfile` (another plugin
-needs CocoaPods), keep SPM on and just paste the block. Prefer the pubspec
+`post_install` block with the one below, keeping any lines of your own inside
+it; the next build runs `pod install` itself. A green build proves nothing: without the block the first model load
+fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`; from `flutter_edge_ai_litertlm` 1.17.0
+the error says why and names this fix. If your app already has a `macos/Podfile` (another plugin
+needs CocoaPods), keep SPM on and only replace its `post_install` block. Prefer the pubspec
 setting to `flutter config --no-enable-swift-package-manager`, which changes
 only your machine — not your teammates' or CI. `flutter_edge_ai_llama` needs
 Swift Package Manager on instead (⁴).
@@ -395,8 +396,12 @@ per platform, embedding and speech models:
 [models](https://flutteredge.ai/docs/models).
 
 Core 2.5.0 lets embedding providers accept self-contained `.gguf` files without
-a separate tokenizer. No GGUF embedding backend ships yet; execution requires
-an engine package that supports the file. Providers declare capabilities with
+a separate tokenizer. The opt-in `LlamaEmbeddingBackend` in
+`flutter_edge_ai_llama` 0.0.3 runs native EmbeddingGemma 2
+text embeddings through llamadart. Give GGUF its own RAG vector profile;
+equal dimensions do not make GGUF and LiteRT vectors interchangeable.
+`flutter_edge_ai_embeddings` supplies tokenizers only and owns no runtime.
+Providers declare capabilities with
 `EmbeddingBackendProvider.honouredBackends(spec)` and report the loaded
 accelerator through `EmbeddingPassInfo.activeBackend`. Automatic requests reuse
 the current non-NPU embedder for the same model. Repeated explicit CPU/GPU

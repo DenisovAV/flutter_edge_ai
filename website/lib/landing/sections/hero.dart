@@ -39,16 +39,40 @@ class Hero extends StatelessComponent {
             ]),
             div(classes: 'hero-install', [
               span(classes: 'install-prompt', [Component.text('\$')]),
-              span(classes: 'install-cmd', [Component.text(' flutter pub add flutter_edge_ai flutter_edge_ai_litertlm')]),
+              span(classes: 'install-cmd', [
+                Component.text(' flutter pub add flutter_edge_ai flutter_edge_ai_litertlm'),
+              ]),
             ]),
           ]),
           // Right column
           div(classes: 'hero-demo', [
             div(classes: 'hero-phone-frame', [
-              img(
-                src: '/images/gemma.gif',
-                alt: 'flutter_edge_ai demo running on a device',
-                classes: 'hero-gif',
+              // The demo is a muted inline video, not a GIF: the same 34 s
+              // clip is 0.35 MB as VP9 / 0.58 MB as H.264 against the 5.8 MB
+              // GIF it replaces, which every first-time visitor downloaded and
+              // which alone used most of the Hosting free-tier transfer quota.
+              video(
+                [
+                  source(src: '/demos/hero.webm', type: 'video/webm'),
+                  source(src: '/demos/hero.mp4', type: 'video/mp4'),
+                ],
+                classes: 'hero-video',
+                // Intrinsic size, so the frame holds its height before the
+                // poster arrives instead of growing under the page.
+                width: 600,
+                height: 1344,
+                // `autoplay` starts it without JavaScript; the marker lets
+                // the landing page's script pause it once it is scrolled
+                // out of view and under reduced motion.
+                autoplay: true,
+                loop: true,
+                muted: true,
+                poster: '/demos/hero-poster.jpg',
+                attributes: const {
+                  'playsinline': '',
+                  'data-play-when-visible': '',
+                  'aria-label': 'flutter_edge_ai demo running on a device',
+                },
               ),
               div(classes: 'hero-demo-overlay', [
                 // Links to the live Flutter web example app at /try.
@@ -207,7 +231,7 @@ class Hero extends StatelessComponent {
         color: Color('rgba(0,0,0,0.5)'),
       ),
     ),
-    css('.hero-gif').styles(
+    css('.hero-video').styles(
       display: Display.block,
       width: 100.percent,
       height: Unit.auto,

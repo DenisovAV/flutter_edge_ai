@@ -237,8 +237,8 @@ an app whose plugins all ship a `Package.swift` — core does, and
 `flutter_edge_ai_litertlm` is not a plugin at all — gets no `macos/Podfile`, so
 nothing runs the block. That is why every step app's `pubspec.yaml` carries
 `flutter: config: enable-swift-package-manager: false`. For an app of your own,
-add the same lines, run `flutter pub get` (it writes `macos/Podfile`), and paste
-the block. A macOS build that succeeds proves nothing here: the app compiles,
+add the same lines, run `flutter pub get` (it writes `macos/Podfile`), and replace
+its `post_install` block with this one, keeping any lines of your own inside it. A macOS build that succeeds proves nothing here: the app compiles,
 links, signs and launches either way, and the failure —
 `Failed to load dynamic library 'LiteRtLm.framework/LiteRtLm'` … `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib` — arrives at the first model load, which no build log warns you about.
 Prefer the pubspec setting to `flutter config --no-enable-swift-package-manager`:

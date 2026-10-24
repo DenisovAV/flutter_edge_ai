@@ -254,6 +254,10 @@ FORBIDDEN=(
   # arm64: from the QAIRT SDK zip, since native-v0.18.0-c).
   "android_arm64:libQnn*"
   "linux_arm64:libQnn*"
+  # Built against MediaTek's NeuroPilot SDK, whose licence allows it only
+  # inside an application: apps fetch Google's build through `mediatek_npu`.
+  "android_arm64:libLiteRtDispatch_MediaTek.so"
+  "android_arm64:libLiteRtCompilerPlugin_MediaTek*"
   # Need libwebgpu_dawn.so, which no Android bundle carries (native-v0.18.0).
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
@@ -275,6 +279,11 @@ REQUIRED=(
   # Intel's dispatch (NpuVendor.intel), in every Windows x64 build: rebuilt
   # from the pin every release, never carried forward unchecked.
   "windows_x86_64:LiteRtDispatch.dll"
+  # OpenVINO 2026.4: the NPU plugin loads it by name for blobs that run on
+  # Intel's NPU VM runtime. Gemma 4 E2B and Intel's 12B for Panther Lake load
+  # without it; it ships because Intel's own kit does, and intelNpuLibs
+  # bundles it.
+  "windows_x86_64:openvino_intel_npu_vm_runtime.dll"
   "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
   "macos_arm64:libLiteRtLmMetalAccelerator.dylib"

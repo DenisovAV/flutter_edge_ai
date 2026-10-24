@@ -19,6 +19,7 @@ String _manifest(Map<String, Iterable<String>> idsByAbi) => jsonEncode({
 final _base = [nativeAssetId('LiteRtLm'), nativeAssetId('StreamProxy')];
 final _stack = [for (final n in qualcommNpuLibs) nativeAssetId(n)];
 final _googleStack = [for (final n in googleTensorNpuLibs) nativeAssetId(n)];
+final _mediatekStack = [for (final n in mediatekNpuLibs) nativeAssetId(n)];
 
 final _linuxStack = [for (final n in qualcommNpuLibsLinux) nativeAssetId(n)];
 
@@ -88,6 +89,29 @@ void main() {
     );
     expect(missing.bundled, isFalse);
     expect(missing.reason, contains('google_tensor_npu: true'));
+    expect(missing.reason, isNot(contains('qualcomm_npu')));
+  });
+
+  test('MediaTek is opt-in: a build without it names its own flag, not '
+      'Qualcomm\'s', () async {
+    final bundled = await checkNpuStackInManifest(
+      NpuVendor.mediatek,
+      read: () async => _manifest({
+        'android_arm64': [..._base, ..._mediatekStack],
+      }),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(bundled.bundled, isTrue);
+
+    final missing = await checkNpuStackInManifest(
+      NpuVendor.mediatek,
+      read: () async => _manifest({'android_arm64': _base}),
+      abi: 'android_arm64',
+      operatingSystem: 'android',
+    );
+    expect(missing.bundled, isFalse);
+    expect(missing.reason, contains('mediatek_npu: true'));
     expect(missing.reason, isNot(contains('qualcomm_npu')));
   });
 

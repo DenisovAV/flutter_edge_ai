@@ -91,6 +91,23 @@ need `flutter_edge_ai_litertlm` 1.15.0: every release from
 or ended the process with `0xC0000409`
 ([LiteRT-LM#4023](https://github.com/google-ai-edge/LiteRT-LM/issues/4023)).
 
+Intel's Gemma 4 12B for Panther Lake needs `flutter_edge_ai_litertlm` 1.17.0:
+its NPU blobs carry metadata 2.7, which the OpenVINO 2026.3 of earlier releases
+refuses. 1.17.0 ships OpenVINO 2026.4.1. Measured with Intel NPU driver
+32.0.100.4778 on both PCs.
+
+A bundle whose NPU blobs carry no weights makes the dispatch copy them to
+`%TEMP%\litert_ov_bank_<hex>.bin` at every load: 5.55 GB for Intel's 12B, 74.5
+MB for EmbeddingGemma 2 270m `_Intel_PTL`. Keep that much free on the system
+drive. The dispatch deletes the file when the model is closed, so an app that
+exits without closing the model leaves it behind. From 1.17.0 each app marks
+its banks with a `<bank>.<pid>.owner` file it keeps open while the model is
+loaded. The next NPU load deletes the banks whose owner is gone, and the
+unmarked ones written before the PC last started, and prints how much it freed.
+Windows' Fast Startup shutdown does not count as a start. An unmarked bank
+written since the start is kept, because an app on an older release or another
+LiteRT program may still be using it.
+
 Run **Gemma 4** there. On the Intel NPU a Gemma 3 bundle loses every prefill
 chunk after the first — the reply is fluent, answers from the opening of your
 prompt and never mentions the rest, with no error raised
@@ -181,12 +198,12 @@ flutter:
     enable-swift-package-manager: false
 ```
 
-2. Replace that Podfile's `post_install` block with the one below; the next
-   build runs `pod install` itself.
+2. Replace that Podfile's `post_install` block with the one below, keeping any
+   lines of your own inside it; the next build runs `pod install` itself.
 
 A green build proves nothing: without the block the first model load fails with
 `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. If the app already has a `macos/Podfile` (another plugin needs
-CocoaPods), keep SPM on and just paste the block. Use the pubspec setting rather
+CocoaPods), keep SPM on and only replace its `post_install` block. Use the pubspec setting rather
 than `flutter config --no-enable-swift-package-manager`, which changes only one
 machine — not your teammates' or CI.
 
@@ -255,6 +272,11 @@ post_install do |installer|
 end
 ```
 
+From Flutter 3.50 (a beta at the time of writing) a build with the setting off prints `Enabling Swift Package
+Manager will be required in a future version of Flutter.`; the setting still
+works. A route that needs no Podfile is tracked in
+[#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689).
+
 **Entitlements** — add to both `macos/Runner/DebugProfile.entitlements` and
 `Release.entitlements`:
 
@@ -301,11 +323,11 @@ for secondary `LoadLibrary` calls — they would fail to find the GPU accelerato
 DLL and silently fall back to CPU.
 
 End-users need nothing installed. `LiteRtLm.dll` is linked against the static CRT and imports no C++ runtime at all;
-measured on `native-v0.18.0-f`, 16 of its 24 DLLs import none.
+measured on `native-v0.18.0-g`, 17 of its 25 DLLs import none.
 
 The other eight are the Intel NPU stack behind `PreferredBackend.npu`: our own
 `LiteRtDispatch.dll`, which links OpenVINO's C++ API and keeps the dynamic CRT, plus
-three of Intel's five `openvino*` (the NPU compiler and its loader import none)
+three of Intel's six `openvino*` (the NPU compiler, its loader and the NPU VM runtime import none)
 and its four `tbb*`. Each imports some of `msvcp140`,
 `vcruntime140` and `vcruntime140_1` — the runtimes any Flutter Windows app already
 resolves — and none imports `vcruntime140_threads.dll`, the Visual Studio 2022 17.8
@@ -506,7 +528,9 @@ exceed. Use CPU on the simulator, or test on a physical iPhone for GPU validatio
 
 In **debug builds** `flutter_edge_ai_litertlm` redirects native stderr to
 `<tmpdir>/litertlm_native.log` and dumps it via `debugPrint` after a failed
-`engine_create`. In release builds stderr goes to the systemd journal / app's own
+`engine_create`. Stdout stays where it was, so `print` keeps reaching
+`flutter run` (from litertlm 1.17.0; earlier debug builds on macOS and Linux
+sent it to the same file after the first model load). In release builds stderr goes to the systemd journal / app's own
 stderr.
 
 ### `glibc 2.38 not found` on Linux

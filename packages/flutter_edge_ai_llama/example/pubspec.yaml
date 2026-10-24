@@ -11,8 +11,8 @@ dependencies:
     sdk: flutter
   flutter_edge_ai_llama:
     path: ..
-  flutter_edge_ai: ^2.4.0
-  llamadart: '>=0.15.0 <0.15.1'
+  flutter_edge_ai: ^2.5.0
+  llamadart: '>=0.15.1 <0.15.2'
   llamadart_llama_cpp_flutter: 0.15.0
   file_selector: ^1.0.4
   path_provider: ^2.1.4
@@ -39,3 +39,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/goldens/eg2_text_golden.json

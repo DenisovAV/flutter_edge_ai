@@ -368,10 +368,11 @@ List<PreferredBackend> _fallbackOrder(PreferredBackend requested) =>
 /// reports `npu`. Measured 2026-10-18 on a DDP Galaxy S24 (SM8650) with the
 /// generic Gemma 3 1B: `activeBackend == npu`, "No compiler plugin found", no
 /// dispatch or QNN library mapped, the CPU's text at 28 tokens/s against 41 on
-/// an explicit CPU. A vendor whose stack ships a LiteRT compiler plugin
-/// (Google's `litert-npu-runtime-mediatek` AAR carries one) makes that path
-/// real, and this rule then has to ask the vendor table. A file that could not
-/// be read keeps every backend.
+/// an explicit CPU. A vendor whose stack ships a LiteRT compiler plugin makes
+/// that path real, and this rule then has to ask the vendor table. Google's
+/// `litert-npu-runtime-mediatek` AAR carries one; the hook takes only its
+/// dispatch (`mediatekNpuLibs`). A file that could not be read keeps every
+/// backend.
 Set<PreferredBackend> _textBackendsAllowed(LiteRtLmBundleInfo? bundle) {
   if (bundle == null) return PreferredBackend.values.toSet();
   if (bundle.isCompiledForNpu) return {PreferredBackend.npu};

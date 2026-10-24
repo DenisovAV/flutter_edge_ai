@@ -326,6 +326,15 @@ void main() {
         'contract_version',
       ),
       'an unknown key': ((p) => p['extra'] = 1, 'unknown [extra]'),
+      'options scored with an Engine each': (
+        (p) => p['method'] = 'fresh_engine',
+        'an Engine per option (method fresh_engine',
+      ),
+      'a method litetune does not write': (
+        (p) => p['method'] = 'batch',
+        'method "batch"',
+      ),
+      'a method that is null': ((p) => p['method'] = null, 'method null'),
       'a missing key': ((p) => p.remove('terminator'), 'missing [terminator]'),
       'an unknown type': ((p) => p['type'] = 'rank', 'type "rank"'),
       'a scoring form not measured': (
@@ -408,6 +417,49 @@ void main() {
         );
       });
     }
+
+    test('litetune 0.6.0\'s section, with method rewind, reads as '
+        'written', () {
+      final section = DecisionSection.parse(
+        jsonEncode(changed((p) => p['method'] = 'rewind')),
+      );
+      expect(section.listed.map((o) => o.id), _emotionIds);
+      expect(section.temperature, payload['temperature']);
+    });
+
+    test('a decider is created on litetune 0.6.0\'s section', () async {
+      final decider =
+          await _Model(
+            jsonEncode(changed((p) => p['method'] = 'rewind')),
+            _emotionScorer(),
+          ).createDecider(
+            question: payload['question'] as String,
+            options: _optionsOf(payload),
+            calibration: const InferenceDeciderCalibration.fromModel(),
+          );
+      expect(decider.options.map((o) => o.id), _emotionIds);
+      await decider.close();
+    });
+
+    test('a fresh_engine section is refused by name', () async {
+      await expectLater(
+        _Model(
+          jsonEncode(changed((p) => p['method'] = 'fresh_engine')),
+          _emotionScorer(),
+        ).createDecider(
+          question: payload['question'] as String,
+          options: _optionsOf(payload),
+          calibration: const InferenceDeciderCalibration.fromModel(),
+        ),
+        throwsA(
+          isA<DeciderUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('an Engine per option (method fresh_engine'),
+          ),
+        ),
+      );
+    });
 
     test('a model without one is refused by name', () async {
       await expectLater(

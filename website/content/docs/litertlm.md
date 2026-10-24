@@ -12,7 +12,7 @@ no engine by default — you opt in by registering `LiteRtLmEngine()`.) It runs
 JVM, no gRPC — and it is the **primary desktop engine** (macOS, Windows, Linux);
 [ONNX Runtime](/docs/onnx) also runs on desktop, and macOS and Windows can additionally
 use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time via
-**Native Assets** (SHA256-verified, from the `native-v0.18.0-f` GitHub release), so
+**Native Assets** (SHA256-verified, from the `native-v0.18.0-g` GitHub release), so
 there's no manual native setup.
 
 The same package also ships **`LiteRtEmbeddingBackend`**: EmbeddingGemma 2 from
@@ -27,7 +27,7 @@ EmbeddingGemma 1 / Gecko
 
 | Platform | Support |
 |----------|---------|
-| Android | ✅ FFI (GPU via OpenCL; NPU on Qualcomm or Google Tensor G5/G6 — opt-in via `qualcomm_npu` / `google_tensor_npu`) |
+| Android | ✅ FFI (GPU via OpenCL; NPU on Qualcomm, Google Tensor G5/G6 or MediaTek — opt-in via `qualcomm_npu` / `google_tensor_npu` / `mediatek_npu`) |
 | iOS | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in via `qualcomm_npu`) |
 | Windows | ✅ FFI (CPU + GPU via DirectX 12 + Intel NPU) |
@@ -106,7 +106,7 @@ Pick the accelerator with `preferredBackend:` on `getActiveModel`:
 |---------|-------|
 | `cpu` | All native platforms |
 | `gpu` | OpenCL (Android), Metal (Apple), DirectX 12 / WebGPU (Windows), Vulkan / WebGPU (Linux); on web the runtime picks WebGPU or WASM itself and `preferredBackend` is not applied |
-| `npu` | Qualcomm on Android and on Linux arm64, Google Tensor G5/G6 on Android (both opt-in, `.litertlm`), and Windows (Intel LunarLake / PantherLake) |
+| `npu` | Qualcomm on Android and on Linux arm64, Google Tensor G5/G6 and MediaTek on Android (each opt-in, `.litertlm`), and Windows (Intel LunarLake / PantherLake) |
 
 GPU is the right default, but it is not uniformly faster: on Android the win is
 in **prefill**, and decode can be slower than CPU. One measured pair — Galaxy S26,
@@ -134,7 +134,8 @@ GPU](/docs/troubleshooting#wrong-numbers-on-gpu).
 Windows NPU ships the Intel dispatch stack — `LiteRtDispatch.dll` + the OpenVino
 runtime + TBB — inside the Windows native archive. LLMs load on it from
 `flutter_edge_ai_litertlm` 1.15.0; 1.7.0 through 1.14.0 failed the load or ended
-the process (`0xC0000409`, LiteRT-LM#4023).
+the process (`0xC0000409`, LiteRT-LM#4023). Intel's Gemma 4 12B for Panther Lake
+needs 1.17.0 (OpenVINO 2026.4.1); see [Desktop → Windows NPU](/docs/desktop).
 
 **Android NPU is opt-in.** Qualcomm licenses its QNN runtime for redistribution
 inside an application only, so the package carries just LiteRT's dispatch
@@ -171,6 +172,28 @@ far on Tensor G6 Pixels with debug builds (Gemma 4 E2B text, images and audio;
 EmbeddingGemma 2 270m and 440m); a Tensor G5 and a release-signed build are not
 run yet.
 
+**MediaTek has its own flag too.** A bundle compiled ahead of time for a
+MediaTek SoC (Google publishes Gemma 3 1B for MT6989/MT6991/MT6993, Gemma 3
+270M for MT6991/MT6993, Qwen3 0.6B for MT6993 and EmbeddingGemma 2 for
+MT6991/MT6993; nothing for Gemma 4) runs on a phone with that SoC and Android
+12 or later when the app sets `mediatek_npu: true` in the same `user_defines`
+block (from flutter_edge_ai_litertlm 1.17.0). The build then fetches Google's
+`litert-npu-runtime-mediatek` 2.3.0 AAR from Google Maven, checks its pinned
+checksum and bundles its `libLiteRtDispatch_MediaTek.so` (Apache 2.0, about
+330 KB). It is not in our release because building it needs MediaTek's
+NeuroPilot SDK, whose licence lets it reach users only inside an app. The
+NeuroPilot runtime it drives is part of the phone; a phone whose vendor does
+not expose it to apps is refused with that reason. Offline, download the AAR
+and add `mediatek_npu_aar: <path>`; `mediatek_npu_maven_url` names a mirror.
+Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug
+build: Gemma 3 1B (`…_mt6989`) generates on the NPU (load 6.6 s, about 5 s of
+it waiting for NeuroPilot's `INeuronService`, absent on that tablet; first token
+115 ms); Gemma 3 1B `…_mt6991` and
+EmbeddingGemma 2 `…_MT6991`/`…_MT6993` bundles are refused when the engine is
+created. The Qwen3 0.6B MT6993 bundle fails on its tokenizer
+([LiteRT-LM#3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865))
+before the NPU. Not run on an MT6991/MT6993 phone yet.
+
 **Linux arm64 NPU takes the same flag.** On a Qualcomm Linux board with a
 Hexagon V68–V81 compute DSP (Dragonwing QCS6490, QCS8275 — the Arduino
 VENTUNO Q — QCS9075, …), `qualcomm_npu: true` bundles the stack into the
@@ -194,25 +217,36 @@ Linux arm64, with the per-SoC bundles, and never falls back: see
 Google Tensor G5/G6 bundles (270m, 440m) take `google_tensor_npu: true` instead
 (from 1.15.0): see
 [EmbeddingGemma 2 on a Google Tensor NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-google-tensor-npu).
+MediaTek MT6991/MT6993 bundles take `mediatek_npu: true` (from 1.17.0; not run
+on such a phone yet).
 On Windows x64 the Intel Panther Lake bundles need no flag (from 1.13.2): see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 
 **For LLMs, NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
-those work on Qualcomm, Intel and Google Tensor G6. The **Gemma 3** family
-does not on Qualcomm or Intel (Tensor not measured), and it fails
+those work on Qualcomm, Intel and Google Tensor G6. Google publishes no Gemma 4
+bundle for MediaTek: Gemma 3 1B `…_mt6989` generates on a Dimensity 9300+, and whether it
+keeps its prefill chunks is not measured. Most **Gemma 3** bundles
+do not on Qualcomm or Intel (Tensor not measured), and they fail
 silently — the model answers from the first prefill chunk alone, fluently,
 with no error and nothing in the log:
 
-- **Qualcomm.** A compiled bundle carries a prefill mask of
-  `2 B × (attention heads ÷ KV heads) × prefill × (cache_length + prefill)`. Above
-  ~1 MiB every chunk after the first is dropped. For Gemma 3 (4 attention heads
-  per KV head) that makes **896** the largest working `cache_length` at prefill
-  128 — and *every* published `qualcomm.*` Gemma 3 bundle is built above the line
-  (270M at cache 4096 is 4.125 MiB, 1B ekv1280 is 1.375 MiB). Garbled Qwen3
-  output on the NPU is a different bug
+- **Qualcomm.** The published 270M bundles for SM8750 and SM8850 lose every
+  chunk after the first, and so do the 1B `…_ekv1280_sm8750` and `…_sm8550`;
+  the 1B `…_sm8850` kept its chunks on a Galaxy S26. In a bundle built with
+  litert-torch's `npu_export`, the loss follows the prefill mask the compiled
+  graph carries,
+  `2 B × (attention heads ÷ KV heads) × prefill × (cache_length + prefill)`:
+  above ~1 MiB every chunk after the first is dropped. For Gemma 3 (4 attention
+  heads per KV head) that makes **896** the largest working `cache_length` at
+  prefill 128. Such a build also needs calibration prompts as long as the
+  prompts it will get: with the default calibration a Gemma 3 1B build lost
+  everything past ~450 tokens
+  ([litert-torch#1344](https://github.com/google-ai-edge/litert-torch/issues/1344)).
+  Garbled Qwen3 output on the NPU is a different bug
   ([LiteRT-LM#3846](https://github.com/google-ai-edge/LiteRT-LM/issues/3846)).
 - **Intel.** The second chunk is lost regardless of mask size — a different
-  defect on the OpenVINO path, which Gemma 4 bundles do not hit.
+  defect on the OpenVINO path, which Gemma 4 bundles do not hit (measured on a
+  Gemma 3 270M built for Lunar Lake; no Gemma 3 Intel bundle is published).
 
 Both are tracked upstream in
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).
@@ -226,9 +260,10 @@ plugin, which no NPU stack here ships, and run it on the CPU while reporting
 S24), so `npu` falls back to GPU and then CPU for it, and the floor applies to
 those attempts. A bundle compiled for an NPU runs only on Windows, on Android
 phones with Qualcomm FastRPC, on Qualcomm Linux arm64 boards that pass the
-FastRPC checks above, and on Google Tensor G5/G6 Pixels with Android 16 or
-later, not a `BP2A` build — the last three only when the app sets `qualcomm_npu` or
-`google_tensor_npu`;
+FastRPC checks above, on Google Tensor G5/G6 Pixels with Android 16 or
+later, not a `BP2A` build, and on MediaTek phones with Android 12 or later whose
+NeuroPilot adapters open in the app — the last four only when the app sets
+`qualcomm_npu`, `google_tensor_npu` or `mediatek_npu`;
 anywhere else it is refused, because nothing there can run it (on macOS the
 native runtime was measured accepting `npu` anyway, which made `activeBackend`
 report an NPU that does not exist on the machine). On Windows the check is per
@@ -262,9 +297,9 @@ excludes — the GPU for the published Gemma 4 and Gemma 3n audio encoders,
 which declare cpu — is refused. `model.activeVisionBackend` and
 `model.activeAudioBackend` report the choice (null for a bundle without that
 encoder). A refusal is a `LiteRtLmBundleException` whose `problem`
-says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a MediaTek bundle,
-a Qualcomm one on Windows or a Google Tensor one off Android), thrown before any engine
-exists. The device's SoC is not read up front: a bundle built for another
+says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a bundle of an NPU
+vendor this package does not know, a Qualcomm one on Windows or a Google Tensor
+or MediaTek one off Android), thrown before any engine exists. The device's SoC is not read up front: a bundle built for another
 Qualcomm SoC fails at engine create, and the error names the SoC it was built
 for.
 
@@ -293,6 +328,22 @@ try {
 
 An NPU the device cannot reach is refused before any engine exists, and so is a
 bundle compiled for an NPU there, with or without the flag.
+
+### Native log level
+
+`LiteRtLmEngine(nativeLogLevel: LiteRtLmLogLevel.verbose)` (1.16.0) sets the
+minimum severity of LiteRT-LM's own native log before each engine is created
+(`litert_lm_set_min_log_level`). The level is process-wide; null leaves the
+level the process has, LiteRT-LM's default until an engine sets one. `silent`
+silences LiteRT-LM's library, its absl, LiteRT and TFLite logging included
+(upstream `SetMinLogSeverity`); other native libraries keep their own logs (the
+GPU accelerator, the NPU dispatch, drivers, the separately loaded `LiteRt`
+library). Native platforms only: the web engine accepts it and ignores it.
+Above `info`, debug builds lose the INFO lines from which a failed create names
+the backend a model requires. On Windows,
+when the app's output is redirected (`app.exe 2> err.log`), the lines follow
+the redirect from 1.17.0; before that the Flutter runner's `AttachConsole` sent
+them to the parent's console.
 
 ### Inspecting a model file
 

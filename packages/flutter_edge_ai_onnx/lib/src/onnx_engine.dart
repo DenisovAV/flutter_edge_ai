@@ -24,8 +24,9 @@ import 'onnx_inference_model.dart';
 /// installs and launches on a real iPhone, and generation runs — the
 /// `@executable_path`-anchored dlopen resolves both `Oga*` and `OrtGetApiBase`
 /// from the single self-contained genai xcframework, `OgaCreateModel` +
-/// streamed generation succeed. Windows ARM64 is archive-backed; its hardware
-/// smoke validation is pending. See `hook/build.dart`'s platform table.
+/// streamed generation succeed. Windows ARM64 also passed generation,
+/// embeddings, and an example build on a Windows 11 ARM64 runner (Azure
+/// Cobalt 100). See `hook/build.dart`'s platform table.
 ///
 /// Mirrors [LiteRtLmEngine] from `flutter_edge_ai_litertlm`: a pure factory
 /// that core probes via [canHandle] and calls to build a bare
@@ -73,8 +74,8 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
     // Keep in lockstep with hook/build.dart's `_archivesFor` table.
     // macOS/Linux/Windows x64/Android arm64 are device-verified (Android on
     // FTL Pixel 8 Pro 2026-08-19: ~10.4 tok/s, ~3.74 GB peak RSS, flat-APK
-    // co-location with no ORT_LIB_PATH fix needed); Windows arm64 is
-    // archive-backed, hardware smoke validation pending. `dart:ffi`'s `Abi`
+    // co-location with no ORT_LIB_PATH fix needed); Windows arm64 passed
+    // generation and embeddings on a Windows 11 ARM64 runner. `dart:ffi`'s `Abi`
     // has no
     // separate simulator ABI: an arm64 iOS Simulator on Apple Silicon
     // reports the SAME `Abi.iosArm64` as a real device (verified — the

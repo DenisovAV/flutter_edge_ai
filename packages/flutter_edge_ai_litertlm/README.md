@@ -42,13 +42,13 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.5.0`,
-`flutter_edge_ai_litertlm: ^1.16.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.5.1`,
+`flutter_edge_ai_litertlm: ^1.17.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
@@ -235,7 +235,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in), MediaTek MT6991/MT6993 (Android, opt-in, not run on device yet) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -559,7 +559,8 @@ final note = await embedder.embed(
 
 `EmbeddingModel.activeBackend` is `cpu` on native and `gpu` for EmbeddingGemma
 2 on the web, and `npu` for an EmbeddingGemma 2 per-SoC bundle on a Google
-Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), Qualcomm NPU
+Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), MediaTek NPU
+([below](#mediatek-npu-on-android-opt-in)), Qualcomm NPU
 ([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
 ([below](#embeddinggemma-2-on-an-intel-npu-windows)); any other
 `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
@@ -603,9 +604,12 @@ assert(embedder.activeBackend == PreferredBackend.npu);
   verified by us, Tensor G5/G6 runs on matching Pixels in apps built with
   `google_tensor_npu` ([below](#google-tensor-npu-on-android-opt-in)), the
   G6 270m and 440m run on a Pixel 11, Intel PTL runs on Windows
-  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek is
-  refused (no dispatch for it ships). What a bundle is compiled for is read
-  from the bundle itself, not from its name.
+  ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek
+  MT6991/MT6993 are accepted in apps built with `mediatek_npu`
+  ([below](#mediatek-npu-on-android-opt-in)) but not run on such a device
+  yet.
+  What a bundle is compiled for is read from the bundle itself, not from its
+  name.
 - **Fast, and close to — not equal to — the CPU vectors.** Measured on an
   SM8650 (Galaxy S24): a text in about 9 ms (53 ms on its CPU), an image in
   about 0.31 s, the 270m loaded in 0.85 s. Against the CPU bundle, the cosine is
@@ -660,6 +664,17 @@ final embedder = await FlutterEdgeAi.getActiveEmbedder(
 - **The load checks the NPU.** It embeds one test text and refuses unless it
   gets a valid vector, so a PC without an Intel NPU, or one the stack cannot
   drive, gets an `EmbeddingLoadException` rather than wrong vectors.
+- **Measured on a Panther Lake PC** (2026-10-21, OpenVINO 2026.4.1): the 270m
+  loads in about 0.9 s (the generic bundle: 0.3 s on the same PC's CPU) and
+  returns 768-dimensional vectors; a matching pair scores cos 0.913 (0.914 on
+  the CPU), an unrelated one 0.629 (0.628). These are similarities within
+  each backend: how close an NPU vector is to the CPU one is not measured. The
+  440m is not measured.
+- **A weight bank in `%TEMP%`.** The load copies the bundle's weights to
+  `litert_ov_bank_<hex>.bin` (74.5 MB for the 270m) and the close deletes it.
+  From 1.17.0 the embedder marks it as its own while it is open, so the next
+  Intel NPU load can delete one an app left behind; see
+  [Windows NPU](https://flutteredge.ai/docs/desktop).
 - The same rules as on Qualcomm: refused without `npu`, refused on any other
   platform (an Intel bundle on Android or Linux, a Qualcomm bundle on Windows),
   refused with the reason when `LiteRtDispatch.dll` is not beside the
@@ -804,32 +819,48 @@ Native platforms need no web setup.
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ FFI (GPU via OpenCL; NPU on Qualcomm or Google Tensor G5/G6 — both opt-in, below) |
+| Android  | ✅ FFI (GPU via OpenCL; NPU on Qualcomm, Google Tensor G5/G6 or MediaTek — each opt-in, below) |
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
 | Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
-The native library (`native-v0.18.0-f`, LiteRT-LM v0.18.0) is fetched at build
+The native library (`native-v0.18.0-g`, LiteRT-LM v0.18.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
-entitlements, and on macOS a `post_install` block in `macos/Podfile`, without
-which the first model load fails with
-`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. See
+entitlements, and on macOS a `post_install` block in `macos/Podfile`, with Swift
+Package Manager turned off for an app that had no Podfile ([Desktop → macOS](https://flutteredge.ai/docs/desktop#macos)).
+Without them the first model load fails; the error contains
+`flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names the fix
+([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)). See
 [platform setup](https://flutteredge.ai/docs/installation#3-platform-specific-setup).
 
 `PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and
 only on Windows, on Google Tensor G5/G6 Pixels with Android 16 or later (not a
-`BP2A` build), on
+`BP2A` build), on MediaTek Android devices (Android 12 or later) whose
+NeuroPilot adapters open in the app, on
 Android devices with Qualcomm FastRPC (`libcdsprpc.so`), and on Qualcomm Linux
-arm64 boards; the Tensor and Qualcomm paths only in apps that opted in (below). A
+arm64 boards; the Tensor, MediaTek and Qualcomm paths only in apps that opted
+in (below). A
 generic bundle falls back to GPU, then CPU, and prints why; a bundle compiled
 for an NPU is refused elsewhere ([Where a model runs](#where-a-model-runs)).
 Windows has no device probe: a bundle compiled for the Intel NPU is not refused
 on a PC without one, and what LiteRT does then is not measured.
 
-Run a Gemma 4 bundle on the NPU: a Gemma 3 bundle drops every prefill chunk
-after the first, with no error, and answers from the start of the prompt alone
+Intel's Gemma 4 12B for Panther Lake needs 1.17.0: its NPU blobs carry metadata
+2.7, which the OpenVINO 2026.3 of earlier releases refuses; 1.17.0 ships
+OpenVINO 2026.4.1. A bundle whose NPU blobs carry no weights makes the dispatch
+copy them to `%TEMP%\litert_ov_bank_<hex>.bin` at every load (5.55 GB for the
+12B); from 1.17.0 the next Intel NPU load deletes the banks an exited 1.17.0
+app left behind, and banks no app claimed (an older release, the LiteRT-LM CLI)
+once the PC has restarted since they were written, and prints how much it
+freed. See
+[Desktop → Windows NPU](https://flutteredge.ai/docs/desktop).
+
+Run a Gemma 4 bundle on the NPU (none is published for MediaTek: whether its Gemma 3 bundles
+keep their chunks is not measured): most Gemma 3 bundles drop every prefill chunk
+after the first, with no error, and answer from the start of the prompt alone;
+of the published Qualcomm 1B files only `…_sm8850` keeps them
 ([LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508)).
 
 On macOS, App Nap throttles an app that is in the background: after about a
@@ -875,7 +906,8 @@ chosen, and are null for a bundle without that encoder.
 A refusal is a `LiteRtLmBundleException` with a `problem`
 (`incomplete`, `wrongBackend`, `unsupportedNpu` for a text model, or an encoder
 the load turns on, compiled for an NPU this package has no dispatch for here —
-MediaTek, a Qualcomm bundle on Windows, or a Google Tensor bundle off Android —
+a bundle of an NPU vendor this package does not know, a Qualcomm bundle on
+Windows, or a Google Tensor or MediaTek bundle off Android —
 or for an NPU encoder next to a text model that is not on the NPU) and a
 message that says
 what to do; no engine is created. An NPU bundle, or an encoder the load turns
@@ -924,8 +956,14 @@ closes it. Engine creations run one at a time. Measured on macOS only; see
 sets the minimum severity of LiteRT-LM's own native log before each engine
 is created (`litert_lm_set_min_log_level`). The level is
 process-wide; null leaves the level the process has, LiteRT-LM's default until
-an engine sets one. `silent` silences LiteRT-LM, not the other native loggers
-in the process.
+an engine sets one. `silent` silences LiteRT-LM's library, its absl, LiteRT and TFLite logging included
+(upstream `SetMinLogSeverity`); other native libraries keep their own logs (the
+GPU accelerator, the NPU dispatch, drivers, the separately loaded `LiteRt`
+library). Native platforms only: the web engine accepts it and ignores it.
+Above `info`, debug builds lose the INFO lines from which a failed create names
+the backend a model requires. On Windows, when the app's output is redirected
+(`app.exe 2> err.log`), the lines follow the redirect from 1.17.0; before
+that the Flutter runner's `AttachConsole` sent them to the parent's console.
 
 ### Inspecting a model file
 
@@ -980,6 +1018,51 @@ E2B text, images and audio on the NPU, and EmbeddingGemma 2 270m and 440m (text
 and an image). Not run yet: a
 Tensor G5 and a release-signed build. On one Pixel the EdgeTPU service logged
 that the app is not on its allowlist; that did not stop the debug run.
+
+### MediaTek NPU on Android (opt-in)
+
+A bundle compiled ahead of time for a MediaTek SoC (`…_mt6991.litertlm`,
+`…_MediaTek_MT6991.litertlm`; its `LiteRtStamp` names `MediaTek` and the SoC,
+the file name is not read) runs on the APU of a phone with that SoC, Android
+12 or later: LiteRT's own requirement (a `Mediatek` or `MTK` SoC
+manufacturer), checked before any engine, together with whether one of the
+phone's NeuroPilot adapters opens in the app. The load is NPU-only: a device
+that cannot run it is refused, never moved to the GPU or the CPU. A generic
+bundle is not compiled on the device.
+
+The dispatch is opt-in:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_edge_ai_litertlm:
+      mediatek_npu: true
+```
+
+With it the build fetches Google's `litert-npu-runtime-mediatek` 2.3.0 AAR from
+Google Maven (checksum-pinned; `mediatek_npu_maven_url` names a mirror,
+`mediatek_npu_aar` a downloaded copy) and bundles its
+`libLiteRtDispatch_MediaTek.so` (Apache 2.0), about 330 KB, into every Android
+arm64 build of the app. It is not in this package's release: building it needs
+MediaTek's NeuroPilot SDK, whose licence lets it reach users only inside an
+application. The NeuroPilot runtime it drives is part of the phone's system,
+is never redistributed, and core declares its libraries as optional; a phone
+whose vendor does not expose them to apps is refused with the reason. An app
+can set this with the other opt-ins: the bundle's stamp picks the vendor.
+The AAR's `LICENSE` and `THIRD_PARTY_NOTICE.txt` stay in the hook's cache (the
+build prints where); an app that lists the open-source licences it ships should
+add them.
+
+Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989, Android 16) with a debug
+build: Gemma 3 1B (`…_mt6989`) generates on the NPU. Bundles for another SoC
+are refused when the engine is created, and nothing else is tried: Gemma 3 1B
+`…_mt6991` and EmbeddingGemma 2 270m `…_MT6991` (NeuroPilot: unsupported target
+`EDPA_1_2`), EmbeddingGemma 2 440m `…_MT6993` (Neuron SDK major version
+mismatch). Qwen3 0.6B `…mediatek.mt6993` fails before the NPU, on its tokenizer
+(`piece must not include null character`, LiteRT-LM#3865). Not run yet: a
+bundle on an MT6991/MT6993 phone, and a release-signed build. Google publishes
+Gemma 3 1B (MT6989, MT6991, MT6993), Gemma 3 270M (MT6991, MT6993), Qwen3 0.6B (MT6993) and EmbeddingGemma 2
+(MT6991, MT6993) bundles; Gemma 4 has none.
 
 ### Qualcomm NPU on Android and Linux arm64 (opt-in)
 
@@ -1078,7 +1161,8 @@ target instead of failing, so an app that uses another engine still builds.
 
 What works today: MediaPipe has no desktop engine. The ONNX engine
 (`flutter_edge_ai_onnx`, ONNX models, not `.litertlm`) bundles Windows ARM64
-archives but has not run on ARM64 hardware yet, and the other option is to
+archives and passed generation and embedding smoke tests on a Windows 11 ARM64
+runner. The other option is to
 build the app for x64, which runs under Windows x64 emulation. See
 [#326](https://github.com/DenisovAV/flutter_edge_ai/issues/326).
 

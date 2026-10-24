@@ -86,8 +86,10 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
 import '../bundle/litertlm_bundle_info.dart' show npuVendorOf;
+import '../ffi/intel_weight_banks.dart';
 import '../ffi/litert_lm_embedding_bindings.dart';
 import '../ffi/litert_lm_library.dart';
+import '../ffi/npu_vendor_host.dart' show npuStagesWeightBanks;
 import '../ffi/sigprof_mask.dart';
 import '../npu_stacks.dart' show NpuVendor;
 import 'embedding_parts.dart';
@@ -219,6 +221,9 @@ String liteRtLmNpuProbeFailureCauses(LiteRtLmNpuTarget target) =>
       NpuVendor.googleTensor =>
         'on another Tensor generation (G5 and G6 bundles are not '
             'interchangeable), or without a compatible Pixel system runtime',
+      NpuVendor.mediatek =>
+        'on another SoC, or with a NeuroPilot runtime on this device that '
+            "does not match the bundle's NeuroPilot SDK version",
       // The placement refuses a bundle of a vendor with no dispatch here
       // before any probe embed.
       null => throw StateError('$target: no NPU vendor of this package'),
@@ -323,6 +328,10 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   LiteRtLmEmbeddingBindings? _bindings;
   Pointer<LiteRtLmEmbeddingEngine> _engine = nullptr;
   Pointer<LiteRtLmEmbeddingOptions> _options = nullptr;
+
+  /// The Intel NPU weight banks this engine's create wrote, held until the
+  /// engine is deleted (intel_weight_banks.dart).
+  IntelWeightBankClaim? _banks;
   int _dimension = 0;
   int _maxInputTokens = 0;
   bool _images = false;
@@ -618,6 +627,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     if (engine != nullptr) {
       _npuCall(() => b.litert_lm_embedding_engine_delete(engine));
     }
+    // After the delete, which removes the banks the dispatch wrote.
+    _banks?.release();
+    _banks = null;
   }
 
   bool get _onNpu => _config.npuTarget != null;
@@ -1133,9 +1145,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         //
         // Intel (Windows): the LLM path also sets `use_hw_masking_for_npu`
         // false there, because the kWH mask method failed a CFG check
-        // (0xc0000409) on Intel's NPU. The embedding settings have no such
-        // setter, and whether the EmbeddingEngine needs it is not established
-        // on Intel NPU hardware.
+        // (0xc0000409) on Intel's NPU. LiteRT-LM's embedding engine never
+        // reads that flag (only the LLM NPU executor does), and EmbeddingGemma
+        // 2 270m `_Intel_PTL` runs without it (Panther Lake, 2026-10-21).
         final dir = dispatchDir.toNativeUtf8(allocator: _alloc);
         try {
           b
@@ -1155,6 +1167,12 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
           _alloc.free(dir);
         }
       }
+      // The Intel dispatch writes the bundle's weights to a bank in the temp
+      // directory during the create (74.5 MB for the 270m): the ones new
+      // after it are this engine's.
+      final vendor = _onNpu ? npuVendorOf(_config.npuTarget!) : null;
+      final claimBanks = vendor != null && npuStagesWeightBanks(vendor);
+      final banksBefore = claimBanks ? listIntelWeightBanks() : null;
       final (:engine, :code, :message) = _npuCall(() {
         b.litert_lm_clear_last_error();
         final engine = b.litert_lm_embedding_engine_create(settings);
@@ -1175,6 +1193,12 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
                     '$message',
           engine: liteRtLmEngineTag,
           nativeCode: code == _statusOk ? null : code,
+        );
+      }
+      if (claimBanks) {
+        _banks = IntelWeightBankClaim.newSince(
+          banksBefore,
+          listIntelWeightBanks(),
         );
       }
       return engine;

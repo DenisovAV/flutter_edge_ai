@@ -678,8 +678,9 @@ void main() {
 
       expect(listenerCalls, 1);
       expect(onCloseCalls, 1);
-      expect(
-        () => tts.synthesize(_text),
+      // No closure around the call: the error must come through the Future.
+      await expectLater(
+        tts.synthesize(_text),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
@@ -696,6 +697,48 @@ void main() {
       expect(onCloseCalls, 1);
       expect(printed.join('\n'), contains('exited unexpectedly'));
       expect(linesOf(log), ['load'], reason: 'it died idle, before a dispose');
+    });
+
+    test('synthesize on a closed synthesizer fails through its Future, never '
+        'synchronously', () async {
+      final log = logFor('synthesizer_closed_synthesize');
+      final tts = await synthesizer(_Mode.fast, log);
+      await tts.close();
+
+      // The call itself must return: a caller that chains handlers instead
+      // of awaiting inside a `try` never sees a synchronous throw.
+      final future = tts.synthesize(_text);
+      await expectLater(
+        future,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'LiteRtSpeechSynthesizer is closed; create a new instance to use '
+                'it',
+          ),
+        ),
+      );
+      final caught = Uint8List(0);
+      expect(
+        await tts.synthesize(_text).catchError((Object _) => caught),
+        same(caught),
+      );
+      expect(linesOf(log), isNot(contains('run')));
+    });
+
+    test('synthesize sends its request during the call, before a close() '
+        'right after it', () async {
+      final log = logFor('synthesizer_send_order');
+      final tts = await synthesizer(_Mode.fast, log);
+
+      final result = outcomeOf(tts.synthesize(_text));
+      await tts.close();
+
+      // The worker had the request before it began closing: it ran it or
+      // turned it away itself. "TtsWorker is closed" would mean the request
+      // reached the worker only after close() had started.
+      expect(await result, anyOf(equals(_pcm), closedBeforeRun('TtsWorker')));
     });
 
     test('a caller that retries from its error handler finds the synthesizer '

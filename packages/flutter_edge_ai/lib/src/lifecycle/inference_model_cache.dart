@@ -145,6 +145,7 @@ class InferenceModelCache {
         await _closeGate.closeAndWait(
           cached.model,
           label: _name(cached.identity),
+          tag: cached.identity,
         );
         continue;
       }
@@ -185,10 +186,12 @@ class InferenceModelCache {
   /// of loading the file being removed. A model built from other files stays
   /// open.
   ///
-  /// A close that throws is reported and the removal goes on, as for a
-  /// rebuild ([ModelCloseGate.closeAndWait]); a close still running at the
-  /// gate's deadline throws [TimeoutException] before [remove] runs. Not
-  /// reentrant: a [remove] that calls [obtain] waits for itself forever.
+  /// A caller whose build of the file was in flight gets the model, closed
+  /// right after. A close that throws is reported and the removal goes on, as
+  /// for a rebuild ([ModelCloseGate.closeAndWait]); a close of this file's
+  /// model still running at the gate's deadline throws [TimeoutException]
+  /// before [remove] runs. Not reentrant: a [remove] that calls [obtain]
+  /// waits for itself forever.
   Future<void> closeForRemoval(
     String filename,
     Future<void> Function() remove,
@@ -221,10 +224,14 @@ class InferenceModelCache {
         await _closeGate.closeAndWait(
           cached.model,
           label: _name(cached.identity),
+          tag: cached.identity,
         );
-      } else {
-        // A model still closing may be this file's: a rebuild started its
-        // close and forgot it.
+      } else if (_closeGate.isClosingWhere(
+        (tag) => tag is InferenceModelIdentity && _builtFrom(tag, filename),
+      )) {
+        // A rebuild started closing this file's model and forgot it. A close
+        // of another file's model is not waited for: it has nothing to do
+        // with this removal, and its deadline would fail it.
         await _closeGate.wait();
       }
       await remove();
@@ -261,7 +268,11 @@ class InferenceModelCache {
       // learn the model went away. Close it rather than leave its weights
       // resident with no owner, then fail the request with the reason.
       try {
-        await _closeGate.closeAndWait(model, label: _name(identity));
+        await _closeGate.closeAndWait(
+          model,
+          label: _name(identity),
+          tag: identity,
+        );
       } on TimeoutException {
         // The close keeps running and the gate holds the next caller until
         // it ends; this caller's error is the listener's, not the wait's.

@@ -168,17 +168,18 @@ void main() {
     }
   });
 
-  testWidgets('uninstalling during a generation ends the generation', (
+  testWidgets('uninstalling during a generation stops the generation', (
     _,
   ) async {
     await registerTestEngines();
     const name = 'uninstall-streaming.litertlm';
     final (_, copy) = await _activeCopy(name);
     final model = await _active();
-    final chat = await model.createChat(modelType: ModelType.functionGemma);
-    StreamSubscription<ModelResponse>? subscription;
+    // A session, the path every model's generation takes.
+    final session = await model.createSession();
+    StreamSubscription<String>? subscription;
     try {
-      await chat.addQuery(
+      await session.addQueryChunk(
         const Message(
           text: 'Count from 1 to 300, one number per line.',
           isUser: true,
@@ -187,7 +188,7 @@ void main() {
       var chunks = 0;
       final first = Completer<void>();
       final ended = Completer<String>();
-      subscription = chat.generateChatResponseAsync().listen(
+      subscription = session.getResponseAsync().listen(
         (_) {
           chunks++;
           if (!first.isCompleted) first.complete();
@@ -201,28 +202,34 @@ void main() {
       );
       await first.future.timeout(const Duration(seconds: 60));
 
-      final chunksAtUninstall = chunks;
+      final chunksBefore = chunks;
       final watch = Stopwatch()..start();
       final uninstall = await _outcome(
         () => FlutterEdgeAi.uninstallModel(name),
       );
       final uninstallMs = watch.elapsedMilliseconds;
+      final chunksAtReturn = chunks;
       final end = await ended.future.timeout(
         const Duration(seconds: 60),
         onTimeout: () => 'no end within 60 s',
       );
       debugPrint(
         '[b88] streaming: uninstall=${_describe(uninstall)} in ${uninstallMs}ms '
-        'chunks at uninstall=$chunksAtUninstall, at end=$chunks end=$end '
-        'copyExists=${copy.existsSync()} isClosed=${model.isClosed}',
+        'chunks before=$chunksBefore at return=$chunksAtReturn '
+        'at end=$chunks end=$end copyExists=${copy.existsSync()} '
+        'isClosed=${model.isClosed}',
       );
       expect(uninstall, isNull);
       expect(copy.existsSync(), isFalse);
       expect(model.isClosed, isTrue);
       expect(end, isNot('no end within 60 s'));
+      // Stopped by the close the uninstall waited for, not run to its end:
+      // left open, the model went on for tens of chunks after the uninstall
+      // returned (macOS 42, Windows 19).
+      expect(chunks - chunksAtReturn, lessThanOrEqualTo(1));
     } finally {
       await subscription?.cancel();
-      await _outcome(chat.close);
+      await _outcome(session.close);
       await model.close();
       await _cleanUp(name, [copy.path]);
     }

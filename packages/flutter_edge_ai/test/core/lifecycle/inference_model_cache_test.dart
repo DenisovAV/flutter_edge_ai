@@ -431,6 +431,100 @@ void main() {
       expect(next.isClosed, isFalse);
       expect(built, ['a/1024', 'a/1024']);
     });
+
+    test('a close of another file\'s model does not hold the removal, even '
+        'past its deadline', () async {
+      final cache = InferenceModelCache(
+        ModelCloseGate(const Duration(milliseconds: 50)),
+      );
+      final teardown = Completer<void>();
+      await cache.obtain(
+        () => request(
+          'a',
+          build: () async => _Model(onClose: () => teardown.future),
+        ),
+      );
+      // Another model is active: the rebuild starts closing 'a', which hangs.
+      await expectLater(
+        cache.obtain(() => request('b')),
+        throwsA(isA<TimeoutException>()),
+      );
+
+      var removed = false;
+      await cache.closeForRemoval('c.litertlm', () async => removed = true);
+
+      expect(removed, isTrue);
+      teardown.complete();
+    });
+
+    test('removals run one at a time, and builds wait for the last', () async {
+      final cache = InferenceModelCache();
+      await cache.obtain(() => request('a'));
+      final first = Completer<void>();
+      final second = Completer<void>();
+      final events = <String>[];
+      final removal1 = cache.closeForRemoval('x.litertlm', () async {
+        events.add('1 start');
+        await first.future;
+        events.add('1 end');
+      });
+      final removal2 = cache.closeForRemoval('y.litertlm', () async {
+        events.add('2 start');
+        await second.future;
+        events.add('2 end');
+      });
+      await pumpEventQueue();
+      expect(events, ['1 start']);
+
+      first.complete();
+      await removal1;
+      await pumpEventQueue();
+      expect(events, ['1 start', '1 end', '2 start']);
+      final next = cache.obtain(() => request('a', maxTokens: 2048));
+      await pumpEventQueue();
+      expect(built, ['a/1024'], reason: 'the second removal holds builds');
+
+      second.complete();
+      await removal2;
+      await next;
+      expect(built, ['a/1024', 'a/2048']);
+    });
+
+    test(
+      'a caller asking for the model being built while its file is '
+      'removed waits for the removal instead of sharing that build',
+      () async {
+        final cache = InferenceModelCache();
+        final gate = Completer<void>();
+        var active = 'a';
+        final building = cache.obtain(
+          () => request(
+            'a',
+            build: () async {
+              await gate.future;
+              built.add('a/1024');
+              return _Model();
+            },
+          ),
+        );
+        await pumpEventQueue();
+        final removal = cache.closeForRemoval(
+          'a.litertlm',
+          () async => active = 'b',
+        );
+        await pumpEventQueue();
+        final sharer = cache.obtain(() => request(active));
+        await pumpEventQueue();
+
+        gate.complete();
+        final first = await building;
+        await removal;
+        final second = await sharer;
+
+        expect(second, isNot(same(first)));
+        expect(built, ['a/1024', 'b/1024']);
+      },
+    );
   });
 
   test('every knob the cache compares reaches the engine', () {

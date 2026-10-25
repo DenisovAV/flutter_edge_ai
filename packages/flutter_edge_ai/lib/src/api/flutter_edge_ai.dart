@@ -1113,10 +1113,14 @@ class FlutterEdgeAi {
   /// throws [NoActiveModelError] instead of loading a file that is gone.
   ///
   /// The model [getActiveModel] built from the file is closed first, with its
-  /// sessions and chats: a generation running on it ends, and a later call on
-  /// it throws. A [getActiveModel] call made during the uninstall waits for
-  /// it. A model built from other files stays open, and so do the models
-  /// [openModel] opened: they are the caller's to close.
+  /// sessions and chats: a generation running on it stops early, with or
+  /// without an error depending on the engine, and a later call on it throws.
+  /// A [getActiveModel] call whose build of that model is still running gets
+  /// it, closed right after; one made once the uninstall has started closing
+  /// waits for the uninstall to end. A model built from other files stays
+  /// open, and so do the models [openModel] opened: they are the caller's to
+  /// close. When that close is still running after 60 seconds, the uninstall
+  /// throws `TimeoutException` before anything is deleted, and can be retried.
   ///
   /// Parameters:
   /// - [modelId]: Model filename to uninstall

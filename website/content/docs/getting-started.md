@@ -529,9 +529,9 @@ also clears the active inference identity: `hasActiveModel()` is false and
 of a deleted file.
 
 It first closes the model `getActiveModel()` built from that file, with its
-sessions and chats: a generation running on it ends with an error, and later
-calls on it throw. Models you opened with `openModel()` stay open; close them
-yourself:
+sessions and chats: a generation running on it stops early, with or without an
+error depending on the engine, and later calls on it throw. Models you opened
+with `openModel()` stay open; close them yourself:
 
 ```dart
 // Closes the model getActiveModel() built from this file, deletes the

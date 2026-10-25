@@ -43,7 +43,7 @@ other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your 
 uses both formats.
 
 Depend on both packages (`flutter_edge_ai: ^2.5.1`,
-`flutter_edge_ai_litertlm: ^1.17.0`) and install `.litertlm` files with
+`flutter_edge_ai_litertlm: ^1.18.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 

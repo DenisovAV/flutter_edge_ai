@@ -17,7 +17,9 @@ import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_loader.dart';
 
 class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
-  FlutterEdgeAiWeb();
+  FlutterEdgeAiWeb() {
+    attachInferenceModelCache(this, _modelCache);
+  }
 
   static void registerWith(Registrar registrar) {
     FlutterEdgeAiPlugin.instance = FlutterEdgeAiWeb();

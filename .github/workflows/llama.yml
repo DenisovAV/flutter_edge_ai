@@ -239,6 +239,33 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Read the pinned embedding fixture digest
+        id: embedding-fixture
+        run: |
+          python - <<'PYTHON'
+          import json, os, pathlib
+          spec = json.loads(pathlib.Path('packages/flutter_edge_ai_llama/tool/embedding_model.json').read_text())
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"sha256={spec['sha256']}\n")
+          PYTHON
+      - name: Cache the pinned embedding fixture
+        id: embedding-fixture-cache
+        uses: actions/cache@v4
+        with:
+          path: packages/flutter_edge_ai_llama/embedding.gguf
+          key: gguf-embedding-${{ runner.os }}-${{ steps.embedding-fixture.outputs.sha256 }}
+      - name: Fetch the pinned embedding fixture
+        if: steps.embedding-fixture-cache.outputs.cache-hit != 'true'
+        run: |
+          python - <<'PYTHON'
+          import json, pathlib, urllib.request
+          package = pathlib.Path('packages/flutter_edge_ai_llama')
+          spec = json.loads((package / 'tool/embedding_model.json').read_text())
+          with urllib.request.urlopen(spec['url'], timeout=120) as source, (package / 'embedding.gguf').open('wb') as output:
+              while block := source.read(1024 * 1024):
+                  output.write(block)
+          # verify_embeddings.py checks size and SHA-256 before running.
+          PYTHON
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -247,4 +274,10 @@ jobs:
           ram-size: 4096M
           disk-size: 4096M
           disable-animations: true
-          script: cd "$PACKAGE_DIRECTORY" && python tool/verify.py device --device emulator-5554 --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf --cpu-threads 1
+          # The connector smoke, then the GGUF embedding gates: automatic
+          # placement loads on the CPU without the "selected CPU" warning, and
+          # an explicit GPU request without fallback is refused for Android.
+          script: |
+            cd "$PACKAGE_DIRECTORY" && python tool/verify.py device --device emulator-5554 --model-url https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q8_0.gguf --cpu-threads 1
+            cd "$PACKAGE_DIRECTORY" && python tool/verify_embeddings.py --model-path embedding.gguf --backend auto --device emulator-5554
+            cd "$PACKAGE_DIRECTORY" && python tool/verify_embeddings.py --model-path embedding.gguf --backend gpu --device emulator-5554

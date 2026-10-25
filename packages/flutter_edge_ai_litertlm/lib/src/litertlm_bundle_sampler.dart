@@ -23,15 +23,29 @@ export 'litertlm_flatbuffer.dart' show litertlmHeaderEnd;
 /// byte 32 to the header end a `LiteRTLMMetaData` flatbuffer listing the
 /// sections; the `LlmMetadataProto` section is a serialized
 /// `litert.lm.proto.LlmMetadata`.
-Future<SamplingParams> readBundleSampler(String modelPath) async {
+Future<SamplingParams> readBundleSampler(String modelPath) async =>
+    (await readBundleMetadata(modelPath)).sampler;
+
+/// What [readBundleSampler] reads, plus whether the bundle's `LlmMetadata`
+/// declares an output channel ([llmMetadataDeclaresChannel]). A bundle with
+/// no `LlmMetadata` section ships neither.
+Future<({SamplingParams sampler, bool declaresChannel})> readBundleMetadata(
+  String modelPath,
+) async {
   final file = await File(modelPath).open();
   try {
     final headerEnd = litertlmHeaderEnd(await _readExactly(file, 0, 32));
     final header = await _readExactly(file, 32, headerEnd - 32);
     final section = llmMetadataRange(header);
-    if (section == null) return const SamplingParams();
+    if (section == null) {
+      return (sampler: const SamplingParams(), declaresChannel: false);
+    }
     final (begin, end) = section;
-    return samplerFromLlmMetadata(await _readExactly(file, begin, end - begin));
+    final metadata = await _readExactly(file, begin, end - begin);
+    return (
+      sampler: samplerFromLlmMetadata(metadata),
+      declaresChannel: llmMetadataDeclaresChannel(metadata),
+    );
   } finally {
     await file.close();
   }
@@ -43,7 +57,11 @@ Future<SamplingParams> readBundleSampler(String modelPath) async {
 /// Any other error is a bug in this reader and is thrown.
 Future<BundleSamplerRead> tryReadBundleSampler(String modelPath) async {
   try {
-    return BundleSamplerRead(await readBundleSampler(modelPath));
+    final metadata = await readBundleMetadata(modelPath);
+    return BundleSamplerRead(
+      metadata.sampler,
+      declaresChannel: metadata.declaresChannel,
+    );
   } on Object catch (e, st) {
     if (e is! FileSystemException &&
         e is! FormatException &&
@@ -57,16 +75,23 @@ Future<BundleSamplerRead> tryReadBundleSampler(String modelPath) async {
 /// The outcome of reading a bundle's sampler: [sampler], empty when the bundle
 /// ships none, or the [error] that stopped the read.
 final class BundleSamplerRead {
-  const BundleSamplerRead(this.sampler) : error = null;
+  const BundleSamplerRead(this.sampler, {this.declaresChannel}) : error = null;
 
   const BundleSamplerRead.failed(String this.error)
-    : sampler = const SamplingParams();
+    : sampler = const SamplingParams(),
+      declaresChannel = null;
 
   const BundleSamplerRead.notRead()
     : sampler = const SamplingParams(),
-      error = null;
+      error = null,
+      declaresChannel = null;
 
   final SamplingParams sampler;
+
+  /// Whether the bundle declares an output channel, which LiteRT-LM's
+  /// thinking budget caps; null when the bundle was not read, or the read
+  /// failed.
+  final bool? declaresChannel;
 
   /// Why the read failed, with its type and stack; null when it worked.
   final String? error;
@@ -138,6 +163,20 @@ SamplingParams samplerFromLlmMetadata(Uint8List llmMetadata) {
       topP: _shortestFloat32(p),
       seed: seed,
     );
+  } on RangeError {
+    throw const FormatException('LlmMetadata proto is truncated');
+  }
+}
+
+/// Whether a serialized `LlmMetadata` declares an output channel
+/// (`LlmMetadata.channels = 8`). LiteRT-LM caps the thinking of the first one
+/// (`runtime/conversation/conversation.cc` at b2f686e2); with none, a thinking
+/// budget caps nothing.
+bool llmMetadataDeclaresChannel(Uint8List llmMetadata) {
+  try {
+    return _ProtoReader(
+      llmMetadata,
+    ).fields().any((f) => f.number == 8 && f.bytes != null);
   } on RangeError {
     throw const FormatException('LlmMetadata proto is truncated');
   }

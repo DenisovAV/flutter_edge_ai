@@ -124,6 +124,9 @@ From the package directory:
 ```sh
 python3 tool/verify_embeddings.py --model-path /absolute/embeddinggemma-2-Q8_0.gguf --backend cpu
 python3 tool/verify_embeddings.py --model-path /absolute/embeddinggemma-2-Q8_0.gguf --backend gpu
+# Android: a device id from `adb devices`
+python3 tool/verify_embeddings.py --model-path /absolute/embeddinggemma-2-Q8_0.gguf --backend auto --device emulator-5554
+python3 tool/verify_embeddings.py --model-path /absolute/embeddinggemma-2-Q8_0.gguf --backend gpu --device emulator-5554
 ```
 
 The runner checks size/SHA-256, uses canonical `flutter test -d <desktop>` and
@@ -132,6 +135,10 @@ enabled: a loopback server lets core install a verified app-owned model copy.
 The test covers dimension, finite unit vectors, retrieval ranking, all task
 prefixes, exact overflow, cancellation, refusal preserving a cached model and
 three close/reload cycles; the GPU lane also switches CPU → GPU → automatic.
+On Android the fixture is served over `adb reverse`; automatic placement must
+load on the CPU without the "selected CPU" warning (read from logcat, since
+the load runs on core's embedding worker isolate) and `--backend gpu` must be
+refused naming Android. The CPU golden floor there is 0.998 instead of 0.999.
 No fixture means no qualification. The model is not included in the archive.
 
 Multimodal GGUF embeddings remain a later contribution using the same

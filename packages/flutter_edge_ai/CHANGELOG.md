@@ -1,3 +1,8 @@
+## 2.5.3
+- `uninstallModel` closes the model built from that file; `getModelPath` follows the file's record (#723).
+- Web: no false "image support not implemented" warning for every engine (#719).
+- Skills: thinking budget, EmbeddingGemma 2 dimensions, Linux diagnostics, ONNX on Windows ARM64.
+
 ## 2.5.2
 - `InferenceModel.createDecider` reads LiteTune 0.6.0 files; one scored `fresh_engine` is refused by name.
 

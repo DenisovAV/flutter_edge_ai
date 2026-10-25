@@ -1,3 +1,6 @@
+## 0.5.11
+- A closed recognizer or synthesizer fails through the returned Future (#718).
+
 ## 0.5.10
 - Docs: the macOS app setup STT and TTS need (#689).
 

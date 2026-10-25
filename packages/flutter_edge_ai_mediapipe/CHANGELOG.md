@@ -1,3 +1,6 @@
+## 1.2.4
+- Web: the vision warning appears only for a model created without `supportImage` (#719).
+
 ## 1.2.3
 - README: `flutter_edge_ai_llama` needs iOS 16.4.
 

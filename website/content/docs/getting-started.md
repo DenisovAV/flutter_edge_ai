@@ -526,14 +526,17 @@ To delete an inference model, or any model by filename, use `uninstallModel()`.
 When the file belongs to the active inference model (the model or its LoRA), it
 also clears the active inference identity: `hasActiveModel()` is false and
 `getActiveModel()` throws `NoActiveModelError` instead of handing out the model
-of a deleted file:
+of a deleted file.
+
+It first closes the model `getActiveModel()` built from that file, with its
+sessions and chats: a generation running on it ends with an error, and later
+calls on it throw. Models you opened with `openModel()` stay open; close them
+yourself:
 
 ```dart
-// Free in-memory handles first if the model is loaded.
-await model.close();
-
-// Delete the downloaded file + metadata (a fromFile file stays). If this was
-// the active model, the active inference identity is cleared too.
+// Closes the model getActiveModel() built from this file, deletes the
+// downloaded file + metadata (a fromFile file stays) and, if this was the
+// active model, clears the active inference identity.
 await FlutterEdgeAi.uninstallModel('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm');
 ```
 

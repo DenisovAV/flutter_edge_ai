@@ -430,27 +430,60 @@ void main() {
       expect(picked.existsSync(), isTrue, reason: 'the app\'s own file');
     });
 
-    test('a model getActiveModel built is not handed out again once its '
-        'file is uninstalled', () async {
+    for (final (name, shell) in [
+      ('mobile', FlutterEdgeAiMobile.new),
+      ('desktop', () => FlutterEdgeAiDesktop.instance),
+    ]) {
+      test('the model getActiveModel built from the file is closed before the '
+          'file goes, and not handed out again ($name)', () async {
+        final plugin = FlutterEdgeAiPlugin.instance;
+        FlutterEdgeAiPlugin.instance = shell();
+        addTearDown(() => FlutterEdgeAiPlugin.instance = plugin);
+        await FlutterEdgeAiPlugin.instance.modelManager.ensureInitialized();
+        final copy = await downloaded('model.task');
+        bool? fileAtClose;
+        EngineRegistry.instance
+          ..reset()
+          ..registerAll([
+            _Engine(onClose: () => fileAtClose = copy.existsSync()),
+          ]);
+        addTearDown(EngineRegistry.instance.reset);
+        final built = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+        addTearDown(built.close);
+
+        await FlutterEdgeAi.uninstallModel('model.task');
+
+        expect(built.isClosed, isTrue);
+        expect(fileAtClose, isTrue, reason: 'closed while the file still was');
+        expect(copy.existsSync(), isFalse);
+        expect(FlutterEdgeAiPlugin.instance.initializedModel, isNull);
+        await expectLater(
+          FlutterEdgeAi.getActiveModel(maxTokens: 1024),
+          throwsA(isA<NoActiveModelError>()),
+        );
+      });
+    }
+
+    test('a model built from another file stays open', () async {
       final plugin = FlutterEdgeAiPlugin.instance;
       FlutterEdgeAiPlugin.instance = FlutterEdgeAiMobile();
       addTearDown(() => FlutterEdgeAiPlugin.instance = plugin);
+      // What initialize() does first: a restore at the uninstall would
+      // replace the active spec and rebuild the model for that reason.
+      await FlutterEdgeAiPlugin.instance.modelManager.ensureInitialized();
       EngineRegistry.instance
         ..reset()
         ..registerAll([_Engine()]);
       addTearDown(EngineRegistry.instance.reset);
+      await fromFile(userFile('other/other.task').path);
       await downloaded('model.task');
       final built = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
       addTearDown(built.close);
 
-      await FlutterEdgeAi.uninstallModel('model.task');
+      await FlutterEdgeAi.uninstallModel('other.task');
 
-      // The cached model still exists; what getActiveModel answers is that
-      // there is no active model, not the model of a deleted file.
-      await expectLater(
-        FlutterEdgeAi.getActiveModel(maxTokens: 1024),
-        throwsA(isA<NoActiveModelError>()),
-      );
+      expect(built.isClosed, isFalse);
+      expect(await FlutterEdgeAi.getActiveModel(maxTokens: 1024), same(built));
     });
 
     test('removing the active download clears it too', () async {
@@ -596,6 +629,11 @@ final class _ClearFailsOnce extends ModelFileManager {
 
 /// Builds a model for any file, without opening it.
 final class _Engine implements InferenceEngineProvider {
+  _Engine({this.onClose});
+
+  /// Called by each model this engine built when it closes.
+  final void Function()? onClose;
+
   @override
   String get name => 'Fake';
 
@@ -609,10 +647,13 @@ final class _Engine implements InferenceEngineProvider {
   Future<InferenceModel> createModel(
     InferenceModelSpec spec,
     RuntimeConfig config,
-  ) async => _Model();
+  ) async => _Model(onClose);
 }
 
 final class _Model with CloseNotifier implements InferenceModel {
+  _Model([this.onClose]);
+
+  final void Function()? onClose;
   bool _closed = false;
 
   @override
@@ -622,6 +663,7 @@ final class _Model with CloseNotifier implements InferenceModel {
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
+    onClose?.call();
     fireCloseListeners();
   }
 

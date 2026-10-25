@@ -242,6 +242,197 @@ void main() {
     expect(built, ['a/1024', 'c/1024']);
   });
 
+  group('closeForRemoval', () {
+    test('closes the cached model built from the file before the removal '
+        'runs', () async {
+      final cache = InferenceModelCache();
+      final model = await cache.obtain(() => request('a')) as _Model;
+      bool? closedAtRemoval;
+
+      await cache.closeForRemoval('a.litertlm', () async {
+        closedAtRemoval = model.isClosed;
+      });
+
+      expect(closedAtRemoval, isTrue);
+      expect(model.closes, 1);
+      expect(cache.model, isNull);
+    });
+
+    test('closes the model whose LoRA is the file', () async {
+      final spec = InferenceModelSpec(
+        name: 'a',
+        modelSource: ModelSource.network('https://x/a.task'),
+        loraSource: ModelSource.network('https://x/adapter.bin'),
+        modelType: ModelType.gemmaIt,
+        fileType: ModelFileType.task,
+      );
+      final cache = InferenceModelCache();
+      final model =
+          await cache.obtain(
+                () => (
+                  identity: (
+                    spec: spec,
+                    modelType: spec.modelType,
+                    fileType: spec.fileType,
+                  ),
+                  params: ActiveModelParams(maxTokens: 1024),
+                  build: () async => _Model(),
+                ),
+              )
+              as _Model;
+
+      await cache.closeForRemoval(spec.files.last.filename, () async {});
+
+      expect(model.isClosed, isTrue);
+      expect(cache.model, isNull);
+    });
+
+    test('leaves a model built from other files open and cached', () async {
+      final cache = InferenceModelCache();
+      final model = await cache.obtain(() => request('a')) as _Model;
+      var removed = false;
+
+      await cache.closeForRemoval('b.litertlm', () async => removed = true);
+
+      expect(removed, isTrue);
+      expect(model.isClosed, isFalse);
+      expect(cache.model, same(model));
+    });
+
+    test('closes a build of the file in flight once it ends, before the '
+        'removal runs', () async {
+      final cache = InferenceModelCache();
+      final gate = Completer<void>();
+      _Model? made;
+      final building = cache.obtain(
+        () => request(
+          'a',
+          build: () async {
+            await gate.future;
+            return made = _Model();
+          },
+        ),
+      );
+      await pumpEventQueue();
+      final events = <String>[];
+      final removal = cache.closeForRemoval(
+        'a.litertlm',
+        () async => events.add('removed, closed: ${made?.isClosed}'),
+      );
+      await pumpEventQueue();
+      expect(events, isEmpty, reason: 'the removal waits for the build');
+
+      gate.complete();
+      expect(await building, same(made));
+      await removal;
+      expect(events, ['removed, closed: true']);
+      expect(cache.model, isNull);
+    });
+
+    test('a caller arriving during the removal resolves its request once '
+        'the removal has ended', () async {
+      final cache = InferenceModelCache();
+      await cache.obtain(() => request('a'));
+      var active = 'a';
+      final removing = Completer<void>();
+      final removal = cache.closeForRemoval('a.litertlm', () async {
+        await removing.future;
+        // What an uninstall changes: the file's model is no longer active.
+        active = 'b';
+      });
+      await pumpEventQueue();
+
+      final next = cache.obtain(() => request(active));
+      await pumpEventQueue();
+      expect(built, ['a/1024'], reason: 'no build while the file is removed');
+
+      removing.complete();
+      await removal;
+      await next;
+      expect(built, ['a/1024', 'b/1024']);
+    });
+
+    test('waits for a close a rebuild started on the file', () async {
+      final cache = InferenceModelCache();
+      final teardown = Completer<void>();
+      await cache.obtain(
+        () => request(
+          'a',
+          build: () async {
+            built.add('a/1024');
+            return _Model(onClose: () => teardown.future);
+          },
+        ),
+      );
+      // Another model is active: the rebuild closes 'a' and forgets it.
+      final rebuild = cache.obtain(() => request('b'));
+      await pumpEventQueue();
+
+      var removed = false;
+      final removal = cache.closeForRemoval(
+        'a.litertlm',
+        () async => removed = true,
+      );
+      await pumpEventQueue();
+      expect(removed, isFalse, reason: "'a' is still closing");
+
+      teardown.complete();
+      await removal;
+      expect(removed, isTrue);
+      await rebuild;
+      expect(built, ['a/1024', 'b/1024']);
+    });
+
+    test('a close past the deadline fails the removal before it runs, and '
+        'so does a retry while that close still runs', () async {
+      final cache = InferenceModelCache(
+        ModelCloseGate(const Duration(milliseconds: 50)),
+      );
+      final teardown = Completer<void>();
+      await cache.obtain(
+        () => request(
+          'a',
+          build: () async => _Model(onClose: () => teardown.future),
+        ),
+      );
+      var removals = 0;
+
+      await expectLater(
+        cache.closeForRemoval('a.litertlm', () async => removals++),
+        throwsA(isA<TimeoutException>()),
+      );
+      await expectLater(
+        cache.closeForRemoval('a.litertlm', () async => removals++),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(removals, 0);
+
+      teardown.complete();
+      await pumpEventQueue();
+      await cache.closeForRemoval('a.litertlm', () async => removals++);
+      expect(removals, 1);
+    });
+
+    test('a removal that fails leaves builds free', () async {
+      final cache = InferenceModelCache();
+      await cache.obtain(() => request('a'));
+
+      await expectLater(
+        cache.closeForRemoval(
+          'a.litertlm',
+          () async => throw StateError('file in use'),
+        ),
+        throwsStateError,
+      );
+
+      final next = await cache
+          .obtain(() => request('a'))
+          .timeout(const Duration(seconds: 1));
+      expect(next.isClosed, isFalse);
+      expect(built, ['a/1024', 'a/1024']);
+    });
+  });
+
   test('every knob the cache compares reaches the engine', () {
     // Each set to something other than its default, so a knob left out of
     // runtimeConfigFor reads back as the default and fails here.

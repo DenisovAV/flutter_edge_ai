@@ -524,8 +524,9 @@ await FlutterEdgeAi.uninstallTts();
 
 To delete an inference model, or any model by filename, use `uninstallModel()`.
 When the file belongs to the active inference model (the model or its LoRA), it
-also clears the active inference identity, so the model isn't auto-restored and
-`getActiveModel()` throws `NoActiveModelError` instead of loading a deleted file:
+also clears the active inference identity: `hasActiveModel()` is false and
+`getActiveModel()` throws `NoActiveModelError` instead of handing out the model
+of a deleted file:
 
 ```dart
 // Free in-memory handles first if the model is loaded.

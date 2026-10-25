@@ -27,6 +27,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/infrastructure/platform_file_system_service.dart';
+import 'package:flutter_edge_ai/src/lifecycle/close_notifier.dart';
+import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
 import 'package:flutter_edge_ai/src/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/src/model_management/utils/local_file_io.dart'
@@ -35,7 +38,7 @@ import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
-    show MobileModelManager;
+    show FlutterEdgeAiMobile, MobileModelManager;
 
 /// Over the 1 MB floor install validation applies to model files.
 final _modelBytes = Uint8List(1024 * 1024 + 1);
@@ -427,6 +430,29 @@ void main() {
       expect(picked.existsSync(), isTrue, reason: 'the app\'s own file');
     });
 
+    test('a model getActiveModel built is not handed out again once its '
+        'file is uninstalled', () async {
+      final plugin = FlutterEdgeAiPlugin.instance;
+      FlutterEdgeAiPlugin.instance = FlutterEdgeAiMobile();
+      addTearDown(() => FlutterEdgeAiPlugin.instance = plugin);
+      EngineRegistry.instance
+        ..reset()
+        ..registerAll([_Engine()]);
+      addTearDown(EngineRegistry.instance.reset);
+      await downloaded('model.task');
+      final built = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+      addTearDown(built.close);
+
+      await FlutterEdgeAi.uninstallModel('model.task');
+
+      // The cached model still exists; what getActiveModel answers is that
+      // there is no active model, not the model of a deleted file.
+      await expectLater(
+        FlutterEdgeAi.getActiveModel(maxTokens: 1024),
+        throwsA(isA<NoActiveModelError>()),
+      );
+    });
+
     test('removing the active download clears it too', () async {
       final copy = await downloaded('model.task');
       expect(FlutterEdgeAi.activeModelSpec, isNotNull);
@@ -564,6 +590,42 @@ final class _ClearFailsOnce extends ModelFileManager {
     _active = null;
   }
 
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// Builds a model for any file, without opening it.
+final class _Engine implements InferenceEngineProvider {
+  @override
+  String get name => 'Fake';
+
+  @override
+  int get priority => 0;
+
+  @override
+  bool canHandle(InferenceModelSpec spec) => true;
+
+  @override
+  Future<InferenceModel> createModel(
+    InferenceModelSpec spec,
+    RuntimeConfig config,
+  ) async => _Model();
+}
+
+final class _Model with CloseNotifier implements InferenceModel {
+  bool _closed = false;
+
+  @override
+  bool get isClosed => _closed;
+
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    fireCloseListeners();
+  }
+
+  // The shell only closes and listens to the model it caches.
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

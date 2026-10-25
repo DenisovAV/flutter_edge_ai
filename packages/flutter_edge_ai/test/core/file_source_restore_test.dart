@@ -243,7 +243,7 @@ void main() {
       await installTask(model);
       // Drops the record and keeps the app's file.
       await FlutterEdgeAi.uninstallModel('picked-model.task');
-      // Releases up to 2.3.2 kept the identity: the missing record alone
+      // Releases up to 2.5.2 kept the identity: the missing record alone
       // keeps the model from being restored.
       await writeInferenceIdentity('picked-model.task', FileSource(model.path));
 

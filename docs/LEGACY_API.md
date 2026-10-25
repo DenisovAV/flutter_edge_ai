@@ -194,9 +194,9 @@ final inferenceModel = await FlutterEdgeAiPlugin.instance.createModel(
 |---------|---------|-----|-----|---------|
 | `cpu` | ✅ | ✅ | ❌ | ✅ |
 | `gpu` | ✅ | ✅ | ✅ (required) | ✅ |
-| `npu` | ✅ (.litertlm) | ❌ | ❌ | ❌ |
+| `npu` | ✅ (.litertlm) | ❌ | ❌ | ✅ Windows (Intel), Linux arm64 (Qualcomm) |
 
-- **NPU**: Qualcomm Snapdragon only — the Android archive ships the Qualcomm QNN dispatch stack and nothing for MediaTek or Google Tensor.
+- **NPU**: see the current [LiteRT-LM docs](https://flutteredge.ai/docs/litertlm) — Qualcomm, Google Tensor and MediaTek on Android and Qualcomm on Linux arm64 (all opt-in), Intel on Windows.
 - **Web**: GPU only (MediaPipe limitation). CPU models will fail to initialize.
 - **Desktop**: GPU uses Metal (macOS), DirectX 12 (Windows), Vulkan (Linux).
 
@@ -570,6 +570,8 @@ final chat = await model.createChat(
 | Desktop | ✅ Full support |
 
 #### Fine-tuning FunctionGemma
+
+> **⚠️ Outdated, no longer maintained.** The Colab notebooks below are kept for reference only. To fine-tune FunctionGemma or another small model into a `.litertlm` that Flutter Edge AI runs, use **[LiteTune](https://litetune.dev)** (`pip install litetune`; source on [GitHub](https://github.com/DenisovAV/litetune)). The [function-calling codelab](https://flutteredge.ai/codelabs/function-calling-flutter-gemma) walks through it end to end.
 
 You can fine-tune FunctionGemma for your custom functions using the provided Colab notebooks:
 

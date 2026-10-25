@@ -25,6 +25,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     required ResolvedSampling sampling,
     required bool samplingExplicit,
     int? maxOutputTokens,
+    required MultimodalOrder multimodalOrder,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;

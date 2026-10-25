@@ -54,7 +54,7 @@ const _cases = [
     modelUrl:
         'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_i8.tflite',
     tokenizerUrl:
-        'https://huggingface.co/UsefulSensors/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
+        'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json',
     sttModelType: SttModelType.moonshine,
   ),
   _Int8Case(

@@ -47,14 +47,18 @@ them for the assistant it detects in the project:
 | any other | `generic` | `.agents/skills/` |
 
 Detection looks for the assistant's directory in the project root. When there is
-none yet, the CLI stops with *Could not auto-detect agent* — name the assistant:
+none yet, the CLI asks which assistants to install for (*Unable to auto-detect
+agent. Please select one or more*); it stops with *Could not auto-detect agent
+and none selected* only without a terminal or when you select nothing. To skip
+the question, name the assistant with `--agent` (or the `SKILLS_AGENT`
+environment variable):
 
 ```
 dart run skills@ get --all --agent claude
 ```
 
 Copilot is never auto-detected, because `.github/` serves many other purposes,
-so it always needs `--agent copilot`. `--all` installs everything without
+so it needs `--agent copilot`, or picking it when the CLI asks. `--all` installs everything without
 asking; `--skill <name>` installs only the skills you name, and can be repeated. The CLI records what it
 installed in `.config/dart_skills/skills_config.json`.
 
@@ -81,6 +85,7 @@ on its own; there is no command to remember.
 | `flutter-edge-ai-inference` | engines, installing a model from Hugging Face, sessions and chats, streaming, system prompts, images and audio, backends — and the platform setup for Android, iOS, macOS, Windows, Linux and web |
 | `flutter-edge-ai-function-calling` | declaring tools, `FunctionCallResponse`, the built-in tool loop, returning errors as results |
 | `flutter-edge-ai-rag` | embedding models, `flutter_edge_ai_rag` (`RagIndex`, embedding profiles), SQLite/Qdrant providers, filters and their schema, ownership |
+| `flutter-edge-ai-decisions` | the experimental `Decider` API: picking one of N options or abstaining, calibration, tool routing for function calling, storing a fitted decider, Jev Choice JSON |
 | `flutter-edge-ai-speech` | Whisper, moonshine and Parakeet STT; Matcha, Qwen3 and Inflect TTS; 16 kHz PCM; `VoiceSession` |
 | `flutter-edge-ai-mediapipe` | `.task` and `.bin` models on Android, iOS and web |
 | `flutter-edge-ai-onnx` | ORT-GenAI generation and ONNX embeddings, native and through Transformers.js |
@@ -94,7 +99,6 @@ The skills spell out the defaults that fail quietly, each with its fix:
 - `maxTokens` is the context window, not the reply length — cap a reply with `maxOutputTokens`.
 - `Message.isUser` defaults to `false`; a prompt without it gets an empty reply.
 - The declared `fileType`, not the file name, picks the engine, and it defaults to `.task`.
-- A metadata filter on a field missing from `filterSchema` is ignored, and search returns unfiltered results.
 - Speech-to-text takes raw 16 kHz mono PCM. A WAV file or 48 kHz audio is not rejected — it is transcribed wrong.
 - The engine packages do not re-export core: import `package:flutter_edge_ai/flutter_edge_ai.dart` as well.
 

@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_edge_ai_mediapipe'
-  s.version          = '1.2.2'
+  s.version          = '1.2.3'
   s.summary          = 'MediaPipe GenAI (.task) inference backend for flutter_edge_ai on iOS.'
   s.description      = <<-DESC
 MediaPipe GenAI (`.task`) inference backend for the flutter_edge_ai plugin.
@@ -20,8 +20,8 @@ on iOS via MediaPipe GenAI.
   s.dependency 'Flutter'
   s.dependency 'MediaPipeTasksGenAI', '= 0.10.33'
   s.dependency 'MediaPipeTasksGenAIC', '= 0.10.33'
-  # 16.0 is MediaPipeTasksGenAI's floor. It is the ONLY package that needs it —
-  # core, litertlm, built-in AI and embeddings build from 15.0 since #441.
+  # 16.0 is MediaPipeTasksGenAI's floor. Core, litertlm, built-in AI and
+  # embeddings build from 15.0 since #441; flutter_edge_ai_llama needs 16.4.
   s.platform = :ios, '16.0'
 
   s.pod_target_xcconfig = {

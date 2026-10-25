@@ -45,6 +45,7 @@ RuntimeConfig runtimeConfigFor(
   supportImage: params.supportImage,
   supportAudio: params.supportAudio,
   maxNumImages: params.maxNumImages,
+  multimodalOrder: params.multimodalOrder,
   enableSpeculativeDecoding: params.enableSpeculativeDecoding,
   activationDataType: params.activationDataType,
   maxConcurrentSessions: params.maxConcurrentSessions,

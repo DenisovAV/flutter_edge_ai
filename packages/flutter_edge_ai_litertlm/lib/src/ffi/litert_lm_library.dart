@@ -16,6 +16,8 @@ import 'dart:io';
 
 import 'litert_default_scope.dart';
 import 'litert_lm_runtime_check.dart';
+import 'macos_load_error.dart';
+import 'windows_std_handles.dart';
 
 /// Opens the LiteRT-LM shared library for the current platform.
 ///
@@ -29,8 +31,9 @@ import 'litert_lm_runtime_check.dart';
 /// embeddings-only app must not fail over a condition it does not depend on.
 ///
 /// Throws [UnsupportedError] on an Android ABI LiteRT-LM ships nothing for,
-/// whatever `DynamicLibrary.open` throws when the library is not in the app,
-/// and [StateError] when the library under that name is another package's
+/// whatever `DynamicLibrary.open` throws when the library is not in the app
+/// (on macOS with a message that names the cause, [openMacOSLiteRtLm]), and
+/// [StateError] when the library under that name is another package's
 /// LiteRT-LM ([checkOwnLiteRtLmBuild]).
 DynamicLibrary openLiteRtLmLibrary() {
   if (Platform.isIOS) {
@@ -38,8 +41,7 @@ DynamicLibrary openLiteRtLmLibrary() {
     return requireOwnLiteRtLmBuild(DynamicLibrary.open(path), path);
   }
   if (Platform.isMacOS) {
-    const path = 'LiteRtLm.framework/LiteRtLm';
-    return requireOwnLiteRtLmBuild(DynamicLibrary.open(path), path);
+    return requireOwnLiteRtLmBuild(openMacOSLiteRtLm(), macOSLiteRtLmFramework);
   }
   if (Platform.isAndroid) {
     // LiteRT-LM ships android_arm64 only. Without this guard an x86_64
@@ -64,8 +66,10 @@ DynamicLibrary openLiteRtLmLibrary() {
     return requireOwnLiteRtLmBuild(DynamicLibrary.open(path), path);
   }
   if (Platform.isWindows) {
+    // Through the std-handle realignment: the embedding pass can be the first
+    // to load this static-CRT DLL (windows_std_handles.dart).
     const path = 'LiteRtLm.dll';
-    return requireOwnLiteRtLmBuild(DynamicLibrary.open(path), path);
+    return requireOwnLiteRtLmBuild(openBundledWindowsLibrary(path), path);
   }
   throw UnsupportedError(
     'LiteRT-LM is not available on ${Platform.operatingSystem}',

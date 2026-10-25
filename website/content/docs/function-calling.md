@@ -14,20 +14,36 @@ and then continue the conversation with the result.
 
 ### Models with function calling support
 
-- **Gemma 4** (E2B, E4B) — full support (native function-call tokens).
-- **Gemma3n E4B** — function calling on the downloadable E4B `.litertlm` build;
-  not on E2B or the MediaPipe `.task` builds.
-- **FunctionGemma 270M** — Google's specialized function-calling model.
-- **DeepSeek R1** — function calling + thinking mode.
-- **Qwen** models (0.5B, 0.6B, 1.5B) — full support.
-- **Phi-4 Mini** — advanced reasoning with function calling.
+A call takes one of two paths, chosen from `modelType` and the file type:
+
+- **The runtime's own tool path** — **Gemma 4** (E2B, E4B) and **FunctionGemma
+  270M** on a `.litertlm`: the declarations reach LiteRT-LM as structured data
+  and the calls come back parsed (see
+  [Who renders the declarations](#who-renders-the-declarations)). A `.gguf`
+  through [llama.cpp](/docs/llama) takes this path too, when the model's chat
+  template supports tools.
+- **Prompt-based** — every other model, in a chat created with
+  `supportsFunctionCalls: true` (except Gemma 4, which needs a `.litertlm` — see
+  [Platform support](#platform-support)): the chat writes the tools into the
+  prompt and parses the calls back out of the text. For example:
+  - **Gemma 3n E4B** — on the downloadable E4B `.litertlm` build; not on E2B or
+    the MediaPipe `.task` builds.
+  - **FunctionGemma 270M** as a MediaPipe `.task`.
+  - **DeepSeek R1** — function calling + thinking mode.
+  - **Qwen 2.5 0.5B / 1.5B** (`.task`) and **Qwen3 0.6B** (`.litertlm` — use
+    `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`, or `Qwen3-0.6B.litertlm`
+    downloaded after 2026-10-13, 15:53 UTC, [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659)).
+  - **Phi-4 Mini**.
+  - The [Built-in AI](#built-in-ai-os-models) OS models.
+
+See [Models](/docs/models) for which models declare function calling.
 
 ### Models without function calling support
 
 - **Gemma 3 270M** — text generation only.
 - **Gemma 3 1B** — text generation only.
 - **SmolLM 135M** — text generation only.
-- **LFM2.5 230M** — text generation only.
+- **LFM2.5 230M (Liquid AI)** — text generation only.
 - **SmolLM3 3B** — text generation with reasoning, no function calling.
 - **Phi-4 Mini Reasoning** — reasoning model, no function calling.
 - **FastVLM 0.5B** — vision model, no function calling.
@@ -38,8 +54,14 @@ and then continue the conversation with the result.
 <Info>
 
 If you pass `tools` with `supportsFunctionCalls: false`, the chat logs a warning
-and does not inject them — the model still works normally for text generation.
-Pass `supportsFunctionCalls: true` for models that support it.
+(debug builds only), does not write them into the prompt and does not parse
+calls out of the reply — the model still works normally for text generation.
+Gemma 4 and FunctionGemma on a `.litertlm` are the exception: there the
+declarations still reach LiteRT-LM, though the chat still does not parse the
+calls. A `.gguf` model is the other: its tools are on unless
+`supportsFunctionCalls` is `false`, and `false` drops them with no warning.
+Pass `supportsFunctionCalls: true` to `createChat` / `openChat` for models that
+support it.
 
 </Info>
 
@@ -182,20 +204,29 @@ listener must handle it too:
 Send the function result back to the model so it can continue:
 
 ```dart
+// `call` is the FunctionCallResponse you just ran.
 final toolMessage = Message.toolResponse(
-  toolName: 'change_background_color',
+  toolName: call.name,
   response: {'status': 'success', 'color': 'blue'},
+  toolCallId: call.id, // null when the engine gave the call no id
 );
 await chat.addQueryChunk(toolMessage);
 final followUp = await chat.generateChatResponse();
 ```
 
+Only `flutter_edge_ai_llama` gives calls ids and reads `toolCallId`: pass it
+there when two calls share a name and their results go back out of order. The
+`.litertlm`, MediaPipe, ONNX and built-in AI engines give none and pair a
+result with its call by `toolName`, in order. genai `callId`s and Genkit
+`ref`s carry theirs, and they stay in the history.
+
 ### Or drive the whole loop in one call (recommended)
 
 `InferenceChat.generateChatResponseWithTools` runs that whole cycle for you — it
 streams the reply, and whenever the model calls a tool it invokes your
-`onToolCall`, feeds the result back as a `Message.toolResponse`, and continues
-until the model produces a final call-free answer (bounded by `maxToolTurns`).
+`onToolCall`, feeds the result back as a `Message.toolResponse` carrying the
+call's id, and continues until the model produces a final call-free answer
+(bounded by `maxToolTurns`).
 You only implement the tools; the parse → execute → feed-back loop is handled.
 
 ```dart
@@ -221,9 +252,38 @@ await for (final response in stream) {
 }
 ```
 
+Gemma 4 often writes a sentence and then calls a tool (`flutter_edge_ai`
+2.4.0). The sentence streams as `TextResponse` — clear what you collected when
+`onToolCall` runs if only the final answer should remain, as
+`flutter_edge_ai_agent` does — but the chat's history keeps only the call
+(`role` and `tool_calls`), not the sentence. Without
+`supportsFunctionCalls: true`, or with `toolChoice: ToolChoice.none`, the call
+is not parsed and its JSON stays in the text.
+
 This is the same driver the voice loop uses: `VoiceSession.fromChat(…, onToolCall:)`
 runs function calls inside a spoken turn through it (see
 [Speech → Tool calling in the voice loop](/docs/speech#tool-calling-in-the-voice-loop)).
+
+### Tool calls in a saved history
+
+`chat.fullHistory` records each call as a `Message.toolCall` whose `toolCalls`
+hold the calls and whose `text` is what text engines replay: the model's output
+as the engine returned it — for a LiteRT-LM call, its `tool_calls` objects
+without the prose written before them. To restore a conversation with
+`clearHistory(replayHistory:)`, keep both, and `toolCallId` on each
+`Message.toolResponse`. A message you build yourself takes the calls alone, and
+the text formats read its text back if the model answers in that shape:
+
+```dart
+Message.toolCall(calls: [
+  FunctionCallResponse(name: 'change_background_color', args: {'color': 'blue'}, id: 'call_1'),
+]);
+// text: {"tool_calls":[{"id":"call_1","name":"change_background_color","arguments":{"color":"blue"}}]}
+```
+
+A history saved with `text` alone still replays: the calls are read back from
+it. One exception: on the web, a Gemma 4 call's text no longer marks its string
+arguments, so read back from text alone it has none — keep `toolCalls`.
 
 ## Platform support
 

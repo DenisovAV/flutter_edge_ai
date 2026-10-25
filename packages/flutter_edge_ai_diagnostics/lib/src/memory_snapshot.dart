@@ -16,9 +16,10 @@ final class MemorySnapshot {
     required this.availableBytes,
     required this.takenAt,
     this.fileBackedBytes,
+    this.anonymousPeakBytes,
   });
 
-  /// Process memory measured as the iOS footprint or Android's
+  /// Process memory measured as the iOS and macOS footprint or Android's
   /// `Private_Dirty + SwapPss`.
   ///
   /// On both platforms, weights read from an mmapped model file are clean
@@ -28,16 +29,20 @@ final class MemorySnapshot {
   ///   jetsam enforces its per-app limit against, so on iOS this is the number
   ///   that decides whether the app is killed. It includes IOKit and GPU
   ///   (Metal) allocations and compressed memory.
+  /// - **macOS:** the same `phys_footprint` call, the figure Activity Monitor
+  ///   shows as "Memory". macOS has no per-app kill limit, so it measures what
+  ///   the app holds, not distance from a threshold.
   /// - **Android:** `Private_Dirty + SwapPss` from `/proc/self/smaps_rollup`.
   ///   `SwapPss` counts pages moved to zRAM, which still belong to the app.
   ///   Singly mapped dirty file pages are included in `Private_Dirty` too;
   ///   clean anonymous pages and `Shared_Dirty` are not included.
   ///   This is not a kill threshold: lmkd decides from device-wide pressure
   ///   and process priority. GPU memory (KGSL, Mali, dmabuf) is mostly outside
-  ///   smaps, so memory a model holds on the GPU is largely not counted here.
+  ///   smaps, so memory a model holds on the GPU is largely not counted here;
+  ///   on Adreno most of it is counted in [fileBackedBytes] instead.
   ///
   /// Null only on an Android kernel without `smaps_rollup`. Vendor kernels
-  /// may backport it. On iOS it is never null.
+  /// may backport it. On iOS and macOS it is never null.
   final int? anonymousBytes;
 
   /// Memory still available before the OS starts reclaiming or killing.
@@ -52,12 +57,16 @@ final class MemorySnapshot {
   ///   limit. Treat it as an optimistic upper bound: lmkd starts killing well
   ///   before it reaches zero.
   ///
-  /// Null only on iOS when the call returns 0: Apple returns 0 both when no
-  /// limit applies (the simulator) and when the limit is already exceeded,
-  /// and the two cannot be told apart. On Android it is never null.
+  /// - **macOS:** null. `os_proc_available_memory()` is iOS-only and macOS has
+  ///   no per-app limit to measure headroom against.
+  ///
+  /// Null on macOS, and on iOS when the call returns 0: Apple returns 0 both
+  /// when no limit applies (the simulator) and when the limit is already
+  /// exceeded, and the two cannot be told apart. On Android it is never null.
   final int? availableBytes;
 
-  /// Resident clean pages, mostly mapped files.
+  /// Resident clean pages: mostly mapped files on a CPU backend, and GPU
+  /// driver buffers too on some GPU backends (see below).
   ///
   /// - **Android:** `Private_Clean + Shared_Clean` from
   ///   `/proc/self/smaps_rollup`. A mapped model appears as its clean pages
@@ -73,6 +82,18 @@ final class MemorySnapshot {
   ///   measure of mapped model weights. Singly mapped dirty file pages are
   ///   in `Private_Dirty` ([anonymousBytes]); `Shared_Dirty` is in neither.
   ///
+  ///   GPU backends: on Adreno, the driver's buffers are mapped through
+  ///   `/dev/kgsl-3d0` and are mostly clean pages, so they are counted here.
+  ///   In one run on a vivo 1933 (Adreno 616, kernel 4.9) a Gemma 4 E2B GPU
+  ///   load raised that mapping from 6 to 981 MiB, and 988 MiB after one
+  ///   prompt, matching `dumpsys meminfo`'s Gfx dev. About 115 MiB of it was
+  ///   dirty (that part is in [anonymousBytes]); all file mappings together
+  ///   (model, libraries, others) were about 260 MiB (Pss). With a GPU
+  ///   backend this is not a model-file figure: compare with a CPU run of the
+  ///   same app, or subtract the clean pages of the `/dev/kgsl*` mappings of
+  ///   `/proc/self/smaps`. One device and one run each; other GPU drivers
+  ///   (Mali) were not measured.
+  ///
   ///   Reclaimable file pages are not a kill threshold, but are not free:
   ///   weights read on every token must be read back from storage if dropped.
   ///   Android lmkd can treat that refault thrashing as a reason to kill.
@@ -81,6 +102,21 @@ final class MemorySnapshot {
   ///
   /// Null on iOS, and on an Android kernel without `smaps_rollup`.
   final int? fileBackedBytes;
+
+  /// The highest [anonymousBytes] this process has reached since it started.
+  ///
+  /// - **iOS and macOS:** `ledger_phys_footprint_peak` from the same
+  ///   `task_info(TASK_VM_INFO)` reply as [anonymousBytes]. It is a lifetime
+  ///   high-water mark kept by the kernel: it is not reset between a model's
+  ///   load and its prompts, so a spike that happened before you started
+  ///   measuring is in it. To attribute a peak to one operation, take a
+  ///   snapshot before and compare, and treat the value as an upper bound.
+  /// - **Android:** null. The kernel keeps no peak of anonymous memory;
+  ///   `VmHWM` includes file-backed pages and would be a different number.
+  ///
+  /// Null on Android, and on an iOS or macOS version whose `task_info` reply
+  /// predates the field.
+  final int? anonymousPeakBytes;
 
   /// When this snapshot was taken.
   final DateTime takenAt;
@@ -91,15 +127,22 @@ final class MemorySnapshot {
       other.anonymousBytes == anonymousBytes &&
       other.availableBytes == availableBytes &&
       other.fileBackedBytes == fileBackedBytes &&
+      other.anonymousPeakBytes == anonymousPeakBytes &&
       other.takenAt == takenAt;
 
   @override
-  int get hashCode =>
-      Object.hash(anonymousBytes, availableBytes, fileBackedBytes, takenAt);
+  int get hashCode => Object.hash(
+    anonymousBytes,
+    availableBytes,
+    fileBackedBytes,
+    anonymousPeakBytes,
+    takenAt,
+  );
 
   @override
   String toString() =>
       'MemorySnapshot(anonymousBytes: $anonymousBytes, '
       'availableBytes: $availableBytes, '
-      'fileBackedBytes: $fileBackedBytes, takenAt: $takenAt)';
+      'fileBackedBytes: $fileBackedBytes, '
+      'anonymousPeakBytes: $anonymousPeakBytes, takenAt: $takenAt)';
 }

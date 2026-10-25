@@ -7,7 +7,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.3.0
+  flutter_edge_ai: ^2.4.0
   # Flutter Edge AI keeps engines/backends in opt-in packages; register
   # them via FlutterEdgeAi.initialize() in main.dart. The bridge package itself
   # stays engine-agnostic — these deps live in the consuming app only.
@@ -37,6 +37,8 @@ dependency_overrides:
     path: ../../flutter_edge_ai_mediapipe
   flutter_edge_ai_embeddings:
     path: ../../flutter_edge_ai_embeddings
+  genkit_hybrid:
+    path: ../../genkit_hybrid
 
 flutter:
   uses-material-design: true

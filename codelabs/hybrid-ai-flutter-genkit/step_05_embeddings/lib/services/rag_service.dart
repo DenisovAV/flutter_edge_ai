@@ -42,7 +42,7 @@ class _VectorDocument {
 ///
 /// Accepts a pre-initialized [Genkit] instance and embedder name from the
 /// caller so it stays decoupled from flutter_edge_ai lifecycle management.
-/// The caller (LocalAIService) owns model/embedder installation.
+/// The caller (AiEngine) owns model/embedder installation.
 class RagService {
   final Genkit _ai;
   final String _embedderName;

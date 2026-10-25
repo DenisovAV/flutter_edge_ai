@@ -4,7 +4,7 @@ import 'package:jaspr/jaspr.dart';
 import '../../theme/brand.dart';
 
 /// Announcement strip above the nav: the project was Flutter Gemma until
-/// 1.11.3, so a visitor who knows the old name learns here why it changed.
+/// 1.11.4, so a visitor who knows the old name learns here why it changed.
 class RenamedBar extends StatelessComponent {
   const RenamedBar({super.key});
 

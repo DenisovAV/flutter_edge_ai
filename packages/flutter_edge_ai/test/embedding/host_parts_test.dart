@@ -333,6 +333,34 @@ void main() {
         throwsA(isA<EmbeddingLoadException>()),
       );
     });
+
+    test('an image budget is positive and comes with images', () {
+      EmbeddingPassInfo info(int budget, {bool images = true}) =>
+          EmbeddingPassInfo(
+            dimension: 4,
+            modalities: {
+              EmbeddingModality.text,
+              if (images) EmbeddingModality.image,
+            },
+            imageFormats: images ? {EncodedMediaFormat.png} : const {},
+            visionTokensPerImage: budget,
+          );
+      expect(check(info(140), const {EmbeddingModality.image}), {
+        EmbeddingModality.text,
+        EmbeddingModality.image,
+      });
+      for (final bad in [info(0), info(-70), info(140, images: false)]) {
+        expect(
+          () => check(bad, const {}),
+          throwsA(
+            isA<EmbeddingLoadException>()
+                .having((e) => e.engine, 'engine', 'Fake')
+                .having((e) => e.message, 'message', contains('per image')),
+          ),
+          reason: '$bad',
+        );
+      }
+    });
   });
 
   group('EmbeddingFailure', () {

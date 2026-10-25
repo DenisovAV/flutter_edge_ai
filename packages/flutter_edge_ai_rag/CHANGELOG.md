@@ -1,3 +1,9 @@
+## 1.1.2
+- README: current package versions.
+
+## 1.1.1
+- README: image and audio indexes with FlutterEdgeAiActiveEmbedder.
+
 ## 1.1.0
 - **Breaking:** `RagIndex.add`/`search` take `EmbeddingInput`; `VectorStoreSpec.documents` binds one modality.
 - Require `flutter_edge_ai` ^2.3.0.

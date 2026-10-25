@@ -6,14 +6,17 @@
 import 'dart:ffi' show Abi;
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show DebugPrintCallback, debugPrint;
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuVendor;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
@@ -87,6 +90,13 @@ void main() {
     File(
       '$bundles/eg2_ptl.litertlm',
     ).writeAsBytesSync(eg2Container(textStamp: ('IntelOpenVINO', 'PTL')));
+    File('$bundles/eg2_npu_audio.litertlm').writeAsBytesSync(
+      eg2Container(
+        textStamp: ('Qualcomm', 'SM8850'),
+        vision: true,
+        audio: true,
+      ),
+    );
     tokenizers = _CountingTokenizers();
     EmbeddingTokenizerRegistry.instance.registerAll([tokenizers]);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -223,6 +233,26 @@ void main() {
       );
     });
 
+    test('requireWeightCache is off by default and reaches the pass when '
+        'set', () async {
+      final lenient = await backend.describe(
+        _bundle(),
+        _config('$bundles/eg2.litertlm'),
+      );
+      expect(
+        (lenient.config as LiteRtLmEmbeddingConfig).requireWeightCache,
+        isFalse,
+      );
+      final strict = await const LiteRtEmbeddingBackend(
+        requireWeightCache: true,
+      ).describe(_bundle(), _config('$bundles/eg2.litertlm'));
+      expect(
+        (strict.config as LiteRtLmEmbeddingConfig).requireWeightCache,
+        isTrue,
+      );
+      expect(strict.activeBackend, PreferredBackend.cpu);
+    });
+
     test('needs no tokenizer provider at all: an EG2-only app registers '
         'none', () async {
       EmbeddingTokenizerRegistry.instance.reset();
@@ -231,6 +261,93 @@ void main() {
         _config('$bundles/eg2.litertlm'),
       );
       expect(descriptor.config, isA<LiteRtLmEmbeddingConfig>());
+    });
+  });
+
+  group('requireWeightCache where it cannot apply is said once per isolate, '
+      'in debug builds', () {
+    const strict = LiteRtEmbeddingBackend(requireWeightCache: true);
+    late List<String> logged;
+    late DebugPrintCallback original;
+
+    setUp(() {
+      resetRequireWeightCacheNotice();
+      logged = [];
+      original = debugPrint;
+      debugPrint = (message, {wrapWidth}) => logged.add(message ?? '');
+    });
+    tearDown(() {
+      debugPrint = original;
+      edgeAiLogLevel = EdgeAiLogLevel.info;
+      resetRequireWeightCacheNotice();
+    });
+
+    Iterable<String> notices() =>
+        logged.where((line) => line.contains('requireWeightCache'));
+
+    Future<void> describeTflite(LiteRtEmbeddingBackend b) => b.describe(
+      _tflite(),
+      _config('/data/gemma.tflite', tokenizerPath: '/data/t.model'),
+    );
+
+    Future<void> describeNpu(
+      LiteRtEmbeddingBackend b, {
+      String model = 'eg2_npu.litertlm',
+      bool supportAudio = false,
+    }) => b.describe(
+      _bundle(model: model),
+      _config(
+        '$bundles/$model',
+        preferredBackend: PreferredBackend.npu,
+        supportAudio: supportAudio,
+      ),
+    );
+
+    test('a .tflite embedder: said once, however many loads', () async {
+      await describeTflite(strict);
+      await describeTflite(strict);
+      expect(notices(), [
+        allOf(
+          contains('does not apply to this load'),
+          contains('gemma.tflite'),
+          contains('.tflite'),
+        ),
+      ]);
+    });
+
+    test('an NPU load without declared audio is said; a CPU load, an NPU '
+        'load with declared audio and the flag off say nothing', () async {
+      liteRtLmNpuHost = _QualcommAndroid();
+      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+
+      await strict.describe(_bundle(), _config('$bundles/eg2.litertlm'));
+      await describeNpu(
+        strict,
+        model: 'eg2_npu_audio.litertlm',
+        supportAudio: true,
+      );
+      await describeNpu(backend);
+      await describeTflite(backend);
+      expect(notices(), isEmpty);
+
+      await describeNpu(strict);
+      expect(notices(), [
+        allOf(
+          contains('does not apply to this load'),
+          contains('eg2_npu.litertlm'),
+          contains('NPU'),
+        ),
+      ]);
+    });
+
+    test('with logging off the one shot is not spent: raised later, the line '
+        'still comes', () async {
+      edgeAiLogLevel = EdgeAiLogLevel.none;
+      await describeTflite(strict);
+      expect(notices(), isEmpty);
+      edgeAiLogLevel = EdgeAiLogLevel.info;
+      await describeTflite(strict);
+      expect(notices(), hasLength(1));
     });
   });
 
@@ -314,8 +431,9 @@ void main() {
               contains(
                 Abi.current() == Abi.windowsX64
                     ? 'runs Intel NPU bundles only'
-                    : 'Qualcomm Android and Qualcomm Linux arm64, and on Intel '
-                          'NPUs with Windows x64, only',
+                    : 'Qualcomm Android and Qualcomm Linux arm64, and on Google '
+                          'Tensor G5/G6 Android devices, and on MediaTek Dimensity Android devices, and on Intel NPUs with '
+                          'Windows x64, only',
               ),
               contains('${Abi.current()}'),
             ),
@@ -609,16 +727,19 @@ final class _QualcommAndroid implements LiteRtLmNpuHost {
   @override
   String get abi => 'android_arm64';
   @override
-  Future<NpuStackCheck> qualcommStack() async => const NpuStackCheck.bundled();
+  Future<NpuStackCheck> stack(NpuVendor vendor) async => switch (vendor) {
+    NpuVendor.qualcomm => const NpuStackCheck.bundled(),
+    NpuVendor.googleTensor || NpuVendor.mediatek => throw StateError(
+      'this fake is specifically a Qualcomm Android phone',
+    ),
+    NpuVendor.intel => throw StateError(
+      'an Android host has no Intel stack to ask about',
+    ),
+  };
   @override
-  Future<NpuStackCheck> intelStack() =>
-      throw StateError('an Android host has no Intel stack to ask about');
+  String? unreachable(NpuVendor vendor) => null;
   @override
-  bool get hasNpu => true;
-  @override
-  String get noNpuReason => '';
-  @override
-  Future<String> prepareDispatchDir() async {
+  Future<String> prepareDispatchDir(NpuVendor vendor) async {
     prepared = true;
     return '/data/app/npu';
   }
@@ -631,14 +752,21 @@ final class _IntelWindows implements LiteRtLmNpuHost {
   @override
   String get abi => 'windows_x64';
   @override
-  Future<NpuStackCheck> qualcommStack() =>
-      throw StateError('a Windows host has no Qualcomm stack to ask about');
+  Future<NpuStackCheck> stack(NpuVendor vendor) async => switch (vendor) {
+    NpuVendor.intel => const NpuStackCheck.bundled(),
+    NpuVendor.qualcomm => throw StateError(
+      'a Windows host has no Qualcomm stack to ask about',
+    ),
+    NpuVendor.googleTensor => throw StateError(
+      'a Windows host has no Google Tensor stack to ask about',
+    ),
+    NpuVendor.mediatek => throw StateError(
+      'a Windows host has no MediaTek stack to ask about',
+    ),
+  };
   @override
-  Future<NpuStackCheck> intelStack() async => const NpuStackCheck.bundled();
+  String? unreachable(NpuVendor vendor) =>
+      vendor == NpuVendor.intel ? null : 'not this host';
   @override
-  bool get hasNpu => throw StateError('Windows has no NPU probe');
-  @override
-  String get noNpuReason => '';
-  @override
-  Future<String> prepareDispatchDir() async => r'C:\Apps\demo';
+  Future<String> prepareDispatchDir(NpuVendor vendor) async => r'C:\Apps\demo';
 }

@@ -189,7 +189,8 @@ enum EmbeddingModel implements EmbeddingModelInterface {
   // the list shows them on Android and Linux only. SM8850 (Snapdragon 8 Elite
   // Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (VENTUNO Q) are the ones
   // verified; Google also publishes SM8550, SM8750, Tensor G5/G6 and MediaTek
-  // MT6991/MT6993 builds, and Intel PTL (below). Their vectors are not the CPU
+  // MT6991/MT6993 builds (the Tensor and MediaTek ones below), and Intel PTL
+  // (below). Their vectors are not the CPU
   // bundle's: each SoC has its own profile id — the CPU text id plus
   // `-npu-<soc>`. The 270m and the 440m of one SoC carry byte-identical text
   // towers (sha256 prefix aaae57a31475 for SM8850, d6db62a3616b for SM8650,
@@ -229,7 +230,8 @@ enum EmbeddingModel implements EmbeddingModelInterface {
 
   // The 740M for SM8850 carries the 440M SM8850's text and vision towers
   // (the same bytes: text aaae57a31475, vision 231495aaa9a3) and the generic
-  // bundle's audio encoder, so it shares their ids. Not yet run on an SM8850.
+  // bundle's audio encoder, so it shares their ids. Run on a Galaxy S26+
+  // (SM8850, DDP): text and images on the NPU, audio on the CPU.
   embeddingGemma2TextVisionAudio740mSm8850(
     url:
         'https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/resolve/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m_Qualcomm_SM8850.litertlm',
@@ -359,6 +361,74 @@ enum EmbeddingModel implements EmbeddingModelInterface {
     npuVendor: EmbeddingNpuVendor.intel,
   ),
 
+  // EmbeddingGemma 2 compiled for the Google Tensor G6 NPU (Google's
+  // `…_Google_Tensor_G6` bundles, same repos and revisions; stamped Google).
+  // They run ONLY there — `getActiveEmbedder(preferredBackend:
+  // PreferredBackend.npu)` on a Pixel with Tensor G6 and Android 16 or later,
+  // in an app built with `google_tensor_npu: true` (this one is) — so the list
+  // shows them on Android only. Run on a Pixel 11 with a debug build. Their own
+  // profile id, the CPU text id plus `-npu-tensor_g6`; the 270m and the 440m
+  // carry byte-identical text towers (sha256 prefix 4130ab1123ab; the
+  // tokenizer and token-embedding sections match too), so they share it.
+  embeddingGemma2Text270mTensorG6(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Google_Tensor_G6.litertlm',
+    filename:
+        'embeddinggemma-2-text-270m_Google_Tensor_G6__rev-9be6e8b90982.litertlm',
+    displayName: 'EmbeddingGemma 2 Text (270M) · Google Tensor G6 NPU',
+    size: '200MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '4cd282395a7b611ec8dec95160cd31a1f471a7b1cde1fc71717aa539c2a29883',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6',
+    npuSoc: 'Tensor_G6',
+    npuVendor: EmbeddingNpuVendor.googleTensor,
+  ),
+
+  embeddingGemma2TextVision440mTensorG6(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/resolve/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Google_Tensor_G6.litertlm',
+    filename:
+        'embeddinggemma-2-text-vision-440m_Google_Tensor_G6__rev-e301f74d5551.litertlm',
+    displayName: 'EmbeddingGemma 2 Text + Vision (440M) · Google Tensor G6 NPU',
+    size: '513MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '40e98aeed9ef08abfd91d5d309f64f4fa06195c513931e917bcf5ea41a910668',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6',
+    embedsImages: true,
+    npuSoc: 'Tensor_G6',
+    npuVendor: EmbeddingNpuVendor.googleTensor,
+  ),
+
+  // EmbeddingGemma 2 compiled for the MediaTek MT6991 (Dimensity 9400) NPU
+  // (Google's `…_MediaTek_MT6991` bundle, same repo and revision; stamped
+  // MediaTek / mt6991). It runs ONLY there — `getActiveEmbedder(
+  // preferredBackend: PreferredBackend.npu)` on an MT6991 phone whose vendor
+  // exposes NeuroPilot to apps, in an app built with `mediatek_npu: true`
+  // (this one is) — so the list shows it on Android only. Not run on an
+  // MT6991 yet. Its own profile id, the CPU text id plus `-npu-mt6991`.
+  embeddingGemma2Text270mMt6991(
+    url:
+        'https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_MediaTek_MT6991.litertlm',
+    filename:
+        'embeddinggemma-2-text-270m_MediaTek_MT6991__rev-9be6e8b90982.litertlm',
+    displayName: 'EmbeddingGemma 2 Text (270M) · MediaTek MT6991 NPU',
+    size: '416MB',
+    dimension: 768,
+    maxSeqLen: 1024,
+    needsAuth: false,
+    sha256: '7acc8e334d882216207c23b7a477179d5af530d67fd8e2cb50ab42d3457f90c0',
+    ragProfileId:
+        'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6991',
+    npuSoc: 'MT6991',
+    npuVendor: EmbeddingNpuVendor.mediatek,
+  ),
+
   // Gecko-110m models (generate 768D embeddings)
   // Gecko 64 is the smallest and fastest model - ideal for short queries
   gecko64(
@@ -370,7 +440,7 @@ enum EmbeddingModel implements EmbeddingModelInterface {
     tokenizerFilename:
         'gecko-110m-en-seq64__sentencepiece__rev-61a0d0c2cdc9.model',
     displayName: 'Gecko (seq=64)',
-    size: '110MB',
+    size: '112MB',
     dimension: 768, // Fixed embedding dimension for Gecko-110m
     maxSeqLen: 64,
     needsAuth: false,
@@ -404,7 +474,7 @@ enum EmbeddingModel implements EmbeddingModelInterface {
     tokenizerFilename:
         'gecko-110m-en-seq512__sentencepiece__rev-61a0d0c2cdc9.model',
     displayName: 'Gecko (seq=512)',
-    size: '116MB',
+    size: '120MB',
     dimension: 768, // Fixed embedding dimension for Gecko-110m
     maxSeqLen: 512,
     needsAuth: false,
@@ -520,10 +590,17 @@ enum EmbeddingNpuVendor {
 
   /// Runs on Windows x64 (Panther Lake).
   intel,
+
+  /// Runs on Android arm64 (a Pixel with that Tensor generation).
+  googleTensor,
+
+  /// Runs on Android arm64 (a phone with that MediaTek SoC).
+  mediatek,
 }
 
 /// Whether this platform can run [vendor]'s per-SoC bundles at all: Qualcomm
-/// on Android and Linux (arm64), Intel on Windows (x64). On such a device
+/// on Android and Linux (arm64), Intel on Windows (x64), Google Tensor and
+/// MediaTek on Android (arm64). On such a device
 /// without that NPU they are listed and refused at load, with the reason.
 bool npuEmbeddersListedFor(EmbeddingNpuVendor vendor) =>
     !kIsWeb &&
@@ -533,6 +610,8 @@ bool npuEmbeddersListedFor(EmbeddingNpuVendor vendor) =>
             defaultTargetPlatform == TargetPlatform.linux,
       EmbeddingNpuVendor.intel =>
         defaultTargetPlatform == TargetPlatform.windows,
+      EmbeddingNpuVendor.googleTensor || EmbeddingNpuVendor.mediatek =>
+        defaultTargetPlatform == TargetPlatform.android,
     };
 
 /// The catalog models this platform lists.

@@ -38,7 +38,7 @@
     {"name": "w1/latin diacritics", "prefix": "none", "text": "na\u00efve r\u00e9sum\u00e9 co\u00f6perate", "ids": [1789, 238527, 560, 118515, 1028, 237001, 74235]},
     {"name": "w1/devanagari", "prefix": "none", "text": "\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u0941\u0928\u093f\u092f\u093e", "ids": [226767, 19975]},
     {"name": "w1/arabic", "prefix": "none", "text": "\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645", "ids": [236873, 150345, 107602, 17193]},
-    {"name": "w1/cyrillic and greek", "prefix": "none", "text": "\u041f\u0440\u0438\u0432\u0435\u0442, \u043c\u0438\u0440! \u0393\u03b5\u03b9\u03ac \u03c3\u03bf\u03c5 \u039a\u03cc\u03c3\u03bc\u03b5", "ids": [116130, 236764, 58562, 236888, 33911, 6986, 237385, 127035, 24272, 237386, 237121, 16115]},
+    {"name": "w1/greek", "prefix": "none", "text": "\u0393\u03b5\u03b9\u03ac \u03c3\u03bf\u03c5 \u039a\u03cc\u03c3\u03bc\u03b5! \u039a\u03b1\u03bb\u03b7\u03bc\u03ad\u03c1\u03b1 \u03c3\u03b1\u03c2", "ids": [239357, 6986, 237385, 127035, 24272, 237386, 237121, 16115, 236888, 82935, 23962, 20961, 9719, 72078]},
     {"name": "w1/python code", "prefix": "none", "text": "def add(a, b):\n    return a + b", "ids": [2063, 1138, 236769, 236746, 236764, 518, 1473, 107, 140, 2060, 496, 900, 518]},
     {"name": "w1/c code", "prefix": "none", "text": "for (int i = 0; i < n; i++) { sum += xs[i]; }", "ids": [1708, 568, 720, 858, 578, 236743, 236771, 236793, 858, 655, 538, 236793, 858, 4419, 642, 2324, 3323, 43733, 236840, 236747, 2312, 682]},
     {"name": "w1/dart code", "prefix": "none", "text": "final x = await FlutterEdgeAi.getActiveEmbedder();", "ids": [10218, 1123, 578, 4825, 71885, 26665, 61837, 236761, 87000, 45294, 1128, 1086]},

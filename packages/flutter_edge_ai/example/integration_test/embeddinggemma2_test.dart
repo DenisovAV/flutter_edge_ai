@@ -418,9 +418,10 @@ void main() {
       '${micros.reduce(math.max) / 1000} ms',
     );
 
-    for (var i = 0; i < 6; i++) {
+    final pairs = _golden.where((item) => item.role == 'query').length;
+    for (var i = 0; i < pairs; i++) {
       final scores = [
-        for (var j = 0; j < 6; j++) _cos(vectors['q$i']!, vectors['d$j']!),
+        for (var j = 0; j < pairs; j++) _cos(vectors['q$i']!, vectors['d$j']!),
       ];
       final best = scores.indexOf(scores.reduce(math.max));
       expect(best, i, reason: 'q$i ranks d$best first: $scores');

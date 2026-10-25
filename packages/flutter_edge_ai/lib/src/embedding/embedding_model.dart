@@ -4,8 +4,12 @@ import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
 import 'package:flutter_edge_ai/src/model_management/cancel_token.dart'
     show CancelToken;
-import 'package:meta/meta.dart' show nonVirtual;
+import 'package:meta/meta.dart' show experimental, nonVirtual;
 
+import '../decision/decider.dart' show Decider;
+import '../decision/decider_method.dart';
+import '../decision/decider_option.dart';
+import '../decision/embedding_decider.dart';
 import 'embedding_exceptions.dart';
 import 'embedding_input.dart';
 import 'embedding_modality.dart';
@@ -35,28 +39,24 @@ abstract base class EmbeddingModel {
   Set<EmbeddingModality> get modalities => const {EmbeddingModality.text};
 
   /// Longest input in tokens — task prefix, BOS and EOS included — as the
-  /// engine read it from the MODEL FILE at load. Null when the file declares
-  /// no limit. Longer inputs fail with `EmbeddingInputTooLongException`; they
-  /// are never truncated.
+  /// loaded engine can accept it, including any configured context or batch
+  /// limit. Null when the engine cannot establish a limit. Longer inputs fail with `EmbeddingInputTooLongException`; they
+  /// are never truncated. Null does not mean unlimited.
   int? get maxInputTokens => null;
 
   /// Backend this embedder actually uses, when known — the counterpart of
   /// `InferenceModel.activeBackend`, and the answer to
   /// `getActiveEmbedder(preferredBackend:)` that survives a release build.
   ///
-  /// Native backends answer [PreferredBackend.cpu], except an EmbeddingGemma 2
-  /// per-SoC `.litertlm` bundle, which runs on the NPU and answers
-  /// [PreferredBackend.npu]. LiteRT `.tflite` stays on CPU because its GPU
-  /// delegate returns all-zero vectors for EmbeddingGemma's int4 weights, ONNX
-  /// because it appends no execution provider. So a caller who passed `gpu`
-  /// can read here that it did not happen, instead of learning it from a
-  /// debug-only log line.
+  /// Providers report the loaded accelerator. CPU-only LiteRT and ONNX
+  /// providers answer CPU: LiteRT's int4 GPU delegate returns all-zero
+  /// vectors, and native ONNX uses no GPU execution provider.
+  /// EmbeddingGemma 2 per-SoC `.litertlm` bundles can
+  /// answer NPU. GPU-capable providers can report GPU after loading.
   ///
-  /// On web, EmbeddingGemma 2 `.litertlm` reports [PreferredBackend.gpu]: it
-  /// runs on WebGPU or refuses to load. Other web embedders report null,
-  /// because their runtime picks the accelerator and does not report back.
-  /// Null also means "this engine did not say". Treat null as unknown, never
-  /// as CPU.
+  /// On web, EmbeddingGemma 2 `.litertlm` reports GPU or refuses to load.
+  /// LiteRT.js and ONNX web do not report their selection and leave this null. Treat
+  /// null as unknown, never as CPU.
   PreferredBackend? get activeBackend => null;
 
   /// Whether [close] has been called, or the model can no longer be used
@@ -113,34 +113,100 @@ abstract base class EmbeddingModel {
   /// killed worker never frees its native model.
   Future<void> close();
 
-  /// Deprecated: use `embed(EmbeddingInput.text(text), taskType: taskType)`.
-  @Deprecated(
-    'Use embed(EmbeddingInput.text(text), taskType: taskType). '
-    'Removed in 2.5.0.',
-  )
+  /// A decider that picks one of [options] for an input, or abstains.
+  ///
+  /// Every option's inputs — its description, then its examples — are
+  /// embedded once, here, with [TaskType.sentenceSimilarity] (the prefix every
+  /// compared input gets), and fitted by [method]: centroids, plus the linear
+  /// layer for [DeciderMethod.linear]. [calibration] sets when the decider
+  /// abstains; the default cross-fit needs two inputs per option. A
+  /// `choose` then costs one [embed] and a dot product per option.
+  ///
+  /// The decider borrows this model and never closes it. When a model
+  /// `FlutterEdgeAi.getActiveEmbedder` returned is closed — core replaced it
+  /// (other media, another backend, a re-install), its worker died, or the
+  /// app closed it — the decider's next `choose` asks core for the active
+  /// embedder again, with the backend and media this model was built with
+  /// (so it may load the model again), and retries there when that
+  /// embedder's space id is the decider's; another space fails with
+  /// `DeciderSpaceMismatchException`. On any other model `choose` fails with
+  /// `EmbedderClosedException` and the decider reports `isClosed`: reload it
+  /// with [loadDecider] from its `toArtifact()` — no re-embedding.
+  ///
+  /// [embedderId] names the model's weights in the decider's embedding-space
+  /// id. A model `FlutterEdgeAi.getActiveEmbedder` returned is named by its
+  /// installed files unless one is given: their names and, natively, their
+  /// sizes in bytes — file names and sizes, not the bytes themselves (on web
+  /// the names alone). Any other model (a test fake, a custom subclass)
+  /// needs an [embedderId], and so does a model whose [activeBackend] is
+  /// null (LiteRT.js and ONNX on web): without a backend to tell WebGPU from
+  /// WASM, the call is refused with [ArgumentError]. An [embedderId]
+  /// REPLACES the installed-file guard: the caller owns the identity, and
+  /// with a null [activeBackend] it must name the backend too. The space id
+  /// also holds the dimension, [activeBackend] and the task prefix, so a
+  /// decider fitted on the CPU file is never loaded onto an NPU bundle's
+  /// vectors, and — when an option example or a labelled request is an
+  /// image — the engine's image budget (EmbeddingGemma 2: 140 or 70 tokens
+  /// per image), so image vectors of one budget never meet the other's.
+  ///
+  /// [cancelToken] stops the embedding of the options and the fit (natively
+  /// the fit's isolate is killed; on web the fit stops at its next yield);
+  /// the call then fails with `DeciderCancelledException` and returns no
+  /// decider.
+  ///
+  /// [onProgress] counts the inputs this call embeds — each option's
+  /// description and examples, then the rows of
+  /// [EmbeddingDeciderCalibration.fromLabelled] — as `(done, total)`:
+  /// `(0, total)` first, then once per input as its vector comes back, ending
+  /// at `(total, total)`. It does not cover the fit that follows: a
+  /// [DeciderMethod.linear] fit at 150 options takes seconds after the last
+  /// call. A throw from it fails the call.
+  ///
+  /// Errors arrive as a FAILED FUTURE: [ArgumentError] for options it cannot
+  /// use (none, duplicate ids, an option with nothing to embed, a calibration
+  /// these options or labelled rows cannot support) and for
+  /// [DeciderMethod.optionScoring], an `InferenceModel` method; [StateError]
+  /// for a vector that is not finite or not [dimension] long and for a fit
+  /// that is not finite (an option whose inputs cancel out); and this model's
+  /// own failures — an over-long input is `EmbeddingInputTooLongException`,
+  /// never truncated; an input's failure names its option and input, with its
+  /// type and fields kept.
+  ///
+  /// Experimental: may change in a minor release while the API settles.
+  @experimental
   @nonVirtual
-  Future<List<double>> generateEmbedding(
-    String text, {
-    TaskType taskType = TaskType.retrievalQuery,
-  }) => embed(EmbeddingInput.text(text), taskType: taskType);
+  Future<Decider> createDecider({
+    required List<DeciderOption> options,
+    DeciderMethod method = DeciderMethod.centroid,
+    EmbeddingDeciderCalibration calibration =
+        const EmbeddingDeciderCalibration.crossFit(),
+    String? embedderId,
+    CancelToken? cancelToken,
+    void Function(int done, int total)? onProgress,
+  }) => createEmbeddingDecider(
+    this,
+    options: options,
+    method: method,
+    calibration: calibration,
+    embedderId: embedderId,
+    cancelToken: cancelToken,
+    onProgress: onProgress,
+  );
 
-  /// Deprecated: use `embedAll` over `EmbeddingInput.text` inputs.
-  @Deprecated(
-    'Use embedAll([for (final t in texts) EmbeddingInput.text(t)], '
-    'taskType: taskType). Removed in 2.5.0.',
-  )
+  /// The decider stored by `Decider.toArtifact()`, on this model, without
+  /// embedding anything.
+  ///
+  /// Fails with `DeciderSpaceMismatchException` when [artifact] was fitted in
+  /// another embedding space than this model's (another model file,
+  /// dimension, backend or task prefix — see [createDecider] for
+  /// [embedderId]), and with [FormatException] for an artifact this release
+  /// cannot read.
+  ///
+  /// Experimental: may change in a minor release while the API settles.
+  @experimental
   @nonVirtual
-  Future<List<List<double>>> generateEmbeddings(
-    List<String> texts, {
-    TaskType taskType = TaskType.retrievalQuery,
-  }) => embedAll([
-    for (final t in texts) EmbeddingInput.text(t),
-  ], taskType: taskType);
-
-  /// Deprecated: use [dimension].
-  @Deprecated('Use dimension. Removed in 2.5.0.')
-  @nonVirtual
-  Future<int> getDimension() => isClosed
-      ? Future.error(const EmbedderClosedException())
-      : Future.sync(() => dimension);
+  Future<Decider> loadDecider(
+    Map<String, Object?> artifact, {
+    String? embedderId,
+  }) => loadEmbeddingDecider(this, artifact, embedderId: embedderId);
 }

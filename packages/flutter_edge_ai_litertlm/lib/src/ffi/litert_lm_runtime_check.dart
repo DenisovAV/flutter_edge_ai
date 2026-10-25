@@ -1,7 +1,10 @@
 // Refuses a libLiteRtLm this package did not build.
 //
 // Another package can bundle its own LiteRT-LM under the same names: llamadart
-// 0.11.1 does by default (LiteRT-LM v0.17.0-8). On iOS that app still builds —
+// 0.11.1 does by default (LiteRT-LM v0.17.0-8). From 0.12.0 llamadart's hook
+// leaves it out when flutter_edge_ai_litertlm is in the app, but an older
+// llamadart, or any other package that ships one, still can. On iOS that app
+// still builds —
 // Flutter renames our framework to `LiteRtLm1.framework`, and
 // `LiteRtLm.framework`, the path every loader here opens, is the other
 // package's build. Without this check the engine binds it and fails later, in
@@ -44,9 +47,10 @@ void checkOwnLiteRtLmBuild(
   throw StateError(
     'The LiteRT-LM library at $path is not the one flutter_edge_ai_litertlm '
     'ships (it lacks $liteRtLmOwnBuildSymbol). Another package in this app '
-    'bundles its own LiteRT-LM — llamadart does by default. Set '
+    'bundles its own LiteRT-LM under the same name — llamadart before 0.12.0 '
+    'does by default. Upgrade llamadart, or set '
     '`hooks: user_defines: llamadart: llamadart_native_runtimes: [llama_cpp]` '
-    "in the app's pubspec.yaml, then run `flutter clean` once.",
+    "in the app's pubspec.yaml; then run `flutter clean` once.",
   );
 }
 

@@ -15,8 +15,9 @@ import 'embedding_pass.dart';
 /// declared `maxInputTokens` is not positive; when a declared modality is not
 /// one the engine serves for this file; when the model would accept nothing
 /// (no text tower and no medium declared); and for an engine bug: a media
-/// modality without a single format it decodes, or a format listed under the
-/// other modality. [label] names the model file in the message.
+/// modality without a single format it decodes, a format listed under the
+/// other modality, or an image budget that is not positive or comes without
+/// images. [label] names the model file in the message.
 Set<EmbeddingModality> checkLoadedPass(
   EmbeddingPassInfo info,
   Set<EmbeddingModality> declaredMedia, {
@@ -76,6 +77,16 @@ Set<EmbeddingModality> checkLoadedPass(
       'decodes (an engine bug).',
       engine: engine,
     );
+  }
+  if (info.visionTokensPerImage case final budget?) {
+    if (budget <= 0 || !info.modalities.contains(EmbeddingModality.image)) {
+      throw EmbeddingLoadException(
+        '$engine reports $budget tokens per image for $label'
+        '${budget <= 0 ? '' : ' without serving images'}; a budget is '
+        'positive and belongs to a model that embeds images (an engine bug).',
+        engine: engine,
+      );
+    }
   }
   final modalities = Set<EmbeddingModality>.unmodifiable({
     if (info.modalities.contains(EmbeddingModality.text))

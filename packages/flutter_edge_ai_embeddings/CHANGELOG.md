@@ -1,3 +1,9 @@
+## 2.3.2
+- README: the current embedding backend SPI.
+
+## 2.3.1
+- README: a missing tokenizer fails getActiveEmbedder with EmbeddingLoadException.
+
 ## 2.3.0
 - **Breaking:** require `flutter_edge_ai` ^2.3.0; core re-exports removed; long SigLIP inputs throw.
 - Gemma tokenization now matches reference SentencePiece (HTML-tag pieces, BOM-led pieces).

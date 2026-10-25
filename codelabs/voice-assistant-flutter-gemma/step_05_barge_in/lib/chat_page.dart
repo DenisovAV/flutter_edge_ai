@@ -108,9 +108,9 @@ class _ChatPageState extends State<ChatPage> {
       setState(() => _chat = chat);
 
       // The files are already here — the gate made sure of that — so this
-      // downloads nothing. What it does is make moonshine the ACTIVE speech
-      // model again: that choice lives in memory and does not survive a
-      // restart, and `getActiveStt()` throws without it.
+      // downloads nothing. It makes moonshine the ACTIVE speech model:
+      // initialize() restores the last active one after a restart, but the
+      // gate checks files, not which model is active.
       await FlutterEdgeAi.installStt()
           .modelFromNetwork(Moonshine.modelUrl)
           .tokenizerFromNetwork(Moonshine.tokenizerUrl)

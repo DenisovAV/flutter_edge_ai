@@ -219,13 +219,13 @@ store you want to act destructively on.
 | Platform | Support |
 |----------|---------|
 | Android (arm64, x64) | ✅ |
-| iOS (arm64, simulator) | ✅ |
+| iOS (arm64, arm64 simulator) | ✅ |
 | macOS (arm64) | ✅ |
 | Linux | ✅ |
 | Windows (x64) | ✅ |
 | Web | ❌ — use `flutter_edge_ai_sqlite` (`WebSqliteVectorStore`) |
 
-An unsupported native target (e.g. Intel macOS, Windows arm64, 32-bit Android)
+An unsupported native target (e.g. Intel macOS, the Intel iOS simulator, Windows arm64, 32-bit Android)
 has no prebuilt archive for the SDK's hook to fetch. The hook prints a warning
 naming the slice and skips it, so the build still produces the supported ABIs —
 **armeabi-v7a is in `flutter build apk`/`appbundle`'s default set**, and failing

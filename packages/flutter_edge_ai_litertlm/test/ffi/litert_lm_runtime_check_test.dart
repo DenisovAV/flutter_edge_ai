@@ -1,7 +1,7 @@
 // The own-build check every libLiteRtLm open goes through: another package's
-// LiteRT-LM under our library's name (llamadart bundles one by default) is
-// refused right after the open, naming the cause and the fix, instead of being
-// bound and failing later somewhere unrelated.
+// LiteRT-LM under our library's name (llamadart before 0.12.0 bundles one by
+// default) is refused right after the open, naming the cause and the fix,
+// instead of being bound and failing later somewhere unrelated.
 //
 // The check itself runs on any host through its symbol probe. The real-library
 // cases need the hook's macOS download cache (a macOS dev box has it after any
@@ -67,8 +67,9 @@ void main() {
               ),
               contains('(it lacks $liteRtLmOwnBuildSymbol)'),
               contains(
-                'Another package in this app bundles its own LiteRT-LM — '
-                'llamadart does by default.',
+                'Another package in this app bundles its own LiteRT-LM under '
+                'the same name — llamadart before 0.12.0 does by default. '
+                'Upgrade llamadart, or set',
               ),
               contains(
                 '`hooks: user_defines: llamadart: '
@@ -92,8 +93,12 @@ void main() {
 
     test('is an Error: the backend fallback loop stops at the first backend '
         'instead of retrying the same library on the next', () async {
+      final backends = ffiBackendFallbackOrder(
+        PreferredBackend.gpu,
+        npuAvailable: false,
+      );
       expect(
-        ffiBackendFallbackOrder(PreferredBackend.gpu).length,
+        backends.length,
         greaterThan(1),
         reason: 'gpu must have a fallback for this case to mean anything',
       );
@@ -101,6 +106,7 @@ void main() {
       await expectLater(
         initializeFfiRuntime<Object>(
           preferredBackend: PreferredBackend.gpu,
+          backends: backends,
           logTag: '[Test]',
           createClient: Object.new,
           initializeClient: (_, backend) async {

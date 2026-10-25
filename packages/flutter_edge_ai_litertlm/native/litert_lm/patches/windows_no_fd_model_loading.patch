@@ -1,0 +1,19 @@
+diff --git a/runtime/components/model_resources_litert_lm.cc b/runtime/components/model_resources_litert_lm.cc
+index 431c5435..51087a0d 100644
+--- a/runtime/components/model_resources_litert_lm.cc
++++ b/runtime/components/model_resources_litert_lm.cc
+@@ -87,6 +87,14 @@ absl::StatusOr<litert::Model> CreateModelFromFileSection(ScopedFile& model_file,
+ absl::StatusOr<std::unique_ptr<ModelResources>> ModelResourcesLitertLm::Create(
+     std::unique_ptr<LitertLmLoader> litert_lm_loader,
+     bool enable_file_backed_model_loading) {
++#if defined(_WIN32)
++  // flutter_gemma patch (section 15): file-backed loading hands
++  // litert::Model::CreateFromFd a C runtime descriptor, an index into one
++  // CRT's table. The prebuilt libLiteRt.dll links its own CRT, so the
++  // descriptor does not exist there and the process ends in libLiteRt.dll
++  // with 0xC0000409 (LiteRT-LM #4023). Sections are served buffer-backed.
++  enable_file_backed_model_loading = false;
++#endif  // _WIN32
+   return absl::WrapUnique(new ModelResourcesLitertLm(
+       std::move(litert_lm_loader), enable_file_backed_model_loading));
+ };

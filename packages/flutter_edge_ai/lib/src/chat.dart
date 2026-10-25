@@ -8,6 +8,7 @@ import 'package:flutter_edge_ai/src/function_call_parser.dart';
 import 'package:flutter_edge_ai/src/message.dart';
 import 'package:flutter_edge_ai/src/model_response.dart';
 import 'package:flutter_edge_ai/src/parsing/sdk_response_parser.dart';
+import 'package:flutter_edge_ai/src/parsing/sdk_text_extractor.dart';
 import 'package:flutter_edge_ai/src/tool.dart';
 import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:mutex/mutex.dart';
@@ -112,6 +113,10 @@ class InferenceChat {
     systemInstruction, // kept for API compatibility, forwarded to session via sessionCreator
   }) : _runtimeInjectsToolDeclarationsOverride = runtimeInjectsToolDeclarations;
 
+  /// Every message of this chat, in order: the user's, the model's answers,
+  /// its tool calls and their results. A model that writes text before it calls
+  /// a tool (Gemma 4 on `.litertlm` does) streams that text, but its history
+  /// entry is the call alone.
   List<Message> get fullHistory => List.unmodifiable(_fullHistory);
 
   int get currentTokens => _currentTokens;
@@ -239,6 +244,9 @@ class InferenceChat {
     }
   }
 
+  /// Runs one generation and returns its answer: text or the tool call(s).
+  /// When the model writes text before a call, only the call is returned;
+  /// [generateChatResponseAsync] streams the text as well.
   Future<ModelResponse> generateChatResponse() async {
     edgeAiLog('InferenceChat: Getting response from native model...');
     final response = await session.getResponse();
@@ -269,8 +277,13 @@ class InferenceChat {
           // Strip Gemma 4 escape tokens (`<|"|>`) before persisting to history.
           // Keeping raw lets the SDK echo those tokens back into the next
           // prompt and the model reproduces them in later tool_calls (#248).
-          final cleanRaw = SdkResponseParser.cleanRawForHistory(raw);
-          final toolCallMessage = Message.toolCall(text: cleanRaw);
+          // Only the call objects: text written before the call is not part
+          // of the call (see toolCallsRawForHistory).
+          final cleanRaw = toolCallsRawForHistory(raw);
+          final toolCallMessage = Message.toolCall(
+            text: cleanRaw,
+            calls: allCalls,
+          );
           _fullHistory.add(toolCallMessage);
           _modelHistory.add(toolCallMessage);
           if (allCalls.length == 1) return allCalls.first;
@@ -303,7 +316,10 @@ class InferenceChat {
         edgeAiLog(
           'InferenceChat: Detected ${allCalls.length} function call(s) in sync response',
         );
-        final toolCallMessage = Message.toolCall(text: cleanedResponse);
+        final toolCallMessage = Message.toolCall(
+          text: cleanedResponse,
+          calls: allCalls,
+        );
         _fullHistory.add(toolCallMessage);
         _modelHistory.add(toolCallMessage);
         edgeAiLog(
@@ -383,9 +399,15 @@ class InferenceChat {
     // anything else is plain text and streams normally. Other formats are
     // excluded by the guard below, so this first-char probe only ever runs for
     // the passthrough format — it never misfires on a text-stream format's
-    // JSON-ish output. Invariant assumed: a passthrough turn is EITHER all
-    // tool-call JSON OR all text, never prose-then-JSON — Gemma 4's SDK emits a
-    // pure tool_calls object for a call, so the first-char classification holds.
+    // JSON-ish output. A turn may also be prose and then a call: Gemma 4 often
+    // writes a sentence before it calls a tool. The call then arrives as a
+    // chunk of its own, a `tool_calls` object with no content
+    // (isSdkToolCallChunk), which is taken out of the stream before the
+    // thinking filter; the prose streams, and the call is surfaced at
+    // end-of-stream like any other. Such a chunk is kept, and surfaced as text
+    // if no call can be read from it. Without this guard (calls not handled)
+    // such a chunk stays in the text as JSON. The prose written before a call
+    // is not recorded in history (see toolCallsRawForHistory).
     final bool sdkPassthrough =
         FunctionCallParser.usesSdkPassthrough(modelType, fileType: fileType) &&
         tools.isNotEmpty &&
@@ -397,10 +419,21 @@ class InferenceChat {
     String sdkProbe = ''; // pre-classification token accumulator
     final sdkSwallowed =
         StringBuffer(); // swallowed JSON (fallback if unparsed)
+    bool sdkCallChunkTaken = false; // a call chunk left out of the text?
 
-    final originalStream = session.getResponseAsync().map(
-      (token) => TextResponse(token),
-    );
+    // A call chunk (isSdkToolCallChunk) is taken out of the text here, on the
+    // session's own chunks: the thinking filter below may hold back the end of
+    // a prose chunk and join it to the next one. It is kept in sdkSwallowed, so
+    // a call that cannot be read at end-of-stream still reaches the caller.
+    final originalStream = session
+        .getResponseAsync()
+        .where((token) {
+          if (!sdkPassthrough || !isSdkToolCallChunk(token)) return true;
+          sdkSwallowed.write(token);
+          sdkCallChunkTaken = true;
+          return false;
+        })
+        .map((token) => TextResponse(token));
 
     // Split reasoning out of the stream for every model: a bundle that
     // declares a thought channel streams its reasoning there whatever the
@@ -482,27 +515,18 @@ class InferenceChat {
               modelType: modelType,
             )) {
               // First try to extract message from any JSON with message field
-              try {
-                final jsonData = jsonDecode(funcBuffer);
-                if (jsonData is Map<String, dynamic> &&
-                    jsonData.containsKey('message')) {
-                  // Found JSON with message field - extract and display the message
-                  final message = jsonData['message'] as String;
-                  if (kDebugMode) {
-                    edgeAiLog(
-                      'InferenceChat: Extracted message from JSON: "$message"',
-                      level: EdgeAiLogLevel.verbose,
-                    );
-                  }
-                  yield TextResponse(message);
-                  funcBuffer = '';
-                  shouldAddToBuffer = false; // Don't add JSON tokens to buffer
-                  continue;
+              final message = _jsonMessageField(funcBuffer);
+              if (message != null) {
+                if (kDebugMode) {
+                  edgeAiLog(
+                    'InferenceChat: Extracted message from JSON: "$message"',
+                    level: EdgeAiLogLevel.verbose,
+                  );
                 }
-              } catch (e) {
-                edgeAiLog(
-                  'InferenceChat: Failed to parse JSON for message extraction: $e',
-                );
+                yield TextResponse(message);
+                funcBuffer = '';
+                shouldAddToBuffer = false; // Don't add JSON tokens to buffer
+                continue;
               }
 
               // If no message field found, try parsing as function call(s)
@@ -517,7 +541,10 @@ class InferenceChat {
                 emittedFunctionCall = true;
                 // Add function call to history IMMEDIATELY (before yielding)
                 // so tool response from caller comes AFTER in history order
-                final toolCallMessage = Message.toolCall(text: funcBuffer);
+                final toolCallMessage = Message.toolCall(
+                  text: funcBuffer,
+                  calls: allCalls,
+                );
                 _fullHistory.add(toolCallMessage);
                 _modelHistory.add(toolCallMessage);
                 edgeAiLog(
@@ -641,9 +668,14 @@ class InferenceChat {
           // SDK path at ~L193 and the JSON paths) — otherwise the caller's
           // tool-response has no matching call and is left orphaned, which
           // corrupts the replayed history when the Gemma 4 session rotates.
-          // Strip the Gemma 4 escape tokens first, same as the sync path (#248).
-          final cleanRaw = SdkResponseParser.cleanRawForHistory(raw);
-          final toolCallMessage = Message.toolCall(text: cleanRaw);
+          // Strip the Gemma 4 escape tokens first, same as the sync path (#248),
+          // and keep only the call objects: prose streamed before the call is
+          // not part of it (see toolCallsRawForHistory).
+          final cleanRaw = toolCallsRawForHistory(raw);
+          final toolCallMessage = Message.toolCall(
+            text: cleanRaw,
+            calls: allCalls,
+          );
           _fullHistory.add(toolCallMessage);
           _modelHistory.add(toolCallMessage);
           if (allCalls.length == 1) {
@@ -655,14 +687,17 @@ class InferenceChat {
       }
     }
 
-    // Safety net: we suppressed a `{`-leading SDK-passthrough stream as a tool
-    // call, but lastRawResponse yielded no parseable call. Don't silently drop
+    // Safety net: we suppressed a `{`-leading SDK-passthrough stream, or took
+    // a call chunk out of the text, as a tool call, but lastRawResponse yielded
+    // no parseable call (or there is none). Don't silently drop
     // the model's output — surface the swallowed text (as it leaked pre-fix). It
     // is deliberately NOT re-recorded to history: this only fires on a degenerate
     // turn (a `{`-leading passthrough turn with no extractable tool_calls), where
     // re-appending the JSON-shaped blob as an assistant turn would pollute the
     // model's next-turn context more than omitting it.
-    if (sdkSwallow && !emittedFunctionCall && sdkSwallowed.isNotEmpty) {
+    if ((sdkSwallow || sdkCallChunkTaken) &&
+        !emittedFunctionCall &&
+        sdkSwallowed.isNotEmpty) {
       edgeAiLog(
         'InferenceChat: SDK tool-call stream suppressed but no call parsed — '
         'surfacing raw text (fallback)',
@@ -688,23 +723,20 @@ class InferenceChat {
         contentToCheck,
         modelType: modelType,
       )) {
+        // For JSON parsing, use funcBuffer (the actual JSON part)
+        // For FunctionGemma parsing, use contentToCheck (full function call)
+        final message = modelType == ModelType.functionGemma
+            ? null
+            : _jsonMessageField(funcBuffer);
+        if (message != null) {
+          edgeAiLog(
+            'InferenceChat: Extracted message from end-of-stream JSON: "$message"',
+            level: EdgeAiLogLevel.verbose,
+          );
+          yield TextResponse(message);
+          return;
+        }
         try {
-          // For JSON parsing, use funcBuffer (the actual JSON part)
-          // For FunctionGemma parsing, use contentToCheck (full function call)
-          if (modelType != ModelType.functionGemma) {
-            final jsonData = jsonDecode(funcBuffer);
-            if (jsonData is Map<String, dynamic> &&
-                jsonData.containsKey('message')) {
-              final message = jsonData['message'] as String;
-              edgeAiLog(
-                'InferenceChat: Extracted message from end-of-stream JSON: "$message"',
-                level: EdgeAiLogLevel.verbose,
-              );
-              yield TextResponse(message);
-              return;
-            }
-          }
-
           // Try to parse as function call(s)
           final allCalls = FunctionCallParser.parseAll(
             contentToCheck,
@@ -716,7 +748,10 @@ class InferenceChat {
             );
             emittedFunctionCall = true;
             // Add function call to history IMMEDIATELY (before yielding)
-            final toolCallMessage = Message.toolCall(text: contentToCheck);
+            final toolCallMessage = Message.toolCall(
+              text: contentToCheck,
+              calls: allCalls,
+            );
             _fullHistory.add(toolCallMessage);
             _modelHistory.add(toolCallMessage);
             edgeAiLog(
@@ -827,6 +862,12 @@ class InferenceChat {
   /// loop exhausts [maxToolTurns] without a call-free answer — so a consumer
   /// driving this loop can surface its own terminal signal (e.g. AgentLoop's
   /// MaxIterationsEvent).
+  ///
+  /// Errors: an exception from [onToolCall], or a result [jsonEncode] cannot
+  /// write, is answered to the model (the call's siblings in that turn as not
+  /// run) and then rethrown on the stream; so is an error from the generation
+  /// itself, after its committed calls are answered. A balancing answer the
+  /// session rejects is printed, never thrown over the original error.
   Stream<ModelResponse> generateChatResponseWithTools({
     required FutureOr<Map<String, dynamic>> Function(FunctionCallResponse call)
     onToolCall,
@@ -882,12 +923,7 @@ class InferenceChat {
           // original below. The caller's safe recovery is to recreate the session
           // / clearHistory(replayHistory:), which the Dart-side history makes
           // correct once the session is usable again.
-          edgeAiLog(
-            'InferenceChat.generateChatResponseWithTools: could not balance '
-            'committed tool-call(s) after a stream error ($balanceError); the '
-            'persistent chat history may be left unbalanced — recover by '
-            'recreating the session.',
-          );
+          _logUnbalanced('a stream error', balanceError);
         }
         rethrow;
       }
@@ -919,27 +955,49 @@ class InferenceChat {
           return;
         }
         final call = pending[i];
-        final Map<String, dynamic> response;
+        Map<String, dynamic>? response;
+        final Message reply;
         try {
           response = await onToolCall(call);
-        } catch (e) {
-          // The app's tool threw. Answer the failed call (and any siblings in
-          // this turn not yet run) so the committed call isn't left dangling,
-          // then rethrow so the caller sees the failure.
-          await addQueryChunk(
-            Message.toolResponse(
-              toolName: call.name,
-              response: {'error': '$e'},
-            ),
+          // Built inside the try: a result jsonEncode cannot write (a
+          // DateTime, say) fails the call like a throwing tool, instead of
+          // leaving it committed with no response.
+          reply = Message.toolResponse(
+            toolName: call.name,
+            response: response,
+            toolCallId: call.id,
           );
-          await _answerToolCalls(pending.sublist(i + 1), const {
-            'status': 'not run — an earlier tool call in this turn failed',
-          });
+        } catch (e) {
+          // The app's tool threw, or its result could not be encoded. Answer
+          // the call (and any siblings in this turn not yet run) so the
+          // committed call isn't left dangling, then rethrow so the caller
+          // sees the failure. A tool that returned has run: saying so keeps
+          // the model from running it again.
+          try {
+            await _answerToolCalls(
+              [call],
+              response == null
+                  ? {'error': '$e'}
+                  : const {
+                      'status': 'ran',
+                      'error': 'the result could not be encoded as JSON',
+                    },
+            );
+          } catch (balanceError) {
+            _logUnbalanced('a tool failure', balanceError);
+          }
+          try {
+            await _answerToolCalls(pending.sublist(i + 1), const {
+              'status': 'not run — an earlier tool call in this turn failed',
+            });
+          } catch (balanceError) {
+            _logUnbalanced('a tool failure', balanceError);
+          }
+          // The tool's error, not a balancing one: that is what the caller
+          // has to act on.
           rethrow;
         }
-        await addQueryChunk(
-          Message.toolResponse(toolName: call.name, response: response),
-        );
+        await addQueryChunk(reply);
       }
     }
     // Exhausted maxToolTurns with calls still pending: each turn's calls WERE
@@ -958,16 +1016,58 @@ class InferenceChat {
 
   /// Feeds a fixed [response] as the tool-response for each of [calls]. Used to
   /// balance history when a turn is cancelled or a tool throws mid-turn, so a
-  /// committed tool-call is never left without a matching response.
+  /// committed tool-call is never left without a matching response. Every call
+  /// is tried even when one feed fails; the first failure is rethrown after.
   Future<void> _answerToolCalls(
     List<FunctionCallResponse> calls,
     Map<String, dynamic> response,
   ) async {
+    (Object, StackTrace)? firstFailure;
     for (final call in calls) {
-      await addQueryChunk(
-        Message.toolResponse(toolName: call.name, response: response),
-      );
+      try {
+        await addQueryChunk(
+          Message.toolResponse(
+            toolName: call.name,
+            response: response,
+            toolCallId: call.id,
+          ),
+        );
+      } catch (e, stack) {
+        firstFailure ??= (e, stack);
+      }
     }
+    if (firstFailure case (final error, final stack)) {
+      Error.throwWithStackTrace(error, stack);
+    }
+  }
+
+  /// Printed, not thrown: a failed balancing feed must not replace the error
+  /// that made the loop balance in the first place ([cause]). A release build
+  /// is where the next turn goes wrong, and edgeAiLog is silent there.
+  void _logUnbalanced(String cause, Object balanceError) {
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai] WARNING: InferenceChat.generateChatResponseWithTools '
+      'could not answer a committed tool call after $cause ($balanceError); '
+      'the persistent chat history may be left unbalanced. Recover by '
+      'recreating the session.',
+    );
+  }
+
+  /// The `message` of a `{"message": "..."}` reply, which is text rather than
+  /// a call, or `null` when [buffer] is not one. A decode error says only that
+  /// [buffer] is not bare JSON: a tagged or fenced call is not, and it must
+  /// still reach the call parser.
+  static String? _jsonMessageField(String buffer) {
+    final Object? json;
+    try {
+      json = jsonDecode(buffer);
+    } on FormatException {
+      return null;
+    }
+    if (json is! Map<String, dynamic>) return null;
+    final message = json['message'];
+    return message is String ? message : null;
   }
 
   Future<void> _recreateSessionWithReducedChunks() async {

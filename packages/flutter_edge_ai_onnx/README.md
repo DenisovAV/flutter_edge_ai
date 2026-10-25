@@ -44,7 +44,7 @@ await FlutterEdgeAi.initialize(
 
 Either arm can be registered on its own — they don't depend on each other.
 
-> **0.5.8 needs `flutter_edge_ai` 2.3.0, and 2.3.0 needs every
+> **Since 0.5.8 this package needs `flutter_edge_ai` 2.3.0, and 2.3.0 needs every
 > flutter_edge_ai package upgraded together:** `flutter_edge_ai_litertlm`
 > 1.13.0 · `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_mediapipe`
 > 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 · `flutter_edge_ai_speech` 0.5.6 ·
@@ -62,20 +62,25 @@ Either arm can be registered on its own — they don't depend on each other.
 | macOS (Intel) | ❌ | ❌ |
 | Linux x64 | ✅ bundled | ✅ device-verified |
 | Windows x64 | ✅ bundled | ✅ device-verified |
+| Windows ARM64 | ✅ bundled | ✅ verified on a Windows 11 ARM64 runner |
 | Android (arm64) | ✅ bundled (AAR-extracted) | ✅ device-verified |
 | iOS (arm64) | ✅ bundled | ✅ device-verified |
 | Web | N/A — Transformers.js + onnxruntime-web, no native archive | ✅ both arms |
 
 `OnnxEngine.canHandle`/`OnnxEmbeddingBackend.describe` are gated to
-macOS arm64, Linux x64, Windows x64, Android arm64, and iOS arm64 —
+macOS arm64, Linux x64, Windows x64 and ARM64, Android arm64, and iOS arm64 —
 device-verified end-to-end (generation +
-embeddings) on macOS (~54 tok/s, M4 Pro), Linux (~5.3-5.8 tok/s), Windows
+embeddings) on macOS (~54 tok/s, M4 Pro), Linux (~5.3-5.8 tok/s), Windows x64
 (~3.3 tok/s), and Android (FTL Pixel 8 Pro, ~10.4 tok/s, ~3.74 GB RSS for a
 3.8B int4 model). On iOS the framework-embedding/dlopen path builds, signs,
 installs and launches on a real iPhone, and generation runs (the
 `@executable_path`-anchored dlopen resolves the single self-contained genai
 xcframework — the same proven pattern as `flutter_edge_ai_litertlm`'s iOS
-path). On an unsupported native host (macOS Intel, or any other native ABI)
+path). Windows ARM64 uses the same FFI path and checksum-pinned Microsoft
+archives. On a GitHub-hosted Windows 11 ARM64 runner (Azure Cobalt 100), the
+example built for ARM64, generation passed 2/2 (64 tokens at 10.9 tok/s), and
+MiniLM embeddings passed (dimension 384). The bundled DLLs are ARM64 builds.
+On an unsupported native host (macOS Intel, or any other native ABI)
 `OnnxEngine` politely declines (logs why, lets another registered engine —
 or core's own "no engine can handle this" error — take over) instead of
 dlopen-ing a library the app may or may not have bundled. Web has no dlopen
@@ -113,7 +118,8 @@ profile, not of the output's name, and should move there.
 
 ## Inference — `OnnxEngine`
 
-Text-only, one session at a time (v1). No vision, no audio, no LoRA. Sampling
+Text-only, one session at a time (v1): `openSession` and `openChat` throw
+`UnsupportedError`. No vision, no audio, no LoRA. Sampling
 follows the model's `genai_config.json` (greedy unless it sets `do_sample`);
 the `temperature`, `topK`, `topP` and `randomSeed` you pass override it, and
 `temperature: 0` or `topK: 1` keeps decoding greedy. Natively, a temperature
@@ -124,9 +130,11 @@ when set. Models install as `ModelFileType.onnx` and use ORT-GenAI's own chat
 template (`OgaTokenizerApplyChatTemplate`) — the engine never builds turn
 markers itself.
 
-`activeBackend` is `null`: ORT-GenAI picks the execution provider from the
-model's `genai_config.json`, which the plugin never reads, so there is no honest
-answer to report.
+Natively `activeBackend` is `null`: ORT-GenAI picks the execution provider from the
+model's `genai_config.json`, whose execution-provider section the plugin does
+not read, so there is no honest answer to report. On web it is `null` until the
+first `createSession` loads the Transformers.js pipeline, then `gpu` (WebGPU)
+or `cpu` (WASM).
 
 ### Model layout: a directory, not a file
 
@@ -216,8 +224,9 @@ LoRA. See [Web setup](#web-setup) for the required `web/index.html` shim.
 
 ## Embeddings — `OnnxEmbeddingBackend`
 
-A plain ONNX Runtime forward pass (no ORT-GenAI, no text generation) over an
-`.onnx`/`.ort` embedding model directory. One factory handles both:
+A plain ONNX Runtime forward pass (no ORT-GenAI, no text generation) over one
+`.onnx`/`.ort` embedding model file and its tokenizer — not a directory, unlike
+the generation arm. One factory handles both:
 
 - **WordPiece / BERT-style** models (e.g. all-MiniLM-L6-v2) — `tokenLevel`
   output contract, mean-pooled + normalized client-side.
@@ -267,7 +276,8 @@ are native-only. See [Web setup](#web-setup).
 - No vision, no audio, no multimodal input on the inference arm — text only.
 - No LoRA.
 - One inference session at a time (`createSession` closes any live session
-  before opening a new one, same as every other engine in this monorepo).
+  before opening a new one, same as every other engine in this monorepo);
+  `openSession` and `openChat` throw `UnsupportedError`.
 
 ## Web setup
 

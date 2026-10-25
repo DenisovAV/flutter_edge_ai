@@ -15,6 +15,7 @@ import 'dart:isolate';
 
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
 import 'package:flutter_edge_ai/src/embedding/embedding_input.dart';
+import 'package:flutter_edge_ai/src/embedding/embedding_exceptions.dart';
 import 'package:flutter_edge_ai/src/embedding/embedding_pass.dart';
 import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
@@ -65,6 +66,52 @@ void main() {
       Future<void>.delayed(const Duration(milliseconds: 300));
 
   for (final shell in shells) {
+    test(
+      '${shell.name}: missing placement closes once behind the error and gates the next load',
+      () async {
+        backend.reportsPlacement = true;
+        final plugin = create(shell.create);
+        final path = fixture.modelPath('missing.gguf');
+        await fixture.activate(plugin, model: 'missing.gguf');
+        // This must fail before close is released; awaiting cleanup here would
+        // hang the caller behind a native teardown that may never finish.
+        await expectLater(
+          plugin
+              .createEmbeddingModel(preferredBackend: PreferredBackend.gpu)
+              .timeout(const Duration(seconds: 5)),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.message,
+              'message',
+              contains('did not report'),
+            ),
+          ),
+        );
+        await events.until(() => events.closing.contains(path));
+        expect(events.closing, [path]);
+        expect(plugin.initializedEmbeddingModel, isNull);
+        backend.omitReport = false;
+        final next = plugin.createEmbeddingModel(
+          preferredBackend: PreferredBackend.gpu,
+        );
+        await settle();
+        expect(
+          backend.described,
+          1,
+          reason: 'prepare must wait for failed-load cleanup',
+        );
+        expect(events.loads, [path]);
+        events.releaseAll();
+        final model = await next;
+        expect(model.activeBackend, PreferredBackend.gpu);
+        expect(backend.described, 2);
+        expect(events.loads, [path, path]);
+        expect(events.closing, [
+          path,
+        ], reason: 'missing-report cleanup closes exactly once');
+      },
+    );
+
     test('${shell.name}: a replacement is not built until the embedder it '
         'replaces has finished closing', () async {
       final plugin = create(shell.create);
@@ -181,6 +228,15 @@ final class _GatedBackend extends EmbeddingBackendProvider {
   _GatedBackend(this._events);
 
   final SendPort _events;
+  bool reportsPlacement = false;
+  bool omitReport = true;
+  int described = 0;
+
+  @override
+  Set<PreferredBackend> honouredBackends(EmbeddingModelSpec spec) =>
+      reportsPlacement
+      ? {PreferredBackend.cpu, PreferredBackend.gpu}
+      : super.honouredBackends(spec);
 
   @override
   String get name => 'gated';
@@ -192,18 +248,26 @@ final class _GatedBackend extends EmbeddingBackendProvider {
   Future<EmbeddingPassDescriptor<Object>> describe(
     EmbeddingModelSpec spec,
     RuntimeConfig config,
-  ) async => EmbeddingPassDescriptor<_GatedConfig>(
-    engineTag: 'Gated',
-    factory: _buildGatedPass,
-    config: _GatedConfig(config.modelPath, _events),
-    activeBackend: PreferredBackend.cpu,
-  );
+  ) async {
+    described++;
+    return EmbeddingPassDescriptor<_GatedConfig>(
+      engineTag: 'Gated',
+      factory: _buildGatedPass,
+      config: _GatedConfig(
+        config.modelPath,
+        _events,
+        omitReport ? null : PreferredBackend.gpu,
+      ),
+      activeBackend: PreferredBackend.cpu,
+    );
+  }
 }
 
 final class _GatedConfig {
-  const _GatedConfig(this.modelPath, this.events);
+  const _GatedConfig(this.modelPath, this.events, this.backend);
   final String modelPath;
   final SendPort events;
+  final PreferredBackend? backend;
 }
 
 EmbeddingPass _buildGatedPass(_GatedConfig config) => _GatedPass(config);
@@ -217,7 +281,7 @@ final class _GatedPass extends EmbeddingPass {
   @override
   Future<EmbeddingPassInfo> load() async {
     _config.events.send(('load', _config.modelPath));
-    return const EmbeddingPassInfo(dimension: 1);
+    return EmbeddingPassInfo(dimension: 1, activeBackend: _config.backend);
   }
 
   @override

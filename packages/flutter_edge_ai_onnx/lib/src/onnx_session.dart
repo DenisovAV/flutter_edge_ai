@@ -192,8 +192,10 @@ class OnnxSession extends InferenceModelSession {
     );
   }
 
+  // `async` so a client whose countTokens throws synchronously still fails
+  // through the returned Future, as GenAiFfiClient.countTokens does.
   @override
-  Future<int> sizeInTokens(String text) => client.countTokens(text);
+  Future<int> sizeInTokens(String text) async => client.countTokens(text);
 
   @override
   Future<void> stopGeneration() {

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:genai_primitives/genai_primitives.dart';
 
 import '../message.dart';
+import '../model_response.dart';
 
 /// Converts a genai_primitives [ChatMessage] into flutter_edge_ai [Message]s.
 ///
@@ -43,7 +44,12 @@ Future<List<Message>> messagesFromChatMessage(ChatMessage message) async {
           'files. Resolve the link yourself and pass a DataPart with the bytes. '
           '(For URL/web content behind a permission gate, use flutter_edge_ai_agent.)',
         );
-      case ToolPart(kind: ToolPartKind.result, :final toolName, :final result):
+      case ToolPart(
+        kind: ToolPartKind.result,
+        :final callId,
+        :final toolName,
+        :final result,
+      ):
         if (!isUser) {
           throw UnsupportedError(
             'A tool result is caller input, not model output.',
@@ -52,8 +58,19 @@ Future<List<Message>> messagesFromChatMessage(ChatMessage message) async {
         final resp = result is Map<String, dynamic>
             ? result
             : {'result': result};
-        messages.add(Message.toolResponse(toolName: toolName, response: resp));
-      case ToolPart(kind: ToolPartKind.call, :final toolName, :final arguments):
+        messages.add(
+          Message.toolResponse(
+            toolName: toolName,
+            response: resp,
+            toolCallId: _callId(callId, toolName),
+          ),
+        );
+      case ToolPart(
+        kind: ToolPartKind.call,
+        :final callId,
+        :final toolName,
+        :final arguments,
+      ):
         if (isUser) {
           throw UnsupportedError(
             'A tool call is model output, not user input.',
@@ -62,6 +79,13 @@ Future<List<Message>> messagesFromChatMessage(ChatMessage message) async {
         messages.add(
           Message.toolCall(
             text: jsonEncode({'name': toolName, 'parameters': arguments ?? {}}),
+            calls: [
+              FunctionCallResponse(
+                name: toolName,
+                args: arguments ?? {},
+                id: _callId(callId, toolName),
+              ),
+            ],
           ),
         );
       case ThinkingPart():
@@ -168,3 +192,9 @@ void assertMessagesFitChat(
     }
   }
 }
+
+/// A [ToolPart.callId] as a call id, or null when it is only the tool's name —
+/// the placeholder `genai_output_converter.dart` writes for a call the engine
+/// gave no id, which would otherwise repeat for parallel calls to one tool.
+String? _callId(String callId, String toolName) =>
+    callId.isEmpty || callId == toolName ? null : callId;

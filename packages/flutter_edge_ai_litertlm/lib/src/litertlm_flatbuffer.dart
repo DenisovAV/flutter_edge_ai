@@ -121,6 +121,55 @@ final class LitertlmFlatBuffer {
     return _data.getUint64(at, Endian.little);
   }
 
+  /// The scalar of [size] bytes in field [index] of [table], read by [get]
+  /// ([absent] when the field is absent). For the typed key-value items of
+  /// the header (`bundle/litertlm_bundle_info.dart`).
+  T _scalar<T extends num>(
+    int table,
+    int index,
+    int size,
+    T Function(int at) get,
+    T absent,
+  ) {
+    final at = _field(table, index);
+    if (at == null) return absent;
+    _check(at, size);
+    return get(at);
+  }
+
+  int int8(int table, int index) => _scalar(table, index, 1, _data.getInt8, 0);
+
+  int uint16(int table, int index) =>
+      _scalar(table, index, 2, (at) => _data.getUint16(at, Endian.little), 0);
+
+  int int16(int table, int index) =>
+      _scalar(table, index, 2, (at) => _data.getInt16(at, Endian.little), 0);
+
+  int uint32(int table, int index) => _scalar(table, index, 4, _uint32, 0);
+
+  int int32(int table, int index) =>
+      _scalar(table, index, 4, (at) => _data.getInt32(at, Endian.little), 0);
+
+  /// Native only, as [uint64]. A uint64 above 2^63 reads as negative.
+  int int64(int table, int index) =>
+      _scalar(table, index, 8, (at) => _data.getInt64(at, Endian.little), 0);
+
+  double float32(int table, int index) => _scalar(
+    table,
+    index,
+    4,
+    (at) => _data.getFloat32(at, Endian.little),
+    0.0,
+  );
+
+  double float64(int table, int index) => _scalar(
+    table,
+    index,
+    8,
+    (at) => _data.getFloat64(at, Endian.little),
+    0.0,
+  );
+
   /// The string in field [index] of [table], or null when absent. Decoded as
   /// UTF-8; malformed bytes become U+FFFD rather than throwing.
   String? string(int table, int index) {

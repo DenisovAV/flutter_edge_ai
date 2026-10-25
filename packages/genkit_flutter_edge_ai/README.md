@@ -1,6 +1,6 @@
 # genkit_flutter_edge_ai
 
-Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai) — local, on-device LLM inference (Gemma, Qwen, Phi, DeepSeek, and more), fully offline.
+Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_ai) — local, on-device LLM inference with any model a registered flutter_edge_ai engine runs ([models](https://flutteredge.ai/docs/models)), fully offline.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/DenisovAV/flutter_edge_ai/main/packages/genkit_flutter_edge_ai/assets/cover.jpeg" alt="genkit_flutter_edge_ai_cover">
@@ -17,27 +17,22 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Wraps `flutter_edge_ai` as a Genkit model provider
 - Supports text generation (blocking and streaming)
 - Embeddings — register a `FlutterEdgeAiEmbedderConfig`, reference it with `flutterEdgeAi.embedder(...)`
-- Multimodal input — several images and one audio clip per user message, from `data:` URIs, `file://` paths, absolute paths or `http(s)://` URLs (at most 20 MiB each, 30 s for all of a request's downloads; a cancel aborts them). A part without a `contentType` is typed from its URI, the served Content-Type, its extension or its bytes; a part the model cannot take, media outside a user message included, is refused with `INVALID_ARGUMENT`, never dropped
+- Multimodal input — several images and one audio clip per user message, from `data:` URIs, `file://` paths, absolute paths or `http(s)://` URLs (each download at most 20 MiB, 30 s for all of a request's downloads; a cancel aborts them). A part without a `contentType` is typed from its URI, the served Content-Type, its extension or its bytes; a part the model cannot take, media outside a user message included, is refused with `INVALID_ARGUMENT`, never dropped
 - Function calling / tool use with `toolChoice` control (`auto`, `required`, `none`) — honors Genkit's native top-level `toolChoice`
-- Parallel tool calls — several calls in one response, each with a `ref`, and every tool response goes back to the model
+- Parallel tool calls — several calls in one response, each with a `ref` that no other call of the turn has, so Genkit pairs every tool response with its request; the refs stay in the history as call ids
 - Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt and Genkit parses `response.output`
 - Context-window trimmer middleware (`trimContext`) — drops oldest turns to fit the on-device KV budget
-- Thinking mode (Gemma 4, DeepSeek, Qwen3)
+- On-device routing decisions — `DeciderRouteClassifier.load` (or `deciderRouteClassifier` over a decider you keep) turns a flutter_edge_ai `Decider` into a `genkit_hybrid` router classifier, and `flutterEdgeAi.warmUp` loads the model before the first request
+- Thinking mode on models that support it
 - `latencyMs`, and token usage in `response.usage` where the engine counts tokens, with time to first token and tokens/s under `usage.custom`. A single-turn model's chat (FunctionGemma) opens a fresh session after each answer and reports none
 - Configurable via `@Schema()`-annotated options, validated before a model loads
-- Errors a router can act on: a bad request is `INVALID_ARGUMENT`; no model installed is `UNAVAILABLE`; tools or media on a model configured without them, or an engine that cannot do this here, are `UNIMPLEMENTED` — `genkit_hybrid` hands both to its next branch; an installed model the app cannot run (no engine registered for it) is `FAILED_PRECONDITION`
+- Errors a router can act on: a bad request is `INVALID_ARGUMENT`; no model installed is `UNAVAILABLE`; tools or media on a model configured without them, or an engine that cannot do this here, are `UNIMPLEMENTED` — a `genkit_hybrid` router falls back on both; an installed model the app cannot run (no engine registered for it) is `FAILED_PRECONDITION`
 
 ## Supported Model Architectures
 
-| Architecture | ModelType | Notes |
-|---|---|---|
-| Gemma 4 | `ModelType.gemma4` | Multimodal (image, audio); thinking mode; native `.litertlm` tool-call tokens |
-| Gemma 3 / Gemma3n IT | `ModelType.gemmaIt` | Gemma 3 text models and Gemma3n multimodal models |
-| DeepSeek | `ModelType.deepSeek` | Thinking mode |
-| Qwen / Qwen3 / Qwen3.5+ | `ModelType.qwen` / `ModelType.qwen3` / `ModelType.qwen35` | Qwen3 supports thinking mode |
-| Llama | `ModelType.llama` | |
-| Phi | `ModelType.phi` | Phi-4 |
-| FunctionGemma | `ModelType.functionGemma` | Specialized function calling |
+Any model a registered engine runs; pass its `ModelType` in
+`FlutterEdgeAiModelConfig`. Which `ModelType` each model takes, and what it
+supports: [models](https://flutteredge.ai/docs/models).
 
 ## Setup
 
@@ -50,21 +45,22 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 
 | Package | Provider | Add it when you use… |
 |---|---|---|
-| `flutter_edge_ai_litertlm` | `LiteRtLmEngine()`, `LiteRtEmbeddingBackend()` | `.litertlm` models (Gemma 4, desktop) and/or text embeddings (EmbeddingGemma) |
-| `flutter_edge_ai_mediapipe` | `MediaPipeEngine()` | `.task` / `.bin` models (Gemma 3, mobile/web) |
+| `flutter_edge_ai_litertlm` | `LiteRtLmEngine()`, `LiteRtEmbeddingBackend()` | `.litertlm` models (every platform, incl. desktop) and LiteRT embeddings (EmbeddingGemma 1 and 2, Gecko) |
+| `flutter_edge_ai_mediapipe` | `MediaPipeEngine()` | `.task` / `.bin` models (Android, iOS, web; MediaPipe is maintenance-only upstream) |
 | `flutter_edge_ai_onnx` | `OnnxEngine()`, `OnnxEmbeddingBackend()` | ONNX models and embeddings |
-| `flutter_edge_ai_builtin_ai` | `BuiltInAiEngine()` | the OS's own model (Gemini Nano, Apple Foundation Models, Phi Silica) |
-| `flutter_edge_ai_embeddings` | `GemmaEmbeddingTokenizers()` | tokenizers for `.tflite` and `.onnx` text embeddings (an EmbeddingGemma 2 `.litertlm` needs none) |
+| `flutter_edge_ai_llama` | `LlamaEngineProvider()` | `.gguf` models through llama.cpp |
+| `flutter_edge_ai_builtin_ai` | `BuiltInAiEngine()` | the OS's own model (Gemini Nano, Apple Foundation Models, Phi Silica) or the browser's Prompt API (Chrome, Edge) |
+| `flutter_edge_ai_embeddings` | `GemmaEmbeddingTokenizers()` | tokenizers for `.tflite` and `.onnx` text embeddings (on the web, `.onnx` only; an EmbeddingGemma 2 `.litertlm` needs none) |
 
 ```yaml
 # pubspec.yaml (your app)
 dependencies:
   genkit: ^1.0.0
-  genkit_flutter_edge_ai: ^0.9.1
-  flutter_edge_ai: ^2.3.0
-  flutter_edge_ai_litertlm: ^1.13.0  # only the engines/backends you actually use
-  flutter_edge_ai_embeddings: ^2.3.0  # the tokenizers an embedding backend needs
-  flutter_edge_ai_mediapipe: ^1.2.2
+  genkit_flutter_edge_ai: ^0.11.0
+  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai_litertlm: ^1.16.0  # only the engines/backends you actually use
+  flutter_edge_ai_embeddings: ^2.3.2  # the tokenizers an embedding backend needs
+  flutter_edge_ai_mediapipe: ^1.2.3
 ```
 
 ```dart
@@ -77,8 +73,9 @@ await FlutterEdgeAi.initialize(
 ```
 
 > If you skip registration, `getActiveModel` throws a `StateError` naming the
-> engine package to add. Through Genkit that error comes back in the result of
-> `ai.generate`, not as an exception — see the check in the Quick Start.
+> model's `ModelFileType` and the engines that are registered. Through Genkit
+> that error comes back in the result of `ai.generate`, not as an exception —
+> see the check in the Quick Start.
 
 ## Quick Start
 
@@ -97,17 +94,21 @@ await FlutterEdgeAi.initialize(
   embeddingBackends: const [LiteRtEmbeddingBackend()],
   embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
 );
-await FlutterEdgeAi.installModel(modelType: ModelType.gemmaIt)
-    .fromAsset('assets/gemma-3-1b-it-int4.task')
-    .install();
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm, // the default, .task, routes to MediaPipe
+).fromNetwork(
+  // On web, install gemma-4-E2B-it-web.litertlm from the same repository.
+  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
+).install();
 
 // Create Genkit with plugin
 final ai = Genkit(plugins: [
   GenkitFlutterEdgeAiPlugin(
     models: [
       FlutterEdgeAiModelConfig(
-        name: 'gemma-3-1b',
-        modelType: ModelType.gemmaIt,
+        name: 'gemma-4-e2b',
+        modelType: ModelType.gemma4,
       ),
     ],
     embedders: [
@@ -118,7 +119,7 @@ final ai = Genkit(plugins: [
 
 // Generate
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Hello!',
 );
 final reason = response.finishReason;
@@ -143,7 +144,7 @@ Pass `FlutterEdgeAiModelOptions` to customize inference:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Hello!',
   config: FlutterEdgeAiModelOptions(
     maxTokens: 2048,
@@ -162,16 +163,16 @@ final response = await ai.generate(
 | `topK` | `int?` | model's own | Top-K sampling; `1` is greedy |
 | `topP` | `double?` | model's own | Top-P (nucleus) sampling |
 | `supportImage` | `bool?` | false | Enable multimodal image input |
-| `supportAudio` | `bool?` | false | Enable audio input (Gemma 4, Gemma3n) |
-| `enableThinking` | `bool?` | false | Enable thinking mode (Gemma 4, DeepSeek, Qwen3) |
+| `supportAudio` | `bool?` | false | Enable audio input (models with an audio encoder, e.g. Gemma 4) |
+| `enableThinking` | `bool?` | false | Enable thinking mode on models that support it |
 | `randomSeed` | `int?` | 1 (ONNX, or a `.litertlm` that ships one: the model's own) | Random seed for sampling |
 | `toolChoice` | `String?` | `'auto'` | Tool calling mode: `'auto'`, `'required'`, `'none'` |
 | `systemInstruction` | `String?` | null | System-level instruction (overrides system-role messages) |
 | `maxFunctionBufferLength` | `int?` | null | Max token buffer for streaming tool-call arguments (increase for large payloads) |
 | `enableSpeculativeDecoding` | `bool?` | null | MTP speculative decoding for Gemma 4 E2B/E4B (null = model default, true/false = force on/off) |
 | `preferredBackend` | `String?` | null | Text-decoder backend: `'cpu'`, `'gpu'`, `'npu'` (null = engine default) |
-| `preferredVisionBackend` | `String?` | null | Vision-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null defaults to CPU; ignored by MediaPipe) |
-| `preferredAudioBackend` | `String?` | null | Audio-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null defaults to CPU; set `'gpu'` for faster audio; ignored by MediaPipe) |
+| `preferredVisionBackend` | `String?` | null | Vision-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null follows the bundle: its `backend_constraint`, else the NPU it is compiled for, else CPU; set one only where the section allows it; ignored by MediaPipe) |
+| `preferredAudioBackend` | `String?` | null | Audio-encoder backend: `'cpu'`, `'gpu'`, `'npu'` (null follows the bundle, as for vision; the published Gemma 4 and Gemma 3n audio encoders declare `'cpu'` and refuse `'gpu'`; ignored by MediaPipe) |
 
 Every option is checked before a model loads: a value of the wrong type, a
 fraction for an integer, a `maxTokens`, `maxOutputTokens`, `topK` or
@@ -189,7 +190,7 @@ model reloaded.
 
 ```dart
 final stream = ai.generateStream(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Write a story.',
 );
 
@@ -205,11 +206,18 @@ final result = await stream.onResult; // check finishReason as in Quick Start
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'What is the weather in Paris?',
   tools: [weatherTool],
 );
 ```
+
+Tool `ref`s travel as call ids both ways (0.10.0, with `flutter_edge_ai`
+2.4.0): a tool request's `ref` is the call's `FunctionCallResponse.id`, or
+`call_0`, `call_1`, … when the engine gives none (`flutter_edge_ai_llama` gives its own),
+and never repeats within a turn; in the history the plugin sends back, a
+request's `ref` becomes its call's id (`Message.toolCall(calls:)`) and a tool
+response's `ref` its `toolCallId`.
 
 Genkit's top-level `toolChoice:` takes precedence over the `toolChoice` option.
 Write it as `toolChoice: .none`: genkit 1.0 and `flutter_edge_ai` both export a
@@ -229,7 +237,7 @@ prompt alone.
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
 );
@@ -264,7 +272,7 @@ call, always keeping every system message and the most recent message:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Continue our conversation…',
   messages: longHistory,
   use: [trimContext(maxInputTokens: 800)],
@@ -317,9 +325,77 @@ The embedder takes text only: a document with no text part is an
 `INVALID_ARGUMENT`. It resolves the active embedder again for each request,
 so it follows a model that core replaced or closed in between.
 
+## Routing with a Decider (experimental)
+
+`DeciderRouteClassifier.load` lets a [genkit_hybrid](https://pub.dev/packages/genkit_hybrid) router
+decide on the device, with an EmbeddingGemma 2 decider (or `InferenceModel.createDecider`), which
+of its targets a request goes to. The decider's options are the labels; the policy maps them to
+targets:
+
+```dart
+// ignore_for_file: experimental_member_use
+final intents = DeciderRouteClassifier.load(() async {
+  final embedder = await FlutterEdgeAi.getActiveEmbedder();
+  return embedder.createDecider(options: [
+    DeciderOption('smalltalk', examples: [
+      EmbeddingInput.text('how are you today?'),
+      EmbeddingInput.text('tell me something nice'),
+    ]),
+    DeciderOption('code', examples: [
+      EmbeddingInput.text('write a parser in Rust'),
+      EmbeddingInput.text('why does this SQL query time out?'),
+    ]),
+  ]);
+}); // loading starts now
+
+final router = defineHybridRouter(
+  ai, // a Genkit with GenkitFlutterEdgeAiPlugin and no default model
+  targets: {
+    kOnDevice: HybridTarget.onDevice(
+      flutterEdgeAi.model('gemma-4-e2b'),
+      warmUp: flutterEdgeAi.warmUp,
+    ),
+    kCloud: HybridTarget.cloud(googleAI.gemini('gemini-2.5-flash')),
+  },
+  cloudPlugins: [googleAI(apiKey: apiKey)],
+  policies: {
+    'smart': RoutePolicy(
+      rules: [RouteRule.inputSize(maxChars: 3000, small: kOnDevice, large: kCloud)],
+      classifier: intents,
+      labels: {
+        'smalltalk': RouteDecision.prefer(kOnDevice),
+        'code': RouteDecision.prefer(kCloud),
+      },
+    ),
+  },
+  defaultPolicy: 'smart',
+);
+await router.warmUp(); // the decider and the on-device model, before the first request
+```
+
+- The last user message's text is classified (or what `text:` picks); none is an abstain
+  (`noText`), which goes to the policy's `onAbstain` (default `RouteDecision.only(kOnDevice)`).
+- `DeciderRouteClassifier.load` owns its decider: loading starts when it is created, and a load
+  that fails fails the requests waiting for it (never routed around) and runs again at the next
+  request. `reload()` refits: the old decider answers until the new one is ready, then is closed;
+  a failed reload keeps it. `close()` closes the decider.
+- To keep the decider yourself, `deciderRouteClassifier(() => decider)` asks your provider per
+  request: return the pending Future while it loads (the request waits, with no limit unless the
+  call has a Genkit cancel token), null when there is none (the classifier is unavailable — the
+  call fails unless the policy sets `onUnavailable`). A Future that fails fails the call; drop it
+  from your cache so the next request retries. This classifier never closes your decider.
+- A decider closed by a refit is asked for once more; one whose embedder was replaced under it
+  chooses once more. Still closed, the classifier is unavailable, and `route.reason` says why.
+- `flutterEdgeAi.warmUp(ref)` loads the active model with the ref's config, the arguments a request
+  with that config uses, so the first request reuses it; an invalid config is `INVALID_ARGUMENT`.
+- Every other decider error fails the call, never an abstain — an input over the embedder's
+  limit included, so keep `RouteRule.inputSize` before the classifier.
+- The route info carries the label, the decider's abstain signal as `score`, the margin, and its
+  method, calibration, space id and timings under `details`.
+
 ## Known Limitations
 
-- **Engine registration**: In the current `flutter_edge_ai` architecture, inference engines and embedding backends are opt-in. The host app must add the relevant packages (`flutter_edge_ai_litertlm` for `.litertlm`, `flutter_edge_ai_mediapipe` for `.task`/`.bin`, `flutter_edge_ai_embeddings` plus a backend such as `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` for embeddings) and register their providers in `await FlutterEdgeAi.initialize()` before using the plugin. This split first shipped as `flutter_gemma` 1.0.0.
+- **Engine registration**: In the current `flutter_edge_ai` architecture, inference engines and embedding backends are opt-in. The host app must add the relevant packages (`flutter_edge_ai_litertlm` for `.litertlm`, `flutter_edge_ai_mediapipe` for `.task`/`.bin`, `flutter_edge_ai_onnx` for ONNX, `flutter_edge_ai_llama` for `.gguf`, `flutter_edge_ai_builtin_ai` for the OS's own model, `flutter_edge_ai_embeddings` plus a backend such as `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` for embeddings) and register their providers in `await FlutterEdgeAi.initialize()` before using the plugin. This split first shipped as `flutter_gemma` 1.0.0.
 - **Model installation**: The plugin does NOT manage model installation. The host app must install models via `FlutterEdgeAi.installModel()` and embedders via `FlutterEdgeAi.installEmbedder()` before using the plugin. Without one, a request fails with `UNAVAILABLE`.
 - **Model names are labels**: every configured `FlutterEdgeAiModelConfig` runs the model that is active in flutter_edge_ai, the one installed or selected last; `modelType` tells the plugin how to talk to it. The names share one queue, so generations run one at a time in the order they arrive. Each request asks flutter_edge_ai for the active model, which reuses the loaded one while nothing changed; a newly installed model, or other runtime arguments, give the next request a new one. Set `supportsTools: false` or `supportsMedia: false` on a config whose model takes no tools or media: its `supports` metadata says so, and a request that needs them fails with `UNIMPLEMENTED` instead of reaching a model that would ignore them.
 - **System role**: System messages are passed natively via `createChat(systemInstruction:)`. Only text content is supported in system messages. The capability first shipped under the old package name in `flutter_gemma` 0.13.0.

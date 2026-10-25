@@ -24,6 +24,8 @@ import 'package:ffi/ffi.dart';
 
 import 'litert_default_scope.dart';
 import 'litert_lm_runtime_check.dart';
+import 'macos_load_error.dart';
+import 'windows_std_handles.dart';
 
 // ----- Opaque handle typedefs ------------------------------------------------
 
@@ -187,8 +189,8 @@ class LiteRtRankedTensorTypeView {
 List<String> _devLiteRtLmCandidates() {
   // Guarded rather than trusted: hostNativeDirName() is null on iOS, and the
   // relative paths below interpolate it, so an unguarded call would build
-  // `.../prebuilt/null/libLiteRtLm.dylib`. Unreachable today — _openLiteRt
-  // throws for iOS before getting here — but a comment is the only thing
+  // `.../prebuilt/null/libLiteRtLm.dylib`. Unreachable today — only the macOS
+  // branch of _openLiteRt passes this on — but a comment is the only thing
   // keeping that true, and comments do not fail.
   final hostDir = hostNativeDirName();
   if (hostDir == null) return const [];
@@ -196,8 +198,8 @@ List<String> _devLiteRtLmCandidates() {
 }
 
 List<String> _candidatesFor(String hostDir) => hostNativeLibraryCandidates(
-  // Reached only from the macOS branch of _openLiteRt (iOS throws before it),
-  // so the host names the shared helper computes are the macOS ones.
+  // Reached only from the macOS branch of _openLiteRt, so the host names the
+  // shared helper computes are the macOS ones.
   libFileName: hostNativeLibraryFileName('LiteRtLm'),
   // LiteRT uses the FLAT cache layout: <cacheBase>/<host>/, no namespace.
   relativePaths: [
@@ -208,64 +210,44 @@ List<String> _candidatesFor(String hostDir) => hostNativeLibraryCandidates(
   ],
 );
 
-/// [DynamicLibrary.open] of [path], or null when it does not load.
-DynamicLibrary? _openOrNull(String path) {
-  try {
-    return DynamicLibrary.open(path);
-  } catch (_) {
-    return null;
-  }
-}
-
 /// Opens the library that carries the LiteRT C API here: the LiteRT-LM
 /// library on Apple and Android, Google's libLiteRt on Linux and Windows.
 ///
 /// Where it is the LiteRT-LM library, another package's LiteRT-LM under that
 /// name is refused with a [StateError] ([checkOwnLiteRtLmBuild]).
 DynamicLibrary _openLiteRt() {
-  if (Platform.isMacOS || Platform.isIOS) {
-    // libLiteRt is statically linked into LiteRtLm.framework on Apple
-    // platforms; both LiteRtLm and LiteRt symbols are exported from the
-    // same dylib. The `@executable_path/../Frameworks/...` path resolves
-    // at runtime; outside an app bundle we fall back to a dev prebuilt.
-    const bundled = 'LiteRtLm.framework/LiteRtLm';
-    // Checked outside the open's error handling: a foreign framework is
-    // refused, never skipped for a dev prebuilt below, which would load on a
-    // developer's Mac and hide the problem until the app reached a user.
-    final bundledLib = _openOrNull(bundled);
-    if (bundledLib != null) return requireOwnLiteRtLmBuild(bundledLib, bundled);
-
+  // libLiteRt is statically linked into LiteRtLm.framework on Apple platforms;
+  // both LiteRtLm and LiteRt symbols are exported from the same dylib.
+  if (Platform.isMacOS) {
+    // The framework inside an app; outside one (the host test suites) a dev
+    // prebuilt or the hook's cache. Each failure keeps dyld's reason (#689).
+    // A foreign framework is refused here, never skipped for a dev prebuilt,
+    // which would load on a developer's Mac and hide the problem until the
+    // app reached a user. A dev prebuilt that is not ours is skipped and
+    // named, so whatever comes back from the dev copies passes the check.
+    return requireOwnLiteRtLmBuild(
+      openMacOSLiteRtLmForTflite(
+        devCandidates: _devLiteRtLmCandidates,
+        isOwnBuild: (library) => library.providesSymbol(liteRtLmOwnBuildSymbol),
+      ),
+      macOSLiteRtLmFramework,
+    );
+  }
+  if (Platform.isIOS) {
     // iOS always resolves the bundled framework; it has no dev checkout and no
     // ~/Library/Caches. Offering it macOS .dylib paths would make the failure
     // message actively misleading on the one occasion someone reads it.
-    if (Platform.isIOS) {
+    const bundled = 'LiteRtLm.framework/LiteRtLm';
+    final DynamicLibrary library;
+    try {
+      library = DynamicLibrary.open(bundled);
+    } on ArgumentError catch (error) {
       throw UnsupportedError(
-        'LiteRtLm.framework/LiteRtLm did not load. On iOS this is the only '
-        'candidate — the framework is missing from the app bundle.',
+        '$bundled did not load. On iOS the app bundle is the only place it '
+        'can come from. dyld: ${dyldErrorText(error)}',
       );
     }
-
-    final tried = <String>[bundled];
-    for (final p in _devLiteRtLmCandidates()) {
-      tried.add(p);
-      // Existence-check first so the message below can tell "no such file"
-      // from "found it but it would not load"...
-      if (!File(p).existsSync()) continue;
-      // ...and keep going when a candidate exists but will not load — wrong
-      // arch, missing companion, stale build. Without this the first
-      // existing-but-broken candidate aborts the search and the remaining
-      // ones, including the version-validated hook cache, are never tried.
-      final lib = _openOrNull(p);
-      if (lib == null) continue;
-      // A dev prebuilt that loads but is not a build of ours is the same kind
-      // of candidate: the failure below names it, and the next one is tried.
-      if (lib.providesSymbol(liteRtLmOwnBuildSymbol)) return lib;
-      tried.last = '$p (lacks $liteRtLmOwnBuildSymbol)';
-    }
-    throw UnsupportedError(
-      'LiteRtLm framework/dylib not found or would not load. Tried (cwd: '
-      '${Directory.current.path}): ${tried.join(", ")}',
-    );
+    return requireOwnLiteRtLmBuild(library, bundled);
   }
   if (Platform.isAndroid) {
     // #447: this is the embeddings/speech entry point, and on Android it may
@@ -308,7 +290,9 @@ DynamicLibrary _openLiteRt() {
   // carries no symbol of ours. Their libLiteRtLm is checked where the LLM
   // client and the EmbeddingGemma 2 pass open it.
   if (Platform.isLinux) return DynamicLibrary.open('libLiteRt.so');
-  if (Platform.isWindows) return DynamicLibrary.open('LiteRt.dll');
+  // Windows does need the std-handle realignment: embeddings or speech can be
+  // the first to load this static-CRT DLL (windows_std_handles.dart).
+  if (Platform.isWindows) return openBundledWindowsLibrary('LiteRt.dll');
   throw UnsupportedError(
     'LiteRT is not available on ${Platform.operatingSystem}',
   );

@@ -268,6 +268,47 @@ void main() {
       expect(result.args['xs'], equals([null, 1]));
     });
 
+    test('a hyphenated tool name parses', () {
+      // Agent skills name tools like `get-current-time`.
+      final result = parseCall(
+        '<start_function_call>call:get-current-time{time-zone:<escape>UTC'
+        '<escape>}<end_function_call>',
+      );
+
+      expect(result.name, equals('get-current-time'));
+      expect(result.args, equals({'time-zone': 'UTC'}));
+    });
+
+    test('bare null parses as null too', () {
+      final result = parseCall(
+        '<start_function_call>call:f{z:null,s:<escape>null<escape>}'
+        '<end_function_call>',
+      );
+
+      expect(result.args.containsKey('z'), isTrue);
+      expect(result.args['z'], isNull);
+      expect(result.args['s'], equals('null'));
+    });
+
+    test('an empty bare value yields no call', () {
+      final result = FunctionCallParser.parse(
+        '<start_function_call>call:f{a:,b:1}<end_function_call>',
+        modelType: ModelType.functionGemma,
+      );
+
+      expect(result, isNull);
+    });
+
+    test('a bare value holding the escape yields no call', () {
+      // A string that lost its opening `<escape>`.
+      final result = FunctionCallParser.parse(
+        '<start_function_call>call:f{a:b<escape>c<escape>}<end_function_call>',
+        modelType: ModelType.functionGemma,
+      );
+
+      expect(result, isNull);
+    });
+
     test('a body it cannot fully consume yields no call at all', () {
       // The template does not escape `<escape>` inside a string value, so a
       // value containing the sentinel is ambiguous on the wire. Parsing what we

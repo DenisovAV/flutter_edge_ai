@@ -60,9 +60,11 @@
              can't dlopen the vendor OpenCL ICD without declaring its loader.
              libvndksupport.so provides android_load_sphal_library(), which the
              v0.13.x OpenCL loader uses to reach libOpenCL.so in the sphal
-             namespace. Without it OpenCL fails to load and the engine falls
-             back to WebGPU, which hard-freezes some Mali drivers on the vision
-             encoder (#324). Required per Google's LiteRT-LM Android docs. -->
+             namespace. Without it OpenCL fails to load, and OpenCL is the only
+             Android GPU path since native-v0.18.0 (native-v0.13.x and earlier
+             fell back to WebGPU, which hard-froze some Mali drivers, #324).
+             Required per
+             Google's LiteRT-LM Android docs. -->
         <uses-native-library android:name="libvndksupport.so" android:required="false"/>
         <uses-native-library
             android:name="libOpenCL.so"
@@ -79,6 +81,10 @@
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+        <!-- Flutter GPU, for the Tiny Island 3D scene (flutter_scene). -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableFlutterGPU"
+            android:value="true" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -94,6 +100,26 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- The agent's send_email, send_text and create_calendar_event
+             intents ask whether an app can handle them before opening it.
+             On Android 11 and newer the answer is "no" unless declared here
+             (flutter_edge_ai_agent README, Setup). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="mailto"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="sms"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSERT"/>
+            <data android:mimeType="vnd.android.cursor.dir/event"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.INSERT"/>
+            <data android:mimeType="vnd.android.cursor.item/event"/>
         </intent>
     </queries>
 </manifest>

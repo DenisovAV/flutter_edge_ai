@@ -41,7 +41,8 @@ void main() {
 
     await FlutterEdgeAi.installEmbedder()
         .modelFromAsset(
-            'assets/models/embeddinggemma-300M_seq256_mixed-precision.tflite')
+          'assets/models/embeddinggemma-300M_seq256_mixed-precision.tflite',
+        )
         .tokenizerFromAsset('assets/models/sentencepiece.model')
         .install();
 
@@ -51,17 +52,18 @@ void main() {
   testWidgets('Embedder: single document embedding', (tester) async {
     final embeddings = await ai.embed(
       embedder: testEmbedderRef,
-      document: DocumentData(
-        content: [TextPart(text: queryText)],
-      ),
+      document: DocumentData(content: [TextPart(text: queryText)]),
     );
 
     expect(embeddings, hasLength(1));
     final vector = embeddings.first.embedding;
     print('[Embedder] Single: ${vector.length} dimensions');
     expect(vector, isNotEmpty, reason: 'Embedding vector should be non-empty');
-    expect(vector.any((v) => v != 0), isTrue,
-        reason: 'Embedding should have non-zero values');
+    expect(
+      vector.any((v) => v != 0),
+      isTrue,
+      reason: 'Embedding should have non-zero values',
+    );
   }, timeout: const Timeout(kInferenceTimeout));
 
   testWidgets('Embedder: batch embedding (3 documents)', (tester) async {
@@ -82,8 +84,9 @@ void main() {
     }
   }, timeout: const Timeout(kInferenceTimeout));
 
-  testWidgets('Embedder: cosine similarity — similar > different',
-      (tester) async {
+  testWidgets('Embedder: cosine similarity — similar > different', (
+    tester,
+  ) async {
     final embeddings = await ai.embed(
       embedder: testEmbedderRef,
       documents: [
@@ -103,12 +106,21 @@ void main() {
     print('[Embedder] Similar cosine: $simSimilarity');
     print('[Embedder] Different cosine: $diffSimilarity');
 
-    expect(simSimilarity, greaterThan(diffSimilarity),
-        reason:
-            'Similar text should have higher cosine similarity than different text');
-    expect(simSimilarity, greaterThan(0.5),
-        reason: 'Similar texts should have similarity > 0.5');
-    expect(diffSimilarity, lessThan(0.5),
-        reason: 'Different texts should have similarity < 0.5');
+    expect(
+      simSimilarity,
+      greaterThan(diffSimilarity),
+      reason:
+          'Similar text should have higher cosine similarity than different text',
+    );
+    expect(
+      simSimilarity,
+      greaterThan(0.5),
+      reason: 'Similar texts should have similarity > 0.5',
+    );
+    expect(
+      diffSimilarity,
+      lessThan(0.5),
+      reason: 'Different texts should have similarity < 0.5',
+    );
   }, timeout: const Timeout(kInferenceTimeout));
 }

@@ -216,11 +216,10 @@ List<({String text, List<String> figures})> _questions(List<_Delivery> log) {
 /// Every figure in [text]: each run of digits joined by `/`, kept when it is a
 /// date or has three digits or more. Whole runs, so `2026/06/233` is not read
 /// as a right `2026/06/23`.
-Iterable<String> _figures(String text) =>
-    RegExp(r'\d+(?:/\d+)*')
-        .allMatches(text)
-        .map((m) => m[0]!)
-        .where((f) => f.contains('/') || f.length >= 3);
+Iterable<String> _figures(String text) => RegExp(r'\d+(?:/\d+)*')
+    .allMatches(text)
+    .map((m) => m[0]!)
+    .where((f) => f.contains('/') || f.length >= 3);
 
 /// What one run of the three questions produced: a line for each answer that
 /// failed, the ones among them that invented a figure (the bug itself, as

@@ -28,7 +28,9 @@ void main() {
     );
 
     final text = response.text;
-    print('[Blocking] Response: "${text.length > 200 ? text.substring(0, 200) : text}"');
+    print(
+      '[Blocking] Response: "${text.length > 200 ? text.substring(0, 200) : text}"',
+    );
     expect(text, isNotEmpty, reason: 'Blocking response should be non-empty');
   }, timeout: const Timeout(kInferenceTimeout));
 
@@ -54,9 +56,14 @@ void main() {
     final result = stream.result;
     final fullText = result.text;
     print(
-        '[Stream] Full (${chunks.length} chunks): "${fullText.length > 200 ? fullText.substring(0, 200) : fullText}"');
+      '[Stream] Full (${chunks.length} chunks): "${fullText.length > 200 ? fullText.substring(0, 200) : fullText}"',
+    );
     expect(chunks, isNotEmpty, reason: 'Should receive at least 1 chunk');
-    expect(fullText, isNotEmpty, reason: 'Assembled streaming text should be non-empty');
+    expect(
+      fullText,
+      isNotEmpty,
+      reason: 'Assembled streaming text should be non-empty',
+    );
   }, timeout: const Timeout(kInferenceTimeout));
 
   testWidgets('Generation: multi-turn conversation', (tester) async {
@@ -102,23 +109,27 @@ void main() {
 
     final text = response.text;
     print('[System] Response: "$text"');
-    expect(text, isNotEmpty,
-        reason: 'Response with system message should be non-empty');
+    expect(
+      text,
+      isNotEmpty,
+      reason: 'Response with system message should be non-empty',
+    );
   }, timeout: const Timeout(kInferenceTimeout));
 
   testWidgets('Generation: custom config (short output)', (tester) async {
     final response = await ai.generate(
       model: testModelRef,
       prompt: 'Write a long story about a dragon.',
-      config: FlutterEdgeAiModelOptions(
-        maxTokens: 50,
-        temperature: 0.1,
-      ),
+      config: FlutterEdgeAiModelOptions(maxTokens: 50, temperature: 0.1),
     );
 
     final text = response.text;
     print('[CustomConfig] Response (${text.length} chars): "$text"');
-    expect(text, isNotEmpty, reason: 'Custom config response should be non-empty');
+    expect(
+      text,
+      isNotEmpty,
+      reason: 'Custom config response should be non-empty',
+    );
     // With maxTokens=50, response should be relatively short
     // (not asserting exact length — model behavior varies).
   }, timeout: const Timeout(kInferenceTimeout));

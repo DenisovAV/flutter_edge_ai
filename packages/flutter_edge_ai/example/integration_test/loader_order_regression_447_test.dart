@@ -24,43 +24,39 @@ import 'loader_order_447_support.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  test(
-    'the embeddings loader leaves the ABI symbols reachable',
-    () {
-      expectLookupWorks();
+  test('the embeddings loader leaves the ABI symbols reachable', () {
+    expectLookupWorks();
 
-      // Nothing may have opened the library yet, or "it stayed visible" would be
-      // someone else's doing.
-      expect(
-        mappedInProcess('libLiteRtLm.so'),
-        isFalse,
-        reason:
-            'libLiteRtLm was already mapped before this test ran; run this file '
-            'on its own, it can only measure a clean process',
-      );
+    // Nothing may have opened the library yet, or "it stayed visible" would be
+    // someone else's doing.
+    expect(
+      mappedInProcess('libLiteRtLm.so'),
+      isFalse,
+      reason:
+          'libLiteRtLm was already mapped before this test ran; run this file '
+          'on its own, it can only measure a clean process',
+    );
 
-      // The embeddings/speech path, arriving FIRST — the order that broke #447.
-      // No model is loaded: opening the bindings is enough to reach _openLiteRt.
-      final bindings = LiteRtBindings.open();
-      expect(bindings, isNotNull);
+    // The embeddings/speech path, arriving FIRST — the order that broke #447.
+    // No model is loaded: opening the bindings is enough to reach _openLiteRt.
+    final bindings = LiteRtBindings.open();
+    expect(bindings, isNotNull);
 
-      // THE ASSERTION. With the plain open this is false, and every later
-      // generation registers the wrong stream-callback ABI.
-      expect(
-        globallyVisible(probeSymbol),
-        isTrue,
-        reason:
-            'the embeddings loader left libLiteRtLm outside the default search '
-            'scope, so stream_proxy.c cannot see the v0.15 chunk accessors and '
-            'will register the 4-arg callback against a 2-arg caller — #447',
-      );
-      expect(globallyVisible(controlSymbol), isTrue);
+    // THE ASSERTION. With the plain open this is false, and every later
+    // generation registers the wrong stream-callback ABI.
+    expect(
+      globallyVisible(probeSymbol),
+      isTrue,
+      reason:
+          'the embeddings loader left libLiteRtLm outside the default search '
+          'scope, so stream_proxy.c cannot see the v0.15 chunk accessors and '
+          'will register the 4-arg callback against a 2-arg caller — #447',
+    );
+    expect(globallyVisible(controlSymbol), isTrue);
 
-      // And the LLM path, arriving second, still gets a working handle.
-      final llmView = DynamicLibrary.open('libLiteRtLm.so');
-      expect(llmView.providesSymbol(probeSymbol), isTrue);
-      expect(globallyVisible(probeSymbol), isTrue);
-    },
-    skip: Platform.isAndroid ? null : 'Android only — unfalsifiable on Apple',
-  );
+    // And the LLM path, arriving second, still gets a working handle.
+    final llmView = DynamicLibrary.open('libLiteRtLm.so');
+    expect(llmView.providesSymbol(probeSymbol), isTrue);
+    expect(globallyVisible(probeSymbol), isTrue);
+  }, skip: Platform.isAndroid ? null : 'Android only — unfalsifiable on Apple');
 }

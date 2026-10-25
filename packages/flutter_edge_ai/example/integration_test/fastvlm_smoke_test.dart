@@ -35,41 +35,37 @@ void main() {
     _model = null;
   });
 
-  testWidgets(
-    'FastVLM install + image + text (GPU)',
-    (t) async {
-      await FlutterEdgeAi.installModel(
-        modelType: ModelType.general,
-        fileType: ModelFileType.litertlm,
-      ).fromNetwork(_url).install();
-      final image = await _testImage();
-      _model = await FlutterEdgeAi.getActiveModel(
-        maxTokens: 2048,
-        preferredBackend: PreferredBackend.gpu,
-        supportImage: true,
-        maxNumImages: 1,
-      );
-      final session = await _model!.createSession(
-        temperature: 0.7,
-        topK: 40,
-        enableVisionModality: true,
-      );
-      await session.addQueryChunk(
-        Message(
-          text: 'Describe this image in one short sentence.',
-          isUser: true,
-          imageBytes: image,
-        ),
-      );
-      final chunks = <String>[];
-      await for (final c in session.getResponseAsync()) {
-        chunks.add(c);
-      }
-      await session.close();
-      final r = chunks.join();
-      print('[FastVLM] $r');
-      expect(r.trim(), isNotEmpty);
-    },
-    timeout: const Timeout(Duration(minutes: 30)),
-  );
+  testWidgets('FastVLM install + image + text (GPU)', (t) async {
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.general,
+      fileType: ModelFileType.litertlm,
+    ).fromNetwork(_url).install();
+    final image = await _testImage();
+    _model = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 2048,
+      preferredBackend: PreferredBackend.gpu,
+      supportImage: true,
+      maxNumImages: 1,
+    );
+    final session = await _model!.createSession(
+      temperature: 0.7,
+      topK: 40,
+      enableVisionModality: true,
+    );
+    await session.addQueryChunk(
+      Message(
+        text: 'Describe this image in one short sentence.',
+        isUser: true,
+        imageBytes: image,
+      ),
+    );
+    final chunks = <String>[];
+    await for (final c in session.getResponseAsync()) {
+      chunks.add(c);
+    }
+    await session.close();
+    final r = chunks.join();
+    print('[FastVLM] $r');
+    expect(r.trim(), isNotEmpty);
+  }, timeout: const Timeout(Duration(minutes: 30)));
 }

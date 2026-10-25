@@ -436,7 +436,7 @@ On web, MediaPipe ignores `preferredBackend` and always runs on the GPU
 and `opfs_helper.js` from the `flutter_edge_ai` package's `web/` directory into
 your app's `web/` (find the package directory with
 `grep -A1 '"name": "flutter_edge_ai"' .dart_tool/package_config.json`), then load
-them in `web/index.html`:
+them in `web/index.html` by adding the following within the `<head>` section:
 
 ```
 <script src="cache_api.js"></script>

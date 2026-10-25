@@ -1,6 +1,6 @@
 name: genkit_flutter_edge_ai
 description: "Genkit Dart plugin for flutter_edge_ai: on-device inference with any model a registered engine runs, plus streaming, tool calling, JSON output and embeddings."
-version: 0.10.1
+version: 0.11.0
 homepage: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/genkit_flutter_edge_ai
 repository: https://github.com/DenisovAV/flutter_edge_ai
 issue_tracker: https://github.com/DenisovAV/flutter_edge_ai/issues
@@ -21,10 +21,12 @@ dependencies:
   flutter:
     sdk: flutter
   genkit: ^1.0.0
-  # ^2.4.0: tool refs travel as `FunctionCallResponse.id` and
-  # `Message.toolCall(calls:)` / `toolCallId`, which 2.4.0 adds (the
-  # embedder's `embedAll` with `EmbeddingInput` needs 2.3.0).
-  flutter_edge_ai: ^2.4.0
+  # >=2.5.0: deciderRouteClassifier needs DeciderQuestionType (2.5.0); tool
+  # refs travel as `FunctionCallResponse.id` and `Message.toolCall(calls:)` /
+  # `toolCallId` (2.4.0). <2.6.0: the Decider API is experimental and may
+  # change in a core minor, so the adapter is re-released with each one.
+  flutter_edge_ai: '>=2.5.0 <2.6.0'
+  genkit_hybrid: ^0.4.0
   http: ^1.6.0
   schemantic: ^1.0.0
 

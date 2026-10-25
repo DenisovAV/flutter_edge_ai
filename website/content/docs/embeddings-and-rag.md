@@ -51,7 +51,7 @@ larger chunk just because the model file declares a larger context.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.1
+  flutter_edge_ai: ^2.5.2
   flutter_edge_ai_litertlm: ^1.17.0
   flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.1.2
@@ -217,6 +217,52 @@ final vector = await embedder.embed(
   before it refuses.
 - EmbeddingGemma 1 and 2 are different embedding spaces with the same
   dimension: give each its own vector-store location and profile.
+
+### EmbeddingGemma 2 at fewer dimensions
+
+EmbeddingGemma 2 is trained with Matryoshka representation learning: the first
+128, 256 or 512 values of its 768-d text vector, normalized again, are an
+embedding of their own: smaller indexes, faster search. The package has no
+option for it, and needs none. Cut the vector the embedder returns and
+normalize it:
+
+```dart
+import 'dart:math' as math;
+
+List<double> truncateEmbedding(List<double> vector, int dimension) {
+  final head = vector.sublist(0, dimension);
+  final norm = math.sqrt(head.fold(0.0, (sum, x) => sum + x * x));
+  return [for (final x in head) x / norm];
+}
+
+final full = await embedder.embed(
+  EmbeddingInput.text('Flutter runs on six platforms.'),
+  taskType: TaskType.retrievalDocument,
+);
+final small = truncateEmbedding(full, 256);
+```
+
+Measured on 2026-10-22 on the 270m bundle on CPU, over the ten golden texts:
+
+| Dimensions | Same as LiteRT-LM's own **output_size**? | Query ranks its document first | Min cos to Sentence Transformers fp32, cut to the same size |
+|---|---|---|---|
+| 128 | yes, cos 1.000000 | 5/5 | 0.986 |
+| 256 | yes, cos 1.000000 | 5/5 | 0.979 |
+| 512 | yes, cos 1.000000 | 5/5 | 0.976 |
+| 768 (full) | — | 5/5 | 0.977 |
+
+Images and audio were not measured: keep truncation to text. Only a
+Matryoshka-trained model keeps its quality this way. EmbeddingGemma 1, Gecko,
+MiniLM and the GGUF build of EmbeddingGemma 2 were not measured here.
+
+A truncated vector is another embedding space. In RAG, implement
+**RagEmbedder** around **FlutterEdgeAiActiveEmbedder**: return the smaller
+dimension and a profile id that names the size (for example
+**'<your id>-mrl256'**) from **resolveProfile**, and truncate in
+**embedDocument** and **embedQuery**. A full-size id would let 256-d and
+768-d vectors share a location, and **forActiveModel** ids come from file
+names alone, so they cannot tell the sizes apart (see
+[Independent text RAG](#independent-text-rag) for the interface).
 
 ### EmbeddingGemma 2 images
 

@@ -123,11 +123,16 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
       );
     }
 
-    // TODO: Implement vision modality for web
-    if (enableVisionModality == true) {
+    // Web images work, but through the model's supportImage, which sets
+    // maxNumImages on the LlmInference below; enableVisionModality does not
+    // turn them on. An image sent to a model created without supportImage
+    // throws ArgumentError in addQueryChunk.
+    if (enableVisionModality == true && !supportImage) {
       if (kDebugMode) {
         edgeAiLog(
-          'Warning: Vision modality is not yet implemented for web platform',
+          '[MediaPipe Web] Warning: vision modality requested, but the model '
+          'was created without supportImage: true; an image message will '
+          'throw ArgumentError.',
         );
       }
     }

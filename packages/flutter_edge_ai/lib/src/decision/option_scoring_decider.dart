@@ -4,7 +4,7 @@
 // model's reply, and the answer. Not exported.
 //
 // The contract is litetune's decision contract, version 1. Each step mirrors
-// litetune's own code (0.5.0):
+// litetune's own code (0.5.0; 0.6.0 adds the section's `method`):
 // - the section and its checks: `decision_verify.section_payload` and
 //   `decisions.decision_from`;
 // - the prompt: `Decision.render`, byte for byte;
@@ -48,6 +48,17 @@ const decisionControlText = [
   '<eos>',
   '<pad>',
 ];
+
+/// The keys a version-1 section may carry besides [_sectionKeys]: litetune
+/// 0.6.0 records how the runtime scored the options (`method`) without
+/// changing the contract version.
+const _optionalSectionKeys = {'method'};
+
+/// litetune's `method` values: one session rewound after each option, and
+/// an Engine per option (its rule for Qwen 3.5). A section without one,
+/// litetune 0.5.x's, was scored by rewinding.
+const _methodRewind = 'rewind';
+const _methodFreshEngine = 'fresh_engine';
 
 /// The keys of a version-1 section payload, every one required.
 const _sectionKeys = {
@@ -112,7 +123,10 @@ final class DecisionSection {
         'version $decisionContractVersion',
       );
     }
-    final unknown = decoded.keys.toSet().difference(_sectionKeys);
+    final unknown = decoded.keys.toSet().difference({
+      ..._sectionKeys,
+      ..._optionalSectionKeys,
+    });
     final missing = _sectionKeys.difference(decoded.keys.toSet());
     if (unknown.isNotEmpty || missing.isNotEmpty) {
       throw FormatException(
@@ -178,6 +192,24 @@ final class DecisionSection {
     if (decoded['scoring'] != 'unique_prefix') {
       throw FormatException(
         'its scoring ${jsonEncode(decoded['scoring'])} is not unique_prefix',
+      );
+    }
+    // The temperature and the threshold were fitted on scores taken this
+    // way; this release's scorers rewind one session.
+    final method = decoded.containsKey('method')
+        ? decoded['method']
+        : _methodRewind;
+    if (method == _methodFreshEngine) {
+      throw const FormatException(
+        'its options were scored with an Engine per option (method '
+        'fresh_engine, litetune\'s rule for Qwen 3.5); this release scores '
+        'them by rewinding one session, which its temperature and threshold '
+        'were not fitted on',
+      );
+    }
+    if (method != _methodRewind) {
+      throw FormatException(
+        'its method ${jsonEncode(method)} is not rewind or fresh_engine',
       );
     }
     final terminator = decoded['terminator'];

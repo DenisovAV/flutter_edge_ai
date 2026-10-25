@@ -322,6 +322,95 @@ final eg2Index = await rag.open(
   gives them different ids (different file names); the explicit id above is for
   one text store shared by the three EmbeddingGemma 2 bundles.
 
+### EmbeddingGemma 2 at 128, 256 or 512 dimensions (Matryoshka)
+
+EmbeddingGemma 2 is trained with Matryoshka representation learning: the first
+128, 256 or 512 values of its 768-d text vector, L2-normalized again, are an
+embedding of their own. There is no API for it, and none is needed: take the
+first N values of the vector the embedder returns and normalize them.
+Measured 2026-10-22 on the 270m bundle (CPU, the ten golden texts): this is
+the same vector LiteRT-LM's own `output_size` option returns (cos 1.000000 at
+128, 256 and 512), each query still ranks its document first (5/5), and the
+minimum cosine to Sentence Transformers fp32 cut to the same size is 0.976
+(512) to 0.986 (128), against 0.977 at the full 768.
+Images and audio were not measured; keep truncation to text.
+
+```dart
+import 'dart:math' as math;
+
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+
+List<double> truncateEmbedding(List<double> vector, int dimension) {
+  final head = vector.sublist(0, dimension);
+  final norm = math.sqrt(head.fold(0.0, (sum, x) => sum + x * x));
+  return [for (final x in head) x / norm];
+}
+
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
+final full = await embedder.embed(
+  EmbeddingInput.text('Flutter runs on six platforms.'),
+  taskType: TaskType.retrievalDocument,
+);
+final small = truncateEmbedding(full, 256); // 256 values, unit length
+```
+
+A truncated vector is another embedding space. In RAG, wrap the embedder so
+the index gets the smaller dimension and its own profile id: an id without
+the size would let 256-d and 768-d vectors share a location.
+`FlutterEdgeAiActiveEmbedder.forActiveModel` builds ids from file names only,
+so it cannot tell the sizes apart either.
+
+```text
+final class MatryoshkaEmbedder implements RagEmbedder {
+  MatryoshkaEmbedder(this.inner, {required this.dimension, required this.profileId});
+
+  final RagEmbedder inner;
+  final int dimension;
+  final String profileId; // a new space: never the full-size id
+
+  @override
+  Future<EmbeddingProfile> resolveProfile() async {
+    final full = await inner.resolveProfile();
+    if (dimension > full.dimension) {
+      throw ArgumentError.value(dimension, 'dimension', 'exceeds ${full.dimension}');
+    }
+    return EmbeddingProfile(id: profileId, dimension: dimension);
+  }
+
+  @override
+  Set<EmbeddingModality> get modalities => const {EmbeddingModality.text};
+
+  @override
+  Future<List<double>> embedDocument(EmbeddingInput document) async =>
+      truncateEmbedding(await inner.embedDocument(document), dimension);
+
+  @override
+  Future<List<double>> embedQuery(
+    EmbeddingInput query, {
+    required EmbeddingModality documentModality,
+  }) async => truncateEmbedding(
+    await inner.embedQuery(query, documentModality: documentModality),
+    dimension,
+  );
+}
+
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: databasePath,
+  ),
+  embedder: MatryoshkaEmbedder(
+    FlutterEdgeAiActiveEmbedder(profileId: eg2ProfileId),
+    dimension: 256,
+    profileId: '$eg2ProfileId-mrl256',
+  ),
+);
+```
+
+Only Matryoshka-trained models keep their quality this way. EmbeddingGemma 1,
+Gecko, MiniLM and the GGUF EmbeddingGemma 2 were not measured here; do not
+truncate a model without measuring it.
+
 ### EmbeddingGemma 2 on a Qualcomm NPU (`flutter_edge_ai_litertlm` 1.13.1)
 
 The same repos hold each bundle compiled for one SoC's NPU

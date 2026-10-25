@@ -20,7 +20,7 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 | **`flutter_edge_ai_mediapipe`** | `.task` / `.bin` inference via MediaPipe. Google's LLM Inference API is maintenance-only — new apps should use `.litertlm`. | Mobile + Web |
 | **`flutter_edge_ai_builtin_ai`** | System OS models — Gemini Nano (Android / AICore), Apple Foundation Models (iOS 26+/macOS 26+), Windows AI Foundry (Phi Silica), and the browser Prompt API (Web — Gemini Nano in Chrome, Phi-4-mini in Edge). No model file to bundle or download. A thin adapter over [`flutter_local_ai`](https://pub.dev/packages/flutter_local_ai), which owns the native layer — not a plugin itself. | Android + iOS + macOS + Windows + Web |
 | **`flutter_edge_ai_llama`** | [GGUF inference](/docs/llama) and native EmbeddingGemma 2 text embeddings (`LlamaEmbeddingBackend`) through llamadart. Native artifacts and the Web bridge remain owned by llamadart. | Android, iOS, macOS, Windows, Linux + Web; see qualification matrix |
-| **`flutter_edge_ai_onnx`** | Text generation (`OnnxEngine`) + embeddings (`OnnxEmbeddingBackend`) — ORT-GenAI/ORT via `dart:ffi` on native, Transformers.js/onnxruntime-web on Web. | macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64 + Web |
+| **`flutter_edge_ai_onnx`** | Text generation (`OnnxEngine`) + embeddings (`OnnxEmbeddingBackend`) — ORT-GenAI/ORT via `dart:ffi` on native, Transformers.js/onnxruntime-web on Web. | macOS arm64, Linux x64, Windows x64, Windows ARM64, Android arm64, iOS arm64 + Web |
 | **`flutter_edge_ai_embeddings`** | Embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via `embeddingTokenizers:`, for `.tflite` and `.onnx` models (an EmbeddingGemma 2 `.litertlm` carries its own). Needs a backend — `LiteRtEmbeddingBackend` (`flutter_edge_ai_litertlm`) or `OnnxEmbeddingBackend` (`flutter_edge_ai_onnx`). | All |
 | **`flutter_edge_ai_rag`** | Instance-scoped RAG orchestration, `RagIndex`, stable embedding profiles, filters, and vector-store provider contracts. | All |
 | **`flutter_edge_ai_qdrant`** | qdrant-edge provider for `flutter_edge_ai_rag`, via the official qdrant_edge UniFFI SDK. Fastest on native. | Native (no Web) |
@@ -72,7 +72,7 @@ is on the [Capabilities](/docs/capabilities) page.
 | On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 | On-device agent skills the model runs itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
-| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS) | `flutter_edge_ai_diagnostics` |
+| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS + Linux) | `flutter_edge_ai_diagnostics` |
 
 <Info>
 
@@ -147,7 +147,7 @@ Two companion packages integrate flutter_edge_ai with [Genkit](https://pub.dev/p
 
 | Package | What it does | Depends on |
 |---|---|---|
-| **`genkit_flutter_edge_ai`** | Exposes flutter_edge_ai as a Genkit model/embedder provider — call `ai.generate(model: flutterEdgeAi.model(...))` and `ai.embed(...)` through the standard Genkit API. | `flutter_edge_ai` + `genkit` |
-| **`genkit_hybrid`** | Provider-agnostic hybrid routing: combine an on-device and a cloud model behind one routing policy, with correct streaming + before-first-token fallback. | `genkit` only (no flutter_edge_ai) |
+| **`genkit_flutter_edge_ai`** | Exposes flutter_edge_ai as a Genkit model/embedder provider — call `ai.generate(model: flutterEdgeAi.model(...))` and `ai.embed(...)` through the standard Genkit API; `deciderRouteClassifier` lets a `genkit_hybrid` router decide on the device. | `flutter_edge_ai` + `genkit` + `genkit_hybrid` |
+| **`genkit_hybrid`** | Hybrid on-device/cloud routing: one decision per call, rules then a classifier, the cloud reachable only through the router. | `genkit` (+ `schemantic`); no flutter_edge_ai |
 
 See [Genkit](/docs/genkit) for setup and examples.

@@ -326,6 +326,9 @@ question, options, temperature, threshold). Pass the question and the trained
 options; take the rest from the file with
 `InferenceDeciderCalibration.fromModel()`. LiteTune 0.5.0's `bundle` prints
 only the `options:` part of the call; the question is in its `contract.json`.
+A file from LiteTune 0.6.0 records its scoring `method` and needs
+`flutter_edge_ai` 2.5.2; a `fresh_engine` one (LiteTune's Qwen 3.5 rule) is
+refused by name.
 
 ```dart
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';

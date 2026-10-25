@@ -1,4 +1,5 @@
 ## 1.18.0
+- `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).
 - EmbeddingGemma 2 270m on the GPU on Windows and Linux x64 (`gpu`); `gpu` with media now throws there.
 
 ## 1.17.0

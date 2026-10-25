@@ -300,6 +300,29 @@ void main() {
         expect(bystanderError, isA<StateError>());
       },
     );
+
+    test('countTokens on a shut-down client fails through its Future, never '
+        'synchronously', () async {
+      await client.shutdown();
+
+      // The call itself must return: a caller that chains handlers
+      // instead of awaiting inside a `try` never sees a synchronous throw.
+      final future = client.countTokens('after shutdown');
+      await expectLater(
+        future,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'GenAiFfiClient is not loaded',
+          ),
+        ),
+      );
+      expect(
+        await client.countTokens('again').catchError((Object _) => -1),
+        -1,
+      );
+    });
   });
 
   group('GenAiFfiClient / OnnxSession-shaped close ordering', () {

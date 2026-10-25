@@ -5,7 +5,6 @@ import 'package:genkit/genkit.dart'
     show SimulateConstrainedGenerationMiddleware;
 import 'package:genkit/plugin.dart';
 
-import 'backend_parse.dart';
 import 'converters/request_converter.dart';
 import 'converters/response_converter.dart';
 import 'converters/tool_converter.dart';
@@ -195,24 +194,7 @@ Future<_PreparedRequest> _prepare(
   final systemInstruction = configSystemInstruction == null
       ? extractSystemInstruction(request.messages)
       : _withOutputInstructions(configSystemInstruction, request.messages);
-  final load = (
-    maxTokens: config?.maxTokens ?? kDefaultMaxTokens,
-    supportImage: supportImage,
-    supportAudio: supportAudio,
-    enableSpeculativeDecoding: config?.enableSpeculativeDecoding,
-    preferredBackend: parsePreferredBackend(
-      config?.preferredBackend,
-      field: 'preferredBackend',
-    ),
-    preferredVisionBackend: parsePreferredBackend(
-      config?.preferredVisionBackend,
-      field: 'preferredVisionBackend',
-    ),
-    preferredAudioBackend: parsePreferredBackend(
-      config?.preferredAudioBackend,
-      field: 'preferredAudioBackend',
-    ),
-  );
+  final load = loadParamsOf(config);
   final tools = convertTools(request.tools);
 
   final messages = await convertMessages(request.messages, cancel: cancel);

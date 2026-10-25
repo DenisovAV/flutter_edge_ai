@@ -1,3 +1,6 @@
+## 0.3.7
+- Require `flutter_local_ai` ^0.3.0; generation failures expose `PlatformException` details.
+
 ## 0.3.6
 - README: Chrome 148 and later need no origin trial; sampling defaults per platform.
 

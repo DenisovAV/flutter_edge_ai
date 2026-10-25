@@ -115,7 +115,7 @@ class _FakeHost extends LiteRtLmEngineHost {
     required int? activationDataType,
     required NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
-    int? thinkingTokenBudget,
+    required int? thinkingTokenBudget,
   }) async {
     nativeLogLevels.add(nativeLogLevel);
     thinkingBudgets.add(thinkingTokenBudget);

@@ -54,7 +54,11 @@ void applyThinkingTokenBudget(
   if (!thinking || budget == null) return;
   final config = b.litert_lm_thinking_config_create();
   if (config == nullptr) {
-    throw StateError('litert_lm_thinking_config_create returned null');
+    throw StateError(
+      'litert_lm_thinking_config_create returned null, so the thinking budget '
+      'could not be applied and no generation was started: a native '
+      'allocation failure',
+    );
   }
   try {
     b.litert_lm_thinking_config_set_enable_thinking(config, true);
@@ -66,6 +70,25 @@ void applyThinkingTokenBudget(
   } finally {
     b.litert_lm_thinking_config_delete(config);
   }
+}
+
+/// The warning for a thinking [budget] that caps nothing on the bundle at
+/// [modelPath], or null. LiteRT-LM caps the first channel a bundle declares;
+/// when [read] found none, a turn with thinking on can still think until
+/// `maxOutputTokens`. Null with no budget, and when the read failed: that read
+/// prints its own warning.
+@visibleForTesting
+String? thinkingBudgetChannelWarning(
+  int? budget,
+  BundleSamplerRead read,
+  String modelPath,
+) {
+  if (budget == null || read.declaresChannel != false) return null;
+  return '[flutter_edge_ai_litertlm] WARNING: '
+      'LiteRtLmEngine(thinkingTokenBudget: $budget) caps nothing on '
+      '${modelPath.split(RegExp(r'[/\\]')).last}: the file declares no '
+      'output channel (LlmMetadata.channels), so a turn with thinking on can '
+      'still think until maxOutputTokens.';
 }
 
 /// Callback typedef with Uint8 for bool (C _Bool = 1 byte)
@@ -1425,6 +1448,15 @@ class LiteRtLmFfiClient {
 
       _isInitialized = true;
       acceptBundleSamplerRead(samplerRead);
+      final channelWarning = thinkingBudgetChannelWarning(
+        _thinkingTokenBudget,
+        samplerRead,
+        modelPath,
+      );
+      // A release build is where an uncapped turn gets reported, and
+      // edgeAiLog is silent there.
+      // ignore: avoid_print
+      if (channelWarning != null) print(channelWarning);
       edgeAiLog(
         '[LiteRtLmFfi/perf] initialize() total: ${initSw.elapsedMilliseconds}ms',
       );

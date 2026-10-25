@@ -5,6 +5,8 @@
 // - a budget the turn never reaches leaves it as it was, and the decode speed
 //   with and without it is printed: LiteRT-LM checks the budget on every
 //   token of a send that carries one;
+// - a turn with thinking off is the same with a budget and without: the
+//   budget never turns thinking on;
 // - a tool turn with thinking on and a budget of 64 still calls the tool and
 //   answers from its result.
 //
@@ -90,14 +92,18 @@ Future<InferenceModel> _activeModel(int? budget) async {
   );
 }
 
-Future<_Turn> _turn(WidgetTester tester, int? budget) async {
+Future<_Turn> _turn(
+  WidgetTester tester,
+  int? budget, {
+  bool enableThinking = true,
+}) async {
   final model = await _activeModel(budget);
   final thinking = StringBuffer();
   final answer = StringBuffer();
   try {
     final chat = await model.createChat(
       topK: 1,
-      enableThinking: true,
+      enableThinking: enableThinking,
       maxOutputTokens: _maxOutputTokens,
       modelType: ModelType.gemma4,
     );
@@ -122,7 +128,8 @@ Future<_Turn> _turn(WidgetTester tester, int? budget) async {
     );
     // ignore: avoid_print
     print(
-      '[thinking budget] $_backendName, budget ${budget ?? 'none'}: '
+      '[thinking budget] $_backendName, budget ${budget ?? 'none'}'
+      '${enableThinking ? '' : ', thinking off'}: '
       'thinking ${turn.thinking.length} chars, answer ${turn.answer.length} '
       'chars, ${turn.outputTokens} output tokens, decode '
       '${turn.tokensPerSecond?.toStringAsFixed(1)} tok/s',
@@ -147,6 +154,12 @@ void main() {
     // free turn must think past that or the bound proves nothing.
     expect(free.thinking.length, greaterThan(600));
     expect(capped.thinking.length, lessThan(600));
+    // Cut short, not switched off or rewritten: greedy decoding thinks the
+    // same tokens until the budget ends the channel, and fewer tokens are
+    // decoded, not only fewer shown.
+    expect(capped.thinking.trim(), isNotEmpty);
+    expect(free.thinking.startsWith(capped.thinking.trimRight()), isTrue);
+    expect(capped.outputTokens, lessThan(free.outputTokens));
     expect(capped.answer.trim(), isNotEmpty);
   }, timeout: const Timeout(Duration(minutes: 15)));
 
@@ -159,6 +172,9 @@ void main() {
       }
     }
     final free = runs[null]!.first;
+    // Fewer tokens in the whole reply than the budget, so the budget was
+    // never reached.
+    expect(free.outputTokens, lessThan(_unreachedBudget));
     for (final turn in [...runs[null]!, ...runs[_unreachedBudget]!]) {
       expect(turn.thinking, free.thinking);
       expect(turn.answer, free.answer);
@@ -173,6 +189,17 @@ void main() {
       '${speeds(_unreachedBudget)}',
     );
   }, timeout: const Timeout(Duration(minutes: 30)));
+
+  testWidgets('a turn with thinking off is the same with a budget of $_budget '
+      'and without ($_backendName)', (tester) async {
+    final free = await _turn(tester, null, enableThinking: false);
+    final budgeted = await _turn(tester, _budget, enableThinking: false);
+
+    expect(free.thinking, isEmpty);
+    expect(budgeted.thinking, isEmpty);
+    expect(budgeted.answer, free.answer);
+    expect(free.answer.trim(), isNotEmpty);
+  }, timeout: const Timeout(Duration(minutes: 15)));
 
   testWidgets('a tool turn with thinking on and a budget of $_budget calls the '
       'tool and answers from its result ($_backendName)', (tester) async {
@@ -223,6 +250,10 @@ void main() {
       );
 
       expect(capped, isFalse);
+      // The first generation thinks, within the budget. Gemma 4 E2B does not
+      // think again after the tool result, so a later generation's own budget
+      // is not shown here.
+      expect(thinking.first, inInclusiveRange(1, 599));
       expect(calls, hasLength(1));
       expect(calls.single.name, 'multiply');
       expect(calls.single.args, {'a': 1234, 'b': 5678});

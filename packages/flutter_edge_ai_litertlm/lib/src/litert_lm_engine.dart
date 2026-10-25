@@ -168,21 +168,29 @@ class LiteRtLmEngine
   /// true`): when the thinking reaches the budget, LiteRT-LM closes the
   /// thought channel and the model goes on to the answer or the tool call.
   /// Without one, a model can think until `maxOutputTokens` and end the turn
-  /// with an empty answer (measured on Intel's Gemma 4 26B for its NPU).
+  /// with an empty answer. A model that reasons with thinking off too (Qwen3
+  /// 4B Thinking 2507) is not capped then: LiteRT-LM applies a budget only to
+  /// a generation with thinking on.
   ///
-  /// The budget is per generation: in a tool loop, each generation after a
-  /// tool result starts with a fresh one. The thinking counts towards
-  /// `maxOutputTokens`, and the reply towards the context (`maxTokens`, 1024
-  /// by default), so a budget that can act is below both, with room left for
+  /// The budget is per generation: every send with thinking on carries it,
+  /// so in a tool loop a generation after a tool result has its own. The
+  /// thinking counts towards `maxOutputTokens`, and the reply, with the
+  /// prompt and the history, towards the context (`maxTokens`, 1024 by
+  /// default), so a budget that can act is below both, with room left for
   /// the answer. LiteRT-LM caps the first channel the bundle declares
   /// (`thought` on the Gemma 4 bundles); a bundle that declares none is not
-  /// capped. On the GPU it slows the decoding of the whole generation (about a
-  /// fifth for Gemma 4 E2B on an M5 Pro); on the CPU no cost was measured.
+  /// capped, and loading one with a budget prints a warning. On the GPU it
+  /// slows the decoding of the whole generation (Gemma 4 E2B: about a fifth
+  /// on an M5 Pro, about 40% on an NVIDIA L4); on the CPU no cost was
+  /// measured.
   ///
   /// It is fixed when the engine is registered: a second `LiteRtLmEngine`
-  /// with another budget does not replace the first. Between 1 and
-  /// 0x7fffffff. The web engine accepts it and ignores it: its runtime has no
-  /// such setting.
+  /// with another budget does not replace the first. To change it, close the
+  /// model, call `FlutterEdgeAi.reset()`, which drops every registration, and
+  /// `initialize` again with every provider the app uses. Between 1 and
+  /// 0x7fffffff: a value outside throws [ArgumentError] when a model loads.
+  /// The web engine accepts it and ignores it: its runtime has no such
+  /// setting.
   final int? thinkingTokenBudget;
 
   @override

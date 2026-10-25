@@ -349,8 +349,9 @@ them to the parent's console.
 
 `LiteRtLmEngine(thinkingTokenBudget: 512)` (1.18.0) caps how many tokens each
 generation with thinking on spends thinking, in every model the engine builds;
-null, the default, sets none. Keep it below `maxOutputTokens`, and that below
-`maxTokens`, or it never acts. On the GPU it slows decoding. See
+null, the default, sets none. Keep it below `maxOutputTokens` and below what
+the context (`maxTokens`) has left after the prompt and the history, or it is
+never reached. On the GPU it slows decoding; the web engine ignores it. See
 [Thinking mode → Thinking budget](/docs/thinking-mode#thinking-budget).
 
 ### Inspecting a model file

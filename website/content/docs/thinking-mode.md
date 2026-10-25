@@ -72,24 +72,35 @@ final chat = await model.createChat(
 ```
 
 Without a budget a model can think until `maxOutputTokens` and end the turn
-with an empty answer: Intel's Gemma 4 26B for its NPU did, and so did Qwen3 0.6B
-on the CPU (4507 characters of thinking, no answer; with a budget of 32, 107
-characters, then the answer).
+with an empty answer: Intel's Gemma 4 26B MoE for the Panther Lake NPU did
+(6144 tokens of thinking, no tool call, [#721](https://github.com/DenisovAV/flutter_edge_ai/pull/721)), and so did
+`Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` on the CPU (4507 characters of
+thinking, no answer; with a budget of 32, 107 characters, then the answer).
 
-- The thinking counts towards `maxOutputTokens`, and the reply towards the
-  context (`maxTokens`, 1024 by default): keep budget < `maxOutputTokens` <
-  `maxTokens`, with room left for the answer, or the budget never acts.
-- It is per generation: in a tool loop, each generation after a tool result
-  starts with a fresh budget.
+- The thinking counts towards `maxOutputTokens`, and the reply, with the
+  prompt and the history, towards the context (`maxTokens`, 1024 by default):
+  keep the budget below `maxOutputTokens` and below what the context has left,
+  with room for the answer, or the budget is never reached.
+- It applies only with thinking on. A model that reasons with
+  `enableThinking: false` too, such as Qwen3 4B Thinking 2507, is not capped
+  then.
+- It is per generation: every send with thinking on carries it, so in a tool
+  loop a generation after a tool result has its own budget. Gemma 4 E2B did not
+  think again after a tool result in the measured runs, so only the first
+  generation of such a turn was seen capped.
 - LiteRT-LM caps the first channel the bundle declares (measured on Gemma 4 E2B
-  and Qwen3 0.6B); a bundle that declares none is not capped.
+  and `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`). A bundle that declares none
+  is not capped, and loading one with a budget prints a warning.
 - It is fixed when the engine is registered. To change it, close the model,
-  call `FlutterEdgeAi.reset()`, `initialize` with the new engine, then install
+  call `FlutterEdgeAi.reset()` (it drops every registration, not only the
+  engine), `initialize` again with every provider the app uses, then install
   and load the model again.
+- A value outside 1..0x7fffffff throws `ArgumentError` when a model loads.
 - On the GPU it slows decoding for the whole generation, after the budget is
-  reached too: Gemma 4 E2B on an M5 Pro decoded at 87–97 tokens per second with
-  a budget it never reached and 117–118 without one, with the same output. On
-  the CPU no cost was measured (55 tokens per second either way).
+  reached too. Gemma 4 E2B with a budget it never reached, same output: 87–97
+  tokens per second instead of 117–118 on an M5 Pro, 68 instead of 111 on an
+  NVIDIA L4 (Linux). On the CPU no cost was measured (55 tokens per second
+  either way on the M5 Pro, 14.4 on the L4 machine).
 - The web engine accepts it and ignores it: `@litert-lm/core` has no such
   setting.
 

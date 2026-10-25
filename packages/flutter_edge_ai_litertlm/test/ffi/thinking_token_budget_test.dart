@@ -9,8 +9,10 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
+import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart';
 import 'package:flutter_edge_ai_litertlm/src/thinking_token_budget.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -174,6 +176,92 @@ void main() {
       printed.where((l) => l.contains('thinkingTokenBudget')),
       hasLength(1),
     );
+  });
+
+  test('with logging off the web notice is not spent: raised later, the '
+      'line still comes', () async {
+    resetThinkingTokenBudgetNotice();
+    addTearDown(resetThinkingTokenBudgetNotice);
+    final level = edgeAiLogLevel;
+    addTearDown(() => edgeAiLogLevel = level);
+    final printed = <String>[];
+    await runZoned(
+      () async {
+        edgeAiLogLevel = EdgeAiLogLevel.none;
+        noticeThinkingTokenBudgetIgnoredOnWeb();
+        edgeAiLogLevel = EdgeAiLogLevel.info;
+        noticeThinkingTokenBudgetIgnoredOnWeb();
+      },
+      zoneSpecification: ZoneSpecification(
+        print: (_, _, _, line) => printed.add(line),
+      ),
+    );
+    expect(
+      printed.where((l) => l.contains('thinkingTokenBudget')),
+      hasLength(1),
+    );
+  });
+
+  group('a budget on a bundle that declares no channel', () {
+    const path = '/models/old-reasoning.litertlm';
+
+    test('is warned about, naming the budget and the file', () {
+      expect(
+        thinkingBudgetChannelWarning(
+          512,
+          const BundleSamplerRead(SamplingParams(), declaresChannel: false),
+          path,
+        ),
+        allOf(
+          contains('WARNING'),
+          contains('thinkingTokenBudget: 512'),
+          contains('old-reasoning.litertlm'),
+          isNot(contains('/models/')),
+        ),
+      );
+    });
+
+    test('is silent with a channel, with no budget, or with no read', () {
+      expect(
+        thinkingBudgetChannelWarning(
+          512,
+          const BundleSamplerRead(SamplingParams(), declaresChannel: true),
+          path,
+        ),
+        isNull,
+      );
+      expect(
+        thinkingBudgetChannelWarning(
+          null,
+          const BundleSamplerRead(SamplingParams(), declaresChannel: false),
+          path,
+        ),
+        isNull,
+      );
+      // A failed read prints its own warning; this one would guess.
+      expect(
+        thinkingBudgetChannelWarning(
+          512,
+          const BundleSamplerRead.failed('FormatException: truncated'),
+          path,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  test('the client keeps the budget initialize was given', () async {
+    final client = LiteRtLmFfiClient();
+    // No engine can load from here; the budget is taken before the load.
+    await expectLater(
+      client.initialize(
+        modelPath: '/nonexistent/model.litertlm',
+        backend: 'cpu',
+        thinkingTokenBudget: 7,
+      ),
+      throwsA(anything),
+    );
+    expect(client.thinkingTokenBudget, 7);
   });
 
   test('the release gate lists every C function a budget calls', () {

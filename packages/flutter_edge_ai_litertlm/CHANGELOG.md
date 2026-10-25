@@ -1,5 +1,5 @@
 ## 1.18.0
-- `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on.
+- `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).
 
 ## 1.17.0
 - MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).

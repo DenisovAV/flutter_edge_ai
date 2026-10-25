@@ -51,6 +51,7 @@ export 'src/registry/hugging_face_resolver.dart'
 
 export 'src/domain/platform_types.dart'
     show ActivationDataType, PreferredBackend;
+export 'src/domain/multimodal_order.dart' show MediaPosition, MultimodalOrder;
 export 'src/domain/no_active_model_error.dart' show NoActiveModelError;
 
 // Embedding inputs, task types and failures.
@@ -70,6 +71,32 @@ export 'src/embedding/embedding_exceptions.dart'
         EmbeddingLoadException,
         EmbeddingModalityNotLoadedException,
         UnsupportedEmbeddingCombinationException;
+// Deciders (experimental): pick one of N options for an input, or abstain.
+export 'src/decision/decider.dart'
+    show
+        AbstainReason,
+        AbstainSignalKind,
+        Decider,
+        DeciderAnswer,
+        DeciderCapabilities,
+        DeciderInput,
+        DeciderProvenance,
+        DeciderQuestionType,
+        DeciderRequest,
+        RankedOption,
+        ScoreKind;
+export 'src/decision/decider_exceptions.dart'
+    show
+        DeciderCancelledException,
+        DeciderException,
+        DeciderSpaceMismatchException,
+        DeciderUnsupportedException;
+export 'src/decision/decider_method.dart'
+    show
+        DeciderMethod,
+        EmbeddingDeciderCalibration,
+        InferenceDeciderCalibration;
+export 'src/decision/decider_option.dart' show DeciderOption;
 export 'src/media/encoded_media_format.dart'
     show EncodedMediaFormat, sniffEncodedMediaFormat;
 export 'src/message.dart' show Message, MessageType;

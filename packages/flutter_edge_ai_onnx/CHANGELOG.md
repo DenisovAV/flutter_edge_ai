@@ -1,3 +1,12 @@
+## 0.6.0
+- Windows ARM64: bundle ORT and ORT-GenAI archives for both engines (#326).
+
+## 0.5.10
+- README: what `activeBackend` reports, natively and on the web.
+
+## 0.5.9
+- README: which part of genai_config.json the engine reads.
+
 ## 0.5.8
 - **Breaking:** require `flutter_edge_ai` ^2.3.0; `OnnxEmbeddingForwardPass` is now `OnnxEmbeddingPass`.
 

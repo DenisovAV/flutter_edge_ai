@@ -423,18 +423,38 @@ void main() {
     });
 
     test('a quick load and a quick close() say nothing', () async {
+      // Quick by construction, not by the wall clock: the notices are this
+      // zone's timers, which never fire on their own. Each must be cancelled
+      // by the time its call returns; then the test lets them all elapse.
+      // With real 200 ms timers this failed whenever spawn or close took
+      // longer than that on a loaded machine.
       final log = logFor('quick_close');
-      final printed = await capturePrints(() async {
+      final printed = <String>[];
+      final notices = <ManualTimer>[];
+      await runZoned(() async {
         final worker = await spawn(
           _Mode.fast,
           log,
-          slowLoadNotice: _shortNotice,
-          slowCloseNotice: _shortNotice,
+          slowLoadNotice: manualNotice,
+          slowCloseNotice: manualNotice,
+        );
+        expect(notices, hasLength(1), reason: 'spawn() set its notice');
+        expect(
+          notices[0].isActive,
+          isFalse,
+          reason: 'spawn() cancelled its notice when it returned',
         );
         await worker.close();
-        // Past both notices: a timer left running would fire by now.
-        await Future<void>.delayed(_shortNotice * 3);
-      });
+        expect(notices, hasLength(2), reason: 'close() set its notice');
+        expect(
+          notices[1].isActive,
+          isFalse,
+          reason: 'close() cancelled its notice when it returned',
+        );
+        for (final notice in notices) {
+          notice.elapse();
+        }
+      }, zoneSpecification: capturePrintsWithManualNotices(printed, notices));
       expect(printed.where((l) => l.contains('has taken')), isEmpty);
     });
   });
@@ -675,8 +695,9 @@ void main() {
 
       expect(listenerCalls, 1);
       expect(onCloseCalls, 1);
-      expect(
-        () => stt.transcribe(Uint8List(32)),
+      // No closure around the call: the error must come through the Future.
+      await expectLater(
+        stt.transcribe(Uint8List(32)),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
@@ -693,6 +714,46 @@ void main() {
       expect(onCloseCalls, 1);
       expect(printed.join('\n'), contains('exited unexpectedly'));
       expect(linesOf(log), ['load'], reason: 'it died idle, before a dispose');
+    });
+
+    test('transcribe on a closed recognizer fails through its Future, never '
+        'synchronously', () async {
+      final log = logFor('recognizer_closed_transcribe');
+      final stt = await recognizer(_Mode.fast, log);
+      await stt.close();
+
+      // The call itself must return: a caller that chains handlers instead
+      // of awaiting inside a `try` never sees a synchronous throw.
+      final future = stt.transcribe(Uint8List(32));
+      await expectLater(
+        future,
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'LiteRtSpeechRecognizer is closed; create a new instance to use it',
+          ),
+        ),
+      );
+      expect(
+        await stt.transcribe(Uint8List(32)).catchError((Object _) => 'caught'),
+        'caught',
+      );
+      expect(linesOf(log), isNot(contains('run')));
+    });
+
+    test('transcribe sends its request during the call, before a close() '
+        'right after it', () async {
+      final log = logFor('recognizer_send_order');
+      final stt = await recognizer(_Mode.fast, log);
+
+      final result = outcomeOf(stt.transcribe(Uint8List(32)));
+      await stt.close();
+
+      // The worker had the request before it began closing: it ran it or
+      // turned it away itself. "SttWorker is closed" would mean the request
+      // reached the worker only after close() had started.
+      expect(await result, anyOf(_transcript, closedBeforeRun('SttWorker')));
     });
 
     test('a caller that retries from its error handler finds the recognizer '

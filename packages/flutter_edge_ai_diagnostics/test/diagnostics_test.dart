@@ -1,10 +1,13 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  // `flutter test` runs on the host (Linux, macOS or Windows), which is
-  // exactly the case this package refuses.
-  group('on a host platform', () {
+  // `flutter test` runs on the host. On Linux and Windows that is exactly the
+  // case this package refuses; a macOS host is a supported platform, and the
+  // integration test covers it.
+  group('on an unsupported host platform', skip: Platform.isMacOS, () {
     test('isSupported is false', () {
       expect(FlutterEdgeAiDiagnostics.isSupported, isFalse);
     });
@@ -57,6 +60,30 @@ void main() {
       );
     });
 
+    test('equality covers anonymousPeakBytes', () {
+      final a = MemorySnapshot(
+        anonymousBytes: 1,
+        availableBytes: 2,
+        anonymousPeakBytes: 9,
+        takenAt: at,
+      );
+      expect(
+        a,
+        MemorySnapshot(
+          anonymousBytes: 1,
+          availableBytes: 2,
+          anonymousPeakBytes: 9,
+          takenAt: at,
+        ),
+      );
+      expect(
+        a,
+        isNot(
+          MemorySnapshot(anonymousBytes: 1, availableBytes: 2, takenAt: at),
+        ),
+      );
+    });
+
     test('equality covers fileBackedBytes', () {
       final a = MemorySnapshot(
         anonymousBytes: 1,
@@ -100,6 +127,7 @@ void main() {
       expect(s, contains('anonymousBytes: null'));
       expect(s, contains('availableBytes: 7'));
       expect(s, contains('fileBackedBytes: null'));
+      expect(s, contains('anonymousPeakBytes: null'));
     });
   });
 }

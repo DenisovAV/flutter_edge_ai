@@ -1,7 +1,10 @@
+import 'dart:collection' show UnmodifiableMapView;
+
 /// How a [Skill] is executed. Inferred from the SKILL.md body's tool mention by
-/// [parseSkillMd] (`run_js` → [js], `run_intent` → [intent], `run_mcp` → [mcp],
-/// otherwise [textOnly]) and used by the executor probe-chain to route a skill
-/// to the matching [SkillExecutor].
+/// [parseSkillMd] (`run_js` / `runSkill` → [js], `run_intent` / `runIntent` →
+/// [intent], `run_mcp` / `runMcp` → [mcp], otherwise [textOnly]; see
+/// [inferSkillType]) and used by the executor probe-chain to route a skill to
+/// the matching [SkillExecutor].
 enum SkillType {
   /// Pure prompt / persona — no tool, no code, no risk. Just instructions fed
   /// to the model (e.g. Gallery's `kitchen-adventure`).
@@ -49,13 +52,16 @@ extension SkillTypeId on SkillType {
 /// Optional `metadata:` block from a SKILL.md frontmatter.
 ///
 /// All fields are optional; a skill with no `metadata:` block parses to an
-/// instance with [homepage] null, [requireSecret] false, and
-/// [secretDescription] null.
+/// instance with [homepage] null, [requireSecret] false, [secretDescription]
+/// null and [extra] empty.
 class SkillMetadata {
+  /// The `extra:` map is not copied: [extra] is an unmodifiable view of the
+  /// map passed here, so a later change to that map shows through it.
   const SkillMetadata({
     this.homepage,
     this.requireSecret = false,
     this.secretDescription,
+    this._extra = const {},
   });
 
   /// `metadata.homepage` — where the skill comes from / its docs. May be null.
@@ -69,14 +75,31 @@ class SkillMetadata {
   /// obtain the secret. May be null.
   final String? secretDescription;
 
+  final Map<String, Object?> _extra;
+
+  /// Every other `metadata:` key, with its value: the keys an app defines for
+  /// its own skills (e.g. whether a skill's result may be shown verbatim).
+  /// The package reads none of them; the app owns the keys it reads.
+  ///
+  /// [parseSkillMd] keeps the YAML types — strings, numbers, booleans, null,
+  /// and nested maps and lists as plain unmodifiable Dart `Map`s and `List`s.
+  /// A frontmatter that is not valid YAML goes through the tolerant line
+  /// parser instead, which yields strings only (and flattens nested keys).
+  /// Unmodifiable, but not a copy of the map given to the constructor.
+  Map<String, Object?> get extra => UnmodifiableMapView(_extra);
+
   /// True when this metadata carries no information (the default/empty case).
   bool get isEmpty =>
-      homepage == null && !requireSecret && secretDescription == null;
+      homepage == null &&
+      !requireSecret &&
+      secretDescription == null &&
+      _extra.isEmpty;
 
   @override
   String toString() =>
       'SkillMetadata(homepage: $homepage, '
-      'requireSecret: $requireSecret, secretDescription: $secretDescription)';
+      'requireSecret: $requireSecret, secretDescription: $secretDescription, '
+      'extra: $_extra)';
 }
 
 /// A parsed agent skill: identity ([name]/[description]) the model uses to pick

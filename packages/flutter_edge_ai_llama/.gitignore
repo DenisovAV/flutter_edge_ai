@@ -1,0 +1,10 @@
+/example/web/webgpu_bridge/
+/test/webgpu_bridge
+__pycache__/
+
+.dart_tool/
+build/
+coverage/
+pubspec.lock
+.flutter-plugins-dependencies
+/tool/fixtures/

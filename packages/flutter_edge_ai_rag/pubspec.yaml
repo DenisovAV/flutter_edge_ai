@@ -1,6 +1,6 @@
 name: flutter_edge_ai_rag
 description: "Pluggable on-device RAG for Flutter Edge AI, with independent vector-store providers and embedders."
-version: 1.1.0
+version: 1.1.2
 resolution: workspace
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_rag

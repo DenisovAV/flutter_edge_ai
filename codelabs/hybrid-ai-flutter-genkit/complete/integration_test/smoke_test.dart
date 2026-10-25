@@ -5,12 +5,13 @@ import 'package:genkit/genkit.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:workshop_genkit_flutter_hybrid_ai/services/ai_engine.dart';
 
-// FTL pushes the model here via `--other-files`; if present we install from it
+// A device run can stage the model here (adb push); if present we install from it
 // (no flaky on-device download). Absent (local run) → normal HF download.
 const _stagedModel =
     '/data/local/tmp/flutter_edge_ai_test/gemma3-1b-it-int4.litertlm';
 
-// On-device smoke test for FTL / a real device.
+// On-device smoke test for a device of your own: both secrets are compiled
+// into the app, so never run it on a shared remote phone.
 // Run with both secrets:
 //   --dart-define=HF_TOKEN=hf_xxx --dart-define=GEMINI_API_KEY=AIza...
 // It downloads Gemma-3-1B on first run (the embedder is intentionally skipped
@@ -44,8 +45,8 @@ void main() {
         content: [TextPart(text: 'Reply with a short greeting.')],
       );
 
-      final resp = await engine.ai.generate(
-        model: engine.modelFor(PolicyMode.local),
+      final resp = await engine.router.generate(
+        policy: engine.policyName(PolicyMode.local),
         messages: [msg],
       );
       expect(
@@ -57,8 +58,8 @@ void main() {
       print('[smoke] LOCAL ok (chars=${resp.text.trim().length})');
 
       if (engine.cloudReady) {
-        final cloudResp = await engine.ai.generate(
-          model: engine.modelFor(PolicyMode.cloud),
+        final cloudResp = await engine.router.generate(
+          policy: engine.policyName(PolicyMode.cloud),
           messages: [msg],
         );
         expect(

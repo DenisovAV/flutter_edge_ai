@@ -187,6 +187,22 @@ void main() {
     },
   );
 
+  test('GGUF installs and restores without an external tokenizer', () async {
+    final ggufPath = path.join(sources.path, 'embedding.GGUF');
+    await File(ggufPath).writeAsBytes(_modelBytes);
+    EmbeddingRegistry.instance.registerAll([_Backend((_) => true)]);
+    final installed = await FlutterEdgeAi.installEmbedder()
+        .modelFromFile(ggufPath)
+        .install();
+    expect(installed.spec.files, hasLength(1));
+    final fresh = MobileModelManager();
+    await fresh.initialize();
+    final restored = fresh.activeEmbeddingModel! as EmbeddingModelSpec;
+    expect(restored.isSelfContained, isTrue);
+    expect(restored.files.single.filename, 'embedding.GGUF');
+    expect(restored.tokenizerSource, isNull);
+  });
+
   test('a v2 record whose bundle is gone restores nothing', () async {
     EmbeddingRegistry.instance.registerAll([_Backend((_) => true)]);
     await FlutterEdgeAi.installEmbedder().modelFromFile(bundlePath).install();

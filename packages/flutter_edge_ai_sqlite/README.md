@@ -200,10 +200,12 @@ loaded automatically before any database is opened.
 into the package, so every install carried all seven platforms' binaries to use
 one of them. They now come from this repository's `native-sqlite-vec-v*` GitHub
 Release, which means the **first** build of each platform needs `github.com`
-reachable; the library is cached under `~/.cache/flutter_gemma/native/`
+reachable; the library is cached under `~/.cache/flutter_gemma/native/sqlite_vec/`
 (`~/Library/Caches/…` on macOS, `%LOCALAPPDATA%\…` on Windows) and later builds
 do not go out again. `flutter_edge_ai_litertlm` has always worked this way. If you
-build in an air-gapped environment, pre-populate that cache directory.
+build in an air-gapped environment, pre-populate that cache directory, including
+its `.flutter_gemma_sqlite_vec_version` marker: without the marker holding the
+pinned bundle version, the hook drops the cached libraries and downloads again.
 
 **Web** ships the custom `sqlite3.wasm` (with `sqlite-vec` linked in) as the
 package web asset `web/rag/sqlite3.wasm`. Copy it into your app's web root so it

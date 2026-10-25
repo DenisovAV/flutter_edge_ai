@@ -38,16 +38,19 @@ looking for Step 4 should find it where Steps 3 and 5 are.
 Step apps are **not** members of the repo's pub workspace. They depend on the
 *published* packages from pub.dev, exactly like a learner's checkout — so a
 release that breaks the teaching material breaks this directory too, which is
-the point.
+the point. Pull-request runs are the exception: CI sets
+`CODELAB_USE_LOCAL_PACKAGES=1`, and `tool/check_codelabs.sh` then writes a
+temporary `pubspec_overrides.yaml` into each app that resolves the packages
+from this checkout. Push and nightly runs resolve from pub.dev.
 
 They also do not commit a `pubspec.lock`, for the same reason: the codelab
 tells the learner to `flutter pub add`, so the apps must resolve to whatever
 that resolves to today. The price is that a PR run is not reproducible — see
 the note in `codelabs/.gitignore`.
 
-Because the apps resolve from pub.dev, a `packages/` change cannot affect them
-until it is published, which is why the workflow's `paths:` filter does not
-watch `packages/`. The flip side is that a release which breaks the teaching
+Because push and nightly runs resolve from pub.dev, a `packages/` change cannot
+affect them until it is published, which is why the workflow's `paths:` filter
+does not watch `packages/`. The flip side is that a release which breaks the teaching
 material is caught by the nightly run — up to 24 h *after* it ships, never
 before. Run `tool/check_codelabs.sh` by hand after publishing if that matters.
 
@@ -62,8 +65,8 @@ tool/check_codelabs.sh     # pub get + analyze + format + test, every step
 the ```` ```dart ```` fences of the codelab texts under `website/codelabs/`:
 codelab code imports only the packages' public libraries, never a `src/` path.
 
-The same script also enforces the cross-codelab invariants declared in its
-`MIRRORS` table: a later codelab's starter is an earlier codelab's finished app,
+`tool/check_codelabs.sh` also enforces the cross-codelab invariants declared in
+its `MIRRORS` table: a later codelab's starter is an earlier codelab's finished app,
 `lib/` and `test/` byte for byte, because both texts tell the learner so. Add a
 row there when a new codelab continues an existing one — and only then. A
 starter may be its own app instead, and function-calling's is: inheriting a
@@ -118,4 +121,21 @@ flutter test integration_test/smoke_test.dart -d <device-id> \
 
 cd codelabs/package-skills-flutter-gemma/complete
 flutter test integration_test/skills_test.dart -d <device-id>
+
+cd codelabs/on-device-rag-flutter-gemma/complete
+flutter test integration_test/quickstart_test.dart -d <device-id>
+
+cd codelabs/voice-assistant-flutter-gemma/complete
+flutter test integration_test/tools_test.dart -d <device-id>
+
+cd codelabs/builtin-ai-flutter/complete
+flutter test integration_test/builtin_ai_test.dart -d <device-id>
 ```
+
+The built-in AI suite bundles no model: the OS owns it. On a device whose
+model is still `downloadable` (an Android phone, typically) the suite starts
+the OS download and waits up to 10 minutes; keep an Android screen on
+(`adb shell svc power stayon true`), since only the app in the foreground may
+use the model. It fails unless the device reaches `available`;
+`--dart-define=EXPECT_UNAVAILABLE=true` checks the typed refusal on a device
+without built-in AI instead.

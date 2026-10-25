@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart'; // MethodChannel — used by file_system_manager.dart part
+import 'package:meta/meta.dart' show internal;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,13 +27,16 @@ import '../model_management/utils/local_file.dart';
 import '../model_management/utils/download_temp_reclaim.dart';
 import '../utils/file_name_utils.dart';
 import '../registry/engine_registry.dart';
+import '../registry/inference_engine_provider.dart';
+import '../registry/multi_model_engine.dart';
 import '../registry/stt_registry.dart';
 import '../registry/tts_registry.dart';
 import '../registry/runtime_config.dart';
 import '../model_management/model_specs.dart';
-import 'package:flutter_edge_ai/src/embedding/embedder_backend_notice.dart';
+
 import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart';
 import 'package:flutter_edge_ai/src/embedding/embedder_loader.dart';
+
 // Re-export the spec value types so existing importers of this library (tests,
 // example, and any external code that imported the mobile lib directly) keep
 // seeing InferenceModelSpec/EmbeddingModelSpec/etc. — they used to be `part`s
@@ -98,6 +102,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
   @override
   EmbeddingModel? get initializedEmbeddingModel => _embedderCache.model;
 
+  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 2.6.0.')
   @override
   Future<InferenceModel> createModel({
     required ModelType modelType,
@@ -110,6 +115,41 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     int? maxNumImages,
     bool supportImage = false,
     bool supportAudio = false, // Enabling audio support (Gemma 3n E4B)
+    MultimodalOrder? multimodalOrder,
+    bool? enableSpeculativeDecoding,
+    ActivationDataType? activationDataType,
+    int? maxConcurrentSessions,
+  }) => obtainActiveModel(
+    modelType: modelType,
+    fileType: fileType,
+    maxTokens: maxTokens,
+    preferredBackend: preferredBackend,
+    preferredVisionBackend: preferredVisionBackend,
+    preferredAudioBackend: preferredAudioBackend,
+    loraRanks: loraRanks,
+    maxNumImages: maxNumImages,
+    supportImage: supportImage,
+    supportAudio: supportAudio,
+    multimodalOrder: multimodalOrder,
+    enableSpeculativeDecoding: enableSpeculativeDecoding,
+    activationDataType: activationDataType,
+    maxConcurrentSessions: maxConcurrentSessions,
+  );
+
+  @internal
+  @override
+  Future<InferenceModel> obtainActiveModel({
+    required ModelType modelType,
+    ModelFileType fileType = ModelFileType.task,
+    int maxTokens = 1024,
+    PreferredBackend? preferredBackend,
+    PreferredBackend? preferredVisionBackend,
+    PreferredBackend? preferredAudioBackend,
+    List<int>? loraRanks,
+    int? maxNumImages,
+    bool supportImage = false,
+    bool supportAudio = false,
+    MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,
     int? maxConcurrentSessions,
@@ -141,6 +181,9 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
         supportImage: supportImage,
         supportAudio: supportAudio,
         maxNumImages: maxNumImages,
+        multimodalOrder:
+            multimodalOrder ??
+            MultimodalOrder.forModelType(requestedSpec.modelType),
         enableSpeculativeDecoding: enableSpeculativeDecoding,
         activationDataType: activationDataType,
         maxConcurrentSessions: maxConcurrentSessions,
@@ -154,79 +197,92 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
           fileType: requestedSpec.fileType,
         ),
         params: requestedParams,
-        build: () async {
-          // The pre-build checks THROW rather than settle anything themselves:
-          // the cache's one catch resets its state for every failure (#170),
-          // and a throw keeps the stack trace.
-          final isBuiltIn = requestedSpec.fileType == ModelFileType.builtIn;
-          String modelPath = '';
-          if (!isBuiltIn) {
-            final isModelInstalled = await manager.isModelInstalled(
-              activeModel,
-            );
-            if (!isModelInstalled) {
-              throw Exception(
-                'Active model is no longer installed. Use the `modelManager` to load the model first',
-              );
-            }
-
-            final modelFilePaths = await manager.getModelFilePaths(activeModel);
-            if (modelFilePaths == null || modelFilePaths.isEmpty) {
-              throw Exception(
-                'Model file paths not found. Use the `modelManager` to load the model first',
-              );
-            }
-
-            modelPath = modelFilePaths.values.first;
-            final modelFile = File(modelPath);
-
-            if (!await modelFile.exists()) {
-              throw Exception(
-                'Model file not found at path: ${modelFile.path}',
-              );
-            }
-
-            edgeAiLog('Using unified model file: $modelPath');
-          } else {
-            edgeAiLog(
-              'Built-in model ${requestedSpec.name}: skipping file/installed checks (no on-disk file)',
-            );
-          }
-
-          // Engine selection routes ENTIRELY through [EngineRegistry] (probe-chain).
-          // Core registers NO default engine: both MediaPipe (.task/.bin, from
-          // flutter_edge_ai_mediapipe) and LiteRT-LM (.litertlm, from
-          // flutter_edge_ai_litertlm) are fully opt-in via
-          // FlutterEdgeAi.initialize(inferenceEngines: [...]). Core only resolves the
-          // model path (preamble above) + owns the singleton lifecycle centrally
-          // (track + reset on close); the selected engine builds the model.
-
-          final spec = requestedSpec;
-          final config = runtimeConfigFor(
-            requestedParams,
-            modelPath: modelPath,
-          );
-          final engine = EngineRegistry.instance.findFor(spec);
-          if (engine == null) {
-            throw StateError(
-              'No inference engine can handle this model (ModelFileType.${spec.fileType.name}). '
-              'Add the engine package to pubspec.yaml and pass it in inferenceEngines: '
-              'of FlutterEdgeAi.initialize(...). Registered engines: '
-              '${EngineRegistry.instance.registered.map((e) => e.name).join(", ")}.',
-            );
-          }
-          if (activationDataType != null &&
-              spec.fileType != ModelFileType.litertlm) {
-            edgeAiLog(
-              '[FlutterEdgeAi] activationDataType (${activationDataType.name}) is '
-              'read only by the .litertlm engine; ${engine.name} ignores it for '
-              'ModelFileType.${spec.fileType.name}.',
-            );
-          }
-          return engine.createModel(spec, config);
-        },
+        build: () => _buildModel(requestedSpec, requestedParams, active: true),
       );
     });
+  }
+
+  @internal
+  @override
+  Future<InferenceModel> openModel(
+    InferenceModelSpec spec,
+    ActiveModelParams params,
+  ) async {
+    // The engine checked is the engine that builds: the registry is asked
+    // once, before the awaits of the install checks.
+    final engine = requireMultiModelEngine(spec);
+    if (spec.fileType != ModelFileType.builtIn) {
+      await requireInstalledAsSpecified(spec);
+    }
+    return _buildModel(spec, params, active: false, engine: engine);
+  }
+
+  /// Builds a model for [spec]: the cached active model ([active]) or one the
+  /// caller owns (`FlutterEdgeAi.openModel`), with [engine] when the caller
+  /// already chose it, else the registry's.
+  Future<InferenceModel> _buildModel(
+    InferenceModelSpec spec,
+    ActiveModelParams params, {
+    required bool active,
+    InferenceEngineProvider? engine,
+  }) async {
+    // The pre-build checks THROW rather than settle anything themselves:
+    // the cache's one catch resets its state for every failure (#170),
+    // and a throw keeps the stack trace.
+    final manager = _unifiedManager;
+    final isBuiltIn = spec.fileType == ModelFileType.builtIn;
+    String modelPath = '';
+    if (!isBuiltIn) {
+      final isModelInstalled = await manager.isModelInstalled(spec);
+      if (!isModelInstalled) {
+        throw Exception(
+          active
+              ? 'Active model is no longer installed. Use the `modelManager` to load the model first'
+              : 'Model ${spec.name} is not installed. Install it with '
+                    '`FlutterEdgeAi.installModel()` first',
+        );
+      }
+
+      final modelFilePaths = await manager.getModelFilePaths(spec);
+      if (modelFilePaths == null || modelFilePaths.isEmpty) {
+        throw Exception(
+          'Model file paths not found. Use the `modelManager` to load the model first',
+        );
+      }
+
+      modelPath = modelFilePaths.values.first;
+      final modelFile = File(modelPath);
+
+      if (!await modelFile.exists()) {
+        throw Exception('Model file not found at path: ${modelFile.path}');
+      }
+
+      edgeAiLog('Using unified model file: $modelPath');
+    } else {
+      edgeAiLog(
+        'Built-in model ${spec.name}: skipping file/installed checks (no on-disk file)',
+      );
+    }
+
+    // Engine selection routes ENTIRELY through [EngineRegistry] (probe-chain).
+    // Core registers NO default engine: both MediaPipe (.task/.bin, from
+    // flutter_edge_ai_mediapipe) and LiteRT-LM (.litertlm, from
+    // flutter_edge_ai_litertlm) are fully opt-in via
+    // FlutterEdgeAi.initialize(inferenceEngines: [...]). Core only resolves the
+    // model path (preamble above) + owns the singleton lifecycle centrally
+    // (track + reset on close); the selected engine builds the model.
+    final config = runtimeConfigFor(params, modelPath: modelPath);
+    engine ??= EngineRegistry.instance.findFor(spec);
+    if (engine == null) throw noInferenceEngineError(spec);
+    final activationDataType = params.activationDataType;
+    if (activationDataType != null && spec.fileType != ModelFileType.litertlm) {
+      edgeAiLog(
+        '[FlutterEdgeAi] activationDataType (${activationDataType.name}) is '
+        'read only by the .litertlm engine; ${engine.name} ignores it for '
+        'ModelFileType.${spec.fileType.name}.',
+      );
+    }
+    return engine.createModel(spec, config);
   }
 
   @override
@@ -235,13 +291,6 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     bool supportImage = false,
     bool supportAudio = false,
   }) {
-    // FIRST statement, before every guard. It is idempotent and one-shot, so
-    // it needs neither resolved paths nor cache state — and putting it in a
-    // branch is what made it unreachable twice: once behind the singleton
-    // cache, once behind "only on reuse". The ordinary shape is a single call
-    // held for the app's lifetime; if it does not speak here it never speaks.
-    noticeEmbedderBackendIgnored(preferredBackend);
-
     // Serialised, because resolving paths, comparing them against the cached
     // embedder and building are three steps with awaits between them: run
     // interleaved, two callers both finish deciding before either records a
@@ -253,6 +302,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
         preferredBackend: preferredBackend,
         supportImage: supportImage,
         supportAudio: supportAudio,
+        entryPoint: createEmbeddingModel,
         verifyInstalled: true,
       ),
     );

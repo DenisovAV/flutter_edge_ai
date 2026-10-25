@@ -3,6 +3,8 @@ import 'package:flutter_edge_ai/src/embedding/embedding_pass.dart'
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
     show EmbeddingModelSpec;
 import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/src/domain/platform_types.dart'
+    show PreferredBackend;
 
 /// A pluggable embedding backend (LiteRT C API + Gecko/EmbeddingGemma, ONNX,
 /// or a third-party backend). Same probe-chain shape as
@@ -28,6 +30,27 @@ abstract base class EmbeddingBackendProvider {
 
   /// Whether this backend can serve [spec]. Probed by the registry.
   bool canHandle(EmbeddingModelSpec spec);
+
+  /// Explicit accelerator requests this provider honours for [spec].
+  ///
+  /// Pure and synchronous; no loading or platform I/O. Core calls this once
+  /// per request and owns cache identity. An unsupported non-NPU request uses
+  /// the legacy CPU key and receives a not-applied notice. NPU always has its
+  /// own key. Automatic requests reuse only non-NPU entries for the same model.
+  /// A repeated CPU/GPU request can reuse its originating successful fallback.
+  ///
+  /// The default preserves existing CPU/NPU request handling. CPU and NPU
+  /// membership do not change key normalization: CPU uses the CPU key and an
+  /// explicit NPU request always reserves the NPU key. GPU membership opts
+  /// into GPU keys, mandatory loaded-placement reporting, actual-placement
+  /// recording for non-NPU requests and release-visible fallback warnings.
+  /// Override for model-dependent capabilities, e.g. {cpu, gpu} for native
+  /// GGUF. A provider advertising GPU must report the loaded accelerator in
+  /// EmbeddingPassInfo.activeBackend; a descriptor alone is insufficient.
+  Set<PreferredBackend> honouredBackends(EmbeddingModelSpec spec) => const {
+    PreferredBackend.cpu,
+    PreferredBackend.npu,
+  };
 
   /// A pure description of what to run for [spec] with [config].
   ///

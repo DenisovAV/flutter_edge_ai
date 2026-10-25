@@ -125,8 +125,11 @@ class LiteRtSpeechSynthesizer extends SpeechSynthesizer with CloseNotifier {
   @override
   int get sampleRate => _worker.sampleRate;
 
+  // `async` so a closed synthesizer's error reaches the caller through the
+  // returned Future, not as a synchronous throw. Nothing here awaits: the
+  // request is still sent to the worker during the call, in call order.
   @override
-  Future<Uint8List> synthesize(String text) {
+  Future<Uint8List> synthesize(String text) async {
     _assertNotClosed();
     return _worker.synthesize(text);
   }

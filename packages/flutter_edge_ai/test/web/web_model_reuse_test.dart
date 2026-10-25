@@ -24,25 +24,36 @@ import 'package:flutter_edge_ai/src/web/flutter_edge_ai_web.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-InferenceModelSpec _spec(String name, {String host = 'x', String? lora}) =>
-    InferenceModelSpec(
-      name: name,
-      modelSource: ModelSource.network('https://$host/$name.litertlm'),
-      loraSource: lora == null ? null : ModelSource.network('https://x/$lora'),
-      modelType: ModelType.gemmaIt,
-      fileType: ModelFileType.litertlm,
-    );
+InferenceModelSpec _spec(
+  String name, {
+  String host = 'x',
+  String? lora,
+  ModelType modelType = ModelType.gemmaIt,
+}) => InferenceModelSpec(
+  name: name,
+  modelSource: ModelSource.network('https://$host/$name.litertlm'),
+  loraSource: lora == null ? null : ModelSource.network('https://x/$lora'),
+  modelType: modelType,
+  fileType: ModelFileType.litertlm,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late _CountingEngine engine;
 
-  Future<void> activate(String name, {String host = 'x', String? lora}) async {
+  Future<void> activate(
+    String name, {
+    String host = 'x',
+    String? lora,
+    ModelType modelType = ModelType.gemmaIt,
+  }) async {
     final manager =
         FlutterEdgeAiPlugin.instance.modelManager as WebModelManager;
     await manager.ensureInitialized();
-    await manager.activateInstalledModel(_spec(name, host: host, lora: lora));
+    await manager.activateInstalledModel(
+      _spec(name, host: host, lora: lora, modelType: modelType),
+    );
   }
 
   setUp(() async {
@@ -69,6 +80,22 @@ void main() {
     expect(engine.builds, 1);
     expect(second, same(first));
     expect((first as _FakeModel).isClosed, isFalse);
+  });
+
+  test('an omitted multimodalOrder is the model type\'s own, and spelled out '
+      'it reuses the model', () async {
+    await activate('gemma-4', modelType: ModelType.gemma4);
+    final first = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+    expect(
+      (first as _FakeModel).config.multimodalOrder,
+      MultimodalOrder.imagesTextAudio,
+    );
+    final second = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 1024,
+      multimodalOrder: MultimodalOrder.imagesTextAudio,
+    );
+    expect(engine.builds, 1);
+    expect(second, same(first));
   });
 
   test('other knobs build a new model and close the old one', () async {

@@ -115,6 +115,204 @@ void main() {
     });
   });
 
+  group('NativeIntentExecutor — intents the app adds', () {
+    test('an added intent without a validator runs unchecked', () async {
+      Map<String, dynamic>? seen;
+      final executor = NativeIntentExecutor(
+        handlers: {
+          'start_timer': (params) async {
+            seen = params;
+            return const TextResult('started');
+          },
+        },
+      );
+
+      final result = await executor.handleIntent(
+        'start_timer',
+        '{"seconds": 10}',
+      );
+
+      expect(result, isA<TextResult>());
+      expect(seen, {'seconds': 10});
+    });
+
+    test(
+      'an added intent runs through execute(), as the loop calls it',
+      () async {
+        final executor = NativeIntentExecutor(
+          handlers: {
+            'start_timer': (params) async =>
+                TextResult('timer ${params['seconds']} s'),
+          },
+        );
+
+        final result = await executor.execute(
+          _intentSkill('start_timer'),
+          '{"seconds": 5}',
+        );
+
+        expect((result as TextResult).text, 'timer 5 s');
+      },
+    );
+
+    test('an added intent with a validator is checked first', () async {
+      var ran = 0;
+      final executor = NativeIntentExecutor(
+        handlers: {
+          'start_timer': (_) async {
+            ran++;
+            return const TextResult('started');
+          },
+        },
+        validators: {
+          'start_timer': (params) =>
+              params['seconds'] is int ? null : 'missing integer "seconds".',
+        },
+      );
+
+      final bad = await executor.handleIntent('start_timer', '{}');
+      expect(bad, isA<ErrorResult>());
+      expect(
+        (bad as ErrorResult).message,
+        'Invalid parameters for "start_timer": missing integer "seconds".',
+      );
+      expect(ran, 0, reason: 'validation gates the handler');
+
+      final good = await executor.handleIntent('start_timer', '{"seconds": 3}');
+      expect(good, isA<TextResult>());
+      expect(ran, 1);
+    });
+
+    test('built-in intents keep their validation next to added ones', () async {
+      var ran = false;
+      final executor = NativeIntentExecutor(
+        handlers: {
+          'start_timer': (_) async => const TextResult('started'),
+          'send_email': (_) async {
+            ran = true;
+            return const TextResult('sent');
+          },
+        },
+        validators: {'start_timer': (_) => null},
+      );
+
+      final result = await executor.handleIntent(
+        'send_email',
+        '{"extra_email": "garbage"}',
+      );
+
+      expect((result as ErrorResult).message, contains('invalid email'));
+      expect(ran, isFalse);
+    });
+
+    test(
+      'a validator for a built-in intent runs after the built-in check',
+      () async {
+        var ran = false;
+        var validated = 0;
+        final executor = NativeIntentExecutor(
+          handlers: {
+            'send_email': (_) async {
+              ran = true;
+              return const TextResult('sent');
+            },
+          },
+          validators: {
+            'send_email': (_) {
+              validated++;
+              return null;
+            },
+          },
+        );
+
+        final result = await executor.handleIntent(
+          'send_email',
+          '{"extra_email": "garbage"}',
+        );
+
+        expect(
+          (result as ErrorResult).message,
+          'Invalid parameters for "send_email": '
+          'invalid email address "garbage".',
+        );
+        expect(validated, 0, reason: 'the built-in check runs first');
+        expect(ran, isFalse);
+      },
+    );
+
+    test(
+      'the built-in check also runs when the handler is not replaced',
+      () async {
+        // The default send_email handler reads "extra_email" as a String,
+        // which only the built-in check guarantees.
+        final executor = NativeIntentExecutor(
+          validators: {'send_email': (_) => null},
+        );
+
+        final result = await executor.handleIntent('send_email', '{}');
+
+        expect(
+          (result as ErrorResult).message,
+          'Invalid parameters for "send_email": '
+          'missing required string "extra_email".',
+        );
+      },
+    );
+
+    test('a built-in intent runs only when both checks pass', () async {
+      var ran = 0;
+      final executor = NativeIntentExecutor(
+        handlers: {
+          'send_email': (_) async {
+            ran++;
+            return const TextResult('sent');
+          },
+        },
+        validators: {
+          'send_email': (params) =>
+              params.containsKey('extra_subject') ? null : 'subject required.',
+        },
+      );
+
+      final noSubject = await executor.handleIntent(
+        'send_email',
+        '{"extra_email": "a@b.com"}',
+      );
+      expect(
+        (noSubject as ErrorResult).message,
+        'Invalid parameters for "send_email": subject required.',
+      );
+      expect(ran, 0);
+
+      final both = await executor.handleIntent(
+        'send_email',
+        '{"extra_email": "a@b.com", "extra_subject": "Hi"}',
+      );
+      expect(both, isA<TextResult>());
+      expect(ran, 1);
+    });
+
+    test('a validator for a built-in intent needs no handler override', () {
+      expect(
+        () => NativeIntentExecutor(validators: {'send_email': (_) => null}),
+        returnsNormally,
+      );
+    });
+
+    test('a validator for an intent with no handler throws', () {
+      expect(
+        () => NativeIntentExecutor(validators: {'start_timer': (_) => null}),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.invalidValue,
+            'invalidValue',
+            'start_timer',
+          ),
+        ),
+      );
+    });
+  });
+
   group('NativeIntentExecutor — dispatch & data resolution', () {
     test('execute resolves the intent from the synthetic skill name', () async {
       String? seenDate;
@@ -207,6 +405,31 @@ void main() {
       expect(result, isA<ErrorResult>());
       expect((result as ErrorResult).message, contains('failed'));
     });
+
+    test(
+      'a throwing validator is caught and surfaced as ErrorResult',
+      () async {
+        var ran = false;
+        final executor = NativeIntentExecutor(
+          handlers: {
+            'start_timer': (_) async {
+              ran = true;
+              return const TextResult('started');
+            },
+          },
+          validators: {'start_timer': (_) => throw StateError('boom')},
+        );
+
+        final result = await executor.handleIntent('start_timer', '{}');
+
+        expect(result, isA<ErrorResult>());
+        expect(
+          (result as ErrorResult).message,
+          'Intent "start_timer" failed: Bad state: boom',
+        );
+        expect(ran, isFalse);
+      },
+    );
   });
 
   group('validateIntentParams — send_email', () {

@@ -16,8 +16,8 @@
 //     with its refcount bumped and its flags untouched — bionic does not
 //     promote (glibc does, which is why Linux never showed this)
 //
-// So an app that reaches embeddings or speech before generating leaves
-// stream_proxy.c's ABI probe blind: `litert_lm_stream_chunk_get_text` resolves
+// So an app that reaches embeddings or speech before generating leaves the
+// shipped (native-v0.18.0-e and earlier) stream_proxy.c's ABI probe blind: `litert_lm_stream_chunk_get_text` resolves
 // to NULL, that is read as "pre-v0.15 library", and the 4-arg callback shape
 // is registered against a 2-arg caller. Arguments 3 and 4 are then whatever
 // x2/x3 happen to hold, and `strdup` runs on the result.
@@ -33,6 +33,12 @@
 // why preventing the bad order is sufficient: a later RTLD_LOCAL open does not
 // demote an already-global soinfo.
 //
+// `stream_proxy_create2` makes the probe unnecessary: the client resolves the
+// chunk accessors on the library it drives and passes them in (#453), and it
+// is required since the pin moved to native-v0.18.0-f. This check stays until
+// a device run shows that a plain open is equivalent for the LLM, embedding and
+// speech entry points; nothing else is known to need the default scope.
+//
 // Both entry points go through this file, and both functions here do the raw
 // `DynamicLibrary.open` themselves. That is deliberate: the original bug was a
 // bare `DynamicLibrary.open` that reached production because the preload step
@@ -43,8 +49,8 @@
 // object, so Linux repairs itself as soon as the LLM path runs. Windows has no
 // process-wide symbol namespace at all — PE imports bind to (module, symbol)
 // pairs and `GetProcAddress` requires an HMODULE, so there is no
-// `dlsym(RTLD_DEFAULT)` to be blind: stream_proxy_resolve looks the module up
-// by name with GetModuleHandleA. And on Apple
+// `dlsym(RTLD_DEFAULT)` to be blind: the shipped shim looks the module up by
+// name with GetModuleHandleA. And on Apple
 // dlopen defaults to RTLD_GLOBAL, so `dlsym(RTLD_DEFAULT)` searches every
 // loaded image.
 //
@@ -63,7 +69,7 @@ import 'package:ffi/ffi.dart';
 /// of scope".
 const _controlSymbol = 'litert_lm_engine_create';
 
-/// The symbol `stream_proxy_probe_abi` actually resolves. Verifying THIS one,
+/// The symbol the shipped shim's ABI probe (`stream_proxy_probe_abi`) resolves. Verifying THIS one,
 /// rather than a proxy for it, is the point: we ask the question the shim asks
 /// and compare its answer against a handle-scoped lookup of the very library
 /// we are about to drive.
@@ -71,7 +77,7 @@ const _probeSymbol = 'litert_lm_stream_chunk_get_text';
 
 /// The address [name] resolves to through `dlsym(RTLD_DEFAULT)`, or null.
 ///
-/// This is literally `stream_proxy_resolve`'s call. It is answered in the same
+/// This is literally the shipped shim's `stream_proxy_resolve` call. It is answered in the same
 /// linker namespace as the shim's, and not by luck: `libStreamProxy.so` is
 /// dlopen'd by the Dart VM itself, so bionic files it in the VM's namespace and
 /// resolves its `RTLD_DEFAULT` (which is caller-namespace-relative) against the

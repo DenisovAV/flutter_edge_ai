@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# test_all.sh — run every workspace package's tests, and the host tests of every
-# example app, each from its own dir.
+# test_all.sh — run workspace integration fixtures, every package's tests, and
+# each example app's host tests from its own directory.
 #
 # WHY THIS EXISTS
 #
@@ -124,6 +124,19 @@ if [[ $web_graph_rc -eq 0 ]]; then
   summary="${summary}  ok  tool/check_web_graph.dart"$'\n'
 else
   summary="${summary}  FAILED  tool/check_web_graph.dart"$'\n'
+  fail=1
+fi
+
+# Cross-package registry fixtures use workspace resolution. Keeping them here
+# avoids adding one optional engine to another package's dependency graph.
+echo "::group::workspace integration tests"
+flutter test tool/test --no-pub
+workspace_rc=$?
+echo "::endgroup::"
+if [[ $workspace_rc -eq 0 ]]; then
+  summary="${summary}  ok  workspace integration tests"$'\n'
+else
+  summary="${summary}  FAILED  workspace integration tests"$'\n'
   fail=1
 fi
 

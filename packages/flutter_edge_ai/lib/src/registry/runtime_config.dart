@@ -1,4 +1,6 @@
 import 'package:meta/meta.dart' show immutable;
+import 'package:flutter_edge_ai/src/domain/multimodal_order.dart'
+    show MultimodalOrder;
 import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show ActivationDataType, PreferredBackend;
 import 'package:flutter_edge_ai/src/embedding/embedding_modality.dart';
@@ -17,6 +19,7 @@ class RuntimeConfig {
     this.supportImage = false,
     this.supportAudio = false,
     this.maxNumImages,
+    this.multimodalOrder,
     this.enableSpeculativeDecoding,
     this.activationDataType,
     this.maxConcurrentSessions,
@@ -56,19 +59,26 @@ class RuntimeConfig {
   final PreferredBackend? preferredBackend;
 
   /// Backend for the VISION encoder, independent of [preferredBackend] (the
-  /// text/decoder backend). Null defaults to CPU in the LiteRT-LM engine,
-  /// because the vision encoder's `STABLEHLO_COMPOSITE` ops fail to prepare on
-  /// the Metal/WebGPU delegates (LiteRT-LM#2461). Set it (e.g. to
-  /// `PreferredBackend.gpu`) only for a model whose vision section bakes a
-  /// gpu-only `backend_constraint`. Ignored by the MediaPipe engine (whole-model
-  /// backend, no per-encoder split).
+  /// text/decoder backend). Null lets the engine choose: the native LiteRT-LM
+  /// engine follows the bundle — the encoder's declared `backend_constraint`
+  /// (the CPU when that allows it), else the NPU it is compiled for, else the
+  /// CPU, because the vision encoder's `STABLEHLO_COMPOSITE` ops fail to
+  /// prepare on the Metal/WebGPU delegates (LiteRT-LM#2461) — and reports its
+  /// choice in `InferenceModel.activeVisionBackend`. Set one only where the
+  /// section allows it (`(await readLiteRtLmBundleInfo(path)).visionEncoder`
+  /// in `flutter_edge_ai_litertlm` shows its `backend_constraint`); a backend
+  /// it excludes is refused before the model loads. Ignored by the MediaPipe
+  /// engine (whole-model backend, no per-encoder split).
   final PreferredBackend? preferredVisionBackend;
 
   /// Backend for the AUDIO encoder, independent of [preferredBackend]. Null
-  /// defaults to CPU in the LiteRT-LM engine as a conservative default — but,
-  /// unlike the vision encoder, the audio encoder runs fine on GPU and is often
-  /// faster there (Gemma 3n audio is ~2× CPU on Metal), so set it to
-  /// `PreferredBackend.gpu` for speed. Ignored by MediaPipe.
+  /// lets the engine choose, as for [preferredVisionBackend], and the native
+  /// LiteRT-LM engine reports it in `InferenceModel.activeAudioBackend`. Set
+  /// one only where the section allows it: the published Gemma 4 and Gemma 3n
+  /// audio encoders declare `backend_constraint` cpu, so
+  /// `PreferredBackend.gpu` is refused for them
+  /// (`(await readLiteRtLmBundleInfo(path)).audioEncoder?.backendConstraint`
+  /// shows it). Ignored by MediaPipe.
   final PreferredBackend? preferredAudioBackend;
 
   /// Inference: whether the model is created with vision. Embedders: the
@@ -80,10 +90,19 @@ class RuntimeConfig {
   /// [supportImage], for audio.
   final bool supportAudio;
   final int? maxNumImages;
+
+  /// The order of a user message's images, audio and text. Core always sets
+  /// it: `getActiveModel` resolves an omitted one with
+  /// [MultimodalOrder.forModelType], and a null in a config built by hand
+  /// means the same. Honored by the native LiteRT-LM engine; the other
+  /// engines ignore it (MediaPipe sends images, audio, then text).
+  final MultimodalOrder? multimodalOrder;
   final bool? enableSpeculativeDecoding;
 
   /// Activation type for the native LiteRT-LM engine's text decoder. Null
-  /// leaves it to the model file; when set, it overrides LiteRT-LM's own
+  /// leaves it to the model file (except a `ModelType.functionGemma` bundle
+  /// that declares no `prefer_activation_type`, which gets float32 on its GPU
+  /// attempt); when set, it overrides LiteRT-LM's own
   /// choice (float16 on GPU by default). Set [ActivationDataType.float32]
   /// when a GPU writes wrong digits
   /// (LiteRT-LM#2814, #3012). The vision and audio encoders keep the model's
@@ -144,6 +163,7 @@ class ActiveModelParams {
     this.supportImage = false,
     this.supportAudio = false,
     this.maxNumImages,
+    this.multimodalOrder,
     this.enableSpeculativeDecoding,
     this.activationDataType,
     this.maxConcurrentSessions,
@@ -157,6 +177,11 @@ class ActiveModelParams {
   final bool supportImage;
   final bool supportAudio;
   final int? maxNumImages;
+
+  /// The shells resolve an omitted order with [MultimodalOrder.forModelType]
+  /// before building this, so an omitted order and the model type's own
+  /// order spelled out compare equal.
+  final MultimodalOrder? multimodalOrder;
   final bool? enableSpeculativeDecoding;
   final ActivationDataType? activationDataType;
   final int? maxConcurrentSessions;
@@ -170,15 +195,16 @@ class ActiveModelParams {
   ///
   /// Comparing the RAW arguments caused spurious rebuilds — and a rebuild here
   /// unloads and reloads multi-gigabyte weights, so it is expensive and very
-  /// visible. Three knobs are normalised downstream:
+  /// visible. One knob is normalised downstream:
   ///
   ///   * `maxNumImages` is `maxNumImages ?? 1` when vision is on and discarded
   ///     entirely when it is off, in both engines. So null and 1 are the same
   ///     request, and with `supportImage: false` the value is dead.
-  ///   * `preferredVisionBackend` / `preferredAudioBackend` default to CPU
-  ///     (`encoderBackendWireName(null) == 'cpu'`), which the facade's own doc
-  ///     tells callers — so writing the value explicitly followed the
-  ///     documentation into a reload.
+  ///
+  /// `preferredVisionBackend` / `preferredAudioBackend` are dropped when their
+  /// encoder is off, and otherwise kept as given: null lets the engine choose
+  /// from the model file (the NPU for an encoder compiled for one), so it is
+  /// not the same request as an explicit CPU.
   ///
   /// `maxTokens` is NOT normalised here: the `.litertlm` engine clamps it up to
   /// 1024 but MediaPipe does not, so the effective value depends on which
@@ -190,11 +216,12 @@ class ActiveModelParams {
   ActiveModelParams normalized() => ActiveModelParams(
     maxTokens: maxTokens,
     preferredBackend: preferredBackend,
-    preferredVisionBackend: preferredVisionBackend ?? PreferredBackend.cpu,
-    preferredAudioBackend: preferredAudioBackend ?? PreferredBackend.cpu,
+    preferredVisionBackend: supportImage ? preferredVisionBackend : null,
+    preferredAudioBackend: supportAudio ? preferredAudioBackend : null,
     supportImage: supportImage,
     supportAudio: supportAudio,
     maxNumImages: supportImage ? (maxNumImages ?? 1) : null,
+    multimodalOrder: multimodalOrder,
     enableSpeculativeDecoding: enableSpeculativeDecoding,
     activationDataType: activationDataType,
     maxConcurrentSessions: maxConcurrentSessions,
@@ -225,15 +252,18 @@ class ActiveModelParams {
   String? _rawDifference(ActiveModelParams other) {
     if (maxTokens != other.maxTokens) return 'maxTokens';
     if (preferredBackend != other.preferredBackend) return 'preferredBackend';
+    // Before the encoder backends, which mean something only while their
+    // encoder is on (normalized drops them otherwise).
+    if (supportImage != other.supportImage) return 'supportImage';
+    if (supportAudio != other.supportAudio) return 'supportAudio';
     if (preferredVisionBackend != other.preferredVisionBackend) {
       return 'preferredVisionBackend';
     }
     if (preferredAudioBackend != other.preferredAudioBackend) {
       return 'preferredAudioBackend';
     }
-    if (supportImage != other.supportImage) return 'supportImage';
-    if (supportAudio != other.supportAudio) return 'supportAudio';
     if (maxNumImages != other.maxNumImages) return 'maxNumImages';
+    if (multimodalOrder != other.multimodalOrder) return 'multimodalOrder';
     if (enableSpeculativeDecoding != other.enableSpeculativeDecoding) {
       return 'enableSpeculativeDecoding';
     }
@@ -274,24 +304,18 @@ class ActiveModelParams {
 /// to `embed`, not a property of the model.
 @immutable
 class ActiveEmbedderParams {
-  /// The requested backend is normalised HERE rather than in a method a caller
-  /// has to remember, so [activeBackend] always means "the backend this embedder
-  /// was built for" and there is no way to compare un-normalised values by
-  /// accident.
-  ///
-  /// `modelPath` is checked with a throw, not an `assert`. An assert is stripped
-  /// in release, and the release failure is not a crash: an empty path makes
-  /// every embedder compare equal to every other, so the cache hands back a
-  /// stale model's vectors — the exact silent-wrong-data failure this type was
-  /// created to prevent. `RuntimeConfig.modelPath` in this same file documents
-  /// `''` as the ordinary value on web, so an adopter wiring it straight in is
-  /// the reachable route.
+  /// Internal cache identity. The loader supplies core's accelerator
+  /// key with [normalizeBackend] false; direct legacy users keep the old
+  /// CPU/NPU normalisation by default. Empty paths never identify a model.
   ActiveEmbedderParams({
     required this.modelPath,
     this.tokenizerPath,
     PreferredBackend? preferredBackend,
     Set<EmbeddingModality> media = const {},
-  }) : activeBackend = _resolvedBackend(preferredBackend),
+    bool normalizeBackend = true,
+  }) : activeBackend = normalizeBackend
+           ? _resolvedBackend(preferredBackend)
+           : preferredBackend,
        media = Set.unmodifiable({
          for (final m in media)
            if (m != EmbeddingModality.text) m,
@@ -318,57 +342,20 @@ class ActiveEmbedderParams {
   /// the model has a text tower, so it is never listed here.
   final Set<EmbeddingModality> media;
 
-  /// The backend the embedder is built for: `npu` when that was asked for,
-  /// `cpu` for every other request — ON NATIVE. The web shell builds this
-  /// object too, and there it holds `cpu` or `npu` (which the web `.litertlm`
-  /// arm refuses, and the other web backends ignore) while
-  /// `EmbeddingModel.activeBackend` may be null and the runtime on WebGPU.
-  /// That is harmless because this field is a cache KEY. Read the model's own
-  /// `activeBackend` for the answer; do not read this one.
-  ///
-  /// Named for the answer, not the request — deliberately unlike the
-  /// `preferredBackend` on [ActiveModelParams] and `RuntimeConfig`, which do
-  /// hold the raw request. The shells build this object and a `RuntimeConfig`
-  /// from the same local a few lines apart, so two fields with one name and
-  /// opposite meanings is a trap; this one matches
-  /// `EmbeddingModel.activeBackend`, which is where the value surfaces.
-  final PreferredBackend activeBackend;
+  /// Core's accelerator key: the loaded backend for an accelerator-aware
+  /// provider, except that an NPU request always retains a distinct NPU key.
+  /// Null represents an automatic selection whose placement is not yet known.
+  /// Read EmbeddingModel.activeBackend for the loaded accelerator.
+  final PreferredBackend? activeBackend;
 
-  /// The single place the "which backend does an embedder run on" fact is
-  /// written: `npu` when asked for, `cpu` otherwise.
-  ///
-  /// NPU is a key of its own because one backend honours it — the LiteRT-LM
-  /// pass runs an EmbeddingGemma 2 per-SoC bundle on its Qualcomm or Intel
-  /// NPU — and its
-  /// vectors live in another space than the CPU bundle's. A cached embedder
-  /// must therefore never answer a request for the other side: a CPU embedder
-  /// handed to an `npu` caller, or an NPU one to a caller who did not ask for
-  /// it, is a silent switch of vector space. With the backend in the key, such
-  /// a request goes to the backend's `describe()`, which refuses what it cannot
-  /// run and leaves the cached embedder serving its own callers.
-  ///
-  /// Everything else still runs on CPU:
-  ///   * LiteRT `.tflite` is CPU-only by decision, not by omission — the GPU
-  ///     delegate compiles and then returns all-zero vectors for
-  ///     EmbeddingGemma's int4 weights (removed in `ab3df2bf`).
-  ///   * ONNX never appends an execution provider, so it runs ORT's default
-  ///     CPU provider.
-  ///   * `gpu` reaches no embedder, so it keys as `cpu`: a request differing
-  ///     only by it builds the same model and must NOT rebuild — a rebuild
-  ///     would unload and reload a bit-identical model at the 570-780 ms
-  ///     compile measured in `docs/issue-299-embedding-ui-isolate.md`.
-  ///
-  /// A `.tflite` or ONNX embedder asked for `npu` is built under the `npu` key
-  /// and reports `cpu` in `EmbeddingModel.activeBackend`; the loader says so
-  /// once in debug builds (`noticeEmbedderNpuNotApplied`).
+  /// Legacy CPU/NPU normalisation for direct users of this value type.
   static PreferredBackend _resolvedBackend(PreferredBackend? requested) =>
       requested == PreferredBackend.npu
       ? PreferredBackend.npu
       : PreferredBackend.cpu;
 
   /// Name of the first field that differs from [other], or null when the cached
-  /// embedder can be reused. No normalisation step to forget: the constructor
-  /// already did it.
+  /// identity matches. Media coverage is checked separately by [canServe].
   String? firstDifference(ActiveEmbedderParams other) {
     if (modelPath != other.modelPath) return 'modelPath';
     if (tokenizerPath != other.tokenizerPath) return 'tokenizerPath';
@@ -387,16 +374,17 @@ class ActiveEmbedderParams {
         modelPath: modelPath,
         tokenizerPath: tokenizerPath,
         preferredBackend: activeBackend,
+        normalizeBackend: false,
         media: media,
       );
 
-  /// True when [requested] asks for something no embedder runs on — `gpu` —
+  /// True when [requested] asks for something a legacy CPU-only backend ignores — `gpu` —
   /// so a caller can be told once that it changed nothing. `npu` is not
   /// "ignored" here: whether it ran is the backend's answer, read from the
   /// built model's `activeBackend` (`noticeEmbedderNpuNotApplied`).
   ///
-  /// Derived from [_resolvedBackend] rather than repeating the constant, so
-  /// the fact still has exactly one site.
+  /// Only for legacy notices; provider capabilities and loaded placement
+  /// determine the shared loader's cache key.
   static bool isIgnoredBackend(PreferredBackend? requested) =>
       requested != null && _resolvedBackend(requested) != requested;
 
@@ -409,11 +397,8 @@ class ActiveEmbedderParams {
 
   /// The same three fields [firstDifference] compares, because `==` delegates
   /// to it — so a fourth field goes in BOTH places, not "both" of `==` and
-  /// [firstDifference]. And if [firstDifference] ever normalises its inputs, as
-  /// [ActiveModelParams.firstDifference] does, hash the normalised values too,
-  /// or two objects would compare equal with different hashes and break every
-  /// `Map` and `Set` holding them. This one is safe today only because it
-  /// normalises in the constructor instead.
+  /// [firstDifference]. Core resolves automatic reuse and capabilities before
+  /// comparing these values; equality itself does not choose an accelerator.
   @override
   int get hashCode => Object.hash(modelPath, tokenizerPath, activeBackend);
 }

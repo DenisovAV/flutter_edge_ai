@@ -17,8 +17,11 @@ class FfiInferenceModel extends InferenceModel with CloseNotifier {
     required ModelType modelType,
     ModelFileType fileType = ModelFileType.litertlm,
     PreferredBackend? activeBackend,
+    PreferredBackend? activeVisionBackend,
+    PreferredBackend? activeAudioBackend,
     bool supportImage = false,
     bool supportAudio = false,
+    MultimodalOrder? multimodalOrder,
     int? maxConcurrentSessions,
     required VoidCallback onClose,
   }) {

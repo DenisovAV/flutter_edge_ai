@@ -1,3 +1,38 @@
+## 1.17.0
+- MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).
+- Windows Intel NPU on OpenVINO 2026.4.1 (`native-v0.18.0-g`): Intel's 12B loads; stale `%TEMP%` banks are deleted.
+- Windows: LiteRT-LM's native log follows a redirected stderr (`app.exe 2> err.log`).
+- A macOS app that cannot load LiteRT-LM is told why and how to fix it (#689).
+- macOS and Linux debug builds: `print` output stays in `flutter run` after a model loads.
+- Docs: which Gemma 3 bundles lose prefill chunks on the NPU (LiteRT-LM#3508).
+- Require `flutter_edge_ai` ^2.5.1.
+
+## 1.16.0
+- `InferenceModel.createDecider` on CPU, natively, from a `.litertlm`'s `litetune.decision` section.
+- Several open models at once (`FlutterEdgeAi.openModel`).
+- `LiteRtLmEngine(nativeLogLevel:)` sets LiteRT-LM's native log level.
+- Require `flutter_edge_ai` ^2.5.0.
+
+## 1.15.0
+- Google Tensor NPU on Android, opt-in with `google_tensor_npu: true` (#670).
+- A stopped turn is rewound in place, so the chat keeps earlier images and audio (#682).
+- Intel NPU on Windows loads its model again (LiteRT-LM #4023, #679).
+- `npu` on a bundle compiled for no NPU runs on the GPU, then the CPU, instead of reporting `npu` (#683).
+- Streaming reads each chunk through accessors resolved on the loaded library (#453).
+- Native bundle `native-v0.18.0-f`; require `flutter_edge_ai` ^2.4.1.
+
+## 1.14.0
+- **Behaviour change:** Gemma 4 gets its audio after the text; `getActiveModel(multimodalOrder:)` changes it.
+- EmbeddingGemma 2 reports its image token budget, so image-fitted deciders are bound to it.
+- FunctionGemma bundles that declare no `prefer_activation_type` run on the GPU at float32 (#552).
+- **Behaviour change:** backends follow the file (`readLiteRtLmBundleInfo`); incomplete or wrong-backend loads throw `LiteRtLmBundleException`.
+- `LiteRtLmEngine(backendFallback: false)`: one attempt, failing with LiteRT-LM's own reason.
+- `LiteRtEmbeddingBackend(requireWeightCache: true)` fails an EmbeddingGemma 2 load that wrote no weight cache.
+- Require `flutter_edge_ai` ^2.4.0.
+
+## 1.13.3
+- README: Qwen3 0.6B bundle that loads (#659); NPU mask formula corrected.
+
 ## 1.13.2
 - Web: EmbeddingGemma 2 audio and combined-input embeddings on WebGPU.
 - EmbeddingGemma 2 on the Intel Panther Lake NPU (Windows).

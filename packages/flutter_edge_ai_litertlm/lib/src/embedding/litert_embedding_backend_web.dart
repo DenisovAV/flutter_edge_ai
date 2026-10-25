@@ -15,6 +15,7 @@ import 'package:flutter_edge_ai/engine_web.dart' show resolveWebModelUrl;
 
 import 'litert_lm_embedding_common.dart';
 import 'vision_budget.dart';
+import 'weight_cache_notice.dart';
 import 'web/litert_js_embedding_pass.dart';
 import 'web/litert_lm_web_embedding_pass.dart';
 import 'web/litert_lm_web_embedding_runtime.dart';
@@ -33,9 +34,21 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// image gets: 140 (the default) or 70; any other value is refused with
   /// `EmbeddingLoadException` when a model loads. The same parameter as the
   /// native arm, so one registration compiles everywhere.
-  const LiteRtEmbeddingBackend({this._visionTokensPerImage = 140});
+  ///
+  /// [requireWeightCache] (flutter_edge_ai_litertlm 1.14.0) is accepted for
+  /// the same reason and does not apply: the web keeps no weight cache to
+  /// require. The bundle sits in the browser's storage and the engine builds
+  /// its weights at every load, so a load is never short of a cache it should
+  /// have written. A debug build says so once.
+  const LiteRtEmbeddingBackend({
+    this._visionTokensPerImage = 140,
+    this._requireWeightCache = false,
+  });
 
   final int _visionTokensPerImage;
+
+  /// Kept only to say, once, that it does not apply here.
+  final bool _requireWeightCache;
 
   @override
   String get name => 'LiteRT Embedding';
@@ -71,6 +84,9 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
         'tokenizer. Install the embedder again.',
         engine: bundle ? liteRtLmEngineTag : liteRtJsEngine,
       );
+    }
+    if (_requireWeightCache) {
+      noticeRequireWeightCacheNotApplied('the web keeps no weight cache');
     }
     if (bundle) {
       return _describeBundle(config, fileName, _visionTokensPerImage);
@@ -121,10 +137,10 @@ Future<EmbeddingPassDescriptor<LiteRtLmWebEmbeddingConfig>> _describeBundle(
   String fileName,
   int visionTokensPerImage,
 ) async {
-  // An EmbeddingGemma 2 NPU bundle needs a native dispatch (Qualcomm,
-  // Intel); asked for here it is refused, never run elsewhere.
+  // An EmbeddingGemma 2 NPU bundle needs a native dispatch; asked for here it
+  // is refused, never run elsewhere.
   if (config.preferredBackend == PreferredBackend.npu) {
-    throw const EmbeddingLoadException(
+    throw EmbeddingLoadException(
       liteRtLmWebNpuRefusal,
       engine: liteRtLmEngineTag,
     );

@@ -1,8 +1,9 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:ffi' show Abi;
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/backend_preference.dart';
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Runs [body] and returns everything it `print`ed, with `gemmaLog` muted — so
@@ -31,10 +32,7 @@ void main() {
   group('ffiBackendFallbackOrder', () {
     test('tries NPU, then GPU, then CPU where an NPU dispatch stack ships', () {
       expect(
-        ffiBackendFallbackOrder(
-          PreferredBackend.npu,
-          npuDispatchAvailable: true,
-        ),
+        ffiBackendFallbackOrder(PreferredBackend.npu, npuAvailable: true),
         const [
           PreferredBackend.npu,
           PreferredBackend.gpu,
@@ -50,123 +48,262 @@ void main() {
       // a Mac report `activeBackend == npu`. Measured on macOS with Gemma 4
       // E2B before this gate existed.
       expect(
-        ffiBackendFallbackOrder(
-          PreferredBackend.npu,
-          npuDispatchAvailable: false,
-        ),
+        ffiBackendFallbackOrder(PreferredBackend.npu, npuAvailable: false),
         const [PreferredBackend.gpu, PreferredBackend.cpu],
         reason:
             'a backend we cannot run must not be reported as the one we ran',
       );
     });
+  });
 
-    test('the rule: Windows always, Android with FastRPC, Linux with a Qualcomm '
-        'NPU, nowhere else', () {
-      // The predicate rather than `hostShipsNpuDispatch`, because
-      // `Platform.operatingSystem` has no override seam — asserting the getter
-      // on a macOS runner compares false to false and would pass for an
-      // implementation that disabled NPU everywhere.
-      expect(npuDispatchShipsFor('windows', androidHasFastRpc: false), isTrue);
-      expect(npuDispatchShipsFor('android', androidHasFastRpc: true), isTrue);
-      expect(
-        npuDispatchShipsFor('android', androidHasFastRpc: false),
-        isFalse,
-        reason:
-            'the Qualcomm stack ships for every arm64 Android build, so the '
-            'APK proves nothing about the silicon',
-      );
-      expect(
-        npuDispatchShipsFor(
-          'linux',
-          androidHasFastRpc: false,
-          linuxHasQualcommNpu: true,
-        ),
-        isTrue,
-      );
-      expect(
-        npuDispatchShipsFor('linux', androidHasFastRpc: true),
-        isFalse,
-        reason: "Android's probe says nothing about a Linux machine",
-      );
-      expect(
-        npuDispatchShipsFor(
-          'macos',
-          androidHasFastRpc: true,
-          linuxHasQualcommNpu: true,
-        ),
-        isFalse,
-      );
-      for (final os in ['macos', 'linux', 'ios', 'fuchsia', '']) {
-        expect(
-          npuDispatchShipsFor(os, androidHasFastRpc: true),
-          isFalse,
-          reason: '$os ships no NPU dispatch stack at all',
-        );
+  group('npuUnreachable', () {
+    // The rule over fake probes rather than the platform host, because
+    // `Platform.operatingSystem` has no override seam — asserting it on a
+    // macOS runner compares no-NPU to no-NPU and would pass for an
+    // implementation that disabled the NPU everywhere.
+    test('Qualcomm asks only its own probe of its own OS', () {
+      for (final (os, probe) in [
+        ('android', 'androidFastRpc'),
+        ('linux', 'linuxQualcommNpu'),
+      ]) {
+        final ok = _FakeProbes();
+        expect(npuUnreachable(NpuVendor.qualcomm, os, ok), isNull);
+        expect(ok.asked, [probe], reason: os);
       }
     });
 
-    test('the FastRPC probe runs on Android only', () {
-      // As an eagerly evaluated argument it ran on every host that asked for
-      // npu — including Windows, where LoadLibrary walks PATH.
+    test('Intel on Windows asks no probe at all', () {
+      final probes = _FakeProbes(error: 'should not be asked');
+      expect(npuUnreachable(NpuVendor.intel, 'windows', probes), isNull);
+      expect(probes.asked, isEmpty);
+    });
+
+    test('Google Tensor asks only for the Pixel system runtime', () {
+      final probes = _FakeProbes();
+      expect(npuUnreachable(NpuVendor.googleTensor, 'android', probes), isNull);
+      expect(probes.asked, ['androidGoogleTensorRuntime']);
+
+      final missing = _FakeProbes(error: 'dlopen failed');
       expect(
-        hostShipsNpuDispatch,
-        npuDispatchShipsFor(Platform.operatingSystem, androidHasFastRpc: false),
+        npuUnreachable(NpuVendor.googleTensor, 'android', missing),
+        'the Google Tensor NPU cannot run here: dlopen failed',
       );
-      expect(fastRpcProbed, isFalse);
-    }, skip: Platform.isAndroid ? 'the probe is the point on Android' : false);
+      expect(missing.asked, ['androidGoogleTensorRuntime']);
+    });
 
-    test('the Linux probe runs on Linux only', () {
-      // It opens device files and dlopens a Qualcomm library; neither belongs
-      // on a host where the answer is fixed.
-      expect(hostShipsNpuDispatch, isNotNull);
-      expect(linuxNpuProbed, isFalse);
-    }, skip: Platform.isLinux ? 'the probe is the point on Linux' : false);
+    test('MediaTek asks only for its NeuroPilot adapters', () {
+      final probes = _FakeProbes();
+      expect(npuUnreachable(NpuVendor.mediatek, 'android', probes), isNull);
+      expect(probes.asked, ['androidMediaTekRuntime']);
 
-    test('the reason npu is missing is worded per platform', () {
-      final android = npuUnavailableReason(
+      final missing = _FakeProbes(error: 'no adapter');
+      expect(
+        npuUnreachable(NpuVendor.mediatek, 'android', missing),
+        'the MediaTek NPU cannot run here: no adapter',
+      );
+      expect(missing.asked, ['androidMediaTekRuntime']);
+    });
+
+    test('MediaTek runs on LiteRT\'s devices only: Android 12+, a MediaTek or '
+        'MTK SoC manufacturer', () {
+      String? refusal(Map<String, String> props) =>
+          mediaTekDeviceRefusal((key) => props[key]);
+      const tab = {
+        'ro.build.version.sdk': '36',
+        'ro.soc.manufacturer': 'Mediatek',
+        'ro.soc.model': 'MT6989',
+      };
+      expect(refusal(tab), isNull);
+      expect(refusal({...tab, 'ro.soc.manufacturer': 'MTK'}), isNull);
+      expect(refusal({...tab, 'ro.soc.manufacturer': ' MEDIATEK '}), isNull);
+      expect(refusal({...tab, 'ro.build.version.sdk': '31'}), isNull);
+      expect(
+        refusal({...tab, 'ro.build.version.sdk': '30'}),
+        'Android API 30: the MediaTek NPU needs Android 12 (API 31) or later',
+      );
+      // A property getprop could not read is not a wrong device.
+      expect(
+        refusal({...tab}..remove('ro.build.version.sdk')),
+        'the Android API level (ro.build.version.sdk) could not be read',
+      );
+      expect(
+        refusal({...tab}..remove('ro.soc.manufacturer')),
+        'the SoC manufacturer (ro.soc.manufacturer) could not be read',
+      );
+      expect(
+        refusal({...tab, 'ro.soc.manufacturer': ''}),
+        startsWith('the device does not report its SoC manufacturer'),
+      );
+      expect(
+        refusal({
+          ...tab,
+          'ro.soc.manufacturer': 'QTI',
+          'ro.soc.model': 'SM8750',
+        }),
+        'this is not a MediaTek SoC (QTI SM8750)',
+      );
+    });
+
+    test('Google Tensor runs on LiteRT\'s devices only: Android 16+, not BP2A, '
+        'a Google SoC', () {
+      String? refusal(Map<String, String> props) =>
+          googleTensorDeviceRefusal((key) => props[key]);
+      const pixel = {
+        'ro.build.version.sdk': '36',
+        'ro.build.id': 'BP3A.250905.014',
+        'ro.soc.manufacturer': 'Google',
+        'ro.soc.model': 'Tensor G5',
+        'ro.hardware': 'frankel',
+      };
+      expect(refusal(pixel), isNull);
+      expect(
+        refusal({...pixel, 'ro.build.version.sdk': '35'}),
+        'Android API 35: the Google Tensor NPU needs Android 16 (API 36) or '
+        'later',
+      );
+      expect(
+        refusal({...pixel}..remove('ro.build.version.sdk')),
+        contains('API (unknown)'),
+      );
+      expect(
+        refusal({...pixel, 'ro.build.id': 'BP2A.250605.031'}),
+        'build BP2A.250605.031: LiteRT does not run the Google Tensor NPU on '
+        'BP2A builds',
+      );
+      expect(
+        refusal({
+          ...pixel,
+          'ro.soc.manufacturer': 'QTI',
+          'ro.soc.model': 'SM8750',
+          'ro.hardware': 'qcom',
+        }),
+        'this is not a Google Tensor SoC (QTI SM8750)',
+      );
+      expect(
+        refusal({...pixel, 'ro.soc.manufacturer': '', 'ro.hardware': 'x'}),
+        isNull,
+        reason: 'a Tensor SoC model is enough, as in LiteRT',
+      );
+    });
+
+    test('an operating system a vendor has no probe for is a programming '
+        'error, never another platform\'s answer', () {
+      for (final (vendor, os) in [
+        (NpuVendor.qualcomm, 'windows'),
+        (NpuVendor.qualcomm, 'macos'),
+        (NpuVendor.googleTensor, 'windows'),
+        (NpuVendor.googleTensor, 'linux'),
+        (NpuVendor.mediatek, 'linux'),
+        (NpuVendor.mediatek, 'windows'),
+        (NpuVendor.intel, 'android'),
+        (NpuVendor.intel, 'linux'),
+      ]) {
+        final probes = _FakeProbes();
+        expect(
+          () => npuUnreachable(vendor, os, probes),
+          throwsStateError,
+          reason: '$vendor on $os',
+        );
+        expect(probes.asked, isEmpty, reason: '$vendor on $os');
+      }
+    });
+
+    test('every vendor answers on each OS of its ABIs and on no other: the '
+        'probe switch agrees with NpuVendor.abis', () {
+      const oses = ['android', 'ios', 'linux', 'macos', 'windows', 'fuchsia'];
+      for (final vendor in NpuVendor.values) {
+        final runsOn = {for (final abi in vendor.abis) abi.split('_').first};
+        for (final os in oses) {
+          final probes = _FakeProbes();
+          if (runsOn.contains(os)) {
+            expect(
+              npuUnreachable(vendor, os, probes),
+              isNull,
+              reason: '$vendor on $os',
+            );
+          } else {
+            expect(
+              () => npuUnreachable(vendor, os, probes),
+              throwsStateError,
+              reason: '$vendor on $os',
+            );
+          }
+        }
+      }
+    });
+
+    test('the reason is worded per platform, with the probe error kept', () {
+      final android = npuUnreachable(
+        NpuVendor.qualcomm,
         'android',
-        fastRpcError: 'dlopen failed: library "libcdsprpc.so" not found',
+        _FakeProbes(error: 'dlopen failed: library "libcdsprpc.so" not found'),
       );
-      expect(android, contains('libcdsprpc.so'));
-      expect(android, contains('not found'), reason: 'the probe error is kept');
+      expect(
+        android,
+        'this device has no Qualcomm FastRPC (libcdsprpc.so did not open: '
+        'dlopen failed: library "libcdsprpc.so" not found), so the bundled NPU '
+        'stack cannot run here',
+      );
       expect(
         android,
         isNot(contains('ships')),
         reason: 'the stack does ship on Android; the device lacks FastRPC',
       );
 
-      final linux = npuUnavailableReason(
+      final linux = npuUnreachable(
+        NpuVendor.qualcomm,
         'linux',
-        fastRpcError:
-            '/dev/dma_heap/system is not accessible to this user. '
-            'Add the user to group fastrpc',
+        _FakeProbes(
+          error:
+              '/dev/dma_heap/system is not accessible to this user. '
+              'Add the user to group fastrpc',
+        ),
       );
       expect(linux, contains('group fastrpc'), reason: 'the fix is named');
-      expect(linux, isNot(contains('ships')));
-      expect(npuUnavailableReason('linux'), contains('no Qualcomm NPU'));
-
-      expect(npuUnavailableReason('macos'), contains('no NPU dispatch stack'));
-      expect(npuUnavailableReason('macos'), isNot(contains('FastRPC')));
+      expect(
+        linux,
+        startsWith('the bundled Qualcomm NPU stack cannot run here'),
+      );
     });
 
+    test('a host no vendor runs on is named by its ABI', () {
+      expect(
+        npuNoVendorReason('linux_x64'),
+        'no NPU dispatch stack ships for '
+        'linux_x64',
+      );
+      expect(npuNoVendorReason('macos_arm64'), isNot(contains('FastRPC')));
+    });
+
+    test('the platform probes have not run on a host no vendor runs on', () {
+      // `chooseNpuVendor` never asks a vendor of another ABI; the probes are
+      // dlopens and device files, which do not belong on such a host.
+      if (NpuVendor.forAbi('${Abi.current()}').isNotEmpty) return;
+      expect(fastRpcProbed, isFalse);
+      expect(linuxNpuProbed, isFalse);
+    });
+  });
+
+  group('ffiBackendFallbackOrder (continued)', () {
     test('tries GPU, then CPU for a GPU preference', () {
-      expect(ffiBackendFallbackOrder(PreferredBackend.gpu), const [
-        PreferredBackend.gpu,
-        PreferredBackend.cpu,
-      ]);
+      expect(
+        ffiBackendFallbackOrder(PreferredBackend.gpu, npuAvailable: false),
+        const [PreferredBackend.gpu, PreferredBackend.cpu],
+      );
     });
 
     test('tries GPU, then CPU when no preference is provided', () {
-      expect(ffiBackendFallbackOrder(null), const [
+      expect(ffiBackendFallbackOrder(null, npuAvailable: false), const [
         PreferredBackend.gpu,
         PreferredBackend.cpu,
       ]);
     });
 
     test('tries only CPU for a CPU preference', () {
-      expect(ffiBackendFallbackOrder(PreferredBackend.cpu), const [
-        PreferredBackend.cpu,
-      ]);
+      expect(
+        ffiBackendFallbackOrder(PreferredBackend.cpu, npuAvailable: false),
+        const [PreferredBackend.cpu],
+      );
     });
   });
 
@@ -186,6 +323,10 @@ void main() {
 
         final runtime = await initializeFfiRuntime<_FakeClient>(
           preferredBackend: PreferredBackend.gpu,
+          backends: ffiBackendFallbackOrder(
+            PreferredBackend.gpu,
+            npuAvailable: false,
+          ),
           logTag: '[Test]',
           createClient: () {
             final client = _FakeClient();
@@ -216,7 +357,10 @@ void main() {
           preferredBackend: PreferredBackend.npu,
           // Pinned rather than host-dependent: this case is about all THREE
           // attempts being reported, which needs npu to be on offer.
-          npuDispatchAvailable: true,
+          backends: ffiBackendFallbackOrder(
+            PreferredBackend.npu,
+            npuAvailable: true,
+          ),
           logTag: '[Test]',
           createClient: () {
             final client = _FakeClient();
@@ -259,7 +403,10 @@ void main() {
         final printed = await _printedWithGemmaLogMuted(() async {
           await initializeFfiRuntime<_FakeClient>(
             preferredBackend: PreferredBackend.npu,
-            npuDispatchAvailable: false,
+            backends: ffiBackendFallbackOrder(
+              PreferredBackend.npu,
+              npuAvailable: false,
+            ),
             logTag: '[Test]',
             createClient: _FakeClient.new,
             initializeClient: (_, _) async {},
@@ -272,12 +419,69 @@ void main() {
       },
     );
 
+    test('a requested backend the model file rules out is printed with the '
+        "file's reason, not the host's", () async {
+      // Gemma 3n declares cpu,gpu for its text model: asked for the NPU, the
+      // load plan leaves it out because of the file, on a device that may
+      // well have one.
+      const declared =
+          'model.litertlm declares that its text model runs on cpu, gpu '
+          '(backend_constraint)';
+      final printed = await _printedWithGemmaLogMuted(() async {
+        await initializeFfiRuntime<_FakeClient>(
+          preferredBackend: PreferredBackend.npu,
+          logTag: '[Test]',
+          createClient: _FakeClient.new,
+          initializeClient: (_, _) async {},
+          shutdownClient: (client) => client.shutdown(),
+          backends: const [PreferredBackend.gpu, PreferredBackend.cpu],
+          droppedBecause: const {PreferredBackend.npu: declared},
+        );
+      });
+      expect(printed, [
+        '[flutter_edge_ai] WARNING: [Test] npu was requested, but $declared — '
+            'trying gpu -> cpu instead. InferenceModel.activeBackend names '
+            'what actually ran.',
+      ]);
+    });
+
+    test('a requested GPU the model file rules out is printed, not dropped '
+        'silently', () async {
+      final printed = await _printedWithGemmaLogMuted(() async {
+        await initializeFfiRuntime<_FakeClient>(
+          preferredBackend: PreferredBackend.gpu,
+          logTag: '[Test]',
+          createClient: _FakeClient.new,
+          initializeClient: (_, _) async {},
+          shutdownClient: (client) => client.shutdown(),
+          backends: const [PreferredBackend.cpu],
+          droppedBecause: const {
+            PreferredBackend.gpu:
+                'model.litertlm declares that its text model runs on cpu '
+                '(backend_constraint)',
+          },
+        );
+      });
+      expect(printed, hasLength(1));
+      expect(
+        printed.single,
+        contains(
+          'gpu was requested, but model.litertlm declares that its text model '
+          'runs on cpu (backend_constraint) — trying cpu instead',
+        ),
+      );
+    });
+
     test('a failed backend is printed, and the last one does not promise a '
         'next', () async {
       final printed = await _printedWithGemmaLogMuted(() async {
         await expectLater(
           initializeFfiRuntime<_FakeClient>(
             preferredBackend: PreferredBackend.gpu,
+            backends: ffiBackendFallbackOrder(
+              PreferredBackend.gpu,
+              npuAvailable: false,
+            ),
             logTag: '[Test]',
             createClient: _FakeClient.new,
             initializeClient: (_, backend) async =>
@@ -311,6 +515,10 @@ void main() {
         await expectLater(
           initializeFfiRuntime<_FakeClient>(
             preferredBackend: PreferredBackend.cpu,
+            backends: ffiBackendFallbackOrder(
+              PreferredBackend.cpu,
+              npuAvailable: false,
+            ),
             logTag: '[Test]',
             createClient: () => client = _FakeClient(),
             initializeClient: (_, __) async => throw error,
@@ -325,13 +533,12 @@ void main() {
   });
 
   group('encoderBackendWireName (vision + audio encoders)', () {
-    // The VISION encoder graph carries STABLEHLO_COMPOSITE ops the Metal /
-    // WebGPU LiteRT delegates can't prepare (hard-fails at conversation_create,
-    // no fallback — LiteRT-LM#2461), so CPU is the op-safe default there. AUDIO
-    // runs on either backend; CPU is a conservative default. Both stay
-    // overridable: a vision model whose section bakes a gpu-only
-    // backend_constraint would otherwise hard-fail on CPU, and Gemma 3n audio is
-    // ~2x faster on GPU.
+    // The LLM engine passes the load plan's choice from the bundle; null
+    // reaches here only for a file the plan could not read. The VISION encoder
+    // graph carries STABLEHLO_COMPOSITE ops the Metal / WebGPU LiteRT delegates
+    // can't prepare (hard-fails at conversation_create, no fallback —
+    // LiteRT-LM#2461), so CPU is the op-safe default there, and the published
+    // Gemma 4 and Gemma 3n audio encoders declare cpu.
     test('defaults to cpu when no encoder backend is set (null)', () {
       expect(encoderBackendWireName(null), 'cpu');
     });
@@ -376,5 +583,37 @@ class _FakeClient {
 
   void shutdown() {
     isShutdown = true;
+  }
+}
+
+/// Probes that answer [error] (null: they pass) and record what was asked.
+final class _FakeProbes implements NpuProbes {
+  _FakeProbes({this.error});
+
+  final String? error;
+  final asked = <String>[];
+
+  @override
+  String? androidFastRpc() {
+    asked.add('androidFastRpc');
+    return error;
+  }
+
+  @override
+  String? androidGoogleTensorRuntime() {
+    asked.add('androidGoogleTensorRuntime');
+    return error;
+  }
+
+  @override
+  String? androidMediaTekRuntime() {
+    asked.add('androidMediaTekRuntime');
+    return error;
+  }
+
+  @override
+  String? linuxQualcommNpu() {
+    asked.add('linuxQualcommNpu');
+    return error;
   }
 }

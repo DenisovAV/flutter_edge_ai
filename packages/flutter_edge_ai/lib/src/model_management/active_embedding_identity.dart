@@ -17,7 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///  * **v1** — a model plus its tokenizer. Written byte for byte as 2.1 wrote
 ///    it, so a downgrade still reads it; [cleared] is v1 too.
 ///  * **v2** — a self-contained model (`EmbeddingModelSpec.isSelfContained`,
-///    a `.litertlm` bundle): no tokenizer fields. A 2.1 reader accepts only
+///    a self-contained `.litertlm` or `.gguf` file): no tokenizer fields. A 2.1 reader accepts only
 ///    schema 1, so it gets null and restores no active embedder — it fails
 ///    closed instead of pairing the bundle with a tokenizer it never had.
 final class ActiveEmbeddingIdentityRecord {

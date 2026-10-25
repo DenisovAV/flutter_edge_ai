@@ -7,6 +7,8 @@ import 'package:flutter_edge_ai_example/image_search_screen.dart';
 import 'package:flutter_edge_ai_example/multimodal_rag_screen.dart';
 import 'package:flutter_edge_ai_example/model_selection_screen.dart';
 import 'package:flutter_edge_ai_example/stt_models_screen.dart';
+import 'package:flutter_edge_ai_example/tiny_island/tiny_island_platform.dart';
+import 'package:flutter_edge_ai_example/tiny_island_screen.dart';
 import 'package:flutter_edge_ai_example/translate_models_screen.dart';
 import 'package:flutter_edge_ai_example/tts_models_screen.dart';
 import 'package:flutter_edge_ai_example/utils/installed_model_lookup.dart';
@@ -153,6 +155,21 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 16),
             _NavigationCard(
+              key: const Key('home-tiny-island'),
+              title: 'Tiny Island',
+              subtitle:
+                  tinyIslandUnsupportedReason() ??
+                  'Control a 3D scene with words; EmbeddingGemma 2 decides '
+                      '(choose Text 270M under Embedding Models, or '
+                      'Text + Vision + Audio 740M to speak to it)',
+              icon: Icons.landscape,
+              color: Colors.cyan,
+              onTap: tinyIslandUnsupportedReason() == null
+                  ? () => _push(const TinyIslandScreen())
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            _NavigationCard(
               title: 'Speech-to-Text',
               subtitle: 'On-device transcription with Moonshine',
               icon: Icons.mic,
@@ -206,12 +223,15 @@ class _NavigationCard extends StatelessWidget {
   final String subtitle;
   final IconData icon;
   final Color color;
-  final VoidCallback onTap;
+
+  /// Null shows the card disabled: its subtitle then says why.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onTap != null;
     return Card(
-      color: const Color(0xFF1a3a5c),
+      color: enabled ? const Color(0xFF1a3a5c) : const Color(0xFF15283d),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
@@ -225,7 +245,11 @@ class _NavigationCard extends StatelessWidget {
                   color: color.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(icon, color: color, size: 24),
+                child: Icon(
+                  icon,
+                  color: enabled ? color : Colors.white38,
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -234,9 +258,10 @@ class _NavigationCard extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
+                        color: enabled ? null : Colors.white54,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -250,11 +275,12 @@ class _NavigationCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(
-                Icons.arrow_forward_ios,
-                color: Colors.white54,
-                size: 16,
-              ),
+              if (enabled)
+                const Icon(
+                  Icons.arrow_forward_ios,
+                  color: Colors.white54,
+                  size: 16,
+                ),
             ],
           ),
         ),

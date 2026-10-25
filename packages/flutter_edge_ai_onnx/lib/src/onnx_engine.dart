@@ -11,11 +11,11 @@ import 'onnx_inference_model.dart';
 
 /// ONNX Runtime GenAI on-device inference engine.
 ///
-/// **macOS/Linux/Windows/Android arm + iOS arm64 (hardened plan Phase 3,
+/// **macOS/Linux/Windows x64 + arm64/Android arm + iOS arm64 (hardened plan Phase 3,
 /// design §11 D2).** [createModel] productionizes the ORT-GenAI FFI path
 /// (`GenAiFfiClient` → `OnnxInferenceModel`/`OnnxSession`) — text-only, one
 /// session at a time, sampling as the caller sets it, else as the model's
-/// `genai_config.json` does. macOS/Linux/Windows/Android arm64
+/// `genai_config.json` does. macOS/Linux/Windows x64/Android arm64
 /// are device-verified — Android on FTL (Pixel 8 Pro, 2026-08-19: ~10.4
 /// tok/s, ~3.74 GB peak RSS, flat-APK co-location with no ORT_LIB_PATH fix
 /// needed, via `onnx_inference_smoke_test.dart`), the D2 throughput/RAM
@@ -24,7 +24,9 @@ import 'onnx_inference_model.dart';
 /// installs and launches on a real iPhone, and generation runs — the
 /// `@executable_path`-anchored dlopen resolves both `Oga*` and `OrtGetApiBase`
 /// from the single self-contained genai xcframework, `OgaCreateModel` +
-/// streamed generation succeed. See `hook/build.dart`'s platform table.
+/// streamed generation succeed. Windows ARM64 also passed generation,
+/// embeddings, and an example build on a Windows 11 ARM64 runner (Azure
+/// Cobalt 100). See `hook/build.dart`'s platform table.
 ///
 /// Mirrors [LiteRtLmEngine] from `flutter_edge_ai_litertlm`: a pure factory
 /// that core probes via [canHandle] and calls to build a bare
@@ -59,10 +61,8 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       const OnnxHuggingFaceResolver();
 
   /// In lockstep with `hook/build.dart`'s `_archivesFor`: every host whose
-  /// archive the hook bundles AND whose engine path is verified on a real
-  /// device (macOS/Linux/Windows/Android/iOS arm64). The gate exists so that
-  /// on a host with no archive — or an
-  /// archive not yet device-validated — `GenAiFfiClient`'s worker-side dlopen
+  /// archive the hook bundles. The gate exists so that on a host with no
+  /// archive `GenAiFfiClient`'s worker-side dlopen
   /// doesn't fail at first use with a confusing native error; instead this
   /// engine declines cleanly (there is no other `.onnx` engine to route to
   /// yet). Widen deliberately only once the hook's archive lands for a given
@@ -72,9 +72,11 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
     if (debugForceUnsupportedHost == true) return false;
     final abi = Abi.current();
     // Keep in lockstep with hook/build.dart's `_archivesFor` table.
-    // macOS/Linux/Windows/Android arm64 are device-verified (Android on FTL
-    // Pixel 8 Pro 2026-08-19: ~10.4 tok/s, ~3.74 GB peak RSS, flat-APK
-    // co-location with no ORT_LIB_PATH fix needed). `dart:ffi`'s `Abi` has no
+    // macOS/Linux/Windows x64/Android arm64 are device-verified (Android on
+    // FTL Pixel 8 Pro 2026-08-19: ~10.4 tok/s, ~3.74 GB peak RSS, flat-APK
+    // co-location with no ORT_LIB_PATH fix needed); Windows arm64 passed
+    // generation and embeddings on a Windows 11 ARM64 runner. `dart:ffi`'s `Abi`
+    // has no
     // separate simulator ABI: an arm64 iOS Simulator on Apple Silicon
     // reports the SAME `Abi.iosArm64` as a real device (verified — the
     // sim-smoke test asserts this), so this one clause covers device +
@@ -82,7 +84,8 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
     // ungated, matching `hook/build.dart` shipping no archive for it either.
     return (Platform.isMacOS && abi == Abi.macosArm64) ||
         (Platform.isLinux && abi == Abi.linuxX64) ||
-        (Platform.isWindows && abi == Abi.windowsX64) ||
+        (Platform.isWindows &&
+            (abi == Abi.windowsX64 || abi == Abi.windowsArm64)) ||
         (Platform.isAndroid && abi == Abi.androidArm64) ||
         (Platform.isIOS && abi == Abi.iosArm64);
   }
@@ -102,7 +105,7 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       edgeAiLog(
         'OnnxEngine declined ${Platform.operatingSystem}/${Abi.current()}: '
         'native ORT archives are macOS-arm64/linux-x64/windows-x64/'
-        'android-arm64/ios-arm64-only in v1 (see hook/build.dart '
+        'windows-arm64/android-arm64/ios-arm64-only in v1 (see hook/build.dart '
         '`_archivesFor`).',
       );
       return false;
@@ -123,7 +126,8 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       throw StateError(
         'OnnxEngine.createModel called on unsupported host '
         '${Platform.operatingSystem}/${Abi.current()} — ONNX native archives '
-        'are macOS-arm64/linux-x64/windows-x64/android-arm64/ios-arm64-only '
+        'are macOS-arm64/linux-x64/windows-x64/windows-arm64/android-arm64/'
+        'ios-arm64-only '
         'in v1 (see hook/build.dart `_archivesFor`).',
       );
     }
@@ -171,8 +175,9 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       //
       // Null rather than CPU, because CPU would be its own guess: ORT-GenAI
       // selects the provider from the model directory's own genai_config.json,
-      // which we never read. Null is what the contract defines for exactly
-      // this — "the platform runtime does not expose a final backend".
+      // whose execution-provider section we never read. Null is what the
+      // contract defines for exactly this — "the platform runtime does not
+      // expose a final backend".
       activeBackend: null,
       fileType: spec.fileType,
       configTopK: configTopK,

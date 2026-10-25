@@ -15,22 +15,23 @@ and cloud models behind a single `ai.generate` call.
 ## genkit_flutter_edge_ai
 
 Wraps flutter_edge_ai as a Genkit model and embedder provider. Once registered,
-every Genkit feature (streaming, tool use, embeddings, prompt templates) works
-with the on-device model exactly as it would with any cloud provider.
+streaming, tool use, embeddings and prompt templates go through the standard
+Genkit API; what a request can use depends on the installed model (see the
+notes below).
 
 ### Add to pubspec.yaml
 
 ```
 dependencies:
   genkit: ^1.0.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.9.1
-  flutter_edge_ai: ^2.3.2
+  genkit_flutter_edge_ai: ^0.11.0
+  flutter_edge_ai: ^2.5.2
   # Add the inference engine(s) you need:
-  flutter_edge_ai_litertlm: ^1.13.2   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.2.2  # .task / .bin models (mobile + web)
+  flutter_edge_ai_litertlm: ^1.17.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.2.3  # .task / .bin models (mobile + web)
   # Optional — tokenizers for .tflite / .onnx embedding models (an EmbeddingGemma 2
   # .litertlm needs none; the backend is flutter_edge_ai_litertlm above):
-  flutter_edge_ai_embeddings: ^2.3.0
+  flutter_edge_ai_embeddings: ^2.3.2
 ```
 
 ### Setup
@@ -54,21 +55,24 @@ await FlutterEdgeAi.initialize(
 );
 
 // 2. Install the model (host app responsibility).
-await FlutterEdgeAi.installModel(modelType: ModelType.gemmaIt)
-    .fromAsset('assets/gemma-3-1b-it-int4.task')
-    .install();
+await FlutterEdgeAi.installModel(
+  modelType: ModelType.gemma4,
+  fileType: ModelFileType.litertlm, // the default, .task, routes to MediaPipe
+).fromNetwork(
+  // On web, install gemma-4-E2B-it-web.litertlm from the same repository.
+  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
+).install();
 
-// For a .litertlm model declare the type in BOTH places — installModel(
-// fileType: ModelFileType.litertlm) and FlutterEdgeAiModelConfig(fileType: ...).
-// Both default to ModelFileType.task, which routes the model to MediaPipe.
+// FlutterEdgeAiModelConfig.fileType does not affect routing; installModel's
+// fileType does.
 
 // 3. Create a Genkit instance with the plugin.
 final ai = Genkit(plugins: [
   GenkitFlutterEdgeAiPlugin(
     models: [
       FlutterEdgeAiModelConfig(
-        name: 'gemma-3-1b',
-        modelType: ModelType.gemmaIt,
+        name: 'gemma-4-e2b',
+        modelType: ModelType.gemma4,
       ),
     ],
     embedders: [
@@ -78,6 +82,10 @@ final ai = Genkit(plugins: [
 ]);
 ```
 
+New apps should prefer `.litertlm`: Google's MediaPipe LLM Inference API is
+maintenance-only, its `.task` models do not load on the iOS GPU, and it has no
+desktop.
+
 Model and embedder ids are `flutter-edge-ai/<name>` (they were
 `flutter-gemma/<name>`), and 0.7.0 drops the old `genkit_flutter_gemma` Dart
 names — `dart fix --apply` renames them.
@@ -86,7 +94,7 @@ names — `dart fix --apply` renames them.
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Hello!',
 );
 final reason = response.finishReason;
@@ -110,12 +118,13 @@ empty line.
 
 ```dart
 final stream = ai.generateStream(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Write a short story.',
 );
 
+final reply = StringBuffer();
 await for (final chunk in stream) {
-  stdout.write(chunk.text);
+  reply.write(chunk.text); // update your UI as the reply grows
 }
 // A failure ends the stream normally; the result says what happened.
 final result = await stream.onResult; // check finishReason as above
@@ -144,10 +153,12 @@ final documentVectors = await ai.embed(
 ```
 
 Index with `retrievalDocument` and search with the default
-`retrievalQuery`; see [Embeddings & RAG](/docs/embeddings-and-rag). The
-embedder takes text only: a document with no text part is an
-`INVALID_ARGUMENT`. Since 0.9.1 it resolves the active embedder again for
-every request, so it follows a model core replaced or closed in between.
+`retrievalQuery`. The embedder runs the model `installEmbedder()` made active,
+EmbeddingGemma 2 included; see [Embeddings & RAG](/docs/embeddings-and-rag). It
+takes text only: a document with no text part is an
+`INVALID_ARGUMENT`. Since 0.9.0 it resolves the active embedder again for
+every request, so it follows a model core replaced in between; since 0.9.1 a
+request that finds it closed resolves it again and is retried once.
 
 ### Configuration options
 
@@ -155,22 +166,30 @@ Pass `FlutterEdgeAiModelOptions` to tune inference:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Hello!',
   config: FlutterEdgeAiModelOptions(
     maxTokens: 2048,                // context window (input + output), not reply length
-    maxOutputTokens: 256,           // cap on the reply (.litertlm; MediaPipe ignores it)
+    maxOutputTokens: 256,           // cap on the reply (every engine except MediaPipe)
     temperature: 0.5,
     topK: 40,
     supportImage: true,
+    supportAudio: true,             // audio input
+    enableThinking: true,           // reasoning arrives as a ReasoningPart
     toolChoice: 'auto',             // tool calling mode: 'auto' / 'required' / 'none'
     // Optional per-component backend ('cpu'/'gpu'/'npu'):
     preferredBackend: 'gpu',        // text decoder
-    preferredAudioBackend: 'gpu',   // audio encoder (~2x on Metal; defaults to CPU)
-    // preferredVisionBackend defaults to CPU (Metal/WebGPU can't run its ops).
+    // preferredVisionBackend / preferredAudioBackend: unset, each encoder
+    // follows the bundle (its backend_constraint, else the NPU it is compiled
+    // for, else CPU); set one only where the section allows it.
   ),
 );
 ```
+
+With `enableThinking: true` the reasoning comes before the reply as a
+`ReasoningPart` (in `response.message?.content`, or each streamed
+`chunk.content`); read it with `part.reasoning`. `response.text` holds the reply
+alone.
 
 Leave `temperature`, `topK` and `topP` unset to get the model's own sampler: the
 one a `.litertlm` file ships, else the defaults its family publishes. On
@@ -204,11 +223,31 @@ metadata says so, and a request that needs them fails with `UNIMPLEMENTED`
 instead of reaching a model that would ignore them. Options are checked before
 anything loads, so a bad value, a `maxOutputTokens` larger than `maxTokens`
 among them, is an `INVALID_ARGUMENT`. An engine that cannot do what was asked
-on this platform is `UNIMPLEMENTED`, which `genkit_hybrid` hands to its next
-branch. An installed model the app cannot run (no engine registered for it) is
+on this platform is `UNIMPLEMENTED`, which a `genkit_hybrid` router falls back
+on. An installed model the app cannot run (no engine registered for it) is
 `FAILED_PRECONDITION`, which no router hides.
 
 </Info>
+
+### Tool calls
+
+Pass Genkit tools as usual; the model calls them through the engine's function
+calling (a tool-capable model, see [Function calling](/docs/function-calling)):
+
+```dart
+final response = await ai.generate(
+  model: flutterEdgeAi.model('gemma-4-e2b'),
+  prompt: 'What is the weather in Paris?',
+  tools: [weatherTool],
+);
+```
+
+Tool `ref`s travel as call ids both ways (`genkit_flutter_edge_ai` 0.10.0,
+which requires `flutter_edge_ai` ^2.4.0). A tool request's `ref` is the call's
+`FunctionCallResponse.id`, or `call_0`, `call_1`, … when the engine gives none
+(of the published engines only `flutter_edge_ai_llama` does), and never repeats within a turn. In the history
+the plugin sends back, a request's `ref` becomes its call's id
+(`Message.toolCall(calls:)`) and a tool response's `ref` its `toolCallId`.
 
 ### Structured (JSON) output
 
@@ -222,7 +261,7 @@ It returns the raw model text and Genkit's `extractJson` populates
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Give me a pancake recipe.',
   outputSchema: Recipe.$schema, // any @Schema()-annotated type
 );
@@ -258,7 +297,7 @@ always keeping every system message and the most recent message:
 
 ```dart
 final response = await ai.generate(
-  model: flutterEdgeAi.model('gemma-3-1b'),
+  model: flutterEdgeAi.model('gemma-4-e2b'),
   prompt: 'Continue our conversation…',
   messages: longHistory,
   use: [trimContext(maxInputTokens: 800)],
@@ -272,18 +311,21 @@ held back as well, since it is written into the prompt after the trimmer runs.
 
 ## genkit_hybrid
 
-Provider-agnostic hybrid routing for Genkit. Combine any two existing Genkit
-models — on-device, cloud, or anything else — behind one routing policy. The
-result is an ordinary `Model`, so your app still calls a single `ai.generate`.
+Hybrid on-device/cloud routing for Genkit. A router sends each generate call to
+one of its targets — a model on the device or in the cloud — once, at the first
+turn of the tool loop, and keeps it there for the whole loop. Deterministic
+rules decide first; a classifier, such as an on-device decider, decides the
+rest.
 
-`genkit_hybrid` depends only on `genkit` — it has no dependency on
-flutter_edge_ai and works with **any** pair of Genkit models.
+`genkit_hybrid` depends only on `genkit` (and `schemantic`, which Genkit itself
+is built on) — it has no dependency on flutter_edge_ai and works with any
+Genkit models.
 
 ### Add to pubspec.yaml
 
 ```
 dependencies:
-  genkit_hybrid: ^0.3.1
+  genkit_hybrid: ^0.4.0
   genkit: ^1.0.0
 ```
 
@@ -293,142 +335,152 @@ dependencies:
 import 'package:genkit/genkit.dart';
 import 'package:genkit_hybrid/genkit_hybrid.dart';
 
-final ai = Genkit();
+// The on-device plugin only, and no `model:`: a call that forgets the router
+// must have nowhere to go.
+final ai = Genkit(plugins: [edgeAi]);
 
-// onDeviceModel and cloudModel are ordinary Genkit Models you already have.
-final smart = hybridModelOnDeviceCloud(
-  onDevice: onDeviceModel,
-  cloud: cloudModel,
-  strategy: ConnectivityStrategy(
-    isOnline: () => connectivity.isOnline,
-    online: kCloud,
-    offline: kOnDevice,
-  ),
+final router = defineHybridRouter(
+  ai,
+  targets: {
+    kOnDevice: HybridTarget.onDevice(
+      flutterEdgeAi.model('gemma-4-e2b'),
+      warmUp: flutterEdgeAi.warmUp, // loads the model with this target's config
+    ),
+    kCloud: HybridTarget.cloud(googleAI.gemini('gemini-2.5-flash')),
+  },
+  cloudPlugins: [googleAI(apiKey: apiKey)], // given to the router only
+  policies: {
+    'smart': RoutePolicy(
+      rules: [
+        RouteRule.offline(isOnline: () => net.isOnline),
+        RouteRule.inputSize(maxChars: 3000, small: kOnDevice, large: kCloud),
+      ],
+      classifier: myClassifier,
+      labels: {
+        'private': RouteDecision.only(kOnDevice), // never leaves the device
+        'smalltalk': RouteDecision.prefer(kOnDevice),
+        'code': RouteDecision.prefer(kCloud),
+      },
+      fallback: [kOnDevice],
+    ),
+  },
+  defaultPolicy: 'smart',
 );
+await router.warmUp(); // at app start: the classifier and the model load now
 
-// A hybrid model is an ordinary Model — register it, then use it like any other.
-ai.registry.register(smart);
-
-final response = await ai.generate(model: smart, prompt: 'Hello!');
+final response = await router.generate(prompt: 'Hello!');
+print(response.route); // target, model, source, label, score, routeTime
 ```
 
-### Routing strategies
+`router.generate` and `router.generateStream` take what `ai.generate` takes
+except `model` and `config` — each target carries its own config on its
+`ModelRef` — plus `policy:` and `pin:`. `router.definePrompt` defines a prompt
+routed with a fixed policy.
 
-| Strategy | Routes on |
+`router.warmUp()` warms every policy's classifier and every on-device target
+given a `warmUp` at once, so the first request waits for none of them; it
+completes when all have ended, with the first failure if one failed.
+
+### The cloud is reachable only through the router
+
+The cloud plugins go to the router, which keeps them in a Genkit instance of
+its own. The app's `ai` gets one proxy model per cloud target, which serves a
+request only when the router chose that target for that call: a direct call to
+it, or an app middleware that switches a device decision to it, fails with
+`PERMISSION_DENIED`. The decision ends with its attempt, so a zone kept from it
+no longer reaches the cloud, and the caller's `onChunk` runs outside it.
+`defineHybridRouter` refuses a Genkit created with a default `model:`, and on
+every cloud call the router checks that the app's `ai` cannot resolve the cloud
+model itself. Define one router per Genkit: Genkit cannot unregister it, and its
+name cannot be reused.
+
+### Policies, rules and decisions
+
+| `RoutePolicy` field | Meaning |
 |---|---|
-| `PreRoutingStrategy(fn)` | your own function (privacy, cost, user tier…) |
-| `FallbackStrategy(order)` | fixed priority order — `kOnDevice` first or `kCloud` first |
-| `ConnectivityStrategy(...)` | network availability |
-| `InputSizeStrategy(...)` | prompt length |
-| `CapabilityStrategy(supports: {...})` | the capabilities a request needs — vision / audio / tools / json — routing to branches that declare them |
-| `CostStrategy(budgetAvailable:, premium:, cheap:)` | a budget signal — the premium branch while the budget holds, the cheap branch once it's spent |
-| `FirstMatch([...])` | first child strategy that decides (chain of rules) |
-| `WithFallback(s, fallbackOrder: order)` | any strategy's pick + a guaranteed fallback tail |
+| `rules` | synchronous rules, in order; the first decision wins |
+| `classifier` | asked only when no rule decided |
+| `labels` | classifier label → `RouteDecision`; an unknown label fails the call |
+| `onAbstain` | the decision for an abstain; default `RouteDecision.only(kOnDevice)` |
+| `onUnavailable` | the decision while the classifier is unavailable (not ready yet, or its decider closed); default: the call fails; `route.reason` keeps why |
+| `fallback` | targets a `prefer` decision may move to: after a transient failure, for a missing capability, after a rejected cascade |
+| `cascade` | a check on the result; false escalates along `fallback` |
 
-### Prefer on-device, fall back to cloud
+Built-in rules: `RouteRule.custom(name, fn)`, `RouteRule.offline(isOnline:)`,
+`RouteRule.inputSize(maxChars:, small:, large:)` and
+`RouteRule.budget(available:, premium:, cheap:)`. A decision is
+`RouteDecision.prefer(target)`, which may move to another target, or
+`RouteDecision.only(target)`, which never does; `pin:` on a call is `only`. Map
+a label that must stay on the device to `only(kOnDevice)`.
+`HybridTarget.onDevice(…, supports: {ModelCapability.vision, …})` (or `.cloud`)
+declares what a target can do, and a request that needs more moves a `prefer`
+decision to the first capable fallback target. `RouteClassifier` and
+`RouteRule` are abstract base classes: extend them, as `final` classes.
+
+### Fallback, cascade and consent
+
+Fallback and cascade happen only at the first turn, for a `prefer` decision,
+never on a resume, and only while nothing ran: no chunk reached the caller and
+no tool ran, since re-running a tool loop would re-run its tools. A failure
+moves the call to a device target when it is transient (`UNAVAILABLE`,
+`DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`, `INTERNAL`, `UNIMPLEMENTED`, or an
+error without a Genkit status), and to a cloud target only on `UNAVAILABLE`,
+`DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED` or `UNIMPLEMENTED`: `INTERNAL` and
+errors without a status are what a device bug or an over-long input raises on
+every request. `route.reason` says why the call moved. A streamed cascade
+attempt holds its chunks until the verdict, or until a tool runs.
+
+`confirmCloud: (request) => …` is asked once per call for each cloud target it
+is about to use; a cancel ends the wait. False on the decided target keeps a
+`prefer` call on the device, and fails a pin, an `only` decision and a router
+without a `kOnDevice` target; false on a fallback target skips it.
+
+### Decide on the device with a Decider
+
+`genkit_flutter_edge_ai`'s `DeciderRouteClassifier.load` turns an EmbeddingGemma 2
+decider into the router's classifier; its options are the labels:
 
 ```dart
-hybridModelOnDeviceCloud(
-  onDevice: onDeviceModel,
-  cloud: cloudModel,
-  strategy: FallbackStrategy([kOnDevice, kCloud]),
-);
+final intents = DeciderRouteClassifier.load(() async {
+  final embedder = await FlutterEdgeAi.getActiveEmbedder();
+  return embedder.createDecider(options: intentOptions);
+}); // loading starts now; router.warmUp() waits for it
+
+// In the policy:
+classifier: intents,
+labels: {
+  'smalltalk': RouteDecision.prefer(kOnDevice),
+  'code': RouteDecision.prefer(kCloud),
+},
 ```
 
-### Chain multiple rules
+`DeciderRouteClassifier.load` keeps the decider; a failed load fails the
+requests waiting for it and runs again at the next one, and `reload()` refits,
+closing the old decider once the new one is ready. To keep the decider
+yourself, `deciderRouteClassifier(() => decider)` asks your provider per
+request. A decider error fails the call, never an abstain — an input over the
+embedder's limit included, so keep `RouteRule.inputSize` before the classifier.
+See [Decisions](/docs/decisions).
+
+### Errors
+
+`router.generate`, `generateStream` and a routed prompt's `call`/`stream` throw
+`HybridRoutingException` when the router refuses; a sub-agent's refusal inside
+a tool fails the outer call as a tool failure instead. Other failures stay what
+Genkit makes of them: a result with `finishReason: FinishReason.failed`, the
+error in `error` and the original exception in `cause`; a cancel or a
+`maxTurns` overrun ends with `FinishReason.aborted`. A cloud model can also
+stop on its own terms: `genkit_google_genai` reports a safety block as
+`FinishReason.blocked`. Treat every finish other than `stop`, `length` and
+`unknown` as a failure, after handling `FinishReason.interrupted`:
 
 ```dart
-hybridModelOnDeviceCloud(
-  onDevice: onDeviceModel,
-  cloud: cloudModel,
-  strategy: WithFallback(
-    FirstMatch([
-      PreRoutingStrategy((c) => userOptedOutOfCloud ? kOnDevice : ''),
-      ConnectivityStrategy(
-        isOnline: () => net.isOnline,
-        online: kCloud,
-        offline: kOnDevice,
-      ),
-    ]),
-    fallbackOrder: [kOnDevice],
-  ),
-);
-```
-
-### Route by required capabilities
-
-`CapabilityStrategy` inspects what the request actually needs — an image or
-audio part, tool definitions, or JSON output — and keeps only the branches that
-declare those capabilities (or `[]` when none qualifies, so compose it with
-`WithFallback`). Capabilities are declared explicitly per branch; nothing is
-inferred from model metadata.
-
-```dart
-final smart = hybridModel(
-  branches: {'onDevice': onDeviceModel, 'cloud': cloudModel},
-  strategy: WithFallback(
-    CapabilityStrategy(supports: {
-      'onDevice': {},                                   // text only
-      'cloud': {ModelCapability.vision, ModelCapability.tools},
-    }),
-    fallbackOrder: ['cloud'],
-  ),
-);
-```
-
-A plain-text request can use either branch; a request carrying an image or tool
-definitions is routed to `cloud`, the only branch that declares those
-capabilities.
-
-### Budget-gate a paid branch
-
-`CostStrategy` sends traffic to a premium branch only while an app-supplied
-budget signal holds, and falls back to the cheap branch once it's spent. Your
-app owns the accounting (running spend, a daily cap, a quota) and reduces it to
-one `bool` — the package depends on no billing SDK.
-
-```dart
-hybridModel(
-  branches: {'onDevice': onDeviceModel, 'cloud': cloudModel},
-  strategy: CostStrategy(
-    budgetAvailable: () => spend.today < dailyCap,
-    premium: 'cloud',
-    cheap: 'onDevice',
-  ),
-);
-```
-
-### Error policy and fallback
-
-Fallback is error-driven: the strategy picks an order, and the next branch is
-tried only when the current one **throws**, and only on a transient failure —
-any non-`GenkitException` error (network, timeout, OOM), or a `GenkitException`
-with `UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED` or `INTERNAL` —
-or on `UNIMPLEMENTED`: a capability one model lacks (tools, images, audio on
-this platform) another branch's model may have. Permanent errors —
-`INVALID_ARGUMENT`, `PERMISSION_DENIED`, `UNAUTHENTICATED`,
-`FAILED_PRECONDITION`, `NOT_FOUND` — propagate immediately, since they would
-fail the same way on every branch. A `GenkitException` thrown without an
-explicit status defaults to `INTERNAL`, so it *is* retried. After a cancel no
-other branch is tried: the error of the branch that was running is the one
-reported.
-
-The error that propagates does not leave `ai.generate` as an exception. In
-genkit 1.0 a failed generation comes back as a result with
-`finishReason: FinishReason.failed`, the error in `error` and the original
-exception in `cause`; `ai.generateStream` ends normally with that result in
-`onResult`. A cancel or a `maxTurns` overrun ends the same way with
-`FinishReason.aborted`, often with no `cause`; `error` is set in both cases.
-A cloud branch can also stop on its own terms without any error:
-`genkit_google_genai` reports a safety block as `FinishReason.blocked` and a
-reason it does not know as `FinishReason.other`. Treat every finish other than
-`stop`, `length` and `unknown` as a failure:
-
-```dart
-await for (final chunk in stream) { /* ... */ }
-final result = await stream.onResult;
+final result = await router.generate(prompt: 'Hi');
 final reason = result.finishReason;
-if (reason != FinishReason.stop &&
+if (reason == FinishReason.interrupted) {
+  // Answer with router.generate(messages: result.messages, interruptRespond: ...):
+  // the router resumes on the target that was interrupted.
+} else if (reason != FinishReason.stop &&
     reason != FinishReason.length &&
     reason != FinishReason.unknown) {
   throw result.cause ??
@@ -436,40 +488,29 @@ if (reason != FinishReason.stop &&
 }
 ```
 
-During **streaming** the same policy applies plus a hard cut-off: fallback is
-possible only before the first token. Once a branch has emitted a chunk, any
-later failure propagates — a partially delivered response cannot be silently
-re-routed.
-
-### Escalate on a quality check with `cascadeModel`
-
-`cascadeModel` is a `Model` (not a strategy): it runs branches in order and
-escalates to the next one only when your `accept` predicate rejects the
-response — "try the cheap on-device model; go to the cloud only if the answer
-isn't good enough". `accept` is any check you like (a length or regex test, a
-JSON-parses check) and may be async, e.g. an LLM-as-judge. A request cancelled
-while an async `accept` runs ends with the cancellation, whatever the verdict.
-
-```dart
-import 'package:genkit_hybrid/genkit_hybrid.dart';
-
-final smart = cascadeModel(
-  branches: {'onDevice': onDeviceModel, 'cloud': cloudModel},
-  order: ['onDevice', 'cloud'],
-  accept: (r) => r.text.trim().length > 20,
-);
-
-final response = await ai.generate(model: smart, prompt: 'Explain quantum tunnelling.');
-```
-
-> **`cascadeModel` is non-streaming in v1.** A quality verdict needs the whole
-> response, and a streamed response can't be un-sent, so a streaming request is
-> run non-streamed and the accepted response is emitted as a single final chunk.
-
 <Info>
 
-`genkit_hybrid` works with **any** Genkit models, not just flutter_edge_ai. You
-can combine `gemini-2.5-flash` (cloud) with a local Ollama model, or any other
-pair that Genkit supports.
+Genkit's tracing records the full prompt on every span. An exporter with
+content capture on sends the text of every request off the device, the
+on-device ones included: in a hybrid app keep content capture off, or redact.
 
 </Info>
+
+### Migrating from 0.3
+
+`hybridModel`, `hybridModelOnDeviceCloud`, `cascadeModel` and the
+`RoutingStrategy` family are deprecated in 0.4.0 and removed in 0.5.0. They
+routed per model call, so inside a tool loop a fallback or a network change
+could switch models between turns.
+
+| 0.3 | 0.4 |
+|---|---|
+| `hybridModel` / `hybridModelOnDeviceCloud` | `defineHybridRouter` + `router.generate` |
+| `PreRoutingStrategy(fn)` | `RouteRule.custom(name, fn)` |
+| `ConnectivityStrategy(...)` | `RouteRule.offline(isOnline:)` |
+| `InputSizeStrategy(threshold:, ...)` | `RouteRule.inputSize(maxChars:, ...)` |
+| `CostStrategy(...)` | `RouteRule.budget(...)` |
+| `FirstMatch([...])` | `RoutePolicy.rules` |
+| `FallbackStrategy(order)` / `WithFallback` | a rule's `prefer` + `RoutePolicy.fallback` |
+| `CapabilityStrategy(supports:)` | `HybridTarget.onDevice/.cloud(…, supports:)` |
+| `cascadeModel(accept:)` | `RoutePolicy.cascade` |

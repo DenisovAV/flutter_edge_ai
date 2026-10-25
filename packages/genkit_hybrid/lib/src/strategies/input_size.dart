@@ -5,6 +5,7 @@ import '../routing_strategy.dart';
 
 /// Routes by input length: total character count of all text parts in the
 /// request. At or below [threshold] -> [small] branch, above -> [large] branch.
+@Deprecated('Use RouteRule.inputSize; removed in 0.5.0.')
 class InputSizeStrategy implements RoutingStrategy {
   InputSizeStrategy({
     required this.threshold,

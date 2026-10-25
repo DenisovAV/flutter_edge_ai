@@ -287,6 +287,7 @@ void main() {
       expect(settings.minInputLength, isNull, reason: 'the runtime default');
       expect(settings.visionBackend, isNull, reason: 'unset = no vision tower');
       expect(settings.visionTokensPerImage, isNull);
+      expect(info.visionTokensPerImage, isNull);
       expect(info.dimension, 4);
       expect(info.maxInputTokens, 1024);
       expect(info.modalities, {EmbeddingModality.text});
@@ -336,6 +337,7 @@ void main() {
         final settings = runtime.engine.settings;
         expect(settings.visionBackend, LiteRtLmWebBackend.gpu);
         expect(settings.visionTokensPerImage, budget);
+        expect(info.visionTokensPerImage, budget, reason: 'reported to core');
         expect(info.modalities, {
           EmbeddingModality.text,
           EmbeddingModality.image,

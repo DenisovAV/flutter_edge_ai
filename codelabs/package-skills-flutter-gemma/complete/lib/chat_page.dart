@@ -107,7 +107,7 @@ class _ChatPageState extends State<ChatPage> {
         onToolCall: _runTool,
         // Reaching the limit ends the stream without an error; this callback
         // is the only signal.
-        onMaxToolTurns: () => _insertNote('Stopped after 8 tool calls.'),
+        onMaxToolTurns: () => _insertNote('Stopped after 8 tool turns.'),
       )) {
         if (chunk is TextResponse) {
           buffer.write(chunk.token);

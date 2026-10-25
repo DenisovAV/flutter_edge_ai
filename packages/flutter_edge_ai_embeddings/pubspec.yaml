@@ -1,6 +1,6 @@
 name: flutter_edge_ai_embeddings
 description: "Embedding tokenizers for flutter_edge_ai: Gemma SentencePiece and BERT WordPiece, as a registrable provider. The pipeline they feed lives in flutter_edge_ai."
-version: 2.3.0
+version: 2.3.2
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_embeddings
 topics: [embeddings, gemma, litert, rag, on-device]

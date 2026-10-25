@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """The LiteRT-LM main library must export every C function the EmbeddingGemma 2
-pass calls (R5 §4.11), and every one option scoring calls (SCORING_SYMBOLS).
+pass calls (R5 §4.11), every one option scoring calls (SCORING_SYMBOLS), and
+the symbol the loader checks to recognise this package's build
+(OWN_BUILD_SYMBOLS).
 
 flutter_edge_ai_litertlm's `.litertlm` embedding pass binds the EmbeddingEngine,
 ModelInfo and error-reporter C API out of libLiteRtLm. Nothing else gates those
@@ -104,6 +106,14 @@ SCORING_SYMBOLS = [
     "litert_lm_tokenize_result_delete",
     "litert_lm_tokenize_result_get_num_tokens",
     "litert_lm_tokenize_result_get_tokens",
+]
+
+# The symbol every libLiteRtLm open checks to tell this package's build from
+# another package's LiteRT-LM under the same name (liteRtLmOwnBuildSymbol in
+# lib/src/ffi/litert_lm_runtime_check.dart; a VM test compares them). Missing
+# from one archive, every app on that target refuses our own library.
+OWN_BUILD_SYMBOLS = [
+    "litert_lm_engine_settings_set_kernel_batch_size",
 ]
 
 MAIN_LIBRARY = ("libLiteRtLm.dylib", "libLiteRtLm.so", "LiteRtLm.dll")
@@ -277,7 +287,9 @@ def main(argv):
     for wanted, what in ((REQUIRED, "EmbeddingEngine functions the "
                           "EmbeddingGemma 2 pass calls"),
                          (SCORING_SYMBOLS, "functions option scoring "
-                          "(createDecider) calls")):
+                          "(createDecider) calls"),
+                         (OWN_BUILD_SYMBOLS, "symbols the loader checks to "
+                          "recognise this package's build")):
         missing = [s for s in wanted if s not in names]
         if missing:
             failed = True

@@ -162,6 +162,27 @@ void main() {
       );
     });
 
+    test('the release gate requires it from every native archive', () {
+      // check_embedding_exports.py runs on each of the seven tarballs
+      // (verify_tarball_manifest.sh); the host test below sees one of them.
+      final gate = File(
+        'native/litert_lm/check_embedding_exports.py',
+      ).readAsStringSync();
+      final listed = RegExp(
+        r'OWN_BUILD_SYMBOLS = \[(.*?)\]',
+        dotAll: true,
+      ).firstMatch(gate)!.group(1)!;
+      expect(
+        [for (final m in RegExp(r'"([a-z_]+)"').allMatches(listed)) m.group(1)],
+        [liteRtLmOwnBuildSymbol],
+      );
+      expect(
+        gate,
+        contains('(OWN_BUILD_SYMBOLS, '),
+        reason: 'main() must check the list, not only declare it',
+      );
+    });
+
     final dylib = _hostDylib();
     final noDylib = dylib == null
         ? 'no host libLiteRtLm in the download cache'

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The LiteRT-LM main library must export every C function the EmbeddingGemma 2
-pass calls (R5 §4.11), every one option scoring calls (SCORING_SYMBOLS), and
-the symbol the loader checks to recognise this package's build
+pass calls (R5 §4.11), every one option scoring calls (SCORING_SYMBOLS),
+every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS), and the
+symbol the loader checks to recognise this package's build
 (OWN_BUILD_SYMBOLS).
 
 flutter_edge_ai_litertlm's `.litertlm` embedding pass binds the EmbeddingEngine,
@@ -106,6 +107,17 @@ SCORING_SYMBOLS = [
     "litert_lm_tokenize_result_delete",
     "litert_lm_tokenize_result_get_num_tokens",
     "litert_lm_tokenize_result_get_tokens",
+]
+
+# Every C function a send with a thinking token budget calls
+# (applyThinkingTokenBudget in lib/src/ffi/litert_lm_client.dart); a VM test
+# compares them. Missing one, the first such send fails, not the load.
+THINKING_BUDGET_SYMBOLS = [
+    "litert_lm_conversation_optional_args_set_thinking_config",
+    "litert_lm_thinking_config_create",
+    "litert_lm_thinking_config_delete",
+    "litert_lm_thinking_config_set_enable_thinking",
+    "litert_lm_thinking_config_set_thinking_token_budget",
 ]
 
 # The symbol every libLiteRtLm open checks to tell this package's build from
@@ -288,6 +300,8 @@ def main(argv):
                           "EmbeddingGemma 2 pass calls"),
                          (SCORING_SYMBOLS, "functions option scoring "
                           "(createDecider) calls"),
+                         (THINKING_BUDGET_SYMBOLS, "functions a thinking "
+                          "token budget calls"),
                          (OWN_BUILD_SYMBOLS, "symbols the loader checks to "
                           "recognise this package's build")):
         missing = [s for s in wanted if s not in names]

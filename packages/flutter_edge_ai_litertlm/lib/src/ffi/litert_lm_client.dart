@@ -38,6 +38,60 @@ export '../litert_lm_load_errors.dart'
 String thinkingExtraContext(bool enableThinking) =>
     jsonEncode(thinkingContext(enableThinking));
 
+/// Gives one send's [optionalArgs] a thinking token budget of [budget] when
+/// the send [thinking]s and a budget is set; otherwise touches nothing, so a
+/// send without a budget reaches LiteRT-LM exactly as before.
+///
+/// LiteRT-LM applies the budget at decode time to the conversation's first
+/// channel (`thought` on the Gemma 4 bundles); a bundle without that channel
+/// ignores it. The args keep a copy of the config, which is deleted here.
+@visibleForTesting
+void applyThinkingTokenBudget(
+  LiteRtLmBindings b,
+  Pointer<LiteRtLmConversationOptionalArgs> optionalArgs, {
+  required bool thinking,
+  required int? budget,
+}) {
+  if (!thinking || budget == null) return;
+  final config = b.litert_lm_thinking_config_create();
+  if (config == nullptr) {
+    throw StateError(
+      'litert_lm_thinking_config_create returned null, so the thinking budget '
+      'could not be applied and no generation was started: a native '
+      'allocation failure',
+    );
+  }
+  try {
+    b.litert_lm_thinking_config_set_enable_thinking(config, true);
+    b.litert_lm_thinking_config_set_thinking_token_budget(config, budget);
+    b.litert_lm_conversation_optional_args_set_thinking_config(
+      optionalArgs,
+      config,
+    );
+  } finally {
+    b.litert_lm_thinking_config_delete(config);
+  }
+}
+
+/// The warning for a thinking [budget] that caps nothing on the bundle at
+/// [modelPath], or null. LiteRT-LM caps the first channel a bundle declares;
+/// when [read] found none, a turn with thinking on can still think until
+/// `maxOutputTokens`. Null with no budget, and when the read failed: that read
+/// prints its own warning.
+@visibleForTesting
+String? thinkingBudgetChannelWarning(
+  int? budget,
+  BundleSamplerRead read,
+  String modelPath,
+) {
+  if (budget == null || read.declaresChannel != false) return null;
+  return '[flutter_edge_ai_litertlm] WARNING: '
+      'LiteRtLmEngine(thinkingTokenBudget: $budget) caps nothing on '
+      '${modelPath.split(RegExp(r'[/\\]')).last}: the file declares no '
+      'output channel (LlmMetadata.channels), so a turn with thinking on can '
+      'still think until maxOutputTokens.';
+}
+
 /// Callback typedef with Uint8 for bool (C _Bool = 1 byte)
 typedef _StreamCallbackNative =
     Void Function(
@@ -268,13 +322,18 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   /// Null after a send that ended by itself, which needs no rewind.
   ({String messageJson, String? extraContext})? _lastSend;
 
-  Stream<String> _send(String messageJson, String? extraContext) {
+  Stream<String> _send(
+    String messageJson,
+    String? extraContext, {
+    required bool thinking,
+  }) {
     final record = (messageJson: messageJson, extraContext: extraContext);
     _lastSend = _client._hasTurnRewind ? record : null;
     return _client._sendMessageStreamRawOn(
       _conversation!,
       messageJson,
       extraContext: extraContext,
+      thinking: thinking,
       onEnded: (how) {
         // Kept only after a cancelled send, the one a rewind puts back.
         if (how != NativeTurnEnd.cancelled && identical(_lastSend, record)) {
@@ -315,6 +374,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
         order: _multimodalOrder,
       ),
       thinkingExtraContext(enableThinking),
+      thinking: enableThinking,
     );
   }
 
@@ -324,7 +384,11 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     bool enableThinking = false,
   }) {
     _assertOpen();
-    return _send(messageJson, thinkingExtraContext(enableThinking));
+    return _send(
+      messageJson,
+      thinkingExtraContext(enableThinking),
+      thinking: enableThinking,
+    );
   }
 
   Future<String> sendMessage(String messageJson, {String? extraContext}) {
@@ -344,7 +408,8 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     String? extraContext,
   }) {
     _assertOpen();
-    return _send(messageJson, extraContext);
+    // The caller writes its own extra_context, so no budget goes with it.
+    return _send(messageJson, extraContext, thinking: false);
   }
 
   @override
@@ -472,7 +537,8 @@ _rewindCancelledTurnOffMainIsolate({
         Pointer.fromAddress(conversationAddr),
         exchange,
         extra,
-        // The stopped send was given no optional args either.
+        // No optional args: the rewind prefills without decoding, so the
+        // stopped send's thinking budget has nothing to cap.
         nullptr,
         lastTurnEnd,
       );
@@ -515,6 +581,12 @@ class LiteRtLmFfiClient {
   /// that sets no sampling gets its family's defaults, not the bundle's.
   String? get bundleSamplerError => _bundleSamplerRead.error;
   BundleSamplerRead _bundleSamplerRead = const BundleSamplerRead.notRead();
+
+  /// The thinking token budget each send with thinking on carries
+  /// (`LiteRtLmEngine.thinkingTokenBudget`), set by [initialize]; null sends
+  /// none.
+  int? get thinkingTokenBudget => _thinkingTokenBudget;
+  int? _thinkingTokenBudget;
 
   /// The sampler of the engine's first generation, which LiteRT-LM keeps for
   /// every later conversation (google-ai-edge/LiteRT-LM#2080).
@@ -1055,6 +1127,9 @@ class LiteRtLmFfiClient {
   /// [nativeLogLevel], when set, is applied with `litert_lm_set_min_log_level`
   /// before the engine is created.
   ///
+  /// [thinkingTokenBudget] is what every send with thinking on hands
+  /// LiteRT-LM (`LiteRtLmEngine.thinkingTokenBudget`); null sends none.
+  ///
   /// [npuDispatch] is what an `npu` [backend] hands LiteRT-LM: the dispatch
   /// directory of the vendor `chooseNpuVendor` chose, prepared by the caller,
   /// and whether that vendor turns the HW mask update path off. Required for
@@ -1073,10 +1148,12 @@ class LiteRtLmFfiClient {
     int? activationDataType,
     NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
+    int? thinkingTokenBudget,
   }) async {
     if (backend == 'npu' && npuDispatch == null) {
       throw ArgumentError.notNull('npuDispatch');
     }
+    _thinkingTokenBudget = thinkingTokenBudget;
     final initSw = Stopwatch()..start();
     _ensureBindings();
     _backend = backend;
@@ -1383,6 +1460,15 @@ class LiteRtLmFfiClient {
 
       _isInitialized = true;
       acceptBundleSamplerRead(samplerRead);
+      final channelWarning = thinkingBudgetChannelWarning(
+        _thinkingTokenBudget,
+        samplerRead,
+        modelPath,
+      );
+      // A release build is where an uncapped turn gets reported, and
+      // edgeAiLog is silent there.
+      // ignore: avoid_print
+      if (channelWarning != null) print(channelWarning);
       edgeAiLog(
         '[LiteRtLmFfi/perf] initialize() total: ${initSw.elapsedMilliseconds}ms',
       );
@@ -1823,12 +1909,14 @@ class LiteRtLmFfiClient {
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? extraContext,
+    required bool thinking,
     void Function(NativeTurnEnd how)? onEnded,
   }) => heldUntilNativeEnd(_nativeMutex, () {
     final send = _doSendMessageStreamRawOn(
       conv,
       messageJson,
       extraContext: extraContext,
+      thinking: thinking,
     );
     if (onEnded != null) unawaited(send.turn.ended.then(onEnded));
     return send;
@@ -1880,6 +1968,7 @@ class LiteRtLmFfiClient {
     required ResolvedSampling sampling,
     required bool samplingExplicit,
     String? extraContext,
+    required bool thinking,
     int? maxOutputTokens,
   }) {
     // StreamController (not async*) so the mutex release is tied to the native
@@ -1973,6 +2062,7 @@ class LiteRtLmFfiClient {
           _virtualConv!,
           messageJson,
           extraContext: extraContext,
+          thinking: thinking,
         );
         // The lock goes when native has ended the turn, not when the consumer
         // stops listening: until then the conversation is still in use.
@@ -2077,6 +2167,7 @@ class LiteRtLmFfiClient {
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? extraContext,
+    required bool thinking,
   }) {
     _assertInitialized();
     final b = _bindings!;
@@ -2166,6 +2257,36 @@ class LiteRtLmFfiClient {
         'a broken export table). See #447 and #453.',
       );
     }
+    // v0.12.0 send_message_stream takes a LiteRtLmConversationOptionalArgs*
+    // that must be a real allocation (passing null sigsegvs inside
+    // litert_lm_lib). We allocate an empty one per call and free it after
+    // the native call returns; the callback fires synchronously inside.
+    // Built before the stream proxy, whose data only the final chunk of a
+    // started send frees (`stream_proxy.c`), so a failure here leaves nothing
+    // native behind.
+    final optionalArgs = b.litert_lm_conversation_optional_args_create();
+    if (optionalArgs == nullptr) {
+      releaseNative();
+      send.failed(StateError('no optional args'));
+      throw StateError(
+        'litert_lm_conversation_optional_args_create returned null — '
+        'native libLiteRtLm.dylib initialization failure',
+      );
+    }
+    try {
+      applyThinkingTokenBudget(
+        b,
+        optionalArgs,
+        thinking: thinking,
+        budget: thinkingTokenBudget,
+      );
+    } catch (e) {
+      b.litert_lm_conversation_optional_args_delete(optionalArgs);
+      releaseNative();
+      send.failed(e);
+      rethrow;
+    }
+
     final outProxyFn = calloc<Pointer<NativeFunction<_StreamCallbackNative>>>();
     final proxyData = create2(
       callable.nativeFunction,
@@ -2182,25 +2303,12 @@ class LiteRtLmFfiClient {
     // hand LiteRT-LM a callback whose arguments it does not pass. That is an
     // allocation failure, or an argument the checks above already rule out.
     if (proxyData == nullptr || proxyFn == nullptr) {
+      b.litert_lm_conversation_optional_args_delete(optionalArgs);
       releaseNative();
       send.failed(StateError('no stream proxy'));
       throw StateError(
         'stream_proxy_create2 returned null, so no generation was started '
         '(an allocation failure in StreamProxy). See #453.',
-      );
-    }
-
-    // v0.12.0 send_message_stream takes a LiteRtLmConversationOptionalArgs*
-    // that must be a real allocation (passing null sigsegvs inside
-    // litert_lm_lib). We allocate an empty one per call and free it after
-    // the native call returns; the callback fires synchronously inside.
-    final optionalArgs = b.litert_lm_conversation_optional_args_create();
-    if (optionalArgs == nullptr) {
-      releaseNative();
-      send.failed(StateError('no optional args'));
-      throw StateError(
-        'litert_lm_conversation_optional_args_create returned null — '
-        'native libLiteRtLm.dylib initialization failure',
       );
     }
 

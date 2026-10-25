@@ -30,7 +30,7 @@ import 'package:flutter_edge_ai/src/infrastructure/platform_file_system_service.
 import 'package:flutter_edge_ai/src/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/src/model_management/utils/local_file_io.dart'
-    show debugAppContainerCanMove;
+    show debugAppContainerCanMove, debugBundledResourcesAreCopies;
 import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -84,6 +84,7 @@ void main() {
 
   tearDown(() async {
     debugAppContainerCanMove = null;
+    debugBundledResourcesAreCopies = null;
     ServiceRegistry.reset();
     if (await root.exists()) await root.delete(recursive: true);
   });
@@ -238,6 +239,99 @@ void main() {
         await FlutterEdgeAi.getModelPath('nothing.task'),
         await coreReadPath('nothing.task'),
       );
+    });
+  });
+
+  // What a start finds: the active model is rebuilt from its files' records,
+  // and must name the files the engine opens when the model is activated —
+  // the same places getModelPath reports.
+  group('a start restores the active model', () {
+    Future<MobileModelManager> restart() async {
+      final restarted = MobileModelManager();
+      await restarted.ensureInitialized();
+      return restarted;
+    }
+
+    test('from a resource of the iOS bundle, read in place', () async {
+      final bundle = Directory('${root.path}/Runner.app')..createSync();
+      await useServices(fileSystem: _BundleFiles(bundle));
+      final resource = File('${bundle.path}/gemma.task')
+        ..writeAsBytesSync(_modelBytes);
+      await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemmaIt,
+        fileType: ModelFileType.task,
+      ).fromBundled('gemma.task').install();
+
+      final restarted = await restart();
+
+      expect(
+        (restarted.activeInferenceModel as InferenceModelSpec?)?.modelSource,
+        FileSource(resource.path),
+      );
+      expect(await FlutterEdgeAi.getModelPath('gemma.task'), resource.path);
+    });
+
+    test('from the iOS bundle, not a file of that name in core\'s '
+        'directory', () async {
+      final bundle = Directory('${root.path}/Runner.app')..createSync();
+      await useServices(fileSystem: _BundleFiles(bundle));
+      final resource = File('${bundle.path}/gemma.task')
+        ..writeAsBytesSync(_modelBytes);
+      await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemmaIt,
+        fileType: ModelFileType.task,
+      ).fromBundled('gemma.task').install();
+      // Core never writes a bundled resource there on iOS; this is someone
+      // else's file.
+      File(await coreReadPath('gemma.task')).writeAsBytesSync(_modelBytes);
+
+      final restarted = await restart();
+
+      expect(
+        (restarted.activeInferenceModel as InferenceModelSpec?)?.modelSource,
+        FileSource(resource.path),
+      );
+    });
+
+    test('with a bundled LoRA, from core\'s copy of it under its resource '
+        'name on Android', () async {
+      debugBundledResourcesAreCopies = true;
+      final apk = Directory('${root.path}/apk')..createSync();
+      File('${apk.path}/gemma.task').writeAsBytesSync(_modelBytes);
+      File('${apk.path}/adapter.bin').writeAsBytesSync(_modelBytes);
+      await useServices(fileSystem: _ApkAssets(apk));
+      final installation = await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemmaIt,
+        fileType: ModelFileType.task,
+      ).fromBundled('gemma.task').withLoraFromBundled('adapter.bin').install();
+      final loraName = installation.spec.files
+          .singleWhere(
+            (file) => file.prefsKey == PreferencesKeys.installedLoraFileName,
+          )
+          .filename;
+      final fs = ServiceRegistry.instance.fileSystemService;
+      final loraCopy = await fs.getWriteTargetPath('adapter.bin');
+      expect(loraName, isNot('adapter.bin'), reason: 'a namespaced record');
+      // An app update that ships another adapter under the same name.
+      File('${apk.path}/adapter.bin').writeAsBytesSync(
+        Uint8List(_modelBytes.length)..[0] = 7,
+      );
+
+      final restarted = await restart();
+
+      final active = restarted.activeInferenceModel as InferenceModelSpec?;
+      expect(
+        active?.modelSource,
+        FileSource(await fs.getWriteTargetPath('gemma.task')),
+      );
+      expect(active?.loraSource, FileSource(loraCopy));
+      expect(
+        File(loraCopy).readAsBytesSync().first,
+        7,
+        reason: 'the copy is renewed from the APK installed now, as when the '
+            'model is activated',
+      );
+      expect(await FlutterEdgeAi.getModelPath(loraName), loraCopy);
     });
   });
 
@@ -441,6 +535,25 @@ class _BundleFiles extends PlatformFileSystemService {
       throw Exception('Bundled resource not found: $resourceName');
     }
     return resource.path;
+  }
+}
+
+/// A file system whose bundled resources are the files in [apk], copied into
+/// core's directory under their resource name on each lookup, as Android
+/// copies an asset out of the APK.
+class _ApkAssets extends PlatformFileSystemService {
+  _ApkAssets(this.apk);
+  final Directory apk;
+
+  @override
+  Future<String> getBundledResourcePath(String resourceName) async {
+    final asset = File(path.join(apk.path, resourceName));
+    if (!asset.existsSync()) {
+      throw Exception('Failed to copy asset from Android assets');
+    }
+    final copy = await getWriteTargetPath(resourceName);
+    await asset.copy(copy);
+    return copy;
   }
 }
 

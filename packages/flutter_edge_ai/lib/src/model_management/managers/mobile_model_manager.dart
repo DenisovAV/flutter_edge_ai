@@ -258,10 +258,13 @@ class MobileModelManager extends ModelFileManager
   /// from an active identity, which can name another model's source — or null
   /// when it is not installed or not there.
   ///
-  /// A file the app installed with `fromFile` is used in place, where it was
-  /// recorded (on iOS, in the app's current container); every other file is
-  /// core's, in core's directory. Nothing else is tried: a file with the same
-  /// name somewhere else is not this one. A file that is there but cannot be
+  /// Where the engine opens it when the model is activated
+  /// ([restoredFileLocation]): a file the app installed with `fromFile` in
+  /// place, where it was recorded (on iOS, in the app's current container); a
+  /// bundled resource in the iOS bundle, or core's copy of it on Android under
+  /// its resource name; every other file is core's, in core's directory.
+  /// Nothing else is tried: a file with the same name somewhere else is not
+  /// this one. A file that is there but cannot be
   /// read still counts, so the engine's open reports why instead of the model
   /// quietly not being active — as long as it can be seen at all: one in a
   /// directory the app may no longer list reads as not there.
@@ -270,12 +273,13 @@ class MobileModelManager extends ModelFileManager
       filename,
     );
     if (record == null) return null;
-    final fs = ServiceRegistry.instance.fileSystemService;
-    final location = switch (record.source) {
-      FileSource(:final path) => await appFileLocationNow(path),
-      _ => await fs.getReadTargetPath(filename),
-    };
-    return await fs.fileExists(location) ? location : null;
+    final location = await restoredFileLocation(record);
+    return location != null &&
+            await ServiceRegistry.instance.fileSystemService.fileExists(
+              location,
+            )
+        ? location
+        : null;
   }
 
   /// Restores a DIRECTORY (ORT-GenAI) active model from the repository records

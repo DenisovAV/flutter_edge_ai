@@ -281,6 +281,19 @@ Future<String> recordedFileLocation(repo.ModelInfo record) async {
   return location;
 }
 
+/// Where an engine opens [record]'s file in this run, for a model restored
+/// at a start: what `getModelFilePaths` hands it when the model is activated.
+/// A bundled resource goes through the bundle lookup, which on Android also
+/// renews core's copy after an app update; any other file is where
+/// [recordedFileLocation] says. Null when it cannot be found: a resource the
+/// iOS bundle does not hold, an asset Android could not copy, or any model on
+/// web.
+Future<String?> restoredFileLocation(repo.ModelInfo record) =>
+    switch (record.source) {
+      BundledSource(:final resourceName) => _bundlePath(resourceName),
+      _ => _readLocation(record),
+    };
+
 /// The one answer to where [record]'s file is; [inBundle] finds a resource
 /// of the iOS bundle.
 Future<String?> _locate(

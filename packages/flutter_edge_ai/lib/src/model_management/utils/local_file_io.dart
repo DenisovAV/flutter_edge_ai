@@ -76,7 +76,13 @@ bool? debugAppContainerCanMove;
 
 /// Whether a bundled resource is copied into core's model directory (Android
 /// copies it out of the APK) rather than read in place (the iOS bundle).
-bool get bundledResourcesAreCopies => Platform.isAndroid;
+bool get bundledResourcesAreCopies =>
+    debugBundledResourcesAreCopies ?? Platform.isAndroid;
+
+/// Stands in for "this run is on Android" in [bundledResourcesAreCopies], so a
+/// test on a desktop host can take the Android path. Null outside tests.
+@visibleForTesting
+bool? debugBundledResourcesAreCopies;
 
 /// The size and modification time of the file at [filePath], or null when
 /// nothing is there — enough to tell that a file was not replaced since.

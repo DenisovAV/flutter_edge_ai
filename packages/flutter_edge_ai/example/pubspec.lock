@@ -265,7 +265,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "2.5.1"
+    version: "2.5.2"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:
@@ -279,7 +279,7 @@ packages:
       path: "../../flutter_edge_ai_builtin_ai"
       relative: true
     source: path
-    version: "0.3.6"
+    version: "0.3.7"
   flutter_edge_ai_diagnostics:
     dependency: "direct dev"
     description:
@@ -300,7 +300,7 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.16.1"
+    version: "1.17.0"
   flutter_edge_ai_mediapipe:
     dependency: "direct main"
     description:
@@ -432,10 +432,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_local_ai
-      sha256: "842f769db0a56744f8642917555381ea7c00907c72dd908a7e79af0a9e551117"
+      sha256: "90488f1d65f73e5eae96b6a990219c4792dfadc36ca9b902bf16ca5e5e3a5560"
       url: "https://pub.dev"
     source: hosted
-    version: "0.2.1"
+    version: "0.3.0"
   flutter_local_notifications:
     dependency: transitive
     description:

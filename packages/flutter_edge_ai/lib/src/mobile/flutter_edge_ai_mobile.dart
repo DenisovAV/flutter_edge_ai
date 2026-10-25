@@ -63,6 +63,10 @@ String _normalizeTtsLanguage(String? language) =>
     (language ?? 'english').toLowerCase();
 
 class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
+  FlutterEdgeAiMobile() {
+    attachInferenceModelCache(this, _modelCache);
+  }
+
   /// The cached inference model and the rules for reusing it, shared with the
   /// desktop and web shells.
   final InferenceModelCache _modelCache = InferenceModelCache();

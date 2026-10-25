@@ -1406,6 +1406,7 @@ class _VirtualConversationHandle implements ConversationHandle {
         sampling: sampling,
         samplingExplicit: samplingExplicit,
         extraContext: extraContext,
+        thinking: enableThinking,
         maxOutputTokens: maxOutputTokens,
       )) {
         final chunkText = LiteRtLmFfiClient.extractTextFromResponse(rawChunk);

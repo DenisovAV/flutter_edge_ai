@@ -43,7 +43,7 @@ dev_dependencies:
   integration_test:
     sdk: flutter
   # FakeLocalAiHost stands in for the OS model in widget tests.
-  flutter_local_ai: ^0.2.3
+  flutter_local_ai: ^0.3.0
   # Core keeps the installed model in preferences; tests mock them.
   shared_preferences: ^2.5.0
 

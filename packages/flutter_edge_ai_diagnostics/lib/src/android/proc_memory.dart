@@ -172,7 +172,8 @@ KgslTotals? kgslTotalsFromSmaps(String text) {
 int? availableBytesFromMeminfo(String text) =>
     parseProcKbFields(text)['MemAvailable'];
 
-/// Reads the three memory values from `/proc`.
+/// Reads the three memory values from `/proc`, the same files on Android and
+/// Linux.
 ///
 /// An absent `smaps_rollup` means `anonymousBytes` and `fileBackedBytes` are
 /// unavailable. Availability depends on kernel support, including backports.

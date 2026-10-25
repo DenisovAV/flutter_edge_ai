@@ -38,7 +38,7 @@ dependencies:
   # Optional — on-device agent skills:
   flutter_edge_ai_agent: latest_version        # agent skills the model runs itself (text / JS / native-intent / MCP)
 
-  # Optional — memory diagnostics (Android + iOS + macOS):
+  # Optional — memory diagnostics (Android + iOS + macOS + Linux):
   flutter_edge_ai_diagnostics: latest_version  # what a model costs in memory the OS cannot reclaim, read from the OS
 ```
 
@@ -61,7 +61,7 @@ dependencies:
 | On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` (Flutter 3.47+) |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
 | Run on-device agent skills the model executes itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
-| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
+| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS + Linux) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
 
 Core registers **no** AI runtime by itself — wire inference, embedding, and
 speech packages in `FlutterEdgeAi.initialize(...)` below. RAG is independent:
@@ -139,7 +139,7 @@ void main() async {
 |---|---|---|
 | `inferenceEngines: [LiteRtLmEngine()]` | `flutter_edge_ai_litertlm` | `.litertlm` (mobile + desktop + web) |
 | `inferenceEngines: [MediaPipeEngine()]` | `flutter_edge_ai_mediapipe` | `.task` / `.bin` (mobile + web) |
-| `inferenceEngines: [OnnxEngine()]` | `flutter_edge_ai_onnx` | ONNX models — ORT-GenAI (FFI: macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64) or Transformers.js (Web) |
+| `inferenceEngines: [OnnxEngine()]` | `flutter_edge_ai_onnx` | ONNX models — ORT-GenAI (FFI: macOS arm64, Linux x64, Windows x64, Windows ARM64, Android arm64, iOS arm64) or Transformers.js (Web) |
 | `inferenceEngines: [BuiltInAiEngine()]` | `flutter_edge_ai_builtin_ai` | the OS model, `ModelFileType.builtIn` (Android, iOS, macOS, Windows, Web) |
 | `inferenceEngines: [LlamaEngineProvider()]` | `flutter_edge_ai_llama` | `.gguf` models via llama.cpp, `ModelFileType.gguf` (mobile + desktop + web) — [llama.cpp](/docs/llama) |
 | `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | embeddings: EmbeddingGemma 2 `.litertlm` (text, images, audio; native and WebGPU) and `.tflite` models |

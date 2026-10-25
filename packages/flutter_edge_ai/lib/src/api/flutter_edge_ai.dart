@@ -4,6 +4,10 @@ import 'package:flutter_edge_ai/src/api/inference_installation_builder.dart';
 import 'package:flutter_edge_ai/src/api/embedding_installation_builder.dart';
 import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.dart'
     show noActiveEmbedderError;
+import 'package:flutter_edge_ai/src/lifecycle/inference_model_cache.dart'
+    show inferenceModelCacheOf;
+import 'package:flutter_edge_ai/src/model_management/install_rule.dart'
+    show coreCopyLocation, recordedFileLocation;
 import 'package:flutter_edge_ai/src/api/stt_installation_builder.dart';
 import 'package:flutter_edge_ai/src/api/tts_installation_builder.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
@@ -1045,24 +1049,41 @@ class FlutterEdgeAi {
     return null;
   }
 
-  /// Absolute on-device read path for an installed model file, keyed by its
-  /// [fileName] (the file's basename, e.g. `gemma-4-E2B-it.litertlm`). On web
-  /// this resolves to a URL/OPFS handle, not a filesystem path. The path is
-  /// computed, not stat-ed — it is returned even if nothing is installed there.
+  /// Absolute on-device path an installed model file is read from, keyed by
+  /// the [fileName] it is installed under (e.g. `gemma-4-E2B-it.litertlm`),
+  /// as the file's install record says — where the engines open it:
+  ///
+  /// - installed with `fromFile`: the app's own file, where it is now (on iOS
+  ///   in the app's current container, which an update or a restore from a
+  ///   backup can move);
+  /// - installed with `fromBundled`: in the app bundle on iOS, core's copy of
+  ///   it on Android;
+  /// - any other source: core's copy, in core's model directory.
+  ///
+  /// A name with no install record gives what an older release registered
+  /// for it, else its place in core's model directory. The path is computed,
+  /// not stat-ed — it is returned even if nothing is there — except that a
+  /// bundled resource the iOS app bundle does not hold throws, as loading it
+  /// does.
+  ///
+  /// On web this returns [fileName] itself, not a path or a URL: a model there
+  /// lives in the browser's storage, and the engines look it up by that name.
   static Future<String> getModelPath(String fileName) async {
-    // A FileSource install references the file in place (not copied) and
-    // registers it under its (possibly namespaced) filename -> its original
-    // path. Resolve that first so getModelPath returns where the file ACTUALLY
-    // is; otherwise fall back to the managed read path (downloaded/asset
-    // installs land in the managed dir under their filename). Without this, a
-    // namespaced companion (e.g. `<model>__tokenizer.json`) whose FileSource
-    // file lives elsewhere would resolve to a non-existent managed path.
-    final external = await ServiceRegistry.instance.protectedFilesRegistry
-        .getExternalPath(fileName);
-    if (external != null) return external;
-    return ServiceRegistry.instance.fileSystemService.getReadTargetPath(
+    final registry = ServiceRegistry.instance;
+    if (!kIsWeb) {
+      // The file's own record, not the registry of the app's files: that one
+      // keeps the path an install was given, so on iOS it can name a
+      // container that has since moved, and older releases left names in it
+      // that a download has taken over since.
+      final record = await registry.modelRepository.loadModel(fileName);
+      if (record != null) return recordedFileLocation(record);
+    }
+    // No record — an install from before every file had one, or none.
+    final external = await registry.protectedFilesRegistry.getExternalPath(
       fileName,
     );
+    if (external != null) return external;
+    return registry.fileSystemService.getReadTargetPath(fileName);
   }
 
   /// Clears the active inference identity (in-memory spec + persisted prefs).
@@ -1086,12 +1107,30 @@ class FlutterEdgeAi {
   /// Removes the model's metadata and core's copy of its file. A file the app
   /// installed with `fromFile` is the app's own and stays where it is.
   ///
+  /// When the file is one of the active inference model's (the model or its
+  /// LoRA), the active inference identity is cleared too, in memory and
+  /// persisted, as [clearActiveInferenceIdentity] does: [getActiveModel] then
+  /// throws [NoActiveModelError] instead of loading a file that is gone.
+  ///
+  /// The model [getActiveModel] built from the file is closed first, with its
+  /// sessions and chats: a generation running on it stops early, with or
+  /// without an error depending on the engine, and a later call on it throws.
+  /// A [getActiveModel] call whose build of that model is still running gets
+  /// it, closed right after; one made once the uninstall has started closing
+  /// waits for the uninstall to end. A model built from other files stays
+  /// open, and so do the models [openModel] opened: they are the caller's to
+  /// close. When that close is still running after 60 seconds, the uninstall
+  /// throws `TimeoutException` before anything is deleted, and can be retried.
+  ///
   /// Parameters:
   /// - [modelId]: Model filename to uninstall
   static Future<void> uninstallModel(String modelId) async {
     final registry = ServiceRegistry.instance;
     final repository = registry.modelRepository;
     final fileSystem = registry.fileSystemService;
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    // The active model is restored at start; it is known once that is done.
+    await manager.ensureInitialized();
 
     // Get model info
     final modelInfo = await repository.loadModel(modelId);
@@ -1099,22 +1138,45 @@ class FlutterEdgeAi {
       throw Exception('Model not found: $modelId');
     }
 
-    // Delete files first (if not external/protected) so a file-delete failure
-    // leaves the metadata intact and the uninstall retryable — mirrors the
-    // safe order used by uninstallEmbedder/Stt/Tts (delete then clear).
-    if (modelInfo.source is! FileSource) {
-      final targetPath = await fileSystem.getReadTargetPath(modelId);
-      await fileSystem.deleteFile(targetPath);
+    Future<void> remove() async {
+      // Delete files first (if not external/protected) so a file-delete
+      // failure leaves the metadata intact and the uninstall retryable —
+      // mirrors the safe order used by uninstallEmbedder/Stt/Tts (delete then
+      // clear).
+      final copy = switch (modelInfo.source) {
+        FileSource() => null,
+        // Core's copy, not a file named after the record: the iOS bundle's
+        // resource is read in place, and Android copies one under its
+        // resource name, which a namespaced LoRA or tokenizer record id is
+        // not.
+        BundledSource() => await coreCopyLocation(modelInfo),
+        _ => await fileSystem.getReadTargetPath(modelId),
+      };
+      if (copy != null) await fileSystem.deleteFile(copy);
+
+      // Forget what a fromFile install registered — or what an older release
+      // left registered after an uninstall — while the record still exists,
+      // so a failure here leaves the uninstall retryable.
+      await registry.protectedFilesRegistry.unprotect(modelId);
+      await registry.protectedFilesRegistry.unregisterExternalPath(modelId);
+
+      // The active model cannot load without this file. Cleared once the
+      // file is gone, and while the record still exists: a failure up to
+      // here leaves both the identity and a retryable uninstall.
+      final active = manager.activeInferenceModel;
+      if (active != null && active.files.any((f) => f.filename == modelId)) {
+        await manager.clearActiveInferenceIdentity();
+      }
+
+      // Delete metadata last.
+      await repository.deleteModel(modelId);
     }
 
-    // Forget what a fromFile install registered — or what an older release
-    // left registered after an uninstall — while the record still exists, so
-    // a failure here leaves the uninstall retryable.
-    await registry.protectedFilesRegistry.unprotect(modelId);
-    await registry.protectedFilesRegistry.unregisterExternalPath(modelId);
-
-    // Delete metadata last.
-    await repository.deleteModel(modelId);
+    // Closed before the file goes: left open, the model keeps answering from
+    // a file that is gone (measured on macOS and Windows).
+    final cache = inferenceModelCacheOf(FlutterEdgeAiPlugin.instance);
+    if (cache == null) return remove();
+    return cache.closeForRemoval(modelId, remove);
   }
 
   /// Uninstall the active embedding model — uninstalls ALL its files (model +

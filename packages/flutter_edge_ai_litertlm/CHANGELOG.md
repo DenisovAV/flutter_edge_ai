@@ -1,4 +1,5 @@
 ## 1.18.0
+- `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).
 - macOS: apps with Swift Package Manager on need no Podfile block; requires macOS 14 (#689).
 
 ## 1.17.0

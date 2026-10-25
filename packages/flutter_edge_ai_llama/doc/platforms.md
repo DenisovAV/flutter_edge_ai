@@ -157,7 +157,7 @@ checks and standalone hosted-consumer checks remain separate gates.
 | macOS | CPU and Metal measured; packaged lifecycle and CPU/Metal cosine 0.99994 | Other devices, models and quantizations |
 | Linux | Packaged CPU embeddings measured | GPU and other hardware |
 | Windows | Packaged CPU embeddings measured | GPU and other hardware |
-| Android | Maintainer diagnostic on Pixel 8a CPU and explicit Vulkan GPU; see below | CPU qualification on other devices; explicit GPU embeddings are refused |
+| Android | Maintainer diagnostic on Pixel 8a CPU and explicit Vulkan GPU; see below. Packaged CPU embeddings on the arm64 emulator (API 37, 2026-10-22): min cos 0.99887 to Sentence Transformers fp32 (macOS CPU: 0.99974), automatic placement on the CPU without the warning, explicit GPU refused; CI runs the same gates on the x86_64 emulator | CPU qualification on physical devices; explicit GPU embeddings are refused |
 | iOS | Unqualified; simulator GPU embeddings are refused | Physical-device CPU/Metal and simulator CPU embedding execution |
 | Web | Unavailable | No GGUF embedding implementation |
 

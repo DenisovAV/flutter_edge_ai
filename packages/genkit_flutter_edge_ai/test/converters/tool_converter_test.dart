@@ -49,9 +49,7 @@ void main() {
     });
 
     test('handles tool with no input schema', () {
-      final tools = [
-        ToolDefinition(name: 'my_tool', description: 'desc'),
-      ];
+      final tools = [ToolDefinition(name: 'my_tool', description: 'desc')];
 
       final result = convertTools(tools);
 

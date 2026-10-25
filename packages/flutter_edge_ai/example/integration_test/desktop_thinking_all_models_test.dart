@@ -60,144 +60,140 @@ void main() {
     final name = entry.key;
     final config = entry.value;
 
-    testWidgets(
-      '$name: isThinking=false — no think tags in output',
-      (tester) async {
-        if (!File(config.path).existsSync()) {
-          debugPrint('SKIP: $name not found at ${config.path}');
-          return;
-        }
+    testWidgets('$name: isThinking=false — no think tags in output', (
+      tester,
+    ) async {
+      if (!File(config.path).existsSync()) {
+        debugPrint('SKIP: $name not found at ${config.path}');
+        return;
+      }
 
-        await registerTestEngines();
+      await registerTestEngines();
 
-        await FlutterEdgeAi.installModel(
+      await FlutterEdgeAi.installModel(
+        modelType: config.modelType,
+        fileType: config.fileType,
+      ).fromFile(config.path).install();
+
+      final model = await FlutterEdgeAi.getActiveModel(maxTokens: 256);
+      try {
+        final chat = await model.createChat(
           modelType: config.modelType,
-          fileType: config.fileType,
-        ).fromFile(config.path).install();
+          enableThinking: false,
+        );
 
-        final model = await FlutterEdgeAi.getActiveModel(maxTokens: 256);
-        try {
-          final chat = await model.createChat(
-            modelType: config.modelType,
-            enableThinking: false,
-          );
+        await chat.addQuery(
+          const Message(text: 'What is 2+2? Answer briefly.', isUser: true),
+        );
+        final response = await chat.generateChatResponse();
+        final text = response is TextResponse
+            ? response.token
+            : response.toString();
+        debugPrint('[$name isThinking=false] Response: $text');
 
-          await chat.addQuery(
-            const Message(text: 'What is 2+2? Answer briefly.', isUser: true),
-          );
-          final response = await chat.generateChatResponse();
-          final text = response is TextResponse
-              ? response.token
-              : response.toString();
-          debugPrint('[$name isThinking=false] Response: $text');
+        expect(
+          text.trim(),
+          isNotEmpty,
+          reason: '$name: response should not be empty',
+        );
+        expect(
+          text,
+          isNot(contains('<think>')),
+          reason: '$name: <think> tags should be stripped',
+        );
+        expect(
+          text,
+          isNot(contains('</think>')),
+          reason: '$name: </think> tags should be stripped',
+        );
 
-          expect(
-            text.trim(),
-            isNotEmpty,
-            reason: '$name: response should not be empty',
-          );
-          expect(
-            text,
-            isNot(contains('<think>')),
-            reason: '$name: <think> tags should be stripped',
-          );
-          expect(
-            text,
-            isNot(contains('</think>')),
-            reason: '$name: </think> tags should be stripped',
-          );
+        await chat.close();
+      } finally {
+        await model.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-          await chat.close();
-        } finally {
-          await model.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+    testWidgets('$name: isThinking=true — response not empty, no raw tags', (
+      tester,
+    ) async {
+      if (!File(config.path).existsSync()) {
+        debugPrint('SKIP: $name not found at ${config.path}');
+        return;
+      }
 
-    testWidgets(
-      '$name: isThinking=true — response not empty, no raw tags',
-      (tester) async {
-        if (!File(config.path).existsSync()) {
-          debugPrint('SKIP: $name not found at ${config.path}');
-          return;
-        }
+      await registerTestEngines();
 
-        await registerTestEngines();
+      await FlutterEdgeAi.installModel(
+        modelType: config.modelType,
+        fileType: config.fileType,
+      ).fromFile(config.path).install();
 
-        await FlutterEdgeAi.installModel(
+      final model = await FlutterEdgeAi.getActiveModel(maxTokens: 256);
+      try {
+        final chat = await model.createChat(
           modelType: config.modelType,
-          fileType: config.fileType,
-        ).fromFile(config.path).install();
+          enableThinking: true,
+        );
 
-        final model = await FlutterEdgeAi.getActiveModel(maxTokens: 256);
-        try {
-          final chat = await model.createChat(
-            modelType: config.modelType,
-            enableThinking: true,
-          );
+        await chat.addQuery(
+          const Message(text: 'What is 2+2? Answer briefly.', isUser: true),
+        );
 
-          await chat.addQuery(
-            const Message(text: 'What is 2+2? Answer briefly.', isUser: true),
-          );
+        final responses = <ModelResponse>[];
+        await for (final response in chat.generateChatResponseAsync()) {
+          responses.add(response);
+        }
 
-          final responses = <ModelResponse>[];
-          await for (final response in chat.generateChatResponseAsync()) {
-            responses.add(response);
-          }
+        final thinkingCount = responses.whereType<ThinkingResponse>().length;
+        final textCount = responses.whereType<TextResponse>().length;
 
-          final thinkingCount = responses.whereType<ThinkingResponse>().length;
-          final textCount = responses.whereType<TextResponse>().length;
+        debugPrint(
+          '[$name isThinking=true] Thinking: $thinkingCount, Text: $textCount',
+        );
 
-          debugPrint(
-            '[$name isThinking=true] Thinking: $thinkingCount, Text: $textCount',
-          );
-
-          // Models that generate thinking should have ThinkingResponse
-          if (config.generatesThinking) {
-            expect(
-              responses.any((r) => r is ThinkingResponse),
-              isTrue,
-              reason: '$name: should emit ThinkingResponse',
-            );
-          }
-
-          // All models should have some text output
+        // Models that generate thinking should have ThinkingResponse
+        if (config.generatesThinking) {
           expect(
-            responses.any((r) => r is TextResponse),
+            responses.any((r) => r is ThinkingResponse),
             isTrue,
-            reason: '$name: should emit TextResponse',
+            reason: '$name: should emit ThinkingResponse',
           );
-
-          // TextResponse should never contain raw thinking tags
-          final textContent = responses
-              .whereType<TextResponse>()
-              .map((r) => r.token)
-              .join();
-          debugPrint('[$name isThinking=true] Text: $textContent');
-          expect(
-            textContent.trim(),
-            isNotEmpty,
-            reason: '$name: text response should not be empty',
-          );
-          expect(
-            textContent,
-            isNot(contains('<think>')),
-            reason: '$name: TextResponse should not contain raw <think>',
-          );
-          expect(
-            textContent,
-            isNot(contains('</think>')),
-            reason: '$name: TextResponse should not contain raw </think>',
-          );
-
-          await chat.close();
-        } finally {
-          await model.close();
         }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+
+        // All models should have some text output
+        expect(
+          responses.any((r) => r is TextResponse),
+          isTrue,
+          reason: '$name: should emit TextResponse',
+        );
+
+        // TextResponse should never contain raw thinking tags
+        final textContent = responses
+            .whereType<TextResponse>()
+            .map((r) => r.token)
+            .join();
+        debugPrint('[$name isThinking=true] Text: $textContent');
+        expect(
+          textContent.trim(),
+          isNotEmpty,
+          reason: '$name: text response should not be empty',
+        );
+        expect(
+          textContent,
+          isNot(contains('<think>')),
+          reason: '$name: TextResponse should not contain raw <think>',
+        );
+        expect(
+          textContent,
+          isNot(contains('</think>')),
+          reason: '$name: TextResponse should not contain raw </think>',
+        );
+
+        await chat.close();
+      } finally {
+        await model.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
   }
 }
 

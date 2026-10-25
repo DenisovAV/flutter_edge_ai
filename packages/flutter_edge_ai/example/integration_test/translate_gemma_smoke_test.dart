@@ -44,111 +44,102 @@ Future<String> _docsPath(String name) async {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    'TranslateGemma 4B int4 — translate three language pairs',
-    (_) async {
-      await registerTestEngines();
+  testWidgets('TranslateGemma 4B int4 — translate three language pairs', (
+    _,
+  ) async {
+    await registerTestEngines();
 
-      final modelPath = await _docsPath(_modelName);
+    final modelPath = await _docsPath(_modelName);
 
-      await FlutterEdgeAi.installModel(
-        modelType: ModelType.gemmaIt,
-        fileType: ModelFileType.litertlm,
-      ).fromFile(modelPath).install();
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.litertlm,
+    ).fromFile(modelPath).install();
 
-      final model = await FlutterEdgeAi.getActiveModel(
-        maxTokens: 4096,
-        // On GPU this bundle loads and then answers with nothing but
-        // <pad> — see translate_model.dart + LiteRT-LM#1748.
-        preferredBackend: PreferredBackend.cpu,
+    final model = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 4096,
+      // On GPU this bundle loads and then answers with nothing but
+      // <pad> — see translate_model.dart + LiteRT-LM#1748.
+      preferredBackend: PreferredBackend.cpu,
+    );
+
+    try {
+      final runner = TranslateRunner(
+        model: model,
+        strategy: const TranslateGemmaXmlPromptStrategy(),
       );
 
-      try {
-        final runner = TranslateRunner(
-          model: model,
-          strategy: const TranslateGemmaXmlPromptStrategy(),
-        );
+      // en → fr
+      final fr = await runner.translate(
+        text: 'Hello world',
+        src: 'en',
+        dst: 'fr',
+      );
+      print('[TranslateGemma] en→fr: $fr');
+      expect(fr.trim(), isNotEmpty);
+      expect(fr.toLowerCase(), contains('bonjour'));
 
-        // en → fr
-        final fr = await runner.translate(
-          text: 'Hello world',
-          src: 'en',
-          dst: 'fr',
-        );
-        print('[TranslateGemma] en→fr: $fr');
-        expect(fr.trim(), isNotEmpty);
-        expect(fr.toLowerCase(), contains('bonjour'));
+      // en → es
+      final es = await runner.translate(
+        text: 'Good morning',
+        src: 'en',
+        dst: 'es',
+      );
+      print('[TranslateGemma] en→es: $es');
+      expect(es.trim(), isNotEmpty);
+      expect(es.toLowerCase(), anyOf(contains('buenos'), contains('buen día')));
 
-        // en → es
-        final es = await runner.translate(
-          text: 'Good morning',
-          src: 'en',
-          dst: 'es',
-        );
-        print('[TranslateGemma] en→es: $es');
-        expect(es.trim(), isNotEmpty);
-        expect(
-          es.toLowerCase(),
-          anyOf(contains('buenos'), contains('buen día')),
-        );
+      // ja → en
+      final enFromJa = await runner.translate(
+        text: 'ありがとうございます',
+        src: 'ja',
+        dst: 'en',
+      );
+      print('[TranslateGemma] ja→en: $enFromJa');
+      expect(enFromJa.trim(), isNotEmpty);
+      expect(enFromJa.toLowerCase(), contains('thank'));
+    } finally {
+      await model.close();
+    }
+  }, timeout: const Timeout(Duration(minutes: 10)));
 
-        // ja → en
-        final enFromJa = await runner.translate(
-          text: 'ありがとうございます',
-          src: 'ja',
-          dst: 'en',
-        );
-        print('[TranslateGemma] ja→en: $enFromJa');
-        expect(enFromJa.trim(), isNotEmpty);
-        expect(enFromJa.toLowerCase(), contains('thank'));
-      } finally {
-        await model.close();
-      }
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+  testWidgets('TranslateGemma 4B int4 — streaming yields chunks', (_) async {
+    await registerTestEngines();
 
-  testWidgets(
-    'TranslateGemma 4B int4 — streaming yields chunks',
-    (_) async {
-      await registerTestEngines();
+    final modelPath = await _docsPath(_modelName);
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.litertlm,
+    ).fromFile(modelPath).install();
 
-      final modelPath = await _docsPath(_modelName);
-      await FlutterEdgeAi.installModel(
-        modelType: ModelType.gemmaIt,
-        fileType: ModelFileType.litertlm,
-      ).fromFile(modelPath).install();
+    final model = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 4096,
+      // On GPU this bundle loads and then answers with nothing but
+      // <pad> — see translate_model.dart + LiteRT-LM#1748.
+      preferredBackend: PreferredBackend.cpu,
+    );
 
-      final model = await FlutterEdgeAi.getActiveModel(
-        maxTokens: 4096,
-        // On GPU this bundle loads and then answers with nothing but
-        // <pad> — see translate_model.dart + LiteRT-LM#1748.
-        preferredBackend: PreferredBackend.cpu,
+    try {
+      final runner = TranslateRunner(
+        model: model,
+        strategy: const TranslateGemmaXmlPromptStrategy(),
       );
 
-      try {
-        final runner = TranslateRunner(
-          model: model,
-          strategy: const TranslateGemmaXmlPromptStrategy(),
-        );
-
-        final chunks = <String>[];
-        await for (final c in runner.translateStream(
-          text: 'The quick brown fox jumps over the lazy dog',
-          src: 'en',
-          dst: 'fr',
-        )) {
-          chunks.add(c);
-        }
-
-        final full = chunks.join();
-        print('[TranslateGemma stream] ${chunks.length} chunks → "$full"');
-        expect(chunks, isNotEmpty);
-        expect(full.trim(), isNotEmpty);
-      } finally {
-        await model.close();
+      final chunks = <String>[];
+      await for (final c in runner.translateStream(
+        text: 'The quick brown fox jumps over the lazy dog',
+        src: 'en',
+        dst: 'fr',
+      )) {
+        chunks.add(c);
       }
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+
+      final full = chunks.join();
+      print('[TranslateGemma stream] ${chunks.length} chunks → "$full"');
+      expect(chunks, isNotEmpty);
+      expect(full.trim(), isNotEmpty);
+    } finally {
+      await model.close();
+    }
+  }, timeout: const Timeout(Duration(minutes: 10)));
 }

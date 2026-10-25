@@ -140,51 +140,47 @@ void main() {
   // FIX CHECK 2 — the user's real intent: limit OUTPUT length via the new
   // maxOutputTokens, leaving the context window at the default. Should answer
   // (and the cap bounds generation; we just assert it runs and is coherent).
-  testWidgets(
-    '#318 FIX: maxOutputTokens caps generation without crashing',
-    (tester) async {
-      final r = await _runUserConfig(maxTokens: 1024, maxOutputTokens: 100);
-      debugPrint(
-        '[#318][FIX-RESULT] maxOutputTokens=100 '
-        'ok=${r.ok} response="${r.response}" error=${r.error}',
-      );
-      expect(
-        r.ok,
-        isTrue,
-        reason: 'maxOutputTokens should not crash: ${r.error}',
-      );
-      expect(r.response.trim(), isNotEmpty, reason: 'should produce output');
-    },
-    timeout: const Timeout(Duration(minutes: 8)),
-  );
+  testWidgets('#318 FIX: maxOutputTokens caps generation without crashing', (
+    tester,
+  ) async {
+    final r = await _runUserConfig(maxTokens: 1024, maxOutputTokens: 100);
+    debugPrint(
+      '[#318][FIX-RESULT] maxOutputTokens=100 '
+      'ok=${r.ok} response="${r.response}" error=${r.error}',
+    );
+    expect(
+      r.ok,
+      isTrue,
+      reason: 'maxOutputTokens should not crash: ${r.error}',
+    );
+    expect(r.response.trim(), isNotEmpty, reason: 'should produce output');
+  }, timeout: const Timeout(Duration(minutes: 8)));
 
   // FIX CHECK 3 — GPU coverage. The clamp runs in the engine BEFORE the
   // backend is selected, so a small maxTokens on the GPU path must also be
   // raised to 1024 and generate normally (not just CPU). Verifies the fix is
   // backend-agnostic — the DYNAMIC_UPDATE_SLICE underflow is a graph-compile
   // KV-cache resize that precedes delegate selection.
-  testWidgets(
-    '#318 FIX: GPU maxTokens=100 auto-clamps and answers',
-    (tester) async {
-      final r = await _runUserConfig(
-        maxTokens: 100,
-        backend: PreferredBackend.gpu,
-      );
-      debugPrint(
-        '[#318][FIX-RESULT] GPU maxTokens=100 '
-        'ok=${r.ok} response="${r.response}" error=${r.error}',
-      );
-      expect(
-        r.ok,
-        isTrue,
-        reason: 'GPU clamp should prevent the crash: ${r.error}',
-      );
-      expect(
-        r.response.toLowerCase(),
-        contains('paris'),
-        reason: 'GPU should produce a coherent answer after clamping',
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 8)),
-  );
+  testWidgets('#318 FIX: GPU maxTokens=100 auto-clamps and answers', (
+    tester,
+  ) async {
+    final r = await _runUserConfig(
+      maxTokens: 100,
+      backend: PreferredBackend.gpu,
+    );
+    debugPrint(
+      '[#318][FIX-RESULT] GPU maxTokens=100 '
+      'ok=${r.ok} response="${r.response}" error=${r.error}',
+    );
+    expect(
+      r.ok,
+      isTrue,
+      reason: 'GPU clamp should prevent the crash: ${r.error}',
+    );
+    expect(
+      r.response.toLowerCase(),
+      contains('paris'),
+      reason: 'GPU should produce a coherent answer after clamping',
+    );
+  }, timeout: const Timeout(Duration(minutes: 8)));
 }

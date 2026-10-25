@@ -54,20 +54,16 @@ void main() {
   // Install + both backends in one test body so the ~2.8 GB in-app download is
   // bound by this Timeout, not the 12-min setUpAll cap (--timeout none does not
   // lift the setUpAll cap).
-  testWidgets(
-    'Phi-4 install + reasoning (CPU + GPU)',
-    (t) async {
-      await FlutterEdgeAi.installModel(
-        modelType: ModelType.general,
-        fileType: ModelFileType.litertlm,
-      ).fromNetwork(_url).install();
-      final cpu = await _run(PreferredBackend.cpu);
-      print('[Phi-4 CPU] $cpu');
-      expect(cpu.trim(), isNotEmpty);
-      final gpu = await _run(PreferredBackend.gpu);
-      print('[Phi-4 GPU] $gpu');
-      expect(gpu.trim(), isNotEmpty);
-    },
-    timeout: const Timeout(Duration(minutes: 45)),
-  );
+  testWidgets('Phi-4 install + reasoning (CPU + GPU)', (t) async {
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.general,
+      fileType: ModelFileType.litertlm,
+    ).fromNetwork(_url).install();
+    final cpu = await _run(PreferredBackend.cpu);
+    print('[Phi-4 CPU] $cpu');
+    expect(cpu.trim(), isNotEmpty);
+    final gpu = await _run(PreferredBackend.gpu);
+    print('[Phi-4 GPU] $gpu');
+    expect(gpu.trim(), isNotEmpty);
+  }, timeout: const Timeout(Duration(minutes: 45)));
 }

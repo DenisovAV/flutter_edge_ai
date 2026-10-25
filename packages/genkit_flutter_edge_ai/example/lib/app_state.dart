@@ -150,7 +150,9 @@ class AppState extends ChangeNotifier {
     if (models.isEmpty && embedders.isEmpty) return;
 
     _ai = Genkit(
-      plugins: [GenkitFlutterEdgeAiPlugin(models: models, embedders: embedders)],
+      plugins: [
+        GenkitFlutterEdgeAiPlugin(models: models, embedders: embedders),
+      ],
     );
   }
 

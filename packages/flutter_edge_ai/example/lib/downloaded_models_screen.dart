@@ -165,18 +165,14 @@ class _DownloadedModelsScreenState extends State<DownloadedModelsScreen> {
   Future<void> _copyPath(_DownloadedModelEntry entry) async {
     try {
       final path = await FlutterEdgeAi.getModelPath(entry.id);
-      // getModelPath computes the managed path; it does not check it. A
-      // bundled install has no file there (iOS reads every bundled file from
-      // the app bundle; on Android a namespaced companion has none either),
-      // so copying it would hand out a path that does not exist.
+      // getModelPath says where the file is read from; it does not check
+      // that the file is still there (an app's own fromFile file can have
+      // been moved or deleted), and a path that does not exist is not copied.
       if (!await createFile(path).exists()) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'No file on disk at $path for ${entry.displayName}: '
-              'bundled resources are read from the app package.',
-            ),
+            content: Text('No file on disk at $path for ${entry.displayName}.'),
           ),
         );
         return;

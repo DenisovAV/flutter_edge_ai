@@ -87,14 +87,18 @@ class InferenceModelCache {
   })?
   _building;
 
+  /// Set while [closeForRemoval] runs: no build starts until it ends.
+  Completer<void>? _removal;
+
   /// The cached model, or null.
   InferenceModel? get model => _cached?.model;
 
   /// The model for the request [resolve] describes: the cached one when it
   /// fits, otherwise the one its `build` returns.
   ///
-  /// [resolve] runs again after every wait — for a close, or for a build in
-  /// flight — so a model activated meanwhile is the one built.
+  /// [resolve] runs again after every wait — for a close, a build in flight
+  /// or a removal ([closeForRemoval]) — so a model activated meanwhile is the
+  /// one built.
   ///
   /// A caller that gets a model has no claim on it: a later caller asking
   /// for other knobs closes it and builds its own, because the cache holds
@@ -105,6 +109,13 @@ class InferenceModelCache {
   ) async {
     while (true) {
       final (:identity, :params, :build) = resolve();
+
+      // A file is being removed: resolved again once it is, so the file
+      // being removed is not loaded.
+      if (_removal case final removal?) {
+        await removal.future;
+        continue;
+      }
 
       // No model is built while another is still closing: two native models
       // must not be resident at once.
@@ -134,6 +145,7 @@ class InferenceModelCache {
         await _closeGate.closeAndWait(
           cached.model,
           label: _name(cached.identity),
+          tag: cached.identity,
         );
         continue;
       }
@@ -165,6 +177,73 @@ class InferenceModelCache {
     }
   }
 
+  /// Closes the model built from [filename] — the cached one, or the one in
+  /// flight once its build ends — and runs [remove] while no build starts.
+  ///
+  /// For an uninstall: left open, the model keeps answering from a file that
+  /// is gone. A caller of [obtain] arriving meanwhile resolves its request
+  /// again once [remove] has ended, so it sees what [remove] changed instead
+  /// of loading the file being removed. A model built from other files stays
+  /// open.
+  ///
+  /// A caller whose build of the file was in flight gets the model, closed
+  /// right after. A close that throws is reported and the removal goes on, as
+  /// for a rebuild ([ModelCloseGate.closeAndWait]); a close of this file's
+  /// model still running at the gate's deadline throws [TimeoutException]
+  /// before [remove] runs. Not reentrant: a [remove] that calls [obtain]
+  /// waits for itself forever.
+  Future<void> closeForRemoval(
+    String filename,
+    Future<void> Function() remove,
+  ) async {
+    while (true) {
+      final other = _removal;
+      if (other == null) break;
+      await other.future;
+    }
+    final removal = Completer<void>();
+    _removal = removal;
+    try {
+      // Left alone, a build of the file would end after the removal and stay
+      // resident: it is closed like a cached one once it ends.
+      while (true) {
+        final building = _building;
+        if (building == null || !_builtFrom(building.identity, filename)) {
+          break;
+        }
+        try {
+          await building.completer.future;
+        } catch (_) {
+          // Nothing was cached; the build's own callers get its error.
+        }
+      }
+      if (_cached case final cached?
+          when _builtFrom(cached.identity, filename)) {
+        // Forgotten first, as for a rebuild: nothing gets the closing model.
+        _cached = null;
+        await _closeGate.closeAndWait(
+          cached.model,
+          label: _name(cached.identity),
+          tag: cached.identity,
+        );
+      } else if (_closeGate.isClosingWhere(
+        (tag) => tag is InferenceModelIdentity && _builtFrom(tag, filename),
+      )) {
+        // A rebuild started closing this file's model and forgot it. A close
+        // of another file's model is not waited for: it has nothing to do
+        // with this removal, and its deadline would fail it.
+        await _closeGate.wait();
+      }
+      await remove();
+    } finally {
+      _removal = null;
+      removal.complete();
+    }
+  }
+
+  static bool _builtFrom(InferenceModelIdentity identity, String filename) =>
+      identity.spec.files.any((file) => file.filename == filename);
+
   Future<InferenceModel> _build(
     InferenceModelIdentity identity,
     ActiveModelParams params,
@@ -189,7 +268,11 @@ class InferenceModelCache {
       // learn the model went away. Close it rather than leave its weights
       // resident with no owner, then fail the request with the reason.
       try {
-        await _closeGate.closeAndWait(model, label: _name(identity));
+        await _closeGate.closeAndWait(
+          model,
+          label: _name(identity),
+          tag: identity,
+        );
       } on TimeoutException {
         // The close keeps running and the gate holds the next caller until
         // it ends; this caller's error is the listener's, not the wait's.
@@ -247,3 +330,18 @@ class InferenceModelCache {
     return null;
   }
 }
+
+/// Each shell's [InferenceModelCache], for `FlutterEdgeAi.uninstallModel`,
+/// which reaches a shell only as a `FlutterEdgeAiPlugin`. A side table rather
+/// than a member, so no shell's public API grows one: `FlutterEdgeAiDesktop`
+/// is exported.
+final _shellCaches = Expando<InferenceModelCache>('InferenceModelCache');
+
+/// Records [cache] as [shell]'s inference model cache.
+void attachInferenceModelCache(Object shell, InferenceModelCache cache) {
+  _shellCaches[shell] = cache;
+}
+
+/// The cache [attachInferenceModelCache] recorded for [shell], or null: a
+/// plugin that is not one of core's shells caches no model here.
+InferenceModelCache? inferenceModelCacheOf(Object shell) => _shellCaches[shell];

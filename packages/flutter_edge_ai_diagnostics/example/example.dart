@@ -4,7 +4,7 @@ import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 /// Measures what an operation costs in memory the OS enforces.
 Future<void> main() async {
   if (!FlutterEdgeAiDiagnostics.isSupported) {
-    print('Memory diagnostics run on Android, iOS and macOS only.');
+    print('Memory diagnostics run on Android, iOS, macOS and Linux only.');
     return;
   }
 

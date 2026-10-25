@@ -4,10 +4,12 @@ import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  // `flutter test` runs on the host. On Linux and Windows that is exactly the
-  // case this package refuses; a macOS host is a supported platform, and the
-  // integration test covers it.
-  group('on an unsupported host platform', skip: Platform.isMacOS, () {
+  // `flutter test` runs on the host. On Windows that is exactly the case this
+  // package refuses; macOS and Linux hosts are supported platforms (Linux is
+  // covered by the host tests below and in proc_memory_test.dart).
+  final supportedHost = Platform.isMacOS || Platform.isLinux;
+
+  group('on an unsupported host platform', skip: supportedHost, () {
     test('isSupported is false', () {
       expect(FlutterEdgeAiDiagnostics.isSupported, isFalse);
     });
@@ -17,6 +19,26 @@ void main() {
         FlutterEdgeAiDiagnostics.memorySnapshot(),
         throwsA(isA<UnsupportedError>()),
       );
+    });
+  });
+
+  group('on a Linux host', skip: !Platform.isLinux, () {
+    test('isSupported is true', () {
+      expect(FlutterEdgeAiDiagnostics.isSupported, isTrue);
+    });
+
+    test('memorySnapshot reads /proc: the values Linux reports', () async {
+      final snapshot = await FlutterEdgeAiDiagnostics.memorySnapshot();
+      expect(snapshot.anonymousBytes, greaterThan(0));
+      expect(snapshot.fileBackedBytes, greaterThan(0));
+      expect(snapshot.availableBytes, greaterThan(0));
+      // The kernel keeps no anonymous-only peak.
+      expect(snapshot.anonymousPeakBytes, isNull);
+    });
+
+    test('gpuMemory is null, not an error and not a kgsl read', () async {
+      // ignore: experimental_member_use
+      expect(await FlutterEdgeAiDiagnostics.gpuMemory(), isNull);
     });
   });
 

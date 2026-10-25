@@ -117,9 +117,9 @@ killed for memory while loading even Gemma 3 1B. See
 
 | Model Family | Best For | Function Calling | Thinking Mode | Vision | Languages | Size |
 |---|---|:---:|:---:|:---:|---|---|
-| **Gemma 4 E2B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ¹ | ✅ | Multilingual | 2.6GB |
-| **Gemma 4 E4B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ¹ | ✅ | Multilingual | 3.7GB |
-| **Gemma3n** | On-device multimodal chat and image analysis | ⚠️ ² | ❌ | ✅ | Multilingual | 3.1-4.9GB |
+| **Gemma 4 E2B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ⁵ | ✅ | Multilingual | 2.6GB |
+| **Gemma 4 E4B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ⁵ | ✅ | Multilingual | 3.7GB |
+| **Gemma3n** | On-device multimodal chat and image analysis | ⚠️ ⁶ | ❌ | ✅ | Multilingual | 3.1-4.9GB |
 | **FastVLM 0.5B** | Fast vision-language inference | ❌ | ❌ | ✅ | Multilingual | 1.2GB |
 | **Qwen2-VL 2B** | Vision-language chat (image + text) | ❌ | ❌ | ✅ | Multilingual | 1.8GB |
 | **SmolVLM2 500M** | Compact vision-language model | ❌ | ❌ | ✅ | Multilingual | 0.36GB |
@@ -143,13 +143,13 @@ killed for memory while loading even Gemma 3 1B. See
 | **Apple Foundation Models** (built-in) | The OS model on iOS and macOS | ✅ prompt-based | ❌ | ⚠️ OS 27 | varies | system |
 | **Phi Silica** (built-in) | The OS model on Windows | ✅ prompt-based | ❌ | ❌ | varies | system |
 
-¹ Gemma 4 **Thinking Mode** needs LiteRT-LM (`.litertlm`): Android, iOS, Desktop
+⁵ Gemma 4 **Thinking Mode** needs LiteRT-LM (`.litertlm`): Android, iOS, Desktop
 and Web (measured on Gemma 4 E2B in Chrome). MediaPipe Web cannot enable it and
 ONNX Web ignores it.
 Qwen3 is different: core parses its emitted `<think>` tags on every platform,
 including Web.
 
-² Gemma3n function calling: the downloadable catalog enables it only on the E4B
+⁶ Gemma3n function calling: the downloadable catalog enables it only on the E4B
 `.litertlm` build.
 
 — not run. The ONNX engine is text-only and ignores `enableThinking`; see
@@ -255,13 +255,13 @@ await FlutterEdgeAi.installModel(modelType: ModelType.phi)
 | [Qwen2-VL 2B](https://huggingface.co/litert-community/Qwen2-VL-2B) | 1.8GB | ✅ | ✅ | ❌ | ❌ |
 | [SmolVLM2 500M](https://huggingface.co/litert-community/SmolVLM2-500M) | 0.36GB | ✅ | ✅ | ❌ | ❌ |
 | [LLaVA-OneVision 0.5B](https://huggingface.co/litert-community/LLaVA-OneVision-0.5B) | 0.83GB | ✅ | ✅ | ❌ | ❌ |
-| [VibeVoice-ASR-BitNet](https://huggingface.co/litert-community/VibeVoice-ASR-BitNet) ⁴ | 2.0GB | ✅ macOS | ✅ Android | ❌ | ❌ |
+| [VibeVoice-ASR-BitNet](https://huggingface.co/litert-community/VibeVoice-ASR-BitNet) ¹⁰ | 2.0GB | ✅ macOS | ✅ Android | ❌ | ❌ |
 | [Gemma-3 1B](https://huggingface.co/litert-community/Gemma3-1B-IT) | 0.5GB | ✅ | ✅ | ✅ | ✅ |
 | [Gemma 3 270M](https://huggingface.co/litert-community/gemma-3-270m-it) | 0.3GB | ✅ | ✅ | ✅ | ✅ |
 | [FunctionGemma 270M](https://huggingface.co/sasha-denisov/function-gemma-270M-it) | 284MB | ✅ | ✅ | ❌ | ❌ |
-| [Qwen3 0.6B](https://huggingface.co/litert-community/Qwen3-0.6B) ¹ | 345MB | ✅ | ✅ | ❌ | ❌ |
+| [Qwen3 0.6B](https://huggingface.co/litert-community/Qwen3-0.6B) ⁷ | 345MB | ✅ | ✅ | ❌ | ❌ |
 | [Qwen 2.5 1.5B](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct) | 1.6GB | ✅ | ✅ | ❌ | ❌ |
-| [Qwen 2.5 0.5B](https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct) | 0.5GB | ❌ | ✅ | ✅ ² | ❌ |
+| [Qwen 2.5 0.5B](https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct) | 0.5GB | ❌ | ✅ | ✅ ⁸ | ❌ |
 | [SmolLM 135M](https://huggingface.co/litert-community/SmolLM-135M-Instruct) | 167MB | ❌ | ✅ | ❌ | ❌ |
 | [LFM2.5 230M (Liquid AI)](https://huggingface.co/litert-community/LFM2.5-230M) | 177MB | ✅ | ✅ | ❌ | ❌ |
 | [SmolLM3 3B](https://huggingface.co/litert-community/SmolLM3-3B) | 2.0GB | ✅ | ✅ | ❌ | ❌ |
@@ -269,13 +269,13 @@ await FlutterEdgeAi.installModel(modelType: ModelType.phi)
 | [Phi-4 Mini Reasoning](https://huggingface.co/litert-community/Phi-4-mini-reasoning) | 2.8GB | ✅ | ✅ | ❌ | ❌ |
 | [DeepSeek R1](https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B) | 1.7GB | ❌ | ✅ | ❌ | ❌ |
 | [TranslateGemma 4B](https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized) † | 1.9-4GB | ✅ | ✅ | ❌ | ❌ |
-| [Phi-3.5 Mini (ONNX)](https://huggingface.co/microsoft/Phi-3.5-mini-instruct-onnx) ³ | 2.8GB | ✅ | ✅ | — | ❌ |
-| [Qwen 2.5 0.5B (ONNX)](https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct) ² | 0.5GB | ❌ | ❌ | ✅ | ❌ |
+| [Phi-3.5 Mini (ONNX)](https://huggingface.co/microsoft/Phi-3.5-mini-instruct-onnx) ⁹ | 2.8GB | ✅ | ✅ | — | ❌ |
+| [Qwen 2.5 0.5B (ONNX)](https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct) ⁸ | 0.5GB | ❌ | ❌ | ✅ | ❌ |
 | [Gemini Nano](/docs/builtin-ai) (built-in) | system | ❌ | ✅ Android | ✅ Chrome | — |
 | [Apple Foundation Models](/docs/builtin-ai) (built-in) | system | ✅ macOS | ✅ iOS | ❌ | — |
 | [Phi Silica](/docs/builtin-ai) (built-in) | system | ✅ Windows | ❌ | ❌ | — |
 
-¹ `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` (345 MB) from that repo is the
+⁷ `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` (345 MB) from that repo is the
 catalog's file. `Qwen3-0.6B.litertlm` (614 MB) failed to load from
 `flutter_edge_ai_litertlm` 1.7.0 until the repo replaced its tokenizer on
 2026-10-13 at 15:53 UTC ([#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659), upstream
@@ -283,15 +283,15 @@ catalog's file. `Qwen3-0.6B.litertlm` (614 MB) failed to load from
 copy downloaded before that still fails — uninstall it and install it again.
 Both are native exports, so neither runs on web.
 
-² On web, Qwen 2.5 0.5B runs as the ONNX build from `onnx-community`, through
+⁸ On web, Qwen 2.5 0.5B runs as the ONNX build from `onnx-community`, through
 Transformers.js ([`flutter_edge_ai_onnx`](/docs/onnx)). That build is web-only.
 
-³ An ORT-GenAI model directory — `fromHuggingFace` installs its CPU folder,
+⁹ An ORT-GenAI model directory — `fromHuggingFace` installs its CPU folder,
 `cpu_and_mobile/cpu-int4-awq-block-128-acc-level-4` — run on macOS arm64,
 Linux x64, Windows x64, Android arm64 and iOS arm64. It peaks at about 3.7 GB
 of RAM, so plan for a 6 GB+ phone. — means not run.
 
-⁴ Speech recognition, not chat: install it as `ModelType.general` (the
+¹⁰ Speech recognition, not chat: install it as `ModelType.general` (the
 repo's `litertlm_manifest.json` sets `maxTokens: 2048` and audio — pass
 `getActiveModel(defaults: r.runtime)`), send the clip as `audioBytes` with the
 text `This is a X.XX seconds audio, please transcribe it.` (the clip's length),

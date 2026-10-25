@@ -53,26 +53,45 @@ Strip them yourself, or don't advertise a thinking UI for those models.
 
 ## Thinking budget
 
-`LiteRtLmEngine(thinkingTokenBudget: 2048)` (`flutter_edge_ai_litertlm` 1.18.0)
-caps how many tokens a turn with `enableThinking: true` spends thinking, in
-every model that engine builds, on the CPU, the GPU and the NPU. Null, the
-default, sets no budget. At the budget LiteRT-LM closes the thought channel and
-the model goes on to its answer or tool call:
+`LiteRtLmEngine(thinkingTokenBudget: 512)` (`flutter_edge_ai_litertlm` 1.18.0)
+caps how many tokens each generation with `enableThinking: true` spends
+thinking, in every model that engine builds, on the CPU, the GPU and the NPU.
+Null, the default, sets no budget. At the budget LiteRT-LM closes the thought
+channel and the model goes on to its answer or tool call:
 
 ```dart
 await FlutterEdgeAi.initialize(
-  inferenceEngines: const [LiteRtLmEngine(thinkingTokenBudget: 2048)],
+  inferenceEngines: const [LiteRtLmEngine(thinkingTokenBudget: 512)],
+);
+final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
+final chat = await model.createChat(
+  enableThinking: true,
+  maxOutputTokens: 2048,
+  modelType: ModelType.gemma4,
 );
 ```
 
 Without a budget a model can think until `maxOutputTokens` and end the turn
-with an empty answer: Intel's Gemma 4 26B for its NPU did. Thinking tokens still
-count towards `maxOutputTokens`, so leave room for the answer. The budget
-applies to `.litertlm` bundles that stream their thinking through the `thought`
-channel, as Gemma 4 does; the web engine accepts it and ignores it. Measured on
-macOS with Gemma 4 E2B, greedy: a budget of 64 cut the thinking from 1724 to 198
-characters on the CPU and from 1465 to 198 on the GPU, and the model still
-answered.
+with an empty answer: Intel's Gemma 4 26B for its NPU did, and so did Qwen3 0.6B
+on the CPU (4507 characters of thinking, no answer; with a budget of 32, 107
+characters, then the answer).
+
+- The thinking counts towards `maxOutputTokens`, and the reply towards the
+  context (`maxTokens`, 1024 by default): keep budget < `maxOutputTokens` <
+  `maxTokens`, with room left for the answer, or the budget never acts.
+- It is per generation: in a tool loop, each generation after a tool result
+  starts with a fresh budget.
+- LiteRT-LM caps the first channel the bundle declares (measured on Gemma 4 E2B
+  and Qwen3 0.6B); a bundle that declares none is not capped.
+- It is fixed when the engine is registered. To change it, close the model,
+  call `FlutterEdgeAi.reset()`, `initialize` with the new engine, then install
+  and load the model again.
+- On the GPU it slows decoding for the whole generation, after the budget is
+  reached too: Gemma 4 E2B on an M5 Pro decoded at 87–97 tokens per second with
+  a budget it never reached and 117–118 without one, with the same output. On
+  the CPU no cost was measured (55 tokens per second either way).
+- The web engine accepts it and ignores it: `@litert-lm/core` has no such
+  setting.
 
 ## Handling thinking responses
 

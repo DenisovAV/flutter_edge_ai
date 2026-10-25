@@ -66,6 +66,7 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
     required int? activationDataType,
     required NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
+    int? thinkingTokenBudget,
   }) => client.initialize(
     modelPath: modelPath,
     backend: backend,
@@ -80,6 +81,7 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
     activationDataType: activationDataType,
     npuDispatch: npuDispatch,
     nativeLogLevel: nativeLogLevel,
+    thinkingTokenBudget: thinkingTokenBudget,
   );
 }
 

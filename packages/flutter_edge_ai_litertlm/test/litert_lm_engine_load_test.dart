@@ -115,9 +115,10 @@ class _FakeHost extends LiteRtLmEngineHost {
     required int? activationDataType,
     required NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
+    int? thinkingTokenBudget,
   }) async {
     nativeLogLevels.add(nativeLogLevel);
-    thinkingBudgets.add(client.thinkingTokenBudget);
+    thinkingBudgets.add(thinkingTokenBudget);
     mostCreatingAtOnce = max(mostCreatingAtOnce, ++creating);
     // A create takes time; another one started meanwhile would overlap it.
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -129,6 +130,33 @@ class _FakeHost extends LiteRtLmEngineHost {
     ));
     npuDispatches.add(npuDispatch);
     if (failures[backend] case final error?) throw error;
+  }
+}
+
+/// Records what [LiteRtLmFfiClient.initialize] is given; creates no engine.
+class _InitCapturingClient extends LiteRtLmFfiClient {
+  LiteRtLmLogLevel? nativeLogLevel;
+  int? budget;
+
+  @override
+  Future<void> initialize({
+    required String modelPath,
+    String backend = 'gpu',
+    int maxTokens = 2048,
+    String? cacheDir,
+    bool enableVision = false,
+    String visionBackend = 'cpu',
+    int maxNumImages = 0,
+    bool enableAudio = false,
+    String audioBackend = 'cpu',
+    bool? enableSpeculativeDecoding,
+    int? activationDataType,
+    NpuDispatch? npuDispatch,
+    LiteRtLmLogLevel? nativeLogLevel,
+    int? thinkingTokenBudget,
+  }) async {
+    this.nativeLogLevel = nativeLogLevel;
+    budget = thinkingTokenBudget;
   }
 }
 
@@ -297,9 +325,34 @@ void main() {
     await plain.close();
   });
 
-  test('a thinkingTokenBudget below 1 is refused before any engine', () async {
+  test('the real host hands the client the budget and the log level', () async {
+    final client = _InitCapturingClient();
+    await const LiteRtLmEngineHost().initializeClient(
+      client,
+      modelPath: 'm',
+      backend: 'cpu',
+      maxTokens: 1024,
+      cacheDir: 'c',
+      enableVision: false,
+      visionBackend: 'cpu',
+      maxNumImages: 0,
+      enableAudio: false,
+      audioBackend: 'cpu',
+      enableSpeculativeDecoding: null,
+      activationDataType: null,
+      npuDispatch: null,
+      nativeLogLevel: LiteRtLmLogLevel.silent,
+      thinkingTokenBudget: 2048,
+    );
+    expect(client.nativeLogLevel, LiteRtLmLogLevel.silent);
+    expect(client.budget, 2048);
+  });
+
+  test('a thinkingTokenBudget LiteRT-LM cannot take is refused before any '
+      'engine', () async {
     final path = write('gpu.litertlm', _bundle(text: 'gpu,cpu'));
-    for (final budget in [0, -1]) {
+    // Above 0x7fffffff the C int would wrap: 1 << 32 would arrive as 0.
+    for (final budget in [0, -1, 0x80000000, 1 << 32]) {
       await expectLater(
         load(path, thinkingTokenBudget: budget),
         throwsA(

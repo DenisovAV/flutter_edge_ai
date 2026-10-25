@@ -4,11 +4,14 @@
 // optional args only when the send thinks and a budget is set, and the config
 // must be deleted after the args have taken their copy.
 
+import 'dart:async';
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
+import 'package:flutter_edge_ai_litertlm/src/thinking_token_budget.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 typedef _CreateN = Pointer<Void> Function();
@@ -21,6 +24,11 @@ class _FakeNative {
   _FakeNative({this.createReturnsNull = false});
 
   final bool createReturnsNull;
+
+  /// The optional args the send hands over; the config must reach these.
+  static final sendArgs = Pointer<LiteRtLmConversationOptionalArgs>.fromAddress(
+    0x10,
+  );
   final calls = <String>[];
   final config = calloc<Uint8>().cast<Void>();
   final _callables = <NativeCallable<Function>>[];
@@ -58,7 +66,7 @@ class _FakeNative {
           Pointer<Void> args,
           Pointer<Void> c,
         ) {
-          calls.add('args ${c == config}');
+          calls.add('args ${args == sendArgs.cast<Void>()} ${c == config}');
         });
       default:
         throw ArgumentError('unexpected native call $name');
@@ -76,7 +84,7 @@ class _FakeNative {
 }
 
 void main() {
-  final args = Pointer<LiteRtLmConversationOptionalArgs>.fromAddress(0x10);
+  final args = _FakeNative.sendArgs;
 
   test('a thinking send with a budget: create, enable, budget, hand to the '
       'args, delete', () {
@@ -92,7 +100,7 @@ void main() {
       'create',
       'enable true',
       'budget 2048',
-      'args true',
+      'args true true',
       'delete true',
     ]);
   });
@@ -128,5 +136,67 @@ void main() {
       throwsStateError,
     );
     expect(native.calls, ['create']);
+  });
+
+  test('a budget LiteRT-LM can take passes, from 1 to the largest C int', () {
+    for (final budget in [null, 1, 2048, maxThinkingTokenBudget]) {
+      checkThinkingTokenBudget(budget);
+    }
+    for (final budget in [0, -1, maxThinkingTokenBudget + 1, 1 << 32]) {
+      expect(
+        () => checkThinkingTokenBudget(budget),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.name,
+            'name',
+            'thinkingTokenBudget',
+          ),
+        ),
+        reason: '$budget',
+      );
+    }
+  });
+
+  test('the web notice is said once per isolate', () async {
+    resetThinkingTokenBudgetNotice();
+    addTearDown(resetThinkingTokenBudgetNotice);
+    final printed = <String>[];
+    await runZoned(
+      () async {
+        noticeThinkingTokenBudgetIgnoredOnWeb();
+        noticeThinkingTokenBudgetIgnoredOnWeb();
+      },
+      zoneSpecification: ZoneSpecification(
+        print: (_, _, _, line) => printed.add(line),
+      ),
+    );
+    expect(
+      printed.where((l) => l.contains('thinkingTokenBudget')),
+      hasLength(1),
+    );
+  });
+
+  test('the release gate lists every C function a budget calls', () {
+    final client = File('lib/src/ffi/litert_lm_client.dart').readAsStringSync();
+    final apply = client.substring(
+      client.indexOf('void applyThinkingTokenBudget('),
+      client.indexOf('/// Callback typedef'),
+    );
+    final called = {
+      for (final m in RegExp(r'b\.(litert_lm_[a-z_]+)\(').allMatches(apply))
+        m.group(1)!,
+    };
+    final gate = File(
+      'native/litert_lm/check_embedding_exports.py',
+    ).readAsStringSync();
+    final listed = RegExp(
+      r'THINKING_BUDGET_SYMBOLS = \[(.*?)\]',
+      dotAll: true,
+    ).firstMatch(gate)!.group(1)!;
+    expect(called, hasLength(5));
+    expect({
+      for (final m in RegExp(r'"(litert_lm_[a-z_]+)"').allMatches(listed))
+        m.group(1)!,
+    }, called);
   });
 }

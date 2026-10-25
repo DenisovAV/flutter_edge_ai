@@ -513,7 +513,8 @@ _rewindCancelledTurnOffMainIsolate({
         Pointer.fromAddress(conversationAddr),
         exchange,
         extra,
-        // The stopped send was given no optional args either.
+        // No optional args: the rewind prefills without decoding, so the
+        // stopped send's thinking budget has nothing to cap.
         nullptr,
         lastTurnEnd,
       );
@@ -557,12 +558,14 @@ class LiteRtLmFfiClient {
   String? get bundleSamplerError => _bundleSamplerRead.error;
   BundleSamplerRead _bundleSamplerRead = const BundleSamplerRead.notRead();
 
+  /// The thinking token budget each send with thinking on carries
+  /// (`LiteRtLmEngine.thinkingTokenBudget`), set by [initialize]; null sends
+  /// none.
+  int? get thinkingTokenBudget => _thinkingTokenBudget;
+  int? _thinkingTokenBudget;
+
   /// The sampler of the engine's first generation, which LiteRT-LM keeps for
   /// every later conversation (google-ai-edge/LiteRT-LM#2080).
-  /// The thinking token budget each send with thinking on carries
-  /// (`LiteRtLmEngine.thinkingTokenBudget`); null sends none.
-  int? thinkingTokenBudget;
-
   final _samplerLatch = EngineSamplerLatch();
   bool _warnedNpuSampling = false;
 
@@ -1089,6 +1092,9 @@ class LiteRtLmFfiClient {
   /// [nativeLogLevel], when set, is applied with `litert_lm_set_min_log_level`
   /// before the engine is created.
   ///
+  /// [thinkingTokenBudget] is what every send with thinking on hands
+  /// LiteRT-LM (`LiteRtLmEngine.thinkingTokenBudget`); null sends none.
+  ///
   /// [npuDispatch] is what an `npu` [backend] hands LiteRT-LM: the dispatch
   /// directory of the vendor `chooseNpuVendor` chose, prepared by the caller,
   /// and whether that vendor turns the HW mask update path off. Required for
@@ -1107,10 +1113,12 @@ class LiteRtLmFfiClient {
     int? activationDataType,
     NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
+    int? thinkingTokenBudget,
   }) async {
     if (backend == 'npu' && npuDispatch == null) {
       throw ArgumentError.notNull('npuDispatch');
     }
+    _thinkingTokenBudget = thinkingTokenBudget;
     final initSw = Stopwatch()..start();
     _ensureBindings();
     _backend = backend;
@@ -1857,7 +1865,7 @@ class LiteRtLmFfiClient {
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? extraContext,
-    bool thinking = false,
+    required bool thinking,
     void Function(NativeTurnEnd how)? onEnded,
   }) => heldUntilNativeEnd(_nativeMutex, () {
     final send = _doSendMessageStreamRawOn(
@@ -1916,7 +1924,7 @@ class LiteRtLmFfiClient {
     required ResolvedSampling sampling,
     required bool samplingExplicit,
     String? extraContext,
-    bool thinking = false,
+    required bool thinking,
     int? maxOutputTokens,
   }) {
     // StreamController (not async*) so the mutex release is tied to the native
@@ -2115,7 +2123,7 @@ class LiteRtLmFfiClient {
     Pointer<LiteRtLmConversation> conv,
     String messageJson, {
     String? extraContext,
-    bool thinking = false,
+    required bool thinking,
   }) {
     _assertInitialized();
     final b = _bindings!;
@@ -2205,34 +2213,13 @@ class LiteRtLmFfiClient {
         'a broken export table). See #447 and #453.',
       );
     }
-    final outProxyFn = calloc<Pointer<NativeFunction<_StreamCallbackNative>>>();
-    final proxyData = create2(
-      callable.nativeFunction,
-      nullptr,
-      _chunkGetText,
-      _chunkGetError,
-      _chunkIsFinal,
-      outProxyFn,
-    );
-    final proxyFn = outProxyFn.value;
-    calloc.free(outProxyFn);
-
-    // NULL is the shim refusing to build a proxy: registering anything would
-    // hand LiteRT-LM a callback whose arguments it does not pass. That is an
-    // allocation failure, or an argument the checks above already rule out.
-    if (proxyData == nullptr || proxyFn == nullptr) {
-      releaseNative();
-      send.failed(StateError('no stream proxy'));
-      throw StateError(
-        'stream_proxy_create2 returned null, so no generation was started '
-        '(an allocation failure in StreamProxy). See #453.',
-      );
-    }
-
     // v0.12.0 send_message_stream takes a LiteRtLmConversationOptionalArgs*
     // that must be a real allocation (passing null sigsegvs inside
     // litert_lm_lib). We allocate an empty one per call and free it after
     // the native call returns; the callback fires synchronously inside.
+    // Built before the stream proxy, whose data only the final chunk of a
+    // started send frees (`stream_proxy.c`), so a failure here leaves nothing
+    // native behind.
     final optionalArgs = b.litert_lm_conversation_optional_args_create();
     if (optionalArgs == nullptr) {
       releaseNative();
@@ -2254,6 +2241,31 @@ class LiteRtLmFfiClient {
       releaseNative();
       send.failed(e);
       rethrow;
+    }
+
+    final outProxyFn = calloc<Pointer<NativeFunction<_StreamCallbackNative>>>();
+    final proxyData = create2(
+      callable.nativeFunction,
+      nullptr,
+      _chunkGetText,
+      _chunkGetError,
+      _chunkIsFinal,
+      outProxyFn,
+    );
+    final proxyFn = outProxyFn.value;
+    calloc.free(outProxyFn);
+
+    // NULL is the shim refusing to build a proxy: registering anything would
+    // hand LiteRT-LM a callback whose arguments it does not pass. That is an
+    // allocation failure, or an argument the checks above already rule out.
+    if (proxyData == nullptr || proxyFn == nullptr) {
+      b.litert_lm_conversation_optional_args_delete(optionalArgs);
+      releaseNative();
+      send.failed(StateError('no stream proxy'));
+      throw StateError(
+        'stream_proxy_create2 returned null, so no generation was started '
+        '(an allocation failure in StreamProxy). See #453.',
+      );
     }
 
     final result = b.litert_lm_conversation_send_message_stream(

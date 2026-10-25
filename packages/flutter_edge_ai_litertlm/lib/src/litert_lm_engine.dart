@@ -16,6 +16,7 @@ import 'litert_lm_engine_host.dart';
 import 'litert_lm_log_level.dart';
 import 'litertlm_bundle_activation.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
+import 'thinking_token_budget.dart';
 
 /// Minimum context window (`max_num_tokens`) for `.litertlm` models.
 ///
@@ -161,19 +162,27 @@ class LiteRtLmEngine
   /// failed create names the backend a model requires.
   final LiteRtLmLogLevel? nativeLogLevel;
 
-  /// The most tokens a turn may spend thinking, in every model this engine
-  /// builds, on the CPU, the GPU and the NPU alike; null (the default) sets no
-  /// budget. It applies only to a turn with thinking on (`enableThinking:
+  /// The most tokens one generation may spend thinking, in every model this
+  /// engine builds, on the CPU, the GPU and the NPU alike; null (the default)
+  /// sets no budget. It applies only with thinking on (`enableThinking:
   /// true`): when the thinking reaches the budget, LiteRT-LM closes the
   /// thought channel and the model goes on to the answer or the tool call.
   /// Without one, a model can think until `maxOutputTokens` and end the turn
   /// with an empty answer (measured on Intel's Gemma 4 26B for its NPU).
   ///
-  /// The thinking tokens still count towards `maxOutputTokens`, so the budget
-  /// should leave room below it for the answer. LiteRT-LM applies the budget
-  /// to a bundle that streams its thinking through the `thought` channel, as
-  /// the Gemma 4 bundles do; other bundles ignore it. Must be positive. Native
-  /// only: the web runtime has no such setting.
+  /// The budget is per generation: in a tool loop, each generation after a
+  /// tool result starts with a fresh one. The thinking counts towards
+  /// `maxOutputTokens`, and the reply towards the context (`maxTokens`, 1024
+  /// by default), so a budget that can act is below both, with room left for
+  /// the answer. LiteRT-LM caps the first channel the bundle declares
+  /// (`thought` on the Gemma 4 bundles); a bundle that declares none is not
+  /// capped. On the GPU it slows the decoding of the whole generation (about a
+  /// fifth for Gemma 4 E2B on an M5 Pro); on the CPU no cost was measured.
+  ///
+  /// It is fixed when the engine is registered: a second `LiteRtLmEngine`
+  /// with another budget does not replace the first. Between 1 and
+  /// 0x7fffffff. The web engine accepts it and ignores it: its runtime has no
+  /// such setting.
   final int? thinkingTokenBudget;
 
   @override
@@ -201,14 +210,7 @@ class LiteRtLmEngine
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
-    final budget = thinkingTokenBudget;
-    if (budget != null && budget <= 0) {
-      throw ArgumentError.value(
-        budget,
-        'thinkingTokenBudget',
-        'must be positive; null sets no budget',
-      );
-    }
+    checkThinkingTokenBudget(thinkingTokenBudget);
     final host = liteRtLmEngineHost;
     final cacheDir = await host.cacheDir();
 
@@ -357,7 +359,6 @@ class LiteRtLmEngine
                   'an npu attempt without a chosen NPU vendor',
                 ),
               };
-        client.thinkingTokenBudget = thinkingTokenBudget;
         try {
           await host.initializeClient(
             client,
@@ -374,6 +375,7 @@ class LiteRtLmEngine
             activationDataType: args.activationDataType,
             npuDispatch: npuDispatch,
             nativeLogLevel: nativeLogLevel,
+            thinkingTokenBudget: thinkingTokenBudget,
           );
         } on LiteRtLmEngineCreateException catch (e, stackTrace) {
           final target = plan.npuTarget;

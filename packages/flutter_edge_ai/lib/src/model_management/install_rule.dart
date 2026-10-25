@@ -165,7 +165,7 @@ Future<FileInstallStep> _plan(
     // Core's copy goes only when it is known to be another file.
     return install(
       replacing: identity == FileIdentity.different
-          ? await _coreCopy(record)
+          ? await coreCopyLocation(record)
           : null,
     );
   }
@@ -197,7 +197,7 @@ Future<FileInstallStep> _plan(
   }
   // Nothing recorded, or the app's own file: the copy takes over the name.
   if (record == null || record.source is FileSource) return install();
-  final copy = await _coreCopy(record);
+  final copy = await coreCopyLocation(record);
   final replaced =
       copy != null &&
       (target == null ||
@@ -215,10 +215,12 @@ Future<bool> _hasRecordedSize(repo.ModelInfo record, String filePath) async {
       stamp.size == record.sizeBytes;
 }
 
-/// Where core's own copy of [record]'s file is, or null when the record is
-/// not a copy core made: the app's file, a resource read in place from the
-/// iOS bundle, or any model on web.
-Future<String?> _coreCopy(repo.ModelInfo record) async {
+/// Where core's own copy of [record]'s file is — what an uninstall deletes —
+/// or null when the record is not a copy core made: the app's file, a
+/// resource read in place from the iOS bundle, or any model on web. Android's
+/// copy of a bundled resource is under the resource's name, which a
+/// namespaced record id is not.
+Future<String?> coreCopyLocation(repo.ModelInfo record) async {
   if (kIsWeb) return null;
   final fs = ServiceRegistry.instance.fileSystemService;
   return switch (record.source) {
@@ -304,7 +306,7 @@ Future<String?> _locate(
     FileSource(:final path) => await appFileLocationNow(path),
     BundledSource(:final resourceName) when !bundledResourcesAreCopies =>
       await inBundle(resourceName),
-    _ => await _coreCopy(record),
+    _ => await coreCopyLocation(record),
   };
 }
 

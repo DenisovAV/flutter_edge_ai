@@ -5,7 +5,7 @@ import 'package:flutter_edge_ai/src/api/embedding_installation_builder.dart';
 import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.dart'
     show noActiveEmbedderError;
 import 'package:flutter_edge_ai/src/model_management/install_rule.dart'
-    show recordedFileLocation;
+    show coreCopyLocation, recordedFileLocation;
 import 'package:flutter_edge_ai/src/api/stt_installation_builder.dart';
 import 'package:flutter_edge_ai/src/api/tts_installation_builder.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
@@ -1129,10 +1129,15 @@ class FlutterEdgeAi {
     // Delete files first (if not external/protected) so a file-delete failure
     // leaves the metadata intact and the uninstall retryable — mirrors the
     // safe order used by uninstallEmbedder/Stt/Tts (delete then clear).
-    if (modelInfo.source is! FileSource) {
-      final targetPath = await fileSystem.getReadTargetPath(modelId);
-      await fileSystem.deleteFile(targetPath);
-    }
+    final copy = switch (modelInfo.source) {
+      FileSource() => null,
+      // Core's copy, not a file named after the record: the iOS bundle's
+      // resource is read in place, and Android copies one under its resource
+      // name, which a namespaced LoRA or tokenizer record id is not.
+      BundledSource() => await coreCopyLocation(modelInfo),
+      _ => await fileSystem.getReadTargetPath(modelId),
+    };
+    if (copy != null) await fileSystem.deleteFile(copy);
 
     // Forget what a fromFile install registered — or what an older release
     // left registered after an uninstall — while the record still exists, so

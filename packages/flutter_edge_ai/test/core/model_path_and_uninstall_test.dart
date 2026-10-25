@@ -313,9 +313,9 @@ void main() {
       final loraCopy = await fs.getWriteTargetPath('adapter.bin');
       expect(loraName, isNot('adapter.bin'), reason: 'a namespaced record');
       // An app update that ships another adapter under the same name.
-      File('${apk.path}/adapter.bin').writeAsBytesSync(
-        Uint8List(_modelBytes.length)..[0] = 7,
-      );
+      File(
+        '${apk.path}/adapter.bin',
+      ).writeAsBytesSync(Uint8List(_modelBytes.length)..[0] = 7);
 
       final restarted = await restart();
 
@@ -328,10 +328,83 @@ void main() {
       expect(
         File(loraCopy).readAsBytesSync().first,
         7,
-        reason: 'the copy is renewed from the APK installed now, as when the '
+        reason:
+            'the copy is renewed from the APK installed now, as when the '
             'model is activated',
       );
       expect(await FlutterEdgeAi.getModelPath(loraName), loraCopy);
+    });
+  });
+
+  // What an uninstall deletes is core's copy, found as getModelPath finds the
+  // file: a resource the iOS bundle serves in place is not core's, and
+  // Android's copy of a bundled resource is under its resource name.
+  group('uninstalling a bundled file', () {
+    test('on iOS deletes nothing in core\'s directory', () async {
+      final bundle = Directory('${root.path}/Runner.app')..createSync();
+      await useServices(fileSystem: _BundleFiles(bundle));
+      final resource = File('${bundle.path}/gemma.task')
+        ..writeAsBytesSync(_modelBytes);
+      await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemmaIt,
+        fileType: ModelFileType.task,
+      ).fromBundled('gemma.task').install();
+      final notCores = File(await coreReadPath('gemma.task'))
+        ..writeAsBytesSync(_modelBytes);
+
+      await FlutterEdgeAi.uninstallModel('gemma.task');
+
+      expect(notCores.existsSync(), isTrue);
+      expect(resource.existsSync(), isTrue);
+      expect(await records().isInstalled('gemma.task'), isFalse);
+    });
+
+    Future<({InferenceInstallation installation, String loraName})>
+    androidWithLora() async {
+      debugBundledResourcesAreCopies = true;
+      final apk = Directory('${root.path}/apk')..createSync();
+      File('${apk.path}/gemma.task').writeAsBytesSync(_modelBytes);
+      File('${apk.path}/adapter.bin').writeAsBytesSync(_modelBytes);
+      await useServices(fileSystem: _ApkAssets(apk));
+      final installation = await FlutterEdgeAi.installModel(
+        modelType: ModelType.gemmaIt,
+        fileType: ModelFileType.task,
+      ).fromBundled('gemma.task').withLoraFromBundled('adapter.bin').install();
+      final loraName = installation.spec.files
+          .singleWhere(
+            (file) => file.prefsKey == PreferencesKeys.installedLoraFileName,
+          )
+          .filename;
+      return (installation: installation, loraName: loraName);
+    }
+
+    test('on Android deletes core\'s copy under its resource name', () async {
+      final (:installation, :loraName) = await androidWithLora();
+      final fs = ServiceRegistry.instance.fileSystemService;
+      final loraCopy = File(await fs.getWriteTargetPath('adapter.bin'));
+      expect(loraCopy.existsSync(), isTrue);
+
+      await FlutterEdgeAi.uninstallModel(loraName);
+
+      expect(loraCopy.existsSync(), isFalse);
+      expect(await records().isInstalled(loraName), isFalse);
+    });
+
+    test('through the model manager, on Android, deletes every copy', () async {
+      final (:installation, :loraName) = await androidWithLora();
+      final fs = ServiceRegistry.instance.fileSystemService;
+      final copies = [
+        File(await fs.getWriteTargetPath('gemma.task')),
+        File(await fs.getWriteTargetPath('adapter.bin')),
+      ];
+      expect(copies.map((f) => f.existsSync()), everyElement(isTrue));
+
+      await FlutterEdgeAiPlugin.instance.modelManager.deleteModel(
+        installation.spec,
+      );
+
+      expect(copies.map((f) => f.existsSync()), everyElement(isFalse));
+      expect(await records().isInstalled(loraName), isFalse);
     });
   });
 

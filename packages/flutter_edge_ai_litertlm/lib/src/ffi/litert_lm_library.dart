@@ -15,6 +15,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'litert_default_scope.dart';
+import 'litert_lm_runtime_check.dart';
 import 'macos_load_error.dart';
 import 'windows_std_handles.dart';
 
@@ -29,16 +30,19 @@ import 'windows_std_handles.dart';
 /// probe needs; the embedding pass can be that first caller). Best effort: an
 /// embeddings-only app must not fail over a condition it does not depend on.
 ///
-/// Throws [UnsupportedError] on an Android ABI LiteRT-LM ships nothing for, and
+/// Throws [UnsupportedError] on an Android ABI LiteRT-LM ships nothing for,
 /// whatever `DynamicLibrary.open` throws when the library is not in the app
-/// (on macOS with a message that names the cause, [openMacOSLiteRtLm]).
+/// (on macOS with a message that names the cause, [openMacOSLiteRtLm]), and
+/// [StateError] when the library under that name is another package's
+/// LiteRT-LM ([checkOwnLiteRtLmBuild]).
 DynamicLibrary openLiteRtLmLibrary() {
   if (Platform.isIOS) {
-    return DynamicLibrary.open(
-      '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm',
-    );
+    const path = '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm';
+    return requireOwnLiteRtLmBuild(DynamicLibrary.open(path), path);
   }
-  if (Platform.isMacOS) return openMacOSLiteRtLm();
+  if (Platform.isMacOS) {
+    return requireOwnLiteRtLmBuild(openMacOSLiteRtLm(), macOSLiteRtLmFramework);
+  }
   if (Platform.isAndroid) {
     // LiteRT-LM ships android_arm64 only. Without this guard an x86_64
     // emulator's failure would name libStreamProxy, the first library the
@@ -49,16 +53,24 @@ DynamicLibrary openLiteRtLmLibrary() {
         '${Abi.current()}); it ships no other Android ABI.',
       );
     }
-    return openLiteRtLmPreferringDefaultScope('libLiteRtLm.so');
+    const path = 'libLiteRtLm.so';
+    return requireOwnLiteRtLmBuild(
+      openLiteRtLmPreferringDefaultScope(path),
+      path,
+    );
   }
   if (Platform.isLinux) {
     // RUNPATH $ORIGIN: its NEEDED libLiteRt.so and
     // libGemmaModelConstraintProvider.so resolve from the bundle's lib/.
-    return DynamicLibrary.open('libLiteRtLm.so');
+    const path = 'libLiteRtLm.so';
+    return requireOwnLiteRtLmBuild(DynamicLibrary.open(path), path);
   }
-  // Through the std-handle realignment: the embedding pass can be the first
-  // to load this static-CRT DLL (windows_std_handles.dart).
-  if (Platform.isWindows) return openBundledWindowsLibrary('LiteRtLm.dll');
+  if (Platform.isWindows) {
+    // Through the std-handle realignment: the embedding pass can be the first
+    // to load this static-CRT DLL (windows_std_handles.dart).
+    const path = 'LiteRtLm.dll';
+    return requireOwnLiteRtLmBuild(openBundledWindowsLibrary(path), path);
+  }
   throw UnsupportedError(
     'LiteRT-LM is not available on ${Platform.operatingSystem}',
   );

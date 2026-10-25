@@ -333,6 +333,70 @@ void main() {
       },
     );
 
+    test('the framework is returned without isOwnBuild: the caller refuses a '
+        'foreign one itself, so it is never skipped for a dev copy', () {
+      expect(
+        openMacOSLiteRtLmForTflite(
+          devCandidates: () => fail('not consulted'),
+          isOwnBuild: (_) => fail('not asked for the framework'),
+          executable: tester,
+          open: (path) => process,
+        ),
+        same(process),
+      );
+    });
+
+    test('outside an app, a copy that loads but is not our build is skipped '
+        'like one that does not load', () {
+      final foreign = DynamicLibrary.executable();
+      final opened = <String>[];
+      expect(
+        openMacOSLiteRtLmForTflite(
+          devCandidates: () => [
+            '/dev/libLiteRtLm.dylib',
+            '/cache/libLiteRtLm.dylib',
+          ],
+          isOwnBuild: (library) => !identical(library, foreign),
+          executable: tester,
+          open: (path) {
+            opened.add(path);
+            if (path == '/dev/libLiteRtLm.dylib') return foreign;
+            if (path == '/cache/libLiteRtLm.dylib') return process;
+            throw _loadFailure(_notBundled);
+          },
+          exists: (_) => true,
+        ),
+        same(process),
+      );
+      expect(opened, [
+        'LiteRtLm.framework/LiteRtLm',
+        '/dev/libLiteRtLm.dylib',
+        '/cache/libLiteRtLm.dylib',
+      ]);
+    });
+
+    test('outside an app, names a copy that is not our build', () {
+      final thrown = _thrownBy(
+        () => openMacOSLiteRtLmForTflite(
+          devCandidates: () => ['/dev/libLiteRtLm.dylib'],
+          isOwnBuild: (_) => false,
+          executable: tester,
+          open: (path) => path == '/dev/libLiteRtLm.dylib'
+              ? process
+              : throw _loadFailure(_notBundled),
+          exists: (_) => true,
+        ),
+      );
+      expect(thrown, isA<UnsupportedError>());
+      expect(
+        '${(thrown! as UnsupportedError).message}',
+        contains(
+          '/dev/libLiteRtLm.dylib: loads, but is not a flutter_edge_ai_litertlm '
+          'build',
+        ),
+      );
+    });
+
     test('outside an app, names each copy that failed and why', () {
       final thrown = _thrownBy(
         () => openMacOSLiteRtLmForTflite(

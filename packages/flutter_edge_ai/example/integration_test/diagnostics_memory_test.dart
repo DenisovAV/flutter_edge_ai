@@ -21,8 +21,8 @@ import 'voice_test_helpers.dart' show stagedModelPath;
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  // Off Android, iOS and macOS memorySnapshot() throws by design, so these skip
-  // there rather than fail.
+  // Off Android, iOS, macOS and Linux memorySnapshot() throws by design, so
+  // these skip there rather than fail.
   final skip = !FlutterEdgeAiDiagnostics.isSupported;
 
   testWidgets('reports the supported values on a real device', (tester) async {
@@ -32,9 +32,10 @@ void main() {
 
     expect(snapshot.anonymousBytes, isNotNull);
     expect(snapshot.anonymousBytes, greaterThan(0));
-    // Android reports resident clean pages, including mapped framework and
-    // library files. The package does not read this value on iOS yet.
-    if (Platform.isAndroid) {
+    // Android and Linux report resident clean pages, including mapped
+    // framework and library files. The package does not read this value on
+    // iOS or macOS yet.
+    if (Platform.isAndroid || Platform.isLinux) {
       expect(snapshot.fileBackedBytes, isNotNull);
       expect(snapshot.fileBackedBytes, greaterThan(0));
     } else {
@@ -42,8 +43,8 @@ void main() {
     }
     // The peak is the kernel's lifetime high-water mark of the footprint, read
     // in the same call, so it is at least the current value. Android keeps no
-    // anonymous-only peak.
-    if (Platform.isAndroid) {
+    // anonymous-only peak, and neither does Linux.
+    if (Platform.isAndroid || Platform.isLinux) {
       expect(snapshot.anonymousPeakBytes, isNull);
     } else {
       expect(snapshot.anonymousPeakBytes, isNotNull);
@@ -54,10 +55,10 @@ void main() {
     }
     // availableBytes is legitimately null on the iOS simulator (no jetsam
     // limit) and always null on macOS (no per-app limit), so only an Android
-    // device or a real iPhone is held to it.
+    // device, a Linux machine or a real iPhone is held to it.
     if (Platform.isMacOS) {
       expect(snapshot.availableBytes, isNull);
-    } else if (Platform.isAndroid || !_isIosSimulator) {
+    } else if (Platform.isAndroid || Platform.isLinux || !_isIosSimulator) {
       expect(snapshot.availableBytes, isNotNull);
       expect(snapshot.availableBytes, greaterThan(0));
     }

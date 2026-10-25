@@ -16,6 +16,7 @@ import 'litert_lm_engine_host.dart';
 import 'litert_lm_log_level.dart';
 import 'litertlm_bundle_activation.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
+import 'thinking_token_budget.dart';
 
 /// Minimum context window (`max_num_tokens`) for `.litertlm` models.
 ///
@@ -129,7 +130,11 @@ class LiteRtLmEngine
         InferenceEngineProvider,
         HuggingFaceResolverSource,
         MultiModelEngine {
-  const LiteRtLmEngine({this.backendFallback = true, this.nativeLogLevel});
+  const LiteRtLmEngine({
+    this.backendFallback = true,
+    this.nativeLogLevel,
+    this.thinkingTokenBudget,
+  });
 
   /// Whether a model that fails to load on its backend is tried on the next
   /// one: npu → gpu → cpu, gpu → cpu (the default).
@@ -157,6 +162,37 @@ class LiteRtLmEngine
   /// failed create names the backend a model requires.
   final LiteRtLmLogLevel? nativeLogLevel;
 
+  /// The most tokens one generation may spend thinking, in every model this
+  /// engine builds, on the CPU, the GPU and the NPU alike; null (the default)
+  /// sets no budget. It applies only with thinking on (`enableThinking:
+  /// true`): when the thinking reaches the budget, LiteRT-LM closes the
+  /// thought channel and the model goes on to the answer or the tool call.
+  /// Without one, a model can think until `maxOutputTokens` and end the turn
+  /// with an empty answer. A model that reasons with thinking off too (Qwen3
+  /// 4B Thinking 2507) is not capped then: LiteRT-LM applies a budget only to
+  /// a generation with thinking on.
+  ///
+  /// The budget is per generation: every send with thinking on carries it,
+  /// so in a tool loop a generation after a tool result has its own. The
+  /// thinking counts towards `maxOutputTokens`, and the reply, with the
+  /// prompt and the history, towards the context (`maxTokens`, 1024 by
+  /// default), so a budget that can act is below both, with room left for
+  /// the answer. LiteRT-LM caps the first channel the bundle declares
+  /// (`thought` on the Gemma 4 bundles); a bundle that declares none is not
+  /// capped, and loading one with a budget prints a warning. On the GPU it
+  /// slows the decoding of the whole generation (Gemma 4 E2B: about a fifth
+  /// on an M5 Pro, about 40% on an NVIDIA L4); on the CPU no cost was
+  /// measured.
+  ///
+  /// It is fixed when the engine is registered: a second `LiteRtLmEngine`
+  /// with another budget does not replace the first. To change it, close the
+  /// model, call `FlutterEdgeAi.reset()`, which drops every registration, and
+  /// `initialize` again with every provider the app uses. Between 1 and
+  /// 0x7fffffff: a value outside throws [ArgumentError] when a model loads.
+  /// The web engine accepts it and ignores it: its runtime has no such
+  /// setting.
+  final int? thinkingTokenBudget;
+
   @override
   String get name => 'LiteRT-LM';
 
@@ -182,6 +218,7 @@ class LiteRtLmEngine
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
+    checkThinkingTokenBudget(thinkingTokenBudget);
     final host = liteRtLmEngineHost;
     final cacheDir = await host.cacheDir();
 
@@ -346,6 +383,7 @@ class LiteRtLmEngine
             activationDataType: args.activationDataType,
             npuDispatch: npuDispatch,
             nativeLogLevel: nativeLogLevel,
+            thinkingTokenBudget: thinkingTokenBudget,
           );
         } on LiteRtLmEngineCreateException catch (e, stackTrace) {
           final target = plan.npuTarget;

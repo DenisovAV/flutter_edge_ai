@@ -72,6 +72,9 @@ void main() {
                 'Upgrade llamadart, or set',
               ),
               contains(
+                'remove llamadart_litert_lm_flutter if it depends on it',
+              ),
+              contains(
                 '`hooks: user_defines: llamadart: '
                 'llamadart_native_runtimes: [llama_cpp]`',
               ),
@@ -193,10 +196,82 @@ void main() {
       expect(requireOwnLiteRtLmBuild(library, dylib), same(library));
     }, skip: noDylib);
 
-    test('LiteRtBindings.open() takes the host libLiteRtLm through the check '
-        '(macOS dev candidates)', () {
+    test('LiteRtBindings.open() does not refuse the host libLiteRtLm (macOS '
+        'dev candidates)', () {
       expect(LiteRtBindings.open, returnsNormally);
     }, skip: Platform.isMacOS ? noDylib : 'the dev candidates are macOS-only');
+  });
+
+  // A foreign framework cannot be planted under the app's name on a host, so
+  // the guard is held in the source: every open of libLiteRtLm hands its
+  // handle to requireOwnLiteRtLmBuild, and a new open must do the same.
+  group('every open of libLiteRtLm goes through the check', () {
+    // An open of the library: an opener whose argument is the path constant
+    // the loaders name it by, or the macOS framework loaders.
+    final opens = RegExp(
+      r'(?:DynamicLibrary\.open|openLiteRtLm(?:Preferring|Requiring)'
+      r'DefaultScope|openBundledWindowsLibrary)\((?:libPath|path|bundled)\)'
+      r'|openMacOSLiteRtLm\w*\(',
+    );
+    String code(String file) => File(file)
+        .readAsLinesSync()
+        .where((line) => !line.trimLeft().startsWith('//'))
+        .join('\n');
+
+    for (final (file, count) in const [
+      ('lib/src/ffi/litert_lm_library.dart', 5),
+      ('lib/src/ffi/litert_lm_client.dart', 5),
+      ('lib/src/ffi/litert_bindings.dart', 3),
+    ]) {
+      test(file, () {
+        final source = code(file);
+        expect(opens.allMatches(source), hasLength(count));
+        expect(
+          'requireOwnLiteRtLmBuild('.allMatches(source),
+          hasLength(count),
+          reason: 'one check per open',
+        );
+      });
+    }
+
+    test('a macOS dev copy that is not ours is skipped, not returned', () {
+      expect(
+        code('lib/src/ffi/litert_bindings.dart'),
+        matches(
+          RegExp(
+            r'isOwnBuild:\s*\(library\)\s*=>\s*'
+            r'library\.providesSymbol\(liteRtLmOwnBuildSymbol\)',
+          ),
+        ),
+      );
+    });
+
+    test('no other file opens it by name', () {
+      final byName = RegExp(
+        r'''(?:DynamicLibrary\.open|open\w*Library|openLiteRtLm\w*)\(\s*['"]'''
+        r'''[^'"]*LiteRtLm[.'"/]''',
+      );
+      final checked = {
+        'lib/src/ffi/litert_lm_library.dart',
+        'lib/src/ffi/litert_lm_client.dart',
+        'lib/src/ffi/litert_bindings.dart',
+      };
+      final offenders = [
+        for (final dir in Directory('..').listSync().whereType<Directory>())
+          if (Directory('${dir.path}/lib').existsSync())
+            for (final f in Directory(
+              '${dir.path}/lib',
+            ).listSync(recursive: true))
+              if (f is File &&
+                  f.path.endsWith('.dart') &&
+                  !checked.any(
+                    (c) => f.path.endsWith('flutter_edge_ai_litertlm/$c'),
+                  ) &&
+                  byName.hasMatch(code(f.path)))
+                f.path,
+      ];
+      expect(offenders, isEmpty);
+    });
   });
 
   test('a real library without the sentinel is refused', () {

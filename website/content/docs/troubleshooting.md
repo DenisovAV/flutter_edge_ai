@@ -412,15 +412,18 @@ lacks litert_lm_engine_settings_set_kernel_batch_size)`** — a `StateError` (an
 `EmbeddingLoadException` for an embedder) when a `.litertlm` model, an embedder
 or speech loads. Another package in the app ships its own LiteRT-LM under the
 same library name — `llamadart` before 0.12.0 does by default (from 0.12.0 its
-build hook leaves it out next to `flutter_edge_ai_litertlm`). On iOS that app
-still builds:
-Flutter renames our framework to `LiteRtLm1.framework`, and `LiteRtLm.framework`
-is the other package's build, which flutter_edge_ai_litertlm refuses rather than
-binds. On Android, Linux and Windows the build fails instead.
+build hook leaves it out next to `flutter_edge_ai_litertlm`), and
+`llamadart_litert_lm_flutter` links one through Swift Package Manager. On iOS
+and macOS that app still builds: depending on the order of the app's
+dependencies, Flutter renames our framework to `LiteRtLm1.framework`, and
+`LiteRtLm.framework` is the other package's build, which
+flutter_edge_ai_litertlm refuses rather than binds. On Android, Linux and
+Windows the build fails instead.
 
 For llamadart, upgrade it to 0.12.0 or later, or leave its LiteRT-LM runtime
 out in the app's `pubspec.yaml` (the workspace root's, if the app is a workspace
-member); then run `flutter clean` once:
+member) and remove `llamadart_litert_lm_flutter` if the app depends on it; then
+run `flutter clean` once:
 
 ```
 hooks:

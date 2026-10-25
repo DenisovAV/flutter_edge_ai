@@ -307,8 +307,8 @@ void main() {
     });
   });
 
-  group('gpuMemory', skip: Platform.isMacOS, () {
-    test('throws off Android, iOS and macOS like memorySnapshot', () {
+  group('gpuMemory', skip: Platform.isMacOS || Platform.isLinux, () {
+    test('throws off Android, iOS, macOS and Linux like memorySnapshot', () {
       expect(
         // ignore: experimental_member_use
         FlutterEdgeAiDiagnostics.gpuMemory(),

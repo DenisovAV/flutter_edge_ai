@@ -74,129 +74,125 @@ Future<Uint8List> _loadTestImage() async {
 void main() {
   initIntegrationTest();
 
-  testWidgets(
-    'iOS 0.10.33: text + vision + cancel',
-    (tester) async {
-      await registerTestEngines();
+  testWidgets('iOS 0.10.33: text + vision + cancel', (tester) async {
+    await registerTestEngines();
 
-      // Wait for model file to appear in Documents
-      final path = await _modelPath();
-      await _waitForModel(path);
+    // Wait for model file to appear in Documents
+    final path = await _modelPath();
+    await _waitForModel(path);
 
-      // Install from local file
-      await FlutterEdgeAi.installModel(
+    // Install from local file
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.task,
+    ).fromFile(path).install();
+    print('[Test] Model installed');
+
+    // --- 1. Text inference ---
+    print('\n=== 1. TEXT INFERENCE ===');
+    var model = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 512,
+      preferredBackend: PreferredBackend.cpu,
+    );
+    try {
+      final chat = await model.createChat(modelType: ModelType.gemmaIt);
+      await chat.addQueryChunk(
+        const Message(text: 'What is 2+2? Answer briefly.', isUser: true),
+      );
+
+      final response = await chat.generateChatResponse();
+      expect(response, isA<TextResponse>());
+      final text = (response as TextResponse).token;
+      print(
+        '[Text] Response: "${text.length > 150 ? text.substring(0, 150) : text}"',
+      );
+      expect(text, isNotEmpty);
+      print('[Text] PASSED');
+    } finally {
+      await model.close();
+    }
+
+    // --- 2. Vision ---
+    print('\n=== 2. VISION ===');
+    final imageBytes = await _loadTestImage();
+    print('[Vision] Image: ${imageBytes.length} bytes');
+
+    model = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 4096,
+      preferredBackend: PreferredBackend.cpu,
+      supportImage: true,
+      maxNumImages: 1,
+    );
+    try {
+      final chat = await model.createChat(
         modelType: ModelType.gemmaIt,
-        fileType: ModelFileType.task,
-      ).fromFile(path).install();
-      print('[Test] Model installed');
-
-      // --- 1. Text inference ---
-      print('\n=== 1. TEXT INFERENCE ===');
-      var model = await FlutterEdgeAi.getActiveModel(
-        maxTokens: 512,
-        preferredBackend: PreferredBackend.cpu,
-      );
-      try {
-        final chat = await model.createChat(modelType: ModelType.gemmaIt);
-        await chat.addQueryChunk(
-          const Message(text: 'What is 2+2? Answer briefly.', isUser: true),
-        );
-
-        final response = await chat.generateChatResponse();
-        expect(response, isA<TextResponse>());
-        final text = (response as TextResponse).token;
-        print(
-          '[Text] Response: "${text.length > 150 ? text.substring(0, 150) : text}"',
-        );
-        expect(text, isNotEmpty);
-        print('[Text] PASSED');
-      } finally {
-        await model.close();
-      }
-
-      // --- 2. Vision ---
-      print('\n=== 2. VISION ===');
-      final imageBytes = await _loadTestImage();
-      print('[Vision] Image: ${imageBytes.length} bytes');
-
-      model = await FlutterEdgeAi.getActiveModel(
-        maxTokens: 4096,
-        preferredBackend: PreferredBackend.cpu,
         supportImage: true,
-        maxNumImages: 1,
       );
-      try {
-        final chat = await model.createChat(
-          modelType: ModelType.gemmaIt,
-          supportImage: true,
-        );
-        await chat.addQueryChunk(
-          Message.withImage(
-            text: 'Describe this image briefly.',
-            imageBytes: imageBytes,
-            isUser: true,
-          ),
-        );
-
-        final response = await chat.generateChatResponse();
-        expect(response, isA<TextResponse>());
-        final text = (response as TextResponse).token;
-        print(
-          '[Vision] Response: "${text.length > 150 ? text.substring(0, 150) : text}"',
-        );
-        expect(text, isNotEmpty);
-        print('[Vision] PASSED');
-      } finally {
-        await model.close();
-      }
-
-      // --- 3. Cancel generation ---
-      print('\n=== 3. CANCEL GENERATION ===');
-      model = await FlutterEdgeAi.getActiveModel(
-        maxTokens: 512,
-        preferredBackend: PreferredBackend.cpu,
+      await chat.addQueryChunk(
+        Message.withImage(
+          text: 'Describe this image briefly.',
+          imageBytes: imageBytes,
+          isUser: true,
+        ),
       );
+
+      final response = await chat.generateChatResponse();
+      expect(response, isA<TextResponse>());
+      final text = (response as TextResponse).token;
+      print(
+        '[Vision] Response: "${text.length > 150 ? text.substring(0, 150) : text}"',
+      );
+      expect(text, isNotEmpty);
+      print('[Vision] PASSED');
+    } finally {
+      await model.close();
+    }
+
+    // --- 3. Cancel generation ---
+    print('\n=== 3. CANCEL GENERATION ===');
+    model = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 512,
+      preferredBackend: PreferredBackend.cpu,
+    );
+    try {
+      final chat = await model.createChat(modelType: ModelType.gemmaIt);
+      await chat.addQueryChunk(
+        const Message(
+          text: 'Write a very long story about space exploration',
+          isUser: true,
+        ),
+      );
+
+      final chunks = <String>[];
+      var cancelled = false;
+
       try {
-        final chat = await model.createChat(modelType: ModelType.gemmaIt);
-        await chat.addQueryChunk(
-          const Message(
-            text: 'Write a very long story about space exploration',
-            isUser: true,
-          ),
-        );
-
-        final chunks = <String>[];
-        var cancelled = false;
-
-        try {
-          await for (final response in chat.generateChatResponseAsync()) {
-            if (response is TextResponse) {
-              chunks.add(response.token);
-              if (chunks.length <= 3) {
-                print('[Cancel] Chunk ${chunks.length}: "${response.token}"');
-              }
-              if (chunks.length >= 3 && !cancelled) {
-                print('[Cancel] Stopping after ${chunks.length} chunks...');
-                await chat.stopGeneration();
-                cancelled = true;
-              }
+        await for (final response in chat.generateChatResponseAsync()) {
+          if (response is TextResponse) {
+            chunks.add(response.token);
+            if (chunks.length <= 3) {
+              print('[Cancel] Chunk ${chunks.length}: "${response.token}"');
+            }
+            if (chunks.length >= 3 && !cancelled) {
+              print('[Cancel] Stopping after ${chunks.length} chunks...');
+              await chat.stopGeneration();
+              cancelled = true;
             }
           }
-          print('[Cancel] Stream ended gracefully.');
-        } on PlatformException catch (e) {
-          expect(cancelled, isTrue);
-          print('[Cancel] Cancelled with: ${e.message}');
         }
-
-        print('[Cancel] Total chunks: ${chunks.length}');
-        expect(chunks.length, greaterThanOrEqualTo(3));
-        print('[Cancel] PASSED');
-      } finally {
-        await model.close();
+        print('[Cancel] Stream ended gracefully.');
+      } on PlatformException catch (e) {
+        expect(cancelled, isTrue);
+        print('[Cancel] Cancelled with: ${e.message}');
       }
 
-      print('\n=== ALL TESTS PASSED ===');
-    },
-    timeout: const Timeout(Duration(minutes: 30)),
-  );
+      print('[Cancel] Total chunks: ${chunks.length}');
+      expect(chunks.length, greaterThanOrEqualTo(3));
+      print('[Cancel] PASSED');
+    } finally {
+      await model.close();
+    }
+
+    print('\n=== ALL TESTS PASSED ===');
+  }, timeout: const Timeout(Duration(minutes: 30)));
 }

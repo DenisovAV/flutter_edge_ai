@@ -71,84 +71,82 @@ void main() {
     ).fromFile(_model).install();
   });
 
-  testWidgets(
-    'reverse probe — does a stochastic-first engine bake stochastic?',
-    (_) async {
-      final String g, s, gd;
+  testWidgets('reverse probe — does a stochastic-first engine bake stochastic?', (
+    _,
+  ) async {
+    final String g, s, gd;
 
-      // Reference: what greedy looks like on an engine that starts greedy.
-      final refEngine = await _engine();
-      try {
-        g = await _gen(refEngine, topK: 1, temperature: 0.8, randomSeed: 1);
-      } finally {
-        await refEngine.close();
-      }
+    // Reference: what greedy looks like on an engine that starts greedy.
+    final refEngine = await _engine();
+    try {
+      g = await _gen(refEngine, topK: 1, temperature: 0.8, randomSeed: 1);
+    } finally {
+      await refEngine.close();
+    }
 
-      // The probe: stochastic FIRST, greedy SECOND, same engine.
-      //
-      // Both sessions use seed 7 deliberately. The first run of this probe
-      // varied topK/temperature AND the seed together, and produced a third
-      // value that matched neither hypothesis — because under baked stochastic
-      // params a different seed still gives different text. Holding the seed
-      // fixed makes the two outcomes exactly comparable: if the later greedy
-      // session returns S verbatim, topK/temperature were baked.
-      final engineD = await _engine();
-      String s2;
-      try {
-        s = await _gen(engineD, topK: 64, temperature: 1.5, randomSeed: 7);
-        // Identical request to S. If params were re-applied per session the
-        // seed would be re-seeded and this must equal S; if the engine baked
-        // them and simply keeps drawing, the RNG stream has advanced and it
-        // will differ. Either way it separates "re-applied" from "baked".
-        s2 = await _gen(engineD, topK: 64, temperature: 1.5, randomSeed: 7);
-        gd = await _gen(engineD, topK: 1, temperature: 0.8, randomSeed: 7);
-      } finally {
-        await engineD.close();
-      }
-      // ignore: avoid_print
-      print('[probe] S2 (identical request to S)         ="$s2"');
+    // The probe: stochastic FIRST, greedy SECOND, same engine.
+    //
+    // Both sessions use seed 7 deliberately. The first run of this probe
+    // varied topK/temperature AND the seed together, and produced a third
+    // value that matched neither hypothesis — because under baked stochastic
+    // params a different seed still gives different text. Holding the seed
+    // fixed makes the two outcomes exactly comparable: if the later greedy
+    // session returns S verbatim, topK/temperature were baked.
+    final engineD = await _engine();
+    String s2;
+    try {
+      s = await _gen(engineD, topK: 64, temperature: 1.5, randomSeed: 7);
+      // Identical request to S. If params were re-applied per session the
+      // seed would be re-seeded and this must equal S; if the engine baked
+      // them and simply keeps drawing, the RNG stream has advanced and it
+      // will differ. Either way it separates "re-applied" from "baked".
+      s2 = await _gen(engineD, topK: 64, temperature: 1.5, randomSeed: 7);
+      gd = await _gen(engineD, topK: 1, temperature: 0.8, randomSeed: 7);
+    } finally {
+      await engineD.close();
+    }
+    // ignore: avoid_print
+    print('[probe] S2 (identical request to S)         ="$s2"');
 
-      // ignore: avoid_print
-      print(
-        '[probe] G  (greedy on a greedy-first engine) ="$g"\n'
-        '[probe] S  (stochastic, engine D first)      ="$s"\n'
-        '[probe] Gd (greedy, engine D second)         ="$gd"\n'
-        '[probe] verdict: ${gd == g ? "BAKING DISPROVED — the greedy request was honoured" : "BAKING CONFIRMED — engine D never returned to greedy; it kept "
-                  "sampling from what its first generation baked"}',
-      );
+    // ignore: avoid_print
+    print(
+      '[probe] G  (greedy on a greedy-first engine) ="$g"\n'
+      '[probe] S  (stochastic, engine D first)      ="$s"\n'
+      '[probe] Gd (greedy, engine D second)         ="$gd"\n'
+      '[probe] verdict: ${gd == g ? "BAKING DISPROVED — the greedy request was honoured" : "BAKING CONFIRMED — engine D never returned to greedy; it kept "
+                "sampling from what its first generation baked"}',
+    );
 
-      // Control: if stochastic and greedy coincide on this prompt, nothing
-      // below can be told apart.
-      expect(
-        s,
-        isNot(equals(g)),
-        reason:
-            'INCONCLUSIVE: stochastic and greedy produced the same text on a '
-            'fresh engine, so the two outcomes are indistinguishable here',
-      );
+    // Control: if stochastic and greedy coincide on this prompt, nothing
+    // below can be told apart.
+    expect(
+      s,
+      isNot(equals(g)),
+      reason:
+          'INCONCLUSIVE: stochastic and greedy produced the same text on a '
+          'fresh engine, so the two outcomes are indistinguishable here',
+    );
 
-      // 1. An identical repeat request must reproduce, if the seed is applied
-      //    per session. It does not — the RNG stream simply carries on.
-      expect(
-        s2,
-        isNot(equals(s)),
-        reason:
-            'the second identical stochastic request reproduced "$s2", which '
-            'would mean seeds ARE re-applied per session — that contradicts '
-            'the baking diagnosis and this probe should be rewritten',
-      );
+    // 1. An identical repeat request must reproduce, if the seed is applied
+    //    per session. It does not — the RNG stream simply carries on.
+    expect(
+      s2,
+      isNot(equals(s)),
+      reason:
+          'the second identical stochastic request reproduced "$s2", which '
+          'would mean seeds ARE re-applied per session — that contradicts '
+          'the baking diagnosis and this probe should be rewritten',
+    );
 
-      // 2. The decisive one. Greedy (topK 1) is argmax: deterministic, seed
-      //    independent. A session that asks for greedy and does not get the
-      //    greedy answer did not get its parameters.
-      expect(
-        gd,
-        isNot(equals(g)),
-        reason:
-            'the greedy request on engine D returned the greedy answer, so '
-            'later sessions DO honour their params — #2080 would be fixed',
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 15)),
-  );
+    // 2. The decisive one. Greedy (topK 1) is argmax: deterministic, seed
+    //    independent. A session that asks for greedy and does not get the
+    //    greedy answer did not get its parameters.
+    expect(
+      gd,
+      isNot(equals(g)),
+      reason:
+          'the greedy request on engine D returned the greedy answer, so '
+          'later sessions DO honour their params — #2080 would be fixed',
+    );
+  }, timeout: const Timeout(Duration(minutes: 15)));
 }

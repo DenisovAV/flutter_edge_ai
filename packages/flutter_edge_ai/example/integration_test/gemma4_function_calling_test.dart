@@ -89,40 +89,38 @@ void main() {
     );
   });
 
-  testWidgets(
-    '1. Single tool call — sync API yields FunctionCallResponse',
-    (tester) async {
-      await _installModel();
-      final model = await _openModel();
-      try {
-        final chat = await _openChat(model);
-        await chat.addQueryChunk(
-          const Message(text: 'Make the background red.', isUser: true),
-        );
-        final response = await chat.generateChatResponse();
+  testWidgets('1. Single tool call — sync API yields FunctionCallResponse', (
+    tester,
+  ) async {
+    await _installModel();
+    final model = await _openModel();
+    try {
+      final chat = await _openChat(model);
+      await chat.addQueryChunk(
+        const Message(text: 'Make the background red.', isUser: true),
+      );
+      final response = await chat.generateChatResponse();
 
-        expect(
-          response,
-          isA<FunctionCallResponse>(),
-          reason: 'SDK-parsed tool call must surface as FunctionCallResponse',
-        );
-        final fc = response as FunctionCallResponse;
-        expect(fc.name, equals('change_color'));
-        final color = fc.args['color']?.toString() ?? '';
-        expect(color.toLowerCase(), contains('red'));
-        expect(
-          color.contains('<|"|>'),
-          isFalse,
-          reason: 'Escape tokens must be stripped before reaching consumer',
-        );
-        // ignore: avoid_print
-        print('[1] single tool call OK: ${fc.name} args=${fc.args}');
-      } finally {
-        await model.close();
-      }
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+      expect(
+        response,
+        isA<FunctionCallResponse>(),
+        reason: 'SDK-parsed tool call must surface as FunctionCallResponse',
+      );
+      final fc = response as FunctionCallResponse;
+      expect(fc.name, equals('change_color'));
+      final color = fc.args['color']?.toString() ?? '';
+      expect(color.toLowerCase(), contains('red'));
+      expect(
+        color.contains('<|"|>'),
+        isFalse,
+        reason: 'Escape tokens must be stripped before reaching consumer',
+      );
+      // ignore: avoid_print
+      print('[1] single tool call OK: ${fc.name} args=${fc.args}');
+    } finally {
+      await model.close();
+    }
+  }, timeout: const Timeout(Duration(minutes: 10)));
 
   testWidgets(
     '2. Parallel tool calls — multi-tool prompt yields ParallelFunctionCallResponse or repeats',
@@ -285,61 +283,59 @@ void main() {
     timeout: const Timeout(Duration(minutes: 10)),
   );
 
-  testWidgets(
-    '5. Multi-turn round-trip — tool result fed back yields natural reply',
-    (tester) async {
-      await _installModel();
-      final model = await _openModel();
-      try {
-        final chat = await _openChat(model);
+  testWidgets('5. Multi-turn round-trip — tool result fed back yields natural reply', (
+    tester,
+  ) async {
+    await _installModel();
+    final model = await _openModel();
+    try {
+      final chat = await _openChat(model);
 
-        // Turn 1: user asks → model returns tool call
-        await chat.addQueryChunk(
-          const Message(text: 'Make the background purple.', isUser: true),
+      // Turn 1: user asks → model returns tool call
+      await chat.addQueryChunk(
+        const Message(text: 'Make the background purple.', isUser: true),
+      );
+      final toolCallResponse = await chat.generateChatResponse();
+      expect(toolCallResponse, isA<FunctionCallResponse>());
+      final fc = toolCallResponse as FunctionCallResponse;
+      expect(fc.name, equals('change_color'));
+
+      // Turn 2: app executes tool, replies with result. Use Message.toolResponse
+      // (factory in core/message.dart) to mark this as role=tool — chat.dart's
+      // transformToChatPrompt routes tool-response messages back to the model.
+      await chat.addQueryChunk(
+        Message.toolResponse(
+          toolName: fc.name,
+          response: const {'status': 'success', 'applied_color': 'purple'},
+        ),
+      );
+      final replyResponse = await chat.generateChatResponse();
+
+      // Model may (a) speak natural language confirming the action, or
+      // (b) issue another tool call (e.g. asking for additional confirmation).
+      // Either is valid — both prove the round-trip didn't crash and the
+      // reply path doesn't leak tool_response tokens into the consumer.
+      if (replyResponse is TextResponse) {
+        expect(replyResponse.token.contains('<|tool_response>'), isFalse);
+        expect(replyResponse.token.contains('<tool_response|>'), isFalse);
+        expect(replyResponse.token.trim(), isNotEmpty);
+        // ignore: avoid_print
+        print(
+          '[5] round-trip OK (text reply): "${replyResponse.token.trim()}"',
         );
-        final toolCallResponse = await chat.generateChatResponse();
-        expect(toolCallResponse, isA<FunctionCallResponse>());
-        final fc = toolCallResponse as FunctionCallResponse;
-        expect(fc.name, equals('change_color'));
-
-        // Turn 2: app executes tool, replies with result. Use Message.toolResponse
-        // (factory in core/message.dart) to mark this as role=tool — chat.dart's
-        // transformToChatPrompt routes tool-response messages back to the model.
-        await chat.addQueryChunk(
-          Message.toolResponse(
-            toolName: fc.name,
-            response: const {'status': 'success', 'applied_color': 'purple'},
-          ),
+      } else if (replyResponse is FunctionCallResponse) {
+        // ignore: avoid_print
+        print(
+          '[5] round-trip OK (model called another tool): ${replyResponse.name}',
         );
-        final replyResponse = await chat.generateChatResponse();
-
-        // Model may (a) speak natural language confirming the action, or
-        // (b) issue another tool call (e.g. asking for additional confirmation).
-        // Either is valid — both prove the round-trip didn't crash and the
-        // reply path doesn't leak tool_response tokens into the consumer.
-        if (replyResponse is TextResponse) {
-          expect(replyResponse.token.contains('<|tool_response>'), isFalse);
-          expect(replyResponse.token.contains('<tool_response|>'), isFalse);
-          expect(replyResponse.token.trim(), isNotEmpty);
-          // ignore: avoid_print
-          print(
-            '[5] round-trip OK (text reply): "${replyResponse.token.trim()}"',
-          );
-        } else if (replyResponse is FunctionCallResponse) {
-          // ignore: avoid_print
-          print(
-            '[5] round-trip OK (model called another tool): ${replyResponse.name}',
-          );
-        } else {
-          fail(
-            'Unexpected reply type after tool response: '
-            '${replyResponse.runtimeType}',
-          );
-        }
-      } finally {
-        await model.close();
+      } else {
+        fail(
+          'Unexpected reply type after tool response: '
+          '${replyResponse.runtimeType}',
+        );
       }
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+    } finally {
+      await model.close();
+    }
+  }, timeout: const Timeout(Duration(minutes: 10)));
 }

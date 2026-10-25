@@ -32,64 +32,62 @@ const _tools = [
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    'generateChatResponseWithTools runs the tool then answers',
-    (tester) async {
-      await registerTestEngines();
-      final llmPath = await stagedModelPath(_modelFile);
-      expect(
-        llmPath,
-        isNotNull,
-        reason:
-            'stage $_modelFile to the app documents dir (desktop/iOS) or '
-            '/data/local/tmp/flutter_gemma_test/ (Android)',
-      );
-      await FlutterEdgeAi.installModel(
-        modelType: ModelType.gemmaIt,
-        fileType: ModelFileType.litertlm,
-      ).fromFile(llmPath!).install();
-      final model = await FlutterEdgeAi.getActiveModel(
-        maxTokens: 1024,
-        preferredBackend: PreferredBackend.cpu,
-      );
-      final chat = await model.createChat(
-        tools: _tools,
-        supportsFunctionCalls: true,
-        modelType: ModelType.gemmaIt,
-        toolChoice: ToolChoice.auto,
-        temperature: 1.0,
-        topK: 64,
-        topP: 0.95,
-      );
+  testWidgets('generateChatResponseWithTools runs the tool then answers', (
+    tester,
+  ) async {
+    await registerTestEngines();
+    final llmPath = await stagedModelPath(_modelFile);
+    expect(
+      llmPath,
+      isNotNull,
+      reason:
+          'stage $_modelFile to the app documents dir (desktop/iOS) or '
+          '/data/local/tmp/flutter_gemma_test/ (Android)',
+    );
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.litertlm,
+    ).fromFile(llmPath!).install();
+    final model = await FlutterEdgeAi.getActiveModel(
+      maxTokens: 1024,
+      preferredBackend: PreferredBackend.cpu,
+    );
+    final chat = await model.createChat(
+      tools: _tools,
+      supportsFunctionCalls: true,
+      modelType: ModelType.gemmaIt,
+      toolChoice: ToolChoice.auto,
+      temperature: 1.0,
+      topK: 64,
+      topP: 0.95,
+    );
 
-      // Same prompt tool_calling_test uses to reliably get a show_alert call.
-      await chat.addQueryChunk(
-        const Message(
-          text: 'Show an alert with title "Test" and message "Hello"',
-          isUser: true,
-        ),
-      );
+    // Same prompt tool_calling_test uses to reliably get a show_alert call.
+    await chat.addQueryChunk(
+      const Message(
+        text: 'Show an alert with title "Test" and message "Hello"',
+        isUser: true,
+      ),
+    );
 
-      final calls = <FunctionCallResponse>[];
-      final out = await chat
-          .generateChatResponseWithTools(
-            onToolCall: (c) {
-              calls.add(c);
-              return {'status': 'success', 'message': 'alert shown'};
-            },
-          )
-          .toList();
+    final calls = <FunctionCallResponse>[];
+    final out = await chat
+        .generateChatResponseWithTools(
+          onToolCall: (c) {
+            calls.add(c);
+            return {'status': 'success', 'message': 'alert shown'};
+          },
+        )
+        .toList();
 
-      // The loop invoked the handler (tool_calling_test proves this model calls
-      // show_alert for this prompt) and then terminated on a call-free turn.
-      expect(calls, isNotEmpty, reason: 'no tool was called');
-      debugPrint('[gwt] tools: ${calls.map((c) => c.name).toList()}');
-      debugPrint(
-        '[gwt] final text: '
-        '"${out.whereType<TextResponse>().map((t) => t.token).join()}"',
-      );
-      await model.close();
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+    // The loop invoked the handler (tool_calling_test proves this model calls
+    // show_alert for this prompt) and then terminated on a call-free turn.
+    expect(calls, isNotEmpty, reason: 'no tool was called');
+    debugPrint('[gwt] tools: ${calls.map((c) => c.name).toList()}');
+    debugPrint(
+      '[gwt] final text: '
+      '"${out.whereType<TextResponse>().map((t) => t.token).join()}"',
+    );
+    await model.close();
+  }, timeout: const Timeout(Duration(minutes: 10)));
 }

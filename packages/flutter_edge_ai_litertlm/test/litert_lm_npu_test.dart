@@ -74,7 +74,7 @@ void main() {
               contains('_Qualcomm_<SoC>.litertlm'),
               contains('<model>_Google_Tensor_G5|G6.litertlm'),
               contains('<model>_Intel_PTL.litertlm'),
-              contains('SM8850, SM8650, QCS8275 are verified'),
+              contains('https://flutteredge.ai/docs/registry'),
               contains('omit preferredBackend'),
             ),
           ),

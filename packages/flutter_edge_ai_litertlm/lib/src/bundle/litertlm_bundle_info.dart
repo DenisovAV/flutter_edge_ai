@@ -29,8 +29,7 @@ final class LiteRtLmNpuTarget extends NpuTarget {
   /// `PTL`, `Tensor_G5`.
   final String soc;
 
-  /// The vendor by core's name, including MediaTek, whose bundles this
-  /// package does not run; null for a stamp core has no name for.
+  /// The vendor by core's name; null for a stamp core has no name for.
   @override
   NpuVendor? get npuVendor => switch (vendor.toLowerCase()) {
     'qualcomm' => NpuVendor.qualcomm,

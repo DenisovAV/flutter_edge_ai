@@ -46,14 +46,23 @@ abstract base class CatalogModel {
   ///
   /// Only variants whose [CatalogVariant.backendsHere] is not empty are
   /// considered, and with [backend] only those that run on it. A variant
-  /// compiled for an NPU is chosen only for its SoC: pass [npu] (the package
-  /// does not read the device's SoC), or ask for [PreferredBackend.npu] when
-  /// one SoC remains. Otherwise the first variant that is not compiled for an
-  /// NPU wins, in catalog order.
+  /// compiled for an NPU is chosen only for its SoC, which the app passes as
+  /// [npu] (the package does not read the device's SoC; the SoC is compared
+  /// without regard to case). Otherwise the first variant that is not
+  /// compiled for an NPU wins, in catalog order.
   ///
-  /// Throws [ArgumentError] when [backend] is [PreferredBackend.npu], [npu]
-  /// is null, and variants for several SoCs remain.
+  /// Throws [ArgumentError] when [backend] is [PreferredBackend.npu] and [npu]
+  /// is null, also when one SoC remains: a build for one SoC runs on that SoC
+  /// only, and nothing here knows the device's.
   CatalogVariant? variantFor({PreferredBackend? backend, NpuTarget? npu}) {
+    if (backend == PreferredBackend.npu && npu == null) {
+      throw ArgumentError.value(
+        npu,
+        'npu',
+        '$id: an NPU build runs on the SoC it is compiled for only; pass the '
+            'device SoC',
+      );
+    }
     var pool = [
       for (final v in variants)
         if (v.backendsHere.isNotEmpty &&
@@ -65,20 +74,6 @@ abstract base class CatalogModel {
         if (v.npuTarget?.sameSoc(npu) ?? false) return v;
       }
       if (backend == PreferredBackend.npu) return null;
-    } else if (backend == PreferredBackend.npu) {
-      final socs = {
-        for (final v in pool)
-          if (v.npuTarget case final t?) (t.npuVendor, t.socModel),
-      };
-      if (socs.length > 1) {
-        throw ArgumentError.value(
-          npu,
-          'npu',
-          '$id has NPU builds for ${socs.map((s) => s.$2).join(', ')}; pass '
-              'the device SoC',
-        );
-      }
-      return pool.firstOrNull;
     }
     pool = [
       for (final v in pool)

@@ -3,7 +3,10 @@
 // A check that passed prints one line naming the registry build it ran, the
 // host, and the backend that actually ran:
 //
-//   FEA_EVIDENCE v1 {"variant":"gemma-4-e2b-it/generic","host":"macos_arm64",...}
+//   FEA_EVIDENCE v2 {"variant":"gemma-4-e2b-it/generic","host":"macos_arm64",...}
+//
+// The backend of a vision or audio check is its encoder's
+// (`activeVisionBackend`, `activeAudioBackend`), not the text model's.
 //
 // `dart run bin/registry.dart evidence --device <device> <log>` in
 // tool/model_registry turns a run's log into model_registry/evidence/. Call
@@ -64,7 +67,7 @@ void recordCatalogEvidence(
   required String check,
 }) {
   print(
-    'FEA_EVIDENCE v1 ${jsonEncode({
+    'FEA_EVIDENCE v2 ${jsonEncode({
       'variant': variant.id,
       'host': '${Abi.current()}',
       'backend': backend.name,

@@ -328,8 +328,8 @@ Future<int> _live(CheckResult result) async {
   if (out != null && out.isNotEmpty) {
     File(out).writeAsStringSync(summary, mode: FileMode.append);
   }
-  const failing = {LiveStatus.missing, LiveStatus.mismatch, LiveStatus.error};
-  return results.any((r) => failing.contains(r.status)) ? 1 : 0;
+  // A file not checked (noAccess) fails as one that is wrong does.
+  return liveFailed(results) ? 1 : 0;
 }
 
 /// model_registry/ at the repo root, two levels above this package.

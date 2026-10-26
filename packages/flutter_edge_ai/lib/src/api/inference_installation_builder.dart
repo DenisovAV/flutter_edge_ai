@@ -1,3 +1,4 @@
+import 'package:flutter_edge_ai/src/api/install_verification.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/model_management/model_activation.dart';
@@ -389,7 +390,10 @@ class InferenceInstallationBuilder {
         fileType: _fileType,
       );
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
-      if (activate) await activateInstalledModel(manager, spec);
+      if (activate) {
+        await verifyBeforeActivation[this]?.call(spec);
+        await activateInstalledModel(manager, spec);
+      }
       edgeAiLog(
         '✅ Built-in model ${activate ? 'set as active' : 'registered'}: '
         '${spec.name}',
@@ -424,7 +428,10 @@ class InferenceInstallationBuilder {
         fileType: _fileType,
       );
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
-      if (activate) await activateInstalledModel(manager, spec);
+      if (activate) {
+        await verifyBeforeActivation[this]?.call(spec);
+        await activateInstalledModel(manager, spec);
+      }
       edgeAiLog(
         '✅ ONNX web model ${activate ? 'set as active' : 'registered'} '
         '(Transformers.js owns the weights): '
@@ -459,6 +466,7 @@ class InferenceInstallationBuilder {
     // AUTO-SET as active inference model (even if already installed)
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     if (activate) {
+      await verifyBeforeActivation[this]?.call(spec);
       await activateInstalledModel(manager, spec);
       await release.run(manager, spec);
     }
@@ -649,6 +657,7 @@ class InferenceInstallationBuilder {
 
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     if (activate) {
+      await verifyBeforeActivation[this]?.call(spec);
       await activateInstalledModel(manager, spec);
       await release.run(manager, spec);
     }

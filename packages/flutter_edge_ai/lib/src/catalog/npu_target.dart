@@ -36,7 +36,9 @@ abstract base class NpuTarget {
   /// `SM8750`, `QCS8275`, `PTL`, `Tensor_G5`, `mt6993`.
   String get socModel;
 
-  /// Whether [other] is the same SoC.
+  /// Whether [other] is the same SoC: the same vendor and the same
+  /// [socModel] without regard to case (`MT6991` is `mt6991`).
   bool sameSoc(NpuTarget other) =>
-      npuVendor == other.npuVendor && socModel == other.socModel;
+      npuVendor == other.npuVendor &&
+      socModel.toLowerCase() == other.socModel.toLowerCase();
 }

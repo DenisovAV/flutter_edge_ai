@@ -116,6 +116,43 @@ void main() {
       );
     });
 
+    test('the wrong size never becomes the active model', () async {
+      await initialize();
+      final manager = FlutterEdgeAiPlugin.instance.modelManager;
+      await FlutterEdgeAi.installFromCatalog(TestLlm('good')).install();
+      await expectLater(
+        FlutterEdgeAi.installFromCatalog(
+          TestLlm('bad', file: artifact('bad.litertlm', size: 123)),
+        ).install(),
+        throwsA(isA<CatalogInstallException>()),
+      );
+      expect(manager.activeInferenceModel?.name, 'good');
+    });
+
+    test('a variant that runs on no backend here is refused before any '
+        'download', () async {
+      await initialize();
+      await expectLater(
+        FlutterEdgeAi.installFromCatalog(
+          TestLlm('npu-elsewhere', backendsHere: const {}),
+        ).install(),
+        throwsUnsupportedError,
+      );
+      expect(downloads.urls, isEmpty);
+    });
+
+    test('progress ends at 100 when the file is already installed', () async {
+      await initialize();
+      await FlutterEdgeAi.installFromCatalog(TestLlm('again')).install();
+      final progress = <int>[];
+      await FlutterEdgeAi.installFromCatalog(
+        TestLlm('again'),
+      ).withProgress(progress.add).install();
+      expect(downloads.urls, hasLength(1), reason: 'the second is skipped');
+      expect(progress, isNotEmpty);
+      expect(progress.last, 100);
+    });
+
     test('an install name that is not the URL\'s file name is refused', () {
       final variant = TestLlm(
         'generic',
@@ -160,6 +197,23 @@ void main() {
         'tiny-seq256__sentencepiece__rev-0123456789ab.model',
       ]);
       expect(progress.last, 100);
+    });
+
+    test('the wrong size never becomes the active embedder', () async {
+      await initialize();
+      final manager = FlutterEdgeAiPlugin.instance.modelManager;
+      final activeBefore = manager.activeEmbeddingModel?.name;
+      await expectLater(
+        FlutterEdgeAi.installFromCatalog(
+          TestEmbedder(
+            model: artifact('bad_256.tflite', size: 123),
+            tokenizer: artifact('sentencepiece.model'),
+          ),
+        ).install(),
+        throwsA(isA<CatalogInstallException>()),
+      );
+      expect(manager.activeEmbeddingModel?.name, activeBefore);
+      expect(activeBefore, isNot('bad_256'));
     });
 
     test('it cannot be installed without becoming active', () {

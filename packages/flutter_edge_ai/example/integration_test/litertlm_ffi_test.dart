@@ -35,6 +35,25 @@ String get _windowsDir => '${Platform.environment['USERPROFILE']}\\models';
 Uint8List _testImage = Uint8List(0);
 Uint8List _testAudio = Uint8List(0);
 
+/// Whether the media are the example's bundled fixtures, whose content the
+/// checks below know: a black puppy on boards, and a woman saying "She had
+/// your dark suit in greasy wash water all year". A staged file of unknown
+/// content still runs the check, but records no registry evidence.
+bool _imageIsFixture = false;
+bool _audioIsFixture = false;
+
+/// [check]'s answer names what the bundled fixture holds: at least [least]
+/// of [words], without regard to case.
+void _expectNames(String answer, List<String> words, {int least = 1}) {
+  final low = answer.toLowerCase();
+  final hits = words.where(low.contains).length;
+  expect(
+    hits,
+    greaterThanOrEqualTo(least),
+    reason: 'expected $least of $words, got: "$answer"',
+  );
+}
+
 /// The Gemma 4 E2B file the group installed, or null when it installed the
 /// registry build from Hugging Face.
 String? _gemma4Path;
@@ -58,10 +77,19 @@ Future<void> _installGemma4(String? localPath) async {
 }
 
 /// Registry evidence that [check] passed on the shared Gemma 4 E2B model, on
-/// the backend that ran.
+/// the backend that ran it: the vision or audio encoder's own backend for
+/// those checks (Gemma 4's audio encoder is constrained to the CPU, so a GPU
+/// run's audio is not GPU audio), the text model's for the others.
 Future<void> _gemma4Evidence(String check) async {
-  final backend = _sharedModel?.activeBackend;
-  if (backend == null) return;
+  final model = _sharedModel;
+  final backend = switch (check) {
+    'vision' => model?.activeVisionBackend,
+    'audio' => model?.activeAudioBackend,
+    _ => model?.activeBackend,
+  };
+  if (backend == null) {
+    fail('$check passed, but the model reports no backend for it');
+  }
   final path = _gemma4Path;
   if (path != null) {
     await recordEvidence(path: path, backend: backend, check: check);
@@ -240,9 +268,17 @@ void main() {
   setUpAll(() async {
     await registerTestEngines();
 
-    // Load test assets — try filesystem first (host paths on macOS/Linux/Windows
-    // and Android adb-pushed paths), then fall back to bundled Flutter assets
-    // (works on iOS device + simulator + any platform where assets/test/ ships).
+    // Load test assets — the bundled fixtures first, whose content the vision
+    // and audio checks assert, then the host files staged next to the models
+    // (Android adb-pushed paths, desktop Documents) when assets/test/ does
+    // not ship.
+    try {
+      final data = await rootBundle.load('assets/test/test_image.jpg');
+      _testImage = data.buffer.asUint8List();
+      _imageIsFixture = true;
+    } catch (_) {
+      /* asset not bundled — try the staged files */
+    }
     for (final path in [
       '$_androidDir/test_image.jpg',
       '$_macosDir/test_image.png',
@@ -252,18 +288,18 @@ void main() {
       if (Platform.isWindows) '$_windowsDir\\test_image.jpg',
       '${Platform.environment['HOME']}/Downloads/test_image.jpg',
     ]) {
+      if (_testImage.isNotEmpty) break;
       if (File(path).existsSync()) {
         _testImage = File(path).readAsBytesSync();
         break;
       }
     }
-    if (_testImage.isEmpty) {
-      try {
-        final data = await rootBundle.load('assets/test/test_image.jpg');
-        _testImage = data.buffer.asUint8List();
-      } catch (_) {
-        /* asset not bundled — leave empty */
-      }
+    try {
+      final data = await rootBundle.load('assets/test/test_audio.wav');
+      _testAudio = data.buffer.asUint8List();
+      _audioIsFixture = true;
+    } catch (_) {
+      /* asset not bundled — try the staged files */
     }
     for (final path in [
       '$_androidDir/test_audio.wav',
@@ -271,21 +307,17 @@ void main() {
       if (Platform.isLinux) '$_linuxDir/test_audio.wav',
       if (Platform.isWindows) '$_windowsDir\\test_audio.wav',
     ]) {
+      if (_testAudio.isNotEmpty) break;
       if (File(path).existsSync()) {
         _testAudio = File(path).readAsBytesSync();
         break;
       }
     }
-    if (_testAudio.isEmpty) {
-      try {
-        final data = await rootBundle.load('assets/test/test_audio.wav');
-        _testAudio = data.buffer.asUint8List();
-      } catch (_) {
-        /* asset not bundled — leave empty */
-      }
-    }
     print('Platform: ${Platform.operatingSystem}');
-    print('Assets: image=${_testImage.length}B, audio=${_testAudio.length}B');
+    print(
+      'Assets: image=${_testImage.length}B (fixture: $_imageIsFixture), '
+      'audio=${_testAudio.length}B (fixture: $_audioIsFixture)',
+    );
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -332,6 +364,11 @@ void main() {
       );
       print('[Gemma4 vision] $r');
       expect(r, isNotEmpty);
+      if (!_imageIsFixture) {
+        print('[Gemma4 vision] staged image of unknown content: no evidence');
+        return;
+      }
+      _expectNames(r, const ['dog', 'puppy', 'pup', 'labrador']);
       await _gemma4Evidence('vision');
     });
 
@@ -343,12 +380,24 @@ void main() {
       final r = await _chat(
         PreferredBackend.gpu,
         4096,
-        'What did you hear?',
+        'Transcribe this audio.',
         supportAudio: true,
         audio: _testAudio,
       );
       print('[Gemma4 audio] $r');
       expect(r, isNotEmpty);
+      if (!_audioIsFixture) {
+        print('[Gemma4 audio] staged audio of unknown content: no evidence');
+        return;
+      }
+      _expectNames(r, const [
+        'dark',
+        'suit',
+        'greasy',
+        'wash',
+        'water',
+        'year',
+      ], least: 3);
       await _gemma4Evidence('audio');
     });
 

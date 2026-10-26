@@ -883,9 +883,14 @@ void _checkAcrossEntries(List<Entry> entries, List<Problem> problems) {
 /// Fields a published version froze: changing one strands what users already
 /// installed or indexed. `published/<package>/<version>.json` maps a variant
 /// id (`<model id>/<slug>`) to the values it shipped with.
+///
+/// The tokenizer is frozen with the model: a `.tflite` embedder that reads
+/// another tokenizer writes other vectors under the same `rag_profile_id`.
 const frozenFields = [
   'install_filename',
   'sha256',
+  'tokenizer_install_filename',
+  'tokenizer_sha256',
   'rag_profile_id',
   'image_rag_profile_id',
 ];
@@ -956,6 +961,7 @@ void _checkPublished(
 Map<String, Object?> frozenValues(Map<String, Object?> v) {
   final file = v['file'];
   final files = v['files'];
+  final tokenizer = v['tokenizer'];
   return {
     'install_filename': file is Map
         ? file['install_filename']
@@ -967,6 +973,10 @@ Map<String, Object?> frozenValues(Map<String, Object?> v) {
         : files is List
         ? [for (final f in files) (f as Map)['sha256']].join(',')
         : null,
+    'tokenizer_install_filename': tokenizer is Map
+        ? tokenizer['install_filename']
+        : null,
+    'tokenizer_sha256': tokenizer is Map ? tokenizer['sha256'] : null,
     'rag_profile_id': v['rag_profile_id'],
     'image_rag_profile_id': v['image_rag_profile_id'],
   };

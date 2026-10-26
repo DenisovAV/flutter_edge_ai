@@ -48,11 +48,10 @@ typedef LiteRtLmEmbeddingPlacement = ({
 @visibleForTesting
 LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 
-/// The per-SoC Qualcomm bundles verified on device. Others are published by
-/// Google (SM8550, SM8750; Tensor G5/G6; MediaTek MT6991/MT6993; Intel PTL)
-/// and not verified here; all of them load: Tensor G5/G6 with
-/// `google_tensor_npu`, MediaTek with `mediatek_npu`.
-const liteRtLmVerifiedNpuSocs = ['SM8850', 'SM8650', 'QCS8275'];
+/// Where each build has run, per platform and backend: the model registry's
+/// page, generated from its recorded runs. A list in an error message goes
+/// stale with the next run; the page does not.
+const liteRtLmRegistryUrl = 'https://flutteredge.ai/docs/registry';
 
 /// Decides where [file] runs for a [requested] backend, or refuses with an
 /// [EmbeddingLoadException] (engine `LiteRT-LM`). [target] is what the bundle
@@ -62,9 +61,9 @@ const liteRtLmVerifiedNpuSocs = ['SM8850', 'SM8650', 'QCS8275'];
 /// order of the cheapest answer first: the platform, the vendor, the build's
 /// stack, the device, then the dispatch directory (Android extracts the
 /// libraries out of the APK there). Where EmbeddingGemma 2 runs on an NPU is
-/// [NpuStack.abis]: Qualcomm on Android arm64 and Linux arm64 (VENTUNO Q /
-/// QCS8275), both verified on device; Intel on Windows x64 (Google's Panther
-/// Lake bundles), not yet run on an Intel NPU.
+/// [NpuStack.abis]: Qualcomm on Android arm64 and Linux arm64, Google Tensor
+/// and MediaTek on Android arm64, Intel on Windows x64; which builds have run
+/// where is [liteRtLmRegistryUrl].
 Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
   required String file,
   required LiteRtLmNpuTarget? target,
@@ -140,7 +139,7 @@ String liteRtLmGenericOnNpuRefusal(String file) =>
     'runs on CPU only. To embed on the NPU, install the bundle compiled for '
     "this device's SoC (litert-community publishes "
     '${npuSentenceList(NpuStack.values.map(_bundleNames))} '
-    'beside it; ${liteRtLmVerifiedNpuSocs.join(', ')} are verified) and load '
+    'beside it; which have run on which device: $liteRtLmRegistryUrl) and load '
     'it with PreferredBackend.npu. To run this bundle, omit preferredBackend.';
 
 /// The file names litert-community gives [vendor]'s EmbeddingGemma 2 bundles.

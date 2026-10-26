@@ -50,6 +50,10 @@ void main() {
         r
           ..statusCode = 401
           ..headers.set('x-error-code', 'GatedRepo');
+      } else if (path == '/deleted/repo/resolve/$_rev/model.bin') {
+        r
+          ..statusCode = 401
+          ..headers.set('x-error-code', 'RepoNotFound');
       } else if (path == '/old/repo/resolve/$_rev/model.bin') {
         r
           ..statusCode = 307
@@ -113,11 +117,43 @@ void main() {
         renamed,
       ]),
       {
-        'org/repo/gated.bin': (LiveStatus.noAccess, 'GatedRepo'),
+        'org/repo/gated.bin': (LiveStatus.noAccess, 'GatedRepo; no HF_TOKEN'),
         'org/repo/gone.bin': (LiveStatus.missing, 'HTTP 404'),
         'old/repo/model.bin': (LiveStatus.ok, 'linked'),
       },
     );
+  });
+
+  test('a deleted repository is missing, not no access', () async {
+    final deleted = (
+      repo: 'deleted/repo',
+      revision: _rev,
+      path: 'model.bin',
+      sha256: lfsSha,
+      size: 1000,
+    );
+    expect(await run([deleted]), {
+      'deleted/repo/model.bin': (LiveStatus.missing, 'RepoNotFound (HTTP 401)'),
+    });
+  });
+
+  test('a file nobody could check fails the run', () async {
+    final results = await checkLive([
+      _artifact('model.bin', lfsSha, 1000),
+    ], base: base);
+    expect(liveFailed(results), isFalse);
+    final gated = await checkLive([
+      _artifact('model.bin', lfsSha, 1000),
+      _artifact('gated.bin', lfsSha, 1),
+    ], base: base);
+    expect(liveFailed(gated), isTrue, reason: 'no HF_TOKEN: unchecked');
+    final withToken = await checkLive(
+      [_artifact('gated.bin', lfsSha, 1)],
+      base: base,
+      token: 'expired',
+    );
+    expect(withToken.single.note, 'GatedRepo; the token has no access');
+    expect(liveFailed(withToken), isTrue);
   });
 
   test('every pinned file once, tokenizers and bundles included', () {

@@ -2,7 +2,13 @@
 //
 // An integration test that passed prints one line per check:
 //
-//   FEA_EVIDENCE v1 {"variant": "...", "host": "...", "backend": "...", "check": "..."}
+//   FEA_EVIDENCE v2 {"variant": "...", "host": "...", "backend": "...", "check": "..."}
+//
+// `backend` is the backend that ran the check's part of the model: the vision
+// or audio encoder's own for a `vision` or `audio` check. A v1 line named the
+// text model's backend for those too (a GPU run recorded GPU audio while the
+// audio encoder ran on the CPU), so v1 lines are refused, and a schema 1 file
+// counts no `vision` or `audio` check.
 //
 // (packages/flutter_edge_ai/example/integration_test/registry_evidence.dart).
 // `registry.dart evidence` reads a run's log and writes one
@@ -18,7 +24,16 @@ import 'package:path/path.dart' as p;
 
 import 'check.dart';
 
-const evidencePrefix = 'FEA_EVIDENCE v1 ';
+const evidencePrefix = 'FEA_EVIDENCE v2 ';
+
+const _v1Prefix = 'FEA_EVIDENCE v1 ';
+
+/// The checks a v1 line or a schema 1 file recorded under the text model's
+/// backend instead of their encoder's.
+const _towerChecks = {'vision', 'audio'};
+
+/// The evidence file schema [runFromLines] writes.
+const evidenceSchemaVersion = 2;
 
 /// The LiteRT-LM archive each native host loads, as named in
 /// packages/flutter_edge_ai_litertlm/hook/build.dart. The speech package
@@ -71,7 +86,12 @@ final class EvidenceRun {
     required this.logSha256,
     required this.logUrl,
     required this.cells,
+    this.schemaVersion = evidenceSchemaVersion,
   });
+
+  /// 2, or 1 for a file written before vision and audio checks named their
+  /// encoder's backend; [cells] of a schema 1 file hold no such check.
+  final int schemaVersion;
 
   /// The file's name under evidence/.
   final String file;
@@ -92,7 +112,7 @@ final class EvidenceRun {
   final Map<String, Map<String, List<String>>> cells;
 
   Map<String, Object?> toJson() => {
-    'schema_version': 1,
+    'schema_version': schemaVersion,
     'date': date,
     'host': host,
     'device': device,
@@ -144,7 +164,10 @@ final class EvidenceRun {
       return v;
     }
 
-    if (json['schema_version'] != 1) error('schema_version must be 1');
+    final schema = json['schema_version'];
+    if (schema != 1 && schema != evidenceSchemaVersion) {
+      error('schema_version must be 1 or $evidenceSchemaVersion');
+    }
     final date = str('date', RegExp(r'^\d{4}-\d{2}-\d{2}$'));
     final host = str('host', null);
     final device = str('device', RegExp(r'\S'));
@@ -176,7 +199,7 @@ final class EvidenceRun {
             if (checks is List &&
                 checks.isNotEmpty &&
                 checks.every((c) => c is String))
-              b: checks.cast<String>()
+              b: checks.cast<String>().toList()
             else
               b: () {
                 error('cells.$v.$b: a non-empty list of check names');
@@ -189,7 +212,19 @@ final class EvidenceRun {
         packages is! Map<String, Object?>) {
       return null;
     }
+    if (schema == 1) {
+      // Recorded under the text model's backend, which need not be the
+      // encoder's: counted for nothing.
+      for (final byBackend in cells.values) {
+        for (final checks in byBackend.values) {
+          checks.removeWhere(_towerChecks.contains);
+        }
+        byBackend.removeWhere((_, checks) => checks.isEmpty);
+      }
+      cells.removeWhere((_, byBackend) => byBackend.isEmpty);
+    }
     return EvidenceRun(
+      schemaVersion: schema == 1 ? 1 : evidenceSchemaVersion,
       file: file,
       date: date!,
       host: host!,
@@ -249,6 +284,14 @@ List<EvidenceLine> parseEvidenceLog(
   final out = <EvidenceLine>[];
   final lines = const LineSplitter().convert(log);
   for (final (i, line) in lines.indexed) {
+    if (line.contains(_v1Prefix)) {
+      error(
+        i + 1,
+        'a v1 line, which recorded vision and audio under the text model\'s '
+        'backend; run again with the current registry_evidence.dart',
+      );
+      continue;
+    }
     final at = line.indexOf(evidencePrefix);
     if (at < 0) continue;
     Object? json;

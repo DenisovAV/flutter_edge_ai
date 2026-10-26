@@ -378,10 +378,20 @@ for (final model in FlutterEdgeAi.catalog.models) {
 ```
 
 `variantFor` leaves out a build this device cannot run: a build compiled for
-another NPU, a web export on a phone. A build compiled for an NPU names the
-context it was compiled for (`requiredMaxTokens`); keep `maxTokens` at or below
-it. After the download the file's size is checked against the registry.
-`install(activate: false)` installs without making the model active.
+another NPU, a web export on a phone. A build compiled for an NPU is picked
+only for the SoC the app names (`variantFor(backend: PreferredBackend.npu,
+npu: …)`; without `npu:` it throws), because the package does not read the
+device's SoC. `installFromCatalog` refuses a build this device cannot run
+before it downloads anything. A build compiled for an NPU names the context it
+was compiled for (`requiredMaxTokens`); keep `maxTokens` at or below it. After
+the download, and before the model becomes active, each file's size is checked
+against the registry. `install(activate: false)` installs without making the
+model active. A LoRA is not installed through the catalog.
+
+The catalog pins every file to a Hugging Face commit. A model installed
+earlier from a `/resolve/main/` URL is a different source, so its first
+`installFromCatalog` downloads the file again (once); later installs from the
+catalog find it installed.
 
 ### From a URL, an asset or a file
 

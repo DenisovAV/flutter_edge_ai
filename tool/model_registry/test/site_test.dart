@@ -201,13 +201,14 @@ Map<String, Object?> _run({
   String? native,
   String version = '1.16.1',
   String date = '2026-10-20',
+  int schema = 2,
   Map<String, Object?> cells = const {
     'tiny/generic': {
       'gpu': ['text'],
     },
   },
 }) => {
-  'schema_version': 1,
+  'schema_version': schema,
   'date': date,
   'host': host,
   'device': 'Test Mac',
@@ -614,10 +615,10 @@ void main() {
       final errors = <String>[];
       final lines = parseEvidenceLog(
         'noise\n'
-        'I/flutter (123): FEA_EVIDENCE v1 {"variant":"a/b","host":"android_arm64",'
+        'I/flutter (123): FEA_EVIDENCE v2 {"variant":"a/b","host":"android_arm64",'
         '"backend":"gpu","check":"text"}\n'
-        'FEA_EVIDENCE v1 {"variant":"a/b"}\n'
-        'FEA_EVIDENCE v1 not json\n'
+        'FEA_EVIDENCE v2 {"variant":"a/b"}\n'
+        'FEA_EVIDENCE v2 not json\n'
         'FEA_EVIDENCE_SKIP {"file":"x"}\n',
         (line, m) => errors.add('$line: $m'),
       );
@@ -626,6 +627,60 @@ void main() {
       expect(errors, hasLength(2));
       expect(errors.first, startsWith('3: needs variant'));
       expect(errors.last, startsWith('4: not JSON'));
+    });
+
+    test('a v1 line is refused: it named the text model\'s backend for the '
+        'encoders', () {
+      final errors = <String>[];
+      final lines = parseEvidenceLog(
+        'FEA_EVIDENCE v1 {"variant":"a/b","host":"macos_arm64",'
+        '"backend":"gpu","check":"audio"}\n',
+        (line, m) => errors.add('$line: $m'),
+      );
+      expect(lines, isEmpty);
+      expect(errors.single, contains('v1 line'));
+    });
+
+    test('a schema 1 file counts no vision or audio check', () {
+      final problems = <Problem>[];
+      final run = EvidenceRun.fromJson(
+        'f.json',
+        _run(
+          schema: 1,
+          cells: const {
+            'tiny/generic': {
+              'cpu': ['text'],
+              'gpu': ['audio', 'text', 'vision'],
+            },
+            'tiny/audio-only': {
+              'gpu': ['audio'],
+            },
+          },
+        ),
+        (m) => problems.add(Problem('f', '-', m)),
+      )!;
+      expect(problems, isEmpty);
+      expect(run.cells, {
+        'tiny/generic': {
+          'cpu': ['text'],
+          'gpu': ['text'],
+        },
+      });
+      expect(run.toJson()['schema_version'], 1);
+      final v2 = EvidenceRun.fromJson(
+        'f.json',
+        _run(
+          cells: const {
+            'tiny/generic': {
+              'cpu': ['audio'],
+            },
+          },
+        ),
+        (m) => problems.add(Problem('f', '-', m)),
+      )!;
+      expect(v2.cells['tiny/generic'], {
+        'cpu': ['audio'],
+      });
     });
 
     test('a run is one host, on a device, with a native build', () {
@@ -653,7 +708,7 @@ void main() {
         return error;
       }
 
-      expect(why([]), contains('no "FEA_EVIDENCE v1 " line'));
+      expect(why([]), contains('no "FEA_EVIDENCE v2 " line'));
       expect(
         why([line('macos_arm64'), line('ios_arm64')]),
         contains('one run is one host'),

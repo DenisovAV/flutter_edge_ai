@@ -1,3 +1,4 @@
+import 'package:flutter_edge_ai/src/api/install_verification.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/model_management/model_activation.dart';
@@ -186,6 +187,7 @@ class SttInstallationBuilder {
 
     // AUTO-SET as active STT model (even if already installed)
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    await verifyBeforeActivation[this]?.call(spec);
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);
 

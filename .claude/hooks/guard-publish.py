@@ -44,10 +44,19 @@ import sys
 # re.MULTILINE is load-bearing — without it `^` anchors to the start of the
 # whole string, and a newline is not a separator, so every multi-line shell
 # block walked straight past this guard.
+#
+# An assignment value may be quoted and hold spaces, or be empty:
+# `RELEASE_SKIP_REGISTRY="no device" dart pub publish` is the override form the
+# release hooks document, and `\S+` stopped at the space, so this guard did not
+# see the publish at all. One character per repetition keeps a long line that
+# is no publish from backtracking for ever.
+_VALUE = r"(?:\"[^\"]*\"|'[^']*'|[^\s\"';&|()])*"
+_ASSIGN = r"\w+=" + _VALUE
 PUBLISH_RE = re.compile(
     r"(?:^|[;&|(]|&&|\|\|)\s*"
-    r"(?:\w+=\S+\s+)*"  # FOO=bar dart pub publish
-    r"(?:(?:timeout|nice|env|command|stdbuf)\s+\S+\s+)*"  # timeout 900 dart ...
+    r"(?:" + _ASSIGN + r"\s+)*"  # FOO=bar dart pub publish
+    r"(?:(?:timeout|nice|env|command|stdbuf)\s+(?:" + _ASSIGN + r"|\S+)\s+"
+    r"(?:" + _ASSIGN + r"\s+)*)*"  # timeout 900 dart ..., env A=1 dart ...
     r"(?:dart|flutter)\s+pub\s+publish\b",
     re.MULTILINE,
 )
@@ -264,6 +273,13 @@ _TESTS = [
     ("set -e\ncd packages/x\n  dart pub publish -f", True),  # was a bypass
     ("timeout 900 dart pub publish", True),  # was a bypass
     ("PUB_HOSTED_URL=x dart pub publish", True),  # was a bypass
+    ('RELEASE_SKIP_REGISTRY="no device" dart pub publish -f', True),  # was a bypass
+    ("RELEASE_SKIP_DOCS='two words' dart pub publish", True),  # was a bypass
+    ('RELEASE_SKIP_REGISTRY="" dart pub publish', True),
+    ("RELEASE_SKIP_REGISTRY= dart pub publish", True),  # was a bypass
+    ('env RELEASE_SKIP_REGISTRY="a b" X=1 dart pub publish', True),  # was a bypass
+    ("x && RELEASE_SKIP_REGISTRY=r dart pub publish", True),
+    ("x; X=1 dart pub publish", True),
     ("cd x; (dart pub publish)", True),  # was a bypass
     ("dart pub publish --dry-run && dart pub publish", True),  # was a bypass
     ("flutter pub publish", True),

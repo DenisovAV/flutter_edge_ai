@@ -143,8 +143,15 @@ passed, naming the registry build by the sha256 of the file they installed
 (`packages/flutter_edge_ai/example/integration_test/registry_evidence.dart`):
 
 ```
-FEA_EVIDENCE v1 {"variant":"gemma-4-e2b-it/generic","host":"macos_arm64","backend":"gpu","check":"text"}
+FEA_EVIDENCE v2 {"variant":"gemma-4-e2b-it/generic","host":"macos_arm64","backend":"gpu","check":"text"}
 ```
+
+`backend` is the backend that ran the check's part of the model: for a
+`vision` or `audio` check the encoder's own (Gemma 4's audio encoder runs on
+the CPU in a GPU run). v1 lines recorded the text model's backend there, so
+`evidence` refuses them, and a `schema_version: 1` evidence file counts no
+`vision` or `audio` check. The vision and audio checks assert what the
+bundled fixtures hold and record nothing for a staged file of unknown content.
 
 Today: `litertlm_ffi_test.dart` (Gemma 4 E2B text, vision and audio on CPU
 and GPU, and the staged NPU bundle), `embeddinggemma2_test.dart`,

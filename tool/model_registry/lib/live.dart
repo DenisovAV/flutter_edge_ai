@@ -7,7 +7,11 @@
 // file in LFS or Xet storage the redirect carries `X-Linked-Etag` (the
 // sha256) and `X-Linked-Size`; for a plain git file it carries the git object
 // id, so the file is fetched and hashed. A gated repository answers 401
-// without a token that has access: named in the result, not a failure.
+// without a token that has access: `noAccess`, which fails the run like any
+// file that was not checked (a missing or expired HF_TOKEN must not turn the
+// weekly run green over files nobody looked at). Hugging Face also answers
+// 401 for a repository, revision or file that does not exist; its
+// `X-Error-Code` names that, and it is `missing`.
 
 import 'dart:async';
 import 'dart:io';
@@ -29,6 +33,14 @@ enum LiveStatus { ok, noAccess, missing, mismatch, error }
 typedef LiveResult = ({LiveArtifact artifact, LiveStatus status, String note});
 
 final _sha256 = RegExp(r'^[0-9a-f]{64}$');
+
+/// The `X-Error-Code`s with which Hugging Face says a file is not there,
+/// whatever the HTTP status.
+const _goneCodes = {'RepoNotFound', 'RevisionNotFound', 'EntryNotFound'};
+
+/// The statuses that fail the run: everything but [LiveStatus.ok].
+bool liveFailed(Iterable<LiveResult> results) =>
+    results.any((r) => r.status != LiveStatus.ok);
 
 /// Checks [artifacts] against [base] (https://huggingface.co in production),
 /// [concurrency] at a time.
@@ -80,10 +92,15 @@ Future<LiveResult> _check(
     final response = await request.close();
     await response.drain<void>();
     final status = response.statusCode;
+    final code = response.headers.value('x-error-code');
+    if (code != null && _goneCodes.contains(code)) {
+      return result(LiveStatus.missing, '$code (HTTP $status)');
+    }
     if (status == 401 || status == 403) {
       return result(
         LiveStatus.noAccess,
-        response.headers.value('x-error-code') ?? 'HTTP $status',
+        '${code ?? 'HTTP $status'}; '
+        '${token == null ? 'no HF_TOKEN' : 'the token has no access'}',
       );
     }
     if (status == 404) return result(LiveStatus.missing, 'HTTP 404');

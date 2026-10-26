@@ -85,16 +85,31 @@ void main() {
       );
     });
 
-    test('asking for the NPU without a SoC needs a single SoC', () {
+    test('asking for the NPU without a SoC throws, also for one SoC', () {
       expect(
         () => model.variantFor(backend: PreferredBackend.npu),
         throwsArgumentError,
       );
       expect(
-        TestModel('m', [
+        () => TestModel('m', [
           generic,
           npu8750,
         ]).variantFor(backend: PreferredBackend.npu),
+        throwsArgumentError,
+        reason: 'one SoC listed says nothing about the device\'s SoC',
+      );
+    });
+
+    test('the SoC is compared without regard to case', () {
+      expect(
+        model.variantFor(npu: const TestNpu(NpuVendor.qualcomm, 'sm8850')),
+        same(npu8850),
+      );
+      expect(
+        model.variantFor(
+          backend: PreferredBackend.npu,
+          npu: const TestNpu(NpuVendor.qualcomm, 'Sm8750'),
+        ),
         same(npu8750),
       );
     });

@@ -81,11 +81,25 @@ class EmbeddingModelDownloadService {
       final authToken = token.isEmpty ? null : token;
       if (model.catalogVariant case final variant?) {
         // A model registry build: one call installs the model and its
-        // tokenizer under their fixed names and checks their sizes.
+        // tokenizer under their fixed names and checks their sizes. Its
+        // progress is one value weighted by file size; core downloads the
+        // model, then the tokenizer, so the bytes before the model's size are
+        // the model's.
+        final modelBytes = variant.model.sizeBytes;
+        final tokenizerBytes = variant.tokenizer?.sizeBytes ?? 0;
+        final total = modelBytes + tokenizerBytes;
         var install = FlutterEdgeAi.installFromCatalog(variant).withProgress((
           progress,
         ) {
-          onProgress(progress.toDouble(), progress.toDouble());
+          final done = total * progress / 100;
+          onProgress(
+            (done / modelBytes * 100).clamp(0, 100).toDouble(),
+            tokenizerBytes == 0
+                ? progress.toDouble()
+                : ((done - modelBytes) / tokenizerBytes * 100)
+                      .clamp(0, 100)
+                      .toDouble(),
+          );
         });
         if (authToken != null) install = install.withToken(authToken);
         await install.install();

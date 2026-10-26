@@ -1,3 +1,4 @@
+import 'package:flutter_edge_ai/src/api/install_verification.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_edge_ai/src/api/tts_asset_listing.dart';
@@ -186,6 +187,7 @@ class TtsInstallationBuilder {
     );
 
     // AUTO-SET as active TTS model (even if already installed).
+    await verifyBeforeActivation[this]?.call(spec);
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);
 

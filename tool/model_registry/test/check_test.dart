@@ -309,6 +309,28 @@ void main() {
         }),
       },
     );
+    for (final (field, value) in [
+      ('sha256', 'f' * 64),
+      ('install_filename', 'tiny-seq256__other.model'),
+    ]) {
+      fails(
+        'a tokenizer $field changed after it was published, same profile id',
+        [
+          _with(
+            _embedder(),
+            (e) => (_variant(e, 0)['tokenizer'] as Map)[field] = value,
+          ),
+        ],
+        'tokenizer_$field: frozen since this release',
+        extraFiles: {
+          'published/flutter_edge_ai_litertlm/1.16.0.json': jsonEncode({
+            'variants': {
+              'tiny-embedder/seq256': frozenValues(_variant(_embedder(), 0)),
+            },
+          }),
+        },
+      );
+    }
     fails(
       'a slug whose Dart getter is a reserved word',
       [_with(_llm(), (e) => _variant(e, 1)['slug'] = 'default')],

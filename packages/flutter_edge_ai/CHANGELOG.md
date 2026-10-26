@@ -1,5 +1,6 @@
 ## 2.5.4
-- Model catalog: `FlutterEdgeAi.catalog` lists the models registered packages offer, pinned to Hugging Face commits, and `installFromCatalog` installs one.
+- `ModelType.gemma4` on `.bin`/`.tflite`: Gemma 4's own turn markers, not Gemma 3's (#705).
+- Model catalog: `FlutterEdgeAi.catalog` and `installFromCatalog`, builds pinned to Hugging Face commits.
 
 ## 2.5.3
 - `uninstallModel` closes the model built from that file; `getModelPath` follows the file's record (#723).

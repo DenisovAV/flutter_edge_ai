@@ -50,10 +50,15 @@ import sys
 
 # Mirror guard-publish.py's command-position matcher (MULTILINE is load-bearing:
 # a `cd` line followed by the publish on the next line must still match).
+# An assignment value may be quoted and hold spaces, or be empty
+# (`RELEASE_SKIP_DOCS="two words" dart pub publish`).
+_VALUE = r"(?:\"[^\"]*\"|'[^']*'|[^\s\"';&|()])*"
+_ASSIGN = r"\w+=" + _VALUE
 PUBLISH_RE = re.compile(
     r"(?:^|[;&|(]|&&|\|\|)\s*"
-    r"(?:\w+=\S+\s+)*"
-    r"(?:(?:timeout|nice|env|command|stdbuf)\s+\S+\s+)*"
+    r"(?:" + _ASSIGN + r"\s+)*"
+    r"(?:(?:timeout|nice|env|command|stdbuf)\s+(?:" + _ASSIGN + r"|\S+)\s+"
+    r"(?:" + _ASSIGN + r"\s+)*)*"
     r"(?:dart|flutter)\s+pub\s+publish\b",
     re.MULTILINE,
 )
@@ -290,6 +295,9 @@ _TESTS = [
     ("dart pub publish --dry-run", True, True),
     ("dart pub publish --dry-run && dart pub publish", True, False),
     ('RELEASE_SKIP_DOCS="x" dart pub publish', True, False),  # skip handled in main, not exempt
+    ('RELEASE_SKIP_DOCS="two words" dart pub publish', True, False),  # was unmatched
+    ('RELEASE_SKIP_REGISTRY="no device" dart pub publish', True, False),  # was unmatched
+    ("RELEASE_SKIP_REGISTRY= dart pub publish", True, False),  # was unmatched
     ("git push origin main", False, False),
     ('grep -r "dart pub publish" docs/', False, False),
 ]

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai/src/api/install_verification.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
     show InferenceModelFile;
@@ -8,9 +9,16 @@ import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
 /// `FlutterEdgeAi.installFromCatalog`.
 ///
 /// The model type, file type, file names and profile come from the variant,
-/// so none of them can be passed wrong. After the download every file's size
-/// is compared with the catalog's (not on the web, where the browser stores
-/// the files).
+/// so none of them can be passed wrong. After the download, and before the
+/// model becomes active, every file's size is compared with the catalog's
+/// (not on the web, where the browser stores the files).
+///
+/// The catalog pins each file to a revision. A model installed earlier from
+/// a `/resolve/main/` URL is therefore a different source, and its first
+/// install from the catalog downloads the file again.
+///
+/// A LoRA is not installed through the catalog: install it with
+/// `FlutterEdgeAi.installModel(…).withLoraFromNetwork(…)`.
 ///
 /// ```dart
 /// final variant = FlutterEdgeAi.catalog
@@ -30,6 +38,7 @@ final class CatalogInstallationBuilder {
   final CatalogVariant _variant;
   String? _token;
   void Function(int percent)? _onProgress;
+  int? _lastPercent;
   CancelToken? _cancelToken;
   bool? _foreground;
 
@@ -40,7 +49,10 @@ final class CatalogInstallationBuilder {
     return this;
   }
 
-  /// Progress of the whole install, 0 to 100, weighted by file size.
+  /// Progress of the whole install, 0 to 100, weighted by file size. A
+  /// [TtsVariant] reports once per finished file, as
+  /// `TtsInstallationBuilder.withProgress` does. A successful install ends
+  /// with 100, also when files were already installed and not downloaded.
   CatalogInstallationBuilder withProgress(
     void Function(int percent) onProgress,
   ) {
@@ -62,18 +74,33 @@ final class CatalogInstallationBuilder {
     return this;
   }
 
+  void _progress(int percent) {
+    _lastPercent = percent;
+    _onProgress?.call(percent);
+  }
+
   /// Installs the variant and makes it the active model of its kind.
   ///
   /// With [activate] false an [InferenceVariant] is installed without
   /// becoming the active model, for `FlutterEdgeAi.openModel`; the other
   /// kinds have one active model each and throw [ArgumentError] for it.
   ///
-  /// Throws [UnsupportedError] for a variant with no file (a model the
-  /// operating system provides), [CatalogInstallException] when an installed
-  /// file's size is not the catalog's, and whatever the installer of the
-  /// variant's kind throws.
+  /// Throws [UnsupportedError], before anything is downloaded, for a variant
+  /// whose [CatalogVariant.backendsHere] is empty (its package does not run
+  /// it in this runtime: an NPU build on a device without that vendor's
+  /// dispatch, a web bundle off the web) and for a variant with no file (a
+  /// model the operating system provides); [CatalogInstallException] when an
+  /// installed file's size is not the catalog's, and whatever the installer
+  /// of the variant's kind throws.
   Future<CatalogInstallation> install({bool activate = true}) async {
     final variant = _variant;
+    if (variant.backendsHere.isEmpty) {
+      throw UnsupportedError(
+        '${variant.id} does not run here: ${variant.catalogName} runs it on '
+        'no backend in this runtime. Pick another variant, for example with '
+        'CatalogModel.variantFor',
+      );
+    }
     if (!activate && variant is! InferenceVariant) {
       throw ArgumentError.value(
         activate,
@@ -82,17 +109,30 @@ final class CatalogInstallationBuilder {
             'the active model',
       );
     }
+    var checked = false;
+    Future<void> check(ModelSpec spec) async {
+      await _checkSizes(spec);
+      checked = true;
+    }
+
     final ModelSpec spec = switch (variant) {
-      InferenceVariant() => await _inference(variant, activate),
-      EmbedderVariant() => await _embedder(variant),
-      SttVariant() => await _stt(variant),
-      TtsVariant() => await _tts(variant),
+      InferenceVariant() => await _inference(variant, activate, check),
+      EmbedderVariant() => await _embedder(variant, check),
+      SttVariant() => await _stt(variant, check),
+      TtsVariant() => await _tts(variant, check),
     };
-    await _checkSizes(spec);
+    // An LLM installed with activate false is never made active, so its
+    // builder runs no check before activation.
+    if (!checked) await _checkSizes(spec);
+    if (_onProgress != null && _lastPercent != 100) _progress(100);
     return CatalogInstallation._(variant: variant, spec: spec);
   }
 
-  Future<ModelSpec> _inference(InferenceVariant v, bool activate) async {
+  Future<ModelSpec> _inference(
+    InferenceVariant v,
+    bool activate,
+    _Check check,
+  ) async {
     final file = v.file;
     if (file == null) {
       throw UnsupportedError(
@@ -117,17 +157,19 @@ final class CatalogInstallationBuilder {
       modelType: v.modelType,
       fileType: v.fileType,
     ).fromNetwork(file.url, token: _token, foreground: _foreground);
-    if (_onProgress case final onProgress?) {
-      builder = builder.withProgress(onProgress);
-    }
+    verifyBeforeActivation[builder] = check;
+    if (_onProgress != null) builder = builder.withProgress(_progress);
     if (_cancelToken case final cancelToken?) {
       builder = builder.withCancelToken(cancelToken);
     }
     return (await builder.install(activate: activate)).spec;
   }
 
-  Future<ModelSpec> _embedder(EmbedderVariant v) async {
-    final progress = _WeightedProgress(_onProgress, v.files);
+  Future<ModelSpec> _embedder(EmbedderVariant v, _Check check) async {
+    final progress = _WeightedProgress(
+      _onProgress == null ? null : _progress,
+      v.files,
+    );
     var builder = FlutterEdgeAi.installEmbedder()
         .modelFromNetwork(
           v.model.url,
@@ -135,6 +177,7 @@ final class CatalogInstallationBuilder {
           filename: v.model.installFilename,
         )
         .withModelProgress(progress.reporterFor(v.model));
+    verifyBeforeActivation[builder] = check;
     if (v.tokenizer case final tokenizer?) {
       builder = builder
           .tokenizerFromNetwork(
@@ -150,27 +193,30 @@ final class CatalogInstallationBuilder {
     return (await builder.install()).spec;
   }
 
-  Future<ModelSpec> _stt(SttVariant v) async {
-    final progress = _WeightedProgress(_onProgress, v.files);
+  Future<ModelSpec> _stt(SttVariant v, _Check check) async {
+    final progress = _WeightedProgress(
+      _onProgress == null ? null : _progress,
+      v.files,
+    );
     var builder = FlutterEdgeAi.installStt()
         .modelFromNetwork(v.model.url, token: _token)
         .tokenizerFromNetwork(v.tokenizer.url, token: _token)
         .ofType(v.type)
         .withModelProgress(progress.reporterFor(v.model))
         .withTokenizerProgress(progress.reporterFor(v.tokenizer));
+    verifyBeforeActivation[builder] = check;
     if (_cancelToken case final cancelToken?) {
       builder = builder.withCancelToken(cancelToken);
     }
     return (await builder.install()).spec;
   }
 
-  Future<ModelSpec> _tts(TtsVariant v) async {
+  Future<ModelSpec> _tts(TtsVariant v, _Check check) async {
     var builder = FlutterEdgeAi.installTts()
         .fromNetwork(v.baseUrl, token: _token)
         .ofType(v.type);
-    if (_onProgress case final onProgress?) {
-      builder = builder.withProgress(onProgress);
-    }
+    verifyBeforeActivation[builder] = check;
+    if (_onProgress != null) builder = builder.withProgress(_progress);
     if (_cancelToken case final cancelToken?) {
       builder = builder.withCancelToken(cancelToken);
     }
@@ -204,19 +250,27 @@ final class CatalogInstallationBuilder {
         );
       }
       final path = paths[installed.first.prefsKey];
-      if (path == null) continue;
+      if (path == null) {
+        throw CatalogInstallException(
+          '${_variant.id}: core has no path for ${artifact.installFilename}, '
+          'so its size cannot be checked',
+        );
+      }
       final size = await fileSystem.getFileSize(path);
       if (size != artifact.sizeBytes) {
         throw CatalogInstallException(
           '${_variant.id}: ${artifact.installFilename} is $size bytes, the '
           'catalog says ${artifact.sizeBytes} (${artifact.url}). The file '
-          'stays installed; uninstall it and install again.',
+          'stays installed but was not made active; uninstall it and '
+          'install again.',
           artifact: artifact,
         );
       }
     }
   }
 }
+
+typedef _Check = Future<void> Function(ModelSpec spec);
 
 /// One progress value for several files, each weighted by its size.
 final class _WeightedProgress {

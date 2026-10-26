@@ -23,7 +23,10 @@ The owner chose a hook over a checklist line for this (a checklist advises, a
 hook refuses — the same lesson as guard-publish.py and guard-release-docs.py).
 
 Override for a release that cannot have the runs (say why) by putting
-`RELEASE_SKIP_REGISTRY=<reason>` in the command.
+`RELEASE_SKIP_REGISTRY="<reason>"` in front of that publish
+(`RELEASE_SKIP_REGISTRY="no device" dart pub publish`). It covers that one
+publish only; on another command of the chain, exported earlier, or with an
+empty reason it is not an override. Every publish of a command is checked.
 
 Fail-closed: if the package, the repository or the tool cannot be found, or
 the check cannot run, BLOCK — an irreversible publish in an unknown state is
@@ -41,21 +44,25 @@ import sys
 # The packages whose published archive carries a generated catalog.
 CATALOG_PACKAGES = {"flutter_edge_ai_litertlm", "flutter_edge_ai_speech"}
 
+# A shell assignment value: quoted parts (which may hold spaces) and bare
+# characters, possibly empty. One character per repetition, never `[...]+`
+# inside the `*`, so a long line that is no publish cannot backtrack for ever.
+_VALUE = r"(?:\"[^\"]*\"|'[^']*'|[^\s\"';&|()])*"
+_ASSIGN = r"\w+=" + _VALUE
 # Mirror guard-publish.py's command-position matcher (MULTILINE is load-bearing:
 # a `cd` line followed by the publish on the next line must still match).
+# `prefix` is the publish's own assignments and wrappers: only a
+# RELEASE_SKIP_REGISTRY there reaches the publish.
 PUBLISH_RE = re.compile(
     r"(?:^|[;&|(]|&&|\|\|)\s*"
-    r"(?:\w+=\S+\s+)*"
-    r"(?:(?:timeout|nice|env|command|stdbuf)\s+\S+\s+)*"
+    r"(?P<prefix>(?:" + _ASSIGN + r"\s+)*"
+    r"(?:(?:timeout|nice|env|command|stdbuf)\s+(?:" + _ASSIGN + r"|\S+)\s+"
+    r"(?:" + _ASSIGN + r"\s+)*)*)"
     r"(?:dart|flutter)\s+pub\s+publish\b",
     re.MULTILINE,
 )
 DRY_RUN_RE = re.compile(r"(?<![\w-])--dry-run(?![\w-])")
-# RELEASE_SKIP_REGISTRY must sit in command position (an env assignment prefix),
-# not merely appear in an echo/grep of the string.
-SKIP_RE = re.compile(
-    r"(?:^|[;&|(]|&&|\|\|)\s*(?:\w+=\S+\s+)*RELEASE_SKIP_REGISTRY=", re.MULTILINE
-)
+SKIP_ASSIGN_RE = re.compile(r"(?<!\S)RELEASE_SKIP_REGISTRY=(" + _VALUE + r")")
 # Duplicated from guard-publish.py on purpose: hooks are standalone files with
 # no shared import path, and a hook that fails to load is a hook that does not
 # run. Keep the two in step.
@@ -95,13 +102,36 @@ def git(repo, *args):
     return r.stdout.strip()
 
 
-def _publish_is_exempt(cmd):
-    """True only if every publish invocation on the line carries --dry-run."""
-    for m in PUBLISH_RE.finditer(cmd):
-        tail = re.split(r"[;&|\n]", cmd[m.end() :], maxsplit=1)[0]
-        if not DRY_RUN_RE.search(tail):
-            return False
-    return True
+def _args(cmd, match):
+    """The publish's own arguments: up to the next separator."""
+    return re.split(r"[;&|\n]", cmd[match.end() :], maxsplit=1)[0]
+
+
+def _is_dry_run(cmd, match):
+    return bool(DRY_RUN_RE.search(_args(cmd, match)))
+
+
+def _skip_reason(match):
+    """The RELEASE_SKIP_REGISTRY reason this publish itself carries, or None.
+
+    Only an assignment in the publish's own prefix counts: one on another
+    command of the chain (`RELEASE_SKIP_REGISTRY=x echo && dart pub publish`)
+    never reaches the publish. An empty or blank reason is no reason.
+    """
+    for m in SKIP_ASSIGN_RE.finditer(match.group("prefix")):
+        reason = re.sub(r"[\"']", "", m.group(1)).strip()
+        if reason:
+            return reason
+    return None
+
+
+def _checked_publishes(cmd):
+    """Every publish in [cmd] that ships and is not skipped with a reason."""
+    return [
+        m
+        for m in PUBLISH_RE.finditer(cmd)
+        if not _is_dry_run(cmd, m) and _skip_reason(m) is None
+    ]
 
 
 def _resolve(target, base):
@@ -114,8 +144,9 @@ def _resolve(target, base):
     return target if os.path.isabs(target) else os.path.join(base, target)
 
 
-def publish_dir(cmd, payload):
-    """Where the publish will run, or None when that cannot be determined.
+def publish_dir(cmd, payload, match=None):
+    """Where [match] (the first publish by default) will run, or None when that
+    cannot be determined.
 
     Only `cd`s BEFORE the publish count; one after it changes nothing. Then the
     publish's own `-C`/`--directory` applies. An unresolvable target (a
@@ -125,7 +156,7 @@ def publish_dir(cmd, payload):
     publish, as in `(cd x) && dart pub publish`.
     """
     base = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    first = PUBLISH_RE.search(cmd)
+    first = match or PUBLISH_RE.search(cmd)
     limit = first.start() if first else len(cmd)
 
     if any(m.start() < limit for m in OPAQUE_CD_RE.finditer(cmd)):
@@ -138,8 +169,7 @@ def publish_dir(cmd, payload):
             return None
 
     if first:
-        args = re.split(r"[;&|\n]", cmd[first.end() :], maxsplit=1)[0]
-        named = PUB_DIR_RE.search(args)
+        named = PUB_DIR_RE.search(_args(cmd, first))
         if named:
             base = _resolve(named.group(1), base)
             if base is None:
@@ -148,14 +178,14 @@ def publish_dir(cmd, payload):
     return os.path.normpath(base)
 
 
-def _located(cmd, payload):
-    """(repo_root, package_prefix, label) for the package being published.
+def _located(cmd, payload, match):
+    """(repo_root, package_prefix, label) for the package [match] publishes.
 
     `package_prefix` is repo-relative and ends in '/' — or is '' when the
     package IS the repository root, which is what every single-package repo
     looks like.
     """
-    where = publish_dir(cmd, payload)
+    where = publish_dir(cmd, payload, match)
     if where is None:
         raise GitUnavailable(
             "a `cd` or `-C` target is built from a variable, or the command uses "
@@ -234,69 +264,171 @@ def main():
         )
         return 2
 
-    if not PUBLISH_RE.search(cmd):
-        return 0
-    if _publish_is_exempt(cmd):
-        return 0
-    if SKIP_RE.search(cmd):
-        return 0  # explicit, reasoned opt-out
+    # Every publish of the command is checked, not the first: a train
+    # `cd a && dart pub publish && cd ../b && dart pub publish` ships both.
+    # A dry run, or a publish with its own reasoned RELEASE_SKIP_REGISTRY,
+    # needs nothing.
+    for match in _checked_publishes(cmd):
+        try:
+            root, prefix, label = _located(cmd, payload, match)
+            name = _package_name(root, prefix)
+            if name not in CATALOG_PACKAGES:
+                continue
+            problem = _release_check(root, prefix, name)
+        except Exception as e:  # noqa: BLE001 — any surprise blocks
+            sys.stderr.write(
+                f"BLOCKED: cannot verify the model registry for this release — {e}\n"
+                "A publish is irreversible; an unverifiable state is not a safe one.\n"
+            )
+            return 2
+        if problem is not None:
+            return _blocked(name, root, problem)
+    return 0
 
-    try:
-        root, prefix, label = _located(cmd, payload)
-        name = _package_name(root, prefix)
-        if name not in CATALOG_PACKAGES:
-            return 0
-        problem = _release_check(root, prefix, name)
-    except (GitUnavailable, OSError) as e:
-        sys.stderr.write(
-            f"BLOCKED: cannot verify the model registry for this release — {e}\n"
-            "A publish is irreversible; an unverifiable state is not a safe one.\n"
-        )
-        return 2
 
-    if problem is None:
-        return 0
-
+def _blocked(name, root, problem):
     sys.stderr.write(
         f"BLOCKED: {name} is not release-ready by the model registry.\n"
         f"  repository: {root}\n"
         f"    {problem}\n"
         "  Record the missing runs (registry_evidence.dart + `registry.dart\n"
         "  evidence`), run `registry.dart freeze <package>`, or re-run with\n"
-        '  RELEASE_SKIP_REGISTRY="<reason>" in the command.\n'
+        '  RELEASE_SKIP_REGISTRY="<reason>" in front of that publish.\n'
         "(guard: .claude/hooks/guard-release-registry.py)\n"
     )
     return 2
 
 
+# (command, publishes found, publishes to check): found counts every publish
+# the matcher sees, which guard-publish.py must see as well; to check leaves
+# out dry runs and publishes with their own reasoned skip.
 _TESTS = [
-    ("dart pub publish --force", True, False),
-    ("cd packages/flutter_edge_ai_speech && dart pub publish", True, False),
-    ("cd packages/x\ndart pub publish", True, False),
-    ("timeout 900 dart pub publish", True, False),
-    ("dart pub publish --dry-run", True, True),
-    ("dart pub publish --dry-run && dart pub publish", True, False),
-    ("git push origin main", False, False),
-    ('grep -r "dart pub publish" docs/', False, False),
+    ("dart pub publish --force", 1, 1),
+    ("cd packages/flutter_edge_ai_speech && dart pub publish", 1, 1),
+    ("cd packages/x\ndart pub publish", 1, 1),
+    ("timeout 900 dart pub publish", 1, 1),
+    ("dart pub publish --dry-run", 1, 0),
+    ("dart pub publish --dry-run && dart pub publish", 2, 1),
+    ("git push origin main", 0, 0),
+    ('grep -r "dart pub publish" docs/', 0, 0),
+    # The documented override: a quoted reason with a space.
+    ('RELEASE_SKIP_REGISTRY="no device" dart pub publish --force', 1, 0),
+    ("RELEASE_SKIP_REGISTRY='no device' X=1 dart pub publish", 1, 0),
+    ("RELEASE_SKIP_REGISTRY=nodevice dart pub publish", 1, 0),
+    ('env RELEASE_SKIP_REGISTRY="no device" dart pub publish', 1, 0),
+    # An empty or blank reason is no override.
+    ("RELEASE_SKIP_REGISTRY= dart pub publish", 1, 1),
+    ('RELEASE_SKIP_REGISTRY="" dart pub publish', 1, 1),
+    ('RELEASE_SKIP_REGISTRY="  " dart pub publish', 1, 1),
+    # Other prefixes still mean a publish.
+    ("X=1 dart pub publish", 1, 1),
+    ('PUB_HOSTED_URL="https://a b" dart pub publish', 1, 1),
+    ("a && dart pub publish", 1, 1),
+    ("a; dart pub publish", 1, 1),
+    # The skip on another command of the chain never reaches the publish.
+    ("RELEASE_SKIP_REGISTRY=x echo hi && dart pub publish", 1, 1),
+    ("echo RELEASE_SKIP_REGISTRY=x && dart pub publish", 1, 1),
+    ("export RELEASE_SKIP_REGISTRY=x; dart pub publish", 1, 1),
+    # Every publish of a chain, each with its own skip.
+    ("cd a && dart pub publish -f && cd ../b && dart pub publish -f", 2, 2),
+    ('RELEASE_SKIP_REGISTRY="r" dart pub publish -C a; dart pub publish -C b', 2, 1),
+]
+
+# (command, directory of each checked publish), cwd /r.
+_DIR_TESTS = [
+    (
+        "cd packages/a && dart pub publish -f && cd ../b && dart pub publish -f",
+        ["/r/packages/a", "/r/packages/b"],
+    ),
+    ("dart pub publish -C a; dart pub publish -C b", ["/r/a", "/r/b"]),
+    ("cd packages/flutter_edge_ai_litertlm && dart pub publish", ["/r/packages/flutter_edge_ai_litertlm"]),
 ]
 
 
+def _run_main(cmd, cwd):
+    """main() on [cmd] as the hook payload; (exit code, stderr)."""
+    import contextlib
+    import io
+
+    payload = json.dumps({"tool_input": {"command": cmd}, "cwd": cwd})
+    err = io.StringIO()
+    stdin = sys.stdin
+    sys.stdin = io.StringIO(payload)
+    try:
+        with contextlib.redirect_stderr(err):
+            code = main()
+    finally:
+        sys.stdin = stdin
+    return code, err.getvalue()
+
+
+def _end_to_end():
+    """main() against a scratch repository with a catalog package; the failures."""
+    import tempfile
+
+    bad = []
+    with tempfile.TemporaryDirectory() as repo:
+        for name, version in [("flutter_edge_ai", "2.0.0"), ("flutter_edge_ai_litertlm", "1.0.0")]:
+            os.makedirs(os.path.join(repo, "packages", name))
+            with open(os.path.join(repo, "packages", name, "pubspec.yaml"), "w") as fh:
+                fh.write(f"name: {name}\nversion: {version}\n")
+        with open(os.path.join(repo, ".gitignore"), "w") as fh:
+            fh.write(".dart_tool/\n")
+        for args in (
+            ["init", "-q"],
+            ["add", "-A"],
+            ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "t"],
+        ):
+            git(repo, *args)
+        core = "dart pub publish -f -C packages/flutter_edge_ai"
+        lite = "dart pub publish -f -C packages/flutter_edge_ai_litertlm"
+        cases = [
+            (core, 0),
+            (lite, 2),
+            (f"{core} && {lite}", 2),  # the second publish was unchecked
+            (f"cd packages/flutter_edge_ai && dart pub publish -f && cd ../flutter_edge_ai_litertlm && dart pub publish -f", 2),
+            (f'RELEASE_SKIP_REGISTRY="no device" {lite}', 0),
+            (f'{core} && RELEASE_SKIP_REGISTRY="no device" {lite}', 0),
+            (f"RELEASE_SKIP_REGISTRY= {lite}", 2),
+            (f"RELEASE_SKIP_REGISTRY=x echo hi && {lite}", 2),
+            (f"X=1 {lite}", 2),
+        ]
+        stamp_dir = os.path.join(repo, "tool", "model_registry", ".dart_tool", "release_check")
+        os.makedirs(stamp_dir)
+        stamp = os.path.join(stamp_dir, "flutter_edge_ai_litertlm-1.0.0.ok")
+        for cmd, want in cases:
+            got, err = _run_main(cmd, repo)
+            if got != want:
+                bad.append(f"main {cmd!r}: exit {got}, want {want} {err.strip()[:120]}")
+        # The positive control: a stamp at HEAD lets the publish through.
+        with open(stamp, "w") as fh:
+            json.dump({"head": git(repo, "rev-parse", "HEAD")}, fh)
+        if _run_main(lite, repo)[0] != 0:
+            bad.append("main: a stamp at HEAD still blocks")
+        # A stamp that is JSON but no object blocks instead of crashing open.
+        with open(stamp, "w") as fh:
+            json.dump([1], fh)
+        if _run_main(lite, repo)[0] != 2:
+            bad.append("main: a list stamp does not block")
+    return bad
+
+
 def _self_test():
-    bad = 0
-    for cmd, want_match, want_exempt in _TESTS:
-        got_match = bool(PUBLISH_RE.search(cmd))
-        got_exempt = got_match and _publish_is_exempt(cmd)
-        if got_match != want_match or got_exempt != want_exempt:
-            bad += 1
-            print(f"  FAIL {cmd!r}: match={got_match} exempt={got_exempt}")
-    assert SKIP_RE.search('RELEASE_SKIP_REGISTRY="no device" dart pub publish')
-    assert not SKIP_RE.search("echo RELEASE_SKIP_REGISTRY=x && dart pub publish")
-    want = os.path.normpath("/r/packages/flutter_edge_ai_litertlm")
-    got = publish_dir("cd packages/flutter_edge_ai_litertlm && dart pub publish", {"cwd": "/r"})
-    if got != want:
-        bad += 1
-        print(f"  FAIL publish_dir {got!r}")
-    print(f"  {len(_TESTS) + 1 - bad}/{len(_TESTS) + 1} pass; parse asserts ok")
+    bad = []
+    for cmd, want_found, want_checked in _TESTS:
+        found = len(list(PUBLISH_RE.finditer(cmd)))
+        checked = len(_checked_publishes(cmd))
+        if (found, checked) != (want_found, want_checked):
+            bad.append(f"{cmd!r}: found={found} checked={checked}")
+    for cmd, want in _DIR_TESTS:
+        got = [publish_dir(cmd, {"cwd": "/r"}, m) for m in _checked_publishes(cmd)]
+        if got != [os.path.normpath(w) for w in want]:
+            bad.append(f"publish_dir {cmd!r}: {got!r}")
+    bad += _end_to_end()
+    for line in bad:
+        print(f"  FAIL {line}")
+    total = len(_TESTS) + len(_DIR_TESTS) + 11
+    print(f"  {total - len(bad)}/{total} pass")
     return 1 if bad else 0
 
 

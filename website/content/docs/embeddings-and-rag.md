@@ -149,17 +149,17 @@ final vector = await embedder.embed(
 - **CPU natively, WebGPU on the Web.** **activeBackend** is
   **PreferredBackend.cpu** natively and **PreferredBackend.gpu** on the Web.
 - **GPU on Windows and Linux x64, when asked (litertlm 1.19.0).**
-  **preferredBackend: PreferredBackend.gpu** runs the text-only 270m bundle on
-  the GPU there (WebGPU over DX12 or Vulkan). Measured 2026-10-22: Windows on
+  **preferredBackend: PreferredBackend.gpu** runs the text tower on the GPU
+  there (WebGPU over DX12 or Vulkan). Measured on the 270m, 2026-10-22: Windows on
   Lunar Lake (Arc iGPU) 22 ms per text vs 83-90 ms on its CPU, Linux on a
   Tesla T4 32-64 ms vs 232-308 ms, min cos 0.997 to the CPU vectors (0.998 for
   a ~900-token text; the GPU computes in FP16) and the same distance to
   Sentence Transformers fp32 as the CPU. A load takes 1.7-3.6 s (0.3-0.6 s on
   CPU); the very first also builds the GPU caches, 5.9-8.2 s. A GPU LLM and
   the GPU embedder run together in one process (measured with Gemma 4 E2B).
-  - The 440m and 740m are refused on the GPU even for text: the engine would
-    compile their vision and audio towers there too, and nobody has measured
-    that. **gpu** with images or audio is refused as well.
+  - Only the text tower runs on the GPU. On the 440m and 740m the vision and
+    audio towers run on CPU, so images and audio embed at CPU speed with CPU
+    vectors. Not yet measured on a device for these two bundles.
   - A GPU that cannot create the engine fails the load, and every GPU load
     checks one probe embedding; nothing falls back to CPU. A software adapter
     is not excluded, though: on a Linux box with no GPU driver loaded,
@@ -171,9 +171,8 @@ final vector = await embedder.embed(
   - A cold load without **preferredBackend** runs on CPU, but a later
     automatic request reuses whatever embedder is loaded, the GPU one
     included.
-  - The 270m has no vision or audio encoder. In RAG, an image index needs the
-    440m or 740m on **PreferredBackend.cpu**: another bundle, so it and a GPU
-    text index reload each other on every switch.
+  - The 270m has no vision or audio encoder. In RAG, a text index and an
+    image index can share one 440m or 740m embedder on the GPU.
   - On macOS, iOS, Android and Linux arm64 **gpu** is not applied: on macOS
     the Metal path ends the process inside LiteRT at engine create (iOS uses
     the same accelerator, not run), and Android and Linux arm64 are not

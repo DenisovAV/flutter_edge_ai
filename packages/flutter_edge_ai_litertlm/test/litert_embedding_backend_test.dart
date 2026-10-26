@@ -758,8 +758,8 @@ void main() {
       expect((d.config as LiteRtLmEmbeddingConfig).gpu, isFalse);
     });
 
-    test('images on the GPU are refused: the 270m has no vision encoder, so '
-        'the refusal names the bundles that do, on CPU', () async {
+    test('images on the GPU with the 270m are refused before the held '
+        'embedder closes, naming the bundle with a vision encoder', () async {
       hostIs(_IntelWindows());
       await expectLater(
         describeGpu(supportImage: true),
@@ -767,47 +767,78 @@ void main() {
           'LiteRT-LM',
           allOf(
             contains('has no vision encoder'),
-            contains('Images need the 440m or 740m'),
-            contains('preferredBackend: cpu'),
-            contains('refused on the GPU'),
+            contains('embeddinggemma-2-text-vision-440m'),
+            isNot(contains('preferredBackend: cpu')),
           ),
         ),
       );
     });
 
-    test('a bundle with vision or audio towers is refused on the GPU even for '
-        'text: LiteRT-LM would compile those towers there too', () async {
+    test('a bundle with vision or audio towers runs its text tower on the '
+        'GPU and names each present tower cpu, declared or not', () async {
       hostIs(_IntelWindows());
-      for (final (model, audio) in [
-        ('eg2.litertlm', false),
-        ('eg2_audio.litertlm', false),
-        ('eg2_audio.litertlm', true),
+      for (final (model, image, audio, vision, audioTower) in [
+        ('eg2_text.litertlm', false, false, false, false),
+        ('eg2.litertlm', false, false, true, false),
+        ('eg2.litertlm', true, false, true, false),
+        ('eg2_audio.litertlm', false, false, true, true),
+        ('eg2_audio.litertlm', true, true, true, true),
       ]) {
-        await expectLater(
-          describeGpu(model: model, supportAudio: audio),
-          _loadRefusal(
-            'LiteRT-LM',
-            allOf(
-              contains('vision or audio encoders'),
-              contains('embeddinggemma-2-text-270m'),
-              contains('preferredBackend: cpu'),
-            ),
-          ),
-          reason: '$model audio=$audio',
+        final d = await describeGpu(
+          model: model,
+          supportImage: image,
+          supportAudio: audio,
         );
+        final config = d.config as LiteRtLmEmbeddingConfig;
+        final reason = '$model image=$image audio=$audio';
+        expect(d.activeBackend, PreferredBackend.gpu, reason: reason);
+        expect(config.gpu, isTrue, reason: reason);
+        expect(config.visionTowerOnCpu, vision, reason: reason);
+        expect(config.audioTowerOnCpu, audioTower, reason: reason);
       }
     });
 
-    test('on the real headers: the 270m passes the text-only check, the 440m '
-        'and the 740m do not', () {
-      requireLiteRtLmTextOnlyBundle(_header270m);
-      for (final header in [_header440m, _header740m]) {
-        expect(
-          () => requireLiteRtLmTextOnlyBundle(header),
-          throwsA(isA<EmbeddingLoadException>()),
-          reason: header,
-        );
-      }
+    test('a CPU load names no tower', () async {
+      final d = await backend.describe(
+        _bundle(model: 'eg2_audio.litertlm'),
+        _config('$bundles/eg2_audio.litertlm', supportAudio: true),
+      );
+      final config = d.config as LiteRtLmEmbeddingConfig;
+      expect(config.visionTowerOnCpu, isFalse);
+      expect(config.audioTowerOnCpu, isFalse);
+    });
+
+    test('on the real headers: the 270m has no media tower, the 440m a vision '
+        'tower, the 740m vision and audio', () {
+      expect(readLiteRtLmMediaTowers(_header270m), (
+        vision: false,
+        audio: false,
+      ));
+      expect(readLiteRtLmMediaTowers(_header440m), (
+        vision: true,
+        audio: false,
+      ));
+      expect(readLiteRtLmMediaTowers(_header740m), (vision: true, audio: true));
+    });
+
+    test('an unreadable container on the GPU is a load failure naming the '
+        'towers it looked for', () async {
+      hostIs(_IntelWindows());
+      File('$bundles/garbage.litertlm').writeAsBytesSync(List.filled(64, 1));
+      await expectLater(
+        describeGpu(model: 'garbage.litertlm'),
+        throwsA(isA<EmbeddingLoadException>()),
+      );
+      expect(
+        () => readLiteRtLmMediaTowers('$bundles/garbage.litertlm'),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            contains('its vision and audio towers'),
+          ),
+        ),
+      );
     });
 
     test(

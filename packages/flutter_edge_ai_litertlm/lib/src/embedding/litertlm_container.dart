@@ -105,15 +105,24 @@ List<String> litertlmModelTypes(Uint8List header) {
 }
 
 /// Whether a bundle whose `TFLiteModel` sections have [modelTypes] carries a
-/// vision or audio tower (`tf_lite_vision_*`, `tf_lite_audio_*`,
-/// `tf_lite_end_of_*`): the 440m and the 740m do, the 270m has only
-/// `tf_lite_text_encoder` and `tf_lite_embedder`. LiteRT-LM compiles every
-/// present tower on the main backend at create, declared or not.
-bool litertlmHasMediaTowers(Iterable<String> modelTypes) => modelTypes.any(
+/// vision tower (`tf_lite_vision_*`, `tf_lite_end_of_vision`): the 440m and
+/// the 740m do, the 270m has only `tf_lite_text_encoder` and
+/// `tf_lite_embedder`. LiteRT-LM compiles every present tower at create,
+/// declared or not: on its own backend when one is named, else on the main
+/// one.
+bool litertlmHasVisionTower(Iterable<String> modelTypes) => modelTypes.any(
   (type) =>
       type.startsWith('tf_lite_vision') ||
+      type.startsWith('tf_lite_end_of_vision'),
+);
+
+/// Whether a bundle whose `TFLiteModel` sections have [modelTypes] carries an
+/// audio tower (`tf_lite_audio_*`, `tf_lite_end_of_audio`): only the 740m.
+/// Compiled at create like the vision tower ([litertlmHasVisionTower]).
+bool litertlmHasAudioTower(Iterable<String> modelTypes) => modelTypes.any(
+  (type) =>
       type.startsWith('tf_lite_audio') ||
-      type.startsWith('tf_lite_end_of'),
+      type.startsWith('tf_lite_end_of_audio'),
 );
 
 /// Whether a bundle whose `TFLiteModel` sections have [modelTypes] carries an

@@ -60,9 +60,9 @@ LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 /// The adapter is Dawn's choice: with no GPU driver loaded, Linux ran it on
 /// Mesa's llvmpipe (software Vulkan), reported as gpu, 37-48 s per load, and
 /// a ~900-token text failed there with DEADLINE_EXCEEDED.
-/// Only the text-only 270m bundle: the 440m and 740m would compile their
-/// vision and audio towers on the GPU too (`requireLiteRtLmTextOnlyBundle`).
-/// The GPU runs FP16 activations by default. macOS and iOS are not here: their
+/// Only the text tower runs on the GPU: on the 440m and 740m the pass names
+/// their vision and audio towers cpu (`readLiteRtLmMediaTowers`), which is
+/// not yet measured on these hosts. The GPU runs FP16 activations by default. macOS and iOS are not here: their
 /// Metal accelerator ends the process with a SIGBUS in LiteRT's external
 /// weight loader (`PrepareAccessForBuffer`) at engine create (measured on
 /// macOS), which no Dart code can catch. Android's OpenCL accelerator and

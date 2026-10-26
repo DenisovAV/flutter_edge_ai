@@ -1,5 +1,5 @@
 ## 1.19.0
-- EmbeddingGemma 2 270m text on the GPU on Windows and Linux x64; `gpu` on other EG2 bundles throws there.
+- EmbeddingGemma 2 text on the GPU on Windows and Linux x64; image and audio towers stay on CPU.
 
 ## 1.18.0
 - `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).

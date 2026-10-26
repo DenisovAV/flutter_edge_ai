@@ -102,6 +102,8 @@ void main() {
     LiteRtLmNpuTarget? npuTarget,
     String npuDispatchDir = _dispatchDir,
     bool gpu = false,
+    bool visionTowerOnCpu = false,
+    bool audioTowerOnCpu = false,
   }) => LiteRtLmEmbeddingPass(
     LiteRtLmEmbeddingConfig(
       modelPath: modelPath,
@@ -113,6 +115,8 @@ void main() {
       npuTarget: npuTarget,
       npuDispatchDir: npuTarget == null ? null : npuDispatchDir,
       gpu: gpu,
+      visionTowerOnCpu: visionTowerOnCpu,
+      audioTowerOnCpu: audioTowerOnCpu,
     ),
     openBindings: openBindings ?? () => native,
     allocator: allocator,
@@ -1897,6 +1901,51 @@ void main() {
           ),
         ),
       );
+      expectNothingLeaked();
+    });
+
+    test('the 740m: text on "gpu", its vision and audio towers named "cpu", '
+        'images and audio embedded', () async {
+      File(_header740m).copySync(modelPath);
+      native.visionSignatures = const [70, 140];
+      final p = pass(
+        gpu: true,
+        visionTowerOnCpu: true,
+        audioTowerOnCpu: true,
+        declaredMedia: {EmbeddingModality.image, EmbeddingModality.audio},
+      );
+      final info = await p.load();
+      expect(native.settingsBackend, 'gpu');
+      expect(native.settingsVisionBackend, 'cpu');
+      expect(native.settingsAudioBackend, 'cpu');
+      expect(info.activeBackend, PreferredBackend.gpu);
+      expect(info.modalities, {
+        EmbeddingModality.text,
+        EmbeddingModality.image,
+        EmbeddingModality.audio,
+      });
+      expect(
+        await p.embed(EmbeddingInput.image(_png), TaskType.retrievalDocument),
+        hasLength(4),
+      );
+      expect(
+        await p.embed(EmbeddingInput.audio(_wav), TaskType.retrievalDocument),
+        hasLength(4),
+      );
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('the 440m: its vision tower named "cpu" even with no image '
+        'declared, and no audio tower named (it has none)', () async {
+      File(_header440m).copySync(modelPath);
+      native.visionSignatures = const [70, 140];
+      final p = pass(gpu: true, visionTowerOnCpu: true);
+      await p.load();
+      expect(native.settingsBackend, 'gpu');
+      expect(native.settingsVisionBackend, 'cpu');
+      expect(native.settingsAudioBackend, isNull);
+      await p.close();
       expectNothingLeaked();
     });
   });

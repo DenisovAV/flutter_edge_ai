@@ -137,16 +137,22 @@ void requireLiteRtLmAudioEncoder(String modelPath) {
   if (!litertlmHasAudioEncoder(types)) throw liteRtLmNoAudioEncoder(file);
 }
 
-/// Throws [EmbeddingLoadException] when the `.litertlm` bundle at [modelPath]
-/// carries a vision or audio tower, read from its container header. Called by
-/// `LiteRtEmbeddingBackend.describe()` for a GPU load: LiteRT-LM compiles
-/// every present tower on the main backend at create, whatever was declared,
-/// and only the text-only 270m is measured on the GPU. A header this reader
-/// cannot parse is a load failure.
-void requireLiteRtLmTextOnlyBundle(String modelPath) {
+/// The vision and audio towers the `.litertlm` bundle at [modelPath] carries,
+/// read from its container header. Called by `LiteRtEmbeddingBackend.describe()`
+/// for a GPU load: LiteRT-LM compiles every present tower at create, declared
+/// or not, on the main backend unless the tower's own is named, so the pass
+/// names each present tower `cpu` and keeps only the text tower on the GPU.
+/// A tower the bundle lacks is never named (create fails with code 5). A
+/// header this reader cannot parse is a load failure.
+({bool vision, bool audio}) readLiteRtLmMediaTowers(String modelPath) {
   final file = _fileName(modelPath);
   Never cannotRead(Object e, String reason) =>
-      throw liteRtLmUnreadableContainer(file, reason, e);
+      throw liteRtLmUnreadableContainer(
+        file,
+        reason,
+        e,
+        looking: 'its vision and audio towers',
+      );
   final List<String> types;
   try {
     types = readLitertlmModelTypes(modelPath);
@@ -155,15 +161,10 @@ void requireLiteRtLmTextOnlyBundle(String modelPath) {
   } on FormatException catch (e) {
     cannotRead(e, e.message);
   }
-  if (litertlmHasMediaTowers(types)) {
-    throw EmbeddingLoadException(
-      '$file carries vision or audio encoders, which LiteRT-LM compiles on '
-      'the GPU too, even for text; only the text-only 270m bundle is measured '
-      'on the GPU. Install embeddinggemma-2-text-270m to embed text on the '
-      'GPU, or load this one with preferredBackend: cpu.',
-      engine: liteRtLmEngineTag,
-    );
-  }
+  return (
+    vision: litertlmHasVisionTower(types),
+    audio: litertlmHasAudioTower(types),
+  );
 }
 
 /// What `LiteRtEmbeddingBackend.describe` hands core for a `.litertlm`
@@ -180,9 +181,15 @@ final class LiteRtLmEmbeddingConfig {
     this.npuTarget,
     this.npuDispatchDir,
     this.gpu = false,
+    this.visionTowerOnCpu = false,
+    this.audioTowerOnCpu = false,
   }) : assert(
          (npuTarget == null) == (npuDispatchDir == null),
          'an NPU bundle runs with a dispatch directory, a CPU one without',
+       ),
+       assert(
+         gpu || !(visionTowerOnCpu || audioTowerOnCpu),
+         'a tower is named cpu only beside a text tower on the GPU',
        );
 
   /// The `.litertlm` bundle core resolved for the active spec.
@@ -226,11 +233,24 @@ final class LiteRtLmEmbeddingConfig {
   /// none of). Set with [npuTarget].
   final String? npuDispatchDir;
 
-  /// A generic bundle on the GPU (LiteRT-LM's GPU executor, which LiteRT runs
-  /// on the GPU alone, never falling back to CPU), asked for with
-  /// `preferredBackend: gpu` on a `liteRtLmEmbeddingGpuAbis` host, text only.
+  /// A generic bundle's text tower on the GPU (LiteRT-LM's GPU executor, which
+  /// LiteRT runs on the GPU alone, never falling back to CPU), asked for with
+  /// `preferredBackend: gpu` on a `liteRtLmEmbeddingGpuAbis` host. Its vision
+  /// and audio towers run on CPU ([visionTowerOnCpu], [audioTowerOnCpu]).
   /// Never set with [npuTarget].
   final bool gpu;
+
+  /// With [gpu]: the bundle carries a vision tower (the 440m, the 740m), and
+  /// the pass names its backend `cpu`, declared images or not — LiteRT-LM
+  /// compiles a present tower at create, on the main backend when its own is
+  /// NULL. Set from the container header by `describe()`
+  /// ([readLiteRtLmMediaTowers]), because naming a tower the bundle lacks
+  /// fails create.
+  final bool visionTowerOnCpu;
+
+  /// With [gpu]: the bundle carries an audio tower (the 740m), named `cpu`
+  /// like [visionTowerOnCpu].
+  final bool audioTowerOnCpu;
 
   /// The backend the engine is created on.
   PreferredBackend get backend => npuTarget != null
@@ -433,8 +453,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       // vision towers write none (upstream gives an NPU graph no XNNPack
       // cache), but declared audio runs on CPU (see _createEngine) and writes
       // one. The GPU writes its own weight and program caches (ML Drift's
-      // `*_mldrift_{weight,program}_cache.bin`), which this check does not
-      // look at; it runs the text-only bundle alone.
+      // `*_mldrift_{weight,program}_cache.bin`) for the text tower, which this
+      // check does not look at, and the 440m/740m towers beside it on CPU are
+      // not checked either.
       // Inside the try: a refusal deletes the engine and the options it made.
       final onCpu = _config.backend == PreferredBackend.cpu;
       if (onCpu || (_onNpu && audio)) {
@@ -1138,7 +1159,14 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     // mismatch. Model requires one of [cpu,gpu] but Audio backend is NPU"
     // (Galaxy S26+, SM8850, 2026-10-13). Audio is declared only on a bundle
     // whose container has an audio encoder, so naming it here is safe.
-    final audioBackend = _onNpu && audio
+    // The other: with the text tower on the GPU, every tower the container
+    // has is named cpu (describe() read which), so only text runs on the GPU;
+    // the bundles' `tf_lite_end_of_vision`/`_audio` sections are themselves
+    // constrained to cpu.
+    final visionBackend = _config.visionTowerOnCpu
+        ? 'cpu'.toNativeUtf8(allocator: _alloc)
+        : nullptr;
+    final audioBackend = (_onNpu && audio) || _config.audioTowerOnCpu
         ? 'cpu'.toNativeUtf8(allocator: _alloc)
         : nullptr;
     final Pointer<LiteRtLmEmbeddingEngineSettings> settings;
@@ -1147,12 +1175,13 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       settings = b.litert_lm_embedding_engine_settings_create(
         path.cast(),
         backend.cast(),
-        nullptr,
+        visionBackend.cast(),
         audioBackend.cast(),
       );
     } finally {
       _alloc.free(path);
       _alloc.free(backend);
+      if (visionBackend != nullptr) _alloc.free(visionBackend);
       if (audioBackend != nullptr) _alloc.free(audioBackend);
     }
     if (settings == nullptr) {

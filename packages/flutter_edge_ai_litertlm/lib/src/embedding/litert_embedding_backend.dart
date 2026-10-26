@@ -192,16 +192,17 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
     requested: config.preferredBackend,
   );
   final onGpu = placement.backend == PreferredBackend.gpu;
-  if (onGpu) requireLiteRtLmTextOnlyBundle(config.modelPath);
-  if (onGpu && config.supportImage) {
-    // Reached only by the text-only 270m: a bundle with towers was refused
-    // just above, and declared audio on a bundle without an audio encoder at
-    // the top. The 270m has no vision encoder on any backend, so the advice
-    // is another bundle, not another backend.
+  // On the GPU only the text tower runs there: the pass names every tower the
+  // container has cpu, and must not name one it lacks (create fails).
+  final towers = onGpu
+      ? readLiteRtLmMediaTowers(config.modelPath)
+      : (vision: false, audio: false);
+  if (onGpu && config.supportImage && !towers.vision) {
+    // The 270m. The pass would refuse it from ModelInfo after core closed the
+    // embedder it holds; the header is already read here, so refuse before,
+    // in the pass's words.
     throw EmbeddingLoadException(
-      '$file has no vision encoder: it embeds text only, on any backend. '
-      'Images need the 440m or 740m EmbeddingGemma 2 bundle, loaded with '
-      'preferredBackend: cpu; those bundles are refused on the GPU.',
+      '$file has no vision encoder; install embeddinggemma-2-text-vision-440m',
       engine: _liteRtLm,
     );
   }
@@ -213,8 +214,9 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   }
   if (requireWeightCache && onGpu) {
     noticeRequireWeightCacheNotApplied(
-      '$file runs on the GPU, which writes its own weight and program caches '
-      '(ML Drift), not the XNNPack weight cache the flag checks',
+      '$file runs its text tower on the GPU, which writes its own weight and '
+      'program caches (ML Drift), not the XNNPack weight cache the flag '
+      'checks; a GPU load is not checked',
     );
   }
   // The platform CACHE directory, not application support: iOS backs that up
@@ -243,11 +245,14 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
       npuTarget: placement.target,
       npuDispatchDir: placement.dispatchDir,
       gpu: onGpu,
+      visionTowerOnCpu: towers.vision,
+      audioTowerOnCpu: towers.audio,
     ),
-    // `settings_create(path, "cpu" | "gpu" | "npu", NULL, NULL)`: the text tower on
-    // that backend, and the vision and audio towers with it (NULL tower
-    // backends run on the main one, D26). The pass refuses to load rather
-    // than fall back, so this is what runs.
+    // `settings_create(path, "cpu" | "gpu" | "npu", vision, audio)`: the text
+    // tower on that backend. The vision and audio towers run with it (NULL,
+    // D26), except on the GPU, where each present one is named cpu, and the
+    // 740m's audio on the NPU (cpu). The pass refuses to load rather than
+    // fall back, so this is what runs; the core API reports the text tower's.
     activeBackend: placement.backend,
   );
 }

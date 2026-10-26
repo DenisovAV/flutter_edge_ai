@@ -59,24 +59,28 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// tower (71 MB for the 270m, 385 MB for the 740m); on the GPU (Windows and
   /// Linux x64, 1.19.0) ML Drift's `…_mldrift_weight_cache.bin` and
   /// `…_mldrift_program_cache.bin` for the text tower (68 MB and 9 MB for the
-  /// 270m). A cache the engine cannot create — a path too long for the
-  /// platform (Windows' 260-character MAX_PATH, which the GPU caches cannot
-  /// exceed either; a file name past 255 characters), a directory this
+  /// 270m), and XNNPack's for the 440m/740m vision and audio towers, which
+  /// run on CPU beside it. A cache the engine cannot create — a path too long
+  /// for the platform (Windows' 260-character MAX_PATH, which the GPU caches
+  /// cannot exceed either; a file name past 255 characters, UTF-8 bytes off
+  /// Windows), on Windows a GPU cache path with characters outside ASCII
+  /// (unless the process's ANSI code page is UTF-8), a directory this
   /// process cannot write to, or possibly no free space at all — leaves the
   /// load working but cold: slower to load every time and, on CPU, measured
   /// on the 270m, about 290 MB more memory. By default no cache at all is a
   /// printed warning. With `true` the load fails instead:
   /// `getActiveEmbedder()` throws an `EmbeddingLoadException` naming the
   /// cache directory, the length of the cache file path and the likely
-  /// causes, and no engine is left running. On the GPU a path too long for
-  /// the GPU caches is refused before the engine is created. A disk that
+  /// causes, and no engine is left running. On the GPU a path the GPU caches
+  /// cannot be created at is refused before the engine is created. A disk that
   /// fills while the CPU cache is being built is not covered: the engine
   /// (XNNPack) then aborts the process in native code, and no flag can catch
   /// that.
   ///
   /// The refusal needs no real cache file at all (on the GPU: neither ML
-  /// Drift file); one tower's file missing beside the others, or one of the
-  /// two GPU files, is a printed warning either way. It applies on CPU and
+  /// Drift file, or no XNNPack file for the CPU towers beside it); one
+  /// tower's file missing beside the others, or one of the two GPU files, is
+  /// a printed warning either way. It applies on CPU and
   /// on the GPU, and on the NPU only to a load with declared audio, whose
   /// tower runs on CPU (the NPU's text and vision towers write no cache). It
   /// does not apply to `.tflite` embedders nor on the web, which keeps no

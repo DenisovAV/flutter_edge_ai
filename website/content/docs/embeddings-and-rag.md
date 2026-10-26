@@ -212,8 +212,9 @@ final vector = await embedder.embed(
   **EmbeddingLoadException** naming the cache directory, the length of the
   cache file path and the likely causes, and no engine is left running. One
   tower's cache missing beside the others stays a printed warning. It applies
-  on CPU, on the GPU (ML Drift's weight and program caches; one of the two
-  missing stays a warning), and on the NPU only with declared audio, whose
+  on CPU, on the GPU (ML Drift's weight and program caches, one of the two
+  missing stays a warning; and the CPU caches of the 440m/740m vision and
+  audio towers), and on the NPU only with declared audio, whose
   tower runs on CPU;
   the Web and a **.tflite** embedder (EmbeddingGemma 1, Gecko) accept it and
   ignore it, and a debug build says so once in the log. The warning is a **print**, which a

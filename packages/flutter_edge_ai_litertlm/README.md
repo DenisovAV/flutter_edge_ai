@@ -340,8 +340,10 @@ final vector = await embedder.embed(
   (Gemma 4 E2B), the embedder loaded before and after it.
   - Only the text tower runs on the GPU. On the 440m and 740m the vision and
     audio towers run on CPU (each named `cpu` at create, declared or not), so
-    images and audio embed at CPU speed and with CPU vectors. Not yet
-    measured on a device for these two bundles.
+    images and audio embed at CPU speed and with CPU vectors. A text-only
+    GPU load of these bundles still compiles those towers at create, with
+    their memory and the same XNNPack caches a CPU load writes for them. Not
+    yet measured on a device for these two bundles.
   - No fallback: LiteRT runs the GPU graph without a CPU accelerator, so a
     GPU that cannot create the engine fails the load, and every GPU load
     embeds one probe text and refuses a non-finite or zero vector. The
@@ -355,10 +357,14 @@ final vector = await embedder.embed(
     `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
     (9 MB) for the text tower. `requireWeightCache` covers them (1.19.0):
     a path the GPU cannot create them at (Windows' 260-character MAX_PATH,
-    which the accelerator cannot exceed, or a file name past 255
-    characters) is refused before the engine is created, and neither file
-    written by the end of the load's probe embedding is refused after it;
-    without the flag both are printed warnings.
+    which the accelerator cannot exceed; a file name past 255 characters,
+    UTF-8 bytes off Windows; on Windows a path with characters outside
+    ASCII, which the accelerator opens with the ANSI `CreateFileA`, unless
+    the process's ANSI code page is UTF-8) is refused before the engine is
+    created, and neither file written by the end of the load's probe
+    embedding is refused after it; without the flag each is one printed
+    warning. The 440m/740m vision and audio towers beside it are checked as
+    on CPU.
   - A cold load without `preferredBackend` runs on CPU; a later automatic
     request reuses whatever embedder is loaded, the GPU one included.
   - The 270m has no vision or audio encoder. A text index and an image index
@@ -400,7 +406,8 @@ final vector = await embedder.embed(
   length of the cache file path and the likely causes, and no engine is left
   running. One tower's cache missing beside the others stays a printed
   warning. It applies on CPU, on the GPU (ML Drift's weight and program
-  caches; one of the two missing stays a warning), and on the NPU only to a
+  caches, one of the two missing stays a warning; and the CPU caches of the
+  440m/740m vision and audio towers), and on the NPU only to a
   load with declared audio, whose tower runs on CPU. For a `.tflite` embedder and on the web it
   is accepted and ignored, which a debug build says once. It takes effect
   when an embedder is loaded: one already loaded is kept.

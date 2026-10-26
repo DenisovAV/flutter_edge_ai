@@ -449,7 +449,7 @@ Then add the CDN script(s) for the **engine package(s) you use**.
 
 ```
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>

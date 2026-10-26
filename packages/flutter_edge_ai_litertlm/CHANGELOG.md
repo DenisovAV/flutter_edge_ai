@@ -1,6 +1,9 @@
+## 1.19.0
+- EmbeddingGemma 2 270m text on the GPU on Windows and Linux x64; `gpu` on other EG2 bundles throws there.
+
 ## 1.18.0
 - `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).
-- EmbeddingGemma 2 270m on the GPU on Windows and Linux x64 (`gpu`); `gpu` with media now throws there.
+- Another package's libLiteRtLm in the app is refused at load with the cause and the fix (#722).
 
 ## 1.17.0
 - MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).

@@ -51,8 +51,8 @@ larger chunk just because the model file declares a larger context.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.2
-  flutter_edge_ai_litertlm: ^1.17.0
+  flutter_edge_ai: ^2.5.3
+  flutter_edge_ai_litertlm: ^1.18.0
   flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.1.2
   flutter_edge_ai_sqlite: ^2.1.1 # all six platforms, including Web
@@ -148,7 +148,7 @@ final vector = await embedder.embed(
   an over-long input costs one full embedding before it is refused.
 - **CPU natively, WebGPU on the Web.** **activeBackend** is
   **PreferredBackend.cpu** natively and **PreferredBackend.gpu** on the Web.
-- **GPU on Windows and Linux x64, when asked (litertlm 1.18.0).**
+- **GPU on Windows and Linux x64, when asked (litertlm 1.19.0).**
   **preferredBackend: PreferredBackend.gpu** runs the text-only 270m bundle on
   the GPU there (WebGPU over DX12 or Vulkan). Measured 2026-10-22: Windows on
   Lunar Lake (Arc iGPU) 22 ms per text vs 83-90 ms on its CPU, Linux on a

@@ -291,7 +291,7 @@ final eg2Index = await rag.open(
 - It runs on CPU natively (`activeBackend` is `PreferredBackend.cpu`) and on
   WebGPU on Web (`PreferredBackend.gpu`), and refuses `PreferredBackend.npu`:
   the NPU runs the per-SoC bundles (next section). On Windows x64 and Linux
-  x64 (`flutter_edge_ai_litertlm` 1.18.0) `preferredBackend:
+  x64 (`flutter_edge_ai_litertlm` 1.19.0) `preferredBackend:
   PreferredBackend.gpu` runs the text-only 270m on the GPU: 22 ms per text
   vs 83-90 ms on CPU (Lunar Lake), 32-64 ms vs 232-308 ms (Tesla T4), min cos
   0.997 to the CPU vectors. The 440m and 740m are refused on `gpu` even for

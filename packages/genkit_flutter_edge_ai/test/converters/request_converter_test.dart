@@ -12,7 +12,10 @@ void main() {
   group('convertMessages', () {
     test('converts user text message', () async {
       final messages = [
-        Message(role: Role.user, content: [TextPart(text: 'Hello')]),
+        Message(
+          role: Role.user,
+          content: [TextPart(text: 'Hello')],
+        ),
       ];
 
       final result = await convertMessages(messages);
@@ -24,7 +27,10 @@ void main() {
 
     test('converts model text message', () async {
       final messages = [
-        Message(role: Role.model, content: [TextPart(text: 'Hi there')]),
+        Message(
+          role: Role.model,
+          content: [TextPart(text: 'Hi there')],
+        ),
       ];
 
       final result = await convertMessages(messages);
@@ -34,28 +40,42 @@ void main() {
       expect(result[0].isUser, isFalse);
     });
 
-    test('skips system messages (handled via extractSystemInstruction)',
-        () async {
-      final messages = [
-        Message(
-          role: Role.system,
-          content: [TextPart(text: 'You are helpful.')],
-        ),
-        Message(role: Role.user, content: [TextPart(text: 'Hello')]),
-      ];
+    test(
+      'skips system messages (handled via extractSystemInstruction)',
+      () async {
+        final messages = [
+          Message(
+            role: Role.system,
+            content: [TextPart(text: 'You are helpful.')],
+          ),
+          Message(
+            role: Role.user,
+            content: [TextPart(text: 'Hello')],
+          ),
+        ];
 
-      final result = await convertMessages(messages);
+        final result = await convertMessages(messages);
 
-      expect(result, hasLength(1));
-      expect(result[0].text, 'Hello');
-      expect(result[0].isUser, isTrue);
-    });
+        expect(result, hasLength(1));
+        expect(result[0].text, 'Hello');
+        expect(result[0].isUser, isTrue);
+      },
+    );
 
     test('skips multiple system messages', () async {
       final messages = [
-        Message(role: Role.system, content: [TextPart(text: 'Rule 1')]),
-        Message(role: Role.system, content: [TextPart(text: 'Rule 2')]),
-        Message(role: Role.user, content: [TextPart(text: 'Hello')]),
+        Message(
+          role: Role.system,
+          content: [TextPart(text: 'Rule 1')],
+        ),
+        Message(
+          role: Role.system,
+          content: [TextPart(text: 'Rule 2')],
+        ),
+        Message(
+          role: Role.user,
+          content: [TextPart(text: 'Hello')],
+        ),
       ];
 
       final result = await convertMessages(messages);
@@ -80,8 +100,14 @@ void main() {
 
     test('converts multi-turn conversation', () async {
       final messages = [
-        Message(role: Role.user, content: [TextPart(text: 'Hi')]),
-        Message(role: Role.model, content: [TextPart(text: 'Hello!')]),
+        Message(
+          role: Role.user,
+          content: [TextPart(text: 'Hi')],
+        ),
+        Message(
+          role: Role.model,
+          content: [TextPart(text: 'Hello!')],
+        ),
         Message(
           role: Role.user,
           content: [TextPart(text: 'How are you?')],
@@ -102,10 +128,15 @@ void main() {
       final dataUrl = 'data:image/jpeg;base64,$base64Data';
 
       final messages = [
-        Message(role: Role.user, content: [
-          TextPart(text: 'Describe this'),
-          MediaPart(media: Media(url: dataUrl, contentType: 'image/jpeg')),
-        ]),
+        Message(
+          role: Role.user,
+          content: [
+            TextPart(text: 'Describe this'),
+            MediaPart(
+              media: Media(url: dataUrl, contentType: 'image/jpeg'),
+            ),
+          ],
+        ),
       ];
 
       final result = await convertMessages(messages);
@@ -125,11 +156,15 @@ void main() {
       try {
         final fileUrl = tempFile.uri.toString(); // file:///...
         final messages = [
-          Message(role: Role.user, content: [
-            TextPart(text: 'Describe'),
-            MediaPart(
-                media: Media(url: fileUrl, contentType: 'image/jpeg')),
-          ]),
+          Message(
+            role: Role.user,
+            content: [
+              TextPart(text: 'Describe'),
+              MediaPart(
+                media: Media(url: fileUrl, contentType: 'image/jpeg'),
+              ),
+            ],
+          ),
         ];
 
         final result = await convertMessages(messages);
@@ -149,15 +184,18 @@ void main() {
 
       try {
         final messages = [
-          Message(role: Role.user, content: [
-            TextPart(text: 'Describe'),
-            MediaPart(
-              media: Media(
-                url: tempFile.path, // /tmp/.../test_image.jpg
-                contentType: 'image/jpeg',
+          Message(
+            role: Role.user,
+            content: [
+              TextPart(text: 'Describe'),
+              MediaPart(
+                media: Media(
+                  url: tempFile.path, // /tmp/.../test_image.jpg
+                  contentType: 'image/jpeg',
+                ),
               ),
-            ),
-          ]),
+            ],
+          ),
         ];
 
         final result = await convertMessages(messages);
@@ -171,14 +209,17 @@ void main() {
 
     test('handles tool response message', () async {
       final messages = [
-        Message(role: Role.tool, content: [
-          ToolResponsePart(
-            toolResponse: ToolResponse(
-              name: 'get_weather',
-              output: {'temp': '15C'},
+        Message(
+          role: Role.tool,
+          content: [
+            ToolResponsePart(
+              toolResponse: ToolResponse(
+                name: 'get_weather',
+                output: {'temp': '15C'},
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ];
 
       final result = await convertMessages(messages);
@@ -189,14 +230,17 @@ void main() {
 
     test('handles model message with tool request', () async {
       final messages = [
-        Message(role: Role.model, content: [
-          ToolRequestPart(
-            toolRequest: ToolRequest(
-              name: 'get_weather',
-              input: {'location': 'Paris'},
+        Message(
+          role: Role.model,
+          content: [
+            ToolRequestPart(
+              toolRequest: ToolRequest(
+                name: 'get_weather',
+                input: {'location': 'Paris'},
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ];
 
       final result = await convertMessages(messages);
@@ -207,20 +251,23 @@ void main() {
 
     test('handles model message with parallel tool requests', () async {
       final messages = [
-        Message(role: Role.model, content: [
-          ToolRequestPart(
-            toolRequest: ToolRequest(
-              name: 'get_weather',
-              input: {'location': 'Paris'},
+        Message(
+          role: Role.model,
+          content: [
+            ToolRequestPart(
+              toolRequest: ToolRequest(
+                name: 'get_weather',
+                input: {'location': 'Paris'},
+              ),
             ),
-          ),
-          ToolRequestPart(
-            toolRequest: ToolRequest(
-              name: 'get_time',
-              input: {'timezone': 'CET'},
+            ToolRequestPart(
+              toolRequest: ToolRequest(
+                name: 'get_time',
+                input: {'timezone': 'CET'},
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ];
 
       final result = await convertMessages(messages);
@@ -237,16 +284,22 @@ void main() {
 
     test('an empty ref is no id, on the call and on its result', () async {
       final result = await convertMessages([
-        Message(role: Role.model, content: [
-          ToolRequestPart(
-            toolRequest: ToolRequest(ref: '', name: 'ping', input: {}),
-          ),
-        ]),
-        Message(role: Role.tool, content: [
-          ToolResponsePart(
-            toolResponse: ToolResponse(ref: '', name: 'ping', output: 'ok'),
-          ),
-        ]),
+        Message(
+          role: Role.model,
+          content: [
+            ToolRequestPart(
+              toolRequest: ToolRequest(ref: '', name: 'ping', input: {}),
+            ),
+          ],
+        ),
+        Message(
+          role: Role.tool,
+          content: [
+            ToolResponsePart(
+              toolResponse: ToolResponse(ref: '', name: 'ping', output: 'ok'),
+            ),
+          ],
+        ),
       ]);
 
       expect(result[0].toolCalls.single.id, isNull);
@@ -255,30 +308,34 @@ void main() {
 
     test('carries refs as call ids and as the ids results answer', () async {
       final messages = [
-        Message(role: Role.model, content: [
-          ToolRequestPart(
-            toolRequest: ToolRequest(
-              ref: 'r1',
-              name: 'get_weather',
-              input: {'location': 'Paris'},
+        Message(
+          role: Role.model,
+          content: [
+            ToolRequestPart(
+              toolRequest: ToolRequest(
+                ref: 'r1',
+                name: 'get_weather',
+                input: {'location': 'Paris'},
+              ),
             ),
-          ),
-          ToolRequestPart(
-            toolRequest: ToolRequest(name: 'get_time'),
-          ),
-        ]),
-        Message(role: Role.tool, content: [
-          ToolResponsePart(
-            toolResponse: ToolResponse(
-              ref: 'r1',
-              name: 'get_weather',
-              output: {'temp': '15C'},
+            ToolRequestPart(toolRequest: ToolRequest(name: 'get_time')),
+          ],
+        ),
+        Message(
+          role: Role.tool,
+          content: [
+            ToolResponsePart(
+              toolResponse: ToolResponse(
+                ref: 'r1',
+                name: 'get_weather',
+                output: {'temp': '15C'},
+              ),
             ),
-          ),
-          ToolResponsePart(
-            toolResponse: ToolResponse(name: 'get_time', output: 'noon'),
-          ),
-        ]),
+            ToolResponsePart(
+              toolResponse: ToolResponse(name: 'get_time', output: 'noon'),
+            ),
+          ],
+        ),
       ];
 
       final result = await convertMessages(messages);
@@ -303,26 +360,31 @@ void main() {
       expect(result[2].toolCallId, isNull);
     });
 
-    test('an input that is not an object leaves the turn to its text',
-        () async {
-      // All the calls or none: the calls must not disagree with the text.
-      final result = await convertMessages([
-        Message(role: Role.model, content: [
-          ToolRequestPart(
-            toolRequest: ToolRequest(ref: 'r0', name: 'ping', input: {}),
+    test(
+      'an input that is not an object leaves the turn to its text',
+      () async {
+        // All the calls or none: the calls must not disagree with the text.
+        final result = await convertMessages([
+          Message(
+            role: Role.model,
+            content: [
+              ToolRequestPart(
+                toolRequest: ToolRequest(ref: 'r0', name: 'ping', input: {}),
+              ),
+              ToolRequestPart(
+                toolRequest: ToolRequest(ref: 'r1', name: 'echo', input: 'hi'),
+              ),
+            ],
           ),
-          ToolRequestPart(
-            toolRequest: ToolRequest(ref: 'r1', name: 'echo', input: 'hi'),
-          ),
-        ]),
-      ]);
+        ]);
 
-      expect(result.single.toolCalls, isEmpty);
-      expect(jsonDecode(result.single.text), [
-        {'name': 'ping', 'parameters': {}},
-        {'name': 'echo', 'parameters': 'hi'},
-      ]);
-    });
+        expect(result.single.toolCalls, isEmpty);
+        expect(jsonDecode(result.single.text), [
+          {'name': 'ping', 'parameters': {}},
+          {'name': 'echo', 'parameters': 'hi'},
+        ]);
+      },
+    );
 
     test('handles empty message list', () async {
       final result = await convertMessages([]);
@@ -331,10 +393,13 @@ void main() {
 
     test('concatenates multiple text parts', () async {
       final messages = [
-        Message(role: Role.user, content: [
-          TextPart(text: 'Part 1'),
-          TextPart(text: 'Part 2'),
-        ]),
+        Message(
+          role: Role.user,
+          content: [
+            TextPart(text: 'Part 1'),
+            TextPart(text: 'Part 2'),
+          ],
+        ),
       ];
 
       final result = await convertMessages(messages);
@@ -351,7 +416,10 @@ void main() {
           role: Role.system,
           content: [TextPart(text: 'You are helpful.')],
         ),
-        Message(role: Role.user, content: [TextPart(text: 'Hello')]),
+        Message(
+          role: Role.user,
+          content: [TextPart(text: 'Hello')],
+        ),
       ];
 
       expect(extractSystemInstruction(messages), 'You are helpful.');
@@ -359,9 +427,18 @@ void main() {
 
     test('concatenates multiple system messages', () {
       final messages = [
-        Message(role: Role.system, content: [TextPart(text: 'Rule 1')]),
-        Message(role: Role.system, content: [TextPart(text: 'Rule 2')]),
-        Message(role: Role.user, content: [TextPart(text: 'Hello')]),
+        Message(
+          role: Role.system,
+          content: [TextPart(text: 'Rule 1')],
+        ),
+        Message(
+          role: Role.system,
+          content: [TextPart(text: 'Rule 2')],
+        ),
+        Message(
+          role: Role.user,
+          content: [TextPart(text: 'Hello')],
+        ),
       ];
 
       expect(extractSystemInstruction(messages), 'Rule 1\nRule 2');
@@ -369,7 +446,10 @@ void main() {
 
     test('returns null when no system messages', () {
       final messages = [
-        Message(role: Role.user, content: [TextPart(text: 'Hello')]),
+        Message(
+          role: Role.user,
+          content: [TextPart(text: 'Hello')],
+        ),
       ];
 
       expect(extractSystemInstruction(messages), isNull);
@@ -381,14 +461,17 @@ void main() {
 
     test('throws on system message with non-text parts only', () {
       final messages = [
-        Message(role: Role.system, content: [
-          MediaPart(
-            media: Media(
-              url: 'data:image/png;base64,iVBOR',
-              contentType: 'image/png',
+        Message(
+          role: Role.system,
+          content: [
+            MediaPart(
+              media: Media(
+                url: 'data:image/png;base64,iVBOR',
+                contentType: 'image/png',
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ];
 
       expect(

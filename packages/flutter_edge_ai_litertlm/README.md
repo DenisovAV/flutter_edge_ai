@@ -43,7 +43,7 @@ other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your 
 uses both formats.
 
 Depend on both packages (`flutter_edge_ai: ^2.5.1`,
-`flutter_edge_ai_litertlm: ^1.17.0`) and install `.litertlm` files with
+`flutter_edge_ai_litertlm: ^1.18.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
@@ -327,7 +327,7 @@ final vector = await embedder.embed(
   Either way an over-long input costs a full embedding before it is refused.
   Split before embedding.
 - **CPU natively, WebGPU on the web, GPU on Windows and Linux x64 when asked
-  (1.18.0).** `activeBackend` is `PreferredBackend.cpu` natively and
+  (1.19.0).** `activeBackend` is `PreferredBackend.cpu` natively and
   `PreferredBackend.gpu` on the web. On Windows x64 and Linux x64,
   `preferredBackend: PreferredBackend.gpu` runs the text-only 270m bundle on
   the GPU (LiteRT-LM's GPU executor over WebGPU: DX12, Vulkan). Measured
@@ -600,7 +600,7 @@ Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), MediaTek NPU
 ([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
 ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and `gpu` for the
 EmbeddingGemma 2 270m asked for with `gpu` on Windows x64 and Linux x64
-(1.18.0); any other
+(1.19.0); any other
 `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
 the output buffer lived after the first embedding, and

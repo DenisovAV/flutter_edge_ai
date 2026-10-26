@@ -87,142 +87,126 @@ void _runTests(String path, ModelFileType fileType, String label) {
 
     // ── createChat tests ─────────────────────────────────────────────────────
 
-    testWidgets(
-      'chat: systemInstruction is applied',
-      (tester) async {
-        final model = await _createModel(path, fileType);
-        try {
-          final chat = await model.createChat(
-            systemInstruction:
-                'You are a pirate. Always start your response with "Arrr!".',
-          );
-          await chat.addQueryChunk(const Message(text: 'Hello', isUser: true));
+    testWidgets('chat: systemInstruction is applied', (tester) async {
+      final model = await _createModel(path, fileType);
+      try {
+        final chat = await model.createChat(
+          systemInstruction:
+              'You are a pirate. Always start your response with "Arrr!".',
+        );
+        await chat.addQueryChunk(const Message(text: 'Hello', isUser: true));
 
-          final chunks = <String>[];
-          await tester.runAsync(() async {
-            await for (final r in chat.generateChatResponseAsync()) {
-              if (r is TextResponse) chunks.add(r.token);
-            }
-          });
+        final chunks = <String>[];
+        await tester.runAsync(() async {
+          await for (final r in chat.generateChatResponseAsync()) {
+            if (r is TextResponse) chunks.add(r.token);
+          }
+        });
 
-          final response = chunks.join();
-          print('[$label / chat / instruction] "$response"');
-          expect(response, isNotEmpty);
-          // The pirate instruction should influence the response
-          expect(
-            response.toLowerCase(),
-            anyOf(
-              contains('arr'),
-              contains('pirate'),
-              contains('ye'),
-              contains('matey'),
-              contains('ship'),
-              contains('ahoy'),
-            ),
-          );
-        } finally {
-          await model.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+        final response = chunks.join();
+        print('[$label / chat / instruction] "$response"');
+        expect(response, isNotEmpty);
+        // The pirate instruction should influence the response
+        expect(
+          response.toLowerCase(),
+          anyOf(
+            contains('arr'),
+            contains('pirate'),
+            contains('ye'),
+            contains('matey'),
+            contains('ship'),
+            contains('ahoy'),
+          ),
+        );
+      } finally {
+        await model.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-    testWidgets(
-      'chat: no systemInstruction — no regression',
-      (tester) async {
-        final model = await _createModel(path, fileType);
-        try {
-          final chat = await model.createChat();
-          await chat.addQueryChunk(
-            const Message(text: 'What is 2+2?', isUser: true),
-          );
+    testWidgets('chat: no systemInstruction — no regression', (tester) async {
+      final model = await _createModel(path, fileType);
+      try {
+        final chat = await model.createChat();
+        await chat.addQueryChunk(
+          const Message(text: 'What is 2+2?', isUser: true),
+        );
 
-          final chunks = <String>[];
-          await tester.runAsync(() async {
-            await for (final r in chat.generateChatResponseAsync()) {
-              if (r is TextResponse) chunks.add(r.token);
-            }
-          });
+        final chunks = <String>[];
+        await tester.runAsync(() async {
+          await for (final r in chat.generateChatResponseAsync()) {
+            if (r is TextResponse) chunks.add(r.token);
+          }
+        });
 
-          final response = chunks.join();
-          print('[$label / chat / no-instruction] "$response"');
-          expect(response, isNotEmpty);
-        } finally {
-          await model.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+        final response = chunks.join();
+        print('[$label / chat / no-instruction] "$response"');
+        expect(response, isNotEmpty);
+      } finally {
+        await model.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
     // ── createSession tests ───────────────────────────────────────────────────
 
-    testWidgets(
-      'session: systemInstruction is applied',
-      (tester) async {
-        final model = await _createModel(path, fileType);
-        try {
-          final session = await model.createSession(
-            systemInstruction:
-                'You are a pirate. Always start your response with "Arrr!".',
-          );
-          await session.addQueryChunk(
-            const Message(text: 'Hello', isUser: true),
-          );
+    testWidgets('session: systemInstruction is applied', (tester) async {
+      final model = await _createModel(path, fileType);
+      try {
+        final session = await model.createSession(
+          systemInstruction:
+              'You are a pirate. Always start your response with "Arrr!".',
+        );
+        await session.addQueryChunk(const Message(text: 'Hello', isUser: true));
 
-          final chunks = <String>[];
-          await tester.runAsync(() async {
-            await for (final token in session.getResponseAsync()) {
-              chunks.add(token);
-            }
-          });
+        final chunks = <String>[];
+        await tester.runAsync(() async {
+          await for (final token in session.getResponseAsync()) {
+            chunks.add(token);
+          }
+        });
 
-          final response = chunks.join();
-          print('[$label / session / instruction] "$response"');
-          expect(response, isNotEmpty);
-          expect(
-            response.toLowerCase(),
-            anyOf(
-              contains('arr'),
-              contains('pirate'),
-              contains('ye'),
-              contains('matey'),
-              contains('ship'),
-              contains('ahoy'),
-            ),
-          );
-        } finally {
-          await model.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+        final response = chunks.join();
+        print('[$label / session / instruction] "$response"');
+        expect(response, isNotEmpty);
+        expect(
+          response.toLowerCase(),
+          anyOf(
+            contains('arr'),
+            contains('pirate'),
+            contains('ye'),
+            contains('matey'),
+            contains('ship'),
+            contains('ahoy'),
+          ),
+        );
+      } finally {
+        await model.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-    testWidgets(
-      'session: no systemInstruction — no regression',
-      (tester) async {
-        final model = await _createModel(path, fileType);
-        try {
-          final session = await model.createSession();
-          await session.addQueryChunk(
-            const Message(text: 'What is 2+2?', isUser: true),
-          );
+    testWidgets('session: no systemInstruction — no regression', (
+      tester,
+    ) async {
+      final model = await _createModel(path, fileType);
+      try {
+        final session = await model.createSession();
+        await session.addQueryChunk(
+          const Message(text: 'What is 2+2?', isUser: true),
+        );
 
-          final chunks = <String>[];
-          await tester.runAsync(() async {
-            await for (final token in session.getResponseAsync()) {
-              chunks.add(token);
-            }
-          });
+        final chunks = <String>[];
+        await tester.runAsync(() async {
+          await for (final token in session.getResponseAsync()) {
+            chunks.add(token);
+          }
+        });
 
-          final response = chunks.join();
-          print('[$label / session / no-instruction] "$response"');
-          expect(response, isNotEmpty);
-        } finally {
-          await model.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+        final response = chunks.join();
+        print('[$label / session / no-instruction] "$response"');
+        expect(response, isNotEmpty);
+      } finally {
+        await model.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
   });
 }
 

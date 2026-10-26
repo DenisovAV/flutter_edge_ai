@@ -103,6 +103,25 @@ void main() {
       },
     );
 
+    test('a conversation released mid-turn (session or model closed) ends the '
+        'stream with done after the chunks that arrived: the consumer cannot '
+        'tell it from a finished reply (B90, pending a decision)', () async {
+      final send = NativeTurnStream(turns, 'a');
+      final out = send.stream.toList();
+      send
+        ..chunk('The capital')
+        ..chunk(' of France');
+      // FfiConversationHandle.close() and shutdown() release the conversation.
+      turns.release('a');
+      expect(send.turn.cancelRequested, isTrue);
+      expect(send.turn.deleteWhenEnded, isTrue);
+      // Native answers the release's cancel with CANCELLED.
+      send.cancelled();
+      expect(await out, ['The capital', ' of France']);
+      expect(await send.turn.ended, NativeTurnEnd.cancelled);
+      expect(log, ['cancel a', 'delete a']);
+    });
+
     test('a cancelled end that nobody asked for is an error: the conversation '
         'is poisoned', () async {
       final send = NativeTurnStream(turns, 'a');

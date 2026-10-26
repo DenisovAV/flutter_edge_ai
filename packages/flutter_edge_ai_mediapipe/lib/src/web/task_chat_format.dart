@@ -212,7 +212,9 @@ _ProtoFields? _protoFields(Uint8List message) {
     // Arithmetic, not shifts: a JS bit operation is 32 bits wide.
     var result = 0;
     var scale = 1;
-    for (var n = 0; n < 8 && i < message.length; n++) {
+    // A negative int32 takes ten bytes; only the length fields are used, and
+    // they are small.
+    for (var n = 0; n < 10 && i < message.length; n++) {
       final b = message[i++];
       result += (b & 0x7f) * scale;
       if (b & 0x80 == 0) return result;

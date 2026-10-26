@@ -247,7 +247,17 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
   Future<WebChatTemplate?> _chatTemplateOf(WebModelSource source) async {
     try {
       final prefix = await readModelPrefix(source, taskMetadataPrefixBytes);
-      if (readTaskChatFormat(prefix)?.template case final declared?) {
+      final format = readTaskChatFormat(prefix);
+      if (format != null && format.hasRuntimePromptTemplates) {
+        // The 0.10.29 runtime reads this message itself, so it may add its own
+        // markers; ours on top of them would write each turn twice.
+        edgeAiLog(
+          '[MediaPipe Web] the model file carries prompt templates for the '
+          'runtime; the turns are sent without markers of our own.',
+        );
+        return null;
+      }
+      if (format?.template case final declared?) {
         edgeAiLog('[MediaPipe Web] chat format from the model file: $declared');
         return declared;
       }

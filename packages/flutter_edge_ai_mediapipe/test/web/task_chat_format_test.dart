@@ -129,6 +129,19 @@ void main() {
     expect(format.hasRuntimePromptTemplates, isTrue);
   });
 
+  test('a ten-byte varint (a negative int32) does not stop the read', () {
+    final negative = Uint8List.fromList([
+      0x08, // field 1, varint
+      ...List.filled(9, 0xff),
+      0x01,
+      ..._llmParameters(),
+    ]);
+    expect(
+      readTaskChatFormat(_task(negative))!.template,
+      WebChatTemplate.gemma4,
+    );
+  });
+
   test('a file without the flat markers declares no template', () {
     final format = readTaskChatFormat(
       _task(_llmParameters(flat: false, runtime: true)),

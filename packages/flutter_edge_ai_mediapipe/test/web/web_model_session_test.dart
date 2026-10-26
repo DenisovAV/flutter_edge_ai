@@ -245,4 +245,120 @@ void main() {
       },
     );
   });
+
+  group('messages the platform formats by hand', () {
+    String formatted(
+      String text, {
+      required ModelType type,
+      required ModelFileType fileType,
+      bool isUser = true,
+    }) => Message(
+      text: text,
+      isUser: isUser,
+    ).transformToChatPrompt(type: type, fileType: fileType);
+
+    WebModelSession bySession(
+      FakeBackend b,
+      ModelType type,
+      ModelFileType fileType,
+    ) => WebModelSession(
+      backend: b,
+      onClose: () {},
+      modelType: type,
+      fileType: fileType,
+      // The Gemma 3 markers a `.bin` falls back to; they must stay unused.
+      template: WebChatTemplate.gemma3,
+    );
+
+    test('a gemmaIt .bin is sent wrapped once', () async {
+      final b = FakeBackend(['Hello.']);
+      final s = bySession(b, ModelType.gemmaIt, ModelFileType.binary);
+      await s.addQueryChunk(const Message(text: 'Hi', isUser: true));
+      await s.getResponse();
+      expect(
+        _text(b.prompts.single),
+        '<start_of_turn>user\nHi<end_of_turn>\n<start_of_turn>model\n',
+      );
+    });
+
+    for (final type in [
+      ModelType.gemmaIt,
+      ModelType.qwen,
+      ModelType.deepSeek,
+      ModelType.llama,
+    ]) {
+      test('a $type .bin keeps its reply closed in the history', () async {
+        final b = FakeBackend(['Hello.', 'Fine.']);
+        final s = bySession(b, type, ModelFileType.binary);
+        await s.addQueryChunk(const Message(text: 'Hi', isUser: true));
+        await s.getResponse();
+        await s.addQueryChunk(const Message(text: 'Ok?', isUser: true));
+        await s.getResponse();
+        expect(
+          _text(b.prompts[1]),
+          formatted('Hi', type: type, fileType: ModelFileType.binary) +
+              formatted(
+                'Hello.',
+                type: type,
+                fileType: ModelFileType.binary,
+                isUser: false,
+              ) +
+              formatted('Ok?', type: type, fileType: ModelFileType.binary),
+        );
+      });
+    }
+
+    test('FunctionGemma on a .task is sent wrapped once', () async {
+      final b = FakeBackend(['Hello.']);
+      final s = bySession(b, ModelType.functionGemma, ModelFileType.task);
+      await s.addQueryChunk(const Message(text: 'Hi', isUser: true));
+      await s.getResponse();
+      expect(
+        _text(b.prompts.single),
+        formatted(
+          'Hi',
+          type: ModelType.functionGemma,
+          fileType: ModelFileType.task,
+        ),
+      );
+    });
+  });
+
+  test('a second getResponseAsync while one streams does not throw', () async {
+    final errors = <Object>[];
+    await runZonedGuarded(() async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      final first = <String>[];
+      s.getResponseAsync().listen(first.add);
+      await Future<void>.delayed(Duration.zero);
+      final firstLive = b.live!;
+      firstLive.add('abc');
+      await Future<void>.delayed(Duration.zero);
+      s.getResponseAsync().listen((_) {});
+      // The pieces that come after the newer call began.
+      firstLive.add('def');
+      await Future<void>.delayed(Duration.zero);
+      await firstLive.close();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      // The first reply is complete in the history.
+      b.live?.add('x');
+      await b.live?.close();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(first, ['abc']);
+    }, (e, _) => errors.add(e));
+    expect(errors, isEmpty);
+  });
+
+  test('a replayed thinking message does not enter the history', () async {
+    final b = FakeBackend(['ok']);
+    final s = _session(b);
+    await s.addQueryChunk(_user);
+    await s.addQueryChunk(
+      const Message(text: 'hidden thought', type: MessageType.thinking),
+    );
+    await s.getResponse();
+    expect(_text(b.prompts.single), isNot(contains('hidden thought')));
+  });
 }

@@ -112,10 +112,16 @@ final class WebConversation {
   /// text separated by a line break. [maxImages] is the number of images the
   /// model was loaded to accept in one prompt, and the history counts toward
   /// it: every call sends the earlier images again.
-  WebConversation({this.template, this.maxImages});
+  ///
+  /// With [preformatted] the messages already carry the model's markers (core
+  /// writes them for a `.bin` file and for FunctionGemma), so the turns are
+  /// joined as they are, with nothing added between or after them.
+  WebConversation({this.template, this.maxImages, this.preformatted = false})
+    : assert(!preformatted || template == null);
 
   final WebChatTemplate? template;
   final int? maxImages;
+  final bool preformatted;
 
   final List<_Turn> _turns = [];
   bool _generating = false;
@@ -149,7 +155,7 @@ final class WebConversation {
     }
     if (hasPendingUserTurn) {
       _turns.last.parts
-        ..add(TextPromptPart('\n'))
+        ..add(TextPromptPart(preformatted ? '' : '\n'))
         ..addAll(parts);
     } else {
       _turns.add(_Turn.user(parts));
@@ -224,7 +230,7 @@ final class WebConversation {
     for (var i = 0; i < _turns.length; i++) {
       final turn = _turns[i];
       if (t == null) {
-        if (i > 0) text('\n');
+        if (i > 0 && !preformatted) text('\n');
       } else {
         text(turn.isUser ? t.userPrefix : t.modelPrefix);
       }

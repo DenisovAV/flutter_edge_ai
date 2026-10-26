@@ -50,10 +50,32 @@ class WebModelSession extends InferenceModelSession {
     WebChatTemplate? template,
     int? maxImages,
   }) : _backend = backend,
+       _preformatted = _formatsByHand(modelType, fileType),
        _conversation = WebConversation(
-         template: template,
+         // A message core wrote the markers into carries them already, so the
+         // file's template must not add them a second time.
+         template: _formatsByHand(modelType, fileType) ? null : template,
          maxImages: maxImages,
+         preformatted: _formatsByHand(modelType, fileType),
        );
+
+  /// Whether core writes the turn markers into the messages itself: a `.bin`
+  /// file, and FunctionGemma, whose `.task` has none (`transformToChatPrompt`).
+  static bool _formatsByHand(ModelType modelType, ModelFileType fileType) =>
+      fileType == ModelFileType.binary ||
+      (fileType == ModelFileType.task && modelType == ModelType.functionGemma);
+
+  final bool _preformatted;
+
+  /// A reply of the model as the history holds it: the raw text when the
+  /// conversation writes the markers, and closed by core's own marker when the
+  /// messages are written by hand.
+  String _inHistory(String reply) => _preformatted
+      ? Message(
+          text: reply,
+          isUser: false,
+        ).transformToChatPrompt(type: modelType, fileType: fileType)
+      : reply;
 
   final WebLlmBackend _backend;
   final WebConversation _conversation;
@@ -148,7 +170,7 @@ class WebModelSession extends InferenceModelSession {
   void _complete(_Run run, String reply) {
     if (run.done) return;
     run.done = true;
-    _conversation.completeGeneration(reply);
+    _conversation.completeGeneration(_inHistory(reply));
   }
 
   /// Ends [run] without a reply: only its own turn goes.
@@ -208,12 +230,15 @@ class WebModelSession extends InferenceModelSession {
           (piece) {
             if (run.done) return;
             run.text.write(piece);
-            controller.add(piece);
+            // The consumer may have started a newer call, which closed this
+            // controller; the reply still ends up in the history.
+            if (!controller.isClosed) controller.add(piece);
           },
           onError: (Object e, StackTrace st) {
             run.end();
             if (run.done) return;
             _fail(run);
+            if (controller.isClosed) return;
             controller
               ..addError(e, st)
               ..close();
@@ -235,7 +260,10 @@ class WebModelSession extends InferenceModelSession {
       // A call that is not streaming has produced nothing the session can
       // see, so the user's turn stays unanswered.
       run.done = true;
-      _conversation.stopGeneration(run.text.toString());
+      final generated = run.text.toString();
+      _conversation.stopGeneration(
+        generated.isEmpty ? generated : _inHistory(generated),
+      );
     }
     try {
       _backend.cancel();

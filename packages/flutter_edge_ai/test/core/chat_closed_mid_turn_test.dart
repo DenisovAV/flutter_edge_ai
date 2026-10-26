@@ -25,12 +25,16 @@ class _ClosedMidTurnSession implements InferenceModelSession {
   @override
   Future<String> getResponse() async => throw UnimplementedError();
 
+  /// Runs between the two chunks and the end: the close happens here.
+  Future<void> Function()? midTurn;
+
   @override
   Stream<String> getResponseAsync() async* {
     yield 'The capital';
     yield ' of France';
-    // The app closes the session here (session.close(), model.close(), or an
-    // uninstall that closes the cached model).
+    // The app closes the session here (session.close(), model.close(), an
+    // uninstall that closes the cached model, or InferenceChat.clearHistory).
+    await midTurn?.call();
     closed = true;
     if (error != null) throw error!;
   }
@@ -55,7 +59,7 @@ class _ClosedMidTurnSession implements InferenceModelSession {
 Future<InferenceChat> _chatOn(InferenceModelSession session) async {
   final chat = InferenceChat(
     sessionCreator: () async => session,
-    maxTokens: 1024,
+    maxTokens: 4096,
     fileType: ModelFileType.litertlm,
   );
   await chat.initSession();
@@ -101,5 +105,33 @@ void main() {
     expect(chat.fullHistory.map((m) => (m.isUser, m.text)), [
       (true, 'Capital of France?'),
     ], reason: 'the user turn stays; the cut reply is not recorded');
+  });
+
+  test('clearHistory during a turn that then ends with done writes the old '
+      "conversation's cut reply into the cleared history", () async {
+    final first = _ClosedMidTurnSession();
+    final second = _ClosedMidTurnSession();
+    final sessions = [first, second];
+    final chat = InferenceChat(
+      sessionCreator: () async => sessions.removeAt(0),
+      maxTokens: 4096,
+      fileType: ModelFileType.litertlm,
+    );
+    await chat.initSession();
+    await chat.addQuery(
+      const Message(text: 'Capital of France?', isUser: true),
+    );
+    // clearHistory closes `first` and opens `second` while `first` streams.
+    first.midTurn = chat.clearHistory;
+
+    await for (final _ in chat.generateChatResponseAsync()) {}
+
+    expect(
+      chat.fullHistory.map((m) => (m.isUser, m.text)),
+      [(false, 'The capital of France')],
+      reason:
+          'the cleared chat starts with an assistant turn from the '
+          'conversation it replaced',
+    );
   });
 }

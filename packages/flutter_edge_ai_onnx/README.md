@@ -289,7 +289,7 @@ runs — the same readiness-handshake pattern `flutter_edge_ai_litertlm` uses fo
 <!-- Transformers.js v4 (OnnxEngine web generation). -->
 <script type="module">
 window.transformersReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1');
   window.transformers = m;
   return m;
 })();

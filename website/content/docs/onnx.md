@@ -189,7 +189,7 @@ whichever arm(s) you register, in `<head>`, ahead of `flutter_bootstrap.js`:
 <!-- Transformers.js v4 — OnnxEngine web generation. -->
 <script type="module">
 window.transformersReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1');
   window.transformers = m;
   return m;
 })();

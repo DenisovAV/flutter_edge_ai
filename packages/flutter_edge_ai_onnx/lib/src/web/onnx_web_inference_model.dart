@@ -94,7 +94,7 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
   /// Says once per app run what web does not apply. Printed, because a
   /// release build is where it gets reported and edgeAiLog is silent there.
   /// The seed is not wired to Transformers.js' global `random.seed` yet, and
-  /// Transformers.js 4.3.0 samples with top-k only.
+  /// Transformers.js 4.3.1 samples with top-k only.
   static void _noteIgnoredOnWeb({
     required int? randomSeed,
     required double? topP,

@@ -71,7 +71,7 @@ Add to `web/index.html` `<head>`, before Flutter boots — the first script for 
 ```html
 <script type="module">
 window.transformersReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1');
   window.transformers = m;
   return m;
 })();

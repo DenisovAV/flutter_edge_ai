@@ -44,7 +44,7 @@
 /// Setting this on a native platform is harmless and has no effect.
 abstract final class LiteRtWebRuntime {
   /// The `@litertjs/core` release this package is built against.
-  static const pinnedVersion = '2.5.3';
+  static const pinnedVersion = '2.6.0';
 
   /// Prefix the WASM runtime is loaded from. See [LiteRtWebRuntime].
   static String wasmPath =

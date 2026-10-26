@@ -744,7 +744,7 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 LiteRtWebRuntime.wasmPath = '/wasm/';
 ```
 
-Those files come from `@litertjs/core` — `npm i @litertjs/core@2.5.3` in a
+Those files come from `@litertjs/core` — `npm i @litertjs/core@2.6.0` in a
 scratch directory, then copy its `wasm/`.
 
 Set the prefix before the first `getActiveEmbedder()` — the runtime is loaded once and

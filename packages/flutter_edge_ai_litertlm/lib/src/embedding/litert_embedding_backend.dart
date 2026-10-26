@@ -193,16 +193,15 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   );
   final onGpu = placement.backend == PreferredBackend.gpu;
   if (onGpu) requireLiteRtLmTextOnlyBundle(config.modelPath);
-  if (onGpu && (config.supportImage || config.supportAudio)) {
-    // Measured for text only: the vision and audio towers would run on the
-    // GPU too (NULL tower backends follow the main one), and nobody has.
-    // An embedder already loaded on the GPU keeps that backend when a later
-    // request adds a medium without naming one (core widens it in place).
+  if (onGpu && config.supportImage) {
+    // Reached only by the text-only 270m: a bundle with towers was refused
+    // just above, and declared audio on a bundle without an audio encoder at
+    // the top. The 270m has no vision encoder on any backend, so the advice
+    // is another bundle, not another backend.
     throw EmbeddingLoadException(
-      '$file runs on the GPU for text only: images and audio on the GPU are '
-      'not measured. Load the embedder with preferredBackend: cpu to embed '
-      '${config.supportImage ? 'images' : 'audio'}; an embedder already on '
-      'the GPU stays there when media are added without a backend.',
+      '$file has no vision encoder: it embeds text only, on any backend. '
+      'Images need the 440m or 740m EmbeddingGemma 2 bundle, loaded with '
+      'preferredBackend: cpu; those bundles are refused on the GPU.',
       engine: _liteRtLm,
     );
   }

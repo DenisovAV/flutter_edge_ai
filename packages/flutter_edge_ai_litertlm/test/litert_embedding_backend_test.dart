@@ -758,17 +758,18 @@ void main() {
       expect((d.config as LiteRtLmEmbeddingConfig).gpu, isFalse);
     });
 
-    test('images on the GPU are refused: measured for text only, and the '
-        'refusal says how to embed them', () async {
+    test('images on the GPU are refused: the 270m has no vision encoder, so '
+        'the refusal names the bundles that do, on CPU', () async {
       hostIs(_IntelWindows());
       await expectLater(
         describeGpu(supportImage: true),
         _loadRefusal(
           'LiteRT-LM',
           allOf(
-            contains('runs on the GPU for text only'),
+            contains('has no vision encoder'),
+            contains('Images need the 440m or 740m'),
             contains('preferredBackend: cpu'),
-            contains('images'),
+            contains('refused on the GPU'),
           ),
         ),
       );

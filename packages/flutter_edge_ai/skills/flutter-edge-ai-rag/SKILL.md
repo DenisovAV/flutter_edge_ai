@@ -295,11 +295,12 @@ final eg2Index = await rag.open(
   PreferredBackend.gpu` runs the text-only 270m on the GPU: 22 ms per text
   vs 83-90 ms on CPU (Lunar Lake), 32-64 ms vs 232-308 ms (Tesla T4), min cos
   0.997 to the CPU vectors. The 440m and 740m are refused on `gpu` even for
-  text (their towers would compile on the GPU too), so is `gpu` with images
-  or audio, and nothing falls back to CPU. An automatic request reuses a GPU
-  embedder already loaded, so an image index beside a text index on `gpu`
-  needs its own `PreferredBackend.cpu` embedder. On macOS, iOS and Android
-  `gpu` is not applied (CPU, with core's notice). Web vectors therefore
+  text (their towers would compile on the GPU too), and the 270m has no
+  vision or audio encoder, so nothing embeds images or audio on the GPU;
+  nothing falls back to CPU. An image index needs the 440m or 740m on
+  `PreferredBackend.cpu`, a different bundle from a GPU text index (the two
+  reload each other on every switch). On macOS, iOS, Android and
+  Linux arm64 `gpu` is not applied (CPU, with core's notice). Web vectors therefore
   differ slightly from native ones — measured min cos about 0.995 for text and
   0.998 for images against the native CPU vectors — and retrieval across
   platforms holds: web queries find natively embedded images and native

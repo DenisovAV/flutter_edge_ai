@@ -203,7 +203,7 @@ void main() {
           isA<EmbeddingLoadException>().having(
             (e) => e.message,
             'message',
-            contains('runs on the GPU for text only'),
+            contains('has no vision encoder'),
           ),
         ),
       );

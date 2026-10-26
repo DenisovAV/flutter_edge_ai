@@ -170,10 +170,14 @@ final vector = await embedder.embed(
     and 9 MB of programs. **requireWeightCache** does not apply on the GPU.
   - A cold load without **preferredBackend** runs on CPU, but a later
     automatic request reuses whatever embedder is loaded, the GPU one
-    included. In RAG, an image index next to a text index on **gpu** needs
-    its own **PreferredBackend.cpu** embedder; the two then reload each other.
-  - On macOS, iOS and Android **gpu** is not applied: the Metal path ends the
-    process inside LiteRT at engine create, and Android is not measured.
+    included.
+  - The 270m has no vision or audio encoder. In RAG, an image index needs the
+    440m or 740m on **PreferredBackend.cpu**: another bundle, so it and a GPU
+    text index reload each other on every switch.
+  - On macOS, iOS, Android and Linux arm64 **gpu** is not applied: on macOS
+    the Metal path ends the process inside LiteRT at engine create (iOS uses
+    the same accelerator, not run), and Android and Linux arm64 are not
+    measured.
   - GPU and CPU vectors are close, not equal: keep one backend per index if
     you need the exact vectors back.
 - The NPU runs the per-SoC bundles

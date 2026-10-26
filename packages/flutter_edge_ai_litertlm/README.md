@@ -357,14 +357,16 @@ final vector = await embedder.embed(
     (9 MB). `requireWeightCache` checks the XNNPack cache only and does not
     apply there.
   - A cold load without `preferredBackend` runs on CPU; a later automatic
-    request reuses whatever embedder is loaded, the GPU one included. In RAG
-    that means a text index on `gpu` and an image index without a backend
-    share the GPU embedder, and the image index is refused: give the image
-    index its own `PreferredBackend.cpu` embedder (the two then reload each
-    other on every switch), or keep both on CPU.
-  - Elsewhere `gpu` is not applied (CPU, with core's notice): on macOS and
-    iOS the Metal accelerator ends the process in LiteRT's external weight
-    loader at engine create, and Android is not measured. `npu` is refused
+    request reuses whatever embedder is loaded, the GPU one included.
+  - The 270m has no vision or audio encoder, so a GPU embedder never embeds
+    images or audio. In RAG an image index needs the 440m or 740m on
+    `PreferredBackend.cpu`: another bundle, so it and a GPU text index reload
+    each other on every switch. Keep both indexes on one CPU bundle to
+    avoid that.
+  - Elsewhere `gpu` is not applied (CPU, with core's notice): on macOS the
+    Metal accelerator ends the process in LiteRT's external weight loader at
+    engine create (iOS ships the same accelerator, not run), and Android and
+    Linux arm64 are not measured. `npu` is refused
     for this bundle: the NPU runs the per-SoC bundles
     ([below](#embeddinggemma-2-on-a-qualcomm-npu)). The web has no CPU path for
   these bundles: the CPU (WebAssembly) backend of `@litert-lm/core` 0.18.0

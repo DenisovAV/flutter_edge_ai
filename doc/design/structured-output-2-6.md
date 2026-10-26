@@ -32,13 +32,12 @@ Everything below was read or measured on 2026-10-26 unless marked otherwise.
     with `kLiteRtLmConstraintProviderTypeLlGuidance = 1`;
   - `litert_lm_conversation_optional_args_set_constraint(args, LiteRtLmConstraintType, const char*)`
     with `kLiteRtLmConstraintTypeRegex = 1`, `kLiteRtLmConstraintTypeJsonSchema = 2`.
-  - Not in our vendored `native/litert_lm/include/c/engine.h` and not in the
-    generated `litert_lm_bindings.dart` today: both need binding.
-- **Shipped.** `nm -gU` on the macOS `libLiteRtLm.dylib` in the hook cache
-  (2026-10-18) and in a `native-v0.18.0-f`-era worktree build (2026-10-20)
-  exports both functions and llguidance's `Constraint::compute_mask` etc.
-  The 2026-10-21 note says all five native targets export them; I re-checked
-  macOS only.
+  - Not in `native/litert_lm/include/engine.h` (the header the inference
+    bindings are generated from, `ffigen.yaml:6`) and not in the generated
+    `litert_lm_bindings.dart` today: both need binding.
+- **Shipped.** `nm -gU` on the android_arm64, ios_arm64 and macos_arm64
+  `libLiteRtLm` in the hook cache (`native-v0.18.0-g`, 2026-10-26) shows both
+  functions exported. Linux and Windows: not re-checked.
 - **Three behaviours of 0.18.0 that shape the design**
   (`runtime/conversation/conversation.cc` @ `v0.18.0`, `CreateDecodeConfig`,
   lines 397-415):
@@ -47,17 +46,26 @@ Everything below was read or measured on 2026-10-26 unless marked otherwise.
      constraint_provider_ != nullptr`). Without the provider it is dropped with
      no error: the silent-ignore case. The engine must always set both.
   2. The constraint is stored in the member `constraint_` and **never reset**:
-     a later send without a constraint still decodes under the old one. So the
-     format must be fixed per conversation (per session), not per turn.
+     a later send without a constraint still decodes under the old one
+     (`kLiteRtLmConstraintTypeNone` sets nothing, `c/conversation.cc:118`). A
+     send with another constraint replaces it, so only clearing it is
+     impossible without rebuilding the conversation.
   3. The tool constraint (`enable_constrained_decoding` + the Gemma provider)
      is the `else` branch of the same `if`: a send can be under the schema or
      under the tool grammar, never both.
-- **An invalid schema** fails inside `CreateConstraint` at the first send
-  (status from `ABSL_ASSIGN_OR_RETURN`), not at conversation create. There is
-  no compile-only call in the C API.
-- **Not known:** whether the mask is applied on the GPU samplers and on the NPU
-  executor. AGENTS.md: "NPU decodes greedily whatever is sent". Until measured,
-  the design refuses NPU and treats GPU as "to measure" (§6).
+- **An invalid schema** fails inside `CreateConstraint` at every send
+  (`absl::InternalError("Failed to create LLGuidance constraint: …")`,
+  `llg_constraint_provider.cc:155-159`), not at conversation create. There is
+  no compile-only call in the C API. By then native has already pushed the
+  user message into `history_` (`conversation.cc:588-598`).
+- **GPU and NPU apply the mask in the v0.18.0 source; neither has been run.**
+  CPU/GPU: `ProcessLogits` before sampling
+  (`llm_litert_compiled_model_executor.cc:1373-1388`); a GPU buffer is copied
+  to the host, masked and written back (`constrained_decoder.cc:42-66`), a
+  vocabulary-sized copy per token. NPU: masked logits, then greedy sampling,
+  MTP off under a constraint (`llm_litert_npu_compiled_model_executor.cc:879-910`,
+  `:1029-1033`). Correctness and tokens per second on a device are what remain
+  (§6).
 
 ### 1.2 LiteRT-LM web (`@litert-lm/core` 0.18.0)
 
@@ -88,7 +96,11 @@ Everything below was read or measured on 2026-10-26 unless marked otherwise.
 - 0.14.0 on a build without llguidance **accepts and ignores** the call (vivo
   1933, #195); 0.17.0 throws "Rebuild with use_guidance=true" (#704, source
   lines cited there). So the ONNX part depends on #704; until then the engine
-  must refuse on Android/iOS itself, before calling ORT.
+  must refuse on Android/iOS itself, before calling ORT. #704 does not add
+  Android support: Microsoft's AAR build passes no `--use_guidance` and
+  `USE_GUIDANCE` defaults to OFF (v0.17.0
+  `tools/ci_build/github/android/default_aar_build_settings.json`,
+  `cmake/options.cmake:8`); ONNX Android would need our own ORT-GenAI build.
 - ONNX has no `openSession` today (#703): `openSession` / `openChat` throw
   `UnsupportedError` with or without a format.
 - Web (Transformers.js): no constraint wiring. **Refuse.**
@@ -114,7 +126,14 @@ Per platform (`supportsStructuredOutput` in each host):
 
 - **No streaming with a schema** on any backend: `generateTextStream` throws
   "Streaming structured (JSON/schema) output is not supported on any backend
-  yet" (`flutter_local_ai.dart:199-206`).
+  yet" (`lib/src/flutter_local_ai.dart:199-207`).
+- `validateGenerationSchema` checks the constructs it knows and ignores
+  unknown keys (`pattern`, `minimum`, `const`, … pass), and Apple's
+  `SchemaBuilder` reads only `description`, string `enum`, `type`,
+  `properties`, `required`, `items`, `minItems`, `maxItems`
+  (`GenerationSchemaBuilder.swift:30-70`). It is not a refusal list.
+- Foundation Models defaults `includeSchemaInPrompt: true` and flutter_local_ai
+  does not override it: on Apple the schema is in the prompt.
 - `jsonObject` ("any object"): the validator accepts `{}` and an object with
   no `properties` (`schema_validation.dart:62-80`, test
   `schema_validation_test.dart:40`), but what Apple's `GenerationSchema`,
@@ -145,9 +164,10 @@ Per platform (`supportsStructuredOutput` in each host):
   local `$ref`, `anyOf`/`oneOf`, bounds, formats, `pattern`; unsupported
   keywords throw before generation, annotations and unknown vocabulary are
   kept but not enforced.
-- Tools + format on native llama.cpp is accepted but **reroutes the chat
-  format to `generic`** (`chat_template_engine.dart:193-195`): a different
-  prompt than without the format.
+- Tools + format on native llama.cpp **reroutes the chat format to
+  `generic`** (`chat_template_engine.dart:193-195`), and is refused with
+  `LlamaUnsupportedException` when any tool uses a canonical JSON schema
+  (`:440-452`).
 - Not passed through today: `llama_inference_session.dart:635-642` calls
   `engine.create` without `responseFormat`.
 
@@ -196,8 +216,8 @@ receive a format through it, after core has checked it.
 
 ```dart
 /// What every reply of a session must be. Fixed for the session's lifetime:
-/// LiteRT-LM keeps a constraint for the whole conversation (§1.1), so a
-/// per-turn format could not be honoured there.
+/// LiteRT-LM keeps a constraint for the whole conversation (§1.1): a later
+/// turn cannot drop it without rebuilding the conversation.
 sealed class ResponseFormat {
   const ResponseFormat._();
 
@@ -214,8 +234,9 @@ sealed class ResponseFormat {
 
 final class JsonSchemaResponseFormat extends ResponseFormat {
   Map<String, Object?> get schema;   // unmodifiable deep copy
-  String get schemaJson;             // canonical encoding (sorted keys), what engines send
-  String? get name;                  // sent where an engine takes one (llama, Windows)
+  String get schemaJson;             // caller's key order: grammars emit properties in schema order
+                                     // (llamadart json_schema_converter.dart:727); sorted form only for ==
+  String? get name;                  // sent where an engine takes one (llama; flutter_local_ai takes none)
   // == / hashCode on schemaJson + name
 }
 
@@ -266,7 +287,7 @@ final class StructuredOutputSupport {
 /// so the next one does not break engines again (as DeciderRequest does).
 final class SessionRequest {
   final double? temperature; final int? randomSeed; final int? topK; final double? topP;
-  final String? loraPath; final bool enableVisionModality, enableAudioModality;
+  final String? loraPath; final bool? enableVisionModality, enableAudioModality; // null = model default
   final String? systemInstruction; final bool enableThinking;
   final List<Tool> tools; final int? maxOutputTokens;
   final ResponseFormat? responseFormat;
@@ -359,7 +380,7 @@ loads a file.
 | option | rule in 2.6.0 | why |
 |---|---|---|
 | `tools` | non-empty + format → `ArgumentError` | LiteRT-LM: schema and tool grammar exclude each other (§1.1 point 3); llama reroutes the chat format and refuses the pair on WebGPU; built-in AI has no combined call. Can be widened per engine later |
-| `enableThinking: true` | + format → `ArgumentError` | the constraint masks from the first decoded token, so the thought channel's opening tokens are masked on LiteRT-LM and ONNX; nothing measured says otherwise. A Qwen3 model that thinks by tag is constrained from its first token and cannot open `<think>`: intended |
+| `enableThinking: true` | + format → `ArgumentError` | LiteRT-LM upstream suspends the user constraint during thinking when a thinking budget ≠ 0 reaches the decode config (`runtime/core/tasks.cc:642-656`), but our client sends one only with `thinkingTokenBudget`; otherwise the budget is 0 (`conversation.cc:394`) and the schema masks from the first token. Neither path is measured. A Qwen3 model that thinks by tag is constrained from its first token and cannot open `<think>`: intended |
 | thinking budget (#721) | n/a | — |
 | `maxOutputTokens` | allowed; cut → `IncompleteStructuredOutputException(outputLimit)` | docs say to leave room |
 | context window | overflow → same, `contextLimit` | — |
@@ -368,8 +389,8 @@ loads a file.
 | `systemInstruction` | unchanged; core does not insert the schema into the prompt | never rewrite the prompt silently; docs recommend naming the fields in the prompt (#195 numbers: guidance fixes the shape, the prompt the values) (decision 10) |
 | images / audio | allowed | constraint acts on decoding only |
 | sampling | unchanged | the mask applies before sampling |
-| `InferenceChat` parsing | the thinking filter (`ModelThinkingFilter`) and tool parsers are bypassed for a structured chat | the parsers already need tools (`chat.dart:262-268`, `:302-305`); the thinking filter runs for every model and could cut a `<think>` inside a JSON string |
-| chat history | the reply is committed to history **before** the guard throws (sync and stream paths) | matches native: LiteRT-LM's virtual handle records the turn even on error (`ffi_inference_model.dart:1385-1420`), and a stopped reply is kept since #682. Today `InferenceChat` commits only after `getResponse` returns / the `await for` completes (`chat.dart:250`, `:336`, `:796`), so this is a change there |
+| `InferenceChat` parsing | the thinking filter (`ModelThinkingFilter`) and tool parsers are bypassed for a structured chat | the parsers already need tools (`chat.dart:262-268`, `:307-310`); the thinking filter runs for every model and could cut a `<think>` inside a JSON string |
+| chat history | the reply is committed to history **before** the guard throws (sync and stream paths) | matches native: LiteRT-LM's virtual handle records the turn even on error (`ffi_inference_model.dart:1385-1420`), and a stopped reply is kept since #682. Today `InferenceChat` commits only after `getResponse` returns / the `await for` completes (`chat.dart:336-339`, `:804-813`), so this is a change there |
 
 ---
 
@@ -415,11 +436,13 @@ There is no compile call; llguidance compiles inside `CreateConstraint` at the
 first send. With §4.2 most schemas core accepts are plain, but llguidance can
 still reject one. Then the turn must leave no trace: today
 `_VirtualConversationHandle` records the user turn and an empty assistant turn
-in `finally`, even when the stream never started (`ffi_inference_model.dart:1385-1420`).
-For a constraint failure it must roll that back and rebuild the conversation,
-and identify the failure by the native status, not by matching error text
-(whether `stream_start_failure.dart` gets a distinguishable status for it is
-to check). Option to avoid this: compile at session creation by one
+in `finally`, even when the stream never started (`ffi_inference_model.dart:1385-1420`),
+and native has already pushed the user message into its own `history_`
+(`conversation.cc:588-598`). The status is `INTERNAL`, shared with unrelated
+failures; only the message prefix "Failed to create LLGuidance constraint"
+tells it apart (`llg_constraint_provider.cc:155-159`). Since the format is
+fixed per session and recompiled on every send, every later send fails too:
+such a session is terminal. Option to avoid this: compile at session creation by one
 throwaway send with `max_output_tokens = 1` on a throwaway conversation —
 costs one prefill per structured session; not proposed for 2.6.0.
 
@@ -434,8 +457,9 @@ costs one prefill per structured session; not proposed for 2.6.0.
    Deprecation lands only in a release where every shipping engine has a
    working `openSession` (decision 2).
 3. Making the four methods `@nonVirtual` is breaking for every engine, in and
-   out of tree, in a minor — the project's precedent (2.1/2.2/2.3/2.5,
-   "Breaking for engines", satellites at `^2.6.0`), but the largest break of
+   out of tree, in a minor — the project's precedent (2.1/2.2/2.3/2.5, e.g.
+   2.2.1 "Breaking for `implements InferenceModel`: add `isClosed`",
+   satellites at `^2.6.0`), but the largest break of
    2.x. It replaces, not adds to, the cost of A, where every override changes
    its signature anyway.
 4. In-repo callers move to `open*` in the same release:
@@ -475,8 +499,9 @@ integration_test/<file>.dart -d <device>`; web with `flutter drive`, no
 - LiteRT-LM: provider + constraint on every send of a structured session,
   neither on a plain one; structured and plain `openSession` interleaved on
   one model (sticky constraint): the plain one is sent without provider;
-  invalid schema at first send → exception, no history entry, next send on
-  the same session works; a stop in session A while B is queued ends only A.
+  invalid schema at first send → exception, no history entry (Dart replay
+  and native), the session is terminal; a stop in session A while B is
+  queued ends only A.
   **Mutation check:** delete the provider call → the test fails.
 - Every `none` path (LiteRT-LM web, NPU, ONNX mobile/web, built-in Android,
   MediaPipe) refuses before any engine call.
@@ -494,8 +519,8 @@ sessions alternating three turns each.
 
 | target | model | where |
 |---|---|---|
-| LiteRT-LM CPU | Gemma 4 E2B, FunctionGemma 270M | macOS (local), Linux (VM; #551 constraint ABI history), Windows (LNL box), Android (DDP: billed per minute, ask first), iPhone |
-| LiteRT-LM GPU | Gemma 4 E2B | macOS Metal, Android OpenCL: decides the GPU row of §1.7 |
+| LiteRT-LM CPU | Gemma 4 E2B, FunctionGemma 270M | macOS (local), Linux (VM; #551 constraint ABI history), Windows (LNL box), Android (local phone, or DDP via `run_instrumented.sh` / `am instrument`, verdict = `I/flutter` summary line, billed per minute, ask first), iPhone |
+| LiteRT-LM GPU | Gemma 4 E2B | macOS Metal, iPhone Metal, Android OpenCL (Adreno, Mali), tokens per second with and without a format: decides the GPU row of §1.7 |
 | ONNX | Phi-3.5-mini / Qwen2.5-0.5B | after #704: macOS, Linux, Windows; Android/iOS refusal |
 | Built-in AI | Apple FM | macOS 26 (local); Chrome desktop; Windows not available to me; `jsonObject` meaning measured here |
 | llama | Qwen2.5-0.5B GGUF | macOS native; web WebGPU (enforce) |
@@ -580,7 +605,9 @@ enforce a format; a custom chat type goes through `buildChat`. Core floor
 
 ## 10. Decisions for Sasha
 
-Listed with recommendations in the autopilot queue item; repeated here:
+Listed with recommendations in the autopilot queue item; repeated here. The
+multi-reviewer pass of 2026-10-26 and its final recommendations are in
+[`structured-output-2-6-review.md`](structured-output-2-6-review.md).
 
 1. B (core owns entry points) or A (parameter per engine). Rec: **B**.
 2. Deprecate `create*` only when every engine has `openSession` (#703, MediaPipe web). Rec: **yes**.

@@ -64,6 +64,95 @@ void main() {
       );
     });
 
+    test('a reply is trimmed after its thinking is dropped', () {
+      expect(
+        _render(const [
+          Message(text: 'Q1', isUser: true),
+          Message(text: '<|channel>thought\nx<channel|>\n\nAnswer one.\n'),
+          Message(text: 'Q2', isUser: true),
+        ]),
+        '<|turn>user\nQ1<turn|>\n'
+        '<|turn>model\nAnswer one.<turn|>\n'
+        '<|turn>user\nQ2<turn|>\n'
+        '<|turn>model\n',
+      );
+    });
+
+    // Edge cases of the template's strip_thinking macro, each rendered with
+    // jinja2 from the same template revision.
+    group('strip_thinking', () {
+      String reply(String text) => _render([
+        const Message(text: 'Q1', isUser: true),
+        Message(text: text),
+        const Message(text: 'Q2', isUser: true),
+      ]);
+
+      String expected(String kept) =>
+          '<|turn>user\nQ1<turn|>\n'
+          '<|turn>model\n$kept<turn|>\n'
+          '<|turn>user\nQ2<turn|>\n'
+          '<|turn>model\n';
+
+      test('drops every thinking block, not only the first', () {
+        expect(
+          reply('A<|channel>t1<channel|>B<|channel>t2<channel|>C'),
+          expected('ABC'),
+        );
+      });
+
+      test('an unclosed block (a stopped generation) drops the rest', () {
+        expect(reply('Ans<|channel>thought\nstopped mid'), expected('Ans'));
+      });
+
+      test('a reply that is only thinking renders empty', () {
+        expect(reply('<|channel>thought\nall<channel|>'), expected(''));
+      });
+
+      test('a stray closing marker is removed, the text around it kept', () {
+        expect(reply('x<channel|>y'), expected('xy'));
+      });
+    });
+
+    // The template writes a tool result as `<|tool_response>response:…`;
+    // this path still writes the legacy block inside a user turn. Pinned as
+    // it is today, so that changing it is a decision, not an accident.
+    test('a tool response is the legacy block in a user turn', () {
+      expect(
+        _render([
+          Message.toolResponse(
+            toolName: 'get_weather',
+            response: const {'temp': 20},
+          ),
+        ]),
+        '<|turn>user\n'
+        '<tool_response>\n'
+        'Tool Name: get_weather\n'
+        'Tool Response:\n'
+        '{"temp":20}\n'
+        '</tool_response><turn|>\n'
+        '<|turn>model\n',
+      );
+    });
+
+    test('every file type with its own template gets the text raw', () {
+      for (final fileType in [
+        ModelFileType.task,
+        ModelFileType.litertlm,
+        ModelFileType.builtIn,
+        ModelFileType.onnx,
+        ModelFileType.gguf,
+      ]) {
+        expect(
+          const Message(
+            text: 'Hello',
+            isUser: true,
+          ).transformToChatPrompt(type: ModelType.gemma4, fileType: fileType),
+          'Hello',
+          reason: '$fileType',
+        );
+      }
+    });
+
     test('never writes Gemma 3 markers', () {
       final prompt = _render(const [
         Message(text: 'Hi', isUser: true),
@@ -89,6 +178,42 @@ void main() {
       expect(
         ModelThinkingFilter.cleanResponse(
           'Banana.<turn|>\n',
+          enableThinking: false,
+          modelType: ModelType.gemma4,
+          fileType: ModelFileType.binary,
+        ),
+        'Banana.',
+      );
+    });
+
+    test('gemma4 strips the marker without a trailing newline', () {
+      expect(
+        ModelThinkingFilter.cleanResponse(
+          'Banana.<turn|>',
+          enableThinking: false,
+          modelType: ModelType.gemma4,
+          fileType: ModelFileType.binary,
+        ),
+        'Banana.',
+      );
+    });
+
+    test('gemma4 keeps a <turn|> in the middle of a reply', () {
+      expect(
+        ModelThinkingFilter.cleanResponse(
+          'A<turn|>B',
+          enableThinking: false,
+          modelType: ModelType.gemma4,
+          fileType: ModelFileType.binary,
+        ),
+        'A<turn|>B',
+      );
+    });
+
+    test('gemma4 drops thinking and the trailing marker together', () {
+      expect(
+        ModelThinkingFilter.cleanResponse(
+          '<|channel>thought\nx<channel|>Banana.<turn|>\n',
           enableThinking: false,
           modelType: ModelType.gemma4,
           fileType: ModelFileType.binary,

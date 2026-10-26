@@ -37,6 +37,8 @@ dependency_overrides:
     path: ../../flutter_edge_ai_mediapipe
   flutter_edge_ai_embeddings:
     path: ../../flutter_edge_ai_embeddings
+  genkit_hybrid:
+    path: ../../genkit_hybrid
 
 flutter:
   uses-material-design: true

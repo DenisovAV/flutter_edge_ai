@@ -42,6 +42,14 @@ published backend produced those pairs. Other model/tokenizer pairs and existing
 `.litertlm` identity schemas keep their behavior. No GGUF embedding backend ships
 yet; a separate engine package is required to execute these files.
 
+Follow-on: `flutter_edge_ai_llama` 0.0.3 adds the opt-in
+`LlamaEmbeddingBackend` for native EmbeddingGemma 2 GGUF text embeddings using
+the core 2.5.0 embedding SPI and llamadart 0.15.1. Register it through
+`FlutterEdgeAi.initialize(embeddingBackends:)` and install the GGUF alone.
+Keep a separate RAG vector profile from LiteRT; matching dimensions are not
+vector compatibility. `flutter_edge_ai_embeddings` remains tokenizer-only.
+The statement above describes availability at the core 2.5.0 release.
+
 Engine authors declare explicit accelerator capabilities through
 `EmbeddingBackendProvider.honouredBackends(spec)`; core computes cache identity.
 Automatic requests reuse only a non-NPU embedder for the same installed model
@@ -655,8 +663,8 @@ dependencies:
 **Current equivalents (2.5):**
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.0                 # core — always required
-  flutter_edge_ai_litertlm: ^1.16.0       # .litertlm + LiteRtEmbeddingBackend
+  flutter_edge_ai: ^2.5.1                 # core — always required
+  flutter_edge_ai_litertlm: ^1.17.0       # .litertlm + LiteRtEmbeddingBackend
   flutter_edge_ai_mediapipe: ^1.2.3       # .task / .bin
   flutter_edge_ai_embeddings: ^2.3.2      # tokenizer providers
   flutter_edge_ai_rag: ^1.1.2             # RAG orchestration + contracts

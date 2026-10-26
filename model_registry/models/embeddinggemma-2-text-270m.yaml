@@ -42,6 +42,8 @@ variants:
   dimension: 768
   max_input_tokens: 1024
   preferred_backend: npu
+  example:
+  - embeddingGemma2Text270mMt6991
 - slug: npu-mt6993
   file_type: litertlm
   file:

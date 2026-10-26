@@ -266,11 +266,11 @@ mark.
 | [FastVLM 0.5B](/docs/registry#fastvlm-0.5b) | 1.16&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ |  | no |
 | [FunctionGemma 270M (Flutter demo fine-tune)](/docs/registry#functiongemma-270m-flutter-demo) | 284&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
 | [FunctionGemma 270M](/docs/registry#functiongemma-270m-it) | 284&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
-| [Gemma 3 1B](/docs/registry#gemma-3-1b-it) | 584&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;❌ |  | yes |
-| [Gemma 3 270M](/docs/registry#gemma-3-270m-it) | 304&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;❌ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;❌ |  | yes |
-| [Gemma 3n E2B](/docs/registry#gemma-3n-e2b-it) | 3.04–3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
+| [Gemma 3 1B](/docs/registry#gemma-3-1b-it) | 584&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ |  | yes |
+| [Gemma 3 270M](/docs/registry#gemma-3-270m-it) | 304&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ |  | yes |
+| [Gemma 3n E2B](/docs/registry#gemma-3n-e2b-it) | 3.04–3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
 | [Gemma 3n E4B](/docs/registry#gemma-3n-e4b-it) | 4.28–4.92&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
-| [Gemma 4 E2B](/docs/registry#gemma-4-e2b-it) | 2.01–2.59&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 | no |
+| [Gemma 4 E2B](/docs/registry#gemma-4-e2b-it) | 2.01–2.59&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 | no |
 | [Gemma 4 E4B](/docs/registry#gemma-4-e4b-it) | 2.97–3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | no |
 | [LFM2.5 230M](/docs/registry#lfm2.5-230m) | 177–266&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
 | [LLaVA-OneVision 0.5B](/docs/registry#llava-onevision-0.5b) | 829&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
@@ -278,7 +278,7 @@ mark.
 | [Phi-4 Mini Reasoning](/docs/registry#phi-4-mini-reasoning) | 2.78&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
 | [Qwen2-VL 2B](/docs/registry#qwen2-vl-2b) | 1.78&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
 | [Qwen 2.5 1.5B Instruct](/docs/registry#qwen2.5-1.5b-instruct) | 1.60–6.18&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
-| [Qwen3 0.6B](/docs/registry#qwen3-0.6b) | 345–498&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [Qwen3 0.6B](/docs/registry#qwen3-0.6b) | 345–498&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
 | [SmolLM3 3B](/docs/registry#smollm3-3b) | 2.00–3.13&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
 | [SmolVLM2 500M](/docs/registry#smolvlm2-500m) | 361&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
 | [TranslateGemma 4B](/docs/registry#translategemma-4b-it) | 2.01–3.92&nbsp;GB | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;⚪ |  | no |
@@ -353,8 +353,8 @@ Prompt API — see [Built-in AI](/docs/builtin-ai).
 
 ### From the model catalog
 
-`flutter_edge_ai` 2.5.1 with `flutter_edge_ai_litertlm` 1.16.1 (and
-`flutter_edge_ai_speech` 0.5.10 for speech) installs a
+`flutter_edge_ai` 2.5.3 with `flutter_edge_ai_litertlm` 1.17.1 (and
+`flutter_edge_ai_speech` 0.5.11 for speech) installs a
 [Model Registry](/docs/registry) build by name. Each build carries its model
 type, file type, Hugging Face commit, file size and install file name, so
 there is no URL to copy and nothing to keep in step:
@@ -628,6 +628,7 @@ the maximum is never truncated: it throws `EmbeddingInputTooLongException`.
 | **[EmbeddingGemma 512](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 512 tokens | 179MB | ✅ |
 | **[EmbeddingGemma 1024](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 1024 tokens | 183MB | ✅ |
 | **[EmbeddingGemma 2048](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 2048 tokens | 196MB | ✅ |
+| **[EmbeddingGemma 2 GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF)** (`.gguf` Q8_0, text; native, through `flutter_edge_ai_llama`) | text tower of google/embeddinggemma-2 | 768D | 1024 tokens | 310MB | ❌ |
 | **[all-MiniLM-L6-v2](https://huggingface.co/Xenova/all-MiniLM-L6-v2)** (ONNX; native and web) | 22M | 384D | the graph's | 90MB (`onnx/model.onnx`) | ❌ |
 | **[EmbeddingGemma-300M ONNX](https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX)** (ONNX; native only) | 300M | 768D | the graph's | 175MB–1.2GB by variant | ❌ |
 
@@ -657,6 +658,9 @@ run on Windows x64 the same way; see
 From 1.15.0 the Google Tensor G5/G6 bundles (`…_Google_Tensor_G6.litertlm`,
 166–658 MB) run on matching Pixels with `google_tensor_npu: true`; see
 [EmbeddingGemma 2 on a Google Tensor NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-google-tensor-npu).
+From 1.17.0 the MediaTek MT6991/MT6993 bundles (`…_MediaTek_MT6991.litertlm`)
+are accepted with `mediatek_npu: true` for phones with that SoC, but not run
+on such a phone yet; see [LiteRT-LM](/docs/litertlm).
 The Gecko and EmbeddingGemma 1 rows are a `.tflite` model plus a tokenizer
 file; the ONNX rows are an `.onnx` model plus its tokenizer file, run by
 `OnnxEmbeddingBackend` ([ONNX](/docs/onnx)). An ONNX model's input limit is its

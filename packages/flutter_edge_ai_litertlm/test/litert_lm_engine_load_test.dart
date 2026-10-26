@@ -302,6 +302,7 @@ void main() {
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/qualcomm',
         disableHwMasking: false,
+        stagesWeightBanks: false,
       ));
       await stamped.close();
 
@@ -350,13 +351,51 @@ void main() {
         expect(host.npuDispatches.single, (
           dir: '/fake/npu/googleTensor',
           disableHwMasking: false,
+          stagesWeightBanks: false,
         ));
       }
     },
   );
 
+  test(
+    'a MediaTek bundle exposes only the MediaTek dispatch and never falls back',
+    () async {
+      host = _FakeHost(
+        os: 'android',
+        abiName: 'android_arm64',
+        npuShips: true,
+        failures: const {
+          'npu': LiteRtLmEngineCreateException('MediaTek NPU create failed'),
+        },
+      );
+      debugLiteRtLmEngineHost = host;
+
+      await expectLater(
+        load(
+          write('mt6991.litertlm', _bundle(textStamp: ('MediaTek', 'mt6991'))),
+        ),
+        throwsA(
+          isA<BackendInitException>().having(
+            (e) => e.attempts.length,
+            'attempts',
+            1,
+          ),
+        ),
+      );
+      expect(host.attempts.map((a) => a.backend), ['npu']);
+      expect(host.askedVendors, [NpuStack.mediatek, NpuStack.mediatek]);
+      expect(host.preparedFor, [NpuStack.mediatek]);
+      expect(host.npuDispatches.single, (
+        dir: '/fake/npu/mediatek',
+        disableHwMasking: false,
+        stagesWeightBanks: false,
+      ));
+    },
+  );
+
   test('Windows x64: the Intel stack is checked before the NPU is tried, and '
-      'an Intel attempt turns the HW mask update path off', () async {
+      'an Intel attempt turns the HW mask update path off and claims its '
+      'weight banks', () async {
     host = _FakeHost(os: 'windows', abiName: 'windows_x64', npuShips: true);
     debugLiteRtLmEngineHost = host;
     final path = writeUnread('unread.task');
@@ -366,6 +405,7 @@ void main() {
     expect(host.npuDispatches.single, (
       dir: '/fake/npu/intel',
       disableHwMasking: true,
+      stagesWeightBanks: true,
     ));
     await model.close();
 
@@ -459,11 +499,11 @@ void main() {
       host = _FakeHost(os: 'android', abiName: 'android_arm64', npuShips: true);
       debugLiteRtLmEngineHost = host;
       final path = write(
-        'vision_mt6991.litertlm',
+        'vision_e9955.litertlm',
         // The vision encoder runs on the NPU by its stamp, so the load asks
         // for the NPU, and the reachability question would come first without
         // the vendor check.
-        _bundle(visionStamp: ('MediaTek', 'MT6991')),
+        _bundle(visionStamp: ('Samsung', 'E9955')),
       );
 
       for (final (preferredBackend, backendFallback) in [
@@ -490,8 +530,8 @@ void main() {
                   'message',
                   allOf(
                     contains(
-                      "vision encoder is compiled for the MediaTek "
-                      'MT6991 NPU',
+                      "vision encoder is compiled for the Samsung "
+                      'E9955 NPU',
                     ),
                     contains('load it without supportImage'),
                   ),

@@ -17,12 +17,16 @@ void main() {
       expect(NpuStack.forStamp('QUALCOMM'), NpuStack.qualcomm);
       expect(NpuStack.forStamp('Google'), NpuStack.googleTensor);
       expect(NpuStack.forStamp('GOOGLE'), NpuStack.googleTensor);
+      // Read from Google's embeddinggemma-2-text-270m_MediaTek_MT6991.litertlm:
+      // vendor `MediaTek`, SoC `mt6991`.
+      expect(NpuStack.forStamp('MediaTek'), NpuStack.mediatek);
+      expect(NpuStack.forStamp('mediatek'), NpuStack.mediatek);
       expect(NpuStack.forStamp('IntelOpenVINO'), NpuStack.intel);
       expect(NpuStack.forStamp('intelopenvino'), NpuStack.intel);
     });
 
     test('has no vendor for a stamp this package has no dispatch for', () {
-      for (final stamp in ['MediaTek', 'Intel', '']) {
+      for (final stamp in ['Samsung', 'Intel', '']) {
         expect(NpuStack.forStamp(stamp), isNull, reason: stamp);
       }
     });
@@ -39,7 +43,11 @@ void main() {
         NpuStack.googleTensor,
       );
       expect(
-        npuVendorOf(const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991')),
+        npuVendorOf(const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6991')),
+        NpuStack.mediatek,
+      );
+      expect(
+        npuVendorOf(const LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955')),
         isNull,
       );
     });
@@ -47,11 +55,13 @@ void main() {
 
   group('NpuStack.forAbi', () {
     test(
-      'Qualcomm and Google on Android, Qualcomm on Linux, Intel on Windows',
+      'Qualcomm, Google and MediaTek on Android, Qualcomm on Linux, Intel on '
+      'Windows',
       () {
         expect(NpuStack.forAbi('android_arm64'), [
           NpuStack.qualcomm,
           NpuStack.googleTensor,
+          NpuStack.mediatek,
         ]);
         expect(NpuStack.forAbi('linux_arm64'), [NpuStack.qualcomm]);
         expect(NpuStack.forAbi('windows_x64'), [NpuStack.intel]);

@@ -14,12 +14,17 @@ import 'package:mutex/mutex.dart';
 import 'litert_default_scope.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
+import 'macos_load_error.dart';
 import 'native_turns.dart';
+import 'stream_start_failure.dart';
 import 'npu_vendor_host.dart';
 import 'option_scoring_ffi.dart';
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
+import 'intel_weight_banks.dart';
 import 'sigprof_mask.dart';
+import 'stderr_redirect.dart';
+import 'windows_std_handles.dart';
 import '../thinking_context.dart';
 import '../litert_lm_load_errors.dart';
 import '../litert_lm_log_level.dart';
@@ -535,8 +540,20 @@ class LiteRtLmFfiClient {
   /// `litert_lm_conversation_rewind_cancelled_turn` (`patch_c_api.sh` section
   /// 16); false on one built before it.
   bool _hasTurnRewind = false;
+
+  /// LiteRT-LM's thread-local last error (`litert_lm_get_last_error_message`),
+  /// null on a library that does not export it.
+  Pointer<Char> Function()? _lastErrorMessage;
+
+  /// Conversations on which a send has started, so that a refused send can
+  /// say whether it was the first.
+  final Set<Pointer<LiteRtLmConversation>> _sentConvs = {};
   _ProxyFreeStringDart? _proxyFreeString;
   Pointer<LiteRtLmEngine>? _engine;
+
+  /// The Intel NPU weight banks this engine's load wrote, held until
+  /// [shutdown] deletes the engine (intel_weight_banks.dart).
+  IntelWeightBankClaim? _intelBanks;
   bool _isInitialized = false;
   String? _nativeLogPath;
 
@@ -800,7 +817,7 @@ class LiteRtLmFfiClient {
         '@executable_path/Frameworks/StreamProxy.framework/StreamProxy',
       );
     } else if (Platform.isMacOS) {
-      lib = DynamicLibrary.open('LiteRtLm.framework/LiteRtLm');
+      lib = openMacOSLiteRtLm();
       proxyLib = DynamicLibrary.open('StreamProxy.framework/StreamProxy');
     } else if (Platform.isLinux) {
       // Load order matters: libLiteRt.so must be loaded first with
@@ -860,8 +877,10 @@ class LiteRtLmFfiClient {
       // Preload LiteRt.dll first so the WebGPU accelerator and TopK sampler
       // can resolve LiteRt* C API + their own exports through the process
       // module list before sampler_factory does its LoadLibrary lookup
-      // (mirrors the Linux/Android RTLD_GLOBAL pattern).
-      proxyLib = DynamicLibrary.open('StreamProxy.dll');
+      // (mirrors the Linux/Android RTLD_GLOBAL pattern). StreamProxy.dll goes
+      // through the std-handle realignment, before any static-CRT DLL loads
+      // (windows_std_handles.dart).
+      proxyLib = openBundledWindowsLibrary('StreamProxy.dll');
       final loadGlobal = proxyLib
           .lookupFunction<
             Pointer Function(Pointer<Utf8>),
@@ -923,6 +942,12 @@ class LiteRtLmFfiClient {
     _hasTurnRewind = lib.providesSymbol(
       'litert_lm_conversation_rewind_cancelled_turn',
     );
+    if (lib.providesSymbol('litert_lm_get_last_error_message')) {
+      _lastErrorMessage = lib
+          .lookupFunction<Pointer<Char> Function(), Pointer<Char> Function()>(
+            'litert_lm_get_last_error_message',
+          );
+    }
     _proxyFreeString = proxyLib
         .lookupFunction<_ProxyFreeStringNative, _ProxyFreeStringDart>(
           'stream_proxy_free_string',
@@ -948,14 +973,31 @@ class LiteRtLmFfiClient {
             int Function(Pointer<Utf8>)
           >('stream_proxy_redirect_stderr');
       final pathPtr = _nativeLogPath!.toNativeUtf8();
-      final rc = redirect(pathPtr);
-      calloc.free(pathPtr);
+      // The native redirect moves stdout too; put it back, or every print
+      // after this load leaves `flutter run` on macOS and Linux.
+      final StderrRedirectResult r;
+      try {
+        r = redirectStderrKeepingStdout(() => redirect(pathPtr));
+      } finally {
+        calloc.free(pathPtr);
+      }
+      if (r.restoreError != null) {
+        edgeAiLog(
+          '[LiteRtLmFfi] WARNING: stdout was not restored after the native '
+          'log redirect (${r.restoreError}); print output now goes to '
+          '$_nativeLogPath',
+        );
+      }
+      final rc = r.rc;
       if (rc != 0) {
         // Log capture is best-effort but its failure makes _dumpNativeLog
         // useless. Surface it instead of silently continuing.
         edgeAiLog(
-          '[LiteRtLmFfi] WARNING: stderr redirect failed (rc=$rc) — '
-          'native log dumps will be empty',
+          rc == null
+              ? '[LiteRtLmFfi] WARNING: stdout could not be saved, so native '
+                    'stderr was not redirected — native log dumps will be empty'
+              : '[LiteRtLmFfi] WARNING: stderr redirect failed (rc=$rc) — '
+                    'native log dumps will be empty',
         );
         _nativeLogPath = null;
       } else {
@@ -1196,8 +1238,14 @@ class LiteRtLmFfiClient {
       // The QNN backend's init fails under the debug VM's SIGPROF sampling on
       // Linux (see withSigprofBlocked); Android's FastRPC client survives it.
       final blockSigprof = npuDispatchDir != null && Platform.isLinux;
+      // The Intel dispatch writes a bundle's weights to a bank in the temp
+      // directory during the create: the ones new after it are this load's.
+      // Listed on the create's isolate; claimed here, where the lock handles
+      // live as long as the engine.
+      final claimBanks = backend == 'npu' && npuDispatch!.stagesWeightBanks;
       final engineAddr = await Isolate.run(() {
         edgeAiLogLevel = isolateLogLevel;
+        final banksBefore = claimBanks ? listIntelWeightBanks() : null;
         final isolateSw = Stopwatch()..start();
         // Plain open (litert_lm_library.dart): `_ensureBindings()` above
         // already loaded it with the preloads and, on Android, the strict
@@ -1239,8 +1287,11 @@ class LiteRtLmFfiClient {
           '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
           level: EdgeAiLogLevel.verbose,
         );
+        final banks = claimBanks && ptr != 0
+            ? (before: banksBefore, after: listIntelWeightBanks())
+            : null;
         if (ptr != 0 || !lastError) {
-          return (address: ptr, code: 0, message: null);
+          return (address: ptr, code: 0, message: null, banks: banks);
         }
         final code = lib.lookupFunction<Int32 Function(), int Function()>(
           'litert_lm_get_last_error_code',
@@ -1255,9 +1306,23 @@ class LiteRtLmFfiClient {
           message: code == 0 || message == nullptr
               ? null
               : message.toDartString(),
+          banks: null,
         );
       });
       _engine = Pointer<LiteRtLmEngine>.fromAddress(engineAddr.address);
+      if (engineAddr.banks case (:final before, :final after)) {
+        // shutdown() released the last engine's claim; a second initialize
+        // without it would leak those handles.
+        assert(_intelBanks == null);
+        final claim = IntelWeightBankClaim.newSince(before, after);
+        _intelBanks = claim;
+        if (claim.banks.isNotEmpty) {
+          edgeAiLog(
+            '[LiteRtLmFfi] Intel NPU weight bank(s) of this engine: '
+            '${claim.banks.join(', ')}',
+          );
+        }
+      }
       sw.stop();
       edgeAiLog(
         '[LiteRtLmFfi/perf] === END litert_lm_engine_create: ${sw.elapsedMilliseconds}ms (includes isolate spawn ~50-200ms) ===',
@@ -2136,11 +2201,28 @@ class LiteRtLmFfiClient {
       proxyData,
     );
 
+    // A refused send leaves its status in LiteRT-LM's thread-local last
+    // error (`c/conversation.cc`); read it before any other native call.
+    final nativeError = result == 0 ? nullptr : _lastErrorMessage?.call();
     b.litert_lm_conversation_optional_args_delete(optionalArgs);
-    if (result == 0) _noteGeneration(conv);
+    if (result == 0) {
+      _noteGeneration(conv);
+      _sentConvs.add(conv);
+    }
 
     if (result != 0) {
-      send.failed(Exception('Failed to start streaming (code: $result)'));
+      send.failed(
+        Exception(
+          streamStartFailureMessage(
+            code: result,
+            nativeMessage: nativeError == null || nativeError == nullptr
+                ? null
+                : _decodeNativeString(nativeError),
+            npu: _backend == 'npu',
+            laterMessage: _sentConvs.contains(conv),
+          ),
+        ),
+      );
       releaseNative();
     }
 
@@ -2322,6 +2404,7 @@ class LiteRtLmFfiClient {
       return;
     }
     _conversationSampling.remove(conv);
+    _sentConvs.remove(conv);
     if (_bindings != null) {
       _bindings!.litert_lm_conversation_delete(conv);
       edgeAiLog('[LiteRtLmFfi] Conversation closed');
@@ -2394,10 +2477,14 @@ class LiteRtLmFfiClient {
       _engine = null;
       edgeAiLog('[LiteRtLmFfi] Engine deleted');
     }
+    // After the delete, which removes the banks the dispatch wrote.
+    _intelBanks?.release();
+    _intelBanks = null;
     // engine_delete bulk-frees every remaining conversation at once; the
     // handle/virtual drains above already emptied the registry, but clear it so
     // no address can linger as a dangling "live" entry after a bulk free.
     _liveConvs.clear();
+    _sentConvs.clear();
 
     _isInitialized = false;
     _backend = null;

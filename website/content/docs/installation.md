@@ -22,7 +22,7 @@ dependencies:
   flutter_edge_ai_mediapipe: latest_version    # .task / .bin models (MediaPipe; mobile + web)
   flutter_edge_ai_builtin_ai: latest_version   # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
   flutter_edge_ai_onnx: latest_version         # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
-  flutter_edge_ai_llama: latest_version        # .gguf models — llama.cpp through llamadart (see /docs/llama)
+  flutter_edge_ai_llama: latest_version        # .gguf models — llama.cpp through llamadart, + LlamaEmbeddingBackend (EmbeddingGemma 2 text, native) (see /docs/llama)
 
   # Optional — text-embedding tokenizer implementations (.tflite / .onnx models; an EmbeddingGemma 2 .litertlm needs none):
   flutter_edge_ai_embeddings: latest_version   # embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via embeddingTokenizers: (needs a backend, e.g. LiteRtEmbeddingBackend above)
@@ -54,6 +54,7 @@ dependencies:
 | Generate text embeddings with EmbeddingGemma 2 (`.litertlm`) | `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
 | Embed images with EmbeddingGemma 2 (the 440m or 740m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) alone; 1.13.1 on Web |
 | Embed audio, or several parts in one vector, with EmbeddingGemma 2 (the 740m `.litertlm`) | `flutter_edge_ai_litertlm` 1.13.1 (`LiteRtEmbeddingBackend`) with `flutter_edge_ai` 2.3.1; 1.13.2 on Web |
+| Generate text embeddings with EmbeddingGemma 2 (`.gguf`, native) | `flutter_edge_ai_llama` 0.0.3 (`LlamaEmbeddingBackend`), no tokenizer package; on iOS/macOS also `llamadart_llama_cpp_flutter`; see [llama.cpp](/docs/llama) |
 | Generate text embeddings with EmbeddingGemma 1 / Gecko (`.tflite`) | `flutter_edge_ai_embeddings` + `flutter_edge_ai_litertlm` (`LiteRtEmbeddingBackend`) |
 | Generate text embeddings from ONNX/ORT models | `flutter_edge_ai_embeddings` + `flutter_edge_ai_onnx` (`OnnxEmbeddingBackend`) |
 | On-device RAG on native, fastest (Android/iOS/desktop) | `flutter_edge_ai_rag` + `flutter_edge_ai_qdrant` |
@@ -143,7 +144,8 @@ void main() async {
 | `inferenceEngines: [LlamaEngineProvider()]` | `flutter_edge_ai_llama` | `.gguf` models via llama.cpp, `ModelFileType.gguf` (mobile + desktop + web) — [llama.cpp](/docs/llama) |
 | `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | embeddings: EmbeddingGemma 2 `.litertlm` (text, images, audio; native and WebGPU) and `.tflite` models |
 | `embeddingBackends: [OnnxEmbeddingBackend()]` | `flutter_edge_ai_onnx` | text embeddings from ONNX/ORT models |
-| `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by both embedding backends above for `.tflite` and `.onnx` models — on the web for `.onnx` only, since LiteRT.js tokenizes `.tflite` in the browser; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |
+| `embeddingBackends: [LlamaEmbeddingBackend()]` | `flutter_edge_ai_llama` | EmbeddingGemma 2 `.gguf` text embeddings, native only (GPU on Apple, CPU on Android); the GGUF carries its own tokenizer — see [llama.cpp](/docs/llama) |
+| `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by `LiteRtEmbeddingBackend` and `OnnxEmbeddingBackend` for `.tflite` and `.onnx` models — on the web for `.onnx` only, since LiteRT.js tokenizes `.tflite` in the browser; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |
 | `sttBackends: [LiteRtSttBackend()]` | `flutter_edge_ai_speech` | speech-to-text (native only) |
 | `ttsBackends: [LiteRtTtsBackend()]` | `flutter_edge_ai_speech` | text-to-speech (native only) |
 
@@ -280,7 +282,7 @@ host fails with `Could not find method kotlin()`. Add KGP to the host's root
 Gradle plugin carries KGP.
 
 **GPU and NPU (any engine): nothing to add to the manifest.** `flutter_edge_ai`'s
-own manifest declares the OpenCL, FastRPC and Google Tensor runtime namespace entries and the manifest
+own manifest declares the OpenCL, FastRPC, Google Tensor and (from core 2.5.1) MediaTek NeuroPilot runtime namespace entries and the manifest
 merger folds them into your app. These
 are what your merged manifest must contain if you pin or audit it — note
 `libvndksupport.so`: without it the OpenCL ICD load is denied on Android 12+, and
@@ -296,6 +298,11 @@ native-v0.18.0).
 <uses-native-library android:name="libedgetpu_litert.so" android:required="false"/>
 <uses-native-library android:name="libedgetpu_util.so" android:required="false"/>
 ```
+
+From core 2.5.1 it also declares 25 MediaTek NeuroPilot libraries
+(`libneuron_adapter_mgvi.so`, `libneuronusdk_adapter*.mtk.so`,
+`libapuware*.mtk.so`, `libmvpu*.mtk.so`, …), all `required="false"`; the full
+list is in `flutter_edge_ai`'s `android/src/main/AndroidManifest.xml`.
 
 **Qualcomm NPU (opt-in).** `PreferredBackend.npu` needs Qualcomm's QNN runtime,
 which Qualcomm licenses for redistribution only inside an application, so the
@@ -323,6 +330,15 @@ dispatch, built from LiteRT and covered by Google's Tensor SDK terms; the
 runtime it drives is part of the Pixel system image. It runs on a Pixel with
 that Tensor generation and Android 16 or later, except on a build whose ID
 starts with `BP2A`, which LiteRT does not run the NPU on. Run so far on Tensor G6 only, with debug builds. See [LiteRT-LM](/docs/litertlm).
+
+**MediaTek NPU (opt-in).** A bundle compiled for a MediaTek SoC
+(`…_MediaTek_MT6991.litertlm`, `…_mt6991.litertlm`) needs `mediatek_npu: true`
+in the same `user_defines` block (`flutter_edge_ai_litertlm` 1.17.0). The build
+then fetches Google's `litert-npu-runtime-mediatek` AAR from Google Maven and
+bundles its dispatch; the NeuroPilot runtime it drives is part of the phone.
+It runs on a phone with that SoC and Android 12 or later whose vendor exposes
+NeuroPilot to apps. Offline, download the AAR and set
+`mediatek_npu_aar: <path>`. See [LiteRT-LM](/docs/litertlm).
 
 **ProGuard/R8 (only if you use `flutter_edge_ai_mediapipe`):** the package ships
 its own consumer ProGuard rules, so a release build needs no rules in your app
@@ -554,7 +570,9 @@ holds across all of desktop: there is no MediaPipe engine on desktop — `.task`
 
 **macOS needs one extra step:** turn Swift Package Manager off for the app
 (`flutter: config: enable-swift-package-manager: false` in `pubspec.yaml`) and
-paste a `post_install` block into the generated `macos/Podfile` — see
+replace the `post_install` block of the generated `macos/Podfile` (an app that
+already had a `macos/Podfile` keeps Swift Package Manager on and only replaces
+the block) — see
 [Desktop → macOS](/docs/desktop#macos). Without it the build succeeds and the
 first model load fails.
 

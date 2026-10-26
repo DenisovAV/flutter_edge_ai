@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 const _sm8850 = LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850');
 const _tensorG5 = LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5');
+const _mt6991 = LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6991');
 const _ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
 
 void main() {
@@ -37,7 +38,7 @@ void main() {
     // so the reason names the vendor that is missing.
     for (final (target, vendor) in const [
       (_ptl, 'Intel'),
-      (LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'), 'MediaTek'),
+      (LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955'), 'Samsung'),
     ]) {
       final host = _FakeHost('android_arm64');
       final choice = await chooseNpuVendor(target: target, host: host);
@@ -61,6 +62,17 @@ void main() {
       expect(choice, isA<NpuChosen>());
       expect((choice as NpuChosen).vendor, NpuStack.googleTensor);
       expect(host.asked, ['stack:googleTensor', 'probe:googleTensor']);
+    },
+  );
+
+  test(
+    'a MediaTek stamp selects only MediaTek even when Qualcomm is also built',
+    () async {
+      final host = _FakeHost('android_arm64');
+      final choice = await chooseNpuVendor(target: _mt6991, host: host);
+      expect(choice, isA<NpuChosen>());
+      expect((choice as NpuChosen).vendor, NpuStack.mediatek);
+      expect(host.asked, ['stack:mediatek', 'probe:mediatek']);
     },
   );
 
@@ -153,6 +165,7 @@ void main() {
   test('each vendor says whether it turns the HW mask update path off', () {
     expect(npuDisablesHwMasking(NpuStack.qualcomm), isFalse);
     expect(npuDisablesHwMasking(NpuStack.googleTensor), isFalse);
+    expect(npuDisablesHwMasking(NpuStack.mediatek), isFalse);
     expect(npuDisablesHwMasking(NpuStack.intel), isTrue);
   });
 }

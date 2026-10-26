@@ -112,6 +112,7 @@ Future<NpuStackCheck> checkNpuStackInManifest(
 String npuNotBundledReason(NpuStack vendor) => switch (vendor) {
   NpuStack.qualcomm => qualcommNpuNotEnabledReason,
   NpuStack.googleTensor => googleTensorNpuNotEnabledReason,
+  NpuStack.mediatek => mediatekNpuNotEnabledReason,
   NpuStack.intel =>
     'this build carries none of the Intel NPU stack; use a '
         'flutter_edge_ai_litertlm whose native release bundles it and rebuild',
@@ -125,6 +126,18 @@ const googleTensorNpuNotEnabledReason =
     '    user_defines:\n'
     '      flutter_edge_ai_litertlm:\n'
     '        $googleTensorNpuUserDefine: true\n'
+    "to the app's pubspec.yaml (the workspace root pubspec if the app is a "
+    'pub workspace member) and rebuild';
+
+/// What an app that did not opt in to MediaTek sees when it asks for npu.
+const mediatekNpuNotEnabledReason =
+    'this app was built without the MediaTek NPU dispatch. It is opt-in: '
+    'the build fetches it from Google Maven, and it drives NeuroPilot, which '
+    "is MediaTek's code under MediaTek's licence. Add\n"
+    '  hooks:\n'
+    '    user_defines:\n'
+    '      flutter_edge_ai_litertlm:\n'
+    '        $mediatekNpuUserDefine: true\n'
     "to the app's pubspec.yaml (the workspace root pubspec if the app is a "
     'pub workspace member) and rebuild';
 

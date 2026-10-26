@@ -36,7 +36,7 @@ Speech runs on the same native libraries as the `.litertlm` engine. Its build se
 
 ## Speech-to-text
 
-An STT model is two files — the model and its tokenizer — usually from different repos. A catalog build (`LiteRtSpeechModels`, `flutter_edge_ai_speech` 0.5.10) carries both, pinned to their Hugging Face commits; `install()` skips files already on disk. `FlutterEdgeAi.installStt()` installs your own files.
+An STT model is two files — the model and its tokenizer — usually from different repos. A catalog build (`LiteRtSpeechModels`, `flutter_edge_ai_speech` 0.5.11) carries both, pinned to their Hugging Face commits; `install()` skips files already on disk. `FlutterEdgeAi.installStt()` installs your own files.
 
 ```dart
 await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.whisperTiny.f32)

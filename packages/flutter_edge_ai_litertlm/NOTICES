@@ -41410,7 +41410,7 @@ SOFTWARE.
 --------------------------------------------------------------------------------
 OpenVINO
 
-The openvino*.dll libraries in the Windows bundle (the Intel NPU path) are Redistributables of the Intel Distribution of OpenVINO toolkit 2026.3.1, unmodified, and are licensed under the Intel OpenVINO Distribution License below. Their third-party programs follow it.
+The openvino*.dll libraries in the Windows bundle (the Intel NPU path) are Redistributables of the Intel Distribution of OpenVINO toolkit 2026.4.1, unmodified, and are licensed under the Intel OpenVINO Distribution License below. Their third-party programs follow it.
 
 ==== EULA.txt ====
 
@@ -43705,7 +43705,7 @@ DEALINGS IN THE SOFTWARE.
 --------------------------------------------------------------------------------
 oneTBB
 
-The tbb*.dll libraries in the Windows bundle come unmodified from the same OpenVINO 2026.3.1 distribution.
+The tbb*.dll libraries in the Windows bundle come unmodified from the same OpenVINO 2026.4.1 distribution.
 
 ==== TBB-LICENSE ====
 

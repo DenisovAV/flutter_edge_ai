@@ -3,6 +3,7 @@ import '../routing_strategy.dart';
 
 /// Routes by network availability. The app supplies [isOnline]; the package
 /// depends on no connectivity SDK.
+@Deprecated('Use RouteRule.offline; removed in 0.5.0.')
 class ConnectivityStrategy implements RoutingStrategy {
   ConnectivityStrategy({
     required this._isOnline,

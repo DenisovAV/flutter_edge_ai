@@ -67,6 +67,18 @@ the GPU or the CPU. Run so far on Tensor G6 Pixels with
 debug builds: Gemma 4 E2B text, images and audio, EmbeddingGemma 2 270m and
 440m.
 
+MediaTek takes `mediatek_npu: true` in the same `flutter_edge_ai_litertlm` block (`flutter_edge_ai_litertlm` 1.17.0): the
+build fetches Google's `litert-npu-runtime-mediatek` AAR from Google Maven and
+bundles its dispatch (about 330 KB); the NeuroPilot runtime it drives is part of
+the phone. A bundle compiled for a MediaTek SoC (Google publishes Gemma 3 1B,
+Gemma 3 270M, Qwen3 0.6B and EmbeddingGemma 2 ones; no Gemma 4) runs on a phone
+with that SoC and Android 12 or later whose vendor exposes NeuroPilot to apps;
+any other device is refused before any engine, a bundle for another SoC when
+the engine is created, and it never moves to the GPU or the CPU. Offline:
+`mediatek_npu_aar: <path>`. Run on a Galaxy Tab S10+ (Dimensity 9300+, MT6989,
+Android 16) with a debug build: Gemma 3 1B (`…_mt6989`) generates on the NPU;
+MT6991/MT6993 bundles are refused there.
+
 ## iOS
 
 Minimum iOS 15.0 — 16.0 if the app includes `flutter_edge_ai_mediapipe`, 16.4
@@ -138,7 +150,9 @@ Native Assets, so nothing else puts them in the bundle.
 With CocoaPods, paste this into `macos/Podfile`, replacing any existing
 `post_install` block; the next build runs `pod install` itself. A green build
 proves nothing: without it the first model load fails with
-`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`.
+`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. From
+`flutter_edge_ai_litertlm` 1.17.0 that error contains
+`flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names this fix.
 
 **A Swift Package Manager app has no `macos/Podfile` to paste into.** SPM is the
 default since Flutter 3.44, and an app whose plugins all ship a `Package.swift` —
@@ -228,10 +242,18 @@ shader compiler and NPU runtime — are bundled at build time.
 
 - Windows: `x64` only — no Windows on Arm build. End users need no VC++
   redistributable installed. (In the legacy `flutter_gemma_litertlm` package
-  this arrived in 1.7.1.) Measured on `native-v0.18.0`:
-  16 of the bundle's 24 DLLs import no C++ runtime; the other eight, the Intel
+  this arrived in 1.7.1.) Measured on `native-v0.18.0-g`:
+  17 of the bundle's 25 DLLs import no C++ runtime; the other eight, the Intel
   NPU stack, import only `msvcp140`, `vcruntime140` and `vcruntime140_1`,
   which every Flutter Windows app already resolves.
+- Windows Intel NPU: a bundle whose NPU blobs carry no weights (Intel's Gemma 4
+  12B for Panther Lake, EmbeddingGemma 2 270m `_Intel_PTL`) makes the dispatch
+  copy them to `%TEMP%\litert_ov_bank_<hex>.bin` at every load (5.55 GB and
+  74.5 MB); closing the model deletes it. From `flutter_edge_ai_litertlm` 1.17.0
+  the next Intel NPU load deletes the banks whose owner process is gone and the
+  unowned ones written before the PC last started (Fast Startup does not
+  count); an unowned bank written since then (an older release, the LiteRT-LM
+  CLI) and `LITERT_OV_WEIGHTS_PATH` are kept.
 - Linux: `x64` and `arm64`. Building needs
   `clang cmake ninja-build libgtk-3-dev lld`. GPU needs the vendor Vulkan
   driver; Mesa's `llvmpipe` software fallback cannot run Gemma 4.

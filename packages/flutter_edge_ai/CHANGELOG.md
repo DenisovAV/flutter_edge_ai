@@ -1,5 +1,15 @@
-## 2.5.1
+## 2.5.3
 - Model catalog: `FlutterEdgeAi.catalog` lists the models registered packages offer, pinned to Hugging Face commits, and `installFromCatalog` installs one.
+
+## 2.5.2
+- `InferenceModel.createDecider` reads LiteTune 0.6.0 files; one scored `fresh_engine` is refused by name.
+
+## 2.5.1
+- Android: the manifest declares MediaTek's NeuroPilot libraries for the MediaTek NPU.
+- Docs: macOS setup replaces the generated `post_install` block; the load error names the fix (#689).
+- Docs: which Gemma 3 bundles lose prefill chunks on the NPU (LiteRT-LM#3508).
+- Docs: EmbeddingGemma 2 GGUF text embeddings with `flutter_edge_ai_llama` 0.0.3.
+- Docs: Intel's Gemma 4 12B on the Windows NPU needs `flutter_edge_ai_litertlm` 1.17.0.
 
 ## 2.5.0
 - **Breaking:** remove the members deprecated for 2.5.0 (listed in MIGRATION.md).

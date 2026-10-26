@@ -64,6 +64,15 @@ String? npuUnreachable(
       'NpuStack.googleTensor has no device probe for $operatingSystem',
     ),
   },
+  NpuStack.mediatek => switch (operatingSystem) {
+    'android' => switch (probes.androidMediaTekRuntime()) {
+      null => null,
+      final error => 'the MediaTek NPU cannot run here: $error',
+    },
+    _ => throw StateError(
+      'NpuStack.mediatek has no device probe for $operatingSystem',
+    ),
+  },
   // Windows has no probe yet. What a bundle compiled for the Intel NPU does on
   // a PC without one is not measured. The run that once argued the check is
   // too coarse (2026-09-27, a Windows Server VM with no NPU: a generic Gemma 4
@@ -96,6 +105,11 @@ abstract interface class NpuProbes {
   /// Android process: null when it opens, else the dlopen error.
   String? androidGoogleTensorRuntime();
 
+  /// Whether this device can run the MediaTek NPU and one of its NeuroPilot
+  /// adapters resolves in this Android process: null when both hold, else why
+  /// not.
+  String? androidMediaTekRuntime();
+
   /// Whether this Linux machine can run the Qualcomm NPU stack: null when it
   /// can, else why not.
   String? linuxQualcommNpu();
@@ -113,6 +127,9 @@ final class _PlatformNpuProbes implements NpuProbes {
 
   @override
   String? androidGoogleTensorRuntime() => _androidGoogleTensorRuntimeError;
+
+  @override
+  String? androidMediaTekRuntime() => _androidMediaTekRuntimeError;
 
   @override
   String? linuxQualcommNpu() => _linuxQualcommNpuError;
@@ -264,6 +281,71 @@ String? googleTensorDeviceRefusal(String? Function(String key) property) {
   return null;
 }
 
+/// The MediaTek probe's answer: null when it passed, else why not.
+(String?,)? _mediaTekProbe;
+
+/// Whether this device can run the MediaTek NPU ([mediaTekDeviceRefusal]) and
+/// one of the NeuroPilot adapters the dispatch opens
+/// ([mediatekNeuronAdapters]) resolves in this process: null when both hold.
+/// The core Android manifest declares them optional, which opens them to this
+/// app's linker namespace on a device whose vendor exposes them.
+String? get _androidMediaTekRuntimeError => (_mediaTekProbe ??= (
+  () {
+    final refusal = mediaTekDeviceRefusal(_androidProperty);
+    if (refusal != null) return refusal;
+    final errors = <String>[];
+    for (final adapter in mediatekNeuronAdapters) {
+      try {
+        DynamicLibrary.open(adapter);
+        return null;
+      } on Object catch (e) {
+        errors.add('$adapter: $e');
+      }
+    }
+    return 'none of the NeuroPilot adapters opened in this app, so the '
+        'device does not expose its NeuroPilot runtime to apps (${errors.join('; ')})';
+  }(),
+)).$1;
+
+/// Why a device whose system properties [property] reads cannot run the
+/// MediaTek NPU, or null when it can.
+///
+/// LiteRT's own check (`isMediaTekDevice` in
+/// litert/kotlin/.../AcceleratorProvider.kt at the pin): Android 12 (API 31)
+/// or later, where the SoC manufacturer is readable, and a SoC manufacturer
+/// of `Mediatek` or `MTK`. Which SoC a bundle is compiled for is not checked
+/// here: the dispatch refuses a mismatch at engine_create.
+/// [property] answers null for a property that could not be read and an
+/// empty string for one the device does not set.
+@visibleForTesting
+String? mediaTekDeviceRefusal(String? Function(String key) property) {
+  final sdkText = property('ro.build.version.sdk');
+  if (sdkText == null) {
+    return 'the Android API level (ro.build.version.sdk) could not be read';
+  }
+  final sdk = int.tryParse(sdkText.trim());
+  if (sdk == null || sdk < 31) {
+    return 'Android API ${sdk ?? '"$sdkText"'}: the MediaTek NPU needs '
+        'Android 12 (API 31) or later';
+  }
+  final manufacturerText = property('ro.soc.manufacturer');
+  if (manufacturerText == null) {
+    return 'the SoC manufacturer (ro.soc.manufacturer) could not be read';
+  }
+  final manufacturer = manufacturerText.trim();
+  if (manufacturer.isEmpty) {
+    return 'the device does not report its SoC manufacturer '
+        '(ro.soc.manufacturer is empty), and LiteRT runs the MediaTek NPU '
+        'only where it reads Mediatek or MTK';
+  }
+  final lower = manufacturer.toLowerCase();
+  if (lower != 'mediatek' && lower != 'mtk') {
+    final model = property('ro.soc.model') ?? '';
+    return 'this is not a MediaTek SoC ($manufacturer $model)';
+  }
+  return null;
+}
+
 /// An Android system property ([key]) through `getprop`, or null when it
 /// cannot be read. Synchronous and asked once per probe.
 String? _androidProperty(String key) {
@@ -282,6 +364,10 @@ String _whereNpuRuns(NpuStack vendor) => switch (vendor) {
         'hooks.user_defines.flutter_edge_ai_litertlm.$qualcommNpuUserDefine: '
         'true)',
   NpuStack.googleTensor => 'Google Tensor G5/G6 Android devices',
+  NpuStack.mediatek =>
+    'MediaTek Dimensity Android devices (in apps built with '
+        'hooks.user_defines.flutter_edge_ai_litertlm.$mediatekNpuUserDefine: '
+        'true)',
   NpuStack.intel => 'on Windows (Intel LunarLake/PantherLake)',
 };
 

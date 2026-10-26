@@ -31,9 +31,9 @@ only the engines, stores and features your app uses — see
 - **Thinking Mode:** View the reasoning process of thinking models — see [Thinking Mode](/docs/thinking-mode).
 - **Stop Generation:** Cancel text generation mid-process on Android, iOS, Web, and Desktop.
 - **Backend Switching:** Choose CPU or GPU where supported, plus NPU for
-  `.litertlm` on Qualcomm Android devices, Qualcomm Linux arm64 boards and
-  Google Tensor Pixels (opt-in, see [LiteRT-LM](/docs/litertlm)) and on Intel
-  NPUs on Windows. The Tensor G5 and Panther Lake builds are not run yet: see
+  `.litertlm` on Qualcomm Android devices, Qualcomm Linux arm64 boards, Google
+  Tensor G5/G6 Pixels and MediaTek Android devices (opt-in, see
+  [LiteRT-LM](/docs/litertlm)) and on Intel LunarLake/PantherLake Windows PCs. Which builds have run where:
   the [Model Registry](/docs/registry).
 - **LoRA (MediaPipe `.task`):** Efficient fine-tuning and integration of LoRA (Low-Rank Adaptation) weights.
 - **Enhanced Downloads:** Smart retry logic with exponential backoff and automatic restart of interrupted downloads.
@@ -42,6 +42,28 @@ only the engines, stores and features your app uses — see
   then use independent `flutter_edge_ai_rag` indexes with Qdrant or SQLite
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
+
+## What's new in 2.5
+
+- **Several open models** (`flutter_edge_ai` 2.5.0, `flutter_edge_ai_litertlm`
+  1.16.0): `FlutterEdgeAi.openModel(spec)` builds a caller-owned model on every
+  call, so one file can be open on CPU and GPU, or two files at once. See
+  [Desktop](/docs/desktop#several-models-at-once).
+- **Deciders from a language model** (experimental, `flutter_edge_ai` 2.5.0 with
+  `flutter_edge_ai_litertlm` 1.16.0, native, `PreferredBackend.cpu` only):
+  `InferenceModel.createDecider` scores the options on a `.litertlm` trained on
+  the decision with LiteTune. See
+  [Decisions](/docs/decisions#deciders-from-a-language-model).
+- **MediaTek NPU** (`flutter_edge_ai_litertlm` 1.17.0): `PreferredBackend.npu`
+  on MediaTek Android devices, opt-in with `mediatek_npu: true`. See
+  [LiteRT-LM](/docs/litertlm).
+- **Intel's Gemma 4 12B on the Windows NPU** (`flutter_edge_ai_litertlm`
+  1.17.0): OpenVINO 2026.4.1, and the next NPU load deletes the `%TEMP%` weight
+  banks a killed 1.17.0 app left (older ones after a restart). See
+  [Desktop](/docs/desktop).
+- **GGUF embeddings** (`flutter_edge_ai_llama` 0.0.3): `LlamaEmbeddingBackend`
+  runs EmbeddingGemma 2 `.gguf` text embeddings natively. See
+  [llama.cpp](/docs/llama).
 
 ## What's new in 2.4
 

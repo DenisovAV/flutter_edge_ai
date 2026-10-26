@@ -285,47 +285,50 @@ void main() {
       );
     });
 
-    test('a text model that declares only the NPU but is compiled for none '
-        'has nothing to run on: refused for every request, the NPU not asked', () {
-      // No published bundle has this shape (14 read 2026-10-18): each that
-      // declares npu also carries a stamp and tf_lite_aux. On npu it would
-      // take LiteRT-LM's compiler-plugin path, as a generic bundle does.
-      final npuDeclared = bundle(text: ('npu', null));
-      expect(npuDeclared.isCompiledForNpu, isFalse);
-      final nothing = refusedWith(
-        LiteRtLmBundleProblem.wrongBackend,
-        'model.litertlm declares that its text model runs on npu '
-        '(backend_constraint) but is not compiled for an NPU (its text model '
-        'carries no LiteRtStamp and there is no tf_lite_aux), so no backend '
-        'here can run it: on the NPU LiteRT would try to compile it on the '
-        'device with a compiler plugin, which no NPU stack here ships, and run '
-        "it on the CPU. Install the bundle compiled for this device's NPU.",
-      );
-      for (final preferred in [null, npu, gpu, cpu]) {
-        for (final fallback in [true, false]) {
-          expect(
-            () => plan(
-              info: npuDeclared,
-              preferred: preferred,
-              fallback: fallback,
-            ),
-            nothing,
-            reason: '$preferred, fallback $fallback',
-          );
+    test(
+      'a text model that declares only the NPU but is compiled for none '
+      'has nothing to run on: refused for every request, the NPU not asked',
+      () {
+        // No published bundle has this shape (14 read 2026-10-18): each that
+        // declares npu also carries a stamp and tf_lite_aux. On npu it would
+        // take LiteRT-LM's compiler-plugin path, as a generic bundle does.
+        final npuDeclared = bundle(text: ('npu', null));
+        expect(npuDeclared.isCompiledForNpu, isFalse);
+        final nothing = refusedWith(
+          LiteRtLmBundleProblem.wrongBackend,
+          'model.litertlm declares that its text model runs on npu '
+          '(backend_constraint) but is not compiled for an NPU (its text model '
+          'carries no LiteRtStamp and there is no tf_lite_aux), so no backend '
+          'here can run it: on the NPU LiteRT would try to compile it on the '
+          'device with a compiler plugin, which no NPU stack here ships, and run '
+          "it on the CPU. Install the bundle compiled for this device's NPU.",
+        );
+        for (final preferred in [null, npu, gpu, cpu]) {
+          for (final fallback in [true, false]) {
+            expect(
+              () => plan(
+                info: npuDeclared,
+                preferred: preferred,
+                fallback: fallback,
+              ),
+              nothing,
+              reason: '$preferred, fallback $fallback',
+            );
+          }
         }
-      }
-      expect(
-        () => liteRtLmTextCandidates(
-          path: 'model.litertlm',
-          bundle: npuDeclared,
-          preferredBackend: null,
-          backendFallback: true,
-          abi: 'android_arm64',
-        ),
-        nothing,
-      );
-      expect(npuAsked, 0);
-    });
+        expect(
+          () => liteRtLmTextCandidates(
+            path: 'model.litertlm',
+            bundle: npuDeclared,
+            preferredBackend: null,
+            backendFallback: true,
+            abi: 'android_arm64',
+          ),
+          nothing,
+        );
+        expect(npuAsked, 0);
+      },
+    );
 
     test('one that declares the NPU and the CPU runs on the CPU, the NPU '
         'dropped for its missing NPU graph', () {
@@ -437,18 +440,15 @@ void main() {
     });
 
     test('an NPU this package has no dispatch for is refused', () {
-      final mediaTek = bundle(
-        text: (
-          null,
-          const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
-        ),
+      final samsung = bundle(
+        text: (null, const LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955')),
         aux: true,
       );
       expect(
-        () => plan(info: mediaTek),
+        () => plan(info: samsung),
         refused(
           LiteRtLmBundleProblem.unsupportedNpu,
-          'Qualcomm, Google Tensor and Intel',
+          'Qualcomm, Google Tensor, MediaTek and Intel',
         ),
       );
       expect(
@@ -501,19 +501,16 @@ void main() {
         'refused for its vendor before an unreachable NPU is asked about', () {
       // The text model makes the NPU a candidate, so asking first would name
       // the unreachable Qualcomm stack instead of the encoder's vendor.
-      final mediatekAudio = bundle(
+      final samsungAudio = bundle(
         text: (null, sm8750),
-        audio: (
-          null,
-          const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
-        ),
+        audio: (null, const LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955')),
         aux: true,
       );
       expect(
-        () => plan(info: mediatekAudio, audio: true, npuHere: false),
+        () => plan(info: samsungAudio, audio: true, npuHere: false),
         refused(
           LiteRtLmBundleProblem.unsupportedNpu,
-          "model.litertlm's audio encoder is compiled for the MediaTek MT6991 "
+          "model.litertlm's audio encoder is compiled for the Samsung E9955 "
           'NPU.',
         ),
       );
@@ -714,20 +711,17 @@ void main() {
 
     test('a vendor this package has no dispatch for: the same, on every '
         'host', () {
-      final mediaTekAudio = bundle(
-        audio: (
-          null,
-          const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
-        ),
+      final samsungAudio = bundle(
+        audio: (null, const LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955')),
       );
-      expect(plan(info: mediaTekAudio).textBackends, [gpu, cpu]);
-      expect(plan(info: mediaTekAudio, image: true).visionBackend, cpu);
+      expect(plan(info: samsungAudio).textBackends, [gpu, cpu]);
+      expect(plan(info: samsungAudio, image: true).visionBackend, cpu);
       expect(
-        () => plan(info: mediaTekAudio, audio: true),
+        () => plan(info: samsungAudio, audio: true),
         refused(
           LiteRtLmBundleProblem.unsupportedNpu,
-          "model.litertlm's audio encoder is compiled for the MediaTek MT6991 "
-          'NPU. flutter_edge_ai_litertlm runs Qualcomm, Google Tensor and Intel '
+          "model.litertlm's audio encoder is compiled for the Samsung E9955 "
+          'NPU. flutter_edge_ai_litertlm runs Qualcomm, Google Tensor, MediaTek and Intel '
           'NPU bundles only; load it without supportAudio, or install',
         ),
       );

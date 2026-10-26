@@ -127,4 +127,15 @@ flutter test integration_test/quickstart_test.dart -d <device-id>
 
 cd codelabs/voice-assistant-flutter-gemma/complete
 flutter test integration_test/tools_test.dart -d <device-id>
+
+cd codelabs/builtin-ai-flutter/complete
+flutter test integration_test/builtin_ai_test.dart -d <device-id>
 ```
+
+The built-in AI suite bundles no model: the OS owns it. On a device whose
+model is still `downloadable` (an Android phone, typically) the suite starts
+the OS download and waits up to 10 minutes; keep an Android screen on
+(`adb shell svc power stayon true`), since only the app in the foreground may
+use the model. It fails unless the device reaches `available`;
+`--dart-define=EXPECT_UNAVAILABLE=true` checks the typed refusal on a device
+without built-in AI instead.

@@ -124,8 +124,8 @@ const maintainers = <Maintainer>[
     roleHref: '/docs/models#hugging-face',
     about:
         'Japan · ex-Ultralytics · has converted 400+ open models to LiteRT, '
-        'Core AI and ExecuTorch and measured them on phones; 163 of them are '
-        'in litert-community',
+        'Core AI and ExecuTorch and measured them on phones; 200+ of them '
+        'are in litert-community',
     blurb:
         'Built installing a model straight from its Hugging Face repository, '
         'and the check that keeps it working against the live catalog as '

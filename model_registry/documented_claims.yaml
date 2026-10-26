@@ -12,7 +12,7 @@
 # of the page does not move what the claim cites.
 #
 # Left out on purpose, as the documentation review found them unrun: Intel
-# PTL bundles, Google Tensor G5 bundles, the Qualcomm SM8550 and SM8750
+# PTL bundles other than the EmbeddingGemma 2 270m, Google Tensor G5 bundles, the Qualcomm SM8550 and SM8750
 # EmbeddingGemma 2 bundles, and on Linux arm64 everything but the CPU and what
 # the Arduino VENTUNO Q (QCS8275) runs below.
 
@@ -256,19 +256,35 @@
   status: documented
   source: website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:547-553
 
+# --- MediaTek NPU and OpenVINO 2026.4.1 (PR #697, PR #702) ----------------------
+- what: Gemma 3 1B on the MediaTek MT6989 NPU (DDP Galaxy Tab S10+, debug build)
+  variants: [gemma-3-1b-it/npu-mt6989]
+  hosts: [android_arm64]
+  backends: [npu]
+  status: documented
+  source: "PR #697, run on a DDP Galaxy Tab S10+ (MT6989)"
+- what: EmbeddingGemma 2 270m on the Intel Panther Lake NPU (Core Ultra X7 358H)
+  variants: [embeddinggemma-2-text-270m/npu-ptl]
+  hosts: [windows_x64]
+  backends: [npu]
+  status: documented
+  source: "PR #702, Panther Lake run (native-v0.18.0-g)"
+- what: Gemma 3 1B for SM8850 keeps its prefill chunks (Galaxy S26)
+  variants: [gemma-3-1b-it/npu-sm8850]
+  hosts: [android_arm64]
+  backends: [npu]
+  status: documented
+  source: "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)"
+
 # --- Known broken ---------------------------------------------------------------
 - what: Gemma 3 on Qualcomm NPUs drops every prefill chunk after the first
   variants:
     - gemma-3-1b-it/npu-sm8550
-    - gemma-3-1b-it/npu-sm8650
     - gemma-3-1b-it/npu-sm8750
-    - gemma-3-1b-it/npu-sm8850
-    - gemma-3-270m-it/npu-sm8550
-    - gemma-3-270m-it/npu-sm8650
     - gemma-3-270m-it/npu-sm8750
     - gemma-3-270m-it/npu-sm8850
   hosts: [android_arm64, linux_arm64]
   backends: [npu]
   status: broken
-  source: website/content/docs/litertlm.md@0c626b2995555fdd76e920b2a51697215c80976b:200-204
+  source: "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)"
   issue: https://github.com/google-ai-edge/LiteRT-LM/issues/3508

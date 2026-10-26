@@ -542,6 +542,12 @@ jobs:
           }
           $dispatch = $dispatchAll[0]
           Copy-Item $dispatch.FullName "artifacts\LiteRtDispatch.dll"
+          # openvino.bzl takes the SDK from OPENVINO_NATIVE_DIR when it is set
+          # (local_path_env), past patches/litert_openvino_2026_4_1.patch: a
+          # runner with it set would ship whatever that directory holds.
+          if ($env:OPENVINO_NATIVE_DIR) {
+            throw "OPENVINO_NATIVE_DIR is set ($env:OPENVINO_NATIVE_DIR): the OpenVino SDK would bypass the pinned release"
+          }
           $ovRootAll = @(Get-ChildItem -Directory -Path "$outputBase\external" `
             -Filter '*intel_openvino*' -ErrorAction SilentlyContinue)
           if ($ovRootAll.Count -eq 0) { throw "OpenVino SDK not fetched — cannot ship a matched NPU stack" }
@@ -565,6 +571,12 @@ jobs:
             'openvino_intel_npu_plugin.dll',
             'openvino_intel_npu_compiler.dll',
             'openvino_intel_npu_compiler_loader.dll',
+            # 2026.4: the NPU plugin loads it by name, at run time, for blobs
+            # that run on Intel's NPU VM runtime. Gemma 4 E2B and Intel's 12B
+            # for Panther Lake load without it (LNL + PTL, 2026-10-20); it
+            # ships because Intel's own kit does. intelNpuLibs (npu_stacks.dart)
+            # names it too, or it would never reach the app.
+            'openvino_intel_npu_vm_runtime.dll',
             'openvino_tensorflow_lite_frontend.dll'
           )
           # Release TBB only: the '*_debug.dll' variants are a full parallel set
@@ -657,6 +669,13 @@ jobs:
           if (-not $sdkRelease -or $dllRelease -ne $sdkRelease) {
             throw "shipped openvino.dll reports '$($embedded -join ', ')' but the dispatch was built against '$sdkBuild'"
           }
+          # The checks above prove the SDK agrees with itself; this is the release
+          # patches/litert_openvino_2026_4_1.patch pins (npu_build_consistency_test.dart
+          # holds the two equal).
+          $ovRelease = '2026.4.1-22982'
+          if ($sdkRelease -ne $ovRelease) {
+            throw "the OpenVino SDK Bazel fetched is $sdkRelease; the pin's patch says $ovRelease"
+          }
           # The property all of this protects is "every shipped OpenVino/TBB DLL
           # is the file from the SDK the dispatch linked against". Assert that
           # directly, byte for byte, so it does not hinge on Intel's strings.
@@ -667,6 +686,35 @@ jobs:
             $sdkHash = (Get-FileHash $d.FullName -Algorithm SHA256).Hash
             if ($shippedHash -ne $sdkHash) {
               throw "artifacts\$($d.Name) is not the SDK's $($d.FullName) (sha256 $shippedHash vs $sdkHash)"
+            }
+          }
+          # Upstream's openvino.bzl fetches the SDK by URL alone, with no sha256:
+          # pin what ships, so an archive Intel re-uploads under the same release
+          # fails here instead of changing the bundle. The names are the staged
+          # set exactly (a renamed TBB would otherwise stage and never reach the
+          # app); npu_build_consistency_test.dart holds them to intelNpuLibs.
+          # Update both with $ovRelease.
+          $ovSha256 = @{
+            'openvino.dll' = 'a4ea3aa9dc4dc5136aa9d2abd94edafa67d7e0798829a0b93e5f289b9ee36892'
+            'openvino_intel_npu_compiler.dll' = 'ac888208cf84081acf6e88edabcc32b56f6b0d5840f1ea6db17d1bd2b7112ce7'
+            'openvino_intel_npu_compiler_loader.dll' = '8a6523265e229f53531e68ddbbb631763445c7d61e64284247c9e2940e8c1002'
+            'openvino_intel_npu_plugin.dll' = '6155f114669572df0ff6650f216b2c040a8569769dfa1a9888f6d15add08ecb5'
+            'openvino_intel_npu_vm_runtime.dll' = '05c9b2d2c7d17bdaec45b37da84ec880a084f9470f87ea6ee9146e4ae25f82b1'
+            'openvino_tensorflow_lite_frontend.dll' = 'e35d9dbe1b621d373140ee1cd5635f88ae78a8d89566a0c6790a31d34369b1f8'
+            'tbb12.dll' = 'd7603904d45426c05db2d5cb5541aaa861ad36dc481c7fbf3befd11acd596343'
+            'tbbbind_2_5.dll' = '9a54a33b5c33866c3846e7b8939609dd08449f9037cff568d92dae88baad01dc'
+            'tbbmalloc.dll' = 'ef627edf5b1c19ead180f8fdf027b5800c4ffdfbfcc00d67c7e66df7d62b4f92'
+            'tbbmalloc_proxy.dll' = 'eeb7a129d60a9b700cf4236dfc198bf596b391f6151db126749a6fb4bcf819d8'
+          }
+          $staged = (@($ovDlls.Name | Sort-Object -Unique) -join ', ')
+          $pinned = (@($ovSha256.Keys | Sort-Object) -join ', ')
+          if ($staged -ne $pinned) {
+            throw "staged OpenVino/TBB DLLs [$staged] are not the pinned set [$pinned]"
+          }
+          foreach ($d in $ovDlls) {
+            $h = (Get-FileHash "artifacts\$($d.Name)" -Algorithm SHA256).Hash.ToLower()
+            if ($h -ne $ovSha256[$d.Name]) {
+              throw "artifacts\$($d.Name) has sha256 $h; $ovRelease pins $($ovSha256[$d.Name])"
             }
           }
           Write-Host "OpenVino release verified: $sdkRelease (version.txt '$sdkBuild', openvino.dll '$($embedded[0])'); $($ovDlls.Count) DLLs byte-identical to the SDK"

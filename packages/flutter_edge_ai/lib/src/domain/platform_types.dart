@@ -14,27 +14,25 @@ library;
 /// - [cpu]: All platforms
 /// - [gpu]: All platforms (Metal on macOS, DirectX on Windows, Vulkan on Linux,
 ///   OpenCL on Android)
-/// - [npu]: LiteRT-LM (.litertlm) bundles compiled for an NPU: Android with
-///   Qualcomm Snapdragon or Google Tensor (each opt-in in the app's pubspec:
-///   `qualcomm_npu`, `google_tensor_npu`), Qualcomm Linux arm64 boards
-///   (`qualcomm_npu`), and Windows x64 (Intel). No MediaTek NPU. For a
-///   language model, `npu` on a bundle compiled for no NPU runs on the GPU,
-///   then the CPU (flutter_edge_ai_litertlm 1.15.0 and later); an
-///   EmbeddingGemma 2 embedder refuses it, because NPU and CPU vectors
-///   differ. A bundle compiled for an NPU this device cannot run is refused
-///   with an error, never moved to the GPU or the CPU. Read
-///   `InferenceModel.activeBackend` for what actually ran. Windows has no
-///   device probe for a language model: a bundle compiled for the Intel NPU
-///   is not refused on a PC without one, and what LiteRT does then is not
-///   measured. Which builds have run where:
-///   https://flutteredge.ai/docs/registry
+/// - [npu]: With LiteRT-LM (.litertlm models) and a bundle compiled for the
+///   device's NPU — Android (Qualcomm, Google Tensor G5/G6 and MediaTek, each
+///   opt-in through a `flutter_edge_ai_litertlm` user_define), Linux arm64
+///   (Qualcomm) and Windows (Intel LunarLake/PantherLake). Asking for it
+///   with a generic bundle falls back where the NPU cannot run it; a bundle
+///   compiled for an NPU runs there or is refused. Read
+///   `InferenceModel.activeBackend` for what actually ran.
+///   On Windows the check is per OS, not per device: a PC without an Intel
+///   NPU is still offered npu, and has been measured reporting
+///   `activeBackend == npu` while running elsewhere. There, npu is a request,
+///   not a proof.
+///   Which builds have run where: https://flutteredge.ai/docs/registry
 ///
 /// [gpu] falls back to the CPU when the GPU is unavailable; [npu] as above.
 /// [cpu] does not fall back: it is the last resort already.
 enum PreferredBackend {
   cpu,
   gpu,
-  npu, // .litertlm NPU bundles: Android, Linux arm64, Windows x64 (see above)
+  npu, // Android (Qualcomm, Google Tensor, MediaTek), Linux arm64, Windows
 }
 
 /// Numeric type of the model's activations, for native `.litertlm` models

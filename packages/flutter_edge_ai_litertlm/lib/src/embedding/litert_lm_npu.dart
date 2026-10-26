@@ -48,11 +48,10 @@ typedef LiteRtLmEmbeddingPlacement = ({
 @visibleForTesting
 LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 
-/// The per-SoC Qualcomm bundles run on device. Others are published by
-/// Google (SM8550, SM8750; Tensor G5/G6; MediaTek MT6991/MT6993; Intel PTL):
-/// the Qualcomm ones, Intel PTL and Tensor G5/G6 (with `google_tensor_npu`)
-/// are accepted by [placeLiteRtLmEmbedder] but not run by us, except the
-/// Tensor G6 270m and 440m (Pixel 11); MediaTek is refused.
+/// The per-SoC Qualcomm bundles verified on device. Others are published by
+/// Google (SM8550, SM8750; Tensor G5/G6; MediaTek MT6991/MT6993; Intel PTL)
+/// and not verified here; all of them load: Tensor G5/G6 with
+/// `google_tensor_npu`, MediaTek with `mediatek_npu`.
 const liteRtLmVerifiedNpuSocs = ['SM8850', 'SM8650', 'QCS8275'];
 
 /// Decides where [file] runs for a [requested] backend, or refuses with an
@@ -148,6 +147,7 @@ String liteRtLmGenericOnNpuRefusal(String file) =>
 String _bundleNames(NpuStack vendor) => switch (vendor) {
   NpuStack.qualcomm => '`<model>_Qualcomm_<SoC>.litertlm`',
   NpuStack.googleTensor => '`<model>_Google_Tensor_G5|G6.litertlm`',
+  NpuStack.mediatek => '`<model>_MediaTek_<SoC>.litertlm`',
   NpuStack.intel => '`<model>_Intel_PTL.litertlm`',
 };
 

@@ -81,9 +81,13 @@ void main() {
       expect(_here(gemma.npuPtl, 'android_arm64'), _none);
     });
 
-    test('MediaTek builds run nowhere: this package has no dispatch', () {
-      for (final abi in _hosts.values) {
-        expect(_here(LiteRtLmModels.qwen3_0_6b.npuMt6993, abi), _none);
+    test('a MediaTek build runs on Android arm64 only', () {
+      for (final MapEntry(key: host, value: abi) in _hosts.entries) {
+        expect(
+          _here(LiteRtLmModels.qwen3_0_6b.npuMt6993, abi),
+          abi == 'android_arm64' ? _npu : _none,
+          reason: host,
+        );
       }
     });
 
@@ -111,7 +115,8 @@ void main() {
       expect(_here(eg2.generic, null), _gpu);
       expect(_here(eg2.npuSm8850, 'android_arm64'), _npu);
       expect(_here(eg2.npuSm8850, null), _none);
-      expect(_here(eg2.npuMt6991, 'android_arm64'), _none);
+      expect(_here(eg2.npuMt6991, 'android_arm64'), _npu);
+      expect(_here(eg2.npuMt6991, 'linux_arm64'), _none);
     });
 
     test('a .tflite model: CPU natively, never an NPU build', () {

@@ -26,8 +26,8 @@ that uses them gets the analyzer warning `experimental_member_use`. Add
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_litertlm: ^1.16.0 # EmbeddingGemma 2 (.litertlm) and 1 (.tflite); option scoring
+  flutter_edge_ai: ^2.5.2
+  flutter_edge_ai_litertlm: ^1.17.0 # EmbeddingGemma 2 (.litertlm) and 1 (.tflite); option scoring
   # flutter_edge_ai_embeddings: ^2.3.2 # for a .tflite or ONNX embedder (EmbeddingGemma 1,
   #   Gecko, ...): its tokenizer, registered with embeddingTokenizers: [GemmaEmbeddingTokenizers()]
 ```
@@ -494,6 +494,11 @@ final answer = await decider.choose(
 LiteTune 0.5.0's `bundle` prints only the `options:` part of that call
 (`model.createDecider(options: [...])`); add the `question:`, which its
 `contract.json` and the section carry, and the `fromModel()` calibration.
+
+LiteTune 0.6.0 also records in the section how the runtime scored the options
+(`method`). A file from it needs `flutter_edge_ai` 2.5.2: `rewind`, one session
+rewound after each option, is what this release does; `fresh_engine`, an
+Engine per option (LiteTune's rule for Qwen 3.5), is refused by name.
 
 The call must match the decision, because the temperature and the threshold
 mean nothing for another question or another option list:

@@ -73,8 +73,8 @@ await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.whisperTiny.f32)
     .install();
 ```
 
-`LiteRtSpeechModels` (0.5.10, with `flutter_edge_ai` 2.5.1 and
-`flutter_edge_ai_litertlm` 1.16.1) lists every speech-to-text and
+`LiteRtSpeechModels` (0.5.11, with `flutter_edge_ai` 2.5.3 and
+`flutter_edge_ai_litertlm` 1.17.1) lists every speech-to-text and
 text-to-speech build, each pinned to a Hugging Face commit; `installStt()` and
 `installTts()` still install your own files. Every build, and where each has
 been run: [Model Registry](https://flutteredge.ai/docs/registry).
@@ -188,6 +188,13 @@ Audio input is native-only.
 The grid is where the package runs, not where each model has been run:
 Parakeet CTC (2.35 GB) is documented on desktop only and Qwen3-TTS on macOS
 only. Per build and platform: https://flutteredge.ai/docs/registry.
+
+On macOS the app needs the same setup as every LiteRT-LM feature: Swift Package
+Manager turned off for the app in `pubspec.yaml` and the `post_install` block in
+`macos/Podfile` (an app that already has a `macos/Podfile` keeps Swift Package
+Manager on and only needs the block), see [Desktop → macOS](https://flutteredge.ai/docs/desktop#macos).
+Without it STT and TTS fail to load, and since `flutter_edge_ai_litertlm` 1.17.0
+the error says so ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 
 No `hook/build.dart` of its own — the native library is bundled by
 `flutter_edge_ai_litertlm`'s Native Assets hook and shared transitively.

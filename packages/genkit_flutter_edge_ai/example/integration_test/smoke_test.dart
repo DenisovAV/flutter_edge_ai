@@ -24,7 +24,9 @@ void main() {
     );
 
     final text = response.text;
-    print('[Smoke] Response: "${text.length > 200 ? text.substring(0, 200) : text}"');
+    print(
+      '[Smoke] Response: "${text.length > 200 ? text.substring(0, 200) : text}"',
+    );
     expect(text, isNotEmpty, reason: 'Smoke test response should be non-empty');
   }, timeout: const Timeout(kInferenceTimeout));
 }

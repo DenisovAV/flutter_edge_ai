@@ -54,7 +54,9 @@ String _normalizeTtsLanguage(String? language) =>
 /// Uses dart:ffi to communicate directly with LiteRT-LM C API
 /// via libLiteRtLm.dylib/so/dll for model inference.
 class FlutterEdgeAiDesktop extends FlutterEdgeAiPlugin {
-  FlutterEdgeAiDesktop._();
+  FlutterEdgeAiDesktop._() {
+    attachInferenceModelCache(this, _modelCache);
+  }
 
   static FlutterEdgeAiDesktop? _instance;
 

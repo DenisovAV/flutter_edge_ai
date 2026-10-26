@@ -80,8 +80,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.delete_outline),
-                    onPressed:
-                        state.chatMessages.isEmpty ? null : state.clearChat,
+                    onPressed: state.chatMessages.isEmpty
+                        ? null
+                        : state.clearChat,
                     tooltip: 'Clear chat',
                   ),
                 ],
@@ -93,7 +94,8 @@ class _ChatScreenState extends State<ChatScreen> {
               child: ListView.builder(
                 controller: _scrollController,
                 padding: const EdgeInsets.only(bottom: 8),
-                itemCount: state.chatMessages.length +
+                itemCount:
+                    state.chatMessages.length +
                     (state.isGenerating && state.currentStreamText.isNotEmpty
                         ? 1
                         : 0),
@@ -122,8 +124,10 @@ class _ChatScreenState extends State<ChatScreen> {
                       decoration: const InputDecoration(
                         hintText: 'Type a message...',
                         border: OutlineInputBorder(),
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                       ),
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(),

@@ -42,20 +42,16 @@ void main() {
     print('Platform: ${Platform.operatingSystem}');
   });
 
-  testWidgets(
-    'Qwen2.5-1.5B install + text (CPU + GPU)',
-    (t) async {
-      await FlutterEdgeAi.installModel(
-        modelType: ModelType.general,
-        fileType: ModelFileType.litertlm,
-      ).fromNetwork(_url).install();
-      final cpu = await _run(PreferredBackend.cpu);
-      print('[Qwen2.5 CPU] $cpu');
-      expect(cpu.trim(), isNotEmpty);
-      final gpu = await _run(PreferredBackend.gpu);
-      print('[Qwen2.5 GPU] $gpu');
-      expect(gpu.trim(), isNotEmpty);
-    },
-    timeout: const Timeout(Duration(minutes: 40)),
-  );
+  testWidgets('Qwen2.5-1.5B install + text (CPU + GPU)', (t) async {
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.general,
+      fileType: ModelFileType.litertlm,
+    ).fromNetwork(_url).install();
+    final cpu = await _run(PreferredBackend.cpu);
+    print('[Qwen2.5 CPU] $cpu');
+    expect(cpu.trim(), isNotEmpty);
+    final gpu = await _run(PreferredBackend.gpu);
+    print('[Qwen2.5 GPU] $gpu');
+    expect(gpu.trim(), isNotEmpty);
+  }, timeout: const Timeout(Duration(minutes: 40)));
 }

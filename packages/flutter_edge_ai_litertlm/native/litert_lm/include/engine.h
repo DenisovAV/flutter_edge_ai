@@ -94,6 +94,9 @@ typedef struct LiteRtLmSessionConfig LiteRtLmSessionConfig;
 // Opaque pointer for LiteRT LM Conversation Config.
 typedef struct LiteRtLmConversationConfig LiteRtLmConversationConfig;
 
+// Opaque pointer for a LiteRT LM Thinking Config.
+typedef struct LiteRtLmThinkingConfig LiteRtLmThinkingConfig;
+
 // Represents the type of sampler.
 typedef enum {
   kLiteRtLmSamplerTypeUnspecified = 0,
@@ -235,6 +238,39 @@ void litert_lm_conversation_optional_args_delete(
 LITERT_LM_C_API_EXPORT
 void litert_lm_conversation_optional_args_set_visual_token_budget(
     LiteRtLmConversationOptionalArgs* optional_args, int visual_token_budget);
+
+// Creates a thinking config: thinking enabled, budget -1 (no budget). The
+// caller deletes it with `litert_lm_thinking_config_delete`.
+// @return The config, or NULL on failure.
+LITERT_LM_C_API_EXPORT
+LiteRtLmThinkingConfig* litert_lm_thinking_config_create();
+
+// Destroys a thinking config.
+LITERT_LM_C_API_EXPORT
+void litert_lm_thinking_config_delete(LiteRtLmThinkingConfig* config);
+
+// Sets whether thinking is enabled.
+LITERT_LM_C_API_EXPORT
+void litert_lm_thinking_config_set_enable_thinking(
+    LiteRtLmThinkingConfig* config, bool enable_thinking);
+
+// Sets the thinking token budget (-1 for none).
+LITERT_LM_C_API_EXPORT
+void litert_lm_thinking_config_set_thinking_token_budget(
+    LiteRtLmThinkingConfig* config, int thinking_token_budget);
+
+// Sets the thinking config of a conversation config; NULL clears it.
+LITERT_LM_C_API_EXPORT
+void litert_lm_conversation_config_set_thinking_config(
+    LiteRtLmConversationConfig* config,
+    const LiteRtLmThinkingConfig* thinking_config);
+
+// Sets the thinking config of one send; NULL clears it. It wins over the
+// conversation config's.
+LITERT_LM_C_API_EXPORT
+void litert_lm_conversation_optional_args_set_thinking_config(
+    LiteRtLmConversationOptionalArgs* optional_args,
+    const LiteRtLmThinkingConfig* thinking_config);
 
 // Sets the minimum log level for the LiteRT LM library.
 // Log levels are: 0=VERBOSE, 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR, 5=FATAL,

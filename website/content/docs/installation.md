@@ -38,7 +38,7 @@ dependencies:
   # Optional — on-device agent skills:
   flutter_edge_ai_agent: latest_version        # agent skills the model runs itself (text / JS / native-intent / MCP)
 
-  # Optional — memory diagnostics (Android + iOS + macOS):
+  # Optional — memory diagnostics (Android + iOS + macOS + Linux):
   flutter_edge_ai_diagnostics: latest_version  # what a model costs in memory the OS cannot reclaim, read from the OS
 ```
 
@@ -61,7 +61,7 @@ dependencies:
 | On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` (Flutter 3.47+) |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
 | Run on-device agent skills the model executes itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
-| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
+| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS + Linux) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
 
 Core registers **no** AI runtime by itself — wire inference, embedding, and
 speech packages in `FlutterEdgeAi.initialize(...)` below. RAG is independent:
@@ -436,7 +436,7 @@ On web, MediaPipe ignores `preferredBackend` and always runs on the GPU
 and `opfs_helper.js` from the `flutter_edge_ai` package's `web/` directory into
 your app's `web/` (find the package directory with
 `grep -A1 '"name": "flutter_edge_ai"' .dart_tool/package_config.json`), then load
-them in `web/index.html`:
+them in `web/index.html` by adding the following within the `<head>` section:
 
 ```
 <script src="cache_api.js"></script>

@@ -27,52 +27,48 @@ import 'loader_order_447_support.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  test(
-    'an RTLD_GLOBAL preload survives a later plain DynamicLibrary.open',
-    () {
-      expectLookupWorks();
+  test('an RTLD_GLOBAL preload survives a later plain DynamicLibrary.open', () {
+    expectLookupWorks();
 
-      expect(
-        mappedInProcess('libLiteRtLm.so'),
-        isFalse,
-        reason:
-            'libLiteRtLm was already mapped into this process; "global first" is '
-            'then not what is being measured',
-      );
+    expect(
+      mappedInProcess('libLiteRtLm.so'),
+      isFalse,
+      reason:
+          'libLiteRtLm was already mapped into this process; "global first" is '
+          'then not what is being measured',
+    );
 
-      // The LLM path, arriving first.
-      final handle = loadGlobal('libLiteRtLm.so');
-      expect(handle, isNot(nullptr), reason: 'RTLD_GLOBAL preload failed');
+    // The LLM path, arriving first.
+    final handle = loadGlobal('libLiteRtLm.so');
+    expect(handle, isNot(nullptr), reason: 'RTLD_GLOBAL preload failed');
 
-      // Precondition, not the point of the test: if the preload does not make
-      // the symbols ambient, everything below is measuring nothing.
-      expect(
-        globallyVisible(probeSymbol),
-        isTrue,
-        reason:
-            'the RTLD_GLOBAL preload did not put the exports in the default '
-            'search scope at all — then stream_proxy could never have worked on '
-            'Android, which contradicts every passing litertlm test we have',
-      );
+    // Precondition, not the point of the test: if the preload does not make
+    // the symbols ambient, everything below is measuring nothing.
+    expect(
+      globallyVisible(probeSymbol),
+      isTrue,
+      reason:
+          'the RTLD_GLOBAL preload did not put the exports in the default '
+          'search scope at all — then stream_proxy could never have worked on '
+          'Android, which contradicts every passing litertlm test we have',
+    );
 
-      // The embeddings/speech path, arriving second. This is the exact call
-      // that poisons a clean process; here it lands on an already-global
-      // soinfo.
-      final lib = DynamicLibrary.open('libLiteRtLm.so');
-      expect(lib.providesSymbol(probeSymbol), isTrue);
+    // The embeddings/speech path, arriving second. This is the exact call
+    // that poisons a clean process; here it lands on an already-global
+    // soinfo.
+    final lib = DynamicLibrary.open('libLiteRtLm.so');
+    expect(lib.providesSymbol(probeSymbol), isTrue);
 
-      // THE ASSERTION.
-      expect(
-        globallyVisible(probeSymbol),
-        isTrue,
-        reason:
-            'a later RTLD_LOCAL open DEMOTED an already-global soinfo. Then '
-            'ordering alone cannot fix #447: every load path in every package '
-            'would have to go through stream_proxy_load_global, and a Dart-side '
-            'ordering change would leave the bug reachable',
-      );
-      expect(globallyVisible(controlSymbol), isTrue);
-    },
-    skip: Platform.isAndroid ? null : 'Android only — unfalsifiable on Apple',
-  );
+    // THE ASSERTION.
+    expect(
+      globallyVisible(probeSymbol),
+      isTrue,
+      reason:
+          'a later RTLD_LOCAL open DEMOTED an already-global soinfo. Then '
+          'ordering alone cannot fix #447: every load path in every package '
+          'would have to go through stream_proxy_load_global, and a Dart-side '
+          'ordering change would leave the bug reachable',
+    );
+    expect(globallyVisible(controlSymbol), isTrue);
+  }, skip: Platform.isAndroid ? null : 'Android only — unfalsifiable on Apple');
 }

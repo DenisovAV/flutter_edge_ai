@@ -72,7 +72,7 @@ is on the [Capabilities](/docs/capabilities) page.
 | On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 | On-device agent skills the model runs itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
-| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS) | `flutter_edge_ai_diagnostics` |
+| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS + Linux) | `flutter_edge_ai_diagnostics` |
 
 <Info>
 

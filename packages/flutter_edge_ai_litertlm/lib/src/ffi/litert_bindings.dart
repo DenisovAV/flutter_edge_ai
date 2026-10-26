@@ -23,6 +23,7 @@ import 'package:flutter_edge_ai/engine_io.dart';
 import 'package:ffi/ffi.dart';
 
 import 'litert_default_scope.dart';
+import 'litert_lm_runtime_check.dart';
 import 'macos_load_error.dart';
 import 'windows_std_handles.dart';
 
@@ -209,26 +210,44 @@ List<String> _candidatesFor(String hostDir) => hostNativeLibraryCandidates(
   ],
 );
 
+/// Opens the library that carries the LiteRT C API here: the LiteRT-LM
+/// library on Apple and Android, Google's libLiteRt on Linux and Windows.
+///
+/// Where it is the LiteRT-LM library, another package's LiteRT-LM under that
+/// name is refused with a [StateError] ([checkOwnLiteRtLmBuild]).
 DynamicLibrary _openLiteRt() {
   // libLiteRt is statically linked into LiteRtLm.framework on Apple platforms;
   // both LiteRtLm and LiteRt symbols are exported from the same dylib.
   if (Platform.isMacOS) {
     // The framework inside an app; outside one (the host test suites) a dev
     // prebuilt or the hook's cache. Each failure keeps dyld's reason (#689).
-    return openMacOSLiteRtLmForTflite(devCandidates: _devLiteRtLmCandidates);
+    // A foreign framework is refused here, never skipped for a dev prebuilt,
+    // which would load on a developer's Mac and hide the problem until the
+    // app reached a user. A dev prebuilt that is not ours is skipped and
+    // named, so whatever comes back from the dev copies passes the check.
+    return requireOwnLiteRtLmBuild(
+      openMacOSLiteRtLmForTflite(
+        devCandidates: _devLiteRtLmCandidates,
+        isOwnBuild: (library) => library.providesSymbol(liteRtLmOwnBuildSymbol),
+      ),
+      macOSLiteRtLmFramework,
+    );
   }
   if (Platform.isIOS) {
     // iOS always resolves the bundled framework; it has no dev checkout and no
     // ~/Library/Caches. Offering it macOS .dylib paths would make the failure
     // message actively misleading on the one occasion someone reads it.
+    const bundled = 'LiteRtLm.framework/LiteRtLm';
+    final DynamicLibrary library;
     try {
-      return DynamicLibrary.open('LiteRtLm.framework/LiteRtLm');
+      library = DynamicLibrary.open(bundled);
     } on ArgumentError catch (error) {
       throw UnsupportedError(
-        'LiteRtLm.framework/LiteRtLm did not load. On iOS the app bundle is '
-        'the only place it can come from. dyld: ${dyldErrorText(error)}',
+        '$bundled did not load. On iOS the app bundle is the only place it '
+        'can come from. dyld: ${dyldErrorText(error)}',
       );
     }
+    return requireOwnLiteRtLmBuild(library, bundled);
   }
   if (Platform.isAndroid) {
     // #447: this is the embeddings/speech entry point, and on Android it may
@@ -256,12 +275,20 @@ DynamicLibrary _openLiteRt() {
         'MediaPipe `.task` text inference still works on this ABI.',
       );
     }
-    return openLiteRtLmPreferringDefaultScope('libLiteRtLm.so');
+    const path = 'libLiteRtLm.so';
+    return requireOwnLiteRtLmBuild(
+      openLiteRtLmPreferringDefaultScope(path),
+      path,
+    );
   }
   // Linux and Windows need no equivalent: glibc promotes an already-loaded
   // object when a later dlopen asks for RTLD_GLOBAL, and PE modules are
   // reachable through the loaded-module list regardless. See the header of
   // litert_default_scope.dart.
+  //
+  // Nor the own-build check: these open Google's prebuilt libLiteRt, which
+  // carries no symbol of ours. Their libLiteRtLm is checked where the LLM
+  // client and the EmbeddingGemma 2 pass open it.
   if (Platform.isLinux) return DynamicLibrary.open('libLiteRt.so');
   // Windows does need the std-handle realignment: embeddings or speech can be
   // the first to load this static-CRT DLL (windows_std_handles.dart).

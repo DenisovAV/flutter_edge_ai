@@ -43,7 +43,7 @@ other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your 
 uses both formats.
 
 Depend on both packages (`flutter_edge_ai: ^2.5.1`,
-`flutter_edge_ai_litertlm: ^1.17.0`) and install `.litertlm` files with
+`flutter_edge_ai_litertlm: ^1.18.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
@@ -951,6 +951,65 @@ CPU. `activeBackend` names what ran either way. The encoders never fall back.
 file on CPU and GPU. Each holds its own weights and KV cache, and the app
 closes it. Engine creations run one at a time. Measured on macOS only; see
 [Desktop → Several models at once](https://flutteredge.ai/docs/desktop#several-models-at-once).
+
+**Thinking budget.** `LiteRtLmEngine(thinkingTokenBudget: 512)` (1.18.0)
+caps how many tokens each generation with `enableThinking: true` spends
+thinking, in every model the engine builds, on the CPU, the GPU and the NPU;
+null (the default) sets none. At the budget LiteRT-LM closes the thought
+channel and the model goes on to the answer or the tool call. Without one, a
+model can think until `maxOutputTokens` and end the turn with an empty answer.
+
+```dart
+await FlutterEdgeAi.initialize(
+  inferenceEngines: const [LiteRtLmEngine(thinkingTokenBudget: 512)],
+);
+final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
+final chat = await model.createChat(
+  enableThinking: true,
+  maxOutputTokens: 2048,
+  modelType: ModelType.gemma4,
+);
+```
+
+- The thinking counts towards `maxOutputTokens`, and the reply, with the
+  prompt and the history, towards the context (`maxTokens`, 1024 by default):
+  keep the budget below `maxOutputTokens` and below what the context has left,
+  with room for the answer, or the budget is never reached.
+- It applies only with thinking on. A model that reasons with
+  `enableThinking: false` too, such as Qwen3 4B Thinking 2507, is not capped
+  then.
+- It is per generation: every send with thinking on carries it, so in a tool
+  loop a generation after a tool result has its own budget. Gemma 4 E2B did not
+  think again after a tool result in the measured runs, so only the first
+  generation of such a turn was seen capped.
+- LiteRT-LM caps the first channel the bundle declares (measured on Gemma 4 E2B
+  and `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`). A bundle that declares none
+  is not capped, and loading one with a budget prints a warning.
+- It is fixed when the engine is registered. To change it, close the model,
+  call `FlutterEdgeAi.reset()` (it drops every registration, not only the
+  engine), `initialize` again with every provider the app uses, then install
+  and load the model again.
+- A value outside 1..0x7fffffff throws `ArgumentError` when a model loads.
+- On the GPU it slows decoding for the whole generation, after the budget is
+  reached too, by about a fifth on an M5 Pro and about 40% on an NVIDIA L4; on
+  the CPU no cost was measured.
+- The web engine accepts it and ignores it.
+
+Measured on macOS (M5 Pro), Gemma 4 E2B, greedy, `maxTokens` 2048,
+`maxOutputTokens` 1536:
+
+| | CPU | GPU |
+|---|---|---|
+| Thinking: no budget → budget 64 | 1724 → 198 characters | 1465 → 198 characters |
+| Decode: no budget / budget 1200, never reached (same output) | 55.0–55.1 / 55.0–55.7 tok/s | 117.2–118.4 / 87.4–97.2 tok/s |
+| A tool turn with thinking on, budget 64 | the call and the answer | the call and the answer |
+
+On Linux (NVIDIA L4), the same test: decode 14.4 tok/s on the CPU either way,
+and on the GPU 111 tok/s without a budget, 68 with one it never reached.
+
+`Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` on the CPU: without a budget it
+thought for 4507 characters and answered nothing; with a budget of 32 it thought
+for 107, then answered.
 
 **Native log level.** `LiteRtLmEngine(nativeLogLevel: LiteRtLmLogLevel.verbose)`
 sets the minimum severity of LiteRT-LM's own native log before each engine

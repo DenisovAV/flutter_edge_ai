@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: tool/verify_embeddings.py serves the pinned fixture
+     from the host over adb reverse, at http://127.0.0.1:<port>. Android 9+
+     blocks cleartext HTTP to loopback too (API 35 emulator), so allow it for
+     loopback alone. Release builds keep the platform default. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

@@ -7,7 +7,8 @@
 // (integration_test/goldens/eg2_text_golden.json, through its .dart twin):
 // - `preferredBackend: gpu` loads with activeBackend gpu, 768-d unit vectors;
 // - min cos >= 0.995 to the CPU vectors (measured 0.9969-0.9970 on Lunar Lake
-//   and a Tesla T4, 2026-10-22) and >= 0.97 to Sentence Transformers fp32;
+//   and a Tesla T4, 2026-10-22) but < 0.9999 (FP16 activations: a run that
+//   stayed on the CPU would match), and >= 0.97 to Sentence Transformers fp32;
 // - every query ranks its document first;
 // - a second gpu request and an automatic one reuse the GPU embedder;
 // - images on the GPU are refused before anything is loaded, and the GPU
@@ -155,6 +156,13 @@ void main() {
         'min cos to CPU $worstCpu, to ST fp32 $worstSt',
       );
       expect(worstCpu, greaterThanOrEqualTo(0.995));
+      // FP16 activations: GPU vectors are close to the CPU ones but never
+      // equal, so a run that silently stayed on the CPU fails here.
+      expect(
+        worstCpu,
+        lessThan(0.9999),
+        reason: 'GPU vectors identical to the CPU ones: not on the GPU',
+      );
       expect(worstSt, greaterThanOrEqualTo(0.97));
 
       final pairs = _golden.where((item) => item.role == 'query').length;

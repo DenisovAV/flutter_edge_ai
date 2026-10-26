@@ -63,6 +63,11 @@ void main() {
       },
     );
 
+    test('the GPU hosts are exactly the measured ones: Windows x64 and '
+        'Linux x64', () {
+      expect(liteRtLmEmbeddingGpuAbis, {'windows_x64', 'linux_x64'});
+    });
+
     for (final abi in liteRtLmEmbeddingGpuAbis) {
       test(
         'with gpu on $abi runs on the GPU; null and cpu stay on CPU',

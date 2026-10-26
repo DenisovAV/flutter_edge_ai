@@ -101,6 +101,7 @@ void main() {
     DateTime Function()? clock,
     LiteRtLmNpuTarget? npuTarget,
     String npuDispatchDir = _dispatchDir,
+    bool gpu = false,
   }) => LiteRtLmEmbeddingPass(
     LiteRtLmEmbeddingConfig(
       modelPath: modelPath,
@@ -111,6 +112,7 @@ void main() {
       requireWeightCache: requireWeightCache,
       npuTarget: npuTarget,
       npuDispatchDir: npuTarget == null ? null : npuDispatchDir,
+      gpu: gpu,
     ),
     openBindings: openBindings ?? () => native,
     allocator: allocator,
@@ -1778,6 +1780,124 @@ void main() {
         containsAll(native.symbolsCalled),
         reason: 'the gate must check every symbol the pass looks up',
       );
+    });
+  });
+
+  group('a generic bundle on the GPU', () {
+    test('settings on "gpu", towers NULL, no dispatch directory, a probe '
+        'embedding before load returns, and activeBackend gpu', () async {
+      final p = pass(gpu: true);
+      final info = await p.load();
+      expect(native.settingsBackend, 'gpu');
+      expect(native.towerBackendsNull, isTrue);
+      expect(native.dispatchDirs, isEmpty);
+      // engine_create compiles but never runs the graph: the load embeds
+      // once itself.
+      final probe = native.order.indexOf('compute_embedding');
+      expect(probe, greaterThan(native.order.indexOf('options_create')));
+      expect(native.lastTexts, ['task: search result | query: probe']);
+      expect(native.created('response'), 1);
+      expect(native.deleted('response'), 1);
+      expect(
+        info.activeBackend,
+        PreferredBackend.gpu,
+        reason:
+            'core requires activeBackend once this backend honours gpu on '
+            'the host; without it every GPU load is refused',
+      );
+      expect(info.dimension, 4);
+      expect(info.modalities, {EmbeddingModality.text});
+
+      final vector = await p.embed(
+        EmbeddingInput.text('hello'),
+        TaskType.retrievalQuery,
+      );
+      expect(vector, hasLength(4));
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('a CPU load reports activeBackend cpu', () async {
+      final info = await pass().load();
+      expect(info.activeBackend, PreferredBackend.cpu);
+    });
+
+    test('the XNNPack weight cache is not checked on the GPU: an empty '
+        'directory under requireWeightCache is neither refused nor '
+        'reported', () async {
+      native.writeCacheOnCreate = false;
+      final p = pass(gpu: true, requireWeightCache: true);
+      final lines = await _printsDuring(() async {
+        expect((await p.load()).activeBackend, PreferredBackend.gpu);
+      });
+      expect(_aboutWeightCache(lines), isEmpty);
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('a probe the GPU cannot run fails the load, naming the GPU, and '
+        'frees the engine', () async {
+      native.failCompute = (code: 13, message: 'DEADLINE_EXCEEDED');
+      final p = pass(gpu: true);
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>()
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('could not run $_file on the GPU'),
+                  contains('DEADLINE_EXCEEDED'),
+                  contains('preferredBackend: cpu'),
+                  isNot(contains('NPU')),
+                ),
+              )
+              .having((e) => e.nativeCode, 'nativeCode', 13),
+        ),
+      );
+      expect(native.deleted('engine'), 1);
+      expect(native.deleted('options'), 1);
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('a probe that returns a NaN fails the load, naming the GPU', () async {
+      native.vectorOverride = [0.5, double.nan, 0.1, 0.2];
+      final p = pass(gpu: true);
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('$_file on the GPU returned'), contains('not used')),
+          ),
+        ),
+      );
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('a GPU engine create that fails names the GPU, not the cache '
+        'directory, whatever the code', () async {
+      native.failEngine = (code: 3, message: 'no WebGPU adapter');
+      final p = pass(gpu: true);
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('on the GPU: no WebGPU adapter'),
+              contains('preferredBackend: cpu'),
+              isNot(contains('cache directory')),
+            ),
+          ),
+        ),
+      );
+      expectNothingLeaked();
     });
   });
 

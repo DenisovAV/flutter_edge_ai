@@ -4,6 +4,10 @@ import 'package:flutter_edge_ai/src/api/inference_installation_builder.dart';
 import 'package:flutter_edge_ai/src/api/embedding_installation_builder.dart';
 import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.dart'
     show noActiveEmbedderError;
+import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart'
+    show embedderCacheOf;
+import 'package:flutter_edge_ai/src/lifecycle/speech_model_cache.dart'
+    show sttRemovalOf, ttsRemovalOf;
 import 'package:flutter_edge_ai/src/lifecycle/inference_model_cache.dart'
     show inferenceModelCacheOf;
 import 'package:flutter_edge_ai/src/model_management/install_rule.dart'
@@ -1183,40 +1187,98 @@ class FlutterEdgeAi {
   /// tokenizer) and clears the active-embedder identity. No-op if none active.
   /// Core's copies are deleted; a file installed with `fromFile` is the app's
   /// own and stays where it is.
+  ///
+  /// The embedder [getActiveEmbedder] built from those files is closed
+  /// first, including the handle the app holds: a later call on it throws
+  /// [EmbedderClosedException], and the next [getActiveEmbedder] throws
+  /// [NoActiveModelError] until an embedder is installed again, which then
+  /// gets a new embedder. A request already running finishes; the queued
+  /// ones fail with [EmbedderClosedException]. A [getActiveEmbedder] call
+  /// made meanwhile waits for the uninstall to end. When that close is still
+  /// running after 60 seconds, the uninstall throws
+  /// [EmbedderCloseTimeoutException] before anything is deleted, and can be
+  /// retried.
   static Future<void> uninstallEmbedder() async {
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final plugin = FlutterEdgeAiPlugin.instance;
+    final manager = plugin.modelManager;
     final spec = manager.activeEmbeddingModel;
     if (spec == null) return;
-    // The manager deletes every artifact in the spec. Clear only after the
-    // whole delete succeeds, so a partial storage failure leaves the identity
-    // available for a retry. The facade is the sole owner of this clear: one
-    // awaited tombstone, regardless of which platform manager is installed.
-    await manager.deleteModel(spec);
-    await manager.clearActiveEmbeddingIdentity();
+    Future<void> remove() async {
+      // The manager deletes every artifact in the spec. Clear only after the
+      // whole delete succeeds, so a partial storage failure leaves the
+      // identity available for a retry. The facade is the sole owner of this
+      // clear: one awaited tombstone, regardless of which platform manager is
+      // installed.
+      await manager.deleteModel(spec);
+      await manager.clearActiveEmbeddingIdentity();
+    }
+
+    // Closed before the files go: left open, the embedder keeps answering
+    // from files that are gone and stays resident (measured on macOS).
+    final cache = embedderCacheOf(plugin);
+    if (cache == null) return remove();
+    final paths = {...?(await manager.getModelFilePaths(spec))?.values};
+    return cache.closeForRemoval(
+      (params) =>
+          paths.contains(params.modelPath) ||
+          paths.contains(params.tokenizerPath),
+      remove,
+      label: spec.name,
+    );
   }
 
   /// Uninstall the active STT model — uninstalls ALL its files and clears
   /// the active-STT identity. No-op if none active. Core's copies are
   /// deleted; a file installed with `fromFile` is the app's own and stays
   /// where it is.
+  ///
+  /// The recognizer [getActiveStt] built from those files is closed first,
+  /// including the handle the app holds: a later call on it throws, and the
+  /// next [getActiveStt] throws until a model is installed again, which then
+  /// gets a new recognizer. A transcription already running finishes first.
+  /// A [getActiveStt] call made meanwhile waits for the uninstall to end.
+  /// When that close is still running after 60 seconds, the uninstall throws
+  /// `TimeoutException` before anything is deleted, and can be retried.
   static Future<void> uninstallStt() async {
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final plugin = FlutterEdgeAiPlugin.instance;
+    final manager = plugin.modelManager;
     final spec = manager.activeSttModel;
     if (spec == null) return;
-    await manager.deleteModel(spec);
-    await manager.clearActiveSttIdentity();
+    Future<void> remove() async {
+      await manager.deleteModel(spec);
+      await manager.clearActiveSttIdentity();
+    }
+
+    final removal = sttRemovalOf(plugin);
+    if (removal == null) return remove();
+    return removal({for (final file in spec.files) file.filename}, remove);
   }
 
   /// Uninstall the active TTS model — uninstalls ALL its files and clears
   /// the active-TTS identity. No-op if none active. Core's copies are
   /// deleted; a file installed with `fromFile` is the app's own and stays
   /// where it is.
+  ///
+  /// The synthesizer [getActiveTts] built from those files is closed first,
+  /// including the handle the app holds: a later call on it throws, and the
+  /// next [getActiveTts] throws until a model is installed again, which then
+  /// gets a new synthesizer. A synthesis already running finishes first. A
+  /// [getActiveTts] call made meanwhile waits for the uninstall to end. When
+  /// that close is still running after 60 seconds, the uninstall throws
+  /// `TimeoutException` before anything is deleted, and can be retried.
   static Future<void> uninstallTts() async {
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final plugin = FlutterEdgeAiPlugin.instance;
+    final manager = plugin.modelManager;
     final spec = manager.activeTtsModel;
     if (spec == null) return;
-    await manager.deleteModel(spec);
-    await manager.clearActiveTtsIdentity();
+    Future<void> remove() async {
+      await manager.deleteModel(spec);
+      await manager.clearActiveTtsIdentity();
+    }
+
+    final removal = ttsRemovalOf(plugin);
+    if (removal == null) return remove();
+    return removal({for (final file in spec.files) file.filename}, remove);
   }
 
   /// Delete orphaned files and stale metadata left by interrupted installs.

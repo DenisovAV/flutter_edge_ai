@@ -3,14 +3,14 @@
 // loaded, on the real engines: EmbeddingGemma 2 270m (.litertlm), moonshine
 // tiny and Matcha.
 //
-// uninstallModel closes the inference model built from the file it removes
-// (uninstall_loaded_model_test.dart). These three uninstalls do not close
-// theirs yet. Each test records what happens to that model — whether it
-// still answers from deleted files, whether the shell still caches it, what
-// the next getActive* call does, and whether a reinstall gets the old
-// instance back — prints it as a `[b89]` line, and then states what the
-// uninstall would do if it closed the model, as uninstallModel does. Until
-// the fix those last expectations fail; the `[b89]` line is the measurement.
+// Each uninstall closes that model before its files go, as uninstallModel
+// closes the inference model (uninstall_loaded_model_test.dart). Each test
+// prints a `[b89]` line — whether the model still answers, whether the shell
+// still caches it, what the next getActive* call does, whether a reinstall
+// gets a new instance, and on macOS/iOS the footprint — and then checks it.
+// Before the fix the model stayed open and cached, answered from the deleted
+// files, kept its memory, and came back after a reinstall (macOS,
+// 2026-10-26).
 //
 // The models are downloaded from Hugging Face (public repos).
 // Run: flutter test integration_test/uninstall_loaded_embedder_speech_test.dart -d <id>
@@ -156,7 +156,6 @@ void main() {
       expect(uninstall, 'ok');
       expect(filesLeft, 0);
       expect(getAfter, startsWith('NoActiveModelError'));
-      // What the uninstall would do if it closed the model (B89).
       expect(closedByUninstall, isTrue, reason: 'B89');
       expect(cachedAfter, isFalse, reason: 'B89');
       expect(reused, isFalse, reason: 'B89');
@@ -198,7 +197,6 @@ void main() {
       expect(uninstall, 'ok');
       expect(filesLeft, 0);
       expect(getAfter, startsWith('StateError'));
-      // What the uninstall would do if it closed the recognizer (B89).
       expect(transcribeAfter, isNot('ok'), reason: 'B89');
       expect(reused, isFalse, reason: 'B89');
     } finally {
@@ -235,7 +233,6 @@ void main() {
       expect(uninstall, 'ok');
       expect(filesLeft, 0);
       expect(getAfter, startsWith('StateError'));
-      // What the uninstall would do if it closed the synthesizer (B89).
       expect(synthesizeAfter, isNot('ok'), reason: 'B89');
       expect(reused, isFalse, reason: 'B89');
     } finally {

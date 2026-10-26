@@ -1,16 +1,11 @@
 // B89: uninstallEmbedder / uninstallStt / uninstallTts and the model that
 // getActiveEmbedder / getActiveStt / getActiveTts built from those files.
 //
-// uninstallModel closes the inference model built from the file it removes
-// (InferenceModelCache.closeForRemoval). The three uninstalls here delete the
-// files and clear the identity, and leave the cached model open: the app's
-// handle keeps working on files that are gone, and the shell keeps it cached
-// until something else closes it.
-//
-// These tests state what an uninstall would do if it closed that model, as
-// uninstallModel does. They are skipped until the owner decides on the
-// design: with the skip removed they fail on today's code, and that failure
-// is the measurement.
+// Each uninstall closes that model before its files go, as uninstallModel
+// closes the inference model (B88): the app's handle stops working, the
+// shell forgets it, and a reinstall gets a new one. Before the fix the model
+// stayed open and cached, answered from files that were gone, and came back
+// from getActive* after a reinstall.
 //
 // Both shells: the VM default is FlutterEdgeAiMobile; FlutterEdgeAiDesktop is
 // what macOS, Linux and Windows apps get, and it caches STT/TTS differently.
@@ -38,10 +33,6 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 // Clears FileSourceHandler's size floors: 1 MB for model files, 1 KB for
 // json and the like.
 final _fixtureBytes = Uint8List(1024 * 1024 + 16);
-
-const _b89 =
-    'B89: the three uninstalls do not close the cached model yet; the fix '
-    'waits for the owner\'s decision on its design';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -88,7 +79,7 @@ void main() {
             EmbeddingInput.text('a'),
             taskType: TaskType.retrievalQuery,
           ),
-          [1.0],
+          [1.0, 0.0, 0.0],
         );
 
         await FlutterEdgeAi.uninstallEmbedder();
@@ -113,7 +104,38 @@ void main() {
         expect(again, isNot(same(model)));
         expect(backend.describeCalls, 2);
         await again.close();
-      }, skip: _b89);
+      });
+
+      test('a decider on the uninstalled embedder fails with '
+          'NoActiveModelError, and takes the reinstalled one', () async {
+        EmbeddingRegistry.instance.registerAll([_FakeEmbeddingBackend()]);
+        await _installEmbedder();
+        final model = await FlutterEdgeAi.getActiveEmbedder();
+        final decider = await model.createDecider(
+          options: [
+            DeciderOption('a', examples: [EmbeddingInput.text('a1')]),
+            DeciderOption('b', examples: [EmbeddingInput.text('b1')]),
+          ],
+          calibration: const EmbeddingDeciderCalibration.none(),
+        );
+        final input = DeciderInput(EmbeddingInput.text('about a'));
+        expect((await decider.choose(input)).choice, 'a');
+
+        await FlutterEdgeAi.uninstallEmbedder();
+
+        // The closed embedder's request never ran; core's replacement is
+        // the active embedder, and there is none.
+        await expectLater(
+          decider.choose(input),
+          throwsA(isA<NoActiveModelError>()),
+        );
+        expect(decider.isClosed, isFalse);
+
+        await _installEmbedder();
+        expect((await decider.choose(input)).choice, 'a');
+        await decider.close();
+        await FlutterEdgeAiPlugin.instance.initializedEmbeddingModel?.close();
+      });
 
       test('uninstallStt closes the recognizer getActiveStt built from its '
           'files', () async {
@@ -135,7 +157,7 @@ void main() {
         final again = await FlutterEdgeAi.getActiveStt();
         expect(again, isNot(same(recognizer)));
         await again.close();
-      }, skip: _b89);
+      });
 
       test('uninstallTts closes the synthesizer getActiveTts built from its '
           'files', () async {
@@ -159,7 +181,7 @@ void main() {
         expect(again, isNot(same(synthesizer)));
         expect(backend.built.length, 2);
         await again.close();
-      }, skip: _b89);
+      });
     });
   }
 }
@@ -197,7 +219,7 @@ Future<void> _installTts() => FlutterEdgeAi.installTts()
     .ofType(TtsModelType.matcha)
     .install();
 
-/// Claims every spec and describes a pass that answers [1.0].
+/// Claims every spec and describes a 3-dimensional fake pass.
 final class _FakeEmbeddingBackend extends EmbeddingBackendProvider {
   int describeCalls = 0;
 
@@ -227,11 +249,17 @@ EmbeddingPass _buildFakePass(String _) => _FakePass();
 final class _FakePass extends EmbeddingPass {
   @override
   Future<EmbeddingPassInfo> load() async =>
-      const EmbeddingPassInfo(dimension: 1);
+      const EmbeddingPassInfo(dimension: 3);
 
+  /// a… → x, b… → y, anything else → z: enough for a decider to tell two
+  /// options apart.
   @override
   Future<List<double>> embed(EmbeddingInput input, TaskType taskType) async =>
-      const [1.0];
+      switch (input.text?[0]) {
+        'a' => const [1.0, 0.0, 0.0],
+        'b' => const [0.0, 1.0, 0.0],
+        _ => const [0.0, 0.0, 1.0],
+      };
 
   @override
   Future<void> close() async {}

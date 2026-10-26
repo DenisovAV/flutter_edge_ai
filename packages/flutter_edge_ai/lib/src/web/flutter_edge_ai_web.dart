@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/src/lifecycle/inference_model_cache.dart';
+import 'package:flutter_edge_ai/src/lifecycle/speech_model_cache.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:meta/meta.dart' show internal;
@@ -19,6 +20,8 @@ import 'package:flutter_edge_ai/src/embedding/embedder_loader.dart';
 class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
   FlutterEdgeAiWeb() {
     attachInferenceModelCache(this, _modelCache);
+    attachEmbedderCache(this, _embedderCache);
+    attachSpeechModelCaches(this, stt: _sttCache.closeForRemoval);
   }
 
   static void registerWith(Registrar registrar) {
@@ -41,8 +44,6 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
   @override
   EmbeddingModel? get initializedEmbeddingModel => _embedderCache.model;
 
-  SpeechRecognizer? _initializedSttModel;
-
   /// The cached inference model and the rules for reusing it, shared with the
   /// mobile and desktop shells.
   final InferenceModelCache _modelCache = InferenceModelCache();
@@ -59,8 +60,14 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
   /// either. Both are now the cache's problem, once, for all three shells.
   final EmbedderCache _embedderCache = EmbedderCache();
 
-  /// The embedder's params live in [_embedderCache]; STT still keeps its own.
-  ({String? modelPath, String? tokenizerPath})? _lastSttPaths;
+  /// The cached recognizer and the rules for reusing it, shared with the
+  /// mobile and desktop shells. Web has no TTS.
+  final SpeechModelCache<SpeechRecognizer, SttCacheKey> _sttCache =
+      SpeechModelCache(
+        close: (recognizer) => recognizer.close(),
+        addCloseListener: (recognizer, listener) =>
+            recognizer.addCloseListener(listener),
+      );
 
   @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 2.6.0.')
   @override
@@ -237,81 +244,81 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     String? tokenizerPath,
     PreferredBackend? preferredBackend,
     String? language,
-  }) async {
-    // Modern API: Use active STT model if paths not provided
-    if (modelPath == null || tokenizerPath == null) {
-      final manager = modelManager as WebModelManager;
-      final activeModel = manager.activeSttModel;
+  }) => _sttCache.obtain(
+    () async {
+      var files = const <String>{};
+      String? label;
+      // Locals, not the parameters: this runs again after every wait, and
+      // must resolve the active model again each time.
+      var resolvedModelPath = modelPath;
+      var resolvedTokenizerPath = tokenizerPath;
+      // Modern API: Use active STT model if paths not provided
+      if (resolvedModelPath == null || resolvedTokenizerPath == null) {
+        final manager = modelManager as WebModelManager;
+        final activeModel = manager.activeSttModel;
 
-      // No active STT model - user must set one first
-      if (activeModel == null) {
-        throw StateError(
-          'No active STT model set. Use `FlutterEdgeAi.installStt()` or `modelManager.ensureModelReadyFromSpec()` first',
-        );
-      }
-
-      // Get the actual model file paths through unified system
-      final modelFilePaths = await manager.getModelFilePaths(activeModel);
-      if (modelFilePaths == null || modelFilePaths.isEmpty) {
-        throw StateError(
-          'STT model file paths not found. Use the `modelManager` to load the model first',
-        );
-      }
-
-      // Extract model and tokenizer paths from spec
-      final activeModelPath = modelFilePaths[PreferencesKeys.sttModelFile];
-      final activeTokenizerPath =
-          modelFilePaths[PreferencesKeys.sttTokenizerFile];
-
-      if (activeModelPath == null || activeTokenizerPath == null) {
-        throw StateError(
-          'Could not find model or tokenizer path in active STT model',
-        );
-      }
-
-      modelPath = activeModelPath;
-      tokenizerPath = activeTokenizerPath;
-
-      if (kDebugMode) {
-        edgeAiLog(
-          'Using active STT model: $modelPath, tokenizer: $tokenizerPath',
-        );
-      }
-    }
-
-    // Check if model already exists with different parameters. Core can no
-    // longer downcast to the package's concrete STT model type, so it
-    // compares against the last resolved paths it cached itself (mirrors
-    // the embedder cache).
-    if (_initializedSttModel != null) {
-      final p = _lastSttPaths;
-      final modelChanged =
-          p == null ||
-          p.modelPath != modelPath ||
-          p.tokenizerPath != tokenizerPath;
-
-      if (modelChanged) {
-        if (kDebugMode) {
-          edgeAiLog(
-            '[FlutterEdgeAiWeb] STT model paths changed, closing existing model',
+        // No active STT model - user must set one first
+        if (activeModel == null) {
+          throw StateError(
+            'No active STT model set. Use `FlutterEdgeAi.installStt()` or `modelManager.ensureModelReadyFromSpec()` first',
           );
         }
-        await _initializedSttModel?.close();
-        _initializedSttModel = null;
-        _lastSttPaths = null;
+
+        // Get the actual model file paths through unified system
+        final modelFilePaths = await manager.getModelFilePaths(activeModel);
+        if (modelFilePaths == null || modelFilePaths.isEmpty) {
+          throw StateError(
+            'STT model file paths not found. Use the `modelManager` to load the model first',
+          );
+        }
+
+        // Extract model and tokenizer paths from spec
+        final activeModelPath = modelFilePaths[PreferencesKeys.sttModelFile];
+        final activeTokenizerPath =
+            modelFilePaths[PreferencesKeys.sttTokenizerFile];
+
+        if (activeModelPath == null || activeTokenizerPath == null) {
+          throw StateError(
+            'Could not find model or tokenizer path in active STT model',
+          );
+        }
+
+        resolvedModelPath = activeModelPath;
+        resolvedTokenizerPath = activeTokenizerPath;
+        files = {for (final file in activeModel.files) file.filename};
+        label = activeModel.name;
       }
-    }
+      final sttModelPath = resolvedModelPath;
+      final sttTokenizerPath = resolvedTokenizerPath;
+      return (
+        key: (modelPath: sttModelPath, tokenizerPath: sttTokenizerPath),
+        files: files,
+        label: label ?? 'STT $sttModelPath',
+        build: () => _buildStt(
+          modelPath: sttModelPath,
+          tokenizerPath: sttTokenizerPath,
+          preferredBackend: preferredBackend,
+          language: language,
+        ),
+      );
+    },
+    // Same model — reuse the singleton, RETARGETED to the requested language.
+    // Without this the caller gets back the recognizer built for the FIRST
+    // language and transcribes into it with no error; see the mobile shell.
+    onReuse: (recognizer) => recognizer.language = language,
+  );
 
-    if (_initializedSttModel != null) {
-      // Same model — reuse the singleton, RETARGETED to the requested
-      // language. Without this the caller gets back the recognizer built for
-      // the FIRST language and transcribes into it with no error; see the
-      // matching branch in the mobile shell. The decoder prompt is rebuilt
-      // per transcription, so this is a field write, not a reload.
-      _initializedSttModel!.language = language;
-      return _initializedSttModel!;
+  Future<SpeechRecognizer> _buildStt({
+    required String modelPath,
+    required String tokenizerPath,
+    required PreferredBackend? preferredBackend,
+    required String? language,
+  }) async {
+    if (kDebugMode) {
+      edgeAiLog(
+        'Using active STT model: $modelPath, tokenizer: $tokenizerPath',
+      );
     }
-
     // Dispatches construction through the SttRegistry (probe-chain, mirrors
     // EmbeddingRegistry). The backend reads spec.sttModelType to select its
     // runtime profile, and ONLY config.modelPath/config.tokenizerPath for
@@ -330,8 +337,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
         '${SttRegistry.instance.registered.map((b) => b.name).join(", ")}.',
       );
     }
-    // modelPath/tokenizerPath are non-null here (resolved in the preamble or
-    // passed by the caller). maxTokens is unused by STT.
+    // maxTokens is unused by STT.
     final sttConfig = RuntimeConfig(
       maxTokens: 0,
       modelPath: modelPath,
@@ -346,7 +352,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
     // resolves paths exclusively from config; synthesize one from the resolved
     // file paths when there's no active SttModelSpec. sttModelType defaults to
     // moonshine — the only shipped profile — for this legacy-path fallback.
-    final model = await backend.createModel(
+    return backend.createModel(
       activeStt is SttModelSpec
           ? activeStt
           : SttModelSpec(
@@ -357,13 +363,6 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
             ),
       sttConfig,
     );
-    _initializedSttModel = model;
-    _lastSttPaths = (modelPath: modelPath, tokenizerPath: tokenizerPath);
-    model.addCloseListener(() {
-      _initializedSttModel = null;
-      _lastSttPaths = null;
-    });
-    return model;
   }
 
   @override

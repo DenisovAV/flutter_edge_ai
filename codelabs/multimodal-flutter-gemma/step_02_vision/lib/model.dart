@@ -47,7 +47,8 @@ class ModelChoice {
   String get sizeLabel => kIsWeb ? webSize : nativeSize;
 }
 
-/// The model this step runs.
+/// The model Steps 1 and 2 run: Step 1 opens it as a text chat, Step 2 opens
+/// the same file with vision switched on.
 ///
 /// The repository is ungated, so nothing here needs a Hugging Face token and
 /// no run needs `--dart-define`.

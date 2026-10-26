@@ -50,7 +50,9 @@ import sys
 # release hooks document, and `\S+` stopped at the space, so this guard did not
 # see the publish at all. One character per repetition keeps a long line that
 # is no publish from backtracking for ever.
-_VALUE = r"(?:\"[^\"]*\"|'[^']*'|[^\s\"';&|()])*"
+# A command substitution (`$(pwd)`, also nested, or backticks) is part of a
+# value too: without it `FOO=$(pwd) dart pub publish` went unseen.
+_VALUE = r"(?:\"[^\"]*\"|'[^']*'|\$\([^)]*\)+|`[^`]*`|[^\s\"'`;&|()])*"
 _ASSIGN = r"\w+=" + _VALUE
 PUBLISH_RE = re.compile(
     r"(?:^|[;&|(]|&&|\|\|)\s*"
@@ -280,6 +282,10 @@ _TESTS = [
     ('env RELEASE_SKIP_REGISTRY="a b" X=1 dart pub publish', True),  # was a bypass
     ("x && RELEASE_SKIP_REGISTRY=r dart pub publish", True),
     ("x; X=1 dart pub publish", True),
+    ("FOO=$(pwd) dart pub publish", True),  # was a regression of the above
+    ("FOO=$(a $(b)) dart pub publish", True),
+    ("FOO=`pwd` dart pub publish", True),
+    ('FOO="$(pwd)" BAR=$(id -u) dart pub publish', True),
     ("cd x; (dart pub publish)", True),  # was a bypass
     ("dart pub publish --dry-run && dart pub publish", True),  # was a bypass
     ("flutter pub publish", True),

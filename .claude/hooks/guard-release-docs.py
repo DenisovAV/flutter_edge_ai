@@ -52,7 +52,9 @@ import sys
 # a `cd` line followed by the publish on the next line must still match).
 # An assignment value may be quoted and hold spaces, or be empty
 # (`RELEASE_SKIP_DOCS="two words" dart pub publish`).
-_VALUE = r"(?:\"[^\"]*\"|'[^']*'|[^\s\"';&|()])*"
+# A command substitution (`$(pwd)`, also nested, or backticks) is part of a
+# value too: without it `FOO=$(pwd) dart pub publish` went unseen.
+_VALUE = r"(?:\"[^\"]*\"|'[^']*'|\$\([^)]*\)+|`[^`]*`|[^\s\"'`;&|()])*"
 _ASSIGN = r"\w+=" + _VALUE
 PUBLISH_RE = re.compile(
     r"(?:^|[;&|(]|&&|\|\|)\s*"
@@ -298,6 +300,8 @@ _TESTS = [
     ('RELEASE_SKIP_DOCS="two words" dart pub publish', True, False),  # was unmatched
     ('RELEASE_SKIP_REGISTRY="no device" dart pub publish', True, False),  # was unmatched
     ("RELEASE_SKIP_REGISTRY= dart pub publish", True, False),  # was unmatched
+    ("FOO=$(pwd) dart pub publish", True, False),
+    ("FOO=`pwd` dart pub publish", True, False),
     ("git push origin main", False, False),
     ('grep -r "dart pub publish" docs/', False, False),
 ]

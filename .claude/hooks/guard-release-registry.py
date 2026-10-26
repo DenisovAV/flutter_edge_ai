@@ -47,7 +47,9 @@ CATALOG_PACKAGES = {"flutter_edge_ai_litertlm", "flutter_edge_ai_speech"}
 # A shell assignment value: quoted parts (which may hold spaces) and bare
 # characters, possibly empty. One character per repetition, never `[...]+`
 # inside the `*`, so a long line that is no publish cannot backtrack for ever.
-_VALUE = r"(?:\"[^\"]*\"|'[^']*'|[^\s\"';&|()])*"
+# A command substitution (`$(pwd)`, also nested, or backticks) is part of a
+# value too: without it `FOO=$(pwd) dart pub publish` went unseen.
+_VALUE = r"(?:\"[^\"]*\"|'[^']*'|\$\([^)]*\)+|`[^`]*`|[^\s\"'`;&|()])*"
 _ASSIGN = r"\w+=" + _VALUE
 # Mirror guard-publish.py's command-position matcher (MULTILINE is load-bearing:
 # a `cd` line followed by the publish on the next line must still match).
@@ -325,6 +327,10 @@ _TESTS = [
     ('PUB_HOSTED_URL="https://a b" dart pub publish', 1, 1),
     ("a && dart pub publish", 1, 1),
     ("a; dart pub publish", 1, 1),
+    ("FOO=$(pwd) dart pub publish", 1, 1),
+    ("FOO=$(a $(b)) dart pub publish", 1, 1),
+    ("FOO=`pwd` dart pub publish", 1, 1),
+    ("RELEASE_SKIP_REGISTRY=$(echo r) dart pub publish", 1, 0),
     # The skip on another command of the chain never reaches the publish.
     ("RELEASE_SKIP_REGISTRY=x echo hi && dart pub publish", 1, 1),
     ("echo RELEASE_SKIP_REGISTRY=x && dart pub publish", 1, 1),

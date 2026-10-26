@@ -53,28 +53,37 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// do not depend on it.
   ///
   /// [requireWeightCache] (flutter_edge_ai_litertlm 1.14.0) concerns
-  /// EmbeddingGemma 2. Its engine writes a weight cache into the app's cache
-  /// directory when it loads, one file per tower on CPU (71 MB for the 270m,
-  /// 385 MB for the 740m). A tower whose file the engine cannot create — a
-  /// path too long for the platform (Windows' 260-character MAX_PATH), a
-  /// directory this process cannot write to, or possibly no free space at
-  /// all — runs anyway, slower to load and, measured on the 270m, with about
-  /// 290 MB more memory. By default no cache at all is a printed warning.
-  /// With `true` the load fails instead: `getActiveEmbedder()` throws an
-  /// `EmbeddingLoadException` naming the cache directory, the length of the
-  /// cache file path and the likely causes, and no engine is left running.
-  /// A disk that fills while the cache is being built is not covered: the
-  /// engine (XNNPack) then aborts the process in native code, and no flag can
-  /// catch that.
+  /// EmbeddingGemma 2: with `true`, a load that would be cold on every start
+  /// is refused. Its engine writes weight caches into the app's cache
+  /// directory when it loads: on CPU XNNPack's `.xnnpack_cache`, one file per
+  /// tower (71 MB for the 270m, 385 MB for the 740m); on the GPU (Windows and
+  /// Linux x64, 1.19.0) ML Drift's `…_mldrift_weight_cache.bin` and
+  /// `…_mldrift_program_cache.bin` for the text tower (68 MB and 9 MB for the
+  /// 270m). A cache the engine cannot create — a path too long for the
+  /// platform (Windows' 260-character MAX_PATH, which the GPU caches cannot
+  /// exceed either; a file name past 255 characters), a directory this
+  /// process cannot write to, or possibly no free space at all — leaves the
+  /// load working but cold: slower to load every time and, on CPU, measured
+  /// on the 270m, about 290 MB more memory. By default no cache at all is a
+  /// printed warning. With `true` the load fails instead:
+  /// `getActiveEmbedder()` throws an `EmbeddingLoadException` naming the
+  /// cache directory, the length of the cache file path and the likely
+  /// causes, and no engine is left running. On the GPU a path too long for
+  /// the GPU caches is refused before the engine is created. A disk that
+  /// fills while the CPU cache is being built is not covered: the engine
+  /// (XNNPack) then aborts the process in native code, and no flag can catch
+  /// that.
   ///
-  /// The refusal needs no real cache file at all; one tower's file missing
-  /// beside the others is a printed warning either way. It applies on CPU,
-  /// and on the NPU only to a load with declared audio, whose tower runs on
-  /// CPU (the NPU's text and vision towers write no cache). It does not apply
-  /// to `.tflite` embedders nor on the web, which keeps no weight cache; a
-  /// debug build says once when it does not apply. It takes effect when an
-  /// embedder is loaded: one already loaded is kept as it is (for example
-  /// after `FlutterEdgeAi.reset()` and `initialize` with the other value).
+  /// The refusal needs no real cache file at all (on the GPU: neither ML
+  /// Drift file); one tower's file missing beside the others, or one of the
+  /// two GPU files, is a printed warning either way. It applies on CPU and
+  /// on the GPU, and on the NPU only to a load with declared audio, whose
+  /// tower runs on CPU (the NPU's text and vision towers write no cache). It
+  /// does not apply to `.tflite` embedders nor on the web, which keeps no
+  /// weight cache; a debug build says once when it does not apply. It takes
+  /// effect when an embedder is loaded: one already loaded is kept as it is
+  /// (for example after `FlutterEdgeAi.reset()` and `initialize` with the
+  /// other value).
   const LiteRtEmbeddingBackend({
     this._visionTokensPerImage = 140,
     this._requireWeightCache = false,
@@ -212,13 +221,6 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
       'towers write no weight cache, and no audio was declared',
     );
   }
-  if (requireWeightCache && onGpu) {
-    noticeRequireWeightCacheNotApplied(
-      '$file runs its text tower on the GPU, which writes its own weight and '
-      'program caches (ML Drift), not the XNNPack weight cache the flag '
-      'checks; a GPU load is not checked',
-    );
-  }
   // The platform CACHE directory, not application support: iOS backs that up
   // to iCloud and Android Auto Backup includes it under a 25 MB per-app quota,
   // which a 71-385 MB weight cache would break. If the OS purges the cache,
@@ -239,8 +241,8 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
         if (config.supportAudio) EmbeddingModality.audio,
       },
       visionTokensPerImage: visionTokensPerImage,
-      // The pass checks the cache on CPU, and on the NPU for declared audio
-      // only (see LiteRtLmEmbeddingConfig).
+      // The pass checks the cache on CPU and on the GPU, and on the NPU for
+      // declared audio only (see LiteRtLmEmbeddingConfig).
       requireWeightCache: requireWeightCache,
       npuTarget: placement.target,
       npuDispatchDir: placement.dispatchDir,

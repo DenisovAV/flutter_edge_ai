@@ -353,8 +353,12 @@ final vector = await embedder.embed(
     a real GPU driver is installed.
   - The GPU writes its own caches beside the CPU's: ML Drift's
     `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
-    (9 MB). `requireWeightCache` checks the XNNPack cache only and does not
-    apply there.
+    (9 MB) for the text tower. `requireWeightCache` covers them (1.19.0):
+    a path the GPU cannot create them at (Windows' 260-character MAX_PATH,
+    which the accelerator cannot exceed, or a file name past 255
+    characters) is refused before the engine is created, and neither file
+    written by the end of the load's probe embedding is refused after it;
+    without the flag both are printed warnings.
   - A cold load without `preferredBackend` runs on CPU; a later automatic
     request reuses whatever embedder is loaded, the GPU one included.
   - The 270m has no vision or audio encoder. A text index and an image index
@@ -395,8 +399,9 @@ final vector = await embedder.embed(
   then throws an `EmbeddingLoadException` naming the cache directory, the
   length of the cache file path and the likely causes, and no engine is left
   running. One tower's cache missing beside the others stays a printed
-  warning. It applies on CPU, and on the NPU only to a load with declared
-  audio, whose tower runs on CPU. For a `.tflite` embedder and on the web it
+  warning. It applies on CPU, on the GPU (ML Drift's weight and program
+  caches; one of the two missing stays a warning), and on the NPU only to a
+  load with declared audio, whose tower runs on CPU. For a `.tflite` embedder and on the web it
   is accepted and ignored, which a debug build says once. It takes effect
   when an embedder is loaded: one already loaded is kept.
   - **The warning is invisible on Windows release builds.** It is a `print`,

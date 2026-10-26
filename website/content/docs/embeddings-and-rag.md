@@ -167,7 +167,10 @@ final vector = await embedder.embed(
     37-48 s load and a ~900-token text failing with **DEADLINE_EXCEEDED**.
     Ask for **gpu** only where a real GPU driver is installed.
   - The GPU writes its own caches next to the CPU one: about 68 MB of weights
-    and 9 MB of programs. **requireWeightCache** does not apply on the GPU.
+    and 9 MB of programs. **requireWeightCache** covers them: a cache path
+    too long for the GPU (past Windows' 260-character MAX_PATH, or a file
+    name past 255 characters) is refused before the engine is created, and a
+    load that wrote neither file is refused after its probe embedding.
   - A cold load without **preferredBackend** runs on CPU, but a later
     automatic request reuses whatever embedder is loaded, the GPU one
     included.
@@ -209,7 +212,9 @@ final vector = await embedder.embed(
   **EmbeddingLoadException** naming the cache directory, the length of the
   cache file path and the likely causes, and no engine is left running. One
   tower's cache missing beside the others stays a printed warning. It applies
-  on CPU, and on the NPU only with declared audio, whose tower runs on CPU;
+  on CPU, on the GPU (ML Drift's weight and program caches; one of the two
+  missing stays a warning), and on the NPU only with declared audio, whose
+  tower runs on CPU;
   the Web and a **.tflite** embedder (EmbeddingGemma 1, Gecko) accept it and
   ignore it, and a debug build says so once in the log. The warning is a **print**, which a
   Windows release build started from Explorer shows nowhere (it has no

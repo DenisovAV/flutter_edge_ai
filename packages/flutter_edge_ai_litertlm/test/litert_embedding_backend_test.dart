@@ -852,28 +852,30 @@ void main() {
       },
     );
 
-    test('requireWeightCache on the GPU is said once: it checks the XNNPack '
-        'cache, which the GPU does not write', () async {
-      hostIs(_LinuxX64());
-      resetRequireWeightCacheNotice();
-      final logged = <String>[];
-      final original = debugPrint;
-      debugPrint = (message, {wrapWidth}) => logged.add(message ?? '');
-      addTearDown(() {
-        debugPrint = original;
+    test(
+      'requireWeightCache on the GPU applies (the pass checks ML Drift\'s '
+      'caches): no not-applied notice, and the flag reaches the pass',
+      () async {
+        hostIs(_LinuxX64());
         resetRequireWeightCacheNotice();
-      });
-      const strict = LiteRtEmbeddingBackend(requireWeightCache: true);
-      await describeGpu(b: strict);
-      await describeGpu(b: strict);
-      expect(logged.where((line) => line.contains('requireWeightCache')), [
-        allOf(
-          contains('eg2_text.litertlm'),
-          contains('GPU'),
-          contains('XNNPack'),
-        ),
-      ]);
-    });
+        final logged = <String>[];
+        final original = debugPrint;
+        debugPrint = (message, {wrapWidth}) => logged.add(message ?? '');
+        addTearDown(() {
+          debugPrint = original;
+          resetRequireWeightCacheNotice();
+        });
+        const strict = LiteRtEmbeddingBackend(requireWeightCache: true);
+        final d = await describeGpu(b: strict);
+        final config = d.config as LiteRtLmEmbeddingConfig;
+        expect(config.gpu, isTrue);
+        expect(config.requireWeightCache, isTrue);
+        expect(
+          logged.where((line) => line.contains('requireWeightCache')),
+          isEmpty,
+        );
+      },
+    );
   });
 }
 

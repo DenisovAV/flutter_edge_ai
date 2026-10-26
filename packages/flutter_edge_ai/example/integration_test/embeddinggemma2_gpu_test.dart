@@ -19,8 +19,12 @@
 //   activations by default);
 // - with GPU_LLM_MODEL_FILE (a Gemma 4 E2B .litertlm) a GPU LLM and a GPU
 //   embedder run in one process, the embedder loaded before and after the LLM.
+// - the first GPU load writes ML Drift's weight and program caches by the end
+//   of its probe embedding; the cache directory is listed after the cold load,
+//   one embedding, close and a warm second load, with both load times.
 // The backend is registered with requireWeightCache: true, so a CPU load that
-// wrote no cache, or a GPU load that checked for one, fails the run.
+// wrote no weight cache, or a GPU load that wrote neither ML Drift cache (or
+// could not, its path past MAX_PATH), fails the run.
 //
 // Run: flutter test integration_test/embeddinggemma2_gpu_test.dart -d windows
 // (or -d linux, under xvfb-run on a headless box). EG2_MODEL_FILE or
@@ -38,6 +42,7 @@ import 'package:flutter_edge_ai_example/models/embedding_model.dart' as catalog;
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'goldens/eg2_text_golden.dart';
 
@@ -107,6 +112,30 @@ double _cos(List<double> a, List<double> b) {
   return dot / (math.sqrt(na) * math.sqrt(nb));
 }
 
+/// Every file under the embedder cache root (`flutter_edge_ai/emb` in the app
+/// cache directory) with its size: when ML Drift writes its GPU caches — at
+/// create, at the first run, or at engine delete — is read from these lines
+/// (the pass itself logs its directory after create and after the probe).
+Future<void> _listCaches(String when) async {
+  final root = Directory(
+    '${(await getApplicationCacheDirectory()).path}'
+    '${Platform.pathSeparator}flutter_edge_ai${Platform.pathSeparator}emb',
+  );
+  final files = root.existsSync()
+      ? (root.listSync(recursive: true).whereType<File>().toList()
+          ..sort((a, b) => a.path.compareTo(b.path)))
+      : const <File>[];
+  final lines = [
+    for (final f in files)
+      '  ${f.path.substring(root.path.length + 1)} ${f.lengthSync()} B',
+  ];
+  _cacheLog(
+    'cache ${root.path} $when:${lines.isEmpty ? ' empty' : '\n${lines.join('\n')}'}',
+  );
+}
+
+void _cacheLog(String line) => debugPrint('[eg2-gpu-cache] $line');
+
 TaskType _taskFor(String role) =>
     role == 'query' ? TaskType.retrievalQuery : TaskType.retrievalDocument;
 
@@ -120,6 +149,71 @@ Future<Map<String, List<double>>> _embedGolden(EmbeddingModel model) async => {
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  // First, so the cold load is this process's first GPU load of the bundle.
+  testWidgets(
+    'the GPU caches: written by the first load (requireWeightCache would '
+    'refuse it otherwise), kept at close, and a warm second load',
+    (tester) async {
+      await _ensureEg2();
+      // Nothing may hold the cache files open while they are deleted
+      // (Windows): close whatever embedder is loaded.
+      await (await FlutterEdgeAi.getActiveEmbedder()).close();
+      final root = Directory(
+        '${(await getApplicationCacheDirectory()).path}'
+        '${Platform.pathSeparator}flutter_edge_ai${Platform.pathSeparator}emb',
+      );
+      if (root.existsSync()) root.deleteSync(recursive: true);
+      await _listCaches('before the cold GPU load');
+
+      final cold = Stopwatch()..start();
+      final first = await FlutterEdgeAi.getActiveEmbedder(
+        preferredBackend: PreferredBackend.gpu,
+      );
+      cold.stop();
+      expect(first.activeBackend, PreferredBackend.gpu);
+      await _listCaches('after the cold GPU load (create + probe)');
+      List<String> mlDrift() => [
+        for (final f in root.listSync(recursive: true).whereType<File>())
+          if (f.path.contains('_mldrift_')) f.path.split(RegExp(r'[\\/]')).last,
+      ]..sort();
+      final afterLoad = mlDrift();
+      await first.embed(
+        EmbeddingInput.text(_golden.first.text),
+        taskType: TaskType.retrievalQuery,
+      );
+      await _listCaches('after one embedding');
+      await first.close();
+      await _listCaches('after close (engine delete)');
+
+      final warm = Stopwatch()..start();
+      final second = await FlutterEdgeAi.getActiveEmbedder(
+        preferredBackend: PreferredBackend.gpu,
+      );
+      warm.stop();
+      expect(second.activeBackend, PreferredBackend.gpu);
+      await _listCaches('after the warm GPU load');
+      _cacheLog(
+        'EG2 GPU on ${Abi.current()}: cold load ${cold.elapsedMilliseconds} '
+        'ms, warm load ${warm.elapsedMilliseconds} ms; ML Drift files after '
+        'the cold load: $afterLoad',
+      );
+      expect(
+        afterLoad.where((n) => n.endsWith('_mldrift_weight_cache.bin')),
+        hasLength(1),
+      );
+      expect(
+        afterLoad.where((n) => n.endsWith('_mldrift_program_cache.bin')),
+        hasLength(1),
+      );
+      final vector = await second.embed(
+        EmbeddingInput.text(_golden.first.text),
+        taskType: TaskType.retrievalQuery,
+      );
+      expect(vector, hasLength(768));
+    },
+    skip: !_gpuHost,
+  );
 
   testWidgets(
     'gpu runs on the GPU, close to the CPU vectors, every query ranking its '

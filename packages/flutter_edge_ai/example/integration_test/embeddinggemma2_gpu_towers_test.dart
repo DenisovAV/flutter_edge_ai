@@ -13,7 +13,9 @@
 // - audio (740m): cos >= 0.99 to the CPU vectors (the audio encoder runs on
 //   CPU; its int8 activations move the last bits between runs, see
 //   embeddinggemma2_audio_test);
-// - load times and per-item latency on each backend are printed.
+// - load times and per-item latency on each backend are printed, with the
+//   cache directory after the GPU run and after its close, and the time of a
+//   warm second GPU load.
 //
 // Run: flutter test integration_test/embeddinggemma2_gpu_towers_test.dart
 // -d windows (or -d linux, under xvfb-run on a headless box).
@@ -31,6 +33,7 @@ import 'package:flutter_edge_ai_example/models/embedding_model.dart' as catalog;
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'goldens/eg2_text_golden.dart';
 
@@ -99,6 +102,30 @@ void _log(String line) {
   print('[eg2-gpu-towers] $line');
 }
 
+/// Every file under the embedder cache root (`flutter_edge_ai/emb` in the app
+/// cache directory) with its size: when ML Drift writes its GPU caches — at
+/// create, at the first run, or at engine delete — is read from these lines
+/// (the pass itself logs its directory after create and after the probe).
+Future<void> _listCaches(String when) async {
+  final root = Directory(
+    '${(await getApplicationCacheDirectory()).path}'
+    '${Platform.pathSeparator}flutter_edge_ai${Platform.pathSeparator}emb',
+  );
+  final files = root.existsSync()
+      ? (root.listSync(recursive: true).whereType<File>().toList()
+          ..sort((a, b) => a.path.compareTo(b.path)))
+      : const <File>[];
+  final lines = [
+    for (final f in files)
+      '  ${f.path.substring(root.path.length + 1)} ${f.lengthSync()} B',
+  ];
+  _cacheLog(
+    'cache ${root.path} $when:${lines.isEmpty ? ' empty' : '\n${lines.join('\n')}'}',
+  );
+}
+
+void _cacheLog(String line) => _log(line);
+
 typedef _Run = ({
   Map<String, List<double>> vectors,
   int loadMs,
@@ -158,6 +185,20 @@ Future<void> _compare(
   await _ensure(model, file);
   final cpu = await _run(PreferredBackend.cpu, audio: audio);
   final gpu = await _run(PreferredBackend.gpu, audio: audio);
+  await _listCaches('after the ${model.filename} GPU load and its embeddings');
+  await (await FlutterEdgeAi.getActiveEmbedder()).close();
+  await _listCaches('after the ${model.filename} GPU embedder closed');
+  final warm = Stopwatch()..start();
+  final again = await FlutterEdgeAi.getActiveEmbedder(
+    preferredBackend: PreferredBackend.gpu,
+    supportImage: true,
+    supportAudio: audio,
+  );
+  warm.stop();
+  expect(again.activeBackend, PreferredBackend.gpu);
+  _log(
+    '${model.filename}: warm second GPU load ${warm.elapsedMilliseconds} ms',
+  );
   _log(
     '${model.filename}: load cpu ${cpu.loadMs} ms, gpu ${gpu.loadMs} ms; '
     'text cpu ${cpu.textMs} ms, gpu ${gpu.textMs} ms; '

@@ -46,7 +46,11 @@
 //   text and vision towers write none). No real cache file at all is a
 //   printed warning, or with `requireWeightCache` an `EmbeddingLoadException`
 //   (the engine deleted); one expected tower's file missing is a printed
-//   warning either way. Caches of earlier copies of the same file name are
+//   warning either way. On the GPU the text tower's caches are ML Drift's
+//   `<model>.text_encoder_<mtime>_<size>_mldrift_{weight,program}_cache.bin`,
+//   which Windows opens without long-path support: their path lengths are
+//   checked before create (`_checkGpuCachePaths`), the files after the probe
+//   embedding (`_checkGpuCache`), with the same warning / refusal split. Caches of earlier copies of the same file name are
 //   deleted only once the engine exists — after a successful load, or right
 //   before the no-cache refusal, since an older copy's cache may be what left
 //   no free space — and not while they were touched in the last 10 minutes.
@@ -217,9 +221,10 @@ final class LiteRtLmEmbeddingConfig {
   /// Whether a load that leaves [cacheBase]'s directory for this bundle
   /// without a real weight cache file is refused with [EmbeddingLoadException]
   /// instead of printing a warning (`LiteRtEmbeddingBackend(requireWeightCache:)`).
-  /// Checked on CPU, and on the NPU only when audio is declared: there the
-  /// text and vision towers write no cache, while the audio tower, pinned to
-  /// CPU, writes one.
+  /// Checked on CPU, on the GPU (ML Drift's weight and program caches, whose
+  /// path lengths are also checked before create), and on the NPU only when
+  /// audio is declared: there the text and vision towers write no cache,
+  /// while the audio tower, pinned to CPU, writes one.
   final bool requireWeightCache;
 
   /// The SoC a per-SoC bundle is compiled for, when `describe()` placed it on
@@ -434,6 +439,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     final (:cacheDir, :modelSize) = _createCacheDir();
 
     try {
+      // Before create: a GPU cache path the accelerator cannot open costs a
+      // cold GPU load at every start and is reported only on stderr.
+      if (_config.gpu) _checkGpuCachePaths(cacheDir, modelSize);
       _engine = _createEngine(
         b,
         maxInputLength: setting,
@@ -444,18 +452,21 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         audio: audio,
       );
       _options = _createOptions(b);
+      if (_config.gpu) _logCacheListing(cacheDir, 'after engine create');
       // An accelerator gets one real embedding before it is trusted: create
       // compiles but never runs the graph.
       if (_onNpu || _config.gpu) {
         _probeAccelerator(b, info.dimension, _config.npuTarget);
       }
+      if (_config.gpu) {
+        _logCacheListing(cacheDir, 'after the probe embedding');
+        _checkGpuCache(cacheDir, modelSize: modelSize);
+      }
       // Every tower on CPU writes a weight cache. On the NPU the text and
       // vision towers write none (upstream gives an NPU graph no XNNPack
       // cache), but declared audio runs on CPU (see _createEngine) and writes
-      // one. The GPU writes its own weight and program caches (ML Drift's
-      // `*_mldrift_{weight,program}_cache.bin`) for the text tower, which this
-      // check does not look at, and the 440m/740m towers beside it on CPU are
-      // not checked either.
+      // one. The GPU's text tower writes ML Drift's caches instead, checked
+      // above; the 440m/740m towers beside it on CPU are not checked.
       // Inside the try: a refusal deletes the engine and the options it made.
       final onCpu = _config.backend == PreferredBackend.cpu;
       if (onCpu || (_onNpu && audio)) {
@@ -1141,6 +1152,122 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     );
   }
 
+  /// What a GPU load without ML Drift's caches costs, from the 270m's
+  /// measurements (README): the first load, which builds them, against a
+  /// load that finds them.
+  static const _coldGpuCost =
+      'every GPU load then compiles the programs and uploads the weights '
+      'again (measured on the 270m: 5.9-8.2 s for a first load, 1.7-3.6 s for '
+      'one that finds the caches)';
+
+  /// Refuses (with [LiteRtLmEmbeddingConfig.requireWeightCache]) or warns
+  /// about, before the engine exists, GPU cache files LiteRT's WebGPU
+  /// accelerator cannot create in [cacheDir] ([liteRtLmGpuCachePathProblem]).
+  /// The directory is not shortened for it: its name is already the short
+  /// form, and the rest is the app's cache path and the model's file name.
+  void _checkGpuCachePaths(String cacheDir, int modelSize) {
+    final problem = liteRtLmGpuCachePathProblem(
+      cacheDir,
+      _file,
+      modelSize,
+      windows: Platform.isWindows,
+    );
+    if (problem == null) return;
+    final what =
+        'LiteRT-LM cannot write the GPU caches of $_file under the cache root '
+        '${_config.cacheBase}: $problem. Without them $_coldGpuCost. A shorter '
+        'model file name or app cache path avoids it.';
+    if (_config.requireWeightCache) {
+      throw EmbeddingLoadException(
+        '$what LiteRtEmbeddingBackend(requireWeightCache: true) refuses to '
+        'run it.',
+        engine: liteRtLmEngineTag,
+      );
+    }
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] WARNING: $what '
+      'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
+      'failure.',
+    );
+  }
+
+  /// Logs [cacheDir]'s files and their sizes (debug, `edgeAiLog`): when ML
+  /// Drift writes each GPU cache — at create, at the first run, or only at
+  /// engine delete — is not documented, and a device run reads it here.
+  void _logCacheListing(String cacheDir, String when) {
+    try {
+      final files = Directory(cacheDir).listSync().whereType<File>().toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+      edgeAiLog(
+        '[LiteRtLmEmbeddingPass] $cacheDir $when: '
+        '${files.isEmpty ? 'empty' : files.map((f) => '${_fileName(f.path)} ${_sizeOf(f)} B').join(', ')}',
+      );
+    } on FileSystemException catch (e) {
+      edgeAiLog('[LiteRtLmEmbeddingPass] could not list $cacheDir $when: $e');
+    }
+  }
+
+  /// After the probe embedding on the GPU, looks for ML Drift's two caches
+  /// ([liteRtLmWrittenGpuCaches]). As on CPU, the refusal under
+  /// [LiteRtLmEmbeddingConfig.requireWeightCache] needs no GPU cache at all
+  /// and one missing beside the other is a printed warning either way. That
+  /// split is the assumption a device run confirms (the listings
+  /// [_logCacheListing] prints): the weight cache is written while the engine
+  /// is created, and the program cache by then or at the probe, the graph's
+  /// first run. A cache written only at engine delete would refuse every GPU
+  /// load under the flag on its first start, which the integration tests,
+  /// registered with the flag, would show.
+  void _checkGpuCache(String cacheDir, {required int modelSize}) {
+    final ({bool weight, bool program}) written;
+    try {
+      written = liteRtLmWrittenGpuCaches(Directory(cacheDir).listSync());
+    } on FileSystemException catch (e) {
+      if (!_config.requireWeightCache) return;
+      throw EmbeddingLoadException(
+        'could not check the GPU caches LiteRT-LM was to write to $cacheDir '
+        'while loading $_file: ${e.osError?.message ?? e.message}',
+        engine: liteRtLmEngineTag,
+        cause: e,
+      );
+    }
+    if (written.weight && written.program) return;
+    final names = liteRtLmGpuCacheFileNames(_file, modelSize);
+    final length = cacheDir.length + 1 + names.program.length;
+    final why =
+        'The program cache file path is about $length characters long. '
+        '${liteRtLmNoWeightCacheCauses(cachePathLength: length, windows: Platform.isWindows)}';
+    if (!written.weight && !written.program) {
+      if (_config.requireWeightCache) {
+        // As on CPU: an older copy's cache may be what left no free space.
+        _deleteStaleSiblings(cacheDir);
+        throw EmbeddingLoadException(
+          'LiteRT-LM wrote no GPU cache (ML Drift weight and program caches) '
+          'to $cacheDir while loading $_file, and '
+          'LiteRtEmbeddingBackend(requireWeightCache: true) refuses to run it '
+          'without them: $_coldGpuCost. $why',
+          engine: liteRtLmEngineTag,
+        );
+      }
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no GPU cache (ML '
+        'Drift weight and program caches) to $cacheDir while loading $_file: '
+        '$_coldGpuCost. $why LiteRtEmbeddingBackend(requireWeightCache: true) '
+        'makes this a load failure.',
+      );
+      return;
+    }
+    final missing = written.weight ? 'program' : 'weight';
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no GPU $missing '
+      'cache (ML Drift) to $cacheDir while loading $_file, so the next GPU '
+      'load ${missing == 'program' ? 'compiles the programs' : 'uploads the weights'} '
+      'again. $why',
+    );
+  }
+
   // ── Settings, engine, options ──────────────────────────────────────────
 
   Pointer<LiteRtLmEmbeddingEngine> _createEngine(
@@ -1437,6 +1564,85 @@ int liteRtLmCacheFilePathLength(
     '_0000000000_$modelSize'.length +
     tower.length +
     _xnnpackCacheSuffix.length;
+
+/// The suffixes LiteRT's WebGPU accelerator (ML Drift, a closed library)
+/// appends to the cache key LiteRT-LM hands it for the text tower on the GPU.
+const _gpuWeightCacheSuffix = '_mldrift_weight_cache.bin';
+const _gpuProgramCacheSuffix = '_mldrift_program_cache.bin';
+
+/// The longest file name NTFS, ext4 and the other usual file systems accept.
+const _maxFileNameLength = 255;
+
+/// The names LiteRT's WebGPU accelerator gives the text tower's GPU caches in
+/// a cache directory: LiteRT-LM sets the serialization directory and the model
+/// cache key `<model file name>.text_encoder_<mtime s>_<size>`
+/// (`litert_compiled_model_executor_utils.cc`, `file_util.cc`), and ML Drift
+/// appends `_mldrift_weight_cache.bin` / `_mldrift_program_cache.bin`. The
+/// mtime's seconds are taken as 10 digits, as in
+/// [liteRtLmCacheFilePathLength]. The program cache's is the longer, by one.
+@visibleForTesting
+({String weight, String program}) liteRtLmGpuCacheFileNames(
+  String modelFileName,
+  int modelSize,
+) {
+  final key = '$modelFileName${_textTower}_0000000000_$modelSize';
+  return (
+    weight: '$key$_gpuWeightCacheSuffix',
+    program: '$key$_gpuProgramCacheSuffix',
+  );
+}
+
+/// Why LiteRT's WebGPU accelerator cannot create the GPU caches of
+/// [modelFileName] in [cacheDir], decided from the lengths alone before the
+/// engine exists; null when both fit. On Windows it opens them with the ANSI
+/// `CreateFileA` and no `\\?\` prefix, so a path of 260 characters or more
+/// fails there; on every file system a file name past 255 characters fails.
+/// A failed write is said only on stderr and the create still succeeds, so
+/// without this the GPU would be cold at every start in silence.
+@visibleForTesting
+String? liteRtLmGpuCachePathProblem(
+  String cacheDir,
+  String modelFileName,
+  int modelSize, {
+  required bool windows,
+}) {
+  final names = liteRtLmGpuCacheFileNames(modelFileName, modelSize);
+  final problems = <String>[
+    for (final (kind, name) in [
+      ('weight', names.weight),
+      ('program', names.program),
+    ]) ...[
+      if (windows && cacheDir.length + 1 + name.length >= _windowsMaxPath)
+        'its $kind cache file path would be about '
+            '${cacheDir.length + 1 + name.length} characters long, past '
+            "Windows' $_windowsMaxPath-character MAX_PATH",
+      if (name.length > _maxFileNameLength)
+        'its $kind cache file name would be about ${name.length} characters '
+            'long, past the $_maxFileNameLength-character limit on a file name',
+    ],
+  ];
+  return problems.isEmpty ? null : problems.join('; ');
+}
+
+/// The names of the real GPU cache files among [entries], a cache directory's
+/// listing: `*_mldrift_weight_cache.bin` and `*_mldrift_program_cache.bin` of
+/// at least [liteRtLmMinWeightCacheBytes] (measured on the 270m: 68 MB and
+/// 9 MB).
+@visibleForTesting
+({bool weight, bool program}) liteRtLmWrittenGpuCaches(
+  Iterable<FileSystemEntity> entries,
+) {
+  bool has(String suffix) => entries.any(
+    (entry) =>
+        entry is File &&
+        entry.path.endsWith(suffix) &&
+        _sizeOf(entry) >= liteRtLmMinWeightCacheBytes,
+  );
+  return (
+    weight: has(_gpuWeightCacheSuffix),
+    program: has(_gpuProgramCacheSuffix),
+  );
+}
 
 /// Why the engine wrote no weight cache, for the refusal and the warnings,
 /// given the length of the cache file path ([liteRtLmCacheFilePathLength]).

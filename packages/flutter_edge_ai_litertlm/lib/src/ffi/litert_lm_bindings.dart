@@ -391,6 +391,134 @@ class LiteRtLmBindings {
             void Function(ffi.Pointer<LiteRtLmConversationOptionalArgs>, int)
           >();
 
+  ffi.Pointer<LiteRtLmThinkingConfig> litert_lm_thinking_config_create() {
+    return _litert_lm_thinking_config_create();
+  }
+
+  late final _litert_lm_thinking_config_createPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Pointer<LiteRtLmThinkingConfig> Function()>
+      >('litert_lm_thinking_config_create');
+  late final _litert_lm_thinking_config_create =
+      _litert_lm_thinking_config_createPtr
+          .asFunction<ffi.Pointer<LiteRtLmThinkingConfig> Function()>();
+
+  void litert_lm_thinking_config_delete(
+    ffi.Pointer<LiteRtLmThinkingConfig> config,
+  ) {
+    return _litert_lm_thinking_config_delete(config);
+  }
+
+  late final _litert_lm_thinking_config_deletePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<LiteRtLmThinkingConfig>)
+        >
+      >('litert_lm_thinking_config_delete');
+  late final _litert_lm_thinking_config_delete =
+      _litert_lm_thinking_config_deletePtr
+          .asFunction<void Function(ffi.Pointer<LiteRtLmThinkingConfig>)>();
+
+  void litert_lm_thinking_config_set_enable_thinking(
+    ffi.Pointer<LiteRtLmThinkingConfig> config,
+    bool enable_thinking,
+  ) {
+    return _litert_lm_thinking_config_set_enable_thinking(
+      config,
+      enable_thinking,
+    );
+  }
+
+  late final _litert_lm_thinking_config_set_enable_thinkingPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<LiteRtLmThinkingConfig>, ffi.Bool)
+        >
+      >('litert_lm_thinking_config_set_enable_thinking');
+  late final _litert_lm_thinking_config_set_enable_thinking =
+      _litert_lm_thinking_config_set_enable_thinkingPtr
+          .asFunction<
+            void Function(ffi.Pointer<LiteRtLmThinkingConfig>, bool)
+          >();
+
+  void litert_lm_thinking_config_set_thinking_token_budget(
+    ffi.Pointer<LiteRtLmThinkingConfig> config,
+    int thinking_token_budget,
+  ) {
+    return _litert_lm_thinking_config_set_thinking_token_budget(
+      config,
+      thinking_token_budget,
+    );
+  }
+
+  late final _litert_lm_thinking_config_set_thinking_token_budgetPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(ffi.Pointer<LiteRtLmThinkingConfig>, ffi.Int)
+        >
+      >('litert_lm_thinking_config_set_thinking_token_budget');
+  late final _litert_lm_thinking_config_set_thinking_token_budget =
+      _litert_lm_thinking_config_set_thinking_token_budgetPtr
+          .asFunction<
+            void Function(ffi.Pointer<LiteRtLmThinkingConfig>, int)
+          >();
+
+  void litert_lm_conversation_config_set_thinking_config(
+    ffi.Pointer<LiteRtLmConversationConfig> config,
+    ffi.Pointer<LiteRtLmThinkingConfig> thinking_config,
+  ) {
+    return _litert_lm_conversation_config_set_thinking_config(
+      config,
+      thinking_config,
+    );
+  }
+
+  late final _litert_lm_conversation_config_set_thinking_configPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<LiteRtLmConversationConfig>,
+            ffi.Pointer<LiteRtLmThinkingConfig>,
+          )
+        >
+      >('litert_lm_conversation_config_set_thinking_config');
+  late final _litert_lm_conversation_config_set_thinking_config =
+      _litert_lm_conversation_config_set_thinking_configPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<LiteRtLmConversationConfig>,
+              ffi.Pointer<LiteRtLmThinkingConfig>,
+            )
+          >();
+
+  void litert_lm_conversation_optional_args_set_thinking_config(
+    ffi.Pointer<LiteRtLmConversationOptionalArgs> optional_args,
+    ffi.Pointer<LiteRtLmThinkingConfig> thinking_config,
+  ) {
+    return _litert_lm_conversation_optional_args_set_thinking_config(
+      optional_args,
+      thinking_config,
+    );
+  }
+
+  late final _litert_lm_conversation_optional_args_set_thinking_configPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Pointer<LiteRtLmConversationOptionalArgs>,
+            ffi.Pointer<LiteRtLmThinkingConfig>,
+          )
+        >
+      >('litert_lm_conversation_optional_args_set_thinking_config');
+  late final _litert_lm_conversation_optional_args_set_thinking_config =
+      _litert_lm_conversation_optional_args_set_thinking_configPtr
+          .asFunction<
+            void Function(
+              ffi.Pointer<LiteRtLmConversationOptionalArgs>,
+              ffi.Pointer<LiteRtLmThinkingConfig>,
+            )
+          >();
+
   void litert_lm_set_min_log_level(int level) {
     return _litert_lm_set_min_log_level(level);
   }
@@ -2067,6 +2195,8 @@ final class LiteRtLmTokenUnions extends ffi.Opaque {}
 final class LiteRtLmSessionConfig extends ffi.Opaque {}
 
 final class LiteRtLmConversationConfig extends ffi.Opaque {}
+
+final class LiteRtLmThinkingConfig extends ffi.Opaque {}
 
 enum LiteRtLmSamplerType {
   kLiteRtLmSamplerTypeUnspecified(0),

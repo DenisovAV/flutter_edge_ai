@@ -47,7 +47,9 @@ void main() {
           client.generate(const GenAiTurn(userContent: 'hi')).toList(),
           throwsA(anything),
         );
-        expect(() => client.countTokens('hi'), throwsStateError);
+        // No closure around the call: the error must come through the
+        // Future, not as a synchronous throw.
+        await expectLater(client.countTokens('hi'), throwsStateError);
       },
     );
   });

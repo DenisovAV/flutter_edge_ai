@@ -218,6 +218,23 @@ core also parses Qwen3's emitted `<think>` tags there. MediaPipe Web has no
 thinking API, ONNX Web ignores `enableThinking`, and DeepSeek R1 thinks on
 Android and iOS only — it ships as a mobile `.task` build.
 
+A model that thinks until `maxOutputTokens` ends the turn with an empty answer.
+On `.litertlm` (native, `flutter_edge_ai_litertlm` 1.18.0+) cap the thinking
+with `LiteRtLmEngine(thinkingTokenBudget: 512)` in `initialize`: each
+generation with `enableThinking: true` then stops thinking at the budget and
+answers, and in a tool loop a generation after a tool result has its own
+budget. Keep the budget below `maxOutputTokens` and below what the context
+(`maxTokens`, 1024 by default) has left after the prompt and the history, or it
+is never reached. It does nothing with `enableThinking: false`, even on a model
+that reasons anyway (Qwen3 4B Thinking 2507). LiteRT-LM caps the bundle's first
+declared channel (measured on Gemma 4 E2B and
+`Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`); a bundle that declares none is not
+capped, and loading one with a budget prints a warning. It is set per engine,
+not per chat, and fixed when the engine is registered; the web engine ignores
+it. On the GPU it slows decoding for the whole generation (Gemma 4 E2B: about a
+fifth on an M5 Pro, about 40% on an NVIDIA L4); on the CPU no cost was
+measured.
+
 ```dart
 final chat = await model.createChat(enableThinking: true, modelType: ModelType.qwen3);
 final answer = StringBuffer();
@@ -265,7 +282,7 @@ The `.litertlm` engine sends a Gemma 4 message as images, text, then audio, as t
 
 `getActiveModel` returns one model per process. Calling it again with the same arguments returns that model, on every platform (web since 2.2.1). Different runtime arguments, or another active model, rebuild it and close the previous one — a handle still held stops working; `model.isClosed` says so from the moment `close()` starts, and a `getActiveModel` call made meanwhile waits for the close to finish before it builds the next model. With no model installed it throws `NoActiveModelError`, a `StateError`. Load it once, then create and close sessions per conversation.
 
-For several models loaded at once (one file on CPU and GPU, or two files), use `FlutterEdgeAi.openModel(spec, …)` (2.5.0, mobile and desktop) with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0); other engines throw `UnsupportedError`. Install the file with `install(activate: false)` and pass the returned `spec`. Every call builds a new model that the app closes: it is never cached, a `getActiveModel` rebuild leaves it open, and the plugin has no memory policy (on iOS a process past its memory limit is killed, not thrown at). An `activate: false` install that would replace the active model's file throws `StateError`, and `openModel` refuses a spec that is not the installed one. Its parameters mean what they do on `getActiveModel`; a model's sampler is fixed by its first generation, so sessions sharing one model use the same sampling; uninstalling a model does not close the models opened on it. Measured on macOS (CPU and GPU engines on one file, two GPU engines) and on Windows Lunar Lake (CPU, GPU and NPU engines together). Not measured: Android, iOS, Linux, and two GPU engines on Windows, where a second one can fail with `wgpu::Instance already set` (https://flutteredge.ai/docs/desktop).
+For several models loaded at once (one file on CPU and GPU, or two files), use `FlutterEdgeAi.openModel(spec, …)` (2.5.0, mobile and desktop) with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0); other engines throw `UnsupportedError`. Install the file with `install(activate: false)` and pass the returned `spec`. Every call builds a new model that the app closes: it is never cached, a `getActiveModel` rebuild leaves it open, and the plugin has no memory policy (on iOS a process past its memory limit is killed, not thrown at). An `activate: false` install that would replace the active model's file throws `StateError`, and `openModel` refuses a spec that is not the installed one. Its parameters mean what they do on `getActiveModel`; a model's sampler is fixed by its first generation, so sessions sharing one model use the same sampling; uninstalling a model does not close the models opened on it (`uninstallModel` closes only the model `getActiveModel` built from that file). Measured on macOS (CPU and GPU engines on one file, two GPU engines) and on Windows Lunar Lake (CPU, GPU and NPU engines together). Not measured: Android, iOS, Linux, and two GPU engines on Windows, where a second one can fail with `wgpu::Instance already set` (https://flutteredge.ai/docs/desktop).
 
 ```dart
 final spec = (await FlutterEdgeAi.installModel(

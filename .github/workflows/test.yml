@@ -44,7 +44,6 @@ jobs:
 
       - name: Verify formatting
         run: dart format --output=none --set-exit-if-changed .
-        continue-on-error: true
 
       # Every workspace package, not just the core one — but scoped to
       # packages/ rather than the repo root. `website/` is a Jaspr app that is

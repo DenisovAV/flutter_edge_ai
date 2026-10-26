@@ -165,7 +165,7 @@ Future<FileInstallStep> _plan(
     // Core's copy goes only when it is known to be another file.
     return install(
       replacing: identity == FileIdentity.different
-          ? await _coreCopy(record)
+          ? await coreCopyLocation(record)
           : null,
     );
   }
@@ -197,7 +197,7 @@ Future<FileInstallStep> _plan(
   }
   // Nothing recorded, or the app's own file: the copy takes over the name.
   if (record == null || record.source is FileSource) return install();
-  final copy = await _coreCopy(record);
+  final copy = await coreCopyLocation(record);
   final replaced =
       copy != null &&
       (target == null ||
@@ -215,10 +215,12 @@ Future<bool> _hasRecordedSize(repo.ModelInfo record, String filePath) async {
       stamp.size == record.sizeBytes;
 }
 
-/// Where core's own copy of [record]'s file is, or null when the record is
-/// not a copy core made: the app's file, a resource read in place from the
-/// iOS bundle, or any model on web.
-Future<String?> _coreCopy(repo.ModelInfo record) async {
+/// Where core's own copy of [record]'s file is — what an uninstall deletes —
+/// or null when the record is not a copy core made: the app's file, a
+/// resource read in place from the iOS bundle, or any model on web. Android's
+/// copy of a bundled resource is under the resource's name, which a
+/// namespaced record id is not.
+Future<String?> coreCopyLocation(repo.ModelInfo record) async {
   if (kIsWeb) return null;
   final fs = ServiceRegistry.instance.fileSystemService;
   return switch (record.source) {
@@ -258,12 +260,53 @@ Future<bool> _isThere(repo.ModelInfo record) async {
 
 /// Where [record]'s file is read from in this run, or null when that cannot
 /// be found out (an iOS bundle resource that is gone).
-Future<String?> _readLocation(repo.ModelInfo record) async {
+Future<String?> _readLocation(repo.ModelInfo record) =>
+    _locate(record, inBundle: _bundlePath);
+
+/// Where [record]'s file is read from in this run, as the engines read it,
+/// and what `FlutterEdgeAi.getModelPath` returns for a name with a record:
+/// the app's file where it is now (on iOS in the app's current container), a
+/// resource of the iOS bundle in place, otherwise core's copy.
+///
+/// Throws what the bundle lookup throws for a resource the iOS app bundle
+/// does not hold, as loading the model does. Native only: on web a model
+/// core holds is not a file, and this throws [UnsupportedError] for one.
+Future<String> recordedFileLocation(repo.ModelInfo record) async {
+  final location = await _locate(
+    record,
+    inBundle: ServiceRegistry.instance.fileSystemService.getBundledResourcePath,
+  );
+  if (location == null) {
+    // Core names no copy of its own only on web.
+    throw UnsupportedError('${record.id} is not a file on this platform');
+  }
+  return location;
+}
+
+/// Where an engine opens [record]'s file in this run, for a model restored
+/// at a start: what `getModelFilePaths` hands it when the model is activated.
+/// A bundled resource goes through the bundle lookup, which on Android also
+/// renews core's copy after an app update; any other file is where
+/// [recordedFileLocation] says. Null when it cannot be found: a resource the
+/// iOS bundle does not hold, an asset Android could not copy, or any model on
+/// web.
+Future<String?> restoredFileLocation(repo.ModelInfo record) =>
+    switch (record.source) {
+      BundledSource(:final resourceName) => _bundlePath(resourceName),
+      _ => _readLocation(record),
+    };
+
+/// The one answer to where [record]'s file is; [inBundle] finds a resource
+/// of the iOS bundle.
+Future<String?> _locate(
+  repo.ModelInfo record, {
+  required Future<String?> Function(String resourceName) inBundle,
+}) async {
   return switch (record.source) {
     FileSource(:final path) => await appFileLocationNow(path),
     BundledSource(:final resourceName) when !bundledResourcesAreCopies =>
-      await _bundlePath(resourceName),
-    _ => await _coreCopy(record),
+      await inBundle(resourceName),
+    _ => await coreCopyLocation(record),
   };
 }
 

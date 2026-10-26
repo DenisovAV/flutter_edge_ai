@@ -58,7 +58,7 @@ Auth errors (401/403/404) fail fast after one attempt — they are not retried. 
 - Reduce `maxTokens` if you hit memory pressure — but **keep it at 1024 or higher for `.litertlm` models** (see "maxTokens vs maxOutputTokens" below). To shorten replies, use `maxOutputTokens`, not a smaller `maxTokens`.
 - Use smaller models (1B-2B parameters) for devices with <6GB RAM. Gemma 4 E2B needs 6 GB or more (a 4 GB phone is killed while it loads); the larger Gemma 4 E4B and Gemma 3n files have no measured floor.
 - Close sessions and models when not needed; monitor usage with `sizeInTokens()`.
-- To see what a model actually costs, measure the memory the OS cannot reclaim before and after loading it with [`flutter_edge_ai_diagnostics`](/docs/diagnostics) (Android + iOS + macOS). The RSS a profiler shows also counts mmapped weights the OS can drop, so it does not show that cost.
+- To see what a model actually costs, measure the memory the OS cannot reclaim before and after loading it with [`flutter_edge_ai_diagnostics`](/docs/diagnostics) (Android + iOS + macOS + Linux). The RSS a profiler shows also counts mmapped weights the OS can drop, so it does not show that cost.
 
 ## maxTokens vs maxOutputTokens
 
@@ -405,6 +405,33 @@ build for a platform, then cache it under `~/.cache/flutter_gemma/native/`
   pinned release. `flutter_edge_ai_sqlite` says so on stderr when it takes that
   path; `flutter_edge_ai_litertlm` and `flutter_edge_ai_onnx` take it silently. If a
   new release "did not take", look for that directory first.
+
+## Another package bundles its own LiteRT-LM
+
+**`The LiteRT-LM library at … is not the one flutter_edge_ai_litertlm ships (it
+lacks litert_lm_engine_settings_set_kernel_batch_size)`** — a `StateError` (an
+`EmbeddingLoadException` for an embedder) when a `.litertlm` model, an embedder
+or speech loads. Another package in the app ships its own LiteRT-LM under the
+same library name — `llamadart` before 0.12.0 does by default (from 0.12.0 its
+build hook leaves it out next to `flutter_edge_ai_litertlm`), and
+`llamadart_litert_lm_flutter` links one through Swift Package Manager. On iOS
+and macOS that app still builds: depending on the order of the app's
+dependencies, Flutter renames our framework to `LiteRtLm1.framework`, and
+`LiteRtLm.framework` is the other package's build, which
+flutter_edge_ai_litertlm refuses rather than binds. On Android, Linux and
+Windows the build fails instead.
+
+For llamadart, upgrade it to 0.12.0 or later, or leave its LiteRT-LM runtime
+out in the app's `pubspec.yaml` (the workspace root's, if the app is a workspace
+member) and remove `llamadart_litert_lm_flutter` if the app depends on it; then
+run `flutter clean` once:
+
+```
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
+```
 
 ## Embeddings
 

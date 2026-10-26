@@ -1,3 +1,7 @@
+## 0.6.0
+- Windows ARM64: bundle ORT and ORT-GenAI archives for both engines (#326).
+- A closed GenAI client fails through the returned Future (#718).
+
 ## 0.5.10
 - README: what `activeBackend` reports, natively and on the web.
 

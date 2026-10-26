@@ -616,11 +616,12 @@ void main() {
           );
           await later.done;
           laterGenerate = later.error;
-          try {
-            await client.countTokens('later');
-          } on StateError catch (e) {
-            laterCount = e;
-          }
+          // A chained handler, not `await` inside a `try`: the refusal must
+          // come through the Future, which a `try` could not tell from a
+          // synchronous throw.
+          laterCount = await client
+              .countTokens('later')
+              .then<Object?>((_) => null, onError: (Object e) => e);
           await client.shutdown().timeout(const Duration(seconds: 5));
         });
 

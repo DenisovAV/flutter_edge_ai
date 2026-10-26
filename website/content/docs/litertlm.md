@@ -348,6 +348,15 @@ when the app's output is redirected (`app.exe 2> err.log`), the lines follow
 the redirect from 1.17.0; before that the Flutter runner's `AttachConsole` sent
 them to the parent's console.
 
+### Thinking budget
+
+`LiteRtLmEngine(thinkingTokenBudget: 512)` (1.18.0) caps how many tokens each
+generation with thinking on spends thinking, in every model the engine builds;
+null, the default, sets none. Keep it below `maxOutputTokens` and below what
+the context (`maxTokens`) has left after the prompt and the history, or it is
+never reached. On the GPU it slows decoding; the web engine ignores it. See
+[Thinking mode → Thinking budget](/docs/thinking-mode#thinking-budget).
+
 ### Inspecting a model file
 
 `readLiteRtLmBundleInfo(path)` (native only) returns what the engine reads:

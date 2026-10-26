@@ -174,8 +174,11 @@ class LiteRtSpeechRecognizer extends SpeechRecognizer with CloseNotifier {
     }
   }
 
+  // `async` so a closed recognizer's error reaches the caller through the
+  // returned Future, not as a synchronous throw. Nothing here awaits: the
+  // request is still sent to the worker during the call, in call order.
   @override
-  Future<String> transcribe(Uint8List pcm16kMono, {String? language}) {
+  Future<String> transcribe(Uint8List pcm16kMono, {String? language}) async {
     _assertNotClosed();
     final samples = pcm16LEToFloat32(pcm16kMono);
     // Per-call value wins; otherwise the recognizer's current default. Both may

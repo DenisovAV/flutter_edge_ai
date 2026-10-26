@@ -1,6 +1,9 @@
-## 0.5.11
+## 0.5.12
 - Model catalog: `LiteRtSpeechModels`, every STT and TTS build pinned to its Hugging Face commit, in `FlutterEdgeAi.catalog`.
-- Require `flutter_edge_ai` ^2.5.3 and `flutter_edge_ai_litertlm` ^1.17.1.
+- Require `flutter_edge_ai` ^2.6.0 and `flutter_edge_ai_litertlm` ^1.20.0.
+
+## 0.5.11
+- A closed recognizer or synthesizer fails through the returned Future (#718).
 
 ## 0.5.10
 - Docs: the macOS app setup STT and TTS need (#689).

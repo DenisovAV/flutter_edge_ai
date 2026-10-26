@@ -120,9 +120,9 @@ killed for memory while loading even Gemma 3 1B. See
 
 | Model Family | Best For | Function Calling | Thinking Mode | Vision | Languages | Size |
 |---|---|:---:|:---:|:---:|---|---|
-| **Gemma 4 E2B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ¹ | ✅ | Multilingual | 2.6GB |
-| **Gemma 4 E4B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ¹ | ✅ | Multilingual | 3.7GB |
-| **Gemma3n** | On-device multimodal chat and image analysis | ⚠️ ² | ❌ | ✅ | Multilingual | 3.1-4.9GB |
+| **Gemma 4 E2B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ⁵ | ✅ | Multilingual | 2.6GB |
+| **Gemma 4 E4B** | Next-gen multimodal chat — text, image, audio | ✅ | ✅ ⁵ | ✅ | Multilingual | 3.7GB |
+| **Gemma3n** | On-device multimodal chat and image analysis | ⚠️ ⁶ | ❌ | ✅ | Multilingual | 3.1-4.9GB |
 | **FastVLM 0.5B** | Fast vision-language inference | ❌ | ❌ | ✅ | Multilingual | 1.2GB |
 | **Qwen2-VL 2B** | Vision-language chat (image + text) | ❌ | ❌ | ✅ | Multilingual | 1.8GB |
 | **SmolVLM2 500M** | Compact vision-language model | ❌ | ❌ | ✅ | Multilingual | 0.36GB |
@@ -146,13 +146,13 @@ killed for memory while loading even Gemma 3 1B. See
 | **Apple Foundation Models** (built-in) | The OS model on iOS and macOS | ✅ prompt-based | ❌ | ⚠️ OS 27 | varies | system |
 | **Phi Silica** (built-in) | The OS model on Windows | ✅ prompt-based | ❌ | ❌ | varies | system |
 
-¹ Gemma 4 **Thinking Mode** needs LiteRT-LM (`.litertlm`): Android, iOS, Desktop
+⁵ Gemma 4 **Thinking Mode** needs LiteRT-LM (`.litertlm`): Android, iOS, Desktop
 and Web (measured on Gemma 4 E2B in Chrome). MediaPipe Web cannot enable it and
 ONNX Web ignores it.
 Qwen3 is different: core parses its emitted `<think>` tags on every platform,
 including Web.
 
-² Gemma3n function calling: the downloadable catalog enables it only on the E4B
+⁶ Gemma3n function calling: the downloadable catalog enables it only on the E4B
 `.litertlm` build.
 
 — not run. The ONNX engine is text-only and ignores `enableThinking`; see
@@ -311,9 +311,9 @@ VibeVoice.
 | [SmolLM 135M](https://huggingface.co/litert-community/SmolLM-135M-Instruct) | `.task` | 167MB | ❌ | ✅ | ❌ | no |
 | [Phi-4 Mini](https://huggingface.co/litert-community/Phi-4-mini-instruct) | `.task` | 3.9GB | ❌ | ✅ | ❌ | no |
 | [FunctionGemma 270M](https://huggingface.co/sasha-denisov/function-gemma-270M-it) | `.task` | 284MB | ❌ | ✅ | ❌ | no |
-| [VibeVoice-ASR-BitNet](https://huggingface.co/litert-community/VibeVoice-ASR-BitNet) ³ | `.litertlm` | 2.0GB | ✅ macOS | ✅ Android | ❌ | no |
-| [Phi-3.5 Mini](https://huggingface.co/microsoft/Phi-3.5-mini-instruct-onnx) ² | ONNX | 2.8GB | ✅ | ✅ | — | no |
-| [Qwen 2.5 0.5B](https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct) ¹ | ONNX | 0.5GB | ❌ | ❌ | ✅ | no |
+| [VibeVoice-ASR-BitNet](https://huggingface.co/litert-community/VibeVoice-ASR-BitNet) ⁹ | `.litertlm` | 2.0GB | ✅ macOS | ✅ Android | ❌ | no |
+| [Phi-3.5 Mini](https://huggingface.co/microsoft/Phi-3.5-mini-instruct-onnx) ⁸ | ONNX | 2.8GB | ✅ | ✅ | — | no |
+| [Qwen 2.5 0.5B](https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct) ⁷ | ONNX | 0.5GB | ❌ | ❌ | ✅ | no |
 | [Gemini Nano](/docs/builtin-ai) | built-in | system | ❌ | ✅ Android | ✅ Chrome | — |
 | [Apple Foundation Models](/docs/builtin-ai) | built-in | system | ✅ macOS | ✅ iOS | ❌ | — |
 | [Phi Silica](/docs/builtin-ai) | built-in | system | ✅ Windows | ❌ | ❌ | — |
@@ -321,15 +321,15 @@ VibeVoice.
 `.task` files run through [MediaPipe](/docs/mediapipe), which has no desktop
 engine.
 
-¹ On web, Qwen 2.5 0.5B runs as the ONNX build from `onnx-community`, through
+⁷ On web, Qwen 2.5 0.5B runs as the ONNX build from `onnx-community`, through
 Transformers.js ([`flutter_edge_ai_onnx`](/docs/onnx)). That build is web-only.
 
-² An ORT-GenAI model directory — `fromHuggingFace` installs its CPU folder,
+⁸ An ORT-GenAI model directory — `fromHuggingFace` installs its CPU folder,
 `cpu_and_mobile/cpu-int4-awq-block-128-acc-level-4` — run on macOS arm64,
 Linux x64, Windows x64, Android arm64 and iOS arm64. It peaks at about 3.7 GB
 of RAM, so plan for a 6 GB+ phone. — means not run.
 
-³ Speech recognition, not chat: install it as `ModelType.general` (the
+⁹ Speech recognition, not chat: install it as `ModelType.general` (the
 repo's `litertlm_manifest.json` sets `maxTokens: 2048` and audio — pass
 `getActiveModel(defaults: r.runtime)`), send the clip as `audioBytes` with the
 text `This is a X.XX seconds audio, please transcribe it.` (the clip's length),

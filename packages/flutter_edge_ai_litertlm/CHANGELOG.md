@@ -1,6 +1,10 @@
-## 1.17.1
+## 1.20.0
 - Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every `.litertlm` and `.tflite` build pinned to its Hugging Face commit, in `FlutterEdgeAi.catalog`.
-- Require `flutter_edge_ai` ^2.5.3.
+- Require `flutter_edge_ai` ^2.6.0.
+
+## 1.18.0
+- `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).
+- Another package's libLiteRtLm in the app is refused at load with the cause and the fix (#722).
 
 ## 1.17.0
 - MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).

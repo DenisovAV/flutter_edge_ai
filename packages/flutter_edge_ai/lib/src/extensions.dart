@@ -16,6 +16,10 @@ const developerPrefix =
 const startTurn = "<start_of_turn>";
 const endTurn = "<end_of_turn>";
 
+// Gemma 4 turn markers, from its chat_template.jinja.
+const gemma4StartTurn = "<|turn>";
+const gemma4EndTurn = "<turn|>";
+
 const deepseekStart = "<｜begin▁of▁sentence｜>";
 const deepseekUser = "<｜User｜>";
 const deepseekAssistant = "<｜Assistant｜>";
@@ -123,7 +127,7 @@ extension MessageExtension on Message {
         final result = switch (type) {
           ModelType.general => _transformGeneral(),
           ModelType.gemmaIt => _transformGemmaIt(),
-          ModelType.gemma4 => _transformGemmaIt(),
+          ModelType.gemma4 => _transformGemma4(),
           ModelType.deepSeek => _transformDeepSeek(),
           ModelType.qwen => _transformQwen(),
           ModelType.qwen3 => _transformQwen(),
@@ -175,6 +179,29 @@ extension MessageExtension on Message {
       content = text;
     }
     return '$content$endTurn\n';
+  }
+
+  /// Gemma 4's chat template, one message at a time. A user message closes
+  /// its turn and opens the model's (the generation prompt); a model reply
+  /// closes that turn. As in the template, user text is trimmed and a reply
+  /// loses its thinking (`<|channel>...<channel|>`) before it is trimmed.
+  String _transformGemma4() {
+    if (isUser) {
+      final content = _formatToolResponseContent().trim();
+      return '$gemma4StartTurn$userPrefix\n$content$gemma4EndTurn\n'
+          '$gemma4StartTurn$modelPrefix\n';
+    }
+    return '${_gemma4StripThinking(text)}$gemma4EndTurn\n';
+  }
+
+  /// The template's `strip_thinking` macro.
+  static String _gemma4StripThinking(String text) {
+    final result = StringBuffer();
+    for (final part in text.split('<channel|>')) {
+      final open = part.indexOf('<|channel>');
+      result.write(open >= 0 ? part.substring(0, open) : part);
+    }
+    return result.toString().trim();
   }
 
   String _transformDeepSeek() {
@@ -481,9 +508,11 @@ class ModelThinkingFilter {
         // General models - no special cleaning needed
         return cleaned.trim();
       case ModelType.gemmaIt:
-      case ModelType.gemma4:
         // Remove trailing <end_of_turn> tags and trim whitespace
         return cleaned.replaceAll(RegExp(r'<end_of_turn>\s*$'), '').trim();
+      case ModelType.gemma4:
+        // Gemma 4 ends its turn with <turn|>.
+        return cleaned.replaceAll(RegExp(r'<turn\|>\s*$'), '').trim();
       case ModelType.qwen:
       case ModelType.qwen3:
       case ModelType.qwen35:

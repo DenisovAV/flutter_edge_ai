@@ -24,7 +24,7 @@ await FlutterEdgeAi.installFromCatalog(LiteRtLmModels.gemma4E2bIt.generic).insta
 | ⏸️ withheld | Left out of the catalog; the note says why |
 | ❌ broken | Known not to work there; see the issue |
 
-A blank cell is a combination that does not exist: a build compiled for one NPU on another platform, a web export on a phone, or a native build on the web. Package versions: `flutter_edge_ai` 2.5.3, `flutter_edge_ai_litertlm` 1.17.1, `flutter_edge_ai_speech` 0.5.11.
+A blank cell is a combination that does not exist: a build compiled for one NPU on another platform, a web export on a phone, or a native build on the web. Package versions: `flutter_edge_ai` 2.5.4, `flutter_edge_ai_litertlm` 1.19.0, `flutter_edge_ai_speech` 0.5.12.
 
 ## Language models
 

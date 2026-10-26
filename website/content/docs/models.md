@@ -353,8 +353,8 @@ Prompt API — see [Built-in AI](/docs/builtin-ai).
 
 ### From the model catalog
 
-`flutter_edge_ai` 2.5.3 with `flutter_edge_ai_litertlm` 1.17.1 (and
-`flutter_edge_ai_speech` 0.5.11 for speech) installs a
+`flutter_edge_ai` 2.5.4 with `flutter_edge_ai_litertlm` 1.19.0 (and
+`flutter_edge_ai_speech` 0.5.12 for speech) installs a
 [Model Registry](/docs/registry) build by name. Each build carries its model
 type, file type, Hugging Face commit, file size and install file name, so
 there is no URL to copy and nothing to keep in step:

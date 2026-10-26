@@ -1,4 +1,4 @@
-## 2.6.0
+## 2.5.4
 - Model catalog: `FlutterEdgeAi.catalog` lists the models registered packages offer, pinned to Hugging Face commits, and `installFromCatalog` installs one.
 
 ## 2.5.3

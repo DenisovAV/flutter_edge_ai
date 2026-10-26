@@ -1,6 +1,6 @@
-## 1.20.0
+## 1.19.0
 - Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every `.litertlm` and `.tflite` build pinned to its Hugging Face commit, in `FlutterEdgeAi.catalog`.
-- Require `flutter_edge_ai` ^2.6.0.
+- Require `flutter_edge_ai` ^2.5.4.
 
 ## 1.18.0
 - `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).

@@ -41,7 +41,7 @@ await FlutterEdgeAi.installFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
 final InferenceModel model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 ```
 
-Gemma 4 E2B is 2.6 GB and needs no token. On web install `LiteRtLmModels.gemma4E2bIt.web` (2.0 GB). `installFromCatalog` needs `flutter_edge_ai` 2.5.3 and `flutter_edge_ai_litertlm` 1.17.1; `FlutterEdgeAi.catalog` lists every build the registered engines offer, and `CatalogModel.variantFor` picks the one this device runs. Every build and where it has been run: https://flutteredge.ai/docs/registry. For your own file, `FlutterEdgeAi.installModel(modelType:, fileType:)` with `fromNetwork`, `fromAsset` or `fromFile`.
+Gemma 4 E2B is 2.6 GB and needs no token. On web install `LiteRtLmModels.gemma4E2bIt.web` (2.0 GB). `installFromCatalog` needs `flutter_edge_ai` 2.5.4 and `flutter_edge_ai_litertlm` 1.19.0; `FlutterEdgeAi.catalog` lists every build the registered engines offer, and `CatalogModel.variantFor` picks the one this device runs. Every build and where it has been run: https://flutteredge.ai/docs/registry. For your own file, `FlutterEdgeAi.installModel(modelType:, fileType:)` with `fromNetwork`, `fromAsset` or `fromFile`.
 
 Supported models, their file types and engines: https://flutteredge.ai/docs/models.
 

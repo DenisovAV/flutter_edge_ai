@@ -73,8 +73,8 @@ await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.whisperTiny.f32)
     .install();
 ```
 
-`LiteRtSpeechModels` (0.5.11, with `flutter_edge_ai` 2.5.3 and
-`flutter_edge_ai_litertlm` 1.17.1) lists every speech-to-text and
+`LiteRtSpeechModels` (0.5.12, with `flutter_edge_ai` 2.5.4 and
+`flutter_edge_ai_litertlm` 1.19.0) lists every speech-to-text and
 text-to-speech build, each pinned to a Hugging Face commit; `installStt()` and
 `installTts()` still install your own files. Every build, and where each has
 been run: [Model Registry](https://flutteredge.ai/docs/registry).

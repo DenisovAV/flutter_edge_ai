@@ -2,6 +2,8 @@
 // base classes, the way an engine's generated catalog extends them.
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
+    show TtsModelTypeManifest;
 
 const rev = '0123456789abcdef0123456789abcdef01234567';
 
@@ -110,6 +112,37 @@ final class TestEmbedder extends EmbedderVariant {
 
   @override
   Set<EmbeddingModality> get modalities => const {EmbeddingModality.text};
+}
+
+/// A Matcha bundle: one artifact per manifest file, all of [size] bytes.
+final class TestTts extends TtsVariant {
+  TestTts({int size = 1024 * 1024 + 16})
+    : files = [
+        for (final name in TtsModelType.matcha.manifest)
+          artifact(name, size: size),
+      ];
+
+  @override
+  final List<ModelArtifact> files;
+
+  @override
+  TtsModelType get type => TtsModelType.matcha;
+
+  @override
+  String get baseUrl =>
+      'https://huggingface.co/litert-community/tiny/resolve/$rev/';
+
+  @override
+  String get id => 'tiny-tts/bundle';
+
+  @override
+  String get modelId => 'tiny-tts';
+
+  @override
+  String get catalogName => 'test_catalog';
+
+  @override
+  Set<PreferredBackend> get backendsHere => const {PreferredBackend.cpu};
 }
 
 final class TestModel extends CatalogModel {

@@ -167,10 +167,16 @@ class TtsInstallationBuilder {
     // in MobileModelManager._migrateLegacyCompanionForRestore.
     final files = spec.files;
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final fileProgress = fileProgressFor[this];
     final release = await installPlanned(
       await planInstall(files),
       modelType: repo.ModelType.tts,
       cancelToken: _cancelToken,
+      progress: [
+        if (fileProgress != null)
+          for (final file in files)
+            (percent) => fileProgress(file.filename, percent),
+      ],
       // Files are replaced one by one, so a switch that fails halfway would
       // leave the active voice made of two bundles, and a restart would
       // restore that mix. Take the voice of this type out of service first;
@@ -182,8 +188,10 @@ class TtsInstallationBuilder {
           await manager.clearActiveTtsIdentity();
         }
       },
-      onFileDone: (i) =>
-          _onProgress?.call((((i + 1) / files.length) * 100).round()),
+      onFileDone: (i) {
+        fileProgress?.call(files[i].filename, 100);
+        _onProgress?.call((((i + 1) / files.length) * 100).round());
+      },
     );
 
     // AUTO-SET as active TTS model (even if already installed).

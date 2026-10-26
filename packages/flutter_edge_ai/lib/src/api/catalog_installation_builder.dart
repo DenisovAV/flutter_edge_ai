@@ -50,9 +50,8 @@ final class CatalogInstallationBuilder {
   }
 
   /// Progress of the whole install, 0 to 100, weighted by file size. A
-  /// [TtsVariant] reports once per finished file, as
-  /// `TtsInstallationBuilder.withProgress` does. A successful install ends
-  /// with 100, also when files were already installed and not downloaded.
+  /// successful install ends with 100, also when files were already
+  /// installed and not downloaded.
   CatalogInstallationBuilder withProgress(
     void Function(int percent) onProgress,
   ) {
@@ -216,7 +215,15 @@ final class CatalogInstallationBuilder {
         .fromNetwork(v.baseUrl, token: _token)
         .ofType(v.type);
     verifyBeforeActivation[builder] = check;
-    if (_onProgress != null) builder = builder.withProgress(_progress);
+    if (_onProgress != null) {
+      // The TTS installer's public progress counts finished files; ask it
+      // for each file's own progress and weight that by the catalog's sizes.
+      final progress = _WeightedProgress(_progress, v.files);
+      fileProgressFor[builder] = (filename, percent) {
+        final artifact = _artifactNamed(v, filename);
+        progress.reporterFor(artifact)(percent);
+      };
+    }
     if (_cancelToken case final cancelToken?) {
       builder = builder.withCancelToken(cancelToken);
     }
@@ -271,6 +278,20 @@ final class CatalogInstallationBuilder {
 }
 
 typedef _Check = Future<void> Function(ModelSpec spec);
+
+/// The artifact of [v] that core installs as [filename]: the catalog's
+/// install name, under the model's prefix for a speech bundle.
+ModelArtifact _artifactNamed(CatalogVariant v, String filename) {
+  for (final artifact in v.files) {
+    if (filename == artifact.installFilename ||
+        filename.endsWith('__${artifact.installFilename}')) {
+      return artifact;
+    }
+  }
+  throw CatalogInstallException(
+    '${v.id}: the install writes $filename, which the catalog does not list',
+  );
+}
 
 /// One progress value for several files, each weighted by its size.
 final class _WeightedProgress {

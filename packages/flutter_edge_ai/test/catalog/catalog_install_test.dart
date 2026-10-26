@@ -225,6 +225,36 @@ void main() {
       );
     });
   });
+
+  group('installFromCatalog, a TTS bundle', () {
+    test('progress is weighted by bytes, not by finished files', () async {
+      await initialize();
+      final variant = TestTts();
+      final progress = <int>[];
+      await FlutterEdgeAi.installFromCatalog(
+        variant,
+      ).withProgress(progress.add).install();
+      final n = variant.files.length;
+      // Each download reports 50 and then 100: halfway through the first of
+      // n equal files is 100 / (2 n) percent of the bytes, where counting
+      // finished files would first say 100 / n.
+      expect(progress.first, (100 / (2 * n)).round());
+      expect(progress, contains((100 * 3 / (2 * n)).round()));
+      expect(progress.last, 100);
+      expect(progress, orderedEquals([...progress]..sort()));
+      expect(downloads.urls, hasLength(n));
+    });
+
+    test('an already installed bundle still ends at 100', () async {
+      await initialize();
+      await FlutterEdgeAi.installFromCatalog(TestTts()).install();
+      final progress = <int>[];
+      await FlutterEdgeAi.installFromCatalog(
+        TestTts(),
+      ).withProgress(progress.add).install();
+      expect(progress.last, 100);
+    });
+  });
 }
 
 final class _Downloads implements DownloadService {
@@ -251,6 +281,7 @@ final class _Downloads implements DownloadService {
     bool? foreground,
   }) async* {
     urls.add(url);
+    yield 50;
     await File(targetPath).writeAsBytes(_bytes);
     yield 100;
   }

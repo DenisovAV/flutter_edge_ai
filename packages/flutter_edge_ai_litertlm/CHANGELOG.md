@@ -1,4 +1,5 @@
 ## 1.19.0
+- EmbeddingGemma 2 text on the GPU on Windows and Linux x64; image and audio towers stay on CPU.
 - Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every LiteRT build pinned to its commit.
 - Require `flutter_edge_ai` ^2.5.4.
 

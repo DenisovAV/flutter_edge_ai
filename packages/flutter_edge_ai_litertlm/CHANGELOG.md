@@ -1,3 +1,7 @@
+## 1.19.0
+- EmbeddingGemma 2 text on the GPU on Windows and Linux x64; image and audio towers stay on CPU.
+- Require `flutter_edge_ai` ^2.5.4.
+
 ## 1.18.1
 - Windows: Gemma 4 12B on an Intel GPU answers prompts under 512 tokens (`native-v0.18.0-h`, LiteRT-LM#4083).
 - macOS: apps with Swift Package Manager on need no Podfile block; requires macOS 14 (#689).

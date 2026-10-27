@@ -53,28 +53,44 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// do not depend on it.
   ///
   /// [requireWeightCache] (flutter_edge_ai_litertlm 1.14.0) concerns
-  /// EmbeddingGemma 2. Its engine writes a weight cache into the app's cache
-  /// directory when it loads, one file per tower on CPU (71 MB for the 270m,
-  /// 385 MB for the 740m). A tower whose file the engine cannot create — a
-  /// path too long for the platform (Windows' 260-character MAX_PATH), a
-  /// directory this process cannot write to, or possibly no free space at
-  /// all — runs anyway, slower to load and, measured on the 270m, with about
-  /// 290 MB more memory. By default no cache at all is a printed warning.
-  /// With `true` the load fails instead: `getActiveEmbedder()` throws an
-  /// `EmbeddingLoadException` naming the cache directory, the length of the
-  /// cache file path and the likely causes, and no engine is left running.
-  /// A disk that fills while the cache is being built is not covered: the
-  /// engine (XNNPack) then aborts the process in native code, and no flag can
-  /// catch that.
+  /// EmbeddingGemma 2: with `true`, a load that would be cold on every start
+  /// is refused. Its engine writes weight caches into the app's cache
+  /// directory when it loads: on CPU XNNPack's `.xnnpack_cache`, one file per
+  /// tower (71 MB for the 270m, 385 MB for the 740m); on the GPU (Windows and
+  /// Linux x64, 1.19.0) ML Drift's `…_mldrift_weight_cache.bin` and
+  /// `…_mldrift_program_cache.bin` for the text tower (68 MB and 9 MB for the
+  /// 270m), and XNNPack's for the 440m/740m vision and audio towers, which
+  /// run on CPU beside it. A cache the engine cannot create — a path too long
+  /// for the platform (Windows' 260-character MAX_PATH, which the GPU caches
+  /// cannot exceed either; a file name past 255 characters, UTF-8 bytes off
+  /// Windows), a directory this process cannot write to, or possibly no free
+  /// space at all — leaves the load working but cold: slower to load every
+  /// time and, on CPU, measured on the 270m, about 290 MB more memory. A
+  /// cache directory with characters outside ASCII on Windows (unless the
+  /// process's ANSI code page is UTF-8) is not measured: the GPU accelerator
+  /// cannot open its caches there, and from LiteRT-LM's source the engine
+  /// create likely fails too, on every backend, since it checks the cache
+  /// directory through the ANSI code page. By default no cache at all is a
+  /// printed warning. With `true` the load fails instead:
+  /// `getActiveEmbedder()` throws an `EmbeddingLoadException` naming the
+  /// cache directory, the length of the cache file path and the likely
+  /// causes, and no engine is left running. On the GPU a path the GPU caches
+  /// cannot be created at is refused before the engine is created. A disk that
+  /// fills while the CPU cache is being built is not covered: the engine
+  /// (XNNPack) then aborts the process in native code, and no flag can catch
+  /// that.
   ///
-  /// The refusal needs no real cache file at all; one tower's file missing
-  /// beside the others is a printed warning either way. It applies on CPU,
-  /// and on the NPU only to a load with declared audio, whose tower runs on
-  /// CPU (the NPU's text and vision towers write no cache). It does not apply
-  /// to `.tflite` embedders nor on the web, which keeps no weight cache; a
-  /// debug build says once when it does not apply. It takes effect when an
-  /// embedder is loaded: one already loaded is kept as it is (for example
-  /// after `FlutterEdgeAi.reset()` and `initialize` with the other value).
+  /// The refusal needs no real cache file at all (on the GPU: neither ML
+  /// Drift file, or no XNNPack file for the CPU towers beside it); one
+  /// tower's file missing beside the others, or one of the two GPU files, is
+  /// a printed warning either way. It applies on CPU and
+  /// on the GPU, and on the NPU only to a load with declared audio, whose
+  /// tower runs on CPU (the NPU's text and vision towers write no cache). It
+  /// does not apply to `.tflite` embedders nor on the web, which keeps no
+  /// weight cache; a debug build says once when it does not apply. It takes
+  /// effect when an embedder is loaded: one already loaded is kept as it is
+  /// (for example after `FlutterEdgeAi.reset()` and `initialize` with the
+  /// other value).
   const LiteRtEmbeddingBackend({
     this._visionTokensPerImage = 140,
     this._requireWeightCache = false,
@@ -95,6 +111,18 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   bool canHandle(EmbeddingModelSpec spec) =>
       spec.tokenizerSource != null ||
       isLiteRtLmFilename(spec.files.first.filename);
+
+  /// GPU joins CPU and NPU for a `.litertlm` bundle on the hosts where
+  /// EmbeddingGemma 2 is measured on the GPU ([liteRtLmEmbeddingGpuAbis]):
+  /// core then keys the cache by the backend each load reports. A `.tflite`
+  /// embedder and every other host keep the default, so a `gpu` request there
+  /// still runs on CPU with core's not-applied notice.
+  @override
+  Set<PreferredBackend> honouredBackends(EmbeddingModelSpec spec) =>
+      isLiteRtLmFilename(spec.files.first.filename) &&
+          liteRtLmEmbeddingGpuHost()
+      ? const {PreferredBackend.cpu, PreferredBackend.gpu, PreferredBackend.npu}
+      : super.honouredBackends(spec);
 
   @override
   Future<EmbeddingPassDescriptor<Object>> describe(
@@ -179,6 +207,21 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
     target: target,
     requested: config.preferredBackend,
   );
+  final onGpu = placement.backend == PreferredBackend.gpu;
+  // On the GPU only the text tower runs there: the pass names every tower the
+  // container has cpu, and must not name one it lacks (create fails).
+  final towers = onGpu
+      ? readLiteRtLmMediaTowers(config.modelPath)
+      : (vision: false, audio: false);
+  if (onGpu && config.supportImage && !towers.vision) {
+    // The 270m. The pass would refuse it from ModelInfo after core closed the
+    // embedder it holds; the header is already read here, so refuse before,
+    // in the pass's words.
+    throw EmbeddingLoadException(
+      '$file has no vision encoder; install embeddinggemma-2-text-vision-440m',
+      engine: _liteRtLm,
+    );
+  }
   if (requireWeightCache && placement.target != null && !config.supportAudio) {
     noticeRequireWeightCacheNotApplied(
       '$file runs on the ${placement.target} NPU, whose text and vision '
@@ -205,16 +248,20 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
         if (config.supportAudio) EmbeddingModality.audio,
       },
       visionTokensPerImage: visionTokensPerImage,
-      // The pass checks the cache on CPU, and on the NPU for declared audio
-      // only (see LiteRtLmEmbeddingConfig).
+      // The pass checks the cache on CPU and on the GPU, and on the NPU for
+      // declared audio only (see LiteRtLmEmbeddingConfig).
       requireWeightCache: requireWeightCache,
       npuTarget: placement.target,
       npuDispatchDir: placement.dispatchDir,
+      gpu: onGpu,
+      visionTowerOnCpu: towers.vision,
+      audioTowerOnCpu: towers.audio,
     ),
-    // `settings_create(path, "cpu" | "npu", NULL, NULL)`: the text tower on
-    // that backend, and the vision and audio towers with it (NULL tower
-    // backends run on the main one, D26). The pass refuses to load rather
-    // than fall back, so this is what runs.
+    // `settings_create(path, "cpu" | "gpu" | "npu", vision, audio)`: the text
+    // tower on that backend. The vision and audio towers run with it (NULL,
+    // D26), except on the GPU, where each present one is named cpu, and the
+    // 740m's audio on the NPU (cpu). The pass refuses to load rather than
+    // fall back, so this is what runs; the core API reports the text tower's.
     activeBackend: placement.backend,
   );
 }

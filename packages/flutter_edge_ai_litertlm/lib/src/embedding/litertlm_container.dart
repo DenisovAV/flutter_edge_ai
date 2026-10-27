@@ -104,6 +104,28 @@ List<String> litertlmModelTypes(Uint8List header) {
   }
 }
 
+/// Whether a bundle whose `TFLiteModel` sections have [modelTypes] carries a
+/// vision tower: a `tf_lite_vision_encoder` section, the one key LiteRT-LM
+/// builds its vision executor for (`runtime/core/embedding_engine_impl.cc`,
+/// `ModelType::kTfLiteVisionEncoder`). The 440m and the 740m have it beside
+/// `tf_lite_vision_adapter` and `tf_lite_end_of_vision`, neither of which
+/// gets an executor of its own; the 270m has only `tf_lite_text_encoder` and
+/// `tf_lite_embedder`. LiteRT-LM compiles a present tower at create, declared
+/// or not: on its own backend when one is named, else on the main one.
+bool litertlmHasVisionTower(Iterable<String> modelTypes) =>
+    modelTypes.contains(_visionTowerType);
+
+/// Whether a bundle whose `TFLiteModel` sections have [modelTypes] carries an
+/// audio tower: a `tf_lite_audio_encoder_hw` section, the one key LiteRT-LM
+/// builds its audio executor for (`ModelType::kTfLiteAudioEncoderHw`); only
+/// the 740m has it, beside `tf_lite_audio_adapter` and `tf_lite_end_of_audio`.
+/// Compiled at create like the vision tower ([litertlmHasVisionTower]).
+bool litertlmHasAudioTower(Iterable<String> modelTypes) =>
+    modelTypes.contains(_audioTowerType);
+
+const _visionTowerType = 'tf_lite_vision_encoder';
+const _audioTowerType = 'tf_lite_audio_encoder_hw';
+
 /// Whether a bundle whose `TFLiteModel` sections have [modelTypes] carries an
 /// audio encoder.
 bool litertlmHasAudioEncoder(Iterable<String> modelTypes) =>

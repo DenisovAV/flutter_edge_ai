@@ -42,13 +42,13 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.5.1`,
-`flutter_edge_ai_litertlm: ^1.18.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.5.4`,
+`flutter_edge_ai_litertlm: ^1.19.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0, ^2.5.4 since 1.19.0), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
@@ -326,11 +326,59 @@ final vector = await embedder.embed(
   averages them instead of truncating; the averaged vector is never returned).
   Either way an over-long input costs a full embedding before it is refused.
   Split before embedding.
-- **CPU natively, WebGPU on the web.** `activeBackend` is
-  `PreferredBackend.cpu` on Android, iOS and desktop and
-  `PreferredBackend.gpu` on the web; `preferredBackend` is not applied — except
-  `npu`, which this bundle refuses: the NPU runs the per-SoC bundles
-  ([below](#embeddinggemma-2-on-a-qualcomm-npu)). The web has no CPU path for
+- **CPU natively, WebGPU on the web, GPU on Windows and Linux x64 when asked
+  (1.19.0).** `activeBackend` is `PreferredBackend.cpu` natively and
+  `PreferredBackend.gpu` on the web. On Windows x64 and Linux x64,
+  `preferredBackend: PreferredBackend.gpu` runs the text tower of a generic
+  bundle on the GPU (LiteRT-LM's GPU executor over WebGPU: DX12, Vulkan).
+  Measured on the 270m, 2026-10-22: Windows on Lunar Lake (Arc iGPU) 22 ms per text vs 83-90 ms on
+  its CPU, Linux on a Tesla T4 32-64 ms vs 232-308 ms; min cos 0.997 to the
+  CPU vectors (0.998 for a ~900-token text: the GPU runs FP16 activations),
+  and the CPU's distance to Sentence Transformers fp32. A load takes 1.7-3.6 s
+  against 0.3-0.6 s on CPU; the very first also builds the GPU caches (5.9 s
+  on Lunar Lake, 8.2 s on the T4). Measured in one process with a GPU LLM
+  (Gemma 4 E2B), the embedder loaded before and after it.
+  - Only the text tower runs on the GPU. On the 440m and 740m the vision and
+    audio towers run on CPU (each named `cpu` at create, declared or not), so
+    images and audio embed at CPU speed and with CPU vectors. A text-only
+    GPU load of these bundles still compiles those towers at create, with
+    their memory and the same XNNPack caches a CPU load writes for them. Not
+    yet measured on a device for these two bundles.
+  - No fallback: LiteRT runs the GPU graph without a CPU accelerator, so a
+    GPU that cannot create the engine fails the load, and every GPU load
+    embeds one probe text and refuses a non-finite or zero vector. The
+    adapter is Dawn's choice, and a software one is not excluded: on a Linux
+    box whose NVIDIA driver was not loaded, Vulkan offered only Mesa's
+    llvmpipe and `gpu` ran there, reported as `gpu`, with correct vectors
+    (min cos 0.997 to CPU), a 37-48 s load, and a ~900-token text failed
+    with `DEADLINE_EXCEEDED` (measured 2026-10-22). Ask for `gpu` only where
+    a real GPU driver is installed.
+  - The GPU writes its own caches beside the CPU's: ML Drift's
+    `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
+    (9 MB) for the text tower. `requireWeightCache` covers them (1.19.0):
+    a path the GPU cannot create them at (Windows' 260-character MAX_PATH,
+    which the accelerator cannot exceed; a file name past 255 characters,
+    UTF-8 bytes off Windows; on Windows a cache directory with characters
+    outside ASCII, unless the process's ANSI code page is UTF-8: the
+    accelerator opens its caches through the UCRT `_open`, which reads the
+    path in the ANSI code page, then `CreateFileW`) is refused before the
+    engine is created, and neither file written by the end of the load's probe
+    embedding is refused after it; without the flag each is one printed
+    warning. The 440m/740m vision and audio towers beside it are checked as
+    on CPU. A cache directory outside ASCII is not measured: from LiteRT-LM's
+    source the engine create then likely fails on every backend, CPU
+    included, because it checks the cache directory through the ANSI code
+    page too.
+  - A cold load without `preferredBackend` runs on CPU; a later automatic
+    request reuses whatever embedder is loaded, the GPU one included.
+  - The 270m has no vision or audio encoder. A text index and an image index
+    can share one 440m or 740m embedder on the GPU.
+  - Elsewhere `gpu` is not applied (CPU, with core's notice): on macOS the
+    Metal accelerator ends the process in LiteRT's external weight loader at
+    engine create (iOS ships the same accelerator, not run), and Android and
+    Linux arm64 are not measured. `npu` is refused
+    for this bundle: the NPU runs the per-SoC bundles
+    ([below](#embeddinggemma-2-on-a-qualcomm-npu)). The web has no CPU path for
   these bundles: the CPU (WebAssembly) backend of `@litert-lm/core` 0.18.0
   cannot read their external weights, so a browser without WebGPU (no
   `navigator.gpu`, or no GPU adapter) fails `getActiveEmbedder()` with an
@@ -361,8 +409,10 @@ final vector = await embedder.embed(
   then throws an `EmbeddingLoadException` naming the cache directory, the
   length of the cache file path and the likely causes, and no engine is left
   running. One tower's cache missing beside the others stays a printed
-  warning. It applies on CPU, and on the NPU only to a load with declared
-  audio, whose tower runs on CPU. For a `.tflite` embedder and on the web it
+  warning. It applies on CPU, on the GPU (ML Drift's weight and program
+  caches, one of the two missing stays a warning; and the CPU caches of the
+  440m/740m vision and audio towers), and on the NPU only to a
+  load with declared audio, whose tower runs on CPU. For a `.tflite` embedder and on the web it
   is accepted and ignored, which a debug build says once. It takes effect
   when an embedder is loaded: one already loaded is kept.
   - **The warning is invisible on Windows release builds.** It is a `print`,
@@ -562,7 +612,9 @@ final note = await embedder.embed(
 Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), MediaTek NPU
 ([below](#mediatek-npu-on-android-opt-in)), Qualcomm NPU
 ([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
-([below](#embeddinggemma-2-on-an-intel-npu-windows)); any other
+([below](#embeddinggemma-2-on-an-intel-npu-windows)), and `gpu` for the
+EmbeddingGemma 2 270m asked for with `gpu` on Windows x64 and Linux x64
+(1.19.0); any other
 `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
 the output buffer lived after the first embedding, and

@@ -65,114 +65,101 @@ void main() {
       });
 
       // --- Test 1: Two sequential queries on same chat (issue #209 core repro) ---
-      testWidgets(
-        'two sequential queries on same chat',
-        (tester) async {
-          final model = await _installAndLoad(path, modelType);
-          try {
-            final chat = await model.createChat(modelType: modelType);
+      testWidgets('two sequential queries on same chat', (tester) async {
+        final model = await _installAndLoad(path, modelType);
+        try {
+          final chat = await model.createChat(modelType: modelType);
 
-            // First query — should work
-            await chat.addQueryChunk(
-              const Message(
-                text: 'What is 2+2? Answer with just the number.',
-                isUser: true,
-              ),
-            );
-            final r1 = await chat.generateChatResponse();
-            expect(r1, isA<TextResponse>());
-            final text1 = (r1 as TextResponse).token;
-            print('[$name] First response: "$text1"');
-            expect(text1, isNotEmpty);
+          // First query — should work
+          await chat.addQueryChunk(
+            const Message(
+              text: 'What is 2+2? Answer with just the number.',
+              isUser: true,
+            ),
+          );
+          final r1 = await chat.generateChatResponse();
+          expect(r1, isA<TextResponse>());
+          final text1 = (r1 as TextResponse).token;
+          print('[$name] First response: "$text1"');
+          expect(text1, isNotEmpty);
 
-            // Second query — crashes with SIGSEGV in issue #209
-            await chat.addQueryChunk(
-              const Message(
-                text: 'What is 3+3? Answer with just the number.',
-                isUser: true,
-              ),
-            );
-            final r2 = await chat.generateChatResponse();
-            expect(r2, isA<TextResponse>());
-            final text2 = (r2 as TextResponse).token;
-            print('[$name] Second response: "$text2"');
-            expect(text2, isNotEmpty);
-          } finally {
-            await model.close();
-          }
-        },
-        timeout: const Timeout(Duration(minutes: 10)),
-      );
+          // Second query — crashes with SIGSEGV in issue #209
+          await chat.addQueryChunk(
+            const Message(
+              text: 'What is 3+3? Answer with just the number.',
+              isUser: true,
+            ),
+          );
+          final r2 = await chat.generateChatResponse();
+          expect(r2, isA<TextResponse>());
+          final text2 = (r2 as TextResponse).token;
+          print('[$name] Second response: "$text2"');
+          expect(text2, isNotEmpty);
+        } finally {
+          await model.close();
+        }
+      }, timeout: const Timeout(Duration(minutes: 10)));
 
       // --- Test 2: Three sequential queries (longer conversation) ---
-      testWidgets(
-        'three sequential queries on same chat',
-        (tester) async {
-          final model = await _installAndLoad(path, modelType);
-          try {
-            final chat = await model.createChat(modelType: modelType);
+      testWidgets('three sequential queries on same chat', (tester) async {
+        final model = await _installAndLoad(path, modelType);
+        try {
+          final chat = await model.createChat(modelType: modelType);
 
-            for (var i = 1; i <= 3; i++) {
-              await chat.addQueryChunk(
-                Message(
-                  text: 'What is ${i}+${i}? Answer briefly.',
-                  isUser: true,
-                ),
-              );
-              final r = await chat.generateChatResponse();
-              expect(r, isA<TextResponse>());
-              final text = (r as TextResponse).token;
-              print('[$name] Query $i response: "$text"');
-              expect(text, isNotEmpty);
-            }
-          } finally {
-            await model.close();
+          for (var i = 1; i <= 3; i++) {
+            await chat.addQueryChunk(
+              Message(text: 'What is ${i}+${i}? Answer briefly.', isUser: true),
+            );
+            final r = await chat.generateChatResponse();
+            expect(r, isA<TextResponse>());
+            final text = (r as TextResponse).token;
+            print('[$name] Query $i response: "$text"');
+            expect(text, isNotEmpty);
           }
-        },
-        timeout: const Timeout(Duration(minutes: 15)),
-      );
+        } finally {
+          await model.close();
+        }
+      }, timeout: const Timeout(Duration(minutes: 15)));
 
       // --- Test 3: Streaming sequential queries ---
-      testWidgets(
-        'two sequential streaming queries on same chat',
-        (tester) async {
-          final model = await _installAndLoad(path, modelType);
-          try {
-            final chat = await model.createChat(modelType: modelType);
+      testWidgets('two sequential streaming queries on same chat', (
+        tester,
+      ) async {
+        final model = await _installAndLoad(path, modelType);
+        try {
+          final chat = await model.createChat(modelType: modelType);
 
-            // First streaming query
-            await chat.addQueryChunk(
-              const Message(text: 'Say hello in one word.', isUser: true),
-            );
-            final chunks1 = <String>[];
-            await tester.runAsync(() async {
-              await for (final r in chat.generateChatResponseAsync()) {
-                if (r is TextResponse) chunks1.add(r.token);
-              }
-            });
-            final text1 = chunks1.join();
-            print('[$name] First streaming response: "$text1"');
-            expect(text1, isNotEmpty);
+          // First streaming query
+          await chat.addQueryChunk(
+            const Message(text: 'Say hello in one word.', isUser: true),
+          );
+          final chunks1 = <String>[];
+          await tester.runAsync(() async {
+            await for (final r in chat.generateChatResponseAsync()) {
+              if (r is TextResponse) chunks1.add(r.token);
+            }
+          });
+          final text1 = chunks1.join();
+          print('[$name] First streaming response: "$text1"');
+          expect(text1, isNotEmpty);
 
-            // Second streaming query — issue #209 crash point
-            await chat.addQueryChunk(
-              const Message(text: 'Say goodbye in one word.', isUser: true),
-            );
-            final chunks2 = <String>[];
-            await tester.runAsync(() async {
-              await for (final r in chat.generateChatResponseAsync()) {
-                if (r is TextResponse) chunks2.add(r.token);
-              }
-            });
-            final text2 = chunks2.join();
-            print('[$name] Second streaming response: "$text2"');
-            expect(text2, isNotEmpty);
-          } finally {
-            await model.close();
-          }
-        },
-        timeout: const Timeout(Duration(minutes: 10)),
-      );
+          // Second streaming query — issue #209 crash point
+          await chat.addQueryChunk(
+            const Message(text: 'Say goodbye in one word.', isUser: true),
+          );
+          final chunks2 = <String>[];
+          await tester.runAsync(() async {
+            await for (final r in chat.generateChatResponseAsync()) {
+              if (r is TextResponse) chunks2.add(r.token);
+            }
+          });
+          final text2 = chunks2.join();
+          print('[$name] Second streaming response: "$text2"');
+          expect(text2, isNotEmpty);
+        } finally {
+          await model.close();
+        }
+      }, timeout: const Timeout(Duration(minutes: 10)));
 
       // --- Test 4: New chat per query (workaround test) ---
       testWidgets('new chat per query works', (tester) async {

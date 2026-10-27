@@ -43,7 +43,7 @@ Detailed setup and reference for running Flutter Edge AI on **macOS, Windows, an
 ```
 
 **Native libraries** are fetched at build time by `hook/build.dart` from the
-GitHub release `native-v0.18.0-g`, SHA256-verified, and bundled by Flutter
+GitHub release `native-v0.18.0-h`, SHA256-verified, and bundled by Flutter
 [Native Assets](https://docs.flutter.dev/development/platform-integration/c-interop)
 into the application bundle. On **macOS** the two upstream companion libraries
 come from `flutter_edge_ai_litertlm`'s Swift package with Swift Package Manager

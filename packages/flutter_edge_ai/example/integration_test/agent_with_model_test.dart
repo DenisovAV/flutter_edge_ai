@@ -161,212 +161,188 @@ void main() {
 
     // M1 — the model routes "calculate hash of hello" to the calculate-hash
     // skill, runs it through the JS executor, and the SHA-1 reaches the loop.
-    testWidgets(
-      'M1 model -> compute skill -> SHA in transcript',
-      (t) async {
-        if (_skipJsNoHarnessWebview('M1')) return;
-        final session = await _session(registry);
-        try {
-          final events = await _ask(session, 'Calculate the hash of hello');
-          final texts = _results(events).whereType<TextResult>().toList();
-          // The skill (or the model echoing it) must surface the exact SHA-1.
-          final sawHash =
-              texts.any((r) => r.text.contains(_sha1OfHello)) ||
-              _finalText(events).contains(_sha1OfHello);
-          expect(
-            sawHash,
-            isTrue,
-            reason:
-                'expected SHA-1 $_sha1OfHello in tool results '
-                '${texts.map((r) => r.text)} or final answer "${_finalText(events)}"',
-          );
-        } finally {
-          await session.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+    testWidgets('M1 model -> compute skill -> SHA in transcript', (t) async {
+      if (_skipJsNoHarnessWebview('M1')) return;
+      final session = await _session(registry);
+      try {
+        final events = await _ask(session, 'Calculate the hash of hello');
+        final texts = _results(events).whereType<TextResult>().toList();
+        // The skill (or the model echoing it) must surface the exact SHA-1.
+        final sawHash =
+            texts.any((r) => r.text.contains(_sha1OfHello)) ||
+            _finalText(events).contains(_sha1OfHello);
+        expect(
+          sawHash,
+          isTrue,
+          reason:
+              'expected SHA-1 $_sha1OfHello in tool results '
+              '${texts.map((r) => r.text)} or final answer "${_finalText(events)}"',
+        );
+      } finally {
+        await session.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
     // M2 — "Show Paris on interactive map" yields a WebviewResult in the
     // transcript (the DOM-skill path the UI embeds inline).
-    testWidgets(
-      'M2 model -> DOM skill -> WebviewResult',
-      (t) async {
-        if (_skipJsNoHarnessWebview('M2')) return;
-        final session = await _session(registry);
-        try {
-          final events = await _ask(session, 'Show Paris on interactive map');
-          final webviews = _results(events).whereType<WebviewResult>().toList();
-          expect(
-            webviews,
-            isNotEmpty,
-            reason: 'expected a WebviewResult in the transcript',
-          );
-          expect(webviews.first.url, contains('maps.google.com'));
-        } finally {
-          await session.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+    testWidgets('M2 model -> DOM skill -> WebviewResult', (t) async {
+      if (_skipJsNoHarnessWebview('M2')) return;
+      final session = await _session(registry);
+      try {
+        final events = await _ask(session, 'Show Paris on interactive map');
+        final webviews = _results(events).whereType<WebviewResult>().toList();
+        expect(
+          webviews,
+          isNotEmpty,
+          reason: 'expected a WebviewResult in the transcript',
+        );
+        expect(webviews.first.url, contains('maps.google.com'));
+      } finally {
+        await session.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
     // M3 — a plain arithmetic question is answered directly: the model should
     // not invoke loadSkill for it.
-    testWidgets(
-      'M3 no skill matches -> direct answer, no loadSkill',
-      (t) async {
-        final session = await _session(registry);
-        try {
-          final events = await _ask(
-            session,
-            "What's 2+2? Reply with just digits.",
-          );
-          final loadedSkills = events.whereType<SkillLoadEvent>().toList();
-          expect(
-            loadedSkills,
-            isEmpty,
-            reason: 'no skill should be loaded for plain arithmetic',
-          );
-          expect(_finalText(events), contains('4'));
-        } finally {
-          await session.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+    testWidgets('M3 no skill matches -> direct answer, no loadSkill', (
+      t,
+    ) async {
+      final session = await _session(registry);
+      try {
+        final events = await _ask(
+          session,
+          "What's 2+2? Reply with just digits.",
+        );
+        final loadedSkills = events.whereType<SkillLoadEvent>().toList();
+        expect(
+          loadedSkills,
+          isEmpty,
+          reason: 'no skill should be loaded for plain arithmetic',
+        );
+        expect(_finalText(events), contains('4'));
+      } finally {
+        await session.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
     // M4 — lazy two-stage discovery: the model only sees name+description in the
     // system prompt, so completing a skill task requires a loadSkill call before
     // the run. Assert a SkillLoadEvent fires for the targeted skill.
-    testWidgets(
-      'M4 lazy discovery -> loadSkill -> execute',
-      (t) async {
-        if (_skipJsNoHarnessWebview('M4')) return;
-        final session = await _session(registry);
-        try {
-          final events = await _ask(session, 'Calculate the hash of hello');
-          final loaded = events.whereType<SkillLoadEvent>().toList();
-          expect(
-            loaded.any((e) => e.skillName == 'calculate-hash' && e.found),
-            isTrue,
-            reason:
-                'two-stage discovery requires a loadSkill("calculate-hash") '
-                'before the skill runs; got ${loaded.map((e) => e.skillName)}',
-          );
-        } finally {
-          await session.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+    testWidgets('M4 lazy discovery -> loadSkill -> execute', (t) async {
+      if (_skipJsNoHarnessWebview('M4')) return;
+      final session = await _session(registry);
+      try {
+        final events = await _ask(session, 'Calculate the hash of hello');
+        final loaded = events.whereType<SkillLoadEvent>().toList();
+        expect(
+          loaded.any((e) => e.skillName == 'calculate-hash' && e.found),
+          isTrue,
+          reason:
+              'two-stage discovery requires a loadSkill("calculate-hash") '
+              'before the skill runs; got ${loaded.map((e) => e.skillName)}',
+        );
+      } finally {
+        await session.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
     // M5 — the maxIterations guard: with a cap of 1 a tool-calling task cannot
     // settle on a text answer, so the loop surfaces a MaxIterationsEvent instead
     // of running away.
-    testWidgets(
-      'M5 maxIterations gate -> MaxIterationsEvent',
-      (t) async {
-        if (_skipJsNoHarnessWebview('M5')) return;
-        final session = await _session(registry, maxIterations: 1);
-        try {
-          final events = await _ask(session, 'Calculate the hash of hello');
-          // With a 1-generation cap on a multi-step skill task the loop must hit
-          // the guard (it cannot loadSkill AND run AND answer in one generation).
-          final hitCap = events.any((e) => e is MaxIterationsEvent);
-          final settled = events.any((e) => e is DoneEvent);
-          expect(
-            hitCap || settled,
-            isTrue,
-            reason: 'loop must terminate via MaxIterationsEvent or DoneEvent',
-          );
-        } finally {
-          await session.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+    testWidgets('M5 maxIterations gate -> MaxIterationsEvent', (t) async {
+      if (_skipJsNoHarnessWebview('M5')) return;
+      final session = await _session(registry, maxIterations: 1);
+      try {
+        final events = await _ask(session, 'Calculate the hash of hello');
+        // With a 1-generation cap on a multi-step skill task the loop must hit
+        // the guard (it cannot loadSkill AND run AND answer in one generation).
+        final hitCap = events.any((e) => e is MaxIterationsEvent);
+        final settled = events.any((e) => e is DoneEvent);
+        expect(
+          hitCap || settled,
+          isTrue,
+          reason: 'loop must terminate via MaxIterationsEvent or DoneEvent',
+        );
+      } finally {
+        await session.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
     // M6 — Linux coverage: MCP + native-intent skills work on Linux, but a JS
     // skill returns an ErrorResult (no webview implementation there). On other
     // platforms this asserts the native-intent path and that the JS gate is open.
-    testWidgets(
-      'M6 Linux: MCP/native-intent work, JS -> ErrorResult',
-      (t) async {
-        // Drive the executors directly (deterministic) — the model's routing is
-        // already covered by M1–M5; here we assert the per-platform capability.
-        final jsExec = JsSkillExecutor(
-          sourceFor: _assetSource.jsSkillSourceFor,
-        );
-        final intentExec = NativeIntentExecutor();
+    testWidgets('M6 Linux: MCP/native-intent work, JS -> ErrorResult', (
+      t,
+    ) async {
+      // Drive the executors directly (deterministic) — the model's routing is
+      // already covered by M1–M5; here we assert the per-platform capability.
+      final jsExec = JsSkillExecutor(sourceFor: _assetSource.jsSkillSourceFor);
+      final intentExec = NativeIntentExecutor();
 
-        // native-intent: get_current_date_and_time is pure-Dart, works everywhere
-        // (Linux included) with no plugin or OS surface.
-        final intentResult = await intentExec.handleIntent(
-          NativeIntentExecutor.getCurrentDateAndTime,
-          '{}',
-        );
-        expect(
-          intentResult,
-          isA<TextResult>(),
-          reason: 'native-intent must work on every platform (incl. Linux)',
-        );
+      // native-intent: get_current_date_and_time is pure-Dart, works everywhere
+      // (Linux included) with no plugin or OS surface.
+      final intentResult = await intentExec.handleIntent(
+        NativeIntentExecutor.getCurrentDateAndTime,
+        '{}',
+      );
+      expect(
+        intentResult,
+        isA<TextResult>(),
+        reason: 'native-intent must work on every platform (incl. Linux)',
+      );
 
-        // MCP: the executor routes by tool name across connected clients. With no
-        // server connected it returns a clean "not found" ErrorResult — the path
-        // is reachable on Linux (MCP is Streamable HTTP, no webview).
-        final mcpExec = McpSkillExecutor(
-          clients: [
-            McpClient(
-              config: const McpServerConfig(
-                url: 'https://example.invalid/mcp',
-                tools: [McpTool(name: 'echo', alwaysAllow: true)],
-              ),
+      // MCP: the executor routes by tool name across connected clients. With no
+      // server connected it returns a clean "not found" ErrorResult — the path
+      // is reachable on Linux (MCP is Streamable HTTP, no webview).
+      final mcpExec = McpSkillExecutor(
+        clients: [
+          McpClient(
+            config: const McpServerConfig(
+              url: 'https://example.invalid/mcp',
+              tools: [McpTool(name: 'echo', alwaysAllow: true)],
             ),
-          ],
-        );
-        const mcpSkill = Skill(
-          name: 'echo',
-          description: 'echo',
-          instructions: '',
-          type: SkillType.mcp,
-        );
-        // alwaysAllow tool present but the server is unreachable -> ErrorResult
-        // (transport failure), proving the MCP path runs on Linux too.
-        final mcpResult = await mcpExec.execute(mcpSkill, '{}');
-        expect(mcpResult, isA<ErrorResult>());
+          ),
+        ],
+      );
+      const mcpSkill = Skill(
+        name: 'echo',
+        description: 'echo',
+        instructions: '',
+        type: SkillType.mcp,
+      );
+      // alwaysAllow tool present but the server is unreachable -> ErrorResult
+      // (transport failure), proving the MCP path runs on Linux too.
+      final mcpResult = await mcpExec.execute(mcpSkill, '{}');
+      expect(mcpResult, isA<ErrorResult>());
 
-        // JS capability per platform. Windows can't run the webview under the
-        // test harness (HWND crash — see _skipJsNoHarnessWebview), so don't
-        // invoke it here; the MCP + native-intent assertions above are the
-        // platform-relevant part of M6 on Windows.
-        if (Platform.isWindows) {
-          debugPrint(
-            '[M6] SKIP JS leg on Windows (webview crashes under test)',
-          );
-          return;
-        }
-        // JS: unavailable on Linux -> ErrorResult; open elsewhere.
-        final jsResult = await jsExec.execute(
-          registry.get('calculate-hash')!,
-          '{"text":"hello"}',
+      // JS capability per platform. Windows can't run the webview under the
+      // test harness (HWND crash — see _skipJsNoHarnessWebview), so don't
+      // invoke it here; the MCP + native-intent assertions above are the
+      // platform-relevant part of M6 on Windows.
+      if (Platform.isWindows) {
+        debugPrint('[M6] SKIP JS leg on Windows (webview crashes under test)');
+        return;
+      }
+      // JS: unavailable on Linux -> ErrorResult; open elsewhere.
+      final jsResult = await jsExec.execute(
+        registry.get('calculate-hash')!,
+        '{"text":"hello"}',
+      );
+      if (Platform.isLinux) {
+        expect(
+          jsResult,
+          isA<ErrorResult>(),
+          reason: 'JS skills are unavailable on Linux',
         );
-        if (Platform.isLinux) {
-          expect(
-            jsResult,
-            isA<ErrorResult>(),
-            reason: 'JS skills are unavailable on Linux',
-          );
-        } else {
-          expect(
-            jsResult,
-            isA<TextResult>(),
-            reason: 'JS skills are available off Linux',
-          );
-          expect((jsResult as TextResult).text, _sha1OfHello);
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+      } else {
+        expect(
+          jsResult,
+          isA<TextResult>(),
+          reason: 'JS skills are available off Linux',
+        );
+        expect((jsResult as TextResult).text, _sha1OfHello);
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
   });
 }
 

@@ -139,6 +139,11 @@ DynamicLibrary openMacOSLiteRtLm({DynamicLibrary Function(String path)? open}) {
 /// Outside one (the macOS host test suites) the copies [devCandidates] names
 /// are tried next, the build hook's cache among them.
 ///
+/// A dev copy that loads but fails [isOwnBuild] is skipped like one that does
+/// not load, and named in the failure. The framework is returned without it:
+/// the caller refuses a foreign framework itself, so it is never skipped for
+/// a dev copy.
+///
 /// A failure is an [UnsupportedError]: inside an app its message is
 /// [macOSLoadErrorMessage]; outside one it names each copy that exists with
 /// dyld's reason, because there the framework is never present and its error
@@ -146,6 +151,7 @@ DynamicLibrary openMacOSLiteRtLm({DynamicLibrary Function(String path)? open}) {
 /// [open] and [exists] are for tests.
 DynamicLibrary openMacOSLiteRtLmForTflite({
   required List<String> Function() devCandidates,
+  bool Function(DynamicLibrary library)? isOwnBuild,
   String? executable,
   DynamicLibrary Function(String path)? open,
   bool Function(String path)? exists,
@@ -173,14 +179,21 @@ DynamicLibrary openMacOSLiteRtLmForTflite({
       missing.add(path);
       continue;
     }
+    final DynamicLibrary library;
     try {
-      return opener(path);
+      library = opener(path);
     } on ArgumentError catch (error) {
       // Keep going: a copy that exists but does not load (wrong arch, a
       // missing companion, a stale build) must not hide a later one that
       // does, the build hook's cache included.
       failed.add('$path: ${dyldErrorText(error)}');
+      continue;
     }
+    if (isOwnBuild != null && !isOwnBuild(library)) {
+      failed.add('$path: loads, but is not a flutter_edge_ai_litertlm build');
+      continue;
+    }
+    return library;
   }
   throw UnsupportedError(
     'flutter_edge_ai_litertlm: LiteRT-LM did not load. Outside an app it is '

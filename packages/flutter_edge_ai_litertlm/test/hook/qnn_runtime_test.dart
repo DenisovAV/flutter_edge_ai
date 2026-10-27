@@ -281,6 +281,8 @@ void main() {
         '0.18.0-f': '2.50.0',
         // Android archive byte-identical to 0.18.0-f.
         '0.18.0-g': '2.50.0',
+        // Android archive byte-identical to 0.18.0-g.
+        '0.18.0-h': '2.50.0',
       };
       final hook = File('hook/build.dart').readAsStringSync();
       final bundle = RegExp(

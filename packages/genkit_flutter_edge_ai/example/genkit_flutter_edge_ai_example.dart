@@ -19,20 +19,24 @@ Future<void> main() async {
   // 2. Install a model (if not already installed).
   final isInstalled = await FlutterEdgeAi.isModelInstalled('gemma-3-nano');
   if (!isInstalled) {
-    await FlutterEdgeAi.installModel(modelType: ModelType.gemmaIt)
-        .fromAsset('assets/gemma-3-1b-it-int4.task')
-        .install();
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.gemmaIt,
+    ).fromAsset('assets/gemma-3-1b-it-int4.task').install();
   }
 
   // 3. Create Genkit with flutter_edge_ai plugin.
-  final ai = Genkit(plugins: [
-    GenkitFlutterEdgeAiPlugin(models: [
-      FlutterEdgeAiModelConfig(
-        name: 'gemma-3-nano',
-        modelType: ModelType.gemmaIt,
+  final ai = Genkit(
+    plugins: [
+      GenkitFlutterEdgeAiPlugin(
+        models: [
+          FlutterEdgeAiModelConfig(
+            name: 'gemma-3-nano',
+            modelType: ModelType.gemmaIt,
+          ),
+        ],
       ),
-    ]),
-  ]);
+    ],
+  );
 
   // 4. Generate a response.
   final response = await ai.generate(

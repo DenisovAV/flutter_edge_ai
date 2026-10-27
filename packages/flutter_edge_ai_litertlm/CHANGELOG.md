@@ -1,6 +1,10 @@
+## 1.18.1
+- Windows: Gemma 4 12B on an Intel GPU answers prompts under 512 tokens (`native-v0.18.0-h`, LiteRT-LM#4083).
+- macOS: apps with Swift Package Manager on need no Podfile block; requires macOS 14 (#689).
+
 ## 1.18.0
 - `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).
-- macOS: apps with Swift Package Manager on need no Podfile block; requires macOS 14 (#689).
+- Another package's libLiteRtLm in the app is refused at load with the cause and the fix (#722).
 
 ## 1.17.0
 - MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).

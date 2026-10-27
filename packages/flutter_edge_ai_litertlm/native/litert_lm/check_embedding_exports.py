@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """The LiteRT-LM main library must export every C function the EmbeddingGemma 2
-pass calls (R5 §4.11), every one option scoring calls (SCORING_SYMBOLS), and
-every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS).
+pass calls (R5 §4.11), every one option scoring calls (SCORING_SYMBOLS),
+every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS), and the
+symbol the loader checks to recognise this package's build
+(OWN_BUILD_SYMBOLS).
 
 flutter_edge_ai_litertlm's `.litertlm` embedding pass binds the EmbeddingEngine,
 ModelInfo and error-reporter C API out of libLiteRtLm. Nothing else gates those
@@ -116,6 +118,14 @@ THINKING_BUDGET_SYMBOLS = [
     "litert_lm_thinking_config_delete",
     "litert_lm_thinking_config_set_enable_thinking",
     "litert_lm_thinking_config_set_thinking_token_budget",
+]
+
+# The symbol every libLiteRtLm open checks to tell this package's build from
+# another package's LiteRT-LM under the same name (liteRtLmOwnBuildSymbol in
+# lib/src/ffi/litert_lm_runtime_check.dart; a VM test compares them). Missing
+# from one archive, every app on that target refuses our own library.
+OWN_BUILD_SYMBOLS = [
+    "litert_lm_engine_settings_set_kernel_batch_size",
 ]
 
 MAIN_LIBRARY = ("libLiteRtLm.dylib", "libLiteRtLm.so", "LiteRtLm.dll")
@@ -291,7 +301,9 @@ def main(argv):
                          (SCORING_SYMBOLS, "functions option scoring "
                           "(createDecider) calls"),
                          (THINKING_BUDGET_SYMBOLS, "functions a thinking "
-                          "token budget calls")):
+                          "token budget calls"),
+                         (OWN_BUILD_SYMBOLS, "symbols the loader checks to "
+                          "recognise this package's build")):
         missing = [s for s in wanted if s not in names]
         if missing:
             failed = True

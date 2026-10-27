@@ -69,90 +69,70 @@ void main() {
       await _install();
     });
 
-    testWidgets(
-      'two openSession dialogues keep isolated history',
-      (t) async {
-        final model = await FlutterEdgeAi.getActiveModel(
-          maxTokens: 512,
-          preferredBackend: PreferredBackend.cpu,
+    testWidgets('two openSession dialogues keep isolated history', (t) async {
+      final model = await FlutterEdgeAi.getActiveModel(
+        maxTokens: 512,
+        preferredBackend: PreferredBackend.cpu,
+      );
+      final a = await model.openSession(temperature: 0.0, topK: 1);
+      final b = await model.openSession(temperature: 0.0, topK: 1);
+      try {
+        expect(model.sessions.length, greaterThanOrEqualTo(2));
+
+        await _ask(a, 'My name is Alice. Remember it.');
+        await _ask(b, 'My name is Bob. Remember it.');
+
+        final ra = (await _ask(a, 'What is my name? One word.')).toLowerCase();
+        final rb = (await _ask(b, 'What is my name? One word.')).toLowerCase();
+        // ignore: avoid_print
+        print('[mp multi-session] A="$ra" B="$rb"');
+
+        expect(ra, contains('alice'), reason: 'A should recall Alice');
+        expect(ra, isNot(contains('bob')), reason: 'A must not see B history');
+        expect(rb, contains('bob'), reason: 'B should recall Bob');
+        expect(
+          rb,
+          isNot(contains('alice')),
+          reason: 'B must not see A history',
         );
-        final a = await model.openSession(temperature: 0.0, topK: 1);
-        final b = await model.openSession(temperature: 0.0, topK: 1);
-        try {
-          expect(model.sessions.length, greaterThanOrEqualTo(2));
-
-          await _ask(a, 'My name is Alice. Remember it.');
-          await _ask(b, 'My name is Bob. Remember it.');
-
-          final ra = (await _ask(
-            a,
-            'What is my name? One word.',
-          )).toLowerCase();
-          final rb = (await _ask(
-            b,
-            'What is my name? One word.',
-          )).toLowerCase();
-          // ignore: avoid_print
-          print('[mp multi-session] A="$ra" B="$rb"');
-
-          expect(ra, contains('alice'), reason: 'A should recall Alice');
-          expect(
-            ra,
-            isNot(contains('bob')),
-            reason: 'A must not see B history',
-          );
-          expect(rb, contains('bob'), reason: 'B should recall Bob');
-          expect(
-            rb,
-            isNot(contains('alice')),
-            reason: 'B must not see A history',
-          );
-        } finally {
-          await a.close();
-          await b.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
-
-    testWidgets(
-      'closing one session leaves the other usable',
-      (t) async {
-        final model = await FlutterEdgeAi.getActiveModel(
-          maxTokens: 512,
-          preferredBackend: PreferredBackend.cpu,
-        );
-        final a = await model.openSession(temperature: 0.0, topK: 1);
-        final b = await model.openSession(temperature: 0.0, topK: 1);
+      } finally {
         await a.close();
-        final rb = await _ask(b, 'Say hi in one word.');
-        // ignore: avoid_print
-        print('[mp multi-session S2] B after A.close = "$rb"');
-        expect(rb.trim(), isNotEmpty);
         await b.close();
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-    testWidgets(
-      'legacy createSession still works after openSession',
-      (t) async {
-        final model = await FlutterEdgeAi.getActiveModel(
-          maxTokens: 512,
-          preferredBackend: PreferredBackend.cpu,
-        );
-        // openSession then close it; the legacy singleton lane must be unaffected.
-        final open = await model.openSession(temperature: 0.0, topK: 1);
-        await open.close();
+    testWidgets('closing one session leaves the other usable', (t) async {
+      final model = await FlutterEdgeAi.getActiveModel(
+        maxTokens: 512,
+        preferredBackend: PreferredBackend.cpu,
+      );
+      final a = await model.openSession(temperature: 0.0, topK: 1);
+      final b = await model.openSession(temperature: 0.0, topK: 1);
+      await a.close();
+      final rb = await _ask(b, 'Say hi in one word.');
+      // ignore: avoid_print
+      print('[mp multi-session S2] B after A.close = "$rb"');
+      expect(rb.trim(), isNotEmpty);
+      await b.close();
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-        final legacy = await model.createSession(temperature: 0.0, topK: 1);
-        final r = await _ask(legacy, 'Say hello in one word.');
-        // ignore: avoid_print
-        print('[mp legacy after open] "$r"');
-        expect(r.trim(), isNotEmpty);
-        await legacy.close();
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+    testWidgets('legacy createSession still works after openSession', (
+      t,
+    ) async {
+      final model = await FlutterEdgeAi.getActiveModel(
+        maxTokens: 512,
+        preferredBackend: PreferredBackend.cpu,
+      );
+      // openSession then close it; the legacy singleton lane must be unaffected.
+      final open = await model.openSession(temperature: 0.0, topK: 1);
+      await open.close();
+
+      final legacy = await model.createSession(temperature: 0.0, topK: 1);
+      final r = await _ask(legacy, 'Say hello in one word.');
+      // ignore: avoid_print
+      print('[mp legacy after open] "$r"');
+      expect(r.trim(), isNotEmpty);
+      await legacy.close();
+    }, timeout: const Timeout(Duration(minutes: 5)));
   });
 }

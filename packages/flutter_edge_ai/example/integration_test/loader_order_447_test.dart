@@ -31,96 +31,88 @@ import 'loader_order_447_support.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  test(
-    'poisoned order: a plain DynamicLibrary.open hides the ABI symbols',
-    () {
-      expectLookupWorks();
+  test('poisoned order: a plain DynamicLibrary.open hides the ABI symbols', () {
+    expectLookupWorks();
 
-      // Baseline. NOT "the symbol is not ambient" — that is true both when
-      // nothing loaded the library and when something loaded it LOCALLY, and the
-      // second is the very state under test. Asking whether it is mapped at all
-      // separates them.
-      expect(
-        mappedInProcess('libLiteRtLm.so'),
-        isFalse,
-        reason:
-            'libLiteRtLm was already mapped into this process before the test '
-            'opened anything, so it cannot measure its own open',
-      );
+    // Baseline. NOT "the symbol is not ambient" — that is true both when
+    // nothing loaded the library and when something loaded it LOCALLY, and the
+    // second is the very state under test. Asking whether it is mapped at all
+    // separates them.
+    expect(
+      mappedInProcess('libLiteRtLm.so'),
+      isFalse,
+      reason:
+          'libLiteRtLm was already mapped into this process before the test '
+          'opened anything, so it cannot measure its own open',
+    );
 
-      // What the embeddings/speech path does: litert_bindings.dart's
-      // _openLiteRt() -> DynamicLibrary.open('libLiteRtLm.so').
-      final lib = DynamicLibrary.open('libLiteRtLm.so');
+    // What the embeddings/speech path does: litert_bindings.dart's
+    // _openLiteRt() -> DynamicLibrary.open('libLiteRtLm.so').
+    final lib = DynamicLibrary.open('libLiteRtLm.so');
 
-      // Sanity: the library really is loaded and really does export both
-      // symbols. Handle-scoped lookup ignores RTLD_GLOBAL entirely, so this
-      // succeeds even when the ambient lookup below fails. If THIS fails, the
-      // bundled library predates v0.15 and the hypothesis is moot.
-      expect(
-        lib.providesSymbol(probeSymbol),
-        isTrue,
-        reason:
-            'bundled libLiteRtLm does not export the v0.15 chunk accessors — '
-            'different problem entirely',
-      );
-      expect(lib.providesSymbol(controlSymbol), isTrue);
+    // Sanity: the library really is loaded and really does export both
+    // symbols. Handle-scoped lookup ignores RTLD_GLOBAL entirely, so this
+    // succeeds even when the ambient lookup below fails. If THIS fails, the
+    // bundled library predates v0.15 and the hypothesis is moot.
+    expect(
+      lib.providesSymbol(probeSymbol),
+      isTrue,
+      reason:
+          'bundled libLiteRtLm does not export the v0.15 chunk accessors — '
+          'different problem entirely',
+    );
+    expect(lib.providesSymbol(controlSymbol), isTrue);
 
-      // THE ASSERTION. The symbols exist, are exported, and the probe still
-      // cannot see them.
-      expect(
-        globallyVisible(probeSymbol),
-        isFalse,
-        reason:
-            'dlsym(RTLD_DEFAULT) CAN see the accessors after an RTLD_LOCAL open. '
-            'Then bionic promoted the flags, or Dart no longer opens with '
-            'RTLD_LAZY alone — either way the #447 explanation is wrong and the '
-            'fix rests on a false premise',
-      );
-      expect(globallyVisible(controlSymbol), isFalse);
-    },
-    skip: Platform.isAndroid ? null : 'Android only — unfalsifiable on Apple',
-  );
+    // THE ASSERTION. The symbols exist, are exported, and the probe still
+    // cannot see them.
+    expect(
+      globallyVisible(probeSymbol),
+      isFalse,
+      reason:
+          'dlsym(RTLD_DEFAULT) CAN see the accessors after an RTLD_LOCAL open. '
+          'Then bionic promoted the flags, or Dart no longer opens with '
+          'RTLD_LAZY alone — either way the #447 explanation is wrong and the '
+          'fix rests on a false premise',
+    );
+    expect(globallyVisible(controlSymbol), isFalse);
+  }, skip: Platform.isAndroid ? null : 'Android only — unfalsifiable on Apple');
 
-  test(
-    'the poisoning cannot be repaired by loading globally afterwards',
-    () {
-      expectLookupWorks();
+  test('the poisoning cannot be repaired by loading globally afterwards', () {
+    expectLookupWorks();
 
-      // Establishes its own precondition rather than inheriting one. dlopen is
-      // idempotent, so this is a no-op when the test above already ran and is the
-      // whole setup when this test runs alone. Inheriting it meant that running
-      // this test in isolation failed with "bionic DID promote" — a false and
-      // expensive diagnosis.
-      DynamicLibrary.open('libLiteRtLm.so');
-      expect(
-        globallyVisible(controlSymbol),
-        isFalse,
-        reason: 'the library should be loaded but local at this point',
-      );
+    // Establishes its own precondition rather than inheriting one. dlopen is
+    // idempotent, so this is a no-op when the test above already ran and is the
+    // whole setup when this test runs alone. Inheriting it meant that running
+    // this test in isolation failed with "bionic DID promote" — a false and
+    // expensive diagnosis.
+    DynamicLibrary.open('libLiteRtLm.so');
+    expect(
+      globallyVisible(controlSymbol),
+      isFalse,
+      reason: 'the library should be loaded but local at this point',
+    );
 
-      // This is what the LLM path already does today. It is why #447 is subtle:
-      // the call SUCCEEDS. bionic returns the existing soinfo with its refcount
-      // bumped and its original flags intact — re-dlopen does not promote.
-      // glibc does promote, which is why Linux never showed this.
-      final handle = loadGlobal('libLiteRtLm.so');
-      expect(
-        handle,
-        isNot(nullptr),
-        reason:
-            'stream_proxy_load_global returned NULL — then the existing null '
-            'check would already have caught this and #447 would have been a '
-            'loud failure instead of a silent one',
-      );
+    // This is what the LLM path already does today. It is why #447 is subtle:
+    // the call SUCCEEDS. bionic returns the existing soinfo with its refcount
+    // bumped and its original flags intact — re-dlopen does not promote.
+    // glibc does promote, which is why Linux never showed this.
+    final handle = loadGlobal('libLiteRtLm.so');
+    expect(
+      handle,
+      isNot(nullptr),
+      reason:
+          'stream_proxy_load_global returned NULL — then the existing null '
+          'check would already have caught this and #447 would have been a '
+          'loud failure instead of a silent one',
+    );
 
-      expect(
-        globallyVisible(probeSymbol),
-        isFalse,
-        reason:
-            'a later RTLD_GLOBAL dlopen DID promote the soinfo. Then the fix '
-            'could simply be "always call loadGlobal before probing" — much '
-            'cheaper than making every load path global',
-      );
-    },
-    skip: Platform.isAndroid ? null : 'Android only — unfalsifiable on Apple',
-  );
+    expect(
+      globallyVisible(probeSymbol),
+      isFalse,
+      reason:
+          'a later RTLD_GLOBAL dlopen DID promote the soinfo. Then the fix '
+          'could simply be "always call loadGlobal before probing" — much '
+          'cheaper than making every load path global',
+    );
+  }, skip: Platform.isAndroid ? null : 'Android only — unfalsifiable on Apple');
 }

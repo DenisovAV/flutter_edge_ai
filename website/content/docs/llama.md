@@ -87,7 +87,7 @@ that version:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.2
+  flutter_edge_ai: ^2.5.3
   flutter_edge_ai_llama: ^0.0.3
 ```
 

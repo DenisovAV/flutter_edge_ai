@@ -223,7 +223,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 final _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0-g',
+  version: '0.18.0-h',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -234,6 +234,18 @@ final _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.18.0-h changes the Windows archive and nothing else: both copies of
+  // libLiteRtWebGpuAccelerator.dll are Google's prebuilt from LiteRT-LM
+  // 5f973f57, which contains LiteRT #11120 — on an Intel GPU it turns off the
+  // dp4a int8 FC/conv path, whose output was corrupt on D3D12, so Gemma 4 12B
+  // returned no text for a prompt under 512 tokens (LiteRT-LM #4083). The
+  // accelerator imports nothing from libLiteRt.dll, and its Dawn imports
+  // resolve against the shipped webgpu_dawn.dll, byte-identical at both refs.
+  // Measured on Panther Lake (Arc B390): the 12B's prefill takes about 45%
+  // longer (7271 tokens: 21.4-22.7 s -> 31.3-32.2 s), its decode 3-4% less
+  // time; E2B and EmbeddingGemma 2 unchanged. The other 23 Windows files and
+  // the six other archives are byte-identical to 0.18.0-g.
+  //
   // 0.18.0-g changes the Windows archive and nothing else: the Intel NPU
   // stack moves from OpenVINO 2026.3.1 to 2026.4.1 (LiteRT 991d15588a,
   // patches/litert_openvino_2026_4_1.patch) — Intel's Gemma 4 12B for Panther
@@ -325,7 +337,7 @@ final _litertlmBundle = _NativeBundle(
     'litertlm-linux_arm64.tar.gz':
         'd437293a4a83a6502e393c99b17f8962eb66d4579361d3bab9c863d4a4724698',
     'litertlm-windows_x86_64.tar.gz':
-        '218eb6c006d53f2e4db26527e279601d97f087a0307f7a7e08347fc5df8a20e6',
+        '9b550ad40c5ef33346596d21df9498217eb96662a7bd457272b6c5e6742d5d59',
     'litertlm-macos_arm64.tar.gz':
         'f95b27723324217f41a5b0b7aa04a24755e237f75b64ed37d852da8c249bfb67',
     'litertlm-ios_arm64.tar.gz':

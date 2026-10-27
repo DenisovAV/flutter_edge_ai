@@ -121,12 +121,13 @@ It shows one line of text and nothing else. That is the whole app:
   They are here so that when the assistant's code fails, it is the code — not a
   missing entitlement that looks the same from outside.
 
-One macOS caveat carries over from Getting Started: Flutter 3.44+ uses Swift
-Package Manager by default, an app with no CocoaPods plugin gets no
-`macos/Podfile`, the `post_install` block never runs, and the first model load
-fails. The starter's `pubspec.yaml` already sets
-`flutter: config: enable-swift-package-manager: false`; if your assistant
-scaffolds a fresh app, make sure it keeps those lines and the Podfile block.
+One macOS caveat carries over from Getting Started: the starter turns Swift
+Package Manager off in `pubspec.yaml`
+(`flutter: config: enable-swift-package-manager: false`), so it needs the
+`post_install` block in `macos/Podfile`, or the first model load fails. If your
+assistant scaffolds a fresh app instead, it can keep Swift Package Manager on:
+from `flutter_edge_ai_litertlm` 1.18.0 that app needs only a macOS 14.0
+deployment target, no Podfile block.
 
 A clean run on your platform is all this step asks for.
 

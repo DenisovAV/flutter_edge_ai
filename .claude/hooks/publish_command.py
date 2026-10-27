@@ -36,7 +36,6 @@ import os
 import re
 
 _PUBLISH_TEXT = re.compile(r"pub\s+publish")
-_PUBLISH_TEXT_OR_WORD = re.compile(r"publish")
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 _SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 _KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}"}
@@ -426,8 +425,31 @@ def _strip_wrappers(words, env):
         if name in _KEYWORDS:
             i += 1
         elif name == "env":
+            # `env -S "<command>"` splits a string into a command this reader
+            # does not run: unclear when it could hold a publish.
+            for w in words[i + 1 :]:
+                t = w.text
+                if not t.startswith("-"):
+                    break
+                split = None
+                if t in ("-S", "--split-string"):
+                    k = words.index(w)
+                    split = words[k + 1] if k + 1 < n else None
+                elif t.startswith("--split-string="):
+                    split = w
+                elif not t.startswith("--") and "S" in t[1:]:
+                    # `-S<string>`, or a cluster `-iS <string>`.
+                    if t.endswith("S"):
+                        k = words.index(w)
+                        split = words[k + 1] if k + 1 < n else None
+                    else:
+                        split = w
+                if split is not None and (
+                    "pub" in split.text or split.expands or re.search(r"['\"\\$]", split.text)
+                ):
+                    raise PublishUnclear("`env -S` splits a string into a command")
             i += 1
-            options(with_arg=("-u", "-C", "-S"))
+            options(with_arg=("-u", "-C", "-S", "--split-string"))
         elif name == "timeout":
             i += 1
             options(with_arg=("-s", "-k", "--signal", "--kill-after"))
@@ -488,10 +510,13 @@ class _Reader:
             if _PUBLISH_TEXT.search(text):
                 raise PublishUnclear("the command nests too deep to read")
             return
-        # Per subshell: [directory, the && chain of a conditional cd].
-        scopes = [[base, None]]
+        # Per subshell: [directory, the && chain of a conditional cd, the
+        # chain of the last cd].
+        scopes = [[base, None, None]]
         chain = 0
-        block = 0  # inside if/while/until/for/case
+        # Once an if/while/until/for/case has opened, a cd may sit in a branch
+        # that did not run: every later cd is an unknown directory.
+        block = False
         for ev in events:
             if ev == "open":
                 scopes.append(list(scopes[-1]))
@@ -509,9 +534,18 @@ class _Reader:
                 scope[0] = None
                 scope[1] = None
             here = scope[0]
-            first = os.path.basename(cmd.words[0].text) if cmd.words else ""
-            if first in ("if", "while", "until", "for", "case", "select"):
-                block += 1
+            if cmd.after == "&" and scope[2] == chain:
+                # `cd x && true &`: the whole list ran in the background.
+                scope[0] = None
+                scope[1] = None
+                here = None
+            for w in cmd.words:
+                t = os.path.basename(w.text)
+                if t in ("if", "while", "until", "for", "case", "select"):
+                    block = True
+                    break
+                if t not in _KEYWORDS:
+                    break
             for word in cmd.words:
                 for sub in word.subs:
                     self.run(sub, here, dict(env), depth + 1)
@@ -526,8 +560,6 @@ class _Reader:
                 continue
             name = os.path.basename(words[0].text)
             if name in _ENDS:
-                if name in ("fi", "done", "esac"):
-                    block = max(0, block - 1)
                 continue
             if name in _SHELLS:
                 script = None
@@ -569,15 +601,20 @@ class _Reader:
                     # After `&&` it ran only if the chain before it did, which
                     # is known only for a publish in the same chain.
                     scope[1] = chain if cmd.before == "&&" else None
+                    scope[2] = chain
                 continue
             # `dart pub $(echo publish)`, `dart $SUB publish`, `$D pub …`: a
             # word that expands where the command or its subcommand stands.
             if (
-                (name in ("dart", "flutter") and len(words) >= 2 and (
-                    (words[1].expands and _PUBLISH_TEXT_OR_WORD.search(self.text))
+                name in ("dart", "flutter")
+                and len(words) >= 2
+                and (
+                    words[1].expands
                     or (words[1].text == "pub" and len(words) >= 3 and words[2].expands)
-                ))
-                or (words[0].expands and len(words) >= 2 and words[1].text == "pub")
+                )
+            ) or (
+                words[0].expands
+                and any(w.expands or w.text in ("pub", "publish") for w in words[1:])
             ):
                 raise PublishUnclear(
                     f"`{words[0].text}` runs a subcommand built from a variable "
@@ -702,6 +739,17 @@ _CASES = [
     ("cd x && echo hi; dart pub publish", ["/r/x"]),
     # Unclear: blocked.
     ('env -S "dart pub publish"', None),
+    ("env -S'dart pub publish'", None),
+    ('env --split-string "dart pub $P"', None),
+    ("env -iS 'dart pub publish'", None),
+    ("timeout -s 'dart pub publish' 5 ls", None),
+    ("dart $X", None),
+    ("$D $P", None),
+    ("cd x && true & dart pub publish", [None]),
+    ("{ if true; then cd x; fi; }; dart pub publish", [None]),
+    ("! if true; then cd x; fi; dart pub publish", [None]),
+    ("cd x; if true; then echo; fi; dart pub publish", ["/r/x"]),
+    ("echo $X", []),
     ("env --split-string='dart pub publish'", None),
     ("dart pub $(echo publish)", None),
     ("dart $SUB publish", None),

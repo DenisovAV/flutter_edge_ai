@@ -5,9 +5,11 @@
 #
 # It reaches the network, so it runs weekly and by hand — never on a pull
 # request. A red run means a pinned file is gone, has other bytes at that
-# commit, or Hugging Face did not answer; it does not mean a pull request broke
-# something. A gated repository the token cannot read is named in the summary
-# as noAccess and does not fail the run.
+# commit, Hugging Face did not answer, or a file could not be checked: a gated
+# repository the token cannot read is noAccess and fails the run, so a missing
+# or expired HF_TOKEN, or an account that has not accepted a gated license,
+# shows as red rather than as files nobody looked at. It does not mean a pull
+# request broke something.
 name: Model registry live check (Hugging Face)
 
 on:

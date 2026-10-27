@@ -44,42 +44,12 @@ import sys
 # The packages whose published archive carries a generated catalog.
 CATALOG_PACKAGES = {"flutter_edge_ai_litertlm", "flutter_edge_ai_speech"}
 
-# A shell assignment value: quoted parts (which may hold spaces) and bare
-# characters, possibly empty. One character per repetition, never `[...]+`
-# inside the `*`, so a long line that is no publish cannot backtrack for ever.
-# A command substitution (`$(pwd)`, also nested, or backticks) is part of a
-# value too: without it `FOO=$(pwd) dart pub publish` went unseen.
-_VALUE = r"(?:\"[^\"]*\"|'[^']*'|\$\([^)]*\)+|`[^`]*`|[^\s\"'`;&|()])*"
-_ASSIGN = r"\w+=" + _VALUE
-# Mirror guard-publish.py's command-position matcher (MULTILINE is load-bearing:
-# a `cd` line followed by the publish on the next line must still match).
-# `prefix` is the publish's own assignments and wrappers: only a
-# RELEASE_SKIP_REGISTRY there reaches the publish.
-PUBLISH_RE = re.compile(
-    r"(?:^|[;&|(]|&&|\|\|)\s*"
-    r"(?P<prefix>(?:" + _ASSIGN + r"\s+)*"
-    r"(?:(?:timeout|nice|env|command|stdbuf)\s+(?:" + _ASSIGN + r"|\S+)\s+"
-    r"(?:" + _ASSIGN + r"\s+)*)*)"
-    r"(?:dart|flutter)\s+pub\s+publish\b",
-    re.MULTILINE,
-)
-DRY_RUN_RE = re.compile(r"(?<![\w-])--dry-run(?![\w-])")
-SKIP_ASSIGN_RE = re.compile(r"(?<!\S)RELEASE_SKIP_REGISTRY=(" + _VALUE + r")")
-# Duplicated from guard-publish.py on purpose: hooks are standalone files with
-# no shared import path, and a hook that fails to load is a hook that does not
-# run. Keep the two in step.
-CD_RE = re.compile(
-    r"(?:^|[;&|(]|&&|\|\|)\s*cd[ \t]+(?!-)" r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)",
-    re.MULTILINE,
-)
-OPAQUE_CD_RE = re.compile(
-    r"(?:^|[;&|(]|&&|\|\|)\s*(?:cd[ \t]+-|cd[ \t]*(?=[;&|)\n]|$)|pushd\b|popd\b)",
-    re.MULTILINE,
-)
-PUB_DIR_RE = re.compile(
-    r"(?<![\w-])(?:-C[ \t]*|--directory(?:=|[ \t]+))"
-    r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)"
-)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import publish_command
+except Exception as _e:  # noqa: BLE001 — main() blocks a publish without it
+    publish_command = None
+    _IMPORT_ERROR = _e
 
 
 class GitUnavailable(RuntimeError):
@@ -104,90 +74,42 @@ def git(repo, *args):
     return r.stdout.strip()
 
 
-def _args(cmd, match):
-    """The publish's own arguments: up to the next separator."""
-    return re.split(r"[;&|\n]", cmd[match.end() :], maxsplit=1)[0]
+
+def _cwd(payload):
+    return payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
-def _is_dry_run(cmd, match):
-    return bool(DRY_RUN_RE.search(_args(cmd, match)))
+def _checked(cmd, payload, var):
+    """The publishes of [cmd] that ship and carry no reasoned [var] skip.
 
-
-def _skip_reason(match):
-    """The RELEASE_SKIP_REGISTRY reason this publish itself carries, or None.
-
-    Only an assignment in the publish's own prefix counts: one on another
-    command of the chain (`RELEASE_SKIP_REGISTRY=x echo && dart pub publish`)
-    never reaches the publish. An empty or blank reason is no reason.
+    Raises PublishUnclear for a command whose publishes cannot be read.
     """
-    for m in SKIP_ASSIGN_RE.finditer(match.group("prefix")):
-        reason = re.sub(r"[\"']", "", m.group(1)).strip()
-        if reason:
-            return reason
-    return None
-
-
-def _checked_publishes(cmd):
-    """Every publish in [cmd] that ships and is not skipped with a reason."""
     return [
-        m
-        for m in PUBLISH_RE.finditer(cmd)
-        if not _is_dry_run(cmd, m) and _skip_reason(m) is None
+        p
+        for p in publish_command.publishes(cmd, _cwd(payload))
+        if not p.dry_run and p.skip_reason(var) is None
     ]
 
 
-def _resolve(target, base):
-    """[target] taken from [base]; None when it is built from a variable."""
-    if len(target) > 1 and target[0] in "\"'" and target[-1] == target[0]:
-        target = target[1:-1]
-    if "$" in target or "`" in target:
-        return None
-    target = os.path.expanduser(target)
-    return target if os.path.isabs(target) else os.path.join(base, target)
+def _unreadable(cmd, hook):
+    """The block for a command this hook cannot read; None when it can."""
+    if publish_command is None:
+        if re.search(r"pub\s+publish", cmd):
+            return (
+                f"BLOCKED: publish_command.py did not load ({_IMPORT_ERROR!r}), "
+                f"so this command cannot be read.\n(guard: .claude/hooks/{hook})\n"
+            )
+    return None
 
 
-def publish_dir(cmd, payload, match=None):
-    """Where [match] (the first publish by default) will run, or None when that
-    cannot be determined.
-
-    Only `cd`s BEFORE the publish count; one after it changes nothing. Then the
-    publish's own `-C`/`--directory` applies. An unresolvable target (a
-    variable, `cd -`, a bare `cd`, `pushd`/`popd`) yields None rather than a
-    guess — asking the right question of the wrong directory is the bug this
-    replaced. Not parsed: a `cd` inside a subshell that closes before the
-    publish, as in `(cd x) && dart pub publish`.
-    """
-    base = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    first = match or PUBLISH_RE.search(cmd)
-    limit = first.start() if first else len(cmd)
-
-    if any(m.start() < limit for m in OPAQUE_CD_RE.finditer(cmd)):
-        return None
-    for m in CD_RE.finditer(cmd):
-        if m.start() >= limit:
-            break
-        base = _resolve(m.group(1), base)
-        if base is None:
-            return None
-
-    if first:
-        named = PUB_DIR_RE.search(_args(cmd, first))
-        if named:
-            base = _resolve(named.group(1), base)
-            if base is None:
-                return None
-
-    return os.path.normpath(base)
-
-
-def _located(cmd, payload, match):
-    """(repo_root, package_prefix, label) for the package [match] publishes.
+def _located(p):
+    """(repo_root, package_prefix, label) for the package [p] publishes.
 
     `package_prefix` is repo-relative and ends in '/' — or is '' when the
     package IS the repository root, which is what every single-package repo
     looks like.
     """
-    where = publish_dir(cmd, payload, match)
+    where = p.directory
     if where is None:
         raise GitUnavailable(
             "a `cd` or `-C` target is built from a variable, or the command uses "
@@ -266,13 +188,28 @@ def main():
         )
         return 2
 
+    unreadable = _unreadable(cmd, "guard-release-registry.py")
+    if unreadable:
+        sys.stderr.write(unreadable)
+        return 2
+    if publish_command is None:
+        return 0
     # Every publish of the command is checked, not the first: a train
     # `cd a && dart pub publish && cd ../b && dart pub publish` ships both.
     # A dry run, or a publish with its own reasoned RELEASE_SKIP_REGISTRY,
     # needs nothing.
-    for match in _checked_publishes(cmd):
+    try:
+        checked = _checked(cmd, payload, "RELEASE_SKIP_REGISTRY")
+    except publish_command.PublishUnclear as e:
+        sys.stderr.write(
+            f"BLOCKED: this command holds `pub publish`, but {e}.\n"
+            "Write the publish plainly (`cd <package> && dart pub publish`).\n"
+            "(guard: .claude/hooks/guard-release-registry.py)\n"
+        )
+        return 2
+    for p in checked:
         try:
-            root, prefix, label = _located(cmd, payload, match)
+            root, prefix, label = _located(p)
             name = _package_name(root, prefix)
             if name not in CATALOG_PACKAGES:
                 continue
@@ -302,8 +239,8 @@ def _blocked(name, root, problem):
 
 
 # (command, publishes found, publishes to check): found counts every publish
-# the matcher sees, which guard-publish.py must see as well; to check leaves
-# out dry runs and publishes with their own reasoned skip.
+# publish_command reads, None when it must block the command as unreadable;
+# to check leaves out dry runs and publishes with their own reasoned skip.
 _TESTS = [
     ("dart pub publish --force", 1, 1),
     ("cd packages/flutter_edge_ai_speech && dart pub publish", 1, 1),
@@ -329,6 +266,14 @@ _TESTS = [
     ("a; dart pub publish", 1, 1),
     ("FOO=$(pwd) dart pub publish", 1, 1),
     ("FOO=$(a $(b)) dart pub publish", 1, 1),
+    ("FOO=$(a $(b) c) dart pub publish", 1, 1),
+    ("FOO=$(printf ')') dart pub publish", 1, 1),
+    ("fvm dart pub publish", 1, 1),
+    ("sudo dart pub publish", 1, 1),
+    ('bash -c "dart pub publish"', 1, 1),
+    ('RELEASE_SKIP_REGISTRY=r bash -c "dart pub publish"', 1, 0),
+    ("xargs dart pub publish", None, None),
+    ("cat <<'EOF'\ndart pub publish\nEOF", 0, 0),
     ("FOO=`pwd` dart pub publish", 1, 1),
     ("RELEASE_SKIP_REGISTRY=$(echo r) dart pub publish", 1, 0),
     # The skip on another command of the chain never reaches the publish.
@@ -420,20 +365,25 @@ def _end_to_end():
 
 
 def _self_test():
-    bad = []
+    bad = list(publish_command.self_test())
     for cmd, want_found, want_checked in _TESTS:
-        found = len(list(PUBLISH_RE.finditer(cmd)))
-        checked = len(_checked_publishes(cmd))
+        try:
+            found = len(publish_command.publishes(cmd, "/r"))
+            checked = len(_checked(cmd, {"cwd": "/r"}, "RELEASE_SKIP_REGISTRY"))
+        except publish_command.PublishUnclear:
+            found = checked = None
         if (found, checked) != (want_found, want_checked):
             bad.append(f"{cmd!r}: found={found} checked={checked}")
+        if want_found is None and _run_main(cmd, "/r")[0] != 2:
+            bad.append(f"{cmd!r}: unreadable, not blocked")
     for cmd, want in _DIR_TESTS:
-        got = [publish_dir(cmd, {"cwd": "/r"}, m) for m in _checked_publishes(cmd)]
+        got = [p.directory for p in _checked(cmd, {"cwd": "/r"}, "RELEASE_SKIP_REGISTRY")]
         if got != [os.path.normpath(w) for w in want]:
             bad.append(f"publish_dir {cmd!r}: {got!r}")
     bad += _end_to_end()
     for line in bad:
         print(f"  FAIL {line}")
-    total = len(_TESTS) + len(_DIR_TESTS) + 11
+    total = len(_TESTS) + len(_DIR_TESTS) + 11 + len(publish_command._CASES)
     print(f"  {total - len(bad)}/{total} pass")
     return 1 if bad else 0
 

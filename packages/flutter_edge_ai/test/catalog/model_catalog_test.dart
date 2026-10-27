@@ -157,6 +157,25 @@ void main() {
       },
     );
 
+    test('one variant id from two catalogs throws, naming both', () {
+      final first = TestCatalog('first', [
+        TestModel('tiny-llm', [TestLlm('generic')]),
+      ]);
+      final second = TestCatalog('second', [
+        TestModel('tiny-llm', [TestLlm('generic')]),
+      ]);
+      expect(
+        () => RegisteredCatalog([TestSource(first), TestSource(second)]),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('tiny-llm/generic'),
+          ),
+        ),
+      );
+    });
+
     test('a catalog reached through two providers counts once', () {
       final catalog = TestCatalog('c', [
         TestModel('tiny-llm', [TestLlm('a')]),

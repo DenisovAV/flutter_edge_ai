@@ -34,7 +34,9 @@ always true when this PreToolUse hook actually fires (at publish time).
 It is NOT a general retroactive audit.
 
 Override for a genuine code-only release with no README surface (rare) by putting
-`RELEASE_SKIP_DOCS=<reason>` in the command.
+`RELEASE_SKIP_DOCS="<reason>"` in front of that publish. It covers that
+one publish only; on another command of the chain, exported earlier, or with
+an empty reason it is not an override. Every publish of a command is checked.
 
 Fail-closed: if git can't be consulted, or the package/version can't be resolved,
 BLOCK — an irreversible publish in an unknown state is not a safe one.
@@ -48,43 +50,12 @@ import re
 import subprocess
 import sys
 
-# Mirror guard-publish.py's command-position matcher (MULTILINE is load-bearing:
-# a `cd` line followed by the publish on the next line must still match).
-# An assignment value may be quoted and hold spaces, or be empty
-# (`RELEASE_SKIP_DOCS="two words" dart pub publish`).
-# A command substitution (`$(pwd)`, also nested, or backticks) is part of a
-# value too: without it `FOO=$(pwd) dart pub publish` went unseen.
-_VALUE = r"(?:\"[^\"]*\"|'[^']*'|\$\([^)]*\)+|`[^`]*`|[^\s\"'`;&|()])*"
-_ASSIGN = r"\w+=" + _VALUE
-PUBLISH_RE = re.compile(
-    r"(?:^|[;&|(]|&&|\|\|)\s*"
-    r"(?:" + _ASSIGN + r"\s+)*"
-    r"(?:(?:timeout|nice|env|command|stdbuf)\s+(?:" + _ASSIGN + r"|\S+)\s+"
-    r"(?:" + _ASSIGN + r"\s+)*)*"
-    r"(?:dart|flutter)\s+pub\s+publish\b",
-    re.MULTILINE,
-)
-DRY_RUN_RE = re.compile(r"(?<![\w-])--dry-run(?![\w-])")
-# RELEASE_SKIP_DOCS must sit in command position (an env assignment prefix),
-# not merely appear in an echo/grep of the string.
-SKIP_RE = re.compile(
-    r"(?:^|[;&|(]|&&|\|\|)\s*(?:\w+=\S+\s+)*RELEASE_SKIP_DOCS=", re.MULTILINE
-)
-# Duplicated from guard-publish.py on purpose: hooks are standalone files with
-# no shared import path, and a hook that fails to load is a hook that does not
-# run. Keep the two in step.
-CD_RE = re.compile(
-    r"(?:^|[;&|(]|&&|\|\|)\s*cd[ \t]+(?!-)" r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)",
-    re.MULTILINE,
-)
-OPAQUE_CD_RE = re.compile(
-    r"(?:^|[;&|(]|&&|\|\|)\s*(?:cd[ \t]+-|cd[ \t]*(?=[;&|)\n]|$)|pushd\b|popd\b)",
-    re.MULTILINE,
-)
-PUB_DIR_RE = re.compile(
-    r"(?<![\w-])(?:-C[ \t]*|--directory(?:=|[ \t]+))"
-    r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)"
-)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import publish_command
+except Exception as _e:  # noqa: BLE001 — main() blocks a publish without it
+    publish_command = None
+    _IMPORT_ERROR = _e
 
 
 class GitUnavailable(RuntimeError):
@@ -109,67 +80,42 @@ def git(repo, *args):
     return r.stdout.strip()
 
 
-def _publish_is_exempt(cmd):
-    """True only if every publish invocation on the line carries --dry-run."""
-    for m in PUBLISH_RE.finditer(cmd):
-        tail = re.split(r"[;&|\n]", cmd[m.end() :], maxsplit=1)[0]
-        if not DRY_RUN_RE.search(tail):
-            return False
-    return True
+
+def _cwd(payload):
+    return payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
-def _resolve(target, base):
-    """[target] taken from [base]; None when it is built from a variable."""
-    if len(target) > 1 and target[0] in "\"'" and target[-1] == target[0]:
-        target = target[1:-1]
-    if "$" in target or "`" in target:
-        return None
-    target = os.path.expanduser(target)
-    return target if os.path.isabs(target) else os.path.join(base, target)
+def _checked(cmd, payload, var):
+    """The publishes of [cmd] that ship and carry no reasoned [var] skip.
 
-
-def publish_dir(cmd, payload):
-    """Where the publish will run, or None when that cannot be determined.
-
-    Only `cd`s BEFORE the publish count; one after it changes nothing. Then the
-    publish's own `-C`/`--directory` applies. An unresolvable target (a
-    variable, `cd -`, a bare `cd`, `pushd`/`popd`) yields None rather than a
-    guess — asking the right question of the wrong directory is the bug this
-    replaced. Not parsed: a `cd` inside a subshell that closes before the
-    publish, as in `(cd x) && dart pub publish`.
+    Raises PublishUnclear for a command whose publishes cannot be read.
     """
-    base = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-    first = PUBLISH_RE.search(cmd)
-    limit = first.start() if first else len(cmd)
-
-    if any(m.start() < limit for m in OPAQUE_CD_RE.finditer(cmd)):
-        return None
-    for m in CD_RE.finditer(cmd):
-        if m.start() >= limit:
-            break
-        base = _resolve(m.group(1), base)
-        if base is None:
-            return None
-
-    if first:
-        args = re.split(r"[;&|\n]", cmd[first.end() :], maxsplit=1)[0]
-        named = PUB_DIR_RE.search(args)
-        if named:
-            base = _resolve(named.group(1), base)
-            if base is None:
-                return None
-
-    return os.path.normpath(base)
+    return [
+        p
+        for p in publish_command.publishes(cmd, _cwd(payload))
+        if not p.dry_run and p.skip_reason(var) is None
+    ]
 
 
-def _located(cmd, payload):
-    """(repo_root, package_prefix, label) for the package being published.
+def _unreadable(cmd, hook):
+    """The block for a command this hook cannot read; None when it can."""
+    if publish_command is None:
+        if re.search(r"pub\s+publish", cmd):
+            return (
+                f"BLOCKED: publish_command.py did not load ({_IMPORT_ERROR!r}), "
+                f"so this command cannot be read.\n(guard: .claude/hooks/{hook})\n"
+            )
+    return None
+
+
+def _located(p):
+    """(repo_root, package_prefix, label) for the package [p] publishes.
 
     `package_prefix` is repo-relative and ends in '/' — or is '' when the
     package IS the repository root, which is what every single-package repo
     looks like.
     """
-    where = publish_dir(cmd, payload)
+    where = p.directory
     if where is None:
         raise GitUnavailable(
             "a `cd` or `-C` target is built from a variable, or the command uses "
@@ -244,7 +190,7 @@ def _doc_problem(root, prefix, label):
         "  The release skill (Step 12) requires the pub.dev-facing README to ship\n"
         "  the new/changed API in the SAME release (website/content/docs is not a\n"
         "  substitute — it's not package-scoped). If this release genuinely has no\n"
-        '  README surface, re-run with RELEASE_SKIP_DOCS="<reason>" in the command.'
+        '  README surface, re-run with RELEASE_SKIP_DOCS="<reason>" in front of the publish.'
     )
 
 
@@ -258,52 +204,71 @@ def main():
         )
         return 2
 
-    if not PUBLISH_RE.search(cmd):
+    unreadable = _unreadable(cmd, "guard-release-docs.py")
+    if unreadable:
+        sys.stderr.write(unreadable)
+        return 2
+    if publish_command is None:
         return 0
-    if _publish_is_exempt(cmd):
-        return 0
-    if SKIP_RE.search(cmd):
-        return 0  # explicit, reasoned opt-out
-
+    # Every publish of the command, each with its own RELEASE_SKIP_DOCS: one
+    # on another command of the chain, or an empty one, is no skip.
     try:
-        root, prefix, label = _located(cmd, payload)
-        problem = _doc_problem(root, prefix, label)
-    except (GitUnavailable, OSError) as e:
+        checked = _checked(cmd, payload, "RELEASE_SKIP_DOCS")
+    except publish_command.PublishUnclear as e:
         sys.stderr.write(
-            f"BLOCKED: cannot verify docs shipped with this release — {e}\n"
-            "A publish is irreversible; an unverifiable state is not a safe one.\n"
+            f"BLOCKED: this command holds `pub publish`, but {e}.\n"
+            "Write the publish plainly (`cd <package> && dart pub publish`).\n"
+            "(guard: .claude/hooks/guard-release-docs.py)\n"
         )
         return 2
+    for p in checked:
+        try:
+            root, prefix, label = _located(p)
+            problem = _doc_problem(root, prefix, label)
+        except Exception as e:  # noqa: BLE001 — any surprise blocks
+            sys.stderr.write(
+                f"BLOCKED: cannot verify docs shipped with this release — {e}\n"
+                "A publish is irreversible; an unverifiable state is not a safe one.\n"
+            )
+            return 2
+        if problem is not None:
+            sys.stderr.write(
+                "BLOCKED: release is missing its docs.\n"
+                f"  repository: {root}\n  - "
+                + problem
+                + "\n(guard: .claude/hooks/guard-release-docs.py)\n"
+            )
+            return 2
+    return 0
 
-    if problem is None:
-        return 0
 
-    sys.stderr.write(
-        "BLOCKED: release is missing its docs.\n"
-        f"  repository: {root}\n  - "
-        + problem
-        + "\n(guard: .claude/hooks/guard-release-docs.py)\n"
-    )
-    return 2
-
-
-# (command, matches_publish, is_exempt) — matching-rule cases only; the git-based
-# doc check is exercised on the live repo, not here.
+# (command, publishes to check) — matching-rule cases only; the git-based doc
+# check is exercised on the live repo and by _end_to_end. None: the command
+# cannot be read and is blocked.
 _TESTS = [
-    ("dart pub publish --force", True, False),
-    ("cd packages/flutter_edge_ai_agent && dart pub publish", True, False),
-    ("cd packages/x\ndart pub publish", True, False),  # multiline was a guard-publish bypass
-    ("timeout 900 dart pub publish", True, False),  # wrapper was a bypass
-    ("dart pub publish --dry-run", True, True),
-    ("dart pub publish --dry-run && dart pub publish", True, False),
-    ('RELEASE_SKIP_DOCS="x" dart pub publish', True, False),  # skip handled in main, not exempt
-    ('RELEASE_SKIP_DOCS="two words" dart pub publish', True, False),  # was unmatched
-    ('RELEASE_SKIP_REGISTRY="no device" dart pub publish', True, False),  # was unmatched
-    ("RELEASE_SKIP_REGISTRY= dart pub publish", True, False),  # was unmatched
-    ("FOO=$(pwd) dart pub publish", True, False),
-    ("FOO=`pwd` dart pub publish", True, False),
-    ("git push origin main", False, False),
-    ('grep -r "dart pub publish" docs/', False, False),
+    ("dart pub publish --force", 1),
+    ("cd packages/flutter_edge_ai_agent && dart pub publish", 1),
+    ("cd packages/x\ndart pub publish", 1),  # multiline was a guard-publish bypass
+    ("timeout 900 dart pub publish", 1),  # wrapper was a bypass
+    ("dart pub publish --dry-run", 0),
+    ("dart pub publish --dry-run && dart pub publish", 1),
+    ('RELEASE_SKIP_DOCS="x" dart pub publish', 0),
+    ('RELEASE_SKIP_DOCS="two words" dart pub publish', 0),
+    ('RELEASE_SKIP_REGISTRY="no device" dart pub publish', 1),
+    ("RELEASE_SKIP_DOCS= dart pub publish", 1),  # was a skip
+    ('RELEASE_SKIP_DOCS="  " dart pub publish', 1),
+    ("RELEASE_SKIP_DOCS=x echo hi && dart pub publish", 1),  # was a skip
+    ("echo RELEASE_SKIP_DOCS=note && dart pub publish", 1),
+    ("cd a && dart pub publish -f && cd ../b && dart pub publish -f", 2),  # was 1
+    ('RELEASE_SKIP_DOCS="r" dart pub publish -C a; dart pub publish -C b', 1),
+    ("FOO=$(pwd) dart pub publish", 1),
+    ("FOO=$(a $(b) c) dart pub publish", 1),
+    ("fvm dart pub publish", 1),
+    ('bash -c "dart pub publish"', 1),
+    ("xargs dart pub publish", None),
+    ("git push origin main", 0),
+    ('grep -r "dart pub publish" docs/', 0),
+    ("cat <<'EOF'\ndart pub publish\nEOF", 0),
 ]
 
 # (payload, command, expected publish directory). The monorepo shapes the old
@@ -330,32 +295,77 @@ _DIR_TESTS = [
 ]
 
 
+def _run_main(cmd, cwd):
+    import contextlib
+    import io
+
+    stdin = sys.stdin
+    sys.stdin = io.StringIO(json.dumps({"tool_input": {"command": cmd}, "cwd": cwd}))
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            return main()
+    finally:
+        sys.stdin = stdin
+
+
+def _end_to_end():
+    """main() on a scratch package; the failures."""
+    import tempfile
+
+    global _doc_problem
+    bad = []
+    with tempfile.TemporaryDirectory() as repo:
+        with open(os.path.join(repo, "pubspec.yaml"), "w") as fh:
+            fh.write("name: pkg\nversion: 1.0.0\n")
+        git(repo, "init", "-q")
+        real = _doc_problem
+        try:
+            # A check that raises something other than GitUnavailable/OSError
+            # blocks; it used to escape main() as exit 1, which allows.
+            def boom(*_):
+                raise ValueError("boom")
+
+            _doc_problem = boom
+            if _run_main("dart pub publish -f", repo) != 2:
+                bad.append("an unexpected exception does not block")
+            # Every publish is checked: the second one's problem blocks.
+            calls = []
+
+            def second_fails(root, prefix, label):
+                calls.append(root)
+                return None if len(calls) == 1 else "missing"
+
+            _doc_problem = second_fails
+            if _run_main("dart pub publish -f && dart pub publish -f", repo) != 2:
+                bad.append("the second publish's problem passed")
+            _doc_problem = lambda *_: "missing"
+            if _run_main('RELEASE_SKIP_DOCS="r" dart pub publish -f', repo) != 0:
+                bad.append("a reasoned skip still blocks")
+            if _run_main("RELEASE_SKIP_DOCS= dart pub publish -f", repo) != 2:
+                bad.append("an empty skip passes")
+        finally:
+            _doc_problem = real
+    return bad
+
+
 def _self_test():
-    bad = 0
-    for cmd, want_match, want_exempt in _TESTS:
-        got_match = bool(PUBLISH_RE.search(cmd))
-        got_exempt = got_match and _publish_is_exempt(cmd)
-        if got_match != want_match or got_exempt != want_exempt:
-            bad += 1
-            print(
-                f"  FAIL {cmd!r}: match={got_match}(want {want_match}) "
-                f"exempt={got_exempt}(want {want_exempt})"
-            )
-
-    for payload, cmd, want in _DIR_TESTS:
-        got = publish_dir(cmd, payload)
+    bad = list(publish_command.self_test())
+    for cmd, want in _TESTS:
+        try:
+            got = len(_checked(cmd, {"cwd": "/r"}, "RELEASE_SKIP_DOCS"))
+        except publish_command.PublishUnclear:
+            got = None
         if got != want:
-            bad += 1
-            print(f"  FAIL want_dir={want!r} got={got!r}  {cmd!r}")
-
-    # skip must be in command position, not inside an echo/grep
-    assert SKIP_RE.search('RELEASE_SKIP_DOCS="reason" dart pub publish'), "skip parse"
-    assert not SKIP_RE.search('echo RELEASE_SKIP_DOCS=note && dart pub publish'), (
-        "skip must not fire from an echo of the string"
-    )
-
-    total = len(_TESTS) + len(_DIR_TESTS)
-    print(f"  {total - bad}/{total} pass; parse asserts ok")
+            bad.append(f"{cmd!r}: checked={got}, want {want}")
+    for payload, cmd, want in _DIR_TESTS:
+        got = _checked(cmd, payload, "RELEASE_SKIP_DOCS")[0].directory
+        if got != want:
+            bad.append(f"want_dir={want!r} got={got!r}  {cmd!r}")
+    bad += _end_to_end()
+    for line in bad:
+        print(f"  FAIL {line}")
+    total = len(_TESTS) + len(_DIR_TESTS) + 4 + len(publish_command._CASES)
+    print(f"  {total - len(bad)}/{total} pass")
     return 1 if bad else 0
 
 

@@ -332,6 +332,25 @@ void main() {
       );
     }
     fails(
+      'an LLM install name that is not its file name',
+      [
+        _with(
+          _llm(),
+          (e) => (_variant(e, 0)['file'] as Map)['install_filename'] =
+              'x.litertlm',
+        ),
+      ],
+      'core installs an LLM under its URL\'s file name',
+      extraFiles: _llmFacts(),
+    );
+    fails('an STT tokenizer install name that is not its file name', [
+      _with(
+        _stt(),
+        (e) => (_variant(e, 0)['tokenizer'] as Map)['install_filename'] =
+            'other.json',
+      ),
+    ], 'core installs an STT model under its URL\'s file name');
+    fails(
       'a slug whose Dart getter is a reserved word',
       [_with(_llm(), (e) => _variant(e, 1)['slug'] = 'default')],
       '"default" is a Dart reserved word',

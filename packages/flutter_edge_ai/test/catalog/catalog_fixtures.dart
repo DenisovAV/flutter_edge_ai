@@ -116,17 +116,18 @@ final class TestEmbedder extends EmbedderVariant {
 
 /// A Matcha bundle: one artifact per manifest file, all of [size] bytes.
 final class TestTts extends TtsVariant {
-  TestTts({int size = 1024 * 1024 + 16})
-    : files = [
-        for (final name in TtsModelType.matcha.manifest)
-          artifact(name, size: size),
-      ];
+  TestTts({
+    int size = 1024 * 1024 + 16,
+    this.type = TtsModelType.matcha,
+    bool dropLast = false,
+  }) : files = [for (final name in type.manifest) artifact(name, size: size)]
+         ..length -= dropLast ? 1 : 0;
 
   @override
   final List<ModelArtifact> files;
 
   @override
-  TtsModelType get type => TtsModelType.matcha;
+  final TtsModelType type;
 
   @override
   String get baseUrl =>
@@ -137,6 +138,33 @@ final class TestTts extends TtsVariant {
 
   @override
   String get modelId => 'tiny-tts';
+
+  @override
+  String get catalogName => 'test_catalog';
+
+  @override
+  Set<PreferredBackend> get backendsHere => const {PreferredBackend.cpu};
+}
+
+final class TestStt extends SttVariant {
+  TestStt({int modelSize = 1024 * 1024 + 16})
+    : model = artifact('tiny_stt.tflite', size: modelSize),
+      tokenizer = artifact('tiny_stt_tokenizer.json');
+
+  @override
+  final ModelArtifact model;
+
+  @override
+  final ModelArtifact tokenizer;
+
+  @override
+  SttModelType get type => SttModelType.moonshine;
+
+  @override
+  String get id => 'tiny-stt/f32';
+
+  @override
+  String get modelId => 'tiny-stt';
 
   @override
   String get catalogName => 'test_catalog';

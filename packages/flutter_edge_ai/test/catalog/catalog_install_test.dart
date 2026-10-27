@@ -5,6 +5,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/src/api/catalog_installation_builder.dart'
+    show checkCatalogFileSizes;
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -153,6 +155,67 @@ void main() {
       expect(progress.last, 100);
     });
 
+    test('a reused builder still ends at 100', () async {
+      await initialize();
+      final progress = <int>[];
+      final builder = FlutterEdgeAi.installFromCatalog(
+        TestLlm('reused'),
+      ).withProgress(progress.add);
+      await builder.install();
+      progress.clear();
+      await builder.install();
+      expect(progress, isNotEmpty);
+      expect(progress.last, 100);
+    });
+
+    test(
+      'a cancel after the last download stops it before activation',
+      () async {
+        await initialize();
+        final manager = FlutterEdgeAiPlugin.instance.modelManager;
+        await FlutterEdgeAi.installFromCatalog(TestLlm('before')).install();
+        final cancel = CancelToken();
+        downloads.onDownloaded = cancel.cancel;
+        await expectLater(
+          FlutterEdgeAi.installFromCatalog(
+            TestLlm('cancelled'),
+          ).withCancelToken(cancel).install(),
+          throwsA(isA<DownloadCancelledException>()),
+        );
+        expect(manager.activeInferenceModel?.name, 'before');
+      },
+    );
+
+    test('a wrong-size file over the active model\'s says so', () async {
+      await initialize();
+      await FlutterEdgeAi.installFromCatalog(TestLlm('shared')).install();
+      // Another revision of the same file name: core writes over the active
+      // model's file.
+      final other = ModelArtifact(
+        repo: 'litert-community/tiny',
+        revision: 'f' * 40,
+        path: 'shared.litertlm',
+        sha256: 'aa',
+        sizeBytes: 123,
+        installFilename: 'shared.litertlm',
+      );
+      await expectLater(
+        FlutterEdgeAi.installFromCatalog(
+          TestLlm('shared', file: other),
+        ).install(),
+        throwsA(
+          isA<CatalogInstallException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('replaced the file of the active model shared'),
+              isNot(contains('not made active')),
+            ),
+          ),
+        ),
+      );
+    });
+
     test('an install name that is not the URL\'s file name is refused', () {
       final variant = TestLlm(
         'generic',
@@ -226,7 +289,81 @@ void main() {
     });
   });
 
+  group('installFromCatalog, STT', () {
+    test('the wrong size never becomes the active STT model', () async {
+      await initialize();
+      final manager = FlutterEdgeAiPlugin.instance.modelManager;
+      final activeBefore = manager.activeSttModel?.name;
+      await expectLater(
+        FlutterEdgeAi.installFromCatalog(TestStt(modelSize: 123)).install(),
+        throwsA(isA<CatalogInstallException>()),
+      );
+      expect(manager.activeSttModel?.name, activeBefore);
+    });
+  });
+
+  group('checkCatalogFileSizes', () {
+    test('a file core has no path for throws', () async {
+      await initialize();
+      final installation = await FlutterEdgeAi.installFromCatalog(
+        TestLlm('pathless'),
+      ).install(activate: false);
+      await expectLater(
+        checkCatalogFileSizes(
+          TestLlm('pathless'),
+          installation.spec,
+          paths: const {},
+          sizeOf: (_) async => 1,
+        ),
+        throwsA(
+          isA<CatalogInstallException>().having(
+            (e) => e.message,
+            'message',
+            contains('no path'),
+          ),
+        ),
+      );
+      await expectLater(
+        checkCatalogFileSizes(
+          TestLlm('pathless'),
+          installation.spec,
+          paths: null,
+          sizeOf: (_) async => 1,
+        ),
+        throwsA(isA<CatalogInstallException>()),
+      );
+    });
+  });
+
   group('installFromCatalog, a TTS bundle', () {
+    test('the wrong size never becomes the active voice', () async {
+      await initialize();
+      final manager = FlutterEdgeAiPlugin.instance.modelManager;
+      await expectLater(
+        FlutterEdgeAi.installFromCatalog(
+          TestTts(size: 123, type: TtsModelType.inflect),
+        ).install(),
+        throwsA(isA<CatalogInstallException>()),
+      );
+      final active = manager.activeTtsModel;
+      expect(
+        active is TtsModelSpec && active.ttsModelType == TtsModelType.inflect,
+        isFalse,
+      );
+    });
+
+    test('a bundle file the catalog does not list is refused before any '
+        'download', () async {
+      await initialize();
+      await expectLater(
+        FlutterEdgeAi.installFromCatalog(
+          TestTts(type: TtsModelType.inflect, dropLast: true),
+        ).install(),
+        throwsA(isA<CatalogInstallException>()),
+      );
+      expect(downloads.urls, isEmpty);
+    });
+
     test('progress is weighted by bytes, not by finished files', () async {
       await initialize();
       final variant = TestTts();
@@ -260,6 +397,9 @@ void main() {
 final class _Downloads implements DownloadService {
   final urls = <String>[];
 
+  /// Runs after each file is written.
+  void Function()? onDownloaded;
+
   @override
   Future<void> download(
     String url,
@@ -269,6 +409,7 @@ final class _Downloads implements DownloadService {
   }) async {
     urls.add(url);
     await File(targetPath).writeAsBytes(_bytes);
+    onDownloaded?.call();
   }
 
   @override
@@ -283,6 +424,7 @@ final class _Downloads implements DownloadService {
     urls.add(url);
     yield 50;
     await File(targetPath).writeAsBytes(_bytes);
+    onDownloaded?.call();
     yield 100;
   }
 }

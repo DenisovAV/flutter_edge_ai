@@ -354,7 +354,8 @@ class FlutterEdgeAi {
   /// first come first. Choose a variant with [CatalogModel.variantFor] and
   /// install it with [installFromCatalog].
   ///
-  /// Throws [StateError] before [initialize] and after [dispose].
+  /// Throws [StateError] before [initialize] and after [dispose], and when
+  /// two packages offer the same variant id.
   static ModelCatalog get catalog {
     // Throws the not-initialized StateError.
     ServiceRegistry.instance;

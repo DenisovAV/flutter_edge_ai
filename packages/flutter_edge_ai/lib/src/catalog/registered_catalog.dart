@@ -7,7 +7,9 @@ import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 /// A catalog reached through two providers counts once. A model id offered by
 /// several catalogs is one model whose variants are concatenated in provider
 /// order, so the first registered provider's variants come first; its
-/// display data comes from the first catalog that lists it.
+/// display data comes from the first catalog that lists it. Two catalogs that
+/// offer the same variant id (`<model>/<slug>`) are a [StateError]: one of
+/// them would otherwise be dropped, and an app would install the other.
 final class RegisteredCatalog extends ModelCatalog {
   /// The catalog of [providers], in the order they were registered.
   RegisteredCatalog(Iterable<Object> providers) : models = _merge(providers);
@@ -59,12 +61,19 @@ final class _MergedModel extends CatalogModel {
   final List<CatalogModel> _parts;
 
   static List<CatalogVariant> _variantsOf(List<CatalogModel> parts) {
-    final seen = <String>{};
-    return [
-      for (final part in parts)
-        for (final v in part.variants)
-          if (seen.add(v.id)) v,
-    ];
+    final seen = <String, CatalogVariant>{};
+    for (final part in parts) {
+      for (final v in part.variants) {
+        if (seen[v.id] case final first?) {
+          throw StateError(
+            'catalog: ${v.id} is offered by ${first.catalogName} and by '
+            '${v.catalogName}; a variant id must be unique across catalogs',
+          );
+        }
+        seen[v.id] = v;
+      }
+    }
+    return seen.values.toList();
   }
 
   @override

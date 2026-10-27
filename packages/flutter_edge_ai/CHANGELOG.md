@@ -1,5 +1,4 @@
 ## 2.5.4
-- `ModelType.gemma4` on `.bin`/`.tflite`: Gemma 4's own turn markers, not Gemma 3's (#705).
 - Model catalog: `FlutterEdgeAi.catalog` and `installFromCatalog`, builds pinned to Hugging Face commits.
 
 ## 2.5.3

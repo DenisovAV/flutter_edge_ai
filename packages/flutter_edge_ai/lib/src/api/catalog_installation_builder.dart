@@ -3,7 +3,8 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/api/install_verification.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
-    show InferenceModelFile;
+    show InferenceModelFile, TtsModelTypeManifest;
+import 'package:meta/meta.dart' show visibleForTesting;
 
 /// Installs a [CatalogVariant] through the installer of its kind, from
 /// `FlutterEdgeAi.installFromCatalog`.
@@ -93,6 +94,7 @@ final class CatalogInstallationBuilder {
   /// of the variant's kind throws.
   Future<CatalogInstallation> install({bool activate = true}) async {
     final variant = _variant;
+    _lastPercent = null;
     if (variant.backendsHere.isEmpty) {
       throw UnsupportedError(
         '${variant.id} does not run here: ${variant.catalogName} runs it on '
@@ -110,6 +112,9 @@ final class CatalogInstallationBuilder {
     }
     var checked = false;
     Future<void> check(ModelSpec spec) async {
+      // A cancel that lands after the last download still stops the install
+      // before the model becomes active.
+      _cancelToken?.throwIfCancelled();
       await _checkSizes(spec);
       checked = true;
     }
@@ -122,7 +127,7 @@ final class CatalogInstallationBuilder {
     };
     // An LLM installed with activate false is never made active, so its
     // builder runs no check before activation.
-    if (!checked) await _checkSizes(spec);
+    if (!checked) await check(spec);
     if (_onProgress != null && _lastPercent != 100) _progress(100);
     return CatalogInstallation._(variant: variant, spec: spec);
   }
@@ -211,6 +216,12 @@ final class CatalogInstallationBuilder {
   }
 
   Future<ModelSpec> _tts(TtsVariant v, _Check check) async {
+    // The bundle's files come from the TTS type; each must be one the
+    // catalog lists, which is checked here, before the installer takes the
+    // active voice out of service.
+    for (final name in v.type.manifest) {
+      _artifactNamed(v, name);
+    }
     var builder = FlutterEdgeAi.installTts()
         .fromNetwork(v.baseUrl, token: _token)
         .ofType(v.type);
@@ -230,49 +241,84 @@ final class CatalogInstallationBuilder {
     return (await builder.install()).spec;
   }
 
-  /// Every file of the variant against the file the install wrote. A speech
-  /// file is stored under its model's prefix, `<model>__<name>`.
+  /// Every file of the variant against the file the install wrote.
   Future<void> _checkSizes(ModelSpec spec) async {
     if (kIsWeb) return;
-    final paths = await FlutterEdgeAiPlugin.instance.modelManager
-        .getModelFilePaths(spec);
-    if (paths == null) {
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final active = switch (_variant) {
+      InferenceVariant() => manager.activeInferenceModel,
+      EmbedderVariant() => manager.activeEmbeddingModel,
+      SttVariant() => manager.activeSttModel,
+      TtsVariant() => manager.activeTtsModel,
+    };
+    final fileSystem = ServiceRegistry.instance.fileSystemService;
+    await checkCatalogFileSizes(
+      _variant,
+      spec,
+      paths: await manager.getModelFilePaths(spec),
+      sizeOf: fileSystem.getFileSize,
+      active: active,
+    );
+  }
+}
+
+/// Compares every file of [variant] with the file of [spec] that core
+/// installed: [paths] are core's paths by `prefsKey` (null when core reports
+/// the spec not installed), [sizeOf] reads a file's size, [active] is the
+/// model of the variant's kind that is active before this install's. A
+/// speech file is stored under its model's prefix, `<model>__<name>`.
+@visibleForTesting
+Future<void> checkCatalogFileSizes(
+  CatalogVariant variant,
+  ModelSpec spec, {
+  required Map<String, String>? paths,
+  required Future<int> Function(String path) sizeOf,
+  ModelSpec? active,
+}) async {
+  if (paths == null) {
+    throw CatalogInstallException(
+      '${variant.id}: the install finished, but core reports it not '
+      'installed',
+    );
+  }
+  for (final artifact in variant.files) {
+    final installed = spec.files.where(
+      (f) =>
+          f.filename == artifact.installFilename ||
+          f.filename.endsWith('__${artifact.installFilename}'),
+    );
+    if (installed.isEmpty) {
       throw CatalogInstallException(
-        '${_variant.id}: the install finished, but core reports it not '
-        'installed',
+        '${variant.id}: the catalog lists ${artifact.installFilename}, '
+        'which the install did not write',
+        artifact: artifact,
       );
     }
-    final fileSystem = ServiceRegistry.instance.fileSystemService;
-    for (final artifact in _variant.files) {
-      final installed = spec.files.where(
-        (f) =>
-            f.filename == artifact.installFilename ||
-            f.filename.endsWith('__${artifact.installFilename}'),
+    final file = installed.first;
+    final path = paths[file.prefsKey];
+    if (path == null) {
+      throw CatalogInstallException(
+        '${variant.id}: core has no path for ${artifact.installFilename}, '
+        'so its size cannot be checked',
+        artifact: artifact,
       );
-      if (installed.isEmpty) {
-        throw CatalogInstallException(
-          '${_variant.id}: the catalog lists ${artifact.installFilename}, '
-          'which the install did not write',
-          artifact: artifact,
-        );
-      }
-      final path = paths[installed.first.prefsKey];
-      if (path == null) {
-        throw CatalogInstallException(
-          '${_variant.id}: core has no path for ${artifact.installFilename}, '
-          'so its size cannot be checked',
-        );
-      }
-      final size = await fileSystem.getFileSize(path);
-      if (size != artifact.sizeBytes) {
-        throw CatalogInstallException(
-          '${_variant.id}: ${artifact.installFilename} is $size bytes, the '
-          'catalog says ${artifact.sizeBytes} (${artifact.url}). The file '
-          'stays installed but was not made active; uninstall it and '
-          'install again.',
-          artifact: artifact,
-        );
-      }
+    }
+    final size = await sizeOf(path);
+    if (size != artifact.sizeBytes) {
+      // A file core holds under the same name as the active model's was
+      // written over that model's file: it is not "not active".
+      final sharedWithActive =
+          active != null &&
+          active.files.any((f) => f.filename == file.filename);
+      throw CatalogInstallException(
+        '${variant.id}: ${artifact.installFilename} is $size bytes, the '
+        'catalog says ${artifact.sizeBytes} (${artifact.url}). '
+        '${sharedWithActive ? 'It replaced the file of the active model '
+                  '${active.name}, which now reads it' : 'The file stays '
+                  'installed but was not made active'}; uninstall it and '
+        'install again.',
+        artifact: artifact,
+      );
     }
   }
 }

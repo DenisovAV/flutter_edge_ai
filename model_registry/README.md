@@ -43,7 +43,8 @@ Generated from it, checked in, never edited by hand:
   | documented | a claim in `documented_claims.yaml` |
   | untested | the package's snapshot runs it there and nothing says more |
   | refused | the snapshot does not run it there: a native backend the package rules out, or an NPU build on its vendor's platform |
-  | broken | `withhold`, `withhold_backends`, or a broken claim, with its issue |
+  | withheld | `withhold`: the variant is left out of the catalog; every cell it would run on gives the reason |
+  | broken | `withhold_backends`, or a broken claim, with its issue |
 
   A combination that does not exist (an NPU build on another vendor's
   platform, a web export on a phone, a native build on the web) has no cell.
@@ -153,8 +154,8 @@ the CPU in a GPU run). v1 lines recorded the text model's backend there, so
 `vision` or `audio` check. The vision and audio checks assert what the
 bundled fixtures hold and record nothing for a staged file of unknown content.
 
-Today: `litertlm_ffi_test.dart` (Gemma 4 E2B text, vision and audio on CPU
-and GPU, and the staged NPU bundle), `embeddinggemma2_test.dart`,
+Today: `litertlm_ffi_test.dart` (Gemma 4 E2B text on CPU and GPU, vision and
+audio on the backend their encoder ran on, and the staged NPU bundle), `embeddinggemma2_test.dart`,
 `stt_moonshine_test.dart` and `tts_smoke_test.dart`. Turn a run's log into an
 evidence file at the commit that ran, then generate:
 
@@ -219,9 +220,12 @@ UPDATE_GOLDENS=1 flutter test test/catalog/litert_catalog_test.dart
   withheld one, a cell the package's snapshot does not run, or a cell a broken
   claim says fails;
 - a claim whose source is neither `"PR #<n> ..."` nor
-  `website/content/docs/<page>.md:<line>` with that line present (quote a
-  pull request source: ` #` starts a YAML comment), or a broken claim without
-  its issue;
+  `website/content/docs/<page>.md@<commit>:<line>[-<line>]`, with that commit
+  an ancestor of HEAD and those lines in the page at it (quote a pull request
+  source: ` #` starts a YAML comment), or a broken claim without its issue.
+  Pin a docs line to a commit on `origin/main`: a commit of a pull request
+  branch is not an ancestor of main once the branch is squash-merged, and
+  main's `check` then fails;
 - Cyrillic text.
 
 `dart test` proves each of those rules fails its own fixture, and that this

@@ -36,6 +36,7 @@ import os
 import re
 
 _PUBLISH_TEXT = re.compile(r"pub\s+publish")
+_PUBLISH_TEXT_OR_WORD = re.compile(r"publish")
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 _SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 _KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}"}
@@ -83,11 +84,15 @@ class _Word:
 
 
 class _Command:
-    __slots__ = ("words", "heredocs")
+    __slots__ = ("words", "heredocs", "before", "after")
 
-    def __init__(self):
+    def __init__(self, before=None):
         self.words = []
         self.heredocs = []  # bodies, in order
+        # The operators around it: None (the start or end), ";", "\n",
+        # "&&", "||", "|", "|&", "&", "(" or ")".
+        self.before = before
+        self.after = None
 
 
 class _Scanner:
@@ -108,7 +113,8 @@ class _Scanner:
         """('cmd', _Command), 'open', 'close' until [stop] or the end."""
         s = self.s
         out = []
-        cmd = _Command()
+        last = "(" if stop == ")" else None
+        cmd = _Command(last)
         word = None
         pending = []  # (delimiter, strip_tabs, command) heredocs to read
         skip_target = False  # the next word is a redirection target
@@ -123,17 +129,19 @@ class _Scanner:
                 cmd.words.append(word)
             word = None
 
-        def end_command():
-            nonlocal cmd
+        def end_command(sep):
+            nonlocal cmd, last
             end_word()
             if cmd.words or cmd.heredocs:
+                cmd.after = sep
                 out.append(("cmd", cmd))
-            cmd = _Command()
+            last = sep
+            cmd = _Command(last)
 
         while self.i < len(s):
             c = s[self.i]
             if stop is not None and c == stop and stop == ")":
-                end_command()
+                end_command(")")
                 self.i += 1
                 return out
             if c in " \t":
@@ -146,7 +154,7 @@ class _Scanner:
                     for delim, strip, owner in pending:
                         owner.heredocs.append(self.heredoc(delim, strip))
                     pending = []
-                end_command()
+                end_command("\n")
             elif c == "#" and word is None:
                 while self.i < len(s) and s[self.i] != "\n":
                     self.i += 1
@@ -158,22 +166,25 @@ class _Scanner:
                         self.i += 1
                     skip_target = True
                     continue
-                end_command()
-                self.i += 1
-                while self.i < len(s) and s[self.i] in ";&|":
-                    self.i += 1
+                j = self.i + 1
+                while j < len(s) and s[j] in ";&|":
+                    j += 1
+                end_command(s[self.i : j])
+                self.i = j
             elif c == "(":
-                end_command()
+                end_command("(")
                 out.append("open")
                 self.i += 1
                 out.extend(self.events(stop=")"))
                 out.append("close")
+                last = ")"
+                cmd = _Command(last)
             elif c == ")":
                 if stop == ")":
-                    end_command()
+                    end_command(")")
                     self.i += 1
                     return out
-                end_command()
+                end_command(")")
                 out.append("close")
                 self.i += 1
             elif c in "<>":
@@ -228,7 +239,7 @@ class _Scanner:
             # A here-document that never ends runs to the end of the text.
             for _, _, owner in pending:
                 owner.heredocs.append("")
-        end_command()
+        end_command(None)
         return out
 
     def heredoc(self, delim, strip):
@@ -395,8 +406,17 @@ def _strip_wrappers(words, env):
             i += 1
             if opt == "--":
                 return
+            taken = [opt]
             if opt in with_arg and i < n:
+                taken.append(words[i].text)
                 i += 1
+            # `env -S "dart pub publish"`, `--split-string=…`: a wrapper's
+            # option that holds a command this reader does not run.
+            if any(_PUBLISH_TEXT.search(t) for t in taken):
+                raise PublishUnclear(
+                    f"an option of `{os.path.basename(words[0].text)}` holds "
+                    "`pub publish`"
+                )
 
     while True:
         assignments()
@@ -468,17 +488,30 @@ class _Reader:
             if _PUBLISH_TEXT.search(text):
                 raise PublishUnclear("the command nests too deep to read")
             return
-        bases = [base]
+        # Per subshell: [directory, the && chain of a conditional cd].
+        scopes = [[base, None]]
+        chain = 0
+        block = 0  # inside if/while/until/for/case
         for ev in events:
             if ev == "open":
-                bases.append(bases[-1])
+                scopes.append(list(scopes[-1]))
                 continue
             if ev == "close":
-                if len(bases) > 1:
-                    bases.pop()
+                if len(scopes) > 1:
+                    scopes.pop()
                 continue
             cmd = ev[1]
-            here = bases[-1]
+            if cmd.before != "&&":
+                chain += 1
+            scope = scopes[-1]
+            if scope[1] is not None and scope[1] != chain:
+                # `a && cd x; publish`: whether the cd ran is not known.
+                scope[0] = None
+                scope[1] = None
+            here = scope[0]
+            first = os.path.basename(cmd.words[0].text) if cmd.words else ""
+            if first in ("if", "while", "until", "for", "case", "select"):
+                block += 1
             for word in cmd.words:
                 for sub in word.subs:
                     self.run(sub, here, dict(env), depth + 1)
@@ -493,6 +526,8 @@ class _Reader:
                 continue
             name = os.path.basename(words[0].text)
             if name in _ENDS:
+                if name in ("fi", "done", "esac"):
+                    block = max(0, block - 1)
                 continue
             if name in _SHELLS:
                 script = None
@@ -516,12 +551,38 @@ class _Reader:
                 self.run(" ".join(w.text for w in words[1:]), here, own, depth + 1)
                 continue
             if name in ("cd", "pushd", "popd"):
-                args = [w for w in words[1:]]
-                if name != "cd" or len(args) != 1 or args[0].text.startswith("-"):
-                    bases[-1] = None
+                args = words[1:]
+                if (
+                    name != "cd"
+                    or len(args) != 1
+                    or args[0].text.startswith("-")
+                    # Piped or backgrounded: it runs in a subshell. After
+                    # `||`, or inside a block: it may not run at all.
+                    or cmd.after in ("|", "|&", "&")
+                    or cmd.before in ("|", "|&", "||")
+                    or block
+                ):
+                    scope[0] = None
+                    scope[1] = None
                 else:
-                    bases[-1] = _resolve(args[0], here)
+                    scope[0] = _resolve(args[0], here)
+                    # After `&&` it ran only if the chain before it did, which
+                    # is known only for a publish in the same chain.
+                    scope[1] = chain if cmd.before == "&&" else None
                 continue
+            # `dart pub $(echo publish)`, `dart $SUB publish`, `$D pub …`: a
+            # word that expands where the command or its subcommand stands.
+            if (
+                (name in ("dart", "flutter") and len(words) >= 2 and (
+                    (words[1].expands and _PUBLISH_TEXT_OR_WORD.search(self.text))
+                    or (words[1].text == "pub" and len(words) >= 3 and words[2].expands)
+                ))
+                or (words[0].expands and len(words) >= 2 and words[1].text == "pub")
+            ):
+                raise PublishUnclear(
+                    f"`{words[0].text}` runs a subcommand built from a variable "
+                    "or a substitution"
+                )
             if name in ("dart", "flutter") and len(words) >= 3 and (
                 words[1].text == "pub" and words[2].text == "publish"
             ):
@@ -629,7 +690,22 @@ _CASES = [
     ("echo $(dart pub publish)", ["/r"]),
     ("dart pub publish 2>&1 | tee log", ["/r"]),
     ("/usr/local/bin/dart pub publish", ["/r"]),
+    # A cd that may not have run, or ran in a subshell.
+    ("false && cd x; dart pub publish", [None]),
+    ("cd x | cat; dart pub publish", [None]),
+    ("cd x & dart pub publish", [None]),
+    ("true || cd x; dart pub publish", [None]),
+    ("if true; then cd x; fi; dart pub publish", [None]),
+    ("if true\nthen\n  cd x\nfi\ndart pub publish", [None]),
+    ("cd /w && git pull && cd x && dart pub publish", ["/w/x"]),
+    ("cd x || exit 1; dart pub publish", ["/r/x"]),
+    ("cd x && echo hi; dart pub publish", ["/r/x"]),
     # Unclear: blocked.
+    ('env -S "dart pub publish"', None),
+    ("env --split-string='dart pub publish'", None),
+    ("dart pub $(echo publish)", None),
+    ("dart $SUB publish", None),
+    ("$D pub $P", None),
     ("xargs dart pub publish", None),
     ("d=dart; $d pub publish", None),
     ("echo 'dart pub publish' | sh", None),

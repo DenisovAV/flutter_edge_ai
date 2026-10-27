@@ -358,13 +358,17 @@ final vector = await embedder.embed(
     (9 MB) for the text tower. `requireWeightCache` covers them (1.19.0):
     a path the GPU cannot create them at (Windows' 260-character MAX_PATH,
     which the accelerator cannot exceed; a file name past 255 characters,
-    UTF-8 bytes off Windows; on Windows a path with characters outside
-    ASCII, which the accelerator opens with the ANSI `CreateFileA`, unless
-    the process's ANSI code page is UTF-8) is refused before the engine is
-    created, and neither file written by the end of the load's probe
+    UTF-8 bytes off Windows; on Windows a cache directory with characters
+    outside ASCII, unless the process's ANSI code page is UTF-8: the
+    accelerator opens its caches through the UCRT `_open`, which reads the
+    path in the ANSI code page, then `CreateFileW`) is refused before the
+    engine is created, and neither file written by the end of the load's probe
     embedding is refused after it; without the flag each is one printed
     warning. The 440m/740m vision and audio towers beside it are checked as
-    on CPU.
+    on CPU. A cache directory outside ASCII is not measured: from LiteRT-LM's
+    source the engine create then likely fails on every backend, CPU
+    included, because it checks the cache directory through the ANSI code
+    page too.
   - A cold load without `preferredBackend` runs on CPU; a later automatic
     request reuses whatever embedder is loaded, the GPU one included.
   - The 270m has no vision or audio encoder. A text index and an image index

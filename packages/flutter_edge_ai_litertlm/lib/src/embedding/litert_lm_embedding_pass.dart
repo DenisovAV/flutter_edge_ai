@@ -48,12 +48,13 @@
 //   (the engine deleted); one expected tower's file missing is a printed
 //   warning either way. On the GPU the text tower's caches are ML Drift's
 //   `<model>.text_encoder_<mtime>_<size>_mldrift_{weight,program}_cache.bin`,
-//   which Windows opens with the ANSI `CreateFileA` and no long-path
-//   support: their paths are checked before create (`_checkGpuCachePaths`:
-//   MAX_PATH, a name past 255 — UTF-8 bytes off Windows — and on Windows a
-//   character outside ASCII unless the ANSI code page is UTF-8), the files
-//   after the probe embedding (`_checkGpuCache`, which does not warn again
-//   for a path already warned about), with the same warning / refusal split.
+//   which Windows opens through the UCRT `_open` (the ANSI code page) and
+//   `CreateFileW` without long-path support: their paths are checked before
+//   create (`_checkGpuCachePaths`: MAX_PATH, a name past 255 — UTF-8 bytes
+//   off Windows — and on Windows a cache directory with a character outside
+//   ASCII unless the ANSI code page is UTF-8), the files after the probe
+//   embedding (`_checkGpuCache`, which does not warn again about a cache
+//   already warned about), with the same warning / refusal split.
 //   The 440m/740m vision and audio towers beside the GPU text tower run on
 //   CPU and are checked as on CPU. A cache directory that cannot be listed
 //   is a warning, or a refusal under the flag. Caches of earlier copies of
@@ -450,8 +451,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       // Before create: a GPU cache path the accelerator cannot open costs a
       // cold GPU load at every start and is reported only on stderr. Warned
       // about here, it is not warned about again after the probe.
-      final gpuPathWarned =
-          _config.gpu && _checkGpuCachePaths(cacheDir, modelSize);
+      final gpuPathWarned = _config.gpu
+          ? _checkGpuCachePaths(cacheDir, modelSize)
+          : const <String>{};
       _engine = _createEngine(
         b,
         maxInputLength: setting,
@@ -1208,20 +1210,32 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   /// accelerator cannot create in [cacheDir] ([liteRtLmGpuCachePathProblem]).
   /// The directory is not shortened for it: its name is already the short
   /// form, and the rest is the app's cache path and the model's file name.
-  /// Returns whether it warned, so the check after the probe does not warn
-  /// again for the same cause.
-  bool _checkGpuCachePaths(String cacheDir, int modelSize) {
-    final problem = liteRtLmGpuCachePathProblem(
+  /// Returns the cache kinds (`weight`, `program`) it warned about, so the
+  /// check after the probe does not warn again about those, and still warns
+  /// about one missing for another reason.
+  Set<String> _checkGpuCachePaths(String cacheDir, int modelSize) {
+    final check = liteRtLmGpuCachePathCheck(
       cacheDir,
       _file,
       modelSize,
       windows: Platform.isWindows,
       ansiCodePageIsUtf8: _ansiCodePageIsUtf8(),
     );
-    if (problem == null) return false;
+    if (check == null) return const {};
+    final both = check.kinds.length == 2;
+    // A cache directory the engine likely cannot use is not claimed to load
+    // cold: what happens then is not measured.
+    final cost = check.cacheDirOutsideAnsi
+        ? ''
+        : both
+        ? ' Without them $_coldGpuCost.'
+        : check.kinds.contains('program')
+        ? ' Without it every GPU load compiles the programs again.'
+        : ' Without it every GPU load uploads the weights again.';
     final what =
-        'LiteRT-LM cannot write the GPU caches of $_file under the cache root '
-        '${_config.cacheBase}: $problem. Without them $_coldGpuCost. A shorter '
+        'LiteRT-LM cannot write the GPU '
+        '${both ? 'caches' : '${check.kinds.single} cache'} of $_file under '
+        'the cache root ${_config.cacheBase}: ${check.problem}.$cost A shorter '
         'model file name or app cache path, in ASCII, avoids it.';
     if (_config.requireWeightCache) {
       throw EmbeddingLoadException(
@@ -1236,7 +1250,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
       'failure.',
     );
-    return true;
+    return check.kinds;
   }
 
   /// Logs [cacheDir]'s files and their sizes (debug, `edgeAiLog`): when ML
@@ -1266,13 +1280,14 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   /// load under the flag on its first start, which the integration tests,
   /// registered with the flag, would show.
   ///
-  /// [pathWarned]: the check before create already warned about these files
-  /// ([_checkGpuCachePaths]), so a missing cache is not warned about twice.
-  /// The refusal is not affected: with the flag, that check refused first.
+  /// [pathWarned]: the cache kinds the check before create already warned
+  /// about ([_checkGpuCachePaths]); a missing one of those is not warned about
+  /// twice, a missing one it did not name is. The refusal is not affected:
+  /// with the flag, that check refused first.
   void _checkGpuCache(
     String cacheDir, {
     required int modelSize,
-    required bool pathWarned,
+    required Set<String> pathWarned,
   }) {
     final ({bool weight, bool program}) written;
     try {
@@ -1292,14 +1307,17 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       );
       return;
     }
-    if (written.weight && written.program) return;
-    if (pathWarned && !_config.requireWeightCache) return;
+    final unwarned = {
+      if (!written.weight) 'weight',
+      if (!written.program) 'program',
+    }.difference(pathWarned);
+    if (unwarned.isEmpty) return;
     final names = liteRtLmGpuCacheFileNames(_file, modelSize);
     final path = '$cacheDir${Platform.pathSeparator}${names.program}';
     final why =
         'The program cache file path is about ${path.length} characters long. '
         '${liteRtLmNoWeightCacheCauses(cachePathLength: path.length, windows: Platform.isWindows)}';
-    if (!written.weight && !written.program) {
+    if (unwarned.length == 2) {
       if (_config.requireWeightCache) {
         // As on CPU: an older copy's cache may be what left no free space.
         _deleteStaleSiblings(cacheDir);
@@ -1320,7 +1338,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       );
       return;
     }
-    final missing = written.weight ? 'program' : 'weight';
+    final missing = unwarned.single;
     // ignore: avoid_print
     print(
       '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no GPU $missing '
@@ -1654,17 +1672,19 @@ const _maxFileNameLength = 255;
   );
 }
 
+/// What the path check before create found ([liteRtLmGpuCachePathCheck]):
+/// the reasons, the GPU cache kinds (`weight`, `program`) they apply to, and
+/// whether the cache directory itself is one the engine likely cannot use.
+typedef LiteRtLmGpuCachePathCheck = ({
+  String problem,
+  Set<String> kinds,
+  bool cacheDirOutsideAnsi,
+});
+
 /// Why LiteRT's WebGPU accelerator cannot create the GPU caches of
 /// [modelFileName] in [cacheDir], decided from the path alone before the
-/// engine exists; null when both fit. On Windows it opens them with the ANSI
-/// `CreateFileA` and no `\\?\` prefix, so a path of 260 characters or more
-/// fails there, and so does a path with characters outside ASCII: the
-/// accelerator gets it as UTF-8 and `CreateFileA` reads it in the ANSI code
-/// page, unless that code page is UTF-8 ([ansiCodePageIsUtf8]). A file name
-/// past 255 fails on every file system: UTF-16 code units on Windows (NTFS),
-/// UTF-8 bytes elsewhere (ext4, APFS). A failed write is said only on stderr
-/// and the create still succeeds, so without this the GPU would be cold at
-/// every start in silence.
+/// engine exists; null when both fit. [liteRtLmGpuCachePathCheck] says which
+/// of the two each reason applies to.
 @visibleForTesting
 String? liteRtLmGpuCachePathProblem(
   String cacheDir,
@@ -1672,37 +1692,86 @@ String? liteRtLmGpuCachePathProblem(
   int modelSize, {
   required bool windows,
   bool ansiCodePageIsUtf8 = false,
+}) => liteRtLmGpuCachePathCheck(
+  cacheDir,
+  modelFileName,
+  modelSize,
+  windows: windows,
+  ansiCodePageIsUtf8: ansiCodePageIsUtf8,
+)?.problem;
+
+/// The check behind [liteRtLmGpuCachePathProblem]. On Windows the
+/// accelerator gets the path as UTF-8 and opens each cache through the UCRT
+/// `_open`, which reads it in the ANSI code page, then `CreateFileW` without
+/// the `\\?\` prefix (read from the disassembly of the shipped
+/// `LiteRtWebGpuAccelerator.dll`). So, unless that code page is UTF-8
+/// ([ansiCodePageIsUtf8]):
+/// - a cache directory with characters outside ASCII cannot be opened at any
+///   length. Not measured: from LiteRT-LM's source the engine create then
+///   likely fails too, on every backend, because it checks the cache
+///   directory through the ANSI code page as well;
+/// - a model file name outside ASCII still opens, under the name its UTF-8
+///   bytes spell in the code page, so it is no problem by itself, but its
+///   lengths are counted in those bytes.
+/// A path of 260 or more (MAX_PATH) fails on Windows, and a file name past
+/// 255 on every file system: UTF-16 code units on NTFS (UTF-8 bytes when the
+/// code page is not UTF-8, as above), UTF-8 bytes on ext4 and APFS. A failed
+/// write is said only on stderr and the create still succeeds, so without
+/// this the GPU would be cold at every start in silence.
+@visibleForTesting
+LiteRtLmGpuCachePathCheck? liteRtLmGpuCachePathCheck(
+  String cacheDir,
+  String modelFileName,
+  int modelSize, {
+  required bool windows,
+  bool ansiCodePageIsUtf8 = false,
 }) {
   final names = liteRtLmGpuCacheFileNames(modelFileName, modelSize);
+  // What Windows counts is UTF-16 units of the path it ends up with: the
+  // path as it is when the code page is UTF-8, else one character per UTF-8
+  // byte (on a single-byte code page). Elsewhere a name's UTF-8 bytes.
+  int lengthOf(String s) =>
+      windows && ansiCodePageIsUtf8 ? s.length : utf8.encode(s).length;
   final unit = windows ? 'character' : 'byte';
-  final problems = <String>[
-    if (windows &&
-        !ansiCodePageIsUtf8 &&
-        liteRtLmPathOutsideAscii('$cacheDir${names.program}'))
-      'their path has characters outside ASCII, which the accelerator opens '
-          "with Windows' ANSI CreateFileA from a UTF-8 path, so it cannot "
-          'open them at any length',
+  final dirOutsideAnsi =
+      windows && !ansiCodePageIsUtf8 && liteRtLmPathOutsideAscii(cacheDir);
+  final problems = <(Set<String>, String)>[
+    if (dirOutsideAnsi)
+      (
+        {'weight', 'program'},
+        'the cache directory has characters outside ASCII, and the '
+            'accelerator opens its caches through the UCRT _open, which reads '
+            'the UTF-8 path in the ANSI code page, so it cannot open them at '
+            'any length (not measured; from LiteRT-LM\'s source the engine '
+            'create likely fails too, on every backend)',
+      ),
     for (final (kind, name) in [
       ('weight', names.weight),
       ('program', names.program),
     ]) ...[
-      if (windows && cacheDir.length + 1 + name.length >= _windowsMaxPath)
-        'its $kind cache file path would be about '
-            '${cacheDir.length + 1 + name.length} characters long, past '
-            "Windows' $_windowsMaxPath-character MAX_PATH",
-      if (_fileNameLength(name, windows: windows) > _maxFileNameLength)
-        'its $kind cache file name would be about '
-            '${_fileNameLength(name, windows: windows)} ${unit}s long, past '
-            'the $_maxFileNameLength-$unit limit on a file name',
+      if (windows && lengthOf(cacheDir) + 1 + lengthOf(name) >= _windowsMaxPath)
+        (
+          {kind},
+          'its $kind cache file path would be about '
+              '${lengthOf(cacheDir) + 1 + lengthOf(name)} ${unit}s long, past '
+              "Windows' $_windowsMaxPath-character MAX_PATH",
+        ),
+      if (lengthOf(name) > _maxFileNameLength)
+        (
+          {kind},
+          'its $kind cache file name would be about ${lengthOf(name)} '
+              '${unit}s long, past the $_maxFileNameLength-$unit limit on a '
+              'file name',
+        ),
     ],
   ];
-  return problems.isEmpty ? null : problems.join('; ');
+  if (problems.isEmpty) return null;
+  return (
+    problem: problems.map((p) => p.$2).join('; '),
+    kinds: {for (final p in problems) ...p.$1},
+    cacheDirOutsideAnsi: dirOutsideAnsi,
+  );
 }
-
-/// A file name's length as its file system counts it: UTF-16 code units on
-/// NTFS, UTF-8 bytes on ext4 and APFS.
-int _fileNameLength(String name, {required bool windows}) =>
-    windows ? name.length : utf8.encode(name).length;
 
 /// Whether [path] has a character outside ASCII.
 @visibleForTesting
@@ -1711,14 +1780,16 @@ bool liteRtLmPathOutsideAscii(String path) =>
 
 /// Whether this process's ANSI code page is UTF-8 (65001, set by an app
 /// manifest's `activeCodePage` or the system-wide beta option): then the
-/// ANSI file APIs read a UTF-8 path as it is. False off Windows.
-bool _ansiCodePageIsUtf8() {
-  if (!Platform.isWindows) return false;
-  final getAcp = DynamicLibrary.open(
-    'kernel32.dll',
-  ).lookupFunction<Uint32 Function(), int Function()>('GetACP');
-  return getAcp() == 65001;
-}
+/// ANSI file APIs read a UTF-8 path as it is. False off Windows. The code
+/// page is fixed for the process's lifetime, so it is read once.
+bool _ansiCodePageIsUtf8() => _ansiCodePageIsUtf8Once;
+
+final bool _ansiCodePageIsUtf8Once =
+    Platform.isWindows &&
+    DynamicLibrary.open(
+          'kernel32.dll',
+        ).lookupFunction<Uint32 Function(), int Function()>('GetACP')() ==
+        65001;
 
 /// The names of the real GPU cache files among [entries], a cache directory's
 /// listing: `*_mldrift_weight_cache.bin` and `*_mldrift_program_cache.bin` of

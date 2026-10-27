@@ -2040,6 +2040,73 @@ void main() {
       });
     });
 
+    group('a GPU program cache name past 255, its weight cache name not', () {
+      // Program 256, weight 255.
+      final edge = '${'m' * 194}.litertlm';
+
+      setUp(() {
+        modelPath = '${root.path}/models/$edge';
+        File(modelPath).writeAsBytesSync(List.filled(37, 7));
+      });
+
+      test('the warning before create names the program cache alone and its '
+          'cost alone', () async {
+        native.dispose();
+        native = _FakeLiteRtLm()..omitGpuCaches = {'program'};
+        final p = pass(gpu: true);
+        final lines = await _printsDuring(() async {
+          expect((await p.load()).activeBackend, PreferredBackend.gpu);
+        });
+        expect(_aboutGpuCache(lines), [
+          allOf(
+            contains('cannot write the GPU program cache of $edge'),
+            contains('compiles the programs again'),
+            isNot(contains('uploads the weights')),
+          ),
+        ]);
+        await p.close();
+        expectNothingLeaked();
+      });
+
+      test('a weight cache missing for another reason is still warned about '
+          'after the probe', () async {
+        native.dispose();
+        native = _FakeLiteRtLm()..omitGpuCaches = {'program', 'weight'};
+        final p = pass(gpu: true);
+        final lines = await _printsDuring(() async {
+          expect((await p.load()).activeBackend, PreferredBackend.gpu);
+        });
+        expect(_aboutGpuCache(lines), [
+          contains('cannot write the GPU program cache'),
+          allOf(contains('WARNING'), contains('no GPU weight cache')),
+        ]);
+        await p.close();
+        expectNothingLeaked();
+      });
+    });
+
+    test(
+      'the load log names the towers on cpu beside the GPU text tower',
+      () async {
+        File(_header740m).copySync(modelPath);
+        native.visionSignatures = const [70, 140];
+        final logged = <String>[];
+        final original = debugPrint;
+        debugPrint = (message, {wrapWidth}) => logged.add(message ?? '');
+        addTearDown(() => debugPrint = original);
+        final p = pass(
+          gpu: true,
+          visionTowerOnCpu: true,
+          audioTowerOnCpu: true,
+        );
+        await p.load();
+        expect(logged.where((l) => l.contains('loaded $_file')), [
+          contains('backend=gpu (vision and audio on cpu),'),
+        ]);
+        await p.close();
+      },
+    );
+
     test('the GPU cache names and the path check: the example app fits '
         'Windows MAX_PATH with 15 characters to spare', () {
       const model = 'embeddinggemma-2-text-270m__rev-9be6e8b90982.litertlm';
@@ -2137,8 +2204,9 @@ void main() {
       );
     });
 
-    test('on Windows a character outside ASCII anywhere in the cache path is a '
-        'problem at any length, unless the ANSI code page is UTF-8', () {
+    test('on Windows a cache directory with a character outside ASCII is a '
+        'problem at any length, unless the ANSI code page is UTF-8; a model '
+        'file name outside ASCII is not', () {
       const model = 'embeddinggemma-2-text-270m.litertlm';
       const ascii = r'C:\Users\sasha\AppData\Local\app\emb\d';
       const cyrillic = r'C:\Users\Саша\AppData\Local\app\emb\d';
@@ -2149,18 +2217,40 @@ void main() {
       expect(
         liteRtLmGpuCachePathProblem(cyrillic, model, 37, windows: true),
         allOf(
-          contains('characters outside ASCII'),
-          contains('CreateFileA'),
+          contains('the cache directory has characters outside ASCII'),
+          contains('UCRT _open'),
+          contains('ANSI code page'),
+          contains('not measured'),
+          contains('create likely fails too, on every backend'),
+          isNot(contains('CreateFileA')),
           isNot(contains('MAX_PATH')),
         ),
+      );
+      expect(
+        liteRtLmGpuCachePathCheck(cyrillic, model, 37, windows: true),
+        isA<LiteRtLmGpuCachePathCheck>()
+            .having((c) => c.kinds, 'kinds', {'weight', 'program'})
+            .having((c) => c.cacheDirOutsideAnsi, 'outside', isTrue),
       );
       expect(
         liteRtLmGpuCachePathProblem('${ascii}é', model, 37, windows: true),
         contains('characters outside ASCII'),
       );
+      // The cache directory's own name is ASCII by construction; a model file
+      // name outside ASCII still opens, under the name its UTF-8 bytes spell
+      // in the code page, so it is not refused.
       expect(
         liteRtLmGpuCachePathProblem(r'C:\c', 'é.litertlm', 37, windows: true),
-        contains('characters outside ASCII'),
+        isNull,
+      );
+      expect(
+        liteRtLmGpuCachePathProblem(
+          ascii,
+          '${'м' * 20}.litertlm',
+          37,
+          windows: true,
+        ),
+        isNull,
       );
       expect(
         liteRtLmGpuCachePathProblem(
@@ -2184,6 +2274,51 @@ void main() {
       );
       expect(liteRtLmPathOutsideAscii('abc~\x7F'), isFalse);
       expect(liteRtLmPathOutsideAscii('ab\u0080'), isTrue);
+    });
+
+    test(
+      'on Windows without a UTF-8 code page a model file name outside ASCII '
+      'is counted in UTF-8 bytes, one character each after the conversion',
+      () {
+        // 109 UTF-16 units, 209 UTF-8 bytes: about 160 and 260 for the program
+        // cache name.
+        final model = '${'м' * 100}.litertlm';
+        final names = liteRtLmGpuCacheFileNames(model, 37);
+        expect(
+          liteRtLmGpuCachePathProblem(r'C:\c', model, 37, windows: true),
+          allOf(
+            contains(
+              'program cache file name would be about '
+              '${utf8.encode(names.program).length} characters',
+            ),
+            contains('255-character limit'),
+            contains('MAX_PATH'),
+            isNot(contains('outside ASCII')),
+          ),
+        );
+        expect(
+          liteRtLmGpuCachePathProblem(
+            r'C:\c',
+            model,
+            37,
+            windows: true,
+            ansiCodePageIsUtf8: true,
+          ),
+          isNull,
+        );
+      },
+    );
+
+    test('the check names the cache kinds each reason applies to: at the edge '
+        'only the program cache, one character longer than the weight cache', () {
+      // Program name 256, weight name 255: past the limit for the program only.
+      final model = '${'m' * 194}.litertlm';
+      final names = liteRtLmGpuCacheFileNames(model, 37);
+      expect(names.program.length, 256);
+      expect(names.weight.length, 255);
+      final check = liteRtLmGpuCachePathCheck('/c', model, 37, windows: false);
+      expect(check?.kinds, {'program'});
+      expect(check?.problem, isNot(contains('weight')));
     });
 
     test('a real GPU cache is a *_mldrift_{weight,program}_cache.bin of at '

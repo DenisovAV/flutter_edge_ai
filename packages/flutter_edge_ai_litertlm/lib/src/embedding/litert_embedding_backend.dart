@@ -63,11 +63,14 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// run on CPU beside it. A cache the engine cannot create — a path too long
   /// for the platform (Windows' 260-character MAX_PATH, which the GPU caches
   /// cannot exceed either; a file name past 255 characters, UTF-8 bytes off
-  /// Windows), on Windows a GPU cache path with characters outside ASCII
-  /// (unless the process's ANSI code page is UTF-8), a directory this
-  /// process cannot write to, or possibly no free space at all — leaves the
-  /// load working but cold: slower to load every time and, on CPU, measured
-  /// on the 270m, about 290 MB more memory. By default no cache at all is a
+  /// Windows), a directory this process cannot write to, or possibly no free
+  /// space at all — leaves the load working but cold: slower to load every
+  /// time and, on CPU, measured on the 270m, about 290 MB more memory. A
+  /// cache directory with characters outside ASCII on Windows (unless the
+  /// process's ANSI code page is UTF-8) is not measured: the GPU accelerator
+  /// cannot open its caches there, and from LiteRT-LM's source the engine
+  /// create likely fails too, on every backend, since it checks the cache
+  /// directory through the ANSI code page. By default no cache at all is a
   /// printed warning. With `true` the load fails instead:
   /// `getActiveEmbedder()` throws an `EmbeddingLoadException` naming the
   /// cache directory, the length of the cache file path and the likely

@@ -386,10 +386,16 @@ def _resolve(target, base):
     return os.path.normpath(path if os.path.isabs(path) else os.path.join(base, path))
 
 
-def _strip_wrappers(words, env):
+def _strip_wrappers(words, env, pub_in_text=True):
     """The words after the assignments and wrappers in front of a command."""
     i = 0
     n = len(words)
+    # Read once: a per-env scan of the rest would be quadratic.
+    split_somewhere = any(
+        w.text.startswith("--split-string")
+        or (w.text.startswith("-") and not w.text.startswith("--") and "S" in w.text[1:])
+        for w in words
+    )
 
     def assignments():
         nonlocal i
@@ -426,28 +432,10 @@ def _strip_wrappers(words, env):
             i += 1
         elif name == "env":
             # `env -S "<command>"` splits a string into a command this reader
-            # does not run: unclear when it could hold a publish.
-            for w in words[i + 1 :]:
-                t = w.text
-                if not t.startswith("-"):
-                    break
-                split = None
-                if t in ("-S", "--split-string"):
-                    k = words.index(w)
-                    split = words[k + 1] if k + 1 < n else None
-                elif t.startswith("--split-string="):
-                    split = w
-                elif not t.startswith("--") and "S" in t[1:]:
-                    # `-S<string>`, or a cluster `-iS <string>`.
-                    if t.endswith("S"):
-                        k = words.index(w)
-                        split = words[k + 1] if k + 1 < n else None
-                    else:
-                        split = w
-                if split is not None and (
-                    "pub" in split.text or split.expands or re.search(r"['\"\\$]", split.text)
-                ):
-                    raise PublishUnclear("`env -S` splits a string into a command")
+            # does not run: any -S/--split-string among env's words makes a
+            # command that mentions `pub` unclear.
+            if pub_in_text and split_somewhere:
+                raise PublishUnclear("`env -S` splits a string into a command")
             i += 1
             options(with_arg=("-u", "-C", "-S", "--split-string"))
         elif name == "timeout":
@@ -514,6 +502,7 @@ class _Reader:
         # chain of the last cd].
         scopes = [[base, None, None]]
         chain = 0
+        andor = 0  # an AND-OR list: commands joined by &&, || and pipes
         # Once an if/while/until/for/case has opened, a cd may sit in a branch
         # that did not run: every later cd is an unknown directory.
         block = False
@@ -528,29 +517,29 @@ class _Reader:
             cmd = ev[1]
             if cmd.before != "&&":
                 chain += 1
+            if cmd.before not in ("&&", "||", "|", "|&"):
+                andor += 1
             scope = scopes[-1]
             if scope[1] is not None and scope[1] != chain:
                 # `a && cd x; publish`: whether the cd ran is not known.
                 scope[0] = None
                 scope[1] = None
             here = scope[0]
-            if cmd.after == "&" and scope[2] == chain:
+            if cmd.after == "&" and scope[2] == andor:
                 # `cd x && true &`: the whole list ran in the background.
                 scope[0] = None
                 scope[1] = None
                 here = None
-            for w in cmd.words:
-                t = os.path.basename(w.text)
-                if t in ("if", "while", "until", "for", "case", "select"):
-                    block = True
-                    break
-                if t not in _KEYWORDS:
-                    break
+            if any(
+                w.text in ("if", "while", "until", "for", "case", "select")
+                for w in cmd.words
+            ):
+                block = True
             for word in cmd.words:
                 for sub in word.subs:
                     self.run(sub, here, dict(env), depth + 1)
             own = dict(env)
-            words = _strip_wrappers(cmd.words, own)
+            words = _strip_wrappers(cmd.words, own, "pub" in self.text)
             for body in cmd.heredocs:
                 if words and os.path.basename(words[0].text) in _SHELLS and not any(
                     "c" in w.text[1:] for w in words[1:] if w.text.startswith("-")
@@ -601,7 +590,7 @@ class _Reader:
                     # After `&&` it ran only if the chain before it did, which
                     # is known only for a publish in the same chain.
                     scope[1] = chain if cmd.before == "&&" else None
-                    scope[2] = chain
+                    scope[2] = andor
                 continue
             # `dart pub $(echo publish)`, `dart $SUB publish`, `$D pub …`: a
             # word that expands where the command or its subcommand stands.
@@ -614,7 +603,7 @@ class _Reader:
                 )
             ) or (
                 words[0].expands
-                and any(w.expands or w.text in ("pub", "publish") for w in words[1:])
+                and ("pub" in self.text or any(w.expands for w in words[1:]))
             ):
                 raise PublishUnclear(
                     f"`{words[0].text}` runs a subcommand built from a variable "
@@ -743,6 +732,14 @@ _CASES = [
     ('env --split-string "dart pub $P"', None),
     ("env -iS 'dart pub publish'", None),
     ("timeout -s 'dart pub publish' 5 ls", None),
+    ("env -u X -S 'dart pub publish'", None),
+    ("env -C /tmp -S 'dart pub publish'", None),
+    ("cd x || true && true & dart pub publish", [None]),
+    ("cd x | cat && true & dart pub publish", [None]),
+    ("time if true; then cd x; fi; dart pub publish", [None]),
+    ("P=publish; $D pub $P", None),
+    ("X=pub; $D $X publish", None),
+    ("X='dart pub publish'; $X", None),
     ("dart $X", None),
     ("$D $P", None),
     ("cd x && true & dart pub publish", [None]),

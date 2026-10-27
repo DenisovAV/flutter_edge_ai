@@ -31,11 +31,25 @@ position this module does not know (`xargs dart pub publish`). The guards
 block on it. Plain text is not a publish: an argument of another command
 (`grep "dart pub publish"`, a commit message) or a here-document body that
 no shell reads.
+
+Out of scope: deliberate disguise. The guards catch mistakes in a release
+run, not an attacker: a publish assembled from pieces at run time (`eval $X`
+of a quote-split string, `env -S` with a variable inside the word, `printf
+… | sh`, base64 into a shell) is not read.
 """
 import os
 import re
 
 _PUBLISH_TEXT = re.compile(r"pub\s+publish")
+_PUB_WORD = re.compile(r"\bpub\b")
+_SUBCOMMANDS = ("publish", "lish", "lush")  # pub's aliases for publish
+_SUB_WORD = re.compile(r"\b(?:publish|lish|lush)\b")
+_BRACES = re.compile(r"\{[^{}]*,[^{}]*\}")
+
+
+def _mentions_publish(text):
+    """`pub` and one of its publish subcommands, both visible in [text]."""
+    return bool(_PUB_WORD.search(text) and _SUB_WORD.search(text))
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 _SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 _KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}"}
@@ -335,6 +349,9 @@ class _Scanner:
                 j += 1
             if j >= len(s):
                 self.fail("a $(( that does not close")
+            body = s[self.i + 3 : j - 1]
+            if "$(" in body or "`" in body:
+                w.subs += _substitutions(body)  # bash runs them in arithmetic
             w.text += s[self.i : j + 1]
             self.i = j + 1
         elif s.startswith("$(", self.i):
@@ -349,6 +366,12 @@ class _Scanner:
             j = s.find("}", self.i)
             if j < 0:
                 self.fail("a ${ that does not close")
+            body = s[self.i + 2 : j]
+            if "$(" in body or "`" in body:
+                # `${X:-$(…)}`: the default is a command bash runs. The body
+                # may end inside it (`}` in the command); then the rest is
+                # read as plain text, and the visible-text rule applies.
+                w.subs += _substitutions(body)
             w.text += s[self.i : j + 1]
             self.i = j + 1
         else:
@@ -378,6 +401,12 @@ class _ScanError(Exception):
     pass
 
 
+def _substitutions(body):
+    """The command substitutions in [body], read as if double-quoted."""
+    scanner = _Scanner('"' + body.replace('"', "'") + '"')
+    return scanner.read_word().subs
+
+
 def _resolve(target, base):
     """[target] from [base]; None for a target built from a variable."""
     if base is None or target.expands:
@@ -386,7 +415,7 @@ def _resolve(target, base):
     return os.path.normpath(path if os.path.isabs(path) else os.path.join(base, path))
 
 
-def _strip_wrappers(words, env, pub_in_text=True):
+def _strip_wrappers(words, env, pub_in_text=True, moves=None):
     """The words after the assignments and wrappers in front of a command."""
     i = 0
     n = len(words)
@@ -437,7 +466,23 @@ def _strip_wrappers(words, env, pub_in_text=True):
             if pub_in_text and split_somewhere:
                 raise PublishUnclear("`env -S` splits a string into a command")
             i += 1
-            options(with_arg=("-u", "-C", "-S", "--split-string"))
+            # `env -C <dir>` / `--chdir`: the command runs in <dir>.
+            k = i
+            while k < n and words[k].text.startswith("-") and words[k].text != "--":
+                t = words[k].text
+                if t in ("-C", "--chdir") and k + 1 < n:
+                    if moves is not None:
+                        moves.append(words[k + 1])
+                    k += 2
+                    continue
+                if t.startswith("--chdir=") or (t.startswith("-C") and len(t) > 2):
+                    target = _Word()
+                    target.text = t.split("=", 1)[1] if t.startswith("--") else t[2:]
+                    target.expands = words[k].expands
+                    if moves is not None:
+                        moves.append(target)
+                k += 1
+            options(with_arg=("-u", "-C", "-S", "--split-string", "--chdir", "--unset"))
         elif name == "timeout":
             i += 1
             options(with_arg=("-s", "-k", "--signal", "--kill-after"))
@@ -498,6 +543,10 @@ class _Reader:
             if _PUBLISH_TEXT.search(text):
                 raise PublishUnclear("the command nests too deep to read")
             return
+        # The words of every command, quotes removed: what a reader sees.
+        visible = _mentions_publish(
+            " ".join(w.text for ev in events if ev not in ("open", "close") for w in ev[1].words)
+        )
         # Per subshell: [directory, the && chain of a conditional cd, the
         # chain of the last cd].
         scopes = [[base, None, None]]
@@ -539,7 +588,10 @@ class _Reader:
                 for sub in word.subs:
                     self.run(sub, here, dict(env), depth + 1)
             own = dict(env)
-            words = _strip_wrappers(cmd.words, own, "pub" in self.text)
+            moves = []
+            words = _strip_wrappers(cmd.words, own, visible, moves)
+            for target in moves:
+                here = _resolve(target, here)
             for body in cmd.heredocs:
                 if words and os.path.basename(words[0].text) in _SHELLS and not any(
                     "c" in w.text[1:] for w in words[1:] if w.text.startswith("-")
@@ -592,46 +644,61 @@ class _Reader:
                     scope[1] = chain if cmd.before == "&&" else None
                     scope[2] = andor
                 continue
-            # `dart pub $(echo publish)`, `dart $SUB publish`, `$D pub …`: a
-            # word that expands where the command or its subcommand stands.
-            if (
-                name in ("dart", "flutter")
-                and len(words) >= 2
-                and (
-                    words[1].expands
-                    or (words[1].text == "pub" and len(words) >= 3 and words[2].expands)
-                )
-            ) or (
+            # A command or subcommand word that expands (`$D pub publish`,
+            # `dart $SUB publish`, `{pub,publish}`) is unclear only when the
+            # text, quotes removed, shows a publish: `$EDITOR "$FILE"` is not.
+            if visible and (
                 words[0].expands
-                and ("pub" in self.text or any(w.expands for w in words[1:]))
+                or (name in ("dart", "flutter") and any(w.expands for w in words[1:3]))
+                or any(_BRACES.search(w.text) for w in words)
             ):
                 raise PublishUnclear(
-                    f"`{words[0].text}` runs a subcommand built from a variable "
-                    "or a substitution"
+                    f"`{words[0].text}` runs a command or subcommand built from "
+                    "a variable, a substitution or braces"
                 )
-            if name in ("dart", "flutter") and len(words) >= 3 and (
-                words[1].text == "pub" and words[2].text == "publish"
-            ):
-                args = words[3:]
-                self.found.append(Publish(own, [w.text for w in args], _directory(args, here)))
-                rest = _publish_pairs(words[1:])
-                if rest:
-                    raise PublishUnclear("a second `pub publish` in one command")
-                continue
-            if _publish_pairs(words) or (
-                len(words) >= 2 and words[0].text == "pub" and words[1].text == "publish"
-            ):
+            if name in ("dart", "flutter"):
+                k = 1
+                while k < len(words) and words[k].text.startswith("-"):
+                    k += 1  # dart's own options, e.g. --verbose
+                sub = _pub_subcommand(words, k)
+                if sub is not None:
+                    args = words[sub + 1 :]
+                    self.found.append(
+                        Publish(
+                            own,
+                            [w.text for w in args],
+                            _directory(words[k + 1 :], here),
+                        )
+                    )
+                    if any(_pub_subcommand(words, m) is not None for m in range(sub + 1, len(words))):
+                        raise PublishUnclear("a second `pub publish` in one command")
+                    continue
+            if any(_pub_subcommand(words, m) is not None for m in range(len(words))):
                 raise PublishUnclear(
                     f"`pub publish` behind `{words[0].text}`, which the guard "
                     "does not read"
                 )
 
 
+def _pub_subcommand(words, k):
+    """The index of `publish|lish|lush` when words[k] is `pub` followed by
+    pub's global options and it; else None."""
+    if k >= len(words) or words[k].text != "pub":
+        return None
+    j = k + 1
+    while j < len(words) and words[j].text.startswith("-"):
+        j += 2 if words[j].text in ("-C", "--directory", "--verbosity") else 1
+    if j < len(words) and words[j].text in _SUBCOMMANDS:
+        return j
+    return None
+
+
 def _directory(args, base):
-    """[base], moved by the publish's own `-C`/`--directory`."""
+    """[base], moved by the LAST `-C`/`--directory` among pub's words, as pub
+    itself takes the last one."""
+    target = None
     for k, w in enumerate(args):
         t = w.text
-        target = None
         if t in ("-C", "--directory"):
             if k + 1 < len(args):
                 target = args[k + 1]
@@ -643,9 +710,7 @@ def _directory(args, base):
             target = _Word()
             target.text = t[2:]
             target.expands = w.expands
-        if target is not None:
-            return _resolve(target, base)
-    return base
+    return base if target is None else _resolve(target, base)
 
 
 def publishes(cmd, cwd):
@@ -729,7 +794,6 @@ _CASES = [
     # Unclear: blocked.
     ('env -S "dart pub publish"', None),
     ("env -S'dart pub publish'", None),
-    ('env --split-string "dart pub $P"', None),
     ("env -iS 'dart pub publish'", None),
     ("timeout -s 'dart pub publish' 5 ls", None),
     ("env -u X -S 'dart pub publish'", None),
@@ -740,8 +804,12 @@ _CASES = [
     ("P=publish; $D pub $P", None),
     ("X=pub; $D $X publish", None),
     ("X='dart pub publish'; $X", None),
-    ("dart $X", None),
-    ("$D $P", None),
+    ("dart $X", []),  # nothing visible says publish
+    # Out of scope (deliberate disguise): only part of the publish is visible.
+    ('env --split-string "dart pub $P"', []),
+    ("dart $SUB publish", []),
+    ("$D pub $P", []),
+    ("$D $P", []),
     ("cd x && true & dart pub publish", [None]),
     ("{ if true; then cd x; fi; }; dart pub publish", [None]),
     ("! if true; then cd x; fi; dart pub publish", [None]),
@@ -749,9 +817,30 @@ _CASES = [
     ("echo $X", []),
     ("env --split-string='dart pub publish'", None),
     ("dart pub $(echo publish)", None),
-    ("dart $SUB publish", None),
-    ("$D pub $P", None),
     ("xargs dart pub publish", None),
+    # pub's aliases, global options and directories.
+    ("dart pub lish --force", ["/r"]),
+    ("dart pub lush --force", ["/r"]),
+    ("dart pub -v publish --force", ["/r"]),
+    ("dart --verbose pub publish", ["/r"]),
+    ("dart pub -C packages/x publish --force", ["/r/packages/x"]),
+    ("dart pub publish -C a -C b --force", ["/r/b"]),
+    ("dart pub -C a publish --directory=b", ["/r/b"]),
+    ("env -C /w dart pub publish", ["/w"]),
+    ("env --chdir=/w dart pub publish", ["/w"]),
+    ("env -C $D dart pub publish", [None]),
+    ("dart pub lish --dry-run", [""]),
+    ("xargs dart pub -v lish", None),
+    # Substitutions inside arithmetic and parameter defaults run.
+    ("echo $(( $(dart pub publish) ))", ["/r"]),
+    ("echo ${X:-$(dart pub publish)}", ["/r"]),
+    # Braces that could spell a publish.
+    ("dart {pub,publish} --force", None),
+    # Ordinary commands with an expanding name are not a publish.
+    ('$EDITOR "$FILE"', []),
+    ('${DART:-dart} format "$F"', []),
+    ("$(git rev-parse --show-toplevel)/tool/test_all.sh $PKG", []),
+    ("dart $SCRIPT", []),
     ("d=dart; $d pub publish", None),
     ("echo 'dart pub publish' | sh", None),
     ('dart pub publish "unclosed', None),

@@ -290,6 +290,18 @@ void main() {
   });
 
   group('installFromCatalog, STT', () {
+    test('an install name that is not the URL\'s file name is refused before '
+        'any download', () async {
+      await initialize();
+      await expectLater(
+        FlutterEdgeAi.installFromCatalog(
+          TestStt(modelInstallFilename: 'other.tflite'),
+        ).install(),
+        throwsArgumentError,
+      );
+      expect(downloads.urls, isEmpty);
+    });
+
     test('the wrong size never becomes the active STT model', () async {
       await initialize();
       final manager = FlutterEdgeAiPlugin.instance.modelManager;

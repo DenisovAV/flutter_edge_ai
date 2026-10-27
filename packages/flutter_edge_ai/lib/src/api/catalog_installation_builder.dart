@@ -198,6 +198,21 @@ final class CatalogInstallationBuilder {
   }
 
   Future<ModelSpec> _stt(SttVariant v, _Check check) async {
+    // Core keeps STT files under their URL's file name too: a catalog that
+    // names them otherwise would be found out only after the download.
+    for (final file in v.files) {
+      final urlName = InferenceModelFile.fromSource(
+        ModelSource.network(file.url),
+      ).filename;
+      if (urlName != file.installFilename) {
+        throw ArgumentError.value(
+          v,
+          'variant',
+          '${v.id} installs "${file.installFilename}", but an STT model\'s '
+              'file is installed under its URL\'s file name "$urlName"',
+        );
+      }
+    }
     final progress = _WeightedProgress(
       _onProgress == null ? null : _progress,
       v.files,

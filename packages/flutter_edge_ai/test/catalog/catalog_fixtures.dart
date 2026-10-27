@@ -147,8 +147,12 @@ final class TestTts extends TtsVariant {
 }
 
 final class TestStt extends SttVariant {
-  TestStt({int modelSize = 1024 * 1024 + 16})
-    : model = artifact('tiny_stt.tflite', size: modelSize),
+  TestStt({int modelSize = 1024 * 1024 + 16, String? modelInstallFilename})
+    : model = artifact(
+        'tiny_stt.tflite',
+        size: modelSize,
+        installFilename: modelInstallFilename,
+      ),
       tokenizer = artifact('tiny_stt_tokenizer.json');
 
   @override

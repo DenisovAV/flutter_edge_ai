@@ -176,6 +176,23 @@ void main() {
       );
     });
 
+    test('the same variant object in two catalogs counts once', () {
+      final shared = TestLlm('generic');
+      final merged = RegisteredCatalog([
+        TestSource(
+          TestCatalog('package', [
+            TestModel('tiny-llm', [shared]),
+          ]),
+        ),
+        TestSource(
+          TestCatalog('app', [
+            TestModel('tiny-llm', [shared]),
+          ]),
+        ),
+      ]);
+      expect(merged.byId('tiny-llm')!.variants, [same(shared)]);
+    });
+
     test('a catalog reached through two providers counts once', () {
       final catalog = TestCatalog('c', [
         TestModel('tiny-llm', [TestLlm('a')]),

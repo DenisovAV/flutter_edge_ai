@@ -3,6 +3,10 @@
 - Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every LiteRT build pinned to its commit.
 - Require `flutter_edge_ai` ^2.5.4.
 
+## 1.18.1
+- Windows: Gemma 4 12B on an Intel GPU answers prompts under 512 tokens (`native-v0.18.0-h`, LiteRT-LM#4083).
+- macOS: apps with Swift Package Manager on need no Podfile block; requires macOS 14 (#689).
+
 ## 1.18.0
 - `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).
 - Another package's libLiteRtLm in the app is refused at load with the cause and the fix (#722).

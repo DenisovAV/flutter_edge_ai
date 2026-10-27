@@ -257,9 +257,14 @@ CHECKLIST
    for large models. macOS must carry NO `com.apple.developer.kernel.*` key — they
    are iOS-only: without a signing team the build fails ("has entitlements that
    require signing with a development certificate"), with a team Xcode drops
-   them. macOS needs `network.client` and `cs.disable-library-validation` in BOTH
-   DebugProfile and Release entitlements; the latter takes effect under Hardened
-   Runtime, because the stager signs LiteRT-LM and its companions ad hoc.
+   them. macOS needs `network.client` in BOTH DebugProfile and Release
+   entitlements, and an app with Swift Package Manager off also
+   `cs.disable-library-validation` (it takes effect under Hardened Runtime,
+   because the Podfile stager signs the companions ad hoc). With it on, the
+   companions come from litertlm's `macos/flutter_edge_ai_litertlm/Package.swift`
+   and Xcode signs them with the app's team (#689); Package.swift and the
+   litertlm podspec declare macOS 14.0, which every app depending on litertlm or
+   speech must match.
 5. No `Podfile post_install` symlink step should be reintroduced: those lib*.dylib
    symlinks caused App Store rejection ITMS-90432 (#245). Any bundled dylib needs
    `vtool` minos 13.0 or the upload is rejected (ITMS-90208).

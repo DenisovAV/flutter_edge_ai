@@ -86,8 +86,9 @@ LiteRT.js loader and **rag/sqlite3.wasm**; EmbeddingGemma 2 needs only the
 
 The `.litertlm` and `.tflite` models run on **LiteRtEmbeddingBackend** from
 **flutter_edge_ai_litertlm**, the GGUF one on **LlamaEmbeddingBackend** from
-**flutter_edge_ai_llama** (on macOS, LiteRT-LM's CocoaPods recipe and
-llama.cpp's Swift Package Manager companion are not qualified in one app), the
+**flutter_edge_ai_llama** (on macOS both load in one Swift Package Manager app
+from `flutter_edge_ai_litertlm` 1.18.0; running both engines' models in one app
+is not qualified), the
 ONNX ones on **OnnxEmbeddingBackend** from **flutter_edge_ai_onnx**. LiteRT
 EmbeddingGemma (1 and 2) and Gecko produce 768-dimensional vectors;
 all-MiniLM-L6-v2 produces 384. A number such as 256 in an artifact name is the

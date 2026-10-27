@@ -394,11 +394,11 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
 | Linux | ✅ FFI |
 | Web | ❌ (the web arm is a stub that throws `UnsupportedError`) |
 
-On macOS the app needs the same setup as every LiteRT-LM feature: Swift Package
-Manager turned off for the app in `pubspec.yaml` and the `post_install` block in
-`macos/Podfile` (an app that already has a `macos/Podfile` keeps Swift Package
-Manager on and only needs the block), see [Desktop → macOS](/docs/desktop#macos). Without it STT and
-TTS fail to load, and since `flutter_edge_ai_litertlm` 1.17.0 the error says so
+On macOS the app needs the same setup as every LiteRT-LM feature, see
+[Desktop → macOS](/docs/desktop#macos): a macOS 14.0 deployment target, and
+with Swift Package Manager off the `post_install` block in `macos/Podfile` (with
+it on, from `flutter_edge_ai_litertlm` 1.18.0, nothing more). Without the
+companion libraries STT and TTS fail to load, and the error says so
 ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 
 On Android, speech (STT + TTS), like everything backed by `libLiteRtLm`, is **arm64-only** and

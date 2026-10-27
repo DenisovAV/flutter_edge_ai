@@ -199,7 +199,10 @@ that applies while a debugger is attached, which is every `flutter run` this
 codelab asks you to do, so leaving it out costs you exactly the runs you are
 about to make.
 
-**macOS** — two entitlements and one build phase. The entitlements go in
+**macOS** — a deployment target, two entitlements and one build phase. The
+deployment target is macOS 14.0, because LiteRT-LM's companion libraries are
+built for macOS 14; the step apps set it on the Runner target and in
+`macos/Podfile`. The entitlements go in
 **both** `macos/Runner/DebugProfile.entitlements` and
 `macos/Runner/Release.entitlements`, beside the keys `flutter create` already
 wrote there:
@@ -214,8 +217,8 @@ wrote there:
 `network.client` is what lets a sandboxed macOS app reach Hugging Face at all.
 `disable-library-validation` does nothing yet: it matters once Hardened Runtime
 is on, which notarizing the app for distribution requires. The build phase below
-signs LiteRT-LM and its companion libraries ad hoc, and library validation
-refuses code not signed by Apple or by your own team. The iOS keys above are
+signs the companion libraries ad hoc, and library validation refuses code not
+signed by Apple or by your own team. The iOS keys above are
 deliberately **not** here: they are iOS entitlements. On macOS a build with no
 signing team fails outright with `"Runner" has entitlements that require signing
 with a development certificate`, and a team-signed build silently drops them — a
@@ -232,17 +235,16 @@ block from any step app's `macos/Podfile` — or from the
 [desktop docs](/docs/desktop), which quote it in full with the reasoning for
 each line; the next build runs `pod install` itself.
 
-One trap, measured. Flutter 3.44+ uses Swift Package Manager by default, and
-an app whose plugins all ship a `Package.swift` — core does, and
-`flutter_edge_ai_litertlm` is not a plugin at all — gets no `macos/Podfile`, so
-nothing runs the block. That is why every step app's `pubspec.yaml` carries
-`flutter: config: enable-swift-package-manager: false`. For an app of your own,
-add the same lines, run `flutter pub get` (it writes `macos/Podfile`), and replace
-its `post_install` block with this one, keeping any lines of your own inside it. A macOS build that succeeds proves nothing here: the app compiles,
-links, signs and launches either way, and the failure —
-`Failed to load dynamic library 'LiteRtLm.framework/LiteRtLm'` … `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib` — arrives at the first model load, which no build log warns you about.
-Prefer the pubspec setting to `flutter config --no-enable-swift-package-manager`:
-that one changes only your machine, not your teammates' or CI.
+The step apps need that block because their `pubspec.yaml` turns Swift Package
+Manager off (`flutter: config: enable-swift-package-manager: false`), and a
+macOS build that succeeds proves nothing there: the app compiles, links, signs
+and launches without the block, and the failure — `LiteRT-LM did not load on
+macOS`, naming the missing library — arrives at the first model load, which no
+build log warns you about. An app of your own can keep Swift Package Manager on,
+Flutter's default since 3.44: from `flutter_edge_ai_litertlm` 1.18.0 its Swift
+package brings the companion libraries and Xcode signs them with your team, so
+it needs only the 14.0 deployment target and `network.client` — no Podfile
+block, no `disable-library-validation`.
 
 **Windows** — nothing in the app, and x86_64 only: there is no Windows arm64
 build of the runtime, so a Snapdragon-X machine is out. Nothing needs installing:

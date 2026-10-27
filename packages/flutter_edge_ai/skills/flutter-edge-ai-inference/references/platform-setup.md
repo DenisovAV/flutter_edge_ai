@@ -118,24 +118,23 @@ simulator build) and cannot run GPU inference; use CPU there, or a real device.
 ## macOS
 
 Apple Silicon (`arm64`) only: there is no native library for Intel (`x86_64`)
-Macs.
+Macs. The deployment target must be **macOS 14.0**: set Minimum Deployments on
+the Runner target in Xcode (`MACOSX_DEPLOYMENT_TARGET = 14.0`), and
+`platform :osx, '14.0'` in `macos/Podfile` if the app has one. LiteRT-LM's
+companion libraries are built for macOS 14; below it the build fails with
+`requires minimum platform version 14.0` (Swift Package Manager) or `required a
+higher minimum deployment target` (CocoaPods).
 
 Add to both `macos/Runner/DebugProfile.entitlements` and
 `macos/Runner/Release.entitlements`:
 
 ```xml
-<key>com.apple.security.cs.disable-library-validation</key>
-<true/>
 <key>com.apple.security.network.client</key>
 <true/>
 ```
 
-`network.client` lets the sandboxed app download the model.
-`disable-library-validation` matters once Hardened Runtime is on, which
-notarization requires: the build phase below signs LiteRT-LM and its companion
-libraries ad hoc, and library validation refuses code that is not signed by
-Apple or by the app's own team. Add both keys to both files — the debug and
-release builds read different ones.
+`network.client` lets the sandboxed app download the model. Add it to both
+files — the debug and release builds read different ones.
 
 Do not copy the iOS `com.apple.developer.kernel.*` keys into these files; they
 are iOS entitlements. Without a signing team the build fails with `"Runner" has
@@ -143,30 +142,27 @@ entitlements that require signing with a development certificate`, and a
 team-signed build silently drops them. A `.litertlm` model loads on macOS
 without them.
 
-`.litertlm` on macOS also needs a build phase that copies the LiteRT-LM
-companion libraries into the app: the package deliberately keeps them out of
-Native Assets, so nothing else puts them in the bundle.
+`.litertlm` on macOS also needs two companion libraries in the app
+(`GemmaModelConstraintProvider`, `LiteRtLmMetalAccelerator`), which the package
+keeps out of Native Assets. How they get there depends on Swift Package Manager:
 
-With CocoaPods, paste this into `macos/Podfile`, replacing any existing
-`post_install` block; the next build runs `pod install` itself. A green build
-proves nothing: without it the first model load fails with
-`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. From
-`flutter_edge_ai_litertlm` 1.17.0 that error contains
-`flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names this fix.
+- **On** (the default since Flutter 3.44), with `flutter_edge_ai_litertlm`
+  1.18.0 or later: nothing to add. Its Swift package brings them, and Xcode
+  embeds and signs them with the app's identity. This holds when the app also
+  has a `macos/Podfile` for another plugin.
+- **Off** (`flutter: config: enable-swift-package-manager: false` in
+  `pubspec.yaml`): paste the block below into `macos/Podfile`, replacing any
+  existing `post_install` block; the next build runs `pod install` itself. Also
+  add `com.apple.security.cs.disable-library-validation` to both entitlements
+  files: the build phase signs the libraries ad hoc, and under Hardened Runtime
+  (which notarization requires) library validation refuses them without it.
+  The `flutter_gemma` phase, cache and stamp names in this snippet are
+  intentional compatibility identifiers used by the current package; do not
+  rename them.
 
-**A Swift Package Manager app has no `macos/Podfile` to paste into.** SPM is the
-default since Flutter 3.44, and an app whose plugins all ship a `Package.swift` —
-core does, and `flutter_edge_ai_litertlm` is not a plugin at all — never gets one
-generated. Either turn SPM off for the project in `pubspec.yaml` —
-`flutter: config: enable-swift-package-manager: false`, committed with the app,
-so teammates and CI get it too, unlike the machine-wide
-`flutter config --no-enable-swift-package-manager` — then run `flutter pub get`,
-which writes `macos/Podfile`; or add the same
-step by hand in Xcode: a Run Script phase on the Runner target named
-`[flutter_gemma] Setup LiteRT-LM macOS`, carrying the `shell_script`, input path
-and output path from the block below. The `flutter_gemma` phase, cache and stamp
-names in this snippet are intentional compatibility identifiers used by the
-current package; do not rename them.
+A green build proves nothing: without the libraries the first model load fails
+with an error that contains
+`flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names the fix.
 
 ```ruby
 post_install do |installer|

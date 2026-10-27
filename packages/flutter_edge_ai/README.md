@@ -69,7 +69,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 
 ³ Through llamadart; CI covers the CPU lifecycle — see its [qualification matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md).
 
-⁴ iOS 16.4+ and macOS 14+, with Flutter's Swift Package Manager on and the `llamadart_llama_cpp_flutter` companion. The LiteRT-LM macOS setup below (CocoaPods, usually with Swift Package Manager off) is not qualified together with it: use separate apps. See the [`flutter_edge_ai_llama` README](https://pub.dev/packages/flutter_edge_ai_llama).
+⁴ iOS 16.4+ and macOS 14+, with Flutter's Swift Package Manager on and the `llamadart_llama_cpp_flutter` companion. From `flutter_edge_ai_litertlm` 1.18.0 LiteRT-LM needs no Podfile on macOS either, and both libraries load in one Swift Package Manager app; running both engines' models in one app is not qualified. See the [`flutter_edge_ai_llama` README](https://pub.dev/packages/flutter_edge_ai_llama).
 
 LiteRT-LM ships `arm64` on Android, iOS and macOS, `x86_64` on Windows and `x86_64` / `arm64`
 on Linux; on Android, MediaPipe `.task` also runs on `x86_64` / `armeabi-v7a`, and on Linux
@@ -149,26 +149,19 @@ LiteRT-LM run on WebGPU; ONNX also runs on CPU (WASM).
 
 ### macOS
 
-macOS needs a build step that stages the LiteRT-LM companion libraries into
-the app ([why](https://flutteredge.ai/docs/desktop)), and it runs from a
-CocoaPods Podfile. Flutter 3.44+ uses Swift Package Manager by default, so a new
-app has no `macos/Podfile`: turn SPM off for the app in `pubspec.yaml`:
+macOS 14 or later: set the app's deployment target to 14.0 (Xcode → Runner
+target → General → Minimum Deployments, and `platform :osx, '14.0'` in
+`macos/Podfile` if the app has one).
 
-```yaml
-flutter:
-  config:
-    enable-swift-package-manager: false
-```
+With Flutter's default Swift Package Manager on, that is all: from
+`flutter_edge_ai_litertlm` 1.18.0 its Swift package brings LiteRT-LM's companion
+libraries into the app ([why](https://flutteredge.ai/docs/desktop#macos)).
 
-Run `flutter pub get` (it writes `macos/Podfile`), then replace that Podfile's
-`post_install` block with the one below, keeping any lines of your own inside
-it; the next build runs `pod install` itself. A green build proves nothing: without the block the first model load
-fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`; from `flutter_edge_ai_litertlm` 1.17.0
-the error says why and names this fix. If your app already has a `macos/Podfile` (another plugin
-needs CocoaPods), keep SPM on and only replace its `post_install` block. Prefer the pubspec
-setting to `flutter config --no-enable-swift-package-manager`, which changes
-only your machine — not your teammates' or CI. `flutter_edge_ai_llama` needs
-Swift Package Manager on instead (⁴).
+An app with Swift Package Manager off (`enable-swift-package-manager: false`
+under `flutter: config:` in `pubspec.yaml`) gets them from `macos/Podfile`:
+replace its `post_install` block with the one below, keeping any lines of your
+own inside it; the next build runs `pod install` itself. Without it the first
+model load fails with `LiteRT-LM did not load on macOS`.
 
 ```ruby
 post_install do |installer|
@@ -238,11 +231,13 @@ end
 Add to `macos/Runner/DebugProfile.entitlements` and `Release.entitlements`:
 
 ```xml
-<key>com.apple.security.cs.disable-library-validation</key>
-<true/>
 <key>com.apple.security.network.client</key>
 <true/>
 ```
+
+With Swift Package Manager off, also add
+`com.apple.security.cs.disable-library-validation`: the Podfile block signs the
+companion libraries ad hoc, which Hardened Runtime refuses without it.
 
 ### Windows and Linux
 

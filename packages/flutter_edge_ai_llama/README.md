@@ -141,8 +141,9 @@ iOS **16.4+** / macOS **14+**, matching the example's Xcode configuration.
 The direct companion dependency links the matching llama.cpp XCFramework.
 On iOS enable `com.apple.developer.kernel.extended-virtual-addressing` and
 `com.apple.developer.kernel.increased-memory-limit`; see the example entitlements.
-The LiteRT-LM macOS CocoaPods recipe disables SwiftPM and conflicts with this
-companion recipe; that combined setup is not qualified.
+From `flutter_edge_ai_litertlm` 1.18.0 LiteRT-LM keeps SwiftPM on as well, and
+both native libraries load in one app; running both engines' models in one app
+is not qualified.
 Companion 0.15.0 includes the framework metadata fix from
 [llamadart-native #110](https://github.com/leehack/llamadart-native/issues/110);
 App Store submission remains **unvalidated**.

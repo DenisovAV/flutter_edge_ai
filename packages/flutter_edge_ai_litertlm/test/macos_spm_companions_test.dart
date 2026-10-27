@@ -82,6 +82,25 @@ void main() {
     expect(_stager, contains(r'dev.flutteredge.litertlm.${base}'));
   });
 
+  test('the packaging script gives the same zip in any timezone and a '
+      'numeric CFBundleVersion', () {
+    // `touch -t` and zip read the local zone: zips built in CET and in UTC
+    // had different checksums.
+    expect(_packager, contains('export TZ=UTC'));
+    // App Store validation wants one to three integers there; the tag itself
+    // goes into its own key.
+    expect(
+      _packager,
+      contains(r'<key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>'),
+    );
+    expect(
+      _packager,
+      contains(
+        r'<key>DevFlutteredgeNativeTag</key><string>native-v${NATIVE_VERSION}</string>',
+      ),
+    );
+  });
+
   test('Package.swift and the podspec declare the same minimum macOS', () {
     final swift = RegExp(
       r'\.macOS\("([\d.]+)"\)',

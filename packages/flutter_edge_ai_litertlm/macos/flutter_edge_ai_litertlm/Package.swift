@@ -16,11 +16,11 @@
 import Foundation
 import PackageDescription
 
-let nativeTag = "native-v0.18.0-g"
+let nativeTag = "native-v0.18.0-h"
 
 let companions: [(name: String, checksum: String)] = [
-    ("GemmaModelConstraintProvider", "143edc89f3e3f444955890842adff16b749ca403385100e49a67c9a3466b472c"),
-    ("LiteRtLmMetalAccelerator", "ca391e63e87c813bdbfdb79a47d228e6240ef31581f6b9c88b392e0c5a7a9052"),
+    ("GemmaModelConstraintProvider", "23bd0dead9e6d01641eedc1a2dae3441bb381363b03319ab4ab028b60b94c9ac"),
+    ("LiteRtLmMetalAccelerator", "e7cc3c25d9e82ef72f44e47724192bf3e2ce3ce757fde50be8c0dd98a26a7427"),
 ]
 
 // For a maintainer testing a local native build: when Artifacts/ holds every

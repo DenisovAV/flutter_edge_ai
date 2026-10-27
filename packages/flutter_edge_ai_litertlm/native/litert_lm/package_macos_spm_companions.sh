@@ -12,10 +12,15 @@
 # identity.
 #
 # The output is deterministic: running it twice on the same tarball gives the
-# same zip bytes, so a checksum can be regenerated and compared at any time.
+# same zip bytes, on any machine and in any timezone (TZ is UTC throughout:
+# `touch -t` and zip both read the local zone), so a checksum can be
+# regenerated and compared at any time.
 #
 # Usage:
-#   package_macos_spm_companions.sh <litertlm-macos_arm64.tar.gz> <out_dir>
+#   [NATIVE_VERSION=0.18.0-h] package_macos_spm_companions.sh <litertlm-macos_arm64.tar.gz> <out_dir>
+#
+# NATIVE_VERSION defaults to the hook's bundle version and must equal it when
+# set: the zips are released on the tag the hook downloads.
 #
 # Writes <out_dir>/GemmaModelConstraintProvider.xcframework.zip,
 # <out_dir>/LiteRtLmMetalAccelerator.xcframework.zip and
@@ -23,6 +28,7 @@
 # the value Package.swift pins).
 
 set -euo pipefail
+export TZ=UTC
 
 TARBALL="${1:?usage: $0 <litertlm-macos_arm64.tar.gz> <out_dir>}"
 OUT="${2:?usage: $0 <litertlm-macos_arm64.tar.gz> <out_dir>}"
@@ -38,8 +44,26 @@ tar -xzf "${TARBALL}" -C "${WORK}"
 # The bundle version in each framework's Info.plist: the native release the
 # bytes come from, read from the hook so the two cannot disagree.
 HOOK="$(cd "$(dirname "$0")/../.." && pwd)/hook/build.dart"
-NATIVE_VERSION="$(sed -n "s/^  version: '\([^']*\)',$/\1/p" "${HOOK}" | head -1)"
-[ -n "${NATIVE_VERSION}" ] || { echo "could not read the native version from ${HOOK}" >&2; exit 1; }
+HOOK_VERSION="$(sed -n "s/^  version: '\([^']*\)',$/\1/p" "${HOOK}" | head -1)"
+[ -n "${HOOK_VERSION}" ] || { echo "could not read the native version from ${HOOK}" >&2; exit 1; }
+NATIVE_VERSION="${NATIVE_VERSION:-${HOOK_VERSION}}"
+[ "${NATIVE_VERSION}" = "${HOOK_VERSION}" ] || {
+  echo "NATIVE_VERSION=${NATIVE_VERSION} but the hook pins ${HOOK_VERSION}" >&2; exit 1; }
+
+# CFBundleVersion must be one to three period-separated integers, so the
+# release letter is folded into the last one: 0.18.0 -> 0.18.0, 0.18.0-h ->
+# 0.18.8 (patch * 100 + the letter's place in the alphabet), which still grows
+# with every release. The tag itself goes into DevFlutteredgeNativeTag.
+case "${NATIVE_VERSION}" in
+  [0-9]*.[0-9]*.[0-9]*-[a-z]) letter="${NATIVE_VERSION##*-}" ;;
+  [0-9]*.[0-9]*.[0-9]*) letter="" ;;
+  *) echo "unexpected native version ${NATIVE_VERSION}" >&2; exit 1 ;;
+esac
+base_version="${NATIVE_VERSION%%-*}"
+IFS=. read -r v_major v_minor v_patch <<< "${base_version}"
+letter_index=0
+[ -z "${letter}" ] || letter_index=$(( $(printf '%d' "'${letter}") - 96 ))
+BUNDLE_VERSION="${v_major}.${v_minor}.$(( v_patch * 100 + letter_index ))"
 
 : > "${OUT}/checksums_spm_macos.txt"
 for base in ${COMPANIONS}; do
@@ -65,8 +89,9 @@ for base in ${COMPANIONS}; do
   <key>CFBundleIdentifier</key><string>dev.flutteredge.litertlm.${base}</string>
   <key>CFBundleName</key><string>${base}</string>
   <key>CFBundlePackageType</key><string>FMWK</string>
-  <key>CFBundleShortVersionString</key><string>${NATIVE_VERSION%%-*}</string>
-  <key>CFBundleVersion</key><string>${NATIVE_VERSION}</string>
+  <key>CFBundleShortVersionString</key><string>${base_version}</string>
+  <key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>
+  <key>DevFlutteredgeNativeTag</key><string>native-v${NATIVE_VERSION}</string>
   <key>CFBundleSupportedPlatforms</key><array><string>MacOSX</string></array>
   <key>LSMinimumSystemVersion</key><string>${minos}</string>
 </dict>

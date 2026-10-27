@@ -245,6 +245,9 @@ final _litertlmBundle = _NativeBundle(
   // longer (7271 tokens: 21.4-22.7 s -> 31.3-32.2 s), its decode 3-4% less
   // time; E2B and EmbeddingGemma 2 unchanged. The other 23 Windows files and
   // the six other archives are byte-identical to 0.18.0-g.
+  // The release also carries the two macOS SwiftPM companion zips
+  // (macos/flutter_edge_ai_litertlm/Package.swift), packaged for this tag from
+  // the same macOS archive.
   //
   // 0.18.0-g changes the Windows archive and nothing else: the Intel NPU
   // stack moves from OpenVINO 2026.3.1 to 2026.4.1 (LiteRT 991d15588a,

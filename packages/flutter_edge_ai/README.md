@@ -137,7 +137,7 @@ the script for each engine you use. For MediaPipe:
 <script src="cache_api.js"></script>
 <script src="opfs_helper.js"></script>
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>

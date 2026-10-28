@@ -43,7 +43,7 @@ On Web, the MediaPipe runtime is loaded from a CDN. Add this to your app's `web/
 
 ```html
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>
@@ -73,7 +73,7 @@ statically linked binaries".
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ `com.google.mediapipe:tasks-genai` 0.10.33 (Gradle) |
-| iOS      | ✅ `MediaPipeTasksGenAI` 0.10.33 (CocoaPods) — **requires iOS 16.0+**; run `.task` models on `PreferredBackend.cpu` |
-| Web      | ✅ `@mediapipe/tasks-genai` 0.10.29 (CDN, see above) — GPU only, `-web.task` models |
+| Android  | ✅ `com.google.mediapipe:tasks-genai` 0.10.35 (Gradle) |
+| iOS      | ✅ `MediaPipeTasksGenAI` 0.10.35 (CocoaPods) — **requires iOS 16.0+**; run `.task` models on `PreferredBackend.cpu` |
+| Web      | ✅ `@mediapipe/tasks-genai` 0.10.30 (CDN, see above) — GPU only, `-web.task` models |
 | Desktop  | ❌ (MediaPipe `.task` not supported on desktop — use `flutter_edge_ai_litertlm`) |

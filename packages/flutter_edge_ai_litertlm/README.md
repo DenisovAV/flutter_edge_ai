@@ -332,7 +332,7 @@ final vector = await embedder.embed(
   `preferredBackend: PreferredBackend.gpu` runs the text tower of a generic
   bundle on the GPU (LiteRT-LM's GPU executor over WebGPU on Vulkan). Linux
   x64 only; Windows x64 is refused on native-v0.18.0-h (LiteRT-LM accelerator
-  crash), tracked in #TBD: there `gpu` fails the load with an
+  crash), tracked in #744: there `gpu` fails the load with an
   `EmbeddingLoadException` that says so, and the app loads it with
   `preferredBackend: cpu` (or unset) instead.
   Measured on the 270m, 2026-10-22: Linux on a Tesla T4 32-64 ms per text vs
@@ -620,7 +620,7 @@ Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), MediaTek NPU
 ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and `gpu` for the
 EmbeddingGemma 2 asked for with `gpu` on Linux x64 (1.19.0; Linux x64 only;
 Windows x64 is refused on native-v0.18.0-h (LiteRT-LM accelerator crash),
-tracked in #TBD); any other `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
+tracked in #744); any other `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
 the output buffer lived after the first embedding, and
 `window.getLiteRtEmbeddingFullyAccelerated()` says whether the graph landed

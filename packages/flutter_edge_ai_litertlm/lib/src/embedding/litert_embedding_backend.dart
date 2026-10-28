@@ -58,7 +58,7 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// directory when it loads: on CPU XNNPack's `.xnnpack_cache`, one file per
   /// tower (71 MB for the 270m, 385 MB for the 740m); on the GPU (Linux x64,
   /// 1.19.0; Windows x64 is refused on native-v0.18.0-h, LiteRT-LM accelerator
-  /// crash, tracked in #TBD) ML Drift's `…_mldrift_weight_cache.bin` and
+  /// crash, tracked in #744) ML Drift's `…_mldrift_weight_cache.bin` and
   /// `…_mldrift_program_cache.bin` for the text tower (68 MB and 9 MB for the
   /// 270m), and XNNPack's for the 440m/740m vision and audio towers, which
   /// run on CPU beside it. A cache the engine cannot create — a path too long

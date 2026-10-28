@@ -1,7 +1,7 @@
 // EmbeddingGemma 2 270m text on LiteRT-LM's GPU executor, where
 // flutter_edge_ai_litertlm runs it: Linux x64 (the WebGPU accelerator over
 // Vulkan). Linux x64 only; Windows x64 is refused on native-v0.18.0-h
-// (LiteRT-LM accelerator crash), tracked in #TBD. Skipped on every other
+// (LiteRT-LM accelerator crash), tracked in #744. Skipped on every other
 // host, where a `gpu` request still runs on CPU (or, on Windows, is refused).
 //
 // What it holds the GPU to, against the same bundle on CPU and the golden

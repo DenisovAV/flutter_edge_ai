@@ -296,7 +296,7 @@ final eg2Index = await rag.open(
   PreferredBackend.gpu` runs the text tower on the GPU: on the 270m 32-64 ms
   per text vs 232-308 ms on CPU (Tesla T4), min cos 0.997 to the CPU vectors;
   nothing falls back to CPU. Linux x64 only; Windows x64 is refused on
-  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #TBD: there
+  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #744: there
   `gpu` throws `EmbeddingLoadException`, so load with
   `preferredBackend: PreferredBackend.cpu`. On the 440m
   and 740m the vision and audio towers run on CPU beside it (not yet

@@ -85,7 +85,7 @@ const liteRtLmEmbeddingGpuAbis = {'linux_x64'};
 const liteRtLmEmbeddingGpuRefusedAbis = {'windows_x64'};
 
 /// The issue tracking [liteRtLmEmbeddingGpuRefusedAbis].
-const liteRtLmEmbeddingGpuWindowsIssue = '#TBD';
+const liteRtLmEmbeddingGpuWindowsIssue = '#744';
 
 /// Why `preferredBackend: gpu` is refused for [file] on a
 /// [liteRtLmEmbeddingGpuRefusedAbis] host, and what to do instead.

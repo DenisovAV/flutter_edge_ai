@@ -152,7 +152,7 @@ final vector = await embedder.embed(
 - **GPU on Linux x64, when asked (litertlm 1.19.0).**
   **preferredBackend: PreferredBackend.gpu** runs the text tower on the GPU
   there (WebGPU over Vulkan). Linux x64 only; Windows x64 is refused on
-  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #TBD: there
+  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #744: there
   **gpu** fails the load with an **EmbeddingLoadException**, and
   **preferredBackend: cpu** (or none) loads it. Measured on the 270m,
   2026-10-22: Linux on a Tesla T4 32-64 ms per text vs 232-308 ms on its CPU

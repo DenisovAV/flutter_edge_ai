@@ -1,5 +1,6 @@
 // Where an EmbeddingGemma 2 `.litertlm` bundle runs: the generic bundle on
-// CPU, a per-SoC bundle on that SoC's NPU — decided in
+// CPU, or on the GPU when asked for where that is measured
+// ([liteRtLmEmbeddingGpuAbis]), a per-SoC bundle on that SoC's NPU — decided in
 // `LiteRtEmbeddingBackend.describe()`, on the caller's isolate, before any
 // worker or engine exists.
 //
@@ -33,9 +34,10 @@ import '../npu_stacks.dart';
 import 'litert_lm_embedding_common.dart';
 import 'litertlm_npu_target.dart';
 
-/// Where the pass will run a bundle: [backend] `cpu` for a generic bundle,
-/// `npu` for a per-SoC one, with its [target] and the [dispatchDir] LiteRT
-/// loads the vendor's dispatch from.
+/// Where the pass will run a bundle: [backend] `cpu` for a generic bundle
+/// (`gpu` when asked for on a [liteRtLmEmbeddingGpuAbis] host), `npu` for a
+/// per-SoC one, with its [target] and the [dispatchDir] LiteRT loads the
+/// vendor's dispatch from.
 typedef LiteRtLmEmbeddingPlacement = ({
   PreferredBackend backend,
   LiteRtLmNpuTarget? target,
@@ -47,6 +49,61 @@ typedef LiteRtLmEmbeddingPlacement = ({
 /// which describe on a host with no NPU.
 @visibleForTesting
 LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
+
+/// The hosts, in `Abi.current()` spelling, where a generic EmbeddingGemma 2
+/// bundle runs on the GPU when `preferredBackend: gpu` asks for it: LiteRT-LM's
+/// GPU executor over the WebGPU accelerator these archives ship. Linux x64
+/// only: Windows x64 is refused on native-v0.18.0-h
+/// ([liteRtLmEmbeddingGpuRefusedAbis]). Measured 2026-10-22 on the 270m, ten
+/// golden texts: Linux x64 on a Tesla T4 (Vulkan) 32-64 ms per embedding vs
+/// 232-308 ms on its CPU; min cos 0.997 to the CPU vectors, and to Sentence
+/// Transformers fp32 0.9765-0.9767 vs 0.9763 on CPU (Windows x64 on Lunar
+/// Lake measured the same way on native-v0.18.0-g: 22 ms vs 83-90 ms).
+/// The adapter is Dawn's choice: with no GPU driver loaded, Linux ran it on
+/// Mesa's llvmpipe (software Vulkan), reported as gpu, 37-48 s per load, and
+/// a ~900-token text failed there with DEADLINE_EXCEEDED.
+/// Only the text tower runs on the GPU: on the 440m and 740m the pass names
+/// their vision and audio towers cpu (`readLiteRtLmMediaTowers`), which is
+/// not yet measured on these hosts. The GPU runs FP16 activations by default. macOS and iOS are not here: their
+/// Metal accelerator ends the process with a SIGBUS in LiteRT's external
+/// weight loader (`PrepareAccessForBuffer`) at engine create (measured on
+/// macOS), which no Dart code can catch. Android's OpenCL accelerator and
+/// Linux arm64 are not measured. Elsewhere a `gpu` request runs on CPU, with
+/// core's not-applied notice, as before.
+const liteRtLmEmbeddingGpuAbis = {'linux_x64'};
+
+/// The hosts where `preferredBackend: gpu` for a generic EmbeddingGemma 2
+/// bundle is refused with an [EmbeddingLoadException]
+/// ([liteRtLmEmbeddingGpuRefusal]) instead of running anywhere: Windows x64,
+/// where LiteRT-LM's WebGPU accelerator in native-v0.18.0-h (Google's prebuilt
+/// from LiteRT-LM 5f973f57) ends the process with an access violation in
+/// `webgpu_dawn.dll` at the first EmbeddingGemma 2 GPU load (reproduced on an
+/// Intel Panther Lake PC with the 270m, 440m and 740m; the same build with
+/// native-v0.18.0-g's Windows archive passes). A crash no Dart code can catch,
+/// so the request is refused; it is not run on CPU instead either, because
+/// the app asked for the GPU.
+const liteRtLmEmbeddingGpuRefusedAbis = {'windows_x64'};
+
+/// The issue tracking [liteRtLmEmbeddingGpuRefusedAbis].
+const liteRtLmEmbeddingGpuWindowsIssue = '#744';
+
+/// Why `preferredBackend: gpu` is refused for [file] on a
+/// [liteRtLmEmbeddingGpuRefusedAbis] host, and what to do instead.
+String liteRtLmEmbeddingGpuRefusal(String file) =>
+    'EmbeddingGemma 2 on the GPU is not supported on Windows x64 with '
+    'native-v0.18.0-h: its LiteRT-LM WebGPU accelerator ends the process at '
+    'the first GPU load of $file (tracked in $liteRtLmEmbeddingGpuWindowsIssue). '
+    'Load it with preferredBackend: cpu (or leave preferredBackend unset) on '
+    'Windows; the GPU stays available on Linux x64.';
+
+/// Whether this host is one of [liteRtLmEmbeddingGpuAbis], asked of the same
+/// host [placeLiteRtLmEmbedder] places on, so the two never disagree.
+bool liteRtLmEmbeddingGpuHost() =>
+    liteRtLmEmbeddingGpuAbis.contains(liteRtLmNpuHost.abi);
+
+/// Whether this host is one of [liteRtLmEmbeddingGpuRefusedAbis].
+bool liteRtLmEmbeddingGpuRefusedHost() =>
+    liteRtLmEmbeddingGpuRefusedAbis.contains(liteRtLmNpuHost.abi);
 
 /// The per-SoC Qualcomm bundles verified on device. Others are published by
 /// Google (SM8550, SM8750; Tensor G5/G6; MediaTek MT6991/MT6993; Intel PTL)
@@ -76,7 +133,18 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     if (requested == PreferredBackend.npu) {
       _refuse(liteRtLmGenericOnNpuRefusal(file));
     }
-    return (backend: PreferredBackend.cpu, target: null, dispatchDir: null);
+    if (requested == PreferredBackend.gpu &&
+        liteRtLmEmbeddingGpuRefusedAbis.contains(host.abi)) {
+      _refuse(liteRtLmEmbeddingGpuRefusal(file));
+    }
+    final gpu =
+        requested == PreferredBackend.gpu &&
+        liteRtLmEmbeddingGpuAbis.contains(host.abi);
+    return (
+      backend: gpu ? PreferredBackend.gpu : PreferredBackend.cpu,
+      target: null,
+      dispatchDir: null,
+    );
   }
   if (requested != PreferredBackend.npu) {
     _refuse(liteRtLmNpuBundleWithoutNpuRefusal(file, target));

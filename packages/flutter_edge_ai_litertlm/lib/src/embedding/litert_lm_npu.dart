@@ -52,11 +52,13 @@ LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 
 /// The hosts, in `Abi.current()` spelling, where a generic EmbeddingGemma 2
 /// bundle runs on the GPU when `preferredBackend: gpu` asks for it: LiteRT-LM's
-/// GPU executor over the WebGPU accelerator these archives ship. Measured
-/// 2026-10-22 on the 270m, ten golden texts: Windows x64 on Lunar Lake (Arc
-/// iGPU, DX12) 22 ms per embedding vs 83-90 ms on its CPU, Linux x64 on a
-/// Tesla T4 (Vulkan) 32-64 ms vs 232-308 ms; min cos 0.997 to the CPU vectors
-/// on both, and to Sentence Transformers fp32 0.9765-0.9767 vs 0.9763 on CPU.
+/// GPU executor over the WebGPU accelerator these archives ship. Linux x64
+/// only: Windows x64 is refused on native-v0.18.0-h
+/// ([liteRtLmEmbeddingGpuRefusedAbis]). Measured 2026-10-22 on the 270m, ten
+/// golden texts: Linux x64 on a Tesla T4 (Vulkan) 32-64 ms per embedding vs
+/// 232-308 ms on its CPU; min cos 0.997 to the CPU vectors, and to Sentence
+/// Transformers fp32 0.9765-0.9767 vs 0.9763 on CPU (Windows x64 on Lunar
+/// Lake measured the same way on native-v0.18.0-g: 22 ms vs 83-90 ms).
 /// The adapter is Dawn's choice: with no GPU driver loaded, Linux ran it on
 /// Mesa's llvmpipe (software Vulkan), reported as gpu, 37-48 s per load, and
 /// a ~900-token text failed there with DEADLINE_EXCEEDED.
@@ -68,12 +70,40 @@ LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 /// macOS), which no Dart code can catch. Android's OpenCL accelerator and
 /// Linux arm64 are not measured. Elsewhere a `gpu` request runs on CPU, with
 /// core's not-applied notice, as before.
-const liteRtLmEmbeddingGpuAbis = {'windows_x64', 'linux_x64'};
+const liteRtLmEmbeddingGpuAbis = {'linux_x64'};
+
+/// The hosts where `preferredBackend: gpu` for a generic EmbeddingGemma 2
+/// bundle is refused with an [EmbeddingLoadException]
+/// ([liteRtLmEmbeddingGpuRefusal]) instead of running anywhere: Windows x64,
+/// where LiteRT-LM's WebGPU accelerator in native-v0.18.0-h (Google's prebuilt
+/// from LiteRT-LM 5f973f57) ends the process with an access violation in
+/// `webgpu_dawn.dll` at the first EmbeddingGemma 2 GPU load (reproduced on an
+/// Intel Panther Lake PC with the 270m, 440m and 740m; the same build with
+/// native-v0.18.0-g's Windows archive passes). A crash no Dart code can catch,
+/// so the request is refused; it is not run on CPU instead either, because
+/// the app asked for the GPU.
+const liteRtLmEmbeddingGpuRefusedAbis = {'windows_x64'};
+
+/// The issue tracking [liteRtLmEmbeddingGpuRefusedAbis].
+const liteRtLmEmbeddingGpuWindowsIssue = '#744';
+
+/// Why `preferredBackend: gpu` is refused for [file] on a
+/// [liteRtLmEmbeddingGpuRefusedAbis] host, and what to do instead.
+String liteRtLmEmbeddingGpuRefusal(String file) =>
+    'EmbeddingGemma 2 on the GPU is not supported on Windows x64 with '
+    'native-v0.18.0-h: its LiteRT-LM WebGPU accelerator ends the process at '
+    'the first GPU load of $file (tracked in $liteRtLmEmbeddingGpuWindowsIssue). '
+    'Load it with preferredBackend: cpu (or leave preferredBackend unset) on '
+    'Windows; the GPU stays available on Linux x64.';
 
 /// Whether this host is one of [liteRtLmEmbeddingGpuAbis], asked of the same
 /// host [placeLiteRtLmEmbedder] places on, so the two never disagree.
 bool liteRtLmEmbeddingGpuHost() =>
     liteRtLmEmbeddingGpuAbis.contains(liteRtLmNpuHost.abi);
+
+/// Whether this host is one of [liteRtLmEmbeddingGpuRefusedAbis].
+bool liteRtLmEmbeddingGpuRefusedHost() =>
+    liteRtLmEmbeddingGpuRefusedAbis.contains(liteRtLmNpuHost.abi);
 
 /// The per-SoC Qualcomm bundles verified on device. Others are published by
 /// Google (SM8550, SM8750; Tensor G5/G6; MediaTek MT6991/MT6993; Intel PTL)
@@ -102,6 +132,10 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
   if (target == null) {
     if (requested == PreferredBackend.npu) {
       _refuse(liteRtLmGenericOnNpuRefusal(file));
+    }
+    if (requested == PreferredBackend.gpu &&
+        liteRtLmEmbeddingGpuRefusedAbis.contains(host.abi)) {
+      _refuse(liteRtLmEmbeddingGpuRefusal(file));
     }
     final gpu =
         requested == PreferredBackend.gpu &&

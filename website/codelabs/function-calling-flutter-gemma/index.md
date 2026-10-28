@@ -140,7 +140,7 @@ before the first frame is guarded:
 
 `webStorageMode` needs two helper scripts in `web/` — `cache_api.js` and
 `opfs_helper.js`, copied verbatim from the plugin's own `web/` directory and
-loaded from `web/index.html`. Every step app in this codelab ships them; if you
+loaded inside the `<head>` of `web/index.html`. Every step app in this codelab ships them; if you
 are building along by hand and skip them, the web build compiles and then fails
 to install a model.
 

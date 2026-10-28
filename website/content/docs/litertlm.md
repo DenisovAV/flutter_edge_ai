@@ -296,7 +296,9 @@ next to a text model on the GPU or the CPU is refused when it is on
 excludes — the GPU for the published Gemma 4 and Gemma 3n audio encoders,
 which declare cpu — is refused. `model.activeVisionBackend` and
 `model.activeAudioBackend` report the choice (null for a bundle without that
-encoder). A refusal is a `LiteRtLmBundleException` whose `problem`
+encoder). Which encoder backends to pick with the text model on the NPU, with
+measurements, is in
+[Multimodal](/docs/multimodal#vision-and-audio-with-the-text-model-on-the-npu). A refusal is a `LiteRtLmBundleException` whose `problem`
 says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a bundle of an NPU
 vendor this package does not know, a Qualcomm one on Windows or a Google Tensor
 or MediaTek one off Android), thrown before any engine exists. The device's SoC is not read up front: a bundle built for another

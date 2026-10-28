@@ -17,9 +17,8 @@ Future<void> main() async {
   // Without LiteRtLmEngine here, the first model call throws a StateError
   // that tells you to add an engine package.
   //
-  // No `huggingFaceToken:` — both models this codelab uses from Step 2 on are
-  // ungated. (Step 1 inherits Gemma 3 1B from Getting Started, and that repo
-  // IS behind a licence gate: it needs `--dart-define=HF_TOKEN=hf_...`.)
+  // No `huggingFaceToken:` — both models this codelab uses are ungated, so no
+  // step of it needs a token or a `--dart-define`.
   //
   // Guarded, because every other failure in this app reaches the screen — the
   // gate's error card, the chat's load error, the notice line — and this is the

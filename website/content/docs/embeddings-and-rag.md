@@ -149,11 +149,14 @@ final vector = await embedder.embed(
   an over-long input costs one full embedding before it is refused.
 - **CPU natively, WebGPU on the Web.** **activeBackend** is
   **PreferredBackend.cpu** natively and **PreferredBackend.gpu** on the Web.
-- **GPU on Windows and Linux x64, when asked (litertlm 1.19.0).**
+- **GPU on Linux x64, when asked (litertlm 1.19.0).**
   **preferredBackend: PreferredBackend.gpu** runs the text tower on the GPU
-  there (WebGPU over DX12 or Vulkan). Measured on the 270m, 2026-10-22: Windows on
-  Lunar Lake (Arc iGPU) 22 ms per text vs 83-90 ms on its CPU, Linux on a
-  Tesla T4 32-64 ms vs 232-308 ms, min cos 0.997 to the CPU vectors (0.998 for
+  there (WebGPU over Vulkan). Linux x64 only; Windows x64 is refused on
+  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #744: there
+  **gpu** fails the load with an **EmbeddingLoadException**, and
+  **preferredBackend: cpu** (or none) loads it. Measured on the 270m,
+  2026-10-22: Linux on a Tesla T4 32-64 ms per text vs 232-308 ms on its CPU
+  (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs 83-90 ms), min cos 0.997 to the CPU vectors (0.998 for
   a ~900-token text; the GPU computes in FP16) and the same distance to
   Sentence Transformers fp32 as the CPU. A load takes 1.7-3.6 s (0.3-0.6 s on
   CPU); the very first also builds the GPU caches, 5.9-8.2 s. A GPU LLM and
@@ -169,8 +172,8 @@ final vector = await embedder.embed(
     Ask for **gpu** only where a real GPU driver is installed.
   - The GPU writes its own caches next to the CPU one: about 68 MB of weights
     and 9 MB of programs. **requireWeightCache** covers them: a cache path
-    too long for the GPU (past Windows' 260-character MAX_PATH, or a file
-    name past 255 characters) is refused before the engine is created, and a
+    too long for the GPU (a file name past 255 bytes; on Windows, once its
+    GPU path is enabled again, also past the 260-character MAX_PATH) is refused before the engine is created, and a
     load that wrote neither file is refused after its probe embedding.
   - A cold load without **preferredBackend** runs on CPU, but a later
     automatic request reuses whatever embedder is loaded, the GPU one

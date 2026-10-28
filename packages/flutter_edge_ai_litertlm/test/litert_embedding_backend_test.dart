@@ -700,7 +700,8 @@ void main() {
     });
   });
 
-  group('EmbeddingGemma 2 on the GPU (Windows and Linux x64, measured)', () {
+  group('EmbeddingGemma 2 on the GPU (Linux x64; Windows x64 refused on '
+      'native-v0.18.0-h)', () {
     void hostIs(LiteRtLmNpuHost host) {
       liteRtLmNpuHost = host;
       addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
@@ -724,6 +725,8 @@ void main() {
 
     for (final host in [_IntelWindows(), _LinuxX64()]) {
       test('${host.abi}: a bundle honours gpu, a .tflite spec does not', () {
+        // On Windows too, so that the request reaches describe() and is
+        // refused there instead of running on CPU.
         hostIs(host);
         expect(backend.honouredBackends(_bundle()), {
           PreferredBackend.cpu,
@@ -735,17 +738,51 @@ void main() {
           PreferredBackend.npu,
         });
       });
-
-      test('${host.abi}: gpu hands the pass the GPU and declares it', () async {
-        hostIs(host);
-        final d = await describeGpu();
-        final config = d.config as LiteRtLmEmbeddingConfig;
-        expect(d.activeBackend, PreferredBackend.gpu);
-        expect(config.gpu, isTrue);
-        expect(config.backend, PreferredBackend.gpu);
-        expect(config.npuTarget, isNull);
-      });
     }
+
+    test('linux_x64: gpu hands the pass the GPU and declares it', () async {
+      hostIs(_LinuxX64());
+      final d = await describeGpu();
+      final config = d.config as LiteRtLmEmbeddingConfig;
+      expect(d.activeBackend, PreferredBackend.gpu);
+      expect(config.gpu, isTrue);
+      expect(config.backend, PreferredBackend.gpu);
+      expect(config.npuTarget, isNull);
+    });
+
+    test('windows_x64: gpu is refused with an EmbeddingLoadException naming '
+        'the native tag and preferredBackend: cpu, for every generic bundle; '
+        'cpu and unset still load on CPU', () async {
+      hostIs(_IntelWindows());
+      for (final (model, image, audio) in [
+        ('eg2_text.litertlm', false, false),
+        ('eg2.litertlm', true, false),
+        ('eg2_audio.litertlm', true, true),
+      ]) {
+        await expectLater(
+          describeGpu(model: model, supportImage: image, supportAudio: audio),
+          _loadRefusal(
+            'LiteRT-LM',
+            allOf(
+              contains('not supported on Windows x64'),
+              contains('native-v0.18.0-h'),
+              contains(model),
+              contains('preferredBackend: cpu'),
+              contains(liteRtLmEmbeddingGpuWindowsIssue),
+            ),
+          ),
+          reason: model,
+        );
+      }
+      for (final requested in [null, PreferredBackend.cpu]) {
+        final d = await backend.describe(
+          _bundle(),
+          _config('$bundles/eg2.litertlm', preferredBackend: requested),
+        );
+        expect(d.activeBackend, PreferredBackend.cpu, reason: '$requested');
+        expect((d.config as LiteRtLmEmbeddingConfig).gpu, isFalse);
+      }
+    });
 
     test('elsewhere a bundle keeps the default and gpu runs on CPU', () async {
       hostIs(_QualcommAndroid());
@@ -760,7 +797,7 @@ void main() {
 
     test('images on the GPU with the 270m are refused before the held '
         'embedder closes, naming the bundle with a vision encoder', () async {
-      hostIs(_IntelWindows());
+      hostIs(_LinuxX64());
       await expectLater(
         describeGpu(supportImage: true),
         _loadRefusal(
@@ -776,7 +813,7 @@ void main() {
 
     test('a bundle with vision or audio towers runs its text tower on the '
         'GPU and names each present tower cpu, declared or not', () async {
-      hostIs(_IntelWindows());
+      hostIs(_LinuxX64());
       for (final (model, image, audio, vision, audioTower) in [
         ('eg2_text.litertlm', false, false, false, false),
         ('eg2.litertlm', false, false, true, false),
@@ -823,7 +860,7 @@ void main() {
 
     test('an unreadable container on the GPU is a load failure naming the '
         'towers it looked for', () async {
-      hostIs(_IntelWindows());
+      hostIs(_LinuxX64());
       File('$bundles/garbage.litertlm').writeAsBytesSync(List.filled(64, 1));
       await expectLater(
         describeGpu(model: 'garbage.litertlm'),

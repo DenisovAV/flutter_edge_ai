@@ -326,17 +326,22 @@ final vector = await embedder.embed(
   averages them instead of truncating; the averaged vector is never returned).
   Either way an over-long input costs a full embedding before it is refused.
   Split before embedding.
-- **CPU natively, WebGPU on the web, GPU on Windows and Linux x64 when asked
+- **CPU natively, WebGPU on the web, GPU on Linux x64 when asked
   (1.19.0).** `activeBackend` is `PreferredBackend.cpu` natively and
-  `PreferredBackend.gpu` on the web. On Windows x64 and Linux x64,
+  `PreferredBackend.gpu` on the web. On Linux x64,
   `preferredBackend: PreferredBackend.gpu` runs the text tower of a generic
-  bundle on the GPU (LiteRT-LM's GPU executor over WebGPU: DX12, Vulkan).
-  Measured on the 270m, 2026-10-22: Windows on Lunar Lake (Arc iGPU) 22 ms per text vs 83-90 ms on
-  its CPU, Linux on a Tesla T4 32-64 ms vs 232-308 ms; min cos 0.997 to the
+  bundle on the GPU (LiteRT-LM's GPU executor over WebGPU on Vulkan). Linux
+  x64 only; Windows x64 is refused on native-v0.18.0-h (LiteRT-LM accelerator
+  crash), tracked in #744: there `gpu` fails the load with an
+  `EmbeddingLoadException` that says so, and the app loads it with
+  `preferredBackend: cpu` (or unset) instead.
+  Measured on the 270m, 2026-10-22: Linux on a Tesla T4 32-64 ms per text vs
+  232-308 ms on its CPU (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs
+  83-90 ms); min cos 0.997 to the
   CPU vectors (0.998 for a ~900-token text: the GPU runs FP16 activations),
   and the CPU's distance to Sentence Transformers fp32. A load takes 1.7-3.6 s
-  against 0.3-0.6 s on CPU; the very first also builds the GPU caches (5.9 s
-  on Lunar Lake, 8.2 s on the T4). Measured in one process with a GPU LLM
+  against 0.3-0.6 s on CPU; the very first also builds the GPU caches (8.2 s
+  on the T4; 5.9 s on Lunar Lake on native-v0.18.0-g). Measured in one process with a GPU LLM
   (Gemma 4 E2B), the embedder loaded before and after it.
   - Only the text tower runs on the GPU. On the 440m and 740m the vision and
     audio towers run on CPU (each named `cpu` at create, declared or not), so
@@ -356,9 +361,9 @@ final vector = await embedder.embed(
   - The GPU writes its own caches beside the CPU's: ML Drift's
     `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
     (9 MB) for the text tower. `requireWeightCache` covers them (1.19.0):
-    a path the GPU cannot create them at (Windows' 260-character MAX_PATH,
-    which the accelerator cannot exceed; a file name past 255 characters,
-    UTF-8 bytes off Windows; on Windows a cache directory with characters
+    a path the GPU cannot create them at (a file name past 255 UTF-8 bytes;
+    on Windows, once its GPU path is enabled again, also the 260-character
+    MAX_PATH, which the accelerator cannot exceed, and a cache directory with characters
     outside ASCII, unless the process's ANSI code page is UTF-8: the
     accelerator opens its caches through the UCRT `_open`, which reads the
     path in the ANSI code page, then `CreateFileW`) is refused before the
@@ -613,9 +618,9 @@ Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), MediaTek NPU
 ([below](#mediatek-npu-on-android-opt-in)), Qualcomm NPU
 ([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
 ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and `gpu` for the
-EmbeddingGemma 2 270m asked for with `gpu` on Windows x64 and Linux x64
-(1.19.0); any other
-`preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
+EmbeddingGemma 2 asked for with `gpu` on Linux x64 (1.19.0; Linux x64 only;
+Windows x64 is refused on native-v0.18.0-h (LiteRT-LM accelerator crash),
+tracked in #744); any other `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
 the output buffer lived after the first embedding, and
 `window.getLiteRtEmbeddingFullyAccelerated()` says whether the graph landed

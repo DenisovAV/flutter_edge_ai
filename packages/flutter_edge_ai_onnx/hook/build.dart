@@ -290,6 +290,24 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
       ),
+      // 0.17.0's `libonnxruntime-genai.so` lists `libmat.so` in DT_NEEDED
+      // (`readelf -d`): the AAR carries it beside the genai library (28 MB,
+      // arm64-v8a) and the app's loader fails with `library "libmat.so" not
+      // found` without it — measured on a vivo 1933 with the library alone.
+      // 0.14.0 had no such file, and no other platform's 0.17.0 archive has
+      // one. Same AAR, so the same url and pin; the AAR is fetched twice, once
+      // per library, and only when the cache is cold.
+      companions: [
+        _Archive(
+          url:
+              'https://github.com/microsoft/onnxruntime-genai/releases/'
+              'download/v0.17.0/onnxruntime-genai-android-0.17.0.aar',
+          sha256:
+              'f8b28a9ce448d97e0d5ab9614eae018a4d994d739de84e9fc5f9ff3b6673dd50',
+          extractedLibPath: 'jni/arm64-v8a/libmat.so',
+          assetName: 'mat',
+        ),
+      ],
     );
   }
   // ios x86_64 (Intel-Mac simulator; see this function's doc), android
@@ -313,17 +331,22 @@ class _OrtBundle {
     required this.dirName,
     required this.ort,
     required this.genai,
+    this.companions = const [],
   });
 
   final String dirName;
   final _Archive? ort;
   final _Archive genai;
 
+  /// Libraries the GenAI library itself lists as NEEDED, when its archive
+  /// ships them next to it.
+  final List<_Archive> companions;
+
   /// Cache-invalidation key — bump whenever either archive's URL/sha changes.
   String get version =>
       ort == null ? 'genai-0.17.0' : 'ort-1.27.0_genai-0.17.0';
 
-  List<_Archive> get archives => [?ort, genai];
+  List<_Archive> get archives => [?ort, genai, ...companions];
 }
 
 // ============================================================================

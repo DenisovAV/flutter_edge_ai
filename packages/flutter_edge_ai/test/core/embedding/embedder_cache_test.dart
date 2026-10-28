@@ -25,6 +25,94 @@ void main() {
   ActiveEmbedderParams paramsFor(String model, {String? tokenizer}) =>
       ActiveEmbedderParams(modelPath: model, tokenizerPath: tokenizer);
 
+  group('EmbedderCache.closeForRemoval', () {
+    bool builtFromA(ActiveEmbedderParams p) => p.modelPath == '/a';
+
+    test(
+      'closes the embedder built from the files before the removal runs',
+      () async {
+        final cache = EmbedderCache();
+        final model = _FakeEmbedder();
+        cache.record(model, paramsFor('/a'));
+        int? closesAtRemoval;
+
+        await cache.closeForRemoval(builtFromA, () async {
+          closesAtRemoval = model.closeCount;
+        }, label: 'a');
+
+        expect(closesAtRemoval, 1);
+        expect(cache.model, isNull);
+      },
+    );
+
+    test('leaves an embedder built from other files open and cached', () async {
+      final cache = EmbedderCache();
+      final model = _FakeEmbedder();
+      cache.record(model, paramsFor('/b'));
+      var removed = false;
+
+      await cache.closeForRemoval(
+        builtFromA,
+        () async => removed = true,
+        label: 'a',
+      );
+
+      expect(removed, isTrue);
+      expect(model.closeCount, 0);
+      expect(cache.model, same(model));
+    });
+
+    test(
+      'a close past the deadline fails the removal before it runs',
+      () async {
+        final cache = EmbedderCache(
+          closeWaitLimit: const Duration(milliseconds: 50),
+        );
+        final gate = Completer<void>();
+        cache.record(_FakeEmbedder(closeGate: gate), paramsFor('/a'));
+        var removals = 0;
+
+        await expectLater(
+          cache.closeForRemoval(builtFromA, () async => removals++, label: 'a'),
+          throwsA(isA<EmbedderCloseTimeoutException>()),
+        );
+        // A retry while that close still runs fails the same way.
+        await expectLater(
+          cache.closeForRemoval(builtFromA, () async => removals++, label: 'a'),
+          throwsA(isA<EmbedderCloseTimeoutException>()),
+        );
+        expect(removals, 0);
+
+        gate.complete();
+        await pumpEventQueue();
+        await cache.closeForRemoval(
+          builtFromA,
+          () async => removals++,
+          label: 'a',
+        );
+        expect(removals, 1);
+      },
+    );
+
+    test('runs after the work already in the lane, and holds what comes '
+        'after it', () async {
+      final cache = EmbedderCache();
+      final events = <String>[];
+      final first = Completer<void>();
+      final ahead = cache.serialize(() async {
+        await first.future;
+        events.add('build');
+      });
+      final removal = cache.closeForRemoval(builtFromA, () async {
+        events.add('remove');
+      }, label: 'a');
+      final behind = cache.serialize(() async => events.add('next'));
+      first.complete();
+      await Future.wait([ahead, removal, behind]);
+      expect(events, ['build', 'remove', 'next']);
+    });
+  });
+
   group('EmbedderCache reuse rule', () {
     test('an empty cache asks for a build', () async {
       final cache = EmbedderCache();

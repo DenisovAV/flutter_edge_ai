@@ -886,13 +886,13 @@ final class _LinuxX64 implements LiteRtLmNpuHost {
   @override
   String get abi => 'linux_x64';
   @override
-  Future<NpuStackCheck> stack(NpuVendor vendor) async =>
+  Future<NpuStackCheck> stack(NpuStack vendor) async =>
       throw StateError('linux_x64 has no NPU stack to ask about');
   @override
-  String? unreachable(NpuVendor vendor) =>
+  String? unreachable(NpuStack vendor) =>
       throw StateError('linux_x64 has no NPU to probe');
   @override
-  Future<String> prepareDispatchDir(NpuVendor vendor) async =>
+  Future<String> prepareDispatchDir(NpuStack vendor) async =>
       throw StateError('linux_x64 has no NPU dispatch');
 }
 

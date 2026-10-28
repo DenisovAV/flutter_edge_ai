@@ -80,7 +80,6 @@ const liteRtLmEmbeddingGpuAbis = {'windows_x64', 'linux_x64'};
 bool liteRtLmEmbeddingGpuHost() =>
     liteRtLmEmbeddingGpuAbis.contains(liteRtLmNpuHost.abi);
 
-
 /// Decides where [file] runs for a [requested] backend, or refuses with an
 /// [EmbeddingLoadException] (engine `LiteRT-LM`). [target] is what the bundle
 /// was compiled for (`readLiteRtLmNpuTarget`): null for the generic bundle.

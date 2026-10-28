@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 /// One model this app knows how to install.
@@ -6,73 +7,86 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 /// the file name the model was installed under, not a display name.
 class ModelChoice {
   const ModelChoice({
-    required this.label,
-    required this.url,
-    required this.fileName,
-    required this.modelType,
-    required this.sizeLabel,
-    required this.requiresToken,
+    required this.nativeLabel,
+    required this.nativeUrl,
+    required this.nativeFileName,
+    required this.nativeModelType,
+    required this.nativeSize,
+    required this.webLabel,
+    required this.webUrl,
+    required this.webFileName,
+    required this.webModelType,
+    required this.webSize,
   });
 
-  final String label;
-  final String url;
-  final String fileName;
-  final ModelType modelType;
-  final String sizeLabel;
+  final String nativeLabel;
+  final String nativeUrl;
+  final String nativeFileName;
+  final ModelType nativeModelType;
+  final String nativeSize;
+  final String webLabel;
+  final String webUrl;
+  final String webFileName;
+  final ModelType webModelType;
+  final String webSize;
 
-  /// Hugging Face serves this repo behind a licence gate. Accept the licence
-  /// once on the model page, then run with `--dart-define=HF_TOKEN=hf_...`.
-  final bool requiresToken;
+  /// The browser `.litertlm` runtime only ever runs a dedicated web export,
+  /// and SmolVLM2 publishes none — a native file installs fine and then fails
+  /// at engine creation. So on the web this app installs the Gemma 4 E2B web
+  /// build instead: the same pair Step 3 installs natively, just early and
+  /// staying text-only (that build's browser arm has no vision executor
+  /// either — see Step 4).
+  ///
+  /// `modelType` follows: `general` for SmolVLM2, `gemma4` for the
+  /// substitute — every call site reads it through this getter, so the two
+  /// never drift apart.
+  String get label => kIsWeb ? webLabel : nativeLabel;
+  String get url => kIsWeb ? webUrl : nativeUrl;
+  String get fileName => kIsWeb ? webFileName : nativeFileName;
+  ModelType get modelType => kIsWeb ? webModelType : nativeModelType;
+  String get sizeLabel => kIsWeb ? webSize : nativeSize;
 }
 
-/// The models this quickstart offers.
+/// The model Steps 1 and 2 run: Step 1 opens it as a text chat, Step 2 opens
+/// the same file with vision switched on.
 ///
-/// All three are `.litertlm`, the format the LiteRT-LM engine reads on
-/// Android, iOS, desktop and the web — but the browser engine
-/// (`@litert-lm/core`) only runs a `.litertlm` file exported for it. [gemma3]
-/// and [gemma4] are native builds: they install fine on web and then fail when
-/// the engine starts. [gemma4Web] is this app's one web-exported model, and
-/// `main.dart` picks it there instead. (`.task` files are MediaPipe-only — a
-/// different engine package, and no desktop support.)
+/// The repository is ungated, so nothing here needs a Hugging Face token and
+/// no run needs `--dart-define`.
 abstract final class Models {
-  /// The plugin's namesake. `ekv4096` in the file name is the KV-cache the
-  /// weights were built for, so this model can carry a 4096-token context.
-  static const gemma3 = ModelChoice(
-    label: 'Gemma 3 1B',
-    url:
-        'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/'
-        'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
-    fileName: 'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
-    modelType: ModelType.gemmaIt,
-    sizeLabel: '0.6 GB',
-    requiresToken: true,
-  );
-
-  /// No Hugging Face account? This repo is ungated. Same code path — the only
-  /// thing that changes is which constant you hand to the app. It is also the
-  /// largest of the three: 2.59 GB, and a phone with 6 GB of RAM or more.
-  static const gemma4 = ModelChoice(
-    label: 'Gemma 4 E2B',
-    url:
-        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
-        'resolve/main/gemma-4-E2B-it.litertlm',
-    fileName: 'gemma-4-E2B-it.litertlm',
-    modelType: ModelType.gemma4,
-    sizeLabel: '2.59 GB',
-    requiresToken: false,
-  );
-
-  /// The web build. The browser engine (`@litert-lm/core`) runs only models
-  /// exported for it — the native files above install on web and then fail
-  /// when the engine starts — and Gemma 4 E2B is the smallest one published.
-  static const gemma4Web = ModelChoice(
-    label: 'Gemma 4 E2B (web build)',
-    url:
+  /// A vision-language model small enough to feel like a text model. 0.36 GB
+  /// is roughly what a photo-heavy app already spends on its image cache, so
+  /// this is the version of "multimodal" you can put in a shipping app
+  /// without an argument about download size — about a minute of download,
+  /// and then it is looking at your photograph.
+  ///
+  /// It cannot hear, and that is not a gap in this step: it is a
+  /// vision-language model, and the plugin's docs name Gemma 4, Gemma 3n and
+  /// VibeVoice-ASR for audio input. A session flag cannot switch
+  /// on an encoder the checkpoint does not carry. It is why Step 3
+  /// changes models, and it is the model half of the question `complete` asks
+  /// at the end — a half that says no here while the device, happily holding
+  /// a microphone, says yes.
+  /// Run on macOS 2026-09-07: installs (0.36 GB) and answers "RED" to a
+  /// 16x16 red square, with `supportImage` set on both `getActiveModel` and
+  /// `createChat`. Nothing in CI runs a model, so this line is the only
+  /// evidence these weights were ever executed.
+  static const smolVlm2 = ModelChoice(
+    nativeLabel: 'SmolVLM2 500M',
+    nativeUrl:
+        'https://huggingface.co/litert-community/SmolVLM2-500M/resolve/main/'
+        'SmolVLM2-500M.litertlm',
+    nativeFileName: 'SmolVLM2-500M.litertlm',
+    // `general` and not `gemmaIt`: SmolVLM2 is not a Gemma, and the chat
+    // template that ships inside the `.litertlm` is the right one to use.
+    nativeModelType: ModelType.general,
+    nativeSize: '0.36 GB',
+    // The web substitute: the same Gemma 4 E2B web build Step 3 uses.
+    webLabel: 'Gemma 4 E2B',
+    webUrl:
         'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/'
         'resolve/main/gemma-4-E2B-it-web.litertlm',
-    fileName: 'gemma-4-E2B-it-web.litertlm',
-    modelType: ModelType.gemma4,
-    sizeLabel: '2.0 GB',
-    requiresToken: false,
+    webFileName: 'gemma-4-E2B-it-web.litertlm',
+    webModelType: ModelType.gemma4,
+    webSize: '2.0 GB',
   );
 }

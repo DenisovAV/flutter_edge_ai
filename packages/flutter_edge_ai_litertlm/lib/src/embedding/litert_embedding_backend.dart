@@ -56,8 +56,9 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
   /// EmbeddingGemma 2: with `true`, a load that would be cold on every start
   /// is refused. Its engine writes weight caches into the app's cache
   /// directory when it loads: on CPU XNNPack's `.xnnpack_cache`, one file per
-  /// tower (71 MB for the 270m, 385 MB for the 740m); on the GPU (Windows and
-  /// Linux x64, 1.19.0) ML Drift's `…_mldrift_weight_cache.bin` and
+  /// tower (71 MB for the 270m, 385 MB for the 740m); on the GPU (Linux x64,
+  /// 1.19.0; Windows x64 is refused on native-v0.18.0-h, LiteRT-LM accelerator
+  /// crash, tracked in #TBD) ML Drift's `…_mldrift_weight_cache.bin` and
   /// `…_mldrift_program_cache.bin` for the text tower (68 MB and 9 MB for the
   /// 270m), and XNNPack's for the 440m/740m vision and audio towers, which
   /// run on CPU beside it. A cache the engine cannot create — a path too long
@@ -113,14 +114,17 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
       isLiteRtLmFilename(spec.files.first.filename);
 
   /// GPU joins CPU and NPU for a `.litertlm` bundle on the hosts where
-  /// EmbeddingGemma 2 is measured on the GPU ([liteRtLmEmbeddingGpuAbis]):
-  /// core then keys the cache by the backend each load reports. A `.tflite`
-  /// embedder and every other host keep the default, so a `gpu` request there
-  /// still runs on CPU with core's not-applied notice.
+  /// EmbeddingGemma 2 is measured on the GPU ([liteRtLmEmbeddingGpuAbis],
+  /// Linux x64): core then keys the cache by the backend each load reports.
+  /// On Windows x64 ([liteRtLmEmbeddingGpuRefusedAbis]) it is declared too,
+  /// so that a `gpu` request reaches [describe] and is refused there with an
+  /// [EmbeddingLoadException] rather than run on CPU. A `.tflite` embedder and
+  /// every other host keep the default, so a `gpu` request there still runs
+  /// on CPU with core's not-applied notice.
   @override
   Set<PreferredBackend> honouredBackends(EmbeddingModelSpec spec) =>
       isLiteRtLmFilename(spec.files.first.filename) &&
-          liteRtLmEmbeddingGpuHost()
+          (liteRtLmEmbeddingGpuHost() || liteRtLmEmbeddingGpuRefusedHost())
       ? const {PreferredBackend.cpu, PreferredBackend.gpu, PreferredBackend.npu}
       : super.honouredBackends(spec);
 

@@ -291,11 +291,14 @@ final eg2Index = await rag.open(
   before embedding.
 - It runs on CPU natively (`activeBackend` is `PreferredBackend.cpu`) and on
   WebGPU on Web (`PreferredBackend.gpu`), and refuses `PreferredBackend.npu`:
-  the NPU runs the per-SoC bundles (next section). On Windows x64 and Linux
-  x64 (`flutter_edge_ai_litertlm` 1.19.0) `preferredBackend:
-  PreferredBackend.gpu` runs the text tower on the GPU: on the 270m 22 ms per
-  text vs 83-90 ms on CPU (Lunar Lake), 32-64 ms vs 232-308 ms (Tesla T4),
-  min cos 0.997 to the CPU vectors; nothing falls back to CPU. On the 440m
+  the NPU runs the per-SoC bundles (next section). On Linux x64
+  (`flutter_edge_ai_litertlm` 1.19.0) `preferredBackend:
+  PreferredBackend.gpu` runs the text tower on the GPU: on the 270m 32-64 ms
+  per text vs 232-308 ms on CPU (Tesla T4), min cos 0.997 to the CPU vectors;
+  nothing falls back to CPU. Linux x64 only; Windows x64 is refused on
+  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #TBD: there
+  `gpu` throws `EmbeddingLoadException`, so load with
+  `preferredBackend: PreferredBackend.cpu`. On the 440m
   and 740m the vision and audio towers run on CPU beside it (not yet
   measured on a device), so one GPU embedder serves a text index and an
   image index. On macOS, iOS, Android and

@@ -82,13 +82,13 @@ if its adapter is missing; Web LoRA execution remains unsupported.
 ## Add it to your app
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
-Version 0.0.3 adds native embeddings with llamadart 0.15.1. This guide targets
-that version:
+Version 0.0.3 adds native embeddings with llamadart 0.15.1; 0.0.4 changes only
+the docs. This guide targets 0.0.4:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.3
-  flutter_edge_ai_llama: ^0.0.3
+  flutter_edge_ai: ^2.5.4
+  flutter_edge_ai_llama: ^0.0.4
 ```
 
 Core 2.5.0+ supplies the embedding SPI and typed tool history.
@@ -158,7 +158,9 @@ for setup, capability limits and qualification.
 With llamadart 0.15.1, adding `flutter_edge_ai_litertlm` keeps the SDK on
 llama.cpp automatically. Retain the root `[llama_cpp]` selection as defence in
 depth; explicitly selecting both LiteRT-LM owners fails with an actionable error.
-On Apple the direct `llamadart_llama_cpp_flutter` companion dependency is required too. The LiteRT-LM macOS CocoaPods
-recipe and this SwiftPM recipe are not yet qualified together. Web LoRA is not wired
+On Apple the direct `llamadart_llama_cpp_flutter` companion dependency is required too. From
+`flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM keeps SwiftPM on as well, and both
+native libraries load in one app; running both engines' models in one app is
+not qualified. Web LoRA is not wired
 by this connector and is rejected, even on a bridge that supports adapters.
 The package README provides Web asset setup using helpers included in its archive.

@@ -31,6 +31,14 @@ jobs:
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
       PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
+      # libLiteRtWebGpuAccelerator.dll alone comes from a later upstream commit:
+      # 5f973f57 carries LiteRT #11120 (dp4a int8 FC/conv off on Intel GPUs;
+      # Gemma 4 12B returned no text under 512 prompt tokens on Intel D3D12,
+      # LiteRT-LM #4083). It imports nothing from libLiteRt.dll, and its Dawn
+      # imports resolve against the v0.18.0 webgpu_dawn.dll (byte-identical at
+      # both refs). native-v0.18.0-h ships exactly these bytes.
+      WEBGPU_ACCELERATOR_REF: '5f973f57011e6175f9a38a3adb2ccda73d5bb44e'
+      WEBGPU_ACCELERATOR_SHA256: '2fb3583681ffb28d2fa8c08803445839e579a8e67417bde480415a4360e18ed0'
       ANDROID_NDK_HOME: ''
       BAZEL_OUTPUT_BASE: 'D:\b'
     steps:
@@ -72,6 +80,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "could not fetch the provider for $env:PREBUILT_REF" }
           $provPath = "C:\LiteRT-LM\prebuilt\windows_x86_64\libGemmaModelConstraintProvider.dll"
           Write-Host "provider: $((Get-Item $provPath).Length) bytes from $env:PREBUILT_REF"
+          $accPath = "C:\LiteRT-LM\prebuilt\windows_x86_64\libLiteRtWebGpuAccelerator.dll"
+          curl.exe -fsSL -o $accPath `
+            "https://media.githubusercontent.com/media/google-ai-edge/LiteRT-LM/$env:WEBGPU_ACCELERATOR_REF/prebuilt/windows_x86_64/libLiteRtWebGpuAccelerator.dll"
+          if ($LASTEXITCODE -ne 0) { throw "could not fetch the WebGPU accelerator for $env:WEBGPU_ACCELERATOR_REF" }
+          $accSha = (Get-FileHash $accPath -Algorithm SHA256).Hash.ToLower()
+          if ($accSha -ne $env:WEBGPU_ACCELERATOR_SHA256) {
+            throw "WebGPU accelerator from $env:WEBGPU_ACCELERATOR_REF is $accSha, expected $env:WEBGPU_ACCELERATOR_SHA256"
+          }
+          Write-Host "WebGPU accelerator: $((Get-Item $accPath).Length) bytes from $env:WEBGPU_ACCELERATOR_REF"
           # Fail before the hour of Bazel, not after it.
           # Absolute paths on purpose: `cd` moves PowerShell's location, not the
           # process working directory, so a .NET call with a relative path reads

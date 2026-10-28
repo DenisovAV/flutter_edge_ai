@@ -51,8 +51,8 @@ larger chunk just because the model file declares a larger context.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.3
-  flutter_edge_ai_litertlm: ^1.18.0
+  flutter_edge_ai: ^2.5.4
+  flutter_edge_ai_litertlm: ^1.19.0
   flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.1.2
   flutter_edge_ai_sqlite: ^2.1.1 # all six platforms, including Web
@@ -86,8 +86,9 @@ LiteRT.js loader and **rag/sqlite3.wasm**; EmbeddingGemma 2 needs only the
 
 The `.litertlm` and `.tflite` models run on **LiteRtEmbeddingBackend** from
 **flutter_edge_ai_litertlm**, the GGUF one on **LlamaEmbeddingBackend** from
-**flutter_edge_ai_llama** (on macOS, LiteRT-LM's CocoaPods recipe and
-llama.cpp's Swift Package Manager companion are not qualified in one app), the
+**flutter_edge_ai_llama** (on macOS both load in one Swift Package Manager app
+from `flutter_edge_ai_litertlm` 1.19.0; running both engines' models in one app
+is not qualified), the
 ONNX ones on **OnnxEmbeddingBackend** from **flutter_edge_ai_onnx**. LiteRT
 EmbeddingGemma (1 and 2) and Gecko produce 768-dimensional vectors;
 all-MiniLM-L6-v2 produces 384. A number such as 256 in an artifact name is the
@@ -148,7 +149,44 @@ final vector = await embedder.embed(
   an over-long input costs one full embedding before it is refused.
 - **CPU natively, WebGPU on the Web.** **activeBackend** is
   **PreferredBackend.cpu** natively and **PreferredBackend.gpu** on the Web.
-  The NPU runs the per-SoC bundles
+- **GPU on Linux x64, when asked (litertlm 1.19.0).**
+  **preferredBackend: PreferredBackend.gpu** runs the text tower on the GPU
+  there (WebGPU over Vulkan). Linux x64 only; Windows x64 is refused on
+  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #744: there
+  **gpu** fails the load with an **EmbeddingLoadException**, and
+  **preferredBackend: cpu** (or none) loads it. Measured on the 270m,
+  2026-10-22: Linux on a Tesla T4 32-64 ms per text vs 232-308 ms on its CPU
+  (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs 83-90 ms), min cos 0.997 to the CPU vectors (0.998 for
+  a ~900-token text; the GPU computes in FP16) and the same distance to
+  Sentence Transformers fp32 as the CPU. A load takes 1.7-3.6 s (0.3-0.6 s on
+  CPU); the very first also builds the GPU caches, 5.9-8.2 s. A GPU LLM and
+  the GPU embedder run together in one process (measured with Gemma 4 E2B).
+  - Only the text tower runs on the GPU. On the 440m and 740m the vision and
+    audio towers run on CPU, so images and audio embed at CPU speed with CPU
+    vectors. Not yet measured on a device for these two bundles.
+  - A GPU that cannot create the engine fails the load, and every GPU load
+    checks one probe embedding; nothing falls back to CPU. A software adapter
+    is not excluded, though: on a Linux box with no GPU driver loaded,
+    Vulkan's llvmpipe ran it, reported as **gpu**, with correct vectors, a
+    37-48 s load and a ~900-token text failing with **DEADLINE_EXCEEDED**.
+    Ask for **gpu** only where a real GPU driver is installed.
+  - The GPU writes its own caches next to the CPU one: about 68 MB of weights
+    and 9 MB of programs. **requireWeightCache** covers them: a cache path
+    too long for the GPU (a file name past 255 bytes; on Windows, once its
+    GPU path is enabled again, also past the 260-character MAX_PATH) is refused before the engine is created, and a
+    load that wrote neither file is refused after its probe embedding.
+  - A cold load without **preferredBackend** runs on CPU, but a later
+    automatic request reuses whatever embedder is loaded, the GPU one
+    included.
+  - The 270m has no vision or audio encoder. In RAG, a text index and an
+    image index can share one 440m or 740m embedder on the GPU.
+  - On macOS, iOS, Android and Linux arm64 **gpu** is not applied: on macOS
+    the Metal path ends the process inside LiteRT at engine create (iOS uses
+    the same accelerator, not run), and Android and Linux arm64 are not
+    measured.
+  - GPU and CPU vectors are close, not equal: keep one backend per index if
+    you need the exact vectors back.
+- The NPU runs the per-SoC bundles
   ([below](#embeddinggemma-2-on-a-qualcomm-npu)); this bundle refuses
   **PreferredBackend.npu**. The Web has no CPU path for these bundles — the
   CPU (WebAssembly) backend of `@litert-lm/core` 0.18.0 cannot read their
@@ -178,7 +216,10 @@ final vector = await embedder.embed(
   **EmbeddingLoadException** naming the cache directory, the length of the
   cache file path and the likely causes, and no engine is left running. One
   tower's cache missing beside the others stays a printed warning. It applies
-  on CPU, and on the NPU only with declared audio, whose tower runs on CPU;
+  on CPU, on the GPU (ML Drift's weight and program caches, one of the two
+  missing stays a warning; and the CPU caches of the 440m/740m vision and
+  audio towers), and on the NPU only with declared audio, whose
+  tower runs on CPU;
   the Web and a **.tflite** embedder (EmbeddingGemma 1, Gecko) accept it and
   ignore it, and a debug build says so once in the log. The warning is a **print**, which a
   Windows release build started from Explorer shows nowhere (it has no

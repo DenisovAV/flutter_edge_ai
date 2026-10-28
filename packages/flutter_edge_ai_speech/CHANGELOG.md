@@ -1,3 +1,6 @@
+## 0.5.12
+- Docs: on macOS with Swift Package Manager on, no Podfile block from litertlm 1.19.0 (#689).
+
 ## 0.5.11
 - A closed recognizer or synthesizer fails through the returned Future (#718).
 

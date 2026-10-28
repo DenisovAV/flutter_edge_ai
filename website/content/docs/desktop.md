@@ -175,37 +175,33 @@ For the high-level chat API with history + thinking + tool calling, use
 
 ### macOS
 
-Native libs are fetched and bundled automatically via Native Assets — except
-the Apple companion libraries, which an Xcode build phase stages. That phase is
-installed by a `post_install` block in your app's `macos/Podfile`, so
-the upstream companion dylibs get wrapped into `.framework` bundles (and
-re-signed) inside `Contents/Frameworks/`, and `LiteRtLm.dylib`'s `LC_LOAD_DYLIB`
-reference is re-pointed at the new framework path (LiteRT-LM's `gpu_registry`
-resolves the Metal accelerator through that framework). Without it the
-companion dylibs are never bundled, and `LiteRtLm.dylib` — which links
-`libGemmaModelConstraintProvider.dylib` directly — fails to load on every
-backend, CPU included.
+**macOS 14 or later.** LiteRT-LM's companion libraries are built for macOS 14,
+so the app's deployment target must be 14.0: in Xcode, Runner target → General
+→ Minimum Deployments (`MACOSX_DEPLOYMENT_TARGET = 14.0` in
+`macos/Runner.xcodeproj/project.pbxproj`), and `platform :osx, '14.0'` in
+`macos/Podfile` if the app has one. Below it the build stops with `The package
+product 'flutter-edge-ai-litertlm-product' requires minimum platform version
+14.0`, or CocoaPods' `required a higher minimum deployment target`.
 
-Flutter 3.44+ uses Swift Package Manager by default, and an SPM-only app has no
-`macos/Podfile`. So on macOS there are two steps:
+Native libs are fetched and bundled via Native Assets, except two companion
+libraries: `GemmaModelConstraintProvider`, which `LiteRtLm` links, and the
+Metal accelerator `LiteRtLmMetalAccelerator`. Native Assets cannot relocate
+them ([#247](https://github.com/DenisovAV/flutter_edge_ai/issues/247)), so they
+reach the app one of two ways:
 
-1. Turn SPM off for the app in `pubspec.yaml`, then run `flutter pub get` (it
-   writes `macos/Podfile`):
+- **Swift Package Manager on** (Flutter's default since 3.44): nothing to set
+  up. `flutter_edge_ai_litertlm`'s Swift package brings them from the native
+  release, and Xcode embeds them and signs them with the app's identity. An app
+  that also has a `macos/Podfile` (another plugin uses CocoaPods) needs no
+  block in it.
+- **Swift Package Manager off** (`enable-swift-package-manager: false` under
+  `flutter: config:` in `pubspec.yaml`): a `post_install` block in
+  `macos/Podfile` copies them. Replace that Podfile's `post_install` block with
+  the one below, keeping any lines of your own inside it; the next build runs
+  `pod install` itself.
 
-```
-flutter:
-  config:
-    enable-swift-package-manager: false
-```
-
-2. Replace that Podfile's `post_install` block with the one below, keeping any
-   lines of your own inside it; the next build runs `pod install` itself.
-
-A green build proves nothing: without the block the first model load fails with
-`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. If the app already has a `macos/Podfile` (another plugin needs
-CocoaPods), keep SPM on and only replace its `post_install` block. Use the pubspec setting rather
-than `flutter config --no-enable-swift-package-manager`, which changes only one
-machine — not your teammates' or CI.
+Without them the first model load fails with `LiteRT-LM did not load on
+macOS`, naming the missing library.
 
 ```
 post_install do |installer|
@@ -272,17 +268,38 @@ post_install do |installer|
 end
 ```
 
-From Flutter 3.50 (a beta at the time of writing) a build with the setting off prints `Enabling Swift Package
-Manager will be required in a future version of Flutter.`; the setting still
-works. A route that needs no Podfile is tracked in
-[#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689).
+**Flutter 3.44 with Xcode 27.** With Swift Package Manager off, the first
+build stops with `The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set
+to 10.15, but the range of supported deployment target versions is 12.0 to
+27.0.x` on the Pods targets, `FlutterMacOS` among them. This is Flutter 3.44.0
+on Xcode 27, not this package: an app with only `shared_preferences` and Swift
+Package Manager off fails the same way. Add one line inside the
+`installer.pods_project.targets.each` loop of the block above, after
+`flutter_additional_macos_build_settings(target)`:
+
+```
+target.build_configurations.each { |c| c.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '14.0' }
+```
+
+Flutter 3.47.8 builds the same Podfile without it (measured on Xcode 27.1,
+2026-10-28; see also [Troubleshooting](/docs/troubleshooting)).
+
+From Flutter 3.50 a build with Swift Package Manager off prints `Enabling
+Swift Package Manager will be required in a future version of Flutter.`
+
+**Turning Swift Package Manager back on.** An app that turned it off for an
+earlier `flutter_edge_ai_litertlm` can delete the
+`enable-swift-package-manager: false` line. It builds and loads LiteRT-LM with
+the Podfile still there; Flutter then prints the steps that remove CocoaPods
+(`pod deintegrate`, the two `Pods-Runner` includes). The
+`[flutter_gemma] Setup LiteRT-LM macOS` build phase stays in the Xcode project
+after them. It leaves the Swift package's frameworks alone; delete it from the
+Runner target's Build Phases.
 
 **Entitlements** — add to both `macos/Runner/DebugProfile.entitlements` and
 `Release.entitlements`:
 
 ```
-<key>com.apple.security.cs.disable-library-validation</key>
-<true/>
 <key>com.apple.security.network.client</key>
 <true/>
 <key>com.apple.security.app-sandbox</key>
@@ -290,10 +307,19 @@ works. A route that needs no Podfile is tracked in
 ```
 
 `network.client` lets the sandboxed app download a model.
-`disable-library-validation` takes effect once Hardened Runtime is on, which
-notarization requires: the build phase above signs LiteRT-LM and its companion
-libraries ad hoc, and library validation refuses code not signed by Apple or by
-the app's own team.
+
+With Swift Package Manager off, also add:
+
+```
+<key>com.apple.security.cs.disable-library-validation</key>
+<true/>
+```
+
+It takes effect once Hardened Runtime is on, which notarization requires: the
+Podfile block signs the companion libraries ad hoc, and library validation
+refuses code not signed by Apple or by the app's own team. With Swift Package
+Manager on, Xcode signs them with the app's team, and a team-signed build with
+Hardened Runtime loads them without it.
 
 Do not add the iOS `com.apple.developer.kernel.*` memory entitlements — they are
 iOS-only. Without a signing team the build fails with `"Runner" has entitlements

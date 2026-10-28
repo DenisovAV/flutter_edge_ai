@@ -48,6 +48,7 @@ void main() {
     test(
       'runs on CPU for every request but npu, asking the host nothing',
       () async {
+        // The fake host is android_arm64, where the GPU is not measured.
         for (final requested in [
           null,
           PreferredBackend.cpu,
@@ -61,6 +62,89 @@ void main() {
         expect(host.asked, isEmpty);
       },
     );
+
+    test('the GPU host is Linux x64 alone; Windows x64 is refused on '
+        'native-v0.18.0-h', () {
+      expect(liteRtLmEmbeddingGpuAbis, {'linux_x64'});
+      expect(liteRtLmEmbeddingGpuRefusedAbis, {'windows_x64'});
+    });
+
+    test('with gpu on windows_x64 the generic bundle is refused, naming the '
+        'native tag, the issue and preferredBackend: cpu; null and cpu stay '
+        'on CPU', () async {
+      host
+        ..abi = 'windows_x64'
+        ..operatingSystem = 'windows';
+      await expectLater(
+        place(target: null, requested: PreferredBackend.gpu),
+        throwsA(
+          isA<EmbeddingLoadException>()
+              .having((e) => e.engine, 'engine', 'LiteRT-LM')
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('not supported on Windows x64'),
+                  contains('native-v0.18.0-h'),
+                  contains(liteRtLmEmbeddingGpuWindowsIssue),
+                  contains('preferredBackend: cpu'),
+                ),
+              ),
+        ),
+      );
+      for (final requested in [null, PreferredBackend.cpu]) {
+        expect(
+          (await place(target: null, requested: requested)).backend,
+          PreferredBackend.cpu,
+          reason: '$requested',
+        );
+      }
+      expect(host.asked, isEmpty);
+    });
+
+    for (final abi in liteRtLmEmbeddingGpuAbis) {
+      test(
+        'with gpu on $abi runs on the GPU; null and cpu stay on CPU',
+        () async {
+          host
+            ..abi = abi
+            ..operatingSystem = abi.split('_').first;
+          expect(
+            (await place(
+              target: null,
+              requested: PreferredBackend.gpu,
+            )).backend,
+            PreferredBackend.gpu,
+          );
+          for (final requested in [null, PreferredBackend.cpu]) {
+            expect(
+              (await place(target: null, requested: requested)).backend,
+              PreferredBackend.cpu,
+              reason: '$requested',
+            );
+          }
+          expect(host.asked, isEmpty);
+        },
+      );
+    }
+
+    for (final abi in [
+      'macos_arm64',
+      'ios_arm64',
+      'android_arm64',
+      'linux_arm64',
+      'windows_arm64',
+    ]) {
+      test('with gpu on $abi stays on CPU: the GPU is not measured there '
+          '(Metal ends the process at create on Apple)', () async {
+        host.abi = abi;
+        final placement = await place(
+          target: null,
+          requested: PreferredBackend.gpu,
+        );
+        expect(placement.backend, PreferredBackend.cpu);
+      });
+    }
 
     test(
       'with npu is refused, naming the per-SoC bundles — never run on CPU',

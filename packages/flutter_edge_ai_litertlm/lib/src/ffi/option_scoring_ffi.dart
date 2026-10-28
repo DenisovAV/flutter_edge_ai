@@ -132,7 +132,11 @@ Future<OptionScoringRun> scoreTargetsOffMainIsolate({
       }
       // Once per decision, after the checkpoint: rewinding resets only the
       // step, and the cell this prefill wrote stays (litetune, measured
-      // 2026-10-16).
+      // 2026-10-16). A rewind also keeps the last prefilled token that scoring
+      // feeds (LiteRT-LM#4195); this prefill ends on the prompt's own last
+      // token, so what the rewind keeps is the right one (bit-identical to a
+      // run without the rewind, FunctionGemma 270M and Gemma 4 E2B on macOS
+      // CPU, 2026-10-28).
       if (reprefill != null) n.prefill(session, reprefill);
       prefillWatch.stop();
       final scoreWatch = Stopwatch()..start();

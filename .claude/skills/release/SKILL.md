@@ -88,13 +88,13 @@ silently do the other thing.
         references/platform-setup.md; the script prints the count, do not hardcode
         one here) — RUN it, do not eyeball
 [ ] 1f-ter  litertlm or speech in the release → macOS SwiftPM gate (#689), else N/A:
-        a fresh `flutter create` app on litertlm's Flutter floor (3.44.0) and on
-        current stable, RUN, not just built. SwiftPM default → the error contains
-        `LiteRT-LM did not load on macOS` and names the companions; SwiftPM off +
-        the desktop.md post_install block → STT, embeddings, LLM on GPU and one
-        tool call work. Paste the result rows into the PR body. If
-        flutter#193978 / #193975 have dated the removal of the SwiftPM opt-out,
-        reopen the #689 bridge decision first
+        a fresh `flutter create` app (deployment target 14.0) on litertlm's
+        Flutter floor (3.44.0) and on current stable, RUN, not just built, with
+        no `macos/flutter_edge_ai_litertlm/Artifacts/` in the package (so
+        Package.swift fetches the release zips). SwiftPM default, no Podfile →
+        STT, embeddings, LLM on GPU and one tool call work; SwiftPM off + the
+        desktop.md post_install block → the same. Paste the result rows into the
+        PR body
 [ ] 1g  each changed satellite's flutter_edge_ai: floor >= the core version it now needs
 [ ] 2   versions bumped: pubspec + podspec (if any) + AGENTS.md Current-Version line
 [ ] 7   CHANGELOG: one short line per package, every published package
@@ -294,8 +294,9 @@ Shared-code hotspots to sweep, per fix type:
   ```
   Why this one bites harder than the others: `pod install` freezes the block
   into every app's `project.pbxproj`, and upgrading `flutter_edge_ai_litertlm`
-  does NOT re-run `pod install` (the package declares no macOS plugin, so
-  Flutter's tracked plugin set never changes). A fix landed in one copy never
+  never rewrites it. Only apps with Swift Package Manager off need it since
+  #689; an app with it on gets the companions from the package's
+  `macos/flutter_edge_ai_litertlm/Package.swift`. A fix landed in one copy never
   reaches users who pasted another. When the check was added the copies had
   already split into three vintages — the genkit example predated all of the
   #300/#368 fixes, and the README copy was missing `input_paths`, so every app
@@ -531,6 +532,20 @@ gh release create "$RELEASE" "$DIST"/litertlm-*.tar.gz "$DIST"/checksums_litertl
   --notes-file release-notes-native.md \
   --target main
 ```
+
+Then the macOS Swift Package Manager companions (#689), built from the macOS
+tarball just published — the same bytes the hook pins — and uploaded to the
+same tag:
+```bash
+bash packages/flutter_edge_ai_litertlm/native/litert_lm/package_macos_spm_companions.sh \
+  "$DIST"/litertlm-macos_arm64.tar.gz "$DIST"/spm
+gh release upload "$RELEASE" "$DIST"/spm/*.xcframework.zip "$DIST"/spm/checksums_spm_macos.txt
+```
+In the same PR as the hook's `version:` bump, set `nativeTag` and both
+checksums in `packages/flutter_edge_ai_litertlm/macos/flutter_edge_ai_litertlm/Package.swift`
+from `checksums_spm_macos.txt`; `test/macos_spm_companions_test.dart` fails
+while the tag disagrees with the hook. The script is deterministic: a rerun on
+the same tarball prints the same checksums.
 
 Verify each URL returns HTTP 200 + sha256 matches:
 ```bash

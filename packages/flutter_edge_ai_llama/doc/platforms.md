@@ -4,7 +4,7 @@ The connector provides GGUF inference through llamadart on Android, iOS, macOS,
 Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.5.0+ and published llamadart 0.15.1 with typed overflow reporting.
 A passing build does not qualify every device, model or accelerator.
 
-Version 0.0.3 pairs llamadart 0.15.1 with Apple
+Version 0.0.4 pairs llamadart 0.15.1 with Apple
 companion `llamadart_llama_cpp_flutter` 0.15.0. Published 0.0.2 pairs SDK
 0.15.0 with companion 0.15.0; 0.0.1 paired 0.13.1 with 0.13.0.
 
@@ -52,7 +52,7 @@ Apple applications add `llamadart_llama_cpp_flutter: 0.15.0` directly and enable
 Flutter SwiftPM. Use iOS 16.4+ and macOS 14+. iOS applications enable the
 extended-virtual-addressing and increased-memory-limit entitlements; the example
 includes both. Do not apply those kernel entitlements on macOS. From
-`flutter_edge_ai_litertlm` 1.18.0 LiteRT-LM keeps SwiftPM on too (its macOS
+`flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM keeps SwiftPM on too (its macOS
 companions come from its own Swift package): an app with this connector, its
 companion and `flutter_edge_ai_litertlm` builds and loads both native libraries
 (macOS, 2026-10-24). Running both engines' models in one app is not qualified.

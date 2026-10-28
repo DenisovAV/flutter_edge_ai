@@ -147,7 +147,7 @@ without them.
 keeps out of Native Assets. How they get there depends on Swift Package Manager:
 
 - **On** (the default since Flutter 3.44), with `flutter_edge_ai_litertlm`
-  1.18.0 or later: nothing to add. Its Swift package brings them, and Xcode
+  1.19.0 or later: nothing to add. Its Swift package brings them, and Xcode
   embeds and signs them with the app's identity. This holds when the app also
   has a `macos/Podfile` for another plugin.
 - **Off** (`flutter: config: enable-swift-package-manager: false` in
@@ -230,6 +230,22 @@ end
 ```
 
 Without it the build succeeds and the model fails to load at runtime.
+
+**Flutter 3.44 with Xcode 27.** With Swift Package Manager off, the first
+build stops with `The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set
+to 10.15, but the range of supported deployment target versions is 12.0 to
+27.0.x` on the Pods targets, `FlutterMacOS` among them. This is Flutter 3.44.0
+on Xcode 27, not this package: an app with only `shared_preferences` and Swift
+Package Manager off fails the same way. Add one line inside the
+`installer.pods_project.targets.each` loop of the block above, after
+`flutter_additional_macos_build_settings(target)`:
+
+```ruby
+target.build_configurations.each { |c| c.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '14.0' }
+```
+
+Flutter 3.47.8 builds the same Podfile without it (measured on Xcode 27.1,
+2026-10-28).
 
 ## Windows and Linux
 

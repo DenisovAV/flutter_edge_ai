@@ -46,11 +46,15 @@ const int kMinLitertlmContextTokens = 1024;
 /// dropped — the model answers from chunk 0 alone, with no error. With 4
 /// attention heads per KV head that puts the largest working `cache_length` at
 /// prefill 128 at **896** (LiteRT-LM#3508). That limit is set when the bundle
-/// is built, not by `maxTokens`: LiteRT-LM's NPU executor (v0.18.0,
+/// is built, not by `maxTokens`. LiteRT-LM's NPU executor (v0.18.0,
 /// `DetermineMaxSequenceLengthStaticModel`) lowers a larger value to the
-/// compiled limit of a bundle with a static KV cache, with a warning, so
-/// raising 896 to 1024 would not break it. Garbled Qwen3 output on the NPU is
-/// a different bug (LiteRT-LM#3846). The floor is skipped on NPU because it is
+/// bundle's `LlmMetadata.max_num_tokens` when it sets one, and to the KV-cache
+/// length read from the graph only when it does not; nothing compares the two
+/// (LiteRT-LM#4184). So a value above the cache is lowered to it only when the
+/// metadata says the cache length or nothing, which litert-torch writes by
+/// default; with metadata above the cache, a context past the cache fails at
+/// the KV-cache update or is not checked (from the code, not run on a device).
+/// Garbled Qwen3 output on the NPU is a different bug (LiteRT-LM#3846). The floor is skipped on NPU because it is
 /// a CPU/GPU fact: the caller's number is passed through untouched, since the
 /// context is a property of the bundle and only the caller knows it.
 ///

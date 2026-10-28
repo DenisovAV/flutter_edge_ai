@@ -59,10 +59,11 @@ void main() {
 
   // LiteRT-LM#3508: an NPU bundle is compiled for one cache_length, and a
   // Gemma 3 npu_export build for the Qualcomm NPU keeps every prefill chunk
-  // only up to 896 — below the #318 floor. LiteRT-LM's NPU executor would lower
-  // a clamped 1024 back to the compiled limit, so skipping the clamp is not what
-  // keeps such a bundle working: the #318 floor is a CPU/GPU fact, and the
-  // caller's number passes through.
+  // only up to 896 — below the #318 floor. LiteRT-LM's NPU executor lowers a
+  // larger value to the bundle's LlmMetadata.max_num_tokens, and to the cache
+  // length only when the metadata has none (LiteRT-LM#4184), so a clamped 1024
+  // is safe only on a bundle whose metadata matches its cache. The #318 floor
+  // is a CPU/GPU fact, and the caller's number passes through.
   group('clampLitertlmContextTokens leaves NPU alone (LiteRT-LM#3508)', () {
     test('896 — the measured Gemma 3 Qualcomm value — is passed through', () {
       expect(

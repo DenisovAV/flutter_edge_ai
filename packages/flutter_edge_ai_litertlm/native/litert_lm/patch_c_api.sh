@@ -7,6 +7,7 @@
 # 4. gpu_registry.cc dlopen rewrite for App-Store-safe framework paths (Apple)
 # 16. litert_lm_conversation_rewind_cancelled_turn: a stopped turn is rewound
 #     instead of leaving the conversation poisoned
+# 17. SentencePiece loads a BPE vocabulary with a NUL-byte piece (#659)
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -716,5 +717,84 @@ grep -qF 'session_lookup_.at(session_id)->active_tasks.empty();' \
 grep -qF 'absl::Status LlmLiteRtCompiledModelExecutorBase::SetCurrentStep(int new_step) {' \
   "$DIR/runtime/executor/llm_litert_compiled_model_executor.cc" ||
   rewind_fail "the compiled-model executor's SetCurrentStep moved"
+
+# ── 17. SentencePiece: a NUL byte in a BPE piece ──
+# SentencePiece 0.2.2 (the WORKSPACE pin since LiteRT-LM v0.17.0) refuses any
+# vocabulary piece containing '\0' ("piece must not include null character").
+# Byte-level BPE vocabularies converted to SP_Tokenizer without byte_fallback
+# carry byte 0x00 as a NORMAL piece (Qwen3-0.6B.litertlm before HF e6687177,
+# FastVLM-0.5B.litertlm: id 188), so engine_create fails on them, while
+# LiteRT-LM's own pip wheel, which links Google's internal SentencePiece,
+# loads and answers them (LiteRT-LM #3865). Upstream SentencePiece's own fix
+# (867f4ae8, #1308) only covers models with byte_fallback.
+# The check guards Darts, which throws on a NUL byte in a key. A BPE model
+# builds no trie over its pieces (a hash map, InitializePieces(false)); only
+# its USER_DEFINED pieces reach one (the prefix matcher). The patch keeps the
+# refusal there and for every other model type (Unigram's trie holds all its
+# pieces) and drops it for the rest of a BPE vocabulary.
+# A Bazel `patches=` on the sentencepiece archive: Bazel applies it before
+# the archive's patch_cmds (still under src/) and fails the fetch when the
+# hunk no longer applies, which is what a SentencePiece bump has to produce.
+# support/tokenizer:sentencepiece_nul_piece_test pins both halves.
+SP_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+sp_fail() {
+  echo "  ERROR: section 17: $1" >&2
+  exit 1
+}
+if ! grep -q "flutter_gemma_sentencepiece_nul_piece.patch" "$WORKSPACE_FILE"; then
+  python3 << 'PYEOF' || exit 1
+import os
+ws = os.environ['WORKSPACE_FILE']
+content = open(ws).read()
+anchor = '    name = "sentencepiece",\n'
+if content.count(anchor) != 1:
+    raise SystemExit("  ERROR: section 17: the sentencepiece http_archive is not in WORKSPACE")
+start = content.index(anchor)
+end = content.find('\n)', start)
+block = content[start:end]
+# The patch is a diff against this release; a moved pin needs a new one.
+if 'strip_prefix = "sentencepiece-0.2.2"' not in block:
+    raise SystemExit("  ERROR: section 17: sentencepiece is no longer 0.2.2 — "
+                     "re-check the NUL-piece refusal and re-create the patch")
+if 'patches' in block:
+    raise SystemExit("  ERROR: section 17: the sentencepiece archive already "
+                     "has patches; merge ours into them")
+content = content.replace(
+    anchor,
+    anchor +
+    '    patches = ["//:flutter_gemma_sentencepiece_nul_piece.patch"],\n'
+    '    patch_args = ["-p1"],\n', 1)
+open(ws, 'w').write(content)
+print("  OK: sentencepiece archive applies patches/sentencepiece_nul_piece.patch")
+PYEOF
+else
+  echo "  SKIP: sentencepiece NUL-piece patch already in WORKSPACE"
+fi
+cp "$SP_SRC_DIR/patches/sentencepiece_nul_piece.patch" \
+  "$DIR/flutter_gemma_sentencepiece_nul_piece.patch"
+cp "$SP_SRC_DIR/sentencepiece_nul_piece_test.cc" \
+  "$DIR/support/tokenizer/sentencepiece_nul_piece_test.cc"
+SP_TOKENIZER_BUILD="$DIR/support/tokenizer/BUILD"
+grep -q 'name = "sentencepiece_tokenizer",' "$SP_TOKENIZER_BUILD" ||
+  sp_fail "support/tokenizer:sentencepiece_tokenizer moved"
+grep -qF 'CreateFromProto(' "$DIR/support/tokenizer/sentencepiece_tokenizer.h" ||
+  sp_fail "SentencePieceTokenizer::CreateFromProto is gone"
+if ! grep -q '"sentencepiece_nul_piece_test"' "$SP_TOKENIZER_BUILD"; then
+  cat >> "$SP_TOKENIZER_BUILD" << 'BUILDEOF'
+
+cc_test(
+    name = "sentencepiece_nul_piece_test",
+    srcs = ["sentencepiece_nul_piece_test.cc"],
+    deps = [
+        ":sentencepiece_tokenizer",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+        "@sentencepiece//:sentencepiece_model_cc_proto",
+    ],
+)
+BUILDEOF
+fi
+echo "  OK: section 17 test target in support/tokenizer"
 
 echo "Patch complete."

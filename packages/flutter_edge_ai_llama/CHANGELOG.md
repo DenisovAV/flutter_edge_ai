@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.4
+
+- Docs: LiteRT-LM keeps Swift Package Manager on from litertlm 1.19.0 (#689).
+
 ## 0.0.3
 
 - Add native EmbeddingGemma 2 GGUF text embeddings; requires core 2.5.0 and llamadart 0.15.1.

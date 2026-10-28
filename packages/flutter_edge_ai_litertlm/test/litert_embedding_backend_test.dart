@@ -353,7 +353,12 @@ void main() {
 
   group('describe() places the bundle from its own bytes: CPU or its NPU, '
       'never a switch', () {
-    test('the generic bundle runs on CPU for every request but npu', () async {
+    test('the generic bundle runs on CPU for every request but npu, on a '
+        'host without GPU embeddings', () async {
+      // Pinned: on a Windows or Linux x64 runner gpu goes to the GPU (the
+      // GPU group below).
+      liteRtLmNpuHost = _QualcommAndroid();
+      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
       for (final requested in [
         null,
         PreferredBackend.cpu,
@@ -694,6 +699,238 @@ void main() {
       );
     });
   });
+
+  group('EmbeddingGemma 2 on the GPU (Linux x64; Windows x64 refused on '
+      'native-v0.18.0-h)', () {
+    void hostIs(LiteRtLmNpuHost host) {
+      liteRtLmNpuHost = host;
+      addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+    }
+
+    // eg2_text.litertlm is the 270m's shape: text encoder and embedder only.
+    Future<EmbeddingPassDescriptor<Object>> describeGpu({
+      LiteRtEmbeddingBackend b = backend,
+      String model = 'eg2_text.litertlm',
+      bool supportImage = false,
+      bool supportAudio = false,
+    }) => b.describe(
+      _bundle(model: model),
+      _config(
+        '$bundles/$model',
+        preferredBackend: PreferredBackend.gpu,
+        supportImage: supportImage,
+        supportAudio: supportAudio,
+      ),
+    );
+
+    for (final host in [_IntelWindows(), _LinuxX64()]) {
+      test('${host.abi}: a bundle honours gpu, a .tflite spec does not', () {
+        // On Windows too, so that the request reaches describe() and is
+        // refused there instead of running on CPU.
+        hostIs(host);
+        expect(backend.honouredBackends(_bundle()), {
+          PreferredBackend.cpu,
+          PreferredBackend.gpu,
+          PreferredBackend.npu,
+        });
+        expect(backend.honouredBackends(_tflite()), {
+          PreferredBackend.cpu,
+          PreferredBackend.npu,
+        });
+      });
+    }
+
+    test('linux_x64: gpu hands the pass the GPU and declares it', () async {
+      hostIs(_LinuxX64());
+      final d = await describeGpu();
+      final config = d.config as LiteRtLmEmbeddingConfig;
+      expect(d.activeBackend, PreferredBackend.gpu);
+      expect(config.gpu, isTrue);
+      expect(config.backend, PreferredBackend.gpu);
+      expect(config.npuTarget, isNull);
+    });
+
+    test('windows_x64: gpu is refused with an EmbeddingLoadException naming '
+        'the native tag and preferredBackend: cpu, for every generic bundle; '
+        'cpu and unset still load on CPU', () async {
+      hostIs(_IntelWindows());
+      for (final (model, image, audio) in [
+        ('eg2_text.litertlm', false, false),
+        ('eg2.litertlm', true, false),
+        ('eg2_audio.litertlm', true, true),
+      ]) {
+        await expectLater(
+          describeGpu(model: model, supportImage: image, supportAudio: audio),
+          _loadRefusal(
+            'LiteRT-LM',
+            allOf(
+              contains('not supported on Windows x64'),
+              contains('native-v0.18.0-h'),
+              contains(model),
+              contains('preferredBackend: cpu'),
+              contains(liteRtLmEmbeddingGpuWindowsIssue),
+            ),
+          ),
+          reason: model,
+        );
+      }
+      for (final requested in [null, PreferredBackend.cpu]) {
+        final d = await backend.describe(
+          _bundle(),
+          _config('$bundles/eg2.litertlm', preferredBackend: requested),
+        );
+        expect(d.activeBackend, PreferredBackend.cpu, reason: '$requested');
+        expect((d.config as LiteRtLmEmbeddingConfig).gpu, isFalse);
+      }
+    });
+
+    test('elsewhere a bundle keeps the default and gpu runs on CPU', () async {
+      hostIs(_QualcommAndroid());
+      expect(backend.honouredBackends(_bundle()), {
+        PreferredBackend.cpu,
+        PreferredBackend.npu,
+      });
+      final d = await describeGpu();
+      expect(d.activeBackend, PreferredBackend.cpu);
+      expect((d.config as LiteRtLmEmbeddingConfig).gpu, isFalse);
+    });
+
+    test('images on the GPU with the 270m are refused before the held '
+        'embedder closes, naming the bundle with a vision encoder', () async {
+      hostIs(_LinuxX64());
+      await expectLater(
+        describeGpu(supportImage: true),
+        _loadRefusal(
+          'LiteRT-LM',
+          allOf(
+            contains('has no vision encoder'),
+            contains('embeddinggemma-2-text-vision-440m'),
+            isNot(contains('preferredBackend: cpu')),
+          ),
+        ),
+      );
+    });
+
+    test('a bundle with vision or audio towers runs its text tower on the '
+        'GPU and names each present tower cpu, declared or not', () async {
+      hostIs(_LinuxX64());
+      for (final (model, image, audio, vision, audioTower) in [
+        ('eg2_text.litertlm', false, false, false, false),
+        ('eg2.litertlm', false, false, true, false),
+        ('eg2.litertlm', true, false, true, false),
+        ('eg2_audio.litertlm', false, false, true, true),
+        ('eg2_audio.litertlm', true, true, true, true),
+      ]) {
+        final d = await describeGpu(
+          model: model,
+          supportImage: image,
+          supportAudio: audio,
+        );
+        final config = d.config as LiteRtLmEmbeddingConfig;
+        final reason = '$model image=$image audio=$audio';
+        expect(d.activeBackend, PreferredBackend.gpu, reason: reason);
+        expect(config.gpu, isTrue, reason: reason);
+        expect(config.visionTowerOnCpu, vision, reason: reason);
+        expect(config.audioTowerOnCpu, audioTower, reason: reason);
+      }
+    });
+
+    test('a CPU load names no tower', () async {
+      final d = await backend.describe(
+        _bundle(model: 'eg2_audio.litertlm'),
+        _config('$bundles/eg2_audio.litertlm', supportAudio: true),
+      );
+      final config = d.config as LiteRtLmEmbeddingConfig;
+      expect(config.visionTowerOnCpu, isFalse);
+      expect(config.audioTowerOnCpu, isFalse);
+    });
+
+    test('on the real headers: the 270m has no media tower, the 440m a vision '
+        'tower, the 740m vision and audio', () {
+      expect(readLiteRtLmMediaTowers(_header270m), (
+        vision: false,
+        audio: false,
+      ));
+      expect(readLiteRtLmMediaTowers(_header440m), (
+        vision: true,
+        audio: false,
+      ));
+      expect(readLiteRtLmMediaTowers(_header740m), (vision: true, audio: true));
+    });
+
+    test('an unreadable container on the GPU is a load failure naming the '
+        'towers it looked for', () async {
+      hostIs(_LinuxX64());
+      File('$bundles/garbage.litertlm').writeAsBytesSync(List.filled(64, 1));
+      await expectLater(
+        describeGpu(model: 'garbage.litertlm'),
+        throwsA(isA<EmbeddingLoadException>()),
+      );
+      expect(
+        () => readLiteRtLmMediaTowers('$bundles/garbage.litertlm'),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            contains('its vision and audio towers'),
+          ),
+        ),
+      );
+    });
+
+    test(
+      'a per-SoC bundle with gpu is still refused: it runs on its NPU',
+      () async {
+        hostIs(_IntelWindows());
+        await expectLater(
+          describeGpu(model: 'eg2_ptl.litertlm'),
+          throwsA(isA<EmbeddingLoadException>()),
+        );
+      },
+    );
+
+    test(
+      'requireWeightCache on the GPU applies (the pass checks ML Drift\'s '
+      'caches): no not-applied notice, and the flag reaches the pass',
+      () async {
+        hostIs(_LinuxX64());
+        resetRequireWeightCacheNotice();
+        final logged = <String>[];
+        final original = debugPrint;
+        debugPrint = (message, {wrapWidth}) => logged.add(message ?? '');
+        addTearDown(() {
+          debugPrint = original;
+          resetRequireWeightCacheNotice();
+        });
+        const strict = LiteRtEmbeddingBackend(requireWeightCache: true);
+        final d = await describeGpu(b: strict);
+        final config = d.config as LiteRtLmEmbeddingConfig;
+        expect(config.gpu, isTrue);
+        expect(config.requireWeightCache, isTrue);
+        expect(
+          logged.where((line) => line.contains('requireWeightCache')),
+          isEmpty,
+        );
+      },
+    );
+  });
+}
+
+/// A Linux x64 desktop: no NPU vendor runs there, so nothing may be asked.
+final class _LinuxX64 implements LiteRtLmNpuHost {
+  @override
+  String get operatingSystem => 'linux';
+  @override
+  String get abi => 'linux_x64';
+  @override
+  Future<NpuStackCheck> stack(NpuVendor vendor) async =>
+      throw StateError('linux_x64 has no NPU stack to ask about');
+  @override
+  String? unreachable(NpuVendor vendor) =>
+      throw StateError('linux_x64 has no NPU to probe');
+  @override
+  Future<String> prepareDispatchDir(NpuVendor vendor) async =>
+      throw StateError('linux_x64 has no NPU dispatch');
 }
 
 /// Counts every time an engine asks for a tokenizer.

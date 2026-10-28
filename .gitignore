@@ -122,3 +122,8 @@ __pycache__/
 # Flutter crash reports — one got committed into a package and shipped to
 # pub.dev inside flutter_gemma_litertlm 1.8.0.
 flutter_*.log
+
+
+# FVM: machine-local SDK links; the pinned version lives in .fvmrc.
+.fvm/
+

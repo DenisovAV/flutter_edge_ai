@@ -16,6 +16,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_parts.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
@@ -101,6 +102,9 @@ void main() {
     DateTime Function()? clock,
     LiteRtLmNpuTarget? npuTarget,
     String npuDispatchDir = _dispatchDir,
+    bool gpu = false,
+    bool visionTowerOnCpu = false,
+    bool audioTowerOnCpu = false,
   }) => LiteRtLmEmbeddingPass(
     LiteRtLmEmbeddingConfig(
       modelPath: modelPath,
@@ -111,6 +115,9 @@ void main() {
       requireWeightCache: requireWeightCache,
       npuTarget: npuTarget,
       npuDispatchDir: npuTarget == null ? null : npuDispatchDir,
+      gpu: gpu,
+      visionTowerOnCpu: visionTowerOnCpu,
+      audioTowerOnCpu: audioTowerOnCpu,
     ),
     openBindings: openBindings ?? () => native,
     allocator: allocator,
@@ -1093,14 +1100,23 @@ void main() {
 
       test(
         'a cache directory gone after create: without the flag the load '
-        'goes on as before, with it the cache is not taken as written',
+        'goes on with a warning, with it the cache is not taken as written',
         () async {
           native
             ..writeCacheOnCreate = false
             ..deleteCacheDirOnCreate = true;
           final lenient = pass();
           final lines = await _printsDuring(() => lenient.load());
-          expect(_aboutWeightCache(lines), isEmpty);
+          expect(_aboutWeightCache(lines), [
+            allOf(
+              contains('WARNING'),
+              contains(
+                'could not check the weight cache LiteRT-LM was to write '
+                'to ${expectedCacheDir()}',
+              ),
+              contains('requireWeightCache: true'),
+            ),
+          ]);
           await lenient.close();
           expectNothingLeaked();
 
@@ -1781,6 +1797,850 @@ void main() {
     });
   });
 
+  group('a generic bundle on the GPU', () {
+    test('settings on "gpu", towers NULL, no dispatch directory, a probe '
+        'embedding before load returns, and activeBackend gpu', () async {
+      final p = pass(gpu: true);
+      final info = await p.load();
+      expect(native.settingsBackend, 'gpu');
+      expect(native.towerBackendsNull, isTrue);
+      expect(native.dispatchDirs, isEmpty);
+      // engine_create compiles but never runs the graph: the load embeds
+      // once itself.
+      final probe = native.order.indexOf('compute_embedding');
+      expect(probe, greaterThan(native.order.indexOf('options_create')));
+      expect(native.lastTexts, ['task: search result | query: probe']);
+      expect(native.created('response'), 1);
+      expect(native.deleted('response'), 1);
+      expect(
+        info.activeBackend,
+        PreferredBackend.gpu,
+        reason:
+            'core requires activeBackend once this backend honours gpu on '
+            'the host; without it every GPU load is refused',
+      );
+      expect(info.dimension, 4);
+      expect(info.modalities, {EmbeddingModality.text});
+
+      final vector = await p.embed(
+        EmbeddingInput.text('hello'),
+        TaskType.retrievalQuery,
+      );
+      expect(vector, hasLength(4));
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('a CPU load reports activeBackend cpu', () async {
+      final info = await pass().load();
+      expect(info.activeBackend, PreferredBackend.cpu);
+    });
+
+    test('ML Drift\'s two caches written: the GPU load says nothing about '
+        'them, with or without requireWeightCache', () async {
+      for (final strict in [false, true]) {
+        final p = pass(gpu: true, requireWeightCache: strict);
+        final lines = await _printsDuring(() async {
+          expect((await p.load()).activeBackend, PreferredBackend.gpu);
+        });
+        expect(_aboutGpuCache(lines), isEmpty, reason: 'strict: $strict');
+        await p.close();
+      }
+      expectNothingLeaked();
+    });
+
+    test('requireWeightCache: no GPU cache after the probe is a load failure '
+        'naming the directory, the path length and the causes; the engine is '
+        'deleted', () async {
+      native.writeCacheOnCreate = false;
+      final dir = expectedCacheDir();
+      final p = pass(gpu: true, requireWeightCache: true);
+      final lines = await _printsDuring(
+        () => expectLater(
+          p.load(),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.message,
+              'message',
+              allOf([
+                contains('wrote no GPU cache'),
+                contains('to $dir while loading $_file'),
+                contains('requireWeightCache: true'),
+                contains(
+                  'about ${_gpuProgramCachePath(dir).length} characters',
+                ),
+                contains('MAX_PATH'),
+                contains('a directory this process cannot write to'),
+              ]),
+            ),
+          ),
+        ),
+      );
+      expect(_aboutGpuCache(lines), isEmpty, reason: 'refused, not warned');
+      expect(native.order.indexOf('compute_embedding'), greaterThan(-1));
+      expect(native.deleted('engine'), 1);
+      expect(native.deleted('options'), 1);
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('without the flag no GPU cache is a printed warning and the load goes '
+        'on', () async {
+      native.writeCacheOnCreate = false;
+      final p = pass(gpu: true);
+      final lines = await _printsDuring(() async {
+        expect((await p.load()).activeBackend, PreferredBackend.gpu);
+      });
+      expect(_aboutGpuCache(lines), [
+        allOf(
+          contains('WARNING'),
+          contains('wrote no GPU cache'),
+          contains(expectedCacheDir()),
+          contains('requireWeightCache: true'),
+        ),
+      ]);
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test(
+      'one of the two GPU caches missing is a warning, never a refusal',
+      () async {
+        for (final kind in ['weight', 'program']) {
+          native.dispose();
+          native = _FakeLiteRtLm()..omitGpuCaches = {kind};
+          final dir = Directory(expectedCacheDir());
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+          final p = pass(gpu: true, requireWeightCache: true);
+          final lines = await _printsDuring(() async {
+            expect((await p.load()).activeBackend, PreferredBackend.gpu);
+          });
+          expect(_aboutGpuCache(lines), [
+            allOf(contains('WARNING'), contains('no GPU $kind cache')),
+          ], reason: kind);
+          await p.close();
+        }
+      },
+    );
+
+    test('the GPU caches are looked for after the probe embedding: a program '
+        'cache the first run writes counts', () async {
+      native.gpuProgramCacheOnCompute = true;
+      final p = pass(gpu: true, requireWeightCache: true);
+      final lines = await _printsDuring(() async {
+        expect((await p.load()).activeBackend, PreferredBackend.gpu);
+      });
+      expect(_aboutGpuCache(lines), isEmpty);
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('the cache directory is logged after create and after the probe, '
+        'with each file\'s size', () async {
+      native.gpuProgramCacheOnCompute = true;
+      final logged = <String>[];
+      final original = debugPrint;
+      debugPrint = (message, {wrapWidth}) => logged.add(message ?? '');
+      addTearDown(() => debugPrint = original);
+      await pass(gpu: true).load();
+      final listings = logged
+          .where((l) => l.contains(expectedCacheDir()))
+          .where((l) => l.contains(' after '))
+          .toList();
+      expect(listings, [
+        allOf(
+          contains('after engine create'),
+          contains('_mldrift_weight_cache.bin ${1 << 20} B'),
+          isNot(contains('program')),
+        ),
+        allOf(
+          contains('after the probe embedding'),
+          contains('_mldrift_program_cache.bin ${1 << 20} B'),
+        ),
+      ]);
+    });
+
+    group('a GPU cache file name past 255 characters', () {
+      // 210 + `.text_encoder_<10>_<size>_mldrift_program_cache.bin` > 255, on
+      // every file system; the model file itself still fits.
+      final long = '${'m' * 201}.litertlm';
+
+      setUp(() {
+        modelPath = '${root.path}/models/$long';
+        File(modelPath).writeAsBytesSync(List.filled(37, 7));
+      });
+
+      test('requireWeightCache: refused before the engine is created, naming '
+          'the length, the limit, the file and the cache root', () async {
+        final p = pass(gpu: true, requireWeightCache: true);
+        await expectLater(
+          p.load(),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.message,
+              'message',
+              allOf([
+                contains('cannot write the GPU caches of $long'),
+                contains('under the cache root $cacheBase'),
+                contains(
+                  'program cache file name would be about '
+                  '${liteRtLmGpuCacheFileNames(long, 37).program.length} '
+                  '${_nameUnit}s',
+                ),
+                contains('255-$_nameUnit limit'),
+                contains('requireWeightCache: true'),
+              ]),
+            ),
+          ),
+        );
+        expect(native.created('engine'), 0);
+        await p.close();
+        expectNothingLeaked();
+      });
+
+      test('without the flag: a warning, and the load goes on', () async {
+        final p = pass(gpu: true);
+        final lines = await _printsDuring(() async {
+          expect((await p.load()).activeBackend, PreferredBackend.gpu);
+        });
+        expect(lines.where((l) => l.contains('cannot write the GPU caches')), [
+          allOf(contains('WARNING'), contains('255-$_nameUnit limit')),
+        ]);
+        await p.close();
+        expectNothingLeaked();
+      });
+
+      test(
+        'without the flag, a path warned about before create is not '
+        'warned about again when the caches are missing after the probe',
+        () async {
+          // What ML Drift does with such a name: it writes nothing.
+          native.writeCacheOnCreate = false;
+          final p = pass(gpu: true);
+          final lines = await _printsDuring(() async {
+            expect((await p.load()).activeBackend, PreferredBackend.gpu);
+          });
+          expect(_aboutGpuCache(lines), [
+            allOf(
+              contains('WARNING'),
+              contains('cannot write the GPU caches'),
+              contains('255-$_nameUnit limit'),
+            ),
+          ]);
+          await p.close();
+          expectNothingLeaked();
+        },
+      );
+
+      test('on CPU the GPU caches are not looked at', () async {
+        final lines = await _printsDuring(() async {
+          await pass(requireWeightCache: true).load();
+        });
+        expect(lines.where((l) => l.contains('GPU cache')), isEmpty);
+      });
+    });
+
+    group('a GPU program cache name past 255, its weight cache name not', () {
+      // Program 256, weight 255.
+      final edge = '${'m' * 194}.litertlm';
+
+      setUp(() {
+        modelPath = '${root.path}/models/$edge';
+        File(modelPath).writeAsBytesSync(List.filled(37, 7));
+      });
+
+      test('the warning before create names the program cache alone and its '
+          'cost alone', () async {
+        native.dispose();
+        native = _FakeLiteRtLm()..omitGpuCaches = {'program'};
+        final p = pass(gpu: true);
+        final lines = await _printsDuring(() async {
+          expect((await p.load()).activeBackend, PreferredBackend.gpu);
+        });
+        expect(_aboutGpuCache(lines), [
+          allOf(
+            contains('cannot write the GPU program cache of $edge'),
+            contains('compiles the programs again'),
+            isNot(contains('uploads the weights')),
+          ),
+        ]);
+        await p.close();
+        expectNothingLeaked();
+      });
+
+      test('a weight cache missing for another reason is still warned about '
+          'after the probe', () async {
+        native.dispose();
+        native = _FakeLiteRtLm()..omitGpuCaches = {'program', 'weight'};
+        final p = pass(gpu: true);
+        final lines = await _printsDuring(() async {
+          expect((await p.load()).activeBackend, PreferredBackend.gpu);
+        });
+        expect(_aboutGpuCache(lines), [
+          contains('cannot write the GPU program cache'),
+          allOf(contains('WARNING'), contains('no GPU weight cache')),
+        ]);
+        await p.close();
+        expectNothingLeaked();
+      });
+    });
+
+    test(
+      'the load log names the towers on cpu beside the GPU text tower',
+      () async {
+        File(_header740m).copySync(modelPath);
+        native.visionSignatures = const [70, 140];
+        final logged = <String>[];
+        final original = debugPrint;
+        debugPrint = (message, {wrapWidth}) => logged.add(message ?? '');
+        addTearDown(() => debugPrint = original);
+        final p = pass(
+          gpu: true,
+          visionTowerOnCpu: true,
+          audioTowerOnCpu: true,
+        );
+        await p.load();
+        expect(logged.where((l) => l.contains('loaded $_file')), [
+          contains('backend=gpu (vision and audio on cpu),'),
+        ]);
+        await p.close();
+      },
+    );
+
+    test('the GPU cache names and the path check: the example app fits '
+        'Windows MAX_PATH with 15 characters to spare', () {
+      const model = 'embeddinggemma-2-text-270m__rev-9be6e8b90982.litertlm';
+      const base =
+          r'C:\Users\a-twenty-char-user-x\AppData\Local\dev.flutterberlin'
+          r'\flutter_edge_ai_example\flutter_edge_ai\emb';
+      final dir =
+          '$base\\${liteRtLmCacheDirName(model, size: 164626432, modified: DateTime.fromMillisecondsSinceEpoch(1791758581397))}';
+      final names = liteRtLmGpuCacheFileNames(model, 164626432);
+      expect(
+        names.weight,
+        '$model.text_encoder_0000000000_164626432_mldrift_weight_cache.bin',
+      );
+      expect(
+        names.program,
+        '$model.text_encoder_0000000000_164626432_mldrift_program_cache.bin',
+      );
+      expect(dir.length + 1 + names.program.length, 244);
+      expect(
+        liteRtLmGpuCachePathProblem(dir, model, 164626432, windows: true),
+        isNull,
+      );
+      // 15 more characters: the program path is 259, still under.
+      final longer = '$dir${'x' * 15}';
+      expect(
+        liteRtLmGpuCachePathProblem(longer, model, 164626432, windows: true),
+        isNull,
+      );
+      // 16 more: 260, past MAX_PATH for the program cache only.
+      final past = liteRtLmGpuCachePathProblem(
+        '$longer'
+        'x',
+        model,
+        164626432,
+        windows: true,
+      );
+      expect(
+        past,
+        allOf(
+          contains('program cache file path would be about 260 characters'),
+          contains("Windows' 260-character MAX_PATH"),
+          isNot(contains('weight')),
+        ),
+      );
+      // Linux has no 260 limit on a path.
+      expect(
+        liteRtLmGpuCachePathProblem(
+          '$longer'
+          'x',
+          model,
+          164626432,
+          windows: false,
+        ),
+        isNull,
+      );
+    });
+
+    test('a non-ASCII model file name: the 255 limit counts UTF-8 bytes off '
+        'Windows and UTF-16 code units on it', () {
+      // 109 UTF-16 code units, 209 UTF-8 bytes: the cache names are about
+      // 160 code units and 260 bytes long.
+      final model = '${'м' * 100}.litertlm';
+      final names = liteRtLmGpuCacheFileNames(model, 37);
+      expect(names.program.length, lessThan(255));
+      expect(utf8.encode(names.program).length, greaterThan(255));
+      expect(
+        liteRtLmGpuCachePathProblem('/c', model, 37, windows: false),
+        allOf(
+          contains(
+            'program cache file name would be about '
+            '${utf8.encode(names.program).length} bytes long',
+          ),
+          contains('255-byte limit'),
+        ),
+      );
+      expect(
+        liteRtLmGpuCachePathProblem(
+          r'C:\c',
+          model,
+          37,
+          windows: true,
+          ansiCodePageIsUtf8: true,
+        ),
+        isNull,
+      );
+      // 80 Cyrillic characters fit in bytes too.
+      expect(
+        liteRtLmGpuCachePathProblem(
+          '/c',
+          '${'м' * 80}.litertlm',
+          37,
+          windows: false,
+        ),
+        isNull,
+      );
+    });
+
+    test('on Windows a cache directory with a character outside ASCII is a '
+        'problem at any length, unless the ANSI code page is UTF-8; a model '
+        'file name outside ASCII is not', () {
+      const model = 'embeddinggemma-2-text-270m.litertlm';
+      const ascii = r'C:\Users\sasha\AppData\Local\app\emb\d';
+      const cyrillic = r'C:\Users\Саша\AppData\Local\app\emb\d';
+      expect(
+        liteRtLmGpuCachePathProblem(ascii, model, 37, windows: true),
+        isNull,
+      );
+      expect(
+        liteRtLmGpuCachePathProblem(cyrillic, model, 37, windows: true),
+        allOf(
+          contains('the cache directory has characters outside ASCII'),
+          contains('UCRT _open'),
+          contains('ANSI code page'),
+          contains('not measured'),
+          contains('create likely fails too, on every backend'),
+          isNot(contains('CreateFileA')),
+          isNot(contains('MAX_PATH')),
+        ),
+      );
+      expect(
+        liteRtLmGpuCachePathCheck(cyrillic, model, 37, windows: true),
+        isA<LiteRtLmGpuCachePathCheck>()
+            .having((c) => c.kinds, 'kinds', {'weight', 'program'})
+            .having((c) => c.cacheDirOutsideAnsi, 'outside', isTrue),
+      );
+      expect(
+        liteRtLmGpuCachePathProblem('${ascii}é', model, 37, windows: true),
+        contains('characters outside ASCII'),
+      );
+      // The cache directory's own name is ASCII by construction; a model file
+      // name outside ASCII still opens, under the name its UTF-8 bytes spell
+      // in the code page, so it is not refused.
+      expect(
+        liteRtLmGpuCachePathProblem(r'C:\c', 'é.litertlm', 37, windows: true),
+        isNull,
+      );
+      expect(
+        liteRtLmGpuCachePathProblem(
+          ascii,
+          '${'м' * 20}.litertlm',
+          37,
+          windows: true,
+        ),
+        isNull,
+      );
+      expect(
+        liteRtLmGpuCachePathProblem(
+          cyrillic,
+          model,
+          37,
+          windows: true,
+          ansiCodePageIsUtf8: true,
+        ),
+        isNull,
+      );
+      // Off Windows the accelerator opens the path as UTF-8.
+      expect(
+        liteRtLmGpuCachePathProblem(
+          '/home/Саша/.cache/emb/d',
+          model,
+          37,
+          windows: false,
+        ),
+        isNull,
+      );
+      expect(liteRtLmPathOutsideAscii('abc~\x7F'), isFalse);
+      expect(liteRtLmPathOutsideAscii('ab\u0080'), isTrue);
+    });
+
+    test(
+      'on Windows without a UTF-8 code page a model file name outside ASCII '
+      'is counted in UTF-8 bytes, one character each after the conversion',
+      () {
+        // 109 UTF-16 units, 209 UTF-8 bytes: about 160 and 260 for the program
+        // cache name.
+        final model = '${'м' * 100}.litertlm';
+        final names = liteRtLmGpuCacheFileNames(model, 37);
+        expect(
+          liteRtLmGpuCachePathProblem(r'C:\c', model, 37, windows: true),
+          allOf(
+            contains(
+              'program cache file name would be about '
+              '${utf8.encode(names.program).length} characters',
+            ),
+            contains('255-character limit'),
+            contains('MAX_PATH'),
+            isNot(contains('outside ASCII')),
+          ),
+        );
+        expect(
+          liteRtLmGpuCachePathProblem(
+            r'C:\c',
+            model,
+            37,
+            windows: true,
+            ansiCodePageIsUtf8: true,
+          ),
+          isNull,
+        );
+      },
+    );
+
+    test('the check names the cache kinds each reason applies to: at the edge '
+        'only the program cache, one character longer than the weight cache', () {
+      // Program name 256, weight name 255: past the limit for the program only.
+      final model = '${'m' * 194}.litertlm';
+      final names = liteRtLmGpuCacheFileNames(model, 37);
+      expect(names.program.length, 256);
+      expect(names.weight.length, 255);
+      final check = liteRtLmGpuCachePathCheck('/c', model, 37, windows: false);
+      expect(check?.kinds, {'program'});
+      expect(check?.problem, isNot(contains('weight')));
+    });
+
+    test('a real GPU cache is a *_mldrift_{weight,program}_cache.bin of at '
+        'least 1 MiB', () {
+      final dir = Directory('${root.path}/gpu_scan')..createSync();
+      File sized(String name, int bytes) {
+        final file = File('${dir.path}/$name');
+        file.openSync(mode: FileMode.write)
+          ..truncateSync(bytes)
+          ..closeSync();
+        return file;
+      }
+
+      expect(
+        liteRtLmWrittenGpuCaches([
+          sized('m.text_encoder_1_2_mldrift_weight_cache.bin', 1 << 20),
+          sized('m.text_encoder_1_2_mldrift_program_cache.bin', (1 << 20) - 1),
+          sized('m_1_2.text_encoder.xnnpack_cache', 2 << 20),
+        ]),
+        (weight: true, program: false),
+      );
+      expect(
+        liteRtLmWrittenGpuCaches([
+          sized('m.text_encoder_1_2_mldrift_program_cache.bin', 9 << 20),
+          File('${dir.path}/gone_mldrift_weight_cache.bin'),
+        ]),
+        (weight: false, program: true),
+      );
+    });
+
+    test('a probe the GPU cannot run fails the load, naming the GPU, and '
+        'frees the engine', () async {
+      native.failCompute = (code: 13, message: 'DEADLINE_EXCEEDED');
+      final p = pass(gpu: true);
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>()
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('could not run $_file on the GPU'),
+                  contains('DEADLINE_EXCEEDED'),
+                  contains('preferredBackend: cpu'),
+                  isNot(contains('NPU')),
+                ),
+              )
+              .having((e) => e.nativeCode, 'nativeCode', 13),
+        ),
+      );
+      expect(native.deleted('engine'), 1);
+      expect(native.deleted('options'), 1);
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('a probe that returns a NaN fails the load, naming the GPU', () async {
+      native.vectorOverride = [0.5, double.nan, 0.1, 0.2];
+      final p = pass(gpu: true);
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('$_file on the GPU returned'), contains('not used')),
+          ),
+        ),
+      );
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('a GPU engine create that fails names the GPU, not the cache '
+        'directory, whatever the code', () async {
+      native.failEngine = (code: 3, message: 'no WebGPU adapter');
+      final p = pass(gpu: true);
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('on the GPU: no WebGPU adapter'),
+              contains('preferredBackend: cpu'),
+              isNot(contains('cache directory')),
+            ),
+          ),
+        ),
+      );
+      expectNothingLeaked();
+    });
+
+    test('requireWeightCache: the no-GPU-cache refusal deletes the stale '
+        'caches of earlier copies first — one of them may be what left no '
+        'free space', () async {
+      final stale = Directory('$cacheBase/${liteRtLmCacheDirPrefix(_file)}-1-2')
+        ..createSync(recursive: true);
+      File('${stale.path}/old_mldrift_weight_cache.bin').writeAsStringSync('x');
+      native.writeCacheOnCreate = false;
+      final p = pass(gpu: true, requireWeightCache: true, clock: anHourLater);
+      await expectLater(
+        p.load(),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            contains('wrote no GPU cache'),
+          ),
+        ),
+      );
+      expect(stale.existsSync(), isFalse);
+      expect(Directory(expectedCacheDir()).existsSync(), isTrue);
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('a cache directory gone after the probe: without the flag a warning '
+        'and the load goes on, with it a load failure', () async {
+      native
+        ..writeCacheOnCreate = false
+        ..deleteCacheDirOnCreate = true;
+      final lenient = pass(gpu: true);
+      final lines = await _printsDuring(() async {
+        expect((await lenient.load()).activeBackend, PreferredBackend.gpu);
+      });
+      expect(_aboutGpuCache(lines), [
+        allOf(
+          contains('WARNING'),
+          contains(
+            'could not check the GPU caches LiteRT-LM was to write to '
+            '${expectedCacheDir()}',
+          ),
+          contains('requireWeightCache: true'),
+        ),
+      ]);
+      await lenient.close();
+      expectNothingLeaked();
+
+      final strict = pass(gpu: true, requireWeightCache: true);
+      await expectLater(
+        strict.load(),
+        throwsA(
+          isA<EmbeddingLoadException>()
+              .having((e) => e.cause, 'cause', isA<FileSystemException>())
+              .having(
+                (e) => e.message,
+                'message',
+                contains('could not check the GPU caches'),
+              ),
+        ),
+      );
+      await strict.close();
+      expectNothingLeaked();
+    });
+
+    group('the 440m/740m vision and audio towers beside a GPU text tower run '
+        'on CPU and write XNNPack weight caches, which are checked', () {
+      setUp(() => native.visionSignatures = const [70, 140]);
+
+      Future<List<String>> load({
+        required String header,
+        Set<String> omit = const {},
+        bool requireWeightCache = false,
+      }) async {
+        native.dispose();
+        native = _FakeLiteRtLm()
+          ..visionSignatures = const [70, 140]
+          ..omitTowerCaches = omit;
+        File(header).copySync(modelPath);
+        final dir = Directory(expectedCacheDir());
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+        final p = pass(
+          gpu: true,
+          visionTowerOnCpu: true,
+          audioTowerOnCpu: header == _header740m,
+          requireWeightCache: requireWeightCache,
+        );
+        try {
+          final lines = await _printsDuring(() async {
+            expect((await p.load()).activeBackend, PreferredBackend.gpu);
+          });
+          return _aboutWeightCache(lines).toList();
+        } finally {
+          await p.close();
+          expectNothingLeaked();
+        }
+      }
+
+      test('all written: nothing said, with or without the flag', () async {
+        for (final header in [_header440m, _header740m]) {
+          expect(await load(header: header), isEmpty, reason: header);
+          expect(
+            await load(header: header, requireWeightCache: true),
+            isEmpty,
+            reason: header,
+          );
+        }
+      });
+
+      test(
+        'the 440m without its vision cache: a warning naming the vision '
+        'tower, and with the flag a load failure; the engine is deleted',
+        () async {
+          expect(await load(header: _header440m, omit: {'vision_encoder'}), [
+            allOf(
+              contains('WARNING'),
+              contains(
+                'wrote no weight cache to ${expectedCacheDir()} for the vision '
+                'tower, which runs on CPU,',
+              ),
+              contains('requireWeightCache: true'),
+              isNot(contains('290 MB')),
+            ),
+          ]);
+          await expectLater(
+            load(
+              header: _header440m,
+              omit: {'vision_encoder'},
+              requireWeightCache: true,
+            ),
+            throwsA(
+              isA<EmbeddingLoadException>().having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('for the vision tower, which runs on CPU,'),
+                  contains('requireWeightCache: true'),
+                  contains(
+                    'about ${liteRtLmCacheFilePathLength(expectedCacheDir(), _file, File(_header440m).lengthSync(), tower: '.vision_encoder')} '
+                    'characters',
+                  ),
+                ),
+              ),
+            ),
+          );
+          expect(native.deleted('engine'), 1);
+        },
+      );
+
+      test('the 740m: one tower missing beside the other is a warning, never a '
+          'refusal; both missing is a refusal under the flag', () async {
+        expect(
+          await load(
+            header: _header740m,
+            omit: {'static_audio_encoder'},
+            requireWeightCache: true,
+          ),
+          [
+            allOf(
+              contains('WARNING'),
+              contains('wrote no weight cache for the audio tower'),
+            ),
+          ],
+        );
+        await expectLater(
+          load(
+            header: _header740m,
+            omit: {'static_audio_encoder', 'vision_encoder'},
+            requireWeightCache: true,
+          ),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.message,
+              'message',
+              contains(
+                'for the vision tower and the audio tower, which run on CPU,',
+              ),
+            ),
+          ),
+        );
+      });
+    });
+
+    test('the 740m: text on "gpu", its vision and audio towers named "cpu", '
+        'images and audio embedded', () async {
+      File(_header740m).copySync(modelPath);
+      native.visionSignatures = const [70, 140];
+      final p = pass(
+        gpu: true,
+        visionTowerOnCpu: true,
+        audioTowerOnCpu: true,
+        declaredMedia: {EmbeddingModality.image, EmbeddingModality.audio},
+      );
+      final info = await p.load();
+      expect(native.settingsBackend, 'gpu');
+      expect(native.settingsVisionBackend, 'cpu');
+      expect(native.settingsAudioBackend, 'cpu');
+      expect(info.activeBackend, PreferredBackend.gpu);
+      expect(info.modalities, {
+        EmbeddingModality.text,
+        EmbeddingModality.image,
+        EmbeddingModality.audio,
+      });
+      expect(
+        await p.embed(EmbeddingInput.image(_png), TaskType.retrievalDocument),
+        hasLength(4),
+      );
+      expect(
+        await p.embed(EmbeddingInput.audio(_wav), TaskType.retrievalDocument),
+        hasLength(4),
+      );
+      await p.close();
+      expectNothingLeaked();
+    });
+
+    test('the 440m: its vision tower named "cpu" even with no image '
+        'declared, and no audio tower named (it has none)', () async {
+      File(_header440m).copySync(modelPath);
+      native.visionSignatures = const [70, 140];
+      final p = pass(gpu: true, visionTowerOnCpu: true);
+      await p.load();
+      expect(native.settingsBackend, 'gpu');
+      expect(native.settingsVisionBackend, 'cpu');
+      expect(native.settingsAudioBackend, isNull);
+      await p.close();
+      expectNothingLeaked();
+    });
+  });
+
   group('a per-SoC bundle on the NPU', () {
     setUp(() => native.textSignatures = _npuSignatures);
 
@@ -2156,6 +3016,18 @@ Future<List<String>> _printsDuring(Future<void> Function() body) async {
 String _textCachePath(String dir) =>
     '$dir/${_file}_1791758581_37.text_encoder.xnnpack_cache';
 
+/// The path LiteRT's WebGPU accelerator gives the program cache of the
+/// 37-byte test model in [dir].
+String _gpuProgramCachePath(String dir) =>
+    '$dir/${liteRtLmGpuCacheFileNames(_file, 37).program}';
+
+/// How this platform's file system counts the 255 limit on a file name.
+final _nameUnit = Platform.isWindows ? 'character' : 'byte';
+
+/// The lines of [lines] about ML Drift's GPU caches.
+Iterable<String> _aboutGpuCache(List<String> lines) =>
+    lines.where((line) => line.contains('GPU') && line.contains('cache'));
+
 /// The lines of [lines] about the weight cache.
 Iterable<String> _aboutWeightCache(List<String> lines) =>
     lines.where((line) => line.contains('weight cache'));
@@ -2209,6 +3081,14 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   /// `'static_audio_encoder'`, …): a path that crossed MAX_PATH for the longer
   /// names only.
   Set<String> omitTowerCaches = const {};
+
+  /// ML Drift's GPU caches (`'weight'`, `'program'`) engine_create on the GPU
+  /// does not write.
+  Set<String> omitGpuCaches = const {};
+
+  /// The GPU program cache is written by the first compute_embedding (the
+  /// probe), not by engine_create.
+  bool gpuProgramCacheOnCompute = false;
 
   /// The cache directory is gone by the time engine_create returns.
   bool deleteCacheDirOnCreate = false;
@@ -2536,11 +3416,29 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
           ..truncateSync(cacheFileBytes)
           ..closeSync();
       }
+      if (settingsBackend == 'gpu') {
+        for (final kind in [
+          'weight',
+          if (!gpuProgramCacheOnCompute) 'program',
+        ]) {
+          if (!omitGpuCaches.contains(kind)) _writeGpuCache(dir, kind);
+        }
+      }
     }
     if (deleteCacheDirOnCreate && dir != null) {
       Directory(dir).deleteSync(recursive: true);
     }
     return _create('engine');
+  }
+
+  /// ML Drift's [kind] cache of the 37-byte test model, as LiteRT's WebGPU
+  /// accelerator names it: `<file>.text_encoder_<mtime s>_<size>_mldrift_…`.
+  void _writeGpuCache(String dir, String kind) {
+    File(
+        '$dir/eg2.litertlm.text_encoder_1791758581_37_mldrift_${kind}_cache.bin',
+      ).openSync(mode: FileMode.write)
+      ..truncateSync(cacheFileBytes)
+      ..closeSync();
   }
 
   /// The towers XNNPack writes a weight cache for at create, as upstream
@@ -2675,6 +3573,16 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
         if (type == LiteRtLmInputDataType.kLiteRtLmInputDataTypeText)
           utf8.decode(bytes),
     ];
+    final dir = cacheDir;
+    if (gpuProgramCacheOnCompute &&
+        writeCacheOnCreate &&
+        dir != null &&
+        !omitGpuCaches.contains('program') &&
+        !File(
+          '$dir/eg2.litertlm.text_encoder_1791758581_37_mldrift_program_cache.bin',
+        ).existsSync()) {
+      _writeGpuCache(dir, 'program');
+    }
     final failure = failCompute;
     if (failure != null) return _fail(failure);
     if (silentNullCompute) return nullptr;

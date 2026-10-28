@@ -46,10 +46,22 @@
 //   text and vision towers write none). No real cache file at all is a
 //   printed warning, or with `requireWeightCache` an `EmbeddingLoadException`
 //   (the engine deleted); one expected tower's file missing is a printed
-//   warning either way. Caches of earlier copies of the same file name are
-//   deleted only once the engine exists — after a successful load, or right
-//   before the no-cache refusal, since an older copy's cache may be what left
-//   no free space — and not while they were touched in the last 10 minutes.
+//   warning either way. On the GPU the text tower's caches are ML Drift's
+//   `<model>.text_encoder_<mtime>_<size>_mldrift_{weight,program}_cache.bin`,
+//   which Windows opens through the UCRT `_open` (the ANSI code page) and
+//   `CreateFileW` without long-path support: their paths are checked before
+//   create (`_checkGpuCachePaths`: MAX_PATH, a name past 255 — UTF-8 bytes
+//   off Windows — and on Windows a cache directory with a character outside
+//   ASCII unless the ANSI code page is UTF-8), the files after the probe
+//   embedding (`_checkGpuCache`, which does not warn again about a cache
+//   already warned about), with the same warning / refusal split.
+//   The 440m/740m vision and audio towers beside the GPU text tower run on
+//   CPU and are checked as on CPU. A cache directory that cannot be listed
+//   is a warning, or a refusal under the flag. Caches of earlier copies of
+//   the same file name are deleted only once the engine exists — after a
+//   successful load, or right before the no-cache refusal, since an older
+//   copy's cache may be what left no free space — and not while they were
+//   touched in the last 10 minutes.
 // - Overflow (§4.8, the P3 gate): options use kTruncate for every request,
 //   and the response reports how many tokens the input had and how many the
 //   engine kept (`litert_lm_embedding_response_get_input_length` /
@@ -137,6 +149,37 @@ void requireLiteRtLmAudioEncoder(String modelPath) {
   if (!litertlmHasAudioEncoder(types)) throw liteRtLmNoAudioEncoder(file);
 }
 
+/// The vision and audio towers the `.litertlm` bundle at [modelPath] carries,
+/// read from its container header. Called by `LiteRtEmbeddingBackend.describe()`
+/// for a GPU load: LiteRT-LM compiles every present tower at create, declared
+/// or not, on the main backend unless the tower's own is named, so the pass
+/// names each present tower `cpu` and keeps only the text tower on the GPU.
+/// A tower the bundle lacks is never named (measured: create fails with code
+/// 5; not found in upstream's source). A
+/// header this reader cannot parse is a load failure.
+({bool vision, bool audio}) readLiteRtLmMediaTowers(String modelPath) {
+  final file = _fileName(modelPath);
+  Never cannotRead(Object e, String reason) =>
+      throw liteRtLmUnreadableContainer(
+        file,
+        reason,
+        e,
+        looking: 'its vision and audio towers',
+      );
+  final List<String> types;
+  try {
+    types = readLitertlmModelTypes(modelPath);
+  } on FileSystemException catch (e) {
+    cannotRead(e, e.osError?.message ?? e.message);
+  } on FormatException catch (e) {
+    cannotRead(e, e.message);
+  }
+  return (
+    vision: litertlmHasVisionTower(types),
+    audio: litertlmHasAudioTower(types),
+  );
+}
+
 /// What `LiteRtEmbeddingBackend.describe` hands core for a `.litertlm`
 /// embedder. Crosses to core's worker isolate: strings, a set of enums and an
 /// int, all sendable.
@@ -150,9 +193,16 @@ final class LiteRtLmEmbeddingConfig {
     this.requireWeightCache = false,
     this.npuTarget,
     this.npuDispatchDir,
+    this.gpu = false,
+    this.visionTowerOnCpu = false,
+    this.audioTowerOnCpu = false,
   }) : assert(
          (npuTarget == null) == (npuDispatchDir == null),
          'an NPU bundle runs with a dispatch directory, a CPU one without',
+       ),
+       assert(
+         gpu || !(visionTowerOnCpu || audioTowerOnCpu),
+         'a tower is named cpu only beside a text tower on the GPU',
        );
 
   /// The `.litertlm` bundle core resolved for the active spec.
@@ -180,9 +230,10 @@ final class LiteRtLmEmbeddingConfig {
   /// Whether a load that leaves [cacheBase]'s directory for this bundle
   /// without a real weight cache file is refused with [EmbeddingLoadException]
   /// instead of printing a warning (`LiteRtEmbeddingBackend(requireWeightCache:)`).
-  /// Checked on CPU, and on the NPU only when audio is declared: there the
-  /// text and vision towers write no cache, while the audio tower, pinned to
-  /// CPU, writes one.
+  /// Checked on CPU, on the GPU (ML Drift's weight and program caches, whose
+  /// path lengths are also checked before create), and on the NPU only when
+  /// audio is declared: there the text and vision towers write no cache,
+  /// while the audio tower, pinned to CPU, writes one.
   final bool requireWeightCache;
 
   /// The SoC a per-SoC bundle is compiled for, when `describe()` placed it on
@@ -196,9 +247,31 @@ final class LiteRtLmEmbeddingConfig {
   /// none of). Set with [npuTarget].
   final String? npuDispatchDir;
 
+  /// A generic bundle's text tower on the GPU (LiteRT-LM's GPU executor, which
+  /// LiteRT runs on the GPU alone, never falling back to CPU), asked for with
+  /// `preferredBackend: gpu` on a `liteRtLmEmbeddingGpuAbis` host. Its vision
+  /// and audio towers run on CPU ([visionTowerOnCpu], [audioTowerOnCpu]).
+  /// Never set with [npuTarget].
+  final bool gpu;
+
+  /// With [gpu]: the bundle carries a vision tower (the 440m, the 740m), and
+  /// the pass names its backend `cpu`, declared images or not — LiteRT-LM
+  /// compiles a present tower at create, on the main backend when its own is
+  /// NULL. Set from the container header by `describe()`
+  /// ([readLiteRtLmMediaTowers]), because naming a tower the bundle lacks
+  /// fails create.
+  final bool visionTowerOnCpu;
+
+  /// With [gpu]: the bundle carries an audio tower (the 740m), named `cpu`
+  /// like [visionTowerOnCpu].
+  final bool audioTowerOnCpu;
+
   /// The backend the engine is created on.
-  PreferredBackend get backend =>
-      npuTarget == null ? PreferredBackend.cpu : PreferredBackend.npu;
+  PreferredBackend get backend => npuTarget != null
+      ? PreferredBackend.npu
+      : gpu
+      ? PreferredBackend.gpu
+      : PreferredBackend.cpu;
 }
 
 /// The descriptor factory: a top-level tear-off, so it survives the trip into
@@ -375,6 +448,12 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     final (:cacheDir, :modelSize) = _createCacheDir();
 
     try {
+      // Before create: a GPU cache path the accelerator cannot open costs a
+      // cold GPU load at every start and is reported only on stderr. Warned
+      // about here, it is not warned about again after the probe.
+      final gpuPathWarned = _config.gpu
+          ? _checkGpuCachePaths(cacheDir, modelSize)
+          : const <String>{};
       _engine = _createEngine(
         b,
         maxInputLength: setting,
@@ -385,21 +464,39 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         audio: audio,
       );
       _options = _createOptions(b);
-      if (_config.npuTarget case final target?) {
-        _probeNpu(b, info.dimension, target);
+      if (_config.gpu) _logCacheListing(cacheDir, 'after engine create');
+      // An accelerator gets one real embedding before it is trusted: create
+      // compiles but never runs the graph.
+      if (_onNpu || _config.gpu) {
+        _probeAccelerator(b, info.dimension, _config.npuTarget);
+      }
+      if (_config.gpu) {
+        _logCacheListing(cacheDir, 'after the probe embedding');
+        _checkGpuCache(
+          cacheDir,
+          modelSize: modelSize,
+          pathWarned: gpuPathWarned,
+        );
       }
       // Every tower on CPU writes a weight cache. On the NPU the text and
       // vision towers write none (upstream gives an NPU graph no XNNPack
       // cache), but declared audio runs on CPU (see _createEngine) and writes
-      // one. Inside the try: a refusal deletes the engine and the options it
-      // made.
-      if (!_onNpu || audio) {
+      // one. The GPU's text tower writes ML Drift's caches instead, checked
+      // above, and the 440m/740m vision and audio towers beside it run on CPU
+      // (named so at create, declared or not) and write XNNPack's.
+      // Inside the try: a refusal deletes the engine and the options it made.
+      final onCpu = _config.backend == PreferredBackend.cpu;
+      final vision = onCpu ? _hasVision(info) : _config.visionTowerOnCpu;
+      final audioOnCpu = audio || _config.audioTowerOnCpu;
+      if (onCpu ||
+          (_onNpu && audio) ||
+          (_config.gpu && (vision || audioOnCpu))) {
         _checkWeightCache(
           cacheDir,
           modelSize: modelSize,
-          text: !_onNpu,
-          vision: !_onNpu && _hasVision(info),
-          audio: audio,
+          text: onCpu,
+          vision: vision,
+          audio: audioOnCpu,
         );
       }
     } catch (_) {
@@ -424,7 +521,8 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       '[LiteRtLmEmbeddingPass] loaded $_file: dim=${info.dimension}, '
       'maxInputTokens=$maxInputTokens, '
       'backend=${_onNpu ? 'npu (${_config.npuTarget}, dispatch '
-                '${_config.npuDispatchDir})' : 'cpu'}, '
+                '${_config.npuDispatchDir})' : _config.backend.name}'
+      '${_config.visionTowerOnCpu || _config.audioTowerOnCpu ? ' (${[if (_config.visionTowerOnCpu) 'vision', if (_config.audioTowerOnCpu) 'audio'].join(' and ')} on cpu)' : ''}, '
       'vision=${vision ? info.visionSignatures : 'none'}'
       '${images ? ', ${_config.visionTokensPerImage} tokens/image' : ''}, '
       'audio=${audio ? 'yes' : 'not declared'}, '
@@ -444,6 +542,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       // The budget the engine was created with: only when images were
       // declared (it is not set otherwise, see _createEngine).
       visionTokensPerImage: images ? _config.visionTokensPerImage : null,
+      // Required by core on the hosts where this backend honours the GPU,
+      // and true everywhere: the engine runs where it was created or fails.
+      activeBackend: _config.backend,
     );
   }
 
@@ -678,10 +779,13 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   /// vision tower of a per-SoC bundle is compiled for the same SoC and loaded
   /// by the same dispatch, and probing it would cost an image embedding
   /// (about 0.3 s on an SM8650) at every load.
-  void _probeNpu(
+  /// One embedding of [_probeText] on the NPU [target] or, with no target,
+  /// on the GPU; refuses an error, a wrong size, or a non-finite or zero
+  /// vector.
+  void _probeAccelerator(
     LiteRtLmEmbeddingBindings b,
     int dimension,
-    LiteRtLmNpuTarget target,
+    LiteRtLmNpuTarget? target,
   ) {
     final bytes = utf8.encode(_probeText);
     final buffer = _alloc<Uint8>(bytes.length);
@@ -698,7 +802,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     }
     if (part == nullptr) {
       throw const EmbeddingLoadException(
-        'litert_lm_input_data_create returned NULL for the NPU probe',
+        'litert_lm_input_data_create returned NULL for the accelerator probe',
         engine: liteRtLmEngineTag,
       );
     }
@@ -708,9 +812,13 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       final (:response, :code, :message) = _compute(b, partArray, 1);
       if (response == nullptr) {
         throw EmbeddingLoadException(
-          'LiteRT-LM could not run $_file on the NPU of this device: '
-          '$message. The bundle is compiled for $target; '
-          '${liteRtLmNpuProbeFailureCauses(target)}, it fails this way.',
+          target == null
+              ? 'LiteRT-LM could not run $_file on the GPU: $message. Load it '
+                    'with preferredBackend: cpu to embed on the CPU.'
+              : 'LiteRT-LM could not run $_file on the NPU of this device: '
+                    '$message. The bundle is compiled for $target; '
+                    '${liteRtLmNpuProbeFailureCauses(target)}, it fails this '
+                    'way.',
           engine: liteRtLmEngineTag,
           nativeCode: code == _statusOk ? null : code,
         );
@@ -723,8 +831,8 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
             : _vectorFault(values, size);
         if (fault != null) {
           throw EmbeddingLoadException(
-            '$_file on the $target NPU returned $fault for a '
-            'test input; it is not used.',
+            '$_file on the ${target == null ? 'GPU' : '$target NPU'} '
+            'returned $fault for a test input; it is not used.',
             engine: liteRtLmEngineTag,
           );
         }
@@ -990,15 +1098,22 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     try {
       written = liteRtLmWrittenWeightCaches(Directory(cacheDir).listSync());
     } on FileSystemException catch (e) {
-      // The directory existed a moment ago; without the flag, nothing useful
-      // to add. With it, an unchecked cache is not a confirmed one.
-      if (!_config.requireWeightCache) return;
-      throw EmbeddingLoadException(
-        'could not check the weight cache LiteRT-LM was to write to '
-        '$cacheDir while loading $_file: ${e.osError?.message ?? e.message}',
-        engine: liteRtLmEngineTag,
-        cause: e,
+      // The directory existed a moment ago. With the flag, an unchecked cache
+      // is not a confirmed one; without it, said, since a directory nobody
+      // can list is most likely one the engine could not write to either.
+      final what =
+          'could not check the weight cache LiteRT-LM was to write to '
+          '$cacheDir while loading $_file: ${e.osError?.message ?? e.message}';
+      if (_config.requireWeightCache) {
+        throw EmbeddingLoadException(what, engine: liteRtLmEngineTag, cause: e);
+      }
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_litertlm] WARNING: $what. '
+        'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
+        'failure.',
       );
+      return;
     }
     // How long [tower]'s cache file path is (what MAX_PATH applies to), and
     // what likely kept the engine from creating it.
@@ -1016,28 +1131,49 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       return 'The cache file path is about $length characters long. $causes';
     }
 
+    String towerName(String tower) => switch (tower) {
+      _textTower => 'the text tower',
+      _visionTower => 'the vision tower',
+      _ => 'the audio tower',
+    };
     if (written.isEmpty) {
       // The tower whose file was surely expected: the text tower on CPU, the
-      // audio tower on the NPU.
-      final why = pathAndCauses(text ? _textTower : _audioTower);
+      // vision tower beside a GPU text tower, the audio tower on the NPU (or
+      // beside a GPU text tower on a bundle without vision).
+      final first = text
+          ? _textTower
+          : vision
+          ? _visionTower
+          : _audioTower;
+      final why = pathAndCauses(first);
+      // On the GPU and the NPU the text tower writes no XNNPack cache: the
+      // towers it was expected for are named, and the 270m figure (its text
+      // tower) does not apply.
+      final towers = [if (vision) _visionTower, if (audio) _audioTower];
+      final whose = text
+          ? ''
+          : ' for ${towers.map(towerName).join(' and ')}, which '
+                '${towers.length == 1 ? 'runs' : 'run'} on CPU,';
+      final cost = text
+          ? 'slower to load; about 290 MB more memory for the 270m'
+          : 'slower to load, more memory';
       if (_config.requireWeightCache) {
         // Collected first, as after a successful create (the engine exists):
         // an older copy's cache may be what left no free space, and keeping
         // it would refuse every later load too.
         _deleteStaleSiblings(cacheDir);
         throw EmbeddingLoadException(
-          'LiteRT-LM wrote no weight cache to $cacheDir while loading $_file, '
-          'and LiteRtEmbeddingBackend(requireWeightCache: true) refuses to run '
-          'it without one (slower to load; about 290 MB more memory for the '
-          '270m). $why',
+          'LiteRT-LM wrote no weight cache to $cacheDir$whose while loading '
+          '$_file, and LiteRtEmbeddingBackend(requireWeightCache: true) '
+          'refuses to run it without one ($cost). $why',
           engine: liteRtLmEngineTag,
         );
       }
       // ignore: avoid_print
       print(
         '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no weight cache '
-        'to $cacheDir while loading $_file, so this embedder runs without one '
-        '(slower to load; about 290 MB more memory for the 270m). $why '
+        'to $cacheDir$whose while loading $_file, so this embedder runs '
+        'without one ($cost). $why '
         'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
         'failure.',
       );
@@ -1050,11 +1186,6 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       if (audio && !has('audio_encoder.')) _audioTower,
     ];
     if (missing.isEmpty) return;
-    String towerName(String tower) => switch (tower) {
-      _textTower => 'the text tower',
-      _visionTower => 'the vision tower',
-      _ => 'the audio tower',
-    };
     // The path reported is the last tower's, the longest name of them (text,
     // then vision, then audio).
     // ignore: avoid_print
@@ -1063,6 +1194,157 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       '${missing.map(towerName).join(' and ')} of $_file to $cacheDir, so '
       '${missing.length == 1 ? 'it runs' : 'they run'} without one (slower to '
       'load, more memory). ${pathAndCauses(missing.last)}',
+    );
+  }
+
+  /// What a GPU load without ML Drift's caches costs, from the 270m's
+  /// measurements (README): the first load, which builds them, against a
+  /// load that finds them.
+  static const _coldGpuCost =
+      'every GPU load then compiles the programs and uploads the weights '
+      'again (measured on the 270m: 5.9-8.2 s for a first load, 1.7-3.6 s for '
+      'one that finds the caches)';
+
+  /// Refuses (with [LiteRtLmEmbeddingConfig.requireWeightCache]) or warns
+  /// about, before the engine exists, GPU cache files LiteRT's WebGPU
+  /// accelerator cannot create in [cacheDir] ([liteRtLmGpuCachePathProblem]).
+  /// The directory is not shortened for it: its name is already the short
+  /// form, and the rest is the app's cache path and the model's file name.
+  /// Returns the cache kinds (`weight`, `program`) it warned about, so the
+  /// check after the probe does not warn again about those, and still warns
+  /// about one missing for another reason.
+  Set<String> _checkGpuCachePaths(String cacheDir, int modelSize) {
+    final check = liteRtLmGpuCachePathCheck(
+      cacheDir,
+      _file,
+      modelSize,
+      windows: Platform.isWindows,
+      ansiCodePageIsUtf8: _ansiCodePageIsUtf8(),
+    );
+    if (check == null) return const {};
+    final both = check.kinds.length == 2;
+    // A cache directory the engine likely cannot use is not claimed to load
+    // cold: what happens then is not measured.
+    final cost = check.cacheDirOutsideAnsi
+        ? ''
+        : both
+        ? ' Without them $_coldGpuCost.'
+        : check.kinds.contains('program')
+        ? ' Without it every GPU load compiles the programs again.'
+        : ' Without it every GPU load uploads the weights again.';
+    final what =
+        'LiteRT-LM cannot write the GPU '
+        '${both ? 'caches' : '${check.kinds.single} cache'} of $_file under '
+        'the cache root ${_config.cacheBase}: ${check.problem}.$cost A shorter '
+        'model file name or app cache path, in ASCII, avoids it.';
+    if (_config.requireWeightCache) {
+      throw EmbeddingLoadException(
+        '$what LiteRtEmbeddingBackend(requireWeightCache: true) refuses to '
+        'run it.',
+        engine: liteRtLmEngineTag,
+      );
+    }
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] WARNING: $what '
+      'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
+      'failure.',
+    );
+    return check.kinds;
+  }
+
+  /// Logs [cacheDir]'s files and their sizes (debug, `edgeAiLog`): when ML
+  /// Drift writes each GPU cache — at create, at the first run, or only at
+  /// engine delete — is not documented, and a device run reads it here.
+  void _logCacheListing(String cacheDir, String when) {
+    try {
+      final files = Directory(cacheDir).listSync().whereType<File>().toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+      edgeAiLog(
+        '[LiteRtLmEmbeddingPass] $cacheDir $when: '
+        '${files.isEmpty ? 'empty' : files.map((f) => '${_fileName(f.path)} ${_sizeOf(f)} B').join(', ')}',
+      );
+    } on FileSystemException catch (e) {
+      edgeAiLog('[LiteRtLmEmbeddingPass] could not list $cacheDir $when: $e');
+    }
+  }
+
+  /// After the probe embedding on the GPU, looks for ML Drift's two caches
+  /// ([liteRtLmWrittenGpuCaches]). As on CPU, the refusal under
+  /// [LiteRtLmEmbeddingConfig.requireWeightCache] needs no GPU cache at all
+  /// and one missing beside the other is a printed warning either way. That
+  /// split is the assumption a device run confirms (the listings
+  /// [_logCacheListing] prints): the weight cache is written while the engine
+  /// is created, and the program cache by then or at the probe, the graph's
+  /// first run. A cache written only at engine delete would refuse every GPU
+  /// load under the flag on its first start, which the integration tests,
+  /// registered with the flag, would show.
+  ///
+  /// [pathWarned]: the cache kinds the check before create already warned
+  /// about ([_checkGpuCachePaths]); a missing one of those is not warned about
+  /// twice, a missing one it did not name is. The refusal is not affected:
+  /// with the flag, that check refused first.
+  void _checkGpuCache(
+    String cacheDir, {
+    required int modelSize,
+    required Set<String> pathWarned,
+  }) {
+    final ({bool weight, bool program}) written;
+    try {
+      written = liteRtLmWrittenGpuCaches(Directory(cacheDir).listSync());
+    } on FileSystemException catch (e) {
+      final what =
+          'could not check the GPU caches LiteRT-LM was to write to $cacheDir '
+          'while loading $_file: ${e.osError?.message ?? e.message}';
+      if (_config.requireWeightCache) {
+        throw EmbeddingLoadException(what, engine: liteRtLmEngineTag, cause: e);
+      }
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_litertlm] WARNING: $what. '
+        'LiteRtEmbeddingBackend(requireWeightCache: true) makes this a load '
+        'failure.',
+      );
+      return;
+    }
+    final unwarned = {
+      if (!written.weight) 'weight',
+      if (!written.program) 'program',
+    }.difference(pathWarned);
+    if (unwarned.isEmpty) return;
+    final names = liteRtLmGpuCacheFileNames(_file, modelSize);
+    final path = '$cacheDir${Platform.pathSeparator}${names.program}';
+    final why =
+        'The program cache file path is about ${path.length} characters long. '
+        '${liteRtLmNoWeightCacheCauses(cachePathLength: path.length, windows: Platform.isWindows)}';
+    if (unwarned.length == 2) {
+      if (_config.requireWeightCache) {
+        // As on CPU: an older copy's cache may be what left no free space.
+        _deleteStaleSiblings(cacheDir);
+        throw EmbeddingLoadException(
+          'LiteRT-LM wrote no GPU cache (ML Drift weight and program caches) '
+          'to $cacheDir while loading $_file, and '
+          'LiteRtEmbeddingBackend(requireWeightCache: true) refuses to run it '
+          'without them: $_coldGpuCost. $why',
+          engine: liteRtLmEngineTag,
+        );
+      }
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no GPU cache (ML '
+        'Drift weight and program caches) to $cacheDir while loading $_file: '
+        '$_coldGpuCost. $why LiteRtEmbeddingBackend(requireWeightCache: true) '
+        'makes this a load failure.',
+      );
+      return;
+    }
+    final missing = unwarned.single;
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] WARNING: LiteRT-LM wrote no GPU $missing '
+      'cache (ML Drift) to $cacheDir while loading $_file, so the next GPU '
+      'load ${missing == 'program' ? 'compiles the programs' : 'uploads the weights'} '
+      'again. $why',
     );
   }
 
@@ -1076,7 +1358,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     required bool audio,
   }) {
     final path = _config.modelPath.toNativeUtf8(allocator: _alloc);
-    final backend = (_onNpu ? 'npu' : 'cpu').toNativeUtf8(allocator: _alloc);
+    final backend = _config.backend.name.toNativeUtf8(allocator: _alloc);
     // Tower backends NULL (D26): present towers run on the main backend, and
     // naming one the bundle lacks fails create with code 5. One exception:
     // the per-SoC 740m bundles compile the audio encoder for cpu/gpu only —
@@ -1084,7 +1366,14 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     // mismatch. Model requires one of [cpu,gpu] but Audio backend is NPU"
     // (Galaxy S26+, SM8850, 2026-10-13). Audio is declared only on a bundle
     // whose container has an audio encoder, so naming it here is safe.
-    final audioBackend = _onNpu && audio
+    // The other: with the text tower on the GPU, every tower the container
+    // has is named cpu (describe() read which), so only text runs on the GPU;
+    // the bundles' `tf_lite_end_of_vision`/`_audio` sections are themselves
+    // constrained to cpu.
+    final visionBackend = _config.visionTowerOnCpu
+        ? 'cpu'.toNativeUtf8(allocator: _alloc)
+        : nullptr;
+    final audioBackend = (_onNpu && audio) || _config.audioTowerOnCpu
         ? 'cpu'.toNativeUtf8(allocator: _alloc)
         : nullptr;
     final Pointer<LiteRtLmEmbeddingEngineSettings> settings;
@@ -1093,12 +1382,13 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       settings = b.litert_lm_embedding_engine_settings_create(
         path.cast(),
         backend.cast(),
-        nullptr,
+        visionBackend.cast(),
         audioBackend.cast(),
       );
     } finally {
       _alloc.free(path);
       _alloc.free(backend);
+      if (visionBackend != nullptr) _alloc.free(visionBackend);
       if (audioBackend != nullptr) _alloc.free(audioBackend);
     }
     if (settings == nullptr) {
@@ -1185,6 +1475,12 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
           _onNpu
               ? 'LiteRT-LM could not create the embedding engine for $_file '
                     'on the ${_config.npuTarget} NPU: $message'
+              // LiteRT runs the GPU graph with no CPU accelerator: a missing
+              // WebGPU adapter or an op it cannot place fails here.
+              : _config.gpu
+              ? 'LiteRT-LM could not create the embedding engine for $_file '
+                    'on the GPU: $message. Load it with preferredBackend: cpu '
+                    'to embed on the CPU.'
               // Measured: a missing or read-only cache dir is code 3 at create.
               : code == _statusInvalidArgument
               ? 'LiteRT-LM refused the embedding cache directory $cacheDir '
@@ -1348,6 +1644,172 @@ int liteRtLmCacheFilePathLength(
     '_0000000000_$modelSize'.length +
     tower.length +
     _xnnpackCacheSuffix.length;
+
+/// The suffixes LiteRT's WebGPU accelerator (ML Drift, a closed library)
+/// appends to the cache key LiteRT-LM hands it for the text tower on the GPU.
+const _gpuWeightCacheSuffix = '_mldrift_weight_cache.bin';
+const _gpuProgramCacheSuffix = '_mldrift_program_cache.bin';
+
+/// The longest file name NTFS, ext4 and the other usual file systems accept.
+const _maxFileNameLength = 255;
+
+/// The names LiteRT's WebGPU accelerator gives the text tower's GPU caches in
+/// a cache directory: LiteRT-LM sets the serialization directory and the model
+/// cache key `<model file name>.text_encoder_<mtime s>_<size>`
+/// (`litert_compiled_model_executor_utils.cc`, `file_util.cc`), and ML Drift
+/// appends `_mldrift_weight_cache.bin` / `_mldrift_program_cache.bin`. The
+/// mtime's seconds are taken as 10 digits, as in
+/// [liteRtLmCacheFilePathLength]. The program cache's is the longer, by one.
+@visibleForTesting
+({String weight, String program}) liteRtLmGpuCacheFileNames(
+  String modelFileName,
+  int modelSize,
+) {
+  final key = '$modelFileName${_textTower}_0000000000_$modelSize';
+  return (
+    weight: '$key$_gpuWeightCacheSuffix',
+    program: '$key$_gpuProgramCacheSuffix',
+  );
+}
+
+/// What the path check before create found ([liteRtLmGpuCachePathCheck]):
+/// the reasons, the GPU cache kinds (`weight`, `program`) they apply to, and
+/// whether the cache directory itself is one the engine likely cannot use.
+typedef LiteRtLmGpuCachePathCheck = ({
+  String problem,
+  Set<String> kinds,
+  bool cacheDirOutsideAnsi,
+});
+
+/// Why LiteRT's WebGPU accelerator cannot create the GPU caches of
+/// [modelFileName] in [cacheDir], decided from the path alone before the
+/// engine exists; null when both fit. [liteRtLmGpuCachePathCheck] says which
+/// of the two each reason applies to.
+@visibleForTesting
+String? liteRtLmGpuCachePathProblem(
+  String cacheDir,
+  String modelFileName,
+  int modelSize, {
+  required bool windows,
+  bool ansiCodePageIsUtf8 = false,
+}) => liteRtLmGpuCachePathCheck(
+  cacheDir,
+  modelFileName,
+  modelSize,
+  windows: windows,
+  ansiCodePageIsUtf8: ansiCodePageIsUtf8,
+)?.problem;
+
+/// The check behind [liteRtLmGpuCachePathProblem]. On Windows the
+/// accelerator gets the path as UTF-8 and opens each cache through the UCRT
+/// `_open`, which reads it in the ANSI code page, then `CreateFileW` without
+/// the `\\?\` prefix (read from the disassembly of the shipped
+/// `LiteRtWebGpuAccelerator.dll`). So, unless that code page is UTF-8
+/// ([ansiCodePageIsUtf8]):
+/// - a cache directory with characters outside ASCII cannot be opened at any
+///   length. Not measured: from LiteRT-LM's source the engine create then
+///   likely fails too, on every backend, because it checks the cache
+///   directory through the ANSI code page as well;
+/// - a model file name outside ASCII still opens, under the name its UTF-8
+///   bytes spell in the code page, so it is no problem by itself, but its
+///   lengths are counted in those bytes.
+/// A path of 260 or more (MAX_PATH) fails on Windows, and a file name past
+/// 255 on every file system: UTF-16 code units on NTFS (UTF-8 bytes when the
+/// code page is not UTF-8, as above), UTF-8 bytes on ext4 and APFS. A failed
+/// write is said only on stderr and the create still succeeds, so without
+/// this the GPU would be cold at every start in silence.
+@visibleForTesting
+LiteRtLmGpuCachePathCheck? liteRtLmGpuCachePathCheck(
+  String cacheDir,
+  String modelFileName,
+  int modelSize, {
+  required bool windows,
+  bool ansiCodePageIsUtf8 = false,
+}) {
+  final names = liteRtLmGpuCacheFileNames(modelFileName, modelSize);
+  // What Windows counts is UTF-16 units of the path it ends up with: the
+  // path as it is when the code page is UTF-8, else one character per UTF-8
+  // byte (on a single-byte code page). Elsewhere a name's UTF-8 bytes.
+  int lengthOf(String s) =>
+      windows && ansiCodePageIsUtf8 ? s.length : utf8.encode(s).length;
+  final unit = windows ? 'character' : 'byte';
+  final dirOutsideAnsi =
+      windows && !ansiCodePageIsUtf8 && liteRtLmPathOutsideAscii(cacheDir);
+  final problems = <(Set<String>, String)>[
+    if (dirOutsideAnsi)
+      (
+        {'weight', 'program'},
+        'the cache directory has characters outside ASCII, and the '
+            'accelerator opens its caches through the UCRT _open, which reads '
+            'the UTF-8 path in the ANSI code page, so it cannot open them at '
+            'any length (not measured; from LiteRT-LM\'s source the engine '
+            'create likely fails too, on every backend)',
+      ),
+    for (final (kind, name) in [
+      ('weight', names.weight),
+      ('program', names.program),
+    ]) ...[
+      if (windows && lengthOf(cacheDir) + 1 + lengthOf(name) >= _windowsMaxPath)
+        (
+          {kind},
+          'its $kind cache file path would be about '
+              '${lengthOf(cacheDir) + 1 + lengthOf(name)} ${unit}s long, past '
+              "Windows' $_windowsMaxPath-character MAX_PATH",
+        ),
+      if (lengthOf(name) > _maxFileNameLength)
+        (
+          {kind},
+          'its $kind cache file name would be about ${lengthOf(name)} '
+              '${unit}s long, past the $_maxFileNameLength-$unit limit on a '
+              'file name',
+        ),
+    ],
+  ];
+  if (problems.isEmpty) return null;
+  return (
+    problem: problems.map((p) => p.$2).join('; '),
+    kinds: {for (final p in problems) ...p.$1},
+    cacheDirOutsideAnsi: dirOutsideAnsi,
+  );
+}
+
+/// Whether [path] has a character outside ASCII.
+@visibleForTesting
+bool liteRtLmPathOutsideAscii(String path) =>
+    path.codeUnits.any((unit) => unit > 0x7F);
+
+/// Whether this process's ANSI code page is UTF-8 (65001, set by an app
+/// manifest's `activeCodePage` or the system-wide beta option): then the
+/// ANSI file APIs read a UTF-8 path as it is. False off Windows. The code
+/// page is fixed for the process's lifetime, so it is read once.
+bool _ansiCodePageIsUtf8() => _ansiCodePageIsUtf8Once;
+
+final bool _ansiCodePageIsUtf8Once =
+    Platform.isWindows &&
+    DynamicLibrary.open(
+          'kernel32.dll',
+        ).lookupFunction<Uint32 Function(), int Function()>('GetACP')() ==
+        65001;
+
+/// The names of the real GPU cache files among [entries], a cache directory's
+/// listing: `*_mldrift_weight_cache.bin` and `*_mldrift_program_cache.bin` of
+/// at least [liteRtLmMinWeightCacheBytes] (measured on the 270m: 68 MB and
+/// 9 MB).
+@visibleForTesting
+({bool weight, bool program}) liteRtLmWrittenGpuCaches(
+  Iterable<FileSystemEntity> entries,
+) {
+  bool has(String suffix) => entries.any(
+    (entry) =>
+        entry is File &&
+        entry.path.endsWith(suffix) &&
+        _sizeOf(entry) >= liteRtLmMinWeightCacheBytes,
+  );
+  return (
+    weight: has(_gpuWeightCacheSuffix),
+    program: has(_gpuProgramCacheSuffix),
+  );
+}
 
 /// Why the engine wrote no weight cache, for the refusal and the warnings,
 /// given the length of the cache file path ([liteRtLmCacheFilePathLength]).

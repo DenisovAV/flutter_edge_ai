@@ -155,9 +155,10 @@ App setup (that package's README, *Add it to your app*, and `doc/platforms.md`):
 app's pubspec, or the workspace root's; on iOS/macOS also
 `llamadart_llama_cpp_flutter: 0.15.0` in the app's own dependencies,
 `flutter config --enable-swift-package-manager`, and iOS 16.4 / macOS 14
-deployment targets; on Android arm64-v8a and x86_64 only. LiteRT-LM's macOS
-CocoaPods recipe turns Swift Package Manager off, so GGUF and LiteRT-LM in one
-macOS app are not qualified.
+deployment targets; on Android arm64-v8a and x86_64 only. From
+`flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM keeps Swift Package Manager on too,
+and both native libraries load in one macOS app; running both engines' models
+in one app is not qualified.
 
 ```dart
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -290,7 +291,18 @@ final eg2Index = await rag.open(
   before embedding.
 - It runs on CPU natively (`activeBackend` is `PreferredBackend.cpu`) and on
   WebGPU on Web (`PreferredBackend.gpu`), and refuses `PreferredBackend.npu`:
-  the NPU runs the per-SoC bundles (next section). Web vectors therefore
+  the NPU runs the per-SoC bundles (next section). On Linux x64
+  (`flutter_edge_ai_litertlm` 1.19.0) `preferredBackend:
+  PreferredBackend.gpu` runs the text tower on the GPU: on the 270m 32-64 ms
+  per text vs 232-308 ms on CPU (Tesla T4), min cos 0.997 to the CPU vectors;
+  nothing falls back to CPU. Linux x64 only; Windows x64 is refused on
+  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #744: there
+  `gpu` throws `EmbeddingLoadException`, so load with
+  `preferredBackend: PreferredBackend.cpu`. On the 440m
+  and 740m the vision and audio towers run on CPU beside it (not yet
+  measured on a device), so one GPU embedder serves a text index and an
+  image index. On macOS, iOS, Android and
+  Linux arm64 `gpu` is not applied (CPU, with core's notice). Web vectors therefore
   differ slightly from native ones — measured min cos about 0.995 for text and
   0.998 for images against the native CPU vectors — and retrieval across
   platforms holds: web queries find natively embedded images and native

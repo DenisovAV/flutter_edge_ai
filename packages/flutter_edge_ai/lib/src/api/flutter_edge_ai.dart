@@ -1129,8 +1129,12 @@ class FlutterEdgeAi {
   /// close. When that close is still running after 60 seconds, the uninstall
   /// throws `TimeoutException` before anything is deleted, and can be retried.
   ///
+  /// A directory model (ORT-GenAI, installed with `fromHuggingFace`) is
+  /// uninstalled by its name, the `spec.name` its install returned: every
+  /// file of it and its directory go.
+  ///
   /// Parameters:
-  /// - [modelId]: Model filename to uninstall
+  /// - [modelId]: Model filename to uninstall, or a directory model's name
   static Future<void> uninstallModel(String modelId) async {
     final registry = ServiceRegistry.instance;
     final repository = registry.modelRepository;
@@ -1142,7 +1146,11 @@ class FlutterEdgeAi {
     // Get model info
     final modelInfo = await repository.loadModel(modelId);
     if (modelInfo == null) {
-      throw Exception('Model not found: $modelId');
+      // A directory (ORT-GenAI) model has no record of its own: each of its
+      // files is recorded as `<modelId>/<file>`.
+      final directory = await _installedDirectoryModel(modelId);
+      if (directory == null) throw Exception('Model not found: $modelId');
+      return _uninstallDirectoryModel(directory);
     }
 
     Future<void> remove() async {
@@ -1184,6 +1192,66 @@ class FlutterEdgeAi {
     final cache = inferenceModelCacheOf(FlutterEdgeAiPlugin.instance);
     if (cache == null) return remove();
     return cache.closeForRemoval(modelId, remove);
+  }
+
+  /// The directory model [modelId] as its install records describe it, or
+  /// null when no file is recorded under `<modelId>/`.
+  static Future<InferenceModelSpec?> _installedDirectoryModel(
+    String modelId,
+  ) async {
+    final members = [
+      for (final record
+          in await ServiceRegistry.instance.modelRepository.listInstalled())
+        if (record.id.startsWith('$modelId/')) record,
+    ];
+    if (members.isEmpty) return null;
+    // Only the file names matter for the removal; which member is the
+    // primary does not.
+    final primary = members.first.id.substring(modelId.length + 1);
+    final files = [
+      for (final m in members)
+        DirectoryBundleFile.member(
+          modelId: modelId,
+          bareName: m.id.substring(modelId.length + 1),
+          primaryName: primary,
+          source: m.source,
+        ),
+    ];
+    // The records keep no model type, and nothing loads this spec.
+    return InferenceModelSpec(
+      name: modelId,
+      modelSource: files.first.source,
+      modelType: ModelType.general,
+      fileType: ModelFileType.onnx,
+      directoryFiles: files,
+    );
+  }
+
+  /// Uninstalls every file of the directory model [spec], as [uninstallModel]
+  /// does one file: the model built from it is closed first, the active
+  /// identity is cleared when it is this model, and the manager deletes each
+  /// file before its record, then the emptied directory.
+  static Future<void> _uninstallDirectoryModel(InferenceModelSpec spec) async {
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final names = {for (final f in spec.files) f.filename};
+
+    Future<void> remove() async {
+      // Cleared before the records go: a delete that fails part-way leaves
+      // the remaining members recorded, so the uninstall can be retried by
+      // the same name, while a model with some of its files gone is no
+      // longer the active one.
+      final active = manager.activeInferenceModel;
+      if (active != null &&
+          active.files.any((f) => names.contains(f.filename))) {
+        await manager.clearActiveInferenceIdentity();
+      }
+      await manager.deleteModel(spec);
+    }
+
+    final cache = inferenceModelCacheOf(FlutterEdgeAiPlugin.instance);
+    if (cache == null) return remove();
+    // Any member names the model built from the directory.
+    return cache.closeForRemoval(spec.files.first.filename, remove);
   }
 
   /// Uninstall the active embedding model — uninstalls ALL its files (model +

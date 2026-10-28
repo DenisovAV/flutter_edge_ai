@@ -532,7 +532,9 @@ To delete an inference model, or any model by filename, use `uninstallModel()`.
 When the file belongs to the active inference model (the model or its LoRA), it
 also clears the active inference identity: `hasActiveModel()` is false and
 `getActiveModel()` throws `NoActiveModelError` instead of handing out the model
-of a deleted file.
+of a deleted file. A directory model (ORT-GenAI, installed with
+`fromHuggingFace`) is uninstalled by its name, the `spec.name` its install
+returned: every file of it and its directory go.
 
 It first closes the model `getActiveModel()` built from that file, with its
 sessions and chats: a generation running on it stops early, with or without an

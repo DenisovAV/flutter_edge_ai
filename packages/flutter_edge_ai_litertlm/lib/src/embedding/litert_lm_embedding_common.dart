@@ -27,14 +27,15 @@ EmbeddingLoadException liteRtLmNoAudioEncoder(String file) =>
       engine: liteRtLmEngineTag,
     );
 
-/// The container of [file] could not be read to find its audio encoder:
-/// a load failure, never "no audio".
+/// The container of [file] could not be read to find [looking] (its audio
+/// encoder, unless said otherwise): a load failure, never "no audio".
 EmbeddingLoadException liteRtLmUnreadableContainer(
   String file,
   String reason,
-  Object cause,
-) => EmbeddingLoadException(
-  'could not read the container of $file to find its audio encoder: '
+  Object cause, {
+  String looking = 'its audio encoder',
+}) => EmbeddingLoadException(
+  'could not read the container of $file to find $looking: '
   '$reason',
   engine: liteRtLmEngineTag,
   cause: cause,

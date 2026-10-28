@@ -1,3 +1,6 @@
+## 2.5.4
+- `ModelType.gemma4` on `.bin`/`.tflite`: Gemma 4's own turn markers, not Gemma 3's (#705).
+
 ## 2.5.3
 - `uninstallModel` closes the model built from that file; `getModelPath` follows the file's record (#723).
 - Web: no false "image support not implemented" warning for every engine (#719).

@@ -1,3 +1,6 @@
+## 2.5.5
+- `uninstallModel` removes a directory (ORT-GenAI) model by its name (#730).
+
 ## 2.5.4
 - `ModelType.gemma4` on `.bin`/`.tflite`: Gemma 4's own turn markers, not Gemma 3's (#705).
 

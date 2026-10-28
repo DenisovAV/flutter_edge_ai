@@ -189,6 +189,30 @@ for dir in packages/*/ packages/*/example/; do
     fail=1
   fi
   tested=$((tested + 1))
+
+  # Browser suites. A plain `flutter test` runs on the VM, where a
+  # `@TestOn('browser')` or `@TestOn('chrome')` file is skipped without a
+  # word, so until 2026-10-26 two dozen of them (fakes only, no models) never
+  # ran anywhere. They get their own Chrome run, named file by file: never the
+  # whole test/, which would compile every VM-only suite for the browser.
+  # `slow` leaves out the long measurement cases (decider_web_test.dart).
+  #
+  # A plain string, not an array, for the bash 3.2 reason above; no test file
+  # name has a space. `|| true`: grep exits 1 when nothing matches.
+  browser_files="$(cd "$dir" && grep -rlE "@TestOn\('(browser|chrome)'\)" test | sort | tr '\n' ' ' || true)"
+  if [[ -n "${browser_files// /}" ]]; then
+    echo "::group::flutter test --platform chrome — $pkg"
+    # shellcheck disable=SC2086  # word splitting is the point
+    (cd "$dir" && flutter test --platform chrome --exclude-tags slow $browser_files)
+    rc=$?
+    echo "::endgroup::"
+    if [[ $rc -eq 0 ]]; then
+      summary="${summary}  ok  ${pkg} (chrome)"$'\n'
+    else
+      summary="${summary}  FAILED  ${pkg} (chrome)"$'\n'
+      fail=1
+    fi
+  fi
 done
 
 echo

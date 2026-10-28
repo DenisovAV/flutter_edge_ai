@@ -121,9 +121,9 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     if (arch != Architecture.arm64) return null;
     const url =
         'https://github.com/microsoft/onnxruntime-genai/releases/'
-        'download/v0.14.0/onnxruntime-genai-ios-0.14.0.zip';
+        'download/v0.17.0/onnxruntime-genai-ios-0.17.0.zip';
     const sha256Hex =
-        '6734735af0827d503031a9e17e034cafeb9b54311d333b3dc6aa1ed73476137f';
+        '699697a1cf0699978083478a028857c188814f027a41b100dad1116cf45ce6cb';
     if (iOSSdk == IOSSdk.iPhoneSimulator) {
       return const _OrtBundle(
         dirName: 'ios_sim_arm64',
@@ -171,11 +171,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.14.0/onnxruntime-genai-0.14.0-osx-arm64.tar.gz',
+            'download/v0.17.0/onnxruntime-genai-0.17.0-osx-arm64.tar.gz',
         sha256:
-            '56583c98e3939d2cfd5a3812471be44017ce2752776d389015ff583a8d758312',
+            'be267c676885305267c2a416324a4a5fe522d04b3efb0386d13e40a675aa7df0',
         extractedLibPath:
-            'onnxruntime-genai-0.14.0-osx-arm64/lib/libonnxruntime-genai.dylib',
+            'onnxruntime-genai-0.17.0-osx-arm64/lib/libonnxruntime-genai.dylib',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -196,11 +196,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.14.0/onnxruntime-genai-0.14.0-linux-x64.tar.gz',
+            'download/v0.17.0/onnxruntime-genai-0.17.0-linux-x64.tar.gz',
         sha256:
-            '7b37f13619ee01263278fb1c24a950e219d75c9fa90586b1623d3e8bab9076b0',
+            '482a17113556ff76c53820b801f391cdcbaac0b6c4089065182683c03fdbc8d9',
         extractedLibPath:
-            'onnxruntime-genai-0.14.0-linux-x64/lib/libonnxruntime-genai.so',
+            'onnxruntime-genai-0.17.0-linux-x64/lib/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -220,11 +220,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.14.0/onnxruntime-genai-0.14.0-win-x64.zip',
+            'download/v0.17.0/onnxruntime-genai-0.17.0-win-x64.zip',
         sha256:
-            '8a303e52dc7be8fb2a5331929af451a25ac59774102d7fd09ef673adc85c5ebf',
+            '0bc5c187f9d6bd91582b7a0439fd47474a2a3cbc67941e6144eb11e0d09bb0b3',
         extractedLibPath:
-            'onnxruntime-genai-0.14.0-win-x64/lib/onnxruntime-genai.dll',
+            'onnxruntime-genai-0.17.0-win-x64/lib/onnxruntime-genai.dll',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -244,11 +244,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.14.0/onnxruntime-genai-0.14.0-win-arm64.zip',
+            'download/v0.17.0/onnxruntime-genai-0.17.0-win-arm64.zip',
         sha256:
-            'b6daeedb6395406e4cefbd6577a0d2196611e360086f7767c153b1d4b3cb3f1b',
+            'fab16090987daf17e5bb9763f70b7249116674a05cd81d625bc11075a098341e',
         extractedLibPath:
-            'onnxruntime-genai-0.14.0-win-arm64/lib/onnxruntime-genai.dll',
+            'onnxruntime-genai-0.17.0-win-arm64/lib/onnxruntime-genai.dll',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -284,9 +284,9 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.14.0/onnxruntime-genai-android-0.14.0.aar',
+            'download/v0.17.0/onnxruntime-genai-android-0.17.0.aar',
         sha256:
-            'c2e9b967a1ecdf766246fbee8572c6637df01183cc263f9b954c01a9ec591f69',
+            'f8b28a9ce448d97e0d5ab9614eae018a4d994d739de84e9fc5f9ff3b6673dd50',
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
       ),
@@ -321,7 +321,7 @@ class _OrtBundle {
 
   /// Cache-invalidation key — bump whenever either archive's URL/sha changes.
   String get version =>
-      ort == null ? 'genai-0.14.0' : 'ort-1.27.0_genai-0.14.0';
+      ort == null ? 'genai-0.17.0' : 'ort-1.27.0_genai-0.17.0';
 
   List<_Archive> get archives => [?ort, genai];
 }

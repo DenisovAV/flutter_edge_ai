@@ -69,7 +69,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 
 ³ Through llamadart; CI covers the CPU lifecycle — see its [qualification matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md).
 
-⁴ iOS 16.4+ and macOS 14+, with Flutter's Swift Package Manager on and the `llamadart_llama_cpp_flutter` companion. From `flutter_edge_ai_litertlm` 1.18.0 LiteRT-LM needs no Podfile on macOS either, and both libraries load in one Swift Package Manager app; running both engines' models in one app is not qualified. See the [`flutter_edge_ai_llama` README](https://pub.dev/packages/flutter_edge_ai_llama).
+⁴ iOS 16.4+ and macOS 14+, with Flutter's Swift Package Manager on and the `llamadart_llama_cpp_flutter` companion. From `flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM needs no Podfile on macOS either, and both libraries load in one Swift Package Manager app; running both engines' models in one app is not qualified. See the [`flutter_edge_ai_llama` README](https://pub.dev/packages/flutter_edge_ai_llama).
 
 LiteRT-LM ships `arm64` on Android, iOS and macOS, `x86_64` on Windows and `x86_64` / `arm64`
 on Linux; on Android, MediaPipe `.task` also runs on `x86_64` / `armeabi-v7a`, and on Linux
@@ -80,8 +80,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.3
-  flutter_edge_ai_litertlm: ^1.18.0   # or any other engine from the table
+  flutter_edge_ai: ^2.5.4
+  flutter_edge_ai_litertlm: ^1.19.0   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with
@@ -154,7 +154,7 @@ target → General → Minimum Deployments, and `platform :osx, '14.0'` in
 `macos/Podfile` if the app has one).
 
 With Flutter's default Swift Package Manager on, that is all: from
-`flutter_edge_ai_litertlm` 1.18.0 its Swift package brings LiteRT-LM's companion
+`flutter_edge_ai_litertlm` 1.19.0 its Swift package brings LiteRT-LM's companion
 libraries into the app ([why](https://flutteredge.ai/docs/desktop#macos)).
 
 An app with Swift Package Manager off (`enable-swift-package-manager: false`

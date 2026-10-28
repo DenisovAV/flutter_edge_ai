@@ -126,7 +126,7 @@ Package Manager off in `pubspec.yaml`
 (`flutter: config: enable-swift-package-manager: false`), so it needs the
 `post_install` block in `macos/Podfile`, or the first model load fails. If your
 assistant scaffolds a fresh app instead, it can keep Swift Package Manager on:
-from `flutter_edge_ai_litertlm` 1.18.0 that app needs only a macOS 14.0
+from `flutter_edge_ai_litertlm` 1.19.0 that app needs only a macOS 14.0
 deployment target, no Podfile block.
 
 A clean run on your platform is all this step asks for.

@@ -156,7 +156,7 @@ app's pubspec, or the workspace root's; on iOS/macOS also
 `llamadart_llama_cpp_flutter: 0.15.0` in the app's own dependencies,
 `flutter config --enable-swift-package-manager`, and iOS 16.4 / macOS 14
 deployment targets; on Android arm64-v8a and x86_64 only. From
-`flutter_edge_ai_litertlm` 1.18.0 LiteRT-LM keeps Swift Package Manager on too,
+`flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM keeps Swift Package Manager on too,
 and both native libraries load in one macOS app; running both engines' models
 in one app is not qualified.
 

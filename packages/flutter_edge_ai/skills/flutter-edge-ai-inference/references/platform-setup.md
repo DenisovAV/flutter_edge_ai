@@ -147,7 +147,7 @@ without them.
 keeps out of Native Assets. How they get there depends on Swift Package Manager:
 
 - **On** (the default since Flutter 3.44), with `flutter_edge_ai_litertlm`
-  1.18.0 or later: nothing to add. Its Swift package brings them, and Xcode
+  1.19.0 or later: nothing to add. Its Swift package brings them, and Xcode
   embeds and signs them with the app's identity. This holds when the app also
   has a `macos/Podfile` for another plugin.
 - **Off** (`flutter: config: enable-swift-package-manager: false` in

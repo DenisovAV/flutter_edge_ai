@@ -34,8 +34,8 @@ inference.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.3
-  flutter_edge_ai_speech: ^0.5.11
+  flutter_edge_ai: ^2.5.4
+  flutter_edge_ai_speech: ^0.5.12
 ```
 
 ## Register the backend
@@ -396,7 +396,7 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
 On macOS the app needs the same setup as every LiteRT-LM feature, see
 [Desktop → macOS](/docs/desktop#macos): a macOS 14.0 deployment target, and
 with Swift Package Manager off the `post_install` block in `macos/Podfile` (with
-it on, from `flutter_edge_ai_litertlm` 1.18.0, nothing more). Without the
+it on, from `flutter_edge_ai_litertlm` 1.19.0, nothing more). Without the
 companion libraries STT and TTS fail to load, and the error says so
 ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 

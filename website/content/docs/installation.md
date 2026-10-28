@@ -198,7 +198,7 @@ its native layer is `flutter_local_ai`, which builds from **iOS 13.0 / macOS
 raises the floor from 10.15 to 12.0**, and a lower deployment target fails
 resolution with a message naming the `flutter_local_ai` pod rather than the
 package you added. `flutter_edge_ai_litertlm` (and so speech) needs **macOS
-14.0**, from 1.18.0 by declaration; its companion libraries are built for
+14.0**, from 1.19.0 by declaration; its companion libraries are built for
 macOS 14.
 
 **Where you set it depends on the dependency manager.** Swift Package Manager is the
@@ -572,7 +572,7 @@ holds across all of desktop: there is no MediaPipe engine on desktop — `.task`
 `.bin` models are **NOT compatible** with desktop.
 
 **macOS:** a deployment target of 14.0. With Swift Package Manager on
-(Flutter's default) that is all, from `flutter_edge_ai_litertlm` 1.18.0. With it
+(Flutter's default) that is all, from `flutter_edge_ai_litertlm` 1.19.0. With it
 off (`enable-swift-package-manager: false`), replace the `post_install` block of
 `macos/Podfile` — see [Desktop → macOS](/docs/desktop#macos). Without it the
 build succeeds and the first model load fails.

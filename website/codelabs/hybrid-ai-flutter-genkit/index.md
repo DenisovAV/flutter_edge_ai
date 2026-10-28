@@ -410,7 +410,7 @@ Swift Package Manager off in `pubspec.yaml`
 built `.app`. A macOS build that succeeds proves nothing here — the app
 compiles, links, signs and launches without the staging too, and the failure
 arrives at the first model load. An app of your own can keep Swift Package
-Manager on, Flutter's default since 3.44: from `flutter_edge_ai_litertlm` 1.18.0
+Manager on, Flutter's default since 3.44: from `flutter_edge_ai_litertlm` 1.19.0
 its Swift package brings the libraries, and the app needs only the 14.0
 deployment target and `network.client`.
 

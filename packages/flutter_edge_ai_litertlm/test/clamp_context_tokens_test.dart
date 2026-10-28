@@ -85,11 +85,14 @@ void main() {
     });
 
     // The trap this pins: `PreferredBackend.npu` does not mean the NPU runs.
-    // `ffiBackendFallbackOrder` retries npu -> gpu -> cpu, so an NPU-sized
-    // context below the floor must NOT survive into the attempts that follow —
-    // those are the CPU/GPU engines the #318 floor exists for. Resolving the
-    // clamp once from the REQUESTED backend (rather than per attempt) is
-    // exactly the regression, and it is invisible on a device that has an NPU.
+    // A generic bundle is never tried on the NPU, and a file the load plan
+    // cannot read is tried npu -> gpu -> cpu (`ffiBackendFallbackOrder`), so an
+    // NPU-sized context below the floor must NOT survive into the GPU and CPU
+    // attempts — those are the engines the #318 floor exists for. A bundle
+    // compiled for an NPU is tried on the NPU alone (`planLiteRtLmLoad`).
+    // Resolving the clamp once from the REQUESTED backend (rather than per
+    // attempt) is exactly the regression, and it is invisible on a device that
+    // has an NPU.
     test(
       'a fallback from NPU re-applies the floor to the backends after it',
       () {

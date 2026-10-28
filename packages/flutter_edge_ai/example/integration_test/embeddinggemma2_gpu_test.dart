@@ -27,8 +27,12 @@
 // wrote no weight cache, or a GPU load that wrote neither ML Drift cache (or
 // could not, its path past MAX_PATH), fails the run.
 //
-// Run: flutter test integration_test/embeddinggemma2_gpu_test.dart -d windows
-// (or -d linux, under xvfb-run on a headless box). EG2_MODEL_FILE or
+// On Windows x64 the one test that runs checks that `gpu` is refused with an
+// EmbeddingLoadException naming preferredBackend: cpu, and that CPU still
+// loads.
+//
+// Run: flutter test integration_test/embeddinggemma2_gpu_test.dart -d linux
+// (under xvfb-run on a headless box), or -d windows for the refusal. EG2_MODEL_FILE or
 // EG2_MODEL_URL override the catalog download, as in embeddinggemma2_test.
 
 import 'dart:convert';
@@ -52,9 +56,10 @@ const _urlOverride = String.fromEnvironment('EG2_MODEL_URL');
 const _fileOverride = String.fromEnvironment('EG2_MODEL_FILE');
 const _llmFile = String.fromEnvironment('GPU_LLM_MODEL_FILE');
 
-final _gpuHost =
-    (Platform.isWindows && Abi.current() == Abi.windowsX64) ||
-    (Platform.isLinux && Abi.current() == Abi.linuxX64);
+final _gpuHost = Platform.isLinux && Abi.current() == Abi.linuxX64;
+
+/// Windows x64: `gpu` is refused on native-v0.18.0-h (#744).
+final _gpuRefusedHost = Platform.isWindows && Abi.current() == Abi.windowsX64;
 
 bool _initialized = false;
 
@@ -214,6 +219,31 @@ void main() {
       expect(vector, hasLength(768));
     },
     skip: !_gpuHost,
+  );
+
+  testWidgets(
+    'Windows x64: gpu is refused naming preferredBackend: cpu, and cpu loads',
+    (tester) async {
+      await _ensureEg2();
+      await expectLater(
+        FlutterEdgeAi.getActiveEmbedder(preferredBackend: PreferredBackend.gpu),
+        throwsA(
+          isA<EmbeddingLoadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('not supported on Windows x64'),
+              contains('preferredBackend: cpu'),
+            ),
+          ),
+        ),
+      );
+      final cpu = await FlutterEdgeAi.getActiveEmbedder(
+        preferredBackend: PreferredBackend.cpu,
+      );
+      expect(cpu.activeBackend, PreferredBackend.cpu);
+    },
+    skip: !_gpuRefusedHost,
   );
 
   testWidgets(

@@ -565,6 +565,75 @@ _rewindCancelledTurnOffMainIsolate({
 @visibleForTesting
 Future<void> Function(void Function() work) offMainIsolate = Isolate.run;
 
+/// How the library warm-up loads each library before `DynamicLibrary.open`
+/// does: [loadWithSystemLoader], best effort. Replaced by tests.
+@visibleForTesting
+void Function(String path) preloadNativeLibrary = _preloadWithSystemLoader;
+
+void _preloadWithSystemLoader(String path) {
+  try {
+    loadWithSystemLoader(path);
+  } on Object catch (e) {
+    // The `DynamicLibrary.open` that follows loads it instead, and reports a
+    // failure in its own words.
+    edgeAiLog(
+      '[LiteRtLmFfi] the system loader did not load $path: $e',
+      level: EdgeAiLogLevel.verbose,
+    );
+  }
+}
+
+/// `RTLD_LAZY`, the flag `DynamicLibrary.open` passes, on every platform that
+/// has `dlopen`.
+const _rtldLazy = 1;
+
+/// Loads [path] with the platform's own loader, `dlopen` (`LoadLibraryW` on
+/// Windows), called as a plain FFI function, and leaves it loaded. Unlike
+/// `DynamicLibrary.open`, which loads inside the VM, a plain FFI call leaves
+/// its isolate at a safepoint while the loader runs, so a garbage collection
+/// elsewhere in the isolate group does not wait for the load. Throws an
+/// [ArgumentError] when the loader returns no library.
+@visibleForTesting
+void loadWithSystemLoader(String path) {
+  if (Platform.isWindows) {
+    final loadLibrary = DynamicLibrary.open('kernel32.dll')
+        .lookupFunction<
+          Pointer<Void> Function(Pointer<Utf16>),
+          Pointer<Void> Function(Pointer<Utf16>)
+        >('LoadLibraryW');
+    final name = path.toNativeUtf16();
+    try {
+      if (loadLibrary(name) == nullptr) {
+        throw ArgumentError('LoadLibraryW could not load $path');
+      }
+    } finally {
+      malloc.free(name);
+    }
+    return;
+  }
+  final process = DynamicLibrary.process();
+  final dlopen = process
+      .lookupFunction<
+        Pointer<Void> Function(Pointer<Utf8>, Int32),
+        Pointer<Void> Function(Pointer<Utf8>, int)
+      >('dlopen');
+  final name = path.toNativeUtf8();
+  try {
+    if (dlopen(name, _rtldLazy) == nullptr) {
+      final reason = process
+          .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+            'dlerror',
+          )();
+      throw ArgumentError(
+        'dlopen could not load $path: '
+        '${reason == nullptr ? 'no reason given' : reason.toDartString()}',
+      );
+    }
+  } finally {
+    malloc.free(name);
+  }
+}
+
 /// Everything `litert_lm_engine_create` is made from, decided on the calling
 /// isolate. Plain values only, so it crosses to the isolate that builds the
 /// engine by copy: the settings are created, used and freed there
@@ -1147,9 +1216,11 @@ class LiteRtLmFfiClient {
   /// ([checkOwnLiteRtLmBuild]) before anything is bound to it.
   ///
   /// Static, so that the process's first load can run on a spawned isolate
-  /// ([_warmNativeLibraries]).
-  static ({DynamicLibrary lib, DynamicLibrary proxyLib})
-  _openNativeLibraries() {
+  /// ([_warmNativeLibraries]), which passes [preload]: it gets every library
+  /// right before `DynamicLibrary.open` does, except on Android.
+  static ({DynamicLibrary lib, DynamicLibrary proxyLib}) _openNativeLibraries({
+    void Function(String path) preload = _preloadNothing,
+  }) {
     final DynamicLibrary lib;
     final DynamicLibrary proxyLib;
     if (Platform.isIOS) {
@@ -1160,16 +1231,21 @@ class LiteRtLmFfiClient {
       // because gpu_registry.cc uses relative-basename dlopen which iOS
       // dyld 4 cannot resolve from .framework names alone.
       const libPath = '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm';
+      preload(libPath);
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
-      proxyLib = DynamicLibrary.open(
-        '@executable_path/Frameworks/StreamProxy.framework/StreamProxy',
-      );
+      const proxyPath =
+          '@executable_path/Frameworks/StreamProxy.framework/StreamProxy';
+      preload(proxyPath);
+      proxyLib = DynamicLibrary.open(proxyPath);
     } else if (Platform.isMacOS) {
+      preload(macOSLiteRtLmFramework);
       lib = requireOwnLiteRtLmBuild(
         openMacOSLiteRtLm(),
         macOSLiteRtLmFramework,
       );
-      proxyLib = DynamicLibrary.open('StreamProxy.framework/StreamProxy');
+      const proxyPath = 'StreamProxy.framework/StreamProxy';
+      preload(proxyPath);
+      proxyLib = DynamicLibrary.open(proxyPath);
     } else if (Platform.isLinux) {
       // Load order matters: libLiteRt.so must be loaded first with
       // RTLD_GLOBAL so libLiteRtLm.so (built with
@@ -1184,6 +1260,9 @@ class LiteRtLmFfiClient {
       // path — pass an absolute path so it resolves regardless of
       // LD_LIBRARY_PATH / RPATH inheritance.
       final libDir = '${File(Platform.resolvedExecutable).parent.path}/lib';
+      // The preload takes the same absolute path, for the same reason: a
+      // plain dlopen called from Dart code may not search Flutter's RPATH.
+      preload('$libDir/libStreamProxy.so');
       proxyLib = DynamicLibrary.open('libStreamProxy.so');
       final loadGlobal = proxyLib
           .lookupFunction<
@@ -1224,6 +1303,7 @@ class LiteRtLmFfiClient {
         }
       }
       const libPath = 'libLiteRtLm.so';
+      preload('$libDir/$libPath');
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isWindows) {
       // Preload LiteRt.dll first so the WebGPU accelerator and TopK sampler
@@ -1232,7 +1312,7 @@ class LiteRtLmFfiClient {
       // (mirrors the Linux/Android RTLD_GLOBAL pattern). StreamProxy.dll goes
       // through the std-handle realignment, before any static-CRT DLL loads
       // (windows_std_handles.dart).
-      proxyLib = openBundledWindowsLibrary('StreamProxy.dll');
+      proxyLib = openBundledWindowsLibrary('StreamProxy.dll', preload: preload);
       final loadGlobal = proxyLib
           .lookupFunction<
             Pointer Function(Pointer<Utf8>),
@@ -1252,6 +1332,7 @@ class LiteRtLmFfiClient {
         }
       }
       const libPath = 'LiteRtLm.dll';
+      preload(libPath);
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isAndroid) {
       // LiteRT-LM ships native libs only for android_arm64 — bail with a
@@ -1266,6 +1347,13 @@ class LiteRtLmFfiClient {
           'or run on an arm64-v8a device / Apple Silicon emulator.',
         );
       }
+      // No [preload] on Android. The first open of libLiteRtLm has to stay
+      // the strict default-scope one below (#447). And bionic files a library
+      // in the linker namespace of the code that calls dlopen: a plain FFI
+      // dlopen from Dart code (JIT code belongs to no library) could land
+      // libStreamProxy.so, and through it libLiteRtLm, in another namespace
+      // than DynamicLibrary.open's, which would then load a second copy. The
+      // long load is a plain FFI call here already: stream_proxy_load_global.
       proxyLib = DynamicLibrary.open('libStreamProxy.so');
       // Load LiteRtLm into the default search scope, as every release since
       // #447 has. Its one verified consumer was the StreamProxy of
@@ -1295,6 +1383,8 @@ class LiteRtLmFfiClient {
     return (lib: lib, proxyLib: proxyLib);
   }
 
+  static void _preloadNothing(String path) {}
+
   /// Whether a spawned isolate has loaded the libraries for this one.
   static bool _librariesWarm = false;
 
@@ -1302,16 +1392,22 @@ class LiteRtLmFfiClient {
   /// isolate. Libraries are loaded per process, not per isolate, so the open
   /// in [_ensureBindings] then finds every one mapped and costs a reference
   /// count, instead of mapping and relocating them (and, on Android, the
-  /// default-scope check) on the calling isolate. That load took 13 ms on an
-  /// S25 Ultra on its own isolate. A load that throws leaves the flag unset,
-  /// so the next initialize tries again.
+  /// default-scope check) on the calling isolate.
+  ///
+  /// Each library goes to the platform's own loader first, through
+  /// [preloadNativeLibrary]. `DynamicLibrary.open` keeps its isolate from
+  /// reaching a safepoint while it loads, so a garbage collection on the
+  /// calling isolate, in the same group, waited for the whole load: 171-174
+  /// ms of LiteRtLm on an M3 Max. A plain FFI call leaves the isolate at a
+  /// safepoint. A load that throws leaves the flag unset, so the next
+  /// initialize tries again.
   static Future<void> _warmNativeLibraries() async {
     if (_librariesWarm) return;
     final isolateLogLevel = edgeAiLogLevel;
     final sw = Stopwatch()..start();
     await offMainIsolate(() {
       edgeAiLogLevel = isolateLogLevel;
-      _openNativeLibraries();
+      _openNativeLibraries(preload: preloadNativeLibrary);
     });
     _librariesWarm = true;
     edgeAiLog(

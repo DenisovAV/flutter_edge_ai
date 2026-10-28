@@ -1,0 +1,20 @@
+--- a/src/model_interface.cc
++++ b/src/model_interface.cc
+@@ -100,7 +100,16 @@
+       status_ = absl::InternalError("piece must not be empty.");
+       return;
+     }
+-    if (sp.piece().find('\0') != absl::string_view::npos) {
++    // flutter_edge_ai: a NUL byte is refused only where a Darts trie would be
++    // built over the piece, because Darts throws on it: every piece of a model
++    // that keeps a reserved-id map (Unigram's trie holds them all) and every
++    // USER_DEFINED piece (the prefix matcher). A BPE model keeps its other
++    // pieces in a hash map, and 0.2.1 accepted them there; byte-level BPE
++    // vocabularies converted without byte_fallback carry byte 0x00 as such a
++    // piece (Qwen3-0.6B, FastVLM-0.5B: id 188).
++    if (sp.piece().find('\0') != absl::string_view::npos &&
++        (use_reserved_id_map ||
++         sp.type() == ModelProto::SentencePiece::USER_DEFINED)) {
+       status_ = absl::InternalError("piece must not include null character.");
+       return;
+     }

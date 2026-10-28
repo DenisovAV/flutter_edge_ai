@@ -45,9 +45,17 @@ class ModelCloseGate {
     InferenceModel model, {
     required String label,
     Object? tag,
+  }) => closeWith(model.close, label: label, tag: tag);
+
+  /// [closeAndWait] for a model that is not an [InferenceModel]: [close]
+  /// starts its teardown, or returns the one already running.
+  Future<void> closeWith(
+    Future<void> Function() close, {
+    required String label,
+    Object? tag,
   }) {
     final pending = _PendingClose(label, tag);
-    pending.done = Future.sync(model.close).then<void>(
+    pending.done = Future.sync(close).then<void>(
       (_) {},
       onError: (Object e, StackTrace st) {
         // `print`, not `edgeAiLog`, as in `EmbedderCache`: edgeAiLog is

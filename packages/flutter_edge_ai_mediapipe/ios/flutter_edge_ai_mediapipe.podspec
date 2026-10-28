@@ -18,8 +18,8 @@ on iOS via MediaPipe GenAI.
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.dependency 'MediaPipeTasksGenAI', '= 0.10.33'
-  s.dependency 'MediaPipeTasksGenAIC', '= 0.10.33'
+  s.dependency 'MediaPipeTasksGenAI', '= 0.10.35'
+  s.dependency 'MediaPipeTasksGenAIC', '= 0.10.35'
   # 16.0 is MediaPipeTasksGenAI's floor. Core, litertlm, built-in AI and
   # embeddings build from 15.0 since #441; flutter_edge_ai_llama needs 16.4.
   s.platform = :ios, '16.0'

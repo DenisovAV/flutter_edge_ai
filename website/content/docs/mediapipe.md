@@ -96,13 +96,13 @@ bootstrap), exposing the symbols on `window`:
 
 ```
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>
 ```
 
-The pinned version is **`@mediapipe/tasks-genai@0.10.29`**. Web runs **GPU-only**:
+The pinned version is **`@mediapipe/tasks-genai@0.10.30`**. Web runs **GPU-only**:
 the web engine ignores `preferredBackend` and always runs on the browser's GPU
 (WebGPU). The model storage helpers (`cache_api.js`, `opfs_helper.js`) are
 needed as well — see [Installation → Web](/docs/installation#web).

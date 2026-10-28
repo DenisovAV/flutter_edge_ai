@@ -135,7 +135,7 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
 
     // Resolved before anything loads: values it rejects must not fetch a
     // model or open its reader. A `.task` file carries no sampler, so an unset
-    // field comes from the family defaults. MediaPipe web 0.10.29 has no topP
+    // field comes from the family defaults. MediaPipe web 0.10.30 has no topP
     // option; it is passed and dropped.
     final sampling = resolveMediaPipeSampling(
       SamplingParams(
@@ -206,7 +206,7 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     _template = await _chatTemplateOf(resolved.model);
 
     final fileset = await FilesetResolver.forGenAiTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29/wasm'.toJS,
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30/wasm'.toJS,
     ).toDart;
 
     // LoRA path comes from the resolver alongside the model source.

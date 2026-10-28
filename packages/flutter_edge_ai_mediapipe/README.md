@@ -43,13 +43,13 @@ On Web, the MediaPipe runtime is loaded from a CDN. Add this to your app's `web/
 
 ```html
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>
 ```
 
-Load the model's `-web.task` build (e.g. `gemma3-1b-it-int4-web.task`); mobile `.task` files generally do not run on web. Also copy `cache_api.js` and `opfs_helper.js` from the `flutter_edge_ai` package's `web/` directory into your app's `web/` and load them with `<script src="cache_api.js"></script>` and `<script src="opfs_helper.js"></script>` — see [Installation → Web](https://flutteredge.ai/docs/installation#web). Web runs on the GPU only.
+Load the model's `-web.task` build (e.g. `gemma3-1b-it-int4-web.task`); mobile `.task` files generally do not run on web. Also copy `cache_api.js` and `opfs_helper.js` from the `flutter_edge_ai` package's `web/` directory into your app's `web/` and load them inside the `<head>` of `web/index.html` with `<script src="cache_api.js"></script>` and `<script src="opfs_helper.js"></script>` — see [Installation → Web](https://flutteredge.ai/docs/installation#web). Web runs on the GPU only.
 
 On web, MediaPipe keeps nothing between calls, so the session keeps the conversation itself and sends all of it with every turn: each answer re-reads the whole history, and its time grows with the chat. Past turns stay in it with the model's replies, images and audio included, so `maxNumImages` counts every image of the conversation, not one prompt. A turn that would go past it fails with an error that names `maxNumImages`; nothing is dropped. Each `createSession` (or `createChat`) starts a new conversation and closes the previous session. The turn markers are read from the `.task` file's own metadata (Gemma 4 declares `<|turn>`), and a file that declares none falls back to its model type. A `.bin` file and FunctionGemma keep the markers core writes into their messages, and a `.task` that carries MediaPipe's own `prompt_templates` is sent without markers of ours. `stopGeneration()` keeps what a streamed reply had produced; on a call that is not streaming nothing has been produced, so the next user message joins the unanswered turn.
 
@@ -75,7 +75,7 @@ statically linked binaries".
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ `com.google.mediapipe:tasks-genai` 0.10.33 (Gradle) |
-| iOS      | ✅ `MediaPipeTasksGenAI` 0.10.33 (CocoaPods) — **requires iOS 16.0+**; run `.task` models on `PreferredBackend.cpu` |
-| Web      | ✅ `@mediapipe/tasks-genai` 0.10.29 (CDN, see above) — GPU only, `-web.task` models |
+| Android  | ✅ `com.google.mediapipe:tasks-genai` 0.10.35 (Gradle) |
+| iOS      | ✅ `MediaPipeTasksGenAI` 0.10.35 (CocoaPods) — **requires iOS 16.0+**; run `.task` models on `PreferredBackend.cpu` |
+| Web      | ✅ `@mediapipe/tasks-genai` 0.10.30 (CDN, see above) — GPU only, `-web.task` models |
 | Desktop  | ❌ (MediaPipe `.task` not supported on desktop — use `flutter_edge_ai_litertlm`) |

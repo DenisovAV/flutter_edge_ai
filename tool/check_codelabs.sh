@@ -146,17 +146,18 @@ fi
 # so. Without this the property drifts the first time someone edits one side.
 #
 # One source can feed several starters — Getting Started's finished app is where
-# both of the codelabs that continue it begin — so this is a list of pairs, not
-# a map, and a new row is all a new continuation needs.
+# every codelab that continues it begins — so this is a list of pairs, not a
+# map, and a new row is all a new continuation needs.
 #
 # It is a list of the codelabs that DO continue another, not of all of them. A
 # starter is free to be its own app: function-calling's is Step 2 without the
 # tools, on the 284 MB model that codelab is actually about, because inheriting
 # Getting Started's finished app meant downloading a licence-gated half-gigabyte
-# model that the next step then replaced and never opened again.
+# model that the next step then replaced and never opened again. Multimodal's is
+# Step 2 without the vision flag, for the same reason — and SHARED_STEPS below
+# holds it to that.
 MIRRORS=(
   "codelabs/getting-started-flutter-gemma/complete|codelabs/inference-engines-flutter-gemma/step_01_starter"
-  "codelabs/getting-started-flutter-gemma/complete|codelabs/multimodal-flutter-gemma/step_01_starter"
   "codelabs/getting-started-flutter-gemma/complete|codelabs/on-device-rag-flutter-gemma/step_01_starter"
   "codelabs/getting-started-flutter-gemma/complete|codelabs/voice-assistant-flutter-gemma/step_01_starter"
 )
@@ -183,6 +184,80 @@ for pair in "${MIRRORS[@]}"; do
     diff -r "$src/$sub" "$dst/$sub" \
       || { echo "::error::$dst/$sub has drifted from $src/$sub"; failed=1; }
   done
+done
+
+# Consecutive steps INSIDE one codelab, where the whole lesson is that almost
+# nothing changed. MIRRORS cannot express this: it compares a lib/ directory
+# whole, and here exactly one file has to differ — it is the step.
+#
+# Multimodal's Step 2 text tells the learner to diff the two apps and says
+# which files come back identical. That sentence is the evidence for the
+# codelab's central claim — a modality is a session flag, not a second model —
+# so it has to be enforced rather than believed. Add a comment to
+# step_01_starter/lib/main.dart, forget step_02_vision, and without this the
+# text goes quietly false while every other check stays green.
+#
+# `<src>|<dst>|<same...>|<differs>`: the files that must match, then the one
+# that must NOT. Both halves are asserted. Guarding only the first would let a
+# step that teaches nothing pass — if chat_page.dart ever matched too, Step 2
+# would have no diff at all, and that is just as wrong as drift.
+SHARED_STEPS=(
+  "codelabs/multimodal-flutter-gemma/step_01_starter|codelabs/multimodal-flutter-gemma/step_02_vision|lib/model.dart lib/main.dart lib/download_page.dart|lib/chat_page.dart"
+)
+
+# Fail closed, as above: an emptied table must not read as "every step holds".
+if [ "${#SHARED_STEPS[@]}" -eq 0 ]; then
+  echo "::error::SHARED_STEPS is empty — the within-codelab check cannot run"
+  exit 1
+fi
+
+for row in "${SHARED_STEPS[@]}"; do
+  IFS='|' read -r src dst same differs <<< "$row"
+  echo ""
+  echo "=== $dst shares all but $differs with $src ==="
+
+  # Fail closed on a half-emptied row, the way the table itself does above. An
+  # empty file list runs the loop below zero times and reports nothing, and an
+  # empty last field leaves the other half of the invariant unasserted — both
+  # read as "checked and fine" without a single comparison having happened.
+  if [ -z "$same" ] || [ -z "$differs" ]; then
+    echo "::error::the SHARED_STEPS row for $dst is missing a file list — the check cannot run"
+    failed=1
+    continue
+  fi
+
+  for f in $same; do
+    # Fail closed: a renamed file must not read as "nothing to compare".
+    if [ ! -f "$src/$f" ] || [ ! -f "$dst/$f" ]; then
+      echo "::error::$src/$f or $dst/$f is missing — the shared-file check cannot run"
+      failed=1
+      continue
+    fi
+    # Every non-zero status fails here — 1 (they differ) and 2 (could not be
+    # compared) alike — which is what makes this half safe by construction.
+    diff "$src/$f" "$dst/$f" \
+      || { echo "::error::$dst/$f has drifted from $src/$f — the text says these are identical"; failed=1; }
+  done
+
+  if [ ! -f "$src/$differs" ] || [ ! -f "$dst/$differs" ]; then
+    echo "::error::$src/$differs or $dst/$differs is missing — the shared-file check cannot run"
+    failed=1
+  else
+    # The other half cannot be written the same way, because here a difference
+    # is the PASS. `diff` exits 0 identical, 1 different, and >1 when it could
+    # not compare at all — and `elif diff -q …; then` reads every non-zero
+    # alike, so an unreadable file (2) would take the "they differ" branch and
+    # this invariant would pass without having been checked. Status 1 has to be
+    # named. `|| status=$?` and not a bare call: under `set -e` an untested
+    # non-zero would abort the script before the case could run.
+    status=0
+    diff -q "$src/$differs" "$dst/$differs" >/dev/null || status=$?
+    case "$status" in
+      0) echo "::error::$dst/$differs is identical to $src/$differs — this step teaches nothing"; failed=1 ;;
+      1) ;;
+      *) echo "::error::diff could not compare $src/$differs with $dst/$differs (status $status)"; failed=1 ;;
+    esac
+  fi
 done
 
 # Web model storage, engine bootstrap and the embeddings loader — delegated to

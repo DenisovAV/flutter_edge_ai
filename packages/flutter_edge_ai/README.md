@@ -130,14 +130,14 @@ plugin manifest automatically.
 ### Web
 
 Copy `cache_api.js` and `opfs_helper.js` from this package's `web/` folder into
-your app's `web/` and load them in `index.html`, then add the script for each
-engine you use. For MediaPipe:
+your app's `web/` and load them inside the `<head>` of `index.html`, then add
+the script for each engine you use. For MediaPipe:
 
 ```html
 <script src="cache_api.js"></script>
 <script src="opfs_helper.js"></script>
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>

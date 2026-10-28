@@ -17,6 +17,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
+import 'package:flutter_edge_ai/src/lifecycle/close_notifier.dart';
+import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
+import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
     show DirectoryBundleFile, InferenceModelSpec;
 import 'package:flutter_edge_ai/src/registry/hugging_face_resolver.dart';
@@ -26,7 +29,7 @@ import 'package:flutter_edge_ai/src/utils/file_name_utils.dart'
     show FileNameUtils;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
-    show MobileModelManager;
+    show FlutterEdgeAiMobile, MobileModelManager;
 
 const _modelId = 'org__repo__cpu';
 const _dirModel = ResolvedHfModel(
@@ -182,6 +185,93 @@ void main() {
       isFalse,
       reason: 'the emptied <modelId>/ subdir must be removed',
     );
+  });
+
+  group('uninstallModel by the model\'s name', () {
+    test('removes every file, record and the subdirectory, and clears the '
+        'active identity', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      HuggingFaceResolverRegistry.instance.registerAll([
+        _ScriptedResolver(ModelFileType.onnx, _dirModel),
+      ]);
+      final install = await FlutterEdgeAi.installModel(
+        modelType: ModelType.general,
+        fileType: ModelFileType.onnx,
+      ).fromHuggingFace('org/repo').install();
+      expect(FlutterEdgeAi.activeModelSpec, isNotNull);
+
+      await FlutterEdgeAi.uninstallModel(install.spec.name);
+
+      final dir = await storageDir();
+      expect(Directory(p.join(dir, _modelId)).existsSync(), isFalse);
+      expect(await FlutterEdgeAi.listInstalledModels(), isEmpty);
+      expect(FlutterEdgeAi.activeModelSpec, isNull);
+      // A cold start finds nothing to restore.
+      final fresh = MobileModelManager();
+      await fresh.initialize();
+      expect(fresh.activeInferenceModel, isNull);
+    });
+
+    test('a name with neither a record nor members still throws', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      HuggingFaceResolverRegistry.instance.registerAll([
+        _ScriptedResolver(ModelFileType.onnx, _dirModel),
+      ]);
+      await FlutterEdgeAi.installModel(
+        modelType: ModelType.general,
+        fileType: ModelFileType.onnx,
+      ).fromHuggingFace('org/repo').install();
+
+      // A prefix of the subdirectory's name is not the model.
+      await expectLater(
+        FlutterEdgeAi.uninstallModel('org__repo'),
+        throwsA(isA<Exception>()),
+      );
+      expect(await FlutterEdgeAi.listInstalledModels(), hasLength(3));
+    });
+
+    for (final (name, shell) in [
+      ('mobile', FlutterEdgeAiMobile.new),
+      ('desktop', () => FlutterEdgeAiDesktop.instance),
+    ]) {
+      test('closes the model getActiveModel built before its files go '
+          '($name)', () async {
+        await ServiceRegistry.initialize(downloadService: download);
+        final plugin = FlutterEdgeAiPlugin.instance;
+        FlutterEdgeAiPlugin.instance = shell();
+        addTearDown(() => FlutterEdgeAiPlugin.instance = plugin);
+        await FlutterEdgeAiPlugin.instance.modelManager.ensureInitialized();
+        HuggingFaceResolverRegistry.instance.registerAll([
+          _ScriptedResolver(ModelFileType.onnx, _dirModel),
+        ]);
+        final install = await FlutterEdgeAi.installModel(
+          modelType: ModelType.general,
+          fileType: ModelFileType.onnx,
+        ).fromHuggingFace('org/repo').install();
+        final weights = File(
+          p.join(await storageDir(), _modelId, 'model.onnx'),
+        );
+        bool? weightsAtClose;
+        EngineRegistry.instance
+          ..reset()
+          ..registerAll([
+            _Engine(onClose: () => weightsAtClose = weights.existsSync()),
+          ]);
+        addTearDown(EngineRegistry.instance.reset);
+        final built = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+        addTearDown(built.close);
+
+        await FlutterEdgeAi.uninstallModel(install.spec.name);
+
+        expect(built.isClosed, isTrue);
+        expect(weightsAtClose, isTrue, reason: 'closed while the files were');
+        expect(weights.existsSync(), isFalse);
+        await expectLater(
+          FlutterEdgeAi.getActiveModel(maxTokens: 1024),
+          throwsA(isA<NoActiveModelError>()),
+        );
+      });
+    }
   });
 
   group('review fixes (codex)', () {
@@ -405,6 +495,51 @@ void main() {
       );
     });
   });
+}
+
+/// Builds a model for any spec, without opening a file.
+final class _Engine implements InferenceEngineProvider {
+  _Engine({this.onClose});
+
+  /// Called by each model this engine built when it closes.
+  final void Function()? onClose;
+
+  @override
+  String get name => 'Fake';
+
+  @override
+  int get priority => 0;
+
+  @override
+  bool canHandle(InferenceModelSpec spec) => true;
+
+  @override
+  Future<InferenceModel> createModel(
+    InferenceModelSpec spec,
+    RuntimeConfig config,
+  ) async => _Model(onClose);
+}
+
+final class _Model with CloseNotifier implements InferenceModel {
+  _Model([this.onClose]);
+
+  final void Function()? onClose;
+  bool _closed = false;
+
+  @override
+  bool get isClosed => _closed;
+
+  @override
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    onClose?.call();
+    fireCloseListeners();
+  }
+
+  // The shell only closes and listens to the model it caches.
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _ScriptedResolver implements HuggingFaceResolver {

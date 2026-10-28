@@ -256,7 +256,7 @@ python3 <package-root>/tool/fetch_web_assets.py --output <app-root>/web/webgpu_b
 ```
 
 Copy `example/web/cache_api.js`, `cache_api.LICENSE` and `_headers` into your
-app's `web/` directory. Hosts that ignore `_headers` need equivalent server configuration.
+app's `web/` directory, and load `cache_api.js` inside the `<head>` of `web/index.html`. Hosts that ignore `_headers` need equivalent server configuration.
 Use the module bootstrap in `example/web/index.html`: it loads the local bridge,
 sets its worker/core/Wasm URLs before Flutter starts, and reports load errors.
 The validator permits extra headers while checking the required wildcard isolation

@@ -183,7 +183,11 @@ final class SiteInputs {
     final snapshots = <String, Map<String, Map<String, List<String>>>>{};
     final snapshotDir = Directory(p.join(registryDir.path, 'snapshots'));
     if (snapshotDir.existsSync()) {
-      for (final file in snapshotDir.listSync().whereType<File>()) {
+      // Sorted: the listing order is the file system's (arbitrary on Linux),
+      // and the snapshots' order reaches the generated pages.
+      final files = snapshotDir.listSync().whereType<File>().toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
+      for (final file in files) {
         if (!file.path.endsWith('.json')) continue;
         final json =
             jsonDecode(file.readAsStringSync()) as Map<String, Object?>;

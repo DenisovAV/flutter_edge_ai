@@ -1,3 +1,6 @@
+## 1.2.5
+- MediaPipe GenAI 0.10.35 on Android and iOS, 0.10.30 on the web.
+
 ## 1.2.4
 - Web: the vision warning appears only for a model created without `supportImage` (#719).
 

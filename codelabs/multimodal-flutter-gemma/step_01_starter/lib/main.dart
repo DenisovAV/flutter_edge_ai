@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
@@ -7,14 +6,10 @@ import 'chat_page.dart';
 import 'download_page.dart';
 import 'model.dart';
 
-/// Supplied at run time, never committed:
-///   flutter run --dart-define=HF_TOKEN=hf_your_token
-const _hfToken = String.fromEnvironment('HF_TOKEN');
-
-/// Change this one line to run the whole app on a different model. On web
-/// it stays `Models.gemma4Web` — the browser engine only runs `.litertlm`
-/// files exported for it, and that is the only one published.
-const _model = kIsWeb ? Models.gemma4Web : Models.gemma3;
+/// The model Steps 1 and 2 run — the same file, opened as a text chat and
+/// then as one that can see. Step 3 needs one that can also hear, and pays
+/// for it.
+const _model = Models.smolVlm2;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,25 +17,64 @@ Future<void> main() async {
   // Engines are fully opt-in: the core package registers none by itself.
   // Without LiteRtLmEngine here, the first model call throws a StateError
   // that tells you to add an engine package.
-  await FlutterEdgeAi.initialize(
-    inferenceEngines: [LiteRtLmEngine()],
-    huggingFaceToken: _hfToken.isEmpty ? null : _hfToken,
-    // OPFS streaming. On web the model is 2.0 GB, right on the ~2 GB blob
-    // ceiling the default `cacheApi` mode would have to buffer it into.
-    // The other platforms ignore this option.
-    webStorageMode: WebStorageMode.streaming,
-  );
+  //
+  // No `huggingFaceToken:` — both models this codelab uses are ungated, so no
+  // step of it needs a token or a `--dart-define`.
+  //
+  // Guarded, because every other failure in this app reaches the screen — the
+  // gate's error card, the chat's load error, the notice line — and this is the
+  // earliest one, so it is the one a learner meets first. Hot-restarting after
+  // adding a plugin throws `MissingPluginException` right here; unguarded, it
+  // never reaches `runApp` and the symptom is a blank window and a stack trace
+  // in a console nobody is looking at.
+  try {
+    await FlutterEdgeAi.initialize(
+      inferenceEngines: [LiteRtLmEngine()],
+      // OPFS streaming, not the Cache API default: the web build is 2.0 GB,
+      // right on the ~2 GB blob ceiling, so it is not worth buffering.
+      webStorageMode: WebStorageMode.streaming,
+    );
+  } catch (error) {
+    runApp(_StartupFailed(error: error));
+    return;
+  }
 
-  runApp(const QuickstartApp());
+  runApp(const MultimodalApp());
 }
 
-class QuickstartApp extends StatelessWidget {
-  const QuickstartApp({super.key});
+/// Shown in place of the app when `FlutterEdgeAi.initialize` throws, so a
+/// failure before the first frame is a sentence instead of a blank window.
+class _StartupFailed extends StatelessWidget {
+  const _StartupFailed({required this.error});
+
+  final Object error;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Edge AI Quickstart',
+      title: 'Gemma Multimodal',
+      home: Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'flutter_edge_ai could not start.\n$error',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class MultimodalApp extends StatelessWidget {
+  const MultimodalApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Gemma Multimodal',
       theme: ThemeData(colorSchemeSeed: Colors.indigo),
       home: const ModelGate(model: _model),
     );
@@ -66,8 +100,21 @@ class ModelGate extends StatefulWidget {
 class _ModelGateState extends State<ModelGate> {
   late Future<bool> _installed = _check();
 
-  Future<bool> _check() =>
-      FlutterEdgeAi.isModelInstalled(widget.model.fileName);
+  /// Installed is not the same as active. This codelab puts two checkpoints in
+  /// one app, so the model `getActiveModel` opens is whichever was installed
+  /// LAST — which, after a trip through the other step, is the other model.
+  /// `install()` is idempotent: on a file already here it downloads nothing
+  /// and just records this model as the current one.
+  Future<bool> _check() async {
+    if (!await FlutterEdgeAi.isModelInstalled(widget.model.fileName)) {
+      return false;
+    }
+    await FlutterEdgeAi.installModel(
+      modelType: widget.model.modelType,
+      fileType: ModelFileType.litertlm,
+    ).fromNetwork(widget.model.url).install();
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {

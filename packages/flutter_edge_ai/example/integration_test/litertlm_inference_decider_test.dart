@@ -7,6 +7,7 @@
 // The packs are private, so they are not in the repository. Stage each in a
 // directory of its own holding `model.litertlm` and `golden.json`:
 //   macOS: <the example's container Documents>/decisions/<pack>/
+//   iOS:   the app's Documents/decisions/<pack>/
 // or name the parent with --dart-define=DECIDER_PACKS=<dir>. A float32 twin
 // of a pack's model, staged beside it as `twin.litertlm`, is checked against
 // the reference to 1e-3 nats per token: the method alone, with no
@@ -27,9 +28,12 @@
 // every token is within 2.0 nats of the reference; a target scored alone
 // equals the same target scored after a rewind. The gap to the golden engine
 // scores is printed, not asserted: it measures this CPU's int8 arithmetic
-// against the one litetune ran on.
+// against the one litetune ran on. Each pack also runs on the GPU: the
+// self-check must pass there and pick the golden mode, and a repeated
+// decision must give the same probabilities; agreement with the golden top
+// options is printed, not asserted.
 //
-// Run (CPU; one model at a time):
+// Run (one model at a time):
 //   flutter test integration_test/litertlm_inference_decider_test.dart -d macos
 // ignore_for_file: experimental_member_use
 import 'dart:convert';
@@ -45,9 +49,14 @@ import 'inference_test_helpers.dart' show registerTestEngines;
 
 const _packsDefine = String.fromEnvironment('DECIDER_PACKS');
 
-String get _documents =>
-    '${Platform.environment['HOME']}/Library/Containers/'
-    'dev.flutterberlin.flutterGemmaExample55/Data/Documents';
+/// Where the packs and the extra models are staged. On iOS HOME is the
+/// app's own container, whose Documents is `xcrun devicectl device copy to
+/// --domain-type appDataContainer`'s target; on macOS the path below the
+/// sandboxed HOME (see the file comment).
+String get _documents => Platform.isIOS
+    ? '${Platform.environment['HOME']}/Documents'
+    : '${Platform.environment['HOME']}/Library/Containers/'
+          'dev.flutterberlin.flutterGemmaExample55/Data/Documents';
 
 Directory get _packsDir =>
     Directory(_packsDefine.isNotEmpty ? _packsDefine : '$_documents/decisions');
@@ -521,6 +530,53 @@ void main() {
     );
   }
 
+  // The GPU computes in other arithmetic than the CPU litetune measured, so
+  // its scores are not the golden ones: printed, not asserted. What is
+  // asserted is that the self-check passes there (its repeats bit-identical,
+  // its rewinds exact) and picks the golden mode, and that a decision
+  // repeated gives the same probabilities, bit for bit.
+  for (final pack in packs) {
+    test('${_name(pack)}: on the GPU', () async {
+      final golden = _goldenOf(pack);
+      final provenance = golden['provenance'] as Map<String, Object?>;
+      final payload = _payloadOf(golden);
+      final model = await _load(
+        '${pack.path}/model.litertlm',
+        backend: PreferredBackend.gpu,
+      );
+      expect(model.activeBackend, PreferredBackend.gpu);
+      final decider = await model.createDecider(
+        question: payload['question'] as String,
+        options: _trainedOptions(payload),
+        calibration: const InferenceDeciderCalibration.fromModel(),
+      );
+      expect(_modeOf(model), provenance['mode']);
+      final rows = (golden['rows'] as List).cast<Map<String, Object?>>();
+      var engineAgree = 0;
+      var referenceAgree = 0;
+      for (final row in rows) {
+        final input = DeciderInput(EmbeddingInput.text(row['state'] as String));
+        final first = await decider.choose(input);
+        final again = await decider.choose(input);
+        expect(
+          again.probabilities,
+          first.probabilities,
+          reason: 'row ${row['index']}: a repeated decision on the GPU',
+        );
+        final top = first.ranked.first.id;
+        if (top == row['engine_argmax']) engineAgree++;
+        if (top == row['reference_argmax']) referenceAgree++;
+      }
+      // ignore: avoid_print
+      print(
+        '[decider] ${_name(pack)} on the GPU: mode ${_modeOf(model)}; top '
+        'option = golden CPU engine on $engineAgree/${rows.length} rows, '
+        '= reference on $referenceAgree/${rows.length}',
+      );
+      await decider.close();
+    }, timeout: const Timeout(Duration(minutes: 20)));
+  }
+
   group('refusals, coexistence and stopping, on the first choice pack', () {
     Directory? pack;
     Map<String, Object?>? payload;
@@ -900,24 +956,6 @@ void main() {
       },
       skip: skip,
     );
-
-    test('a model on the GPU is refused: only the CPU is measured', () async {
-      final m = await _load(
-        '${pack!.path}/model.litertlm',
-        backend: PreferredBackend.gpu,
-      );
-      expect(m.activeBackend, PreferredBackend.gpu);
-      await expectLater(
-        decider(m),
-        throwsA(
-          isA<DeciderUnsupportedException>().having(
-            (e) => e.message,
-            'message',
-            contains('CPU'),
-          ),
-        ),
-      );
-    }, skip: skip);
 
     test('closing the model stops a long scoring run', () async {
       final m = await model();

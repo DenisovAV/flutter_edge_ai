@@ -43,13 +43,13 @@ On Web, the MediaPipe runtime is loaded from a CDN. Add this to your app's `web/
 
 ```html
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>
 ```
 
-Load the model's `-web.task` build (e.g. `gemma3-1b-it-int4-web.task`); mobile `.task` files generally do not run on web. Also copy `cache_api.js` and `opfs_helper.js` from the `flutter_edge_ai` package's `web/` directory into your app's `web/` and load them with `<script src="cache_api.js"></script>` and `<script src="opfs_helper.js"></script>` — see [Installation → Web](https://flutteredge.ai/docs/installation#web). Web runs on the GPU only.
+Load the model's `-web.task` build (e.g. `gemma3-1b-it-int4-web.task`); mobile `.task` files generally do not run on web. Also copy `cache_api.js` and `opfs_helper.js` from the `flutter_edge_ai` package's `web/` directory into your app's `web/` and load them inside the `<head>` of `web/index.html` with `<script src="cache_api.js"></script>` and `<script src="opfs_helper.js"></script>` — see [Installation → Web](https://flutteredge.ai/docs/installation#web). Web runs on the GPU only.
 
 (Android needs no extra setup — the MediaPipe Gradle deps are bundled by this package.)
 
@@ -73,7 +73,7 @@ statically linked binaries".
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ `com.google.mediapipe:tasks-genai` 0.10.33 (Gradle) |
-| iOS      | ✅ `MediaPipeTasksGenAI` 0.10.33 (CocoaPods) — **requires iOS 16.0+**; run `.task` models on `PreferredBackend.cpu` |
-| Web      | ✅ `@mediapipe/tasks-genai` 0.10.29 (CDN, see above) — GPU only, `-web.task` models |
+| Android  | ✅ `com.google.mediapipe:tasks-genai` 0.10.35 (Gradle) |
+| iOS      | ✅ `MediaPipeTasksGenAI` 0.10.35 (CocoaPods) — **requires iOS 16.0+**; run `.task` models on `PreferredBackend.cpu` |
+| Web      | ✅ `@mediapipe/tasks-genai` 0.10.30 (CDN, see above) — GPU only, `-web.task` models |
 | Desktop  | ❌ (MediaPipe `.task` not supported on desktop — use `flutter_edge_ai_litertlm`) |

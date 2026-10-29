@@ -40,7 +40,7 @@ if (FlutterEdgeAiDiagnostics.isSupported) {
 
 Each Android snapshot walks the process's page tables (about 150 ms on a low-end device with a 4.9 kernel, and before Linux 5.10 it stalls the process's mmap calls), so do not poll faster than about once a second. The read is asynchronous, which moves the wait off your isolate but not the kernel's cost.
 
-On Linux the same walk costs about 3.7 ms per resident GiB (1.7 ms idle, about 30 ms with 7 GiB resident), measured on one machine. Call it at a few points, not per frame or per token. On Windows a snapshot is two `kernel32` calls; their cost has not been timed.
+On Linux the same walk costs about 3.7 ms per resident GiB (1.7 ms idle, about 30 ms with 7 GiB resident), measured on one machine. Call it at a few points, not per frame or per token. On Windows a snapshot is two `kernel32` calls; about 7 µs each in a `dart run` process on one x64 machine (JIT, not a release build).
 
 Take a snapshot before loading a model, after loading it, and during generation. On Android and Linux, neither process counter alone measures the model's entire memory cost.
 

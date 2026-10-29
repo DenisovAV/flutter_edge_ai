@@ -148,7 +148,7 @@ Future<InferenceModel> loadAndMeasure() async {
 On Android a snapshot walks the process's page tables: the reads are
 asynchronous, so they do not block the isolate, but one costs about 150 ms on a
 low-end device (and before Linux 5.10 it stalls the process's mmap calls). On iOS
-it is a microsecond Mach call, and on Windows two `kernel32` calls (not timed). Either way, sample during generation on a timer
+it is a microsecond Mach call, and on Windows two `kernel32` calls, about 7 µs measured in a `dart run` process on one x64 machine. Either way, sample during generation on a timer
 (at most once a second) rather than every so many chunks, and never on every
 frame.
 

@@ -180,7 +180,7 @@ packages:
       path: "../../flutter_edge_ai"
       relative: true
     source: path
-    version: "2.5.4"
+    version: "2.5.1"
   flutter_edge_ai_agent:
     dependency: "direct main"
     description:
@@ -201,14 +201,14 @@ packages:
       path: "../../flutter_edge_ai_litertlm"
       relative: true
     source: path
-    version: "1.19.0"
+    version: "1.16.1"
   flutter_edge_ai_speech:
     dependency: "direct main"
     description:
       path: ".."
       relative: true
     source: path
-    version: "0.5.12"
+    version: "0.5.10"
   flutter_inappwebview:
     dependency: transitive
     description:

@@ -47,6 +47,7 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter_edge_ai_onnx/src/hook/elf_page_align.dart';
 import 'package:hooks/hooks.dart';
 
 const _packageName = 'flutter_edge_ai_onnx';
@@ -281,33 +282,23 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       // archives above, just a differently-shaped AAR asset. GenAI's AAR
       // ships arm64-v8a + x86_64 only (no armeabi-v7a) — arm64 is the only
       // viable device ABI, not a policy choice.
+      // Not Microsoft's AAR. Its 0.17.0 `libonnxruntime-genai.so` lists
+      // `libmat.so` (the 1DS telemetry SDK) in DT_NEEDED, and that file is
+      // 4 KB-aligned: Google Play rejects it for apps that target API 35+ and a
+      // 16 KB-page device cannot load it. This is the same v0.17.0 source built
+      // by `native/build_genai_android.sh` with ENABLE_TELEMETRY=OFF, so it
+      // needs only liblog/libm/libdl/libc and every PT_LOAD is 16 KB-aligned.
+      // The zip keeps the AAR's `jni/arm64-v8a/` layout.
       genai: _Archive(
         url:
-            'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.17.0/onnxruntime-genai-android-0.17.0.aar',
+            'https://github.com/DenisovAV/flutter_edge_ai/releases/'
+            'download/native-onnx-genai-v0.17.0-a/'
+            'onnxruntime-genai-android-0.17.0-a.zip',
         sha256:
-            'f8b28a9ce448d97e0d5ab9614eae018a4d994d739de84e9fc5f9ff3b6673dd50',
+            'fde5732759bc445c8e01932c5a85652448e02c7c89a090a0982d0c5b9f5535cf',
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
       ),
-      // 0.17.0's `libonnxruntime-genai.so` lists `libmat.so` in DT_NEEDED
-      // (`readelf -d`): the AAR carries it beside the genai library (28 MB,
-      // arm64-v8a) and the app's loader fails with `library "libmat.so" not
-      // found` without it — measured on a vivo 1933 with the library alone.
-      // 0.14.0 had no such file, and no other platform's 0.17.0 archive has
-      // one. Same AAR, so the same url and pin; the AAR is fetched twice, once
-      // per library, and only when the cache is cold.
-      companions: [
-        _Archive(
-          url:
-              'https://github.com/microsoft/onnxruntime-genai/releases/'
-              'download/v0.17.0/onnxruntime-genai-android-0.17.0.aar',
-          sha256:
-              'f8b28a9ce448d97e0d5ab9614eae018a4d994d739de84e9fc5f9ff3b6673dd50',
-          extractedLibPath: 'jni/arm64-v8a/libmat.so',
-          assetName: 'mat',
-        ),
-      ],
     );
   }
   // ios x86_64 (Intel-Mac simulator; see this function's doc), android
@@ -331,22 +322,20 @@ class _OrtBundle {
     required this.dirName,
     required this.ort,
     required this.genai,
-    this.companions = const [],
   });
 
   final String dirName;
   final _Archive? ort;
   final _Archive genai;
 
-  /// Libraries the GenAI library itself lists as NEEDED, when its archive
-  /// ships them next to it.
-  final List<_Archive> companions;
-
   /// Cache-invalidation key — bump whenever either archive's URL/sha changes.
-  String get version =>
-      ort == null ? 'genai-0.17.0' : 'ort-1.27.0_genai-0.17.0';
+  String get version => ort == null
+      ? 'genai-0.17.0'
+      : dirName.startsWith('android')
+      ? 'ort-1.27.0_genai-0.17.0-a'
+      : 'ort-1.27.0_genai-0.17.0';
 
-  List<_Archive> get archives => [?ort, genai, ...companions];
+  List<_Archive> get archives => [?ort, genai];
 }
 
 // ============================================================================
@@ -721,6 +710,10 @@ void main(List<String> args) async {
           'extract. Delete it and build again.',
         );
       }
+      // Google Play rejects a 4 KB-aligned library for apps that target API
+      // 35+ and a 16 KB-page device cannot load one, so an Android library
+      // below 16 KB is a broken build, not something to bundle.
+      if (os == OS.android) requireAndroidPageAlign(src);
       final canonicalFileName = switch (os) {
         OS.linux || OS.android => 'lib${archive.assetName}.so',
         OS.windows => '${archive.assetName}.dll',

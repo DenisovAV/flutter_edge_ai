@@ -603,8 +603,10 @@ abstract class InferenceModel {
   /// Core implements this once for every engine that extends this class
   /// (`@nonVirtual`); an engine supplies the scoring through
   /// `OptionScoringModel` (`package:flutter_edge_ai/engine.dart`), not by
-  /// overriding this. `flutter_edge_ai_litertlm` scores on the CPU from
-  /// 1.16.0, natively (measured on macOS). Use
+  /// overriding this. `flutter_edge_ai_litertlm` scores natively, on the CPU
+  /// from 1.16.0 and on the GPU from its next release; the NPU is refused.
+  /// The temperature and threshold in the file are fitted on CPU
+  /// probabilities, which the GPU does not reproduce exactly. Use
   /// `EmbeddingModel.createDecider` for a model that was not trained on the
   /// decision. `implements` does not inherit this body: such a class has to
   /// declare the method, and should fail it with
@@ -638,8 +640,8 @@ abstract class InferenceModel {
     throw const DeciderUnsupportedException(
       'This model does not score options: only a model trained on the '
       'decision, on an engine that scores options (flutter_edge_ai_litertlm, '
-      'natively, on the CPU), does. Create the decider from an EmbeddingModel '
-      'instead: EmbeddingModel.createDecider().',
+      'natively, on the CPU or GPU), does. Create the decider from an '
+      'EmbeddingModel instead: EmbeddingModel.createDecider().',
     );
   }
 

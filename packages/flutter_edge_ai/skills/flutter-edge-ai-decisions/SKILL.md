@@ -339,7 +339,10 @@ await FlutterEdgeAi.installModel(
   modelType: ModelType.gemmaIt,
   fileType: ModelFileType.litertlm,
 ).fromFile(path).install();
-// Option scoring is measured on the CPU only; GPU and NPU are refused.
+// CPU or GPU; the NPU is refused. The file's temperature and threshold are
+// fitted on CPU probabilities: on the GPU the top option matched the CPU's
+// on 97-100 % of rows measured (Metal, Adreno 830); Mali, Linux and Windows
+// GPUs are not measured.
 final llm = await FlutterEdgeAi.getActiveModel(
   preferredBackend: PreferredBackend.cpu,
 );

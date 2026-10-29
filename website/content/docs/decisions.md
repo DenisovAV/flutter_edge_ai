@@ -460,8 +460,9 @@ option `choose` gains in a later release reaches `decide` as a new field of
 kind of decider: a small LLM trained on one question and its options lists
 them in a prompt and scores each option's id as its reply
 (`DeciderMethod.optionScoring`). `flutter_edge_ai_litertlm` 1.16.0 implements
-it for `.litertlm` models on the CPU backend, on native platforms; on the web
-`createDecider` throws `DeciderUnsupportedException`.
+it for `.litertlm` models on the CPU backend, on native platforms, and its next
+release on the GPU too; on the NPU and on the web `createDecider` throws
+`DeciderUnsupportedException`.
 
 The model is an ordinary generative `.litertlm`, tuned for the decision by
 [LiteTune](https://pypi.org/project/litetune/) 0.5.0 or later. When its verify
@@ -476,7 +477,7 @@ await FlutterEdgeAi.installModel(
   fileType: ModelFileType.litertlm,
 ).fromFile(path).install();
 final model = await FlutterEdgeAi.getActiveModel(
-  preferredBackend: PreferredBackend.cpu,
+  preferredBackend: PreferredBackend.cpu, // or PreferredBackend.gpu
 );
 final decider = await model.createDecider(
   question: 'Which emotion does the text express?',
@@ -558,9 +559,8 @@ Its answers have the same shape as an embedding decider's, with these values:
 | `capabilities.supportsAmong`, `storable` | true, true | false, false |
 
 Not in this release: `among`, `DeciderInput.context`, images and audio, the
-GPU and NPU (refused: option scoring is measured on the CPU only), and the web
-(refused). Measured on macOS (Apple M4 Pro); Android, iOS, Linux and Windows
-use the same C calls and are not measured yet. An input
+NPU (refused: its executor rolls back one token only, and a decision rewinds
+between options), and the web (refused). An input
 that contains a chat template's control text (`<start_of_turn>`,
 `<end_of_turn>`, `<bos>`, …) is refused with `ArgumentError`: the model was
 never trained on such a prompt.
@@ -577,6 +577,28 @@ one scoring pass per option, against one embedding whatever the number of
 options for an embedding decider. So a language-model decider is for a few
 options that are a property of the text (a tone, an emotion, yes or no, a
 level), and an embedding decider for many options by topic.
+
+**On the GPU.** Load the model with `preferredBackend: PreferredBackend.gpu`
+and the decider scores there. The GPU does not compute the CPU's scores
+exactly, and the temperature and threshold in the file were fitted by LiteTune
+on CPU probabilities. The scoring self-check runs on the GPU before the first
+decision, as on the CPU: it asks for scores that repeat bit for bit and for
+rewinds that change nothing, and it passed on every GPU below. Measured on a
+long-dialogue Noul decision (is the customer back about the same problem?),
+the bundles tuned by LiteTune, `InferenceDeciderCalibration.fromModel()`:
+Gemma 3 270M on 300 rows, Qwen3 1.7B and Gemma 4 E2B on 60 rows each.
+
+| GPU | Gemma 3 270M | Qwen3 1.7B | Gemma 4 E2B |
+|---|---|---|---|
+| iPhone 17 Pro (Metal) | top option = CPU 291/300; 0.840 → 0.857 | 59/60; 0.917 → 0.900 | 59/60; 0.933 → 0.917 |
+| Galaxy S25 Ultra (Adreno 830) | 292/300; 0.840 → 0.840 | 59/60; 0.917 → 0.900 | 59/60; 0.933 → 0.917 |
+| Mac mini M5 Pro (Metal) | 293/300; 0.840 → 0.850 | 59/60; 0.917 → 0.900 | 60/60; 0.933 → 0.933 |
+
+"Top option = CPU" counts the rows on which the GPU's top option is the same
+device's CPU one; the balanced accuracy is the CPU's, then the GPU's. On the
+CPU both phones chose what the Mac chose on every row. Not measured: Mali GPUs
+(Android's other GPU path), Linux and Windows (CPU or GPU), the NPU (refused),
+memory and battery.
 
 ## Jev Choice JSON
 
@@ -601,7 +623,7 @@ questions only: `noul` and `score` throw `ArgumentError`.
 | `InferenceModel.createDecider`: a blank question, an option with examples, a calibration value out of range or a `noneOption` that is not an option, or any of them other than the model was trained with; no options, duplicate ids, an option with nothing to embed, a calibration the options or labelled rows cannot support, an unknown `among` id, a model without installed files or a backend and no `embedderId` | `ArgumentError` |
 | A language-model decider's input that is empty, contains a chat template's control text, or renders to a prompt longer than the model's `maxTokens` | `ArgumentError` |
 | `DeciderInput.context` to a decider without `supportsContext` (none in this release); `among` to one without `supportsAmong`; an input modality not in `capabilities.modalities` | `DeciderUnsupportedException` |
-| `InferenceModel.createDecider` on a model whose engine does not score options (every model on the web), a file without a `litetune.decision` section or with one this release does not read, a backend other than the CPU, a tokenizer that splits the options otherwise than the calibration saw, a decision that cannot fit the model's `maxTokens`, an engine whose scoring self-check gives no answer; a language-model decider's engine returning scores that are not log-probabilities; `toArtifact()` on a decider with nothing to store | `DeciderUnsupportedException` |
+| `InferenceModel.createDecider` on a model whose engine does not score options (every model on the web), a file without a `litetune.decision` section or with one this release does not read, the NPU or a model that reports no backend, a tokenizer that splits the options otherwise than the calibration saw, a decision that cannot fit the model's `maxTokens`, an engine whose scoring self-check gives no answer; a language-model decider's engine returning scores that are not log-probabilities; `toArtifact()` on a decider with nothing to store | `DeciderUnsupportedException` |
 | `DeciderMethod.optionScoring` given to `EmbeddingModel.createDecider` | `ArgumentError` |
 | An artifact from another embedding space; core's replacement embedder in another space | `DeciderSpaceMismatchException` |
 | A malformed, contradictory or newer artifact | `FormatException` |

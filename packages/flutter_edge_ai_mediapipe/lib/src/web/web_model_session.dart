@@ -41,22 +41,46 @@ class _Run {
 class WebModelSession extends InferenceModelSession {
   WebModelSession({
     required WebLlmBackend backend,
-    required this.onClose,
-    required this.modelType,
-    this.fileType = ModelFileType.task,
-    this.supportImage = false,
-    this.supportAudio = false,
-    this.systemInstruction,
+    required VoidCallback onClose,
+    required ModelType modelType,
+    ModelFileType fileType = ModelFileType.task,
+    bool supportImage = false,
+    bool supportAudio = false,
+    String? systemInstruction,
     WebChatTemplate? template,
     int? maxImages,
+  }) : this._(
+         backend: backend,
+         onClose: onClose,
+         modelType: modelType,
+         fileType: fileType,
+         supportImage: supportImage,
+         supportAudio: supportAudio,
+         systemInstruction: systemInstruction,
+         template: template,
+         maxImages: maxImages,
+         preformatted: _formatsByHand(modelType, fileType),
+       );
+
+  WebModelSession._({
+    required WebLlmBackend backend,
+    required this.onClose,
+    required this.modelType,
+    required this.fileType,
+    required this.supportImage,
+    required this.supportAudio,
+    required this.systemInstruction,
+    required WebChatTemplate? template,
+    required int? maxImages,
+    required bool preformatted,
   }) : _backend = backend,
-       _preformatted = _formatsByHand(modelType, fileType),
+       _preformatted = preformatted,
        _conversation = WebConversation(
          // A message core wrote the markers into carries them already, so the
          // file's template must not add them a second time.
-         template: _formatsByHand(modelType, fileType) ? null : template,
+         template: preformatted ? null : template,
          maxImages: maxImages,
-         preformatted: _formatsByHand(modelType, fileType),
+         preformatted: preformatted,
        );
 
   /// Whether core writes the turn markers into the messages itself: a `.bin`
@@ -216,6 +240,8 @@ class WebModelSession extends InferenceModelSession {
   Future<String> getResponse() async {
     _requireOpen();
     await _previousEnded();
+    // Closed while it waited: it must not start a call on the shared backend.
+    _requireOpen();
     final prompt = _conversation.beginGeneration();
     final run = _run = _Run();
     try {

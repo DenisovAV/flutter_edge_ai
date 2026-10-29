@@ -206,6 +206,24 @@ void main() {
       expect(b.cancels, 0);
     });
 
+    test('that closes while its call waits for the previous one does not '
+        'start', () async {
+      final b = FakeBackend([])..endOnCancel = false;
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      await s.stopGeneration(); // the stopped call is still ending
+      await s.addQueryChunk(const Message(text: 'go on', isUser: true));
+      final waiting = s.getResponse();
+      final outcome = expectLater(waiting, throwsStateError);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await s.close();
+      await b.live!.close();
+      await outcome;
+      expect(b.prompts, hasLength(1));
+    });
+
     test('throws StateError from addQueryChunk, getResponse and '
         'getResponseAsync', () async {
       final b = FakeBackend(['x']);

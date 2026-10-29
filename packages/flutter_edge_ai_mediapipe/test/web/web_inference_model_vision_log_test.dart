@@ -50,6 +50,23 @@ final class _BlobResolver implements WebModelSourceResolver {
       (model: const BlobUrlModelSource('blob:fake-model'), loraPath: null);
 }
 
+/// Answers with a Blob URL once [gate] completes.
+final class _GatedResolver implements WebModelSourceResolver {
+  _GatedResolver(this.gate);
+  final Future<void> gate;
+
+  @override
+  Future<InferenceModelSpec> activeInferenceSpec() =>
+      Completer<InferenceModelSpec>().future;
+
+  @override
+  Future<({WebModelSource model, String? loraPath})>
+  resolveActiveInferenceModel() async {
+    await gate;
+    return (model: const BlobUrlModelSource('blob:fake-model'), loraPath: null);
+  }
+}
+
 WebInferenceModel _model({
   required bool supportImage,
   WebModelSourceResolver? resolver,
@@ -114,6 +131,39 @@ List<String> _visionLogs(
     ),
   );
   return (created: created, prompts: prompts);
+}
+
+/// Like [_fakeMediaPipe], but generateResponse answers only when the test says
+/// so: `calls` holds one completer per call made, in order.
+({List<Completer<String>> calls, JSObject instance}) _heldMediaPipe() {
+  final calls = <Completer<String>>[];
+  final instance = JSObject()
+    ..setProperty(
+      'generateResponse'.toJS,
+      ((JSAny prompt, JSAny? _) {
+        final call = Completer<String>();
+        calls.add(call);
+        return call.future.then((text) => text.toJS).toJS;
+      }).toJS,
+    )
+    ..setProperty('cancelProcessing'.toJS, (() {}).toJS);
+  _replaceGlobal(
+    'FilesetResolver',
+    JSObject()..setProperty(
+      'forGenAiTasks'.toJS,
+      ((JSString _) => Future<JSObject>.value(JSObject()).toJS).toJS,
+    ),
+  );
+  _replaceGlobal(
+    'LlmInference',
+    JSObject()..setProperty(
+      'createFromOptions'.toJS,
+      ((JSObject _, JSObject options) => Future<JSObject>.value(
+        instance,
+      ).toJS).toJS,
+    ),
+  );
+  return (calls: calls, instance: instance);
 }
 
 /// Sets globalThis[name] for the rest of the test, then puts back what was
@@ -235,6 +285,47 @@ void main() {
     }
     await results.last.addQueryChunk(const Message(text: 'Hi', isUser: true));
     expect(model.session, same(results.last));
+  });
+
+  test('a stop that arrives while the call waits for the previous one '
+      'cancels it before it starts', () async {
+    final fake = _heldMediaPipe();
+    final model = _model(supportImage: false, resolver: _BlobResolver());
+
+    final first = await model.createSession();
+    await first.addQueryChunk(const Message(text: 'A', isUser: true));
+    first.getResponseAsync().listen((_) {});
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(fake.calls, hasLength(1));
+
+    // The next session's call waits for the first one to end.
+    final second = await model.createSession();
+    await second.addQueryChunk(const Message(text: 'B', isUser: true));
+    second.getResponseAsync().listen((_) {});
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await second.stopGeneration();
+
+    fake.calls.single.complete('done');
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(fake.calls, hasLength(1), reason: 'the stopped call must not run');
+  });
+
+  test('a model closed while it loads does not hand out a session', () async {
+    _fakeMediaPipe();
+    final gate = Completer<void>();
+    final model = _model(
+      supportImage: false,
+      resolver: _GatedResolver(gate.future),
+    );
+
+    final creating = model.createSession();
+    final outcome = expectLater(creating, throwsStateError);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    // close() waits for the load it finds in flight.
+    final closing = model.close();
+    gate.complete();
+    await closing;
+    await outcome;
   });
 
   test('a model created without supportImage gives the LlmInference no '

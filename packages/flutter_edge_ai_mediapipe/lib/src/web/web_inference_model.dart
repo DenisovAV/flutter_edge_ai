@@ -167,6 +167,11 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     try {
       await turn;
       final llm = await _loadModel(sampling, loraPath);
+      // Closed while it loaded: close() has already released what it had, so
+      // a session built now would sit on a model that is gone.
+      if (_isClosed) {
+        throw StateError('The model was closed while it was loading.');
+      }
 
       // Like the mobile model: a new session closes the one before it and
       // starts a clean conversation. MediaPipe web keeps nothing between

@@ -15,6 +15,7 @@ import '../mediapipe_sampling.dart';
 import 'llm_inference_backend.dart';
 import 'llm_inference_web.dart';
 import 'task_chat_format.dart';
+import 'web_chat_template.dart';
 import 'web_file_prefix.dart';
 import 'web_model_session.dart';
 import 'web_prompt.dart';
@@ -157,27 +158,41 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
       );
     }
 
-    final llm = await _loadModel(sampling, loraPath);
+    // One call at a time from here on. Two calls that arrive during the first
+    // load both continue when it ends; the second would close the session the
+    // first is about to return.
+    final turn = _sessionLane;
+    final done = Completer<void>();
+    _sessionLane = done.future;
+    try {
+      await turn;
+      final llm = await _loadModel(sampling, loraPath);
 
-    // Like the mobile model: a new session closes the one before it and starts
-    // a clean conversation. MediaPipe web keeps nothing between calls, so the
-    // conversation lives in the session, and a session that outlived its chat
-    // would carry that chat into the next one.
-    if (session case final previous?) {
-      await previous.close();
+      // Like the mobile model: a new session closes the one before it and
+      // starts a clean conversation. MediaPipe web keeps nothing between
+      // calls, so the conversation lives in the session, and a session that
+      // outlived its chat would carry that chat into the next one.
+      if (session case final previous?) {
+        await previous.close();
+      }
+      return session = WebModelSession(
+        backend: _backend ??= LlmInferenceBackend(llm),
+        modelType: modelType,
+        fileType: fileType,
+        supportImage: supportImage, // Enabling image support
+        supportAudio: supportAudio, // Enabling audio support
+        systemInstruction: systemInstruction,
+        template: _template,
+        maxImages: supportImage ? (maxNumImages ?? 1) : null,
+        onClose: onClose,
+      );
+    } finally {
+      done.complete();
     }
-    return session = WebModelSession(
-      backend: _backend ??= LlmInferenceBackend(llm),
-      modelType: modelType,
-      fileType: fileType,
-      supportImage: supportImage, // Enabling image support
-      supportAudio: supportAudio, // Enabling audio support
-      systemInstruction: systemInstruction,
-      template: _template,
-      maxImages: supportImage ? (maxNumImages ?? 1) : null,
-      onClose: onClose,
-    );
   }
+
+  /// Ends when the [createSession] call before the current one has returned.
+  Future<void> _sessionLane = Future<void>.value();
 
   /// Loads the model once; callers that arrive while it loads share the load.
   /// The sampling of the first session is the one the model keeps, as on every
@@ -203,7 +218,11 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     // Used identically by the LiteRT-LM web model in flutter_edge_ai_litertlm.
     final resolved = await sourceResolver.resolveActiveInferenceModel();
 
-    _template = await _chatTemplateOf(resolved.model);
+    _template = await resolveWebChatTemplate(
+      readPrefix: () =>
+          readModelPrefix(resolved.model, taskMetadataPrefixBytes),
+      modelType: modelType,
+    );
 
     final fileset = await FilesetResolver.forGenAiTasks(
       'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30/wasm'.toJS,
@@ -240,44 +259,6 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     );
 
     return LlmInference.createFromOptions(fileset, config).toDart;
-  }
-
-  /// The turn markers of the loaded file: what it declares, else what its
-  /// [modelType] implies, else none (the turns are written as plain text).
-  Future<WebChatTemplate?> _chatTemplateOf(WebModelSource source) async {
-    try {
-      final prefix = await readModelPrefix(source, taskMetadataPrefixBytes);
-      final format = readTaskChatFormat(prefix);
-      if (format != null && format.hasRuntimePromptTemplates) {
-        // The 0.10.29 runtime reads this message itself, so it may add its own
-        // markers; ours on top of them would write each turn twice.
-        edgeAiLog(
-          '[MediaPipe Web] the model file carries prompt templates for the '
-          'runtime; the turns are sent without markers of our own.',
-        );
-        return null;
-      }
-      if (format?.template case final declared?) {
-        edgeAiLog('[MediaPipe Web] chat format from the model file: $declared');
-        return declared;
-      }
-    } catch (e) {
-      edgeAiLog('[MediaPipe Web] could not read the model file\'s format: $e');
-    }
-    final implied = switch (modelType) {
-      ModelType.gemma4 => WebChatTemplate.gemma4,
-      ModelType.gemmaIt => WebChatTemplate.gemma3,
-      _ => null,
-    };
-    // Printed, because edgeAiLog is silent in a release build and a model
-    // that answers badly because of this is where it gets reported.
-    // ignore: avoid_print
-    print(
-      '[flutter_edge_ai_mediapipe] The model file declares no chat format; '
-      '${implied == null ? 'the turns are sent as plain text' : 'using the '
-                'format of $modelType'}.',
-    );
-    return implied;
   }
 
   /// The teardown in progress, shared by every caller of [close]: a second

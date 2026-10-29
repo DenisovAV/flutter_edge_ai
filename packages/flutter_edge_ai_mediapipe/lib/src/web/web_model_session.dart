@@ -67,6 +67,24 @@ class WebModelSession extends InferenceModelSession {
 
   final bool _preformatted;
 
+  /// Whether the turns are written with the file's template and the model is
+  /// Gemma 4, whose chat template trims what the user said and strips the
+  /// thinking from a reply, as core does for a `.bin` (`transformToChatPrompt`).
+  bool get _gemma4Template => !_preformatted && modelType == ModelType.gemma4;
+
+  String _cleanUser(String text) => _gemma4Template ? text.trim() : text;
+
+  /// The template's `strip_thinking` macro, then a trim.
+  String _cleanReply(String reply) {
+    if (!_gemma4Template) return reply;
+    final result = StringBuffer();
+    for (final part in reply.split('<channel|>')) {
+      final open = part.indexOf('<|channel>');
+      result.write(open >= 0 ? part.substring(0, open) : part);
+    }
+    return result.toString().trim();
+  }
+
   /// A reply of the model as the history holds it: the raw text when the
   /// conversation writes the markers, and closed by core's own marker when the
   /// messages are written by hand.
@@ -75,7 +93,7 @@ class WebModelSession extends InferenceModelSession {
           text: reply,
           isUser: false,
         ).transformToChatPrompt(type: modelType, fileType: fileType)
-      : reply;
+      : _cleanReply(reply);
 
   final WebLlmBackend _backend;
   final WebConversation _conversation;
@@ -90,11 +108,20 @@ class WebModelSession extends InferenceModelSession {
   final String? systemInstruction;
   bool _systemInstructionSent = false;
 
+  /// Set by [close]. A closed session must not touch the backend, which the
+  /// next session of the model shares.
+  bool _closed = false;
+
+  void _requireOpen() {
+    if (_closed) throw StateError('This session is closed.');
+  }
+
   @override
   Future<int> sizeInTokens(String text) => _backend.sizeInTokens(text);
 
   @override
   Future<void> addQueryChunk(Message message) async {
+    _requireOpen();
     if (kDebugMode) {
       edgeAiLog(
         'WebModelSession.addQueryChunk() - isUser: ${message.isUser}, '
@@ -103,11 +130,12 @@ class WebModelSession extends InferenceModelSession {
     }
 
     var messageToSend = message;
-    if (message.isUser &&
+    final addsSystemInstruction =
+        message.isUser &&
         !_systemInstructionSent &&
         systemInstruction != null &&
-        systemInstruction!.isNotEmpty) {
-      _systemInstructionSent = true;
+        systemInstruction!.isNotEmpty;
+    if (addsSystemInstruction) {
       messageToSend = message.copyWith(
         text: '[System: ${systemInstruction!}]\n\n${message.text}',
       );
@@ -122,7 +150,7 @@ class WebModelSession extends InferenceModelSession {
       // A reply of the model that the chat replays into a new session. What
       // this session generates itself is recorded when it is generated.
       if (message.type != MessageType.thinking && text.isNotEmpty) {
-        _conversation.addModel(text);
+        _conversation.addModel(_cleanReply(text));
       }
       return;
     }
@@ -149,8 +177,11 @@ class WebModelSession extends InferenceModelSession {
       parts.add(AudioPromptPart(message.audioBytes!));
     }
     // Text last, so a multimodal turn keeps its image/audio context first.
-    parts.add(TextPromptPart(text));
+    parts.add(TextPromptPart(_cleanUser(text)));
     _conversation.addUser(parts);
+    // Only now: a message the conversation refused must not use up the
+    // instruction.
+    if (addsSystemInstruction) _systemInstructionSent = true;
   }
 
   /// MediaPipe refuses a call while the one before it is still ending, which
@@ -173,7 +204,8 @@ class WebModelSession extends InferenceModelSession {
     _conversation.completeGeneration(_inHistory(reply));
   }
 
-  /// Ends [run] without a reply: only its own turn goes.
+  /// Ends [run] without a reply: the user's turn stays, to be answered by a
+  /// retry.
   void _fail(_Run run) {
     if (run.done) return;
     run.done = true;
@@ -182,6 +214,7 @@ class WebModelSession extends InferenceModelSession {
 
   @override
   Future<String> getResponse() async {
+    _requireOpen();
     await _previousEnded();
     final prompt = _conversation.beginGeneration();
     final run = _run = _Run();
@@ -202,6 +235,7 @@ class WebModelSession extends InferenceModelSession {
 
   @override
   Stream<String> getResponseAsync() {
+    _requireOpen();
     // Close previous controller to prevent leak if called again before completion
     _controller?.close();
     final controller = _controller = StreamController<String>();
@@ -255,6 +289,9 @@ class WebModelSession extends InferenceModelSession {
   @override
   Future<void> stopGeneration() async {
     final run = _run;
+    // The backend is shared with the other sessions of the model, so only a
+    // run of this session is cancelled: a stop on an idle or closed session
+    // must not end the generation of the live one.
     if (run != null && !run.done) {
       // What was generated until now stays, as in a native session's cache.
       // A call that is not streaming has produced nothing the session can
@@ -264,17 +301,16 @@ class WebModelSession extends InferenceModelSession {
       _conversation.stopGeneration(
         generated.isEmpty ? generated : _inHistory(generated),
       );
-    }
-    try {
-      _backend.cancel();
-    } catch (e) {
-      if (kDebugMode) {
-        edgeAiLog('[WebModelSession] cancel error: $e');
+      try {
+        _backend.cancel();
+      } catch (e) {
+        if (kDebugMode) {
+          edgeAiLog('[WebModelSession] cancel error: $e');
+        }
       }
-    } finally {
-      _controller?.close();
-      _controller = null;
     }
+    _controller?.close();
+    _controller = null;
   }
 
   @override
@@ -290,6 +326,7 @@ class WebModelSession extends InferenceModelSession {
 
   @override
   Future<void> close() async {
+    _closed = true;
     // The loaded model belongs to the model, not to a session: closing a
     // session ends its conversation, and the next session reuses the model.
     final run = _run;

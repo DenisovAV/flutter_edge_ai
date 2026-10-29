@@ -105,36 +105,146 @@ void main() {
     );
   });
 
-  test('an error drops only the pending turn', () async {
-    final b = FakeBackend(['ok', 'fine'])..failWith = null;
-    final s = _session(b);
-    await s.addQueryChunk(_user);
-    await s.getResponse();
-    await s.addQueryChunk(const Message(text: 'boom', isUser: true));
-    b.failWith = StateError('webgpu lost');
+  test('an error keeps the turn it failed on, with the system instruction '
+      'and the tools prompt', () async {
+    final b = FakeBackend(['ok'])..failWith = StateError('webgpu lost');
+    final s = _session(b, system: 'Be brief');
+    // The chat sends the tools prompt and then the question.
+    await s.addQueryChunk(const Message(text: 'TOOLS', isUser: true));
+    await s.addQueryChunk(const Message(text: 'Q1', isUser: true));
     await expectLater(s.getResponse(), throwsStateError);
     b.failWith = null;
-    await s.addQueryChunk(const Message(text: 'retry', isUser: true));
     await s.getResponse();
     final sent = _text(b.prompts.last);
-    expect(sent, contains('ok'));
-    expect(sent, isNot(contains('boom')));
-    expect(sent, contains('retry'));
+    expect(sent, contains('[System: Be brief]'));
+    expect(sent, contains('TOOLS'));
+    expect(sent, contains('Q1'));
+    expect(b.prompts.first, isNotEmpty);
   });
 
-  test('a stream error drops only the pending turn', () async {
-    final b = FakeBackend(['ok'])..failWith = null;
-    final s = _session(b);
-    await s.addQueryChunk(_user);
-    await s.getResponse();
-    await s.addQueryChunk(const Message(text: 'boom', isUser: true));
-    b.failWith = StateError('lost');
+  test('a stream error keeps the turn it failed on', () async {
+    final b = FakeBackend(['ok'])..failWith = StateError('lost');
+    final s = _session(b, system: 'Be brief');
+    await s.addQueryChunk(const Message(text: 'Q1', isUser: true));
     await expectLater(s.getResponseAsync().toList(), throwsStateError);
     b.failWith = null;
-    b.replies.add('again');
-    await s.addQueryChunk(const Message(text: 'retry', isUser: true));
     await s.getResponse();
-    expect(_text(b.prompts.last), isNot(contains('boom')));
+    expect(
+      _text(b.prompts.last),
+      '<|turn>user\n[System: Be brief]\n\nQ1<turn|>\n<|turn>model\n',
+    );
+  });
+
+  test('a message refused by the conversation does not use up the system '
+      'instruction', () async {
+    final b = FakeBackend(['x']);
+    final s = _session(b, system: 'Be brief', image: true, maxImages: 1);
+    final png = Uint8List.fromList([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]);
+    await s.addQueryChunk(Message(text: 'a', isUser: true, imageBytes: png));
+    s.stopGeneration();
+    await s.addQueryChunk(const Message(text: 'plain', isUser: true));
+    // The second image does not fit; the instruction was in the first turn.
+    await expectLater(
+      s.addQueryChunk(Message(text: 'b', isUser: true, imageBytes: png)),
+      throwsStateError,
+    );
+    await s.getResponse();
+    expect(
+      RegExp(r'\[System: Be brief\]').allMatches(_text(b.prompts.single)),
+      hasLength(1),
+    );
+  });
+
+  test('addQueryChunk while a generation runs is refused and changes '
+      'nothing', () async {
+    final b = FakeBackend([]);
+    final s = _session(b);
+    await s.addQueryChunk(_user);
+    s.getResponseAsync().listen((_) {});
+    await Future<void>.delayed(Duration.zero);
+    b.live!.add('ra');
+    await Future<void>.delayed(Duration.zero);
+    await expectLater(
+      s.addQueryChunk(const Message(text: 'B', isUser: true)),
+      throwsStateError,
+    );
+    await expectLater(
+      s.addQueryChunk(const Message(text: 'late reply')),
+      throwsStateError,
+    );
+    await b.live!.close();
+    await Future<void>.delayed(Duration.zero);
+    b.replies.add('x');
+    await s.addQueryChunk(const Message(text: 'C', isUser: true));
+    await s.getResponse();
+    expect(
+      _text(b.prompts.last),
+      '<|turn>user\nName a yellow fruit.<turn|>\n<|turn>model\nra<turn|>\n'
+      '<|turn>user\nC<turn|>\n<|turn>model\n',
+    );
+  });
+
+  group('a closed session', () {
+    test('does not cancel the generation of the live one', () async {
+      final b = FakeBackend([]);
+      final old = _session(b);
+      await old.close();
+      final live = _session(b);
+      await live.addQueryChunk(_user);
+      live.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      await old.stopGeneration();
+      expect(b.cancels, 0);
+      await live.stopGeneration();
+      expect(b.cancels, 1);
+    });
+
+    test('an idle session does not cancel either', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.stopGeneration();
+      expect(b.cancels, 0);
+    });
+
+    test('throws StateError from addQueryChunk, getResponse and '
+        'getResponseAsync', () async {
+      final b = FakeBackend(['x']);
+      final s = _session(b);
+      await s.close();
+      await expectLater(s.addQueryChunk(_user), throwsStateError);
+      await expectLater(s.getResponse(), throwsStateError);
+      expect(s.getResponseAsync, throwsStateError);
+      expect(b.prompts, isEmpty);
+    });
+  });
+
+  group('Gemma 4 on the .task template', () {
+    test('trims what the user said and strips thinking from a reply, as a '
+        '.bin does', () async {
+      final b = FakeBackend([
+        '<|channel>thought\nhmm<channel|>  Banana.  \n',
+        'x',
+      ]);
+      final s = _session(b);
+      await s.addQueryChunk(const Message(text: '  Hi  \n', isUser: true));
+      await s.getResponse();
+      await s.addQueryChunk(const Message(text: 'Ok?', isUser: true));
+      await s.getResponse();
+      String bin(String text, {bool isUser = true}) =>
+          Message(text: text, isUser: isUser).transformToChatPrompt(
+            type: ModelType.gemma4,
+            fileType: ModelFileType.binary,
+          );
+      expect(
+        _text(b.prompts[1]),
+        bin('  Hi  \n') +
+            bin(
+              '<|channel>thought\nhmm<channel|>  Banana.  \n',
+              isUser: false,
+            ) +
+            bin('Ok?'),
+      );
+    });
   });
 
   test('stop keeps the generated partial and cancels the backend', () async {
@@ -347,6 +457,11 @@ void main() {
       await b.live?.close();
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(first, ['abc']);
+      // The pieces that came after the newer call began are in the history.
+      b.replies.add('y');
+      await s.addQueryChunk(const Message(text: 'next', isUser: true));
+      await s.getResponse();
+      expect(_text(b.prompts.last), contains('abcdef'));
     }, (e, _) => errors.add(e));
     expect(errors, isEmpty);
   });

@@ -215,6 +215,28 @@ void main() {
     );
   });
 
+  test('two createSession calls at once: the second closes the first, and '
+      'only the second stays open', () async {
+    _fakeMediaPipe();
+    final model = _model(supportImage: false, resolver: _BlobResolver());
+    final before = await model.createSession();
+
+    final results = await Future.wait([
+      model.createSession(),
+      model.createSession(),
+    ]);
+
+    // Each new session closes the one before it, in the order of the calls.
+    for (final closed in [before, results.first]) {
+      await expectLater(
+        closed.addQueryChunk(const Message(text: 'Hi', isUser: true)),
+        throwsStateError,
+      );
+    }
+    await results.last.addQueryChunk(const Message(text: 'Hi', isUser: true));
+    expect(model.session, same(results.last));
+  });
+
   test('a model created without supportImage gives the LlmInference no '
       'maxNumImages', () async {
     final fake = _fakeMediaPipe();

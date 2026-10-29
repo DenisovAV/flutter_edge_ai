@@ -140,9 +140,11 @@ final class WebConversation {
 
   /// Adds what the user said: [parts] in the order the model should read them.
   ///
-  /// Throws [StateError] when the images would exceed [maxImages], leaving the
-  /// conversation as it was. Nothing is dropped to make room.
+  /// Throws [StateError] when the images would exceed [maxImages] or a
+  /// generation is running, leaving the conversation as it was. Nothing is
+  /// dropped to make room.
   void addUser(List<PromptPart> parts) {
+    _requireIdle();
     final added = parts.whereType<ImagePromptPart>().length;
     final limit = maxImages;
     if (limit != null && imageCount + added > limit) {
@@ -164,7 +166,23 @@ final class WebConversation {
 
   /// Adds a reply of the model that did not come from this session: a message
   /// the chat replays after it rebuilt the session.
-  void addModel(String text) => _appendModel(text);
+  ///
+  /// Throws [StateError] while a generation is running.
+  void addModel(String text) {
+    _requireIdle();
+    _appendModel(text);
+  }
+
+  /// A message added while a generation runs would join the turn that is being
+  /// answered and leave the next prompt without a user turn to answer.
+  void _requireIdle() {
+    if (_generating) {
+      throw StateError(
+        'A generation is running in this session. Wait for it to end, or '
+        'stop it, before adding a message.',
+      );
+    }
+  }
 
   void _appendModel(String text) {
     if (_turns.isNotEmpty && !_turns.last.isUser) {
@@ -198,11 +216,11 @@ final class WebConversation {
     if (generated.isNotEmpty) _appendModel(generated);
   }
 
-  /// The generation failed. Only the turn it was started for goes: the earlier
-  /// conversation stays.
+  /// The generation failed. The user's turn stays unanswered, with everything
+  /// in it (a system instruction, a tools prompt), as a failed message stays
+  /// in the history of a native chat; a retry answers it.
   void failGeneration() {
     _generating = false;
-    if (hasPendingUserTurn) _turns.removeLast();
   }
 
   /// Forgets the conversation.

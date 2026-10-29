@@ -82,17 +82,30 @@ void main() {
     expect(c.hasPendingUserTurn, isTrue);
   });
 
-  test('an error drops only the pending turn', () {
+  test('an error keeps the pending turn, so a retry answers it', () {
     final c = WebConversation(template: g4);
     c.addUser([TextPromptPart('q1')]);
     c.completeGeneration('a1');
-    c.addUser([TextPromptPart('q2')]);
+    c.addUser([TextPromptPart('[System: be brief]\n\nq2')]);
     c.beginGeneration();
     c.failGeneration();
+    expect(c.isGenerating, isFalse);
     expect(
       _text(c.render()),
-      '<|turn>user\nq1<turn|>\n<|turn>model\na1<turn|>\n<|turn>model\n',
+      '<|turn>user\nq1<turn|>\n<|turn>model\na1<turn|>\n'
+      '<|turn>user\n[System: be brief]\n\nq2<turn|>\n<|turn>model\n',
     );
+  });
+
+  test('a message added while a generation runs is refused', () {
+    final c = WebConversation(template: g4);
+    c.addUser([TextPromptPart('q')]);
+    final before = _text(c.render());
+    c.beginGeneration();
+    expect(() => c.addUser([TextPromptPart('more')]), throwsStateError);
+    expect(() => c.addModel('a'), throwsStateError);
+    c.stopGeneration('');
+    expect(_text(c.render()), before);
   });
 
   test('a second generation while one runs is refused', () {

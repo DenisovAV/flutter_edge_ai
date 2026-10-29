@@ -1,9 +1,15 @@
 // Reading the chat format out of a `.task` file's TFLite metadata.
+@TestOn('vm')
+library;
+
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_mediapipe/src/web/task_chat_format.dart';
+import 'package:flutter_edge_ai_mediapipe/src/web/web_chat_template.dart';
 import 'package:flutter_edge_ai_mediapipe/src/web/web_prompt.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -188,4 +194,65 @@ void main() {
     final format = readTaskChatFormat(prefix)!;
     expect(format.template, WebChatTemplate.gemma4);
   }, skip: real == null ? 'set TASK_FILE_GEMMA4' : false);
+
+  group('resolveWebChatTemplate', () {
+    Future<(WebChatTemplate?, List<String>)> resolve(
+      Future<Uint8List> Function() read, {
+      ModelType type = ModelType.gemma4,
+    }) async {
+      final printed = <String>[];
+      final template = await runZoned(
+        () => resolveWebChatTemplate(readPrefix: read, modelType: type),
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+      return (template, printed);
+    }
+
+    test('a file with prompt_templates (field 17) gets no markers of ours, '
+        'and says so', () async {
+      final (template, printed) = await resolve(
+        () async => _task(_llmParameters(runtime: true)),
+      );
+      expect(template, isNull);
+      expect(printed, [contains('prompt templates')]);
+    });
+
+    test('a declared template wins over the model type', () async {
+      final (template, printed) = await resolve(
+        () async => _task(_llmParameters()),
+        type: ModelType.gemmaIt,
+      );
+      expect(template, WebChatTemplate.gemma4);
+      expect(
+        printed.where((l) => l.contains('flutter_edge_ai_mediapipe')),
+        isEmpty,
+      );
+    });
+
+    test(
+      'no declared format: the model type decides, and it is printed',
+      () async {
+        final (template, printed) = await resolve(
+          () async => _task(_llmParameters(flat: false)),
+          type: ModelType.gemmaIt,
+        );
+        expect(template, WebChatTemplate.gemma3);
+        expect(printed, [contains('declares no chat format')]);
+      },
+    );
+
+    test('a file that could not be read prints the error, not the claim that '
+        'it declares nothing', () async {
+      final (template, printed) = await resolve(
+        () async => throw StateError('range not satisfiable'),
+        type: ModelType.qwen,
+      );
+      expect(template, isNull);
+      expect(printed, hasLength(1));
+      expect(printed.single, contains('range not satisfiable'));
+      expect(printed.single, isNot(contains('declares no chat format')));
+    });
+  });
 }

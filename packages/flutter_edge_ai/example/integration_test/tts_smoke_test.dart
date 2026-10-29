@@ -1,5 +1,5 @@
 // Portable cross-platform on-device TTS e2e (Matcha). Runs the full public
-// flow (initialize -> installFromCatalog -> getActiveTts -> synthesize) on the
+// flow (initialize -> installTts().fromCatalog -> getActiveTts -> synthesize) on the
 // registry's Matcha bundle, pinned to its Hugging Face commit, and asserts a
 // TOLERANCE oracle (non-silent + duration/sample-count/RMS within ±tolerance
 // of the macOS-CPU golden), NOT a byte-exact match: a different arch/libm/
@@ -50,7 +50,7 @@ void main() {
             .ofType(TtsModelType.matcha)
             .install();
       } else {
-        await FlutterEdgeAi.installFromCatalog(variant).install();
+        await FlutterEdgeAi.installTts().fromCatalog(variant).install();
       }
 
       final synth = await FlutterEdgeAi.getActiveTts();

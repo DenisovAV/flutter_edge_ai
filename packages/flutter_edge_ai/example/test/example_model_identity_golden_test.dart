@@ -67,7 +67,11 @@ Map<String, Object?> _inference(Model m) => {
   'fileType': _perPlatform(() => m.fileType.name),
   'maxTokens': m.maxTokens,
   'url': _perPlatform(() => m.url),
-  'installedId': _perPlatform(() => _lastSegment(m.url)),
+  // A registry build installs under the catalog's name, others under the
+  // URL's file name.
+  'installedId': _perPlatform(
+    () => m.catalogVariant?.file.installFilename ?? _lastSegment(m.url),
+  ),
   'preferredBackend': _perPlatform(() => m.preferredBackend.name),
 };
 

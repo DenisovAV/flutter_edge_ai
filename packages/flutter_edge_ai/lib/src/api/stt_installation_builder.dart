@@ -1,4 +1,5 @@
-import 'package:flutter_edge_ai/src/api/install_verification.dart';
+import 'package:flutter_edge_ai/src/api/bundle_progress.dart';
+import 'package:flutter_edge_ai/src/api/install_expectations.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/model_management/model_activation.dart';
@@ -33,31 +34,79 @@ class SttInstallationBuilder {
   SttModelType? _sttModelType;
   void Function(int progress)? _onModelProgress;
   void Function(int progress)? _onTokenizerProgress;
+  void Function(int progress)? _onProgress;
   CancelToken? _cancelToken;
+
+  /// What each network file must be once installed.
+  FileExpectation _modelExpected = const FileExpectation();
+  FileExpectation _tokenizerExpected = const FileExpectation();
+
+  /// The catalog variant this builder installs ([fromCatalog]).
+  SttVariant? _catalogVariant;
+
+  /// Install a model registry build: its pinned model and tokenizer URLs,
+  /// its type and sizes. The sizes are checked before the model becomes
+  /// active, and [withProgress] weights by them without asking the network.
+  ///
+  /// An STT model's files are installed under their URL's file names, so
+  /// [install] throws [ArgumentError] for a variant that names them
+  /// otherwise, and [UnsupportedError] for one whose `backendsHere` is empty;
+  /// both before anything downloads.
+  SttInstallationBuilder fromCatalog(SttVariant variant, {String? token}) {
+    _catalogVariant = variant;
+    modelFromNetwork(
+      variant.model.url,
+      token: token,
+      expectedSize: variant.model.sizeBytes,
+    );
+    tokenizerFromNetwork(
+      variant.tokenizer.url,
+      token: token,
+      expectedSize: variant.tokenizer.sizeBytes,
+    );
+    return ofType(variant.type);
+  }
 
   // === Model source setters ===
 
   /// Set model source from network URL (HTTP/HTTPS)
-  SttInstallationBuilder modelFromNetwork(String url, {String? token}) {
+  ///
+  /// [expectedSize] / [expectedSha256]: what the file must be once
+  /// downloaded, checked before the model becomes active (not on the web); a
+  /// file that differs stays installed, is not made active, and [install]
+  /// throws [ModelValidationException].
+  SttInstallationBuilder modelFromNetwork(
+    String url, {
+    String? token,
+    int? expectedSize,
+    String? expectedSha256,
+  }) {
     _modelSource = ModelSource.network(url, authToken: token);
+    _modelExpected = FileExpectation(
+      size: expectedSize,
+      sha256: expectedSha256,
+    );
     return this;
   }
 
   /// Set model source from Flutter asset
   SttInstallationBuilder modelFromAsset(String path) {
     _modelSource = ModelSource.asset(path);
+    _modelExpected = const FileExpectation();
     return this;
   }
 
   /// Set model source from bundled native resource
   SttInstallationBuilder modelFromBundled(String resourceName) {
     _modelSource = ModelSource.bundled(resourceName);
+    _modelExpected = const FileExpectation();
     return this;
   }
 
   /// Set model source from external file path
   SttInstallationBuilder modelFromFile(String path) {
     _modelSource = ModelSource.file(path);
+    _modelExpected = const FileExpectation();
     return this;
   }
 
@@ -66,26 +115,40 @@ class SttInstallationBuilder {
   /// Set tokenizer source from network URL (HTTP/HTTPS).
   ///
   /// [token] optional auth token for the URL (e.g. HuggingFace).
-  SttInstallationBuilder tokenizerFromNetwork(String url, {String? token}) {
+  ///
+  /// [expectedSize] / [expectedSha256] as for [modelFromNetwork].
+  SttInstallationBuilder tokenizerFromNetwork(
+    String url, {
+    String? token,
+    int? expectedSize,
+    String? expectedSha256,
+  }) {
     _tokenizerSource = ModelSource.network(url, authToken: token);
+    _tokenizerExpected = FileExpectation(
+      size: expectedSize,
+      sha256: expectedSha256,
+    );
     return this;
   }
 
   /// Set tokenizer source from a Flutter asset.
   SttInstallationBuilder tokenizerFromAsset(String path) {
     _tokenizerSource = ModelSource.asset(path);
+    _tokenizerExpected = const FileExpectation();
     return this;
   }
 
   /// Set tokenizer source from a bundled native resource.
   SttInstallationBuilder tokenizerFromBundled(String resourceName) {
     _tokenizerSource = ModelSource.bundled(resourceName);
+    _tokenizerExpected = const FileExpectation();
     return this;
   }
 
   /// Set tokenizer source from an external file path.
   SttInstallationBuilder tokenizerFromFile(String path) {
     _tokenizerSource = ModelSource.file(path);
+    _tokenizerExpected = const FileExpectation();
     return this;
   }
 
@@ -104,6 +167,18 @@ class SttInstallationBuilder {
   // === Progress callbacks ===
 
   /// Add model file progress callback
+  /// Progress of the whole install, 0 to 100, by bytes across the model and
+  /// its tokenizer, as `TtsInstallationBuilder.withProgress` counts: sizes
+  /// read before the first download (a HEAD request per network file unless
+  /// its `expectedSize` is set, the disk for files installed already), files
+  /// installed already counted from the start, every file the same weight
+  /// when a size is unknown. Values only rise, and a successful install ends
+  /// with 100 once the model is active.
+  SttInstallationBuilder withProgress(void Function(int progress) onProgress) {
+    _onProgress = onProgress;
+    return this;
+  }
+
   SttInstallationBuilder withModelProgress(
     void Function(int progress) onProgress,
   ) {
@@ -149,6 +224,24 @@ class SttInstallationBuilder {
   Future<SttInstallation> install() async {
     // Check cancellation before starting
     _cancelToken?.throwIfCancelled();
+    if (_catalogVariant case final variant?) {
+      checkCatalogVariant(variant);
+      // Core keeps STT files under their URL's file names.
+      for (final file in variant.files) {
+        final urlName = InferenceModelFile.fromSource(
+          ModelSource.network(file.url),
+        ).filename;
+        if (urlName != file.installFilename) {
+          throw ArgumentError.value(
+            variant,
+            'variant',
+            '${variant.id} installs "${file.installFilename}", but an STT '
+                'model\'s file is installed under its URL\'s file name '
+                '"$urlName"',
+          );
+        }
+      }
+    }
 
     if (_modelSource == null || _tokenizerSource == null) {
       throw StateError(
@@ -176,20 +269,50 @@ class SttInstallationBuilder {
       replacePolicy: ModelReplacePolicy.keep,
     );
 
+    // What each file must be, by its index in spec.files (model, tokenizer).
+    final expectations = [_modelExpected, _tokenizerExpected];
+    final steps = await planInstall(spec.files);
+    final progress = await startBundleProgress(
+      _onProgress,
+      steps,
+      known: {
+        for (final (i, file) in spec.files.indexed)
+          if (expectations[i].size case final size?) file.prefsKey: size,
+      },
+      cancelToken: _cancelToken,
+      bundle: spec.name,
+    );
+    final perFile = [_onModelProgress, _onTokenizerProgress];
+
     // The model, then its tokenizer, each by its own record (see
     // install_rule.dart).
     final release = await installPlanned(
-      await planInstall(spec.files),
+      steps,
       modelType: repo.ModelType.stt,
       cancelToken: _cancelToken,
-      progress: [_onModelProgress, _onTokenizerProgress],
+      progress: [
+        for (var i = 0; i < spec.files.length; i++)
+          if (perFile[i] == null && progress == null)
+            null
+          else
+            (int percent) {
+              perFile[i]?.call(percent);
+              progress?.report(i, percent);
+            },
+      ],
+      onFileDone: (i) => progress?.report(i, 100),
     );
 
     // AUTO-SET as active STT model (even if already installed)
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
-    await verifyBeforeActivation[this]?.call(spec);
+    _cancelToken?.throwIfCancelled();
+    await verifyInstalledFiles(spec, {
+      for (final (i, file) in spec.files.indexed)
+        file.filename: expectations[i],
+    }, active: manager.activeSttModel);
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);
+    progress?.complete();
 
     edgeAiLog('✅ STT model installed and set as active: ${spec.name}');
 

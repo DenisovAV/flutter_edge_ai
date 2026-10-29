@@ -7,7 +7,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/src/api/bundle_progress.dart';
+import 'package:flutter_edge_ai/src/api/bundle_progress.dart' show sizeOnDisk;
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
     show TtsModelTypeManifest;
@@ -20,9 +20,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 const _base = 'https://example.com/matcha/';
 final _names = TtsModelType.matcha.manifest;
 
-/// The first file is three times the size of each other one.
+/// The first file is three times the size of each other one. Each is over
+/// the 1 MiB core requires of a `.tflite` model file.
+const _unit = 2 * 1024 * 1024;
 Map<String, int> _sizes() => {
-  for (final (i, name) in _names.indexed) name: i == 0 ? 3000 : 1000,
+  for (final (i, name) in _names.indexed) name: i == 0 ? 3 * _unit : _unit,
 };
 
 void main() {
@@ -69,7 +71,7 @@ void main() {
       await initialize();
       final progress = <int>[];
       await matcha(progress).install();
-      // 3000 + 7 x 1000 bytes; half of the first file = 1500 / 10000. Counting
+      // 3 + 7 x 1 units; half of the first file = 1.5 / 10 units. Counting
       // files would say 50% of 1 of 8 = 6%.
       expect(progress.first, 15);
       expect(probe.asked, hasLength(_names.length));
@@ -106,7 +108,7 @@ void main() {
 
     final progress = <int>[];
     await matcha(progress).install();
-    // 3000 + 1000 + 1000 of 10000 bytes are there before any download.
+    // 3 + 1 + 1 of 10 units are there before any download.
     expect(progress.first, 50);
     expect(progress.last, 100);
     expect(
@@ -167,12 +169,13 @@ void main() {
     }, reason: 'huggingface.co gets the token passed to initialize');
   });
 
-  test('sizes the caller knows are used, with no HEAD (the catalog)', () async {
+  test('a catalog bundle uses its pinned sizes, with no HEAD', () async {
     await initialize();
     final progress = <int>[];
-    final builder = matcha(progress);
-    knownBundleFileSizes[builder] = _sizes();
-    await builder.install();
+    await FlutterEdgeAi.installTts()
+        .fromCatalog(_MatchaVariant())
+        .withProgress(progress.add)
+        .install();
     expect(probe.asked, isEmpty);
     expect(progress.first, 15);
   });
@@ -287,4 +290,38 @@ final class _Paths extends PathProviderPlatform {
 
   @override
   Future<String?> getTemporaryPath() async => Directory.systemTemp.path;
+}
+
+/// The Matcha bundle as a catalog lists it, with [_sizes].
+final class _MatchaVariant extends TtsVariant {
+  @override
+  List<ModelArtifact> get files => [
+    for (final MapEntry(key: name, value: size) in _sizes().entries)
+      ModelArtifact(
+        repo: 'org/matcha',
+        revision: '0123456789abcdef0123456789abcdef01234567',
+        path: name,
+        sha256: 'aa',
+        sizeBytes: size,
+        installFilename: name,
+      ),
+  ];
+
+  @override
+  TtsModelType get type => TtsModelType.matcha;
+
+  @override
+  String get baseUrl => _base;
+
+  @override
+  String get id => 'matcha/bundle';
+
+  @override
+  String get modelId => 'matcha';
+
+  @override
+  String get catalogName => 'test_catalog';
+
+  @override
+  Set<PreferredBackend> get backendsHere => const {PreferredBackend.cpu};
 }

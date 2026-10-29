@@ -1,7 +1,7 @@
-import 'package:flutter_edge_ai/src/api/install_verification.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_edge_ai/src/api/bundle_progress.dart';
+import 'package:flutter_edge_ai/src/api/install_expectations.dart';
 import 'package:flutter_edge_ai/src/api/tts_asset_listing.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
@@ -34,10 +34,36 @@ class TtsInstallationBuilder {
   void Function(int overallPercent)? _onProgress;
   CancelToken? _cancelToken;
 
+  /// Sizes known before the install (by each file's plain manifest name):
+  /// used for progress without a HEAD request, and checked before the
+  /// voice becomes active.
+  Map<String, int>? _knownSizes;
+
+  /// The catalog variant this builder installs ([fromCatalog]).
+  TtsVariant? _catalogVariant;
+
+  /// Install a model registry build: its pinned base URL, type and the size
+  /// of every file. The sizes are checked before the voice becomes active,
+  /// and [withProgress] weights by them without asking the network.
+  ///
+  /// [install] throws, before anything downloads, [UnsupportedError] for a
+  /// variant whose `backendsHere` is empty, and [ArgumentError] when the
+  /// variant's files are not the type's bundle.
+  TtsInstallationBuilder fromCatalog(TtsVariant variant, {String? token}) {
+    fromNetwork(variant.baseUrl, token: token);
+    _catalogVariant = variant;
+    _knownSizes = {
+      for (final file in variant.files) file.installFilename: file.sizeBytes,
+    };
+    return ofType(variant.type);
+  }
+
   /// Base URL the bundle files live under (each manifest filename is
   /// appended to it to derive the per-file network source).
   TtsInstallationBuilder fromNetwork(String baseUrl, {String? token}) {
     _base = TtsNetworkBase(baseUrl, token: token);
+    _knownSizes = null;
+    _catalogVariant = null;
     return this;
   }
 
@@ -51,6 +77,8 @@ class TtsInstallationBuilder {
   /// loads each file into memory first.
   TtsInstallationBuilder fromAsset(String directory) {
     _base = TtsAssetBase(directory);
+    _knownSizes = null;
+    _catalogVariant = null;
     return this;
   }
 
@@ -59,6 +87,8 @@ class TtsInstallationBuilder {
   /// must be allowed to read them; uninstalling the model leaves them there.
   TtsInstallationBuilder fromFile(String directory) {
     _base = TtsFileBase(directory);
+    _knownSizes = null;
+    _catalogVariant = null;
     return this;
   }
 
@@ -69,6 +99,8 @@ class TtsInstallationBuilder {
   /// the app bundle. Android and iOS only.
   TtsInstallationBuilder fromBundled() {
     _base = const TtsBundledBase();
+    _knownSizes = null;
+    _catalogVariant = null;
     return this;
   }
 
@@ -155,6 +187,26 @@ class TtsInstallationBuilder {
       );
     }
 
+    if (_catalogVariant case final variant?) {
+      checkCatalogVariant(variant);
+      // The bundle's files come from the type; each must be one the catalog
+      // lists, checked before the installer takes the active voice out of
+      // service.
+      final listed = {for (final f in variant.files) f.installFilename};
+      final missing = [
+        for (final name in ttsModelType.manifest)
+          if (!listed.contains(name)) name,
+      ];
+      if (missing.isNotEmpty) {
+        throw ArgumentError.value(
+          variant,
+          'variant',
+          '${variant.id} does not list ${missing.join(', ')}, which a '
+              '${ttsModelType.name} bundle installs',
+        );
+      }
+    }
+
     final spec = TtsModelSpec.fromManifest(
       name: _name ?? ttsModelType.name,
       ttsModelType: ttsModelType,
@@ -177,23 +229,13 @@ class TtsInstallationBuilder {
     final files = spec.files;
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final steps = await planInstall(files);
-    final onProgress = _onProgress;
-    BundleProgress? progress;
-    if (onProgress != null) {
-      progress = BundleProgress(
-        onProgress,
-        await bundleFileSizes(
-          steps,
-          known: knownBundleFileSizes[this],
-          cancelToken: _cancelToken,
-        ),
-        bundle: spec.name,
-      );
-      progress.installedAlready([
-        for (final (i, step) in steps.indexed)
-          if (!step.installs) i,
-      ]);
-    }
+    final progress = await startBundleProgress(
+      _onProgress,
+      steps,
+      known: _knownSizes,
+      cancelToken: _cancelToken,
+      bundle: spec.name,
+    );
     final release = await installPlanned(
       steps,
       modelType: repo.ModelType.tts,
@@ -201,7 +243,7 @@ class TtsInstallationBuilder {
       progress: [
         if (progress != null)
           for (var i = 0; i < files.length; i++)
-            (percent) => progress!.report(i, percent),
+            (percent) => progress.report(i, percent),
       ],
       // Files are replaced one by one, so a switch that fails halfway would
       // leave the active voice made of two bundles, and a restart would
@@ -218,7 +260,14 @@ class TtsInstallationBuilder {
     );
 
     // AUTO-SET as active TTS model (even if already installed).
-    await verifyBeforeActivation[this]?.call(spec);
+    _cancelToken?.throwIfCancelled();
+    if (_knownSizes case final sizes?) {
+      await verifyInstalledFiles(spec, {
+        for (final file in spec.files)
+          if (sizes[file.prefsKey] case final size?)
+            file.filename: FileExpectation(size: size),
+      }, active: manager.activeTtsModel);
+    }
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);
     progress?.complete();

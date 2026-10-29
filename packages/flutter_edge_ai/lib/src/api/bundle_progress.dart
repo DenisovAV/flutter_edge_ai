@@ -6,11 +6,6 @@ import 'package:flutter_edge_ai/src/services/file_system_service.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
-/// Sizes a caller already knows for a bundle's files, in bytes by each
-/// file's `prefsKey` (its plain manifest name), keyed by the installation
-/// builder. A file found here is never asked of the network. Internal.
-final knownBundleFileSizes = Expando<Map<String, int>>('knownBundleFileSizes');
-
 /// The size of each of [steps]' files before the install, in order; null
 /// where it cannot be known before the copy.
 ///
@@ -63,6 +58,29 @@ Future<List<int?>> bundleFileSizes(
     cancelToken.throwIfCancelled();
   }
   return all;
+}
+
+/// The byte-weighted progress of an install of [steps], or null without
+/// [onProgress]: sizes read first ([bundleFileSizes], [known] by `prefsKey`
+/// first), the files installed already reported at once.
+Future<BundleProgress?> startBundleProgress(
+  void Function(int percent)? onProgress,
+  List<FileInstallStep> steps, {
+  Map<String, int>? known,
+  CancelToken? cancelToken,
+  String? bundle,
+}) async {
+  if (onProgress == null) return null;
+  final progress = BundleProgress(
+    onProgress,
+    await bundleFileSizes(steps, known: known, cancelToken: cancelToken),
+    bundle: bundle,
+  );
+  progress.installedAlready([
+    for (final (i, step) in steps.indexed)
+      if (!step.installs) i,
+  ]);
+  return progress;
 }
 
 /// The length of the file at [path], or null when it is not there or cannot

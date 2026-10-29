@@ -250,6 +250,8 @@ class MobileModelManager extends ModelFileManager
       loraSource: loraPath == null ? null : FileSource(loraPath),
       modelType: modelType,
       fileType: fileType,
+      // The name it was installed under, which need not be its source's.
+      filename: filename,
     );
     edgeAiLog('[ModelManager] restored active inference model: $filename');
   }

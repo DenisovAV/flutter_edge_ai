@@ -69,7 +69,7 @@ Future<void> _installGemma4(String? localPath) async {
     _gemma4Path = localPath;
   } else {
     // Gemma 4 is not gated.
-    await FlutterEdgeAi.installFromCatalog(
+    await FlutterEdgeAi.installModelFromCatalog(
       LiteRtLmModels.gemma4E2bIt.generic,
     ).install();
     _gemma4Path = null;

@@ -60,7 +60,7 @@ Future<void> recordEvidence({
 }
 
 /// Records that [check] passed on [variant], installed from the catalog
-/// (`FlutterEdgeAi.installFromCatalog`), run on [backend].
+/// (`installModelFromCatalog` or `fromCatalog`), run on [backend].
 void recordCatalogEvidence(
   CatalogVariant variant, {
   required PreferredBackend backend,

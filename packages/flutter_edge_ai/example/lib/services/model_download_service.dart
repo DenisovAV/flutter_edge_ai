@@ -17,7 +17,7 @@ class ModelDownloadService {
   });
 
   /// The model registry build to install, when the model is one: then it is
-  /// installed with `FlutterEdgeAi.installFromCatalog`, which takes the type,
+  /// installed with `FlutterEdgeAi.installModelFromCatalog`, which takes the type,
   /// file type and pinned URL from it and checks the file's size.
   final CatalogVariant? catalogVariant;
 
@@ -51,13 +51,20 @@ class ModelDownloadService {
   }
 
   /// Checks if the model file exists and matches the remote file size.
+  /// The name core installs the model under: the catalog's install name for
+  /// a registry build, otherwise the URL's file name.
+  String get installedName {
+    if (catalogVariant case InferenceVariant(file: final file?)) {
+      return file.installFilename;
+    }
+    final uri = Uri.parse(modelUrl);
+    return uri.pathSegments.isNotEmpty ? uri.pathSegments.last : modelFilename;
+  }
+
   Future<bool> checkModelExistence(String token) async {
     try {
-      // Extract SAME filename that Modern API will use during download
-      final uri = Uri.parse(modelUrl);
-      final actualFilename = uri.pathSegments.isNotEmpty
-          ? uri.pathSegments.last
-          : modelFilename;
+      // The name core installs the model under.
+      final actualFilename = installedName;
 
       // Modern API: Check if model is installed using actual filename
       final isInstalled = await FlutterEdgeAi.isModelInstalled(actualFilename);
@@ -122,14 +129,12 @@ class ModelDownloadService {
       // Convert empty string to null for cleaner API
       final authToken = token.isEmpty ? null : token;
 
-      if (catalogVariant case final variant?) {
-        var install = FlutterEdgeAi.installFromCatalog(
+      if (catalogVariant case final InferenceVariant variant) {
+        await FlutterEdgeAi.installModelFromCatalog(
           variant,
-        ).withProgress((progress) => onProgress(progress.toDouble()));
-        if (authToken != null) install = install.withToken(authToken);
-        if (foreground case final value?)
-          install = install.withForeground(value);
-        await install.install();
+          token: authToken,
+          foreground: foreground,
+        ).withProgress((progress) => onProgress(progress.toDouble())).install();
         return;
       }
       // Modern API: Install inference model from network with progress tracking
@@ -150,11 +155,8 @@ class ModelDownloadService {
   /// Deletes the downloaded file and metadata.
   Future<void> deleteModel() async {
     try {
-      // Extract actual filename used by Modern API
-      final uri = Uri.parse(modelUrl);
-      final actualFilename = uri.pathSegments.isNotEmpty
-          ? uri.pathSegments.last
-          : modelFilename;
+      // The name core installed the model under.
+      final actualFilename = installedName;
 
       // Use Modern API to properly uninstall (deletes metadata + file)
       await FlutterEdgeAi.uninstallModel(actualFilename);

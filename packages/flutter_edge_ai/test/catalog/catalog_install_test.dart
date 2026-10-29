@@ -1,12 +1,12 @@
-// FlutterEdgeAi.catalog and installFromCatalog against core's real install
+// FlutterEdgeAi.catalog and the fromCatalog installs against core's real install
 // path, with a download service that writes fixed bytes instead of fetching.
 
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai/src/api/catalog_installation_builder.dart'
-    show checkCatalogFileSizes;
+import 'package:flutter_edge_ai/src/api/install_expectations.dart'
+    show FileExpectation, checkInstalledFiles;
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -66,7 +66,7 @@ void main() {
     });
   });
 
-  group('installFromCatalog, an LLM', () {
+  group('installModelFromCatalog', () {
     test('installs with the variant\'s model and file type', () async {
       await initialize();
       final variant = TestLlm(
@@ -74,10 +74,10 @@ void main() {
         modelType: ModelType.gemma4,
         fileType: ModelFileType.litertlm,
       );
-      final installation = await FlutterEdgeAi.installFromCatalog(
+      final installation = await FlutterEdgeAi.installModelFromCatalog(
         variant,
       ).install();
-      final spec = installation.spec as InferenceModelSpec;
+      final spec = installation.spec;
       expect(spec.modelType, ModelType.gemma4);
       expect(spec.fileType, ModelFileType.litertlm);
       expect(spec.files.single.filename, 'generic.litertlm');
@@ -92,7 +92,7 @@ void main() {
       await initialize();
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
       final activeBefore = manager.activeInferenceModel?.name;
-      final installation = await FlutterEdgeAi.installFromCatalog(
+      final installation = await FlutterEdgeAi.installModelFromCatalog(
         TestLlm('inactive'),
       ).install(activate: false);
       expect(installation.spec, isA<InferenceModelSpec>());
@@ -107,12 +107,12 @@ void main() {
         file: artifact('generic.litertlm', size: 123),
       );
       await expectLater(
-        FlutterEdgeAi.installFromCatalog(variant).install(),
+        FlutterEdgeAi.installModelFromCatalog(variant).install(),
         throwsA(
-          isA<CatalogInstallException>().having(
+          isA<ModelValidationException>().having(
             (e) => e.message,
             'message',
-            allOf(contains('${_bytes.length} bytes'), contains('says 123')),
+            allOf(contains('${_bytes.length} bytes'), contains('123 expected')),
           ),
         ),
       );
@@ -121,12 +121,12 @@ void main() {
     test('the wrong size never becomes the active model', () async {
       await initialize();
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
-      await FlutterEdgeAi.installFromCatalog(TestLlm('good')).install();
+      await FlutterEdgeAi.installModelFromCatalog(TestLlm('good')).install();
       await expectLater(
-        FlutterEdgeAi.installFromCatalog(
+        FlutterEdgeAi.installModelFromCatalog(
           TestLlm('bad', file: artifact('bad.litertlm', size: 123)),
         ).install(),
-        throwsA(isA<CatalogInstallException>()),
+        throwsA(isA<ModelValidationException>()),
       );
       expect(manager.activeInferenceModel?.name, 'good');
     });
@@ -135,7 +135,7 @@ void main() {
         'download', () async {
       await initialize();
       await expectLater(
-        FlutterEdgeAi.installFromCatalog(
+        FlutterEdgeAi.installModelFromCatalog(
           TestLlm('npu-elsewhere', backendsHere: const {}),
         ).install(),
         throwsUnsupportedError,
@@ -143,41 +143,18 @@ void main() {
       expect(downloads.urls, isEmpty);
     });
 
-    test('progress ends at 100 when the file is already installed', () async {
-      await initialize();
-      await FlutterEdgeAi.installFromCatalog(TestLlm('again')).install();
-      final progress = <int>[];
-      await FlutterEdgeAi.installFromCatalog(
-        TestLlm('again'),
-      ).withProgress(progress.add).install();
-      expect(downloads.urls, hasLength(1), reason: 'the second is skipped');
-      expect(progress, isNotEmpty);
-      expect(progress.last, 100);
-    });
-
-    test('a reused builder still ends at 100', () async {
-      await initialize();
-      final progress = <int>[];
-      final builder = FlutterEdgeAi.installFromCatalog(
-        TestLlm('reused'),
-      ).withProgress(progress.add);
-      await builder.install();
-      progress.clear();
-      await builder.install();
-      expect(progress, isNotEmpty);
-      expect(progress.last, 100);
-    });
-
     test(
       'a cancel after the last download stops it before activation',
       () async {
         await initialize();
         final manager = FlutterEdgeAiPlugin.instance.modelManager;
-        await FlutterEdgeAi.installFromCatalog(TestLlm('before')).install();
+        await FlutterEdgeAi.installModelFromCatalog(
+          TestLlm('before'),
+        ).install();
         final cancel = CancelToken();
         downloads.onDownloaded = cancel.cancel;
         await expectLater(
-          FlutterEdgeAi.installFromCatalog(
+          FlutterEdgeAi.installModelFromCatalog(
             TestLlm('cancelled'),
           ).withCancelToken(cancel).install(),
           throwsA(isA<DownloadCancelledException>()),
@@ -188,7 +165,7 @@ void main() {
 
     test('a wrong-size file over the active model\'s says so', () async {
       await initialize();
-      await FlutterEdgeAi.installFromCatalog(TestLlm('shared')).install();
+      await FlutterEdgeAi.installModelFromCatalog(TestLlm('shared')).install();
       // Another revision of the same file name: core writes over the active
       // model's file.
       final other = ModelArtifact(
@@ -200,11 +177,11 @@ void main() {
         installFilename: 'shared.litertlm',
       );
       await expectLater(
-        FlutterEdgeAi.installFromCatalog(
+        FlutterEdgeAi.installModelFromCatalog(
           TestLlm('shared', file: other),
         ).install(),
         throwsA(
-          isA<CatalogInstallException>().having(
+          isA<ModelValidationException>().having(
             (e) => e.message,
             'message',
             allOf(
@@ -216,20 +193,32 @@ void main() {
       );
     });
 
-    test('an install name that is not the URL\'s file name is refused', () {
+    test('it installs under the catalog\'s name, not the URL\'s', () async {
+      await initialize();
       final variant = TestLlm(
         'generic',
-        file: artifact('generic.litertlm', installFilename: 'other.litertlm'),
+        file: artifact('model.litertlm', installFilename: 'tiny-llm.litertlm'),
       );
+      final installation = await FlutterEdgeAi.installModelFromCatalog(
+        variant,
+      ).install();
+      expect(installation.spec.files.single.filename, 'tiny-llm.litertlm');
+      expect(await FlutterEdgeAi.isModelInstalled('tiny-llm.litertlm'), isTrue);
+      expect(await FlutterEdgeAi.isModelInstalled('model.litertlm'), isFalse);
       expect(
-        () => FlutterEdgeAi.installFromCatalog(variant).install(),
-        throwsArgumentError,
+        await FlutterEdgeAi.getModelPath('tiny-llm.litertlm'),
+        endsWith('tiny-llm.litertlm'),
+      );
+      await FlutterEdgeAi.uninstallModel('tiny-llm.litertlm');
+      expect(
+        await FlutterEdgeAi.isModelInstalled('tiny-llm.litertlm'),
+        isFalse,
       );
     });
 
     test('a variant with no file has nothing to install', () {
       expect(
-        () => FlutterEdgeAi.installFromCatalog(
+        () => FlutterEdgeAi.installModelFromCatalog(
           TestLlm('builtin', noFile: true),
         ).install(),
         throwsUnsupportedError,
@@ -237,7 +226,7 @@ void main() {
     });
   });
 
-  group('installFromCatalog, an embedder', () {
+  group('installEmbedder().fromCatalog', () {
     TestEmbedder embedder() => TestEmbedder(
       model: artifact(
         'emb_256.tflite',
@@ -252,9 +241,10 @@ void main() {
     test('installs model and tokenizer under the catalog\'s names', () async {
       await initialize();
       final progress = <int>[];
-      final installation = await FlutterEdgeAi.installFromCatalog(
-        embedder(),
-      ).withProgress(progress.add).install();
+      final installation = await FlutterEdgeAi.installEmbedder()
+          .fromCatalog(embedder())
+          .withProgress(progress.add)
+          .install();
       expect(installation.spec.files.map((f) => f.filename), [
         'emb_256__rev-0123456789ab.tflite',
         'tiny-seq256__sentencepiece__rev-0123456789ab.model',
@@ -267,36 +257,29 @@ void main() {
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
       final activeBefore = manager.activeEmbeddingModel?.name;
       await expectLater(
-        FlutterEdgeAi.installFromCatalog(
-          TestEmbedder(
-            model: artifact('bad_256.tflite', size: 123),
-            tokenizer: artifact('sentencepiece.model'),
-          ),
-        ).install(),
-        throwsA(isA<CatalogInstallException>()),
+        FlutterEdgeAi.installEmbedder()
+            .fromCatalog(
+              TestEmbedder(
+                model: artifact('bad_256.tflite', size: 123),
+                tokenizer: artifact('sentencepiece.model'),
+              ),
+            )
+            .install(),
+        throwsA(isA<ModelValidationException>()),
       );
       expect(manager.activeEmbeddingModel?.name, activeBefore);
       expect(activeBefore, isNot('bad_256'));
     });
-
-    test('it cannot be installed without becoming active', () {
-      expect(
-        () => FlutterEdgeAi.installFromCatalog(
-          embedder(),
-        ).install(activate: false),
-        throwsArgumentError,
-      );
-    });
   });
 
-  group('installFromCatalog, STT', () {
+  group('installStt().fromCatalog', () {
     test('an install name that is not the URL\'s file name is refused before '
         'any download', () async {
       await initialize();
       await expectLater(
-        FlutterEdgeAi.installFromCatalog(
-          TestStt(modelInstallFilename: 'other.tflite'),
-        ).install(),
+        FlutterEdgeAi.installStt()
+            .fromCatalog(TestStt(modelInstallFilename: 'other.tflite'))
+            .install(),
         throwsArgumentError,
       );
       expect(downloads.urls, isEmpty);
@@ -307,55 +290,59 @@ void main() {
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
       final activeBefore = manager.activeSttModel?.name;
       await expectLater(
-        FlutterEdgeAi.installFromCatalog(TestStt(modelSize: 123)).install(),
-        throwsA(isA<CatalogInstallException>()),
+        FlutterEdgeAi.installStt()
+            .fromCatalog(TestStt(modelSize: 123))
+            .install(),
+        throwsA(isA<ModelValidationException>()),
       );
       expect(manager.activeSttModel?.name, activeBefore);
     });
   });
 
-  group('checkCatalogFileSizes', () {
-    test('a file core has no path for throws', () async {
+  group('checkInstalledFiles', () {
+    test('a file core has no path for throws, and so does no record', () async {
       await initialize();
-      final installation = await FlutterEdgeAi.installFromCatalog(
+      final installation = await FlutterEdgeAi.installModelFromCatalog(
         TestLlm('pathless'),
       ).install(activate: false);
+      final expected = {'pathless.litertlm': const FileExpectation(size: 1)};
+      final fs = ServiceRegistry.instance.fileSystemService;
       await expectLater(
-        checkCatalogFileSizes(
-          TestLlm('pathless'),
+        checkInstalledFiles(
           installation.spec,
+          expected,
           paths: const {},
-          sizeOf: (_) async => 1,
+          fileSystem: fs,
         ),
         throwsA(
-          isA<CatalogInstallException>().having(
+          isA<ModelValidationException>().having(
             (e) => e.message,
             'message',
-            contains('no path'),
+            contains('no file'),
           ),
         ),
       );
       await expectLater(
-        checkCatalogFileSizes(
-          TestLlm('pathless'),
+        checkInstalledFiles(
           installation.spec,
+          expected,
           paths: null,
-          sizeOf: (_) async => 1,
+          fileSystem: fs,
         ),
-        throwsA(isA<CatalogInstallException>()),
+        throwsA(isA<ModelValidationException>()),
       );
     });
   });
 
-  group('installFromCatalog, a TTS bundle', () {
+  group('installTts().fromCatalog', () {
     test('the wrong size never becomes the active voice', () async {
       await initialize();
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
       await expectLater(
-        FlutterEdgeAi.installFromCatalog(
-          TestTts(size: 123, type: TtsModelType.inflect),
-        ).install(),
-        throwsA(isA<CatalogInstallException>()),
+        FlutterEdgeAi.installTts()
+            .fromCatalog(TestTts(size: 123, type: TtsModelType.inflect))
+            .install(),
+        throwsA(isA<ModelValidationException>()),
       );
       final active = manager.activeTtsModel;
       expect(
@@ -368,10 +355,10 @@ void main() {
         'download', () async {
       await initialize();
       await expectLater(
-        FlutterEdgeAi.installFromCatalog(
-          TestTts(type: TtsModelType.inflect, dropLast: true),
-        ).install(),
-        throwsA(isA<CatalogInstallException>()),
+        FlutterEdgeAi.installTts()
+            .fromCatalog(TestTts(type: TtsModelType.inflect, dropLast: true))
+            .install(),
+        throwsArgumentError,
       );
       expect(downloads.urls, isEmpty);
     });
@@ -380,15 +367,16 @@ void main() {
       await initialize();
       final variant = TestTts();
       final progress = <int>[];
-      await FlutterEdgeAi.installFromCatalog(
-        variant,
-      ).withProgress(progress.add).install();
+      await FlutterEdgeAi.installTts()
+          .fromCatalog(variant)
+          .withProgress(progress.add)
+          .install();
       final n = variant.files.length;
       // Each download reports 50 and then 100: halfway through the first of
       // n equal files is 100 / (2 n) percent of the bytes, where counting
       // finished files would first say 100 / n.
       expect(progress.first, (100 / (2 * n)).round());
-      expect(progress, contains((100 * 3 / (2 * n)).round()));
+      expect(progress, contains((100 * 3 / (2 * n)).floor()));
       expect(progress.last, 100);
       expect(progress, orderedEquals([...progress]..sort()));
       expect(downloads.urls, hasLength(n));
@@ -396,11 +384,12 @@ void main() {
 
     test('an already installed bundle still ends at 100', () async {
       await initialize();
-      await FlutterEdgeAi.installFromCatalog(TestTts()).install();
+      await FlutterEdgeAi.installTts().fromCatalog(TestTts()).install();
       final progress = <int>[];
-      await FlutterEdgeAi.installFromCatalog(
-        TestTts(),
-      ).withProgress(progress.add).install();
+      await FlutterEdgeAi.installTts()
+          .fromCatalog(TestTts())
+          .withProgress(progress.add)
+          .install();
       expect(progress.last, 100);
     });
   });

@@ -74,18 +74,16 @@ class _SttScreenState extends State<SttScreen> {
         token = await AuthTokenService.loadToken();
       }
 
-      var install =
-          FlutterEdgeAi.installFromCatalog(
-            widget.model.catalogVariant,
-          ).withProgress((percent) {
+      await FlutterEdgeAi.installStt()
+          .fromCatalog(widget.model.catalogVariant, token: token)
+          .withProgress((percent) {
             if (!mounted) return;
             setState(() {
               _downloadStage = 'model';
               _downloadPercent = percent;
             });
-          });
-      if (token != null) install = install.withToken(token);
-      await install.install();
+          })
+          .install();
 
       final recognizer = await FlutterEdgeAi.getActiveStt();
 

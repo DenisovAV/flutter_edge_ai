@@ -47,13 +47,13 @@ Depend on both packages (`flutter_edge_ai: ^2.5.4`,
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
-**The model catalog (1.19.0).** Every LiteRT build this package offers is
+**The model catalog.** Every LiteRT build this package offers is
 listed as `LiteRtLmModels` (language models) and `LiteRtEmbedders`, each pinned
 to a Hugging Face commit with its size and install file name, and installs by
 name with its model type and file type:
 
 ```dart
-await FlutterEdgeAi.installFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
+await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
     .withProgress((percent) => print('downloading: $percent%'))
     .install();
 ```

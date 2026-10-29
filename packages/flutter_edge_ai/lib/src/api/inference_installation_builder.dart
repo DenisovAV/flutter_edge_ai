@@ -1,4 +1,4 @@
-import 'package:flutter_edge_ai/src/api/install_verification.dart';
+import 'package:flutter_edge_ai/src/api/install_expectations.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/model_management/model_activation.dart';
@@ -7,6 +7,7 @@ import 'package:flutter_edge_ai/src/model_management/install_rule.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
+import 'package:meta/meta.dart' show internal;
 
 /// Fluent builder for inference model installation
 ///
@@ -28,6 +29,15 @@ class InferenceInstallationBuilder {
 
   ModelSource? _modelSource;
   ModelSource? _loraSource;
+
+  /// The name the network file is installed under (`fromNetwork(filename:)`).
+  String? _filename;
+
+  /// What the network file must be once installed.
+  FileExpectation _expected = const FileExpectation();
+
+  /// The catalog variant this builder installs (`installModelFromCatalog`).
+  InferenceVariant? _catalogVariant;
   void Function(int progress)? _onProgress;
   CancelToken? _cancelToken;
 
@@ -58,16 +68,30 @@ class InferenceInstallationBuilder {
   ///     notification, and the platform needs one before it starts the service
   ///   - true: always use foreground
   ///   - false: never use foreground
+  /// - [filename]: the name the file is installed under instead of the URL's
+  ///   file name, with the same extension. `isModelInstalled`,
+  ///   `getModelPath` and `uninstallModel` then take this name.
+  /// - [expectedSize] / [expectedSha256]: what the file must be once
+  ///   downloaded. It is checked before the model becomes active (not on the
+  ///   web, where the browser keeps the file); a file that differs stays
+  ///   installed, is not made active, and [install] throws
+  ///   [ModelValidationException]. The sha256 is computed over the whole
+  ///   file, which takes a while for a large model.
   InferenceInstallationBuilder fromNetwork(
     String url, {
     String? token,
     bool? foreground,
+    String? filename,
+    int? expectedSize,
+    String? expectedSha256,
   }) {
     _modelSource = ModelSource.network(
       url,
       authToken: token,
       foreground: foreground,
     );
+    _filename = filename;
+    _expected = FileExpectation(size: expectedSize, sha256: expectedSha256);
     _hfRepo = null; // an explicit source cancels a pending deferred-HF resolve
     return this;
   }
@@ -78,6 +102,7 @@ class InferenceInstallationBuilder {
   /// Handles 'assets/' prefix automatically.
   InferenceInstallationBuilder fromAsset(String path) {
     _modelSource = ModelSource.asset(path);
+    _clearNetworkOptions();
     _hfRepo = null;
     return this;
   }
@@ -90,6 +115,7 @@ class InferenceInstallationBuilder {
   /// - Web: /assets/{resourceName}
   InferenceInstallationBuilder fromBundled(String resourceName) {
     _modelSource = ModelSource.bundled(resourceName);
+    _clearNetworkOptions();
     _hfRepo = null;
     return this;
   }
@@ -100,8 +126,14 @@ class InferenceInstallationBuilder {
   /// Use case: User-provided models via file picker
   InferenceInstallationBuilder fromFile(String path) {
     _modelSource = ModelSource.file(path);
+    _clearNetworkOptions();
     _hfRepo = null;
     return this;
+  }
+
+  void _clearNetworkOptions() {
+    _filename = null;
+    _expected = const FileExpectation();
   }
 
   /// Set model source from a Hugging Face repo. Two modes:
@@ -287,6 +319,7 @@ class InferenceInstallationBuilder {
   Future<InferenceInstallation> install({bool activate = true}) async {
     // Check cancellation before starting
     _cancelToken?.throwIfCancelled();
+    if (_catalogVariant case final variant?) checkCatalogVariant(variant);
 
     // Runtime defaults / notes / model family resolved from a Hugging Face
     // manifest (deferred `fromHuggingFace(repo)`). Null/empty for every non-HF
@@ -391,7 +424,6 @@ class InferenceInstallationBuilder {
       );
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
       if (activate) {
-        await verifyBeforeActivation[this]?.call(spec);
         await activateInstalledModel(manager, spec);
       }
       edgeAiLog(
@@ -429,7 +461,6 @@ class InferenceInstallationBuilder {
       );
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
       if (activate) {
-        await verifyBeforeActivation[this]?.call(spec);
         await activateInstalledModel(manager, spec);
       }
       edgeAiLog(
@@ -445,7 +476,10 @@ class InferenceInstallationBuilder {
     }
 
     // Create spec
-    final modelFile = InferenceModelFile.fromSource(source);
+    final filename = _filename;
+    final modelFile = filename == null
+        ? InferenceModelFile.fromSource(source)
+        : InferenceModelFile(source: source, filename: filename);
     final spec = InferenceModelSpec(
       name: FileNameUtils.getBaseName(modelFile.filename),
       modelSource: source,
@@ -453,6 +487,7 @@ class InferenceInstallationBuilder {
       replacePolicy: ModelReplacePolicy.keep,
       modelType: resolvedModelType ?? _modelType,
       fileType: _fileType,
+      filename: filename,
     );
 
     // The model, then its LoRA, each by its own record (see install_rule.dart).
@@ -465,8 +500,13 @@ class InferenceInstallationBuilder {
 
     // AUTO-SET as active inference model (even if already installed)
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    // A cancel that lands after the last download still stops the install
+    // before the file is checked and made active.
+    _cancelToken?.throwIfCancelled();
+    await verifyInstalledFiles(spec, {
+      spec.files.first.filename: _expected,
+    }, active: manager.activeInferenceModel);
     if (activate) {
-      await verifyBeforeActivation[this]?.call(spec);
       await activateInstalledModel(manager, spec);
       await release.run(manager, spec);
     }
@@ -657,7 +697,6 @@ class InferenceInstallationBuilder {
 
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     if (activate) {
-      await verifyBeforeActivation[this]?.call(spec);
       await activateInstalledModel(manager, spec);
       await release.run(manager, spec);
     }
@@ -709,4 +748,28 @@ class InferenceInstallation {
 
   /// Whether LoRA weights were installed
   bool get hasLora => spec.loraSource != null;
+}
+
+/// The builder `FlutterEdgeAi.installModelFromCatalog` returns: the variant's
+/// model and file type, its pinned URL, install name and size.
+@internal
+InferenceInstallationBuilder inferenceBuilderFromCatalog(
+  InferenceVariant variant, {
+  String? token,
+  bool? foreground,
+}) {
+  final builder = InferenceInstallationBuilder(
+    modelType: variant.modelType,
+    fileType: variant.fileType,
+  ).._catalogVariant = variant;
+  if (variant.file case final file?) {
+    builder.fromNetwork(
+      file.url,
+      token: token,
+      foreground: foreground,
+      filename: file.installFilename,
+      expectedSize: file.sizeBytes,
+    );
+  }
+  return builder;
 }

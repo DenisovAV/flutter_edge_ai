@@ -77,15 +77,13 @@ class _TranslateScreenState extends State<TranslateScreen> {
         token = await AuthTokenService.loadToken();
       }
 
-      var install =
-          FlutterEdgeAi.installFromCatalog(
-            widget.model.catalogVariant,
-          ).withProgress((percent) {
-            if (!mounted) return;
-            setState(() => _downloadPercent = percent);
-          });
-      if (token != null) install = install.withToken(token);
-      await install.install();
+      await FlutterEdgeAi.installModelFromCatalog(
+        widget.model.catalogVariant,
+        token: token,
+      ).withProgress((percent) {
+        if (!mounted) return;
+        setState(() => _downloadPercent = percent);
+      }).install();
 
       if (kDebugMode) {
         debugPrint('[TranslateScreen] Model installed, getting active…');

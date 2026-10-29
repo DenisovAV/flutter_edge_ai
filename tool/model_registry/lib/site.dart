@@ -643,7 +643,7 @@ String registryPage(SiteInputs inputs, List<Entry> entries) {
     ..writeln()
     ..writeln('```dart')
     ..writeln(
-      'await FlutterEdgeAi.installFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)'
+      'await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)'
       '.install();',
     )
     ..writeln('```')

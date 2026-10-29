@@ -31,11 +31,23 @@ class ModelDownloadException extends ModelException {
   }
 }
 
-/// Exception thrown when model file validation fails
+/// An installed model file is not what it should be: smaller than a model
+/// can be, or not the size or sha256 the install asked for
+/// (`expectedSize` / `expectedSha256` on the builders, and every
+/// `fromCatalog` install). A file that fails the check stays installed and is
+/// not made active.
 class ModelValidationException extends ModelException {
+  /// The file checked.
   final String? filePath;
+
+  /// Its size in bytes.
   final int? actualSize;
+
+  /// The least size a model file can have, when that is what failed.
   final int? expectedMinSize;
+
+  /// The exact size the install expected, when that is what failed.
+  final int? expectedSize;
 
   const ModelValidationException(
     super.message, [
@@ -43,7 +55,17 @@ class ModelValidationException extends ModelException {
     this.filePath,
     this.actualSize,
     this.expectedMinSize,
-  ]);
+  ]) : expectedSize = null;
+
+  /// [filePath] is not the file the install expected: [actualSize] bytes
+  /// where [expectedSize] were expected, or (with [expectedSize] null) a
+  /// sha256 other than the expected one, which [message] names.
+  const ModelValidationException.mismatch(
+    super.message, {
+    this.filePath,
+    this.actualSize,
+    this.expectedSize,
+  }) : expectedMinSize = null;
 
   @override
   String toString() {
@@ -51,6 +73,9 @@ class ModelValidationException extends ModelException {
     if (actualSize != null && expectedMinSize != null) {
       details +=
           ' (size: $actualSize bytes, expected: >=$expectedMinSize bytes)';
+    }
+    if (actualSize != null && expectedSize != null) {
+      details += ' (size: $actualSize bytes, expected: $expectedSize bytes)';
     }
     return 'ModelValidationException: $message ($details)${cause != null ? ' (caused by: $cause)' : ''}';
   }

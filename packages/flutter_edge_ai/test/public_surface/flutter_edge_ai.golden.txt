@@ -8,9 +8,6 @@ AssetSource class final
 BundledSource class final
 CancelToken class
 CanceledError class final
-CatalogInstallException class final
-CatalogInstallation class final
-CatalogInstallationBuilder class final
 CatalogModel class abstract base
 CatalogVariant class sealed
 CorruptionAction enum
@@ -101,6 +98,7 @@ ModelSpec class abstract
 ModelStorageException class
 ModelThinkingFilter class
 ModelType enum
+ModelValidationException class
 MultimodalImageHandler class
 MultimodalImageResult class
 MultimodalOrder class final

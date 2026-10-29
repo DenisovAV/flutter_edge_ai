@@ -1019,7 +1019,7 @@
       "webUrl": null,
       "desktopUrl": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm",
       "hfRepo": null,
-      "filename": "model.litertlm",
+      "filename": "phi-4-mini-reasoning.litertlm",
       "localModel": false,
       "needsAuth": false,
       "modelType": "phi",
@@ -1039,11 +1039,11 @@
         "linux": "https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm"
       },
       "installedId": {
-        "android": "model.litertlm",
-        "iOS": "model.litertlm",
-        "macOS": "model.litertlm",
-        "windows": "model.litertlm",
-        "linux": "model.litertlm"
+        "android": "phi-4-mini-reasoning.litertlm",
+        "iOS": "phi-4-mini-reasoning.litertlm",
+        "macOS": "phi-4-mini-reasoning.litertlm",
+        "windows": "phi-4-mini-reasoning.litertlm",
+        "linux": "phi-4-mini-reasoning.litertlm"
       },
       "preferredBackend": {
         "android": "gpu",

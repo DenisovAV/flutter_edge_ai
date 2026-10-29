@@ -82,7 +82,7 @@ await FlutterEdgeAi.initialize(
   huggingFaceToken: hfToken.isEmpty ? null : hfToken,
 );
 // The registry build: commit 29888fce, revision-qualified file names.
-await FlutterEdgeAi.installFromCatalog(LiteRtEmbedders.embeddinggemma300m.seq256)
+await FlutterEdgeAi.installEmbedder().fromCatalog(LiteRtEmbedders.embeddinggemma300m.seq256)
     .install();
 
 final rag = FlutterEdgeAiRag(

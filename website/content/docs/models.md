@@ -249,7 +249,7 @@ await FlutterEdgeAi.installModel(modelType: ModelType.phi)
 ## Supported models & platforms
 
 The LiteRT-LM (`.litertlm`) language models come from the
-[Model Registry](/docs/registry), the same files `installFromCatalog`
+[Model Registry](/docs/registry), the same files the catalog installs
 installs. A cell shows, per backend, the best that any build of the model has
 on that platform: 📝 documented to work, ⚪ the package runs it but no run has
 been recorded, ❌ known broken (✅ verified once runs are recorded). The
@@ -353,21 +353,24 @@ Prompt API — see [Built-in AI](/docs/builtin-ai).
 
 ### From the model catalog
 
-`flutter_edge_ai` 2.5.4 with `flutter_edge_ai_litertlm` 1.19.0 (and
-`flutter_edge_ai_speech` 0.5.12 for speech) installs a
-[Model Registry](/docs/registry) build by name. Each build carries its model
-type, file type, Hugging Face commit, file size and install file name, so
-there is no URL to copy and nothing to keep in step:
+`flutter_edge_ai` 2.5.5, with the `flutter_edge_ai_litertlm` and
+`flutter_edge_ai_speech` releases that ship the catalog, installs a
+[Model Registry](/docs/registry) build by name through the usual installers.
+Each build carries its model type, file type, Hugging Face commit, file size
+and install file name, so there is no URL to copy and nothing to keep in step:
 
 ```dart
-// A language model, an embedder, a speech model: the same call.
-await FlutterEdgeAi.installFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
+// A language model, an embedder, a speech model.
+await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
     .withProgress((percent) => print('downloading: $percent%'))
     .install();
-await FlutterEdgeAi.installFromCatalog(LiteRtEmbedders.embeddinggemma300m.seq256)
-    .withToken(huggingFaceToken) // the repository is gated
+await FlutterEdgeAi.installEmbedder()
+    .fromCatalog(
+      LiteRtEmbedders.embeddinggemma300m.seq256,
+      token: huggingFaceToken, // the repository is gated
+    )
     .install();
-await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.whisperTiny.f32)
+await FlutterEdgeAi.installStt().fromCatalog(LiteRtSpeechModels.whisperTiny.f32)
     .install();
 
 // Every model the registered packages offer, and the build for this device.
@@ -381,17 +384,22 @@ for (final model in FlutterEdgeAi.catalog.models) {
 another NPU, a web export on a phone. A build compiled for an NPU is picked
 only for the SoC the app names (`variantFor(backend: PreferredBackend.npu,
 npu: …)`; without `npu:` it throws), because the package does not read the
-device's SoC. `installFromCatalog` refuses a build this device cannot run
-before it downloads anything. A build compiled for an NPU names the context it
-was compiled for (`requiredMaxTokens`); keep `maxTokens` at or below it. After
-the download, and before the model becomes active, each file's size is checked
-against the registry. `install(activate: false)` installs without making the
-model active. A LoRA is not installed through the catalog.
+device's SoC. An install from the catalog refuses a build this device cannot
+run before it downloads anything. A build compiled for an NPU names the
+context it was compiled for (`requiredMaxTokens`); keep `maxTokens` at or
+below it. After the download, and before the model becomes active, each
+file's size is checked against the registry: a file of another size stays
+installed, is not made active, and `install()` throws
+`ModelValidationException`. `withProgress` weights the files by their pinned
+sizes. An LLM is installed under the registry's install name (for example
+`phi-4-mini-reasoning.litertlm`), which `isModelInstalled`, `getModelPath` and
+`uninstallModel` take. `install(activate: false)` installs an LLM without
+making it active. A LoRA is not installed through the catalog.
 
 The catalog pins every file to a Hugging Face commit. A model installed
 earlier from a `/resolve/main/` URL is a different source, so its first
-`installFromCatalog` downloads the file again (once); later installs from the
-catalog find it installed.
+install from the catalog downloads the file again (once); later installs from
+the catalog find it installed.
 
 ### From a URL, an asset or a file
 

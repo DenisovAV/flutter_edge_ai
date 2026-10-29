@@ -170,6 +170,10 @@ class WebModelManager extends ModelFileManager
       loraSource: loraSource,
       modelType: modelType,
       fileType: fileType,
+      // The name it was installed under: `fromNetwork(filename:)` keeps the
+      // file under a name other than the URL's, and the install is recorded
+      // by that name.
+      filename: filename,
     );
     edgeAiLog('[WebModelManager] restored active inference model: $filename');
   }

@@ -694,22 +694,34 @@ void _checkVariant(
       final tokenizer = c.need<Map<String, Object?>>(where, v, 'tokenizer');
       if (tokenizer != null) _checkArtifact(c, '$where.tokenizer', tokenizer);
   }
-  // Core installs an LLM's file and an STT model's two files under their
-  // URL's file name, whatever the catalog says: a different install name
-  // would be found only after the download.
-  if (kind == 'llm' || kind == 'stt') {
-    for (final key in ['file', if (kind == 'stt') 'tokenizer']) {
+  // Core installs an STT model's two files under their URL's file name,
+  // whatever the catalog says: a different install name would be found only
+  // after the download. An LLM is installed under the catalog's name, which
+  // keeps the file's extension (the engines read it).
+  if (kind == 'stt') {
+    for (final key in ['file', 'tokenizer']) {
       if (v[key] case {
         'path': final String path,
         'install_filename': final String name,
       } when name != p.posix.basename(path)) {
         c.error(
           '$where.$key.install_filename',
-          '"$name": core installs ${kind == 'llm' ? 'an LLM' : 'an STT model'} '
-              'under its URL\'s file name, '
+          '"$name": core installs an STT model under its URL\'s file name, '
               '"${p.posix.basename(path)}"',
         );
       }
+    }
+  }
+  if (kind == 'llm') {
+    if (v['file'] case {
+      'path': final String path,
+      'install_filename': final String name,
+    } when p.posix.extension(name) != p.posix.extension(path)) {
+      c.error(
+        '$where.file.install_filename',
+        '"$name": an LLM keeps its file\'s extension, '
+            '"${p.posix.extension(path)}"',
+      );
     }
   }
 }

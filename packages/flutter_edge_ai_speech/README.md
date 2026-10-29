@@ -45,7 +45,7 @@ await FlutterEdgeAi.initialize(
 
 // Text-to-speech (Matcha): install the registry's bundle once (pinned to a
 // Hugging Face commit), then synthesize.
-await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.matchaTts.bundle)
+await FlutterEdgeAi.installTts().fromCatalog(LiteRtSpeechModels.matchaTts.bundle)
     .install();
 
 final synth = await FlutterEdgeAi.getActiveTts();
@@ -69,14 +69,14 @@ A voice can also ship with the app: `fromAsset(directory)` and
 Speech-to-text installs a model and a tokenizer; a catalog build carries both:
 
 ```dart
-await FlutterEdgeAi.installFromCatalog(LiteRtSpeechModels.whisperTiny.f32)
+await FlutterEdgeAi.installStt().fromCatalog(LiteRtSpeechModels.whisperTiny.f32)
     .install();
 ```
 
-`LiteRtSpeechModels` (0.5.12, with `flutter_edge_ai` 2.5.4 and
-`flutter_edge_ai_litertlm` 1.19.0) lists every speech-to-text and
-text-to-speech build, each pinned to a Hugging Face commit; `installStt()` and
-`installTts()` still install your own files. Every build, and where each has
+`LiteRtSpeechModels` (with `flutter_edge_ai` 2.5.5) lists every
+speech-to-text and text-to-speech build, each pinned to a Hugging Face commit;
+`installStt().fromCatalog(…)` and `installTts().fromCatalog(…)` install one,
+and their other sources still install your own files. Every build, and where each has
 been run: [Model Registry](https://flutteredge.ai/docs/registry).
 
 `transcribe` takes raw 16 kHz mono 16-bit little-endian PCM (`Uint8List`), not a

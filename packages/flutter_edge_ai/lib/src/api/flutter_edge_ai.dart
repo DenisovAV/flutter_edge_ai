@@ -46,7 +46,6 @@ import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
 import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
-import 'package:flutter_edge_ai/src/api/catalog_installation_builder.dart';
 import 'package:flutter_edge_ai/src/catalog/model_catalog.dart';
 import 'package:flutter_edge_ai/src/catalog/registered_catalog.dart';
 
@@ -356,7 +355,8 @@ class FlutterEdgeAi {
   /// catalog, so only models a registered package can run are listed. A model
   /// two packages offer is one model; the variants of the package registered
   /// first come first. Choose a variant with [CatalogModel.variantFor] and
-  /// install it with [installFromCatalog].
+  /// install it with [installModelFromCatalog] (an LLM) or `fromCatalog` on
+  /// [installEmbedder], [installStt] or [installTts].
   ///
   /// Throws [StateError] before [initialize] and after [dispose], and when
   /// two packages offer the same variant id.
@@ -371,21 +371,43 @@ class FlutterEdgeAi {
     ]);
   }
 
-  /// Installs [variant] through the installer of its kind, with the model
-  /// type, file type, file names and profile the catalog records.
+  /// An installation builder for the LLM [variant]: its model type and file
+  /// type, its pinned URL, the name the file is installed under and its
+  /// size, which is checked before the model becomes active.
+  ///
+  /// [token] is used for the download; without it, the token passed to
+  /// [initialize] is used for huggingface.co. [foreground] is
+  /// `InferenceInstallationBuilder.fromNetwork(foreground:)`.
+  ///
+  /// `install()` throws [UnsupportedError], before anything downloads, for a
+  /// variant whose [CatalogVariant.backendsHere] is empty (its package does
+  /// not run it in this runtime) and for one with no file (a model the
+  /// operating system provides).
+  ///
+  /// The catalog pins each file to a revision: a model installed earlier
+  /// from a `/resolve/main/` URL is another source, and its first install
+  /// from the catalog downloads the file again.
   ///
   /// ```dart
   /// final variant = FlutterEdgeAi.catalog
   ///     .byId('gemma-4-e2b-it')!
   ///     .variantFor(backend: PreferredBackend.gpu)! as InferenceVariant;
-  /// await FlutterEdgeAi.installFromCatalog(variant).install();
+  /// await FlutterEdgeAi.installModelFromCatalog(variant)
+  ///     .withProgress((p) => print('$p%'))
+  ///     .install();
   /// final model = await FlutterEdgeAi.getActiveModel(
   ///   defaults: variant.runtimeDefaults,
   /// );
   /// ```
-  static CatalogInstallationBuilder installFromCatalog(
-    CatalogVariant variant,
-  ) => CatalogInstallationBuilder(variant);
+  static InferenceInstallationBuilder installModelFromCatalog(
+    InferenceVariant variant, {
+    String? token,
+    bool? foreground,
+  }) => inferenceBuilderFromCatalog(
+    variant,
+    token: token,
+    foreground: foreground,
+  );
 
   /// Check if a model is installed
   ///

@@ -11,7 +11,7 @@ meta:
 Every LiteRT build the packages run, each pinned to a Hugging Face commit, and for every platform and backend what is known about it. The same data is in [models.json](/models.json). Install a build by name, with no URL to copy:
 
 ```dart
-await FlutterEdgeAi.installFromCatalog(LiteRtLmModels.gemma4E2bIt.generic).install();
+await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic).install();
 ```
 
 | Mark | Meaning |

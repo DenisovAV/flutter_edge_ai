@@ -1,5 +1,5 @@
 // On-device STT integration test — installs the registry's moonshine-tiny f32
-// build (installFromCatalog, pinned to its Hugging Face commit) and transcribes
+// build (installStt().fromCatalog, pinned to its Hugging Face commit) and transcribes
 // the bundled clip through the public API (getActiveStt -> transcribe). Runs on
 // every native target (macOS/iOS/Android/desktop). Web is not covered — the STT
 // web arm is a stub. A pass prints the registry evidence line.
@@ -48,7 +48,7 @@ void main() {
           .ofType(SttModelType.moonshine)
           .install();
     } else {
-      await FlutterEdgeAi.installFromCatalog(variant).install();
+      await FlutterEdgeAi.installStt().fromCatalog(variant).install();
     }
 
     final recognizer = await FlutterEdgeAi.getActiveStt();

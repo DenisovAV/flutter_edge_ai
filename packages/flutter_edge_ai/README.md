@@ -292,9 +292,9 @@ Installing a name again from another source replaces it; core never deletes a
 file you installed with `fromFile`.
 
 ```dart
-// A build from the model catalog (2.5.4): model type, file type and a
-// commit-pinned URL come with it.
-await FlutterEdgeAi.installFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
+// A build from the model catalog (2.5.5): model type, file type, a
+// commit-pinned URL, its install name and size come with it.
+await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
     .withProgress((progress) => print('Downloading: $progress%'))
     .install();
 

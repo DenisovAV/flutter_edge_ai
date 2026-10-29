@@ -1746,7 +1746,7 @@ const _phi4MiniReasoning$generic = LiteRtLmVariant._(
     path: 'model.litertlm',
     sha256: 'd507262ca3d01d93d59c573a82e6f2eeb3aec21d9a67c31fb4c0f93d17225b8f',
     sizeBytes: 2784187376,
-    installFilename: 'model.litertlm',
+    installFilename: 'phi-4-mini-reasoning.litertlm',
   ),
   modelType: ModelType.phi,
   runtimeDefaults: ModelRuntimeDefaults(

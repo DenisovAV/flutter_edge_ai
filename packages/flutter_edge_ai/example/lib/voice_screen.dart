@@ -115,15 +115,13 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading speech model';
         _downloadPercent = null;
       });
-      var sttInstall =
-          FlutterEdgeAi.installFromCatalog(
-            widget.sttModel.catalogVariant,
-          ).withProgress((percent) {
+      await FlutterEdgeAi.installStt()
+          .fromCatalog(widget.sttModel.catalogVariant, token: sttToken)
+          .withProgress((percent) {
             if (!mounted) return;
             setState(() => _downloadPercent = percent);
-          });
-      if (sttToken != null) sttInstall = sttInstall.withToken(sttToken);
-      await sttInstall.install();
+          })
+          .install();
       recognizer = await FlutterEdgeAi.getActiveStt();
 
       // --- TTS ---
@@ -135,12 +133,13 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading voice model';
         _downloadPercent = null;
       });
-      await FlutterEdgeAi.installFromCatalog(
-        widget.ttsModel.catalogVariant,
-      ).withProgress((percent) {
-        if (!mounted) return;
-        setState(() => _downloadPercent = percent);
-      }).install();
+      await FlutterEdgeAi.installTts()
+          .fromCatalog(widget.ttsModel.catalogVariant)
+          .withProgress((percent) {
+            if (!mounted) return;
+            setState(() => _downloadPercent = percent);
+          })
+          .install();
       synth = await FlutterEdgeAi.getActiveTts();
 
       // --- LLM (no tools — see class doc) ---
@@ -162,11 +161,10 @@ class _VoiceScreenState extends State<VoiceScreen> {
       }
 
       if (widget.llmModel.catalogVariant case final variant?) {
-        var llmInstall = FlutterEdgeAi.installFromCatalog(
+        await FlutterEdgeAi.installModelFromCatalog(
           variant,
-        ).withProgress(onLlmProgress);
-        if (llmToken != null) llmInstall = llmInstall.withToken(llmToken);
-        await llmInstall.install();
+          token: llmToken,
+        ).withProgress(onLlmProgress).install();
       } else {
         await FlutterEdgeAi.installModel(
               modelType: widget.llmModel.modelType,

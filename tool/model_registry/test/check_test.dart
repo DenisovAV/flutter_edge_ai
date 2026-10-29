@@ -332,15 +332,14 @@ void main() {
       );
     }
     fails(
-      'an LLM install name that is not its file name',
+      'an LLM install name with another extension',
       [
         _with(
           _llm(),
-          (e) => (_variant(e, 0)['file'] as Map)['install_filename'] =
-              'x.litertlm',
+          (e) => (_variant(e, 0)['file'] as Map)['install_filename'] = 'x.task',
         ),
       ],
-      'core installs an LLM under its URL\'s file name',
+      'an LLM keeps its file\'s extension',
       extraFiles: _llmFacts(),
     );
     fails('an STT tokenizer install name that is not its file name', [

@@ -158,11 +158,6 @@ export 'src/api/stt_installation_builder.dart'
     show SttInstallation, SttInstallationBuilder;
 export 'src/api/tts_installation_builder.dart'
     show TtsInstallation, TtsInstallationBuilder;
-export 'src/api/catalog_installation_builder.dart'
-    show
-        CatalogInstallation,
-        CatalogInstallationBuilder,
-        CatalogInstallException;
 
 // Model catalog: the models the registered packages offer, pinned files.
 export 'src/catalog/model_artifact.dart' show ModelArtifact;
@@ -218,7 +213,8 @@ export 'src/model_management/model_specs.dart'
         // Model management types
         ModelManagementType,
         // Exceptions
-        ModelStorageException;
+        ModelStorageException,
+        ModelValidationException;
 
 // Desktop implementation (conditionally — only on non-web platforms). The
 // pubspec's `dartPluginClass: FlutterEdgeAiDesktop` resolves through this

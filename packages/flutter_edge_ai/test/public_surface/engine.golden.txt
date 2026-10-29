@@ -8,9 +8,6 @@ AssetSource class final
 BundledSource class final
 CancelToken class
 CanceledError class final
-CatalogInstallException class final
-CatalogInstallation class final
-CatalogInstallationBuilder class final
 CatalogModel class abstract base
 CatalogVariant class sealed
 CloseNotifier mixin
@@ -112,6 +109,7 @@ ModelSpec class abstract
 ModelStorageException class
 ModelThinkingFilter class
 ModelType enum
+ModelValidationException class
 MultiModelEngine class abstract interface
 MultimodalImageHandler class
 MultimodalImageResult class

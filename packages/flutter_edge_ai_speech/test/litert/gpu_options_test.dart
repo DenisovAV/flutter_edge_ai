@@ -2,6 +2,7 @@
 // fakes of the three LiteRT calls: no native library is loaded. The fakes
 // read the payload the way LiteRT's GPU accelerator does (a NUL-terminated
 // TOML string) and free it where LiteRT would.
+import 'dart:convert';
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
@@ -15,6 +16,7 @@ import 'package:flutter_edge_ai_litertlm/litert_bindings.dart'
 import 'package:flutter_edge_ai_speech/src/litert/litert_graph.dart'
     show
         attachGpuOptions,
+        compiledModelFailureMessage,
         configureSpeechAcceleratorWith,
         liteRtGpuOptionsIdentifier,
         speechGpuOptionsToml;
@@ -31,6 +33,7 @@ class _FakeLiteRt {
   final calls = <String>[];
   String? identifier;
   String? payload;
+  int? terminatedAt;
   Pointer<NativeFinalizerFunction>? destructor;
   LiteRtOptions? addedTo;
   LiteRtOpaqueOptions? added;
@@ -48,6 +51,8 @@ class _FakeLiteRt {
     calls.add('create');
     identifier = id.toDartString();
     payload = data.cast<Utf8>().toDartString();
+    final length = utf8.encode(payload!).length;
+    terminatedAt = data.cast<Uint8>()[length] == 0 ? length : null;
     destructor = free;
     if (createStatus != 0) return createStatus;
     _ownedPayload = data;
@@ -81,6 +86,28 @@ class _FakeLiteRt {
   }
 }
 
+/// Allocates through [malloc], as the payload must be, but fills every block
+/// with 0xFF first (a missing NUL terminator then reads as garbage) and
+/// records what [attachGpuOptions] frees itself.
+class _RecordingAllocator implements Allocator {
+  final allocated = <int>[];
+  final freed = <int>[];
+
+  @override
+  Pointer<T> allocate<T extends NativeType>(int byteCount, {int? alignment}) {
+    final block = malloc.allocate<Uint8>(byteCount, alignment: alignment);
+    block.asTypedList(byteCount).fillRange(0, byteCount, 0xFF);
+    allocated.add(block.address);
+    return block.cast();
+  }
+
+  @override
+  void free(Pointer<NativeType> pointer) {
+    freed.add(pointer.address);
+    malloc.free(pointer);
+  }
+}
+
 final LiteRtOptions _options = Pointer.fromAddress(0x0b7);
 
 void main() {
@@ -92,14 +119,21 @@ void main() {
 
   test('attachGpuOptions hands LiteRT the gpu_options TOML and adds it', () {
     final fake = _FakeLiteRt();
+    final allocator = _RecordingAllocator();
     attachGpuOptions(
       _options,
       'precision = 2\n',
       create: fake.create,
       add: fake.add,
       destroy: fake.destroy,
+      allocator: allocator,
     );
     fake.release();
+
+    // NUL-terminated: the accelerator reads it as a C string.
+    expect(fake.terminatedAt, 'precision = 2\n'.length);
+    // LiteRT owns it now; freeing it here would be a double free.
+    expect(allocator.freed, isEmpty);
 
     expect(fake.calls, ['create', 'add']);
     expect(fake.identifier, liteRtGpuOptionsIdentifier);
@@ -111,8 +145,9 @@ void main() {
     expect(fake.destroyed, isNull);
   });
 
-  test('a failed create throws and never adds', () {
+  test('a failed create frees the payload, throws and never adds', () {
     final fake = _FakeLiteRt(createStatus: 1);
+    final allocator = _RecordingAllocator();
     expect(
       () => attachGpuOptions(
         _options,
@@ -120,6 +155,7 @@ void main() {
         create: fake.create,
         add: fake.add,
         destroy: fake.destroy,
+        allocator: allocator,
       ),
       throwsA(
         isA<StateError>().having(
@@ -130,10 +166,13 @@ void main() {
       ),
     );
     expect(fake.calls, ['create']);
+    // LiteRT never took it, so it is ours to free.
+    expect(allocator.freed, [allocator.allocated.single]);
   });
 
   test('a failed add destroys the options it created, then throws', () {
     final fake = _FakeLiteRt(addStatus: 1);
+    final allocator = _RecordingAllocator();
     expect(
       () => attachGpuOptions(
         _options,
@@ -141,6 +180,7 @@ void main() {
         create: fake.create,
         add: fake.add,
         destroy: fake.destroy,
+        allocator: allocator,
       ),
       throwsA(
         isA<StateError>().having(
@@ -152,6 +192,9 @@ void main() {
     );
     expect(fake.calls, ['create', 'add', 'destroy']);
     expect(fake.destroyed, fake.opaque);
+    // Destroying the options ran the payload's destructor; a second free here
+    // would be a double free.
+    expect(allocator.freed, isEmpty);
   });
 
   group('configureSpeechAcceleratorWith', () {
@@ -210,6 +253,33 @@ void main() {
         ),
       );
       expect(fake.calls, isEmpty);
+    });
+  });
+
+  group('compiledModelFailureMessage', () {
+    test('names the file and the status', () {
+      final message = compiledModelFailureMessage(
+        '/models/a.tflite',
+        kLiteRtHwAcceleratorCpu,
+        3,
+      );
+      expect(message, contains('/models/a.tflite'));
+      expect(message, contains('status=3'));
+      expect(message, isNot(contains('_i8')));
+    });
+
+    test('on the GPU it points an int8 file to the CPU', () {
+      final message = compiledModelFailureMessage(
+        '/models/parakeet_ctc_0.6b_5s_i8.tflite',
+        kLiteRtHwAcceleratorGpu,
+        3,
+      );
+      expect(message, contains('/models/parakeet_ctc_0.6b_5s_i8.tflite'));
+      expect(message, contains('status=3'));
+      expect(message, contains('int8'));
+      expect(message, contains('constant tensor sharing'));
+      expect(message, contains('PreferredBackend.cpu'));
+      expect(message, contains('LiteRT-LM#3685'));
     });
   });
 }

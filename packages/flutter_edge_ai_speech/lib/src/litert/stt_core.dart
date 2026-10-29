@@ -52,7 +52,11 @@ import '../model/stt_model_profile.dart';
 import '../tokenizer/stt_special_tokens.dart'
     show ResolvedSuppression, SttSpecialTokenResolver;
 import '../tokenizer/stt_tokenizer.dart' show SttTokenizer;
-import 'litert_graph.dart' show acceleratorFor, configureSpeechAccelerator;
+import 'litert_graph.dart'
+    show
+        acceleratorFor,
+        compiledModelFailureMessage,
+        configureSpeechAccelerator;
 import 'log_mel_frontend.dart' show computeLogMelSpectrogram, computeNemoLogMel;
 import 'mel_filter_assets.dart' show loadMelFilterAsset;
 
@@ -188,6 +192,25 @@ void applySuppression(
       if (id < logitsRow.length) logitsRow[id] = double.negativeInfinity;
     }
   }
+}
+
+/// One greedy seq2seq decode step over [rowLogits], a COPY of the decoder's
+/// output row: the argmax after [applySuppression], or null when the row holds
+/// a NaN anywhere.
+///
+/// A NaN means the backend produced invalid output (a GPU/accelerator failure,
+/// cf. #214, #747). The whole row is scanned, as [ctcGreedyDecode] scans a
+/// frame: [argmax]'s `>` skips a NaN away from the winner, and checking only
+/// the winner would let a row like that pass with a plausible token. It is
+/// scanned before suppression, which overwrites ids with -inf.
+int? greedyDecodeStep(
+  Float32List rowLogits, {
+  required int step,
+  required ResolvedSuppression? suppression,
+}) {
+  if (rowLogits.any((v) => v.isNaN)) return null;
+  applySuppression(rowLogits, step: step, suppression: suppression);
+  return argmax(rowLogits);
 }
 
 /// Build the decoder seed prompt for one transcription.
@@ -429,9 +452,22 @@ class SttCore {
       );
 
       final compiledPtr = calloc<LiteRtCompiledModel>();
-      bindings
-          .createCompiledModel(environment, model, options, compiledPtr)
-          .check('LiteRtCreateCompiledModel');
+      final status = bindings.createCompiledModel(
+        environment,
+        model,
+        options,
+        compiledPtr,
+      );
+      if (status != 0) {
+        calloc.free(compiledPtr);
+        throw StateError(
+          compiledModelFailureMessage(
+            modelPath,
+            acceleratorFor(backend),
+            status,
+          ),
+        );
+      }
       compiled = compiledPtr.value;
       calloc.free(compiledPtr);
 
@@ -851,18 +887,15 @@ class SttCore {
               row * vocabSize,
               (row + 1) * vocabSize,
             );
-            applySuppression(
+            final next = greedyDecodeStep(
               rowLogits,
               step: len - promptIds.length,
               suppression: _resolvedSuppression,
             );
-            bestId = argmax(rowLogits);
-            // A NaN top logit means the backend produced invalid output (e.g.
-            // a GPU/accelerator failure, cf. #214). argmax then collapses to
-            // id 0 (<unk>), which detokenizes to '' and would be returned as a
-            // "successful" empty transcript indistinguishable from a silent
-            // clip. Flag it here and fail loudly after cleanup instead.
-            nanLogit = rowLogits[bestId].isNaN;
+            // Flagged here and thrown after cleanup: the buffer is still
+            // locked.
+            nanLogit = next == null;
+            bestId = next ?? 0;
             _bindings
                 .unlockTensorBuffer(outBufPtr.value)
                 .check('LiteRtUnlockTensorBuffer(decode out)');

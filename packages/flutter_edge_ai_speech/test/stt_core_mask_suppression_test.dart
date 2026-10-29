@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_speech/src/litert/stt_core.dart'
-    show applySuppression, writeDecoderMask;
+    show applySuppression, greedyDecodeStep, writeDecoderMask;
 import 'package:flutter_edge_ai_speech/src/model/stt_model_profile.dart'
     show SttDecoderMaskConvention;
 import 'package:flutter_edge_ai_speech/src/tokenizer/stt_special_tokens.dart'
@@ -104,6 +104,37 @@ void main() {
         }
       }
       expect(bestIndex, isNot(1));
+    });
+  });
+
+  group('greedyDecodeStep (#747)', () {
+    test('a clean row returns the argmax', () {
+      final row = Float32List.fromList([0.1, 0.9, 0.3]);
+      expect(greedyDecodeStep(row, step: 0, suppression: null), 1);
+    });
+
+    test('a NaN away from the winner is caught, not skipped by argmax', () {
+      // argmax's `>` is NaN-blind: it would return 1 here.
+      final row = Float32List.fromList([0.1, 0.9, double.nan, 0.3]);
+      expect(greedyDecodeStep(row, step: 0, suppression: null), isNull);
+    });
+
+    test('a NaN in a slot suppression overwrites is still caught', () {
+      const suppression = ResolvedSuppression(
+        suppressAboveId: 1,
+        suppressAtStepZeroIds: {},
+      );
+      final row = Float32List.fromList([0.1, 0.9, double.nan, 5.0]);
+      expect(greedyDecodeStep(row, step: 3, suppression: suppression), isNull);
+    });
+
+    test('suppression applies before the argmax', () {
+      const suppression = ResolvedSuppression(
+        suppressAboveId: 1,
+        suppressAtStepZeroIds: {},
+      );
+      final row = Float32List.fromList([0.1, 0.9, 7.0, 5.0]);
+      expect(greedyDecodeStep(row, step: 3, suppression: suppression), 1);
     });
   });
 }

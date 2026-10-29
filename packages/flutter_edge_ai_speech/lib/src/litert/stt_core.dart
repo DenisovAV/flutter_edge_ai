@@ -52,7 +52,7 @@ import '../model/stt_model_profile.dart';
 import '../tokenizer/stt_special_tokens.dart'
     show ResolvedSuppression, SttSpecialTokenResolver;
 import '../tokenizer/stt_tokenizer.dart' show SttTokenizer;
-import 'litert_graph.dart' show acceleratorFor;
+import 'litert_graph.dart' show acceleratorFor, configureSpeechAccelerator;
 import 'log_mel_frontend.dart' show computeLogMelSpectrogram, computeNemoLogMel;
 import 'mel_filter_assets.dart' show loadMelFilterAsset;
 
@@ -421,9 +421,12 @@ class SttCore {
       bindings.createOptions(optsPtr).check('LiteRtCreateOptions');
       options = optsPtr.value;
       calloc.free(optsPtr);
-      bindings
-          .setOptionsHardwareAccelerators(options, acceleratorFor(backend))
-          .check('LiteRtSetOptionsHardwareAccelerators');
+      configureSpeechAccelerator(
+        bindings,
+        options,
+        acceleratorFor(backend),
+        context: modelPath,
+      );
 
       final compiledPtr = calloc<LiteRtCompiledModel>();
       bindings

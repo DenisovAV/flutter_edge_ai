@@ -19,6 +19,7 @@
 // parameter ([runLiteRtGraph]'s `signatureIndex`) — Matcha call sites keep
 // passing `0`.
 
+import 'dart:convert';
 import 'dart:ffi';
 import 'dart:typed_data';
 
@@ -38,6 +39,129 @@ int acceleratorFor(PreferredBackend? backend) => switch (backend) {
   PreferredBackend.npu => kLiteRtHwAcceleratorNpu,
   PreferredBackend.cpu || null => kLiteRtHwAcceleratorCpu,
 };
+
+/// LiteRT's `kLiteRtDelegatePrecisionFp32` (`litert_common.h`).
+const int liteRtDelegatePrecisionFp32 = 2;
+
+/// The `gpu_options` payload every speech graph is compiled with on the GPU.
+///
+/// fp32, because at the GPU accelerator's default (fp16) moonshine-tiny f32
+/// decodes NaN on Adreno 740 and parakeet-ctc NaN as well; at fp32 both
+/// transcribe as on the CPU (#747). Google's own ASR sample forces fp32 on the
+/// GPU for every model it ships.
+///
+/// No `enable_constant_tensors_sharing`: with it, a float32 EMBEDDING_LOOKUP
+/// (moonshine f32) aborts the process inside the accelerator
+/// (google-ai-edge/LiteRT-LM#3685). Without it the int8 files do not compile
+/// on the GPU, which fails the load with an error instead.
+const String speechGpuOptionsToml =
+    'precision = $liteRtDelegatePrecisionFp32\n';
+
+/// Identifier LiteRT's GPU accelerator looks its options up by.
+const String liteRtGpuOptionsIdentifier = 'gpu_options';
+
+/// `LiteRtBindings.createOpaqueOptions`'s Dart signature.
+typedef CreateOpaqueOptions =
+    int Function(
+      Pointer<Utf8>,
+      Pointer<Void>,
+      Pointer<NativeFinalizerFunction>,
+      Pointer<LiteRtOpaqueOptions>,
+    );
+
+/// `LiteRtBindings.addOpaqueOptions`'s Dart signature.
+typedef AddOpaqueOptions = int Function(LiteRtOptions, LiteRtOpaqueOptions);
+
+/// `LiteRtBindings.destroyOpaqueOptions`'s Dart signature.
+typedef DestroyOpaqueOptions = void Function(LiteRtOpaqueOptions);
+
+/// Appends a `gpu_options` payload holding [toml] to [options].
+///
+/// The three calls are parameters so a VM test can drive it without LiteRT.
+/// A failed call throws: a GPU graph compiled without these options runs at
+/// fp16 and returns NaN, so it is never compiled silently without them. The
+/// payload is freed on every path that does not hand it to LiteRT.
+void attachGpuOptions(
+  LiteRtOptions options,
+  String toml, {
+  required CreateOpaqueOptions create,
+  required AddOpaqueOptions add,
+  required DestroyOpaqueOptions destroy,
+}) {
+  final bytes = utf8.encode(toml);
+  final payload = malloc<Uint8>(bytes.length + 1);
+  payload.asTypedList(bytes.length + 1)
+    ..setAll(0, bytes)
+    ..[bytes.length] = 0;
+  final identifier = liteRtGpuOptionsIdentifier.toNativeUtf8();
+  final opaquePtr = calloc<LiteRtOpaqueOptions>();
+  try {
+    final created = create(
+      identifier,
+      payload.cast(),
+      malloc.nativeFree,
+      opaquePtr,
+    );
+    if (created != 0) {
+      malloc.free(payload);
+      created.check('LiteRtCreateOpaqueOptions($liteRtGpuOptionsIdentifier)');
+    }
+    final opaque = opaquePtr.value;
+    final added = add(options, opaque);
+    if (added != 0) {
+      destroy(opaque);
+      added.check('LiteRtAddOpaqueOptions($liteRtGpuOptionsIdentifier)');
+    }
+  } finally {
+    calloc.free(identifier);
+    calloc.free(opaquePtr);
+  }
+}
+
+/// Sets [accelerator] on [options] and, for the GPU, the speech GPU options
+/// ([speechGpuOptionsToml]). Every speech core compiles through this, so no
+/// graph reaches the GPU at its default precision. [context] names the graph
+/// in an error.
+void configureSpeechAccelerator(
+  LiteRtBindings bindings,
+  LiteRtOptions options,
+  int accelerator, {
+  required String context,
+}) => configureSpeechAcceleratorWith(
+  options,
+  accelerator,
+  context: context,
+  setAccelerators: bindings.setOptionsHardwareAccelerators,
+  create: bindings.createOpaqueOptions,
+  add: bindings.addOpaqueOptions,
+  destroy: bindings.destroyOpaqueOptions,
+);
+
+/// [configureSpeechAccelerator] over the four LiteRT calls it makes, so a VM
+/// test can check which accelerators get the GPU options.
+void configureSpeechAcceleratorWith(
+  LiteRtOptions options,
+  int accelerator, {
+  required String context,
+  required int Function(LiteRtOptions, int) setAccelerators,
+  required CreateOpaqueOptions create,
+  required AddOpaqueOptions add,
+  required DestroyOpaqueOptions destroy,
+}) {
+  setAccelerators(
+    options,
+    accelerator,
+  ).check('LiteRtSetOptionsHardwareAccelerators($context)');
+  if (accelerator == kLiteRtHwAcceleratorGpu) {
+    attachGpuOptions(
+      options,
+      speechGpuOptionsToml,
+      create: create,
+      add: add,
+      destroy: destroy,
+    );
+  }
+}
 
 /// Resolves [file] from the bundle's filename -> on-disk-path map, failing
 /// loud (named by [owner], e.g. `'TtsCore'`) when the bundle doesn't carry
@@ -110,9 +234,7 @@ LoadedGraph loadLiteRtGraph(
     bindings.createOptions(optsPtr).check('LiteRtCreateOptions($path)');
     options = optsPtr.value;
     calloc.free(optsPtr);
-    bindings
-        .setOptionsHardwareAccelerators(options, accelerator)
-        .check('LiteRtSetOptionsHardwareAccelerators($path)');
+    configureSpeechAccelerator(bindings, options, accelerator, context: path);
 
     final compiledPtr = calloc<LiteRtCompiledModel>();
     bindings

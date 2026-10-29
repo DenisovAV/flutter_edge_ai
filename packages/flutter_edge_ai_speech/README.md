@@ -82,6 +82,31 @@ WAV file. Each model has a fixed window — 5 s for moonshine and Parakeet, 30 s
 for Whisper; shorter audio is zero-padded and longer audio is silently
 truncated.
 
+### Speech-to-text models on phones
+
+Measured on a Galaxy S23 (Snapdragon 8 Gen 2, Adreno 740, 8 GB), one 5 s
+window ([#747](https://github.com/DenisovAV/flutter_edge_ai/issues/747)):
+
+| File | Backend | Per window | Anonymous memory |
+|------|---------|------------|--------|
+| `moonshine_tiny_5s_f32.tflite` | GPU | ~0.25 s | ~0.6 GB |
+| `moonshine_tiny_5s_f32.tflite` | CPU | ~0.8 s | ~0.35 GB |
+| `parakeet_ctc_0.6b_5s_i8.tflite` | CPU | ~1.4 s | ~0.8 GB |
+| `parakeet_ctc_0.6b_5s_f32.tflite` | CPU | ~2.4 s | ~2.4 GB |
+| `parakeet_ctc_0.6b_5s_f32.tflite` | GPU | does not load | — |
+
+- Parakeet f32 does not load on the GPU of an 8 GB phone: the system kills the
+  app during `getActiveStt`, before the first transcription. Use the int8 file
+  from the same repository, `parakeet_ctc_0.6b_5s_i8.tflite`, on the CPU: it
+  transcribes the same text as the f32 file.
+- On the GPU every speech graph is compiled at fp32. At the GPU's default fp16,
+  moonshine and Parakeet return NaN on Adreno; moonshine f32 at fp32 is about
+  three times faster than on the CPU.
+- The int8 (`_i8`) files do not run on the GPU yet: they compile there only with
+  constant tensor sharing, which crashes LiteRT on the f32 files
+  ([LiteRT-LM#3685](https://github.com/google-ai-edge/LiteRT-LM/issues/3685)).
+  Their load on the GPU fails with an error; run them on the CPU.
+
 ### Speech-to-text output language (Whisper)
 
 Whisper's shipped checkpoints are multilingual. The output language is one token

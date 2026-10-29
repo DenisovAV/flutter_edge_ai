@@ -45,6 +45,7 @@ void main() {
   Future<void> initialize({List<TtsBackendProvider> tts = const []}) async {
     await ServiceRegistry.initialize(downloadService: downloads);
     await FlutterEdgeAi.initialize(ttsBackends: tts);
+    await clearActiveModels();
   }
 
   group('FlutterEdgeAi.catalog', () {
@@ -67,6 +68,18 @@ void main() {
   });
 
   group('installModelFromCatalog', () {
+    test(
+      'progress holds at 99 until the model is checked and active',
+      () async {
+        await initialize();
+        final progress = <int>[];
+        await FlutterEdgeAi.installModelFromCatalog(
+          TestLlm('progress'),
+        ).withProgress(progress.add).install();
+        expect(progress, [50, 99, 100]);
+      },
+    );
+
     test('installs with the variant\'s model and file type', () async {
       await initialize();
       final variant = TestLlm(
@@ -163,16 +176,19 @@ void main() {
       },
     );
 
-    test('a wrong-size file over the active model\'s says so', () async {
+    test('an install over the active model\'s file is refused before it '
+        'downloads', () async {
       await initialize();
+      final manager = FlutterEdgeAiPlugin.instance.modelManager;
       await FlutterEdgeAi.installModelFromCatalog(TestLlm('shared')).install();
-      // Another revision of the same file name: core writes over the active
-      // model's file.
+      final downloaded = downloads.urls.length;
+      // Another revision of the same file name: core would write over the
+      // active model's file, and check it only afterwards.
       final other = ModelArtifact(
         repo: 'litert-community/tiny',
         revision: 'f' * 40,
         path: 'shared.litertlm',
-        sha256: 'aa',
+        sha256: sha64,
         sizeBytes: 123,
         installFilename: 'shared.litertlm',
       );
@@ -181,16 +197,17 @@ void main() {
           TestLlm('shared', file: other),
         ).install(),
         throwsA(
-          isA<ModelValidationException>().having(
+          isA<StateError>().having(
             (e) => e.message,
             'message',
-            allOf(
-              contains('replaced the file of the active model shared'),
-              isNot(contains('not made active')),
-            ),
+            contains('the active model shared reads'),
           ),
         ),
       );
+      expect(downloads.urls, hasLength(downloaded));
+      expect(manager.activeInferenceModel?.name, 'shared');
+      final path = await FlutterEdgeAi.getModelPath('shared.litertlm');
+      expect(await File(path).length(), _bytes.length);
     });
 
     test('it installs under the catalog\'s name, not the URL\'s', () async {
@@ -300,41 +317,230 @@ void main() {
   });
 
   group('checkInstalledFiles', () {
-    test('a file core has no path for throws, and so does no record', () async {
-      await initialize();
-      final installation = await FlutterEdgeAi.installModelFromCatalog(
-        TestLlm('pathless'),
-      ).install(activate: false);
-      final expected = {'pathless.litertlm': const FileExpectation(size: 1)};
+    late InferenceModelSpec spec;
+    late List<String> forgotten;
+    late List<String> hashed;
+
+    Future<void> check(
+      Map<String, FileExpectation> expected, {
+      Map<String, String>? paths,
+      Set<String> written = const {'pathless.litertlm'},
+      bool usePaths = true,
+    }) async {
       final fs = ServiceRegistry.instance.fileSystemService;
-      await expectLater(
-        checkInstalledFiles(
-          installation.spec,
-          expected,
-          paths: const {},
-          fileSystem: fs,
-        ),
-        throwsA(
-          isA<ModelValidationException>().having(
-            (e) => e.message,
-            'message',
-            contains('no file'),
+      await checkInstalledFiles(
+        spec,
+        expected,
+        paths: usePaths
+            ? paths ??
+                  await FlutterEdgeAiPlugin.instance.modelManager
+                      .getModelFilePaths(spec)
+            : null,
+        fileSystem: fs,
+        written: written,
+        forget: (file, _) async => forgotten.add(file.filename),
+        sha256Of: (path) async {
+          hashed.add(path);
+          return 'b' * 64;
+        },
+      );
+    }
+
+    setUp(() async {
+      forgotten = [];
+      hashed = [];
+    });
+
+    Future<void> install() async {
+      await initialize();
+      spec = (await FlutterEdgeAi.installModelFromCatalog(
+        TestLlm('pathless'),
+      ).install(activate: false)).spec;
+    }
+
+    test(
+      'a file core has no path for is a storage error, and is forgotten',
+      () async {
+        await install();
+        final expected = {'pathless.litertlm': const FileExpectation(size: 1)};
+        await expectLater(
+          check(expected, paths: const {}),
+          throwsA(
+            isA<ModelStorageException>().having(
+              (e) => e.message,
+              'message',
+              contains('no file'),
+            ),
           ),
+        );
+        await expectLater(
+          check(expected, usePaths: false),
+          throwsA(isA<ModelStorageException>()),
+        );
+        expect(forgotten, ['pathless.litertlm', 'pathless.litertlm']);
+      },
+    );
+
+    test('a sha256 mismatch names both values and forgets the file', () async {
+      await install();
+      await expectLater(
+        check({'pathless.litertlm': FileExpectation(sha256: 'c' * 64)}),
+        throwsA(
+          isA<ModelValidationException>()
+              .having((e) => e.expectedSha256, 'expected', 'c' * 64)
+              .having((e) => e.actualSha256, 'actual', 'b' * 64)
+              .having((e) => e.expectedSize, 'expectedSize', isNull),
         ),
       );
+      expect(forgotten, ['pathless.litertlm']);
+    });
+
+    test('a file this install did not write is not hashed', () async {
+      await install();
+      await check({
+        'pathless.litertlm': FileExpectation(sha256: 'c' * 64),
+      }, written: const {});
+      expect(hashed, isEmpty);
+      expect(forgotten, isEmpty);
+    });
+
+    test('an expectation for a file the spec does not have throws', () async {
+      await install();
       await expectLater(
-        checkInstalledFiles(
-          installation.spec,
-          expected,
-          paths: null,
-          fileSystem: fs,
-        ),
-        throwsA(isA<ModelValidationException>()),
+        check({'other.litertlm': const FileExpectation(size: 1)}),
+        throwsStateError,
       );
     });
   });
 
+  group('a builder re-pointed after fromCatalog', () {
+    final notRefusedForTheVariant = isNot(
+      predicate((e) => '$e'.contains('does not run here')),
+    );
+    final nowhere = <PreferredBackend>{};
+
+    test(
+      'inference: fromNetwork drops the variant, its name and size',
+      () async {
+        await initialize();
+        final installation = await FlutterEdgeAi.installModelFromCatalog(
+          TestLlm(
+            'cat',
+            backendsHere: nowhere,
+            file: artifact(
+              'm.litertlm',
+              size: 5,
+              installFilename: 'cat.litertlm',
+            ),
+          ),
+        ).fromNetwork('https://example.com/other.litertlm').install();
+        expect(installation.spec.files.single.filename, 'other.litertlm');
+      },
+    );
+
+    test('inference: a deferred fromHuggingFace drops the variant', () async {
+      await initialize();
+      await expectLater(
+        FlutterEdgeAi.installModelFromCatalog(
+          TestLlm('cat', backendsHere: nowhere),
+        ).fromHuggingFace('org/x').install(),
+        throwsA(notRefusedForTheVariant),
+      );
+    });
+
+    test('embedder: modelFromNetwork drops the variant', () async {
+      await initialize();
+      await FlutterEdgeAi.installEmbedder()
+          .fromCatalog(
+            TestEmbedder(
+              model: artifact('e.litertlm', size: 5),
+              backendsHere: nowhere,
+            ),
+          )
+          .modelFromNetwork('https://example.com/e2.litertlm')
+          .install();
+    });
+
+    test('STT: modelFromNetwork, or another type, drops the variant', () async {
+      await initialize();
+      await FlutterEdgeAi.installStt()
+          .fromCatalog(TestStt(backendsHere: nowhere))
+          .modelFromNetwork('https://example.com/tiny_stt.tflite')
+          .install();
+      await expectLater(
+        FlutterEdgeAi.installStt()
+            .fromCatalog(TestStt(backendsHere: nowhere))
+            .ofType(SttModelType.whisper)
+            .install(),
+        throwsA(notRefusedForTheVariant),
+      );
+    });
+  });
+
+  group('checkCatalogVariant', () {
+    for (final (what, file) in [
+      ('a branch', artifact('a.litertlm', revision: 'main')),
+      ('a short sha256', artifact('b.litertlm', sha: 'aa')),
+      ('no size', artifact('c.litertlm', size: 0)),
+      (
+        'a name with a colon',
+        artifact('d.litertlm', installFilename: 'd:x.litertlm'),
+      ),
+    ]) {
+      test('refuses $what before a download', () async {
+        await initialize();
+        await expectLater(
+          FlutterEdgeAi.installModelFromCatalog(
+            TestLlm('x', file: file),
+          ).install(),
+          throwsArgumentError,
+        );
+        expect(downloads.urls, isEmpty);
+      });
+    }
+  });
+
   group('installTts().fromCatalog', () {
+    test('a bundle over the active voice is refused before it downloads, and '
+        'the voice stays active', () async {
+      await initialize();
+      final manager = FlutterEdgeAiPlugin.instance.modelManager;
+      await FlutterEdgeAi.installTts().fromCatalog(TestTts()).install();
+      final downloaded = downloads.urls.length;
+      await expectLater(
+        FlutterEdgeAi.installTts()
+            .fromCatalog(TestTts(size: 123, revision: 'f' * 40))
+            .install(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('the active model matcha reads'),
+          ),
+        ),
+      );
+      expect(downloads.urls, hasLength(downloaded));
+      final active = manager.activeTtsModel;
+      expect(
+        active is TtsModelSpec && active.ttsModelType.name == 'matcha',
+        isTrue,
+      );
+    });
+
+    test(
+      'a variant listing other URLs than the install fetches is refused',
+      () async {
+        await initialize();
+        await expectLater(
+          FlutterEdgeAi.installTts()
+              .fromCatalog(TestTts(baseUrl: 'https://example.com/elsewhere/'))
+              .install(),
+          throwsArgumentError,
+        );
+        expect(downloads.urls, isEmpty);
+      },
+    );
+
     test('the wrong size never becomes the active voice', () async {
       await initialize();
       final manager = FlutterEdgeAiPlugin.instance.modelManager;

@@ -72,11 +72,14 @@ class InferenceInstallationBuilder {
   ///   file name, with the same extension. `isModelInstalled`,
   ///   `getModelPath` and `uninstallModel` then take this name.
   /// - [expectedSize] / [expectedSha256]: what the file must be once
-  ///   downloaded. It is checked before the model becomes active (not on the
-  ///   web, where the browser keeps the file); a file that differs stays
-  ///   installed, is not made active, and [install] throws
-  ///   [ModelValidationException]. The sha256 is computed over the whole
-  ///   file, which takes a while for a large model.
+  ///   downloaded. It is checked before the model becomes active; a file
+  ///   that differs is deleted with its record and [install] throws
+  ///   [ModelValidationException]. With either set, an install that would
+  ///   write over the active model's file throws [StateError] before it
+  ///   downloads. The sha256 is computed, on a worker isolate, only over a
+  ///   file this install downloaded; a negative size or a sha256 that is not
+  ///   64 hex digits throws [ArgumentError] here. On the web nothing is
+  ///   checked, and [expectedSha256] throws [UnsupportedError].
   InferenceInstallationBuilder fromNetwork(
     String url, {
     String? token,
@@ -85,14 +88,18 @@ class InferenceInstallationBuilder {
     int? expectedSize,
     String? expectedSha256,
   }) {
+    final expected = FileExpectation.checked(
+      size: expectedSize,
+      sha256: expectedSha256,
+    );
+    _clearSource();
     _modelSource = ModelSource.network(
       url,
       authToken: token,
       foreground: foreground,
     );
     _filename = filename;
-    _expected = FileExpectation(size: expectedSize, sha256: expectedSha256);
-    _hfRepo = null; // an explicit source cancels a pending deferred-HF resolve
+    _expected = expected;
     return this;
   }
 
@@ -101,9 +108,8 @@ class InferenceInstallationBuilder {
   /// Path should be relative to assets directory.
   /// Handles 'assets/' prefix automatically.
   InferenceInstallationBuilder fromAsset(String path) {
+    _clearSource();
     _modelSource = ModelSource.asset(path);
-    _clearNetworkOptions();
-    _hfRepo = null;
     return this;
   }
 
@@ -114,9 +120,8 @@ class InferenceInstallationBuilder {
   /// - iOS: Bundle.main.path(forResource:)
   /// - Web: /assets/{resourceName}
   InferenceInstallationBuilder fromBundled(String resourceName) {
+    _clearSource();
     _modelSource = ModelSource.bundled(resourceName);
-    _clearNetworkOptions();
-    _hfRepo = null;
     return this;
   }
 
@@ -125,15 +130,19 @@ class InferenceInstallationBuilder {
   /// File must exist at the specified absolute path.
   /// Use case: User-provided models via file picker
   InferenceInstallationBuilder fromFile(String path) {
+    _clearSource();
     _modelSource = ModelSource.file(path);
-    _clearNetworkOptions();
-    _hfRepo = null;
     return this;
   }
 
-  void _clearNetworkOptions() {
+  /// What a source setter replaces: the earlier source's install name,
+  /// expectations and catalog variant, and a pending deferred resolve (an
+  /// explicit source cancels it).
+  void _clearSource() {
     _filename = null;
     _expected = const FileExpectation();
+    _catalogVariant = null;
+    _hfRepo = null;
   }
 
   /// Set model source from a Hugging Face repo. Two modes:
@@ -205,6 +214,7 @@ class InferenceInstallationBuilder {
               'revision you want.',
         );
       }
+      _clearSource();
       _modelSource = null; // cancel any earlier explicit source
       _hfRepo = repo;
       _hfToken = token;
@@ -259,7 +269,8 @@ class InferenceInstallationBuilder {
 
   /// Add progress callback
   ///
-  /// Called periodically during installation with progress percentage (0-100).
+  /// Called periodically during installation with the model file's percent:
+  /// at most 99 until the file is checked and the model is active, then 100.
   InferenceInstallationBuilder withProgress(
     void Function(int progress) onProgress,
   ) {
@@ -491,25 +502,42 @@ class InferenceInstallationBuilder {
     );
 
     // The model, then its LoRA, each by its own record (see install_rule.dart).
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final expected = {spec.files.first.filename: _expected};
+    final steps = _keepingActiveModel(
+      await planInstall(spec.files),
+      activate: activate,
+    );
+    final activeBefore = manager.activeInferenceModel;
+    refuseReplacingActive(steps, expected, activeBefore);
+    // The model's percent, held at 99 until the model is checked and active.
+    final onProgress = _onProgress;
     final release = await installPlanned(
-      _keepingActiveModel(await planInstall(spec.files), activate: activate),
+      steps,
       modelType: repo.ModelType.inference,
       cancelToken: _cancelToken,
-      progress: [_onProgress],
+      progress: [
+        if (onProgress != null) (percent) => onProgress(percent.clamp(0, 99)),
+      ],
     );
 
     // AUTO-SET as active inference model (even if already installed)
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
     // A cancel that lands after the last download still stops the install
     // before the file is checked and made active.
     _cancelToken?.throwIfCancelled();
-    await verifyInstalledFiles(spec, {
-      spec.files.first.filename: _expected,
-    }, active: manager.activeInferenceModel);
+    await verifyInstalledFiles(
+      spec,
+      expected,
+      steps: steps,
+      active: activeBefore,
+      cancelToken: _cancelToken,
+    );
+    _cancelToken?.throwIfCancelled();
     if (activate) {
       await activateInstalledModel(manager, spec);
       await release.run(manager, spec);
     }
+    onProgress?.call(100);
 
     edgeAiLog(
       '✅ Inference model installed${activate ? ' and set as active' : ''}: '
@@ -761,7 +789,7 @@ InferenceInstallationBuilder inferenceBuilderFromCatalog(
   final builder = InferenceInstallationBuilder(
     modelType: variant.modelType,
     fileType: variant.fileType,
-  ).._catalogVariant = variant;
+  );
   if (variant.file case final file?) {
     builder.fromNetwork(
       file.url,
@@ -771,5 +799,5 @@ InferenceInstallationBuilder inferenceBuilderFromCatalog(
       expectedSize: file.sizeBytes,
     );
   }
-  return builder;
+  return builder.._catalogVariant = variant;
 }

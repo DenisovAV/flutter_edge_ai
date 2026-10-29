@@ -3,18 +3,52 @@
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
-    show TtsModelTypeManifest;
+    show TtsAbsoluteUrl, TtsModelTypeManifest, TtsRelativeSuffix;
 
 const rev = '0123456789abcdef0123456789abcdef01234567';
+
+/// A well-formed sha256 (64 hex digits) for a file no test hashes.
+const sha64 =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+/// The artifact [type]'s installer downloads for [name] under [base]: its own
+/// repo, or the absolute URL the type fetches it from (Inflect's G2P files).
+ModelArtifact ttsArtifact(
+  TtsModelType type,
+  String name, {
+  required int size,
+  String revision = rev,
+}) {
+  switch (type.fetchLocationFor(name)) {
+    case TtsAbsoluteUrl(:final url):
+      final parts = Uri.parse(url).pathSegments; // owner/repo/resolve/rev/…
+      return artifact(
+        parts.skip(4).join('/'),
+        size: size,
+        repo: '${parts[0]}/${parts[1]}',
+        revision: parts[3],
+        installFilename: name,
+      );
+    case TtsRelativeSuffix(:final suffix):
+      return artifact(
+        suffix,
+        size: size,
+        installFilename: name,
+        revision: revision,
+      );
+  }
+}
 
 ModelArtifact artifact(
   String path, {
   int size = 1024 * 1024 + 16,
   String? installFilename,
-  String sha = 'aa',
+  String sha = sha64,
+  String repo = 'litert-community/tiny',
+  String revision = rev,
 }) => ModelArtifact(
-  repo: 'litert-community/tiny',
-  revision: rev,
+  repo: repo,
+  revision: revision,
   path: path,
   sha256: sha,
   sizeBytes: size,
@@ -81,7 +115,11 @@ final class TestEmbedder extends EmbedderVariant {
     required this.model,
     this.tokenizer,
     this.ragProfileId = 'tiny-embedder-v1',
+    this.backendsHere = const {PreferredBackend.cpu},
   });
+
+  @override
+  final Set<PreferredBackend> backendsHere;
 
   @override
   final ModelArtifact model;
@@ -102,9 +140,6 @@ final class TestEmbedder extends EmbedderVariant {
   String get catalogName => 'test_catalog';
 
   @override
-  Set<PreferredBackend> get backendsHere => const {PreferredBackend.cpu};
-
-  @override
   int get dimension => 768;
 
   @override
@@ -120,8 +155,15 @@ final class TestTts extends TtsVariant {
     int size = 1024 * 1024 + 16,
     this.type = TtsModelType.matcha,
     bool dropLast = false,
-  }) : files = [for (final name in type.manifest) artifact(name, size: size)]
-         ..length -= dropLast ? 1 : 0;
+    this.revision = rev,
+    String? baseUrl,
+  }) : baseUrl =
+           baseUrl ??
+           'https://huggingface.co/litert-community/tiny/resolve/$revision/',
+       files = [
+         for (final name in type.manifest)
+           ttsArtifact(type, name, size: size, revision: revision),
+       ]..length -= dropLast ? 1 : 0;
 
   @override
   final List<ModelArtifact> files;
@@ -129,9 +171,11 @@ final class TestTts extends TtsVariant {
   @override
   final TtsModelType type;
 
+  /// The commit the bundle's own files are pinned to.
+  final String revision;
+
   @override
-  String get baseUrl =>
-      'https://huggingface.co/litert-community/tiny/resolve/$rev/';
+  final String baseUrl;
 
   @override
   String get id => 'tiny-tts/bundle';
@@ -147,13 +191,16 @@ final class TestTts extends TtsVariant {
 }
 
 final class TestStt extends SttVariant {
-  TestStt({int modelSize = 1024 * 1024 + 16, String? modelInstallFilename})
-    : model = artifact(
-        'tiny_stt.tflite',
-        size: modelSize,
-        installFilename: modelInstallFilename,
-      ),
-      tokenizer = artifact('tiny_stt_tokenizer.json');
+  TestStt({
+    int modelSize = 1024 * 1024 + 16,
+    String? modelInstallFilename,
+    this.backendsHere = const {PreferredBackend.cpu},
+  }) : model = artifact(
+         'tiny_stt.tflite',
+         size: modelSize,
+         installFilename: modelInstallFilename,
+       ),
+       tokenizer = artifact('tiny_stt_tokenizer.json');
 
   @override
   final ModelArtifact model;
@@ -174,7 +221,7 @@ final class TestStt extends SttVariant {
   String get catalogName => 'test_catalog';
 
   @override
-  Set<PreferredBackend> get backendsHere => const {PreferredBackend.cpu};
+  final Set<PreferredBackend> backendsHere;
 }
 
 final class TestModel extends CatalogModel {
@@ -218,4 +265,15 @@ final class TestSource implements ModelCatalogSource {
 
   @override
   final ModelCatalog modelCatalog;
+}
+
+/// The model manager is one per isolate, so a test would otherwise start
+/// with the active models an earlier test left (whose files went with its
+/// temporary directory).
+Future<void> clearActiveModels() async {
+  final manager = FlutterEdgeAiPlugin.instance.modelManager;
+  await manager.clearActiveInferenceIdentity();
+  await manager.clearActiveEmbeddingIdentity();
+  await manager.clearActiveSttIdentity();
+  await manager.clearActiveTtsIdentity();
 }

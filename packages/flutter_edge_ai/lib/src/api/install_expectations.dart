@@ -4,15 +4,48 @@ import 'package:flutter_edge_ai/src/api/file_sha256_io.dart'
     if (dart.library.js_interop) 'package:flutter_edge_ai/src/api/file_sha256_web.dart';
 import 'package:flutter_edge_ai/src/catalog/model_catalog.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
+import 'package:flutter_edge_ai/src/model_management/install_rule.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/services/file_system_service.dart';
+import 'package:flutter_edge_ai/src/utils/file_name_utils.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 
+final _sha256Hex = RegExp(r'^[0-9a-fA-F]{64}$');
+final _commit = RegExp(r'^[0-9a-f]{40}$');
+
 /// What an installed file should be: the `expectedSize` / `expectedSha256`
-/// an installation builder was given for it.
+/// an installation builder was given for it. `const FileExpectation()` is
+/// the empty one: nothing to check.
 final class FileExpectation {
-  /// An expectation; at least one of the two is set.
+  /// An expectation; see [FileExpectation.checked] for one from a caller.
   const FileExpectation({this.size, this.sha256});
+
+  /// [size] and [sha256] as a caller passed them, refused before anything
+  /// downloads when they cannot be right: a negative size, a sha256 that is
+  /// not 64 hex digits, or a sha256 on the web, which keeps no local file to
+  /// hash ([UnsupportedError]).
+  factory FileExpectation.checked({int? size, String? sha256}) {
+    if (size != null && size < 0) {
+      throw ArgumentError.value(size, 'expectedSize', 'must not be negative');
+    }
+    if (sha256 != null) {
+      if (!_sha256Hex.hasMatch(sha256)) {
+        throw ArgumentError.value(
+          sha256,
+          'expectedSha256',
+          'must be 64 hex digits',
+        );
+      }
+      if (kIsWeb) {
+        throw UnsupportedError(
+          'expectedSha256 is not checked on the web: the browser keeps the '
+          'file, and there is no local file to hash',
+        );
+      }
+    }
+    return FileExpectation(size: size, sha256: sha256?.toLowerCase());
+  }
 
   /// Bytes, exactly.
   final int? size;
@@ -24,76 +57,130 @@ final class FileExpectation {
   bool get isEmpty => size == null && sha256 == null;
 }
 
+/// Refuses, before anything is downloaded, an install with an expectation
+/// that would write over a file the [active] model of the same kind reads:
+/// were the file then not what was expected, the active model would be left
+/// reading it. Without an expectation the install replaces it as before.
+void refuseReplacingActive(
+  List<FileInstallStep> steps,
+  Map<String, FileExpectation> expected,
+  ModelSpec? active,
+) {
+  if (kIsWeb || active == null) return;
+  final activeNames = {for (final f in active.files) f.filename};
+  final replaced = [
+    for (final step in steps)
+      if (step.installs &&
+          activeNames.contains(step.file.filename) &&
+          !(expected[step.file.filename]?.isEmpty ?? true))
+        step.file.filename,
+  ];
+  if (replaced.isEmpty) return;
+  throw StateError(
+    'This install would write ${replaced.join(', ')} over the file the active '
+    'model ${active.name} reads, and checks it only afterwards. Uninstall '
+    '${active.name} first, or install under another file name.',
+  );
+}
+
 /// Checks the files of [spec] the install just wrote against [expected] (by
 /// file name), before the spec is made active. On the web, where the browser
-/// keeps the files, nothing is checked.
+/// keeps the files, nothing is checked. A sha256 is computed only for a file
+/// one of [steps] wrote; a file installed earlier gets the size check alone.
 ///
-/// Throws [ModelValidationException] for a file of another size or sha256:
-/// it stays installed and the spec is not made active. [active] is the model
-/// of the same kind active before this install; when the file shares its
-/// name, the message says that the active model's file was replaced.
+/// Throws [ModelValidationException] for a file of another size or sha256,
+/// after deleting the file and its record — the next install downloads it
+/// again — unless the [active] model of the same kind (read before the
+/// install) reads it: that file is left as it is. [cancelToken] stops a hash
+/// in progress.
 Future<void> verifyInstalledFiles(
   ModelSpec spec,
   Map<String, FileExpectation> expected, {
-  ModelSpec? active,
+  required List<FileInstallStep> steps,
+  required ModelSpec? active,
+  CancelToken? cancelToken,
 }) async {
   if (kIsWeb || expected.values.every((e) => e.isEmpty)) return;
   final manager = FlutterEdgeAiPlugin.instance.modelManager;
+  final registry = ServiceRegistry.instance;
   await checkInstalledFiles(
     spec,
     expected,
     paths: await manager.getModelFilePaths(spec),
-    fileSystem: ServiceRegistry.instance.fileSystemService,
-    active: active,
+    fileSystem: registry.fileSystemService,
+    written: {
+      for (final step in steps)
+        if (step.installs) step.file.filename,
+    },
+    keep: {...?active?.files.map((f) => f.filename)},
+    forget: (file, path) async {
+      if (path != null && await registry.fileSystemService.fileExists(path)) {
+        await registry.fileSystemService.deleteFile(path);
+      }
+      await registry.modelRepository.deleteModel(file.filename);
+    },
+    sha256Of: (path) => fileSha256(path, cancelToken: cancelToken),
   );
 }
 
 /// [verifyInstalledFiles] over given [paths] (core's paths by `prefsKey`,
-/// null when core reports the spec not installed).
+/// null when core reports the spec not installed). [forget] deletes a file
+/// that failed, with its record, unless [keep] names it.
 @visibleForTesting
 Future<void> checkInstalledFiles(
   ModelSpec spec,
   Map<String, FileExpectation> expected, {
   required Map<String, String>? paths,
   required FileSystemService fileSystem,
-  ModelSpec? active,
-  Future<String> Function(String path) sha256Of = fileSha256,
+  required Set<String> written,
+  required Future<void> Function(ModelFile file, String? path) forget,
+  required Future<String> Function(String path) sha256Of,
+  Set<String> keep = const {},
 }) async {
+  final names = {for (final file in spec.files) file.filename};
+  for (final MapEntry(key: name, value: expectation) in expected.entries) {
+    if (!expectation.isEmpty && !names.contains(name)) {
+      throw StateError('$name is expected, but ${spec.name} has no such file');
+    }
+  }
   for (final file in spec.files) {
     final expectation = expected[file.filename];
     if (expectation == null || expectation.isEmpty) continue;
     final path = paths?[file.prefsKey];
     if (path == null || !await fileSystem.fileExists(path)) {
-      throw ModelValidationException.mismatch(
+      if (!keep.contains(file.filename)) await forget(file, path);
+      throw ModelStorageException(
         '${file.filename}: the install finished, but core has no file for '
-        'it to check',
-        filePath: path,
-        expectedSize: expectation.size,
+            'it to check. Its record was removed; install it again.',
+        null,
+        'install',
       );
     }
-    final replaced =
-        active != null && active.files.any((f) => f.filename == file.filename);
-    final consequence = replaced
-        ? 'It replaced the file of the active model ${active.name}, which now '
-              'reads it; uninstall it and install again.'
-        : 'The file stays installed but was not made active; uninstall it and '
-              'install again.';
+    final deleted = keep.contains(file.filename)
+        ? 'The active model reads this file, so it was left as it is.'
+        : 'The file and its record were deleted; the next install downloads '
+              'it again.';
     final size = await fileSystem.getFileSize(path);
     if (expectation.size case final want? when size != want) {
+      if (!keep.contains(file.filename)) await forget(file, path);
       throw ModelValidationException.mismatch(
-        '${file.filename} is $size bytes, $want expected. $consequence',
+        '${file.filename} is $size bytes, $want expected. $deleted',
         filePath: path,
         actualSize: size,
         expectedSize: want,
       );
     }
-    if (expectation.sha256 case final want?) {
+    if (expectation.sha256 case final want?
+        when written.contains(file.filename)) {
       final got = await sha256Of(path);
-      if (got != want.toLowerCase()) {
+      if (got != want) {
+        if (!keep.contains(file.filename)) await forget(file, path);
         throw ModelValidationException.mismatch(
-          '${file.filename} has sha256 $got, $want expected. $consequence',
+          '${file.filename} has sha256 $got, $want expected. $deleted',
           filePath: path,
           actualSize: size,
+          expectedSha256: want,
+          actualSha256: got,
         );
       }
     }
@@ -102,8 +189,10 @@ Future<void> checkInstalledFiles(
 
 /// A catalog variant that cannot be installed here is refused before
 /// anything downloads: one its package runs on no backend in this runtime
-/// (`backendsHere` empty), or one with no file (a model the operating system
-/// provides).
+/// (`backendsHere` empty), one with no file (a model the operating system
+/// provides), or one whose files break the catalog's rules (a revision that
+/// is not a commit, a size that is not positive, a sha256 that is not 64 hex
+/// digits, an install name that is not a portable file name).
 void checkCatalogVariant(CatalogVariant variant) {
   if (variant.backendsHere.isEmpty) {
     throw UnsupportedError(
@@ -117,5 +206,21 @@ void checkCatalogVariant(CatalogVariant variant) {
       '${variant.id} is provided by the operating system; there is nothing to '
       'install',
     );
+  }
+  for (final file in variant.files) {
+    final problem = switch (file) {
+      _ when !_commit.hasMatch(file.revision) =>
+        'revision ${file.revision} is not a 40-hex commit',
+      _ when file.sizeBytes <= 0 => 'size ${file.sizeBytes} is not positive',
+      _ when !_sha256Hex.hasMatch(file.sha256) =>
+        'sha256 ${file.sha256} is not 64 hex digits',
+      _ => null,
+    };
+    if (problem != null) {
+      throw ArgumentError(
+        '${variant.id}: ${file.path}: $problem (${variant.catalogName})',
+      );
+    }
+    FileNameUtils.validatePortableFileNameSegment(file.installFilename);
   }
 }

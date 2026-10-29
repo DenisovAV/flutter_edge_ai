@@ -17,6 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../catalog/catalog_fixtures.dart' show clearActiveModels;
+
 const _base = 'https://example.com/matcha/';
 final _names = TtsModelType.matcha.manifest;
 
@@ -52,12 +54,14 @@ void main() {
     }
   });
 
-  Future<void> initialize({String? huggingFaceToken}) =>
-      ServiceRegistry.initialize(
-        downloadService: downloads,
-        remoteSizeProbe: probe,
-        huggingFaceToken: huggingFaceToken,
-      );
+  Future<void> initialize({String? huggingFaceToken}) async {
+    await ServiceRegistry.initialize(
+      downloadService: downloads,
+      remoteSizeProbe: probe,
+      huggingFaceToken: huggingFaceToken,
+    );
+    await clearActiveModels();
+  }
 
   TtsInstallationBuilder matcha(List<int> progress, {String base = _base}) =>
       FlutterEdgeAi.installTts()
@@ -301,7 +305,7 @@ final class _MatchaVariant extends TtsVariant {
         repo: 'org/matcha',
         revision: '0123456789abcdef0123456789abcdef01234567',
         path: name,
-        sha256: 'aa',
+        sha256: 'a' * 64,
         sizeBytes: size,
         installFilename: name,
       ),
@@ -311,7 +315,8 @@ final class _MatchaVariant extends TtsVariant {
   TtsModelType get type => TtsModelType.matcha;
 
   @override
-  String get baseUrl => _base;
+  String get baseUrl =>
+      'https://huggingface.co/org/matcha/resolve/0123456789abcdef0123456789abcdef01234567/';
 
   @override
   String get id => 'matcha/bundle';

@@ -8,6 +8,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai/src/api/file_sha256_io.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
@@ -16,6 +17,8 @@ import 'package:flutter_edge_ai/src/services/remote_size_probe.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../catalog/catalog_fixtures.dart' show clearActiveModels;
 
 /// Over the 1 MiB core requires of a model file.
 const _unit = 2 * 1024 * 1024;
@@ -47,6 +50,7 @@ void main() {
       downloadService: downloads,
       remoteSizeProbe: probe,
     );
+    await clearActiveModels();
   });
 
   tearDown(() async {
@@ -126,11 +130,10 @@ void main() {
   });
 
   group('expectedSize and expectedSha256', () {
-    test('a file of another size stays installed, not active', () async {
+    test('a file of another size is deleted with its record; a retry '
+        'downloads it again', () async {
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
-      final activeBefore = manager.activeInferenceModel?.name;
-      expect(activeBefore, isNot('model'));
-      await expectLater(
+      Future<void> attempt() => expectLater(
         llm()
             .fromNetwork(
               'https://example.com/repo/model.litertlm',
@@ -141,36 +144,117 @@ void main() {
           isA<ModelValidationException>()
               .having((e) => e.expectedSize, 'expectedSize', 123)
               .having((e) => e.actualSize, 'actualSize', _unit)
-              .having((e) => e.toString(), 'toString', contains('123 bytes')),
+              .having((e) => e.toString(), 'toString', contains('123 bytes'))
+              .having((e) => e.message, 'message', contains('deleted')),
         ),
       );
-      expect(manager.activeInferenceModel?.name, activeBefore);
-      expect(await FlutterEdgeAi.isModelInstalled('model.litertlm'), isTrue);
+      await attempt();
+      expect(manager.activeInferenceModel, isNull);
+      expect(await FlutterEdgeAi.isModelInstalled('model.litertlm'), isFalse);
+      final path = await ServiceRegistry.instance.fileSystemService
+          .getReadTargetPath('model.litertlm');
+      expect(File(path).existsSync(), isFalse);
+      await attempt();
+      expect(downloads.count, 2);
     });
 
-    test('the right sha256 passes; another one throws', () async {
-      final right = '${sha256.convert(Uint8List(_unit))}';
-      await llm()
-          .fromNetwork(
-            'https://example.com/repo/model.litertlm',
-            expectedSha256: right,
-          )
-          .install();
-      await expectLater(
-        llm()
+    test(
+      'the right sha256 passes; another one throws and is deleted',
+      () async {
+        final right = '${sha256.convert(Uint8List(_unit))}';
+        await llm()
+            .fromNetwork(
+              'https://example.com/repo/model.litertlm',
+              expectedSha256: right.toUpperCase(),
+            )
+            .install();
+        await expectLater(
+          llm()
+              .fromNetwork(
+                'https://example.com/repo/model.litertlm',
+                filename: 'wrong.litertlm',
+                expectedSha256: 'f' * 64,
+              )
+              .install(),
+          throwsA(
+            isA<ModelValidationException>()
+                .having((e) => e.expectedSha256, 'expectedSha256', 'f' * 64)
+                .having((e) => e.actualSha256, 'actualSha256', right),
+          ),
+        );
+        expect(await FlutterEdgeAi.isModelInstalled('wrong.litertlm'), isFalse);
+      },
+    );
+
+    test(
+      'a file installed earlier gets the size check, not a new hash',
+      () async {
+        await llm()
+            .fromNetwork('https://example.com/repo/model.litertlm')
+            .install();
+        // Not hashed again: this install downloads nothing.
+        await llm()
             .fromNetwork(
               'https://example.com/repo/model.litertlm',
               expectedSha256: 'f' * 64,
             )
-            .install(),
-        throwsA(
-          isA<ModelValidationException>().having(
-            (e) => e.message,
-            'message',
-            contains('sha256'),
+            .install();
+        await expectLater(
+          llm()
+              .fromNetwork(
+                'https://example.com/repo/model.litertlm',
+                expectedSize: 5,
+              )
+              .install(),
+          throwsA(isA<ModelValidationException>()),
+        );
+        // The active model's own file is left as it is.
+        expect(await FlutterEdgeAi.isModelInstalled('model.litertlm'), isTrue);
+      },
+    );
+
+    test(
+      'an expectation that cannot be right is refused before a download',
+      () {
+        expect(
+          () => llm().fromNetwork(
+            'https://example.com/m.litertlm',
+            expectedSha256: 'abc',
           ),
-        ),
-      );
+          throwsArgumentError,
+        );
+        expect(
+          () => llm().fromNetwork(
+            'https://example.com/m.litertlm',
+            expectedSize: -1,
+          ),
+          throwsArgumentError,
+        );
+        expect(
+          () => FlutterEdgeAi.installEmbedder().modelFromNetwork(
+            'https://example.com/emb.tflite',
+            expectedSha256: 'sha256:${'a' * 64}',
+          ),
+          throwsArgumentError,
+        );
+        expect(
+          () => FlutterEdgeAi.installStt().tokenizerFromNetwork(
+            'https://example.com/tokenizer.json',
+            expectedSha256: 'a' * 63,
+          ),
+          throwsArgumentError,
+        );
+        expect(downloads.count, 0);
+      },
+    );
+
+    test('a cancel during the hash stops it', () async {
+      final file = File('${documents.path}/big.bin');
+      await file.writeAsBytes(Uint8List(256 * 1024 * 1024));
+      final cancel = CancelToken();
+      final hashing = fileSha256(file.path, cancelToken: cancel);
+      cancel.cancel();
+      await expectLater(hashing, throwsA(isA<DownloadCancelledException>()));
     });
 
     test('the embedder checks each file before it is active', () async {
@@ -247,7 +331,7 @@ ModelArtifact _artifact(String path, int size) => ModelArtifact(
   repo: 'org/tiny',
   revision: '0123456789abcdef0123456789abcdef01234567',
   path: path,
-  sha256: 'aa',
+  sha256: 'a' * 64,
   sizeBytes: size,
   installFilename: path,
 );
@@ -311,13 +395,19 @@ final class _Downloads implements DownloadService {
   Uint8List _bytesFor(String url) =>
       Uint8List(_sizes[Uri.parse(url).pathSegments.last] ?? _unit);
 
+  /// Files written so far.
+  int count = 0;
+
   @override
   Future<void> download(
     String url,
     String targetPath, {
     String? token,
     CancelToken? cancelToken,
-  }) => File(targetPath).writeAsBytes(_bytesFor(url));
+  }) {
+    count++;
+    return File(targetPath).writeAsBytes(_bytesFor(url));
+  }
 
   @override
   Stream<int> downloadWithProgress(
@@ -328,6 +418,7 @@ final class _Downloads implements DownloadService {
     CancelToken? cancelToken,
     bool? foreground,
   }) async* {
+    count++;
     yield 50;
     await File(targetPath).writeAsBytes(_bytesFor(url));
     yield 100;

@@ -215,6 +215,27 @@ class TtsInstallationBuilder {
 
     await _requireLocalFiles(base, spec.files);
 
+    // A catalog variant's files are checked by size, so each must be the one
+    // this install downloads: the URL the variant lists for the name.
+    if (_catalogVariant case final variant?) {
+      final urls = {for (final f in variant.files) f.installFilename: f.url};
+      final elsewhere = [
+        for (final file in spec.files)
+          if (file.source case NetworkSource(
+            :final url,
+          ) when urls[file.prefsKey] != url)
+            file.filename,
+      ];
+      if (elsewhere.isNotEmpty) {
+        throw ArgumentError.value(
+          variant,
+          'variant',
+          '${variant.id} lists other URLs than this install downloads for '
+              '${elsewhere.join(', ')}',
+        );
+      }
+    }
+
     // NOTE: install-time legacy-file adoption (renaming an on-disk
     // pre-1.5.1-namespacing plain file onto the namespaced identity) was
     // removed here — a bundle basename can be unique within the TTS catalog
@@ -229,6 +250,16 @@ class TtsInstallationBuilder {
     final files = spec.files;
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final steps = await planInstall(files);
+    final sizes = _knownSizes;
+    final expected = {
+      if (sizes != null)
+        for (final file in spec.files)
+          if (sizes[file.prefsKey] case final size?)
+            file.filename: FileExpectation(size: size),
+    };
+    // Read before the install takes the voice of this type out of service.
+    final activeBefore = manager.activeTtsModel;
+    refuseReplacingActive(steps, expected, activeBefore);
     final progress = await startBundleProgress(
       _onProgress,
       steps,
@@ -261,13 +292,14 @@ class TtsInstallationBuilder {
 
     // AUTO-SET as active TTS model (even if already installed).
     _cancelToken?.throwIfCancelled();
-    if (_knownSizes case final sizes?) {
-      await verifyInstalledFiles(spec, {
-        for (final file in spec.files)
-          if (sizes[file.prefsKey] case final size?)
-            file.filename: FileExpectation(size: size),
-      }, active: manager.activeTtsModel);
-    }
+    await verifyInstalledFiles(
+      spec,
+      expected,
+      steps: steps,
+      active: activeBefore,
+      cancelToken: _cancelToken,
+    );
+    _cancelToken?.throwIfCancelled();
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);
     progress?.complete();

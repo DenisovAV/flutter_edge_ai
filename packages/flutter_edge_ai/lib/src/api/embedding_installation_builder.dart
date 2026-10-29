@@ -57,8 +57,8 @@ class EmbeddingInstallationBuilder {
 
   /// Install a model registry build: its pinned model and tokenizer URLs,
   /// install names and sizes, and the profile its vectors belong to. The
-  /// sizes are checked before the model becomes active, and [withProgress]
-  /// weights by them without asking the network.
+  /// sizes are checked before the model becomes active (not on the web),
+  /// and [withProgress] weights by them without asking the network.
   ///
   /// [install] throws [UnsupportedError] before anything downloads for a
   /// variant whose `backendsHere` is empty (it does not run in this runtime).
@@ -68,7 +68,6 @@ class EmbeddingInstallationBuilder {
     EmbedderVariant variant, {
     String? token,
   }) {
-    _catalogVariant = variant;
     modelFromNetwork(
       variant.model.url,
       token: token,
@@ -87,6 +86,7 @@ class EmbeddingInstallationBuilder {
       _tokenizerFilename = null;
       _tokenizerExpected = const FileExpectation();
     }
+    _catalogVariant = variant;
     return this;
   }
 
@@ -98,9 +98,13 @@ class EmbeddingInstallationBuilder {
   /// the URL basename. Prefer a revision-qualified basename for mutable hosts.
   ///
   /// [expectedSize] / [expectedSha256]: what the file must be once
-  /// downloaded, checked before the model becomes active (not on the web); a
-  /// file that differs stays installed, is not made active, and [install]
-  /// throws [ModelValidationException].
+  /// downloaded, checked before the model becomes active; a file that
+  /// differs is deleted with its record and [install] throws
+  /// [ModelValidationException]. With either set, an install that would
+  /// write over the active embedder's file throws [StateError] before it
+  /// downloads. The sha256 is computed on a worker isolate, only over a file
+  /// this install downloaded. On the web nothing is checked, and
+  /// [expectedSha256] throws [UnsupportedError].
   EmbeddingInstallationBuilder modelFromNetwork(
     String url, {
     String? token,
@@ -109,8 +113,9 @@ class EmbeddingInstallationBuilder {
     String? expectedSha256,
   }) {
     _modelSource = ModelSource.network(url, authToken: token);
+    _catalogVariant = null;
     _modelFilename = _validateFilename(filename);
-    _modelExpected = FileExpectation(
+    _modelExpected = FileExpectation.checked(
       size: expectedSize,
       sha256: expectedSha256,
     );
@@ -120,6 +125,7 @@ class EmbeddingInstallationBuilder {
   /// Set model source from Flutter asset
   EmbeddingInstallationBuilder modelFromAsset(String path, {String? filename}) {
     _modelSource = ModelSource.asset(path);
+    _catalogVariant = null;
     _modelExpected = const FileExpectation();
     _modelFilename = _validateFilename(filename);
     return this;
@@ -131,6 +137,7 @@ class EmbeddingInstallationBuilder {
     String? filename,
   }) {
     _modelSource = ModelSource.bundled(resourceName);
+    _catalogVariant = null;
     _modelExpected = const FileExpectation();
     _modelFilename = _validateFilename(filename);
     return this;
@@ -139,6 +146,7 @@ class EmbeddingInstallationBuilder {
   /// Set model source from external file path
   EmbeddingInstallationBuilder modelFromFile(String path, {String? filename}) {
     _modelSource = ModelSource.file(path);
+    _catalogVariant = null;
     _modelExpected = const FileExpectation();
     _modelFilename = _validateFilename(filename);
     return this;
@@ -166,8 +174,9 @@ class EmbeddingInstallationBuilder {
     String? expectedSha256,
   }) {
     _tokenizerSource = ModelSource.network(url, authToken: token);
+    _catalogVariant = null;
     _tokenizerFilename = _validateFilename(filename);
-    _tokenizerExpected = FileExpectation(
+    _tokenizerExpected = FileExpectation.checked(
       size: expectedSize,
       sha256: expectedSha256,
     );
@@ -180,6 +189,7 @@ class EmbeddingInstallationBuilder {
     String? filename,
   }) {
     _tokenizerSource = ModelSource.asset(path);
+    _catalogVariant = null;
     _tokenizerExpected = const FileExpectation();
     _tokenizerFilename = _validateFilename(filename);
     return this;
@@ -191,6 +201,7 @@ class EmbeddingInstallationBuilder {
     String? filename,
   }) {
     _tokenizerSource = ModelSource.bundled(resourceName);
+    _catalogVariant = null;
     _tokenizerExpected = const FileExpectation();
     _tokenizerFilename = _validateFilename(filename);
     return this;
@@ -202,6 +213,7 @@ class EmbeddingInstallationBuilder {
     String? filename,
   }) {
     _tokenizerSource = ModelSource.file(path);
+    _catalogVariant = null;
     _tokenizerExpected = const FileExpectation();
     _tokenizerFilename = _validateFilename(filename);
     return this;
@@ -233,7 +245,8 @@ class EmbeddingInstallationBuilder {
   /// Progress of the whole install, 0 to 100, by bytes across the model and
   /// its tokenizer, as `TtsInstallationBuilder.withProgress` counts: sizes
   /// read before the first download (a HEAD request per network file unless
-  /// its `expectedSize` is set, the disk for files installed already), files
+  /// its `expectedSize` is set, none on the web; the disk for files installed
+  /// already), files
   /// installed already counted from the start, every file the same weight
   /// when a size is unknown. Values only rise, and a successful install ends
   /// with 100 once the model is active.
@@ -329,7 +342,14 @@ class EmbeddingInstallationBuilder {
 
     // What each file must be, by its index in spec.files (model, tokenizer).
     final expectations = [_modelExpected, _tokenizerExpected];
+    final expected = {
+      for (final (i, file) in spec.files.indexed)
+        file.filename: expectations[i],
+    };
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final steps = await planInstall(spec.files);
+    final activeBefore = manager.activeEmbeddingModel;
+    refuseReplacingActive(steps, expected, activeBefore);
     final progress = await startBundleProgress(
       _onProgress,
       steps,
@@ -362,12 +382,15 @@ class EmbeddingInstallationBuilder {
     );
 
     // AUTO-SET as active embedding model (even if already installed)
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
     _cancelToken?.throwIfCancelled();
-    await verifyInstalledFiles(spec, {
-      for (final (i, file) in spec.files.indexed)
-        file.filename: expectations[i],
-    }, active: manager.activeEmbeddingModel);
+    await verifyInstalledFiles(
+      spec,
+      expected,
+      steps: steps,
+      active: activeBefore,
+      cancelToken: _cancelToken,
+    );
+    _cancelToken?.throwIfCancelled();
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);
     progress?.complete();

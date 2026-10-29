@@ -22,6 +22,16 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-stale-body.py\"",
+            "error_message": "Publishing blocked: the --body-file is stale or missing. Write the approved text and post it in the same command."
+          }
+        ]
+      },
+      {
         "matcher": "Edit|Write",
         "hooks": [
           {

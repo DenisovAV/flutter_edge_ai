@@ -19,8 +19,8 @@ final class MemorySnapshot {
     this.anonymousPeakBytes,
   });
 
-  /// Process memory measured as the iOS and macOS footprint or the Android
-  /// and Linux `Private_Dirty + SwapPss`.
+  /// Process memory measured as the iOS and macOS footprint, the Windows
+  /// commit charge or the Android and Linux `Private_Dirty + SwapPss`.
   ///
   /// On every platform, weights read from an mmapped model file are clean
   /// file pages and are not counted.
@@ -46,9 +46,20 @@ final class MemorySnapshot {
   ///   GPU it is system RAM that this snapshot does not show: a FunctionGemma
   ///   270M on the GPU cost 700 to 835 MiB of Intel `drm-resident-system0`
   ///   with the device mappings at 0 MiB.
+  /// - **Windows:** the commit charge, `PagefileUsage` of
+  ///   `K32GetProcessMemoryInfo` (Microsoft documents it as the same number as
+  ///   `PrivateUsage`): the private memory the process owns, wherever it is
+  ///   (resident, compressed or paged out), like `phys_footprint` on iOS and
+  ///   `SwapPss` on Android. It counts memory when it is allocated, not when
+  ///   it is touched, so it reads higher than the resident figure and is not
+  ///   comparable with the other platforms: a FunctionGemma 270M load on the
+  ///   CPU raised it by 389 to 392 MiB and the private working set by 102 to
+  ///   105 MiB (one machine). Most of a model's memory arrives with the first
+  ///   prompt, not at load. GPU memory is not read (see
+  ///   `FlutterEdgeAiDiagnostics.gpuMemory`).
   ///
   /// Null only on an Android or Linux kernel without `smaps_rollup`. Vendor
-  /// kernels may backport it. On iOS and macOS it is never null.
+  /// kernels may backport it. On iOS, macOS and Windows it is never null.
   final int? anonymousBytes;
 
   /// Memory still available before the OS starts reclaiming or killing.
@@ -66,13 +77,17 @@ final class MemorySnapshot {
   ///   `memory.max` (a container or a systemd scope with a limit): the limit
   ///   is the cgroup's, not this number.
   ///
+  /// - **Windows:** `ullAvailPhys` from `GlobalMemoryStatusEx`, the physical
+  ///   memory that can be used without paging, on *the whole machine*. Windows
+  ///   has no per-app limit, so it is an upper bound for this app, not
+  ///   headroom, and it ignores a job object's memory limit.
   /// - **macOS:** null. `os_proc_available_memory()` is iOS-only and macOS has
   ///   no per-app limit to measure headroom against.
   ///
   /// Null on macOS, and on iOS when the call returns 0: Apple returns 0 both
   /// when no limit applies (the simulator) and when the limit is already
-  /// exceeded, and the two cannot be told apart. On Android and Linux it is
-  /// never null.
+  /// exceeded, and the two cannot be told apart. On Android, Linux and Windows
+  /// it is never null.
   final int? availableBytes;
 
   /// Resident clean pages: mostly mapped files on a CPU backend, and GPU
@@ -113,11 +128,22 @@ final class MemorySnapshot {
   ///   Linux 7.0: 512 MiB swapped out and read back showed as 512 MiB
   ///   `Private_Clean`, `Swap` 0), which moves memory from [anonymousBytes]
   ///   into this field, as zram readback does on Android.
+  /// - **Windows:** `WorkingSetSize - PrivateWorkingSetSize`: the resident
+  ///   pages that are not private to the process. They are file-backed or
+  ///   shareable pages, DLL code included, so this is not "model weights": a
+  ///   LiteRT-LM model on the CPU is mapped at load and faulted in by the first
+  ///   prompt (this figure rose by about 361 MiB for a 271 MiB file, and the
+  ///   DLL pages could not be told apart), while ORT-GenAI's weights landed in
+  ///   the private working set and not here. Read before loading and subtract.
+  ///   Trimming the working set (minimizing the window) changed nothing without
+  ///   memory pressure; what it does under pressure is not measured. Null when
+  ///   the OS does not fill `PrivateWorkingSetSize` (a Windows that predates
+  ///   the extended struct; not tested on one).
   /// - **iOS and macOS:** null. This package does not read a corresponding
   ///   value yet; `TASK_VM_INFO.external` is a possible follow-up.
   ///
-  /// Null on iOS and macOS, and on an Android or Linux kernel without
-  /// `smaps_rollup`.
+  /// Null on iOS and macOS, on an Android or Linux kernel without
+  /// `smaps_rollup`, and on a Windows without the extended struct.
   final int? fileBackedBytes;
 
   /// The highest [anonymousBytes] this process has reached since it started.
@@ -128,12 +154,15 @@ final class MemorySnapshot {
   ///   load and its prompts, so a spike that happened before you started
   ///   measuring is in it. To attribute a peak to one operation, take a
   ///   snapshot before and compare, and treat the value as an upper bound.
+  /// - **Windows:** `PeakPagefileUsage`, the highest commit charge since the
+  ///   process started, the peak of the same quantity [anonymousBytes] holds
+  ///   there. Also a lifetime mark: take a snapshot before and compare.
   /// - **Android and Linux:** null. The kernel keeps no peak of anonymous
   ///   memory; `VmHWM` includes file-backed pages and would be a different
   ///   number.
   ///
   /// Null on Android and Linux, and on an iOS or macOS version whose
-  /// `task_info` reply predates the field.
+  /// `task_info` reply predates the field. Never null on Windows.
   final int? anonymousPeakBytes;
 
   /// When this snapshot was taken.

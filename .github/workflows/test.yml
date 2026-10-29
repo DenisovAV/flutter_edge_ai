@@ -319,3 +319,28 @@ jobs:
             exit 1
           fi
           echo "OK: LiteRtLm references the framework-form GemmaModelConstraintProvider."
+
+  # The Windows reader calls kernel32 through dart:ffi; the host group of
+  # test/windows_memory_test.dart is skipped everywhere else, so this job is
+  # the only place in CI where it runs.
+  test-diagnostics-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        working-directory: packages/flutter_edge_ai_diagnostics
+        run: flutter pub get
+
+      - name: Test flutter_edge_ai_diagnostics (Windows host group included)
+        working-directory: packages/flutter_edge_ai_diagnostics
+        run: flutter test

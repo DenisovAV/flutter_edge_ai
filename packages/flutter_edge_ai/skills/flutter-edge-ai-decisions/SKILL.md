@@ -16,9 +16,12 @@ CI that fails on warnings fail.
 1. A decider comes from a model: `EmbeddingModel.createDecider` works with every
    embedding backend. `InferenceModel.createDecider(question:, options:,
    calibration:)` needs a small LLM TRAINED on that one decision (a `.litertlm`
-   tuned by LiteTune, which writes the decision into the file), on the CPU,
-   natively (`flutter_edge_ai_litertlm` 1.16.0); any other model, and every
-   model on the web, throws `DeciderUnsupportedException`. Both return a `Decider` whose `DeciderAnswer` reads the same, so code
+   tuned by LiteTune, which writes the decision into the file), natively, on
+   the CPU (`flutter_edge_ai_litertlm` 1.16.0) or the GPU (1.20.0); the NPU,
+   any other model, and every model on the web throw
+   `DeciderUnsupportedException`. The file's calibration is fitted on the
+   CPU: load with `preferredBackend: PreferredBackend.cpu` to use it as
+   fitted (a load without it tries the GPU first). Both return a `Decider` whose `DeciderAnswer` reads the same, so code
    that reads answers (choice, ranked, abstainReason, provenance) needs no
    change when one replaces the other; check `decider.capabilities`
    (`supportsAmong`, `storable`, `calibratedProbabilities`, `modalities`, `questionType`)
@@ -341,8 +344,9 @@ await FlutterEdgeAi.installModel(
 ).fromFile(path).install();
 // CPU or GPU; the NPU is refused. The file's temperature and threshold are
 // fitted on CPU probabilities: on the GPU the top option matched the CPU's
-// on 97-100 % of rows measured (Metal, Adreno 830); Mali, Linux and Windows
-// GPUs are not measured.
+// on 97-100 % of rows measured (Metal, Adreno 830, yes/no questions only);
+// Mali, Linux and Windows GPUs and the abstain threshold on the GPU are not
+// measured. The CPU keeps the calibration as fitted.
 final llm = await FlutterEdgeAi.getActiveModel(
   preferredBackend: PreferredBackend.cpu,
 );

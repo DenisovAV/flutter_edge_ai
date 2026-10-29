@@ -36,8 +36,8 @@ void main() {
       });
     }
 
-    test('refuses the NPU by name', () {
-      expect(
+    test('refuses the NPU by name', () async {
+      await expectLater(
         modelOn(PreferredBackend.npu).openOptionScorer(),
         throwsA(
           isA<DeciderUnsupportedException>().having(
@@ -49,10 +49,19 @@ void main() {
       );
     });
 
-    test('refuses a model that does not report its backend', () {
-      expect(
+    test('refuses a model that does not report its backend', () async {
+      await expectLater(
         modelOn(null).openOptionScorer(),
-        throwsA(isA<DeciderUnsupportedException>()),
+        throwsA(
+          isA<DeciderUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('does not report its backend'),
+              contains('PreferredBackend.cpu'),
+            ),
+          ),
+        ),
       );
     });
   });

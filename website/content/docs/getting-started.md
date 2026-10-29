@@ -50,7 +50,7 @@ only the engines, stores and features your app uses — see
   [Desktop](/docs/desktop#several-models-at-once).
 - **Deciders from a language model** (experimental, `flutter_edge_ai` 2.5.0 with
   `flutter_edge_ai_litertlm` 1.16.0, native, `PreferredBackend.cpu`; the GPU
-  too from its next release, not the NPU):
+  too from 1.20.0, not the NPU):
   `InferenceModel.createDecider` scores the options on a `.litertlm` trained on
   the decision with LiteTune. See
   [Decisions](/docs/decisions#deciders-from-a-language-model).

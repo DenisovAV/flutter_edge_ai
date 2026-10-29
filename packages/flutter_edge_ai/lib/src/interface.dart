@@ -590,8 +590,8 @@ abstract class InferenceModel {
   /// Fails with `DeciderUnsupportedException` for a model whose engine does
   /// not score options (every model on the web), a model file without a
   /// decision (an ordinary chat model), a decision this release does not
-  /// read, a backend option scoring is not measured on (LiteRT-LM scores on
-  /// the CPU only), a decision whose prompt cannot fit [maxTokens], and an
+  /// read, a backend the engine does not score on (LiteRT-LM: the NPU), a
+  /// decision whose prompt cannot fit [maxTokens], and an
   /// engine that cannot tell how it scores. Each `choose` refuses an input
   /// whose prompt does not fit [maxTokens] with [ArgumentError]: it is never
   /// truncated.
@@ -604,9 +604,12 @@ abstract class InferenceModel {
   /// (`@nonVirtual`); an engine supplies the scoring through
   /// `OptionScoringModel` (`package:flutter_edge_ai/engine.dart`), not by
   /// overriding this. `flutter_edge_ai_litertlm` scores natively, on the CPU
-  /// from 1.16.0 and on the GPU from its next release; the NPU is refused.
-  /// The temperature and threshold in the file are fitted on CPU
-  /// probabilities, which the GPU does not reproduce exactly. Use
+  /// from 1.16.0 and on every GPU from 1.20.0; the NPU is refused. The
+  /// temperature and threshold in the file are fitted on CPU probabilities,
+  /// which the GPU does not reproduce exactly; its self-check checks that
+  /// scores repeat, not that they are right. A model loaded without
+  /// `preferredBackend` tries the GPU first. Load it with
+  /// `PreferredBackend.cpu` for the calibration as fitted. Use
   /// `EmbeddingModel.createDecider` for a model that was not trained on the
   /// decision. `implements` does not inherit this body: such a class has to
   /// declare the method, and should fail it with

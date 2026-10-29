@@ -17,9 +17,9 @@ import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
 ///
-/// Scores options for `createDecider` ([OptionScoringModel]) on the CPU
-/// backend, from the decision litetune wrote into the model file
-/// ([decisionRead], read when the model was loaded).
+/// Scores options for `createDecider` ([OptionScoringModel]) on the CPU and
+/// GPU backends (not the NPU), from the decision litetune wrote into the
+/// model file ([decisionRead], read when the model was loaded).
 base class FfiInferenceModel extends InferenceModel
     with CloseNotifier, OptionScoringModel {
   FfiInferenceModel({
@@ -137,6 +137,7 @@ base class FfiInferenceModel extends InferenceModel
           ),
     ];
     final check = liteRtLmScoringSelfCheck(
+      backend: activeBackend,
       targets: targets,
       tokenize: scorer.tokenize,
       detokenize: scorer.detokenize,

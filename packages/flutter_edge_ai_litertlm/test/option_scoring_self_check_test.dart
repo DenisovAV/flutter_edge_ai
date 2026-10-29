@@ -54,12 +54,14 @@ final class _Engine {
     List<String> tokens,
   )
   inMode = (mode, prompt, tokens) => [for (final t in tokens) _base[t] ?? -1.5];
+  PreferredBackend? backend = PreferredBackend.cpu;
   final runs = <List<String>>[];
   final modes = <(LiteRtLmScoringMode, String)>[];
 
   Future<LiteRtLmScoringMode> check([
     List<String> targets = const ['sad', 'joy', 'love'],
   ]) => liteRtLmScoringSelfCheck(
+    backend: backend,
     targets: targets,
     tokenize: (text) async => tokens[text] ?? const [],
     detokenize: (ids) async => ids.map((id) => pieces[id] ?? '?').join(),
@@ -81,6 +83,56 @@ Matcher _refusing(String says) => throwsA(
 );
 
 void main() {
+  group('a refusal that depends on the engine\'s arithmetic names the '
+      'backend', () {
+    final cases = <String, _Engine Function()>{
+      'not repeatable': () =>
+          _Engine()..score = (prompt, token, call) => -1.5 - call * 1e-6,
+      'mixed': () => _Engine()
+        ..score = (prompt, token, _) =>
+            prompt == liteRtLmSelfCheckPrompt || token == 'sad' ? -1.5 : -2.0,
+      'rewinding': () => _Engine()
+        ..inMode = (mode, prompt, tokens) => [
+          for (var i = 0; i < tokens.length; i++) i == 0 ? -1.5 : -1.6,
+        ],
+    };
+    for (final MapEntry(key: says, value: make) in cases.entries) {
+      test('$says, on the GPU: points to the CPU', () async {
+        final engine = make()..backend = PreferredBackend.gpu;
+        await expectLater(
+          engine.check(),
+          throwsA(
+            isA<DeciderUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains(says),
+                contains('The check ran on the GPU'),
+                contains('preferredBackend: PreferredBackend.cpu'),
+              ),
+            ),
+          ),
+        );
+      });
+      test('$says, on the CPU: names the CPU, no advice', () async {
+        final engine = make();
+        await expectLater(
+          engine.check(),
+          throwsA(
+            isA<DeciderUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('The check ran on the CPU.'),
+                isNot(contains('preferredBackend')),
+              ),
+            ),
+          ),
+        );
+      });
+    }
+  });
+
   test(
     'identical scores on both prompts pick once (LiteRT-LM 0.18.0)',
     () async {

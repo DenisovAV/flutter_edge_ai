@@ -7,6 +7,7 @@
 // The packs are private, so they are not in the repository. Stage each in a
 // directory of its own holding `model.litertlm` and `golden.json`:
 //   macOS: <the example's container Documents>/decisions/<pack>/
+//   iOS:   the app's Documents/decisions/<pack>/
 // or name the parent with --dart-define=DECIDER_PACKS=<dir>. A float32 twin
 // of a pack's model, staged beside it as `twin.litertlm`, is checked against
 // the reference to 1e-3 nats per token: the method alone, with no
@@ -48,9 +49,14 @@ import 'inference_test_helpers.dart' show registerTestEngines;
 
 const _packsDefine = String.fromEnvironment('DECIDER_PACKS');
 
-String get _documents =>
-    '${Platform.environment['HOME']}/Library/Containers/'
-    'dev.flutterberlin.flutterGemmaExample55/Data/Documents';
+/// Where the packs and the extra models are staged. On iOS HOME is the
+/// app's own container, whose Documents is `xcrun devicectl device copy to
+/// --domain-type appDataContainer`'s target; on macOS the path below the
+/// sandboxed HOME (see the file comment).
+String get _documents => Platform.isIOS
+    ? '${Platform.environment['HOME']}/Documents'
+    : '${Platform.environment['HOME']}/Library/Containers/'
+          'dev.flutterberlin.flutterGemmaExample55/Data/Documents';
 
 Directory get _packsDir =>
     Directory(_packsDefine.isNotEmpty ? _packsDefine : '$_documents/decisions');

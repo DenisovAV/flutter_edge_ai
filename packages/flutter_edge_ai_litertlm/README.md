@@ -187,9 +187,15 @@ long-dialogue Noul decision (Gemma 3 270M on 300 rows, Qwen3 1.7B and Gemma 4
 E2B on 60 each), the GPU's top option was the same device's CPU one on 291/300,
 59/60 and 59/60 rows on an iPhone 17 Pro (Metal), 292/300, 59/60 and 59/60 on a
 Galaxy S25 Ultra (Adreno 830) and 293/300, 59/60 and 60/60 on a Mac mini M5 Pro
-(Metal); balanced accuracy moved by at most 0.017 either way. Not measured:
-Mali GPUs, Linux and Windows GPUs, and the NPU. Linux and Windows CPUs use the
-same C calls and are not measured either. The answers, Noul and Score included:
+(Metal); balanced accuracy moved by at most 0.017 either way. All of it is
+Noul, which never abstains: a threshold fitted on the CPU is not checked
+against GPU probabilities. Not measured: Mali GPUs, Linux (Vulkan) and Windows
+(DirectX 12) GPUs, Linux and Windows CPUs, and the NPU. Every GPU is allowed,
+and a model loaded without `preferredBackend` tries the GPU first, so on those
+devices a decider scores on an unmeasured GPU. The self-check catches scores
+that do not repeat, not scores that repeat and are wrong. For the calibration
+as fitted, load with `preferredBackend: PreferredBackend.cpu`. The answers,
+Noul and Score included:
 [Decisions](https://flutteredge.ai/docs/decisions#deciders-from-a-language-model).
 
 ## Install from a Hugging Face repo (`litertlm_manifest.json`)

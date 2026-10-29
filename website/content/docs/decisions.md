@@ -460,8 +460,8 @@ option `choose` gains in a later release reaches `decide` as a new field of
 kind of decider: a small LLM trained on one question and its options lists
 them in a prompt and scores each option's id as its reply
 (`DeciderMethod.optionScoring`). `flutter_edge_ai_litertlm` 1.16.0 implements
-it for `.litertlm` models on the CPU backend, on native platforms, and its next
-release on the GPU too; on the NPU and on the web `createDecider` throws
+it for `.litertlm` models on the CPU backend, on native platforms, and 1.20.0
+on the GPU too; on the NPU and on the web `createDecider` throws
 `DeciderUnsupportedException`.
 
 The model is an ordinary generative `.litertlm`, tuned for the decision by
@@ -596,9 +596,19 @@ Gemma 3 270M on 300 rows, Qwen3 1.7B and Gemma 4 E2B on 60 rows each.
 
 "Top option = CPU" counts the rows on which the GPU's top option is the same
 device's CPU one; the balanced accuracy is the CPU's, then the GPU's. On the
-CPU both phones chose what the Mac chose on every row. Not measured: Mali GPUs
-(Android's other GPU path), Linux and Windows (CPU or GPU), the NPU (refused),
-memory and battery.
+CPU both phones chose what the Mac chose on every row. Every row is a Noul
+question, which never abstains: a threshold fitted on the CPU (a Choice
+decider's `abstainBelow`) is not checked against GPU probabilities.
+
+Not measured: Mali GPUs (Android's other GPU path), Linux GPUs (Vulkan),
+Windows GPUs (DirectX 12), Linux and Windows CPUs, the NPU (refused), memory
+and battery. The GPU is not limited to the GPUs above: a decider scores on
+any GPU the model loaded on, and a model loaded without `preferredBackend`
+tries the GPU first, so on those devices it scores on a GPU nobody measured.
+The self-check catches scores that do not repeat or rewinds that change
+them; it cannot tell repeatable but wrong scores from right ones. For the
+calibration as LiteTune fitted it, load the model with
+`preferredBackend: PreferredBackend.cpu`.
 
 ## Jev Choice JSON
 

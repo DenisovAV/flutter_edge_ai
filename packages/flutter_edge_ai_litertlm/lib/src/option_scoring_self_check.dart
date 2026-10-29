@@ -61,8 +61,11 @@ const liteRtLmSelfCheckControlPrompt =
 /// when some comparisons are identical and others are not, when a prompt
 /// that differs early scores the same (the scores do not see the prompt),
 /// and when targets scored in one run, in either order, do not score as each
-/// does alone (rewinding between targets changes them).
+/// does alone (rewinding between targets changes them). The refusals that
+/// depend on the engine's arithmetic name [backend], the one the check ran
+/// on, and on the GPU point to the CPU.
 Future<LiteRtLmScoringMode> liteRtLmScoringSelfCheck({
+  required PreferredBackend? backend,
   required List<String> targets,
   required Future<List<int>> Function(String text) tokenize,
   required Future<String> Function(List<int> ids) detokenize,
@@ -121,7 +124,7 @@ Future<LiteRtLmScoringMode> liteRtLmScoringSelfCheck({
       throw DeciderUnsupportedException(
         'The scoring self-check scored "$z" twice after the same prompt and '
         'got $first and $second: this engine\'s scores are not repeatable, '
-        'so how it scores after a prefill cannot be told.',
+        'so how it scores after a prefill cannot be told.${_ranOn(backend)}',
       );
     }
     for (var repeat = 0; repeat < 2; repeat++) {
@@ -156,7 +159,7 @@ Future<LiteRtLmScoringMode> liteRtLmScoringSelfCheck({
     throw DeciderUnsupportedException(
       'The scoring self-check is mixed: of ${diffs.length} comparisons some '
       'scored identically and some did not (largest difference $most). This '
-      'LiteRT-LM scores in a way nobody has measured.',
+      'LiteRT-LM scores in a way nobody has measured.${_ranOn(backend)}',
     );
   }
   // The mode as a decision uses it: every target after the first is scored
@@ -176,9 +179,19 @@ Future<LiteRtLmScoringMode> liteRtLmScoringSelfCheck({
         '${forward[i]} and ${backward[run.length - 1 - i]} in one run with '
         'other targets (mode ${mode.name}): on this LiteRT-LM rewinding '
         'between targets changes their scores, so a decision\'s options '
-        'cannot be scored exactly.',
+        'cannot be scored exactly.${_ranOn(backend)}',
       );
     }
   }
   return mode;
 }
+
+/// Where the check ran, for a refusal; on the GPU, the way to the CPU.
+String _ranOn(PreferredBackend? backend) => switch (backend) {
+  PreferredBackend.gpu =>
+    ' The check ran on the GPU; load the model with preferredBackend: '
+        'PreferredBackend.cpu to score on the CPU.',
+  PreferredBackend.cpu => ' The check ran on the CPU.',
+  PreferredBackend.npu => ' The check ran on the NPU.',
+  null => '',
+};

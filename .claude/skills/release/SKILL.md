@@ -333,6 +333,14 @@ the new satellite then gets a resolve that **fails to compile** (calls a
 method/param that core version lacks). This is a manual step; nothing automated
 catches it.
 
+**The model catalog (#734) is such a case, open until its release PR:** litertlm
+and speech use the catalog types (`ModelCatalogSource`, `NpuTarget`, …) that
+first ship in **core 2.5.5**, and speech uses `LiteRtLmNpuTarget extends NpuTarget`
+from the **next litertlm** (after 1.19.0). In that release PR set litertlm's
+`flutter_edge_ai: ^2.5.5`, speech's `flutter_edge_ai: ^2.5.5` and
+`flutter_edge_ai_litertlm: ^<that litertlm>`, fix the comments above those lines,
+and publish core first, then litertlm, then speech.
+
 **A floor naming an UNPUBLISHED core forces a publish ORDER — and dry-run is blind
 to it.** `dart pub publish --dry-run` only checks that a constraint is satisfiable in
 the workspace, never that the named version exists on pub.dev, so it reports 0

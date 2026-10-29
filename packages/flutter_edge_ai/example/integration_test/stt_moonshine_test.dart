@@ -83,7 +83,7 @@ void main() {
         check: 'transcribes the bundled clip',
       );
     } else {
-      recordCatalogEvidence(
+      await recordCatalogEvidence(
         variant,
         backend: PreferredBackend.cpu,
         check: 'transcribes the bundled clip',

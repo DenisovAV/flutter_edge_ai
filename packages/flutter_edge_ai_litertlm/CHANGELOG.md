@@ -1,5 +1,5 @@
 ## Unreleased
-- Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every LiteRT build pinned to its commit.
+- Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every LiteRT build pinned to its commit (#734).
 - The option-scoring self-check runs in debug and profile builds only.
 - `InferenceModel.createDecider` scores on the GPU too; the NPU stays refused.
 

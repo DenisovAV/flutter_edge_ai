@@ -52,6 +52,18 @@ final class HttpRemoteSizeProbe implements RemoteSizeProbe {
         final response = await request.close().timeout(timeout);
         await response.drain<void>().timeout(timeout);
         final status = response.statusCode;
+        // Hugging Face answers a file's /resolve/ with a redirect to its
+        // storage that names the file (X-Linked-Etag) and its size; the
+        // storage may then refuse a HEAD (a presigned URL). A redirect that
+        // names no file (a renamed repository) is followed.
+        if (status >= 300 &&
+            status < 400 &&
+            response.headers.value('x-linked-etag') != null) {
+          final linked = int.tryParse(
+            response.headers.value('x-linked-size') ?? '',
+          );
+          if (linked != null && linked > 0) return linked;
+        }
         if (status >= 300 && status < 400) {
           final location = response.headers.value(HttpHeaders.locationHeader);
           if (location == null) return null;
@@ -64,9 +76,11 @@ final class HttpRemoteSizeProbe implements RemoteSizeProbe {
         final linked = int.tryParse(
           response.headers.value('x-linked-size') ?? '',
         );
-        if (linked != null && linked >= 0) return linked;
+        // 0 is no answer: a model file is never empty, and a weight of 0
+        // would make the progress jump past it.
+        if (linked != null && linked > 0) return linked;
         final length = response.contentLength;
-        return length >= 0 ? length : null;
+        return length > 0 ? length : null;
       }
       return null;
     } on Object {

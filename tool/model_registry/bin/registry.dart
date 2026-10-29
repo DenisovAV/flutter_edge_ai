@@ -108,6 +108,12 @@ Future<void> main(List<String> args) async {
       exit(0);
     }
     final reasons = <String>[
+      for (final path in uncommittedUnder(repoRoot, [
+        'model_registry',
+        'tool/model_registry',
+        'packages/$package',
+      ]))
+        '$path is not committed: the stamp would not stand for HEAD',
       if (stale > 0) '$stale generated file(s) not current',
       if (!published.existsSync() || published.readAsStringSync() != snapshot)
         '${p.relative(published.path, from: repoRoot)} is not what '

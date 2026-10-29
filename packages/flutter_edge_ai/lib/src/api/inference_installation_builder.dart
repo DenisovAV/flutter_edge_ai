@@ -799,6 +799,10 @@ InferenceInstallationBuilder inferenceBuilderFromCatalog(
       filename: file.installFilename,
       expectedSize: file.sizeBytes,
     );
+  } else if (variant.fileType == ModelFileType.builtIn) {
+    // The operating system provides it: registered under its model id, as
+    // the built-in packages name theirs (`ModelSource.bundled('gemini-nano')`).
+    builder.fromBundled(variant.modelId);
   }
   return builder.._catalogVariant = variant;
 }

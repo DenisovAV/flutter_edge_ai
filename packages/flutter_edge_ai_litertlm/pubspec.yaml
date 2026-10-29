@@ -25,8 +25,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # ^2.5.4: this version offers its models through the model catalog
-  # (`ModelCatalogSource`, `CatalogModel`, `NpuTarget`), which arrives in 2.5.4.
+  # The model catalog (`ModelCatalogSource`, `CatalogModel`, `NpuTarget`)
+  # this version offers its models through arrives in core 2.5.5; the floor
+  # moves to ^2.5.5 in the release PR (release skill, 1g). ^2.5.4 until then.
   # 2.5.0 brought the option-scoring SPI it implements (`OptionScoringModel`,
   # `OptionScorer`) and `MultiModelEngine` (for `FlutterEdgeAi.openModel`).
   # 2.4.0 brought

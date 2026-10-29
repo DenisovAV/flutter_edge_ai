@@ -213,7 +213,7 @@ final class SiteInputs {
         versions[package] = '${yaml['version']}';
       }
     }
-    return SiteInputs._(
+    final inputs = SiteInputs._(
       repoRoot,
       hosts,
       claims,
@@ -221,6 +221,50 @@ final class SiteInputs {
       versions,
       readEvidence(registryDir, problems),
     );
+    // A host a snapshot does not answer for would show as refused, and one
+    // whose native build cannot be named would make every run there stale:
+    // both are problems, not a page that says something else.
+    for (final MapEntry(key: package, value: byVariant) in snapshots.entries) {
+      final answered = {
+        for (final hostsOf in byVariant.values) ...hostsOf.keys,
+      };
+      for (final host in hosts) {
+        if (byVariant.isNotEmpty && !answered.contains(host.id)) {
+          problems.add(
+            Problem(
+              'snapshots/$package.json',
+              host.id,
+              'no answer for this host of hosts.yaml; run the package\'s '
+                  'catalog test with UPDATE_GOLDENS=1',
+            ),
+          );
+        }
+      }
+    }
+    final hook = File(
+      p.join(
+        repoRoot,
+        'packages',
+        'flutter_edge_ai_litertlm',
+        'hook',
+        'build.dart',
+      ),
+    );
+    if (hook.existsSync()) {
+      for (final host in hosts) {
+        if (!inputs.natives.containsKey(host.id)) {
+          problems.add(
+            Problem(
+              'hosts.yaml',
+              host.id,
+              'the native build it runs cannot be named from the hook: every '
+                  'run there would read as stale',
+            ),
+          );
+        }
+      }
+    }
+    return inputs;
   }
 
   final _pages = <String, List<String>?>{};

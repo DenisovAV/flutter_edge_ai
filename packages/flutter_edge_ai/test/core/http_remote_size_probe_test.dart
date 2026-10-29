@@ -46,6 +46,16 @@ void main() {
             ..statusCode = 302
             ..headers.set('location', '/gone')
             ..headers.set('x-linked-size', '123456');
+        case '/linked-file-redirect':
+          // Hugging Face's /resolve/ answer: the file named (etag) and its
+          // size, then storage that refuses a HEAD.
+          r
+            ..statusCode = 302
+            ..headers.set('location', '/gone')
+            ..headers.set('x-linked-etag', '"abc"')
+            ..headers.set('x-linked-size', '654321');
+        case '/empty':
+          r.contentLength = 0;
         case '/denied':
           r
             ..statusCode = 401
@@ -92,6 +102,17 @@ void main() {
 
   test('X-Linked-Size is preferred over Content-Length', () async {
     expect(await HttpRemoteSizeProbe().sizeOf('$base/linked'), 123456);
+  });
+
+  test('X-Linked-Size on the redirect that names the file is read', () async {
+    expect(
+      await HttpRemoteSizeProbe().sizeOf('$base/linked-file-redirect'),
+      654321,
+    );
+  });
+
+  test('a length of 0 is no answer', () async {
+    expect(await HttpRemoteSizeProbe().sizeOf('$base/empty'), isNull);
   });
 
   test('X-Linked-Size on a redirect is not read', () async {

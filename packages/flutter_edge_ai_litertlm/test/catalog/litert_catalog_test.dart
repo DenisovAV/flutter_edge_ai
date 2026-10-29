@@ -250,6 +250,10 @@ void main() {
         '${const JsonEncoder.withIndent('  ').convert({'package': 'flutter_edge_ai_litertlm', 'backends_here': snapshot})}\n';
     final golden = File('$_registry/snapshots/flutter_edge_ai_litertlm.json');
     if (Platform.environment['UPDATE_GOLDENS'] == '1') {
+      // A snapshot written on CI would pass whatever the change did to it.
+      if ((Platform.environment['CI'] ?? '').isNotEmpty) {
+        fail('UPDATE_GOLDENS=1 is refused while CI is set');
+      }
       golden
         ..createSync(recursive: true)
         ..writeAsStringSync(actual);

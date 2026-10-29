@@ -17,7 +17,21 @@ void main() {
   final smallSha = '${sha256.convert(small)}';
   final lfsSha = 'a' * 64;
 
+  late HttpServer elsewhere;
+  final authorizations = <String, String?>{};
+
   setUp(() async {
+    authorizations.clear();
+    elsewhere = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    elsewhere.listen((request) async {
+      authorizations['elsewhere'] = request.headers.value('authorization');
+      request.response
+        ..statusCode = 302
+        ..headers.set('location', '/cdn/model')
+        ..headers.set('x-linked-etag', '"$lfsSha"')
+        ..headers.set('x-linked-size', '1000');
+      await request.response.close();
+    });
     // Hugging Face as the check sees it: LFS files redirect with the linked
     // sha256 and size; a plain git file redirects with its git oid and is
     // fetched; a gated repo answers 401; a renamed repo redirects to its
@@ -54,6 +68,14 @@ void main() {
         r
           ..statusCode = 401
           ..headers.set('x-error-code', 'RepoNotFound');
+      } else if (path == '/away/repo/resolve/$_rev/model.bin') {
+        authorizations['away'] = request.headers.value('authorization');
+        r
+          ..statusCode = 307
+          ..headers.set(
+            'location',
+            'http://localhost:${elsewhere.port}/org/repo/resolve/$_rev/model.bin',
+          );
       } else if (path == '/old/repo/resolve/$_rev/model.bin') {
         r
           ..statusCode = 307
@@ -65,7 +87,10 @@ void main() {
     });
   });
 
-  tearDown(() => server.close(force: true));
+  tearDown(() async {
+    await server.close(force: true);
+    await elsewhere.close(force: true);
+  });
 
   Future<Map<String, (LiveStatus, String)>> run(List<LiveArtifact> a) async => {
     for (final r in await checkLive(a, base: base, concurrency: 2))
@@ -122,6 +147,20 @@ void main() {
         'old/repo/model.bin': (LiveStatus.ok, 'linked'),
       },
     );
+  });
+
+  test('the token goes to the Hugging Face host only', () async {
+    final away = (
+      repo: 'away/repo',
+      revision: _rev,
+      path: 'model.bin',
+      sha256: lfsSha,
+      size: 1000,
+    );
+    await checkLive([away], base: base, token: 'hf_secret');
+    expect(authorizations['away'], 'Bearer hf_secret');
+    expect(authorizations, contains('elsewhere'));
+    expect(authorizations['elsewhere'], isNull);
   });
 
   test('a deleted repository is missing, not no access', () async {

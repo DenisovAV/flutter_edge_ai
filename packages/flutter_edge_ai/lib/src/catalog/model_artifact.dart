@@ -34,6 +34,10 @@ final class ModelArtifact {
 
   /// The name the file is installed under: its identity on the device.
   /// Fixed once a release ships it, so an installed file is found again.
+  /// Core keeps a speech model's companions under their model's namespace:
+  /// an STT tokenizer `tokenizer.json` is stored as
+  /// `<model file's name>__tokenizer.json`, a TTS file `config.json` as
+  /// `<type>__config.json`; this is the name before that prefix.
   final String installFilename;
 
   /// Whether the repository is gated: downloading it needs a Hugging Face
@@ -46,16 +50,29 @@ final class ModelArtifact {
       'https://huggingface.co/$repo/resolve/$revision/'
       '${path.split('/').map(Uri.encodeComponent).join('/')}';
 
+  /// Every field: two artifacts that install the same bytes under another
+  /// name, or that record another size, are not the same artifact.
   @override
   bool operator ==(Object other) =>
       other is ModelArtifact &&
       other.repo == repo &&
       other.revision == revision &&
       other.path == path &&
-      other.sha256 == sha256;
+      other.sha256 == sha256 &&
+      other.sizeBytes == sizeBytes &&
+      other.installFilename == installFilename &&
+      other.gated == gated;
 
   @override
-  int get hashCode => Object.hash(repo, revision, path, sha256);
+  int get hashCode => Object.hash(
+    repo,
+    revision,
+    path,
+    sha256,
+    sizeBytes,
+    installFilename,
+    gated,
+  );
 
   @override
   String toString() => 'ModelArtifact($repo@$revision/$path)';

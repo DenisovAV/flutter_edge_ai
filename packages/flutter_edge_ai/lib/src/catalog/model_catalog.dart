@@ -1,4 +1,5 @@
 import 'package:flutter_edge_ai/src/catalog/model_artifact.dart';
+import 'package:meta/meta.dart' show nonVirtual;
 import 'package:flutter_edge_ai/src/catalog/npu_target.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
 import 'package:flutter_edge_ai/src/embedding/embedding_modality.dart';
@@ -89,6 +90,10 @@ abstract base class CatalogModel {
 /// One installable form of a [CatalogModel]: its files and where they run.
 /// One subclass per installer, so a variant reaches only the installer that
 /// can take it.
+///
+/// Sealed: a `switch` over the kinds is exhaustive. A fifth kind (a reranker,
+/// a voice-activity detector) is therefore a breaking change of core, made in
+/// a major version.
 sealed class CatalogVariant {
   const CatalogVariant();
 
@@ -113,7 +118,10 @@ sealed class CatalogVariant {
   /// runtime. Empty when the package does not run it here: an NPU build on a
   /// device the package has no dispatch for, a web bundle off the web.
   /// Whether a run on a given device works is the model registry's record,
-  /// on the website, not this.
+  /// on the website, not this: the answer is by runtime and processor
+  /// architecture, so the iOS Simulator on an Apple-Silicon Mac answers as an
+  /// iPhone does, `gpu` included, although its Metal cannot load an LLM's
+  /// weights (one allocation is capped at 256 MB).
   Set<PreferredBackend> get backendsHere;
 
   @override
@@ -132,7 +140,9 @@ abstract base class InferenceVariant extends CatalogVariant {
   ModelFileType get fileType;
 
   /// The model file; null for a model the operating system provides
-  /// ([ModelFileType.builtIn]).
+  /// ([ModelFileType.builtIn]), which `installModelFromCatalog` registers
+  /// under [modelId] with nothing to download. A variant of any other file
+  /// type without a file is refused at install.
   ModelArtifact? get file;
 
   /// What to open the model with: pass it as `defaults:` to
@@ -156,6 +166,8 @@ abstract base class InferenceVariant extends CatalogVariant {
   /// Whether the variant has a thinking mode.
   bool get supportsThinking => false;
 
+  /// [file], which is what the installer downloads; not overridable.
+  @nonVirtual
   @override
   List<ModelArtifact> get files => [?file];
 }
@@ -192,6 +204,9 @@ abstract base class EmbedderVariant extends CatalogVariant {
   /// for an NPU, null otherwise.
   PreferredBackend? get preferredBackend => null;
 
+  /// [model] and [tokenizer], which is what the installer downloads; not
+  /// overridable.
+  @nonVirtual
   @override
   List<ModelArtifact> get files => [model, ?tokenizer];
 }
@@ -210,12 +225,18 @@ abstract base class SttVariant extends CatalogVariant {
   /// The tokenizer file.
   ModelArtifact get tokenizer;
 
+  /// [model] and [tokenizer], which is what the installer downloads; not
+  /// overridable.
+  @nonVirtual
   @override
   List<ModelArtifact> get files => [model, tokenizer];
 }
 
 /// A model `FlutterEdgeAi.installTts` installs: a bundle of files under one
-/// base URL.
+/// base URL. Its [files] are exactly what core fetches for [type] under
+/// [baseUrl] (`TtsModelType.manifest`, each at its fetch location): the
+/// install checks their sizes, and refuses with [ArgumentError] a variant
+/// whose files name another URL.
 abstract base class TtsVariant extends CatalogVariant {
   /// For subclasses.
   const TtsVariant();

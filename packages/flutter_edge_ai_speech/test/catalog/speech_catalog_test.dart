@@ -125,6 +125,10 @@ void main() {
       '../../model_registry/snapshots/flutter_edge_ai_speech.json',
     );
     if (Platform.environment['UPDATE_GOLDENS'] == '1') {
+      // A snapshot written on CI would pass whatever the change did to it.
+      if ((Platform.environment['CI'] ?? '').isNotEmpty) {
+        fail('UPDATE_GOLDENS=1 is refused while CI is set');
+      }
       golden
         ..createSync(recursive: true)
         ..writeAsStringSync(actual);

@@ -94,7 +94,7 @@ Future<void> _gemma4Evidence(String check) async {
   if (path != null) {
     await recordEvidence(path: path, backend: backend, check: check);
   } else {
-    recordCatalogEvidence(
+    await recordCatalogEvidence(
       LiteRtLmModels.gemma4E2bIt.generic,
       backend: backend,
       check: check,

@@ -131,7 +131,7 @@ void main() {
             check: 'synthesizes within the golden tolerance',
           );
         } else {
-          recordCatalogEvidence(
+          await recordCatalogEvidence(
             variant,
             backend: PreferredBackend.cpu,
             check: 'synthesizes within the golden tolerance',

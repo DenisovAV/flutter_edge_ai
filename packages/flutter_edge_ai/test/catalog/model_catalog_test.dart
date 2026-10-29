@@ -31,15 +31,16 @@ void main() {
       );
     });
 
-    test('two artifacts are equal on repo, revision, path and sha256', () {
-      expect(
-        artifact('m.litertlm', installFilename: 'x'),
+    test('two artifacts are equal on every field', () {
+      expect(artifact('m.litertlm'), artifact('m.litertlm'));
+      expect(artifact('m.litertlm').hashCode, artifact('m.litertlm').hashCode);
+      for (final other in [
         artifact('m.litertlm', installFilename: 'y'),
-      );
-      expect(
-        artifact('m.litertlm', sha: 'aa'),
-        isNot(artifact('m.litertlm', sha: 'bb')),
-      );
+        artifact('m.litertlm', size: 5),
+        artifact('m.litertlm', sha: 'b' * 64),
+      ]) {
+        expect(artifact('m.litertlm'), isNot(other));
+      }
     });
   });
 

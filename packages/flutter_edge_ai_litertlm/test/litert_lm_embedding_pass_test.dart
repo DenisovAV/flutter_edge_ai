@@ -18,6 +18,10 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
+    show LiteRtEmbedders;
+import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
+    show debugLiteRtCatalogHost;
 import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_parts.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_container_io.dart';
@@ -784,8 +788,10 @@ void main() {
         );
         final file = '${model}_1791758581_164626432.text_encoder.xnnpack_cache';
         final path = '$base\\$dir\\$file';
-        // 232 characters: 28 to spare for a longer user, company or app
-        // folder (the 12-hex / decimal / embedding_cache form left 4).
+        // 232 characters for the 270m's text tower: 28 to spare for a longer
+        // user, company or app folder (the 12-hex / decimal / embedding_cache
+        // form left 4). The longest the catalog offers on Windows is the next
+        // test's: 251, 9 to spare.
         expect(path.length, 232);
         expect(260 - path.length, greaterThanOrEqualTo(25));
         // What the refusal and the warning report: this file's path, not the
@@ -794,6 +800,50 @@ void main() {
           liteRtLmCacheFilePathLength('$base\\$dir', model, 164626432),
           path.length,
         );
+      });
+
+      test('every EmbeddingGemma 2 build the catalog offers on Windows keeps '
+          'each tower\'s cache file under MAX_PATH', () {
+        const base =
+            r'C:\Users\a-twenty-char-user-x\AppData\Local\dev.flutterberlin'
+            r'\flutter_edge_ai_example\flutter_edge_ai\emb';
+        debugLiteRtCatalogHost = () => 'windows_x64';
+        addTearDown(() => debugLiteRtCatalogHost = null);
+        var longest = 0;
+        var worst = '';
+        var checked = 0;
+        for (final model in LiteRtEmbedders.all) {
+          for (final v in model.variants) {
+            if (!v.isBundle || v.backendsHere.isEmpty) continue;
+            final name = v.model.installFilename;
+            final dir = liteRtLmCacheDirName(
+              name,
+              size: v.model.sizeBytes,
+              modified: DateTime.fromMillisecondsSinceEpoch(1791758581397),
+            );
+            for (final tower in [
+              'text_encoder',
+              if (v.modalities.contains(EmbeddingModality.image))
+                'vision_encoder',
+              if (v.modalities.contains(EmbeddingModality.audio))
+                'static_audio_encoder',
+            ]) {
+              final file =
+                  '${name}_1791758581_${v.model.sizeBytes}.$tower.xnnpack_cache';
+              final length = '$base\\$dir\\$file'.length;
+              if (length > longest) {
+                longest = length;
+                worst = '$name, $tower';
+              }
+              checked++;
+            }
+          }
+        }
+        expect(checked, greaterThan(3));
+        // 251 characters, for the 440m Intel PTL bundle's vision tower: 9 to
+        // spare for a longer user, company or app folder name.
+        expect(longest, 251, reason: worst);
+        expect(worst, allOf(contains('440m_Intel_PTL'), contains('vision')));
       });
 
       test('the causes name MAX_PATH as the likely one on Windows from 260 '

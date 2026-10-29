@@ -89,7 +89,9 @@ Future<BundleProgress?> startBundleProgress(
 Future<int?> sizeOnDisk(FileSystemService fileSystem, String path) async {
   try {
     if (!await fileSystem.fileExists(path)) return null;
-    return await fileSystem.getFileSize(path);
+    final size = await fileSystem.getFileSize(path);
+    // The web's file system answers -1 for a file it holds but cannot size.
+    return size < 0 ? null : size;
   } on Object {
     return null;
   }

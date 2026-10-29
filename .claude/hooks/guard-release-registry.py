@@ -94,7 +94,8 @@ def _checked(cmd, payload, var):
 def _unreadable(cmd, hook):
     """The block for a command this hook cannot read; None when it can."""
     if publish_command is None:
-        if re.search(r"pub\s+publish", cmd):
+        # pub's aliases for publish too, as publish_command reads them.
+        if re.search(r"pub\s+(?:publish|lish|lush)\b", cmd):
             return (
                 f"BLOCKED: publish_command.py did not load ({_IMPORT_ERROR!r}), "
                 f"so this command cannot be read.\n(guard: .claude/hooks/{hook})\n"
@@ -127,24 +128,49 @@ def _located(p):
 
 
 
-def _package_name(root, prefix):
+# A top-level YAML scalar, bare or quoted: `name: x`, `name: 'x'`, `name: "x"`.
+def _top_level(field):
+    return re.compile(rf"""{field}:\s*(?:'([^']*)'|"([^"]*)"|([^\s#'"]+))""")
+
+
+def _pubspec_value(root, prefix, field):
     path = os.path.join(root, prefix, "pubspec.yaml")
+    pattern = _top_level(field)
     with open(path, encoding="utf-8") as fh:
         for line in fh:
-            m = re.match(r"name:\s*(\S+)", line)
+            m = pattern.match(line)
             if m:
-                return m.group(1)
-    raise GitUnavailable(f"no name: in {prefix}pubspec.yaml")
+                return next(g for g in m.groups() if g is not None)
+    raise GitUnavailable(f"no {field}: in {prefix}pubspec.yaml")
+
+
+def _package_name(root, prefix):
+    return _pubspec_value(root, prefix, "name")
 
 
 def _version(root, prefix):
-    path = os.path.join(root, prefix, "pubspec.yaml")
-    with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            m = re.match(r"version:\s*(\S+)", line)
-            if m:
-                return m.group(1)
-    raise GitUnavailable(f"no version: in {prefix}pubspec.yaml")
+    return _pubspec_value(root, prefix, "version")
+
+
+def _catalog_packages(root):
+    """CATALOG_PACKAGES and every `package:` a registry model names.
+
+    A package that gains a catalog is guarded as soon as a model names it,
+    not when someone remembers this list.
+    """
+    names = set(CATALOG_PACKAGES)
+    models = os.path.join(root, "model_registry", "models")
+    if os.path.isdir(models):
+        pattern = _top_level("package")
+        for entry in sorted(os.listdir(models)):
+            if not entry.endswith(".yaml"):
+                continue
+            with open(os.path.join(models, entry), encoding="utf-8") as fh:
+                for line in fh:
+                    m = pattern.match(line)
+                    if m:
+                        names.add(next(g for g in m.groups() if g is not None))
+    return names
 
 
 def _release_check(root, prefix, name):
@@ -207,11 +233,19 @@ def main():
             "(guard: .claude/hooks/guard-release-registry.py)\n"
         )
         return 2
+    # An accepted override is said, so the log of the release keeps why.
+    for p in publish_command.publishes(cmd, _cwd(payload)):
+        reason = None if p.dry_run else p.skip_reason("RELEASE_SKIP_REGISTRY")
+        if reason is not None:
+            sys.stderr.write(
+                f"guard-release-registry: the registry check is skipped for "
+                f"{p.directory or 'this publish'}: {reason}\n"
+            )
     for p in checked:
         try:
             root, prefix, label = _located(p)
             name = _package_name(root, prefix)
-            if name not in CATALOG_PACKAGES:
+            if name not in _catalog_packages(root):
                 continue
             problem = _release_check(root, prefix, name)
         except Exception as e:  # noqa: BLE001 — any surprise blocks
@@ -319,10 +353,19 @@ def _end_to_end():
 
     bad = []
     with tempfile.TemporaryDirectory() as repo:
-        for name, version in [("flutter_edge_ai", "2.0.0"), ("flutter_edge_ai_litertlm", "1.0.0")]:
+        # litertlm's name is quoted, as YAML allows; extra is a catalog
+        # package only because a registry model names it.
+        for name, written, version in [
+            ("flutter_edge_ai", "flutter_edge_ai", "2.0.0"),
+            ("flutter_edge_ai_litertlm", "'flutter_edge_ai_litertlm'", "'1.0.0'"),
+            ("flutter_edge_ai_extra", "flutter_edge_ai_extra", "0.1.0"),
+        ]:
             os.makedirs(os.path.join(repo, "packages", name))
             with open(os.path.join(repo, "packages", name, "pubspec.yaml"), "w") as fh:
-                fh.write(f"name: {name}\nversion: {version}\n")
+                fh.write(f"name: {written}\nversion: {version}\n")
+        os.makedirs(os.path.join(repo, "model_registry", "models"))
+        with open(os.path.join(repo, "model_registry", "models", "x.yaml"), "w") as fh:
+            fh.write("id: x\npackage: flutter_edge_ai_extra\n")
         with open(os.path.join(repo, ".gitignore"), "w") as fh:
             fh.write(".dart_tool/\n")
         for args in (
@@ -343,6 +386,7 @@ def _end_to_end():
             (f"RELEASE_SKIP_REGISTRY= {lite}", 2),
             (f"RELEASE_SKIP_REGISTRY=x echo hi && {lite}", 2),
             (f"X=1 {lite}", 2),
+            ("dart pub publish -f -C packages/flutter_edge_ai_extra", 2),
         ]
         stamp_dir = os.path.join(repo, "tool", "model_registry", ".dart_tool", "release_check")
         os.makedirs(stamp_dir)
@@ -351,6 +395,9 @@ def _end_to_end():
             got, err = _run_main(cmd, repo)
             if got != want:
                 bad.append(f"main {cmd!r}: exit {got}, want {want} {err.strip()[:120]}")
+        # An accepted override says why, so the release log keeps it.
+        if "skipped" not in _run_main(f'RELEASE_SKIP_REGISTRY="no device" {lite}', repo)[1]:
+            bad.append("main: an accepted override names no reason")
         # The positive control: a stamp at HEAD lets the publish through.
         with open(stamp, "w") as fh:
             json.dump({"head": git(repo, "rev-parse", "HEAD")}, fh)
@@ -383,7 +430,7 @@ def _self_test():
     bad += _end_to_end()
     for line in bad:
         print(f"  FAIL {line}")
-    total = len(_TESTS) + len(_DIR_TESTS) + 11 + len(publish_command._CASES)
+    total = len(_TESTS) + len(_DIR_TESTS) + 13 + len(publish_command._CASES)
     print(f"  {total - len(bad)}/{total} pass")
     return 1 if bad else 0
 

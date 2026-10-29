@@ -4,6 +4,7 @@ import 'package:flutter_edge_ai/src/api/file_sha256_io.dart'
     if (dart.library.js_interop) 'package:flutter_edge_ai/src/api/file_sha256_web.dart';
 import 'package:flutter_edge_ai/src/catalog/model_catalog.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/model.dart' show ModelFileType;
 import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
 import 'package:flutter_edge_ai/src/model_management/install_rule.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
@@ -216,8 +217,9 @@ Future<void> checkInstalledFiles(
 
 /// A catalog variant that cannot be installed here is refused before
 /// anything downloads: one its package runs on no backend in this runtime
-/// (`backendsHere` empty), one with no file (a model the operating system
-/// provides), or one whose files break the catalog's rules (a revision that
+/// (`backendsHere` empty), one with no file that is not a built-in model
+/// (`ModelFileType.builtIn`, which the operating system provides), or one
+/// whose files break the catalog's rules (a revision that
 /// is not a commit, a size that is not positive, a sha256 that is not 64 hex
 /// digits, an install name that is not a portable file name).
 void checkCatalogVariant(CatalogVariant variant) {
@@ -228,10 +230,12 @@ void checkCatalogVariant(CatalogVariant variant) {
       'CatalogModel.variantFor',
     );
   }
-  if (variant.files.isEmpty) {
+  final builtIn =
+      variant is InferenceVariant && variant.fileType == ModelFileType.builtIn;
+  if (variant.files.isEmpty && !builtIn) {
     throw UnsupportedError(
-      '${variant.id} is provided by the operating system; there is nothing to '
-      'install',
+      '${variant.id} lists no file, and only a built-in model '
+      '(ModelFileType.builtIn) installs without one',
     );
   }
   for (final file in variant.files) {

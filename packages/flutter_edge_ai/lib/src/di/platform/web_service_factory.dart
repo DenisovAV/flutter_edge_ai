@@ -70,7 +70,10 @@ DownloadService createDownloadService(
   );
 }
 
-/// The web has no on-device TTS, so nothing asks a size before a download.
+/// The web asks no size before a download (a cross-origin HEAD would need the
+/// host's CORS for its headers): a byte-weighted `withProgress` there counts
+/// a file by its `expectedSize` (every catalog install has one), else every
+/// file the same.
 RemoteSizeProbe createRemoteSizeProbe() => const _NoRemoteSizes();
 
 final class _NoRemoteSizes implements RemoteSizeProbe {

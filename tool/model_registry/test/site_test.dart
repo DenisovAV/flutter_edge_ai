@@ -127,6 +127,7 @@ const _docClaim = '''
   List<Problem> problems, {
   Map<String, Object?> snapshot = _snapshot,
   List<Map<String, Object?>> evidence = const [],
+  bool linuxArm64Archive = true,
 }) {
   final root = Directory.systemTemp.createTempSync('site_test');
   addTearDown(() => root.deleteSync(recursive: true));
@@ -172,6 +173,10 @@ const _docClaim = '''
     "  checksums: {\n"
         "    'litertlm-macos_arm64.tar.gz':\n        '$_macNative',\n"
         "    'litertlm-android_arm64.tar.gz':\n        '${'b' * 64}',\n"
+        "    'litertlm-ios_arm64.tar.gz':\n        '${'c' * 64}',\n"
+        "    'litertlm-windows_x86_64.tar.gz':\n        '${'d' * 64}',\n"
+        "    'litertlm-linux_x86_64.tar.gz':\n        '${'e' * 64}',\n"
+        "${linuxArm64Archive ? "    'litertlm-linux_arm64.tar.gz':\n        '${'f' * 64}',\n" : ''}"
         '  },\n',
   );
   for (final (i, run) in evidence.indexed) {
@@ -252,6 +257,35 @@ Map<String, Map<String, Map<String, String>>> _statuses(
 }
 
 void main() {
+  group('inputs that would render a wrong page are problems', () {
+    test('a snapshot with no answer for a host of hosts.yaml', () {
+      final problems = <Problem>[];
+      final backends = {
+        for (final MapEntry(:key, :value)
+            in (_snapshot['backends_here']! as Map<String, Object?>).entries)
+          key: {...(value! as Map<String, Object?>)}..remove('linux_arm64'),
+      };
+      _repo(
+        '[]',
+        problems,
+        snapshot: {..._snapshot, 'backends_here': backends},
+      );
+      expect(
+        problems.map((x) => '$x'),
+        contains(contains('linux_arm64: no answer for this host')),
+      );
+    });
+
+    test('a host whose native archive the hook does not name', () {
+      final problems = <Problem>[];
+      _repo('[]', problems, linuxArm64Archive: false);
+      expect(
+        problems.map((x) => '$x'),
+        contains(contains('linux_arm64: the native build it runs cannot be')),
+      );
+    });
+  });
+
   group('cells', () {
     test('what the package runs is untested until a claim says more', () {
       final s = _statuses(_docClaim);

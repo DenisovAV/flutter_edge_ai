@@ -256,12 +256,23 @@ void main() {
       );
     });
 
-    test('a variant with no file has nothing to install', () {
+    test('a variant with no file is refused, unless it is built in', () async {
       expect(
         () => FlutterEdgeAi.installModelFromCatalog(
-          TestLlm('builtin', noFile: true),
+          TestLlm('nofile', noFile: true),
         ).install(),
         throwsUnsupportedError,
+      );
+      await initialize();
+      final installation = await FlutterEdgeAi.installModelFromCatalog(
+        TestLlm('os', noFile: true, fileType: ModelFileType.builtIn),
+      ).install();
+      expect(installation.spec.fileType, ModelFileType.builtIn);
+      expect(installation.spec.name, 'tiny-llm');
+      expect(downloads.urls, isEmpty);
+      expect(
+        FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel?.name,
+        'tiny-llm',
       );
     });
   });

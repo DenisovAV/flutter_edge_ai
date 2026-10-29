@@ -9,6 +9,7 @@ import 'dart:typed_data';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/api/bundle_progress.dart' show sizeOnDisk;
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
+import 'package:flutter_edge_ai/src/services/file_system_service.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
     show TtsModelTypeManifest;
 import 'package:flutter_edge_ai/src/services/download_service.dart';
@@ -208,6 +209,10 @@ void main() {
     expect(await sizeOnDisk(fs, there.path), 321);
   });
 
+  test('a size the file system cannot tell (-1, the web) is unknown', () async {
+    expect(await sizeOnDisk(_UnknownSizes(), 'x'), isNull);
+  });
+
   test('without withProgress nothing is asked', () async {
     await initialize();
     await FlutterEdgeAi.installTts()
@@ -329,4 +334,16 @@ final class _MatchaVariant extends TtsVariant {
 
   @override
   Set<PreferredBackend> get backendsHere => const {PreferredBackend.cpu};
+}
+
+/// The web's answer for a file it holds but cannot size.
+final class _UnknownSizes implements FileSystemService {
+  @override
+  Future<bool> fileExists(String path) async => true;
+
+  @override
+  Future<int> getFileSize(String path) async => -1;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

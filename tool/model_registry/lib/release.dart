@@ -156,3 +156,23 @@ String freezeJson(Map<String, Object?> snapshot) =>
 /// published/<package>/<version>.json.
 File publishedFile(Directory registryDir, String package, String version) =>
     File(p.join(registryDir.path, 'published', package, '$version.json'));
+
+/// The paths under [paths] (relative to the repository at [repoRoot]) that
+/// differ from HEAD or are untracked: `release-check` writes its stamp only
+/// when none does, so a pass computed on files that are then reverted never
+/// stands for the commit the publish runs from. A repository git cannot read
+/// is one problem, never an empty answer.
+List<String> uncommittedUnder(String repoRoot, List<String> paths) {
+  final status = Process.runSync('git', [
+    'status',
+    '--porcelain',
+    '--untracked-files=all',
+    '--',
+    ...paths,
+  ], workingDirectory: repoRoot);
+  if (status.exitCode != 0) return ['git status failed: ${status.stderr}'];
+  return [
+    for (final line in '${status.stdout}'.split('\n'))
+      if (line.trim().isNotEmpty) line.substring(3),
+  ];
+}

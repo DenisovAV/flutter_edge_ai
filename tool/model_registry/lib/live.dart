@@ -88,7 +88,13 @@ Future<LiveResult> _check(
   for (var hop = 0; hop < 4; hop++) {
     final request = await client.headUrl(url);
     request.followRedirects = false;
-    if (token != null) request.headers.set('authorization', 'Bearer $token');
+    // The token is for Hugging Face only, not a host a redirect names.
+    if (token != null &&
+        url.scheme == root.scheme &&
+        url.host == root.host &&
+        url.port == root.port) {
+      request.headers.set('authorization', 'Bearer $token');
+    }
     final response = await request.close();
     await response.drain<void>();
     final status = response.statusCode;

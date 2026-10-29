@@ -77,8 +77,10 @@ class SttInstallationBuilder {
   /// differs is deleted with its record and [install] throws
   /// [ModelValidationException]. With either set, an install that would
   /// write over the active STT model's file throws [StateError] before it
-  /// downloads. The sha256 is computed on a worker isolate, only over a file
-  /// this install downloaded. On the web nothing is checked, and
+  /// downloads. The sha256 is computed on a worker isolate on every
+  /// install, of a file installed earlier too, and a cancel stops it. A
+  /// negative size or a sha256 that is not 64 hex digits throws
+  /// [ArgumentError] here. On the web nothing is checked, and
   /// [expectedSha256] throws [UnsupportedError].
   SttInstallationBuilder modelFromNetwork(
     String url, {

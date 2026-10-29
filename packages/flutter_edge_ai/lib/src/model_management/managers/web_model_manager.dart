@@ -10,6 +10,7 @@ import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.
 import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.dart';
 import 'package:flutter_edge_ai/src/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/src/model_management/model_activation.dart';
+import 'package:flutter_edge_ai/src/model_management/restored_filename.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/src/utils/file_name_utils.dart';
 
@@ -55,19 +56,24 @@ class WebModelManager extends ModelFileManager
   Future<void> ensureInitialized() => initialize();
 
   Future<void> _doInit() async {
-    try {
-      await _restoreActiveInferenceModel();
-      await _restoreActiveEmbeddingModel();
-      await _restoreActiveSttModel();
-      edgeAiLog('WebModelManager initialized');
-    } catch (e, st) {
-      // Best-effort restore: a failure must not abort app startup — start with
-      // no active model. (#314 follow-up; mirrors MobileModelManager.)
-      // Include the stack trace so an unexpected restore bug stays diagnosable.
-      edgeAiLog(
-        'WebModelManager: active-model restore failed, starting with no active model: $e\n$st',
-      );
+    // Best-effort restore, one kind at a time: a failure must not abort app
+    // startup, nor cost the other kinds their active model. (#314 follow-up;
+    // mirrors MobileModelManager.)
+    for (final (kind, restore) in [
+      ('inference', _restoreActiveInferenceModel),
+      ('embedding', _restoreActiveEmbeddingModel),
+      ('stt', _restoreActiveSttModel),
+    ]) {
+      try {
+        await restore();
+      } catch (e, st) {
+        edgeAiLog(
+          'WebModelManager: the active $kind model was not restored, '
+          'starting without one: $e\n$st',
+        );
+      }
     }
+    edgeAiLog('WebModelManager initialized');
   }
 
   /// Rehydrate `_activeInferenceModel` from the identity persisted by a
@@ -172,8 +178,9 @@ class WebModelManager extends ModelFileManager
       fileType: fileType,
       // The name it was installed under: `fromNetwork(filename:)` keeps the
       // file under a name other than the URL's, and the install is recorded
-      // by that name.
-      filename: filename,
+      // by that name. A name that is the URL's own was never checked as a
+      // name of its own, and is not now.
+      filename: renamedFrom(source, filename),
     );
     edgeAiLog('[WebModelManager] restored active inference model: $filename');
   }

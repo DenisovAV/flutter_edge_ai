@@ -111,16 +111,18 @@ void refuseReplacingActive(
   );
 }
 
-/// Checks the files of [spec] the install just wrote against [expected] (by
-/// file name), before the spec is made active. On the web, where the browser
-/// keeps the files, nothing is checked. A sha256 is computed only for a file
-/// one of [steps] wrote; a file installed earlier gets the size check alone.
+/// Checks the files of [spec] against [expected] (by file name), before the
+/// spec is made active: on every install, files installed earlier included,
+/// so an install that stopped before its check proves nothing to the next
+/// one. On the web, where the browser keeps the files, nothing is checked.
 ///
 /// Throws [ModelValidationException] for a file of another size or sha256,
-/// after deleting the file and its record — the next install downloads it
-/// again — unless the [active] model of the same kind (read before the
-/// install) reads it: that file is left as it is. [cancelToken] stops a hash
-/// in progress.
+/// or one core has no copy of, after deleting the file and its record — the
+/// next install downloads it again — unless the [active] model of the same
+/// kind (read before the install) reads it: that file is left as it is. A
+/// check that ends without proving its files (a cancel through
+/// [cancelToken], a file that cannot be read) deletes what [steps] wrote
+/// and throws what stopped it.
 Future<void> verifyInstalledFiles(
   ModelSpec spec,
   Map<String, FileExpectation> expected, {
@@ -141,11 +143,14 @@ Future<void> verifyInstalledFiles(
         if (step.installs) step.file.filename,
     },
     keep: {...?active?.files.map((f) => f.filename)},
+    // The record first: a file the system will not let go of yet (Windows
+    // keeps a file open by another process) is then an orphan the next
+    // install writes over, never a record that skips its download.
     forget: (file, path) async {
+      await registry.modelRepository.deleteModel(file.filename);
       if (path != null && await registry.fileSystemService.fileExists(path)) {
         await registry.fileSystemService.deleteFile(path);
       }
-      await registry.modelRepository.deleteModel(file.filename);
     },
     sha256Of: (path) => fileSha256(path, cancelToken: cancelToken),
   );
@@ -153,7 +158,8 @@ Future<void> verifyInstalledFiles(
 
 /// [verifyInstalledFiles] over given [paths] (core's paths by `prefsKey`,
 /// null when core reports the spec not installed). [forget] deletes a file
-/// that failed, with its record, unless [keep] names it.
+/// with its record, unless [keep] names it; [written] are the files this
+/// install wrote, deleted when the check ends without a verdict.
 @visibleForTesting
 Future<void> checkInstalledFiles(
   ModelSpec spec,
@@ -171,47 +177,88 @@ Future<void> checkInstalledFiles(
       throw StateError('$name is expected, but ${spec.name} has no such file');
     }
   }
-  for (final file in spec.files) {
-    final expectation = expected[file.filename];
-    if (expectation == null || expectation.isEmpty) continue;
-    final path = paths?[file.prefsKey];
-    if (path == null || !await fileSystem.fileExists(path)) {
-      if (!keep.contains(file.filename)) await forget(file, path);
-      throw ModelStorageException(
-        '${file.filename}: the install finished, but core has no file for '
-            'it to check. Its record was removed; install it again.',
+
+  /// Deletes [file] unless [keep] names it, and says what became of it. A
+  /// delete that fails is named, never thrown in place of the check's error.
+  Future<(String, Object?)> drop(ModelFile file, String? path) async {
+    if (keep.contains(file.filename)) {
+      return (
+        'The active model reads this file, so it was left as it is.',
         null,
-        'install',
       );
     }
-    final deleted = keep.contains(file.filename)
-        ? 'The active model reads this file, so it was left as it is.'
-        : 'The file and its record were deleted; the next install downloads '
-              'it again.';
-    final size = await fileSystem.getFileSize(path);
-    if (expectation.size case final want? when size != want) {
-      if (!keep.contains(file.filename)) await forget(file, path);
-      throw ModelValidationException.mismatch(
-        '${file.filename} is $size bytes, $want expected. $deleted',
-        filePath: path,
-        actualSize: size,
-        expectedSize: want,
+    try {
+      await forget(file, path);
+      return (
+        'The file and its record were deleted; the next install downloads '
+            'it again.',
+        null,
+      );
+    } catch (e) {
+      return (
+        'Deleting it failed ($e); uninstall it before installing it '
+            'again.',
+        e,
       );
     }
-    if (expectation.sha256 case final want?
-        when written.contains(file.filename)) {
-      final got = await sha256Of(path);
-      if (got != want) {
-        if (!keep.contains(file.filename)) await forget(file, path);
+  }
+
+  try {
+    for (final file in spec.files) {
+      final expectation = expected[file.filename];
+      if (expectation == null || expectation.isEmpty) continue;
+      final path = paths?[file.prefsKey];
+      if (path == null || !await fileSystem.fileExists(path)) {
+        final (what, failure) = await drop(file, path);
         throw ModelValidationException.mismatch(
-          '${file.filename} has sha256 $got, $want expected. $deleted',
+          '${file.filename}: the install finished, but core has no file for '
+          'it to check. $what',
           filePath: path,
-          actualSize: size,
-          expectedSha256: want,
-          actualSha256: got,
+          expectedSize: expectation.size,
+          cause: failure,
         );
       }
+      final size = await fileSystem.getFileSize(path);
+      if (expectation.size case final want? when size != want) {
+        final (what, failure) = await drop(file, path);
+        throw ModelValidationException.mismatch(
+          '${file.filename} is $size bytes, $want expected. $what',
+          filePath: path,
+          actualSize: size,
+          expectedSize: want,
+          cause: failure,
+        );
+      }
+      if (expectation.sha256 case final want?) {
+        final got = await sha256Of(path);
+        if (got != want) {
+          final (what, failure) = await drop(file, path);
+          throw ModelValidationException.mismatch(
+            '${file.filename} has sha256 $got, $want expected. $what',
+            filePath: path,
+            actualSize: size,
+            cause: failure,
+          );
+        }
+      }
     }
+  } on ModelValidationException {
+    rethrow;
+  } catch (e, stack) {
+    // The check ended without a verdict: what this install wrote is not
+    // proven, so it does not stay for the next install to find.
+    for (final file in spec.files) {
+      if (!written.contains(file.filename) || keep.contains(file.filename)) {
+        continue;
+      }
+      try {
+        await forget(file, paths?[file.prefsKey]);
+      } catch (_) {
+        // The check's own error is what the caller needs; this file is
+        // checked again (and hashed) by the next install.
+      }
+    }
+    Error.throwWithStackTrace(e, stack);
   }
 }
 

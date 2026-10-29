@@ -50,35 +50,26 @@ class ModelValidationException extends ModelException {
   /// The exact size the install expected, when that is what failed.
   final int? expectedSize;
 
-  /// The sha256 the install expected (lower-case hex), when that is what
-  /// failed.
-  final String? expectedSha256;
-
-  /// The file's sha256 (lower-case hex), when [expectedSha256] failed.
-  final String? actualSha256;
-
   const ModelValidationException(
     super.message, [
     super.cause,
     this.filePath,
     this.actualSize,
     this.expectedMinSize,
-  ]) : expectedSize = null,
-       expectedSha256 = null,
-       actualSha256 = null;
+  ]) : expectedSize = null;
 
   /// [filePath] is not the file the install expected: [actualSize] bytes
-  /// where [expectedSize] were expected, or [actualSha256] where
-  /// [expectedSha256] was expected.
+  /// where [expectedSize] were expected, another sha256 (which [message]
+  /// names), or no file at all.
   @internal
   const ModelValidationException.mismatch(
-    super.message, {
+    String message, {
     this.filePath,
     this.actualSize,
     this.expectedSize,
-    this.expectedSha256,
-    this.actualSha256,
-  }) : expectedMinSize = null;
+    Object? cause,
+  }) : expectedMinSize = null,
+       super(message, cause);
 
   @override
   String toString() {
@@ -89,9 +80,6 @@ class ModelValidationException extends ModelException {
     }
     if (actualSize != null && expectedSize != null) {
       details += ' (size: $actualSize bytes, expected: $expectedSize bytes)';
-    }
-    if (actualSha256 != null && expectedSha256 != null) {
-      details += ' (sha256: $actualSha256, expected: $expectedSha256)';
     }
     return 'ModelValidationException: $message ($details)${cause != null ? ' (caused by: $cause)' : ''}';
   }

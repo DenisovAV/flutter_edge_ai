@@ -32,21 +32,27 @@ class MobileModelManager extends ModelFileManager
     // Copies an earlier install replaced and could not delete yet; before any
     // restore, so none of them is in use. Never throws.
     await releasePendingCopies();
-    try {
-      await _restoreActiveInferenceModel();
-      await _restoreActiveEmbeddingModel();
-      await _restoreActiveSttModel();
-      await _restoreActiveTtsModel();
-      edgeAiLog('UnifiedModelManager initialized successfully');
-    } catch (e, st) {
-      // Restoring the previously-active model is best-effort. A failure here
-      // (e.g. unreadable SharedPreferences) must not abort app startup — start
-      // with no active model; the user can re-install/select. (#314 follow-up)
-      // Include the stack trace so an unexpected restore bug stays diagnosable.
-      edgeAiLog(
-        'UnifiedModelManager: active-model restore failed, starting with no active model: $e\n$st',
-      );
+    // Restoring the previously-active models is best-effort, one kind at a
+    // time: a failure in one (e.g. unreadable SharedPreferences, a record
+    // core cannot read back) must not abort app startup, nor cost the other
+    // kinds their active model; the user can re-install/select that one.
+    // (#314 follow-up) The stack trace keeps a restore bug diagnosable.
+    for (final (kind, restore) in [
+      ('inference', _restoreActiveInferenceModel),
+      ('embedding', _restoreActiveEmbeddingModel),
+      ('stt', _restoreActiveSttModel),
+      ('tts', _restoreActiveTtsModel),
+    ]) {
+      try {
+        await restore();
+      } catch (e, st) {
+        edgeAiLog(
+          'UnifiedModelManager: the active $kind model was not restored, '
+          'starting without one: $e\n$st',
+        );
+      }
     }
+    edgeAiLog('UnifiedModelManager initialized');
     // Reclaim multi-GB download temp files orphaned by failed / cancelled /
     // process-killed downloads (#383). Fire-and-forget: it must never block or
     // fail app startup, and it self-delays past WorkManager rescheduling before
@@ -250,8 +256,10 @@ class MobileModelManager extends ModelFileManager
       loraSource: loraPath == null ? null : FileSource(loraPath),
       modelType: modelType,
       fileType: fileType,
-      // The name it was installed under, which need not be its source's.
-      filename: filename,
+      // The name it was installed under, when it is not its source's (a
+      // `fromNetwork(filename:)` install, checked when it was installed); a
+      // name read back is not checked again.
+      filename: renamedFrom(FileSource(filePath), filename),
     );
     edgeAiLog('[ModelManager] restored active inference model: $filename');
   }

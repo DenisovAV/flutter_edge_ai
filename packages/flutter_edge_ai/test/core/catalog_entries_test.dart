@@ -107,6 +107,19 @@ void main() {
       expect(active!.files.single.filename, 'phi-4-mini-reasoning.litertlm');
     });
 
+    test('a name its URL gives is restored as it was installed, even one '
+        'that is not portable', () async {
+      await llm()
+          .fromNetwork('https://example.com/repo/gemma%3A2b.litertlm')
+          .install();
+      final restarted = MobileModelManager();
+      await restarted.initialize();
+      expect(
+        restarted.activeInferenceModel?.files.single.filename,
+        'gemma:2b.litertlm',
+      );
+    });
+
     test('keeps the source\'s extension', () {
       expect(
         () => InferenceModelSpec(
@@ -189,39 +202,70 @@ void main() {
               )
               .install(),
           throwsA(
-            isA<ModelValidationException>()
-                .having((e) => e.expectedSha256, 'expectedSha256', 'f' * 64)
-                .having((e) => e.actualSha256, 'actualSha256', right),
+            isA<ModelValidationException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('f' * 64), contains(right)),
+            ),
           ),
         );
         expect(await FlutterEdgeAi.isModelInstalled('wrong.litertlm'), isFalse);
       },
     );
 
-    test(
-      'a file installed earlier gets the size check, not a new hash',
-      () async {
-        await llm()
-            .fromNetwork('https://example.com/repo/model.litertlm')
-            .install();
-        // Not hashed again: this install downloads nothing.
-        await llm()
+    test('a file installed earlier is hashed again; the active model\'s '
+        'file is kept', () async {
+      await llm()
+          .fromNetwork('https://example.com/repo/model.litertlm')
+          .install();
+      await expectLater(
+        llm()
             .fromNetwork(
               'https://example.com/repo/model.litertlm',
               expectedSha256: 'f' * 64,
             )
-            .install();
+            .install(),
+        throwsA(
+          isA<ModelValidationException>().having(
+            (e) => e.message,
+            'message',
+            contains('left as it is'),
+          ),
+        ),
+      );
+      expect(await FlutterEdgeAi.isModelInstalled('model.litertlm'), isTrue);
+    });
+
+    test(
+      'a mismatch whose file cannot be deleted still loses its record',
+      () async {
+        if (Platform.isWindows) return; // directory permissions differ
+        final locked = <String>[];
+        downloads.afterWrite = (path) {
+          locked.add(File(path).parent.path);
+          Process.runSync('chmod', ['555', File(path).parent.path]);
+        };
+        addTearDown(() {
+          for (final dir in locked) {
+            Process.runSync('chmod', ['755', dir]);
+          }
+        });
         await expectLater(
           llm()
               .fromNetwork(
                 'https://example.com/repo/model.litertlm',
-                expectedSize: 5,
+                expectedSize: 123,
               )
               .install(),
-          throwsA(isA<ModelValidationException>()),
+          throwsA(
+            isA<ModelValidationException>().having(
+              (e) => e.cause,
+              'cause',
+              isNotNull,
+            ),
+          ),
         );
-        // The active model's own file is left as it is.
-        expect(await FlutterEdgeAi.isModelInstalled('model.litertlm'), isTrue);
+        expect(await FlutterEdgeAi.isModelInstalled('model.litertlm'), isFalse);
       },
     );
 
@@ -410,15 +454,19 @@ final class _Downloads implements DownloadService {
   /// Files written so far.
   int count = 0;
 
+  /// Runs after each file is written, with its path.
+  void Function(String path)? afterWrite;
+
   @override
   Future<void> download(
     String url,
     String targetPath, {
     String? token,
     CancelToken? cancelToken,
-  }) {
+  }) async {
     count++;
-    return File(targetPath).writeAsBytes(_bytesFor(url));
+    await File(targetPath).writeAsBytes(_bytesFor(url));
+    afterWrite?.call(targetPath);
   }
 
   @override
@@ -433,6 +481,7 @@ final class _Downloads implements DownloadService {
     count++;
     yield 50;
     await File(targetPath).writeAsBytes(_bytesFor(url));
+    afterWrite?.call(targetPath);
     yield 100;
   }
 }

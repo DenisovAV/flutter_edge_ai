@@ -46,4 +46,32 @@ void main() {
     expect(spec, isNotNull);
     expect(spec!.files.single.filename, 'phi-4-mini-reasoning.litertlm');
   });
+
+  test(
+    'a name its URL gives is restored, even one that is not portable',
+    () async {
+      const url = 'https://example.com/repo/gemma%3A2b.litertlm';
+      SharedPreferences.setMockInitialValues({
+        'active_inference_model_type': 'gemma4',
+        'active_inference_file_type': 'litertlm',
+        'active_inference_filename': 'gemma:2b.litertlm',
+        'active_inference_source': 'network|$url',
+      });
+      await ServiceRegistry.initialize();
+      await ServiceRegistry.instance.modelRepository.saveModel(
+        repo.ModelInfo(
+          id: 'gemma:2b.litertlm',
+          source: ModelSource.network(url),
+          installedAt: DateTime(2026),
+          sizeBytes: 1,
+          type: repo.ModelType.inference,
+          hasLoraWeights: false,
+        ),
+      );
+      final manager = WebModelManager();
+      await manager.ensureInitialized();
+      final spec = manager.activeInferenceModel as InferenceModelSpec?;
+      expect(spec?.files.single.filename, 'gemma:2b.litertlm');
+    },
+  );
 }

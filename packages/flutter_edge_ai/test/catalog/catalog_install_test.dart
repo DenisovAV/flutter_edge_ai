@@ -350,6 +350,36 @@ void main() {
     });
   });
 
+  test(
+    'an install stopped before its check is checked by the next one',
+    () async {
+      await initialize();
+      final cancel = CancelToken();
+      downloads.onDownloaded = cancel.cancel;
+      InferenceInstallationBuilder wrongSha() =>
+          FlutterEdgeAi.installModel(
+            modelType: ModelType.gemma4,
+            fileType: ModelFileType.litertlm,
+          ).fromNetwork(
+            'https://example.com/x/m.litertlm',
+            expectedSha256: 'f' * 64,
+          );
+      await expectLater(
+        wrongSha().withCancelToken(cancel).install(),
+        throwsA(isA<DownloadCancelledException>()),
+      );
+      downloads.onDownloaded = null;
+      await expectLater(
+        wrongSha().install(),
+        throwsA(isA<ModelValidationException>()),
+      );
+      expect(
+        FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel,
+        isNull,
+      );
+    },
+  );
+
   group('checkInstalledFiles', () {
     late InferenceModelSpec spec;
     late List<String> forgotten;
@@ -392,28 +422,26 @@ void main() {
       ).install(activate: false)).spec;
     }
 
-    test(
-      'a file core has no path for is a storage error, and is forgotten',
-      () async {
-        await install();
-        final expected = {'pathless.litertlm': const FileExpectation(size: 1)};
-        await expectLater(
-          check(expected, paths: const {}),
-          throwsA(
-            isA<ModelStorageException>().having(
-              (e) => e.message,
-              'message',
-              contains('no file'),
-            ),
+    test('a file core has no path for is a validation error, and is '
+        'forgotten', () async {
+      await install();
+      final expected = {'pathless.litertlm': const FileExpectation(size: 1)};
+      await expectLater(
+        check(expected, paths: const {}),
+        throwsA(
+          isA<ModelValidationException>().having(
+            (e) => e.message,
+            'message',
+            contains('no file'),
           ),
-        );
-        await expectLater(
-          check(expected, usePaths: false),
-          throwsA(isA<ModelStorageException>()),
-        );
-        expect(forgotten, ['pathless.litertlm', 'pathless.litertlm']);
-      },
-    );
+        ),
+      );
+      await expectLater(
+        check(expected, usePaths: false),
+        throwsA(isA<ModelValidationException>()),
+      );
+      expect(forgotten, ['pathless.litertlm', 'pathless.litertlm']);
+    });
 
     test('a sha256 mismatch names both values and forgets the file', () async {
       await install();
@@ -421,21 +449,69 @@ void main() {
         check({'pathless.litertlm': FileExpectation(sha256: 'c' * 64)}),
         throwsA(
           isA<ModelValidationException>()
-              .having((e) => e.expectedSha256, 'expected', 'c' * 64)
-              .having((e) => e.actualSha256, 'actual', 'b' * 64)
-              .having((e) => e.expectedSize, 'expectedSize', isNull),
+              .having((e) => e.expectedSize, 'expectedSize', isNull)
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(contains('c' * 64), contains('b' * 64)),
+              ),
         ),
       );
       expect(forgotten, ['pathless.litertlm']);
     });
 
-    test('a file this install did not write is not hashed', () async {
+    test('a file installed earlier is hashed too', () async {
       await install();
-      await check({
-        'pathless.litertlm': FileExpectation(sha256: 'c' * 64),
-      }, written: const {});
-      expect(hashed, isEmpty);
-      expect(forgotten, isEmpty);
+      await expectLater(
+        check({
+          'pathless.litertlm': FileExpectation(sha256: 'c' * 64),
+        }, written: const {}),
+        throwsA(isA<ModelValidationException>()),
+      );
+      expect(hashed, hasLength(1));
+    });
+
+    test('a check that ends without a verdict deletes what the install '
+        'wrote, and throws what stopped it', () async {
+      await install();
+      final fs = ServiceRegistry.instance.fileSystemService;
+      await expectLater(
+        checkInstalledFiles(
+          spec,
+          {'pathless.litertlm': FileExpectation(sha256: 'c' * 64)},
+          paths: await FlutterEdgeAiPlugin.instance.modelManager
+              .getModelFilePaths(spec),
+          fileSystem: fs,
+          written: const {'pathless.litertlm'},
+          forget: (file, _) async => forgotten.add(file.filename),
+          sha256Of: (_) async => throw DownloadCancelledException('stop', null),
+        ),
+        throwsA(isA<DownloadCancelledException>()),
+      );
+      expect(forgotten, ['pathless.litertlm']);
+    });
+
+    test('a delete that fails is the cause, not the error', () async {
+      await install();
+      final fs = ServiceRegistry.instance.fileSystemService;
+      await expectLater(
+        checkInstalledFiles(
+          spec,
+          {'pathless.litertlm': const FileExpectation(size: 1)},
+          paths: await FlutterEdgeAiPlugin.instance.modelManager
+              .getModelFilePaths(spec),
+          fileSystem: fs,
+          written: const {'pathless.litertlm'},
+          forget: (_, _) async =>
+              throw const FileSystemException('in use', 'x'),
+          sha256Of: (_) async => 'b' * 64,
+        ),
+        throwsA(
+          isA<ModelValidationException>()
+              .having((e) => e.cause, 'cause', isA<FileSystemException>())
+              .having((e) => e.message, 'message', contains('Deleting it')),
+        ),
+      );
     });
 
     test('an expectation for a file the spec does not have throws', () async {

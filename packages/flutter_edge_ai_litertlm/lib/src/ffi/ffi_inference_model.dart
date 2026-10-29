@@ -100,10 +100,12 @@ base class FfiInferenceModel extends InferenceModel
     return read.payload;
   }
 
-  /// The self-check, once per model; a check that failed runs again next
-  /// time (it may have failed on a model that was closing). Its runs belong
-  /// to [scorer]: closing that scorer stops them, and another scorer waiting
-  /// on the same check then runs it again for itself.
+  /// The self-check, once per model in a debug or profile build (a release
+  /// build scores in [liteRtLmReleaseScoringMode] without it); a check that
+  /// failed runs again next time (it may have failed on a model that was
+  /// closing). Its runs belong to [scorer]: closing that scorer stops them,
+  /// and another scorer waiting on the same check then runs it again for
+  /// itself.
   Future<LiteRtLmScoringMode> _scoringModeFor(
     _LiteRtLmOptionScorer scorer,
     List<String> targets,
@@ -136,39 +138,45 @@ base class FfiInferenceModel extends InferenceModel
             '${run.tokenScores[i].length} tokens.',
           ),
     ];
-    final check = liteRtLmScoringSelfCheck(
-      backend: activeBackend,
-      targets: targets,
-      tokenize: scorer.tokenize,
-      detokenize: scorer.detokenize,
-      scoreOneToken: (prompt, token) async => single(
-        await scorer._client.scoreTargets(prompt, [
-          token,
-        ], stops: scorer._stops),
-        [token],
-      ).single,
-      scoreInMode: (mode, prompt, tokens) async {
-        final client = scorer._client;
-        String? reprefill;
-        if (mode == LiteRtLmScoringMode.once) {
-          try {
-            reprefill = await scorer._reprefillFor(prompt);
-          } on DeciderUnsupportedException catch (e) {
-            throw DeciderUnsupportedException(
-              'The scoring self-check\'s own prompt: ${e.message}',
-            );
+    // kReleaseMode is `dart.vm.product`, a compile-time constant: true in a
+    // release build only (profile builds keep the check), and the check's
+    // code is tree-shaken out of a release build.
+    final check = liteRtLmScoringMode(
+      releaseMode: kReleaseMode,
+      selfCheck: () => liteRtLmScoringSelfCheck(
+        backend: activeBackend,
+        targets: targets,
+        tokenize: scorer.tokenize,
+        detokenize: scorer.detokenize,
+        scoreOneToken: (prompt, token) async => single(
+          await scorer._client.scoreTargets(prompt, [
+            token,
+          ], stops: scorer._stops),
+          [token],
+        ).single,
+        scoreInMode: (mode, prompt, tokens) async {
+          final client = scorer._client;
+          String? reprefill;
+          if (mode == LiteRtLmScoringMode.once) {
+            try {
+              reprefill = await scorer._reprefillFor(prompt);
+            } on DeciderUnsupportedException catch (e) {
+              throw DeciderUnsupportedException(
+                'The scoring self-check\'s own prompt: ${e.message}',
+              );
+            }
           }
-        }
-        return single(
-          await client.scoreTargets(
-            prompt,
+          return single(
+            await client.scoreTargets(
+              prompt,
+              tokens,
+              reprefill: reprefill,
+              stops: scorer._stops,
+            ),
             tokens,
-            reprefill: reprefill,
-            stops: scorer._stops,
-          ),
-          tokens,
-        );
-      },
+          );
+        },
+      ),
     );
     _scoringCheck = check;
     return check.then(
@@ -181,8 +189,9 @@ base class FfiInferenceModel extends InferenceModel
   }
 
   /// Scores on the CPU and on the GPU. The GPU's scores are not the CPU's,
-  /// and the calibration in a bundle is fitted on CPU probabilities; the
-  /// self-check runs on either before the first decision. The NPU is refused:
+  /// and the calibration in a bundle is fitted on CPU probabilities; in a
+  /// debug or profile build the self-check runs on either before the first
+  /// decision (a release build skips it). The NPU is refused:
   /// its executor rolls back one token only, and a decision rewinds between
   /// options.
   @override

@@ -4,6 +4,7 @@
 // ignore_for_file: experimental_member_use
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/option_scoring_self_check.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter_test/flutter_test.dart';
 
 final _user =
@@ -83,6 +84,49 @@ Matcher _refusing(String says) => throwsA(
 );
 
 void main() {
+  group('the self-check runs in debug and profile builds only', () {
+    test('a release build scores in once without running it', () async {
+      var checks = 0;
+      final mode = await liteRtLmScoringMode(
+        releaseMode: true,
+        selfCheck: () async {
+          checks++;
+          return LiteRtLmScoringMode.plain;
+        },
+      );
+      expect(mode, LiteRtLmScoringMode.once);
+      expect(liteRtLmReleaseScoringMode, LiteRtLmScoringMode.once);
+      expect(checks, 0);
+    });
+
+    test('a debug or profile build runs it and takes its mode', () async {
+      var checks = 0;
+      final mode = await liteRtLmScoringMode(
+        releaseMode: false,
+        selfCheck: () async {
+          checks++;
+          return LiteRtLmScoringMode.plain;
+        },
+      );
+      expect(mode, LiteRtLmScoringMode.plain);
+      expect(checks, 1);
+    });
+
+    test('a debug build passes the check\'s refusal on', () async {
+      final engine = _Engine()
+        ..score = (prompt, token, call) => -1.5 - call * 1e-6;
+      await expectLater(
+        liteRtLmScoringMode(releaseMode: false, selfCheck: engine.check),
+        _refusing('not repeatable'),
+      );
+    });
+
+    test('this test run is not a release build, so the check runs', () {
+      // The engine passes kReleaseMode; flutter test is never release.
+      expect(kReleaseMode, isFalse);
+    });
+  });
+
   group('a refusal that depends on the engine\'s arithmetic names the '
       'backend', () {
     final cases = <String, _Engine Function()>{

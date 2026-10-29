@@ -33,6 +33,11 @@ const _withheld = <String, Set<PreferredBackend>>{
   'translategemma-4b-it/int4': {PreferredBackend.gpu},
   'translategemma-4b-it/int8': {PreferredBackend.gpu},
   'translategemma-4b-it/int4-multimodal': {PreferredBackend.gpu},
+  'qwen3-0.6b/standard': {
+    PreferredBackend.cpu,
+    PreferredBackend.gpu,
+    PreferredBackend.npu,
+  },
 };
 
 const _registry = '../../model_registry';
@@ -98,12 +103,47 @@ void main() {
       );
     });
 
-    test('a withheld variant is not in the catalog', () {
+    test('a withheld variant stays in the catalog and runs nowhere', () {
       expect(
         LiteRtLmModels.qwen3_0_6b.variants.map((v) => v.id),
-        isNot(contains('qwen3-0.6b/standard')),
+        contains('qwen3-0.6b/standard'),
+      );
+      final standard = LiteRtLmModels.qwen3_0_6b.variants.firstWhere(
+        (v) => v.id == 'qwen3-0.6b/standard',
+      );
+      for (final abi in _hosts.values) {
+        expect(_here(standard, abi), _none, reason: '$abi');
+      }
+    });
+
+    test('a build withheld from the NPU is not offered there', () {
+      for (final v in [
+        LiteRtLmModels.gemma3_1bIt.npuSm8550,
+        LiteRtLmModels.gemma3_1bIt.npuSm8750,
+        LiteRtLmModels.gemma3_270mIt.npuSm8750,
+        LiteRtLmModels.gemma3_270mIt.npuSm8850,
+      ]) {
+        expect(_here(v, 'android_arm64'), _none, reason: v.id);
+        expect(_here(v, 'linux_arm64'), _none, reason: v.id);
+      }
+      expect(
+        _here(LiteRtLmModels.gemma3_1bIt.npuSm8650, 'android_arm64'),
+        _npu,
       );
     });
+  });
+
+  group('a host the native archive is not published for', () {
+    for (final abi in ['windows_arm64', 'macos_x64', 'android_x64']) {
+      test('$abi runs nothing', () {
+        expect(_here(LiteRtLmModels.gemma4E2bIt.generic, abi), _none);
+        expect(
+          _here(LiteRtEmbedders.embeddinggemma2Text270m.generic, abi),
+          _none,
+        );
+        expect(_here(LiteRtEmbedders.embeddinggemma300m.seq256, abi), _none);
+      });
+    }
   });
 
   group('where an embedder runs', () {
@@ -112,6 +152,13 @@ void main() {
 
     test('an EmbeddingGemma 2 bundle: CPU natively, WebGPU on the web', () {
       expect(_here(eg2.generic, 'android_arm64'), _cpu);
+      expect(_here(eg2.generic, 'windows_x64'), _cpu);
+      expect(_here(eg2.generic, 'macos_arm64'), _cpu);
+      // Where the loader honours the GPU for it.
+      expect(_here(eg2.generic, 'linux_x64'), {
+        PreferredBackend.cpu,
+        PreferredBackend.gpu,
+      });
       expect(_here(eg2.generic, null), _gpu);
       expect(_here(eg2.npuSm8850, 'android_arm64'), _npu);
       expect(_here(eg2.npuSm8850, null), _none);
@@ -167,14 +214,16 @@ void main() {
       for (final v in model.variants) {
         if (v.isWebBundle) continue;
         final info = _bundleInfo(v.file.sha256);
-        final allowed = textBackendsAllowedForTesting(
-          info,
-        ).difference(_withheld[v.id] ?? const {});
+        final loader = textBackendsAllowedForTesting(info);
         if (v.npuTarget == null) {
-          expect(_here(v, 'macos_arm64'), allowed, reason: v.id);
+          expect(
+            _here(v, 'macos_arm64'),
+            loader.difference(_withheld[v.id] ?? const {}),
+            reason: v.id,
+          );
         } else {
           expect(
-            allowed,
+            loader,
             _npu,
             reason: '${v.id}: the loader runs it on the NPU',
           );

@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart';
 
 import '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
+import '../native_hosts.dart';
 import '../npu_stacks.dart' show NpuStack;
 import 'catalog_host_web.dart'
     if (dart.library.ffi) 'catalog_host_io.dart'
@@ -88,7 +89,14 @@ final class LiteRtLmVariant extends InferenceVariant {
     required Set<PreferredBackend> textBackends,
     this.npuTarget,
     this.requiredMaxTokens,
-  }) : _textBackends = textBackends;
+    Set<PreferredBackend> withheld = const {},
+  }) : _textBackends = textBackends,
+       _withheld = withheld;
+
+  /// Backends the registry withholds this variant from (all of them for a
+  /// withheld variant, which stays in the catalog, deprecated, so code that
+  /// names it still compiles).
+  final Set<PreferredBackend> _withheld;
 
   @override
   final String id;
@@ -139,18 +147,23 @@ final class LiteRtLmVariant extends InferenceVariant {
   final Set<PreferredBackend> _textBackends;
 
   /// A web bundle runs on the web only, on the GPU; every other file runs
-  /// natively only. A file compiled for an NPU runs where this package has
+  /// natively only, on a host this package's native archive is published for
+  /// (Android arm64, iOS arm64 — device and Apple-Silicon simulator —, macOS
+  /// arm64, Linux x64 and arm64, Windows x64): none on any other. A file compiled for an NPU runs where this package has
   /// that vendor's dispatch: Qualcomm on Android arm64 and Linux arm64,
   /// Google Tensor on Android arm64, Intel on Windows x64 (whether the app
   /// bundled the vendor's stack, which Qualcomm and Google Tensor make
   /// opt-in, is known only at load).
+  /// A withheld backend is in none of these answers.
   @override
-  Set<PreferredBackend> get backendsHere {
+  Set<PreferredBackend> get backendsHere => _runsOn.difference(_withheld);
+
+  Set<PreferredBackend> get _runsOn {
     final abi = _abi;
     if (abi == null) {
       return isWebBundle ? const {PreferredBackend.gpu} : const {};
     }
-    if (isWebBundle) return const {};
+    if (isWebBundle || !liteRtLmNativeAbis.contains(abi)) return const {};
     return _npuRuns(npuTarget, abi) ?? _textBackends;
   }
 }
@@ -208,7 +221,12 @@ final class LiteRtEmbedderVariant extends EmbedderVariant {
     this.tokenizer,
     this.imageRagProfileId,
     this.npuTarget,
-  });
+    Set<PreferredBackend> withheld = const {},
+  }) : _withheld = withheld;
+
+  /// Backends the registry withholds this variant from (see
+  /// [LiteRtLmVariant]).
+  final Set<PreferredBackend> _withheld;
 
   @override
   final String id;
@@ -251,15 +269,19 @@ final class LiteRtEmbedderVariant extends EmbedderVariant {
   /// Whether the model is a `.litertlm` bundle, which carries its tokenizer.
   bool get isBundle => tokenizer == null;
 
-  /// A `.litertlm` bundle runs on the CPU natively and on the GPU (WebGPU) on
-  /// the web; one compiled for an NPU runs on that NPU where this package has
+  /// A `.litertlm` bundle runs on the CPU natively — and on the GPU where
+  /// that is measured, Linux x64 — and on the GPU (WebGPU) on the web; none
+  /// natively on a host this package's archive is not published for; one compiled for an NPU runs on that NPU where this package has
   /// its vendor's dispatch (the rule [LiteRtLmVariant.backendsHere] states),
   /// never on the web. A `.tflite` model runs on the CPU natively (the GPU
   /// delegate returns zero vectors for EmbeddingGemma's weights) and where
   /// LiteRT.js puts it on the web; this version runs no `.tflite` compiled
   /// for an NPU.
+  /// A withheld backend is in none of these answers.
   @override
-  Set<PreferredBackend> get backendsHere {
+  Set<PreferredBackend> get backendsHere => _runsOn.difference(_withheld);
+
+  Set<PreferredBackend> get _runsOn {
     final abi = _abi;
     final compiled = npuTarget != null;
     if (abi == null) {
@@ -268,8 +290,12 @@ final class LiteRtEmbedderVariant extends EmbedderVariant {
           ? const {PreferredBackend.gpu}
           : const {PreferredBackend.cpu, PreferredBackend.gpu};
     }
+    if (!liteRtLmNativeAbis.contains(abi)) return const {};
     if (!isBundle) return compiled ? const {} : const {PreferredBackend.cpu};
-    return _npuRuns(npuTarget, abi) ?? const {PreferredBackend.cpu};
+    return _npuRuns(npuTarget, abi) ??
+        (liteRtLmEmbeddingGpuAbis.contains(abi)
+            ? const {PreferredBackend.cpu, PreferredBackend.gpu}
+            : const {PreferredBackend.cpu});
   }
 }
 

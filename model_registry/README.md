@@ -25,8 +25,9 @@ text-to-speech) in the repositories below. The schema already admits `task`,
 Generated from it, checked in, never edited by hand:
 - `packages/flutter_edge_ai_litertlm/lib/src/catalog/generated/litert_catalog.g.dart`:
   `LiteRtLmModels` and `LiteRtEmbedders`, a class per model with a getter
-  per variant (`LiteRtLmModels.gemma4E2bIt.npuSm8750`). A variant withheld
-  from a release is left out.
+  per variant (`LiteRtLmModels.gemma4E2bIt.npuSm8750`). A withheld variant
+  stays, `@Deprecated` with its reason, and runs nowhere (empty
+  `backendsHere`); a backend withheld from it is in none of its answers.
 - `packages/flutter_edge_ai_speech/lib/src/catalog/generated/speech_catalog.g.dart`:
   `LiteRtSpeechModels`, speech-to-text and text-to-speech in one namespace
   (`LiteRtSpeechModels.moonshineTiny.f32`). A TTS bundle's files are in the
@@ -43,7 +44,7 @@ Generated from it, checked in, never edited by hand:
   | documented | a claim in `documented_claims.yaml` |
   | untested | the package's snapshot runs it there and nothing says more |
   | refused | the snapshot does not run it there: a native backend the package rules out, or an NPU build on its vendor's platform |
-  | withheld | `withhold`: the variant is left out of the catalog; every cell it would run on gives the reason |
+  | withheld | `withhold`: the variant is deprecated and runs nowhere; every cell it would run on gives the reason |
   | broken | `withhold_backends`, or a broken claim, with its issue |
 
   A combination that does not exist (an NPU build on another vendor's
@@ -95,9 +96,21 @@ Per kind:
   order of `TtsModelType.manifest` in core.
 
 Optional on any variant:
-- `withhold: {reason, issue}` keeps it out of what the package offers.
-- `withhold_backends: {gpu: {reason, issue}}` does the same for one backend.
-- `deprecated: {reason, use}`.
+- `withhold: {reason, issue}`: the package offers it on no backend.
+- `withhold_backends: {gpu: {reason, issue}}` does the same for one backend,
+  for every kind of model.
+- `deprecated: {reason, use}`: its getter is `@Deprecated`.
+
+### Variants are never removed
+
+A variant's getter is public API of its package: an app that names
+`LiteRtLmModels.gemma3_1bIt.npuSm8750` breaks at compile time if it goes.
+So a variant, once in the registry, is never deleted or renamed: one that
+must stop being offered is withheld (`withhold`, or `withhold_backends` for
+a backend), which keeps its getter, marks it `@Deprecated` and empties its
+`backendsHere`. `check` refuses a release snapshot under `published/` whose
+variant is gone, and a package whose CHANGELOG has released a catalog
+without a `published/` snapshot for that version.
 
 `gated: auto | manual` on an artifact is the repository's Hugging Face gating.
 

@@ -277,14 +277,3 @@
   source: "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)"
 
 # --- Known broken ---------------------------------------------------------------
-- what: Gemma 3 on Qualcomm NPUs drops every prefill chunk after the first
-  variants:
-    - gemma-3-1b-it/npu-sm8550
-    - gemma-3-1b-it/npu-sm8750
-    - gemma-3-270m-it/npu-sm8750
-    - gemma-3-270m-it/npu-sm8850
-  hosts: [android_arm64, linux_arm64]
-  backends: [npu]
-  status: broken
-  source: "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)"
-  issue: https://github.com/google-ai-edge/LiteRT-LM/issues/3508

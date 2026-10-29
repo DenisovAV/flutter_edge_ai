@@ -196,15 +196,11 @@
       "web": []
     },
     "gemma-3-1b-it/npu-sm8550": {
-      "android_arm64": [
-        "npu"
-      ],
+      "android_arm64": [],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
-      "linux_arm64": [
-        "npu"
-      ],
+      "linux_arm64": [],
       "windows_x64": [],
       "web": []
     },
@@ -222,15 +218,11 @@
       "web": []
     },
     "gemma-3-1b-it/npu-sm8750": {
-      "android_arm64": [
-        "npu"
-      ],
+      "android_arm64": [],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
-      "linux_arm64": [
-        "npu"
-      ],
+      "linux_arm64": [],
       "windows_x64": [],
       "web": []
     },
@@ -345,28 +337,20 @@
       "web": []
     },
     "gemma-3-270m-it/npu-sm8750": {
-      "android_arm64": [
-        "npu"
-      ],
+      "android_arm64": [],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
-      "linux_arm64": [
-        "npu"
-      ],
+      "linux_arm64": [],
       "windows_x64": [],
       "web": []
     },
     "gemma-3-270m-it/npu-sm8850": {
-      "android_arm64": [
-        "npu"
-      ],
+      "android_arm64": [],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],
-      "linux_arm64": [
-        "npu"
-      ],
+      "linux_arm64": [],
       "windows_x64": [],
       "web": []
     },
@@ -900,6 +884,15 @@
       ],
       "web": []
     },
+    "qwen3-0.6b/standard": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
     "qwen3-0.6b/mixed-int4": {
       "android_arm64": [
         "cpu",
@@ -1093,7 +1086,8 @@
         "cpu"
       ],
       "linux_x64": [
-        "cpu"
+        "cpu",
+        "gpu"
       ],
       "linux_arm64": [
         "cpu"
@@ -1236,7 +1230,8 @@
         "cpu"
       ],
       "linux_x64": [
-        "cpu"
+        "cpu",
+        "gpu"
       ],
       "linux_arm64": [
         "cpu"
@@ -1379,7 +1374,8 @@
         "cpu"
       ],
       "linux_x64": [
-        "cpu"
+        "cpu",
+        "gpu"
       ],
       "linux_arm64": [
         "cpu"

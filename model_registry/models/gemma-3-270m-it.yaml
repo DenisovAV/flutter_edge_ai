@@ -111,6 +111,11 @@ variants:
   fixed_max_tokens: 4096
   runtime:
     preferred_backend: npu
+  withhold_backends:
+    npu:
+      reason: LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the
+        model answers a different prompt than it was given.
+      issue: https://github.com/google-ai-edge/LiteRT-LM/issues/3508
 - slug: npu-sm8850
   file_type: litertlm
   file:
@@ -127,3 +132,8 @@ variants:
   fixed_max_tokens: 4096
   runtime:
     preferred_backend: npu
+  withhold_backends:
+    npu:
+      reason: LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the
+        model answers a different prompt than it was given.
+      issue: https://github.com/google-ai-edge/LiteRT-LM/issues/3508

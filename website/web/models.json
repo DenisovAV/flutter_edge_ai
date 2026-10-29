@@ -183,8 +183,7 @@
       },
       "linux_x64": {
        "gpu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.19.0"
+        "status": "untested"
        },
        "cpu": {
         "status": "documented",
@@ -531,8 +530,7 @@
       },
       "linux_x64": {
        "gpu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.19.0"
+        "status": "untested"
        },
        "cpu": {
         "status": "documented",
@@ -883,8 +881,7 @@
       },
       "linux_x64": {
        "gpu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.19.0"
+        "status": "untested"
        },
        "cpu": {
         "status": "documented",
@@ -3890,16 +3887,42 @@
       "android_arm64": {
        "npu": {
         "status": "broken",
-        "source": "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)",
-        "note": "Gemma 3 on Qualcomm NPUs drops every prefill chunk after the first",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "ios_arm64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "macos_arm64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "windows_x64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "linux_x64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
         "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "broken",
-        "source": "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)",
-        "note": "Gemma 3 on Qualcomm NPUs drops every prefill chunk after the first",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
         "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
        }
       }
@@ -3956,16 +3979,42 @@
       "android_arm64": {
        "npu": {
         "status": "broken",
-        "source": "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)",
-        "note": "Gemma 3 on Qualcomm NPUs drops every prefill chunk after the first",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "ios_arm64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "macos_arm64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "windows_x64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "linux_x64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
         "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "broken",
-        "source": "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)",
-        "note": "Gemma 3 on Qualcomm NPUs drops every prefill chunk after the first",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
         "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
        }
       }
@@ -4261,16 +4310,42 @@
       "android_arm64": {
        "npu": {
         "status": "broken",
-        "source": "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)",
-        "note": "Gemma 3 on Qualcomm NPUs drops every prefill chunk after the first",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "ios_arm64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "macos_arm64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "windows_x64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "linux_x64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
         "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "broken",
-        "source": "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)",
-        "note": "Gemma 3 on Qualcomm NPUs drops every prefill chunk after the first",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
         "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
        }
       }
@@ -4297,16 +4372,42 @@
       "android_arm64": {
        "npu": {
         "status": "broken",
-        "source": "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)",
-        "note": "Gemma 3 on Qualcomm NPUs drops every prefill chunk after the first",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "ios_arm64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "macos_arm64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "windows_x64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
+       }
+      },
+      "linux_x64": {
+       "npu": {
+        "status": "broken",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
         "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
        }
       },
       "linux_arm64": {
        "npu": {
         "status": "broken",
-        "source": "PR #701, Gemma 3 NPU prefill chunks (LiteRT-LM#3508)",
-        "note": "Gemma 3 on Qualcomm NPUs drops every prefill chunk after the first",
+        "note": "LiteRT-LM drops every prefill chunk after the first on Qualcomm NPUs, so the model answers a different prompt than it was given.",
         "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/3508"
        }
       }

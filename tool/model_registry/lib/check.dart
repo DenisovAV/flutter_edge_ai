@@ -210,6 +210,7 @@ CheckResult checkRegistry(Directory registryDir) {
   _checkDartNames(entries, problems);
   _checkDerived(registryDir, entries, problems);
   _checkPublished(registryDir, entries, problems);
+  _checkReleasedCatalogs(registryDir, entries, problems);
   return CheckResult(entries, problems);
 }
 
@@ -965,7 +966,8 @@ void _checkPublished(
           Problem(
             rel,
             key.toString(),
-            'published variant is gone; deprecate it instead of deleting it',
+            'published variant is gone; withhold it instead of deleting it '
+            '(a catalog variant is never removed)',
           ),
         );
         continue;
@@ -982,6 +984,53 @@ void _checkPublished(
             ),
           );
         }
+      }
+    }
+  }
+}
+
+/// A package whose CHANGELOG has released its catalog (a `## X.Y.Z` section
+/// naming "Model catalog") has `published/<package>/<version>.json` for that
+/// version and every later one: the freeze [_checkPublished] holds variants
+/// to, which a deleted snapshot would otherwise switch off without a word.
+void _checkReleasedCatalogs(
+  Directory registryDir,
+  List<Entry> entries,
+  List<Problem> problems,
+) {
+  final root = p.dirname(p.absolute(registryDir.path));
+  final packages = {for (final e in entries) '${e.data['package']}'}.toList()
+    ..sort();
+  final heading = RegExp(r'^## (\d+\.\d+\.\d+\S*)\s*$');
+  for (final package in packages) {
+    final changelog = File(p.join(root, 'packages', package, 'CHANGELOG.md'));
+    if (!changelog.existsSync()) continue;
+    final released = <String>[]; // newest first
+    final withCatalog = <String>{};
+    String? section;
+    for (final line in changelog.readAsLinesSync()) {
+      if (heading.firstMatch(line) case final m?) {
+        section = m.group(1);
+        released.add(section!);
+      } else if (line.startsWith('## ')) {
+        section = null;
+      } else if (section != null && line.contains('Model catalog')) {
+        withCatalog.add(section);
+      }
+    }
+    final first = released.lastIndexWhere(withCatalog.contains);
+    for (final version in released.take(first + 1)) {
+      final snapshot = p.join('published', package, '$version.json');
+      if (!File(p.join(registryDir.path, snapshot)).existsSync()) {
+        problems.add(
+          Problem(
+            snapshot,
+            '-',
+            '$package $version released its catalog (CHANGELOG.md), and this '
+                'snapshot of it is missing; run `registry.dart freeze $package` '
+                'at that version, or restore the file',
+          ),
+        );
       }
     }
   }

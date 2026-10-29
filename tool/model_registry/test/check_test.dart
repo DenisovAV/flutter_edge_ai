@@ -448,6 +448,69 @@ void main() {
     );
   });
 
+  group('a released catalog has its published snapshots', () {
+    List<String> problemsWith(String changelog, Map<String, String> files) {
+      final root = Directory.systemTemp.createTempSync('registry_root');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final registry = _registry(
+        [_llm()],
+        extraFiles: {..._llmFacts(), ...files},
+      );
+      final moved = registry.renameSync(p.join(root.path, 'model_registry'));
+      // Back where _registry's own tear-down deletes it, before root goes.
+      addTearDown(() => moved.renameSync(registry.path));
+      File(
+          p.join(
+            root.path,
+            'packages',
+            'flutter_edge_ai_litertlm',
+            'CHANGELOG.md',
+          ),
+        )
+        ..createSync(recursive: true)
+        ..writeAsStringSync(changelog);
+      return [
+        for (final x in checkRegistry(Directory(moved.path)).problems) '$x',
+      ];
+    }
+
+    const changelog = """## Unreleased
+- Model catalog: more models.
+
+## 1.21.0
+- Something else.
+
+## 1.20.0
+- Model catalog: `LiteRtLmModels`.
+
+## 1.19.0
+- Before the catalog.
+""";
+
+    test('every version from the first catalog release on', () {
+      expect(
+        problemsWith(changelog, const {}),
+        containsAll([
+          contains('flutter_edge_ai_litertlm 1.21.0 released its catalog'),
+          contains('flutter_edge_ai_litertlm 1.20.0 released its catalog'),
+        ]),
+      );
+      final none = problemsWith(changelog, {
+        for (final v in ['1.20.0', '1.21.0'])
+          'published/flutter_edge_ai_litertlm/$v.json': jsonEncode({
+            'variants': {
+              for (final v in (_llm()['variants']! as List).indexed)
+                'tiny-llm/${(v.$2 as Map)['slug']}': frozenValues(
+                  _variant(_llm(), v.$1),
+                ),
+            },
+          }),
+      });
+      expect(none.where((x) => x.contains('released its catalog')), isEmpty);
+      expect(none.where((x) => x.contains('1.19.0')), isEmpty);
+    });
+  });
+
   test('Dart names keep numbers apart', () {
     expect(dartMemberName('gemma-4-e2b-it'), 'gemma4E2bIt');
     expect(dartMemberName('qwen3-0.6b'), 'qwen3_0_6b');

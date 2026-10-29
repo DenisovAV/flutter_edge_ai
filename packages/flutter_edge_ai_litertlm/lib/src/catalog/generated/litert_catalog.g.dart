@@ -580,9 +580,10 @@ const _gemma3_1bIt$npuSm8550 = LiteRtLmVariant._(
   supportsFunctionCalls: false,
   supportsThinking: false,
   isWebBundle: false,
-  textBackends: {PreferredBackend.npu},
+  textBackends: {},
   npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8550'),
   requiredMaxTokens: 1280,
+  withheld: {PreferredBackend.npu},
 );
 
 const _gemma3_1bIt$npuSm8650 = LiteRtLmVariant._(
@@ -638,9 +639,10 @@ const _gemma3_1bIt$npuSm8750 = LiteRtLmVariant._(
   supportsFunctionCalls: false,
   supportsThinking: false,
   isWebBundle: false,
-  textBackends: {PreferredBackend.npu},
+  textBackends: {},
   npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8750'),
   requiredMaxTokens: 1280,
+  withheld: {PreferredBackend.npu},
 );
 
 const _gemma3_1bIt$npuSm8850 = LiteRtLmVariant._(
@@ -940,9 +942,10 @@ const _gemma3_270mIt$npuSm8750 = LiteRtLmVariant._(
   supportsFunctionCalls: false,
   supportsThinking: false,
   isWebBundle: false,
-  textBackends: {PreferredBackend.npu},
+  textBackends: {},
   npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8750'),
   requiredMaxTokens: 4096,
+  withheld: {PreferredBackend.npu},
 );
 
 const _gemma3_270mIt$npuSm8850 = LiteRtLmVariant._(
@@ -969,9 +972,10 @@ const _gemma3_270mIt$npuSm8850 = LiteRtLmVariant._(
   supportsFunctionCalls: false,
   supportsThinking: false,
   isWebBundle: false,
-  textBackends: {PreferredBackend.npu},
+  textBackends: {},
   npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850'),
   requiredMaxTokens: 4096,
+  withheld: {PreferredBackend.npu},
 );
 
 /// Gemma 3n E2B (`gemma-3n-e2b-it`), gemma.
@@ -1895,6 +1899,7 @@ final class LiteRtLmQwen3_0_6b extends LiteRtLmModel {
         licenseUrl: 'https://huggingface.co/Qwen/Qwen3-0.6B/blob/main/LICENSE',
         variants: const [
           _qwen3_0_6b$dynamicInt4,
+          _qwen3_0_6b$standard,
           _qwen3_0_6b$mixedInt4,
           _qwen3_0_6b$npuMt6993,
         ],
@@ -1902,6 +1907,12 @@ final class LiteRtLmQwen3_0_6b extends LiteRtLmModel {
 
   /// `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`, 345 MB.
   LiteRtLmVariant get dynamicInt4 => _qwen3_0_6b$dynamicInt4;
+
+  /// `Qwen3-0.6B.litertlm`, 614 MB.
+  @Deprecated(
+    'Withheld: The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm 1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement, which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before 2026-10-13 still fails. (https://github.com/DenisovAV/flutter_edge_ai/issues/659) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
+  )
+  LiteRtLmVariant get standard => _qwen3_0_6b$standard;
 
   /// `qwen3_0_6b_mixed_int4.litertlm`, 498 MB.
   LiteRtLmVariant get mixedInt4 => _qwen3_0_6b$mixedInt4;
@@ -1934,6 +1945,33 @@ const _qwen3_0_6b$dynamicInt4 = LiteRtLmVariant._(
   supportsThinking: true,
   isWebBundle: false,
   textBackends: {PreferredBackend.gpu, PreferredBackend.cpu},
+);
+
+const _qwen3_0_6b$standard = LiteRtLmVariant._(
+  id: 'qwen3-0.6b/standard',
+  modelId: 'qwen3-0.6b',
+  file: ModelArtifact(
+    repo: 'litert-community/Qwen3-0.6B',
+    revision: 'e6687177e00897731e7716267eebd4eba0dde7c2',
+    path: 'Qwen3-0.6B.litertlm',
+    sha256: 'c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108',
+    sizeBytes: 613722264,
+    installFilename: 'Qwen3-0.6B.litertlm',
+  ),
+  modelType: ModelType.qwen3,
+  runtimeDefaults: ModelRuntimeDefaults(
+    maxTokens: 4096,
+    preferredBackend: PreferredBackend.gpu,
+    supportImage: false,
+    supportAudio: false,
+  ),
+  supportsImage: false,
+  supportsAudio: false,
+  supportsFunctionCalls: true,
+  supportsThinking: true,
+  isWebBundle: false,
+  textBackends: {PreferredBackend.gpu, PreferredBackend.cpu},
+  withheld: {PreferredBackend.cpu, PreferredBackend.gpu, PreferredBackend.npu},
 );
 
 const _qwen3_0_6b$mixedInt4 = LiteRtLmVariant._(
@@ -2157,6 +2195,7 @@ const _translategemma4bIt$int4 = LiteRtLmVariant._(
   supportsThinking: false,
   isWebBundle: false,
   textBackends: {PreferredBackend.cpu},
+  withheld: {PreferredBackend.gpu},
 );
 
 const _translategemma4bIt$int8 = LiteRtLmVariant._(
@@ -2184,6 +2223,7 @@ const _translategemma4bIt$int8 = LiteRtLmVariant._(
   supportsThinking: false,
   isWebBundle: false,
   textBackends: {PreferredBackend.cpu},
+  withheld: {PreferredBackend.gpu},
 );
 
 const _translategemma4bIt$int4Multimodal = LiteRtLmVariant._(
@@ -2211,6 +2251,7 @@ const _translategemma4bIt$int4Multimodal = LiteRtLmVariant._(
   supportsThinking: false,
   isWebBundle: false,
   textBackends: {PreferredBackend.cpu},
+  withheld: {PreferredBackend.gpu},
 );
 
 /// EmbeddingGemma 2 Text + Vision + Audio 740M (`embeddinggemma-2-740m`), apache-2.0.

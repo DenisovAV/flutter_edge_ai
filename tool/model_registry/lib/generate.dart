@@ -146,10 +146,47 @@ void _namespace(
     ..writeln();
 }
 
+/// Every variant of [model]: one the registry withholds stays in the
+/// catalog, deprecated and with no backend, so a catalog variant, once
+/// published, is never removed (README: "Variants are never removed").
 List<Map<String, Object?>> _offered(Map<String, Object?> model) => [
-  for (final v in model['variants']! as List)
-    if ((v as Map<String, Object?>)['withhold'] == null) v,
+  for (final v in model['variants']! as List) v as Map<String, Object?>,
 ];
+
+const _allBackends = ['cpu', 'gpu', 'npu'];
+
+/// The backends [v] is withheld from: every one for `withhold`, else the
+/// keys of `withhold_backends`.
+List<String> _withheld(Map<String, Object?> v) => v['withhold'] != null
+    ? _allBackends
+    : [
+        for (final b in _allBackends)
+          if ((v['withhold_backends'] as Map?)?.containsKey(b) ?? false) b,
+      ];
+
+/// The `withheld:` argument of [v]'s constructor, or none.
+void _writeWithheld(StringBuffer out, Map<String, Object?> v) {
+  final withheld = _withheld(v);
+  if (withheld.isEmpty) return;
+  out.writeln(
+    '  withheld: {${withheld.map((b) => 'PreferredBackend.$b').join(', ')}},',
+  );
+}
+
+/// The `@Deprecated` of [v]'s getter, or null: a withheld variant, or one
+/// the registry deprecates.
+String? _deprecation(Map<String, Object?> v) {
+  if (v['withhold'] case final Map<Object?, Object?> w) {
+    final issue = w['issue'] == null ? '' : ' (${w['issue']})';
+    return 'Withheld: ${w['reason']}$issue It runs nowhere (backendsHere is '
+        'empty); kept so code that names it still compiles.';
+  }
+  if (v['deprecated'] case final Map<Object?, Object?> d) {
+    final use = d['use'] == null ? '' : ' Use ${d['use']}.';
+    return '${d['reason']}$use';
+  }
+  return null;
+}
 
 void _modelClass(
   StringBuffer out,
@@ -198,11 +235,14 @@ void _modelClass(
               '${_size(files.fold(0, (sum, f) => sum + (f['size']! as int)))}';
     out
       ..writeln()
-      ..writeln('  /// $doc.')
-      ..writeln(
-        '  $variantType get ${dartMemberName(v['slug']! as String)} => '
-        '${constName(v)};',
-      );
+      ..writeln('  /// $doc.');
+    if (_deprecation(v) case final reason?) {
+      out.writeln('  @Deprecated(${_str(reason)})');
+    }
+    out.writeln(
+      '  $variantType get ${dartMemberName(v['slug']! as String)} => '
+      '${constName(v)};',
+    );
   }
   out
     ..writeln('}')
@@ -276,6 +316,7 @@ void _llmModel(
           ..writeln('  npuTarget: ${_npuTarget(npu)},')
           ..writeln('  requiredMaxTokens: $fixed,');
       }
+      _writeWithheld(out, v);
       out
         ..writeln(');')
         ..writeln();
@@ -316,6 +357,7 @@ void _embedderModel(StringBuffer out, Map<String, Object?> m) {
           '  modalities: {${modalities.map((x) => 'EmbeddingModality.$x').join(', ')}},',
         );
       if (npu != null) out.writeln('  npuTarget: ${_npuTarget(npu)},');
+      _writeWithheld(out, v);
       out
         ..writeln(');')
         ..writeln();
@@ -462,6 +504,7 @@ void _speechModel(
         }
         out.writeln('  ],');
       }
+      _writeWithheld(out, v);
       out
         ..writeln(');')
         ..writeln();

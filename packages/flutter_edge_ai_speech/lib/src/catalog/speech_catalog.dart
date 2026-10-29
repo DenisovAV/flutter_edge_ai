@@ -9,6 +9,10 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtLmNpuTarget;
 
+import 'speech_catalog_host_web.dart'
+    if (dart.library.ffi) 'speech_catalog_host_io.dart'
+    as host;
+
 part 'generated/speech_catalog.g.dart';
 
 /// Replaces [kIsWeb] for the runtime [CatalogVariant.backendsHere] answers
@@ -16,11 +20,30 @@ part 'generated/speech_catalog.g.dart';
 @visibleForTesting
 bool? debugSpeechCatalogOnWeb;
 
+/// Replaces the host's `Abi.current()` for the runtime
+/// [CatalogVariant.backendsHere] answers. Tests only.
+@visibleForTesting
+String? debugSpeechCatalogAbi;
+
+/// The hosts flutter_edge_ai_litertlm's native archive, which this package
+/// runs on, is published for — that package's `lib/src/native_hosts.dart`
+/// (`liteRtLmNativeAbis`); a test keeps the two equal.
+const _nativeAbis = {
+  'android_arm64',
+  'ios_arm64',
+  'macos_arm64',
+  'linux_x64',
+  'linux_arm64',
+  'windows_x64',
+};
+
 /// This package runs speech natively, on the CPU or the GPU it is asked for:
-/// not on the web, and not a file compiled for an NPU, whose dispatch it does
-/// not load.
+/// not on the web, not on a host the native archive is not published for,
+/// and not a file compiled for an NPU, whose dispatch it does not load.
 Set<PreferredBackend> _backendsHere({required bool compiledForNpu}) {
   if (debugSpeechCatalogOnWeb ?? kIsWeb) return const {};
+  final abi = debugSpeechCatalogAbi ?? host.speechCatalogHostAbi;
+  if (!_nativeAbis.contains(abi)) return const {};
   if (compiledForNpu) return const {};
   return const {PreferredBackend.cpu, PreferredBackend.gpu};
 }
@@ -82,7 +105,12 @@ final class LiteRtSttVariant extends SttVariant {
     required this.model,
     required this.tokenizer,
     this.npuTarget,
-  });
+    Set<PreferredBackend> withheld = const {},
+  }) : _withheld = withheld;
+
+  /// Backends the registry withholds this variant from (all of them for a
+  /// withheld variant, which stays in the catalog, deprecated).
+  final Set<PreferredBackend> _withheld;
 
   @override
   final String id;
@@ -108,7 +136,7 @@ final class LiteRtSttVariant extends SttVariant {
 
   @override
   Set<PreferredBackend> get backendsHere =>
-      _backendsHere(compiledForNpu: npuTarget != null);
+      _backendsHere(compiledForNpu: npuTarget != null).difference(_withheld);
 }
 
 /// A text-to-speech model this package runs.
@@ -156,7 +184,12 @@ final class LiteRtTtsVariant extends TtsVariant {
     required this.type,
     required this.baseUrl,
     required this.files,
-  });
+    Set<PreferredBackend> withheld = const {},
+  }) : _withheld = withheld;
+
+  /// Backends the registry withholds this variant from (see
+  /// [LiteRtSttVariant]).
+  final Set<PreferredBackend> _withheld;
 
   @override
   final String id;
@@ -179,5 +212,5 @@ final class LiteRtTtsVariant extends TtsVariant {
 
   @override
   Set<PreferredBackend> get backendsHere =>
-      _backendsHere(compiledForNpu: false);
+      _backendsHere(compiledForNpu: false).difference(_withheld);
 }

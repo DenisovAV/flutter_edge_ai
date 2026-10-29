@@ -12,15 +12,17 @@ import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
     show TtsAbsoluteUrl, TtsModelTypeManifest, TtsRelativeSuffix;
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 import 'package:flutter_edge_ai_speech/src/catalog/speech_catalog.dart'
-    show debugSpeechCatalogOnWeb;
+    show debugSpeechCatalogAbi, debugSpeechCatalogOnWeb;
 import 'package:flutter_test/flutter_test.dart';
 
-T _on<T>(bool web, T Function() read) {
+T _on<T>(bool web, T Function() read, {String abi = 'macos_arm64'}) {
   debugSpeechCatalogOnWeb = web;
+  debugSpeechCatalogAbi = abi;
   try {
     return read();
   } finally {
     debugSpeechCatalogOnWeb = null;
+    debugSpeechCatalogAbi = null;
   }
 }
 
@@ -37,6 +39,32 @@ void main() {
         _on(false, () => LiteRtSpeechModels.qwen3Tts0_6b.bundle.backendsHere),
         _native,
       );
+    });
+
+    test('nothing on a host the native archive is not published for', () {
+      for (final abi in ['windows_arm64', 'macos_x64', 'android_x64']) {
+        expect(_on(false, () => moonshine.f32.backendsHere, abi: abi), isEmpty);
+      }
+    });
+
+    test('the native hosts are flutter_edge_ai_litertlm\'s', () {
+      final source = File(
+        '../flutter_edge_ai_litertlm/lib/src/native_hosts.dart',
+      ).readAsStringSync();
+      final table = RegExp(
+        r'const liteRtLmNativeAbis = \{([^}]*)\}',
+      ).firstMatch(source)!.group(1)!;
+      final theirs = {
+        for (final m in RegExp(r"'(\w+)'").allMatches(table)) m.group(1)!,
+      };
+      for (final abi in theirs) {
+        expect(
+          _on(false, () => moonshine.f32.backendsHere, abi: abi),
+          _native,
+          reason: abi,
+        );
+      }
+      expect(theirs, hasLength(6));
     });
 
     test('a file compiled for an NPU runs nowhere in this version', () {
@@ -86,7 +114,8 @@ void main() {
           ])
             host: [
               for (final b in PreferredBackend.values)
-                if (_on(web, () => variant.backendsHere).contains(b)) b.name,
+                if (_on(web, () => variant.backendsHere, abi: host).contains(b))
+                  b.name,
             ],
         },
     };

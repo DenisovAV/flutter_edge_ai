@@ -31,6 +31,28 @@ void main() {
       }
     });
 
+    test('a target names core\'s vendor for every stack, by the one table', () {
+      for (final stack in NpuStack.values) {
+        final target = LiteRtLmNpuTarget(vendor: stack.stampVendor, soc: 'x');
+        expect(target.npuVendor, isNotNull, reason: stack.name);
+      }
+      expect(
+        const LiteRtLmNpuTarget(vendor: 'Unknown', soc: 'x').npuVendor,
+        isNull,
+      );
+    });
+
+    test('targets are equal without regard to case', () {
+      expect(
+        const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
+        const LiteRtLmNpuTarget(vendor: 'mediatek', soc: 'mt6991'),
+      );
+      expect(
+        const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991').hashCode,
+        const LiteRtLmNpuTarget(vendor: 'mediatek', soc: 'mt6991').hashCode,
+      );
+    });
+
     test('npuVendorOf reads a target the same way', () {
       expect(
         npuVendorOf(const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850')),

@@ -511,6 +511,27 @@ void main() {
     });
   });
 
+  test('an install name every platform takes', () {
+    for (final bad in [
+      'CON.litertlm',
+      'a:b.task',
+      'x.',
+      'a?.bin',
+      'dir/x.bin',
+    ]) {
+      expect(isPortableFileName(bad), isFalse, reason: bad);
+    }
+    expect(isPortableFileName('gemma-4-E2B-it.litertlm'), isTrue);
+    expect(
+      _problems([
+        _with(_llm(), (e) {
+          (_variant(e, 0)['file']! as Map)['install_filename'] = 'NUL.litertlm';
+        }),
+      ], extraFiles: _llmFacts()),
+      contains(contains('every platform takes')),
+    );
+  });
+
   test('Dart names keep numbers apart', () {
     expect(dartMemberName('gemma-4-e2b-it'), 'gemma4E2bIt');
     expect(dartMemberName('qwen3-0.6b'), 'qwen3_0_6b');

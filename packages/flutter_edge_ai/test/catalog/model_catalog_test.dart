@@ -8,6 +8,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'catalog_fixtures.dart';
 
 void main() {
+  test('a vendor core has no name for matches no SoC, not even its own', () {
+    const a = TestNpu(null, 'X1');
+    const b = TestNpu(null, 'X1');
+    expect(a.sameSoc(b), isFalse);
+    expect(
+      const TestNpu(
+        NpuVendor.qualcomm,
+        'SM8750',
+      ).sameSoc(const TestNpu(NpuVendor.qualcomm, 'sm8750')),
+      isTrue,
+    );
+  });
+
   group('ModelArtifact', () {
     test('the URL pins the revision and encodes each path segment', () {
       final a = artifact('dir with space/a+b.litertlm');
@@ -174,6 +187,24 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('one catalog with a broken id throws, alone too', () {
+      for (final (what, model) in [
+        ('listed twice', TestModel('tiny-llm', [TestLlm('a'), TestLlm('a')])),
+        (
+          'another model\'s id',
+          TestModel('tiny-llm', [TestLlm('a', modelId: 'other')]),
+        ),
+      ]) {
+        expect(
+          () => RegisteredCatalog([
+            TestSource(TestCatalog('only', [model])),
+          ]),
+          throwsStateError,
+          reason: what,
+        );
+      }
     });
 
     test('the same variant object in two catalogs counts once', () {

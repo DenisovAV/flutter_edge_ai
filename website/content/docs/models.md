@@ -380,17 +380,29 @@ for (final model in FlutterEdgeAi.catalog.models) {
 }
 ```
 
-`variantFor` leaves out a build this device cannot run: a build compiled for
-another NPU, a web export on a phone. A build compiled for an NPU is picked
-only for the SoC the app names (`variantFor(backend: PreferredBackend.npu,
-npu: …)`; without `npu:` it throws), because the package does not read the
-device's SoC. An install from the catalog refuses a build this device cannot
-run before it downloads anything. A build compiled for an NPU names the
-context it was compiled for (`requiredMaxTokens`); keep `maxTokens` at or
-below it. After the download, and before the model becomes active, each
-file's size is checked against the registry: a file of another size stays
-installed, is not made active, and `install()` throws
-`ModelValidationException`. `withProgress` weights the files by their pinned
+`variantFor` leaves out a build this runtime cannot run: a build compiled for
+an NPU whose vendor's dispatch the package does not ship for this processor
+architecture, a web export on a phone, any native build on a host the
+package's native libraries are not published for. A build compiled for an NPU
+is picked only for the SoC the app names (`variantFor(backend:
+PreferredBackend.npu, npu: …)`; without `npu:` it throws), because the
+package does not read the device's SoC. The app builds that target in the
+spelling the compiler stamps into the file, not the one Android reports:
+`LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8750')` (Android says `QTI`),
+`'Google'` with `'Tensor_G5'`, `'MediaTek'` with `'mt6993'` (any case),
+`'IntelOpenVINO'` with `'PTL'`. An install from the catalog refuses, before it
+downloads anything, a build whose `backendsHere` is empty here; whether this
+device has that NPU, and whether the app bundled the vendor's stack
+(`qualcomm_npu`, `google_tensor_npu`), is known only when the model loads. A
+build compiled for an NPU names the context it was compiled for
+(`requiredMaxTokens`); keep `maxTokens` at or below it. After the download,
+and before the model becomes active, each file's size is checked against the
+registry (not on the web): a file of another size is deleted with its record,
+and `install()` throws `ModelValidationException`. An install that would
+write over the active model's file of another source is refused before it
+downloads. On the web, in the default `WebStorageMode.cacheApi`, a file over
+2 GB is refused before it downloads; initialize with `webStorageMode:
+WebStorageMode.streaming` for the larger web bundles. `withProgress` weights the files by their pinned
 sizes. An LLM is installed under the registry's install name (for example
 `phi-4-mini-reasoning.litertlm`), which `isModelInstalled`, `getModelPath` and
 `uninstallModel` take. `install(activate: false)` installs an LLM without

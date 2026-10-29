@@ -813,9 +813,13 @@ void _checkArtifact(_Ctx c, String where, Map<String, Object?> a) {
   final size = c.need<int>(where, a, 'size');
   if (size != null && size <= 0) c.error('$where.size', 'must be positive');
   final name = c.need<String>(where, a, 'install_filename');
-  if (name != null &&
-      (name.isEmpty || name.contains('/') || name.contains('\\'))) {
-    c.error('$where.install_filename', 'must be a bare file name');
+  if (name != null && !isPortableFileName(name)) {
+    c.error(
+      '$where.install_filename',
+      'must be a bare file name every platform takes: no path separator, '
+          'control character or one of <>:"|?*, no trailing dot or space, '
+          'not a Windows device name (CON, NUL, COM1, …)',
+    );
   }
   c.oneOf('$where.gated', a['gated'], _gated);
 }
@@ -1035,6 +1039,22 @@ void _checkReleasedCatalogs(
     }
   }
 }
+
+/// Whether [name] is a file name core installs on every platform: the rule
+/// of core's `FileNameUtils.validatePortableFileNameSegment`.
+bool isPortableFileName(String name) =>
+    name.isNotEmpty &&
+    name != '.' &&
+    name != '..' &&
+    !name.contains('/') &&
+    !name.contains('\\') &&
+    !RegExp(r'[\u0000-\u001F\u007F-\u009F<>:"|?*]').hasMatch(name) &&
+    !name.endsWith('.') &&
+    !name.endsWith(' ') &&
+    !RegExp(
+      r'^(con|prn|aux|nul|com[1-9]|lpt[1-9])$',
+      caseSensitive: false,
+    ).hasMatch(name.split('.').first);
 
 /// The frozen values of one variant, as a published snapshot records them.
 Map<String, Object?> frozenValues(Map<String, Object?> v) {

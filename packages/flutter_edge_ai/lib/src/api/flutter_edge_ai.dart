@@ -1,5 +1,10 @@
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
+    show
+        kIsWeb,
+        defaultTargetPlatform,
+        listEquals,
+        TargetPlatform,
+        visibleForTesting;
 import 'package:flutter_edge_ai/src/api/inference_installation_builder.dart';
 import 'package:flutter_edge_ai/src/api/embedding_installation_builder.dart';
 import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.dart'
@@ -362,18 +367,35 @@ class FlutterEdgeAi {
   /// two packages offer the same variant id.
   static ModelCatalog get catalog {
     // Throws the not-initialized StateError.
-    ServiceRegistry.instance;
-    return RegisteredCatalog([
+    final registry = ServiceRegistry.instance;
+    final providers = [
       ...EngineRegistry.instance.registered,
       ...EmbeddingRegistry.instance.registered,
       ...SttRegistry.instance.registered,
       ...TtsRegistry.instance.registered,
-    ]);
+    ];
+    // Built once for the registered providers (in their order): a getter an
+    // app reads from build() does not merge the catalogs again.
+    if (_catalog case (
+      final r,
+      final p,
+      final c,
+    ) when identical(r, registry) && listEquals(p, providers)) {
+      return c;
+    }
+    final built = RegisteredCatalog(providers);
+    _catalog = (registry, providers, built);
+    return built;
   }
+
+  static (ServiceRegistry, List<Object>, ModelCatalog)? _catalog;
 
   /// An installation builder for the LLM [variant]: its model type and file
   /// type, its pinned URL, the name the file is installed under and its
-  /// size, which is checked before the model becomes active.
+  /// size, which is checked before the model becomes active (not on the web,
+  /// where the browser keeps the file). On the web, in the default
+  /// `WebStorageMode.cacheApi`, a file over 2 GB is refused before it
+  /// downloads; `WebStorageMode.streaming` holds it.
   ///
   /// [token] is used for the download; without it, the token passed to
   /// [initialize] is used for huggingface.co. [foreground] is
@@ -381,8 +403,10 @@ class FlutterEdgeAi {
   ///
   /// `install()` throws [UnsupportedError], before anything downloads, for a
   /// variant whose [CatalogVariant.backendsHere] is empty (its package does
-  /// not run it in this runtime) and for one with no file (a model the
-  /// operating system provides).
+  /// not run it in this runtime). That is a check of the runtime and its
+  /// processor architecture only: whether this device has the NPU a build
+  /// was compiled for, and whether the app bundled that vendor's stack, is
+  /// known at load.
   ///
   /// The catalog pins each file to a revision: a model installed earlier
   /// from a `/resolve/main/` URL is another source, and its first install

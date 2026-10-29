@@ -32,6 +32,7 @@ final class RegisteredCatalog extends ModelCatalog {
     final byId = <String, List<CatalogModel>>{};
     for (final catalog in catalogs) {
       for (final model in catalog.models) {
+        _checkIds(catalog, model);
         (byId[model.id] ??= []).add(model);
       }
     }
@@ -39,6 +40,27 @@ final class RegisteredCatalog extends ModelCatalog {
       for (final parts in byId.values)
         parts.length == 1 ? parts.single : _MergedModel(parts),
     ]);
+  }
+}
+
+/// Each variant of [model] is `<model id>/<slug>`, names [model] as its
+/// model, and is listed once: checked in every catalog, so whether one is
+/// valid does not depend on which other packages are registered.
+void _checkIds(ModelCatalog catalog, CatalogModel model) {
+  final seen = <String>{};
+  for (final v in model.variants) {
+    final problem = switch (v) {
+      _ when !v.id.startsWith('${model.id}/') =>
+        'its id is not "${model.id}/<slug>"',
+      _ when v.modelId != model.id => 'its modelId is "${v.modelId}"',
+      _ when !seen.add(v.id) => 'it is listed twice',
+      _ => null,
+    };
+    if (problem != null) {
+      throw StateError(
+        'catalog ${catalog.name}: ${v.id} in model ${model.id}: $problem',
+      );
+    }
   }
 }
 

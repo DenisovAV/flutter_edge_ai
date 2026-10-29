@@ -126,6 +126,18 @@ void main() {
         ),
         throwsArgumentError,
       );
+      for (final name in ['CON.task', 'a:b.task']) {
+        expect(
+          () => InferenceModelSpec(
+            name: 'x',
+            modelSource: ModelSource.network('https://example.com/model.task'),
+            modelType: ModelType.gemmaIt,
+            filename: name,
+          ),
+          throwsArgumentError,
+          reason: name,
+        );
+      }
     });
   });
 

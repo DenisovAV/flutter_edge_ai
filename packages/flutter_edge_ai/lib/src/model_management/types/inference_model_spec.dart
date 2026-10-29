@@ -308,13 +308,8 @@ class InferenceModelSpec extends ModelSpec {
         'a directory (ORT-GenAI) model is installed under its own files',
       );
     }
-    if (filename.isEmpty || filename.contains('/') || filename.contains(r'\')) {
-      throw ArgumentError.value(
-        filename,
-        'filename',
-        'must be a bare file name',
-      );
-    }
+    // A bare file name every platform's file system takes, as an embedder's.
+    FileNameUtils.validatePortableFileNameSegment(filename);
     final own = InferenceModelFile.fromSource(source).filename;
     String extensionOf(String name) {
       final dot = name.lastIndexOf('.');

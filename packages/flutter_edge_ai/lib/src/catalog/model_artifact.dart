@@ -25,7 +25,8 @@ final class ModelArtifact {
   final String path;
 
   /// The SHA-256 of the file at [revision], as Hugging Face reports it.
-  /// Advisory: an install checks [sizeBytes], not this.
+  /// An install checks [sizeBytes] (not on the web), not this; hashing a
+  /// model of several GB takes minutes on a phone.
   final String sha256;
 
   /// The file's size in bytes.

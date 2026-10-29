@@ -502,8 +502,9 @@ class InferenceInstallationBuilder {
     );
 
     // The model, then its LoRA, each by its own record (see install_rule.dart).
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final expected = {spec.files.first.filename: _expected};
+    refuseTooLargeForWebCache(expected);
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final steps = _keepingActiveModel(
       await planInstall(spec.files),
       activate: activate,

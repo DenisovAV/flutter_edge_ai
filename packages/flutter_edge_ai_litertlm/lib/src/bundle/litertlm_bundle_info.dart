@@ -29,14 +29,15 @@ final class LiteRtLmNpuTarget extends NpuTarget {
   /// `PTL`, `Tensor_G5`.
   final String soc;
 
-  /// The vendor by core's name; null for a stamp core has no name for.
+  /// The vendor by core's name, through the one table of stamps
+  /// ([NpuStack]); null for a stamp this package has no stack for.
   @override
-  NpuVendor? get npuVendor => switch (vendor.toLowerCase()) {
-    'qualcomm' => NpuVendor.qualcomm,
-    'google' => NpuVendor.googleTensor,
-    'mediatek' => NpuVendor.mediatek,
-    'intelopenvino' => NpuVendor.intel,
-    _ => null,
+  NpuVendor? get npuVendor => switch (NpuStack.forStamp(vendor)) {
+    NpuStack.qualcomm => NpuVendor.qualcomm,
+    NpuStack.googleTensor => NpuVendor.googleTensor,
+    NpuStack.mediatek => NpuVendor.mediatek,
+    NpuStack.intel => NpuVendor.intel,
+    null => null,
   };
 
   /// [soc], as the compiler stamped it.
@@ -50,12 +51,16 @@ final class LiteRtLmNpuTarget extends NpuTarget {
   /// published 270m, 440m and 740m, revisions 9be6e8b9, e301f74d, 24d962e9).
   bool get isIntel => npuVendorOf(this) == NpuStack.intel;
 
+  /// The same vendor and SoC without regard to case, as [sameSoc] compares
+  /// them: a stamp's case is the compiler's, not the SoC's.
   @override
   bool operator ==(Object other) =>
-      other is LiteRtLmNpuTarget && other.vendor == vendor && other.soc == soc;
+      other is LiteRtLmNpuTarget &&
+      other.vendor.toLowerCase() == vendor.toLowerCase() &&
+      other.soc.toLowerCase() == soc.toLowerCase();
 
   @override
-  int get hashCode => Object.hash(vendor, soc);
+  int get hashCode => Object.hash(vendor.toLowerCase(), soc.toLowerCase());
 
   @override
   String toString() => '$vendor $soc';

@@ -57,6 +57,33 @@ final class FileExpectation {
   bool get isEmpty => size == null && sha256 == null;
 }
 
+/// The largest file the web's default storage, the Cache API, holds: a file
+/// is read whole into one `ArrayBuffer`, which browsers cap near 2 GiB.
+const webCacheLimitBytes = 2 * 1024 * 1024 * 1024;
+
+/// Refuses, before anything is downloaded, a file whose expected size is over
+/// [webCacheLimitBytes] on the web in the default `WebStorageMode.cacheApi`:
+/// the download would fail part-way. `WebStorageMode.streaming` (OPFS) holds
+/// it. [web] and [streaming] replace the runtime's answers in tests.
+void refuseTooLargeForWebCache(
+  Map<String, FileExpectation> expected, {
+  bool? web,
+  bool? streaming,
+}) {
+  if (!(web ?? kIsWeb)) return;
+  if (streaming ?? ServiceRegistry.instance.useStreamingStorage) return;
+  final tooLarge = [
+    for (final MapEntry(key: name, value: e) in expected.entries)
+      if ((e.size ?? 0) > webCacheLimitBytes) name,
+  ];
+  if (tooLarge.isEmpty) return;
+  throw UnsupportedError(
+    '${tooLarge.join(', ')} is over 2 GB, more than the web\'s default '
+    'storage (WebStorageMode.cacheApi) holds. Pass '
+    'webStorageMode: WebStorageMode.streaming to FlutterEdgeAi.initialize.',
+  );
+}
+
 /// Refuses, before anything is downloaded, an install with an expectation
 /// that would write over a file the [active] model of the same kind reads:
 /// were the file then not what was expected, the active model would be left

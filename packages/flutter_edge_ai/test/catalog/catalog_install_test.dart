@@ -6,7 +6,11 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/src/api/install_expectations.dart'
-    show FileExpectation, checkInstalledFiles;
+    show
+        FileExpectation,
+        checkInstalledFiles,
+        refuseTooLargeForWebCache,
+        webCacheLimitBytes;
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -64,6 +68,25 @@ void main() {
       expect(FlutterEdgeAi.catalog.models, [same(model)]);
       await FlutterEdgeAi.dispose();
       expect(() => FlutterEdgeAi.catalog, throwsStateError);
+    });
+
+    test('is built once per initialize, again after the next', () async {
+      final model = TestModel('tiny-llm', [TestLlm('generic')]);
+      await initialize(
+        tts: [
+          _TtsWithCatalog(TestCatalog('c', [model])),
+        ],
+      );
+      final first = FlutterEdgeAi.catalog;
+      expect(FlutterEdgeAi.catalog, same(first));
+      await FlutterEdgeAi.dispose();
+      ServiceRegistry.reset();
+      await initialize(
+        tts: [
+          _TtsWithCatalog(TestCatalog('c', [model])),
+        ],
+      );
+      expect(FlutterEdgeAi.catalog, isNot(same(first)));
     });
   });
 
@@ -473,6 +496,29 @@ void main() {
             .ofType(SttModelType.whisper)
             .install(),
         throwsA(notRefusedForTheVariant),
+      );
+    });
+  });
+
+  group('the web\'s default storage', () {
+    final huge = {'big.litertlm': const FileExpectation(size: 3000000000)};
+    test('refuses a file over 2 GB unless the app streams', () {
+      expect(
+        () => refuseTooLargeForWebCache(huge, web: true, streaming: false),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (e) => e.message,
+            'message',
+            contains('WebStorageMode.streaming'),
+          ),
+        ),
+      );
+      refuseTooLargeForWebCache(huge, web: true, streaming: true);
+      refuseTooLargeForWebCache(huge, web: false, streaming: false);
+      refuseTooLargeForWebCache(
+        {'small.litertlm': const FileExpectation(size: webCacheLimitBytes)},
+        web: true,
+        streaming: false,
       );
     });
   });

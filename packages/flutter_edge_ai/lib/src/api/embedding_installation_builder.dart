@@ -346,6 +346,7 @@ class EmbeddingInstallationBuilder {
       for (final (i, file) in spec.files.indexed)
         file.filename: expectations[i],
     };
+    refuseTooLargeForWebCache(expected);
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final steps = await planInstall(spec.files);
     final activeBefore = manager.activeEmbeddingModel;

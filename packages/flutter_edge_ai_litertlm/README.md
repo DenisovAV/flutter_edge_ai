@@ -155,7 +155,7 @@ carries that decision in a `litetune.decision` section, and
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(
-  preferredBackend: PreferredBackend.cpu,
+  preferredBackend: PreferredBackend.cpu, // or PreferredBackend.gpu
 );
 final decider = await model.createDecider(
   question: 'Which emotion does the text express?',
@@ -172,13 +172,34 @@ option's shortest unique prefix as the model's reply through LiteRT-LM's
 session API (`run_text_scoring`, with a checkpoint and a rewind between
 options), on a background isolate and in turn with any chat on the same
 engine; a cancel stops it between two options, and so does closing the model.
-Native platforms, CPU only: the web, a model loaded on the GPU or the NPU, and
-a file without the section are refused with `DeciderUnsupportedException`; an
-input whose prompt does not fit `maxTokens` with `ArgumentError`. Measured on
-an Apple M4 Pro CPU with LiteTune's golden packs (google/gemma-3-270m-it,
-int8): 120–190 ms per decision, and the same top option as LiteTune's PyTorch
-reference on every row but near-ties. Android, iOS, Linux and Windows use the
-same C calls and are not measured yet. The answers, Noul and Score included:
+Native platforms, on the CPU or the GPU: the web, a model loaded on the NPU
+(its executor rolls back one token only, and a decision rewinds between
+options), and a file without the section are refused with
+`DeciderUnsupportedException`; an input whose prompt does not fit `maxTokens`
+with `ArgumentError`. Measured on an Apple M4 Pro CPU with LiteTune's golden
+packs (google/gemma-3-270m-it, int8): 120–190 ms per decision, and the same
+top option as LiteTune's PyTorch reference on every row but near-ties.
+
+The GPU does not compute the CPU's scores exactly, and the temperature and
+threshold in the file were fitted on CPU probabilities. In a debug or profile
+build the first `createDecider` runs a scoring self-check (LiteRT-LM #3561: how
+this LiteRT-LM scores after a prefill; scores must repeat bit for bit and
+survive a rewind) on the GPU as on the CPU, and it passed on the GPUs measured.
+A release build skips it and scores in the mode it picked everywhere measured
+(`once`), so run the decider once in debug on the hardware you ship to, an
+unmeasured GPU above all. On a long-dialogue Noul decision (Gemma 3 270M on 300
+rows, Qwen3 1.7B and Gemma 4 E2B on 60 each), the GPU's top option was the same
+device's CPU one on 291/300, 59/60 and 59/60 rows on an iPhone 17 Pro (Metal),
+292/300, 59/60 and 59/60 on a Galaxy S25 Ultra (Adreno 830) and 293/300, 59/60
+and 60/60 on a Mac mini M5 Pro (Metal); balanced accuracy moved by at most
+0.017 either way. All of it is Noul, which never abstains: a threshold fitted
+on the CPU is not checked against GPU probabilities. Not measured: Mali GPUs,
+Linux (Vulkan) and Windows (DirectX 12) GPUs, Linux and Windows CPUs, and the
+NPU. Every GPU is allowed, and a model loaded without `preferredBackend` tries
+the GPU first, so on those devices a decider scores on an unmeasured GPU. The
+self-check catches scores that do not repeat, not scores that repeat and are
+wrong. For the calibration as fitted, load with `preferredBackend:
+PreferredBackend.cpu`. The answers, Noul and Score included:
 [Decisions](https://flutteredge.ai/docs/decisions#deciders-from-a-language-model).
 
 ## Install from a Hugging Face repo (`litertlm_manifest.json`)

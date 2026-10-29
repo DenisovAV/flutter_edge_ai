@@ -33,7 +33,7 @@ base mixin OptionScoringModel on InferenceModel {
 
   /// The engine's scoring calls, for one decider. Fails with
   /// `DeciderUnsupportedException` when this model cannot score here — a
-  /// backend option scoring is not measured on, for one — and with
+  /// backend the engine does not score on, for one — and with
   /// [StateError] when the model is closed.
   Future<OptionScorer> openOptionScorer();
 }
@@ -65,8 +65,10 @@ abstract base class OptionScorer {
 
   /// Called once, before the first [score], with the decision's targets. An
   /// engine checks here what it has to before it can score them exactly
-  /// (LiteRT-LM finds out how its version scores after a prefill), and fails
-  /// with `DeciderUnsupportedException` when it cannot. Nothing by default.
+  /// (LiteRT-LM finds out how its version scores after a prefill, in debug
+  /// and profile builds only: a release build scores in the mode the check
+  /// picked on every engine measured), and fails with
+  /// `DeciderUnsupportedException` when it cannot. Nothing by default.
   Future<void> prepare(List<String> targets) async {}
 
   /// The exact natural-log probability of each token of each of [targets] as

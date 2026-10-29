@@ -4,6 +4,7 @@
 // ignore_for_file: experimental_member_use
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/option_scoring_self_check.dart';
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter_test/flutter_test.dart';
 
 final _user =
@@ -54,12 +55,14 @@ final class _Engine {
     List<String> tokens,
   )
   inMode = (mode, prompt, tokens) => [for (final t in tokens) _base[t] ?? -1.5];
+  PreferredBackend? backend = PreferredBackend.cpu;
   final runs = <List<String>>[];
   final modes = <(LiteRtLmScoringMode, String)>[];
 
   Future<LiteRtLmScoringMode> check([
     List<String> targets = const ['sad', 'joy', 'love'],
   ]) => liteRtLmScoringSelfCheck(
+    backend: backend,
     targets: targets,
     tokenize: (text) async => tokens[text] ?? const [],
     detokenize: (ids) async => ids.map((id) => pieces[id] ?? '?').join(),
@@ -81,6 +84,99 @@ Matcher _refusing(String says) => throwsA(
 );
 
 void main() {
+  group('the self-check runs in debug and profile builds only', () {
+    test('a release build scores in once without running it', () async {
+      var checks = 0;
+      final mode = await liteRtLmScoringMode(
+        releaseMode: true,
+        selfCheck: () async {
+          checks++;
+          return LiteRtLmScoringMode.plain;
+        },
+      );
+      expect(mode, LiteRtLmScoringMode.once);
+      expect(liteRtLmReleaseScoringMode, LiteRtLmScoringMode.once);
+      expect(checks, 0);
+    });
+
+    test('a debug or profile build runs it and takes its mode', () async {
+      var checks = 0;
+      final mode = await liteRtLmScoringMode(
+        releaseMode: false,
+        selfCheck: () async {
+          checks++;
+          return LiteRtLmScoringMode.plain;
+        },
+      );
+      expect(mode, LiteRtLmScoringMode.plain);
+      expect(checks, 1);
+    });
+
+    test('a debug build passes the check\'s refusal on', () async {
+      final engine = _Engine()
+        ..score = (prompt, token, call) => -1.5 - call * 1e-6;
+      await expectLater(
+        liteRtLmScoringMode(releaseMode: false, selfCheck: engine.check),
+        _refusing('not repeatable'),
+      );
+    });
+
+    test('this test run is not a release build, so the check runs', () {
+      // The engine passes kReleaseMode; flutter test is never release.
+      expect(kReleaseMode, isFalse);
+    });
+  });
+
+  group('a refusal that depends on the engine\'s arithmetic names the '
+      'backend', () {
+    final cases = <String, _Engine Function()>{
+      'not repeatable': () =>
+          _Engine()..score = (prompt, token, call) => -1.5 - call * 1e-6,
+      'mixed': () => _Engine()
+        ..score = (prompt, token, _) =>
+            prompt == liteRtLmSelfCheckPrompt || token == 'sad' ? -1.5 : -2.0,
+      'rewinding': () => _Engine()
+        ..inMode = (mode, prompt, tokens) => [
+          for (var i = 0; i < tokens.length; i++) i == 0 ? -1.5 : -1.6,
+        ],
+    };
+    for (final MapEntry(key: says, value: make) in cases.entries) {
+      test('$says, on the GPU: points to the CPU', () async {
+        final engine = make()..backend = PreferredBackend.gpu;
+        await expectLater(
+          engine.check(),
+          throwsA(
+            isA<DeciderUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains(says),
+                contains('The check ran on the GPU'),
+                contains('preferredBackend: PreferredBackend.cpu'),
+              ),
+            ),
+          ),
+        );
+      });
+      test('$says, on the CPU: names the CPU, no advice', () async {
+        final engine = make();
+        await expectLater(
+          engine.check(),
+          throwsA(
+            isA<DeciderUnsupportedException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('The check ran on the CPU.'),
+                isNot(contains('preferredBackend')),
+              ),
+            ),
+          ),
+        );
+      });
+    }
+  });
+
   test(
     'identical scores on both prompts pick once (LiteRT-LM 0.18.0)',
     () async {

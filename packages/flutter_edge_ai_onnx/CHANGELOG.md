@@ -1,5 +1,5 @@
 ## 0.7.0
-- Bundle ORT-GenAI 0.17.0 (was 0.14.0) on every host; guidance on Android and iOS builds without llguidance now errors (#704).
+- Bundle ORT-GenAI 0.17.0 (was 0.14.0) on every host, with its telemetry switched off (#704).
 
 ## 0.6.0
 - Windows ARM64: bundle ORT and ORT-GenAI archives for both engines (#326).

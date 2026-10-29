@@ -3,7 +3,8 @@
 // library to run, so a VM test cannot load a model through them. This holds
 // their source to the rules that the GPU-options tests rely on (#747): every
 // set of compilation options gets its accelerator through
-// configureSpeechAccelerator (which adds the fp32 GPU options), never through
+// configureSpeechAccelerator (which adds the fp32 GPU options for
+// speech-to-text only), never through
 // a direct setOptionsHardwareAccelerators call, every compile failure is
 // reported through compiledModelFailureMessage, and the seq2seq decoder picks
 // each token through greedyDecodeStep (whole-row NaN check).
@@ -56,6 +57,38 @@ void main() {
       unorderedEquals([
         'lib/src/litert/litert_graph.dart',
         'lib/src/litert/stt_core.dart',
+      ]),
+    );
+  });
+
+  test('only speech-to-text asks for the fp32 GPU options', () {
+    // SttCore.load compiles the speech-to-text graph; loadLiteRtGraph compiles
+    // every text-to-speech graph, which keeps LiteRT's GPU defaults.
+    expect(
+      _count(
+        sources['lib/src/litert/stt_core.dart']!,
+        r'configureSpeechAccelerator\([^;]*fp32OnGpu: true,',
+      ),
+      1,
+    );
+    final graph = sources['lib/src/litert/litert_graph.dart']!;
+    final load = graph.substring(graph.indexOf('LoadedGraph loadLiteRtGraph('));
+    expect(
+      _count(load, r'configureSpeechAccelerator\([^;]*fp32OnGpu: false,'),
+      1,
+    );
+    final ttsLoaders = {
+      for (final MapEntry(:key, :value) in sources.entries)
+        if (value.contains('loadLiteRtGraph(') &&
+            key != 'lib/src/litert/litert_graph.dart')
+          key,
+    };
+    expect(
+      ttsLoaders,
+      unorderedEquals([
+        'lib/src/litert/tts_core.dart',
+        'lib/src/litert/inflect_tts_core.dart',
+        'lib/src/qwen3/qwen3_tts_core.dart',
       ]),
     );
   });

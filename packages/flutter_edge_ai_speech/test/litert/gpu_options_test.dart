@@ -19,7 +19,7 @@ import 'package:flutter_edge_ai_speech/src/litert/litert_graph.dart'
         compiledModelFailureMessage,
         configureSpeechAcceleratorWith,
         liteRtGpuOptionsIdentifier,
-        speechGpuOptionsToml;
+        sttGpuOptionsToml;
 import 'package:flutter_test/flutter_test.dart';
 
 /// Records what [attachGpuOptions] hands to LiteRT and owns the payload the
@@ -111,10 +111,10 @@ class _RecordingAllocator implements Allocator {
 final LiteRtOptions _options = Pointer.fromAddress(0x0b7);
 
 void main() {
-  test('the speech GPU payload asks for fp32 and nothing else', () {
-    expect(speechGpuOptionsToml, 'precision = 2\n');
+  test('the speech-to-text GPU payload asks for fp32 and nothing else', () {
+    expect(sttGpuOptionsToml, 'precision = 2\n');
     // Constant sharing aborts on a float32 EMBEDDING_LOOKUP (LiteRT-LM#3685).
-    expect(speechGpuOptionsToml, isNot(contains('constant_tensors_sharing')));
+    expect(sttGpuOptionsToml, isNot(contains('constant_tensors_sharing')));
   });
 
   test('attachGpuOptions hands LiteRT the gpu_options TOML and adds it', () {
@@ -198,18 +198,22 @@ void main() {
   });
 
   group('configureSpeechAcceleratorWith', () {
-    void configure(_FakeLiteRt fake, int accelerator) =>
-        configureSpeechAcceleratorWith(
-          _options,
-          accelerator,
-          context: 'model.tflite',
-          setAccelerators: fake.setAccelerators,
-          create: fake.create,
-          add: fake.add,
-          destroy: fake.destroy,
-        );
+    void configure(
+      _FakeLiteRt fake,
+      int accelerator, {
+      bool fp32OnGpu = true,
+    }) => configureSpeechAcceleratorWith(
+      _options,
+      accelerator,
+      context: 'model.tflite',
+      fp32OnGpu: fp32OnGpu,
+      setAccelerators: fake.setAccelerators,
+      create: fake.create,
+      add: fake.add,
+      destroy: fake.destroy,
+    );
 
-    test('the GPU gets the speech GPU options', () {
+    test('speech-to-text on the GPU gets the fp32 options', () {
       final fake = _FakeLiteRt();
       configure(fake, kLiteRtHwAcceleratorGpu);
       fake.release();
@@ -218,18 +222,26 @@ void main() {
         'create',
         'add',
       ]);
-      expect(fake.payload, speechGpuOptionsToml);
+      expect(fake.payload, sttGpuOptionsToml);
+    });
+
+    test('text-to-speech on the GPU keeps LiteRT defaults', () {
+      final fake = _FakeLiteRt();
+      configure(fake, kLiteRtHwAcceleratorGpu, fp32OnGpu: false);
+      expect(fake.calls, ['setAccelerators($kLiteRtHwAcceleratorGpu)']);
     });
 
     for (final (name, accelerator) in [
       ('CPU', kLiteRtHwAcceleratorCpu),
       ('NPU', kLiteRtHwAcceleratorNpu),
     ]) {
-      test('the $name gets no GPU options', () {
-        final fake = _FakeLiteRt();
-        configure(fake, accelerator);
-        expect(fake.calls, ['setAccelerators($accelerator)']);
-      });
+      for (final fp32OnGpu in [true, false]) {
+        test('the $name gets no GPU options (fp32OnGpu: $fp32OnGpu)', () {
+          final fake = _FakeLiteRt();
+          configure(fake, accelerator, fp32OnGpu: fp32OnGpu);
+          expect(fake.calls, ['setAccelerators($accelerator)']);
+        });
+      }
     }
 
     test('a failed accelerator call throws before any GPU option', () {
@@ -239,6 +251,7 @@ void main() {
           _options,
           kLiteRtHwAcceleratorGpu,
           context: 'model.tflite',
+          fp32OnGpu: true,
           setAccelerators: (_, _) => 1,
           create: fake.create,
           add: fake.add,
@@ -257,29 +270,22 @@ void main() {
   });
 
   group('compiledModelFailureMessage', () {
-    test('names the file and the status', () {
-      final message = compiledModelFailureMessage(
-        '/models/a.tflite',
-        kLiteRtHwAcceleratorCpu,
-        3,
-      );
-      expect(message, contains('/models/a.tflite'));
-      expect(message, contains('status=3'));
-      expect(message, isNot(contains('_i8')));
-    });
-
-    test('on the GPU it points an int8 file to the CPU', () {
-      final message = compiledModelFailureMessage(
-        '/models/parakeet_ctc_0.6b_5s_i8.tflite',
-        kLiteRtHwAcceleratorGpu,
-        3,
-      );
-      expect(message, contains('/models/parakeet_ctc_0.6b_5s_i8.tflite'));
-      expect(message, contains('status=3'));
-      expect(message, contains('int8'));
-      expect(message, contains('constant tensor sharing'));
-      expect(message, contains('PreferredBackend.cpu'));
-      expect(message, contains('LiteRT-LM#3685'));
-    });
+    for (final (accelerator, name) in [
+      (kLiteRtHwAcceleratorCpu, 'cpu'),
+      (kLiteRtHwAcceleratorGpu, 'gpu'),
+      (kLiteRtHwAcceleratorNpu, 'npu'),
+    ]) {
+      test('names the file, the $name and the status, and nothing more', () {
+        expect(
+          compiledModelFailureMessage(
+            '/models/parakeet_ctc_0.6b_5s_i8.tflite',
+            accelerator,
+            3,
+          ),
+          'LiteRtCreateCompiledModel(/models/parakeet_ctc_0.6b_5s_i8.tflite) '
+          'failed on the $name (status=3)',
+        );
+      });
+    }
   });
 }

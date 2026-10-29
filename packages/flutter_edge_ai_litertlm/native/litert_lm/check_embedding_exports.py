@@ -135,7 +135,7 @@ OWN_BUILD_SYMBOLS = [
 # come out of the library LiteRtBindings opens — libLiteRtLm on Apple and
 # Android, Google's libLiteRt.so / LiteRt.dll beside it on Linux and Windows.
 # Missing one, that load fails on that target only (the opaque-options three
-# carry the speech GPU options, #747).
+# carry the speech-to-text GPU options, #747).
 LITERT_BINDINGS_SYMBOLS = [
     "LiteRtAddOpaqueOptions",
     "LiteRtCreateCompiledModel",

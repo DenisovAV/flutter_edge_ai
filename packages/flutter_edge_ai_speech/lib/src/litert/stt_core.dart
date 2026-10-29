@@ -449,6 +449,7 @@ class SttCore {
         options,
         acceleratorFor(backend),
         context: modelPath,
+        fp32OnGpu: true,
       );
 
       final compiledPtr = calloc<LiteRtCompiledModel>();

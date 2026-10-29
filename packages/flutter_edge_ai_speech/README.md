@@ -100,16 +100,17 @@ window, steady state over repeated transcriptions
   app during `getActiveStt`, before the first transcription. Use the int8 file
   from the same repository, `parakeet_ctc_0.6b_5s_i8.tflite`, on the CPU: it
   transcribed the same text as the f32 file.
-- On the GPU speech asks LiteRT for fp32. At LiteRT's default (fp16),
-  moonshine f32 returned NaN logits at its first decode step on Adreno 740
-  (Whisper tiny transcribed correctly); at fp32 it transcribes the same text as
-  on the CPU, about three times faster. fp32 is measured on Adreno 740 only, not
-  on Mali, Metal or WebGPU.
+- On the GPU, speech-to-text asks LiteRT for fp32; text-to-speech keeps
+  LiteRT's defaults. At LiteRT's default (fp16), moonshine f32 returned NaN
+  logits at its first decode step on Adreno 740; at fp32 it transcribes the same
+  text as on the CPU, about three times faster. Whisper tiny transcribed
+  correctly both ways and is about 5% slower at fp32. fp32 is measured on
+  Adreno 740 only, not on Mali, Metal or WebGPU.
 - The int8 (`_i8`) files do not compile on the GPU without constant tensor
   sharing, which speech leaves off: with it set, moonshine f32 aborted inside
   LiteRT
   ([LiteRT-LM#3685](https://github.com/google-ai-edge/LiteRT-LM/issues/3685)).
-  Their GPU load fails with an error that says so; run them on the CPU.
+  Their GPU load fails with an error naming the file; run them on the CPU.
 
 ## Voice loop
 

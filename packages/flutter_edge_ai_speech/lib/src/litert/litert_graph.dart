@@ -44,25 +44,25 @@ int acceleratorFor(PreferredBackend? backend) => switch (backend) {
 /// LiteRT's `kLiteRtDelegatePrecisionFp32` (`litert_common.h`).
 const int liteRtDelegatePrecisionFp32 = 2;
 
-/// The `gpu_options` payload every speech graph is compiled with on the GPU.
+/// The `gpu_options` payload every speech-to-text graph is compiled with on
+/// the GPU. Text-to-speech graphs get none ([configureSpeechAccelerator]).
 ///
 /// fp32. With no options (the accelerator's default, fp16) moonshine-tiny f32
 /// returned NaN logits at its first decode step on a Galaxy S23 (Adreno 740);
 /// with `precision = 2` it transcribed the same text as on the CPU (#747).
-/// whisper-tiny f32 transcribed correctly at the default, and Parakeet f32 at
-/// fp32 never got past its load there (the system killed the app). Google's
-/// ASR sample (`litert-samples`, speech_recognition) forces fp32 on the GPU
-/// for every model it ships. Measured on Adreno 740 only; Metal, WebGPU and
-/// Mali are not.
+/// whisper-tiny f32 transcribed correctly both ways, about 5% slower at fp32,
+/// and Parakeet f32 never got past its load on that phone either way (the
+/// system killed the app). Google's ASR sample (`litert-samples`,
+/// speech_recognition) forces fp32 on the GPU for every model it ships.
+/// Measured on Adreno 740 only; Metal, WebGPU and Mali are not.
 ///
 /// No `enable_constant_tensors_sharing`: moonshine-tiny f32 aborted the process
 /// inside the accelerator (`EMBEDDING_LOOKUP: Unsupported external weights
 /// type: 1`) when it was set together with precision fp32, texture weights,
 /// madvise and GPU weight conversion; the code path is a float32 embedding
 /// table shared as a constant (google-ai-edge/LiteRT-LM#3685). Without it the
-/// int8 files do not compile on the GPU ([compiledModelFailureMessage]).
-const String speechGpuOptionsToml =
-    'precision = $liteRtDelegatePrecisionFp32\n';
+/// int8 files do not compile on the GPU.
+const String sttGpuOptionsToml = 'precision = $liteRtDelegatePrecisionFp32\n';
 
 /// Identifier LiteRT's GPU accelerator looks its options up by.
 const String liteRtGpuOptionsIdentifier = 'gpu_options';
@@ -85,8 +85,8 @@ typedef DestroyOpaqueOptions = void Function(LiteRtOpaqueOptions);
 /// Appends a `gpu_options` payload holding [toml] to [options].
 ///
 /// The three calls are parameters so a VM test can drive it without LiteRT. A
-/// failed create or add throws, so a speech graph is not compiled for the GPU
-/// without its options attached. What the accelerator does with them is
+/// failed create or add throws, so a speech-to-text graph is not compiled for
+/// the GPU without its options attached. What the accelerator does with them is
 /// LiteRT's: it ignores a payload it cannot find or parse and compiles at its
 /// default, with no error (`ml_drift_delegate_create.cc`). The payload is freed
 /// on every path that does not hand it to LiteRT.
@@ -131,36 +131,36 @@ void attachGpuOptions(
   }
 }
 
-/// The error of a failed `LiteRtCreateCompiledModel` for the graph at [path].
-///
-/// On the GPU it also says what a failure most likely is: an int8 (`_i8`)
-/// file, which compiles there only with constant tensor sharing, left off on
-/// purpose ([speechGpuOptionsToml]). Both int8 files tried on Adreno 740
-/// (moonshine-tiny, parakeet-ctc) failed with status 3 at fp32 without it
-/// (#747).
-String compiledModelFailureMessage(String path, int accelerator, int status) {
-  final failed = 'LiteRtCreateCompiledModel($path) failed (status=$status)';
-  if (accelerator != kLiteRtHwAcceleratorGpu) return failed;
-  return '$failed on the GPU. If this is an int8 (_i8) file: those compile on '
-      'the GPU only with constant tensor sharing, which speech leaves off '
-      'because it aborts on the f32 files '
-      '(google-ai-edge/LiteRT-LM#3685). Run it with PreferredBackend.cpu, '
-      'or use the f32 file on the GPU.';
-}
+/// The name an error gives [accelerator]: `cpu`, `gpu` or `npu`.
+String acceleratorName(int accelerator) => switch (accelerator) {
+  kLiteRtHwAcceleratorGpu => 'gpu',
+  kLiteRtHwAcceleratorNpu => 'npu',
+  kLiteRtHwAcceleratorCpu => 'cpu',
+  _ => 'accelerator $accelerator',
+};
 
-/// Sets [accelerator] on [options] and, for the GPU, the speech GPU options
-/// ([speechGpuOptionsToml]). Every speech core compiles through this, so no
-/// graph reaches the GPU at its default precision. [context] names the graph
-/// in an error.
+/// The error of a failed `LiteRtCreateCompiledModel`: the file at [path], the
+/// accelerator it was compiled for and LiteRT's status.
+String compiledModelFailureMessage(String path, int accelerator, int status) =>
+    'LiteRtCreateCompiledModel($path) failed on the '
+    '${acceleratorName(accelerator)} (status=$status)';
+
+/// Sets [accelerator] on [options] and, when [fp32OnGpu] is true and it is the
+/// GPU, the speech-to-text GPU options ([sttGpuOptionsToml]). Every speech core
+/// compiles through this: speech-to-text passes true, text-to-speech false,
+/// which leaves its graphs at LiteRT's defaults, as before #747. [context]
+/// names the graph in an error.
 void configureSpeechAccelerator(
   LiteRtBindings bindings,
   LiteRtOptions options,
   int accelerator, {
   required String context,
+  required bool fp32OnGpu,
 }) => configureSpeechAcceleratorWith(
   options,
   accelerator,
   context: context,
+  fp32OnGpu: fp32OnGpu,
   setAccelerators: bindings.setOptionsHardwareAccelerators,
   create: bindings.createOpaqueOptions,
   add: bindings.addOpaqueOptions,
@@ -168,11 +168,12 @@ void configureSpeechAccelerator(
 );
 
 /// [configureSpeechAccelerator] over the four LiteRT calls it makes, so a VM
-/// test can check which accelerators get the GPU options.
+/// test can check which graphs get the GPU options.
 void configureSpeechAcceleratorWith(
   LiteRtOptions options,
   int accelerator, {
   required String context,
+  required bool fp32OnGpu,
   required int Function(LiteRtOptions, int) setAccelerators,
   required CreateOpaqueOptions create,
   required AddOpaqueOptions add,
@@ -182,10 +183,10 @@ void configureSpeechAcceleratorWith(
     options,
     accelerator,
   ).check('LiteRtSetOptionsHardwareAccelerators($context)');
-  if (accelerator == kLiteRtHwAcceleratorGpu) {
+  if (fp32OnGpu && accelerator == kLiteRtHwAcceleratorGpu) {
     attachGpuOptions(
       options,
-      speechGpuOptionsToml,
+      sttGpuOptionsToml,
       create: create,
       add: add,
       destroy: destroy,
@@ -264,7 +265,15 @@ LoadedGraph loadLiteRtGraph(
     bindings.createOptions(optsPtr).check('LiteRtCreateOptions($path)');
     options = optsPtr.value;
     calloc.free(optsPtr);
-    configureSpeechAccelerator(bindings, options, accelerator, context: path);
+    // Text-to-speech graphs only (TtsCore, InflectTtsCore, Qwen3TtsCore): they
+    // keep LiteRT's GPU defaults. SttCore.load compiles its own.
+    configureSpeechAccelerator(
+      bindings,
+      options,
+      accelerator,
+      context: path,
+      fp32OnGpu: false,
+    );
 
     final compiledPtr = calloc<LiteRtCompiledModel>();
     final status = bindings.createCompiledModel(

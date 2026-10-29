@@ -17,9 +17,9 @@ import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
 ///
-/// Scores options for `createDecider` ([OptionScoringModel]) on the CPU
-/// backend, from the decision litetune wrote into the model file
-/// ([decisionRead], read when the model was loaded).
+/// Scores options for `createDecider` ([OptionScoringModel]) on the CPU and
+/// GPU backends (not the NPU), from the decision litetune wrote into the
+/// model file ([decisionRead], read when the model was loaded).
 base class FfiInferenceModel extends InferenceModel
     with CloseNotifier, OptionScoringModel {
   FfiInferenceModel({
@@ -137,6 +137,7 @@ base class FfiInferenceModel extends InferenceModel
           ),
     ];
     final check = liteRtLmScoringSelfCheck(
+      backend: activeBackend,
       targets: targets,
       tokenize: scorer.tokenize,
       detokenize: scorer.detokenize,
@@ -179,17 +180,32 @@ base class FfiInferenceModel extends InferenceModel
     );
   }
 
+  /// Scores on the CPU and on the GPU. The GPU's scores are not the CPU's,
+  /// and the calibration in a bundle is fitted on CPU probabilities; the
+  /// self-check runs on either before the first decision. The NPU is refused:
+  /// its executor rolls back one token only, and a decision rewinds between
+  /// options.
   @override
   Future<OptionScorer> openOptionScorer() async {
     if (_isClosed) throw StateError('The model is closed.');
-    if (activeBackend != PreferredBackend.cpu) {
-      throw DeciderUnsupportedException(
-        'Option scoring is measured on the CPU backend only, and this model '
-        'runs on ${activeBackend?.name ?? 'an unknown backend'}. Load it with '
-        'preferredBackend: PreferredBackend.cpu to create a decider from it.',
-      );
+    switch (activeBackend) {
+      case PreferredBackend.cpu || PreferredBackend.gpu:
+        return _LiteRtLmOptionScorer(this);
+      case PreferredBackend.npu:
+        throw const DeciderUnsupportedException(
+          'Option scoring does not run on the NPU: its executor rolls back one '
+          'token only, and a decision rewinds between options. Load a bundle '
+          'built for the CPU or GPU with preferredBackend: PreferredBackend.cpu '
+          'or PreferredBackend.gpu to create a decider from it.',
+        );
+      case null:
+        throw const DeciderUnsupportedException(
+          'Option scoring runs on the CPU and GPU backends, and this model '
+          'does not report its backend. Load it with preferredBackend: '
+          'PreferredBackend.cpu or PreferredBackend.gpu to create a decider '
+          'from it.',
+        );
     }
-    return _LiteRtLmOptionScorer(this);
   }
 
   @override

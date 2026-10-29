@@ -33,7 +33,7 @@ base mixin OptionScoringModel on InferenceModel {
 
   /// The engine's scoring calls, for one decider. Fails with
   /// `DeciderUnsupportedException` when this model cannot score here — a
-  /// backend option scoring is not measured on, for one — and with
+  /// backend the engine does not score on, for one — and with
   /// [StateError] when the model is closed.
   Future<OptionScorer> openOptionScorer();
 }

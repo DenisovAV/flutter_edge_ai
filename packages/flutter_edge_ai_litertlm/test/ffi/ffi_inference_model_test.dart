@@ -1,3 +1,6 @@
+// The decider SPI (OptionScorer, DeciderUnsupportedException) is @experimental.
+// ignore_for_file: experimental_member_use
+
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_edge_ai/engine.dart';
@@ -14,6 +17,53 @@ void main() {
     );
 
     expect(model.activeBackend, PreferredBackend.gpu);
+  });
+
+  group('openOptionScorer', () {
+    FfiInferenceModel modelOn(PreferredBackend? backend) => FfiInferenceModel(
+      ffiClient: LiteRtLmFfiClient(),
+      maxTokens: 2048,
+      modelType: ModelType.gemmaIt,
+      activeBackend: backend,
+      onClose: () {},
+    );
+
+    for (final backend in [PreferredBackend.cpu, PreferredBackend.gpu]) {
+      test('opens a scorer on ${backend.name}', () async {
+        final scorer = await modelOn(backend).openOptionScorer();
+        expect(scorer, isA<OptionScorer>());
+        await scorer.close();
+      });
+    }
+
+    test('refuses the NPU by name', () async {
+      await expectLater(
+        modelOn(PreferredBackend.npu).openOptionScorer(),
+        throwsA(
+          isA<DeciderUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('NPU'), contains('rolls back one token only')),
+          ),
+        ),
+      );
+    });
+
+    test('refuses a model that does not report its backend', () async {
+      await expectLater(
+        modelOn(null).openOptionScorer(),
+        throwsA(
+          isA<DeciderUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('does not report its backend'),
+              contains('PreferredBackend.cpu'),
+            ),
+          ),
+        ),
+      );
+    });
   });
 
   test('isClosed is true from the moment close() starts', () async {

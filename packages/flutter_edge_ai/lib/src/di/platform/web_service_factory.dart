@@ -5,6 +5,7 @@ library;
 
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/web_storage_mode.dart';
+import '../../model_management/cancel_token.dart';
 import '../../services/remote_size_probe.dart';
 import '../../infrastructure/web_download_service.dart';
 import '../../infrastructure/web_file_system_service.dart';
@@ -76,5 +77,9 @@ final class _NoRemoteSizes implements RemoteSizeProbe {
   const _NoRemoteSizes();
 
   @override
-  Future<int?> sizeOf(String url, {String? token}) async => null;
+  Future<int?> sizeOf(
+    String url, {
+    String? token,
+    CancelToken? cancelToken,
+  }) async => null;
 }

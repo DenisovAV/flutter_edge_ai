@@ -177,6 +177,30 @@ void main() {
     expect(progress.first, 15);
   });
 
+  test('100 is said only once the bundle is the active voice', () async {
+    await initialize();
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    String? activeAt100;
+    await FlutterEdgeAi.installTts()
+        .fromNetwork(_base)
+        .ofType(TtsModelType.matcha)
+        .named('fresh-voice')
+        .withProgress((p) {
+          if (p == 100) activeAt100 = manager.activeTtsModel?.name;
+        })
+        .install();
+    expect(activeAt100, 'fresh-voice');
+  });
+
+  test('a file that is not there has no size, not 0', () async {
+    await initialize();
+    final fs = ServiceRegistry.instance.fileSystemService;
+    expect(await sizeOnDisk(fs, '${documents.path}/none.bin'), isNull);
+    final there = File('${documents.path}/there.bin')
+      ..writeAsBytesSync(Uint8List(321));
+    expect(await sizeOnDisk(fs, there.path), 321);
+  });
+
   test('without withProgress nothing is asked', () async {
     await initialize();
     await FlutterEdgeAi.installTts()
@@ -197,7 +221,11 @@ final class _Probe implements RemoteSizeProbe {
   final tokens = <String?>[];
 
   @override
-  Future<int?> sizeOf(String url, {String? token}) async {
+  Future<int?> sizeOf(
+    String url, {
+    String? token,
+    CancelToken? cancelToken,
+  }) async {
     asked.add(url);
     tokens.add(token);
     if (gate case final gate?) await gate;

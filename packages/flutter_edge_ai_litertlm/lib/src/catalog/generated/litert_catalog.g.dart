@@ -402,9 +402,6 @@ final class LiteRtLmGemma3_1bIt extends LiteRtLmModel {
           _gemma3_1bIt$npuMt6989,
           _gemma3_1bIt$npuMt6991,
           _gemma3_1bIt$npuMt6993,
-          _gemma3_1bIt$npuSm8550,
-          _gemma3_1bIt$npuSm8650,
-          _gemma3_1bIt$npuSm8750,
           _gemma3_1bIt$npuSm8850,
           _gemma3_1bIt$npuTensorG5,
           _gemma3_1bIt$npuTensorG6,
@@ -422,15 +419,6 @@ final class LiteRtLmGemma3_1bIt extends LiteRtLmModel {
 
   /// `Gemma3-1B-IT_q4_ekv1280_mt6993.litertlm`, 1.02 GB.
   LiteRtLmVariant get npuMt6993 => _gemma3_1bIt$npuMt6993;
-
-  /// `Gemma3-1B-IT_q4_ekv1280_sm8550.litertlm`, 690 MB.
-  LiteRtLmVariant get npuSm8550 => _gemma3_1bIt$npuSm8550;
-
-  /// `Gemma3-1B-IT_q4_ekv1280_sm8650.litertlm`, 690 MB.
-  LiteRtLmVariant get npuSm8650 => _gemma3_1bIt$npuSm8650;
-
-  /// `Gemma3-1B-IT_q4_ekv1280_sm8750.litertlm`, 689 MB.
-  LiteRtLmVariant get npuSm8750 => _gemma3_1bIt$npuSm8750;
 
   /// `Gemma3-1B-IT_q4_ekv1280_sm8850.litertlm`, 694 MB.
   LiteRtLmVariant get npuSm8850 => _gemma3_1bIt$npuSm8850;
@@ -556,95 +544,6 @@ const _gemma3_1bIt$npuMt6993 = LiteRtLmVariant._(
   requiredMaxTokens: 1280,
 );
 
-const _gemma3_1bIt$npuSm8550 = LiteRtLmVariant._(
-  id: 'gemma-3-1b-it/npu-sm8550',
-  modelId: 'gemma-3-1b-it',
-  file: ModelArtifact(
-    repo: 'litert-community/Gemma3-1B-IT',
-    revision: 'd448835d84411a08f577e25f3afebe528402d73b',
-    path: 'Gemma3-1B-IT_q4_ekv1280_sm8550.litertlm',
-    sha256: '29426fd343eaeac9d54d67ca2bf72fce8c1f0cce947757e5e9c8009bcf5e72af',
-    sizeBytes: 690143232,
-    installFilename: 'Gemma3-1B-IT_q4_ekv1280_sm8550.litertlm',
-    gated: true,
-  ),
-  modelType: ModelType.gemmaIt,
-  runtimeDefaults: ModelRuntimeDefaults(
-    maxTokens: 1280,
-    preferredBackend: PreferredBackend.npu,
-    supportImage: false,
-    supportAudio: false,
-  ),
-  supportsImage: false,
-  supportsAudio: false,
-  supportsFunctionCalls: false,
-  supportsThinking: false,
-  isWebBundle: false,
-  textBackends: {},
-  npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8550'),
-  requiredMaxTokens: 1280,
-  withheld: {PreferredBackend.npu},
-);
-
-const _gemma3_1bIt$npuSm8650 = LiteRtLmVariant._(
-  id: 'gemma-3-1b-it/npu-sm8650',
-  modelId: 'gemma-3-1b-it',
-  file: ModelArtifact(
-    repo: 'litert-community/Gemma3-1B-IT',
-    revision: 'd448835d84411a08f577e25f3afebe528402d73b',
-    path: 'Gemma3-1B-IT_q4_ekv1280_sm8650.litertlm',
-    sha256: '85d2ea5199802f913818d53897b3a304bcf983abb993393e6b1749fbdb005552',
-    sizeBytes: 690094080,
-    installFilename: 'Gemma3-1B-IT_q4_ekv1280_sm8650.litertlm',
-    gated: true,
-  ),
-  modelType: ModelType.gemmaIt,
-  runtimeDefaults: ModelRuntimeDefaults(
-    maxTokens: 1280,
-    preferredBackend: PreferredBackend.npu,
-    supportImage: false,
-    supportAudio: false,
-  ),
-  supportsImage: false,
-  supportsAudio: false,
-  supportsFunctionCalls: false,
-  supportsThinking: false,
-  isWebBundle: false,
-  textBackends: {PreferredBackend.npu},
-  npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8650'),
-  requiredMaxTokens: 1280,
-);
-
-const _gemma3_1bIt$npuSm8750 = LiteRtLmVariant._(
-  id: 'gemma-3-1b-it/npu-sm8750',
-  modelId: 'gemma-3-1b-it',
-  file: ModelArtifact(
-    repo: 'litert-community/Gemma3-1B-IT',
-    revision: 'd448835d84411a08f577e25f3afebe528402d73b',
-    path: 'Gemma3-1B-IT_q4_ekv1280_sm8750.litertlm',
-    sha256: '1904ceff9591e7a140df3a672c800e8e7bee8337526484b00f69ccef4fa2d60a',
-    sizeBytes: 689291264,
-    installFilename: 'Gemma3-1B-IT_q4_ekv1280_sm8750.litertlm',
-    gated: true,
-  ),
-  modelType: ModelType.gemmaIt,
-  runtimeDefaults: ModelRuntimeDefaults(
-    maxTokens: 1280,
-    preferredBackend: PreferredBackend.npu,
-    supportImage: false,
-    supportAudio: false,
-  ),
-  supportsImage: false,
-  supportsAudio: false,
-  supportsFunctionCalls: false,
-  supportsThinking: false,
-  isWebBundle: false,
-  textBackends: {},
-  npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8750'),
-  requiredMaxTokens: 1280,
-  withheld: {PreferredBackend.npu},
-);
-
 const _gemma3_1bIt$npuSm8850 = LiteRtLmVariant._(
   id: 'gemma-3-1b-it/npu-sm8850',
   modelId: 'gemma-3-1b-it',
@@ -746,10 +645,6 @@ final class LiteRtLmGemma3_270mIt extends LiteRtLmModel {
           _gemma3_270mIt$q8,
           _gemma3_270mIt$npuMt6991,
           _gemma3_270mIt$npuMt6993,
-          _gemma3_270mIt$npuSm8550,
-          _gemma3_270mIt$npuSm8650,
-          _gemma3_270mIt$npuSm8750,
-          _gemma3_270mIt$npuSm8850,
         ],
       );
 
@@ -761,18 +656,6 @@ final class LiteRtLmGemma3_270mIt extends LiteRtLmModel {
 
   /// `gemma3-270m-it-q8.mediatek.mt6993.litertlm`, 555 MB.
   LiteRtLmVariant get npuMt6993 => _gemma3_270mIt$npuMt6993;
-
-  /// `gemma3-270m-it-q8.qualcomm.sm8550.litertlm`, 462 MB.
-  LiteRtLmVariant get npuSm8550 => _gemma3_270mIt$npuSm8550;
-
-  /// `gemma3-270m-it-q8.qualcomm.sm8650.litertlm`, 462 MB.
-  LiteRtLmVariant get npuSm8650 => _gemma3_270mIt$npuSm8650;
-
-  /// `gemma3-270m-it-q8.qualcomm.sm8750.litertlm`, 461 MB.
-  LiteRtLmVariant get npuSm8750 => _gemma3_270mIt$npuSm8750;
-
-  /// `gemma3-270m-it-q8.qualcomm.sm8850.litertlm`, 463 MB.
-  LiteRtLmVariant get npuSm8850 => _gemma3_270mIt$npuSm8850;
 }
 
 const _gemma3_270mIt$q8 = LiteRtLmVariant._(
@@ -858,124 +741,6 @@ const _gemma3_270mIt$npuMt6993 = LiteRtLmVariant._(
   textBackends: {PreferredBackend.npu},
   npuTarget: LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6993'),
   requiredMaxTokens: 4096,
-);
-
-const _gemma3_270mIt$npuSm8550 = LiteRtLmVariant._(
-  id: 'gemma-3-270m-it/npu-sm8550',
-  modelId: 'gemma-3-270m-it',
-  file: ModelArtifact(
-    repo: 'litert-community/gemma-3-270m-it',
-    revision: '9d2093270fb5aa49a986b49b5779d763dde7b630',
-    path: 'gemma3-270m-it-q8.qualcomm.sm8550.litertlm',
-    sha256: '3de5b6e6affcabae4ba0ee6b8cd0de88e12b54dc2f210102ba57ffb09c093ff1',
-    sizeBytes: 461750272,
-    installFilename: 'gemma3-270m-it-q8.qualcomm.sm8550.litertlm',
-    gated: true,
-  ),
-  modelType: ModelType.gemmaIt,
-  runtimeDefaults: ModelRuntimeDefaults(
-    maxTokens: 4096,
-    preferredBackend: PreferredBackend.npu,
-    supportImage: false,
-    supportAudio: false,
-  ),
-  supportsImage: false,
-  supportsAudio: false,
-  supportsFunctionCalls: false,
-  supportsThinking: false,
-  isWebBundle: false,
-  textBackends: {PreferredBackend.npu},
-  npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8550'),
-  requiredMaxTokens: 4096,
-);
-
-const _gemma3_270mIt$npuSm8650 = LiteRtLmVariant._(
-  id: 'gemma-3-270m-it/npu-sm8650',
-  modelId: 'gemma-3-270m-it',
-  file: ModelArtifact(
-    repo: 'litert-community/gemma-3-270m-it',
-    revision: '9d2093270fb5aa49a986b49b5779d763dde7b630',
-    path: 'gemma3-270m-it-q8.qualcomm.sm8650.litertlm',
-    sha256: '73b7bcfc6cdaf94f143158b089ea9c1c16de62a11ef07b387982820d804a93e9',
-    sizeBytes: 461766656,
-    installFilename: 'gemma3-270m-it-q8.qualcomm.sm8650.litertlm',
-    gated: true,
-  ),
-  modelType: ModelType.gemmaIt,
-  runtimeDefaults: ModelRuntimeDefaults(
-    maxTokens: 4096,
-    preferredBackend: PreferredBackend.npu,
-    supportImage: false,
-    supportAudio: false,
-  ),
-  supportsImage: false,
-  supportsAudio: false,
-  supportsFunctionCalls: false,
-  supportsThinking: false,
-  isWebBundle: false,
-  textBackends: {PreferredBackend.npu},
-  npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8650'),
-  requiredMaxTokens: 4096,
-);
-
-const _gemma3_270mIt$npuSm8750 = LiteRtLmVariant._(
-  id: 'gemma-3-270m-it/npu-sm8750',
-  modelId: 'gemma-3-270m-it',
-  file: ModelArtifact(
-    repo: 'litert-community/gemma-3-270m-it',
-    revision: '9d2093270fb5aa49a986b49b5779d763dde7b630',
-    path: 'gemma3-270m-it-q8.qualcomm.sm8750.litertlm',
-    sha256: 'bfbb6c28112aa4bc8d954fb68c6587fab0cbc228c5e15cae4990eeecf1b652e3',
-    sizeBytes: 461340672,
-    installFilename: 'gemma3-270m-it-q8.qualcomm.sm8750.litertlm',
-    gated: true,
-  ),
-  modelType: ModelType.gemmaIt,
-  runtimeDefaults: ModelRuntimeDefaults(
-    maxTokens: 4096,
-    preferredBackend: PreferredBackend.npu,
-    supportImage: false,
-    supportAudio: false,
-  ),
-  supportsImage: false,
-  supportsAudio: false,
-  supportsFunctionCalls: false,
-  supportsThinking: false,
-  isWebBundle: false,
-  textBackends: {},
-  npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8750'),
-  requiredMaxTokens: 4096,
-  withheld: {PreferredBackend.npu},
-);
-
-const _gemma3_270mIt$npuSm8850 = LiteRtLmVariant._(
-  id: 'gemma-3-270m-it/npu-sm8850',
-  modelId: 'gemma-3-270m-it',
-  file: ModelArtifact(
-    repo: 'litert-community/gemma-3-270m-it',
-    revision: '9d2093270fb5aa49a986b49b5779d763dde7b630',
-    path: 'gemma3-270m-it-q8.qualcomm.sm8850.litertlm',
-    sha256: 'b032a3052dcff6d1b7a45325f5198fb775b97c7e064d97552ddb95712758ab2b',
-    sizeBytes: 463011840,
-    installFilename: 'gemma3-270m-it-q8.qualcomm.sm8850.litertlm',
-    gated: true,
-  ),
-  modelType: ModelType.gemmaIt,
-  runtimeDefaults: ModelRuntimeDefaults(
-    maxTokens: 4096,
-    preferredBackend: PreferredBackend.npu,
-    supportImage: false,
-    supportAudio: false,
-  ),
-  supportsImage: false,
-  supportsAudio: false,
-  supportsFunctionCalls: false,
-  supportsThinking: false,
-  isWebBundle: false,
-  textBackends: {},
-  npuTarget: LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850'),
-  requiredMaxTokens: 4096,
-  withheld: {PreferredBackend.npu},
 );
 
 /// Gemma 3n E2B (`gemma-3n-e2b-it`), gemma.
@@ -2194,7 +1959,7 @@ const _translategemma4bIt$int4 = LiteRtLmVariant._(
   supportsFunctionCalls: false,
   supportsThinking: false,
   isWebBundle: false,
-  textBackends: {PreferredBackend.cpu},
+  textBackends: {PreferredBackend.gpu, PreferredBackend.cpu},
   withheld: {PreferredBackend.gpu},
 );
 
@@ -2222,7 +1987,7 @@ const _translategemma4bIt$int8 = LiteRtLmVariant._(
   supportsFunctionCalls: false,
   supportsThinking: false,
   isWebBundle: false,
-  textBackends: {PreferredBackend.cpu},
+  textBackends: {PreferredBackend.gpu, PreferredBackend.cpu},
   withheld: {PreferredBackend.gpu},
 );
 
@@ -2250,7 +2015,7 @@ const _translategemma4bIt$int4Multimodal = LiteRtLmVariant._(
   supportsFunctionCalls: false,
   supportsThinking: false,
   isWebBundle: false,
-  textBackends: {PreferredBackend.cpu},
+  textBackends: {PreferredBackend.gpu, PreferredBackend.cpu},
   withheld: {PreferredBackend.gpu},
 );
 

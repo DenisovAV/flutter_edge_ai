@@ -51,16 +51,14 @@ final class LiteRtLmNpuTarget extends NpuTarget {
   /// published 270m, 440m and 740m, revisions 9be6e8b9, e301f74d, 24d962e9).
   bool get isIntel => npuVendorOf(this) == NpuStack.intel;
 
-  /// The same vendor and SoC without regard to case, as [sameSoc] compares
-  /// them: a stamp's case is the compiler's, not the SoC's.
+  /// The same stamp as written. [sameSoc] is the comparison that ignores
+  /// case (a stamp's case is the compiler's, not the SoC's).
   @override
   bool operator ==(Object other) =>
-      other is LiteRtLmNpuTarget &&
-      other.vendor.toLowerCase() == vendor.toLowerCase() &&
-      other.soc.toLowerCase() == soc.toLowerCase();
+      other is LiteRtLmNpuTarget && other.vendor == vendor && other.soc == soc;
 
   @override
-  int get hashCode => Object.hash(vendor.toLowerCase(), soc.toLowerCase());
+  int get hashCode => Object.hash(vendor, soc);
 
   @override
   String toString() => '$vendor $soc';

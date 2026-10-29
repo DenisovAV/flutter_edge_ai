@@ -89,10 +89,7 @@ Future<LiveResult> _check(
     final request = await client.headUrl(url);
     request.followRedirects = false;
     // The token is for Hugging Face only, not a host a redirect names.
-    if (token != null &&
-        url.scheme == root.scheme &&
-        url.host == root.host &&
-        url.port == root.port) {
+    if (token != null && _sameOrigin(url, root)) {
       request.headers.set('authorization', 'Bearer $token');
     }
     final response = await request.close();
@@ -135,7 +132,9 @@ Future<LiveResult> _check(
     if (status >= 400) return result(LiveStatus.error, 'HTTP $status');
     // A plain git file: fetch it and hash it.
     final get = await client.getUrl(url);
-    if (token != null) get.headers.set('authorization', 'Bearer $token');
+    if (token != null && _sameOrigin(url, root)) {
+      get.headers.set('authorization', 'Bearer $token');
+    }
     final body = await get.close();
     if (body.statusCode != 200) {
       await body.drain<void>();
@@ -225,3 +224,6 @@ String liveSummary(List<LiveResult> results) {
   }
   return out.toString();
 }
+
+bool _sameOrigin(Uri a, Uri b) =>
+    a.scheme == b.scheme && a.host == b.host && a.port == b.port;

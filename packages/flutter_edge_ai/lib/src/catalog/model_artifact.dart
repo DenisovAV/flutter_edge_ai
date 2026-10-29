@@ -5,6 +5,12 @@
 /// its bytes; apps get artifacts from a catalog, never build them.
 final class ModelArtifact {
   /// An artifact. Generated catalogs call this; an app has no reason to.
+  /// Nothing is checked here (a third-party catalog is const, and its
+  /// values reach core only at install): an install refuses, before it
+  /// downloads, a [revision] that is not a lower-case 40-hex commit, a
+  /// [sizeBytes] that is not positive, a [sha256] that is not 64 hex digits
+  /// (either case) and an [installFilename] that is not a portable file
+  /// name.
   const ModelArtifact({
     required this.repo,
     required this.revision,
@@ -58,7 +64,7 @@ final class ModelArtifact {
       other.repo == repo &&
       other.revision == revision &&
       other.path == path &&
-      other.sha256 == sha256 &&
+      other.sha256.toLowerCase() == sha256.toLowerCase() &&
       other.sizeBytes == sizeBytes &&
       other.installFilename == installFilename &&
       other.gated == gated;
@@ -68,7 +74,7 @@ final class ModelArtifact {
     repo,
     revision,
     path,
-    sha256,
+    sha256.toLowerCase(),
     sizeBytes,
     installFilename,
     gated,

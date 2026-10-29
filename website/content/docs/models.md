@@ -266,8 +266,8 @@ mark.
 | [FastVLM 0.5B](/docs/registry#fastvlm-0.5b) | 1.16&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ |  | no |
 | [FunctionGemma 270M (Flutter demo fine-tune)](/docs/registry#functiongemma-270m-flutter-demo) | 284&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
 | [FunctionGemma 270M](/docs/registry#functiongemma-270m-it) | 284&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
-| [Gemma 3 1B](/docs/registry#gemma-3-1b-it) | 584&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;❌ | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;❌ | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;❌ | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;❌ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ |  | yes |
-| [Gemma 3 270M](/docs/registry#gemma-3-270m-it) | 304&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;❌ | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;❌ | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;❌ | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;❌ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ |  | yes |
+| [Gemma 3 1B](/docs/registry#gemma-3-1b-it) | 584&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ |  | yes |
+| [Gemma 3 270M](/docs/registry#gemma-3-270m-it) | 304&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | yes |
 | [Gemma 3n E2B](/docs/registry#gemma-3n-e2b-it) | 3.04–3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
 | [Gemma 3n E4B](/docs/registry#gemma-3n-e4b-it) | 4.28–4.92&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
 | [Gemma 4 E2B](/docs/registry#gemma-4-e2b-it) | 2.01–2.59&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 | no |
@@ -393,15 +393,19 @@ spelling the compiler stamps into the file, not the one Android reports:
 `'IntelOpenVINO'` with `'PTL'`. An install from the catalog refuses, before it
 downloads anything, a build whose `backendsHere` is empty here; whether this
 device has that NPU, and whether the app bundled the vendor's stack
-(`qualcomm_npu`, `google_tensor_npu`), is known only when the model loads. A
+(`qualcomm_npu`, `google_tensor_npu`, `mediatek_npu`), is known only when the
+model loads. A
 build compiled for an NPU names the context it was compiled for
 (`requiredMaxTokens`); keep `maxTokens` at or below it. After the download,
 and before the model becomes active, each file's size is checked against the
 registry (not on the web): a file of another size is deleted with its record,
 and `install()` throws `ModelValidationException`. An install that would
-write over the active model's file of another source is refused before it
-downloads. On the web, in the default `WebStorageMode.cacheApi`, a file over
-2 GB is refused before it downloads; initialize with `webStorageMode:
+write over the active model's file of another source (a model installed
+earlier from a `/resolve/main/` URL under the same name, or an older pin) is
+refused with a `StateError` before it downloads: uninstall that model first
+(`uninstallModel`, `uninstallEmbedder`, `uninstallStt`, `uninstallTts`), then
+install. On the web, in the default `WebStorageMode.cacheApi`, a file over
+2 GiB is refused before it downloads; initialize with `webStorageMode:
 WebStorageMode.streaming` for the larger web bundles. `withProgress` weights the files by their pinned
 sizes. An LLM is installed under the registry's install name (for example
 `phi-4-mini-reasoning.litertlm`), which `isModelInstalled`, `getModelPath` and

@@ -50,7 +50,12 @@ void _checkIds(ModelCatalog catalog, CatalogModel model) {
   final seen = <String>{};
   for (final v in model.variants) {
     final problem = switch (v) {
-      _ when !v.id.startsWith('${model.id}/') =>
+      _ when model.id.isEmpty || model.id.contains('/') =>
+        'the model id "${model.id}" is empty or holds a "/"',
+      _
+          when !v.id.startsWith('${model.id}/') ||
+              v.id.length == model.id.length + 1 ||
+              v.id.substring(model.id.length + 1).contains('/') =>
         'its id is not "${model.id}/<slug>"',
       _ when v.modelId != model.id => 'its modelId is "${v.modelId}"',
       _ when !seen.add(v.id) => 'it is listed twice',

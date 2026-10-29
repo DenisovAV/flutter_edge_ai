@@ -304,6 +304,23 @@ void main() {
       },
     );
 
+    test('a file the hash cannot read is that file system error', () async {
+      await expectLater(
+        fileSha256('${documents.path}/none.bin'),
+        throwsA(
+          isA<FileSystemException>()
+              .having((e) => e.osError, 'osError', isNotNull)
+              .having((e) => e.path, 'path', endsWith('none.bin')),
+        ),
+      );
+      expect(
+        await fileSha256(
+          (File('${documents.path}/empty.bin')..writeAsBytesSync([])).path,
+        ),
+        '${sha256.convert(<int>[])}',
+      );
+    });
+
     test('a cancel during the hash stops it', () async {
       final file = File('${documents.path}/big.bin');
       await file.writeAsBytes(Uint8List(256 * 1024 * 1024));
@@ -311,6 +328,45 @@ void main() {
       final hashing = fileSha256(file.path, cancelToken: cancel);
       cancel.cancel();
       await expectLater(hashing, throwsA(isA<DownloadCancelledException>()));
+    });
+
+    test('an install over a file another kind\'s active model reads is '
+        'refused', () async {
+      await llm()
+          .fromNetwork('https://example.com/repo/shared.litertlm')
+          .install();
+      final before = downloads.count;
+      await expectLater(
+        FlutterEdgeAi.installEmbedder()
+            .modelFromNetwork(
+              'https://example.com/other/shared.litertlm',
+              expectedSize: _unit,
+            )
+            .install(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('the active model shared reads'),
+          ),
+        ),
+      );
+      expect(downloads.count, before);
+    });
+
+    test('a refused expectation leaves the builder as it was', () async {
+      final builder = FlutterEdgeAi.installEmbedder().fromCatalog(_Embedder());
+      expect(
+        () => builder.modelFromNetwork(
+          'https://example.com/x.tflite',
+          expectedSha256: 'bad',
+        ),
+        throwsArgumentError,
+      );
+      // Still the catalog's files, not x.tflite.
+      await builder.install();
+      expect(await FlutterEdgeAi.isModelInstalled('emb.tflite'), isTrue);
+      expect(await FlutterEdgeAi.isModelInstalled('x.tflite'), isFalse);
     });
 
     test('the embedder checks each file before it is active', () async {
@@ -355,6 +411,31 @@ void main() {
           .install();
       expect(progress.first, 37);
       expect(progress.last, 100);
+    });
+
+    test('embedder and STT say 100 only once the model is active', () async {
+      final manager = FlutterEdgeAiPlugin.instance.modelManager;
+      final embedderAtHundred = <String?>[];
+      await FlutterEdgeAi.installEmbedder()
+          .modelFromNetwork('https://example.com/emb.tflite')
+          .tokenizerFromNetwork('https://example.com/tok.model')
+          .withProgress((p) {
+            if (p == 100) {
+              embedderAtHundred.add(manager.activeEmbeddingModel?.name);
+            }
+          })
+          .install();
+      expect(embedderAtHundred, ['emb']);
+      final sttAtHundred = <String?>[];
+      await FlutterEdgeAi.installStt()
+          .modelFromNetwork('https://example.com/stt.tflite')
+          .tokenizerFromNetwork('https://example.com/tokenizer.json')
+          .ofType(SttModelType.moonshine)
+          .withProgress((p) {
+            if (p == 100) sttAtHundred.add(manager.activeSttModel?.name);
+          })
+          .install();
+      expect(sttAtHundred, ['stt']);
     });
 
     test('the per-file callbacks still report each file', () async {

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'services/catalog_install.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -74,16 +75,19 @@ class _SttScreenState extends State<SttScreen> {
         token = await AuthTokenService.loadToken();
       }
 
-      await FlutterEdgeAi.installStt()
-          .fromCatalog(widget.model.catalogVariant, token: token)
-          .withProgress((percent) {
-            if (!mounted) return;
-            setState(() {
-              _downloadStage = 'model';
-              _downloadPercent = percent;
-            });
-          })
-          .install();
+      await installFromCatalogReplacingActive(
+        () => FlutterEdgeAi.installStt()
+            .fromCatalog(widget.model.catalogVariant, token: token)
+            .withProgress((percent) {
+              if (!mounted) return;
+              setState(() {
+                _downloadStage = 'model';
+                _downloadPercent = percent;
+              });
+            })
+            .install(),
+        uninstall: FlutterEdgeAi.uninstallStt,
+      );
 
       final recognizer = await FlutterEdgeAi.getActiveStt();
 

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'; // For EmbeddingModelSpec
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
     as example_embedding_model;
@@ -83,20 +84,23 @@ class EmbeddingModelDownloadService {
         // A model registry build: fromCatalog installs the model and its
         // tokenizer under their fixed names and checks their sizes.
         final hasTokenizer = variant.tokenizer != null;
-        await FlutterEdgeAi.installEmbedder()
-            .fromCatalog(variant, token: authToken)
-            .withModelProgress((progress) {
-              modelProgress = progress.toDouble();
-              onProgress(
-                modelProgress,
-                hasTokenizer ? tokenizerProgress : modelProgress,
-              );
-            })
-            .withTokenizerProgress((progress) {
-              tokenizerProgress = progress.toDouble();
-              onProgress(modelProgress, tokenizerProgress);
-            })
-            .install();
+        await installFromCatalogReplacingActive(
+          () => FlutterEdgeAi.installEmbedder()
+              .fromCatalog(variant, token: authToken)
+              .withModelProgress((progress) {
+                modelProgress = progress.toDouble();
+                onProgress(
+                  modelProgress,
+                  hasTokenizer ? tokenizerProgress : modelProgress,
+                );
+              })
+              .withTokenizerProgress((progress) {
+                tokenizerProgress = progress.toDouble();
+                onProgress(modelProgress, tokenizerProgress);
+              })
+              .install(),
+          uninstall: FlutterEdgeAi.uninstallEmbedder,
+        );
         await persistVerifiedEmbeddingCatalogSelection(model);
         return;
       }

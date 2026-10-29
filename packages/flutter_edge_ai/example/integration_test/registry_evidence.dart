@@ -20,6 +20,7 @@
 import 'dart:convert';
 import 'dart:ffi' show Abi;
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -30,8 +31,7 @@ final _byPath = <String, Future<CatalogVariant?>>{};
 /// once per path per run.
 Future<CatalogVariant?> registryVariantOf(String path) =>
     _byPath.putIfAbsent(path, () async {
-      final digest = await sha256.bind(File(path).openRead()).first;
-      final hex = '$digest';
+      final hex = await _sha256Of(path);
       for (final model in FlutterEdgeAi.catalog.models) {
         for (final variant in model.variants) {
           if (variant.files.isNotEmpty && variant.files.first.sha256 == hex) {
@@ -60,36 +60,67 @@ Future<void> recordEvidence({
 }
 
 /// Records that [check] passed on [variant], installed from the catalog
-/// (`installModelFromCatalog` or `fromCatalog`), run on [backend]. The
-/// installed file is hashed as [recordEvidence] does: a file that is not the
-/// pinned build prints FEA_EVIDENCE_SKIP and counts for nothing.
+/// (`installModelFromCatalog` or `fromCatalog`), run on [backend]. Every
+/// installed file of it is hashed, off the UI isolate: a file that is not
+/// there, or not the pinned bytes, prints FEA_EVIDENCE_SKIP and counts for
+/// nothing.
 Future<void> recordCatalogEvidence(
   CatalogVariant variant, {
   required PreferredBackend backend,
   required String check,
 }) async {
-  final first = variant.files.first.installFilename;
-  // A TTS bundle's files are installed under its type's namespace.
-  final name = variant is TtsVariant ? '${variant.type.name}__$first' : first;
-  // Where core reads the file; returned even when nothing is there.
-  final path = await FlutterEdgeAi.getModelPath(name);
-  final installed = File(path).existsSync()
-      ? await registryVariantOf(path)
-      : null;
-  if (installed?.id != variant.id) {
-    print(
-      'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'not the pinned build of ${variant.id}'})}',
-    );
-    return;
+  for (final (name, file) in installedNamesOf(variant)) {
+    // Where core reads the file; returned even when nothing is there.
+    final path = await FlutterEdgeAi.getModelPath(name);
+    final reason = !File(path).existsSync()
+        ? 'not installed at $path'
+        : await _sha256Of(path) != file.sha256.toLowerCase()
+        ? 'not the pinned bytes of ${variant.id}'
+        : null;
+    if (reason != null) {
+      print(
+        'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': reason})}',
+      );
+      return;
+    }
   }
   _printEvidence(variant, backend: backend, check: check);
 }
+
+/// Each file of [variant] with the name core installs it under: a TTS
+/// bundle's under its type's namespace, an STT tokenizer under its model
+/// file's (`<model name>__tokenizer.json`), the rest as the catalog names
+/// them.
+List<(String, ModelArtifact)> installedNamesOf(
+  CatalogVariant variant,
+) => switch (variant) {
+  TtsVariant(:final type, :final files) => [
+    for (final f in files) ('${type.name}__${f.installFilename}', f),
+  ],
+  SttVariant(:final model, :final tokenizer) => [
+    (model.installFilename, model),
+    (
+      '${_coreBaseName(model.installFilename)}__${tokenizer.installFilename}',
+      tokenizer,
+    ),
+  ],
+  _ => [for (final f in variant.files) (f.installFilename, f)],
+};
 
 void _printEvidence(
   CatalogVariant variant, {
   required PreferredBackend backend,
   required String check,
 }) {
+  final simulator = _isSimulator;
+  if (simulator == null) {
+    // Neither a device nor an emulator for sure: a run that cannot say
+    // which counts for nothing, rather than as a device.
+    print(
+      'FEA_EVIDENCE_SKIP ${jsonEncode({'variant': variant.id, 'check': check, 'reason': 'cannot tell an emulator from a device here (getprop unreadable)'})}',
+    );
+    return;
+  }
   print(
     'FEA_EVIDENCE v2 ${jsonEncode({
       'variant': variant.id,
@@ -97,14 +128,15 @@ void _printEvidence(
       'backend': backend.name,
       'check': check,
       // A simulator or emulator reports the device's host but is not one.
-      if (_isSimulator) 'simulator': true,
+      if (simulator) 'simulator': true,
     })}',
   );
 }
 
 /// The iOS simulator, or an Android emulator (an arm64 one on an Apple
-/// Silicon Mac reports `android_arm64`, with the host's or a software GPU).
-final bool _isSimulator = () {
+/// Silicon Mac reports `android_arm64`, with the host's or a software GPU);
+/// null on Android when the system properties cannot be read.
+final bool? _isSimulator = () {
   if (Platform.isIOS) {
     return Platform.environment.containsKey('SIMULATOR_DEVICE_NAME');
   }
@@ -112,9 +144,10 @@ final bool _isSimulator = () {
   return looksLikeAndroidEmulator(
     property: (name) {
       try {
-        return '${Process.runSync('getprop', [name]).stdout}'.trim();
+        final result = Process.runSync('getprop', [name]);
+        return result.exitCode == 0 ? '${result.stdout}'.trim() : null;
       } on ProcessException {
-        return '';
+        return null;
       }
     },
     exists: (path) => File(path).existsSync(),
@@ -122,13 +155,49 @@ final bool _isSimulator = () {
 }();
 
 /// Whether an Android process runs on an emulator, from its system
-/// properties ([property]) and device nodes ([exists]).
-bool looksLikeAndroidEmulator({
-  required String Function(String name) property,
+/// properties ([property]: null when it cannot be read) and device nodes
+/// ([exists]). Null when it cannot tell: no emulator sign, and not even the
+/// build fingerprint (which every Android build sets) could be read.
+bool? looksLikeAndroidEmulator({
+  required String? Function(String name) property,
   required bool Function(String path) exists,
-}) =>
-    property('ro.kernel.qemu') == '1' ||
-    property('ro.boot.qemu') == '1' ||
-    property('ro.build.fingerprint').contains('generic') ||
-    exists('/dev/qemu_pipe') ||
-    exists('/dev/goldfish_pipe');
+}) {
+  final fingerprint = property('ro.build.fingerprint') ?? '';
+  final hardware = property('ro.hardware') ?? '';
+  final model = property('ro.product.model') ?? '';
+  final emulator =
+      property('ro.kernel.qemu') == '1' ||
+      property('ro.boot.qemu') == '1' ||
+      hardware == 'ranchu' ||
+      hardware == 'goldfish' ||
+      model.startsWith('sdk_gphone') ||
+      fingerprint.contains('generic') ||
+      fingerprint.contains('/sdk_gphone') ||
+      exists('/dev/qemu_pipe') ||
+      exists('/dev/goldfish_pipe');
+  if (emulator) return true;
+  return fingerprint.isEmpty ? null : false;
+}
+
+/// The sha256 of the file at [path], hashed on a worker isolate.
+Future<String> _sha256Of(String path) => Isolate.run(
+  () async => '${await sha256.bind(File(path).openRead()).first}',
+);
+
+/// [name] with every model extension core knows taken out, as core's
+/// `FileNameUtils.getBaseName` names an STT model's tokenizer namespace.
+String _coreBaseName(String name) {
+  var result = name;
+  for (final ext in const [
+    '.task',
+    '.bin',
+    '.tflite',
+    '.json',
+    '.model',
+    '.litertlm',
+    '.gguf',
+  ]) {
+    result = result.replaceAll(ext, '');
+  }
+  return result;
+}

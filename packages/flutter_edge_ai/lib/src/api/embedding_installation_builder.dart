@@ -60,6 +60,10 @@ class EmbeddingInstallationBuilder {
   /// sizes are checked before the model becomes active (not on the web),
   /// and [withProgress] weights by them without asking the network.
   ///
+  /// When the active embedder reads a file of the same name from another
+  /// source (an older pin), [install] throws [StateError] before the
+  /// download: uninstall it first (`uninstallEmbedder`).
+  ///
   /// [install] throws [UnsupportedError] before anything downloads for a
   /// variant whose `backendsHere` is empty (it does not run in this runtime).
   /// [token] is used for both files; without it, the token passed to
@@ -114,13 +118,15 @@ class EmbeddingInstallationBuilder {
     int? expectedSize,
     String? expectedSha256,
   }) {
-    _modelSource = ModelSource.network(url, authToken: token);
-    _catalogVariant = null;
-    _modelFilename = _validateFilename(filename);
-    _modelExpected = FileExpectation.checked(
+    // Checked first: a refused value leaves the builder as it was.
+    final expected = FileExpectation.checked(
       size: expectedSize,
       sha256: expectedSha256,
     );
+    _modelSource = ModelSource.network(url, authToken: token);
+    _catalogVariant = null;
+    _modelFilename = _validateFilename(filename);
+    _modelExpected = expected;
     return this;
   }
 
@@ -175,13 +181,15 @@ class EmbeddingInstallationBuilder {
     int? expectedSize,
     String? expectedSha256,
   }) {
-    _tokenizerSource = ModelSource.network(url, authToken: token);
-    _catalogVariant = null;
-    _tokenizerFilename = _validateFilename(filename);
-    _tokenizerExpected = FileExpectation.checked(
+    // Checked first: a refused value leaves the builder as it was.
+    final expected = FileExpectation.checked(
       size: expectedSize,
       sha256: expectedSha256,
     );
+    _tokenizerSource = ModelSource.network(url, authToken: token);
+    _catalogVariant = null;
+    _tokenizerFilename = _validateFilename(filename);
+    _tokenizerExpected = expected;
     return this;
   }
 
@@ -351,7 +359,7 @@ class EmbeddingInstallationBuilder {
     refuseTooLargeForWebCache(expected);
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final steps = await planInstall(spec.files);
-    final activeBefore = manager.activeEmbeddingModel;
+    final activeBefore = activeModelsOf(manager);
     refuseReplacingActive(steps, expected, activeBefore);
     final progress = await startBundleProgress(
       _onProgress,

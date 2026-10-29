@@ -53,4 +53,34 @@ void main() {
       ),
     );
   });
+
+  test('a catalog STT model over 2 GB too', () async {
+    await expectLater(
+      FlutterEdgeAi.installStt()
+          .fromCatalog(TestStt(modelSize: 3000000000))
+          .install(),
+      throwsA(
+        isA<UnsupportedError>().having(
+          (e) => e.message,
+          'message',
+          contains('WebStorageMode.streaming'),
+        ),
+      ),
+    );
+  });
+
+  test('expectedSha256 is refused on the web, where nothing can be hashed', () {
+    expect(
+      () => FlutterEdgeAi.installModel(
+        modelType: ModelType.gemma4,
+        fileType: ModelFileType.litertlm,
+      ).fromNetwork('https://example.com/m.litertlm', expectedSha256: 'a' * 64),
+      throwsUnsupportedError,
+    );
+    // A size alone is accepted (and not checked).
+    FlutterEdgeAi.installModel(
+      modelType: ModelType.gemma4,
+      fileType: ModelFileType.litertlm,
+    ).fromNetwork('https://example.com/m.litertlm', expectedSize: 5);
+  });
 }

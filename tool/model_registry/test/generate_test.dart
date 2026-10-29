@@ -47,6 +47,16 @@ void main() {
     expect(out, contains(r'_qwen3_0_6b$standard,'));
   });
 
+  test('text backends are the file\'s; a withheld one is only withheld:', () {
+    final out = litert(entries);
+    final int4 = out.substring(
+      out.indexOf(r'const _translategemma4bIt$int4 ='),
+    );
+    final block = int4.substring(0, int4.indexOf(');\n'));
+    expect(block, contains('PreferredBackend.gpu, PreferredBackend.cpu}'));
+    expect(block, contains('withheld: {PreferredBackend.gpu},'));
+  });
+
   test('withhold_backends reaches an embedder and a speech variant', () {
     const reason = {'reason': 'Broken.', 'issue': 'https://x/1'};
     final list = [
@@ -77,6 +87,14 @@ void main() {
           e,
     ];
     expect(speech(list), contains("@Deprecated('Old. Use x.')"));
+    final multiLine = [
+      for (final e in entries)
+        if (e.id == 'moonshine-tiny')
+          edited(e.id, (v) => v['deprecated'] = {'reason': 'Line one.\nTwo.'})
+        else
+          e,
+    ];
+    expect(speech(multiLine), contains(r"@Deprecated('Line one.\nTwo.')"));
   });
 }
 

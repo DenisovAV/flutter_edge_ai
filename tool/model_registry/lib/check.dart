@@ -872,7 +872,9 @@ void _checkAcrossEntries(List<Entry> entries, List<Problem> problems) {
       final sha = a['sha256'];
       final name = a['install_filename'];
       if (name is String && sha is String) {
-        final key = scoped ? '${e.id}/$name' : name;
+        // macOS and Windows file systems ignore case: `Model.litertlm` and
+        // `model.litertlm` are one file there.
+        final key = (scoped ? '${e.id}/$name' : name).toLowerCase();
         final seen = identities[key];
         if (seen == null) {
           identities[key] = located;
@@ -971,7 +973,8 @@ void _checkPublished(
             rel,
             key.toString(),
             'published variant is gone; withhold it instead of deleting it '
-            '(a catalog variant is never removed)',
+            '(a variant a release shipped is never removed; one no release '
+            'shipped may be)',
           ),
         );
         continue;
@@ -1003,26 +1006,58 @@ void _checkReleasedCatalogs(
   List<Problem> problems,
 ) {
   final root = p.dirname(p.absolute(registryDir.path));
+  // A registry outside a repository (the tests' fixtures) has no packages.
+  if (!Directory(p.join(root, 'packages')).existsSync()) return;
   final packages = {for (final e in entries) '${e.data['package']}'}.toList()
     ..sort();
   final heading = RegExp(r'^## (\d+\.\d+\.\d+\S*)\s*$');
+  final namesAVersion = RegExp(r'^## .*\d+\.\d+\.\d+');
   for (final package in packages) {
-    final changelog = File(p.join(root, 'packages', package, 'CHANGELOG.md'));
-    if (!changelog.existsSync()) continue;
+    final rel = p.join('packages', package, 'CHANGELOG.md');
+    final changelog = File(p.join(root, rel));
+    if (!changelog.existsSync()) {
+      problems.add(
+        Problem(rel, '-', 'missing: it says which versions shipped a catalog'),
+      );
+      continue;
+    }
     final released = <String>[]; // newest first
     final withCatalog = <String>{};
     String? section;
-    for (final line in changelog.readAsLinesSync()) {
+    for (final (i, line) in changelog.readAsLinesSync().indexed) {
       if (heading.firstMatch(line) case final m?) {
         section = m.group(1);
         released.add(section!);
       } else if (line.startsWith('## ')) {
         section = null;
-      } else if (section != null && line.contains('Model catalog')) {
+        // A release heading in another form would be read as no release.
+        if (namesAVersion.hasMatch(line)) {
+          problems.add(
+            Problem(
+              rel,
+              'line ${i + 1}',
+              '"$line" names a version but is not "## X.Y.Z"',
+            ),
+          );
+        }
+      } else if (section != null &&
+          line.toLowerCase().contains('model catalog')) {
         withCatalog.add(section);
       }
     }
-    final first = released.lastIndexWhere(withCatalog.contains);
+    // The published snapshots anchor it too: a version newer than the oldest
+    // one frozen shipped the catalog, whatever its CHANGELOG says.
+    final frozenDir = Directory(p.join(registryDir.path, 'published', package));
+    final frozen = frozenDir.existsSync()
+        ? {
+            for (final f in frozenDir.listSync().whereType<File>())
+              if (f.path.endsWith('.json')) p.basenameWithoutExtension(f.path),
+          }
+        : const <String>{};
+    final first = [
+      released.lastIndexWhere(withCatalog.contains),
+      released.lastIndexWhere(frozen.contains),
+    ].reduce((a, b) => a > b ? a : b);
     for (final version in released.take(first + 1)) {
       final snapshot = p.join('published', package, '$version.json');
       if (!File(p.join(registryDir.path, snapshot)).existsSync()) {

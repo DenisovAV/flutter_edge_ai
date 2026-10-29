@@ -143,7 +143,8 @@ final class LiteRtLmVariant extends InferenceVariant {
 
   /// The backends the text model runs on, read from the file: the NPU for a
   /// build compiled for one, else its `backend_constraint`, else the GPU and
-  /// the CPU. Backends a release withheld are not in it.
+  /// the CPU. What the registry withholds is [_withheld], subtracted in
+  /// [backendsHere].
   final Set<PreferredBackend> _textBackends;
 
   /// A web bundle runs on the web only, on the GPU; every other file runs

@@ -6,6 +6,7 @@ import 'package:flutter_edge_ai/src/catalog/model_catalog.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/model.dart' show ModelFileType;
 import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
+import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
 import 'package:flutter_edge_ai/src/model_management/install_rule.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/services/file_system_service.dart';
@@ -79,36 +80,44 @@ void refuseTooLargeForWebCache(
   ];
   if (tooLarge.isEmpty) return;
   throw UnsupportedError(
-    '${tooLarge.join(', ')} is over 2 GB, more than the web\'s default '
+    '${tooLarge.join(', ')} is over 2 GiB, more than the web\'s default '
     'storage (WebStorageMode.cacheApi) holds. Pass '
     'webStorageMode: WebStorageMode.streaming to FlutterEdgeAi.initialize.',
   );
 }
 
+/// The active model of every kind, read before an install changes any: a
+/// file name is one file, whichever kind of model reads it.
+List<ModelSpec> activeModelsOf(ModelFileManager manager) => [
+  ?manager.activeInferenceModel,
+  ?manager.activeEmbeddingModel,
+  ?manager.activeSttModel,
+  ?manager.activeTtsModel,
+];
+
 /// Refuses, before anything is downloaded, an install with an expectation
-/// that would write over a file the [active] model of the same kind reads:
-/// were the file then not what was expected, the active model would be left
+/// that would write over a file one of the [active] models reads (of any
+/// kind): were the file then not what was expected, that model would be left
 /// reading it. Without an expectation the install replaces it as before.
 void refuseReplacingActive(
   List<FileInstallStep> steps,
   Map<String, FileExpectation> expected,
-  ModelSpec? active,
+  List<ModelSpec> active,
 ) {
-  if (kIsWeb || active == null) return;
-  final activeNames = {for (final f in active.files) f.filename};
-  final replaced = [
-    for (final step in steps)
-      if (step.installs &&
-          activeNames.contains(step.file.filename) &&
-          !(expected[step.file.filename]?.isEmpty ?? true))
-        step.file.filename,
-  ];
-  if (replaced.isEmpty) return;
-  throw StateError(
-    'This install would write ${replaced.join(', ')} over the file the active '
-    'model ${active.name} reads, and checks it only afterwards. Uninstall '
-    '${active.name} first, or install under another file name.',
-  );
+  if (kIsWeb) return;
+  for (final step in steps) {
+    if (!step.installs || (expected[step.file.filename]?.isEmpty ?? true)) {
+      continue;
+    }
+    for (final model in active) {
+      if (!model.files.any((f) => f.filename == step.file.filename)) continue;
+      throw StateError(
+        'This install would write ${step.file.filename} over the file the '
+        'active model ${model.name} reads, and checks it only afterwards. '
+        'Uninstall ${model.name} first, or install under another file name.',
+      );
+    }
+  }
 }
 
 /// Checks the files of [spec] against [expected] (by file name), before the
@@ -119,7 +128,8 @@ void refuseReplacingActive(
 /// Throws [ModelValidationException] for a file of another size or sha256,
 /// or one core has no copy of, after deleting the file and its record — the
 /// next install downloads it again — unless the [active] model of the same
-/// kind (read before the install) reads it: that file is left as it is. A
+/// kind or another (read before the install) reads it: that file is left as
+/// it is. A
 /// check that ends without proving its files (a cancel through
 /// [cancelToken], a file that cannot be read) deletes what [steps] wrote
 /// and throws what stopped it.
@@ -127,7 +137,7 @@ Future<void> verifyInstalledFiles(
   ModelSpec spec,
   Map<String, FileExpectation> expected, {
   required List<FileInstallStep> steps,
-  required ModelSpec? active,
+  required List<ModelSpec> active,
   CancelToken? cancelToken,
 }) async {
   if (kIsWeb || expected.values.every((e) => e.isEmpty)) return;
@@ -142,7 +152,10 @@ Future<void> verifyInstalledFiles(
       for (final step in steps)
         if (step.installs) step.file.filename,
     },
-    keep: {...?active?.files.map((f) => f.filename)},
+    keep: {
+      for (final model in active)
+        for (final f in model.files) f.filename,
+    },
     // The record first: a file the system will not let go of yet (Windows
     // keeps a file open by another process) is then an orphan the next
     // install writes over, never a record that skips its download.

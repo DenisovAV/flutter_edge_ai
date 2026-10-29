@@ -61,6 +61,14 @@ Entry _llm() => Entry('models/tiny.yaml', {
       'file': _file('tiny-web-old.litertlm'),
     },
     {
+      'slug': 'npu-sm8650',
+      'npu': {'vendor': 'qualcomm', 'soc': 'SM8650'},
+      'withhold_backends': {
+        'npu': {'reason': 'Drops prefill chunks.', 'issue': 'https://x/5'},
+      },
+      'file': _file('tiny_sm8650.litertlm'),
+    },
+    {
       'slug': 'cpu-only',
       'withhold_backends': {
         'gpu': {'reason': 'Emits <pad>.', 'issue': 'https://x/2'},
@@ -92,6 +100,12 @@ const _snapshot = {
       'android_arm64': ['npu'],
       'macos_arm64': <String>[],
       'linux_arm64': ['npu'],
+      'web': <String>[],
+    },
+    'tiny/npu-sm8650': {
+      'android_arm64': <String>[],
+      'macos_arm64': <String>[],
+      'linux_arm64': <String>[],
       'web': <String>[],
     },
     'tiny/npu-mt6993': {
@@ -128,6 +142,7 @@ const _docClaim = '''
   Map<String, Object?> snapshot = _snapshot,
   List<Map<String, Object?>> evidence = const [],
   bool linuxArm64Archive = true,
+  bool hook = true,
 }) {
   final root = Directory.systemTemp.createTempSync('site_test');
   addTearDown(() => root.deleteSync(recursive: true));
@@ -168,17 +183,18 @@ const _docClaim = '''
     'packages/flutter_edge_ai_litertlm/pubspec.yaml',
     'name: flutter_edge_ai_litertlm\nversion: 1.16.1\n',
   );
-  write(
-    'packages/flutter_edge_ai_litertlm/hook/build.dart',
-    "  checksums: {\n"
-        "    'litertlm-macos_arm64.tar.gz':\n        '$_macNative',\n"
-        "    'litertlm-android_arm64.tar.gz':\n        '${'b' * 64}',\n"
-        "    'litertlm-ios_arm64.tar.gz':\n        '${'c' * 64}',\n"
-        "    'litertlm-windows_x86_64.tar.gz':\n        '${'d' * 64}',\n"
-        "    'litertlm-linux_x86_64.tar.gz':\n        '${'e' * 64}',\n"
-        "${linuxArm64Archive ? "    'litertlm-linux_arm64.tar.gz':\n        '${'f' * 64}',\n" : ''}"
-        '  },\n',
-  );
+  if (hook)
+    write(
+      'packages/flutter_edge_ai_litertlm/hook/build.dart',
+      "  checksums: {\n"
+          "    'litertlm-macos_arm64.tar.gz':\n        '$_macNative',\n"
+          "    'litertlm-android_arm64.tar.gz':\n        '${'b' * 64}',\n"
+          "    'litertlm-ios_arm64.tar.gz':\n        '${'c' * 64}',\n"
+          "    'litertlm-windows_x86_64.tar.gz':\n        '${'d' * 64}',\n"
+          "    'litertlm-linux_x86_64.tar.gz':\n        '${'e' * 64}',\n"
+          "${linuxArm64Archive ? "    'litertlm-linux_arm64.tar.gz':\n        '${'f' * 64}',\n" : ''}"
+          '  },\n',
+    );
   for (final (i, run) in evidence.indexed) {
     write('model_registry/evidence/run$i.json', jsonEncode(run));
   }
@@ -276,6 +292,34 @@ void main() {
       );
     });
 
+    test('one variant without an answer for a host', () {
+      final problems = <Problem>[];
+      final backends = {
+        ...(_snapshot['backends_here']! as Map<String, Object?>),
+        'tiny/generic': {
+          ...((_snapshot['backends_here']! as Map)['tiny/generic']! as Map),
+        }..remove('web'),
+      };
+      _repo(
+        '[]',
+        problems,
+        snapshot: {..._snapshot, 'backends_here': backends},
+      );
+      expect(
+        problems.map((x) => '$x'),
+        contains(contains('tiny/generic.web: no answer for this host')),
+      );
+    });
+
+    test('a hook that is gone', () {
+      final problems = <Problem>[];
+      _repo('[]', problems, hook: false);
+      expect(
+        problems.map((x) => '$x'),
+        contains(contains('hook/build.dart: -: missing')),
+      );
+    });
+
     test('a host whose native archive the hook does not name', () {
       final problems = <Problem>[];
       _repo('[]', problems, linuxArm64Archive: false);
@@ -337,6 +381,15 @@ void main() {
     test('a withheld web export says so on the web only', () {
       expect(_statuses('[]')['tiny/web-old'], {
         'web': {'gpu': 'withheld'},
+      });
+    });
+
+    test('an NPU build withheld from its NPU is broken on its vendor\'s hosts '
+        'only', () {
+      final s = _statuses('[]');
+      expect(s['tiny/npu-sm8650'], {
+        'android_arm64': {'npu': 'broken'},
+        'linux_arm64': {'npu': 'broken'},
       });
     });
 
@@ -526,9 +579,18 @@ void main() {
       ((snapshot['backends_here']! as Map)['tiny/npu-sm8750']!
               as Map)['android_arm64'] =
           <String>[];
+      // Without the NPU build that is broken there (a status of its own).
+      final llm = _llm();
+      final refusedOnly = Entry(llm.file, {
+        ...llm.data,
+        'variants': [
+          for (final v in llm.data['variants']! as List)
+            if ((v as Map)['slug'] != 'npu-sm8650') v,
+        ],
+      });
       final cells = row(
         llmPlatformsBlock(_inputs('[]', problems, snapshot: snapshot), [
-          _llm(),
+          refusedOnly,
         ]),
       );
       expect(cells['Android'], 'GPU&nbsp;⚪ CPU&nbsp;⚪');

@@ -826,7 +826,7 @@ void main() {
               if (v.modalities.contains(EmbeddingModality.image))
                 'vision_encoder',
               if (v.modalities.contains(EmbeddingModality.audio))
-                'static_audio_encoder',
+                'streaming_audio_encoder',
             ]) {
               final file =
                   '${name}_1791758581_${v.model.sizeBytes}.$tower.xnnpack_cache';

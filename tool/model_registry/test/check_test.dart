@@ -487,6 +487,40 @@ void main() {
 - Before the catalog.
 """;
 
+    test('a reworded bullet still counts once a snapshot is frozen', () {
+      const reworded = '''## 1.21.0
+- Catalog of pinned builds.
+
+## 1.20.0
+- `LiteRtLmModels`, pinned builds.
+''';
+      final problems = problemsWith(reworded, {
+        'published/flutter_edge_ai_litertlm/1.20.0.json': jsonEncode({
+          'variants': {
+            for (final v in (_llm()['variants']! as List).indexed)
+              'tiny-llm/${(v.$2 as Map)['slug']}': frozenValues(
+                _variant(_llm(), v.$1),
+              ),
+          },
+        }),
+      });
+      expect(problems, contains(contains('1.21.0 released its catalog')));
+    });
+
+    test('a release heading in another form is a problem', () {
+      expect(
+        problemsWith('## 1.20.0 (2026-11-01)\n- Model catalog.\n', const {}),
+        contains(contains('names a version but is not')),
+      );
+    });
+
+    test('a lower-case marker counts', () {
+      expect(
+        problemsWith('## 1.20.0\n- model catalog: pinned.\n', const {}),
+        contains(contains('1.20.0 released its catalog')),
+      );
+    });
+
     test('every version from the first catalog release on', () {
       expect(
         problemsWith(changelog, const {}),
@@ -509,6 +543,18 @@ void main() {
       expect(none.where((x) => x.contains('released its catalog')), isEmpty);
       expect(none.where((x) => x.contains('1.19.0')), isEmpty);
     });
+  });
+
+  test('two files whose install names differ only by case collide', () {
+    expect(
+      _problems([
+        _with(_llm(), (e) {
+          (_variant(e, 1)['file']! as Map)['install_filename'] =
+              'Tiny.litertlm';
+        }),
+      ], extraFiles: _llmFacts()),
+      contains(contains('is also')),
+    );
   });
 
   test('an install name every platform takes', () {

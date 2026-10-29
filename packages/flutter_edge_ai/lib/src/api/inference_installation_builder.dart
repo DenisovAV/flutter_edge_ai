@@ -271,7 +271,8 @@ class InferenceInstallationBuilder {
   /// Add progress callback
   ///
   /// Called periodically during installation with the model file's percent:
-  /// at most 99 until the file is checked and the model is active, then 100.
+  /// at most 99 until the file is checked and the model is active (with
+  /// `install(activate: false)`: until it is checked), then 100.
   InferenceInstallationBuilder withProgress(
     void Function(int progress) onProgress,
   ) {
@@ -510,7 +511,7 @@ class InferenceInstallationBuilder {
       await planInstall(spec.files),
       activate: activate,
     );
-    final activeBefore = manager.activeInferenceModel;
+    final activeBefore = activeModelsOf(manager);
     refuseReplacingActive(steps, expected, activeBefore);
     // The model's percent, held at 99 until the model is checked and active.
     final onProgress = _onProgress;

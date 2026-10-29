@@ -286,11 +286,9 @@ void _llmModel(
           : web
           ? 'gpu'
           : (runtime['preferred_backend'] ?? modelRuntime['preferred_backend']);
-      final withheld = (v['withhold_backends'] as Map?)?.keys.toSet() ?? {};
-      final text = _textBackends(
-        derived[file['sha256']],
-        file,
-      ).where((b) => !withheld.contains(b)).toList();
+      // What the file's text model runs on; what the registry withholds is
+      // the `withheld:` argument, subtracted by `backendsHere`.
+      final text = _textBackends(derived[file['sha256']], file);
       out
         ..writeln('const $name = LiteRtLmVariant._(')
         ..writeln("  id: ${_str('$id/${v['slug']}')},")
@@ -580,7 +578,7 @@ String _artifact(Map<String, Object?> a) {
 }
 
 String _str(String s) =>
-    "'${s.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll(r'$', r'\$')}'";
+    "'${s.replaceAll(r'\', r'\\').replaceAll("'", r"\'").replaceAll(r'$', r'\$').replaceAll('\n', r'\n').replaceAll('\r', r'\r')}'";
 
 String _size(int bytes) => bytes >= 1000 * 1000 * 1000
     ? '${(bytes / 1e9).toStringAsFixed(2)} GB'

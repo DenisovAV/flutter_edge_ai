@@ -145,7 +145,15 @@ def _pubspec_value(root, prefix, field):
 
 
 def _package_name(root, prefix):
-    return _pubspec_value(root, prefix, "name")
+    name = _pubspec_value(root, prefix, "name")
+    # A tag, an anchor or a block scalar (`!!str x`, `&a x`, `>-`) would read
+    # as some other name and let the publish through unchecked.
+    if not re.fullmatch(r"[a-z_][a-z0-9_]*", name):
+        raise GitUnavailable(
+            f"the name in {prefix}pubspec.yaml reads as {name!r}, not a package "
+            "name; write it plainly"
+        )
+    return name
 
 
 def _version(root, prefix):
@@ -195,9 +203,12 @@ def _release_check(root, prefix, name):
             f"release-check passed at {str(passed.get('head'))[:10]}, HEAD is "
             f"{head[:10]}: {run} again"
         )
+    # An example app's pubspec.lock is rewritten by any `pub get` and is not
+    # what the catalog ships; it is left out, as release-check leaves it out.
     changed = git(
         root, "status", "--porcelain", "--", "model_registry",
         "tool/model_registry", prefix.rstrip("/") or ".",
+        ":(exclude,glob)**/example/pubspec.lock",
     )
     if changed:
         return f"uncommitted changes since release-check:\n    {changed}"
@@ -233,13 +244,16 @@ def main():
             "(guard: .claude/hooks/guard-release-registry.py)\n"
         )
         return 2
-    # An accepted override is said, so the log of the release keeps why.
+    # An accepted override is said where the session shows it — a
+    # PreToolUse hook's stderr is not shown when it allows — so the log of
+    # the release keeps why.
+    skipped = []
     for p in publish_command.publishes(cmd, _cwd(payload)):
         reason = None if p.dry_run else p.skip_reason("RELEASE_SKIP_REGISTRY")
         if reason is not None:
-            sys.stderr.write(
-                f"guard-release-registry: the registry check is skipped for "
-                f"{p.directory or 'this publish'}: {reason}\n"
+            skipped.append(
+                f"the registry check is skipped for "
+                f"{p.directory or 'this publish'}: {reason}"
             )
     for p in checked:
         try:
@@ -256,6 +270,8 @@ def main():
             return 2
         if problem is not None:
             return _blocked(name, root, problem)
+    if skipped:
+        print(json.dumps({"systemMessage": "guard-release-registry: " + "; ".join(skipped)}))
     return 0
 
 
@@ -331,20 +347,21 @@ _DIR_TESTS = [
 
 
 def _run_main(cmd, cwd):
-    """main() on [cmd] as the hook payload; (exit code, stderr)."""
+    """main() on [cmd] as the hook payload; (exit code, stderr + stdout)."""
     import contextlib
     import io
 
     payload = json.dumps({"tool_input": {"command": cmd}, "cwd": cwd})
     err = io.StringIO()
+    out = io.StringIO()
     stdin = sys.stdin
     sys.stdin = io.StringIO(payload)
     try:
-        with contextlib.redirect_stderr(err):
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(out):
             code = main()
     finally:
         sys.stdin = stdin
-    return code, err.getvalue()
+    return code, err.getvalue() + out.getvalue()
 
 
 def _end_to_end():
@@ -368,6 +385,12 @@ def _end_to_end():
             fh.write("id: x\npackage: flutter_edge_ai_extra\n")
         with open(os.path.join(repo, ".gitignore"), "w") as fh:
             fh.write(".dart_tool/\n")
+        example = os.path.join(repo, "packages", "flutter_edge_ai_litertlm", "example")
+        os.makedirs(example)
+        with open(os.path.join(example, "pubspec.lock"), "w") as fh:
+            fh.write("packages: {}\n")
+        with open(os.path.join(repo, "packages", "flutter_edge_ai_litertlm", "lib.dart"), "w") as fh:
+            fh.write("// v1\n")
         for args in (
             ["init", "-q"],
             ["add", "-A"],
@@ -395,20 +418,47 @@ def _end_to_end():
             got, err = _run_main(cmd, repo)
             if got != want:
                 bad.append(f"main {cmd!r}: exit {got}, want {want} {err.strip()[:120]}")
-        # An accepted override says why, so the release log keeps it.
-        if "skipped" not in _run_main(f'RELEASE_SKIP_REGISTRY="no device" {lite}', repo)[1]:
+        # An accepted override says why, as a systemMessage the session shows.
+        said = _run_main(f'RELEASE_SKIP_REGISTRY="no device" {lite}', repo)[1]
+        if '"systemMessage"' not in said or "no device" not in said:
             bad.append("main: an accepted override names no reason")
         # The positive control: a stamp at HEAD lets the publish through.
         with open(stamp, "w") as fh:
             json.dump({"head": git(repo, "rev-parse", "HEAD")}, fh)
         if _run_main(lite, repo)[0] != 0:
             bad.append("main: a stamp at HEAD still blocks")
+        # An example's pubspec.lock that `pub get` rewrote does not block...
+        with open(os.path.join(example, "pubspec.lock"), "w") as fh:
+            fh.write("packages: {rewritten: true}\n")
+        if _run_main(lite, repo)[0] != 0:
+            bad.append("main: a rewritten example pubspec.lock blocks")
+        # A name that is not a plain package name blocks.
+        tagged = os.path.join(repo, "packages", "tagged")
+        os.makedirs(tagged)
+        with open(os.path.join(tagged, "pubspec.yaml"), "w") as fh:
+            fh.write("name: !!str flutter_edge_ai_litertlm\nversion: 1.0.0\n")
+        if _run_main("dart pub publish -f -C packages/tagged", repo)[0] != 2:
+            bad.append("main: a tagged pubspec name does not block")
+        # A crash blocks.
+        real_main = globals()["main"]
+        globals()["main"] = lambda: 1 / 0
+        try:
+            if _guarded_main() != 2:
+                bad.append("main: a crash does not block")
+        finally:
+            globals()["main"] = real_main
+        # ...any other uncommitted file of the package does.
+        with open(os.path.join(repo, "packages", "flutter_edge_ai_litertlm", "lib.dart"), "w") as fh:
+            fh.write("// v2\n")
+        if _run_main(lite, repo)[0] != 2:
+            bad.append("main: an uncommitted package file does not block")
         # A stamp that is JSON but no object blocks instead of crashing open.
         with open(stamp, "w") as fh:
             json.dump([1], fh)
         if _run_main(lite, repo)[0] != 2:
             bad.append("main: a list stamp does not block")
-    return bad
+    # The cases, plus the seven checks after them.
+    return bad, len(cases) + 7
 
 
 def _self_test():
@@ -427,15 +477,32 @@ def _self_test():
         got = [p.directory for p in _checked(cmd, {"cwd": "/r"}, "RELEASE_SKIP_REGISTRY")]
         if got != [os.path.normpath(w) for w in want]:
             bad.append(f"publish_dir {cmd!r}: {got!r}")
-    bad += _end_to_end()
+    end_to_end_bad, end_to_end_checks = _end_to_end()
+    bad += end_to_end_bad
     for line in bad:
         print(f"  FAIL {line}")
-    total = len(_TESTS) + len(_DIR_TESTS) + 13 + len(publish_command._CASES)
+    total = (
+        len(_TESTS) + len(_DIR_TESTS) + end_to_end_checks
+        + len(publish_command._CASES)
+    )
     print(f"  {total - len(bad)}/{total} pass")
     return 1 if bad else 0
+
+
+def _guarded_main():
+    """main(), failing closed: a crash is exit 2 (block), never the exit 1 of
+    a traceback, which a PreToolUse hook reads as a non-blocking error."""
+    try:
+        return main()
+    except BaseException as e:  # noqa: BLE001 — any surprise blocks
+        sys.stderr.write(
+            f"BLOCKED: guard-release-registry failed ({e!r}); a publish in an "
+            "unknown state is not a safe one.\n"
+        )
+        return 2
 
 
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(_self_test())
-    sys.exit(main())
+    sys.exit(_guarded_main())

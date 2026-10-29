@@ -42,15 +42,12 @@ void main() {
       );
     });
 
-    test('targets are equal without regard to case', () {
-      expect(
-        const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'),
-        const LiteRtLmNpuTarget(vendor: 'mediatek', soc: 'mt6991'),
-      );
-      expect(
-        const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991').hashCode,
-        const LiteRtLmNpuTarget(vendor: 'mediatek', soc: 'mt6991').hashCode,
-      );
+    test('== is the stamp as written; sameSoc ignores case', () {
+      const a = LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991');
+      const b = LiteRtLmNpuTarget(vendor: 'mediatek', soc: 'mt6991');
+      expect(a, isNot(b));
+      expect(a, const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'));
+      expect(a.sameSoc(b), isTrue);
     });
 
     test('npuVendorOf reads a target the same way', () {

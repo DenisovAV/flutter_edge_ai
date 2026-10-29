@@ -59,8 +59,9 @@ await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
 ```
 
 `FlutterEdgeAi.catalog` lists them once `LiteRtLmEngine` and
-`LiteRtEmbeddingBackend` are registered, and `variantFor` picks the build this
-device runs. Every build, and where each has been run:
+`LiteRtEmbeddingBackend` are registered, and `variantFor` picks a build this
+runtime runs (by platform and processor; for an NPU build the app names the
+SoC). Every build, and where each has been run:
 [Model Registry](https://flutteredge.ai/docs/registry).
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since

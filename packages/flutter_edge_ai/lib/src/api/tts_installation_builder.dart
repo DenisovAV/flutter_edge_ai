@@ -48,7 +48,10 @@ class TtsInstallationBuilder {
   ///
   /// [install] throws, before anything downloads, [UnsupportedError] for a
   /// variant whose `backendsHere` is empty, and [ArgumentError] when the
-  /// variant's files are not the type's bundle.
+  /// variant's files are not the type's bundle. When the active voice of
+  /// the type reads files of the same names from another source (an older
+  /// pin), it throws [StateError] before the download: uninstall it first
+  /// (`uninstallTts`).
   TtsInstallationBuilder fromCatalog(TtsVariant variant, {String? token}) {
     fromNetwork(variant.baseUrl, token: token);
     _catalogVariant = variant;
@@ -258,7 +261,7 @@ class TtsInstallationBuilder {
             file.filename: FileExpectation(size: size),
     };
     // Read before the install takes the voice of this type out of service.
-    final activeBefore = manager.activeTtsModel;
+    final activeBefore = activeModelsOf(manager);
     refuseReplacingActive(steps, expected, activeBefore);
     final progress = await startBundleProgress(
       _onProgress,

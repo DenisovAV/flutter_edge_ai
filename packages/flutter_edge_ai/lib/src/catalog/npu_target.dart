@@ -37,13 +37,15 @@ abstract base class NpuTarget {
   String get socModel;
 
   /// Whether [other] is the same SoC: the same vendor and the same
-  /// [socModel] without regard to case (`MT6991` is `mt6991`). A vendor this
-  /// version of core has no name for (`npuVendor` null) matches nothing: two
-  /// such vendors cannot be told apart.
+  /// [socModel] without regard to case (`MT6991` is `mt6991`). For a vendor
+  /// this version of core has no name for (`npuVendor` null, as for every
+  /// NPU a third-party catalog adds), the two targets must be equal (`==`),
+  /// so its own catalog can still pick it, and two such vendors never
+  /// match each other by accident.
   bool sameSoc(NpuTarget other) {
     final vendor = npuVendor;
-    return vendor != null &&
-        vendor == other.npuVendor &&
+    if (vendor == null) return this == other;
+    return vendor == other.npuVendor &&
         socModel.toLowerCase() == other.socModel.toLowerCase();
   }
 }

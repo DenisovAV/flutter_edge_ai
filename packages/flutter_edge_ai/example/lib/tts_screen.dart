@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'services/catalog_install.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/models/tts_model.dart';
@@ -86,13 +87,16 @@ class _TtsScreenState extends State<TtsScreen> {
     _synth = null;
     await oldSynth?.close();
     try {
-      await FlutterEdgeAi.installTts()
-          .fromCatalog(_model.catalogVariant)
-          .withProgress((percent) {
-            if (!mounted) return;
-            setState(() => _downloadPercent = percent);
-          })
-          .install();
+      await installFromCatalogReplacingActive(
+        () => FlutterEdgeAi.installTts()
+            .fromCatalog(_model.catalogVariant)
+            .withProgress((percent) {
+              if (!mounted) return;
+              setState(() => _downloadPercent = percent);
+            })
+            .install(),
+        uninstall: FlutterEdgeAi.uninstallTts,
+      );
 
       final synth = await FlutterEdgeAi.getActiveTts(
         language: _isQwen3 ? _language : null,

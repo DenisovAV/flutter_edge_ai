@@ -10,54 +10,66 @@ import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
 /// would otherwise be spent on the caller's (usually the UI) isolate.
 ///
 /// A cancel of [cancelToken] stops the worker and throws
-/// [DownloadCancelledException].
+/// [DownloadCancelledException]. A file that cannot be read throws the
+/// [FileSystemException] the worker met, with its OS error.
 Future<String> fileSha256(String path, {CancelToken? cancelToken}) async {
   cancelToken?.throwIfCancelled();
   final answer = ReceivePort();
-  final isolate = await Isolate.spawn(
-    _hashInto,
-    (answer.sendPort, path),
-    onError: answer.sendPort,
-    onExit: answer.sendPort,
-    errorsAreFatal: true,
-  );
-  final done = Completer<String>();
-  final subscription = answer.listen((message) {
-    if (done.isCompleted) return;
-    switch (message) {
-      case String hex:
-        done.complete(hex);
-      case [final Object error, final Object? stack]:
-        done.completeError(
-          FileSystemException('$error', path),
-          StackTrace.fromString('$stack'),
-        );
-      default:
-        done.completeError(
-          FileSystemException('the hashing isolate stopped', path),
-        );
-    }
-  });
-  unawaited(
-    cancelToken?.whenCancelled.then((_) {
-      if (done.isCompleted) return;
-      isolate.kill(priority: Isolate.immediate);
-      try {
-        cancelToken.throwIfCancelled();
-      } catch (e, stack) {
-        done.completeError(e, stack);
-      }
-    }),
-  );
   try {
-    return await done.future;
+    final isolate = await Isolate.spawn(_hashInto, (
+      answer.sendPort,
+      path,
+    ), onExit: answer.sendPort);
+    final done = Completer<String>();
+    final subscription = answer.listen((message) {
+      if (done.isCompleted) return;
+      switch (message) {
+        case String hex:
+          done.complete(hex);
+        case (String error, String? osMessage, int? osCode):
+          done.completeError(
+            FileSystemException(
+              error,
+              path,
+              osMessage == null ? null : OSError(osMessage, osCode ?? 0),
+            ),
+          );
+        default:
+          done.completeError(
+            FileSystemException('the hashing isolate stopped', path),
+          );
+      }
+    });
+    if (cancelToken != null) {
+      unawaited(
+        Future.any([cancelToken.whenCancelled, done.future]).then((_) {
+          if (done.isCompleted) return;
+          isolate.kill(priority: Isolate.immediate);
+          try {
+            cancelToken.throwIfCancelled();
+          } catch (e, stack) {
+            done.completeError(e, stack);
+          }
+        }, onError: (_) {}),
+      );
+    }
+    try {
+      return await done.future;
+    } finally {
+      await subscription.cancel();
+    }
   } finally {
-    await subscription.cancel();
     answer.close();
   }
 }
 
 Future<void> _hashInto((SendPort, String) request) async {
   final (reply, path) = request;
-  reply.send('${await sha256.bind(File(path).openRead()).first}');
+  try {
+    reply.send('${await sha256.bind(File(path).openRead()).first}');
+  } on FileSystemException catch (e) {
+    reply.send((e.message, e.osError?.message, e.osError?.errorCode));
+  } catch (e) {
+    reply.send(('$e', null, null));
+  }
 }

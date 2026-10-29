@@ -37,5 +37,14 @@ void main() {
       'model_registry/a.yaml',
       'model_registry/evidence/new.json',
     ]);
+
+    // An example's pubspec.lock that `pub get` rewrote is not one.
+    final lock = File(p.join(repo.path, 'pkg', 'example', 'pubspec.lock'))
+      ..createSync(recursive: true)
+      ..writeAsStringSync('a');
+    git(['add', '-A']);
+    git(['commit', '-qm', 'lock']);
+    lock.writeAsStringSync('b');
+    expect(uncommittedUnder(repo.path, ['pkg']), isEmpty);
   });
 }

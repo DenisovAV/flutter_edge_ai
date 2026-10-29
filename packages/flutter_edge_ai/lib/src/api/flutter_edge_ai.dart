@@ -363,8 +363,11 @@ class FlutterEdgeAi {
   /// install it with [installModelFromCatalog] (an LLM) or `fromCatalog` on
   /// [installEmbedder], [installStt] or [installTts].
   ///
-  /// Throws [StateError] before [initialize] and after [dispose], and when
-  /// two packages offer the same variant id.
+  /// Throws [StateError] before [initialize] and after [dispose], when two
+  /// packages offer the same variant id, and when a registered catalog breaks
+  /// the id rules (a variant id that is not `<model id>/<slug>`, a model id
+  /// with a `/`, a variant listed twice): one faulty catalog makes the whole
+  /// getter throw, rather than leave a variant no id finds.
   static ModelCatalog get catalog {
     // Throws the not-initialized StateError.
     final registry = ServiceRegistry.instance;
@@ -394,7 +397,7 @@ class FlutterEdgeAi {
   /// type, its pinned URL, the name the file is installed under and its
   /// size, which is checked before the model becomes active (not on the web,
   /// where the browser keeps the file). On the web, in the default
-  /// `WebStorageMode.cacheApi`, a file over 2 GB is refused before it
+  /// `WebStorageMode.cacheApi`, a file over 2 GiB is refused before it
   /// downloads; `WebStorageMode.streaming` holds it.
   ///
   /// [token] is used for the download; without it, the token passed to
@@ -409,8 +412,11 @@ class FlutterEdgeAi {
   /// known at load.
   ///
   /// The catalog pins each file to a revision: a model installed earlier
-  /// from a `/resolve/main/` URL is another source, and its first install
-  /// from the catalog downloads the file again.
+  /// from a `/resolve/main/` URL (or an older pin) is another source under
+  /// the same name, and its first install from the catalog downloads the
+  /// file again. When that model is the active one, `install()` throws
+  /// [StateError] before the download instead of writing over the file it
+  /// reads: uninstall it first (`uninstallModel`), then install.
   ///
   /// ```dart
   /// final variant = FlutterEdgeAi.catalog
@@ -1525,6 +1531,7 @@ class FlutterEdgeAi {
   }
 
   static void _resetCoreState() {
+    _catalog = null;
     ServiceRegistry.reset();
     EngineRegistry.instance.reset();
     EmbeddingRegistry.instance.reset();

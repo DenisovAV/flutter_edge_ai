@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'services/catalog_install.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -115,13 +116,16 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading speech model';
         _downloadPercent = null;
       });
-      await FlutterEdgeAi.installStt()
-          .fromCatalog(widget.sttModel.catalogVariant, token: sttToken)
-          .withProgress((percent) {
-            if (!mounted) return;
-            setState(() => _downloadPercent = percent);
-          })
-          .install();
+      await installFromCatalogReplacingActive(
+        () => FlutterEdgeAi.installStt()
+            .fromCatalog(widget.sttModel.catalogVariant, token: sttToken)
+            .withProgress((percent) {
+              if (!mounted) return;
+              setState(() => _downloadPercent = percent);
+            })
+            .install(),
+        uninstall: FlutterEdgeAi.uninstallStt,
+      );
       recognizer = await FlutterEdgeAi.getActiveStt();
 
       // --- TTS ---
@@ -133,13 +137,16 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading voice model';
         _downloadPercent = null;
       });
-      await FlutterEdgeAi.installTts()
-          .fromCatalog(widget.ttsModel.catalogVariant)
-          .withProgress((percent) {
-            if (!mounted) return;
-            setState(() => _downloadPercent = percent);
-          })
-          .install();
+      await installFromCatalogReplacingActive(
+        () => FlutterEdgeAi.installTts()
+            .fromCatalog(widget.ttsModel.catalogVariant)
+            .withProgress((percent) {
+              if (!mounted) return;
+              setState(() => _downloadPercent = percent);
+            })
+            .install(),
+        uninstall: FlutterEdgeAi.uninstallTts,
+      );
       synth = await FlutterEdgeAi.getActiveTts();
 
       // --- LLM (no tools — see class doc) ---
@@ -161,10 +168,14 @@ class _VoiceScreenState extends State<VoiceScreen> {
       }
 
       if (widget.llmModel.catalogVariant case final variant?) {
-        await FlutterEdgeAi.installModelFromCatalog(
-          variant,
-          token: llmToken,
-        ).withProgress(onLlmProgress).install();
+        await installFromCatalogReplacingActive(
+          () => FlutterEdgeAi.installModelFromCatalog(
+            variant,
+            token: llmToken,
+          ).withProgress(onLlmProgress).install(),
+          uninstall: () =>
+              FlutterEdgeAi.uninstallModel(variant.file.installFilename),
+        );
       } else {
         await FlutterEdgeAi.installModel(
               modelType: widget.llmModel.modelType,

@@ -64,7 +64,17 @@ void main() {
           reason: abi,
         );
       }
-      expect(theirs, hasLength(6));
+      // And speech's own copy is exactly that set, no host more.
+      final ours = File(
+        'lib/src/catalog/speech_catalog.dart',
+      ).readAsStringSync();
+      final ourTable = RegExp(
+        r'const _nativeAbis = \{([^}]*)\}',
+      ).firstMatch(ours)!.group(1)!;
+      expect({
+        for (final m in RegExp(r"'(\w+)'").allMatches(ourTable)) m.group(1)!,
+      }, theirs);
+      expect(theirs, isNotEmpty);
     });
 
     test('a file compiled for an NPU runs nowhere in this version', () {
@@ -74,6 +84,16 @@ void main() {
     test('variantFor picks the first file that is not an NPU build', () {
       expect(_on(false, moonshine.variantFor), same(moonshine.f32));
     });
+  });
+
+  test('the package hides its test hooks', () {
+    final barrel = File('lib/flutter_edge_ai_speech.dart').readAsStringSync();
+    final export = RegExp(
+      r"export 'src/catalog/speech_catalog.dart'([^;]*);",
+    ).firstMatch(barrel)!.group(1)!;
+    expect(export, contains('hide'));
+    expect(export, contains('debugSpeechCatalogAbi'));
+    expect(export, contains('debugSpeechCatalogOnWeb'));
   });
 
   test('every TTS bundle is the files core installs, at the pinned URLs', () {

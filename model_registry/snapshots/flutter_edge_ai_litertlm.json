@@ -195,37 +195,6 @@
       "windows_x64": [],
       "web": []
     },
-    "gemma-3-1b-it/npu-sm8550": {
-      "android_arm64": [],
-      "ios_arm64": [],
-      "macos_arm64": [],
-      "linux_x64": [],
-      "linux_arm64": [],
-      "windows_x64": [],
-      "web": []
-    },
-    "gemma-3-1b-it/npu-sm8650": {
-      "android_arm64": [
-        "npu"
-      ],
-      "ios_arm64": [],
-      "macos_arm64": [],
-      "linux_x64": [],
-      "linux_arm64": [
-        "npu"
-      ],
-      "windows_x64": [],
-      "web": []
-    },
-    "gemma-3-1b-it/npu-sm8750": {
-      "android_arm64": [],
-      "ios_arm64": [],
-      "macos_arm64": [],
-      "linux_x64": [],
-      "linux_arm64": [],
-      "windows_x64": [],
-      "web": []
-    },
     "gemma-3-1b-it/npu-sm8850": {
       "android_arm64": [
         "npu"
@@ -303,50 +272,6 @@
       "android_arm64": [
         "npu"
       ],
-      "ios_arm64": [],
-      "macos_arm64": [],
-      "linux_x64": [],
-      "linux_arm64": [],
-      "windows_x64": [],
-      "web": []
-    },
-    "gemma-3-270m-it/npu-sm8550": {
-      "android_arm64": [
-        "npu"
-      ],
-      "ios_arm64": [],
-      "macos_arm64": [],
-      "linux_x64": [],
-      "linux_arm64": [
-        "npu"
-      ],
-      "windows_x64": [],
-      "web": []
-    },
-    "gemma-3-270m-it/npu-sm8650": {
-      "android_arm64": [
-        "npu"
-      ],
-      "ios_arm64": [],
-      "macos_arm64": [],
-      "linux_x64": [],
-      "linux_arm64": [
-        "npu"
-      ],
-      "windows_x64": [],
-      "web": []
-    },
-    "gemma-3-270m-it/npu-sm8750": {
-      "android_arm64": [],
-      "ios_arm64": [],
-      "macos_arm64": [],
-      "linux_x64": [],
-      "linux_arm64": [],
-      "windows_x64": [],
-      "web": []
-    },
-    "gemma-3-270m-it/npu-sm8850": {
-      "android_arm64": [],
       "ios_arm64": [],
       "macos_arm64": [],
       "linux_x64": [],

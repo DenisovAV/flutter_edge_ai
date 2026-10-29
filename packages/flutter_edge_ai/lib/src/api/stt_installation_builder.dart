@@ -51,7 +51,9 @@ class SttInstallationBuilder {
   /// An STT model's files are installed under their URL's file names, so
   /// [install] throws [ArgumentError] for a variant that names them
   /// otherwise, and [UnsupportedError] for one whose `backendsHere` is empty;
-  /// both before anything downloads.
+  /// both before anything downloads. When the active STT model reads a
+  /// file of the same name from another source, [install] throws
+  /// [StateError] before the download: uninstall it first (`uninstallStt`).
   SttInstallationBuilder fromCatalog(SttVariant variant, {String? token}) {
     modelFromNetwork(
       variant.model.url,
@@ -88,12 +90,14 @@ class SttInstallationBuilder {
     int? expectedSize,
     String? expectedSha256,
   }) {
-    _modelSource = ModelSource.network(url, authToken: token);
-    _catalogVariant = null;
-    _modelExpected = FileExpectation.checked(
+    // Checked first: a refused value leaves the builder as it was.
+    final expected = FileExpectation.checked(
       size: expectedSize,
       sha256: expectedSha256,
     );
+    _modelSource = ModelSource.network(url, authToken: token);
+    _catalogVariant = null;
+    _modelExpected = expected;
     return this;
   }
 
@@ -134,12 +138,14 @@ class SttInstallationBuilder {
     int? expectedSize,
     String? expectedSha256,
   }) {
-    _tokenizerSource = ModelSource.network(url, authToken: token);
-    _catalogVariant = null;
-    _tokenizerExpected = FileExpectation.checked(
+    // Checked first: a refused value leaves the builder as it was.
+    final expected = FileExpectation.checked(
       size: expectedSize,
       sha256: expectedSha256,
     );
+    _tokenizerSource = ModelSource.network(url, authToken: token);
+    _catalogVariant = null;
+    _tokenizerExpected = expected;
     return this;
   }
 
@@ -292,9 +298,10 @@ class SttInstallationBuilder {
       for (final (i, file) in spec.files.indexed)
         file.filename: expectations[i],
     };
+    refuseTooLargeForWebCache(expected);
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
     final steps = await planInstall(spec.files);
-    final activeBefore = manager.activeSttModel;
+    final activeBefore = activeModelsOf(manager);
     refuseReplacingActive(steps, expected, activeBefore);
     final progress = await startBundleProgress(
       _onProgress,

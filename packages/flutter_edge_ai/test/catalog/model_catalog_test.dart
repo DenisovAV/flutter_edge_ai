@@ -8,10 +8,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'catalog_fixtures.dart';
 
 void main() {
-  test('a vendor core has no name for matches no SoC, not even its own', () {
-    const a = TestNpu(null, 'X1');
-    const b = TestNpu(null, 'X1');
-    expect(a.sameSoc(b), isFalse);
+  test('a vendor core has no name for matches only an equal target', () {
+    const a = _OtherNpu('acme', 'X1');
+    expect(a.sameSoc(const _OtherNpu('acme', 'X1')), isTrue);
+    expect(a.sameSoc(const _OtherNpu('zeta', 'X1')), isFalse);
+    // TestNpu has no ==: two of them with no vendor are not the same SoC.
+    expect(
+      // ignore: prefer_const_constructors — two objects, not one constant
+      TestNpu(null, 'X1').sameSoc(TestNpu(null, 'X1')),
+      isFalse,
+    );
     expect(
       const TestNpu(
         NpuVendor.qualcomm,
@@ -34,6 +40,15 @@ void main() {
     test('two artifacts are equal on every field', () {
       expect(artifact('m.litertlm'), artifact('m.litertlm'));
       expect(artifact('m.litertlm').hashCode, artifact('m.litertlm').hashCode);
+      // The sha256's hex digits in either case are the same file.
+      expect(
+        artifact('m.litertlm', sha: 'A' * 64),
+        artifact('m.litertlm', sha: 'a' * 64),
+      );
+      expect(
+        artifact('m.litertlm', sha: 'A' * 64).hashCode,
+        artifact('m.litertlm', sha: 'a' * 64).hashCode,
+      );
       for (final other in [
         artifact('m.litertlm', installFilename: 'y'),
         artifact('m.litertlm', size: 5),
@@ -197,6 +212,11 @@ void main() {
           'another model\'s id',
           TestModel('tiny-llm', [TestLlm('a', modelId: 'other')]),
         ),
+        ('an empty slug', TestModel('tiny-llm', [TestLlm('')])),
+        (
+          'a model id with a slash',
+          TestModel('a/b', [TestLlm('x', modelId: 'a/b')]),
+        ),
       ]) {
         expect(
           () => RegisteredCatalog([
@@ -255,4 +275,26 @@ void main() {
       expect(merged.byId('tiny-llm'), same(model));
     });
   });
+}
+
+/// A third-party NPU: a vendor core has no name for, with value equality.
+final class _OtherNpu extends NpuTarget {
+  const _OtherNpu(this.vendor, this.socModel);
+
+  final String vendor;
+
+  @override
+  NpuVendor? get npuVendor => null;
+
+  @override
+  final String socModel;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _OtherNpu &&
+      other.vendor == vendor &&
+      other.socModel == socModel;
+
+  @override
+  int get hashCode => Object.hash(vendor, socModel);
 }

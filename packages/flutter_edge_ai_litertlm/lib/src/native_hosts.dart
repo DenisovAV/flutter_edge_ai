@@ -1,10 +1,11 @@
 /// The hosts this package runs on natively, and where EmbeddingGemma 2 runs
 /// on the GPU, named once for the places that must agree on them: the
-/// loader, the model catalog's `backendsHere` and the build hook's archive
-/// table (held equal by test/native_hosts_test.dart).
+/// loader and the model catalog's `backendsHere` import it; the build hook
+/// does not, and test/native_hosts_test.dart holds its archive table equal
+/// to [liteRtLmNativeAbis] by reading the hook's text.
 ///
 /// Pure Dart with no imports at all, like npu_stacks.dart: the catalog
-/// reaches it from the web graph, and the hook from the plain Dart VM.
+/// reaches it from the web graph.
 library;
 
 /// The hosts, in `Abi.current()` spelling, the native archive is published

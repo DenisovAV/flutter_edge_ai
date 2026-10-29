@@ -116,18 +116,28 @@ void main() {
       }
     });
 
-    test('a build withheld from the NPU is not offered there', () {
-      for (final v in [
-        LiteRtLmModels.gemma3_1bIt.npuSm8550,
-        LiteRtLmModels.gemma3_1bIt.npuSm8750,
-        LiteRtLmModels.gemma3_270mIt.npuSm8750,
-        LiteRtLmModels.gemma3_270mIt.npuSm8850,
+    test('the Gemma 3 Qualcomm builds of LiteRT-LM#3508 are not in the '
+        'catalog; the one that keeps its chunks is', () {
+      final ids = [
+        for (final m in [
+          LiteRtLmModels.gemma3_1bIt,
+          LiteRtLmModels.gemma3_270mIt,
+        ])
+          for (final v in m.variants) v.id,
+      ];
+      for (final gone in [
+        'gemma-3-1b-it/npu-sm8550',
+        'gemma-3-1b-it/npu-sm8650',
+        'gemma-3-1b-it/npu-sm8750',
+        'gemma-3-270m-it/npu-sm8550',
+        'gemma-3-270m-it/npu-sm8650',
+        'gemma-3-270m-it/npu-sm8750',
+        'gemma-3-270m-it/npu-sm8850',
       ]) {
-        expect(_here(v, 'android_arm64'), _none, reason: v.id);
-        expect(_here(v, 'linux_arm64'), _none, reason: v.id);
+        expect(ids, isNot(contains(gone)));
       }
       expect(
-        _here(LiteRtLmModels.gemma3_1bIt.npuSm8650, 'android_arm64'),
+        _here(LiteRtLmModels.gemma3_1bIt.npuSm8850, 'android_arm64'),
         _npu,
       );
     });

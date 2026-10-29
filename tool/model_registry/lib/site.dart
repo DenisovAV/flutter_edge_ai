@@ -225,19 +225,30 @@ final class SiteInputs {
     // whose native build cannot be named would make every run there stale:
     // both are problems, not a page that says something else.
     for (final MapEntry(key: package, value: byVariant) in snapshots.entries) {
-      final answered = {
-        for (final hostsOf in byVariant.values) ...hostsOf.keys,
-      };
-      for (final host in hosts) {
-        if (byVariant.isNotEmpty && !answered.contains(host.id)) {
-          problems.add(
-            Problem(
-              'snapshots/$package.json',
-              host.id,
-              'no answer for this host of hosts.yaml; run the package\'s '
-                  'catalog test with UPDATE_GOLDENS=1',
-            ),
-          );
+      if (byVariant.isEmpty) {
+        problems.add(
+          Problem(
+            'snapshots/$package.json',
+            '-',
+            'answers for no variant; run the package\'s catalog test with '
+                'UPDATE_GOLDENS=1',
+          ),
+        );
+      }
+      // Each variant answers for every host: one left out would show as
+      // refused there.
+      for (final MapEntry(key: variant, value: hostsOf) in byVariant.entries) {
+        for (final host in hosts) {
+          if (!hostsOf.containsKey(host.id)) {
+            problems.add(
+              Problem(
+                'snapshots/$package.json',
+                '$variant.${host.id}',
+                'no answer for this host of hosts.yaml; run the package\'s '
+                    'catalog test with UPDATE_GOLDENS=1',
+              ),
+            );
+          }
         }
       }
     }
@@ -250,7 +261,16 @@ final class SiteInputs {
         'build.dart',
       ),
     );
-    if (hook.existsSync()) {
+    if (!hook.existsSync() &&
+        Directory(p.join(repoRoot, 'packages')).existsSync()) {
+      problems.add(
+        Problem(
+          p.relative(hook.path, from: repoRoot),
+          '-',
+          'missing: the native build of every host is named from it',
+        ),
+      );
+    } else if (hook.existsSync()) {
       for (final host in hosts) {
         if (!inputs.natives.containsKey(host.id)) {
           problems.add(
@@ -446,7 +466,10 @@ Map<String, Map<String, Map<String, Cell>>> cells(
                         ? const Cell('untested')
                         : Cell(claim.status, source: claim.source));
         } else if (withheldBackends[b] case final Map<String, Object?> w
-            when h != 'web') {
+            when h != 'web' &&
+                // An NPU build is broken where its vendor's NPU is; elsewhere
+                // it is a combination that does not exist.
+                (npu == null || (natural?.contains(h) ?? false))) {
           cell = Cell(
             'broken',
             note: '${w['reason']}',

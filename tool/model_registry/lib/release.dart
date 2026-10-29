@@ -169,6 +169,9 @@ List<String> uncommittedUnder(String repoRoot, List<String> paths) {
     '--untracked-files=all',
     '--',
     ...paths,
+    // Rewritten by any `pub get`, and not what a package ships: the release
+    // hook leaves it out too.
+    ':(exclude,glob)**/example/pubspec.lock',
   ], workingDirectory: repoRoot);
   if (status.exitCode != 0) return ['git status failed: ${status.stderr}'];
   return [

@@ -24,6 +24,15 @@ void main() {
     authorizations.clear();
     elsewhere = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     elsewhere.listen((request) async {
+      if (request.uri.path == '/plain/tok.json') {
+        // A plain file on another host: answered as itself, then fetched.
+        authorizations['elsewhere ${request.method}'] = request.headers.value(
+          'authorization',
+        );
+        if (request.method == 'GET') request.response.add(small);
+        await request.response.close();
+        return;
+      }
       authorizations['elsewhere'] = request.headers.value('authorization');
       request.response
         ..statusCode = 302
@@ -68,6 +77,13 @@ void main() {
         r
           ..statusCode = 401
           ..headers.set('x-error-code', 'RepoNotFound');
+      } else if (path == '/away/repo/resolve/$_rev/tok.json') {
+        r
+          ..statusCode = 307
+          ..headers.set(
+            'location',
+            'http://localhost:${elsewhere.port}/plain/tok.json',
+          );
       } else if (path == '/away/repo/resolve/$_rev/model.bin') {
         authorizations['away'] = request.headers.value('authorization');
         r
@@ -157,7 +173,17 @@ void main() {
       sha256: lfsSha,
       size: 1000,
     );
-    await checkLive([away], base: base, token: 'hf_secret');
+    final plain = (
+      repo: 'away/repo',
+      revision: _rev,
+      path: 'tok.json',
+      sha256: '${sha256.convert(small)}',
+      size: small.length,
+    );
+    await checkLive([away, plain], base: base, token: 'hf_secret');
+    expect(authorizations, contains('elsewhere GET'));
+    expect(authorizations['elsewhere GET'], isNull);
+    expect(authorizations['elsewhere HEAD'], isNull);
     expect(authorizations['away'], 'Bearer hf_secret');
     expect(authorizations, contains('elsewhere'));
     expect(authorizations['elsewhere'], isNull);

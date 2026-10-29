@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'services/catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 import 'package:flutter_edge_ai_example/chat_widget.dart';
@@ -139,13 +140,16 @@ class ChatScreenState extends State<ChatScreen> {
         final token = variant.file.gated
             ? await AuthTokenService.loadToken()
             : null;
-        await FlutterEdgeAi.installModelFromCatalog(
-          variant,
-          token: token,
-        ).withProgress((percent) {
-          if (!mounted) return;
-          setState(() => _downloadPercent = percent);
-        }).install();
+        await installFromCatalogReplacingActive(
+          () => FlutterEdgeAi.installModelFromCatalog(variant, token: token)
+              .withProgress((percent) {
+                if (!mounted) return;
+                setState(() => _downloadPercent = percent);
+              })
+              .install(),
+          uninstall: () =>
+              FlutterEdgeAi.uninstallModel(variant.file.installFilename),
+        );
       } else if (widget.model.hfRepo != null) {
         final installation = await installer
             .fromHuggingFace(widget.model.hfRepo!)

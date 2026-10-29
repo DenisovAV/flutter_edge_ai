@@ -101,16 +101,21 @@ Optional on any variant:
   for every kind of model.
 - `deprecated: {reason, use}`: its getter is `@Deprecated`.
 
-### Variants are never removed
+### A shipped variant is never removed
 
 A variant's getter is public API of its package: an app that names
-`LiteRtLmModels.gemma3_1bIt.npuSm8750` breaks at compile time if it goes.
-So a variant, once in the registry, is never deleted or renamed: one that
-must stop being offered is withheld (`withhold`, or `withhold_backends` for
-a backend), which keeps its getter, marks it `@Deprecated` and empties its
-`backendsHere`. `check` refuses a release snapshot under `published/` whose
-variant is gone, and a package whose CHANGELOG has released a catalog
+`LiteRtLmModels.gemma4E2bIt.npuSm8750` breaks at compile time if it goes.
+So a variant that a release has shipped is never deleted or renamed: one
+that must stop being offered is withheld (`withhold`, or `withhold_backends`
+for a backend), which keeps its getter, marks it `@Deprecated` and empties
+its `backendsHere`. `check` refuses a release snapshot under `published/`
+whose variant is gone, and a package whose CHANGELOG has released a catalog
 without a `published/` snapshot for that version.
+
+A variant no release has shipped yet is not public API: a build known to be
+broken is removed instead, and never enters the catalog (the Gemma 3
+Qualcomm NPU builds of LiteRT-LM#3508, and the ones beside them nobody had
+run, before the first catalog release).
 
 `gated: auto | manual` on an artifact is the repository's Hugging Face gating.
 
@@ -220,7 +225,11 @@ UPDATE_GOLDENS=1 flutter test test/catalog/litert_catalog_test.dart
 - an NPU target or compiled context that the bytes contradict;
 - a `.litertlm` or NPU file that was never read;
 - a native file that is not a LiteRT-LM container;
-- one install file name for two different files;
+- one install file name for two different files (names that differ only by
+  case are one name: macOS and Windows file systems ignore case);
+- an install name that is not a portable file name (a path separator, a
+  control character or one of `<>:"|?*`, a trailing dot or space, a Windows
+  device name);
 - one profile id with two dimensions;
 - a withheld variant without an issue;
 - an id or slug whose Dart name is not an identifier, is a reserved word, or
@@ -239,6 +248,14 @@ UPDATE_GOLDENS=1 flutter test test/catalog/litert_catalog_test.dart
   Pin a docs line to a commit on `origin/main`: a commit of a pull request
   branch is not an ancestor of main once the branch is squash-merged, and
   main's `check` then fails;
+- a snapshot under `snapshots/` without an answer for a host of
+  `hosts.yaml`, for any variant, or with no variant at all;
+- a host whose native build the litertlm hook cannot name, or a hook that is
+  gone;
+- a package whose CHANGELOG released its catalog (a `## X.Y.Z` section naming
+  the model catalog, or any version after the oldest `published/` snapshot)
+  without that version's snapshot, a missing CHANGELOG, or a release heading
+  in another form than `## X.Y.Z`;
 - Cyrillic text.
 
 `dart test` proves each of those rules fails its own fixture, and that this
@@ -260,13 +277,16 @@ every later change to. `release-check` passes when the registry and every
 generated file are current, the frozen fields are written, and every cell
 `release_critical.yaml` lists for the package is verified: a run under
 `evidence/` on the native build the package ships, since that build or the
-package's minor version last moved. A patch on the same native build keeps its
-evidence. On success `release-check` writes a stamp with the HEAD it passed at
+package's minor version last moved, and nothing under `model_registry/`,
+`tool/model_registry/` or the package is uncommitted (an example app's
+`pubspec.lock`, which any `pub get` rewrites, aside). A patch on the same
+native build keeps its evidence. On success `release-check` writes a stamp with the HEAD it passed at
 (`tool/model_registry/.dart_tool/release_check/<package>-<version>.ok`).
 `.claude/hooks/guard-release-registry.py` refuses `dart pub publish` of either
 package unless that stamp is for HEAD and nothing under `model_registry/`,
-`tool/model_registry/` or the package has changed since, or the command carries
-`RELEASE_SKIP_REGISTRY="<reason>"`. The hook reads the stamp and asks git; it
+`tool/model_registry/` or the package has changed since (an example's
+`pubspec.lock` aside), or the command carries
+`RELEASE_SKIP_REGISTRY="<reason>"`, which it reports as a `systemMessage`. The hook reads the stamp and asks git; it
 runs no repository code, which a hook would run before the command is approved.
 
 CI runs `check` and `dart test` on every pull request (`model-registry` in

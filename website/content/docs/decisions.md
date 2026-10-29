@@ -578,12 +578,21 @@ options for an embedding decider. So a language-model decider is for a few
 options that are a property of the text (a tone, an emotion, yes or no, a
 level), and an embedding decider for many options by topic.
 
+**The scoring self-check.** In a debug or profile build, the first
+`createDecider` on a model runs LiteRT-LM's scoring self-check: it finds out
+how this LiteRT-LM scores right after a prefill (LiteRT-LM #3561) and refuses
+an engine whose scores do not repeat bit for bit or change after a rewind. A
+release build does not run it and scores in the mode the check picked on
+every engine measured (`once`: LiteRT-LM 0.18.0 on the CPU, Apple Metal and
+Adreno 830), so the first decision does not pay for it. Run the decider once
+in debug on the hardware you ship to, above all on a GPU nobody measured: a
+refusal there is one a release build would not report.
+
 **On the GPU.** Load the model with `preferredBackend: PreferredBackend.gpu`
 and the decider scores there. The GPU does not compute the CPU's scores
 exactly, and the temperature and threshold in the file were fitted by LiteTune
-on CPU probabilities. The scoring self-check runs on the GPU before the first
-decision, as on the CPU: it asks for scores that repeat bit for bit and for
-rewinds that change nothing, and it passed on every GPU below. Measured on a
+on CPU probabilities. In a debug build the self-check runs on the GPU as on
+the CPU, and it passed on every GPU below. Measured on a
 long-dialogue Noul decision (is the customer back about the same problem?),
 the bundles tuned by LiteTune, `InferenceDeciderCalibration.fromModel()`:
 Gemma 3 270M on 300 rows, Qwen3 1.7B and Gemma 4 E2B on 60 rows each.

@@ -1,4 +1,5 @@
 ## Unreleased
+- The option-scoring self-check runs in debug and profile builds only.
 - `InferenceModel.createDecider` scores on the GPU too; the NPU stays refused.
 
 ## 1.19.0

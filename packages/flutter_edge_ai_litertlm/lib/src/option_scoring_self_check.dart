@@ -33,6 +33,22 @@ enum LiteRtLmScoringMode {
   plain,
 }
 
+/// The mode a release build scores in, without the self-check: the mode it
+/// picked on every engine measured (LiteRT-LM 0.18.0 on the CPU, Apple Metal
+/// and Adreno 830; Gemma 3 270M, Qwen3 1.7B, Gemma 4 E2B). It belongs to the
+/// native build: a LiteRT-LM with the #3561 fix scores in `plain`, and a
+/// debug run's self-check is what tells.
+const liteRtLmReleaseScoringMode = LiteRtLmScoringMode.once;
+
+/// How a model scores: [selfCheck] in debug and profile builds, so a
+/// developer's run on the target hardware checks the engine; in a release
+/// build ([releaseMode]) [liteRtLmReleaseScoringMode], without the check and
+/// its cost at the first decision.
+Future<LiteRtLmScoringMode> liteRtLmScoringMode({
+  required bool releaseMode,
+  required Future<LiteRtLmScoringMode> Function() selfCheck,
+}) => releaseMode ? Future.value(liteRtLmReleaseScoringMode) : selfCheck();
+
 /// The pair the check compares: the same text ending in the model turn's
 /// opening and in the user turn's (`decision_scripts.FIXED`).
 const liteRtLmSelfCheckPrompt =

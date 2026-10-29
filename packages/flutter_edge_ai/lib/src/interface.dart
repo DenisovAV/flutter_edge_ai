@@ -607,7 +607,10 @@ abstract class InferenceModel {
   /// from 1.16.0 and on every GPU from 1.20.0; the NPU is refused. The
   /// temperature and threshold in the file are fitted on CPU probabilities,
   /// which the GPU does not reproduce exactly; its self-check checks that
-  /// scores repeat, not that they are right. A model loaded without
+  /// scores repeat, not that they are right, and runs in debug and profile
+  /// builds only (a release build scores in a fixed mode without it), so
+  /// run the decider once in debug on the hardware you ship to, an
+  /// unmeasured GPU above all. A model loaded without
   /// `preferredBackend` tries the GPU first. Load it with
   /// `PreferredBackend.cpu` for the calibration as fitted. Use
   /// `EmbeddingModel.createDecider` for a model that was not trained on the

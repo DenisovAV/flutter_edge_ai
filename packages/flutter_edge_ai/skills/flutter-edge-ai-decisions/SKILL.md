@@ -21,7 +21,9 @@ CI that fails on warnings fail.
    any other model, and every model on the web throw
    `DeciderUnsupportedException`. The file's calibration is fitted on the
    CPU: load with `preferredBackend: PreferredBackend.cpu` to use it as
-   fitted (a load without it tries the GPU first). Both return a `Decider` whose `DeciderAnswer` reads the same, so code
+   fitted (a load without it tries the GPU first). Its scoring self-check runs
+   in debug and profile builds only (litertlm 1.20.0; release scores in a
+   fixed mode): run the decider once in debug on the target hardware. Both return a `Decider` whose `DeciderAnswer` reads the same, so code
    that reads answers (choice, ranked, abstainReason, provenance) needs no
    change when one replaces the other; check `decider.capabilities`
    (`supportsAmong`, `storable`, `calibratedProbabilities`, `modalities`, `questionType`)

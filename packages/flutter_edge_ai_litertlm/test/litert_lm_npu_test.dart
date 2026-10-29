@@ -63,9 +63,43 @@ void main() {
       },
     );
 
-    test('the GPU hosts are exactly the measured ones: Windows x64 and '
-        'Linux x64', () {
-      expect(liteRtLmEmbeddingGpuAbis, {'windows_x64', 'linux_x64'});
+    test('the GPU host is Linux x64 alone; Windows x64 is refused on '
+        'native-v0.18.0-h', () {
+      expect(liteRtLmEmbeddingGpuAbis, {'linux_x64'});
+      expect(liteRtLmEmbeddingGpuRefusedAbis, {'windows_x64'});
+    });
+
+    test('with gpu on windows_x64 the generic bundle is refused, naming the '
+        'native tag, the issue and preferredBackend: cpu; null and cpu stay '
+        'on CPU', () async {
+      host
+        ..abi = 'windows_x64'
+        ..operatingSystem = 'windows';
+      await expectLater(
+        place(target: null, requested: PreferredBackend.gpu),
+        throwsA(
+          isA<EmbeddingLoadException>()
+              .having((e) => e.engine, 'engine', 'LiteRT-LM')
+              .having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('not supported on Windows x64'),
+                  contains('native-v0.18.0-h'),
+                  contains(liteRtLmEmbeddingGpuWindowsIssue),
+                  contains('preferredBackend: cpu'),
+                ),
+              ),
+        ),
+      );
+      for (final requested in [null, PreferredBackend.cpu]) {
+        expect(
+          (await place(target: null, requested: requested)).backend,
+          PreferredBackend.cpu,
+          reason: '$requested',
+        );
+      }
+      expect(host.asked, isEmpty);
     });
 
     for (final abi in liteRtLmEmbeddingGpuAbis) {

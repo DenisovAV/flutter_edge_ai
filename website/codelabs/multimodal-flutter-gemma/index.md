@@ -12,18 +12,18 @@ Duration: 3
 
 ### What you'll build
 
-The chat app from the *Getting Started* codelab, taught to send a **picture**
-and a **recording** to the model — and, at the end, taught to know where it
-cannot.
+A small on-device chat app, taught to send a **picture** and a **recording**
+to the model — and, at the end, taught to know where it cannot.
 
-Two models, and the second one is the point. Step 2 starts on **SmolVLM2
-500M**: 0.36 GB, about a minute of download, and the app is describing your
-own photograph. Step 3 wants audio — and no flag switches on an encoder the
-weights do not contain, so it moves to **Gemma 4 E2B**, 2.59 GB. Seven times
-the size, said plainly rather than in a footnote. (That is the native journey.
-On the web, SmolVLM2 has no browser build at all, so Step 2 is already Gemma 4
-E2B there — Step 2's own section explains why, and Step 3 changes nothing
-further on that platform.)
+Two models, and the second one is the point. Step 1 downloads **SmolVLM2
+500M** — 0.36 GB, about a minute — and chats with it in text. Step 2 sets one
+flag, and that same file starts describing your own photograph: no second
+download, because the vision encoder was in there the whole time. Step 3 wants
+audio — and no flag switches on an encoder the weights do not contain, so it
+moves to **Gemma 4 E2B**, 2.59 GB. Seven times the size, said plainly rather
+than in a footnote. (That is the native journey. On the web, SmolVLM2 has no
+browser build at all, so Steps 1 and 2 already run Gemma 4 E2B there — Step 1's
+own section explains why, and Step 3 changes nothing further on that platform.)
 
 You pay it once. Those weights read pictures *and* hear you, so the app never
 ends up juggling one model per modality: `complete` ships exactly one.
@@ -71,21 +71,23 @@ each.
 
 ### What you'll need
 
-* The finished app from
-  [Getting Started with On-Device LLMs in Flutter](/codelabs/getting-started-flutter-gemma)
-  — or just its `complete/` directory, which is this codelab's starter
-* **No Hugging Face token** from Step 2 on: both repositories this codelab
-  introduces are ungated, so every `flutter run` from there is a plain
-  `flutter run` with no `--dart-define`. Step 1 is Getting Started's finished
-  app unchanged, and it still runs that codelab's gated Gemma 3 1B, which needs
-  `--dart-define=HF_TOKEN=hf_...`
-* Room for **0.36 GB** in Step 2 on native, and for **2.59 GB** from Step 3 on
-  — plus the memory to open the larger one, roughly 6 GB of RAM. A 4 GB phone
-  is killed by the OS rather than told no. On the **web**, Step 2 already
+* [Getting Started with On-Device LLMs in Flutter](/codelabs/getting-started-flutter-gemma)
+  builds the background this one assumes: installing a model, the gate that
+  decides between the download screen and the chat, the streaming loop. Its
+  finished app is *not* the starter here, though — `step_01_starter` is this
+  codelab's own Step 2 with the vision code taken out, so the model file does
+  not change between Step 1 and Step 2
+* **No Hugging Face token, in any step.** Both repositories this codelab
+  downloads from are ungated, so every `flutter run` in it is a plain
+  `flutter run` — there is no `--dart-define` anywhere in this codelab
+* Room for **0.36 GB** from Step 1 on native, and for **2.59 GB** from Step 3
+  on — plus the memory to open the larger one, roughly 6 GB of RAM. A 4 GB phone
+  is killed by the OS rather than told no. On the **web**, Step 1 already
   needs Gemma 4 E2B's **2.0 GB** web build (SmolVLM2 has none), so leave about
   3 GB free for it per step you run in the browser — a browser close to its
-  storage quota refuses the write rather than slowing down. Step 3 uses the
-  same file, but each step app downloads it again on the web; Step 3 says why
+  storage quota refuses the write rather than slowing down. Every step uses
+  the same file there, but each step app downloads it again on the web; Step 3
+  says why
 * Android (an **arm64** device or emulator — `flutter_edge_ai_litertlm` ships an
   arm64 library and nothing else, so a 32-bit or x86_64 image has no runtime to
   load), a real iPhone or iPad, macOS, Windows or Linux for the full thing.
@@ -101,126 +103,22 @@ ls
 ```
 
 ```text
-step_01_starter/     the Getting Started app, unchanged
-step_02_vision/      after Step 2 — a small vision model, and it can see
+step_01_starter/     a text chat on the model Step 2 will teach to see
+step_02_vision/      after Step 2 — the same model, and it can see
 step_03_audio/       after Step 3 — a bigger one, and it hears too
 complete/            after Step 4 — and it knows where it cannot
 ```
 
 ## Step 1: A modality is a session flag
-Duration: 4
+Duration: 7
 
 ### Run the starter
 
-Open `step_01_starter` and run it. It is the Getting Started app: download a
-`.litertlm` file, chat with it, in text.
+Open `step_01_starter` and run it — a plain `flutter run`, no `--dart-define`,
+no Hugging Face account. It downloads a `.litertlm` file and chats with it, in
+text.
 
-Now look at the call that opens the chat, because that is where this codelab's
-central change lands:
-
-```dart
-      final chat = await inference.createChat(
-        modelType: widget.model.modelType,
-        maxOutputTokens: 256,
-      );
-```
-
-### One checkpoint, several sessions
-
-`createChat` takes `supportImage` and `supportAudio`. They map to
-`enableVisionModality` and `enableAudioModality` on the native session. Set
-neither and you get a text session. Set one and the same weights will take
-pictures. Set both and they will take pictures and sound.
-
-Nothing is downloaded in between, and nothing about the model changes: a
-`.litertlm` file ships whatever encoders it was built with, and a session
-decides which of them are wired up.
-
-Which is also the limit of the idea, and Step 3 walks straight into it. A flag
-can only switch on an encoder that is in the file. Step 2's SmolVLM2 has a
-vision encoder and no audio one, so `supportAudio: true` there is not a cheap
-way to get sound — it asks for a part the checkpoint does not contain. Audio
-means different weights, and different weights mean a download, not a boolean.
-
-### What is not yours to decide
-
-The flags are yours to set. Whether the platform honours them is not.
-
-`flutter_edge_ai_litertlm`'s browser arm runs the upstream `@litert-lm/core`
-package, and that JS API exposes **no vision executor and no audio executor**.
-Setting `supportImage: true` there does not throw. The model loads, the chat
-opens, and a debug build prints one warning. The refusal comes at the message:
-`addQueryChunk` with an image in it throws `UnsupportedError`, and the turn
-never reaches the model. (Before `flutter_edge_ai_litertlm` 1.11.3 it did not
-throw — the bytes were dropped, and the model answered about a picture it
-never received.)
-
-An exception you can catch, and Step 2's `catch` does: the error lands where
-the reply would have been. But it lands after the user has picked the photo
-and typed the question. So by the end of this codelab the app asks first,
-before it offers the button, and when the answer is no it says **which** no it
-got:
-
-```dart
-  bool get available => byModel && byPlatform;
-
-  /// Which side said no, and why. Null when both said yes.
-  ///
-  /// Both can refuse at once — a text-only model in a browser — and then the
-  /// user deserves both halves, because fixing one changes nothing.
-  String? get blockedBecause => switch ((byModel, byPlatform)) {
-    (true, true) => null,
-    (false, true) => modelReason,
-    (true, false) => platformReason,
-    (false, false) => '$modelReason, and $platformReason',
-  };
-```
-
-*"This platform has no audio input"* reads very differently to a learner than a
-greyed-out microphone. One is information; the other is a bug report waiting to
-be filed.
-
-## Step 2: Send a picture
-Duration: 12
-
-### Add the package
-
-```bash
-flutter pub add image_picker
-```
-
-`image_picker` declares all six platforms: a photo gallery on Android and iOS,
-a file dialog — through `file_selector` — on macOS, Windows and Linux, and the
-browser's own file picker on the web. That single call is why this step needs
-no platform branching in the UI.
-
-### One platform change
-
-macOS runs sandboxed, and a sandboxed app cannot read a file the user picked
-unless it says it will. Add one key to **both** `macos/Runner/DebugProfile.entitlements`
-and `macos/Runner/Release.entitlements`:
-
-```xml
-	<key>com.apple.security.files.user-selected.read-only</key>
-	<true/>
-```
-
-Both files, not one: `Debug` is what `flutter run` uses and `Release` is what
-you ship, and an entitlement added to only the first works perfectly until the
-day it matters.
-
-Android needs nothing — the system photo picker hands back a URI without a
-permission. iOS needs nothing either to run it: since iOS 14 `image_picker`
-uses `PHPicker`, which runs out of process and never asks for photo-library
-permission. Before an App Store submission, though, add an
-`NSPhotoLibraryUsageDescription` string to `ios/Runner/Info.plist`:
-`image_picker`'s README says App Store policy requires the entry even when the
-permission is never requested. Windows, Linux and the web need nothing.
-
-### The model
-
-`step_02_vision` replaces Getting Started's Gemma 3 1B with something smaller
-that can see:
+### The model you just downloaded
 
 ```dart
   /// A vision-language model small enough to feel like a text model. 0.36 GB
@@ -273,35 +171,23 @@ Error: Streaming kTfLitePrefillDecode models is not supported yet.
 So `ModelChoice` carries a native pair and a web pair, the same shape Step 3
 uses for its own two builds of one checkpoint — except here the two platforms
 do not even agree on which *model* it is. On the web this one resolves to the
-Gemma 4 E2B web build: the exact pair Step 3 installs natively, just arriving
-a step early. `modelType` has to follow the platform for the same reason the
+Gemma 4 E2B web build: the same file Step 3 installs in the browser, here from
+Step 1 on. `modelType` has to follow the platform for the same reason the
 URL does — `general` for SmolVLM2, `gemma4` for the substitute — and every call
 site (`main.dart`'s gate, `download_page.dart`, `createChat`) reads it through
 one getter, so the two can never drift apart the way two independently-set
 fields could.
 
-Run this step in Chrome and you get a real chat: the Gemma 4 E2B web build
-talks, it just cannot see — vision is a native feature in this codelab, not
-because of anything Step 2 does differently on the web, but because the
-browser runtime has no vision executor for *any* checkpoint. The picture
-button stays live all the same, here and in Step 3 — and so does Step 3's
-microphone. Press either in a browser, pick the photo or record the clip, send
-it, and the turn fails: `addQueryChunk` throws `UnsupportedError`, and the
-`catch` in `_send` puts it in the reply bubble — *"⚠️ Unsupported operation:
-Web LiteRT-LM does not support image input for LLMs yet…"*, or *audio input*
-for a clip. Nothing reaches the model, and the next text-only turn works as
-before. A debug build also prints one line at `createChat`, saying the
-modalities were requested and an image or audio message will throw; a release
-build does not, because `edgeAiLog` compiles out of release entirely. The error
-in the bubble is there either way. It is an honest failure, and a late one: the
-user did the work before anything said no. Step 4 moves the answer ahead of the
-button, by asking the platform what it supports instead of assuming. For now
-the point is narrower: SmolVLM2 never installs in a browser, and it fails
-loudly rather than quietly when you try.
+A vision-language model, running a text chat. That is deliberate, and it is
+what makes Step 2 readable: the file on disk does not change between here and
+there. Step 2 writes a fair amount of code — a picker, a preview, a thumbnail
+in the transcript — but none of that is what makes the model see. Two flags
+are, and because the checkpoint is held fixed you can watch them do it on
+their own.
 
-`ModelType.general` and not `gemmaIt` is still the right call for the native
-build, but not for the reason it would be on an older format. On `.litertlm`
-the prompt never gets a hand-built wrapper: the engine applies the chat
+`ModelType.general` and not `gemmaIt` is the right call for the native build,
+but not for the reason it would be on an older format. On `.litertlm` the
+prompt never gets a hand-built wrapper: the engine applies the chat
 template baked into the file itself, on every platform this codelab targets,
 so naming the wrong family here does not double the turn markers. (It used to,
 on iOS — before the legacy `flutter_gemma` 1.8.3 release the SDK still wrapped
@@ -316,15 +202,16 @@ format a tool call in the response is parsed with. SmolVLM2 reasons in neither
 form and calls no tools, which is the real reason `general` is right here, not
 a guard against a prompt that was never going to be corrupted.
 
-0.36 GB is roughly a minute of download, on native. That is the reason this
-step starts here: you should be reading a model's description of your own
-photograph before you have finished reading this page, not waiting out a
-multi-gigabyte download to find out whether the wiring is right. (On the web
-the download is the 2.0 GB Gemma 4 build above, and there is no photograph to
-read a description of — see the vision note above.)
+0.36 GB is roughly a minute of download, on native. That is the other reason
+this codelab starts here rather than on the 2.59 GB model it ends on: you
+should be reading a model's description of your own photograph before you have
+finished reading this page, not waiting out a multi-gigabyte download to find
+out whether the wiring is right. (On the web the download is the 2.0 GB Gemma 4
+build above, and Step 2 explains why there is no photograph to describe there.)
 
-The repository is ungated, so `main.dart` also loses the Hugging Face plumbing
-it inherited from Getting Started. It gains a `try` in exchange:
+The repository is ungated, so there is no Hugging Face plumbing in `main.dart`
+at all — no token, no `--dart-define`, no 401 to explain. What there is, is a
+`try`:
 
 ```dart
   try {
@@ -340,6 +227,13 @@ it inherited from Getting Started. It gains a `try` in exchange:
   }
 ```
 
+That is not ceremony. This is the earliest thing in the app that can fail —
+hot-restarting after adding a plugin throws `MissingPluginException` right here
+— and an `await` before `runApp` that throws never reaches `runApp` at all. The
+symptom is a blank window and a stack trace in a console you are probably not
+looking at. Every other failure in this app arrives on screen; this one has to
+be made to.
+
 `webStorageMode` is the web half of this step, and it earns its own sentence.
 It is not something the format demands: the browser engine takes either
 storage mode — `flutter_edge_ai_litertlm`'s web arm accepts a Cache API blob URL
@@ -350,18 +244,143 @@ arrived at all, not that streaming became compulsory. The reason to set it
 here is size. The default `WebStorageMode.cacheApi` buffers the whole download
 in memory as one blob, and browsers cap a single blob at roughly 2 GB — Chrome
 refuses past it with `ERR_BLOB_OUT_OF_MEMORY`. The Gemma 4 E2B web build this
-step installs in the browser is 2.0 GB, right on that line. Close enough that
-every `.litertlm` install in this codelab uses `WebStorageMode.streaming` from
-here on: streaming writes the download into OPFS and reads the model back from
-there instead of holding it whole in memory. It is not the only thing a web
+codelab installs in the browser is 2.0 GB, right on that line. Close enough that
+every `.litertlm` install in this codelab uses `WebStorageMode.streaming`:
+streaming writes the download into OPFS and reads the model back from there
+instead of holding it whole in memory. It is not the only thing a web
 install needs — Step 4 covers the rest.
 
-That is not ceremony. This is the earliest thing in the app that can fail —
-hot-restarting after adding a plugin throws `MissingPluginException` right here
-— and an `await` before `runApp` that throws never reaches `runApp` at all. The
-symptom is a blank window and a stack trace in a console you are probably not
-looking at. Every other failure in this app arrives on screen; this one has to
-be made to.
+### The call this codelab changes
+
+Now look at the call that opens the chat, because that is where this codelab's
+central change lands:
+
+```dart
+      final chat = await inference.createChat(
+        modelType: widget.model.modelType,
+        maxOutputTokens: 256,
+      );
+```
+
+Nothing in it mentions pictures, and yet the weights it opens have a vision
+encoder in them. Step 2 downloads nothing new on native: it opens this same
+file with one more capability switched on.
+
+### One checkpoint, several sessions
+
+`createChat` takes `supportImage` and `supportAudio`. They map to
+`enableVisionModality` and `enableAudioModality` on the native session. Set
+neither and you get a text session. Set one and the same weights will take
+pictures. Set both and they will take pictures and sound.
+
+Nothing is downloaded in between, and nothing about the model changes: a
+`.litertlm` file ships whatever encoders it was built with, and a session
+decides which of them are wired up.
+
+Which is also the limit of the idea, and Step 3 walks straight into it. A flag
+can only switch on an encoder that is in the file. The SmolVLM2 you just
+downloaded has a vision encoder and no audio one, so `supportAudio: true` on it
+is not a cheap way to get sound — it asks for a part the checkpoint does not
+contain. Audio means different weights, and different weights mean a download,
+not a boolean.
+
+### What is not yours to decide
+
+The flags are yours to set. Whether the platform honours them is not.
+
+`flutter_edge_ai_litertlm`'s browser arm runs the upstream `@litert-lm/core`
+package, and that JS API exposes **no vision executor and no audio executor**.
+Setting `supportImage: true` there does not throw. The model loads, the chat
+opens, and a debug build prints one warning. The refusal comes at the message:
+`addQueryChunk` with an image in it throws `UnsupportedError`, and the turn
+never reaches the model. (Before `flutter_edge_ai_litertlm` 1.11.3 it did not
+throw — the bytes were dropped, and the model answered about a picture it
+never received.)
+
+An exception you can catch, and Step 2's `catch` does: the error lands where
+the reply would have been. But it lands after the user has picked the photo
+and typed the question. So by the end of this codelab the app asks first,
+before it offers the button, and when the answer is no it says **which** no it
+got:
+
+```dart
+  bool get available => byModel && byPlatform;
+
+  /// Which side said no, and why. Null when both said yes.
+  ///
+  /// Both can refuse at once — a text-only model in a browser — and then the
+  /// user deserves both halves, because fixing one changes nothing.
+  String? get blockedBecause => switch ((byModel, byPlatform)) {
+    (true, true) => null,
+    (false, true) => modelReason,
+    (true, false) => platformReason,
+    (false, false) => '$modelReason, and $platformReason',
+  };
+```
+
+*"This platform has no audio input"* reads very differently to a learner than a
+greyed-out microphone. One is information; the other is a bug report waiting to
+be filed.
+
+## Step 2: Send a picture
+Duration: 9
+
+### The model does not change
+
+`lib/model.dart` is untouched. `step_02_vision` opens the same
+`SmolVLM2-500M.litertlm` that Step 1 downloaded — same constant, same URL, same
+bytes on disk — and every step app in this codelab shares one application
+identity, so on native running this step fetches nothing. (On the web both
+steps install the Gemma 4 E2B web build, and the browser downloads it again for
+this step folder unless both are served from one origin — Step 3 explains.)
+Diff the two apps and
+`model.dart`, `main.dart` and `download_page.dart` come back identical. Beyond
+`chat_page.dart` the diff prints only what the package below brings with it:
+`pubspec.yaml`, the two entitlements files, and the five plugin registrants
+`flutter pub add` regenerates for Linux, macOS and Windows.
+
+That is the claim this codelab is making, and it is only checkable because
+Step 1 was already running these weights. If the checkpoint changed here too,
+"a modality is a flag" would be a sentence you had to take on trust.
+
+Which is also why the paragraph above is a CI check and not a promise. This
+repository's `tool/check_codelabs.sh` asserts both halves of it on every run —
+that those three files match, and that `chat_page.dart` does **not**. A
+sentence in a codelab that nothing enforces is true on the day it is written.
+
+### Add the package
+
+```bash
+flutter pub add image_picker
+```
+
+`image_picker` declares all six platforms: a photo gallery on Android and iOS,
+a file dialog — through `file_selector` — on macOS, Windows and Linux, and the
+browser's own file picker on the web. That single call is why this step needs
+no platform branching in the UI.
+
+### One platform change
+
+macOS runs sandboxed, and a sandboxed app cannot read a file the user picked
+unless it says it will. Add one key to **both** `macos/Runner/DebugProfile.entitlements`
+and `macos/Runner/Release.entitlements`:
+
+```xml
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+```
+
+Both files, not one: `Debug` is what `flutter run` uses and `Release` is what
+you ship, and an entitlement added to only the first works perfectly until the
+day it matters.
+
+Android needs nothing — the system photo picker hands back a URI without a
+permission. iOS needs nothing either to run it: since iOS 14 `image_picker`
+uses `PHPicker`, which runs out of process and never asks for photo-library
+permission. Before an App Store submission, though, add an
+`NSPhotoLibraryUsageDescription` string to `ios/Runner/Info.plist`:
+`image_picker`'s README says App Store policy requires the entry even when the
+permission is never requested. Windows, Linux and the web need nothing.
 
 ### Open a session that can see
 
@@ -471,10 +490,29 @@ picture once it is sent.
 ```
 
 Everything downstream — `generateChatResponseAsync`, the streaming loop, the
-error handling — is byte-for-byte the code from Getting Started.
+error handling — is byte-for-byte the code from Step 1.
 
 Run `step_02_vision` on a phone or a desktop, attach a photo, and ask what is
 in it.
+
+### Run it in a browser
+
+Run this step in Chrome and you get a real chat: the Gemma 4 E2B web build
+talks, it just cannot see — vision is a native feature in this codelab, not
+because of anything Step 2 does differently on the web, but because the
+browser runtime has no vision executor for *any* checkpoint. The picture
+button stays live all the same, here and in Step 3 — and so does Step 3's
+microphone. Press either in a browser, pick the photo or record the clip, send
+it, and the turn fails: `addQueryChunk` throws `UnsupportedError`, and the
+`catch` in `_send` puts it in the reply bubble — *"⚠️ Unsupported operation:
+Web LiteRT-LM does not support image input for LLMs yet…"*, or *audio input*
+for a clip. Nothing reaches the model, and the next text-only turn works as
+before. A debug build also prints one line at `createChat`, saying the
+modalities were requested and an image or audio message will throw; a release
+build does not, because `edgeAiLog` compiles out of release entirely. The error
+in the bubble is there either way. It is an honest failure, and a late one: the
+user did the work before anything said no. Step 4 moves the answer ahead of the
+button, by asking the platform what it supports instead of assuming.
 
 ## Step 3: Seven times the size, paid once
 Duration: 16

@@ -1,5 +1,6 @@
 // EmbeddingGemma 2 440m and 740m with `preferredBackend: gpu` where
-// flutter_edge_ai_litertlm runs EG2 on the GPU (Windows x64, Linux x64): the
+// flutter_edge_ai_litertlm runs EG2 on the GPU (Linux x64; Windows x64 is
+// refused on native-v0.18.0-h, #744): the
 // text tower on LiteRT-LM's GPU executor, the vision and audio towers named
 // cpu at create. Skipped on every other host.
 //
@@ -17,8 +18,12 @@
 //   cache directory after the GPU run and after its close, and the time of a
 //   warm second GPU load.
 //
+// The backend is registered with requireWeightCache: true, so a GPU load
+// that wrote neither ML Drift cache, or no XNNPack cache for its CPU towers,
+// fails the run.
+//
 // Run: flutter test integration_test/embeddinggemma2_gpu_towers_test.dart
-// -d windows (or -d linux, under xvfb-run on a headless box).
+// -d linux (under xvfb-run on a headless box).
 // EG2_440M_MODEL_FILE / EG2_740M_MODEL_FILE override the catalog download.
 
 import 'dart:convert';
@@ -40,9 +45,7 @@ import 'goldens/eg2_text_golden.dart';
 const _file440m = String.fromEnvironment('EG2_440M_MODEL_FILE');
 const _file740m = String.fromEnvironment('EG2_740M_MODEL_FILE');
 
-final _gpuHost =
-    (Platform.isWindows && Abi.current() == Abi.windowsX64) ||
-    (Platform.isLinux && Abi.current() == Abi.linuxX64);
+final _gpuHost = Platform.isLinux && Abi.current() == Abi.linuxX64;
 
 const _images = ['circle.png', 'bar_chart.png', 'house_scene.png'];
 const _clips = ['kitchen_lights.wav', 'piano_lesson.wav'];
@@ -53,7 +56,9 @@ bool _initialized = false;
 Future<void> _ensure(catalog.EmbeddingModel model, String file) async {
   if (!_initialized) {
     await FlutterEdgeAi.initialize(
-      embeddingBackends: const [LiteRtEmbeddingBackend()],
+      embeddingBackends: const [
+        LiteRtEmbeddingBackend(requireWeightCache: true),
+      ],
     );
     _initialized = true;
   }

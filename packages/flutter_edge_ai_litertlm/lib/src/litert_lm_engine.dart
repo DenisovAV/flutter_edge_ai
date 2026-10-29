@@ -48,17 +48,25 @@ const int kMinLitertlmContextTokens = 1024;
 /// dropped — the model answers from chunk 0 alone, with no error. With 4
 /// attention heads per KV head that puts the largest working `cache_length` at
 /// prefill 128 at **896** (LiteRT-LM#3508). That limit is set when the bundle
-/// is built, not by `maxTokens`: LiteRT-LM's NPU executor (v0.18.0,
+/// is built, not by `maxTokens`. LiteRT-LM's NPU executor (v0.18.0,
 /// `DetermineMaxSequenceLengthStaticModel`) lowers a larger value to the
-/// compiled limit of a bundle with a static KV cache, with a warning, so
-/// raising 896 to 1024 would not break it. Garbled Qwen3 output on the NPU is
-/// a different bug (LiteRT-LM#3846). The floor is skipped on NPU because it is
-/// a CPU/GPU fact: the caller's number is passed through untouched, since the
-/// context is a property of the bundle and only the caller knows it.
+/// bundle's `LlmMetadata.max_num_tokens` when it sets one, and to the KV-cache
+/// length read from the graph only when it does not; nothing compares the two
+/// (LiteRT-LM#4184). So a value above the cache is lowered to it only when the
+/// metadata says the cache length or nothing, which litert-torch writes by
+/// default; with metadata above the cache, a context past the cache fails at
+/// the KV-cache update or is not checked (from the code, not run on a device).
+/// Garbled Qwen3 output on the NPU is a different bug (LiteRT-LM#3846). The
+/// floor is skipped on NPU because it is a CPU/GPU fact: the caller's number
+/// is passed through untouched, since the context is a property of the bundle
+/// and only the caller knows it.
 ///
-/// Pass the backend of the ATTEMPT, not the one the caller asked for. A
-/// requested NPU falls back npu -> gpu -> cpu, and the floor still has to apply
-/// to the two that follow.
+/// Pass the backend of the ATTEMPT, not the one the caller asked for. The load
+/// plan (`planLiteRtLmLoad`) tries a bundle compiled for an NPU on the NPU
+/// alone and a generic bundle never on the NPU, so a requested NPU becomes GPU
+/// and CPU attempts for a generic bundle, and npu -> gpu -> cpu only for a
+/// file the plan cannot read (a `.task`, a newer container); the floor has to
+/// apply to every GPU and CPU attempt.
 @visibleForTesting
 int clampLitertlmContextTokens(
   int maxTokens, {
@@ -140,7 +148,8 @@ class LiteRtLmEngine
   });
 
   /// Whether a model that fails to load on its backend is tried on the next
-  /// one: npu → gpu → cpu, gpu → cpu (the default).
+  /// one the model file allows: npu → gpu → cpu, gpu → cpu (the default). A
+  /// generic bundle is never tried on the NPU, so `npu` starts at the GPU.
   ///
   /// With false, a load makes exactly one attempt — on `preferredBackend`, or
   /// on the GPU when none is given — and a failure throws a
@@ -352,11 +361,12 @@ class LiteRtLmEngine
           visionBackend: plan.visionBackend,
           audioBackend: plan.audioBackend,
         );
-        // Per ATTEMPT, not per request: a requested NPU falls back npu -> gpu
-        // -> cpu (`ffiBackendFallbackOrder`), and the floor this skips exists
-        // for the two it falls back to. Computing it once from the REQUESTED
-        // backend would hand an unclamped NPU-sized context to the CPU engine
-        // that follows, which is the #318 crash.
+        // Per ATTEMPT, not per request: a requested NPU runs as GPU and CPU
+        // attempts for a generic bundle, and as npu -> gpu -> cpu for a file
+        // the plan cannot read (`plan.textBackends`), and the floor this
+        // skips exists for those. Computing it once from the REQUESTED
+        // backend would hand an unclamped NPU-sized context to a CPU engine,
+        // which is the #318 crash.
         final maxTokens = clampLitertlmContextTokens(
           config.maxTokens,
           preferredBackend: backend,

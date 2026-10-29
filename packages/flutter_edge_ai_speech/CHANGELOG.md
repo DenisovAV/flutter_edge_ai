@@ -1,6 +1,8 @@
-## 0.5.12
+## Unreleased
 - Model catalog: `LiteRtSpeechModels`, every STT and TTS build pinned to its commit.
-- Require `flutter_edge_ai` ^2.5.4 and `flutter_edge_ai_litertlm` ^1.19.0.
+
+## 0.5.12
+- Docs: on macOS with Swift Package Manager on, no Podfile block from litertlm 1.19.0 (#689).
 
 ## 0.5.11
 - A closed recognizer or synthesizer fails through the returned Future (#718).

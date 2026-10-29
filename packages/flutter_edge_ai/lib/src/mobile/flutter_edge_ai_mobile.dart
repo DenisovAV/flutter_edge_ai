@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/src/lifecycle/inference_model_cache.dart';
+import 'package:flutter_edge_ai/src/lifecycle/speech_model_cache.dart';
 
 import 'dart:io';
 
@@ -51,20 +52,15 @@ part '../model_management/utils/file_system_manager.dart';
 part '../model_management/utils/resume_checker.dart';
 part '../model_management/managers/mobile_model_manager.dart';
 
-/// Normalizes a `createTtsModel`/`getActiveTts` `language` argument for the
-/// same-model reuse guard's store/compare — defaults `null` to `'english'`
-/// (mirrors `LiteRtTtsBackend.createModel`'s `config.language ?? 'english'`)
-/// and lowercases so `null`, `'english'`, and `'English'` all compare equal
-/// (they build the SAME synthesizer either way — `Qwen3Prompt.build` already
-/// lowercases the language it's given). Without this, storing/comparing the
-/// raw argument tripped a spurious `StateError` for effectively-identical
-/// requests (e.g. `getActiveTts()` then `getActiveTts(language: 'english')`).
-String _normalizeTtsLanguage(String? language) =>
-    (language ?? 'english').toLowerCase();
-
 class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
   FlutterEdgeAiMobile() {
     attachInferenceModelCache(this, _modelCache);
+    attachEmbedderCache(this, _embedderCache);
+    attachSpeechModelCaches(
+      this,
+      stt: _sttCache.closeForRemoval,
+      tts: _ttsCache.closeForRemoval,
+    );
   }
 
   /// The cached inference model and the rules for reusing it, shared with the
@@ -76,23 +72,21 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
   /// because three hand-rolled copies of it were wrong in three different ways.
   final EmbedderCache _embedderCache = EmbedderCache();
 
-  Completer<SpeechRecognizer>? _initSttCompleter;
-  SpeechRecognizer? _initializedSttModel;
-  SttModelSpec?
-  _lastActiveSttSpec; // Track which spec was used to create _initializedSttModel
-
-  Completer<SpeechSynthesizer>? _initTtsCompleter;
-  SpeechSynthesizer? _initializedTtsModel;
-  TtsModelSpec?
-  _lastActiveTtsSpec; // Track which spec was used to create _initializedTtsModel
-  // The `language` the active singleton was built with, NORMALIZED
-  // ([_normalizeTtsLanguage] — defaulted + lowercased) so a same-effective-
-  // language request compared raw-to-raw (e.g. null vs. 'english', or
-  // 'English' vs. 'english') doesn't spuriously trip the guard below.
-  // Reusing the singleton for a genuinely DIFFERENT language would silently
-  // emit wrong-language audio with no error — see the same-model branch in
-  // createTtsModel below.
-  String? _lastActiveTtsLanguage;
+  /// The cached recognizer and synthesizer and the rules for reusing them,
+  /// shared with the desktop and web shells.
+  final SpeechModelCache<SpeechRecognizer, SttCacheKey> _sttCache =
+      SpeechModelCache(
+        close: (recognizer) => recognizer.close(),
+        addCloseListener: (recognizer, listener) =>
+            recognizer.addCloseListener(listener),
+      );
+  final SpeechModelCache<SpeechSynthesizer, TtsCacheKey> _ttsCache =
+      SpeechModelCache(
+        close: (synthesizer) => synthesizer.close(),
+        addCloseListener: (synthesizer, listener) =>
+            synthesizer.addCloseListener(listener),
+        decide: decideTtsReuse,
+      );
 
   // Made public for example app integration
   late final MobileModelManager _unifiedManager = MobileModelManager();
@@ -318,114 +312,80 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     String? tokenizerPath,
     PreferredBackend? preferredBackend,
     String? language,
-  }) async {
-    // Modern API: Use active STT model if paths not provided
-    if (modelPath == null || tokenizerPath == null) {
+  }) => _sttCache.obtain(
+    () async {
       final manager = _unifiedManager;
-      final activeModel = manager.activeSttModel;
+      var files = const <String>{};
+      String? label;
+      // Locals, not the parameters: this runs again after every wait, and
+      // must resolve the active model again each time.
+      var resolvedModelPath = modelPath;
+      var resolvedTokenizerPath = tokenizerPath;
+      // Modern API: Use active STT model if paths not provided
+      if (resolvedModelPath == null || resolvedTokenizerPath == null) {
+        final activeModel = manager.activeSttModel;
 
-      // No active STT model - user must set one first
-      if (activeModel == null) {
-        throw StateError(
-          'No active STT model set. Use `FlutterEdgeAi.installStt()` or `modelManager.ensureModelReadyFromSpec()` first',
-        );
-      }
-
-      // Get the actual model file paths through unified system
-      final modelFilePaths = await manager.getModelFilePaths(activeModel);
-      if (modelFilePaths == null || modelFilePaths.isEmpty) {
-        throw StateError(
-          'STT model file paths not found. Use the `modelManager` to load the model first',
-        );
-      }
-
-      // Extract model and tokenizer paths from spec
-      final activeModelPath = modelFilePaths[PreferencesKeys.sttModelFile];
-      final activeTokenizerPath =
-          modelFilePaths[PreferencesKeys.sttTokenizerFile];
-
-      if (activeModelPath == null || activeTokenizerPath == null) {
-        throw StateError(
-          'Could not find model or tokenizer path in active STT model',
-        );
-      }
-
-      // Check if singleton exists and matches the active model
-      if (_initSttCompleter != null &&
-          _initializedSttModel != null &&
-          _lastActiveSttSpec != null) {
-        final currentSpec = _lastActiveSttSpec!;
-        final requestedSpec = activeModel as SttModelSpec;
-
-        if (currentSpec.name != requestedSpec.name) {
-          // Active model changed - close old model and create new one
-          edgeAiLog(
-            '⚠️  Active STT model changed: ${currentSpec.name} → ${requestedSpec.name}',
+        // No active STT model - user must set one first
+        if (activeModel == null) {
+          throw StateError(
+            'No active STT model set. Use `FlutterEdgeAi.installStt()` or `modelManager.ensureModelReadyFromSpec()` first',
           );
-          edgeAiLog('🔄 Closing old STT model and creating new one...');
-          await _initializedSttModel?.close();
-          // Reset explicitly (mirror the desktop shell) instead of relying on
-          // the async close-listener, so the in-progress guard below cannot
-          // return the completer that is being torn down.
-          _initSttCompleter = null;
-          _initializedSttModel = null;
-          _lastActiveSttSpec = null;
-        } else {
-          // Same model - return existing singleton, RETARGETED to the requested
-          // language.
-          //
-          // Load-bearing, and the reason `SpeechRecognizer.language` is
-          // settable: this branch is the common case (a recognizer built at
-          // startup, a language picked later), and without the assignment the
-          // caller gets back the recognizer built for the FIRST language and
-          // transcribes into it with no error — a documented parameter that
-          // works exactly once per process. Whisper's decoder prompt is rebuilt
-          // per transcription, so this is a field write, not a reload.
-          edgeAiLog(
-            'ℹ️  Reusing existing STT model instance for ${requestedSpec.name}',
-          );
-          final cached = await _initSttCompleter!.future;
-          cached.language = language;
-          return cached;
         }
+
+        // Get the actual model file paths through unified system
+        final modelFilePaths = await manager.getModelFilePaths(activeModel);
+        if (modelFilePaths == null || modelFilePaths.isEmpty) {
+          throw StateError(
+            'STT model file paths not found. Use the `modelManager` to load the model first',
+          );
+        }
+
+        // Extract model and tokenizer paths from spec
+        final activeModelPath = modelFilePaths[PreferencesKeys.sttModelFile];
+        final activeTokenizerPath =
+            modelFilePaths[PreferencesKeys.sttTokenizerFile];
+
+        if (activeModelPath == null || activeTokenizerPath == null) {
+          throw StateError(
+            'Could not find model or tokenizer path in active STT model',
+          );
+        }
+
+        resolvedModelPath = activeModelPath;
+        resolvedTokenizerPath = activeTokenizerPath;
+        files = {for (final file in activeModel.files) file.filename};
+        label = activeModel.name;
       }
-
-      modelPath = activeModelPath;
-      tokenizerPath = activeTokenizerPath;
-
-      edgeAiLog(
-        'Using active STT model: $modelPath, tokenizer: $tokenizerPath',
+      final sttModelPath = resolvedModelPath;
+      final sttTokenizerPath = resolvedTokenizerPath;
+      return (
+        key: (modelPath: sttModelPath, tokenizerPath: sttTokenizerPath),
+        files: files,
+        label: label ?? 'STT ${path.basename(sttModelPath)}',
+        build: () => _buildStt(
+          modelPath: sttModelPath,
+          tokenizerPath: sttTokenizerPath,
+          preferredBackend: preferredBackend,
+          language: language,
+        ),
       );
-    } else {
-      // Legacy API with explicit paths - check if singleton exists
-      if (_initSttCompleter case Completer<SpeechRecognizer> completer) {
-        edgeAiLog('ℹ️  Reusing existing STT model instance (Legacy API)');
-        // `createSttModel`'s dartdoc promises it retargets an existing
-        // recognizer. On this arm it did not, so a second explicit-paths call
-        // with a new language returned the first one's, silently.
-        final cached = await completer.future;
-        cached.language = language;
-        return cached;
-      }
-    }
+    },
+    // Load-bearing, and the reason `SpeechRecognizer.language` is settable:
+    // reuse is the common case (a recognizer built at startup, a language
+    // picked later), and without the assignment the caller gets back the
+    // recognizer built for the FIRST language and transcribes into it with no
+    // error. Whisper's decoder prompt is rebuilt per transcription, so this
+    // is a field write, not a reload. A caller joining a build in flight is
+    // retargeted too.
+    onReuse: (recognizer) => recognizer.language = language,
+  );
 
-    // In-progress guard (Modern-API path): a concurrent createSttModel() during
-    // the initial load — completer set but the model not yet published to
-    // _initializedSttModel — must return the existing completer, not fall
-    // through and spawn a SECOND SttWorker/native model. Mirrors the desktop
-    // shell (which the Modern-API branch above otherwise lacked).
-    if (_initSttCompleter case Completer<SpeechRecognizer> completer) {
-      // A caller arriving DURING the first load gets that load's recognizer —
-      // so it must still be retargeted, or a language picked while the model is
-      // still loading is dropped with no error. The window is wide: an isolate
-      // spawn plus a ~51k-entry tokenizer parse plus a model compile.
-      final cached = await completer.future;
-      cached.language = language;
-      return cached;
-    }
-
-    final completer = _initSttCompleter = Completer<SpeechRecognizer>();
-
+  Future<SpeechRecognizer> _buildStt({
+    required String modelPath,
+    required String tokenizerPath,
+    required PreferredBackend? preferredBackend,
+    required String? language,
+  }) async {
     // Verify the active model is still installed (for Modern API path)
     final manager = _unifiedManager;
     final activeModel = manager.activeSttModel;
@@ -433,99 +393,67 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     if (activeModel != null) {
       final isModelInstalled = await manager.isModelInstalled(activeModel);
       if (!isModelInstalled) {
-        completer.completeError(
-          Exception(
-            'Active STT model is no longer installed. Use the `modelManager` to load the model first',
-          ),
+        throw Exception(
+          'Active STT model is no longer installed. Use the `modelManager` to load the model first',
         );
-        return completer.future;
       }
     }
 
-    try {
-      // Dispatches construction through the SttRegistry (probe-chain, mirrors
-      // EmbeddingRegistry). The backend reads spec.sttModelType to select its
-      // runtime profile, and ONLY config.modelPath/config.tokenizerPath for
-      // path resolution — it ignores the spec arg for path resolution (see
-      // LiteRtSttBackend.createModel).
-      final activeSpec =
-          activeModel as SttModelSpec?; // null on legacy explicit-paths
-      final SttBackendProvider? backend = activeSpec != null
-          ? SttRegistry.instance.findFor(activeSpec)
-          : (SttRegistry.instance.registered.isNotEmpty
-                ? SttRegistry.instance.registered.first
-                : null);
-      if (backend == null) {
-        throw StateError(
-          'No STT backend registered. Add flutter_edge_ai_speech to '
-          'pubspec.yaml and pass it in sttBackends: of '
-          'FlutterEdgeAi.initialize(...). Registered backends: '
-          '${SttRegistry.instance.registered.map((b) => b.name).join(", ")}.',
-        );
-      }
-      // modelPath/tokenizerPath are non-null here (resolved in the preamble or
-      // passed by the legacy API). maxTokens is unused by STT.
-      final sttConfig = RuntimeConfig(
-        maxTokens: 0,
-        modelPath: modelPath,
-        tokenizerPath: tokenizerPath,
-        preferredBackend: preferredBackend,
-        // Whisper's output language. Dropping it here is invisible: the
-        // recognizer still works and still returns text, just always in
-        // English, because the profile falls back to its `<|en|>` default.
-        language: language,
+    edgeAiLog('Using active STT model: $modelPath, tokenizer: $tokenizerPath');
+
+    // Dispatches construction through the SttRegistry (probe-chain, mirrors
+    // EmbeddingRegistry). The backend reads spec.sttModelType to select its
+    // runtime profile, and ONLY config.modelPath/config.tokenizerPath for
+    // path resolution — it ignores the spec arg for path resolution (see
+    // LiteRtSttBackend.createModel).
+    final activeSpec =
+        activeModel as SttModelSpec?; // null on legacy explicit-paths
+    final SttBackendProvider? backend = activeSpec != null
+        ? SttRegistry.instance.findFor(activeSpec)
+        : (SttRegistry.instance.registered.isNotEmpty
+              ? SttRegistry.instance.registered.first
+              : null);
+    if (backend == null) {
+      throw StateError(
+        'No STT backend registered. Add flutter_edge_ai_speech to '
+        'pubspec.yaml and pass it in sttBackends: of '
+        'FlutterEdgeAi.initialize(...). Registered backends: '
+        '${SttRegistry.instance.registered.map((b) => b.name).join(", ")}.',
       );
-      // The backend's createModel(spec, config) signature requires a non-null
-      // spec, but it resolves paths exclusively from config. On the legacy
-      // explicit-paths path there is no active spec, so synthesize one from the
-      // resolved file paths (FileSource, mobile/desktop only — web swaps in its
-      // own plugin) purely to satisfy the signature. sttModelType defaults to
-      // moonshine — the only shipped profile — for this legacy-path fallback.
-      final specForBackend =
-          activeSpec ??
-          SttModelSpec(
-            name: 'legacy:${path.basename(modelPath)}',
-            modelSource: ModelSource.file(modelPath),
-            tokenizerSource: ModelSource.file(tokenizerPath),
-            sttModelType: SttModelType.moonshine,
-          );
-      final model = await backend.createModel(specForBackend, sttConfig);
-
-      // Core owns the singleton lifecycle: track it + reset on close. The
-      // package-built model fires this via CloseNotifier (addCloseListener).
-      _initializedSttModel = model;
-      model.addCloseListener(() {
-        _initializedSttModel = null;
-        _initSttCompleter = null;
-        _lastActiveSttSpec = null;
-      });
-
-      // Save the spec that was used to create this model (Modern API path only)
-      if (activeSpec != null) {
-        _lastActiveSttSpec = activeSpec;
-      }
-
-      completer.complete(model);
-      return model;
-    } catch (e, st) {
-      // FIX #170: Reset state to allow retry with different model
-      _initSttCompleter = null;
-      _initializedSttModel = null;
-      _lastActiveSttSpec = null;
-      completer.completeError(e, st);
-      // Return the error-completed completer future (not a separate throw) so
-      // exactly one Future is in flight — a bare throw would orphan
-      // completer.future (no listener in the single-caller path) → spurious
-      // unhandled-async. Mirrors createTtsModel. See #394.
-      return completer.future;
     }
+    // maxTokens is unused by STT.
+    final sttConfig = RuntimeConfig(
+      maxTokens: 0,
+      modelPath: modelPath,
+      tokenizerPath: tokenizerPath,
+      preferredBackend: preferredBackend,
+      // Whisper's output language. Dropping it here is invisible: the
+      // recognizer still works and still returns text, just always in
+      // English, because the profile falls back to its `<|en|>` default.
+      language: language,
+    );
+    // The backend's createModel(spec, config) signature requires a non-null
+    // spec, but it resolves paths exclusively from config. On the legacy
+    // explicit-paths path there is no active spec, so synthesize one from the
+    // resolved file paths (FileSource, mobile/desktop only — web swaps in its
+    // own plugin) purely to satisfy the signature. sttModelType defaults to
+    // moonshine — the only shipped profile — for this legacy-path fallback.
+    final specForBackend =
+        activeSpec ??
+        SttModelSpec(
+          name: 'legacy:${path.basename(modelPath)}',
+          modelSource: ModelSource.file(modelPath),
+          tokenizerSource: ModelSource.file(tokenizerPath),
+          sttModelType: SttModelType.moonshine,
+        );
+    return backend.createModel(specForBackend, sttConfig);
   }
 
   @override
   Future<SpeechSynthesizer> createTtsModel({
     PreferredBackend? preferredBackend,
     String? language,
-  }) async {
+  }) => _ttsCache.obtain(() async {
     final manager = _unifiedManager;
     final activeModel = manager.activeTtsModel;
     if (activeModel is! TtsModelSpec) {
@@ -533,125 +461,47 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
         'No active TTS model set. Use FlutterEdgeAi.installTts() first.',
       );
     }
+    return (
+      key: (name: activeModel.name, language: normalizeTtsLanguage(language)),
+      files: {for (final file in activeModel.files) file.filename},
+      label: activeModel.name,
+      build: () => _buildTts(activeModel, preferredBackend, language),
+    );
+  });
 
-    // Check if singleton exists and matches the active model
-    if (_initTtsCompleter != null &&
-        _initializedTtsModel != null &&
-        _lastActiveTtsSpec != null) {
-      if (_lastActiveTtsSpec!.name != activeModel.name) {
-        // Active model changed - close old model and create new one
-        edgeAiLog(
-          '⚠️  Active TTS model changed: ${_lastActiveTtsSpec!.name} → ${activeModel.name}',
-        );
-        edgeAiLog('🔄 Closing old TTS model and creating new one...');
-        // Reset the singleton fields BEFORE awaiting close() so a concurrent
-        // createTtsModel() that interleaves during the await cannot pass the
-        // "all three non-null" guard and spawn a duplicate worker (which would
-        // then be orphaned → native leak). Capture the old model first, then
-        // close it after the reset.
-        final old = _initializedTtsModel;
-        _initTtsCompleter = null;
-        _initializedTtsModel = null;
-        _lastActiveTtsSpec = null;
-        _lastActiveTtsLanguage = null;
-        await old?.close();
-      } else if (_normalizeTtsLanguage(language) != _lastActiveTtsLanguage) {
-        // Same model, but a DIFFERENT language was requested — reusing the
-        // singleton here would silently emit WRONG-LANGUAGE audio with no
-        // error. Fail loud instead of reusing: the caller must close() the
-        // existing synthesizer first (tts_screen.dart already does this on
-        // every model/language switch — see LiteRtSpeechSynthesizer/
-        // getActiveTts's docs). Both
-        // sides are normalized ([_normalizeTtsLanguage]) so this only fires
-        // for a GENUINELY different language, not e.g. null vs. 'english'
-        // or 'English' vs. 'english'.
-        throw StateError(
-          'Active TTS synthesizer was created for language '
-          "'$_lastActiveTtsLanguage'; call close() before requesting "
-          "'${_normalizeTtsLanguage(language)}'.",
-        );
-      } else {
-        // Same model, same language - return existing singleton
-        edgeAiLog(
-          'ℹ️  Reusing existing TTS model instance for ${activeModel.name}',
-        );
-        return _initTtsCompleter!.future;
-      }
-    }
-
-    // In-progress guard: a concurrent createTtsModel() during the initial
-    // load — completer set but the model not yet published to
-    // _initializedTtsModel — must return the existing completer, not fall
-    // through and spawn a SECOND TtsWorker/native model.
-    if (_initTtsCompleter case Completer<SpeechSynthesizer> completer) {
-      return completer.future;
-    }
-
-    final completer = _initTtsCompleter = Completer<SpeechSynthesizer>();
-
-    try {
-      final filePaths = await manager.getModelFilePaths(activeModel);
-      if (filePaths == null || filePaths.isEmpty) {
-        throw StateError(
-          'Active TTS model files not found on disk. Reinstall via installTts().',
-        );
-      }
-      final config = RuntimeConfig(
-        maxTokens: 0,
-        modelPath: filePaths
-            .values
-            .first, // representative; TTS backend uses artifactPaths
-        artifactPaths: filePaths,
-        preferredBackend: preferredBackend,
-        language: language,
+  Future<SpeechSynthesizer> _buildTts(
+    TtsModelSpec activeModel,
+    PreferredBackend? preferredBackend,
+    String? language,
+  ) async {
+    final filePaths = await _unifiedManager.getModelFilePaths(activeModel);
+    if (filePaths == null || filePaths.isEmpty) {
+      throw StateError(
+        'Active TTS model files not found on disk. Reinstall via installTts().',
       );
-      final backend = TtsRegistry.instance.findFor(activeModel);
-      if (backend == null) {
-        throw StateError(
-          TtsRegistry.instance.hasAny
-              ? 'No registered TTS backend can handle this model '
-                    '(${activeModel.ttsModelType}). Registered: '
-                    '${TtsRegistry.instance.registered.map((b) => b.name).join(", ")}.'
-              : 'No TTS backend registered. Pass ttsBackends: to FlutterEdgeAi.initialize().',
-        );
-      }
-      edgeAiLog(
-        'Using active TTS model: ${activeModel.name} (${filePaths.length} files)',
-      );
-      final synth = await backend.createModel(activeModel, config);
-
-      // Core owns the singleton lifecycle: track it + reset on close. The
-      // package-built model fires this via CloseNotifier (addCloseListener).
-      _initializedTtsModel = synth;
-      _lastActiveTtsSpec = activeModel;
-      _lastActiveTtsLanguage = _normalizeTtsLanguage(language);
-      synth.addCloseListener(() {
-        // Only reset if this close-listener still belongs to the current
-        // singleton — a newer model may already have replaced it (the
-        // model-changed branch above resets the fields synchronously).
-        if (identical(_initializedTtsModel, synth)) {
-          _initializedTtsModel = null;
-          _initTtsCompleter = null;
-          _lastActiveTtsSpec = null;
-          _lastActiveTtsLanguage = null;
-        }
-      });
-
-      completer.complete(synth);
-      return synth;
-    } catch (e, st) {
-      _initTtsCompleter = null;
-      _initializedTtsModel = null;
-      _lastActiveTtsSpec = null;
-      _lastActiveTtsLanguage = null;
-      // Complete the completer and return its future (rather than
-      // rethrowing separately) so there is exactly one Future in flight for
-      // this call — a second, unheeded `completer.future` (as a bare
-      // rethrow would leave behind whenever no concurrent caller grabbed a
-      // reference to it first) would otherwise surface as an unhandled
-      // async error.
-      completer.completeError(e, st);
-      return completer.future;
     }
+    final config = RuntimeConfig(
+      maxTokens: 0,
+      modelPath: filePaths
+          .values
+          .first, // representative; TTS backend uses artifactPaths
+      artifactPaths: filePaths,
+      preferredBackend: preferredBackend,
+      language: language,
+    );
+    final backend = TtsRegistry.instance.findFor(activeModel);
+    if (backend == null) {
+      throw StateError(
+        TtsRegistry.instance.hasAny
+            ? 'No registered TTS backend can handle this model '
+                  '(${activeModel.ttsModelType}). Registered: '
+                  '${TtsRegistry.instance.registered.map((b) => b.name).join(", ")}.'
+            : 'No TTS backend registered. Pass ttsBackends: to FlutterEdgeAi.initialize().',
+      );
+    }
+    edgeAiLog(
+      'Using active TTS model: ${activeModel.name} (${filePaths.length} files)',
+    );
+    return backend.createModel(activeModel, config);
   }
 }

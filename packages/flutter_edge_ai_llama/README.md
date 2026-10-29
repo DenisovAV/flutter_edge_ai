@@ -11,7 +11,7 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
 Version 0.0.3 adds native text embeddings with llamadart 0.15.1.
-The consumer setup below targets version 0.0.3.
+The consumer setup below targets version 0.0.4.
 
 The minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**,
 published llamadart **0.15.1** with typed overflow reporting and Apple
@@ -97,15 +97,15 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-Version 0.0.3 requires core 2.5.0+ and llamadart 0.15.1.
+Version 0.0.4 requires core 2.5.0+ and llamadart 0.15.1.
 Add these hosted dependencies to your app:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.5.1
-  flutter_edge_ai_llama: ^0.0.3
+  flutter_edge_ai: ^2.5.4
+  flutter_edge_ai_llama: ^0.0.4
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.15.0
 
@@ -121,7 +121,7 @@ only when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-The SDK constraint is bounded to published patch 0.15.1. Version 0.0.3
+The SDK constraint is bounded to published patch 0.15.1. Version 0.0.4
 retains the tested SDK 0.15.1 / companion 0.15.0 pair. Companion 0.15.0 and
 0.15.1 both accept SDK `>=0.15.0 <0.16.0`; companion patches are versioned
 independently, so an SDK patch does not require a companion upgrade.
@@ -141,7 +141,7 @@ iOS **16.4+** / macOS **14+**, matching the example's Xcode configuration.
 The direct companion dependency links the matching llama.cpp XCFramework.
 On iOS enable `com.apple.developer.kernel.extended-virtual-addressing` and
 `com.apple.developer.kernel.increased-memory-limit`; see the example entitlements.
-From `flutter_edge_ai_litertlm` 1.18.0 LiteRT-LM keeps SwiftPM on as well, and
+From `flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM keeps SwiftPM on as well, and
 both native libraries load in one app; running both engines' models in one app
 is not qualified.
 Companion 0.15.0 includes the framework metadata fix from
@@ -256,7 +256,7 @@ python3 <package-root>/tool/fetch_web_assets.py --output <app-root>/web/webgpu_b
 ```
 
 Copy `example/web/cache_api.js`, `cache_api.LICENSE` and `_headers` into your
-app's `web/` directory. Hosts that ignore `_headers` need equivalent server configuration.
+app's `web/` directory, and load `cache_api.js` inside the `<head>` of `web/index.html`. Hosts that ignore `_headers` need equivalent server configuration.
 Use the module bootstrap in `example/web/index.html`: it loads the local bridge,
 sets its worker/core/Wasm URLs before Flutter starts, and reports load errors.
 The validator permits extra headers while checking the required wildcard isolation

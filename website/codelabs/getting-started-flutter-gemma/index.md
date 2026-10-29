@@ -241,7 +241,7 @@ macOS build that succeeds proves nothing there: the app compiles, links, signs
 and launches without the block, and the failure — `LiteRT-LM did not load on
 macOS`, naming the missing library — arrives at the first model load, which no
 build log warns you about. An app of your own can keep Swift Package Manager on,
-Flutter's default since 3.44: from `flutter_edge_ai_litertlm` 1.18.0 its Swift
+Flutter's default since 3.44: from `flutter_edge_ai_litertlm` 1.19.0 its Swift
 package brings the companion libraries and Xcode signs them with your team, so
 it needs only the 14.0 deployment target and `network.client` — no Podfile
 block, no `disable-library-validation`.

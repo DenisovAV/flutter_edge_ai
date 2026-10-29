@@ -130,8 +130,8 @@ The app's build settings are already set for the packages: Android's
 `android/app/build.gradle.kts` sets `minSdk = 26`, the lowest Android version
 the package builds for (the device list above is what decides whether a phone
 runs the model). The step apps' `web/index.html` loads `cache_api.js` and
-`opfs_helper.js` before `flutter_bootstrap.js`; in an app of your own, copy them
-from the resolved `flutter_edge_ai` package as the
+`opfs_helper.js` inside `<head>`, before `flutter_bootstrap.js`; in an app of
+your own, copy them from the resolved `flutter_edge_ai` package as the
 [getting-started codelab](/codelabs/getting-started-flutter-gemma) shows.
 
 ### Run it

@@ -171,7 +171,7 @@ carries that decision in a `litetune.decision` section, and
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(
-  preferredBackend: PreferredBackend.cpu,
+  preferredBackend: PreferredBackend.cpu, // or PreferredBackend.gpu
 );
 final decider = await model.createDecider(
   question: 'Which emotion does the text express?',
@@ -188,13 +188,34 @@ option's shortest unique prefix as the model's reply through LiteRT-LM's
 session API (`run_text_scoring`, with a checkpoint and a rewind between
 options), on a background isolate and in turn with any chat on the same
 engine; a cancel stops it between two options, and so does closing the model.
-Native platforms, CPU only: the web, a model loaded on the GPU or the NPU, and
-a file without the section are refused with `DeciderUnsupportedException`; an
-input whose prompt does not fit `maxTokens` with `ArgumentError`. Measured on
-an Apple M4 Pro CPU with LiteTune's golden packs (google/gemma-3-270m-it,
-int8): 120–190 ms per decision, and the same top option as LiteTune's PyTorch
-reference on every row but near-ties. Android, iOS, Linux and Windows use the
-same C calls and are not measured yet. The answers, Noul and Score included:
+Native platforms, on the CPU or the GPU: the web, a model loaded on the NPU
+(its executor rolls back one token only, and a decision rewinds between
+options), and a file without the section are refused with
+`DeciderUnsupportedException`; an input whose prompt does not fit `maxTokens`
+with `ArgumentError`. Measured on an Apple M4 Pro CPU with LiteTune's golden
+packs (google/gemma-3-270m-it, int8): 120–190 ms per decision, and the same
+top option as LiteTune's PyTorch reference on every row but near-ties.
+
+The GPU does not compute the CPU's scores exactly, and the temperature and
+threshold in the file were fitted on CPU probabilities. In a debug or profile
+build the first `createDecider` runs a scoring self-check (LiteRT-LM #3561: how
+this LiteRT-LM scores after a prefill; scores must repeat bit for bit and
+survive a rewind) on the GPU as on the CPU, and it passed on the GPUs measured.
+A release build skips it and scores in the mode it picked everywhere measured
+(`once`), so run the decider once in debug on the hardware you ship to, an
+unmeasured GPU above all. On a long-dialogue Noul decision (Gemma 3 270M on 300
+rows, Qwen3 1.7B and Gemma 4 E2B on 60 each), the GPU's top option was the same
+device's CPU one on 291/300, 59/60 and 59/60 rows on an iPhone 17 Pro (Metal),
+292/300, 59/60 and 59/60 on a Galaxy S25 Ultra (Adreno 830) and 293/300, 59/60
+and 60/60 on a Mac mini M5 Pro (Metal); balanced accuracy moved by at most
+0.017 either way. All of it is Noul, which never abstains: a threshold fitted
+on the CPU is not checked against GPU probabilities. Not measured: Mali GPUs,
+Linux (Vulkan) and Windows (DirectX 12) GPUs, Linux and Windows CPUs, and the
+NPU. Every GPU is allowed, and a model loaded without `preferredBackend` tries
+the GPU first, so on those devices a decider scores on an unmeasured GPU. The
+self-check catches scores that do not repeat, not scores that repeat and are
+wrong. For the calibration as fitted, load with `preferredBackend:
+PreferredBackend.cpu`. The answers, Noul and Score included:
 [Decisions](https://flutteredge.ai/docs/decisions#deciders-from-a-language-model).
 
 ## Install from a Hugging Face repo (`litertlm_manifest.json`)
@@ -342,17 +363,22 @@ final vector = await embedder.embed(
   averages them instead of truncating; the averaged vector is never returned).
   Either way an over-long input costs a full embedding before it is refused.
   Split before embedding.
-- **CPU natively, WebGPU on the web, GPU on Windows and Linux x64 when asked
+- **CPU natively, WebGPU on the web, GPU on Linux x64 when asked
   (1.19.0).** `activeBackend` is `PreferredBackend.cpu` natively and
-  `PreferredBackend.gpu` on the web. On Windows x64 and Linux x64,
+  `PreferredBackend.gpu` on the web. On Linux x64,
   `preferredBackend: PreferredBackend.gpu` runs the text tower of a generic
-  bundle on the GPU (LiteRT-LM's GPU executor over WebGPU: DX12, Vulkan).
-  Measured on the 270m, 2026-10-22: Windows on Lunar Lake (Arc iGPU) 22 ms per text vs 83-90 ms on
-  its CPU, Linux on a Tesla T4 32-64 ms vs 232-308 ms; min cos 0.997 to the
+  bundle on the GPU (LiteRT-LM's GPU executor over WebGPU on Vulkan). Linux
+  x64 only; Windows x64 is refused on native-v0.18.0-h (LiteRT-LM accelerator
+  crash), tracked in #744: there `gpu` fails the load with an
+  `EmbeddingLoadException` that says so, and the app loads it with
+  `preferredBackend: cpu` (or unset) instead.
+  Measured on the 270m, 2026-10-22: Linux on a Tesla T4 32-64 ms per text vs
+  232-308 ms on its CPU (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs
+  83-90 ms); min cos 0.997 to the
   CPU vectors (0.998 for a ~900-token text: the GPU runs FP16 activations),
   and the CPU's distance to Sentence Transformers fp32. A load takes 1.7-3.6 s
-  against 0.3-0.6 s on CPU; the very first also builds the GPU caches (5.9 s
-  on Lunar Lake, 8.2 s on the T4). Measured in one process with a GPU LLM
+  against 0.3-0.6 s on CPU; the very first also builds the GPU caches (8.2 s
+  on the T4; 5.9 s on Lunar Lake on native-v0.18.0-g). Measured in one process with a GPU LLM
   (Gemma 4 E2B), the embedder loaded before and after it.
   - Only the text tower runs on the GPU. On the 440m and 740m the vision and
     audio towers run on CPU (each named `cpu` at create, declared or not), so
@@ -372,9 +398,9 @@ final vector = await embedder.embed(
   - The GPU writes its own caches beside the CPU's: ML Drift's
     `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
     (9 MB) for the text tower. `requireWeightCache` covers them (1.19.0):
-    a path the GPU cannot create them at (Windows' 260-character MAX_PATH,
-    which the accelerator cannot exceed; a file name past 255 characters,
-    UTF-8 bytes off Windows; on Windows a cache directory with characters
+    a path the GPU cannot create them at (a file name past 255 UTF-8 bytes;
+    on Windows, once its GPU path is enabled again, also the 260-character
+    MAX_PATH, which the accelerator cannot exceed, and a cache directory with characters
     outside ASCII, unless the process's ANSI code page is UTF-8: the
     accelerator opens its caches through the UCRT `_open`, which reads the
     path in the ANSI code page, then `CreateFileW`) is refused before the
@@ -629,9 +655,9 @@ Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), MediaTek NPU
 ([below](#mediatek-npu-on-android-opt-in)), Qualcomm NPU
 ([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
 ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and `gpu` for the
-EmbeddingGemma 2 270m asked for with `gpu` on Windows x64 and Linux x64
-(1.19.0); any other
-`preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
+EmbeddingGemma 2 asked for with `gpu` on Linux x64 (1.19.0; Linux x64 only;
+Windows x64 is refused on native-v0.18.0-h (LiteRT-LM accelerator crash),
+tracked in #744); any other `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
 the output buffer lived after the first embedding, and
 `window.getLiteRtEmbeddingFullyAccelerated()` says whether the graph landed
@@ -898,7 +924,7 @@ The native library (`native-v0.18.0-h`, LiteRT-LM v0.18.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and macOS 14.0. On macOS the companion libraries come from this
-package's Swift package with Swift Package Manager on (since 1.18.0), and from
+package's Swift package with Swift Package Manager on (since 1.19.0), and from
 a `post_install` block in `macos/Podfile` with it off ([Desktop → macOS](https://flutteredge.ai/docs/desktop#macos)).
 Without them the first model load fails; the error contains
 `flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names the fix

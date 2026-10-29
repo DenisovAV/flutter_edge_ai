@@ -69,7 +69,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 
 ³ Through llamadart; CI covers the CPU lifecycle — see its [qualification matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md).
 
-⁴ iOS 16.4+ and macOS 14+, with Flutter's Swift Package Manager on and the `llamadart_llama_cpp_flutter` companion. From `flutter_edge_ai_litertlm` 1.18.0 LiteRT-LM needs no Podfile on macOS either, and both libraries load in one Swift Package Manager app; running both engines' models in one app is not qualified. See the [`flutter_edge_ai_llama` README](https://pub.dev/packages/flutter_edge_ai_llama).
+⁴ iOS 16.4+ and macOS 14+, with Flutter's Swift Package Manager on and the `llamadart_llama_cpp_flutter` companion. From `flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM needs no Podfile on macOS either, and both libraries load in one Swift Package Manager app; running both engines' models in one app is not qualified. See the [`flutter_edge_ai_llama` README](https://pub.dev/packages/flutter_edge_ai_llama).
 
 LiteRT-LM ships `arm64` on Android, iOS and macOS, `x86_64` on Windows and `x86_64` / `arm64`
 on Linux; on Android, MediaPipe `.task` also runs on `x86_64` / `armeabi-v7a`, and on Linux
@@ -80,7 +80,7 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.3
+  flutter_edge_ai: ^2.5.4
   flutter_edge_ai_litertlm: ^1.19.0   # or any other engine from the table
 ```
 
@@ -130,14 +130,14 @@ plugin manifest automatically.
 ### Web
 
 Copy `cache_api.js` and `opfs_helper.js` from this package's `web/` folder into
-your app's `web/` and load them in `index.html`, then add the script for each
-engine you use. For MediaPipe:
+your app's `web/` and load them inside the `<head>` of `index.html`, then add
+the script for each engine you use. For MediaPipe:
 
 ```html
 <script src="cache_api.js"></script>
 <script src="opfs_helper.js"></script>
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>
@@ -154,7 +154,7 @@ target → General → Minimum Deployments, and `platform :osx, '14.0'` in
 `macos/Podfile` if the app has one).
 
 With Flutter's default Swift Package Manager on, that is all: from
-`flutter_edge_ai_litertlm` 1.18.0 its Swift package brings LiteRT-LM's companion
+`flutter_edge_ai_litertlm` 1.19.0 its Swift package brings LiteRT-LM's companion
 libraries into the app ([why](https://flutteredge.ai/docs/desktop#macos)).
 
 An app with Swift Package Manager off (`enable-swift-package-manager: false`
@@ -227,6 +227,22 @@ post_install do |installer|
   end
 end
 ```
+
+**Flutter 3.44 with Xcode 27.** With Swift Package Manager off, the first
+build stops with `The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set
+to 10.15, but the range of supported deployment target versions is 12.0 to
+27.0.x` on the Pods targets, `FlutterMacOS` among them. This is Flutter 3.44.0
+on Xcode 27, not this package: an app with only `shared_preferences` and Swift
+Package Manager off fails the same way. Add one line inside the
+`installer.pods_project.targets.each` loop of the block above, after
+`flutter_additional_macos_build_settings(target)`:
+
+```ruby
+target.build_configurations.each { |c| c.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '14.0' }
+```
+
+Flutter 3.47.8 builds the same Podfile without it (measured on Xcode 27.1,
+2026-10-28).
 
 Add to `macos/Runner/DebugProfile.entitlements` and `Release.entitlements`:
 
@@ -371,8 +387,8 @@ language-model kind, with answers of the same shape: a small `.litertlm` tuned
 for the decision by LiteTune carries the question, options, temperature and
 threshold in the file; pass the question and the options, with
 `InferenceDeciderCalibration.fromModel()` for the rest. Each option's id is
-scored as the model's reply, on the CPU, natively (`flutter_edge_ai_litertlm`
-1.16.0). It answers Choice, Noul (`answer.noul`, P(yes)) and Score
+scored as the model's reply, natively, on the CPU (`flutter_edge_ai_litertlm`
+1.16.0) or the GPU (1.20.0; not the NPU). It answers Choice, Noul (`answer.noul`, P(yes)) and Score
 (`answer.expectedLevel`) questions.
 
 ## Three things that fail quietly

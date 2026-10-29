@@ -186,6 +186,49 @@ every order.
 Only the native `.litertlm` engine reads it. The measurements are in the
 [`flutter_edge_ai_litertlm` README](https://pub.dev/packages/flutter_edge_ai_litertlm#multimodal-order).
 
+## Vision and audio with the text model on the NPU
+
+`preferredBackend: PreferredBackend.npu` moves only the text decoder (see
+[NPU](/docs/litertlm) for the opt-in and the context size). The encoders keep
+their own settings. The public Qualcomm Gemma 4 bundles compile only the text
+model for the NPU, so left unset both encoders run on the CPU
+([where a model runs](/docs/litertlm#where-a-model-runs)). On Android you can
+do better for images. Measured on a Galaxy S25 Ultra (Snapdragon 8 Elite) with
+the public `gemma-4-E2B-it_qualcomm_sm8750.litertlm`, text on the NPU, encoder
+time for one image or one audio clip after the first:
+
+| Vision / audio encoder | Image | Audio clip |
+|---|---|---|
+| unset (CPU / CPU, the default) | 2.8 s | 0.13 s |
+| **GPU** / CPU | **1.7 s** | 0.18 s |
+| GPU / GPU | fails when the chat is created | — |
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 1024,                               // measured with this bundle
+  preferredBackend: PreferredBackend.npu,        // text decoder
+  preferredVisionBackend: PreferredBackend.gpu,  // images ~1.7x faster than CPU
+  supportImage: true,
+  supportAudio: true,                            // audio encoder stays on CPU
+);
+```
+
+- **Keep the audio encoder on CPU.** The SM8750 bundle declares no
+  `backend_constraint`, so the GPU is not refused at load: the model loads,
+  then creating a chat fails with `Failed to create conversation`, because the
+  GPU delegate does not support the 5-D `ADD` ops of its audio encoder. The
+  `…_qualcomm_qcs8275` bundle declares cpu for its audio encoder, so there the
+  GPU is refused before the model loads.
+- **`PreferredBackend.npu` for an encoder these bundles do not compile for the
+  NPU is refused** before the model loads (`LiteRtLmBundleException`,
+  `wrongBackend`).
+- **A bundle whose encoders are compiled for the NPU** runs them on the NPU
+  and refuses any other backend for them.
+- The GPU vision encoder with the text on the NPU is measured on Android with
+  the SM8750 bundle only; Linux arm64 and Windows NPU machines are not.
+  `model.activeVisionBackend` and `model.activeAudioBackend` say where the
+  encoders run.
+
 ## Web limitations
 
 The web `.litertlm` path (`@litert-lm/core`, early preview) does **not** support

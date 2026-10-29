@@ -1,11 +1,13 @@
-## 1.19.0
-- EmbeddingGemma 2 text on the GPU on Windows and Linux x64; image and audio towers stay on CPU.
+## Unreleased
 - Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every LiteRT build pinned to its commit.
-- Require `flutter_edge_ai` ^2.5.4.
+- The option-scoring self-check runs in debug and profile builds only.
+- `InferenceModel.createDecider` scores on the GPU too; the NPU stays refused.
 
-## 1.18.1
+## 1.19.0
+- EmbeddingGemma 2 text on the GPU on Linux x64; image and audio towers stay on CPU.
 - Windows: Gemma 4 12B on an Intel GPU answers prompts under 512 tokens (`native-v0.18.0-h`, LiteRT-LM#4083).
 - macOS: apps with Swift Package Manager on need no Podfile block; requires macOS 14 (#689).
+- Require `flutter_edge_ai` ^2.5.4.
 
 ## 1.18.0
 - `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).

@@ -50,7 +50,8 @@ only the engines, stores and features your app uses — see
   call, so one file can be open on CPU and GPU, or two files at once. See
   [Desktop](/docs/desktop#several-models-at-once).
 - **Deciders from a language model** (experimental, `flutter_edge_ai` 2.5.0 with
-  `flutter_edge_ai_litertlm` 1.16.0, native, `PreferredBackend.cpu` only):
+  `flutter_edge_ai_litertlm` 1.16.0, native, `PreferredBackend.cpu`; the GPU
+  too from 1.20.0, not the NPU):
   `InferenceModel.createDecider` scores the options on a `.litertlm` trained on
   the decision with LiteTune. See
   [Decisions](/docs/decisions#deciders-from-a-language-model).
@@ -523,11 +524,19 @@ await FlutterEdgeAi.uninstallStt();
 await FlutterEdgeAi.uninstallTts();
 ```
 
+Each first closes the model `getActiveEmbedder()`, `getActiveStt()` or
+`getActiveTts()` built from those files, including the one your app holds: a
+request already running finishes, and later calls on it throw. The next
+`getActive*()` call throws until a model is installed again, and then builds a
+new one.
+
 To delete an inference model, or any model by filename, use `uninstallModel()`.
 When the file belongs to the active inference model (the model or its LoRA), it
 also clears the active inference identity: `hasActiveModel()` is false and
 `getActiveModel()` throws `NoActiveModelError` instead of handing out the model
-of a deleted file.
+of a deleted file. A directory model (ORT-GenAI, installed with
+`fromHuggingFace`) is uninstalled by its name, the `spec.name` its install
+returned: every file of it and its directory go.
 
 It first closes the model `getActiveModel()` built from that file, with its
 sessions and chats: a generation running on it stops early, with or without an

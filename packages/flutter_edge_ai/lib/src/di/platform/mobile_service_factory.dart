@@ -6,8 +6,10 @@ library;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/web_storage_mode.dart';
 import '../../infrastructure/background_downloader_service.dart';
+import '../../infrastructure/http_remote_size_probe.dart';
 import '../../services/download_service.dart';
 import '../../services/file_system_service.dart';
+import '../../services/remote_size_probe.dart';
 
 /// Creates the default DownloadService for mobile platforms
 ///
@@ -24,3 +26,6 @@ DownloadService createDownloadService(
   // All parameters ignored - mobile uses BackgroundDownloaderService standalone
   return BackgroundDownloaderService();
 }
+
+/// Creates the default [RemoteSizeProbe]: HEAD requests over `dart:io`.
+RemoteSizeProbe createRemoteSizeProbe() => HttpRemoteSizeProbe();

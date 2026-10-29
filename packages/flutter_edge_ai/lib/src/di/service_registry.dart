@@ -3,6 +3,7 @@ import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_edge_ai/src/domain/web_storage_mode.dart';
 import 'package:flutter_edge_ai/src/services/download_service.dart';
+import 'package:flutter_edge_ai/src/services/remote_size_probe.dart';
 import 'package:flutter_edge_ai/src/services/file_system_service.dart';
 import 'package:flutter_edge_ai/src/services/asset_loader.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart';
@@ -249,6 +250,7 @@ class ServiceRegistry {
     DownloadService? downloadService,
     ModelRepository? modelRepository,
     ProtectedFilesRegistry? protectedFilesRegistry,
+    RemoteSizeProbe? remoteSizeProbe,
   }) async {
     // Initialize file system service first
     final fileSystem = fileSystemService ?? _createDefaultFileSystemService();
@@ -278,6 +280,7 @@ class ServiceRegistry {
       downloadService: download,
       modelRepository: modelRepository,
       protectedFilesRegistry: protectedFilesRegistry,
+      remoteSizeProbe: remoteSizeProbe ?? platform.createRemoteSizeProbe(),
     );
   }
 
@@ -290,6 +293,7 @@ class ServiceRegistry {
     required DownloadService downloadService,
     ModelRepository? modelRepository,
     ProtectedFilesRegistry? protectedFilesRegistry,
+    required this.remoteSizeProbe,
   }) {
     // Initialize infrastructure services
     _fileSystemService = fileSystemService;
@@ -398,6 +402,7 @@ class ServiceRegistry {
     ModelRepository? modelRepository,
     ProtectedFilesRegistry? protectedFilesRegistry,
     Stream<Object>? downloadUpdatesStream,
+    RemoteSizeProbe? remoteSizeProbe,
   }) async {
     // Make idempotent - skip if already initialized
     if (_instance != null) {
@@ -426,6 +431,7 @@ class ServiceRegistry {
       downloadService: downloadService,
       modelRepository: modelRepository,
       protectedFilesRegistry: protectedFilesRegistry,
+      remoteSizeProbe: remoteSizeProbe,
     );
   }
 
@@ -444,6 +450,9 @@ class ServiceRegistry {
   AssetLoader get assetLoader => _assetLoader;
 
   DownloadService get downloadService => _downloadService;
+
+  /// Sizes of network files before they download (TTS bundle progress).
+  final RemoteSizeProbe remoteSizeProbe;
 
   ModelRepository get modelRepository => _modelRepository;
 

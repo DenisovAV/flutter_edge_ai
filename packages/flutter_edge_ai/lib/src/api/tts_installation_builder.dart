@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter_edge_ai/src/api/bundle_progress.dart';
 import 'package:flutter_edge_ai/src/api/tts_asset_listing.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
@@ -86,7 +87,15 @@ class TtsInstallationBuilder {
     return this;
   }
 
-  /// Overall bundle install progress (0-100), across all manifest files.
+  /// Progress of the whole bundle, 0 to 100, by bytes across its files.
+  ///
+  /// Before the first download the size of each file is read: a network file
+  /// with one HEAD request (all at once, with the download's token), a file
+  /// already installed or passed with [fromFile] from disk. Files installed
+  /// already count from the start. An asset or bundled file has no size
+  /// before its copy; when a size is unknown, every file counts the same, and
+  /// each file's own progress still moves continuously. Values only rise, and
+  /// a successful install ends with 100.
   TtsInstallationBuilder withProgress(void Function(int overallPercent) cb) {
     _onProgress = cb;
     return this;
@@ -166,10 +175,33 @@ class TtsInstallationBuilder {
     // in MobileModelManager._migrateLegacyCompanionForRestore.
     final files = spec.files;
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final steps = await planInstall(files);
+    final onProgress = _onProgress;
+    BundleProgress? progress;
+    if (onProgress != null) {
+      progress = BundleProgress(
+        onProgress,
+        await bundleFileSizes(
+          steps,
+          known: knownBundleFileSizes[this],
+          cancelToken: _cancelToken,
+        ),
+        bundle: spec.name,
+      );
+      progress.installedAlready([
+        for (final (i, step) in steps.indexed)
+          if (!step.installs) i,
+      ]);
+    }
     final release = await installPlanned(
-      await planInstall(files),
+      steps,
       modelType: repo.ModelType.tts,
       cancelToken: _cancelToken,
+      progress: [
+        if (progress != null)
+          for (var i = 0; i < files.length; i++)
+            (percent) => progress!.report(i, percent),
+      ],
       // Files are replaced one by one, so a switch that fails halfway would
       // leave the active voice made of two bundles, and a restart would
       // restore that mix. Take the voice of this type out of service first;
@@ -181,13 +213,13 @@ class TtsInstallationBuilder {
           await manager.clearActiveTtsIdentity();
         }
       },
-      onFileDone: (i) =>
-          _onProgress?.call((((i + 1) / files.length) * 100).round()),
+      onFileDone: (i) => progress?.report(i, 100),
     );
 
     // AUTO-SET as active TTS model (even if already installed).
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);
+    progress?.complete();
 
     edgeAiLog('✅ TTS model installed and set as active: ${spec.name}');
 

@@ -5,6 +5,7 @@ library;
 
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/web_storage_mode.dart';
+import '../../services/remote_size_probe.dart';
 import '../../infrastructure/web_download_service.dart';
 import '../../infrastructure/web_file_system_service.dart';
 import '../../infrastructure/web_js_interop.dart';
@@ -66,4 +67,14 @@ DownloadService createDownloadService(
     opfsService: opfsService,
     webStorageMode: webStorageMode,
   );
+}
+
+/// The web has no on-device TTS, so nothing asks a size before a download.
+RemoteSizeProbe createRemoteSizeProbe() => const _NoRemoteSizes();
+
+final class _NoRemoteSizes implements RemoteSizeProbe {
+  const _NoRemoteSizes();
+
+  @override
+  Future<int?> sizeOf(String url, {String? token}) async => null;
 }

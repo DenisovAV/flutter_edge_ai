@@ -23,9 +23,13 @@ void main() {
     for (final file in Directory(
       'lib',
     ).listSync(recursive: true).whereType<File>())
-      // Keyed with '/' on every host, so the paths below match on Windows too.
+      // Keyed with '/' on every host, so the paths below match on Windows too,
       if (file.path.endsWith('.dart'))
-        file.path.replaceAll(r'\', '/'): file.readAsStringSync(),
+        // and with '\n' line ends, so a CRLF checkout matches too.
+        file.path.replaceAll(r'\', '/'): file.readAsStringSync().replaceAll(
+          '\r\n',
+          '\n',
+        ),
   };
 
   test('only configureSpeechAccelerator sets the accelerator', () {
@@ -137,6 +141,20 @@ void main() {
     );
   });
 
+  test('SttCore hands runGreedyDecode its own EOS and suppression', () {
+    final stt = sources['lib/src/litert/stt_core.dart']!;
+    final call = stt.substring(stt.indexOf('return runGreedyDecode('));
+    final args = call.substring(0, call.indexOf('decoderRow:'));
+    // Whisper's EOS is not moonshine's 2, and its suppression is what blocks
+    // timestamps and step-zero tokens; a literal here breaks one of them.
+    expect(args, contains('eosId: _eosId,'));
+    expect(args, contains('suppression: _resolvedSuppression,'));
+    expect(args, contains('maxTokens: maxTokens,'));
+    expect(args, contains('promptIds: promptIds,'));
+    // The row of the token just written, copied in full and nothing more.
+    expect(_count(call, r'row: len - 1,'), 1);
+  });
+
   test('the decoder row is read with the buffer unlocked on every path', () {
     final stt = sources['lib/src/litert/stt_core.dart']!;
     final read = stt.substring(
@@ -169,5 +187,16 @@ void main() {
     expect(unlocked, lessThan(returned));
     expect(_count(read, r'\.unlockTensorBuffer\('), 2);
     expect(read, isNot(contains('if (')));
+    // Read lock, checked; the copy is exactly row [row]; any throwable is
+    // caught for the unlock, Errors (RangeError) included.
+    expect(read, contains('kLiteRtTensorBufferLockModeRead'));
+    expect(read, contains(".check('LiteRtLockTensorBuffer(decode out)')"));
+    expect(
+      read,
+      contains(
+        'copied = logits.sublist(row * vocabSize, (row + 1) * vocabSize);',
+      ),
+    );
+    expect(read, contains('} catch (_) {'));
   });
 }

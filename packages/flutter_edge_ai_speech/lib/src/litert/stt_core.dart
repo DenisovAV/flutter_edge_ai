@@ -914,11 +914,11 @@ class SttCore {
               calloc.free(inputs);
             }
 
-            // Argmax is taken at tensor row `len - 1` (0-indexed) — the
-            // position of the token that was just written into the padded
-            // sequence, NOT row 0 and NOT the last row. Returned as a copy;
-            // the finally below releases the step's buffers before
-            // runGreedyDecode reads it.
+            // The next token is picked (in runGreedyDecode) from tensor row
+            // `len - 1` (0-indexed) — the position of the token that was just
+            // written into the padded sequence, NOT row 0 and NOT the last
+            // row. Returned as a copy; the finally below releases the step's
+            // buffers before runGreedyDecode reads it.
             return _readDecoderRow(
               outBufPtr.value,
               row: len - 1,

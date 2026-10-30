@@ -156,8 +156,9 @@ window, steady state over repeated transcriptions
   logits at its first decode step on Adreno 740; with the fp32 request it
   transcribes the same text as on the CPU, about three times faster. Whisper
   tiny gave the same text in both modes, with no NaN: 4.6–5.0 s per 30 s window
-  with the request over two runs, ~4.7 s without it. Measured on Adreno 740
-  only, not on Mali, Metal or WebGPU.
+  with the request over two runs, ~4.7 s without it in one run (a main build
+  with the decoder mask at -1e4). Measured on Adreno 740 only, not on Mali,
+  Metal or WebGPU.
 - On Adreno 740 the int8 (`_i8`) files did not compile on the GPU without
   constant tensor sharing, which speech leaves off: set together with four
   other GPU options, it made moonshine f32 abort inside LiteRT

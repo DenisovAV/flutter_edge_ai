@@ -32,7 +32,17 @@ class _Run {
 
   /// Whether the session is through with it: completed, failed, stopped or
   /// closed. What the backend sends after that is not recorded.
-  bool done = false;
+  bool get done => _done.isCompleted;
+  set done(bool value) {
+    assert(value, 'a run that is done stays done');
+    if (!_done.isCompleted) _done.complete();
+  }
+
+  final Completer<void> _done = Completer<void>();
+
+  /// Completes when [done] is set: a call stopped while it waits stops
+  /// waiting.
+  Future<void> get whenDone => _done.future;
 
   /// Whether it began: the conversation's turn is open and the backend has the
   /// call. A run stopped before that never reached either.
@@ -83,9 +93,8 @@ class WebModelSession extends InferenceModelSession {
     required WebChatTemplate? template,
     required int? maxImages,
     required bool preformatted,
-    required Duration previousCallWait,
+    required this.previousCallWait,
   }) : _backend = backend,
-       _previousCallWait = previousCallWait,
        _preformatted = preformatted,
        _conversation = WebConversation(
          // A message core wrote the markers into carries them already, so the
@@ -145,8 +154,10 @@ class WebModelSession extends InferenceModelSession {
   /// one of them.
   final List<_Run> _runs = [];
 
-  /// How long a call waits for the ones before it to end.
-  final Duration _previousCallWait;
+  /// How long a call waits for the ones before it to end. Past it, a call
+  /// that was stopped is not waited for again: its backend call may never
+  /// settle, and every later turn would wait as long.
+  final Duration previousCallWait;
 
   _Run _register() {
     final run = _Run();
@@ -240,20 +251,30 @@ class WebModelSession extends InferenceModelSession {
 
   /// MediaPipe refuses a call while the one before it is still ending, which
   /// after a stop is a moment later than the stop itself.
-  Future<void> _previousEnded(List<_Run> before) async {
+  ///
+  /// It ends early when [run], the call that waits, is stopped or closed:
+  /// it will not start, so it has nothing to wait for.
+  Future<void> _previousEnded(List<_Run> before, _Run run) async {
     final pending = [
-      for (final run in before)
-        if (!run.ended.isCompleted) run.ended.future,
+      for (final earlier in before)
+        if (!earlier.ended.isCompleted) earlier.ended.future,
     ];
     if (pending.isEmpty) return;
-    await Future.wait(pending).timeout(
-      _previousCallWait,
+    await Future.any([Future.wait(pending), run.whenDone]).timeout(
+      previousCallWait,
       onTimeout: () {
         edgeAiLog(
           '[WebModelSession] the previous call did not end in '
-          '${_previousCallWait.inSeconds} s',
+          '${previousCallWait.inMilliseconds} ms',
         );
-        return const [];
+        // A stopped call that has not ended is let go of: it has nothing more
+        // to record, and no later call should wait for it again. One that was
+        // not stopped stays, so a stop still finds it.
+        for (final earlier in before) {
+          if (earlier.done && !earlier.ended.isCompleted) {
+            _runs.remove(earlier);
+          }
+        }
       },
     );
   }
@@ -282,7 +303,7 @@ class WebModelSession extends InferenceModelSession {
     final run = _register();
     final List<PromptPart> prompt;
     try {
-      await _previousEnded(before);
+      await _previousEnded(before, run);
       // Closed while it waited: it must not start a call on the shared
       // backend.
       _requireOpen();
@@ -330,12 +351,12 @@ class WebModelSession extends InferenceModelSession {
     final run = _register();
     final List<PromptPart> prompt;
     try {
-      await _previousEnded(before);
-      // Stopped, closed or replaced by a newer call while it waited.
-      if (run.done || controller.isClosed) {
+      await _previousEnded(before, run);
+      // Stopped, closed or replaced by a newer call while it waited: each
+      // closes this controller (a stop or close marks the run done as well).
+      if (controller.isClosed) {
         run.done = true;
         _end(run);
-        if (!controller.isClosed) await controller.close();
         return;
       }
       prompt = _conversation.beginGeneration();
@@ -433,6 +454,10 @@ class WebModelSession extends InferenceModelSession {
   /// The number of images the conversation holds.
   @visibleForTesting
   int get imageCount => _conversation.imageCount;
+
+  /// The calls of this session that have not ended.
+  @visibleForTesting
+  int get pendingCalls => _runs.length;
 
   @override
   Future<void> close() async {

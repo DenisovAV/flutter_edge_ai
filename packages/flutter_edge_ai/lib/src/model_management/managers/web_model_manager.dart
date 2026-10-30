@@ -155,6 +155,28 @@ class WebModelManager extends ModelFileManager
       return;
     }
 
+    // The LoRA is part of what was activated, as on mobile: restoring the
+    // model without it would load it with no adapter and no error. Its
+    // source is read before any file is looked for, as the embedding and STT
+    // restores read theirs: a record that cannot be read is reported in
+    // every storage mode, also when the files are gone (as under
+    // WebStorageMode.none, after every page load).
+    final loraFilename = identity?[PreferencesKeys.activeInferenceLoraFilename];
+    ModelSource? loraSource;
+    if (loraFilename != null) {
+      final loraEncoded = identity?[PreferencesKeys.activeInferenceLoraSource];
+      loraSource = loraEncoded == null
+          ? null
+          : ModelSource.tryDecode(loraEncoded);
+      if (loraSource == null) {
+        restoreNotice(
+          '[WebModelManager] active model restore: the LoRA of $filename '
+          '($loraFilename) has a malformed source — skipping',
+        );
+        return;
+      }
+    }
+
     // Verify the underlying file is still installed in the Web repository
     // before we set it active — otherwise getModelFilePaths() will throw
     // later on the first getActiveModel() call.
@@ -166,23 +188,7 @@ class WebModelManager extends ModelFileManager
       return;
     }
 
-    // The LoRA is part of what was activated, as on mobile: restoring the
-    // model without it would load it with no adapter and no error.
-    final loraFilename = identity?[PreferencesKeys.activeInferenceLoraFilename];
-    ModelSource? loraSource;
     if (loraFilename != null) {
-      final loraEncoded = identity?[PreferencesKeys.activeInferenceLoraSource];
-      loraSource = loraEncoded == null
-          ? null
-          : ModelSource.tryDecode(loraEncoded);
-      if (loraSource == null) {
-        // A record that cannot be read: reported in every storage mode.
-        restoreNotice(
-          '[WebModelManager] active model restore: the LoRA of $filename '
-          '($loraFilename) has a malformed source — skipping',
-        );
-        return;
-      }
       if (!await repo.isInstalled(loraFilename)) {
         _restoreSkipped(
           '[WebModelManager] active model restore: the LoRA of $filename '

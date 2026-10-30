@@ -124,7 +124,8 @@ class FlutterEdgeAi {
   ///
   /// Some messages are printed in every build whatever logLevel says:
   /// warnings about failures the app would not otherwise see, and a few
-  /// one-time notices (for example the sampler latch and hidden reasoning).
+  /// notices (for example the sampler latch, once per engine, and the
+  /// hidden-reasoning note, once per chat).
   ///
   /// Note: this is a process-global, per-isolate setting; set it once at
   /// startup. Background isolates snapshot the value at spawn time.

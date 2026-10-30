@@ -28,11 +28,14 @@ class _BlockedService extends ModelDownloadService {
 
   final bool askFirst;
   final result = Completer<CatalogInstallResult>();
+
+  /// When set, the token load waits for it.
+  Completer<String?>? token;
   final asked = <bool>[];
   final started = Completer<void>();
 
   @override
-  Future<String?> loadToken() async => null;
+  Future<String?> loadToken() async => token?.future;
 
   @override
   Future<bool> checkModelExistence(String token) async => false;
@@ -156,4 +159,31 @@ void main() {
       expect(service.asked, [false]);
     });
   }
+
+  testWidgets('UniversalDownloadScreen: a token that loads after the screen '
+      'is gone is not written to its disposed field', (tester) async {
+    final service = _BlockedService()..token = Completer<String?>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => TextButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => screens['UniversalDownloadScreen']!(service),
+              ),
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pumpAndSettle();
+    service.token!.complete('hf_token');
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 }

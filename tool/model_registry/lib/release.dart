@@ -162,16 +162,27 @@ File publishedFile(Directory registryDir, String package, String version) =>
 /// does, so a pass computed on files that are then reverted never stands for
 /// the commit the publish runs from. A repository git cannot read
 /// is one problem, never an empty answer.
-List<String> uncommittedUnder(String repoRoot, List<String> paths) {
-  final status = Process.runSync('git', [
-    'status',
-    '--porcelain',
-    '--untracked-files=all',
-    '--',
-    ...paths,
-    // Rewritten by any `pub get`, and not what a package ships.
-    ':(exclude,glob)**/example/pubspec.lock',
-  ], workingDirectory: repoRoot);
+///
+/// [git] names the executable; tests name one that is not there.
+List<String> uncommittedUnder(
+  String repoRoot,
+  List<String> paths, {
+  String git = 'git',
+}) {
+  final ProcessResult status;
+  try {
+    status = Process.runSync(git, [
+      'status',
+      '--porcelain',
+      '--untracked-files=all',
+      '--',
+      ...paths,
+      // Rewritten by any `pub get`, and not what a package ships.
+      ':(exclude,glob)**/example/pubspec.lock',
+    ], workingDirectory: repoRoot);
+  } on ProcessException catch (e) {
+    return ['git could not run (${e.message}): install git'];
+  }
   if (status.exitCode != 0) return ['git status failed: ${status.stderr}'];
   return [
     for (final line in '${status.stdout}'.split('\n'))
@@ -184,14 +195,25 @@ List<String> uncommittedUnder(String repoRoot, List<String> paths) {
 /// adds. Fails closed: when git cannot answer (no repository, an error), the
 /// answer is yes, so a missing snapshot stops every command rather than being
 /// written again from today's registry.
-bool everCommitted(String repoRoot, String path) {
-  final log = Process.runSync('git', [
-    'log',
-    '--format=%H',
-    '-1',
-    '--',
-    path,
-  ], workingDirectory: repoRoot);
+///
+/// [git] names the executable; tests name one that is not there.
+bool everCommitted(String repoRoot, String path, {String git = 'git'}) {
+  final ProcessResult log;
+  try {
+    log = Process.runSync(git, [
+      'log',
+      '--format=%H',
+      '-1',
+      '--',
+      path,
+    ], workingDirectory: repoRoot);
+  } on ProcessException catch (e) {
+    stderr.writeln(
+      'git could not run (${e.message}), so it cannot say whether $path was '
+      'ever committed: it is treated as shipped',
+    );
+    return true;
+  }
   if (log.exitCode != 0) {
     stderr.writeln(
       'git could not say whether $path was ever committed '

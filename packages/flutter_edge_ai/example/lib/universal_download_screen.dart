@@ -124,6 +124,8 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
       _token = await _inferenceDownloadService!.loadToken() ?? '';
     }
 
+    // The controller is disposed with the screen.
+    if (!mounted) return;
     _tokenController.text = _token;
     await _checkModelExistence();
   }

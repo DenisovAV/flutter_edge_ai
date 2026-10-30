@@ -74,4 +74,17 @@ void main() {
     File(p.join(repo.path, 'published', 'x', '1.0.0.json')).deleteSync();
     expect(everCommitted(repo.path, 'published/x/1.0.0.json'), isTrue);
   });
+
+  test('without git, the answers are the closed ones, not a stack trace', () {
+    final repo = Directory.systemTemp.createTempSync('release_no_git');
+    addTearDown(() => repo.deleteSync(recursive: true));
+    const missing = 'git-that-is-not-installed';
+    expect(
+      everCommitted(repo.path, 'published/x/1.0.0.json', git: missing),
+      isTrue,
+    );
+    expect(uncommittedUnder(repo.path, ['model_registry'], git: missing), [
+      startsWith('git could not run'),
+    ]);
+  });
 }

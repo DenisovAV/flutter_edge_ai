@@ -31,6 +31,19 @@ import 'package:model_registry/site.dart';
 import 'package:path/path.dart' as p;
 
 Future<void> main(List<String> args) async {
+  try {
+    await _main(args);
+  } on ProcessException catch (e) {
+    // git (or another tool) is not installed: say so, not a stack trace.
+    stderr.writeln(
+      '${e.executable} could not run (${e.message}); the registry tool '
+      'needs it on PATH',
+    );
+    exit(1);
+  }
+}
+
+Future<void> _main(List<String> args) async {
   final command = args.isEmpty ? null : args.first;
   const commands = {
     'check',

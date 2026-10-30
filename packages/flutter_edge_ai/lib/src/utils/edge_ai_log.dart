@@ -4,14 +4,15 @@ import 'package:flutter/foundation.dart';
 ///
 /// - [none] — silence this log, the start-up restore notices included.
 /// - [info] — lifecycle, errors, non-PII diagnostics (default). In release
-///   builds only the start-up notices about active models that could not be
-///   restored.
+///   builds, of this log, the start-up notices about active models that
+///   could not be restored.
 /// - [verbose] — adds model output / prompts / conversation history (debug
 ///   builds).
 ///
 /// Some messages are printed in every build whatever logLevel says:
 /// warnings about failures the app would not otherwise see, and a few
-/// one-time notices (for example the sampler latch and hidden reasoning).
+/// notices (for example the sampler latch, once per engine, and the
+/// hidden-reasoning note, once per chat).
 enum EdgeAiLogLevel { none, info, verbose }
 
 /// Active log level. Top-level (Dart-canonical for process-global logger
@@ -28,7 +29,7 @@ EdgeAiLogLevel edgeAiLogLevel = EdgeAiLogLevel.info;
 ///
 /// Not every message goes through it: the start-up restore notices go
 /// through [restoreNotice] (release builds keep them), and some warnings and
-/// one-time notices are printed with `print` in every build whatever the
+/// notices are printed with `print` in every build whatever the
 /// level (see [EdgeAiLogLevel]).
 ///
 /// - Release builds: `kDebugMode` is a compile-time `false`, so the body is

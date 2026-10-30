@@ -173,7 +173,6 @@ void main() {
     test(
       'WebStorageMode.none still says a LoRA source that cannot be read',
       () async {
-        const url = 'https://example.com/gone.litertlm';
         // The one-key record: the LoRA is part of it, not of the per-field
         // keys older releases wrote.
         SharedPreferences.setMockInitialValues({
@@ -183,18 +182,9 @@ void main() {
             PreferencesKeys.activeInferenceLoraSource: 'not a source',
           }),
         });
+        // A real state under WebStorageMode.none: the identity outlived the
+        // page load, the in-memory repository did not, so no file is there.
         await ServiceRegistry.initialize(webStorageMode: WebStorageMode.none);
-        // The model itself is installed, so the restore reaches its LoRA.
-        await ServiceRegistry.instance.modelRepository.saveModel(
-          repo.ModelInfo(
-            id: 'gone.litertlm',
-            source: ModelSource.network(url),
-            installedAt: DateTime(2026),
-            sizeBytes: 1,
-            type: repo.ModelType.inference,
-            hasLoraWeights: true,
-          ),
-        );
         await WebModelManager().ensureInitialized();
         expect(
           said,

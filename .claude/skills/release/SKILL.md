@@ -104,13 +104,16 @@ silently do the other thing.
         "0 warnings" with no SKILL.md in the archive (#578)
 [ ] 8b  native bundle moved? → litertlm_native_tools_test.dart green on every
         platform in the release (the smoke suite never passes a tool), else N/A
-[ ] 8c  litertlm or speech in the release? → the model registry is ready:
+[ ] 8c  litertlm or speech in the release? → MANDATORY, else N/A. NO PUBLISH of
+        either package without a green release-check AT THIS HEAD:
         record the runs of release_critical.yaml's cells (the release-gate
         tests print FEA_EVIDENCE lines; `registry.dart evidence --device …
-        <log>` per host), `registry.dart freeze <package>`, `generate`, and
-        `registry.dart release-check <package>` prints "ready to publish".
-        guard-release-registry.py refuses the publish otherwise
-        (override: RELEASE_SKIP_REGISTRY="<reason>"), else N/A
+        <log>` per host), then in tool/model_registry
+        `dart run bin/registry.dart freeze <package>` (commit the snapshot),
+        `generate`, and `dart run bin/registry.dart release-check <package>`
+        must print "<package> <version>: ready to publish" on the commit being
+        published, with nothing uncommitted. Nothing enforces this but this
+        step: run it again after any later commit, and never skip it
 [ ] 10b  after publishing: pub.dev actually SERVES the new versions (its API
         lags minutes behind the upload); if a package's web/ changed
         (flutter_edge_ai_litertlm or flutter_edge_ai), sync every codelab copy to
@@ -716,7 +719,19 @@ git status --short                    # clean tree
 ```
 
 Only once `HEAD == origin/main`, the version on `main` is the one you intend to
-publish, and the tree is clean, proceed:
+publish, and the tree is clean, proceed.
+
+**`flutter_edge_ai_litertlm` or `flutter_edge_ai_speech`: no publish without a
+green `release-check` at this HEAD** (checklist 8c). Run it here, on the commit
+being published, right before the publish, and stop on anything but
+"ready to publish":
+
+```bash
+(cd tool/model_registry && dart run bin/registry.dart release-check <name>)
+# → <name> <version>: ready to publish
+```
+
+Then:
 
 ```bash
 # Run from the package dir so the guard-release-docs hook can resolve which

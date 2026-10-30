@@ -1,7 +1,7 @@
 # The cells a release must have verified: for each package that ships a
 # generated catalog, the builds and hosts a broken native or catalog change
-# would hurt most. `registry.dart release-check <package>` (and the release
-# hook .claude/hooks/guard-release-registry.py) refuses a publish while any of
+# would hurt most. `registry.dart release-check <package>`, which the release
+# skill requires before a publish, refuses while any of
 # them is not verified on the native build the package ships, that is, has no
 # run under evidence/ since the native archive or the package's minor version
 # last moved. A patch release on the same native build keeps its evidence.

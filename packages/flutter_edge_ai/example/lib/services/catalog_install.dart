@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_example/utils/gated_model_access_dialog.dart';
+import 'package:flutter_edge_ai_example/utils/storage_quota_dialog.dart';
 
 /// The active model core's refusal names: an install would write over a file
 /// it reads. Read from the refusal's message, whose words core holds with a
@@ -39,13 +41,18 @@ final class ActiveModelInTheWay {
     );
   }
 
-  /// Uninstalls it with the call of its kind.
-  Future<void> uninstall() => switch (kind) {
-    'embedding' => FlutterEdgeAi.uninstallEmbedder(),
-    'speech-to-text' => FlutterEdgeAi.uninstallStt(),
-    'text-to-speech' => FlutterEdgeAi.uninstallTts(),
-    _ => FlutterEdgeAi.uninstallModel(inferenceFile!),
+  /// The core call that uninstalls it, by its kind: a static tear-off for
+  /// the embedder, STT and TTS (so a test can compare it), and
+  /// `uninstallModel` with its file for an inference model.
+  Future<void> Function() get uninstaller => switch (kind) {
+    'embedding' => FlutterEdgeAi.uninstallEmbedder,
+    'speech-to-text' => FlutterEdgeAi.uninstallStt,
+    'text-to-speech' => FlutterEdgeAi.uninstallTts,
+    _ => () => FlutterEdgeAi.uninstallModel(inferenceFile!),
   };
+
+  /// Uninstalls it with the call of its kind.
+  Future<void> uninstall() => uninstaller();
 }
 
 /// How [installFromCatalogReplacingActive] ended without an error.
@@ -102,10 +109,11 @@ Future<CatalogInstallResult> installFromCatalogReplacingActive(
   Future<void> Function(ActiveModelInTheWay model)? uninstall,
 }) async {
   final bytes = variant.files.fold(0, (sum, f) => sum + f.sizeBytes);
-  final removed = <String>[];
+  // By kind and name: an inference model and an embedder may share a name.
+  final removed = <(String, String)>[];
   String gone() =>
-      '${removed.join(' and ')} ${removed.length == 1 ? 'was' : 'were'} '
-      'already uninstalled';
+      '${removed.map((m) => m.$2).join(' and ')} '
+      '${removed.length == 1 ? 'was' : 'were'} already uninstalled';
   Never failAfterRemoval(Object error, StackTrace stack) {
     if (removed.isEmpty) Error.throwWithStackTrace(error, stack);
     throw CatalogReplaceFailed(
@@ -122,9 +130,14 @@ Future<CatalogInstallResult> installFromCatalogReplacingActive(
       return const CatalogInstalled();
     } on StateError catch (e, stack) {
       final model = ActiveModelInTheWay.of(e);
-      // The same model again: its uninstall did not take.
-      if (model == null || removed.contains(model.name)) {
-        failAfterRemoval(e, stack);
+      if (model == null) failAfterRemoval(e, stack);
+      if (removed.contains((model.kind, model.name))) {
+        // The same model again: its uninstall did not release the file.
+        throw CatalogReplaceFailed(
+          'Uninstalling ${model.name} did not release its file, so '
+          '${variant.id} is not installed${removed.length > 1 ? '; ${gone()}' : ''}.',
+          e,
+        );
       }
       inTheWay = model;
     } catch (e, stack) {
@@ -147,7 +160,7 @@ Future<CatalogInstallResult> installFromCatalogReplacingActive(
         e,
       );
     }
-    removed.add(inTheWay.name);
+    removed.add((inTheWay.kind, inTheWay.name));
   }
 }
 
@@ -194,4 +207,52 @@ void leaveKeeping(BuildContext context, CatalogInstallKept kept) {
     context,
   )?.showSnackBar(SnackBar(content: Text(kept.message)));
   Navigator.maybePop(context);
+}
+
+/// One thing a download screen shows for a failed install, in the order of
+/// [installErrorViews].
+sealed class InstallErrorView {
+  const InstallErrorView();
+}
+
+/// A message: what a failed replace left behind, or the screen's own text.
+final class InstallErrorMessage extends InstallErrorView {
+  const InstallErrorMessage(this.text);
+
+  final String text;
+}
+
+/// The gated-access dialog, for [error].
+final class InstallErrorGated extends InstallErrorView {
+  const InstallErrorGated(this.error);
+
+  final Object error;
+}
+
+/// The not-enough-storage dialog.
+final class InstallErrorStorage extends InstallErrorView {
+  const InstallErrorStorage();
+}
+
+/// What a download screen shows for [error], in order. A failed replace says
+/// first that the old model is already gone, then offers the dialog its cause
+/// needs (an expired token, a full disk): the dialog alone would hide what was
+/// uninstalled. Anything else is the gated or storage dialog, or [fallback].
+List<InstallErrorView> installErrorViews(
+  Object error, {
+  required String fallback,
+}) {
+  InstallErrorView? dialogFor(Object e) => isGatedAccessError(e)
+      ? InstallErrorGated(e)
+      : isStorageQuotaError(e)
+      ? const InstallErrorStorage()
+      : null;
+  if (error is CatalogReplaceFailed) {
+    final cause = error.cause;
+    return [
+      InstallErrorMessage(error.message),
+      if (cause != null) ?dialogFor(cause),
+    ];
+  }
+  return [dialogFor(error) ?? InstallErrorMessage(fallback)];
 }

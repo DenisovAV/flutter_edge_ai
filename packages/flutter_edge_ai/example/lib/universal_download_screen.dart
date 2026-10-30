@@ -273,23 +273,28 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
   }
 
   Future<void> _handleDownloadError(Object error) async {
-    if (!mounted) return;
-    if (isGatedAccessError(error)) {
-      await showGatedModelAccessDialog(
-        context: context,
-        modelUrl: widget.model.url,
-        licenseUrl: widget.model.licenseUrl,
-        error: error,
-      );
-    } else if (isStorageQuotaError(error)) {
-      await showStorageFullDialog(context);
-    } else {
-      _showErrorDialog(error.toString());
+    // A failed replace first says the old model is gone, then the dialog its
+    // cause needs.
+    for (final view in installErrorViews(error, fallback: error.toString())) {
+      if (!mounted) return;
+      switch (view) {
+        case InstallErrorMessage(:final text):
+          await _showErrorDialog(text);
+        case InstallErrorGated(:final error):
+          await showGatedModelAccessDialog(
+            context: context,
+            modelUrl: widget.model.url,
+            licenseUrl: widget.model.licenseUrl,
+            error: error,
+          );
+        case InstallErrorStorage():
+          await showStorageFullDialog(context);
+      }
     }
   }
 
-  void _showErrorDialog(String error) {
-    showDialog(
+  Future<void> _showErrorDialog(String error) {
+    return showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Download Error'),

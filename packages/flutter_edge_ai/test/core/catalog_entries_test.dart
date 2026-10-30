@@ -302,6 +302,19 @@ void main() {
         ),
         contains(r"(FlutterEdgeAi.uninstallModel('it\'s.litertlm'))"),
       );
+      // A directory model (ORT-GenAI) is uninstalled by its name.
+      expect(
+        activeFileRefusal(
+          'phi/genai_config.json',
+          InferenceModelSpec(
+            name: 'phi',
+            modelSource: ModelSource.network('https://example.com/m.onnx'),
+            modelType: ModelType.general,
+            fileType: ModelFileType.onnx,
+          ),
+        ),
+        contains("(FlutterEdgeAi.uninstallModel('phi'))"),
+      );
       expect(
         activeFileRefusal(
           'm.litertlm',

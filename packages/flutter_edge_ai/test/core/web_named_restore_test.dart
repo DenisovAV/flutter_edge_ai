@@ -8,8 +8,7 @@ library;
 //
 // Run: flutter test --platform chrome test/core/web_named_restore_test.dart
 
-import 'dart:async';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
@@ -79,31 +78,71 @@ void main() {
     },
   );
 
-  test('a restore that throws is printed, and the start goes on', () async {
-    // Debug logging off: what is left is what a release build says.
-    edgeAiLogLevel = EdgeAiLogLevel.none;
-    addTearDown(() => edgeAiLogLevel = EdgeAiLogLevel.info);
-    // Not a string: reading the record throws.
-    SharedPreferences.setMockInitialValues({
-      PreferencesKeys.activeInferenceIdentity: 5,
+  group('restore notices, through the log sink', () {
+    late List<String> said;
+    final sink = debugPrint;
+    setUp(() {
+      said = [];
+      debugPrint = (message, {wrapWidth}) => said.add(message ?? '');
     });
-    await ServiceRegistry.initialize();
-    final manager = WebModelManager();
-    final printed = <String>[];
-    await runZoned(
-      manager.ensureInitialized,
-      zoneSpecification: ZoneSpecification(
-        print: (self, parent, zone, line) => printed.add(line),
-      ),
-    );
-    expect(manager.activeInferenceModel, isNull);
-    expect(
-      printed,
-      contains(
-        startsWith(
-          'flutter_edge_ai: the active inference model was not restored',
+    tearDown(() {
+      debugPrint = sink;
+      edgeAiLogLevel = EdgeAiLogLevel.info;
+    });
+
+    /// An active inference model with no record of its file.
+    final unrecorded = {
+      PreferencesKeys.activeInferenceModelType: 'phi',
+      PreferencesKeys.activeInferenceFileType: 'litertlm',
+      PreferencesKeys.activeInferenceFilename: 'gone.litertlm',
+      PreferencesKeys.activeInferenceSource:
+          'network|https://example.com/gone.litertlm',
+    };
+
+    test('a restore that throws is said, and the start goes on', () async {
+      // Not a string: reading the record throws.
+      SharedPreferences.setMockInitialValues({
+        PreferencesKeys.activeInferenceIdentity: 5,
+      });
+      await ServiceRegistry.initialize();
+      final manager = WebModelManager();
+      await manager.ensureInitialized();
+      expect(manager.activeInferenceModel, isNull);
+      expect(
+        said,
+        contains(
+          startsWith(
+            'flutter_edge_ai: the active inference model was not restored',
+          ),
         ),
-      ),
+      );
+    });
+
+    test('a skip is said in the default storage', () async {
+      SharedPreferences.setMockInitialValues(unrecorded);
+      await ServiceRegistry.initialize();
+      await WebModelManager().ensureInitialized();
+      expect(said, contains(contains('gone.litertlm not in repository')));
+    });
+
+    test(
+      'WebStorageMode.none, where nothing outlives a load, says no skip',
+      () async {
+        SharedPreferences.setMockInitialValues(unrecorded);
+        await ServiceRegistry.initialize(webStorageMode: WebStorageMode.none);
+        await WebModelManager().ensureInitialized();
+        expect(said.where((m) => m.startsWith('flutter_edge_ai: ')), isEmpty);
+      },
     );
+
+    test('EdgeAiLogLevel.none silences it', () async {
+      edgeAiLogLevel = EdgeAiLogLevel.none;
+      SharedPreferences.setMockInitialValues({
+        PreferencesKeys.activeInferenceIdentity: 5,
+      });
+      await ServiceRegistry.initialize();
+      await WebModelManager().ensureInitialized();
+      expect(said, isEmpty);
+    });
   });
 }

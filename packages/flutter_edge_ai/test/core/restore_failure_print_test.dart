@@ -1,10 +1,10 @@
-// A restore that fails for one kind is printed, so a release build (where
-// edgeAiLog is silent) reports it too, and the start goes on without it.
+// A restore that fails or is skipped for one kind is said through the log
+// sink (debugPrint, which release builds keep, unlike edgeAiLog), the start
+// goes on without it, and EdgeAiLogLevel.none silences it.
 
-import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
@@ -18,41 +18,50 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory root;
+  late List<String> said;
+  final sink = debugPrint;
 
   setUp(() async {
-    // Debug logging off: what is left is what a release build says.
-    edgeAiLogLevel = EdgeAiLogLevel.none;
-    root = await Directory.systemTemp.createTemp('fea_restore_print_');
+    said = [];
+    debugPrint = (message, {wrapWidth}) => said.add(message ?? '');
+    root = await Directory.systemTemp.createTemp('fea_restore_notice_');
     PathProviderPlatform.instance = _Paths(root.path);
     ServiceRegistry.reset();
   });
 
   tearDown(() async {
+    debugPrint = sink;
     edgeAiLogLevel = EdgeAiLogLevel.info;
     ServiceRegistry.reset();
     await root.delete(recursive: true);
   });
 
-  test('a restore that throws is printed and the start goes on', () async {
+  /// A start with a manager of its own (the plugin's starts once per run).
+  Future<MobileModelManager> start() async {
+    final manager = MobileModelManager();
+    await ServiceRegistry.initialize();
+    await manager.ensureInitialized();
+    return manager;
+  }
+
+  /// An active inference model whose file is not installed.
+  final missing = {
+    PreferencesKeys.activeInferenceModelType: 'gemma4',
+    PreferencesKeys.activeInferenceFileType: 'litertlm',
+    PreferencesKeys.activeInferenceFilename: 'gone.litertlm',
+    PreferencesKeys.activeInferenceSource:
+        'network|https://example.com/gone.litertlm',
+  };
+
+  test('a restore that throws is said, and the start goes on', () async {
     // Not a string: reading the record throws.
     SharedPreferences.setMockInitialValues({
       PreferencesKeys.activeInferenceIdentity: 5,
     });
-    // A manager of its own: the plugin's is initialized once per run.
-    final manager = MobileModelManager();
-    final printed = <String>[];
-    await runZoned(
-      () async {
-        await ServiceRegistry.initialize();
-        await manager.ensureInitialized();
-      },
-      zoneSpecification: ZoneSpecification(
-        print: (self, parent, zone, line) => printed.add(line),
-      ),
-    );
+    final manager = await start();
     expect(manager.activeInferenceModel, isNull);
     expect(
-      printed,
+      said,
       contains(
         startsWith(
           'flutter_edge_ai: the active inference model was not restored',
@@ -61,27 +70,11 @@ void main() {
     );
   });
 
-  test('a restore skipped for a missing file is printed', () async {
-    SharedPreferences.setMockInitialValues({
-      'active_inference_model_type': 'gemma4',
-      'active_inference_file_type': 'litertlm',
-      'active_inference_filename': 'gone.litertlm',
-      'active_inference_source': 'network|https://example.com/gone.litertlm',
-    });
-    // A manager of its own: the plugin's is initialized once per run.
-    final manager = MobileModelManager();
-    final printed = <String>[];
-    await runZoned(
-      () async {
-        await ServiceRegistry.initialize();
-        await manager.ensureInitialized();
-      },
-      zoneSpecification: ZoneSpecification(
-        print: (self, parent, zone, line) => printed.add(line),
-      ),
-    );
+  test('a restore skipped for a missing file is said', () async {
+    SharedPreferences.setMockInitialValues(missing);
+    await start();
     expect(
-      printed,
+      said,
       contains(
         allOf(
           startsWith('flutter_edge_ai: '),
@@ -89,6 +82,13 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('EdgeAiLogLevel.none silences it', () async {
+    edgeAiLogLevel = EdgeAiLogLevel.none;
+    SharedPreferences.setMockInitialValues(missing);
+    await start();
+    expect(said, isEmpty);
   });
 }
 

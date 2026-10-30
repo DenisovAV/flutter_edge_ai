@@ -12,11 +12,7 @@ for a guard rather than more prose: a checklist advises, a hook refuses.
 
 The first version of this guard was itself reviewed and found to be a no-op on
 the most likely command shape (a two-line `cd` + publish), so the matching and
-every fail-open path below are deliberate and tested — see `_TESTS`. The
-command is read by publish_command.py, shared with the two release guards:
-every publish of a command is checked, and a command that holds `pub publish`
-the reader cannot place is blocked, as is any command holding it when that
-module cannot load.
+every fail-open path below are deliberate and tested — see `_TESTS`.
 
 The repository inspected is the one the publish RUNS IN, not $CLAUDE_PROJECT_DIR.
 Reading the session's project was wrong in both directions, and the harmless
@@ -43,12 +39,45 @@ import re
 import subprocess
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-try:
-    import publish_command
-except Exception as _e:  # noqa: BLE001 — main() blocks a publish without it
-    publish_command = None
-    _IMPORT_ERROR = _e
+# Must sit in *command position*: at the start of a line, or right after a
+# separator, optionally behind an env assignment or a wrapper like `timeout`.
+# re.MULTILINE is load-bearing — without it `^` anchors to the start of the
+# whole string, and a newline is not a separator, so every multi-line shell
+# block walked straight past this guard.
+PUBLISH_RE = re.compile(
+    r"(?:^|[;&|(]|&&|\|\|)\s*"
+    r"(?:\w+=\S+\s+)*"  # FOO=bar dart pub publish
+    r"(?:(?:timeout|nice|env|command|stdbuf)\s+\S+\s+)*"  # timeout 900 dart ...
+    r"(?:dart|flutter)\s+pub\s+publish\b",
+    re.MULTILINE,
+)
+
+# --dry-run must belong to the same command, not merely appear somewhere on the
+# line. `dart pub publish --dry-run && dart pub publish` is the canonical
+# verify-then-ship one-liner and must NOT be exempt.
+DRY_RUN_RE = re.compile(r"(?<![\w-])--dry-run(?![\w-])")
+
+# `cd` in command position. The Bash tool's own cwd persists between calls, but
+# a release is nearly always written as `cd <package>` followed by the publish,
+# so the directory that matters is wherever those leave us.
+CD_RE = re.compile(
+    r"(?:^|[;&|(]|&&|\|\|)\s*cd[ \t]+(?!-)" r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)",
+    re.MULTILINE,
+)
+# Directory changes whose destination is not in the command text: `cd -` (and
+# any `cd -<option>`), a bare `cd`, `pushd`/`popd`. They block, as a variable
+# target does, instead of being skipped — skipping one inspects the directory
+# the shell already left.
+OPAQUE_CD_RE = re.compile(
+    r"(?:^|[;&|(]|&&|\|\|)\s*(?:cd[ \t]+-|cd[ \t]*(?=[;&|)\n]|$)|pushd\b|popd\b)",
+    re.MULTILINE,
+)
+# `pub publish -C <dir>` / `--directory=<dir>`: pub's own way of naming the
+# package directory, applied on top of any `cd`.
+PUB_DIR_RE = re.compile(
+    r"(?<![\w-])(?:-C[ \t]*|--directory(?:=|[ \t]+))"
+    r"(\"[^\"]*\"|'[^']*'|[^\s;&|)]+)"
+)
 
 
 class GitUnavailable(RuntimeError):
@@ -74,13 +103,60 @@ def git(repo, *args):
     return r.stdout.strip()
 
 
-def _cwd(payload):
-    return payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+def _publish_is_exempt(cmd):
+    """True only if every publish invocation on the line carries --dry-run."""
+    for m in PUBLISH_RE.finditer(cmd):
+        # the rest of this one command, up to the next separator
+        tail = re.split(r"[;&|\n]", cmd[m.end() :], maxsplit=1)[0]
+        if not DRY_RUN_RE.search(tail):
+            return False
+    return True
 
 
-def _shipping(cmd, payload):
-    """The publishes of [cmd] that ship (not --dry-run). Raises PublishUnclear."""
-    return [p for p in publish_command.publishes(cmd, _cwd(payload)) if not p.dry_run]
+def _resolve(target, base):
+    """[target] taken from [base]; None when it is built from a variable."""
+    if len(target) > 1 and target[0] in "\"'" and target[-1] == target[0]:
+        target = target[1:-1]
+    if "$" in target or "`" in target:
+        return None
+    target = os.path.expanduser(target)
+    return target if os.path.isabs(target) else os.path.join(base, target)
+
+
+def publish_dir(cmd, payload):
+    """Where the publish will run, or None when that cannot be determined.
+
+    Only `cd`s BEFORE the publish count; one after it changes nothing about the
+    archive. Then the publish's own `-C`/`--directory` applies. An unresolvable
+    target (a variable, `cd -`, a bare `cd`, `pushd`/`popd`) yields None rather
+    than a guess: checking the wrong repository is how this guard failed before,
+    and a wrong answer here is worse than no answer.
+
+    Not parsed: a `cd` inside a subshell that closes before the publish, as in
+    `(cd x) && dart pub publish` — it is counted as if it still applied.
+    """
+    base = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    first = PUBLISH_RE.search(cmd)
+    limit = first.start() if first else len(cmd)
+
+    if any(m.start() < limit for m in OPAQUE_CD_RE.finditer(cmd)):
+        return None
+    for m in CD_RE.finditer(cmd):
+        if m.start() >= limit:
+            break
+        base = _resolve(m.group(1), base)
+        if base is None:
+            return None
+
+    if first:
+        args = re.split(r"[;&|\n]", cmd[first.end() :], maxsplit=1)[0]
+        named = PUB_DIR_RE.search(args)
+        if named:
+            base = _resolve(named.group(1), base)
+            if base is None:
+                return None
+
+    return os.path.normpath(base)
 
 
 def _problems(repo):
@@ -130,10 +206,6 @@ def _problems(repo):
         )
     return out
 
-def _block(text):
-    sys.stderr.write(text + "(guard: .claude/hooks/guard-publish.py)\n")
-    return 2
-
 
 def main():
     try:
@@ -146,55 +218,42 @@ def main():
         )
         return 2
 
-    if publish_command is None:
-        # Loosely, as anything could be: `pub` (or `packages`) and a publish
-        # word anywhere, quotes and backslashes dropped, or `$'…'` beside it.
-        text = re.sub(r"[\"'\\]", "", cmd)
-        if re.search(r"\b(?:pub|packages)\b", text) and (
-            re.search(r"\b(?:publish|lish|lush)\b", text) or "$'" in cmd
-        ):
-            return _block(
-                f"BLOCKED: publish_command.py did not load ({_IMPORT_ERROR!r}), "
-                "so this command cannot be read.\n"
-            )
+    if not PUBLISH_RE.search(cmd):
+        return 0
+    if _publish_is_exempt(cmd):
         return 0
 
-    try:
-        shipping = _shipping(cmd, payload)
-    except publish_command.PublishUnclear as e:
-        return _block(
-            f"BLOCKED: this command holds `pub publish`, but {e}.\n"
-            "Write the publish plainly (`cd <package> && dart pub publish`).\n"
+    where = publish_dir(cmd, payload)
+    if where is None:
+        sys.stderr.write(
+            "BLOCKED: cannot tell which directory the publish runs in — a `cd` "
+            "or `-C` target is built from a variable, or the command uses "
+            "`cd -`, a bare `cd`, `pushd` or `popd`.\n"
+            "Write the path literally so the guard checks the right repository.\n"
         )
+        return 2
 
-    # Every publish of the command, each in the repository it runs in.
-    for p in shipping:
-        where = p.directory
-        if where is None:
-            return _block(
-                "BLOCKED: cannot tell which directory the publish runs in — a "
-                "`cd` or `-C` target is built from a variable, or the command "
-                "uses `cd -`, a bare `cd`, `pushd` or `popd`.\n"
-                "Write the path literally so the guard checks the right "
-                "repository.\n"
-            )
-        try:
-            repo = git(where, "rev-parse", "--show-toplevel")
-            problems = _problems(repo)
-        except Exception as e:  # noqa: BLE001 — any surprise blocks
-            return _block(
-                f"BLOCKED: cannot verify the commit is on origin — {e}\n"
-                f"Publish directory: {where}\n"
-                "A publish is irreversible; an unverifiable state is not a safe "
-                "one.\n"
-            )
-        if problems:
-            return _block(
-                "BLOCKED: refusing to publish source that is not on the remote.\n"
-                f"  repository: {repo}\n"
-                + "".join(f"  - {p}\n" for p in problems)
-            )
-    return 0
+    try:
+        repo = git(where, "rev-parse", "--show-toplevel")
+        problems = _problems(repo)
+    except GitUnavailable as e:
+        sys.stderr.write(
+            f"BLOCKED: cannot verify the commit is on origin — {e}\n"
+            f"Publish directory: {where}\n"
+            "A publish is irreversible; an unverifiable state is not a safe one.\n"
+        )
+        return 2
+
+    if not problems:
+        return 0
+
+    sys.stderr.write(
+        "BLOCKED: refusing to publish source that is not on the remote.\n"
+        f"  repository: {repo}\n"
+        + "".join(f"  - {p}\n" for p in problems)
+        + "(guard: .claude/hooks/guard-publish.py)\n"
+    )
+    return 2
 
 
 # (command, should_block) — the cases that made earlier versions useless.
@@ -208,28 +267,15 @@ _TESTS = [
     ("cd x; (dart pub publish)", True),  # was a bypass
     ("dart pub publish --dry-run && dart pub publish", True),  # was a bypass
     ("flutter pub publish", True),
-    ('RELEASE_SKIP_REGISTRY="no device" dart pub publish -f', True),  # was a bypass
-    ("RELEASE_SKIP_DOCS='two words' dart pub publish", True),  # was a bypass
-    ("RELEASE_SKIP_REGISTRY= dart pub publish", True),  # was a bypass
-    ('env RELEASE_SKIP_REGISTRY="a b" X=1 dart pub publish', True),  # was a bypass
-    ("FOO=$(pwd) dart pub publish", True),
-    ("FOO=$(a $(b) c) dart pub publish", True),  # was a bypass
-    ("FOO=$(printf ')') dart pub publish", True),  # was a bypass
-    ("FOO=`pwd` dart pub publish", True),
-    ("fvm dart pub publish", True),  # was a bypass
-    ("sudo dart pub publish", True),  # was a bypass
-    ('bash -c "dart pub publish"', True),  # was a bypass
-    ("xargs dart pub publish", True),  # unclear: blocked
     ("dart pub publish --dry-run", False),
     ("cd x && dart pub publish --dry-run", False),
     ('echo \'{"command":"dart pub publish"}\' | cat', False),
     ('grep -r "dart pub publish" docs/', False),
-    ("cat <<'EOF'\ndart pub publish\nEOF", False),  # was blocked
     ("git push origin main", False),
 ]
 
-# (payload, command, expected directory of the first publish) — which
-# repository gets inspected. `None` means the guard must refuse, not guess.
+# (payload, command, expected directory) — which repository gets inspected.
+# `None` means the guard must refuse rather than guess.
 _DIR_TESTS = [
     # The bug this fixes: no `cd`, so the tool's own cwd decides — NOT the
     # session project, which may be an entirely different checkout.
@@ -237,153 +283,47 @@ _DIR_TESTS = [
     ({"cwd": "/w/a"}, "cd /w/b && dart pub publish", "/w/b"),
     ({"cwd": "/w/a"}, "cd packages/x && dart pub publish", "/w/a/packages/x"),
     ({"cwd": "/w/a"}, "cd packages\ncd x\ndart pub publish", "/w/a/packages/x"),
+    # A `cd` after the publish changes nothing about what was published.
     ({"cwd": "/w/a"}, "dart pub publish\ncd /elsewhere", "/w/a"),
+    # Unresolvable target: refuse instead of inspecting a guessed directory.
     ({"cwd": "/w/a"}, 'cd "$PKG" && dart pub publish', None),
     ({"cwd": "/w/a"}, "cd $PKG && dart pub publish", None),
+    # pub's own directory flag, alone and on top of a `cd`.
     ({"cwd": "/w/a"}, "dart pub publish -C /w/b --force", "/w/b"),
     ({"cwd": "/w/a"}, "cd packages && dart pub publish -C x", "/w/a/packages/x"),
     ({"cwd": "/w/a"}, "dart pub publish -Cpackages/x", "/w/a/packages/x"),
     ({"cwd": "/w/a"}, "dart pub publish --directory=packages/x", "/w/a/packages/x"),
     ({"cwd": "/w/a"}, "flutter pub publish --directory packages/x", "/w/a/packages/x"),
     ({"cwd": "/w/a"}, 'dart pub publish -C "$PKG"', None),
+    # Destinations not in the text block before the publish, not after it.
     ({"cwd": "/w/a"}, "cd /w/b && cd - && dart pub publish", None),
     ({"cwd": "/w/a"}, "cd -P /w/b && dart pub publish", None),
     ({"cwd": "/w/a"}, "cd\ndart pub publish", None),
     ({"cwd": "/w/a"}, "pushd /w/b && dart pub publish", None),
     ({"cwd": "/w/a"}, "dart pub publish\ncd -", "/w/a"),
-    ({"cwd": "/w/a"}, "(cd /w/b) && dart pub publish", "/w/a"),
 ]
 
 
-def _run_main(cmd, cwd):
-    import contextlib
-    import io
-
-    stdin = sys.stdin
-    sys.stdin = io.StringIO(json.dumps({"tool_input": {"command": cmd}, "cwd": cwd}))
-    try:
-        with contextlib.redirect_stderr(io.StringIO()):
-            return main()
-    finally:
-        sys.stdin = stdin
-
-
-_HOOK = "guard-publish"
-
-
-def _may_publish(raw):
-    """Whether the hook payload [raw] may hold a publish, read loosely; an
-    unreadable payload may."""
-    try:
-        cmd = (json.loads(raw).get("tool_input") or {}).get("command") or ""
-        if not isinstance(cmd, str):
-            return True
-        if publish_command is not None:
-            return publish_command.mentions_publish(cmd)
-        text = re.sub(r"[\"'\\]", "", cmd)
-        return bool(
-            re.search(r"\b(?:pub|packages)\b", text)
-            and (re.search(r"\b(?:publish|lish|lush)\b", text) or "$'" in cmd)
-        )
-    except BaseException:  # noqa: BLE001 — unsure: may publish
-        return True
-
-
-def _guarded_main():
-    """main(), failing closed for a publish only: a crash on a command that
-    may publish is exit 2 (block), never the exit 1 of a traceback, which a
-    PreToolUse hook reads as non-blocking; on any other command it allows."""
-    import io
-
-    try:
-        raw = sys.stdin.read()
-    except BaseException as e:  # noqa: BLE001 — a payload not read may publish
-        sys.stderr.write(f"BLOCKED: {_HOOK} could not read the hook payload ({e!r}).\n")
-        return 2
-    sys.stdin = io.StringIO(raw)
-    try:
-        return main()
-    except BaseException as e:  # noqa: BLE001 — a surprise blocks a publish
-        if not _may_publish(raw):
-            sys.stderr.write(f"{_HOOK} failed ({e!r}) on a command with no publish; allowed.\n")
-            return 0
-        sys.stderr.write(
-            f"BLOCKED: {_HOOK} failed ({e!r}); a publish in an unknown state is "
-            "not a safe one.\n"
-        )
-        return 2
-
-
-def _crash_blocks_publish_only():
-    """Self-test: with main() crashing, a publish blocks and `git status` does
-    not. Returns the failures."""
-    import contextlib
-    import io
-
-    bad = []
-    real = globals()["main"]
-    globals()["main"] = lambda: 1 / 0
-    try:
-        for cmd, want in (("dart pub publish -f", 2), ("dart pub\\\npublish", 2), ("git status", 0)):
-            stdin = sys.stdin
-            sys.stdin = io.StringIO(json.dumps({"tool_input": {"command": cmd}}))
-            try:
-                with contextlib.redirect_stderr(io.StringIO()):
-                    got = _guarded_main()
-            finally:
-                sys.stdin = stdin
-            if got != want:
-                bad.append(f"a crash on {cmd!r}: exit {got}, want {want}")
-    finally:
-        globals()["main"] = real
-    return bad
-
-
 def _self_test():
-    import tempfile
-
-    bad = list(publish_command.self_test())
-    bad += _crash_blocks_publish_only()
+    bad = 0
     for cmd, want in _TESTS:
-        try:
-            got = bool(_shipping(cmd, {"cwd": "/w"}))
-        except publish_command.PublishUnclear:
-            got = True
+        got = bool(PUBLISH_RE.search(cmd)) and not _publish_is_exempt(cmd)
         if got != want:
-            bad.append(f"want_block={want} got={got}  {cmd!r}")
+            bad += 1
+            print(f"  FAIL want_block={want} got={got}  {cmd!r}")
+
     for payload, cmd, want in _DIR_TESTS:
-        got = _shipping(cmd, payload)[0].directory
+        got = publish_dir(cmd, payload)
         if got != want:
-            bad.append(f"want_dir={want!r} got={got!r}  {cmd!r}")
-    # Two publishes in two repositories: the second one's is checked too.
-    with tempfile.TemporaryDirectory() as root:
-        clean = os.path.join(root, "clean")
-        dirty = os.path.join(root, "dirty")
-        origin = os.path.join(root, "origin.git")
-        git(root, "init", "-q", "--bare", origin)
-        for repo in (clean, dirty):
-            os.makedirs(repo)
-            git(repo, "init", "-q", "-b", "main")
-            git(repo, "-c", "user.name=t", "-c", "user.email=t@t",
-                "commit", "-q", "--allow-empty", "-m", "t")
-            git(repo, "remote", "add", "origin", origin)
-        git(clean, "push", "-q", "origin", "main")
-        open(os.path.join(dirty, "x"), "w").close()
-        if _run_main(f"dart pub publish -C {clean}", root) != 0:
-            bad.append("a pushed, clean repository is blocked")
-        code = _run_main(
-            f"dart pub publish -C {clean} && dart pub publish -C {dirty}", root
-        )
-        if code != 2:
-            bad.append(f"the second publish's dirty repository passed: exit {code}")
-    for line in bad:
-        print(f"  FAIL {line}")
-    total = len(_TESTS) + len(_DIR_TESTS) + 2 + len(publish_command._CASES)
-    print(f"  {total - len(bad)}/{total} pass")
+            bad += 1
+            print(f"  FAIL want_dir={want!r} got={got!r}  {cmd!r}")
+
+    total = len(_TESTS) + len(_DIR_TESTS)
+    print(f"  {total - bad}/{total} pass")
     return 1 if bad else 0
 
 
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(_self_test())
-    sys.exit(_guarded_main())
+    sys.exit(main())

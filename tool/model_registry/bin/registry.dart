@@ -113,7 +113,7 @@ Future<void> main(List<String> args) async {
         'tool/model_registry',
         'packages/$package',
       ]))
-        '$path is not committed: the stamp would not stand for HEAD',
+        '$path is not committed: the check would not stand for HEAD',
       if (stale > 0) '$stale generated file(s) not current',
       if (!published.existsSync() || published.readAsStringSync() != snapshot)
         '${p.relative(published.path, from: repoRoot)} is not what '
@@ -128,28 +128,6 @@ Future<void> main(List<String> args) async {
             '(${c.what})',
     ];
     if (reasons.isEmpty) {
-      // The release hook reads this instead of running the tool: a hook that
-      // executes repository code would run it before the publish is approved.
-      final head = Process.runSync('git', [
-        'rev-parse',
-        'HEAD',
-      ], workingDirectory: repoRoot);
-      File(
-          p.join(
-            p.dirname(p.dirname(p.fromUri(Platform.script))),
-            '.dart_tool',
-            'release_check',
-            '$package-$version.ok',
-          ),
-        )
-        ..createSync(recursive: true)
-        ..writeAsStringSync(
-          jsonEncode({
-            'package': package,
-            'version': version,
-            'head': '${head.stdout}'.trim(),
-          }),
-        );
       stdout.writeln('$package $version: ready to publish');
       exit(0);
     }

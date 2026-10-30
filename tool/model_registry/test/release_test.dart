@@ -1,4 +1,4 @@
-// release-check stamps HEAD only when the inputs it read are committed.
+// release-check passes only when the inputs it read are committed.
 
 import 'dart:io';
 

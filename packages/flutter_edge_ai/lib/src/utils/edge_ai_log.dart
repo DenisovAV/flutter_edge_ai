@@ -31,12 +31,12 @@ void edgeAiLog(String message, {EdgeAiLogLevel level = EdgeAiLogLevel.info}) {
 }
 
 /// Says that a start-up restore left a kind without its active model, in
-/// every build: [edgeAiLog] is silent in release builds, where an app would
-/// otherwise find its model gone at start without a word. One line, with
-/// `print`, whatever [edgeAiLogLevel] is.
+/// release builds too: [edgeAiLog] is silent there, where an app would
+/// otherwise find its model gone at start without a word. One line through
+/// [debugPrint]; silent under [EdgeAiLogLevel.none], as every plugin log is.
 void restoreNotice(String message) {
-  // ignore: avoid_print
-  print('flutter_edge_ai: ${sanitizeForLog(message)}');
+  if (edgeAiLogLevel == EdgeAiLogLevel.none) return;
+  debugPrint('flutter_edge_ai: ${sanitizeForLog(message)}');
 }
 
 /// Rewrites U+FFFD (the replacement character) and unpaired UTF-16 surrogates

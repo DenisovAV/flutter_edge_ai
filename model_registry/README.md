@@ -280,14 +280,9 @@ generated file are current, the frozen fields are written, and every cell
 package's minor version last moved, and nothing under `model_registry/`,
 `tool/model_registry/` or the package is uncommitted (an example app's
 `pubspec.lock`, which any `pub get` rewrites, aside). A patch on the same
-native build keeps its evidence. On success `release-check` writes a stamp with the HEAD it passed at
-(`tool/model_registry/.dart_tool/release_check/<package>-<version>.ok`).
-`.claude/hooks/guard-release-registry.py` refuses `dart pub publish` of either
-package unless that stamp is for HEAD and nothing under `model_registry/`,
-`tool/model_registry/` or the package has changed since (an example's
-`pubspec.lock` aside), or the command carries
-`RELEASE_SKIP_REGISTRY="<reason>"`, which it reports as a `systemMessage`. The hook reads the stamp and asks git; it
-runs no repository code, which a hook would run before the command is approved.
+native build keeps its evidence. The release skill makes a green
+`release-check` at the HEAD being published a required step before
+`dart pub publish` of either package; nothing enforces it beyond that.
 
 CI runs `check` and `dart test` on every pull request (`model-registry` in
 `.github/workflows/test.yml`). Weekly, `model-registry-live.yml` runs

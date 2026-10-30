@@ -5,6 +5,7 @@
 // a model was uninstalled says that it is gone. The refusal's words are
 // core's, held by core's catalog_entries_test.dart.
 
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/services/catalog_install.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -168,9 +169,45 @@ void main() {
         },
         uninstall: (_) async {},
       ),
-      throwsA(isA<CatalogReplaceFailed>()),
+      throwsA(
+        isA<CatalogReplaceFailed>().having(
+          (e) => e.message,
+          'message',
+          'Uninstalling emb did not release its file, so ${variant.id} is '
+              'not installed.',
+        ),
+      ),
     );
     expect(asks, 1);
+  });
+
+  test('each kind is uninstalled with its own core call', () {
+    for (final (kind, call, uninstaller) in [
+      ('embedding', 'uninstallEmbedder()', FlutterEdgeAi.uninstallEmbedder),
+      ('speech-to-text', 'uninstallStt()', FlutterEdgeAi.uninstallStt),
+      ('text-to-speech', 'uninstallTts()', FlutterEdgeAi.uninstallTts),
+    ]) {
+      final model = ActiveModelInTheWay.of(refusal(kind, 'm', call))!;
+      expect(identical(model.uninstaller, uninstaller), isTrue, reason: kind);
+    }
+  });
+
+  test('two models of different kinds with one name are two models', () async {
+    final asked = <String>[];
+    final result = await installFromCatalogReplacingActive(
+      installing([
+        refusal('inference', 'emb', "uninstallModel('emb.litertlm')"),
+        embedder,
+      ], []),
+      variant: variant,
+      confirm: (model, _) async {
+        asked.add(model.kind);
+        return true;
+      },
+      uninstall: (_) async {},
+    );
+    expect(result, isA<CatalogInstalled>());
+    expect(asked, ['inference', 'embedding']);
   });
 
   test('an inference model is named with its file, escapes read', () {
@@ -202,5 +239,61 @@ void main() {
       ),
     );
     expect(asked, isFalse);
+  });
+
+  group('what a download screen shows', () {
+    const gated = DownloadException(DownloadError.unauthorized());
+    const failed = 'Failed to download the model.';
+
+    test('a replace that failed on a 401 says first the old model is gone, '
+        'then offers the gated dialog', () {
+      final views = installErrorViews(
+        const CatalogReplaceFailed(
+          'emb was already uninstalled, but x did not install',
+          gated,
+        ),
+        fallback: failed,
+      );
+      expect(views, hasLength(2));
+      expect(
+        (views[0] as InstallErrorMessage).text,
+        startsWith('emb was already uninstalled'),
+      );
+      expect((views[1] as InstallErrorGated).error, same(gated));
+    });
+
+    test('a replace that failed on a full disk says first the old model is '
+        'gone, then offers the storage dialog', () {
+      final views = installErrorViews(
+        CatalogReplaceFailed(
+          'emb was already uninstalled, but x did not install',
+          Exception('No space left on device'),
+        ),
+        fallback: failed,
+      );
+      expect(views.first, isA<InstallErrorMessage>());
+      expect(views.last, isA<InstallErrorStorage>());
+    });
+
+    test('a replace that failed otherwise is its message alone', () {
+      final views = installErrorViews(
+        CatalogReplaceFailed('emb was already uninstalled', Exception('x')),
+        fallback: failed,
+      );
+      expect(views.single, isA<InstallErrorMessage>());
+    });
+
+    test('any other error is its dialog, or the screen\'s text', () {
+      expect(
+        installErrorViews(gated, fallback: failed).single,
+        isA<InstallErrorGated>(),
+      );
+      expect(
+        (installErrorViews(Exception('boom'), fallback: failed).single
+                as InstallErrorMessage)
+            .text,
+        failed,
+      );
+    });
   });
 }

@@ -18,6 +18,9 @@ class FakeBackend implements WebLlmBackend {
   Object? failWith;
   int cancels = 0;
 
+  /// The next generate() answers only when the test completes this.
+  Completer<String>? held;
+
   /// A cancelled call ends only when the test lets it.
   bool endOnCancel = true;
   StreamController<String>? live;
@@ -29,6 +32,10 @@ class FakeBackend implements WebLlmBackend {
   Future<String> generate(List<PromptPart> prompt) async {
     prompts.add(prompt);
     if (failWith != null) throw failWith!;
+    if (held case final hold?) {
+      held = null;
+      return hold.future;
+    }
     return replies.removeAt(0);
   }
 
@@ -57,6 +64,7 @@ WebModelSession _session(
   int? maxImages,
   bool image = false,
   String? system,
+  Duration previousCallWait = const Duration(seconds: 30),
 }) => WebModelSession(
   backend: b,
   onClose: () {},
@@ -65,6 +73,7 @@ WebModelSession _session(
   systemInstruction: system,
   template: WebChatTemplate.gemma4,
   maxImages: maxImages,
+  previousCallWait: previousCallWait,
 );
 
 const _user = Message(text: 'Name a yellow fruit.', isUser: true);
@@ -140,18 +149,18 @@ void main() {
     final b = FakeBackend(['x']);
     final s = _session(b, system: 'Be brief', image: true, maxImages: 1);
     final png = Uint8List.fromList([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]);
-    await s.addQueryChunk(Message(text: 'a', isUser: true, imageBytes: png));
-    s.stopGeneration();
-    await s.addQueryChunk(const Message(text: 'plain', isUser: true));
-    // The second image does not fit; the instruction was in the first turn.
+    // The first message is the refused one: two images, room for one.
     await expectLater(
-      s.addQueryChunk(Message(text: 'b', isUser: true, imageBytes: png)),
+      s.addQueryChunk(
+        Message.withImages(text: 'a', imageBytes: [png, png], isUser: true),
+      ),
       throwsStateError,
     );
+    await s.addQueryChunk(const Message(text: 'plain', isUser: true));
     await s.getResponse();
     expect(
-      RegExp(r'\[System: Be brief\]').allMatches(_text(b.prompts.single)),
-      hasLength(1),
+      _text(b.prompts.single),
+      '<|turn>user\n[System: Be brief]\n\nplain<turn|>\n<|turn>model\n',
     );
   });
 
@@ -218,10 +227,17 @@ void main() {
       final waiting = s.getResponse();
       final outcome = expectLater(waiting, throwsStateError);
       await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(b.cancels, 1);
       await s.close();
+      expect(
+        b.cancels,
+        1,
+        reason: 'the waiting call never reached the backend: nothing to cancel',
+      );
       await b.live!.close();
       await outcome;
       expect(b.prompts, hasLength(1));
+      expect(s.pendingCalls, 0);
     });
 
     test('throws StateError from addQueryChunk, getResponse and '
@@ -265,6 +281,41 @@ void main() {
     });
   });
 
+  group('Gemma 4 thinking is stripped', () {
+    test('from a reply the chat replays', () async {
+      final b = FakeBackend(['x']);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      await s.addQueryChunk(
+        const Message(text: '<|channel>thought\nhm<channel|>  Banana.  \n'),
+      );
+      await s.addQueryChunk(const Message(text: 'Ok?', isUser: true));
+      await s.getResponse();
+      expect(
+        _text(b.prompts.single),
+        contains('<|turn>model\nBanana.<turn|>\n<|turn>user\nOk?'),
+      );
+    });
+
+    test('from a stopped partial', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      b.live!.add('<|channel>thought\nhm<channel|>  Ban');
+      await Future<void>.delayed(Duration.zero);
+      await s.stopGeneration();
+      await s.addQueryChunk(const Message(text: 'Ok?', isUser: true));
+      b.replies.add('x');
+      await s.getResponse();
+      expect(
+        _text(b.prompts.last),
+        contains('<|turn>model\nBan<turn|>\n<|turn>user\nOk?'),
+      );
+    });
+  });
+
   test('stop keeps the generated partial and cancels the backend', () async {
     final b = FakeBackend([]);
     final s = _session(b);
@@ -283,6 +334,334 @@ void main() {
       _text(b.prompts.last),
       contains('<|turn>model\nMango, which<turn|>'),
     );
+  });
+
+  test('a stop while getResponse waits for the previous call ends it before '
+      'it starts', () async {
+    final b = FakeBackend([])..endOnCancel = false;
+    final s = _session(b);
+    await s.addQueryChunk(_user);
+    s.getResponseAsync().listen((_) {});
+    await Future<void>.delayed(Duration.zero);
+    final first = b.live!;
+    first.add('Mango');
+    await Future<void>.delayed(Duration.zero);
+    await s.stopGeneration();
+
+    await s.addQueryChunk(const Message(text: 'go on', isUser: true));
+    b.replies.add('never sent');
+    final next = s.getResponse();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(b.cancels, 1);
+    await s.stopGeneration();
+    expect(
+      b.cancels,
+      1,
+      reason: 'the waiting call never reached the backend: nothing to cancel',
+    );
+    await first.close();
+    expect(await next, isEmpty);
+    expect(b.prompts, hasLength(1), reason: 'the stopped call must not run');
+
+    // The stopped turn is still the user's, and the next call answers it.
+    b.replies
+      ..clear()
+      ..add('ok');
+    await s.getResponse();
+    expect(
+      _text(b.prompts.last),
+      endsWith(
+        '<|turn>model\nMango<turn|>\n<|turn>user\ngo on<turn|>\n<|turn>model\n',
+      ),
+    );
+  });
+
+  group('overlapping blocking calls', () {
+    test('a stop ends both, and the running one\'s late reply is not '
+        'recorded', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(const Message(text: 'a', isUser: true));
+      final hold = b.held = Completer<String>();
+      final first = s.getResponse();
+      final second = s.getResponse();
+      await Future<void>.delayed(Duration.zero);
+      await s.stopGeneration();
+      expect(b.cancels, 1);
+      hold.complete('partial');
+      expect(await first, 'partial');
+      expect(await second, isEmpty);
+      expect(b.prompts, hasLength(1), reason: 'the waiting call never ran');
+
+      await s.addQueryChunk(const Message(text: 'b', isUser: true));
+      b.replies.add('ok');
+      await s.getResponse();
+      expect(_text(b.prompts.last), isNot(contains('partial')));
+      expect(_text(b.prompts.last), '<|turn>user\na\nb<turn|>\n<|turn>model\n');
+    });
+
+    test('a call still running behind two that gave up waiting stays '
+        'stoppable', () async {
+      final b = FakeBackend([]);
+      final s = _session(b, previousCallWait: const Duration(milliseconds: 5));
+      await s.addQueryChunk(const Message(text: 'a', isUser: true));
+      final hold = b.held = Completer<String>();
+      final first = s.getResponse();
+      // Both wait at once, past their limit, and are refused: the first is
+      // still running.
+      final second = s.getResponse();
+      final third = s.getResponse();
+      await expectLater(second, throwsStateError);
+      await expectLater(third, throwsStateError);
+
+      await s.stopGeneration();
+      expect(b.cancels, 1, reason: 'the running call was found and cancelled');
+      hold.complete('late');
+      await first;
+      expect(s.pendingCalls, 0);
+
+      await s.addQueryChunk(const Message(text: 'b', isUser: true));
+      b.replies.add('ok');
+      await s.getResponse();
+      expect(_text(b.prompts.last), isNot(contains('late')));
+    });
+
+    test('a close ends both, and the late reply lands nowhere', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(const Message(text: 'a', isUser: true));
+      final hold = b.held = Completer<String>();
+      final first = s.getResponse();
+      final second = expectLater(s.getResponse(), throwsStateError);
+      await Future<void>.delayed(Duration.zero);
+      await s.close();
+      expect(b.cancels, 1);
+      // The waiting call is refused at the close, not when the first ends.
+      await second;
+      hold.complete('late');
+      expect(await first, 'late');
+      expect(b.prompts, hasLength(1));
+    });
+  });
+
+  group('a call that waits for an earlier one', () {
+    test('a stopped call that never ends delays only the next turn', () async {
+      const wait = Duration(milliseconds: 200);
+      final b = FakeBackend([])..endOnCancel = false;
+      final s = _session(b, previousCallWait: wait);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      await s.stopGeneration(); // its stream never closes
+
+      final took = <Duration>[];
+      for (final text in ['one', 'two', 'three']) {
+        await s.addQueryChunk(Message(text: text, isUser: true));
+        b.replies.add('ok');
+        final clock = Stopwatch()..start();
+        await s.getResponse();
+        took.add(clock.elapsed);
+      }
+      // Timers and Stopwatch round differently; a few ms of slack.
+      expect(took[0], greaterThan(wait - const Duration(milliseconds: 20)));
+      expect(took[1], lessThan(wait ~/ 2));
+      expect(took[2], lessThan(wait ~/ 2));
+      expect(s.pendingCalls, 0);
+    });
+
+    test('a stream behind a call that is still running is refused after the '
+        'wait, and the running call stays stoppable', () async {
+      final b = FakeBackend([]);
+      final s = _session(b, previousCallWait: const Duration(milliseconds: 5));
+      await s.addQueryChunk(const Message(text: 'a', isUser: true));
+      final hold = b.held = Completer<String>();
+      final first = s.getResponse();
+      final errors = <Object>[];
+      final done = Completer<void>();
+      s.getResponseAsync().listen(
+        (_) {},
+        onError: errors.add,
+        onDone: done.complete,
+      );
+      await done.future;
+      expect(errors.single, isA<StateError>());
+
+      await s.stopGeneration();
+      expect(b.cancels, 1);
+      hold.complete('late');
+      await first;
+      expect(s.pendingCalls, 0);
+    });
+
+    test(
+      'a stream stopped while it waits never starts, and ends at once',
+      () async {
+        final b = FakeBackend([]);
+        final s = _session(b);
+        await s.addQueryChunk(const Message(text: 'a', isUser: true));
+        final hold = b.held = Completer<String>();
+        final first = s.getResponse();
+        final done = Completer<void>();
+        s.getResponseAsync().listen((_) {}, onDone: done.complete);
+        await Future<void>.delayed(Duration.zero);
+
+        await s.stopGeneration();
+        await done.future.timeout(const Duration(seconds: 1));
+        expect(
+          b.cancels,
+          1,
+          reason: 'only the call in the backend is cancelled',
+        );
+        hold.complete('late');
+        await first;
+        await Future<void>.delayed(Duration.zero);
+        expect(b.prompts, hasLength(1), reason: 'the stream never started');
+        expect(s.pendingCalls, 0);
+      },
+    );
+
+    test(
+      'a stream closed while it waits never starts, and ends at once',
+      () async {
+        final b = FakeBackend([]);
+        final s = _session(b);
+        await s.addQueryChunk(const Message(text: 'a', isUser: true));
+        final hold = b.held = Completer<String>();
+        final first = s.getResponse();
+        final done = Completer<void>();
+        s.getResponseAsync().listen((_) {}, onDone: done.complete);
+        await Future<void>.delayed(Duration.zero);
+
+        await s.close();
+        await done.future.timeout(const Duration(seconds: 1));
+        expect(b.cancels, 1);
+        hold.complete('late');
+        await first;
+        await Future<void>.delayed(Duration.zero);
+        expect(b.prompts, hasLength(1), reason: 'the stream never started');
+        expect(s.pendingCalls, 0);
+      },
+    );
+
+    test('a call queued later starts when the delayed turn ends, not at its '
+        'own timeout', () async {
+      const wait = Duration(milliseconds: 200);
+      final b = FakeBackend([])..endOnCancel = false;
+      final s = _session(b, previousCallWait: wait);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      await s.stopGeneration(); // its stream never closes
+
+      await s.addQueryChunk(const Message(text: 'go on', isUser: true));
+      final delayedDone = Completer<void>();
+      s.getResponseAsync().listen((_) {}, onDone: delayedDone.complete);
+      await Future<void>.delayed(wait ~/ 2);
+      // Queued half a wait later; its own limit runs out at 1.5 waits.
+      final later = s.getResponse();
+      await Future<void>.delayed(wait ~/ 2 + const Duration(milliseconds: 30));
+      expect(b.prompts, hasLength(2), reason: 'the delayed turn is running');
+      b.replies.add('x');
+      b.live!
+        ..add('Ok.')
+        ..close();
+      await delayedDone.future;
+      final clock = Stopwatch()..start();
+      await later;
+      expect(clock.elapsed, lessThan(wait ~/ 4));
+      expect(b.prompts, hasLength(3));
+    });
+
+    test('a call queued behind the turn a never-ending stopped call delayed '
+        'is not refused', () async {
+      const wait = Duration(milliseconds: 200);
+      final b = FakeBackend([])..endOnCancel = false;
+      final s = _session(b, previousCallWait: wait);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      final stuck = b.live!;
+      await s.stopGeneration(); // its stream never closes
+
+      await s.addQueryChunk(const Message(text: 'go on', isUser: true));
+      s.getResponseAsync().listen((_) {});
+      final queued = s.getResponse();
+      var refused = false;
+      unawaited(queued.then((_) {}, onError: (Object _) => refused = true));
+      // Past the first wait the stopped call is let go of and the stream
+      // runs; the blocking call then waits for the stream afresh, as for any
+      // call that runs, instead of being refused alongside it.
+      await Future<void>.delayed(wait * 1.5);
+      expect(b.prompts, hasLength(2), reason: 'the second stream started');
+      expect(identical(b.live, stuck), isFalse);
+      expect(refused, isFalse);
+
+      await s.stopGeneration();
+      expect(await queued, isEmpty);
+    });
+
+    test('a blocking call behind a waiting stream queues instead of failing, '
+        'and a stop ends both', () async {
+      final b = FakeBackend([])..endOnCancel = false;
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      final first = b.live!;
+      first.add('Mango');
+      await Future<void>.delayed(Duration.zero);
+      await s.stopGeneration();
+
+      // The stream waits for the stopped call; the blocking call waits for it.
+      await s.addQueryChunk(const Message(text: 'go on', isUser: true));
+      final streamed = <String>[];
+      final done = Completer<void>();
+      s.getResponseAsync().listen(streamed.add, onDone: done.complete);
+      final blocking = s.getResponse();
+      await first.close();
+      await Future<void>.delayed(Duration.zero);
+      expect(b.prompts, hasLength(2), reason: 'the stream runs first');
+      b.live!.add('Ok');
+      await Future<void>.delayed(Duration.zero);
+
+      await s.stopGeneration();
+      await done.future;
+      expect(streamed.join(), 'Ok');
+      // Queued, not refused: the stop ends it before it starts.
+      expect(await blocking, isEmpty);
+      expect(b.prompts, hasLength(2));
+      expect(s.pendingCalls, 1, reason: 'the stopped stream is still ending');
+      await b.live!.close();
+      await Future<void>.delayed(Duration.zero);
+      expect(s.pendingCalls, 0);
+    });
+  });
+
+  test('a blocking call queues behind a stream, runs after it, and sees '
+      'its reply', () async {
+    final b = FakeBackend([]);
+    final s = _session(b);
+    await s.addQueryChunk(_user);
+    final streamed = <String>[];
+    final done = Completer<void>();
+    s.getResponseAsync().listen(streamed.add, onDone: done.complete);
+    await Future<void>.delayed(Duration.zero);
+    final live = b.live!;
+    // Queued while the stream runs; addQueryChunk is refused until it ends,
+    // so this call has no user message of its own.
+    final blocking = s.getResponse();
+    await Future<void>.delayed(Duration.zero);
+    expect(b.prompts, hasLength(1), reason: 'it waits for the stream');
+
+    b.replies.add('Next.');
+    live
+      ..add('Ok.')
+      ..close();
+    await done.future;
+    expect(streamed.join(), 'Ok.');
+    expect(await blocking, 'Next.');
+    expect(b.prompts, hasLength(2));
+    expect(_text(b.prompts.last), contains('<|turn>model\nOk.<turn|>'));
   });
 
   test('the next call waits until the stopped one has ended', () async {

@@ -5,7 +5,6 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/chat_screen.dart';
 import 'package:flutter_edge_ai_example/services/model_download_service.dart';
 import 'package:flutter_edge_ai_example/utils/gated_model_access_dialog.dart';
-import 'package:flutter_edge_ai_example/utils/storage_quota_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'models/model.dart';
@@ -97,25 +96,17 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
         needToDownload = false;
       });
     } catch (e) {
-      for (final view in installErrorViews(
-        e,
-        fallback: 'Failed to download the model.',
-      )) {
-        if (!mounted) return;
-        switch (view) {
-          case InstallErrorMessage(:final text):
-            scaffoldMessenger.showSnackBar(SnackBar(content: Text(text)));
-          case InstallErrorGated(:final error):
-            await showGatedModelAccessDialog(
-              context: context,
-              modelUrl: widget.model.url,
-              licenseUrl: widget.model.licenseUrl,
-              error: error,
-            );
-          case InstallErrorStorage():
-            await showStorageFullDialog(context);
-        }
-      }
+      if (!mounted) return;
+      await showInstallErrors(
+        context,
+        installErrorViews(e, fallback: 'Failed to download the model.'),
+        gated: (error) => showGatedModelAccessDialog(
+          context: context,
+          modelUrl: widget.model.url,
+          licenseUrl: widget.model.licenseUrl,
+          error: error,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {

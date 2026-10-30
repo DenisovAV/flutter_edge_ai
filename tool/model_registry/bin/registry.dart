@@ -63,6 +63,17 @@ Future<void> main(List<String> args) async {
   checkEvidence(site, result.entries, result.problems);
   final critical = readCritical(registry, result.problems);
   checkCritical(site, result.entries, critical, result.problems);
+  // The release in progress: see releaseGate.
+  final gate = releaseGate(command!, result.problems, site.versions);
+  for (final problem in gate.pending) {
+    stdout.writeln(
+      'pending until `registry.dart freeze ${problem.awaitsFreeze!.$1}`: '
+      '$problem',
+    );
+  }
+  result.problems
+    ..clear()
+    ..addAll(gate.blocking);
   if (command == 'evidence') {
     exit(_evidence(args, option, registry, repoRoot, site, result));
   }

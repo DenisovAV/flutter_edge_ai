@@ -14,7 +14,6 @@ import 'package:flutter_edge_ai_example/services/model_download_service.dart';
 import 'package:flutter_edge_ai_example/services/embedding_download_service.dart';
 import 'package:flutter_edge_ai_example/translate_screen.dart';
 import 'package:flutter_edge_ai_example/utils/gated_model_access_dialog.dart';
-import 'package:flutter_edge_ai_example/utils/storage_quota_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class UniversalDownloadScreen extends StatefulWidget {
@@ -275,22 +274,17 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
   Future<void> _handleDownloadError(Object error) async {
     // A failed replace first says the old model is gone, then the dialog its
     // cause needs.
-    for (final view in installErrorViews(error, fallback: error.toString())) {
-      if (!mounted) return;
-      switch (view) {
-        case InstallErrorMessage(:final text):
-          await _showErrorDialog(text);
-        case InstallErrorGated(:final error):
-          await showGatedModelAccessDialog(
-            context: context,
-            modelUrl: widget.model.url,
-            licenseUrl: widget.model.licenseUrl,
-            error: error,
-          );
-        case InstallErrorStorage():
-          await showStorageFullDialog(context);
-      }
-    }
+    if (!mounted) return;
+    await showInstallErrors(
+      context,
+      installErrorViews(error, fallback: error.toString()),
+      gated: (cause) => showGatedModelAccessDialog(
+        context: context,
+        modelUrl: widget.model.url,
+        licenseUrl: widget.model.licenseUrl,
+        error: cause,
+      ),
+    );
   }
 
   Future<void> _showErrorDialog(String error) {

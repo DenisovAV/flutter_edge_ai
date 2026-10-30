@@ -25,10 +25,10 @@ void main() {
   test('the active model keeps its install name across a reload', () async {
     const url = 'https://example.com/repo/model.litertlm';
     SharedPreferences.setMockInitialValues({
-      'active_inference_model_type': 'phi',
-      'active_inference_file_type': 'litertlm',
-      'active_inference_filename': 'phi-4-mini-reasoning.litertlm',
-      'active_inference_source': 'network|$url',
+      PreferencesKeys.activeInferenceModelType: 'phi',
+      PreferencesKeys.activeInferenceFileType: 'litertlm',
+      PreferencesKeys.activeInferenceFilename: 'phi-4-mini-reasoning.litertlm',
+      PreferencesKeys.activeInferenceSource: 'network|$url',
     });
     await ServiceRegistry.initialize();
     await ServiceRegistry.instance.modelRepository.saveModel(
@@ -55,10 +55,10 @@ void main() {
     () async {
       const url = 'https://example.com/repo/gemma%3A2b.litertlm';
       SharedPreferences.setMockInitialValues({
-        'active_inference_model_type': 'gemma4',
-        'active_inference_file_type': 'litertlm',
-        'active_inference_filename': 'gemma:2b.litertlm',
-        'active_inference_source': 'network|$url',
+        PreferencesKeys.activeInferenceModelType: 'gemma4',
+        PreferencesKeys.activeInferenceFileType: 'litertlm',
+        PreferencesKeys.activeInferenceFilename: 'gemma:2b.litertlm',
+        PreferencesKeys.activeInferenceSource: 'network|$url',
       });
       await ServiceRegistry.initialize();
       await ServiceRegistry.instance.modelRepository.saveModel(
@@ -78,6 +78,9 @@ void main() {
     },
   );
 
+  // A notice is meant for release builds too, which a `kDebugMode` gate
+  // would silence. `flutter test` always runs in debug mode, where such a gate
+  // is open, so no test here can see it; only a release build can.
   group('restore notices, through the log sink', () {
     late List<String> said;
     final sink = debugPrint;
@@ -122,7 +125,16 @@ void main() {
       SharedPreferences.setMockInitialValues(unrecorded);
       await ServiceRegistry.initialize();
       await WebModelManager().ensureInitialized();
-      expect(said, contains(contains('gone.litertlm not in repository')));
+      // The prefix is restoreNotice's: edgeAiLog prints the bare message.
+      expect(
+        said,
+        contains(
+          allOf(
+            startsWith('flutter_edge_ai: '),
+            contains('gone.litertlm not in repository'),
+          ),
+        ),
+      );
     });
 
     test(

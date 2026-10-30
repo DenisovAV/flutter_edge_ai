@@ -41,18 +41,22 @@ final class ActiveModelInTheWay {
     );
   }
 
-  /// The core call that uninstalls it, by its kind: a static tear-off for
-  /// the embedder, STT and TTS (so a test can compare it), and
-  /// `uninstallModel` with its file for an inference model.
-  Future<void> Function() get uninstaller => switch (kind) {
+  /// The core call that uninstalls it, by its kind, as a static tear-off a
+  /// test can compare: `uninstallModel` (given [inferenceFile]) for an
+  /// inference model, the kind's own call for the others.
+  Function get uninstaller => switch (kind) {
     'embedding' => FlutterEdgeAi.uninstallEmbedder,
     'speech-to-text' => FlutterEdgeAi.uninstallStt,
     'text-to-speech' => FlutterEdgeAi.uninstallTts,
-    _ => () => FlutterEdgeAi.uninstallModel(inferenceFile!),
+    _ => FlutterEdgeAi.uninstallModel,
   };
 
   /// Uninstalls it with the call of its kind.
-  Future<void> uninstall() => uninstaller();
+  Future<void> uninstall() => switch (uninstaller) {
+    final Future<void> Function(String) byFile => byFile(inferenceFile!),
+    final Future<void> Function() call => call(),
+    _ => throw StateError('no uninstall call for a $kind model'),
+  };
 }
 
 /// How [installFromCatalogReplacingActive] ended without an error.
@@ -255,4 +259,38 @@ List<InstallErrorView> installErrorViews(
     ];
   }
   return [dialogFor(error) ?? InstallErrorMessage(fallback)];
+}
+
+/// Shows [views] over [context] one after the other, each awaited: a message
+/// as a dialog (a snackbar's time would run out behind the next dialog's
+/// barrier, and with it "already uninstalled"), then the gated dialog
+/// ([gated]) or the storage one.
+Future<void> showInstallErrors(
+  BuildContext context,
+  List<InstallErrorView> views, {
+  required Future<void> Function(Object error) gated,
+}) async {
+  for (final view in views) {
+    if (!context.mounted) return;
+    switch (view) {
+      case InstallErrorMessage(:final text):
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Download error'),
+            content: Text(text),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      case InstallErrorGated(:final error):
+        await gated(error);
+      case InstallErrorStorage():
+        await showStorageFullDialog(context);
+    }
+  }
 }

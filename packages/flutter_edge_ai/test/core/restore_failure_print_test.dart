@@ -1,6 +1,10 @@
 // A restore that fails or is skipped for one kind is said through the log
 // sink (debugPrint, which release builds keep, unlike edgeAiLog), the start
 // goes on without it, and EdgeAiLogLevel.none silences it.
+//
+// That release builds keep it cannot be seen here: `flutter test` always
+// runs in debug mode, so a `kDebugMode` gate on restoreNotice would stay
+// open in every test. Only a release build can show it.
 
 import 'dart:io';
 

@@ -36,7 +36,7 @@ final class FileExpectation {
   bool get isEmpty => size == null;
 }
 
-/// The largest file the web's default storage, the Cache API, holds: a file
+/// The largest file the web holds outside `WebStorageMode.streaming`: a file
 /// is read whole into one `ArrayBuffer`, which browsers cap near 2 GiB.
 const webCacheLimitBytes = 2 * 1024 * 1024 * 1024;
 
@@ -210,11 +210,14 @@ Future<void> checkInstalledFiles(
       );
     } catch (e) {
       // The record goes first: when it is gone the next install downloads
-      // over the file; when it is not, only an uninstall clears it.
+      // over the file; when it is not, only an uninstall of that record (not
+      // of the active model, which is another one) clears it.
+      final name = _dartQuoted(file.filename);
       return (
-        'Deleting it failed ($e). If isModelInstalled still lists '
-            '${file.filename}, uninstall it before installing again; if not, '
-            'the next install downloads over it.',
+        'Deleting it failed ($e). If '
+            "FlutterEdgeAi.isModelInstalled('$name') is still true, run "
+            "FlutterEdgeAi.uninstallModel('$name') before installing again; "
+            'if not, the next install downloads over it.',
         e,
       );
     }

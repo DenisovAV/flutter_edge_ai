@@ -399,7 +399,8 @@ build compiled for an NPU names the context it was compiled for
 (`requiredMaxTokens`); keep `maxTokens` at or below it. After the download,
 and before the model becomes active, each file's size is checked against the
 registry (not on the web): a file of another size is deleted with its record,
-and `install()` throws `ModelValidationException`. An install that would
+unless an active model reads it, and `install()` throws
+`ModelValidationException`. An install that would
 write over a file an active model of any kind reads, from another source (a
 model installed earlier from a `/resolve/main/` URL under the same name, or
 an older pin), is refused with a `StateError` before it downloads (not on the

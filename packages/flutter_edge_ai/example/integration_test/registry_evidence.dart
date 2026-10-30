@@ -53,21 +53,24 @@ Future<void> recordEvidence({
   required String check,
 }) async {
   final name = path.split(Platform.pathSeparator).last;
-  final CatalogVariant? variant;
+  // Only the hash is caught: a file it cannot read, or the worker isolate's
+  // own failure, is a skip. The catalog's own errors (not initialized, ids
+  // that clash) fail the test, as they should.
+  final String hex;
   try {
-    variant = await registryVariantOf(path);
+    hex = await fileSha256(path);
   } on FileSystemException catch (e) {
     print(
       'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'cannot read it: ${e.message}'})}',
     );
     return;
   } catch (e) {
-    // The worker isolate's own failure: a skip, never the test's failure.
     print(
       'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'cannot hash it: $e'})}',
     );
     return;
   }
+  final variant = variantWithSha256(hex, FlutterEdgeAi.catalog.models);
   if (variant == null) {
     print(
       'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'not a registry build'})}',

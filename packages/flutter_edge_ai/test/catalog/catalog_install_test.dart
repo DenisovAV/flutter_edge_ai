@@ -478,7 +478,9 @@ void main() {
               .having(
                 (e) => e.message,
                 'message',
-                contains('uninstall it before installing again'),
+                contains(
+                  "run FlutterEdgeAi.uninstallModel('pathless.litertlm') before ",
+                ),
               ),
         ),
       );

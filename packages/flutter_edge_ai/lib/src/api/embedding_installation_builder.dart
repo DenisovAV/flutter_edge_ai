@@ -311,7 +311,8 @@ class EmbeddingInstallationBuilder {
   ///   one later) and says so once in the debug log.
   ///
   /// - [UnsupportedError] for a [fromCatalog] variant that does not run here,
-  ///   and on the web for a file over 2 GiB in the default storage
+  ///   and on the web for a file over 2 GiB unless the app uses
+  ///   `WebStorageMode.streaming`
   /// - [StateError] when a file with an `expectedSize` would replace one an
   ///   active model of any kind reads (not on the web)
   ///

@@ -115,10 +115,14 @@ import 'package:flutter_edge_ai/src/catalog/registered_catalog.dart';
 class FlutterEdgeAi {
   /// Controls flutter_edge_ai's internal log verbosity.
   ///
-  /// Debug builds only -- release builds are always silent regardless of this
-  /// value (no model output / prompts leak into logcat/syslog). Default
-  /// [EdgeAiLogLevel.info]. Use [EdgeAiLogLevel.verbose] to see model output and
-  /// prompts while debugging, or [EdgeAiLogLevel.none] to silence the plugin.
+  /// Release builds print only the start-up notices about active models that
+  /// could not be restored (no model output or prompts reach logcat/syslog);
+  /// debug builds print according to this value. Default
+  /// [EdgeAiLogLevel.info]. Use [EdgeAiLogLevel.verbose] to see model output
+  /// and prompts while debugging. [EdgeAiLogLevel.none] silences everything
+  /// this level controls, those notices included. Not under it: a few
+  /// warnings about failures an app would not otherwise see (a model that
+  /// fails to close, for example) are printed in every build.
   ///
   /// Note: this is a process-global, per-isolate setting; set it once at
   /// startup. Background isolates snapshot the value at spawn time.
@@ -396,9 +400,9 @@ class FlutterEdgeAi {
   /// An installation builder for the LLM [variant]: its model type and file
   /// type, its pinned URL, the name the file is installed under and its
   /// size, which is checked before the model becomes active (not on the web,
-  /// where the browser keeps the file). On the web, in the default
-  /// `WebStorageMode.cacheApi`, a file over 2 GiB is refused before it
-  /// downloads; `WebStorageMode.streaming` holds it.
+  /// where the browser keeps the file). On the web a file over 2 GiB is
+  /// refused before it downloads in every storage mode but
+  /// `WebStorageMode.streaming`, the one that holds it.
   ///
   /// [token] is used for the download; without it, the token passed to
   /// [initialize] is used for huggingface.co. [foreground] is

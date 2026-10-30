@@ -14,11 +14,15 @@ import 'dart_names.dart';
 
 /// One broken rule, anchored to the file and the key path it was found at.
 final class Problem {
-  Problem(this.file, this.where, this.message);
+  Problem(this.file, this.where, this.message, {this.awaitsFreeze});
 
   final String file;
   final String where;
   final String message;
+
+  /// The (package, version) whose `published/` snapshot is missing, when that
+  /// is the problem: `freeze` writes it ([releaseGate]).
+  final (String, String)? awaitsFreeze;
 
   @override
   String toString() => '$file: $where: $message';
@@ -1040,10 +1044,26 @@ void _checkReleasedCatalogs(
     final released = <String>[]; // newest first
     final withCatalog = <String>{};
     String? section;
-    var fenced = false;
+    // The fence that opened the block in force (``` or ~~~), and its line.
+    String? fence;
+    var fenceLine = 0;
     for (final (i, line) in changelog.readAsLinesSync().indexed) {
-      // A `#` line inside a fenced block is code, not a heading.
-      if (line.trimLeft().startsWith('```')) fenced = !fenced;
+      // A `#` line inside a fenced block is code, not a heading. A block
+      // ends at a fence of the same kind.
+      final trimmed = line.trimLeft();
+      for (final mark in const ['```', '~~~']) {
+        if (!trimmed.startsWith(mark)) continue;
+        if (fence == null) {
+          fence = mark;
+          fenceLine = i + 1;
+        } else if (fence == mark) {
+          fence = null;
+        }
+      }
+      final fenced =
+          fence != null ||
+          trimmed.startsWith('```') ||
+          trimmed.startsWith('~~~');
       if (fenced) {
         if (section != null && line.toLowerCase().contains('model catalog')) {
           withCatalog.add(section);
@@ -1071,6 +1091,17 @@ void _checkReleasedCatalogs(
           line.toLowerCase().contains('model catalog')) {
         withCatalog.add(section);
       }
+    }
+    if (fence != null) {
+      // Everything after it would be read as code: later releases unseen.
+      problems.add(
+        Problem(
+          rel,
+          'line $fenceLine',
+          'a $fence block that never closes; the rest of the file is read as '
+              'code',
+        ),
+      );
     }
     // The published snapshots anchor it too: a version newer than the oldest
     // one frozen shipped the catalog, whatever its CHANGELOG says.
@@ -1107,6 +1138,7 @@ void _checkReleasedCatalogs(
             '$package $version released its catalog (CHANGELOG.md), and this '
                 'snapshot of it is missing; run `registry.dart freeze $package` '
                 'at that version, or restore the file',
+            awaitsFreeze: (package, version),
           ),
         );
       }
@@ -1153,4 +1185,38 @@ Map<String, Object?> frozenValues(Map<String, Object?> v) {
     'rag_profile_id': v['rag_profile_id'],
     'image_rag_profile_id': v['image_rag_profile_id'],
   };
+}
+
+/// The problems that stop [command], and those it lets pass as the release in
+/// progress.
+///
+/// The release skill renames a package's `## Unreleased` heading to the
+/// version in its pubspec (step 7) before it freezes that version (8c). From
+/// then on `check` reports the version's snapshot missing until `freeze`
+/// writes it, and a gate on every problem would refuse the very commands the
+/// fix needs. So that one problem, for exactly the version the package's
+/// pubspec names ([versions]), does not stop `freeze`, `generate`, `evidence`
+/// or `release-check` (whose own reasons still refuse a missing snapshot);
+/// `check` and `live` are stopped by every problem.
+({List<Problem> blocking, List<Problem> pending}) releaseGate(
+  String command,
+  List<Problem> problems,
+  Map<String, String> versions,
+) {
+  const lenient = {'freeze', 'generate', 'evidence', 'release-check'};
+  bool releasing(Problem problem) => switch (problem.awaitsFreeze) {
+    (final package, final version) =>
+      lenient.contains(command) && versions[package] == version,
+    null => false,
+  };
+  return (
+    blocking: [
+      for (final x in problems)
+        if (!releasing(x)) x,
+    ],
+    pending: [
+      for (final x in problems)
+        if (releasing(x)) x,
+    ],
+  );
 }

@@ -5,6 +5,9 @@
 // a model was uninstalled says that it is gone. The refusal's words are
 // core's, held by core's catalog_entries_test.dart.
 
+import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/services/catalog_install.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
@@ -181,16 +184,31 @@ void main() {
     expect(asks, 1);
   });
 
-  test('each kind is uninstalled with its own core call', () {
-    for (final (kind, call, uninstaller) in [
-      ('embedding', 'uninstallEmbedder()', FlutterEdgeAi.uninstallEmbedder),
-      ('speech-to-text', 'uninstallStt()', FlutterEdgeAi.uninstallStt),
-      ('text-to-speech', 'uninstallTts()', FlutterEdgeAi.uninstallTts),
-    ]) {
-      final model = ActiveModelInTheWay.of(refusal(kind, 'm', call))!;
-      expect(identical(model.uninstaller, uninstaller), isTrue, reason: kind);
-    }
-  });
+  test(
+    'core\'s own sentences, one per kind, are read with their core call',
+    () {
+      // Written by core's test/catalog/active_file_refusal_golden_test.dart,
+      // which holds them to activeFileRefusal: the example reads core's real
+      // wording, not a copy of it.
+      final golden = File(
+        '../test/catalog/active_file_refusals.golden.txt',
+      ).readAsLinesSync().where((l) => l.isNotEmpty).toList();
+      final expected = <(String, String, String?, Function)>[
+        ('inference', 'gemma', "it's.litertlm", FlutterEdgeAi.uninstallModel),
+        ('embedding', 'emb', null, FlutterEdgeAi.uninstallEmbedder),
+        ('speech-to-text', 'stt', null, FlutterEdgeAi.uninstallStt),
+        ('text-to-speech', 'matcha', null, FlutterEdgeAi.uninstallTts),
+      ];
+      expect(golden, hasLength(expected.length));
+      for (final (i, (kind, name, file, call)) in expected.indexed) {
+        final model = ActiveModelInTheWay.of(StateError(golden[i]))!;
+        expect(model.kind, kind);
+        expect(model.name, name);
+        expect(model.inferenceFile, file);
+        expect(identical(model.uninstaller, call), isTrue, reason: kind);
+      }
+    },
+  );
 
   test('two models of different kinds with one name are two models', () async {
     final asked = <String>[];
@@ -295,5 +313,44 @@ void main() {
         failed,
       );
     });
+  });
+
+  testWidgets('the screens show "already uninstalled" first, and only then '
+      'the dialog its cause needs', (tester) async {
+    final gated = <Object>[];
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (c) {
+            context = c;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    const cause = DownloadException(DownloadError.unauthorized());
+    final showing = showInstallErrors(
+      context,
+      installErrorViews(
+        const CatalogReplaceFailed(
+          'emb was already uninstalled, but x did not install',
+          cause,
+        ),
+        fallback: 'failed',
+      ),
+      gated: (error) async => gated.add(error),
+    );
+    await tester.pumpAndSettle();
+    // The message waits for the user; the gated dialog has not opened.
+    expect(
+      find.text('emb was already uninstalled, but x did not install'),
+      findsOneWidget,
+    );
+    expect(gated, isEmpty);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    await showing;
+    expect(gated, [cause]);
   });
 }

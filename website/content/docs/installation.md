@@ -657,13 +657,14 @@ To use a gated repo: visit the model page → "Request Access" button.
 
 ## Logging
 
-Flutter Edge AI's internal logs are **silent in release builds** — model output,
-prompts, and conversation history are never written to logcat / syslog. In debug
-builds they're shown according to `FlutterEdgeAi.logLevel`:
+In release builds Flutter Edge AI's internal log prints only the start-up
+notices about active models that could not be restored — model output,
+prompts, and conversation history are never written to logcat / syslog. In
+debug builds it's shown according to `FlutterEdgeAi.logLevel`:
 
-| Level | What it prints (debug only) |
+| Level | What it prints (debug builds) |
 |---|---|
-| `EdgeAiLogLevel.none` | Nothing — fully silent. |
+| `EdgeAiLogLevel.none` | Nothing — fully silent, the restore notices included. |
 | `EdgeAiLogLevel.info` *(default)* | Lifecycle, errors, diagnostics. **No** model output / prompts. |
 | `EdgeAiLogLevel.verbose` | Everything above **plus** model output, prompts, and conversation history. |
 
@@ -677,5 +678,8 @@ FlutterEdgeAi.logLevel = EdgeAiLogLevel.verbose;
 FlutterEdgeAi.logLevel = EdgeAiLogLevel.none;
 ```
 
-Release builds are always silent regardless of this setting. The level is
-process-global and per-isolate; set it once at startup.
+In release builds only the restore notices are printed, and
+`EdgeAiLogLevel.none` silences them too. Not under this setting: a few warnings
+about failures an app would not otherwise see (a model that fails to close, for
+example) are printed in every build. The level is process-global and
+per-isolate; set it once at startup.

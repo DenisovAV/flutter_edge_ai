@@ -99,4 +99,13 @@ void main() {
       startsWith('not installed'),
     );
   });
+
+  test('a catalog error is the test\'s failure, not a skip', () async {
+    // The catalog is not initialized here: FlutterEdgeAi.catalog throws.
+    final path = (File('${dir.path}/m.bin')..writeAsBytesSync([0, 0, 0])).path;
+    await expectLater(
+      recordEvidence(path: path, backend: PreferredBackend.cpu, check: 'x'),
+      throwsStateError,
+    );
+  });
 }

@@ -2,9 +2,13 @@ import 'package:flutter/foundation.dart';
 
 /// Verbosity for flutter_edge_ai's internal logs.
 ///
-/// - [none] — silence the plugin entirely.
-/// - [info] — lifecycle, errors, non-PII diagnostics (default in debug).
-/// - [verbose] — adds model output / prompts / conversation history.
+/// - [none] — silence this log entirely, the start-up restore notices
+///   included.
+/// - [info] — lifecycle, errors, non-PII diagnostics (default). In release
+///   builds only the start-up notices about active models that could not be
+///   restored.
+/// - [verbose] — adds model output / prompts / conversation history (debug
+///   builds).
 enum EdgeAiLogLevel { none, info, verbose }
 
 /// Active log level. Top-level (Dart-canonical for process-global logger
@@ -15,7 +19,8 @@ enum EdgeAiLogLevel { none, info, verbose }
 /// set this from data passed at spawn (see the embedding worker).
 EdgeAiLogLevel edgeAiLogLevel = EdgeAiLogLevel.info;
 
-/// Internal log entry point. Every plugin log routes through here.
+/// Internal log entry point for everything but the start-up restore notices
+/// ([restoreNotice], which release builds keep).
 ///
 /// - Release builds: silent regardless of level. `kDebugMode` is a compile-time
 ///   `false`, so the body is dead-code-eliminated. (Callers that interpolate a

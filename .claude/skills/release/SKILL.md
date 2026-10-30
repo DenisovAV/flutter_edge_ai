@@ -106,14 +106,20 @@ silently do the other thing.
         platform in the release (the smoke suite never passes a tool), else N/A
 [ ] 8c  litertlm or speech in the release? → MANDATORY, else N/A. NO PUBLISH of
         either package without a green release-check AT THIS HEAD:
-        record the runs of release_critical.yaml's cells (the release-gate
-        tests print FEA_EVIDENCE lines; `registry.dart evidence --device …
-        <log>` per host), then in tool/model_registry
-        `dart run bin/registry.dart freeze <package>` (commit the snapshot),
-        `generate`, and `dart run bin/registry.dart release-check <package>`
-        must print "<package> <version>: ready to publish" on the commit being
-        published, with nothing uncommitted. Nothing enforces this but this
-        step: run it again after any later commit, and never skip it
+        after steps 2 and 7 (the pubspec version bumped, `## Unreleased`
+        renamed to it: until the freeze `check` reports that version's
+        snapshot missing, which freeze, generate, evidence and release-check
+        let pass), run the release-gate tests (litertlm_ffi_test,
+        embeddinggemma2_test, stt_moonshine_test, tts_smoke_test in
+        example/integration_test, on every host release_critical.yaml lists;
+        they print FEA_EVIDENCE lines), then in tool/model_registry
+        `dart run bin/registry.dart evidence --device … <log>` per host,
+        `dart run bin/registry.dart freeze <package>`, `generate`, and commit
+        the evidence, the snapshot and the generated files together. Then
+        `dart run bin/registry.dart release-check <package>` must print
+        "<package> <version>: ready to publish" on that commit, with nothing
+        uncommitted. Nothing enforces this but this step: run it again after
+        any later commit, and never skip it
 [ ] 10b  after publishing: pub.dev actually SERVES the new versions (its API
         lags minutes behind the upload); if a package's web/ changed
         (flutter_edge_ai_litertlm or flutter_edge_ai), sync every codelab copy to

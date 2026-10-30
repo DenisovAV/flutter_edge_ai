@@ -232,7 +232,8 @@ class SttInstallationBuilder {
   ///   (not on the web)
   /// - [UnsupportedError] or [ArgumentError] for a [fromCatalog] variant that
   ///   cannot be installed here (see [fromCatalog]); [UnsupportedError] on
-  ///   the web for a file over 2 GiB in the default storage
+  ///   the web for a file over 2 GiB unless the app uses
+  ///   `WebStorageMode.streaming`
   /// - [ModelValidationException] if a file is not its `expectedSize` once
   ///   installed (the first such file is then deleted with its record,
   ///   unless an active model reads it)

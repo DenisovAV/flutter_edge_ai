@@ -306,8 +306,8 @@ class InferenceInstallationBuilder {
   ///   when a file with an `expectedSize` would replace one an active model
   ///   of any kind reads (not on the web)
   /// - [UnsupportedError] before the download for a catalog variant that does
-  ///   not run here, and on the web for a file over 2 GiB in the default
-  ///   storage
+  ///   not run here, and on the web for a file over 2 GiB unless the app
+  ///   uses `WebStorageMode.streaming`
   /// - [ModelValidationException] if the file is not its `expectedSize` once
   ///   installed (it is then deleted with its record, unless an active
   ///   model reads it)

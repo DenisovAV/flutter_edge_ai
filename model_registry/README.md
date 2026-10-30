@@ -273,7 +273,12 @@ dart run bin/registry.dart release-check flutter_edge_ai_litertlm
 ```
 
 `freeze` records the frozen fields the version ships, which `check` then holds
-every later change to. `release-check` passes when the registry and every
+every later change to. Once the package's CHANGELOG heading names the version
+in its pubspec, `check` reports that version's snapshot missing until `freeze`
+writes it; `freeze`, `generate`, `evidence` and `release-check` let that one
+problem pass (`release-check` still refuses until the snapshot is written), so
+the release skill's order works: bump, rename the heading, record, freeze,
+generate, commit, release-check. `release-check` passes when the registry and every
 generated file are current, the frozen fields are written, and every cell
 `release_critical.yaml` lists for the package is verified: a run under
 `evidence/` on the native build the package ships, since that build or the

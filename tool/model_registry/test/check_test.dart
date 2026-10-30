@@ -539,6 +539,23 @@ void main() {
       );
     });
 
+    test('a ~~~ fence is a fence; one that never closes is a problem', () {
+      const tilde = '''## 1.20.0
+~~~sh
+# not a heading
+~~~
+- Model catalog: `LiteRtLmModels`.
+''';
+      expect(
+        problemsWith(tilde, const {}),
+        contains(contains('1.20.0 released its catalog')),
+      );
+      expect(
+        problemsWith('## 1.20.0\n```\n# x\n- Model catalog.\n', const {}),
+        contains(contains('a ``` block that never closes')),
+      );
+    });
+
     test('a snapshot of a version the CHANGELOG does not name', () {
       expect(
         problemsWith(changelog, {
@@ -572,6 +589,64 @@ void main() {
       expect([
         for (final x in checkRegistry(Directory(moved.path)).problems) '$x',
       ], contains(contains('missing beside model_registry')));
+    });
+
+    test('the release in progress: its missing snapshot stops check only, '
+        'and only for the version the pubspec names', () {
+      final problems = problemsWith(changelog, const {});
+      // problemsWith returns text; rebuild the Problem the check makes.
+      expect(problems, contains(contains('1.20.0 released its catalog')));
+      final missing = Problem(
+        'published/flutter_edge_ai_litertlm/1.20.0.json',
+        '-',
+        'missing',
+        awaitsFreeze: ('flutter_edge_ai_litertlm', '1.20.0'),
+      );
+      final other = Problem('models/x.yaml', '-', 'broken');
+      const releasing = {'flutter_edge_ai_litertlm': '1.20.0'};
+      for (final command in [
+        'freeze',
+        'generate',
+        'evidence',
+        'release-check',
+      ]) {
+        final gate = releaseGate(command, [missing, other], releasing);
+        expect(gate.blocking, [other], reason: command);
+        expect(gate.pending, [missing], reason: command);
+      }
+      expect(releaseGate('check', [missing], releasing).blocking, [missing]);
+      // An older version's snapshot is no release in progress.
+      expect(
+        releaseGate(
+          'freeze',
+          [missing],
+          {'flutter_edge_ai_litertlm': '1.21.0'},
+        ).blocking,
+        [missing],
+      );
+    });
+
+    test('the check marks the missing snapshot it reports', () {
+      final root = Directory.systemTemp.createTempSync('registry_root');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final registry = _registry([_llm()], extraFiles: _llmFacts());
+      final moved = registry.renameSync(p.join(root.path, 'model_registry'));
+      addTearDown(() => moved.renameSync(registry.path));
+      File(
+          p.join(
+            root.path,
+            'packages',
+            'flutter_edge_ai_litertlm',
+            'CHANGELOG.md',
+          ),
+        )
+        ..createSync(recursive: true)
+        ..writeAsStringSync('## 1.20.0\n- Model catalog.\n');
+      final marked = [
+        for (final x in checkRegistry(Directory(moved.path)).problems)
+          if (x.awaitsFreeze != null) x.awaitsFreeze,
+      ];
+      expect(marked, [('flutter_edge_ai_litertlm', '1.20.0')]);
     });
 
     test('a lower-case marker counts', () {

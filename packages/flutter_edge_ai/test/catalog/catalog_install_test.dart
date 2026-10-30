@@ -264,9 +264,12 @@ void main() {
         throwsUnsupportedError,
       );
       await initialize();
+      final progress = <int>[];
       final installation = await FlutterEdgeAi.installModelFromCatalog(
         TestLlm('os', noFile: true, fileType: ModelFileType.builtIn),
-      ).install();
+      ).withProgress(progress.add).install();
+      // Nothing downloads, and the install still ends at 100.
+      expect(progress, [100]);
       expect(installation.spec.fileType, ModelFileType.builtIn);
       expect(installation.spec.name, 'tiny-llm');
       expect(downloads.urls, isEmpty);

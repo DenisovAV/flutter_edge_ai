@@ -24,8 +24,6 @@ StateError refusal(String kind, String name, String call) => StateError(
 final embedder = refusal('embedding', 'emb', 'uninstallEmbedder()');
 final voice = refusal('text-to-speech', 'matcha', 'uninstallTts()');
 
-var _calls = 0;
-
 void main() {
   final variant = LiteRtLmModels.gemma4E2bIt.generic;
 
@@ -211,10 +209,11 @@ void main() {
 
   test('a failure after a replace keeps its own stack', () async {
     final stack = StackTrace.fromString('the download');
+    var calls = 0;
     try {
       await installFromCatalogReplacingActive(
         () async {
-          if (++_calls == 1) throw embedder;
+          if (++calls == 1) throw embedder;
           Error.throwWithStackTrace(Exception('HTTP 401'), stack);
         },
         variant: variant,
@@ -224,6 +223,41 @@ void main() {
       fail('no failure');
     } on CatalogReplaceFailed catch (_, st) {
       expect('$st', 'the download');
+    }
+  });
+
+  test('the same model again keeps the refusal\'s stack', () async {
+    final stack = StackTrace.fromString('the second refusal');
+    var calls = 0;
+    try {
+      await installFromCatalogReplacingActive(
+        () async {
+          if (++calls == 1) throw embedder;
+          Error.throwWithStackTrace(embedder, stack);
+        },
+        variant: variant,
+        confirm: (_, _) async => true,
+        uninstall: (_) async {},
+      );
+      fail('no failure');
+    } on CatalogReplaceFailed catch (_, st) {
+      expect('$st', 'the second refusal');
+    }
+  });
+
+  test('an uninstall that fails keeps its own stack', () async {
+    final stack = StackTrace.fromString('the uninstall');
+    try {
+      await installFromCatalogReplacingActive(
+        installing([embedder], []),
+        variant: variant,
+        confirm: (_, _) async => true,
+        uninstall: (_) async =>
+            Error.throwWithStackTrace(StateError('close timed out'), stack),
+      );
+      fail('no failure');
+    } on CatalogReplaceFailed catch (_, st) {
+      expect('$st', 'the uninstall');
     }
   });
 
@@ -253,6 +287,11 @@ void main() {
       ActiveModelInTheWay.of(
         refusal('embedding', 'e', "uninstallModel('e.tflite')"),
       ),
+      isNull,
+    );
+    // Another kind's call, with no file, as both take: the call alone is off.
+    expect(
+      ActiveModelInTheWay.of(refusal('embedding', 'e', 'uninstallStt()')),
       isNull,
     );
   });

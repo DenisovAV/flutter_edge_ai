@@ -27,11 +27,17 @@ class UniversalDownloadScreen extends StatefulWidget {
   /// `context` is this screen's, so the callback can pushReplacement onto it.
   final void Function(BuildContext context)? onReady;
 
+  /// Replaces the service the screen builds for an inference [model]; for
+  /// tests.
+  @visibleForTesting
+  final ModelDownloadService? inferenceDownloadService;
+
   const UniversalDownloadScreen({
     super.key,
     required this.model,
     this.selectedBackend,
     this.onReady,
+    this.inferenceDownloadService,
   });
 
   @override
@@ -90,15 +96,17 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
         break;
       case ModelKind.inference:
         final inferenceModel = widget.model as Model;
-        _inferenceDownloadService = ModelDownloadService(
-          modelUrl: widget.model.url,
-          modelFilename: widget.model.filename,
-          licenseUrl: widget.model.licenseUrl ?? '',
-          modelType: inferenceModel.modelType,
-          fileType: inferenceModel.fileType,
-          foreground: inferenceModel.foreground,
-          catalogVariant: inferenceModel.catalogVariant,
-        );
+        _inferenceDownloadService =
+            widget.inferenceDownloadService ??
+            ModelDownloadService(
+              modelUrl: widget.model.url,
+              modelFilename: widget.model.filename,
+              licenseUrl: widget.model.licenseUrl ?? '',
+              modelType: inferenceModel.modelType,
+              fileType: inferenceModel.fileType,
+              foreground: inferenceModel.foreground,
+              catalogVariant: inferenceModel.catalogVariant,
+            );
         break;
     }
   }
@@ -129,6 +137,7 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
       exists = await _inferenceDownloadService!.checkModelExistence(_token);
     }
 
+    if (!mounted) return;
     setState(() {
       needToDownload = !exists;
     });
@@ -152,14 +161,20 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
         fileType: ModelFileType.builtIn,
       ).fromBundled(model.filename).install();
       await BuiltInAi.ensureReady(
-        onProgress: (p) => setState(() => _progress = p.toDouble()),
+        onProgress: (p) {
+          if (mounted) setState(() => _progress = p.toDouble());
+        },
       );
+      if (!mounted) return;
       setState(() {
         needToDownload = false;
         _progress = 100.0;
       });
-    } on BuiltInAiUnavailableException catch (e) {
-      if (!mounted) return;
+    } on BuiltInAiUnavailableException catch (e, stack) {
+      if (!mounted) {
+        logInstallFailure(e, stack);
+        return;
+      }
       _showErrorDialog(e.message);
       setState(() {
         needToDownload = true;
@@ -209,7 +224,10 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
             });
           },
           confirmReplace: (model, bytes) =>
-              askToReplaceActiveModel(context, model, bytes),
+              // A screen already gone asks nobody: the old model is kept.
+              mounted
+              ? askToReplaceActiveModel(context, model, bytes)
+              : Future.value(false),
         );
 
         if (replaced case final CatalogInstallKept kept) {
@@ -227,7 +245,10 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
             });
           },
           confirmReplace: (model, bytes) =>
-              askToReplaceActiveModel(context, model, bytes),
+              // A screen already gone asks nobody: the old model is kept.
+              mounted
+              ? askToReplaceActiveModel(context, model, bytes)
+              : Future.value(false),
         );
         if (replaced case final CatalogInstallKept kept) {
           _showKept(kept);
@@ -259,9 +280,14 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
         _modelProgress = 0.0;
         _tokenizerProgress = 0.0;
       });
-    } catch (e) {
-      // Deleting, not downloading: its own title.
-      if (mounted) await _showErrorDialog('$e', title: 'Delete error');
+    } catch (e, stack) {
+      // Deleting, not downloading: its own title; logged when the screen is
+      // gone.
+      if (!mounted) {
+        debugPrint('Model delete failed: $e\n$stack');
+        return;
+      }
+      await _showErrorDialog('$e', title: 'Delete error');
     }
   }
 
@@ -276,7 +302,12 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
 
   Future<void> _handleDownloadError(Object error, StackTrace stack) async {
     // A failed replace first says the old model is gone, then the dialog its
-    // cause needs; logged even when the screen is already gone.
+    // cause needs. State.context throws once the screen is gone: then the
+    // failure is only logged.
+    if (!mounted) {
+      logInstallFailure(error, stack);
+      return;
+    }
     await showInstallErrors(
       context,
       error,

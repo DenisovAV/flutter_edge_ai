@@ -252,12 +252,13 @@ Future<void> checkInstalledFiles(
 }
 
 /// A catalog variant that cannot be installed here is refused before
-/// anything downloads: one its package runs on no backend in this runtime
-/// (`backendsHere` empty), one with no file that is not a built-in model
-/// (`ModelFileType.builtIn`, which the operating system provides), or one
-/// whose files break the catalog's rules (a revision that
-/// is not a commit, a size that is not positive, a sha256 that is not 64 hex
-/// digits, an install name that is not a portable file name).
+/// anything downloads. [UnsupportedError]: one its package runs on no
+/// backend in this runtime (`backendsHere` empty), or one with no file that
+/// is not a built-in model (`ModelFileType.builtIn`, which the operating
+/// system provides). [ArgumentError]: a built-in model that lists files
+/// (nothing would install them), or files that break the catalog's rules (a
+/// revision that is not a commit, a size that is not positive, a sha256 that
+/// is not 64 hex digits, an install name that is not a portable file name).
 void checkCatalogVariant(CatalogVariant variant) {
   if (variant.backendsHere.isEmpty) {
     throw UnsupportedError(

@@ -1203,8 +1203,10 @@ Map<String, Object?> frozenValues(Map<String, Object?> v) {
 /// or `release-check` (whose own reasons still refuse a missing snapshot);
 /// `check` and `live` are stopped by every problem.
 ///
-/// `freeze` and `release-check` name a [package]: only its own snapshot is
-/// let pass, so another package's missing one still stops them. A snapshot
+/// `release-check` names a [package]: only its own snapshot is let pass, so
+/// a release of it never passes while another package's is missing. `freeze`
+/// lets every package's pass, so two packages bumped and renamed together
+/// freeze in either order. A snapshot
 /// that was ever committed ([everCommitted], by its path under the
 /// registry) is a shipped one deleted, not a release in progress: it stops
 /// every command, so `freeze` cannot write it again from today's registry.
@@ -1216,7 +1218,7 @@ Map<String, Object?> frozenValues(Map<String, Object?> v) {
   bool Function(String file) everCommitted = _never,
 }) {
   const lenient = {'freeze', 'generate', 'evidence', 'release-check'};
-  const named = {'freeze', 'release-check'};
+  const named = {'release-check'};
   bool releasing(Problem problem) => switch (problem.awaitsFreeze) {
     (final owner, final version) =>
       lenient.contains(command) &&

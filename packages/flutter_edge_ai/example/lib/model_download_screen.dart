@@ -13,10 +13,15 @@ class ModelDownloadScreen extends StatefulWidget {
   final Model model;
   final PreferredBackend? selectedBackend;
 
+  /// Replaces the service the screen builds for [model]; for tests.
+  @visibleForTesting
+  final ModelDownloadService? downloadService;
+
   const ModelDownloadScreen({
     super.key,
     required this.model,
     this.selectedBackend,
+    this.downloadService,
   });
 
   @override
@@ -34,15 +39,17 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
   @override
   void initState() {
     super.initState();
-    _downloadService = ModelDownloadService(
-      modelUrl: widget.model.url,
-      modelFilename: widget.model.filename,
-      licenseUrl: widget.model.licenseUrl,
-      modelType: widget.model.modelType,
-      fileType: widget.model.fileType,
-      foreground: widget.model.foreground,
-      catalogVariant: widget.model.catalogVariant,
-    );
+    _downloadService =
+        widget.downloadService ??
+        ModelDownloadService(
+          modelUrl: widget.model.url,
+          modelFilename: widget.model.filename,
+          licenseUrl: widget.model.licenseUrl,
+          modelType: widget.model.modelType,
+          fileType: widget.model.fileType,
+          foreground: widget.model.foreground,
+          catalogVariant: widget.model.catalogVariant,
+        );
     _initialize();
   }
 
@@ -50,7 +57,7 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
     _token = await _downloadService.loadToken() ?? '';
     _tokenController.text = _token;
     needToDownload = !(await _downloadService.checkModelExistence(_token));
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _saveToken(String token) async {
@@ -83,8 +90,10 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
             _progress = progress;
           });
         },
-        confirmReplace: (model, bytes) =>
-            askToReplaceActiveModel(context, model, bytes),
+        // A screen already gone asks nobody: the old model is kept.
+        confirmReplace: (model, bytes) => mounted
+            ? askToReplaceActiveModel(context, model, bytes)
+            : Future.value(false),
       );
       if (!mounted) return;
       if (replaced case final CatalogInstallKept kept) {
@@ -96,6 +105,11 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
         needToDownload = false;
       });
     } catch (e, stack) {
+      // State.context throws once the screen is gone: then only the log.
+      if (!mounted) {
+        logInstallFailure(e, stack);
+        return;
+      }
       await showInstallErrors(
         context,
         e,
@@ -121,6 +135,7 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
 
   Future<void> _deleteModel() async {
     await _downloadService.deleteModel();
+    if (!mounted) return;
     setState(() {
       needToDownload = true;
     });

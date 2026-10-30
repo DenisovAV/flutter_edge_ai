@@ -47,4 +47,31 @@ void main() {
     lock.writeAsStringSync('b');
     expect(uncommittedUnder(repo.path, ['pkg']), isEmpty);
   });
+
+  test('a snapshot git once held counts as shipped; when git cannot say, '
+      'it counts as shipped too', () {
+    final repo = Directory.systemTemp.createTempSync('release_committed');
+    addTearDown(() => repo.deleteSync(recursive: true));
+    // Not a repository: git fails, so the answer is the closed one.
+    expect(everCommitted(repo.path, 'published/x/1.0.0.json'), isTrue);
+    void git(List<String> args) {
+      final r = Process.runSync('git', args, workingDirectory: repo.path);
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+    }
+
+    git(['init', '-q']);
+    git(['config', 'user.email', 't@example.com']);
+    git(['config', 'user.name', 't']);
+    File(p.join(repo.path, 'other.txt')).writeAsStringSync('x');
+    git(['add', '-A']);
+    git(['commit', '-qm', 'init']);
+    expect(everCommitted(repo.path, 'published/x/1.0.0.json'), isFalse);
+    File(p.join(repo.path, 'published', 'x', '1.0.0.json'))
+      ..createSync(recursive: true)
+      ..writeAsStringSync('{}');
+    git(['add', '-A']);
+    git(['commit', '-qm', 'freeze']);
+    File(p.join(repo.path, 'published', 'x', '1.0.0.json')).deleteSync();
+    expect(everCommitted(repo.path, 'published/x/1.0.0.json'), isTrue);
+  });
 }

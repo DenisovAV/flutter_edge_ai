@@ -8,6 +8,8 @@ library;
 //
 // Run: flutter test --platform chrome test/core/web_named_restore_test.dart
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart';
@@ -162,6 +164,44 @@ void main() {
             allOf(
               startsWith('flutter_edge_ai: '),
               contains('malformed source'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'WebStorageMode.none still says a LoRA source that cannot be read',
+      () async {
+        const url = 'https://example.com/gone.litertlm';
+        // The one-key record: the LoRA is part of it, not of the per-field
+        // keys older releases wrote.
+        SharedPreferences.setMockInitialValues({
+          PreferencesKeys.activeInferenceIdentity: jsonEncode({
+            ...unrecorded,
+            PreferencesKeys.activeInferenceLoraFilename: 'adapter.bin',
+            PreferencesKeys.activeInferenceLoraSource: 'not a source',
+          }),
+        });
+        await ServiceRegistry.initialize(webStorageMode: WebStorageMode.none);
+        // The model itself is installed, so the restore reaches its LoRA.
+        await ServiceRegistry.instance.modelRepository.saveModel(
+          repo.ModelInfo(
+            id: 'gone.litertlm',
+            source: ModelSource.network(url),
+            installedAt: DateTime(2026),
+            sizeBytes: 1,
+            type: repo.ModelType.inference,
+            hasLoraWeights: true,
+          ),
+        );
+        await WebModelManager().ensureInitialized();
+        expect(
+          said,
+          contains(
+            allOf(
+              startsWith('flutter_edge_ai: '),
+              contains('adapter.bin) has a malformed source'),
             ),
           ),
         );

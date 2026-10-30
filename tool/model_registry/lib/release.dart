@@ -178,3 +178,26 @@ List<String> uncommittedUnder(String repoRoot, List<String> paths) {
       if (line.trim().isNotEmpty) line.substring(3),
   ];
 }
+
+/// Whether git has ever held [path] (relative to the repository at
+/// [repoRoot]): a snapshot that was committed was shipped, not one a release
+/// adds. Fails closed: when git cannot answer (no repository, an error), the
+/// answer is yes, so a missing snapshot stops every command rather than being
+/// written again from today's registry.
+bool everCommitted(String repoRoot, String path) {
+  final log = Process.runSync('git', [
+    'log',
+    '--format=%H',
+    '-1',
+    '--',
+    path,
+  ], workingDirectory: repoRoot);
+  if (log.exitCode != 0) {
+    stderr.writeln(
+      'git could not say whether $path was ever committed '
+      '(${'${log.stderr}'.trim()}): it is treated as shipped',
+    );
+    return true;
+  }
+  return '${log.stdout}'.trim().isNotEmpty;
+}

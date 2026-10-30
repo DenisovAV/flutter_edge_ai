@@ -8,7 +8,8 @@ import 'package:flutter_edge_ai_example/utils/storage_quota_dialog.dart';
 /// golden file (`test/catalog/active_file_refusals.golden.txt`) that this
 /// app's test parses too.
 final class ActiveModelInTheWay {
-  const ActiveModelInTheWay({
+  // Only [of] makes one, so the kind, its call and the file always agree.
+  const ActiveModelInTheWay._({
     required this.kind,
     required this.name,
     this.inferenceFile,
@@ -30,12 +31,14 @@ final class ActiveModelInTheWay {
     r"\(FlutterEdgeAi\.(uninstall\w+)\((?:'((?:[^'\\]|\\.)+)')?\)\)",
   );
 
-  /// The call core names for each kind, and whether it takes the file.
-  static const _calls = {
-    'inference': ('uninstallModel', true),
-    'embedding': ('uninstallEmbedder', false),
-    'speech-to-text': ('uninstallStt', false),
-    'text-to-speech': ('uninstallTts', false),
+  /// For each kind, the call core names in the sentence and that call as a
+  /// static tear-off: one table, so the two never part. `uninstallModel`
+  /// alone takes the file.
+  static final Map<String, (String, Function)> _calls = {
+    'inference': ('uninstallModel', FlutterEdgeAi.uninstallModel),
+    'embedding': ('uninstallEmbedder', FlutterEdgeAi.uninstallEmbedder),
+    'speech-to-text': ('uninstallStt', FlutterEdgeAi.uninstallStt),
+    'text-to-speech': ('uninstallTts', FlutterEdgeAi.uninstallTts),
   };
 
   /// The model [error] names, or null when it is another error, or one whose
@@ -44,10 +47,11 @@ final class ActiveModelInTheWay {
     final match = _refusal.firstMatch(error.message);
     if (match == null) return null;
     final kind = match[1]!;
-    final (call, takesFile) = _calls[kind]!;
+    final (call, _) = _calls[kind]!;
     final file = match[4];
+    final takesFile = call == 'uninstallModel';
     if (match[3] != call || (file != null) != takesFile) return null;
-    return ActiveModelInTheWay(
+    return ActiveModelInTheWay._(
       kind: kind,
       name: match[2]!,
       // Quoted as a Dart string: `\'` and `\\` are escapes.
@@ -58,15 +62,11 @@ final class ActiveModelInTheWay {
   /// The core call that uninstalls it, by its kind, as a static tear-off a
   /// test can compare: `uninstallModel` (given [inferenceFile]) for an
   /// inference model, the kind's own call for the others.
-  Function get uninstaller => switch (kind) {
-    'embedding' => FlutterEdgeAi.uninstallEmbedder,
-    'speech-to-text' => FlutterEdgeAi.uninstallStt,
-    'text-to-speech' => FlutterEdgeAi.uninstallTts,
-    _ => FlutterEdgeAi.uninstallModel,
-  };
+  Function get uninstaller => _calls[kind]!.$2;
 
   /// Uninstalls it with the call of its kind: [uninstaller], or [via] in
-  /// tests, which then receives what core's call would.
+  /// tests, which then receives what core's call would (the file for an
+  /// inference model, nothing for the others).
   Future<void> uninstall({Function? via}) => switch (via ?? uninstaller) {
     final Future<void> Function(String) byFile => byFile(inferenceFile!),
     final Future<void> Function() call => call(),
@@ -313,7 +313,7 @@ Future<void> showInstallErrors(
   required Future<void> Function(Object error) gated,
   void Function(String line)? log,
 }) async {
-  (log ?? (line) => debugPrint(line))('Model install failed: $error\n$stack');
+  logInstallFailure(error, stack, log: log);
   for (final view in installErrorViews(error, fallback: fallback)) {
     if (!context.mounted) return;
     switch (view) {
@@ -338,3 +338,14 @@ Future<void> showInstallErrors(
     }
   }
 }
+
+/// Logs a failed install with its [stack] ([log], `debugPrint` by default):
+/// what a screen that is already gone (the user backed out during a long
+/// download) leaves behind instead of a dialog, "already uninstalled"
+/// included.
+void logInstallFailure(
+  Object error,
+  StackTrace stack, {
+  void Function(String line)? log,
+}) =>
+    (log ?? (line) => debugPrint(line))('Model install failed: $error\n$stack');

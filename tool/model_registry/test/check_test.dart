@@ -570,6 +570,21 @@ void main() {
           '## 1.20.0\n````\n```\n# x\n````\n- Model catalog.\n',
         ),
         ('indented four', '## 1.20.0\n    ```\n- Model catalog.\n'),
+        // ``` inside a ~~~ block does not close it.
+        (
+          'other character',
+          '## 1.20.0\n~~~\n```\n# x\n~~~\n- Model catalog.\n',
+        ),
+        // A backtick in the info string: not a fence at all.
+        ('backtick info', '## 1.20.0\n``` a`b\n- Model catalog.\n'),
+        // A closer may be longer, and carry trailing spaces.
+        ('longer closer', '## 1.20.0\n```\n# x\n`````\n- Model catalog.\n'),
+        ('trailing spaces', '## 1.20.0\n```\n# x\n```   \n- Model catalog.\n'),
+        // Indented one to three spaces is still a fence.
+        (
+          'indented three',
+          '## 1.20.0\n   ```\n# x\n   ```\n- Model catalog.\n',
+        ),
       ]) {
         final problems = problemsWith(text, const {});
         expect(
@@ -649,27 +664,47 @@ void main() {
         expect(gate.pending, [missing], reason: command);
       }
       expect(releaseGate('check', [missing], releasing).blocking, [missing]);
-      // freeze and release-check of a package let only its own snapshot pass.
-      for (final command in ['freeze', 'release-check']) {
+      // release-check of a package lets only its own snapshot pass.
+      expect(
+        releaseGate(
+          'release-check',
+          [missing],
+          releasing,
+          package: 'flutter_edge_ai_speech',
+        ).blocking,
+        [missing],
+      );
+      expect(
+        releaseGate(
+          'release-check',
+          [missing],
+          releasing,
+          package: 'flutter_edge_ai_litertlm',
+        ).pending,
+        [missing],
+      );
+      // Two packages released together freeze in either order: freeze lets
+      // the other's pending snapshot pass too.
+      final speechMissing = Problem(
+        'published/flutter_edge_ai_speech/0.5.13.json',
+        '-',
+        'missing',
+        awaitsFreeze: ('flutter_edge_ai_speech', '0.5.13'),
+      );
+      const both = {
+        'flutter_edge_ai_litertlm': '1.20.0',
+        'flutter_edge_ai_speech': '0.5.13',
+      };
+      for (final package in both.keys) {
         expect(
           releaseGate(
-            command,
-            [missing],
-            releasing,
-            package: 'flutter_edge_ai_speech',
+            'freeze',
+            [missing, speechMissing],
+            both,
+            package: package,
           ).blocking,
-          [missing],
-          reason: command,
-        );
-        expect(
-          releaseGate(
-            command,
-            [missing],
-            releasing,
-            package: 'flutter_edge_ai_litertlm',
-          ).pending,
-          [missing],
-          reason: command,
+          isEmpty,
+          reason: package,
         );
       }
       // A snapshot git once held is a shipped one deleted: it stops freeze.

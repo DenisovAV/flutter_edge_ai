@@ -54,6 +54,13 @@ Future<void> main(List<String> args) async {
     return at >= 0 && at + 1 < args.length ? args[at + 1] : null;
   }
 
+  // freeze and release-check name a package: without one, the usage, before
+  // anything the registry says.
+  if ((command == 'freeze' || command == 'release-check') &&
+      (args.length < 2 || args[1].startsWith('--'))) {
+    stderr.writeln('$command needs a package: $command <package>');
+    exit(64);
+  }
   final registry = Directory(option('--registry') ?? _defaultRegistry());
   final repoRoot = p.dirname(p.absolute(registry.path));
   final result = checkRegistry(registry);
@@ -69,11 +76,10 @@ Future<void> main(List<String> args) async {
     result.problems,
     site.versions,
     package: args.length > 1 && !args[1].startsWith('--') ? args[1] : null,
-    // A snapshot git has ever held was shipped, not one a release adds.
-    everCommitted: (file) =>
-        '${Process.runSync('git', ['log', '--format=%H', '-1', '--', p.join(p.relative(p.absolute(registry.path), from: repoRoot), file)], workingDirectory: repoRoot).stdout}'
-            .trim()
-            .isNotEmpty,
+    everCommitted: (file) => everCommitted(
+      repoRoot,
+      p.join(p.relative(p.absolute(registry.path), from: repoRoot), file),
+    ),
   );
   for (final problem in gate.pending) {
     stdout.writeln(
@@ -110,7 +116,10 @@ Future<void> main(List<String> args) async {
         ? args[1]
         : null;
     final version = site.versions[package];
-    if (package == null || version == null) {
+    // A package with no catalog (core) has nothing to freeze.
+    if (package == null ||
+        version == null ||
+        !site.snapshots.containsKey(package)) {
       stderr.writeln(
         '$command needs a package with a snapshot: '
         '${site.snapshots.keys.join(', ')}',

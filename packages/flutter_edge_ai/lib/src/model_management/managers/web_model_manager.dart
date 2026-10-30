@@ -175,7 +175,15 @@ class WebModelManager extends ModelFileManager
       loraSource = loraEncoded == null
           ? null
           : ModelSource.tryDecode(loraEncoded);
-      if (loraSource == null || !await repo.isInstalled(loraFilename)) {
+      if (loraSource == null) {
+        // A record that cannot be read: reported in every storage mode.
+        restoreNotice(
+          '[WebModelManager] active model restore: the LoRA of $filename '
+          '($loraFilename) has a malformed source — skipping',
+        );
+        return;
+      }
+      if (!await repo.isInstalled(loraFilename)) {
         _restoreSkipped(
           '[WebModelManager] active model restore: the LoRA of $filename '
           '($loraFilename) is not installed — skipping',

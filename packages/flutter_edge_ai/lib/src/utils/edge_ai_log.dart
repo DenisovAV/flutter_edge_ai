@@ -22,15 +22,21 @@ enum EdgeAiLogLevel { none, info, verbose }
 /// set this from data passed at spawn (see the embedding worker).
 EdgeAiLogLevel edgeAiLogLevel = EdgeAiLogLevel.info;
 
-/// Internal log entry point for everything but the start-up restore notices
-/// ([restoreNotice], which release builds keep).
+/// The plugin's debug log. Silent in release builds and under
+/// [EdgeAiLogLevel.none]; in debug builds it prints when [level] <=
+/// [edgeAiLogLevel].
 ///
-/// - Release builds: silent regardless of level. `kDebugMode` is a compile-time
-///   `false`, so the body is dead-code-eliminated. (Callers that interpolate a
-///   large/hot variable must still guard the CALL SITE with `if (kDebugMode)`
-///   to avoid building the string in release.)
-/// - Debug builds: prints when [level] <= [edgeAiLogLevel], after sanitizing
-///   U+FFFD so it can't crash `flutter run` (issue #306).
+/// Not every message goes through it: the start-up restore notices go
+/// through [restoreNotice] (release builds keep them), and some warnings and
+/// one-time notices are printed with `print` in every build whatever the
+/// level (see [EdgeAiLogLevel]).
+///
+/// - Release builds: `kDebugMode` is a compile-time `false`, so the body is
+///   dead-code-eliminated. (Callers that interpolate a large/hot variable must
+///   still guard the CALL SITE with `if (kDebugMode)` to avoid building the
+///   string in release.)
+/// - Debug builds: the message is sanitized for U+FFFD first, so it can't
+///   crash `flutter run` (issue #306).
 void edgeAiLog(String message, {EdgeAiLogLevel level = EdgeAiLogLevel.info}) {
   if (!kDebugMode) return;
   if (edgeAiLogLevel == EdgeAiLogLevel.none) return;
@@ -40,9 +46,10 @@ void edgeAiLog(String message, {EdgeAiLogLevel level = EdgeAiLogLevel.info}) {
 
 /// Says that a start-up restore left a kind without its active model, in
 /// release builds too: [edgeAiLog] is silent there, where an app would
-/// otherwise find its model gone at start without a word. One line through
+/// otherwise find its model gone at start without a word. Printed through
 /// [debugPrint] (an app that replaces `debugPrint` in release replaces this
-/// too); silent under [EdgeAiLogLevel.none], as [edgeAiLog] is.
+/// too), prefixed `flutter_edge_ai: `; silent under [EdgeAiLogLevel.none], as
+/// [edgeAiLog] is.
 void restoreNotice(String message) {
   if (edgeAiLogLevel == EdgeAiLogLevel.none) return;
   debugPrint('flutter_edge_ai: ${sanitizeForLog(message)}');

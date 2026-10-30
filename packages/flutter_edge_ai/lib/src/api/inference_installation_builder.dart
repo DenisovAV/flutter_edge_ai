@@ -442,6 +442,8 @@ class InferenceInstallationBuilder {
       if (activate) {
         await activateInstalledModel(manager, spec);
       }
+      // Nothing downloads: done once registered (and active).
+      _onProgress?.call(100);
       edgeAiLog(
         '✅ Built-in model ${activate ? 'set as active' : 'registered'}: '
         '${spec.name}',
@@ -479,6 +481,8 @@ class InferenceInstallationBuilder {
       if (activate) {
         await activateInstalledModel(manager, spec);
       }
+      // Transformers.js downloads at load: the install is done once active.
+      _onProgress?.call(100);
       edgeAiLog(
         '✅ ONNX web model ${activate ? 'set as active' : 'registered'} '
         '(Transformers.js owns the weights): '

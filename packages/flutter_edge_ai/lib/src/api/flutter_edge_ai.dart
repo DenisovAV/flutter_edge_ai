@@ -115,12 +115,12 @@ import 'package:flutter_edge_ai/src/catalog/registered_catalog.dart';
 class FlutterEdgeAi {
   /// Controls flutter_edge_ai's internal log verbosity.
   ///
-  /// Release builds print only the start-up notices about active models that
-  /// could not be restored (no model output or prompts reach logcat/syslog);
-  /// debug builds print according to this value. Default
-  /// [EdgeAiLogLevel.info]. Use [EdgeAiLogLevel.verbose] to see model output
-  /// and prompts while debugging. [EdgeAiLogLevel.none] silences everything
-  /// this level controls, those notices included.
+  /// Of the log this value controls, release builds print the start-up
+  /// notices about active models that could not be restored (no model output
+  /// or prompts reach logcat/syslog); debug builds print according to this
+  /// value. Default [EdgeAiLogLevel.info]. Use [EdgeAiLogLevel.verbose] to see
+  /// model output and prompts while debugging. [EdgeAiLogLevel.none]
+  /// silences this log, those notices included.
   ///
   /// Some messages are printed in every build whatever logLevel says:
   /// warnings about failures the app would not otherwise see, and a few

@@ -53,10 +53,7 @@ import '../tokenizer/stt_special_tokens.dart'
     show ResolvedSuppression, SttSpecialTokenResolver;
 import '../tokenizer/stt_tokenizer.dart' show SttTokenizer;
 import 'litert_graph.dart'
-    show
-        acceleratorFor,
-        compiledModelFailureMessage,
-        configureSpeechAccelerator;
+    show acceleratorFor, checkCompiledModelStatus, configureSpeechAccelerator;
 import 'log_mel_frontend.dart' show computeLogMelSpectrogram, computeNemoLogMel;
 import 'mel_filter_assets.dart' show loadMelFilterAsset;
 
@@ -211,6 +208,20 @@ int? greedyDecodeStep(
   if (rowLogits.any((v) => v.isNaN)) return null;
   applySuppression(rowLogits, step: step, suppression: suppression);
   return argmax(rowLogits);
+}
+
+/// The token a seq2seq decode step picked: [next] from [greedyDecodeStep], or
+/// a [StateError] when it is null (the row held a NaN). [step] names the step.
+///
+/// Called after the step's tensor buffers are released, so the error never
+/// leaves a buffer locked.
+int acceptDecodedToken(int? next, {required int step}) {
+  if (next != null) return next;
+  throw StateError(
+    'STT decode produced NaN logits at step $step — the model backend '
+    'returned invalid output; transcription aborted rather than silently '
+    'returning an empty result.',
+  );
 }
 
 /// Build the decoder seed prompt for one transcription.
@@ -459,15 +470,15 @@ class SttCore {
         options,
         compiledPtr,
       );
-      if (status != 0) {
-        calloc.free(compiledPtr);
-        throw StateError(
-          compiledModelFailureMessage(
-            modelPath,
-            acceleratorFor(backend),
-            status,
-          ),
+      try {
+        checkCompiledModelStatus(
+          status,
+          path: modelPath,
+          accelerator: acceleratorFor(backend),
         );
+      } catch (_) {
+        calloc.free(compiledPtr);
+        rethrow;
       }
       compiled = compiledPtr.value;
       calloc.free(compiledPtr);
@@ -817,8 +828,9 @@ class SttCore {
         final maskBufPtr = calloc<LiteRtTensorBuffer>();
         final outBufPtr = calloc<LiteRtTensorBuffer>();
         var tokCreated = false, maskCreated = false, outCreated = false;
-        int bestId;
-        var nanLogit = false;
+        // The step's pick, or null for a NaN row; read once the buffers are
+        // released (acceptDecodedToken).
+        int? next;
 
         try {
           _bindings
@@ -888,15 +900,11 @@ class SttCore {
               row * vocabSize,
               (row + 1) * vocabSize,
             );
-            final next = greedyDecodeStep(
+            next = greedyDecodeStep(
               rowLogits,
               step: len - promptIds.length,
               suppression: _resolvedSuppression,
             );
-            // Flagged here and thrown after cleanup: the buffer is still
-            // locked.
-            nanLogit = next == null;
-            bestId = next ?? 0;
             _bindings
                 .unlockTensorBuffer(outBufPtr.value)
                 .check('LiteRtUnlockTensorBuffer(decode out)');
@@ -915,13 +923,7 @@ class SttCore {
           outType.free();
         }
 
-        if (nanLogit) {
-          throw StateError(
-            'STT decode produced NaN logits at step $len — the model backend '
-            'returned invalid output; transcription aborted rather than '
-            'silently returning an empty result.',
-          );
-        }
+        final bestId = acceptDecodedToken(next, step: len);
 
         generated.add(bestId);
         if (shouldStopDecoding(

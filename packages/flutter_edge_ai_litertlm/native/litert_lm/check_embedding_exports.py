@@ -2,7 +2,7 @@
 """The LiteRT-LM main library must export every C function the EmbeddingGemma 2
 pass calls (R5 §4.11), every one option scoring calls (SCORING_SYMBOLS),
 every LiteRT C function LiteRtBindings looks up (LITERT_BINDINGS_SYMBOLS, from
-libLiteRt.so / LiteRt.dll where the bundle ships one),
+libLiteRt.so on Linux and LiteRt.dll on Windows, by the platform in the label),
 every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS), and the
 symbol the loader checks to recognise this package's build
 (OWN_BUILD_SYMBOLS).
@@ -165,8 +165,11 @@ LITERT_BINDINGS_SYMBOLS = [
 
 MAIN_LIBRARY = ("libLiteRtLm.dylib", "libLiteRtLm.so", "LiteRtLm.dll")
 
-# The library LiteRtBindings opens where it is not the main library.
-LITERT_C_LIBRARY = ("libLiteRt.so", "LiteRt.dll")
+# The library LiteRtBindings opens where it is not the main library, by the
+# platform in the bundle's label (litertlm-<platform>): Google's prebuilt
+# LiteRT beside libLiteRtLm (_openLiteRt in lib/src/ffi/litert_bindings.dart).
+# Every other platform links LiteRT into the main library.
+LITERT_C_LIBRARY = {"linux": "libLiteRt.so", "windows": "LiteRt.dll"}
 
 
 class FormatError(Exception):
@@ -315,16 +318,18 @@ def find_main_library(bundle):
     return found
 
 
-def find_litert_c_library(bundle, main_library):
-    """The library LiteRtBindings opens: libLiteRt.so / LiteRt.dll when the
-    bundle ships one (Linux, Windows), else the main library (Apple, Android,
-    where LiteRT is linked into libLiteRtLm)."""
-    found = []
-    for root, _, files in os.walk(bundle):
-        for name in files:
-            if name in LITERT_C_LIBRARY:
-                found.append(os.path.join(root, name))
-    return found or [main_library]
+def find_litert_c_library(bundle, label, main_library):
+    """The libraries LiteRtBindings opens on the bundle's platform, read from
+    [label]: every libLiteRt.so / LiteRt.dll in it on Linux / Windows (exactly
+    one is expected), the main library elsewhere (Apple, Android)."""
+    for platform, name in LITERT_C_LIBRARY.items():
+        if f"-{platform}" in label or label.startswith(platform):
+            found = []
+            for root, _, files in os.walk(bundle):
+                if name in files:
+                    found.append(os.path.join(root, name))
+            return name, found
+    return os.path.basename(main_library), [main_library]
 
 
 def main(argv):
@@ -364,10 +369,11 @@ def main(argv):
         else:
             print(f"  [ok]   {label} — {os.path.basename(library)} exports all "
                   f"{len(wanted)} {what}")
-    litert_libraries = find_litert_c_library(bundle, library)
+    litert_name, litert_libraries = find_litert_c_library(
+        bundle, label, library)
     if len(litert_libraries) != 1:
-        print(f"  [FAIL] {label} — expected at most one of "
-              f"{', '.join(LITERT_C_LIBRARY)}, found {len(litert_libraries)}: "
+        print(f"  [FAIL] {label} — expected one {litert_name}, the library "
+              f"LiteRtBindings opens there, found {len(litert_libraries)}: "
               f"{litert_libraries}")
         return 1
     litert_library = litert_libraries[0]

@@ -90,7 +90,7 @@ window, steady state over repeated transcriptions
 
 | File | Backend | Per window | Anonymous memory |
 |------|---------|------------|------------------|
-| `moonshine_tiny_5s_f32.tflite` | GPU | ~0.25 s | ~0.44 GB |
+| `moonshine_tiny_5s_f32.tflite` | GPU | ~0.25 s | ~0.44–0.68 GB |
 | `moonshine_tiny_5s_f32.tflite` | CPU | ~0.8 s | ~0.36 GB |
 | `parakeet_ctc_0.6b_5s_i8.tflite` | CPU | ~1.4 s | ~0.84 GB |
 | `parakeet_ctc_0.6b_5s_f32.tflite` | CPU | ~2.4 s | ~2.4 GB |
@@ -102,15 +102,40 @@ window, steady state over repeated transcriptions
   transcribed the same text as the f32 file.
 - On the GPU, speech-to-text asks LiteRT for fp32; text-to-speech keeps
   LiteRT's defaults. At LiteRT's default (fp16), moonshine f32 returned NaN
-  logits at its first decode step on Adreno 740; at fp32 it transcribes the same
-  text as on the CPU, about three times faster. Whisper tiny transcribed
-  correctly both ways and is about 5% slower at fp32. fp32 is measured on
+  logits at its first decode step on Adreno 740; with the fp32 request it
+  transcribes the same text as on the CPU, about three times faster. Whisper
+  tiny gave the same text in both modes, with no NaN, about 6% slower with the
+  request. Which of the request's effects cures the NaN is not isolated (it
+  also changes the accelerator's kernel batch size), and it is measured on
   Adreno 740 only, not on Mali, Metal or WebGPU.
 - The int8 (`_i8`) files do not compile on the GPU without constant tensor
   sharing, which speech leaves off: with it set, moonshine f32 aborted inside
   LiteRT
   ([LiteRT-LM#3685](https://github.com/google-ai-edge/LiteRT-LM/issues/3685)).
   Their GPU load fails with an error naming the file; run them on the CPU.
+- Matcha TTS does not load on the GPU of that phone: its G2P graph
+  (`dp_g2p_matcha_fp16.tflite`) fails to compile there (LiteRT status 504), as
+  it did before #747. Run Matcha on the CPU (~7.6 s for one sentence).
+
+### Speech-to-text output language (Whisper)
+
+Whisper's shipped checkpoints are multilingual. The output language is one token
+in the decoder's seed prompt, rebuilt per transcription — so it is a per-call
+knob, and switching it never reloads the model:
+
+```dart
+final recognizer = await FlutterEdgeAi.getActiveStt(language: 'de');
+final german = await recognizer.transcribe(germanPcm);
+
+// Same recognizer, one call in French.
+final french = await recognizer.transcribe(frenchPcm, language: 'fr');
+```
+
+Codes are Whisper's own, without the delimiters (`'en'`, `'de'`, `'uk'`);
+default `'en'`. The setting changes what the model WRITES, not what it hears —
+`'en'` on German audio returns an English translation, not an error. moonshine
+and Parakeet have no language token and throw `ArgumentError` rather than
+ignoring the value.
 
 ## Voice loop
 

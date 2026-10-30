@@ -1,7 +1,8 @@
-// The GPU options every speech graph is compiled with (#747), driven through
-// fakes of the three LiteRT calls: no native library is loaded. The fakes
-// read the payload the way LiteRT's GPU accelerator does (a NUL-terminated
-// TOML string) and free it where LiteRT would.
+// The GPU options every speech-to-text graph is compiled with (#747; text-to-
+// speech gets none), driven through fakes of the three LiteRT calls: no native
+// library is loaded. The fakes read the payload the way LiteRT's GPU
+// accelerator does (a NUL-terminated TOML string) and free it where LiteRT
+// would. Also the compile-failure check both compile sites go through.
 import 'dart:convert';
 import 'dart:ffi';
 
@@ -16,6 +17,7 @@ import 'package:flutter_edge_ai_litertlm/litert_bindings.dart'
 import 'package:flutter_edge_ai_speech/src/litert/litert_graph.dart'
     show
         attachGpuOptions,
+        checkCompiledModelStatus,
         compiledModelFailureMessage,
         configureSpeechAcceleratorWith,
         liteRtGpuOptionsIdentifier,
@@ -284,6 +286,40 @@ void main() {
           ),
           'LiteRtCreateCompiledModel(/models/parakeet_ctc_0.6b_5s_i8.tflite) '
           'failed on the $name (status=3)',
+        );
+      });
+    }
+  });
+
+  group('checkCompiledModelStatus', () {
+    test('kLiteRtStatusOk (0) passes', () {
+      checkCompiledModelStatus(
+        0,
+        path: '/models/a.tflite',
+        accelerator: kLiteRtHwAcceleratorGpu,
+      );
+    });
+
+    // 3: an int8 file on the GPU; 504: Matcha's G2P graph on Adreno (#747).
+    for (final status in [3, 504, -1]) {
+      test('status $status throws the failure message', () {
+        expect(
+          () => checkCompiledModelStatus(
+            status,
+            path: '/models/a.tflite',
+            accelerator: kLiteRtHwAcceleratorGpu,
+          ),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              compiledModelFailureMessage(
+                '/models/a.tflite',
+                kLiteRtHwAcceleratorGpu,
+                status,
+              ),
+            ),
+          ),
         );
       });
     }

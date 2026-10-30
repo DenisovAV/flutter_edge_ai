@@ -49,12 +49,15 @@ const int liteRtDelegatePrecisionFp32 = 2;
 ///
 /// fp32. With no options (the accelerator's default, fp16) moonshine-tiny f32
 /// returned NaN logits at its first decode step on a Galaxy S23 (Adreno 740);
-/// with `precision = 2` it transcribed the same text as on the CPU (#747).
-/// whisper-tiny f32 transcribed correctly both ways, about 5% slower at fp32,
-/// and Parakeet f32 never got past its load on that phone either way (the
-/// system killed the app). Google's ASR sample (`litert-samples`,
-/// speech_recognition) forces fp32 on the GPU for every model it ships.
-/// Measured on Adreno 740 only; Metal, WebGPU and Mali are not.
+/// with this payload it transcribed the same text as on the CPU (#747).
+/// Attaching it also moved the accelerator's logged `kernel_batch_size` from 0
+/// to -1, so whether precision alone cures the NaN is not isolated.
+/// whisper-tiny f32 gave the same text both ways, with no NaN, about 6% slower
+/// with the payload. Parakeet f32 was killed by the system during its load at
+/// the default and at fp32; with fp16, madvise and GPU weight conversion it
+/// loaded and returned NaN at its first frame. Google's ASR sample
+/// (`litert-samples`, speech_recognition) forces fp32 on the GPU for every
+/// model it ships. Measured on Adreno 740 only; Metal, WebGPU and Mali are not.
 ///
 /// No `enable_constant_tensors_sharing`: moonshine-tiny f32 aborted the process
 /// inside the accelerator (`EMBEDDING_LOOKUP: Unsupported external weights
@@ -144,6 +147,18 @@ String acceleratorName(int accelerator) => switch (accelerator) {
 String compiledModelFailureMessage(String path, int accelerator, int status) =>
     'LiteRtCreateCompiledModel($path) failed on the '
     '${acceleratorName(accelerator)} (status=$status)';
+
+/// Throws a [StateError] ([compiledModelFailureMessage]) unless [status] is
+/// LiteRT's `kLiteRtStatusOk` (0). LiteRT's error statuses are positive (3 for
+/// an int8 file on the GPU, 504 for Matcha's G2P graph on Adreno, #747).
+void checkCompiledModelStatus(
+  int status, {
+  required String path,
+  required int accelerator,
+}) {
+  if (status == 0) return;
+  throw StateError(compiledModelFailureMessage(path, accelerator, status));
+}
 
 /// Sets [accelerator] on [options] and, when [fp32OnGpu] is true and it is the
 /// GPU, the speech-to-text GPU options ([sttGpuOptionsToml]). Every speech core
@@ -282,9 +297,11 @@ LoadedGraph loadLiteRtGraph(
       options,
       compiledPtr,
     );
-    if (status != 0) {
+    try {
+      checkCompiledModelStatus(status, path: path, accelerator: accelerator);
+    } catch (_) {
       calloc.free(compiledPtr);
-      throw StateError(compiledModelFailureMessage(path, accelerator, status));
+      rethrow;
     }
     compiled = compiledPtr.value;
     calloc.free(compiledPtr);

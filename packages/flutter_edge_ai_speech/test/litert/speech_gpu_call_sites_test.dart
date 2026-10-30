@@ -6,8 +6,8 @@
 // configureSpeechAccelerator (which adds the fp32 GPU options for
 // speech-to-text only), never through
 // a direct setOptionsHardwareAccelerators call, every compile failure is
-// reported through compiledModelFailureMessage, and the seq2seq decoder picks
-// each token through greedyDecodeStep (whole-row NaN check).
+// checked through checkCompiledModelStatus, and the seq2seq decoder picks each
+// token through greedyDecodeStep and acceptDecodedToken (whole-row NaN check).
 @TestOn('vm')
 library;
 
@@ -23,7 +23,9 @@ void main() {
     for (final file in Directory(
       'lib',
     ).listSync(recursive: true).whereType<File>())
-      if (file.path.endsWith('.dart')) file.path: file.readAsStringSync(),
+      // Keyed with '/' on every host, so the paths below match on Windows too.
+      if (file.path.endsWith('.dart'))
+        file.path.replaceAll(r'\', '/'): file.readAsStringSync(),
   };
 
   test('only configureSpeechAccelerator sets the accelerator', () {
@@ -93,16 +95,25 @@ void main() {
     );
   });
 
-  test('every compile failure goes through compiledModelFailureMessage', () {
+  test('every compile status goes through checkCompiledModelStatus', () {
+    final checked = <String>[];
     for (final MapEntry(:key, :value) in sources.entries) {
       final compiles = _count(value, r'\.createCompiledModel\(');
       if (compiles == 0) continue;
+      checked.add(key);
       expect(
-        _count(value, r'StateError\(\s*compiledModelFailureMessage\('),
+        _count(value, r'checkCompiledModelStatus\(\s*status,'),
         compiles,
-        reason: '$key compiles a graph without compiledModelFailureMessage',
+        reason: '$key compiles a graph without checkCompiledModelStatus',
       );
     }
+    expect(
+      checked,
+      unorderedEquals([
+        'lib/src/litert/litert_graph.dart',
+        'lib/src/litert/stt_core.dart',
+      ]),
+    );
   });
 
   test('the seq2seq decoder picks tokens through greedyDecodeStep', () {
@@ -113,5 +124,7 @@ void main() {
     );
     expect(_count(loop, r'greedyDecodeStep\('), 1);
     expect(loop, isNot(contains('argmax(')));
+    // Its pick is the token, through the check that throws on a NaN row.
+    expect(_count(loop, r'acceptDecodedToken\(\s*next,'), 1);
   });
 }

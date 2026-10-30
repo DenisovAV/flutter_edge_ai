@@ -1,7 +1,11 @@
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_speech/src/litert/stt_core.dart'
-    show applySuppression, greedyDecodeStep, writeDecoderMask;
+    show
+        acceptDecodedToken,
+        applySuppression,
+        greedyDecodeStep,
+        writeDecoderMask;
 import 'package:flutter_edge_ai_speech/src/model/stt_model_profile.dart'
     show SttDecoderMaskConvention;
 import 'package:flutter_edge_ai_speech/src/tokenizer/stt_special_tokens.dart'
@@ -135,6 +139,37 @@ void main() {
       );
       final row = Float32List.fromList([0.1, 0.9, 7.0, 5.0]);
       expect(greedyDecodeStep(row, step: 3, suppression: suppression), 1);
+    });
+  });
+
+  group('acceptDecodedToken (#747)', () {
+    test('a pick is the token', () {
+      expect(acceptDecodedToken(42, step: 3), 42);
+      expect(acceptDecodedToken(0, step: 3), 0);
+    });
+
+    test('a NaN row (null) throws, naming the step', () {
+      expect(
+        () => acceptDecodedToken(null, step: 3),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('NaN logits at step 3'),
+          ),
+        ),
+      );
+    });
+
+    test('a NaN anywhere in the row reaches the error', () {
+      final row = Float32List.fromList([0.1, 0.9, double.nan]);
+      expect(
+        () => acceptDecodedToken(
+          greedyDecodeStep(row, step: 0, suppression: null),
+          step: 1,
+        ),
+        throwsStateError,
+      );
     });
   });
 }

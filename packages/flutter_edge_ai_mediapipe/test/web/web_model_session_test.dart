@@ -543,6 +543,35 @@ void main() {
       },
     );
 
+    test('a call queued later starts when the delayed turn ends, not at its '
+        'own timeout', () async {
+      const wait = Duration(milliseconds: 200);
+      final b = FakeBackend([])..endOnCancel = false;
+      final s = _session(b, previousCallWait: wait);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      await s.stopGeneration(); // its stream never closes
+
+      await s.addQueryChunk(const Message(text: 'go on', isUser: true));
+      final delayedDone = Completer<void>();
+      s.getResponseAsync().listen((_) {}, onDone: delayedDone.complete);
+      await Future<void>.delayed(wait ~/ 2);
+      // Queued half a wait later; its own limit runs out at 1.5 waits.
+      final later = s.getResponse();
+      await Future<void>.delayed(wait ~/ 2 + const Duration(milliseconds: 30));
+      expect(b.prompts, hasLength(2), reason: 'the delayed turn is running');
+      b.replies.add('x');
+      b.live!
+        ..add('Ok.')
+        ..close();
+      await delayedDone.future;
+      final clock = Stopwatch()..start();
+      await later;
+      expect(clock.elapsed, lessThan(wait ~/ 4));
+      expect(b.prompts, hasLength(3));
+    });
+
     test('a call queued behind the turn a never-ending stopped call delayed '
         'is not refused', () async {
       const wait = Duration(milliseconds: 200);

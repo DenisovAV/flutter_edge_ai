@@ -147,8 +147,9 @@ class ChatScreenState extends State<ChatScreen> {
                 setState(() => _downloadPercent = percent);
               })
               .install(),
-          uninstall: () =>
-              FlutterEdgeAi.uninstallModel(variant.file.installFilename),
+          variant: variant,
+          confirm: (model, bytes) =>
+              askToReplaceActiveModel(context, model, bytes),
         );
       } else if (widget.model.hfRepo != null) {
         final installation = await installer

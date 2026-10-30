@@ -1,14 +1,13 @@
 // The installation builders' catalog entries and the options under them:
-// an LLM under a name of its own (fromNetwork(filename:)), expectedSize /
-// expectedSha256 before activation, and the embedder and STT withProgress by
-// bytes.
+// an LLM under a name of its own (fromNetwork(filename:)), expectedSize
+// before activation, and the embedder and STT withProgress by bytes.
 
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'package:flutter_edge_ai/src/api/file_sha256_io.dart';
+import 'package:flutter_edge_ai/src/api/install_expectations.dart'
+    show activeFileRefusal;
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart'
     show MobileModelManager;
@@ -154,7 +153,7 @@ void main() {
     });
   });
 
-  group('expectedSize and expectedSha256', () {
+  group('expectedSize', () {
     test('a file of another size is deleted with its record; a retry '
         'downloads it again', () async {
       final manager = FlutterEdgeAiPlugin.instance.modelManager;
@@ -183,37 +182,7 @@ void main() {
       expect(downloads.count, 2);
     });
 
-    test(
-      'the right sha256 passes; another one throws and is deleted',
-      () async {
-        final right = '${sha256.convert(Uint8List(_unit))}';
-        await llm()
-            .fromNetwork(
-              'https://example.com/repo/model.litertlm',
-              expectedSha256: right.toUpperCase(),
-            )
-            .install();
-        await expectLater(
-          llm()
-              .fromNetwork(
-                'https://example.com/repo/model.litertlm',
-                filename: 'wrong.litertlm',
-                expectedSha256: 'f' * 64,
-              )
-              .install(),
-          throwsA(
-            isA<ModelValidationException>().having(
-              (e) => e.message,
-              'message',
-              allOf(contains('f' * 64), contains(right)),
-            ),
-          ),
-        );
-        expect(await FlutterEdgeAi.isModelInstalled('wrong.litertlm'), isFalse);
-      },
-    );
-
-    test('a file installed earlier is hashed again; the active model\'s '
+    test('a file installed earlier is checked again; the active model\'s '
         'file is kept', () async {
       await llm()
           .fromNetwork('https://example.com/repo/model.litertlm')
@@ -222,14 +191,14 @@ void main() {
         llm()
             .fromNetwork(
               'https://example.com/repo/model.litertlm',
-              expectedSha256: 'f' * 64,
+              expectedSize: 123,
             )
             .install(),
         throwsA(
           isA<ModelValidationException>().having(
             (e) => e.message,
             'message',
-            contains('left as it is'),
+            contains('so it was kept'),
           ),
         ),
       );
@@ -269,65 +238,29 @@ void main() {
       },
     );
 
-    test(
-      'an expectation that cannot be right is refused before a download',
-      () {
-        expect(
-          () => llm().fromNetwork(
-            'https://example.com/m.litertlm',
-            expectedSha256: 'abc',
-          ),
-          throwsArgumentError,
-        );
-        expect(
-          () => llm().fromNetwork(
-            'https://example.com/m.litertlm',
-            expectedSize: -1,
-          ),
-          throwsArgumentError,
-        );
-        expect(
-          () => FlutterEdgeAi.installEmbedder().modelFromNetwork(
-            'https://example.com/emb.tflite',
-            expectedSha256: 'sha256:${'a' * 64}',
-          ),
-          throwsArgumentError,
-        );
-        expect(
-          () => FlutterEdgeAi.installStt().tokenizerFromNetwork(
-            'https://example.com/tokenizer.json',
-            expectedSha256: 'a' * 63,
-          ),
-          throwsArgumentError,
-        );
-        expect(downloads.count, 0);
-      },
-    );
-
-    test('a file the hash cannot read is that file system error', () async {
-      await expectLater(
-        fileSha256('${documents.path}/none.bin'),
-        throwsA(
-          isA<FileSystemException>()
-              .having((e) => e.osError, 'osError', isNotNull)
-              .having((e) => e.path, 'path', endsWith('none.bin')),
+    test('a negative size is refused before a download', () {
+      expect(
+        () => llm().fromNetwork(
+          'https://example.com/m.litertlm',
+          expectedSize: -1,
         ),
+        throwsArgumentError,
       );
       expect(
-        await fileSha256(
-          (File('${documents.path}/empty.bin')..writeAsBytesSync([])).path,
+        () => FlutterEdgeAi.installEmbedder().modelFromNetwork(
+          'https://example.com/emb.tflite',
+          expectedSize: -1,
         ),
-        '${sha256.convert(<int>[])}',
+        throwsArgumentError,
       );
-    });
-
-    test('a cancel during the hash stops it', () async {
-      final file = File('${documents.path}/big.bin');
-      await file.writeAsBytes(Uint8List(256 * 1024 * 1024));
-      final cancel = CancelToken();
-      final hashing = fileSha256(file.path, cancelToken: cancel);
-      cancel.cancel();
-      await expectLater(hashing, throwsA(isA<DownloadCancelledException>()));
+      expect(
+        () => FlutterEdgeAi.installStt().tokenizerFromNetwork(
+          'https://example.com/tokenizer.json',
+          expectedSize: -1,
+        ),
+        throwsArgumentError,
+      );
+      expect(downloads.count, 0);
     });
 
     test('an install over a file another kind\'s active model reads is '
@@ -347,11 +280,64 @@ void main() {
           isA<StateError>().having(
             (e) => e.message,
             'message',
-            contains('the active model shared reads'),
+            contains('the active inference model shared reads'),
           ),
         ),
       );
       expect(downloads.count, before);
+    });
+
+    test('the refusal names the kind and the uninstall call, in the words '
+        'the example app reads', () {
+      // example/lib/services/catalog_install.dart parses these sentences.
+      expect(
+        activeFileRefusal(
+          'm.litertlm',
+          InferenceModelSpec(
+            name: 'm',
+            modelSource: ModelSource.network('https://example.com/m.litertlm'),
+            modelType: ModelType.general,
+            fileType: ModelFileType.litertlm,
+          ),
+        ),
+        'This install would write m.litertlm over the file the active '
+        'inference model m reads, and checks it only afterwards. Uninstall '
+        "that model first (FlutterEdgeAi.uninstallModel('m.litertlm')), or "
+        'install under another file name.',
+      );
+      for (final (spec, kind, call) in [
+        (
+          EmbeddingModelSpec(
+            name: 'emb',
+            modelSource: ModelSource.network('https://example.com/emb.tflite'),
+            tokenizerSource: ModelSource.network(
+              'https://example.com/tok.model',
+            ),
+          ),
+          'embedding',
+          'uninstallEmbedder()',
+        ),
+        (
+          SttModelSpec(
+            name: 'stt',
+            modelSource: ModelSource.network('https://example.com/stt.tflite'),
+            tokenizerSource: ModelSource.network(
+              'https://example.com/tokenizer.json',
+            ),
+            sttModelType: SttModelType.moonshine,
+          ),
+          'speech-to-text',
+          'uninstallStt()',
+        ),
+      ]) {
+        expect(
+          activeFileRefusal('x', spec),
+          'This install would write x over the file the active $kind model '
+          '${spec.name} reads, and checks it only afterwards. Uninstall that '
+          'model first (FlutterEdgeAi.$call), or install under another file '
+          'name.',
+        );
+      }
     });
 
     test('a refused expectation leaves the builder as it was', () async {
@@ -359,7 +345,21 @@ void main() {
       expect(
         () => builder.modelFromNetwork(
           'https://example.com/x.tflite',
-          expectedSha256: 'bad',
+          expectedSize: -1,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => builder.tokenizerFromNetwork(
+          'https://example.com/x.model',
+          expectedSize: -1,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => builder.modelFromNetwork(
+          'https://example.com/x.tflite',
+          filename: '../x.tflite',
         ),
         throwsArgumentError,
       );
@@ -367,6 +367,57 @@ void main() {
       await builder.install();
       expect(await FlutterEdgeAi.isModelInstalled('emb.tflite'), isTrue);
       expect(await FlutterEdgeAi.isModelInstalled('x.tflite'), isFalse);
+      expect(await FlutterEdgeAi.isModelInstalled('x.model'), isFalse);
+    });
+
+    test('a refused STT expectation leaves the builder as it was', () async {
+      final builder = FlutterEdgeAi.installStt()
+          .modelFromNetwork('https://example.com/stt.tflite')
+          .tokenizerFromNetwork('https://example.com/tokenizer.json')
+          .ofType(SttModelType.moonshine);
+      expect(
+        () => builder.modelFromNetwork(
+          'https://example.com/x.tflite',
+          expectedSize: -1,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => builder.tokenizerFromNetwork(
+          'https://example.com/x.json',
+          expectedSize: -1,
+        ),
+        throwsArgumentError,
+      );
+      await builder.install();
+      final active =
+          FlutterEdgeAiPlugin.instance.modelManager.activeSttModel!
+              as SttModelSpec;
+      expect(
+        active.modelSource,
+        ModelSource.network('https://example.com/stt.tflite'),
+      );
+      expect(
+        active.tokenizerSource,
+        ModelSource.network('https://example.com/tokenizer.json'),
+      );
+    });
+
+    test('fromCatalog with a tokenizer it refuses leaves the model as it '
+        'was', () async {
+      final builder = FlutterEdgeAi.installEmbedder()
+          .modelFromNetwork('https://example.com/mine.tflite')
+          .tokenizerFromNetwork('https://example.com/mine.model');
+      expect(
+        () => builder.fromCatalog(_Embedder(tokenizerSize: -1)),
+        throwsArgumentError,
+      );
+      await builder.install();
+      expect(
+        FlutterEdgeAiPlugin.instance.modelManager.activeEmbeddingModel?.name,
+        'mine',
+      );
+      expect(await FlutterEdgeAi.isModelInstalled('emb.tflite'), isFalse);
     });
 
     test('the embedder checks each file before it is active', () async {
@@ -474,11 +525,15 @@ ModelArtifact _artifact(String path, int size) => ModelArtifact(
 );
 
 final class _Embedder extends EmbedderVariant {
+  _Embedder({this.tokenizerSize = _unit});
+
+  final int tokenizerSize;
+
   @override
   ModelArtifact get model => _artifact('emb.tflite', 3 * _unit);
 
   @override
-  ModelArtifact? get tokenizer => _artifact('tok.model', _unit);
+  ModelArtifact? get tokenizer => _artifact('tok.model', tokenizerSize);
 
   @override
   String get ragProfileId => 'tiny-v1';

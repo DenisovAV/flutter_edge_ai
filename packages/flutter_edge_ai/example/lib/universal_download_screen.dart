@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_edge_ai_example/services/catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 import 'package:flutter_edge_ai_example/chat_screen.dart';
@@ -206,6 +207,8 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
               _progress = modelProg;
             });
           },
+          confirmReplace: (model, bytes) =>
+              askToReplaceActiveModel(context, model, bytes),
         );
 
         debugPrint('[UI] Embedding download completed');
@@ -221,6 +224,8 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
               _progress = progress;
             });
           },
+          confirmReplace: (model, bytes) =>
+              askToReplaceActiveModel(context, model, bytes),
         );
       }
 

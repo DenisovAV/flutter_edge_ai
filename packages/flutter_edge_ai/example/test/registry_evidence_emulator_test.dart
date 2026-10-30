@@ -13,6 +13,16 @@ void main() {
       );
   const phone = 'google/husky/husky:15/AP4A/1:user/release-keys';
 
+  test('Cuttlefish and Genymotion are emulators', () {
+    for (final hardware in ['cutf_cvm', 'vsoc_x86_64', 'vbox86']) {
+      expect(
+        emulator({'ro.build.fingerprint': phone, 'ro.hardware': hardware}),
+        isTrue,
+        reason: hardware,
+      );
+    }
+  });
+
   test('an emulator by its properties or device nodes', () {
     expect(
       emulator({'ro.build.fingerprint': phone, 'ro.boot.qemu': '1'}),

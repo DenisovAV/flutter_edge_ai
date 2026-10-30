@@ -25,6 +25,11 @@ final class NpuVendor {
 
 /// The NPU a model file was compiled for. Engines extend this with the
 /// details their files carry.
+///
+/// A target whose [npuVendor] is null must override `==` and `hashCode` by
+/// value: [sameSoc] compares such targets with `==`, which without an
+/// override is identity, so an app's `MyTarget('x1')` would match only the
+/// catalog's own instance.
 abstract base class NpuTarget {
   /// For subclasses.
   const NpuTarget();

@@ -25,22 +25,25 @@ import 'dart:isolate';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
-final _byPath = <String, Future<CatalogVariant?>>{};
+/// The registry build whose file has the bytes of [path], or null; hashed
+/// once per file version (see [fileSha256]).
+Future<CatalogVariant?> registryVariantOf(String path) async =>
+    variantWithSha256(await fileSha256(path), FlutterEdgeAi.catalog.models);
 
-/// The registry build whose file has the bytes of [path], or null. Hashed
-/// once per path per run.
-Future<CatalogVariant?> registryVariantOf(String path) =>
-    _byPath.putIfAbsent(path, () async {
-      final hex = await _sha256Of(path);
-      for (final model in FlutterEdgeAi.catalog.models) {
-        for (final variant in model.variants) {
-          if (variant.files.isNotEmpty && variant.files.first.sha256 == hex) {
-            return variant;
-          }
-        }
+/// The variant of [models] whose first file is pinned to [hex], compared
+/// without regard to case, or null.
+CatalogVariant? variantWithSha256(String hex, Iterable<CatalogModel> models) {
+  final want = hex.toLowerCase();
+  for (final model in models) {
+    for (final variant in model.variants) {
+      if (variant.files.isNotEmpty &&
+          variant.files.first.sha256.toLowerCase() == want) {
+        return variant;
       }
-      return null;
-    });
+    }
+  }
+  return null;
+}
 
 /// Records that [check] passed on the model file at [path], run on
 /// [backend] — the backend that ran (`activeBackend`), not the one asked for.
@@ -49,10 +52,19 @@ Future<void> recordEvidence({
   required PreferredBackend backend,
   required String check,
 }) async {
-  final variant = await registryVariantOf(path);
+  final name = path.split(Platform.pathSeparator).last;
+  final CatalogVariant? variant;
+  try {
+    variant = await registryVariantOf(path);
+  } on FileSystemException catch (e) {
+    print(
+      'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'cannot read it: ${e.message}'})}',
+    );
+    return;
+  }
   if (variant == null) {
     print(
-      'FEA_EVIDENCE_SKIP ${jsonEncode({'file': path.split(Platform.pathSeparator).last, 'check': check, 'reason': 'not a registry build'})}',
+      'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'not a registry build'})}',
     );
     return;
   }
@@ -72,12 +84,7 @@ Future<void> recordCatalogEvidence(
   for (final (name, file) in installedNamesOf(variant)) {
     // Where core reads the file; returned even when nothing is there.
     final path = await FlutterEdgeAi.getModelPath(name);
-    final reason = !File(path).existsSync()
-        ? 'not installed at $path'
-        : await _sha256Of(path) != file.sha256.toLowerCase()
-        ? 'not the pinned bytes of ${variant.id}'
-        : null;
-    if (reason != null) {
+    if (await pinnedBytesProblem(path, file, variant.id) case final reason?) {
       print(
         'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': reason})}',
       );
@@ -85,6 +92,23 @@ Future<void> recordCatalogEvidence(
     }
   }
   _printEvidence(variant, backend: backend, check: check);
+}
+
+/// Why the file at [path] is not [file]'s pinned bytes — not there, not
+/// readable, other bytes — or null when it is. [id] names the variant.
+Future<String?> pinnedBytesProblem(
+  String path,
+  ModelArtifact file,
+  String id,
+) async {
+  if (!File(path).existsSync()) return 'not installed at $path';
+  try {
+    return await fileSha256(path) == file.sha256.toLowerCase()
+        ? null
+        : 'not the pinned bytes of $id';
+  } on FileSystemException catch (e) {
+    return 'cannot read $path: ${e.message}';
+  }
 }
 
 /// Each file of [variant] with the name core installs it under: a TTS
@@ -171,6 +195,11 @@ bool? looksLikeAndroidEmulator({
       hardware == 'ranchu' ||
       hardware == 'goldfish' ||
       model.startsWith('sdk_gphone') ||
+      // Cuttlefish (cutf_cvm, vsoc_*) and Genymotion (vbox86).
+      hardware.startsWith('cutf') ||
+      hardware.startsWith('vsoc') ||
+      hardware.startsWith('vbox86') ||
+      fingerprint.contains('/vsoc_') ||
       fingerprint.contains('generic') ||
       fingerprint.contains('/sdk_gphone') ||
       exists('/dev/qemu_pipe') ||
@@ -179,10 +208,34 @@ bool? looksLikeAndroidEmulator({
   return fingerprint.isEmpty ? null : false;
 }
 
-/// The sha256 of the file at [path], hashed on a worker isolate.
-Future<String> _sha256Of(String path) => Isolate.run(
-  () async => '${await sha256.bind(File(path).openRead()).first}',
-);
+final _hashes = <(String, int, DateTime), Future<String>>{};
+
+/// How many files [fileSha256] has hashed in this run.
+int get fileHashCount => _hashCount;
+var _hashCount = 0;
+
+/// The lower-case hex sha256 of the file at [path], hashed on a worker
+/// isolate once per version of the file (its path, size and modification
+/// time): a suite records several checks on one multi-GB model, and each
+/// would hash it again. A failed hash is not kept.
+Future<String> fileSha256(String path) {
+  final stat = File(path).statSync();
+  if (stat.type == FileSystemEntityType.notFound) {
+    throw PathNotFoundException(path, const OSError('not found', 2));
+  }
+  final key = (path, stat.size, stat.modified);
+  return _hashes.putIfAbsent(key, () {
+    _hashCount++;
+    final hashing = Isolate.run(
+      () async => '${await sha256.bind(File(path).openRead()).first}',
+    );
+    hashing.ignore();
+    return hashing.catchError((Object e, StackTrace stack) {
+      _hashes.remove(key);
+      Error.throwWithStackTrace(e, stack);
+    });
+  });
+}
 
 /// [name] with every model extension core knows taken out, as core's
 /// `FileNameUtils.getBaseName` names an STT model's tokenizer namespace.

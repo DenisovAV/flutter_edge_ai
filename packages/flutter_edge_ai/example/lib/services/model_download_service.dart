@@ -122,9 +122,14 @@ class ModelDownloadService {
   }
 
   /// Downloads the model file and tracks progress using Modern API.
+  ///
+  /// [confirmReplace] is asked before an active model in the way of a
+  /// catalog install is uninstalled (see `installFromCatalogReplacingActive`).
   Future<void> downloadModel({
     required String token,
     required Function(double) onProgress,
+    required Future<bool> Function(ActiveModelInTheWay model, int bytes)
+    confirmReplace,
   }) async {
     try {
       // Convert empty string to null for cleaner API
@@ -140,8 +145,8 @@ class ModelDownloadService {
                   )
                   .withProgress((progress) => onProgress(progress.toDouble()))
                   .install(),
-          uninstall: () =>
-              FlutterEdgeAi.uninstallModel(variant.file!.installFilename),
+          variant: variant,
+          confirm: confirmReplace,
         );
         return;
       }

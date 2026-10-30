@@ -333,13 +333,30 @@ Map<String, (Entry, Map<String, Object?>)> variantsById(List<Entry> entries) =>
     };
 
 /// Problems with the claims: unknown variants, hosts or backends, a missing
-/// source or issue, and a claim on a cell the package does not run.
+/// source or issue, and a claim on a cell the package does not run. Also a
+/// variant its package's snapshot does not answer for: its cells would read
+/// refused.
 void checkClaims(
   SiteInputs inputs,
   List<Entry> entries,
   List<Problem> problems,
 ) {
   final variants = variantsById(entries);
+  for (final MapEntry(key: id, value: (entry, variant)) in variants.entries) {
+    final package = '${entry.data['package']}';
+    final snapshot = inputs.snapshots[package];
+    if (snapshot == null || variant['withhold'] != null) continue;
+    if (!snapshot.containsKey(id)) {
+      problems.add(
+        Problem(
+          'snapshots/$package.json',
+          id,
+          'no answer for this variant of the registry; its cells would read '
+              'refused. Run the package\'s catalog test with UPDATE_GOLDENS=1',
+        ),
+      );
+    }
+  }
   final hostIds = {for (final h in inputs.hosts) h.id};
   for (final (i, c) in inputs.claims.indexed) {
     void error(String message) => problems.add(
@@ -467,9 +484,11 @@ Map<String, Map<String, Map<String, Cell>>> cells(
                         : Cell(claim.status, source: claim.source));
         } else if (withheldBackends[b] case final Map<String, Object?> w
             when h != 'web' &&
-                // An NPU build is broken where its vendor's NPU is; elsewhere
-                // it is a combination that does not exist.
-                (npu == null || (natural?.contains(h) ?? false))) {
+                // An NPU build is broken on its vendor's NPU only; elsewhere,
+                // and on another backend, it is a combination that does not
+                // exist.
+                (npu == null ||
+                    (b == 'npu' && (natural?.contains(h) ?? false)))) {
           cell = Cell(
             'broken',
             note: '${w['reason']}',

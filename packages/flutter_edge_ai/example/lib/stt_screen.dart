@@ -86,7 +86,9 @@ class _SttScreenState extends State<SttScreen> {
               });
             })
             .install(),
-        uninstall: FlutterEdgeAi.uninstallStt,
+        variant: widget.model.catalogVariant,
+        confirm: (model, bytes) =>
+            askToReplaceActiveModel(context, model, bytes),
       );
 
       final recognizer = await FlutterEdgeAi.getActiveStt();

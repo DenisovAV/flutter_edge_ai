@@ -46,10 +46,14 @@ class MobileModelManager extends ModelFileManager
       try {
         await restore();
       } catch (e, st) {
-        edgeAiLog(
-          'UnifiedModelManager: the active $kind model was not restored, '
-          'starting without one: $e\n$st',
+        // Printed, so a release build reports it too; the stack trace is for
+        // debug builds.
+        // ignore: avoid_print
+        print(
+          'flutter_edge_ai: the active $kind model was not restored, '
+          'starting without one: $e',
         );
+        edgeAiLog('UnifiedModelManager: $kind restore failed at\n$st');
       }
     }
     edgeAiLog('UnifiedModelManager initialized');
@@ -256,9 +260,9 @@ class MobileModelManager extends ModelFileManager
       loraSource: loraPath == null ? null : FileSource(loraPath),
       modelType: modelType,
       fileType: fileType,
-      // The name it was installed under, when it is not its source's (a
-      // `fromNetwork(filename:)` install, checked when it was installed); a
-      // name read back is not checked again.
+      // Null when the file's own name is the recorded one — core keeps its
+      // copies under their install names, so for them it always is —, else
+      // the recorded name (checked when it was installed, not again here).
       filename: renamedFrom(FileSource(filePath), filename),
     );
     edgeAiLog('[ModelManager] restored active inference model: $filename');

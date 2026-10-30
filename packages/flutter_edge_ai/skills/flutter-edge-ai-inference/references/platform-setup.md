@@ -316,7 +316,7 @@ Storage mode, set in `FlutterEdgeAi.initialize(webStorageMode: ...)`:
 
 | `WebStorageMode` | Use for |
 | --- | --- |
-| `cacheApi` (default) | models under about 2 GB |
+| `cacheApi` (default) | files up to 2 GiB (a catalog build over that is refused before it downloads) |
 | `streaming` | larger models — streams through OPFS |
 | `none` | no persistence; downloads every launch |
 

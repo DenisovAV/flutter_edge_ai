@@ -67,10 +67,14 @@ class WebModelManager extends ModelFileManager
       try {
         await restore();
       } catch (e, st) {
-        edgeAiLog(
-          'WebModelManager: the active $kind model was not restored, '
-          'starting without one: $e\n$st',
+        // Printed, so a release build reports it too; the stack trace is for
+        // debug builds.
+        // ignore: avoid_print
+        print(
+          'flutter_edge_ai: the active $kind model was not restored, '
+          'starting without one: $e',
         );
+        edgeAiLog('WebModelManager: $kind restore failed at\n$st');
       }
     }
     edgeAiLog('WebModelManager initialized');

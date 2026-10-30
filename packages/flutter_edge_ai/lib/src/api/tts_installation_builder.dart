@@ -48,10 +48,11 @@ class TtsInstallationBuilder {
   ///
   /// [install] throws, before anything downloads, [UnsupportedError] for a
   /// variant whose `backendsHere` is empty, and [ArgumentError] when the
-  /// variant's files are not the type's bundle. When the active voice of
-  /// the type reads files of the same names from another source (an older
-  /// pin), it throws [StateError] before the download: uninstall it first
-  /// (`uninstallTts`).
+  /// variant's files are not the type's bundle. When an active model of any
+  /// kind reads a file of one of these names from another source (an older
+  /// pin), it throws [StateError] before the download, naming that model
+  /// and the call that uninstalls it: uninstall it first. Not on the web,
+  /// where TTS does not run.
   TtsInstallationBuilder fromCatalog(TtsVariant variant, {String? token}) {
     fromNetwork(variant.baseUrl, token: token);
     _catalogVariant = variant;
@@ -149,7 +150,13 @@ class TtsInstallationBuilder {
   ///
   /// Throws:
   /// - [UnsupportedError] on web, and for [fromBundled] off Android/iOS
-  /// - [StateError] if the base source or [ofType] was not configured
+  /// - [StateError] if the base source or [ofType] was not configured, and,
+  ///   before the download, when a [fromCatalog] file would replace one an
+  ///   active model of any kind reads
+  /// - [UnsupportedError] or [ArgumentError] for a [fromCatalog] variant that
+  ///   cannot be installed here (see [fromCatalog])
+  /// - [ModelValidationException] if a [fromCatalog] file is not its size
+  ///   once installed (it is then deleted with its record)
   /// - [Exception] naming every missing file, if a local bundle is incomplete
   /// - [DownloadCancelledException] if cancelled via cancelToken
   /// - [Exception] on installation failure
@@ -295,13 +302,7 @@ class TtsInstallationBuilder {
 
     // AUTO-SET as active TTS model (even if already installed).
     _cancelToken?.throwIfCancelled();
-    await verifyInstalledFiles(
-      spec,
-      expected,
-      steps: steps,
-      active: activeBefore,
-      cancelToken: _cancelToken,
-    );
+    await verifyInstalledFiles(spec, expected, active: activeBefore);
     _cancelToken?.throwIfCancelled();
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);

@@ -87,9 +87,9 @@ class _TranslateScreenState extends State<TranslateScreen> {
               if (!mounted) return;
               setState(() => _downloadPercent = percent);
             }).install(),
-        uninstall: () => FlutterEdgeAi.uninstallModel(
-          widget.model.catalogVariant.file.installFilename,
-        ),
+        variant: widget.model.catalogVariant,
+        confirm: (model, bytes) =>
+            askToReplaceActiveModel(context, model, bytes),
       );
 
       if (kDebugMode) {

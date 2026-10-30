@@ -514,6 +514,52 @@ void main() {
       );
     });
 
+    test('only a heading that starts with a version names one', () {
+      final problems = problemsWith(
+        '## Migrating from 1.x to 2.0.0\n- text.\n\n'
+        '# 1.21.0\n- Model catalog.\n',
+        const {},
+      );
+      expect(problems.where((x) => x.contains('names a version but is not')), [
+        contains('"# 1.21.0"'),
+      ]);
+    });
+
+    test('a snapshot of a version the CHANGELOG does not name', () {
+      expect(
+        problemsWith(changelog, {
+          'published/flutter_edge_ai_litertlm/1.30.0.json': jsonEncode({
+            'variants': <String, Object?>{},
+          }),
+        }),
+        contains(contains('has no "## 1.30.0" for')),
+      );
+    });
+
+    test('a missing CHANGELOG is a problem', () {
+      final root = Directory.systemTemp.createTempSync('registry_root');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final registry = _registry([_llm()], extraFiles: _llmFacts());
+      final moved = registry.renameSync(p.join(root.path, 'model_registry'));
+      addTearDown(() => moved.renameSync(registry.path));
+      Directory(p.join(root.path, 'packages')).createSync();
+      expect([
+        for (final x in checkRegistry(Directory(moved.path)).problems) '$x',
+      ], contains(contains('CHANGELOG.md: -: missing')));
+    });
+
+    test('a repository without its packages is a problem', () {
+      final root = Directory.systemTemp.createTempSync('registry_root');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final registry = _registry([_llm()], extraFiles: _llmFacts());
+      final moved = registry.renameSync(p.join(root.path, 'model_registry'));
+      addTearDown(() => moved.renameSync(registry.path));
+      File(p.join(root.path, 'pubspec.yaml')).writeAsStringSync('name: x\n');
+      expect([
+        for (final x in checkRegistry(Directory(moved.path)).problems) '$x',
+      ], contains(contains('missing beside model_registry')));
+    });
+
     test('a lower-case marker counts', () {
       expect(
         problemsWith('## 1.20.0\n- model catalog: pinned.\n', const {}),

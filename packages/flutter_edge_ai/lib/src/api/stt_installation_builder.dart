@@ -51,9 +51,10 @@ class SttInstallationBuilder {
   /// An STT model's files are installed under their URL's file names, so
   /// [install] throws [ArgumentError] for a variant that names them
   /// otherwise, and [UnsupportedError] for one whose `backendsHere` is empty;
-  /// both before anything downloads. When the active STT model reads a
-  /// file of the same name from another source, [install] throws
-  /// [StateError] before the download: uninstall it first (`uninstallStt`).
+  /// both before anything downloads. When an active model of any kind reads
+  /// a file of the same name from another source, [install] throws
+  /// [StateError] before the download (not on the web), naming that model
+  /// and the call that uninstalls it: uninstall it first.
   SttInstallationBuilder fromCatalog(SttVariant variant, {String? token}) {
     modelFromNetwork(
       variant.model.url,
@@ -74,27 +75,20 @@ class SttInstallationBuilder {
 
   /// Set model source from network URL (HTTP/HTTPS)
   ///
-  /// [expectedSize] / [expectedSha256]: what the file must be once
-  /// downloaded, checked before the model becomes active; a file that
-  /// differs is deleted with its record and [install] throws
-  /// [ModelValidationException]. With either set, an install that would
-  /// write over the active STT model's file throws [StateError] before it
-  /// downloads. The sha256 is computed on a worker isolate on every
-  /// install, of a file installed earlier too, and a cancel stops it. A
-  /// negative size or a sha256 that is not 64 hex digits throws
-  /// [ArgumentError] here. On the web nothing is checked, and
-  /// [expectedSha256] throws [UnsupportedError].
+  /// [expectedSize]: the file's size in bytes once downloaded, checked on
+  /// every install before the model becomes active, a file installed earlier
+  /// included. A file of another size is deleted with its record and
+  /// [install] throws [ModelValidationException]; a negative size throws
+  /// [ArgumentError] here. With it set, [install] throws [StateError] before
+  /// the download when an active model of any kind reads a file of this
+  /// name: uninstall that model first. On the web neither is checked.
   SttInstallationBuilder modelFromNetwork(
     String url, {
     String? token,
     int? expectedSize,
-    String? expectedSha256,
   }) {
     // Checked first: a refused value leaves the builder as it was.
-    final expected = FileExpectation.checked(
-      size: expectedSize,
-      sha256: expectedSha256,
-    );
+    final expected = FileExpectation.checked(size: expectedSize);
     _modelSource = ModelSource.network(url, authToken: token);
     _catalogVariant = null;
     _modelExpected = expected;
@@ -131,18 +125,14 @@ class SttInstallationBuilder {
   ///
   /// [token] optional auth token for the URL (e.g. HuggingFace).
   ///
-  /// [expectedSize] / [expectedSha256] as for [modelFromNetwork].
+  /// [expectedSize] as for [modelFromNetwork].
   SttInstallationBuilder tokenizerFromNetwork(
     String url, {
     String? token,
     int? expectedSize,
-    String? expectedSha256,
   }) {
     // Checked first: a refused value leaves the builder as it was.
-    final expected = FileExpectation.checked(
-      size: expectedSize,
-      sha256: expectedSha256,
-    );
+    final expected = FileExpectation.checked(size: expectedSize);
     _tokenizerSource = ModelSource.network(url, authToken: token);
     _catalogVariant = null;
     _tokenizerExpected = expected;
@@ -231,7 +221,13 @@ class SttInstallationBuilder {
   ///
   /// Throws:
   /// - [StateError] if model or tokenizer source not configured, or [ofType]
-  ///   was not called
+  ///   was not called, and, before the download, when a file with an
+  ///   `expectedSize` would replace one an active model of any kind reads
+  /// - [UnsupportedError] or [ArgumentError] for a [fromCatalog] variant that
+  ///   cannot be installed here (see [fromCatalog]); [UnsupportedError] on
+  ///   the web for a file over 2 GiB in the default storage
+  /// - [ModelValidationException] if a file is not its `expectedSize` once
+  ///   installed (what the install wrote is then deleted with its record)
   /// - [DownloadCancelledException] if cancelled via cancelToken
   /// - [Exception] on installation failure
   ///
@@ -336,13 +332,7 @@ class SttInstallationBuilder {
 
     // AUTO-SET as active STT model (even if already installed)
     _cancelToken?.throwIfCancelled();
-    await verifyInstalledFiles(
-      spec,
-      expected,
-      steps: steps,
-      active: activeBefore,
-      cancelToken: _cancelToken,
-    );
+    await verifyInstalledFiles(spec, expected, active: activeBefore);
     _cancelToken?.throwIfCancelled();
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);

@@ -65,6 +65,8 @@ Entry _llm() => Entry('models/tiny.yaml', {
       'npu': {'vendor': 'qualcomm', 'soc': 'SM8650'},
       'withhold_backends': {
         'npu': {'reason': 'Drops prefill chunks.', 'issue': 'https://x/5'},
+        // An NPU build never runs on the GPU: no GPU cell for it.
+        'gpu': {'reason': 'Not an NPU problem.', 'issue': 'https://x/6'},
       },
       'file': _file('tiny_sm8650.litertlm'),
     },
@@ -289,6 +291,23 @@ void main() {
       expect(
         problems.map((x) => '$x'),
         contains(contains('linux_arm64: no answer for this host')),
+      );
+    });
+
+    test('a registry variant its package snapshot does not answer for', () {
+      final problems = <Problem>[];
+      final backends = {
+        ...(_snapshot['backends_here']! as Map<String, Object?>),
+      }..remove('tiny/cpu-only');
+      final (inputs, _) = _repo(
+        '[]',
+        problems,
+        snapshot: {..._snapshot, 'backends_here': backends},
+      );
+      checkClaims(inputs, [_llm()], problems);
+      expect(
+        problems.map((x) => '$x'),
+        contains(contains('tiny/cpu-only: no answer for this variant')),
       );
     });
 

@@ -89,9 +89,8 @@ Future<LiveResult> _check(
     final request = await client.headUrl(url);
     request.followRedirects = false;
     // The token is for Hugging Face only, not a host a redirect names.
-    if (token != null && _sameOrigin(url, root)) {
-      request.headers.set('authorization', 'Bearer $token');
-    }
+    final sent = token != null && _sameOrigin(url, root);
+    if (sent) request.headers.set('authorization', 'Bearer $token');
     final response = await request.close();
     await response.drain<void>();
     final status = response.statusCode;
@@ -103,7 +102,11 @@ Future<LiveResult> _check(
       return result(
         LiveStatus.noAccess,
         '${code ?? 'HTTP $status'}; '
-        '${token == null ? 'no HF_TOKEN' : 'the token has no access'}',
+        '${token == null
+            ? 'no HF_TOKEN'
+            : sent
+            ? 'the token has no access'
+            : 'refused by ${url.host}, where the token is not sent'}',
       );
     }
     if (status == 404) return result(LiveStatus.missing, 'HTTP 404');

@@ -1006,12 +1006,28 @@ void _checkReleasedCatalogs(
   List<Problem> problems,
 ) {
   final root = p.dirname(p.absolute(registryDir.path));
-  // A registry outside a repository (the tests' fixtures) has no packages.
-  if (!Directory(p.join(root, 'packages')).existsSync()) return;
+  if (!Directory(p.join(root, 'packages')).existsSync()) {
+    // A registry outside a repository (the tests' fixtures) has no packages;
+    // one in the repository (a root pubspec.yaml) must find them.
+    if (File(p.join(root, 'pubspec.yaml')).existsSync()) {
+      problems.add(
+        Problem(
+          'packages',
+          '-',
+          'missing beside model_registry: their CHANGELOGs say which '
+              'versions shipped a catalog',
+        ),
+      );
+    }
+    return;
+  }
   final packages = {for (final e in entries) '${e.data['package']}'}.toList()
     ..sort();
   final heading = RegExp(r'^## (\d+\.\d+\.\d+\S*)\s*$');
-  final namesAVersion = RegExp(r'^## .*\d+\.\d+\.\d+');
+  // A heading of any level whose text starts with a version: `# 1.20.0`,
+  // `## v1.20.0`, `## [1.20.0]`, `## 1.20.0 (date)`; not "## Migrating from
+  // 1.x to 2.0.0".
+  final namesAVersion = RegExp(r'^#+\s*\[?v?\d+\.\d+\.\d+');
   for (final package in packages) {
     final rel = p.join('packages', package, 'CHANGELOG.md');
     final changelog = File(p.join(root, rel));
@@ -1028,7 +1044,7 @@ void _checkReleasedCatalogs(
       if (heading.firstMatch(line) case final m?) {
         section = m.group(1);
         released.add(section!);
-      } else if (line.startsWith('## ')) {
+      } else if (line.startsWith('#')) {
         section = null;
         // A release heading in another form would be read as no release.
         if (namesAVersion.hasMatch(line)) {
@@ -1054,6 +1070,18 @@ void _checkReleasedCatalogs(
               if (f.path.endsWith('.json')) p.basenameWithoutExtension(f.path),
           }
         : const <String>{};
+    // A snapshot of a version the CHANGELOG does not name anchors nothing.
+    for (final version
+        in frozen.difference(released.toSet()).toList()..sort()) {
+      problems.add(
+        Problem(
+          p.join('published', package, '$version.json'),
+          '-',
+          'a snapshot of $package $version, a version $rel has no '
+              '"## $version" for',
+        ),
+      );
+    }
     final first = [
       released.lastIndexWhere(withCatalog.contains),
       released.lastIndexWhere(frozen.contains),

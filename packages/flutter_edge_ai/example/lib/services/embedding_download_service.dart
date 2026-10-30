@@ -71,10 +71,14 @@ class EmbeddingModelDownloadService {
   /// Downloads both model and tokenizer with progress tracking using Modern API.
   ///
   /// [onProgress] callback receives (modelProgress, tokenizerProgress) as doubles 0-100
+  /// [confirmReplace] is asked before an active model in the way of a
+  /// catalog install is uninstalled (see `installFromCatalogReplacingActive`).
   Future<void> downloadModel(
     String token,
-    void Function(double modelProgress, double tokenizerProgress) onProgress,
-  ) async {
+    void Function(double modelProgress, double tokenizerProgress) onProgress, {
+    required Future<bool> Function(ActiveModelInTheWay model, int bytes)
+    confirmReplace,
+  }) async {
     try {
       double modelProgress = 0;
       double tokenizerProgress = 0;
@@ -99,7 +103,8 @@ class EmbeddingModelDownloadService {
                 onProgress(modelProgress, tokenizerProgress);
               })
               .install(),
-          uninstall: FlutterEdgeAi.uninstallEmbedder,
+          variant: variant,
+          confirm: confirmReplace,
         );
         await persistVerifiedEmbeddingCatalogSelection(model);
         return;

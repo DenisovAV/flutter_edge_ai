@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_edge_ai_example/services/catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/chat_screen.dart';
 import 'package:flutter_edge_ai_example/services/model_download_service.dart';
@@ -81,6 +82,8 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
             _progress = progress;
           });
         },
+        confirmReplace: (model, bytes) =>
+            askToReplaceActiveModel(context, model, bytes),
       );
       setState(() {
         needToDownload = false;

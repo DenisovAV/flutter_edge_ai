@@ -8,7 +8,10 @@ library;
 //
 // Run: flutter test --platform chrome test/core/web_named_restore_test.dart
 
+import 'dart:async';
+
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/model_management/managers/web_model_manager.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
@@ -74,4 +77,29 @@ void main() {
       expect(spec?.files.single.filename, 'gemma:2b.litertlm');
     },
   );
+
+  test('a restore that throws is printed, and the start goes on', () async {
+    // Not a string: reading the record throws.
+    SharedPreferences.setMockInitialValues({
+      PreferencesKeys.activeInferenceIdentity: 5,
+    });
+    await ServiceRegistry.initialize();
+    final manager = WebModelManager();
+    final printed = <String>[];
+    await runZoned(
+      manager.ensureInitialized,
+      zoneSpecification: ZoneSpecification(
+        print: (self, parent, zone, line) => printed.add(line),
+      ),
+    );
+    expect(manager.activeInferenceModel, isNull);
+    expect(
+      printed,
+      contains(
+        startsWith(
+          'flutter_edge_ai: the active inference model was not restored',
+        ),
+      ),
+    );
+  });
 }

@@ -47,11 +47,16 @@ final class RegisteredCatalog extends ModelCatalog {
 /// model, and is listed once: checked in every catalog, so whether one is
 /// valid does not depend on which other packages are registered.
 void _checkIds(ModelCatalog catalog, CatalogModel model) {
+  // First, so a model with no variants is checked too.
+  if (model.id.isEmpty || model.id.contains('/')) {
+    throw StateError(
+      'catalog ${catalog.name}: the model id "${model.id}" is empty or holds '
+      'a "/"',
+    );
+  }
   final seen = <String>{};
   for (final v in model.variants) {
     final problem = switch (v) {
-      _ when model.id.isEmpty || model.id.contains('/') =>
-        'the model id "${model.id}" is empty or holds a "/"',
       _
           when !v.id.startsWith('${model.id}/') ||
               v.id.length == model.id.length + 1 ||

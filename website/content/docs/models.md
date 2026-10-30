@@ -400,11 +400,12 @@ build compiled for an NPU names the context it was compiled for
 and before the model becomes active, each file's size is checked against the
 registry (not on the web): a file of another size is deleted with its record,
 and `install()` throws `ModelValidationException`. An install that would
-write over the active model's file of another source (a model installed
-earlier from a `/resolve/main/` URL under the same name, or an older pin) is
-refused with a `StateError` before it downloads: uninstall that model first
-(`uninstallModel`, `uninstallEmbedder`, `uninstallStt`, `uninstallTts`), then
-install. On the web, in the default `WebStorageMode.cacheApi`, a file over
+write over a file an active model of any kind reads, from another source (a
+model installed earlier from a `/resolve/main/` URL under the same name, or
+an older pin), is refused with a `StateError` before it downloads (not on the
+web). Its message names that model's kind, its name and the call that
+uninstalls it (`uninstallModel`, `uninstallEmbedder`, `uninstallStt` or
+`uninstallTts`): uninstall it first, then install. On the web, in the default `WebStorageMode.cacheApi`, a file over
 2 GiB is refused before it downloads; initialize with `webStorageMode:
 WebStorageMode.streaming` for the larger web bundles. `withProgress` weights the files by their pinned
 sizes. An LLM is installed under the registry's install name (for example

@@ -414,9 +414,10 @@ class FlutterEdgeAi {
   /// The catalog pins each file to a revision: a model installed earlier
   /// from a `/resolve/main/` URL (or an older pin) is another source under
   /// the same name, and its first install from the catalog downloads the
-  /// file again. When that model is the active one, `install()` throws
-  /// [StateError] before the download instead of writing over the file it
-  /// reads: uninstall it first (`uninstallModel`), then install.
+  /// file again. When an active model of any kind reads a file of that name,
+  /// `install()` throws [StateError] before the download instead of writing
+  /// over it (not on the web), naming that model and the call that
+  /// uninstalls it: uninstall it first, then install.
   ///
   /// ```dart
   /// final variant = FlutterEdgeAi.catalog

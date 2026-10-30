@@ -205,8 +205,11 @@ def _release_check(root, prefix, name):
         )
     # An example app's pubspec.lock is rewritten by any `pub get` and is not
     # what the catalog ships; it is left out, as release-check leaves it out.
+    # Every untracked file by name, as release-check lists them, not only its
+    # new directory.
     changed = git(
-        root, "status", "--porcelain", "--", "model_registry",
+        root, "status", "--porcelain", "--untracked-files=all", "--",
+        "model_registry",
         "tool/model_registry", prefix.rstrip("/") or ".",
         ":(exclude,glob)**/example/pubspec.lock",
     )
@@ -418,20 +421,25 @@ def _end_to_end():
             got, err = _run_main(cmd, repo)
             if got != want:
                 bad.append(f"main {cmd!r}: exit {got}, want {want} {err.strip()[:120]}")
+        # Each check below adds one to [extra], so the total counts them.
+        extra = 0
         # An accepted override says why, as a systemMessage the session shows.
         said = _run_main(f'RELEASE_SKIP_REGISTRY="no device" {lite}', repo)[1]
         if '"systemMessage"' not in said or "no device" not in said:
             bad.append("main: an accepted override names no reason")
+        extra += 1
         # The positive control: a stamp at HEAD lets the publish through.
         with open(stamp, "w") as fh:
             json.dump({"head": git(repo, "rev-parse", "HEAD")}, fh)
         if _run_main(lite, repo)[0] != 0:
             bad.append("main: a stamp at HEAD still blocks")
+        extra += 1
         # An example's pubspec.lock that `pub get` rewrote does not block...
         with open(os.path.join(example, "pubspec.lock"), "w") as fh:
             fh.write("packages: {rewritten: true}\n")
         if _run_main(lite, repo)[0] != 0:
             bad.append("main: a rewritten example pubspec.lock blocks")
+        extra += 1
         # A name that is not a plain package name blocks.
         tagged = os.path.join(repo, "packages", "tagged")
         os.makedirs(tagged)
@@ -439,26 +447,55 @@ def _end_to_end():
             fh.write("name: !!str flutter_edge_ai_litertlm\nversion: 1.0.0\n")
         if _run_main("dart pub publish -f -C packages/tagged", repo)[0] != 2:
             bad.append("main: a tagged pubspec name does not block")
-        # A crash blocks.
+        extra += 1
+        # A crash blocks a publish, and only a publish.
         real_main = globals()["main"]
         globals()["main"] = lambda: 1 / 0
         try:
-            if _guarded_main() != 2:
-                bad.append("main: a crash does not block")
+            for cmd, want in ((lite, 2), ("git status", 0)):
+                if _run_guarded(cmd, repo) != want:
+                    bad.append(f"main: a crash on {cmd!r} is not exit {want}")
         finally:
             globals()["main"] = real_main
+        extra += 1
+        # An untracked file in a new directory of the package blocks too.
+        os.makedirs(os.path.join(repo, "packages", "flutter_edge_ai_litertlm", "new"))
+        with open(os.path.join(repo, "packages", "flutter_edge_ai_litertlm", "new", "x.dart"), "w") as fh:
+            fh.write("// new\n")
+        if "new/x.dart" not in (_release_check(
+            repo, "packages/flutter_edge_ai_litertlm/", "flutter_edge_ai_litertlm"
+        ) or ""):
+            bad.append("main: an untracked file is not named")
+        extra += 1
         # ...any other uncommitted file of the package does.
         with open(os.path.join(repo, "packages", "flutter_edge_ai_litertlm", "lib.dart"), "w") as fh:
             fh.write("// v2\n")
         if _run_main(lite, repo)[0] != 2:
             bad.append("main: an uncommitted package file does not block")
+        extra += 1
         # A stamp that is JSON but no object blocks instead of crashing open.
         with open(stamp, "w") as fh:
             json.dump([1], fh)
         if _run_main(lite, repo)[0] != 2:
             bad.append("main: a list stamp does not block")
-    # The cases, plus the seven checks after them.
-    return bad, len(cases) + 7
+        extra += 1
+    return bad, len(cases) + extra
+
+
+def _run_guarded(cmd, cwd):
+    """_guarded_main() on [cmd] as the hook payload, its stderr kept out of
+    the self-test's output; the exit code."""
+    import contextlib
+    import io
+
+    payload = json.dumps({"tool_input": {"command": cmd}, "cwd": cwd})
+    stdin = sys.stdin
+    sys.stdin = io.StringIO(payload)
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            return _guarded_main()
+    finally:
+        sys.stdin = stdin
 
 
 def _self_test():
@@ -489,12 +526,30 @@ def _self_test():
     return 1 if bad else 0
 
 
+_PUBLISH_TEXT = re.compile(r"pub\s+(?:publish|lish|lush)\b")
+
+
 def _guarded_main():
-    """main(), failing closed: a crash is exit 2 (block), never the exit 1 of
-    a traceback, which a PreToolUse hook reads as a non-blocking error."""
+    """main(), failing closed for a publish only.
+
+    The hook runs on every Bash command. A crash on a command whose text
+    holds a publish is exit 2 (block), never the exit 1 of a traceback, which
+    a PreToolUse hook reads as a non-blocking error; on any other command it
+    lets the command through and says why on stderr.
+    """
+    import io
+
+    raw = sys.stdin.read()
+    sys.stdin = io.StringIO(raw)
     try:
         return main()
-    except BaseException as e:  # noqa: BLE001 — any surprise blocks
+    except BaseException as e:  # noqa: BLE001 — a surprise blocks a publish
+        if not _PUBLISH_TEXT.search(raw):
+            sys.stderr.write(
+                f"guard-release-registry failed ({e!r}) on a command with no "
+                "publish; allowed.\n"
+            )
+            return 0
         sys.stderr.write(
             f"BLOCKED: guard-release-registry failed ({e!r}); a publish in an "
             "unknown state is not a safe one.\n"

@@ -124,7 +124,9 @@ class _VoiceScreenState extends State<VoiceScreen> {
               setState(() => _downloadPercent = percent);
             })
             .install(),
-        uninstall: FlutterEdgeAi.uninstallStt,
+        variant: widget.sttModel.catalogVariant,
+        confirm: (model, bytes) =>
+            askToReplaceActiveModel(context, model, bytes),
       );
       recognizer = await FlutterEdgeAi.getActiveStt();
 
@@ -145,7 +147,9 @@ class _VoiceScreenState extends State<VoiceScreen> {
               setState(() => _downloadPercent = percent);
             })
             .install(),
-        uninstall: FlutterEdgeAi.uninstallTts,
+        variant: widget.ttsModel.catalogVariant,
+        confirm: (model, bytes) =>
+            askToReplaceActiveModel(context, model, bytes),
       );
       synth = await FlutterEdgeAi.getActiveTts();
 
@@ -173,8 +177,9 @@ class _VoiceScreenState extends State<VoiceScreen> {
             variant,
             token: llmToken,
           ).withProgress(onLlmProgress).install(),
-          uninstall: () =>
-              FlutterEdgeAi.uninstallModel(variant.file.installFilename),
+          variant: variant,
+          confirm: (model, bytes) =>
+              askToReplaceActiveModel(context, model, bytes),
         );
       } else {
         await FlutterEdgeAi.installModel(

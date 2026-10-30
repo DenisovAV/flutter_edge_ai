@@ -24,6 +24,11 @@ void main() {
     authorizations.clear();
     elsewhere = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     elsewhere.listen((request) async {
+      if (request.uri.path == '/denied') {
+        request.response.statusCode = 403;
+        await request.response.close();
+        return;
+      }
       if (request.uri.path == '/plain/tok.json') {
         // A plain file on another host: answered as itself, then fetched.
         authorizations['elsewhere ${request.method}'] = request.headers.value(
@@ -91,6 +96,13 @@ void main() {
           ..headers.set(
             'location',
             'http://localhost:${elsewhere.port}/org/repo/resolve/$_rev/model.bin',
+          );
+      } else if (path == '/away/repo/resolve/$_rev/denied.bin') {
+        r
+          ..statusCode = 307
+          ..headers.set(
+            'location',
+            'http://localhost:${elsewhere.port}/denied',
           );
       } else if (path == '/old/repo/resolve/$_rev/model.bin') {
         r
@@ -187,6 +199,19 @@ void main() {
     expect(authorizations['away'], 'Bearer hf_secret');
     expect(authorizations, contains('elsewhere'));
     expect(authorizations['elsewhere'], isNull);
+  });
+
+  test('a refusal where the token was not sent does not blame it', () async {
+    final denied = (
+      repo: 'away/repo',
+      revision: _rev,
+      path: 'denied.bin',
+      sha256: lfsSha,
+      size: 1000,
+    );
+    final [result] = await checkLive([denied], base: base, token: 'hf_x');
+    expect(result.status, LiveStatus.noAccess);
+    expect(result.note, contains('where the token is not sent'));
   });
 
   test('a deleted repository is missing, not no access', () async {

@@ -60,9 +60,10 @@ class EmbeddingInstallationBuilder {
   /// sizes are checked before the model becomes active (not on the web),
   /// and [withProgress] weights by them without asking the network.
   ///
-  /// When the active embedder reads a file of the same name from another
-  /// source (an older pin), [install] throws [StateError] before the
-  /// download: uninstall it first (`uninstallEmbedder`).
+  /// When an active model of any kind reads a file of the same name from
+  /// another source (an older pin), [install] throws [StateError] before
+  /// the download (not on the web), naming that model and the call that
+  /// uninstalls it: uninstall it first.
   ///
   /// [install] throws [UnsupportedError] before anything downloads for a
   /// variant whose `backendsHere` is empty (it does not run in this runtime).
@@ -72,6 +73,11 @@ class EmbeddingInstallationBuilder {
     EmbedderVariant variant, {
     String? token,
   }) {
+    // Both files' values first: a refused one leaves the builder as it was.
+    for (final file in [variant.model, ?variant.tokenizer]) {
+      FileExpectation.checked(size: file.sizeBytes);
+      _validateFilename(file.installFilename);
+    }
     modelFromNetwork(
       variant.model.url,
       token: token,
@@ -101,41 +107,36 @@ class EmbeddingInstallationBuilder {
   /// [filename] pins the installed/cache identity instead of deriving it from
   /// the URL basename. Prefer a revision-qualified basename for mutable hosts.
   ///
-  /// [expectedSize] / [expectedSha256]: what the file must be once
-  /// downloaded, checked before the model becomes active; a file that
-  /// differs is deleted with its record and [install] throws
-  /// [ModelValidationException]. With either set, an install that would
-  /// write over the active embedder's file throws [StateError] before it
-  /// downloads. The sha256 is computed on a worker isolate on every
-  /// install, of a file installed earlier too, and a cancel stops it. A
-  /// negative size or a sha256 that is not 64 hex digits throws
-  /// [ArgumentError] here. On the web nothing is checked, and
-  /// [expectedSha256] throws [UnsupportedError].
+  /// [expectedSize]: the file's size in bytes once downloaded, checked on
+  /// every install before the model becomes active, a file installed earlier
+  /// included. A file of another size is deleted with its record and
+  /// [install] throws [ModelValidationException]; a negative size throws
+  /// [ArgumentError] here. With it set, [install] throws [StateError] before
+  /// the download when an active model of any kind reads a file of this
+  /// name: uninstall that model first. On the web neither is checked.
   EmbeddingInstallationBuilder modelFromNetwork(
     String url, {
     String? token,
     String? filename,
     int? expectedSize,
-    String? expectedSha256,
   }) {
     // Checked first: a refused value leaves the builder as it was.
-    final expected = FileExpectation.checked(
-      size: expectedSize,
-      sha256: expectedSha256,
-    );
+    final expected = FileExpectation.checked(size: expectedSize);
+    final name = _validateFilename(filename);
     _modelSource = ModelSource.network(url, authToken: token);
     _catalogVariant = null;
-    _modelFilename = _validateFilename(filename);
+    _modelFilename = name;
     _modelExpected = expected;
     return this;
   }
 
   /// Set model source from Flutter asset
   EmbeddingInstallationBuilder modelFromAsset(String path, {String? filename}) {
+    final name = _validateFilename(filename);
     _modelSource = ModelSource.asset(path);
     _catalogVariant = null;
     _modelExpected = const FileExpectation();
-    _modelFilename = _validateFilename(filename);
+    _modelFilename = name;
     return this;
   }
 
@@ -144,19 +145,21 @@ class EmbeddingInstallationBuilder {
     String resourceName, {
     String? filename,
   }) {
+    final name = _validateFilename(filename);
     _modelSource = ModelSource.bundled(resourceName);
     _catalogVariant = null;
     _modelExpected = const FileExpectation();
-    _modelFilename = _validateFilename(filename);
+    _modelFilename = name;
     return this;
   }
 
   /// Set model source from external file path
   EmbeddingInstallationBuilder modelFromFile(String path, {String? filename}) {
+    final name = _validateFilename(filename);
     _modelSource = ModelSource.file(path);
     _catalogVariant = null;
     _modelExpected = const FileExpectation();
-    _modelFilename = _validateFilename(filename);
+    _modelFilename = name;
     return this;
   }
 
@@ -172,23 +175,20 @@ class EmbeddingInstallationBuilder {
   /// [token] optional auth token for the URL (e.g. HuggingFace).
   /// [filename] pins the installed/cache identity; it must already be unique
   /// to the owning embedding profile because explicit names bypass automatic
-  /// tokenizer namespacing. [expectedSize] / [expectedSha256] as for
+  /// tokenizer namespacing. [expectedSize] as for
   /// [modelFromNetwork].
   EmbeddingInstallationBuilder tokenizerFromNetwork(
     String url, {
     String? token,
     String? filename,
     int? expectedSize,
-    String? expectedSha256,
   }) {
     // Checked first: a refused value leaves the builder as it was.
-    final expected = FileExpectation.checked(
-      size: expectedSize,
-      sha256: expectedSha256,
-    );
+    final expected = FileExpectation.checked(size: expectedSize);
+    final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.network(url, authToken: token);
     _catalogVariant = null;
-    _tokenizerFilename = _validateFilename(filename);
+    _tokenizerFilename = name;
     _tokenizerExpected = expected;
     return this;
   }
@@ -198,10 +198,11 @@ class EmbeddingInstallationBuilder {
     String path, {
     String? filename,
   }) {
+    final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.asset(path);
     _catalogVariant = null;
     _tokenizerExpected = const FileExpectation();
-    _tokenizerFilename = _validateFilename(filename);
+    _tokenizerFilename = name;
     return this;
   }
 
@@ -210,10 +211,11 @@ class EmbeddingInstallationBuilder {
     String resourceName, {
     String? filename,
   }) {
+    final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.bundled(resourceName);
     _catalogVariant = null;
     _tokenizerExpected = const FileExpectation();
-    _tokenizerFilename = _validateFilename(filename);
+    _tokenizerFilename = name;
     return this;
   }
 
@@ -222,10 +224,11 @@ class EmbeddingInstallationBuilder {
     String path, {
     String? filename,
   }) {
+    final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.file(path);
     _catalogVariant = null;
     _tokenizerExpected = const FileExpectation();
-    _tokenizerFilename = _validateFilename(filename);
+    _tokenizerFilename = name;
     return this;
   }
 
@@ -305,8 +308,15 @@ class EmbeddingInstallationBuilder {
   ///   backend registered yet the install goes ahead (the app may register
   ///   one later) and says so once in the debug log.
   ///
+  /// - [UnsupportedError] for a [fromCatalog] variant that does not run here,
+  ///   and on the web for a file over 2 GiB in the default storage
+  /// - [StateError] when a file with an `expectedSize` would replace one an
+  ///   active model of any kind reads (not on the web)
+  ///
   /// and later [DownloadCancelledException] if cancelled via the cancel token,
-  /// or an [Exception] on installation failure.
+  /// [ModelValidationException] if a file is not its `expectedSize` once
+  /// installed (what the install wrote is then deleted with its record), or
+  /// an [Exception] on installation failure.
   ///
   /// Note: This method is idempotent - a file already installed from the same
   /// source is skipped and the spec is just (re-)set as active. One installed
@@ -394,13 +404,7 @@ class EmbeddingInstallationBuilder {
 
     // AUTO-SET as active embedding model (even if already installed)
     _cancelToken?.throwIfCancelled();
-    await verifyInstalledFiles(
-      spec,
-      expected,
-      steps: steps,
-      active: activeBefore,
-      cancelToken: _cancelToken,
-    );
+    await verifyInstalledFiles(spec, expected, active: activeBefore);
     _cancelToken?.throwIfCancelled();
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);

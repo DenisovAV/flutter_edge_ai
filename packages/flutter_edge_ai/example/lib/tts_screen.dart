@@ -95,7 +95,9 @@ class _TtsScreenState extends State<TtsScreen> {
               setState(() => _downloadPercent = percent);
             })
             .install(),
-        uninstall: FlutterEdgeAi.uninstallTts,
+        variant: _model.catalogVariant,
+        confirm: (model, bytes) =>
+            askToReplaceActiveModel(context, model, bytes),
       );
 
       final synth = await FlutterEdgeAi.getActiveTts(

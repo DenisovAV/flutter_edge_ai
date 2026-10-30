@@ -32,11 +32,11 @@ class ModelDownloadException extends ModelException {
 }
 
 /// An installed model file is not what it should be: smaller than a model
-/// can be, or not the size or sha256 the install asked for
-/// (`expectedSize` / `expectedSha256` on the builders, and the size of every
-/// `fromCatalog` install; not checked on the web). A file that fails the
-/// size or sha256 check is deleted with its record, so the next install
-/// downloads it again, and is not made active.
+/// can be, or not the size the install asked for (`expectedSize` on the
+/// builders, and the size of every `fromCatalog` install; not checked on the
+/// web). A file that fails the size check is not made active, and is deleted
+/// with its record so the next install downloads it again — unless an
+/// active model reads it, or the delete fails, which the message says.
 class ModelValidationException extends ModelException {
   /// The file checked.
   final String? filePath;
@@ -59,8 +59,7 @@ class ModelValidationException extends ModelException {
   ]) : expectedSize = null;
 
   /// [filePath] is not the file the install expected: [actualSize] bytes
-  /// where [expectedSize] were expected, another sha256 (which [message]
-  /// names), or no file at all.
+  /// where [expectedSize] were expected, or no file at all.
   @internal
   const ModelValidationException.mismatch(
     String message, {

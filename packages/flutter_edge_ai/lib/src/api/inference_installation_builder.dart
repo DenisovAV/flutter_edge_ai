@@ -71,28 +71,22 @@ class InferenceInstallationBuilder {
   /// - [filename]: the name the file is installed under instead of the URL's
   ///   file name, with the same extension. `isModelInstalled`,
   ///   `getModelPath` and `uninstallModel` then take this name.
-  /// - [expectedSize] / [expectedSha256]: what the file must be once
-  ///   downloaded. It is checked before the model becomes active; a file
-  ///   that differs is deleted with its record and [install] throws
-  ///   [ModelValidationException]. With either set, an install that would
-  ///   write over the active model's file throws [StateError] before it
-  ///   downloads. The sha256 is computed on a worker isolate on every
-  ///   install, of a file installed earlier too, and a cancel stops it (what
-  ///   the install wrote is then deleted); a negative size or a sha256 that is not
-  ///   64 hex digits throws [ArgumentError] here. On the web nothing is
-  ///   checked, and [expectedSha256] throws [UnsupportedError].
+  /// - [expectedSize]: the file's size in bytes once downloaded, checked on
+  ///   every install before the model becomes active, a file installed
+  ///   earlier included. A file of another size is deleted with its record
+  ///   and [install] throws [ModelValidationException]; a negative size
+  ///   throws [ArgumentError] here. With it set, [install] throws
+  ///   [StateError] before the download when an active model of any kind
+  ///   reads a file of this name: uninstall that model first. On the web
+  ///   neither is checked.
   InferenceInstallationBuilder fromNetwork(
     String url, {
     String? token,
     bool? foreground,
     String? filename,
     int? expectedSize,
-    String? expectedSha256,
   }) {
-    final expected = FileExpectation.checked(
-      size: expectedSize,
-      sha256: expectedSha256,
-    );
+    final expected = FileExpectation.checked(size: expectedSize);
     _clearSource();
     _modelSource = ModelSource.network(
       url,
@@ -307,7 +301,14 @@ class InferenceInstallationBuilder {
   /// Returns [InferenceInstallation] with details about installed model.
   ///
   /// Throws:
-  /// - [StateError] if no model source configured
+  /// - [StateError] if no model source configured, and, before the download,
+  ///   when a file with an `expectedSize` would replace one an active model
+  ///   of any kind reads (not on the web)
+  /// - [UnsupportedError] before the download for a catalog variant that does
+  ///   not run here, and on the web for a file over 2 GiB in the default
+  ///   storage
+  /// - [ModelValidationException] if the file is not its `expectedSize` once
+  ///   installed (it is then deleted with its record)
   /// - [DownloadCancelledException] if cancelled via cancelToken
   /// - [Exception] on installation failure
   ///
@@ -528,13 +529,7 @@ class InferenceInstallationBuilder {
     // A cancel that lands after the last download still stops the install
     // before the file is checked and made active.
     _cancelToken?.throwIfCancelled();
-    await verifyInstalledFiles(
-      spec,
-      expected,
-      steps: steps,
-      active: activeBefore,
-      cancelToken: _cancelToken,
-    );
+    await verifyInstalledFiles(spec, expected, active: activeBefore);
     _cancelToken?.throwIfCancelled();
     if (activate) {
       await activateInstalledModel(manager, spec);

@@ -217,6 +217,8 @@ void main() {
           'a model id with a slash',
           TestModel('a/b', [TestLlm('x', modelId: 'a/b')]),
         ),
+        ('an empty model id, no variants', TestModel('', [])),
+        ('a model id with a slash, no variants', TestModel('a/b', [])),
       ]) {
         expect(
           () => RegisteredCatalog([

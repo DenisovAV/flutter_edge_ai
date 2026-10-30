@@ -223,7 +223,7 @@ void main() {
           isA<StateError>().having(
             (e) => e.message,
             'message',
-            contains('the active model shared reads'),
+            contains('the active inference model shared reads'),
           ),
         ),
       );
@@ -356,21 +356,17 @@ void main() {
       await initialize();
       final cancel = CancelToken();
       downloads.onDownloaded = cancel.cancel;
-      InferenceInstallationBuilder wrongSha() =>
-          FlutterEdgeAi.installModel(
-            modelType: ModelType.gemma4,
-            fileType: ModelFileType.litertlm,
-          ).fromNetwork(
-            'https://example.com/x/m.litertlm',
-            expectedSha256: 'f' * 64,
-          );
+      InferenceInstallationBuilder wrongSize() => FlutterEdgeAi.installModel(
+        modelType: ModelType.gemma4,
+        fileType: ModelFileType.litertlm,
+      ).fromNetwork('https://example.com/x/m.litertlm', expectedSize: 123);
       await expectLater(
-        wrongSha().withCancelToken(cancel).install(),
+        wrongSize().withCancelToken(cancel).install(),
         throwsA(isA<DownloadCancelledException>()),
       );
       downloads.onDownloaded = null;
       await expectLater(
-        wrongSha().install(),
+        wrongSize().install(),
         throwsA(isA<ModelValidationException>()),
       );
       expect(
@@ -383,13 +379,12 @@ void main() {
   group('checkInstalledFiles', () {
     late InferenceModelSpec spec;
     late List<String> forgotten;
-    late List<String> hashed;
 
     Future<void> check(
       Map<String, FileExpectation> expected, {
       Map<String, String>? paths,
-      Set<String> written = const {'pathless.litertlm'},
       bool usePaths = true,
+      Set<String> keep = const {},
     }) async {
       final fs = ServiceRegistry.instance.fileSystemService;
       await checkInstalledFiles(
@@ -401,18 +396,13 @@ void main() {
                       .getModelFilePaths(spec)
             : null,
         fileSystem: fs,
-        written: written,
+        keep: keep,
         forget: (file, _) async => forgotten.add(file.filename),
-        sha256Of: (path) async {
-          hashed.add(path);
-          return 'b' * 64;
-        },
       );
     }
 
     setUp(() async {
       forgotten = [];
-      hashed = [];
     });
 
     Future<void> install() async {
@@ -443,52 +433,23 @@ void main() {
       expect(forgotten, ['pathless.litertlm', 'pathless.litertlm']);
     });
 
-    test('a sha256 mismatch names both values and forgets the file', () async {
+    test('a missing file an active model names keeps its record', () async {
       await install();
       await expectLater(
-        check({'pathless.litertlm': FileExpectation(sha256: 'c' * 64)}),
+        check(
+          {'pathless.litertlm': const FileExpectation(size: 1)},
+          paths: const {},
+          keep: const {'pathless.litertlm'},
+        ),
         throwsA(
-          isA<ModelValidationException>()
-              .having((e) => e.expectedSize, 'expectedSize', isNull)
-              .having(
-                (e) => e.message,
-                'message',
-                allOf(contains('c' * 64), contains('b' * 64)),
-              ),
+          isA<ModelValidationException>().having(
+            (e) => e.message,
+            'message',
+            contains('so it was kept'),
+          ),
         ),
       );
-      expect(forgotten, ['pathless.litertlm']);
-    });
-
-    test('a file installed earlier is hashed too', () async {
-      await install();
-      await expectLater(
-        check({
-          'pathless.litertlm': FileExpectation(sha256: 'c' * 64),
-        }, written: const {}),
-        throwsA(isA<ModelValidationException>()),
-      );
-      expect(hashed, hasLength(1));
-    });
-
-    test('a check that ends without a verdict deletes what the install '
-        'wrote, and throws what stopped it', () async {
-      await install();
-      final fs = ServiceRegistry.instance.fileSystemService;
-      await expectLater(
-        checkInstalledFiles(
-          spec,
-          {'pathless.litertlm': FileExpectation(sha256: 'c' * 64)},
-          paths: await FlutterEdgeAiPlugin.instance.modelManager
-              .getModelFilePaths(spec),
-          fileSystem: fs,
-          written: const {'pathless.litertlm'},
-          forget: (file, _) async => forgotten.add(file.filename),
-          sha256Of: (_) async => throw DownloadCancelledException('stop', null),
-        ),
-        throwsA(isA<DownloadCancelledException>()),
-      );
-      expect(forgotten, ['pathless.litertlm']);
+      expect(forgotten, isEmpty);
     });
 
     test('a delete that fails is the cause, not the error', () async {
@@ -501,15 +462,17 @@ void main() {
           paths: await FlutterEdgeAiPlugin.instance.modelManager
               .getModelFilePaths(spec),
           fileSystem: fs,
-          written: const {'pathless.litertlm'},
           forget: (_, _) async =>
               throw const FileSystemException('in use', 'x'),
-          sha256Of: (_) async => 'b' * 64,
         ),
         throwsA(
           isA<ModelValidationException>()
               .having((e) => e.cause, 'cause', isA<FileSystemException>())
-              .having((e) => e.message, 'message', contains('Deleting it')),
+              .having(
+                (e) => e.message,
+                'message',
+                contains('the next install checks it again'),
+              ),
         ),
       );
     });
@@ -589,7 +552,7 @@ void main() {
 
   group('the web\'s default storage', () {
     final huge = {'big.litertlm': const FileExpectation(size: 3000000000)};
-    test('refuses a file over 2 GB unless the app streams', () {
+    test('refuses a file over 2 GiB unless the app streams', () {
       expect(
         () => refuseTooLargeForWebCache(huge, web: true, streaming: false),
         throwsA(
@@ -648,7 +611,7 @@ void main() {
           isA<StateError>().having(
             (e) => e.message,
             'message',
-            contains('the active model matcha reads'),
+            contains('the active text-to-speech model matcha reads'),
           ),
         ),
       );

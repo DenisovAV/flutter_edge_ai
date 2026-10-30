@@ -34,6 +34,7 @@ final class _Opaque extends Opaque {}
 typedef LiteRtEnvironment = Pointer<_Opaque>;
 typedef LiteRtModel = Pointer<_Opaque>;
 typedef LiteRtOptions = Pointer<_Opaque>;
+typedef LiteRtOpaqueOptions = Pointer<_Opaque>;
 typedef LiteRtCompiledModel = Pointer<_Opaque>;
 typedef LiteRtSignature = Pointer<_Opaque>;
 typedef LiteRtTensorBuffer = Pointer<_Opaque>;
@@ -383,6 +384,43 @@ class LiteRtBindings {
         Int32 Function(LiteRtOptions, Int32),
         int Function(LiteRtOptions, int)
       >('LiteRtSetOptionsHardwareAccelerators');
+
+  // Opaque accelerator options: a payload an accelerator finds by its
+  // identifier. LiteRT's GPU accelerator reads `gpu_options`, a TOML string,
+  // so GPU settings need no binding of their own (#747).
+  //
+  // Create takes ownership of the payload only when it succeeds; Add hands
+  // the options to the compilation options only when it succeeds, and
+  // [destroyOptions] then frees them. On a failed Add the caller destroys
+  // them, which also runs the payload destructor.
+
+  late final createOpaqueOptions = _lib
+      .lookupFunction<
+        Int32 Function(
+          Pointer<Utf8>,
+          Pointer<Void>,
+          Pointer<NativeFinalizerFunction>,
+          Pointer<LiteRtOpaqueOptions>,
+        ),
+        int Function(
+          Pointer<Utf8>,
+          Pointer<Void>,
+          Pointer<NativeFinalizerFunction>,
+          Pointer<LiteRtOpaqueOptions>,
+        )
+      >('LiteRtCreateOpaqueOptions');
+
+  late final destroyOpaqueOptions = _lib
+      .lookupFunction<
+        Void Function(LiteRtOpaqueOptions),
+        void Function(LiteRtOpaqueOptions)
+      >('LiteRtDestroyOpaqueOptions');
+
+  late final addOpaqueOptions = _lib
+      .lookupFunction<
+        Int32 Function(LiteRtOptions, LiteRtOpaqueOptions),
+        int Function(LiteRtOptions, LiteRtOpaqueOptions)
+      >('LiteRtAddOpaqueOptions');
 
   // Compiled model.
 

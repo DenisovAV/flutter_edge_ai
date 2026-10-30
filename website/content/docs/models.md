@@ -494,7 +494,7 @@ see [Speech](/docs/speech).
 |---|---|---|---|---|
 | **[moonshine-tiny](https://huggingface.co/litert-community/moonshine-tiny)** | raw 16 kHz PCM | ~104 MB | ✅ end-to-end | ❌ |
 | **[Whisper](https://huggingface.co/litert-community/whisper-tiny)** (tiny / base) | log-mel | — | ✅ end-to-end | ❌ |
-| **[Parakeet](https://huggingface.co/litert-community/parakeet-ctc-0.6b)** (CTC 0.6B) | log-mel | — | ✅ end-to-end | ❌ |
+| **[Parakeet](https://huggingface.co/litert-community/parakeet-ctc-0.6b)** (CTC 0.6B) | log-mel | 596 MB int8 (phones, CPU) / 2.35 GB f32 | ✅ end-to-end | ❌ |
 
 Whisper is **multilingual** — the shipped checkpoints are the multilingual ones
 (no `.en` suffix), so all 99 of Whisper's languages are available. Set a default

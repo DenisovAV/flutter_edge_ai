@@ -58,7 +58,9 @@ try {
 | --- | --- | --- |
 | `SttModelType.moonshine` | English | 5 s |
 | `SttModelType.whisper` | 99, selectable, default `'en'` | 30 s |
-| `SttModelType.parakeet` | English | 5 s; 2.35 GB, so desktop in practice — nothing refuses it on a phone |
+| `SttModelType.parakeet` | English | 5 s; f32 is 2.35 GB, for desktop — on a Galaxy S23 (8 GB) its GPU load was killed. On a phone use the int8 `parakeet_ctc_0.6b_5s_i8.tflite` (596 MB) on the CPU (#747) |
+
+On the GPU, run the f32 files: on Adreno 740 the int8 (`_i8`) ones did not compile there, and the load fails with an error naming the file.
 
 **Audio longer than the window is silently truncated**, not rejected: it is zero-padded when shorter and cut when longer, so a 40-second clip on Whisper returns the first 30 seconds with no error. Split long recordings yourself.
 

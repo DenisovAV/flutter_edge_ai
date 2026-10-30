@@ -17,7 +17,8 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' show SttModelType;
 /// on the f32-proven `SttCore` path (see `stt_int8_test.dart`).
 /// [parakeetCtc] runs the third family — a CTC model with its own NeMo mel
 /// frontend + greedy CTC decode (device-verified, see `parakeet_ctc_test.dart`).
-/// Desktop-only: 2.35 GB f32, no small/int8 export.
+/// The f32 file is 2.35 GB and meant for desktop; [parakeetCtcInt8] is the
+/// same model as int8 (596 MB), the one to use on phones, on the CPU (#747).
 enum SttModel {
   moonshineTiny(
     modelUrl:
@@ -48,12 +49,29 @@ enum SttModel {
         'https://huggingface.co/litert-community/parakeet-ctc-0.6b/resolve/main/parakeet_ctc_0.6b_5s_f32.tflite',
     tokenizerUrl:
         'https://huggingface.co/nvidia/parakeet-ctc-0.6b/resolve/main/tokenizer.json',
-    displayName: 'Parakeet CTC 0.6B (desktop)',
+    displayName: 'Parakeet CTC 0.6B (f32, desktop)',
     size: '2.35GB',
     sttModelType: SttModelType.parakeet,
     needsAuth: false,
-    // Desktop-only: 2.35 GB f32 (no small/int8 export) — highest-quality of the
-    // three STT families. Runs the CTC path (NeMo mel + greedy CTC decode).
+    // Desktop: 2.35 GB f32 — on a Galaxy S23 (8 GB) the system killed its GPU
+    // load; use [parakeetCtcInt8] on a phone. Runs the CTC path (NeMo mel +
+    // greedy CTC decode).
+    isSupported: true,
+  ),
+
+  parakeetCtcInt8(
+    modelUrl:
+        'https://huggingface.co/litert-community/parakeet-ctc-0.6b/resolve/main/parakeet_ctc_0.6b_5s_i8.tflite',
+    tokenizerUrl:
+        'https://huggingface.co/nvidia/parakeet-ctc-0.6b/resolve/main/tokenizer.json',
+    displayName: 'Parakeet CTC 0.6B (int8, mobile)',
+    size: '596MB',
+    sttModelType: SttModelType.parakeet,
+    needsAuth: false,
+    // Same transcript as the f32 file on a Galaxy S23, ~1.5 s per 5 s window on
+    // the CPU and a third of its memory (#747). CPU only: on Adreno 740 the int8
+    // files did not compile on the GPU without constant tensor sharing, which
+    // speech leaves off.
     isSupported: true,
   ),
 

@@ -1,4 +1,5 @@
 ## Unreleased
+- `LiteRtBindings` binds the opaque-options calls the speech-to-text GPU options use (#747).
 - The option-scoring self-check runs in debug and profile builds only.
 - `InferenceModel.createDecider` scores on the GPU too; the NPU stays refused.
 

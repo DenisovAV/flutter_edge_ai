@@ -18,7 +18,8 @@ native bundle and exposes the LiteRT C API bindings (`LiteRtBindings`) used here
   and **Parakeet** (log-mel) via `LiteRtSttBackend`.
 - **TTS** works end-to-end for **Matcha** (`litert-community/Matcha-TTS`, 22050 Hz
   — a 3-graph LiteRT pipeline: encoder → CFM decoder → HiFi-GAN vocoder,
-  producing 16-bit PCM), **Qwen3-TTS** and **Inflect-Nano-v2** (both 24000 Hz) via
+  producing 16-bit PCM, plus a neural G2P graph for words missing from its
+  dictionary), **Qwen3-TTS** and **Inflect-Nano-v2** (both 24000 Hz) via
   `LiteRtTtsBackend`; `kokoro`/`supertonic` are follow-ons.
 
 Both backends are pure factories (`canHandle` always `true`) — the *model* is
@@ -81,6 +82,44 @@ await FlutterEdgeAi.installStt()
 WAV file. Each model has a fixed window — 5 s for moonshine and Parakeet, 30 s
 for Whisper; shorter audio is zero-padded and longer audio is silently
 truncated.
+
+### Speech-to-text models on phones
+
+Measured on a Galaxy S23 (Snapdragon 8 Gen 2, Adreno 740, 8 GB), one 5 s
+window, steady state over repeated transcriptions
+([#747](https://github.com/DenisovAV/flutter_edge_ai/issues/747)):
+
+| File | Backend | Per window | Anonymous memory |
+|------|---------|------------|------------------|
+| `moonshine_tiny_5s_f32.tflite` | GPU | ~0.25 s | ~0.44–0.68 GB |
+| `moonshine_tiny_5s_f32.tflite` | CPU | ~0.8 s | ~0.36 GB |
+| `parakeet_ctc_0.6b_5s_i8.tflite` | CPU | ~1.5 s | ~0.83 GB |
+| `parakeet_ctc_0.6b_5s_f32.tflite` | CPU | ~2.4 s | ~2.4 GB |
+| `parakeet_ctc_0.6b_5s_f32.tflite` | GPU | does not load | — |
+
+- Parakeet f32 does not load on the GPU of that phone: the system kills the
+  app during `getActiveStt`, before the first transcription. Use the int8 file
+  from the same repository, `parakeet_ctc_0.6b_5s_i8.tflite`, on the CPU: it
+  transcribed the same text as the f32 file.
+- On the GPU, speech-to-text asks LiteRT for fp32; text-to-speech keeps
+  LiteRT's defaults. At LiteRT's default (fp16), moonshine f32 returned NaN
+  logits at its first decode step on Adreno 740; with the fp32 request it
+  transcribes the same text as on the CPU, about three times faster. Whisper
+  tiny gave the same text in both modes, with no NaN: 4.6–5.0 s per 30 s window
+  with the request over two runs, ~4.7 s without it in one run on an
+  experimental build. Measured on Adreno 740 only, not on Mali, Metal or
+  WebGPU.
+- On Adreno 740 the int8 (`_i8`) files did not compile on the GPU without
+  constant tensor sharing, which speech leaves off: set together with four
+  other GPU options, it made moonshine f32 abort inside LiteRT
+  ([LiteRT-LM#3685](https://github.com/google-ai-edge/LiteRT-LM/issues/3685)).
+  Their GPU load fails with an error naming the file; run them on the CPU.
+- Matcha TTS does not load on the GPU of that phone: its neural G2P graph
+  (`dp_g2p_matcha_fp16.tflite`, the fallback for words missing from its
+  dictionary) is compiled when the voice loads and fails to compile there
+  (LiteRT status 504), as it did before #747, so the load fails whatever the
+  text. Run Matcha on the CPU: 6.9–8.0 s for a sentence of 3.4 s over three
+  runs.
 
 ### Speech-to-text output language (Whisper)
 

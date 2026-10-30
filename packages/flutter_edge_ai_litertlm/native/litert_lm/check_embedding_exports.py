@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """The LiteRT-LM main library must export every C function the EmbeddingGemma 2
 pass calls (R5 §4.11), every one option scoring calls (SCORING_SYMBOLS),
+every LiteRT C function LiteRtBindings looks up (LITERT_BINDINGS_SYMBOLS, from
+libLiteRt.so on Linux and LiteRt.dll on Windows, by the platform in the label),
 every one a thinking token budget calls (THINKING_BUDGET_SYMBOLS), and the
 symbol the loader checks to recognise this package's build
 (OWN_BUILD_SYMBOLS).
@@ -128,7 +130,46 @@ OWN_BUILD_SYMBOLS = [
     "litert_lm_engine_settings_set_kernel_batch_size",
 ]
 
+# Every LiteRT C function LiteRtBindings looks up (lib/src/ffi/litert_bindings.dart;
+# a VM test compares them): embeddings on .tflite and every speech model. They
+# come out of the library LiteRtBindings opens — libLiteRtLm on Apple and
+# Android, Google's libLiteRt.so / LiteRt.dll beside it on Linux and Windows.
+# Missing one, that load fails on that target only (the opaque-options three
+# carry the speech-to-text GPU options, #747).
+LITERT_BINDINGS_SYMBOLS = [
+    "LiteRtAddOpaqueOptions",
+    "LiteRtCreateCompiledModel",
+    "LiteRtCreateEnvironment",
+    "LiteRtCreateModelFromFile",
+    "LiteRtCreateOpaqueOptions",
+    "LiteRtCreateOptions",
+    "LiteRtCreateTensorBufferFromHostMemory",
+    "LiteRtDestroyCompiledModel",
+    "LiteRtDestroyEnvironment",
+    "LiteRtDestroyModel",
+    "LiteRtDestroyOpaqueOptions",
+    "LiteRtDestroyOptions",
+    "LiteRtDestroyTensorBuffer",
+    "LiteRtGetCompiledModelInputBufferRequirements",
+    "LiteRtGetCompiledModelInputTensorLayout",
+    "LiteRtGetCompiledModelOutputBufferRequirements",
+    "LiteRtGetCompiledModelOutputTensorLayouts",
+    "LiteRtGetModelSignature",
+    "LiteRtGetNumSignatureInputs",
+    "LiteRtGetSignatureInputName",
+    "LiteRtLockTensorBuffer",
+    "LiteRtRunCompiledModel",
+    "LiteRtSetOptionsHardwareAccelerators",
+    "LiteRtUnlockTensorBuffer",
+]
+
 MAIN_LIBRARY = ("libLiteRtLm.dylib", "libLiteRtLm.so", "LiteRtLm.dll")
+
+# The library LiteRtBindings opens where it is not the main library, by the
+# platform in the bundle's label (litertlm-<platform>): Google's prebuilt
+# LiteRT beside libLiteRtLm (_openLiteRt in lib/src/ffi/litert_bindings.dart).
+# Every other platform links LiteRT into the main library.
+LITERT_C_LIBRARY = {"linux": "libLiteRt.so", "windows": "LiteRt.dll"}
 
 
 class FormatError(Exception):
@@ -277,6 +318,32 @@ def find_main_library(bundle):
     return found
 
 
+# Platforms a bundle label (litertlm-<platform>_<arch>) can name.
+KNOWN_PLATFORMS = ("android", "ios", "macos", "linux", "windows")
+
+
+def bundle_platform(label):
+    """The platform in a bundle label such as litertlm-linux_x86_64, or None
+    when the label names none of KNOWN_PLATFORMS."""
+    name = label.split("litertlm-", 1)[-1]
+    platform = name.split("_", 1)[0]
+    return platform if platform in KNOWN_PLATFORMS else None
+
+
+def find_litert_c_library(bundle, platform, main_library):
+    """The libraries LiteRtBindings opens on [platform]: every libLiteRt.so /
+    LiteRt.dll in the bundle on Linux / Windows (exactly one is expected), the
+    main library elsewhere (Apple, Android)."""
+    name = LITERT_C_LIBRARY.get(platform)
+    if name is None:
+        return os.path.basename(main_library), [main_library]
+    found = []
+    for root, _, files in os.walk(bundle):
+        if name in files:
+            found.append(os.path.join(root, name))
+    return name, found
+
+
 def main(argv):
     if len(argv) not in (2, 3):
         sys.exit(__doc__)
@@ -314,6 +381,41 @@ def main(argv):
         else:
             print(f"  [ok]   {label} — {os.path.basename(library)} exports all "
                   f"{len(wanted)} {what}")
+    platform = bundle_platform(label)
+    if platform is None:
+        # Which library LiteRtBindings opens depends on the platform; a label
+        # that names none must not pass by checking the wrong one.
+        print(f"  [FAIL] {label} — the label names no platform "
+              f"({', '.join(KNOWN_PLATFORMS)}), so the library LiteRtBindings "
+              f"opens is unknown")
+        return 1
+    litert_name, litert_libraries = find_litert_c_library(
+        bundle, platform, library)
+    if len(litert_libraries) != 1:
+        print(f"  [FAIL] {label} — expected one {litert_name}, the library "
+              f"LiteRtBindings opens there, found {len(litert_libraries)}: "
+              f"{litert_libraries}")
+        return 1
+    litert_library = litert_libraries[0]
+    try:
+        litert_names = (names if litert_library == library
+                        else exports(litert_library))
+    except (FormatError, struct.error, ValueError, IndexError) as e:
+        print(f"  [FAIL] {label} — cannot read the exports of "
+              f"{os.path.basename(litert_library)}: {e}")
+        return 1
+    missing = [s for s in LITERT_BINDINGS_SYMBOLS if s not in litert_names]
+    what = "LiteRT C functions LiteRtBindings looks up"
+    if missing:
+        failed = True
+        print(f"  [FAIL] {label} — {os.path.basename(litert_library)} does not "
+              f"export {len(missing)} of the {len(LITERT_BINDINGS_SYMBOLS)} "
+              f"{what}:")
+        for symbol in missing:
+            print(f"         {symbol}")
+    else:
+        print(f"  [ok]   {label} — {os.path.basename(litert_library)} exports "
+              f"all {len(LITERT_BINDINGS_SYMBOLS)} {what}")
     return 1 if failed else 0
 
 

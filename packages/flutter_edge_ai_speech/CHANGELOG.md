@@ -1,3 +1,6 @@
+## Unreleased
+- Speech-to-text requests fp32 on the GPU: moonshine no longer returns NaN on Adreno 740 (#747).
+
 ## 0.5.12
 - Docs: on macOS with Swift Package Manager on, no Podfile block from litertlm 1.19.0 (#689).
 

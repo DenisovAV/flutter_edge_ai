@@ -33,14 +33,15 @@ class _Run {
   /// Whether the session is through with it: completed, failed, stopped or
   /// closed. What the backend sends after that is not recorded.
   bool get done => _done.isCompleted;
-  set done(bool value) {
-    assert(value, 'a run that is done stays done');
+
+  /// Marks it [done]; it stays done.
+  void markDone() {
     if (!_done.isCompleted) _done.complete();
   }
 
   final Completer<void> _done = Completer<void>();
 
-  /// Completes when [done] is set: a call stopped while it waits stops
+  /// Completes when it is marked done: a call stopped while it waits stops
   /// waiting.
   Future<void> get whenDone => _done.future;
 
@@ -49,7 +50,9 @@ class _Run {
   bool started = false;
 
   /// Completes when the backend call has ended, whatever way: after a stop
-  /// that is later than the stop.
+  /// that is later than the stop. A stopped call whose backend call has not
+  /// ended by the time a later call gives up waiting is ended then too, so
+  /// nothing waits for it again.
   final Completer<void> ended = Completer<void>();
   void end() {
     if (!ended.isCompleted) ended.complete();
@@ -253,36 +256,53 @@ class WebModelSession extends InferenceModelSession {
   /// after a stop is a moment later than the stop itself.
   ///
   /// It ends early when [run], the call that waits, is stopped or closed:
-  /// it will not start, so it has nothing to wait for.
+  /// it will not start, so it has nothing to wait for. Past
+  /// [previousCallWait], a stopped call that has not ended is let go of (see
+  /// [_Run.ended]). When some earlier call ended or was let go of during the
+  /// wait, the wait starts afresh for those still running, as for any call
+  /// queued behind one that runs; when none did, the caller finds them
+  /// running. A call that was not stopped is never let go of, so a stop still
+  /// finds it.
   Future<void> _previousEnded(List<_Run> before, _Run run) async {
-    final pending = [
-      for (final earlier in before)
-        if (!earlier.ended.isCompleted) earlier.ended.future,
-    ];
-    if (pending.isEmpty) return;
-    await Future.any([Future.wait(pending), run.whenDone]).timeout(
-      previousCallWait,
-      onTimeout: () {
-        edgeAiLog(
-          '[WebModelSession] the previous call did not end in '
-          '${previousCallWait.inMilliseconds} ms',
-        );
-        // A stopped call that has not ended is let go of: it has nothing more
-        // to record, and no later call should wait for it again. One that was
-        // not stopped stays, so a stop still finds it.
-        for (final earlier in before) {
-          if (earlier.done && !earlier.ended.isCompleted) {
-            _runs.remove(earlier);
-          }
-        }
-      },
-    );
+    var earlier = before;
+    while (true) {
+      final pending = [
+        for (final call in earlier)
+          if (!call.ended.isCompleted) call.ended.future,
+      ];
+      if (pending.isEmpty || run.done) return;
+      var timedOut = false;
+      await Future.any([
+        Future.wait(pending),
+        run.whenDone,
+      ]).timeout(previousCallWait, onTimeout: () => timedOut = true);
+      if (!timedOut) return;
+      edgeAiLog(
+        '[WebModelSession] the previous call did not end in '
+        '${previousCallWait.inMilliseconds} ms',
+      );
+      final stillPending = [
+        for (final call in earlier)
+          if (!call.ended.isCompleted) call,
+      ];
+      // Ending a stopped one also releases every other call that waits for it.
+      stillPending.where((call) => call.done).toList().forEach(_end);
+      final running = [
+        for (final call in stillPending)
+          if (!call.done) call,
+      ];
+      // Waited the whole time for calls that are still running: the caller
+      // finds them so. Otherwise a call ended or was let go of meanwhile, here
+      // or by another waiter's timeout, and the rest get a fresh wait.
+      if (running.isEmpty || running.length == pending.length) return;
+      earlier = running;
+    }
   }
 
   /// Ends [run] with the reply the model wrote.
   void _complete(_Run run, String reply) {
     if (run.done) return;
-    run.done = true;
+    run.markDone();
     _conversation.completeGeneration(_inHistory(reply));
   }
 
@@ -290,7 +310,7 @@ class WebModelSession extends InferenceModelSession {
   /// retry.
   void _fail(_Run run) {
     if (run.done) return;
-    run.done = true;
+    run.markDone();
     _conversation.failGeneration();
   }
 
@@ -316,7 +336,7 @@ class WebModelSession extends InferenceModelSession {
       prompt = _conversation.beginGeneration();
       run.started = true;
     } catch (_) {
-      run.done = true;
+      run.markDone();
       _end(run);
       rethrow;
     }
@@ -355,14 +375,14 @@ class WebModelSession extends InferenceModelSession {
       // Stopped, closed or replaced by a newer call while it waited: each
       // closes this controller (a stop or close marks the run done as well).
       if (controller.isClosed) {
-        run.done = true;
+        run.markDone();
         _end(run);
         return;
       }
       prompt = _conversation.beginGeneration();
       run.started = true;
     } catch (e, stackTrace) {
-      run.done = true;
+      run.markDone();
       _end(run);
       if (!controller.isClosed) {
         controller
@@ -411,7 +431,7 @@ class WebModelSession extends InferenceModelSession {
     var started = false;
     for (final run in [..._runs]) {
       if (run.done) continue;
-      run.done = true;
+      run.markDone();
       if (!run.started) continue;
       started = true;
       if (record) {

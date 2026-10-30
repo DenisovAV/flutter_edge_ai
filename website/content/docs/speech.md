@@ -162,10 +162,11 @@ window, steady state over repeated transcriptions
   other GPU options, it made moonshine f32 abort inside LiteRT
   ([LiteRT-LM#3685](https://github.com/google-ai-edge/LiteRT-LM/issues/3685)).
   Their GPU load fails with an error naming the file; run them on the CPU.
-- Matcha TTS does not load on the GPU of that phone: its G2P graph
-  (`dp_g2p_matcha_fp16.tflite`) fails to compile there (LiteRT status 504), as
-  it did before #747. Run Matcha on the CPU: about 7.6–8.0 s for a sentence of
-  3.4 s.
+- Matcha TTS does not load on the GPU of that phone: its neural G2P graph
+  (`dp_g2p_matcha_fp16.tflite`, the fallback for words missing from its
+  dictionary) is compiled when the voice loads and fails to compile there
+  (LiteRT status 504), as it did before #747, so the load fails whatever the
+  text. Run Matcha on the CPU: about 7.6–8.0 s for a sentence of 3.4 s.
 
 ## Text-to-speech (Matcha)
 

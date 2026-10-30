@@ -210,24 +210,31 @@ int? greedyDecodeStep(
   return argmax(rowLogits);
 }
 
-/// The greedy seq2seq decode loop over [pick], which runs one decoder step on
-/// the tokens so far and returns [greedyDecodeStep]'s result once that step's
-/// buffers are released. Starts from [promptIds]. The step number, counted
-/// from 0 at the first token after the prompt, is computed here only and
-/// handed to [pick] and to [acceptDecodedToken]; each pick is appended. Stops
-/// at [eosId] or at [maxTokens] tokens, prompt included.
+/// The greedy seq2seq decode loop. [decoderRow] runs one decoder step on the
+/// tokens so far and returns a copy of its output row for the next token, its
+/// buffers already released. The step number, counted from 0 at the first
+/// token after [promptIds], is computed here only: each row goes through
+/// [greedyDecodeStep] (NaN check, [suppression] at that step, argmax) and
+/// [acceptDecodedToken], and the pick is appended. Stops at [eosId] or at
+/// [maxTokens] tokens, prompt included.
 ///
-/// Pure: [SttCore]'s decoder passes the native step, tests pass a script.
+/// Pure: [SttCore]'s decoder passes the native step, tests pass rows.
 List<int> runGreedyDecode({
   required List<int> promptIds,
   required int maxTokens,
   required int eosId,
-  required int? Function(List<int> generated, int step) pick,
+  required ResolvedSuppression? suppression,
+  required Float32List Function(List<int> generated) decoderRow,
 }) {
   final generated = List<int>.from(promptIds);
   while (true) {
     final step = generated.length - promptIds.length;
-    final bestId = acceptDecodedToken(pick(generated, step), step: step);
+    final next = greedyDecodeStep(
+      decoderRow(generated),
+      step: step,
+      suppression: suppression,
+    );
+    final bestId = acceptDecodedToken(next, step: step);
     generated.add(bestId);
     if (shouldStopDecoding(bestId, generated.length, maxTokens, eosId: eosId)) {
       if (bestId != eosId && generated.length >= maxTokens) {
@@ -813,7 +820,8 @@ class SttCore {
         promptIds: promptIds,
         maxTokens: maxTokens,
         eosId: _eosId,
-        pick: (generated, step) {
+        suppression: _resolvedSuppression,
+        decoderRow: (generated) {
           final len = generated.length;
 
           // decode_args_1: i32[1, maxTokens] — token ids so far, right-padded
@@ -906,41 +914,17 @@ class SttCore {
               calloc.free(inputs);
             }
 
-            final lockedPtr = calloc<Pointer<Void>>();
-            try {
-              _bindings
-                  .lockTensorBuffer(
-                    outBufPtr.value,
-                    lockedPtr,
-                    kLiteRtTensorBufferLockModeRead,
-                  )
-                  .check('LiteRtLockTensorBuffer(decode out)');
-              // Argmax is taken at tensor row `len - 1` (0-indexed) — the
-              // position of the token that was just written into the padded
-              // sequence, NOT row 0 and NOT the last row.
-              final row = len - 1;
-              final logits = lockedPtr.value.cast<Float>().asTypedList(
-                maxTokens * vocabSize,
-              );
-              final rowLogits = logits.sublist(
-                row * vocabSize,
-                (row + 1) * vocabSize,
-              );
-              final pick = greedyDecodeStep(
-                rowLogits,
-                step: step,
-                suppression: _resolvedSuppression,
-              );
-              _bindings
-                  .unlockTensorBuffer(outBufPtr.value)
-                  .check('LiteRtUnlockTensorBuffer(decode out)');
-              // Returned from inside the step, after its unlock; the finally
-              // blocks below release the step's buffers before
-              // runGreedyDecode reads it.
-              return pick;
-            } finally {
-              calloc.free(lockedPtr);
-            }
+            // Argmax is taken at tensor row `len - 1` (0-indexed) — the
+            // position of the token that was just written into the padded
+            // sequence, NOT row 0 and NOT the last row. Returned as a copy;
+            // the finally below releases the step's buffers before
+            // runGreedyDecode reads it.
+            return _readDecoderRow(
+              outBufPtr.value,
+              row: len - 1,
+              maxTokens: maxTokens,
+              vocabSize: vocabSize,
+            );
           } finally {
             if (tokCreated) _bindings.destroyTensorBuffer(tokBufPtr.value);
             if (maskCreated) _bindings.destroyTensorBuffer(maskBufPtr.value);
@@ -960,6 +944,39 @@ class SttCore {
       calloc.free(tokensAlloc.raw);
       calloc.free(maskAlloc.raw);
       calloc.free(decodeOutAlloc.raw);
+    }
+  }
+
+  /// A copy of decoder output [row] of [buffer], read under a read lock. The
+  /// buffer is unlocked on every path, a failed copy included, before it is
+  /// destroyed by the caller.
+  Float32List _readDecoderRow(
+    LiteRtTensorBuffer buffer, {
+    required int row,
+    required int maxTokens,
+    required int vocabSize,
+  }) {
+    final lockedPtr = calloc<Pointer<Void>>();
+    try {
+      _bindings
+          .lockTensorBuffer(buffer, lockedPtr, kLiteRtTensorBufferLockModeRead)
+          .check('LiteRtLockTensorBuffer(decode out)');
+      final Float32List copied;
+      try {
+        final logits = lockedPtr.value.cast<Float>().asTypedList(
+          maxTokens * vocabSize,
+        );
+        copied = logits.sublist(row * vocabSize, (row + 1) * vocabSize);
+      } catch (_) {
+        _bindings.unlockTensorBuffer(buffer);
+        rethrow;
+      }
+      _bindings
+          .unlockTensorBuffer(buffer)
+          .check('LiteRtUnlockTensorBuffer(decode out)');
+      return copied;
+    } finally {
+      calloc.free(lockedPtr);
     }
   }
 

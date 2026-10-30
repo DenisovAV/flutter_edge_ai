@@ -7,8 +7,7 @@
 // speech-to-text only), never through
 // a direct setOptionsHardwareAccelerators call, every compile failure is
 // taken through takeCompiledModel, and the seq2seq decoder is runGreedyDecode
-// over a native step that returns greedyDecodeStep's pick (whole-row NaN
-// check).
+// over a native step that only copies its output row, unlocked on every path.
 @TestOn('vm')
 library;
 
@@ -117,29 +116,58 @@ void main() {
     );
   });
 
-  test('the seq2seq decoder picks tokens through greedyDecodeStep', () {
+  test('the seq2seq decoder is runGreedyDecode over a copied output row', () {
     final stt = sources['lib/src/litert/stt_core.dart']!;
     final loop = stt.substring(
       stt.indexOf('List<int> _decodeLoop('),
-      stt.indexOf('List<int> _ctcDecode('),
+      stt.indexOf('Float32List _readDecoderRow('),
     );
-    expect(_count(loop, r'greedyDecodeStep\('), 1);
-    expect(loop, isNot(contains('argmax(')));
-    // The loop is runGreedyDecode (tested on its own), and the native step
-    // returns greedyDecodeStep's pick straight from where it is computed.
+    // The token is picked in runGreedyDecode (tested on its own: NaN check,
+    // suppression step, stop rule); the native step only hands it the row.
     expect(_count(loop, r'return runGreedyDecode\('), 1);
-    expect(_count(loop, r'final pick = greedyDecodeStep\('), 1);
-    expect(_count(loop, r'return pick;'), 1);
-    // In that order: the pick, the unlock of the decoder output, the return.
-    // A return before the unlock would destroy a still-locked buffer.
-    final picked = loop.indexOf('final pick = greedyDecodeStep(');
-    final unlocked = loop.indexOf('.unlockTensorBuffer(outBufPtr.value)');
-    final returned = loop.indexOf('return pick;');
-    expect(picked, lessThan(unlocked));
-    expect(unlocked, lessThan(returned));
+    expect(loop, isNot(contains('greedyDecodeStep(')));
+    expect(loop, isNot(contains('argmax(')));
+    expect(_count(loop, r'return _readDecoderRow\('), 1);
     expect(
-      _count(loop.substring(picked, returned), r'\.unlockTensorBuffer\('),
+      _count(
+        stt,
+        r'greedyDecodeStep\(\s*decoderRow\(generated\),\s*step: step,',
+      ),
       1,
     );
+  });
+
+  test('the decoder row is read with the buffer unlocked on every path', () {
+    final stt = sources['lib/src/litert/stt_core.dart']!;
+    final read = stt.substring(
+      stt.indexOf('Float32List _readDecoderRow('),
+      stt.indexOf('List<int> _ctcDecode('),
+    );
+    final locked = read.indexOf('.lockTensorBuffer(');
+    final copied = read.indexOf('copied = logits.sublist(');
+    final onFailure = read.indexOf('_bindings.unlockTensorBuffer(buffer);');
+    final rethrown = read.indexOf('rethrow;');
+    final unlocked = read.indexOf(
+      '.unlockTensorBuffer(buffer)\n          .check(',
+    );
+    final returned = read.indexOf('return copied;');
+    for (final at in [
+      locked,
+      copied,
+      onFailure,
+      rethrown,
+      unlocked,
+      returned,
+    ]) {
+      expect(at, isNonNegative, reason: read);
+    }
+    // lock, copy, (on a failed copy: unlock, rethrow), unlock, return.
+    expect(locked, lessThan(copied));
+    expect(copied, lessThan(onFailure));
+    expect(onFailure, lessThan(rethrown));
+    expect(rethrown, lessThan(unlocked));
+    expect(unlocked, lessThan(returned));
+    expect(_count(read, r'\.unlockTensorBuffer\('), 2);
+    expect(read, isNot(contains('if (')));
   });
 }

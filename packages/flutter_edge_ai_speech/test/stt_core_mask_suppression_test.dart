@@ -175,23 +175,27 @@ void main() {
   });
 
   group('runGreedyDecode (#747)', () {
+    // A row whose largest logit is [winner], with [runnerUp] second.
+    Float32List row(int winner, {int? runnerUp}) {
+      final r = Float32List(8)..[winner] = 1.0;
+      if (runnerUp != null) r[runnerUp] = 0.5;
+      return r;
+    }
+
     test('decodes several steps from the prompt to EOS', () {
       final seen = <List<int>>[];
-      final steps = <int>[];
-      final script = [5, 6, 2];
+      final rows = [row(5), row(6), row(2)];
       final ids = runGreedyDecode(
         promptIds: const [1],
         maxTokens: 8,
         eosId: 2,
-        pick: (generated, step) {
+        suppression: null,
+        decoderRow: (generated) {
           seen.add(List.of(generated));
-          steps.add(step);
-          return script[seen.length - 1];
+          return rows[seen.length - 1];
         },
       );
       expect(ids, [1, 5, 6, 2]);
-      // Steps count from the first token after the prompt.
-      expect(steps, [0, 1, 2]);
       // Each step sees every token so far.
       expect(seen, [
         [1],
@@ -200,32 +204,40 @@ void main() {
       ]);
     });
 
-    test('a real step through greedyDecodeStep picks the argmax each time', () {
-      // Rows whose winners are 5, then 6, then EOS (2).
-      Float32List row(int winner) => Float32List(8)..[winner] = 1.0;
-      final rows = [row(5), row(6), row(2)];
+    test('suppression runs at the step counted from the prompt', () {
+      // Step 0 blocks id 5 (Whisper's step-zero list): the first row's winner
+      // is 5, so the pick is its runner-up 4. Later steps may pick 5. With a
+      // two-token prompt, a step counted from the start (2) would not block
+      // it, and a step stuck at 0 would block it every time.
+      const suppression = ResolvedSuppression(
+        suppressAboveId: 7,
+        suppressAtStepZeroIds: {5},
+      );
+      final rows = [row(5, runnerUp: 4), row(5, runnerUp: 4), row(2)];
+      var i = 0;
       final ids = runGreedyDecode(
         promptIds: const [1, 3],
         maxTokens: 8,
         eosId: 2,
-        pick: (_, step) =>
-            greedyDecodeStep(rows[step], step: step, suppression: null),
+        suppression: suppression,
+        decoderRow: (_) => rows[i++],
       );
-      expect(ids, [1, 3, 5, 6, 2]);
+      expect(ids, [1, 3, 4, 5, 2]);
     });
 
     test('a NaN at the second step throws, naming that step', () {
       final rows = [
-        Float32List(4)..[3] = 1.0,
-        Float32List.fromList([0.1, double.nan, 0.2, 0.3]),
+        row(3),
+        Float32List.fromList([0.1, double.nan, 0.2, 0.3, 0, 0, 0, 0]),
       ];
+      var i = 0;
       expect(
         () => runGreedyDecode(
           promptIds: const [1],
           maxTokens: 8,
           eosId: 2,
-          pick: (_, step) =>
-              greedyDecodeStep(rows[step], step: step, suppression: null),
+          suppression: null,
+          decoderRow: (_) => rows[i++],
         ),
         throwsA(
           isA<StateError>().having(
@@ -242,7 +254,8 @@ void main() {
         promptIds: const [1, 4],
         maxTokens: 5,
         eosId: 2,
-        pick: (_, _) => 7,
+        suppression: null,
+        decoderRow: (_) => row(7),
       );
       expect(ids, [1, 4, 7, 7, 7]);
     });

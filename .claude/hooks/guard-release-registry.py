@@ -452,7 +452,13 @@ def _end_to_end():
         real_main = globals()["main"]
         globals()["main"] = lambda: 1 / 0
         try:
-            for cmd, want in ((lite, 2), ("git status", 0)):
+            for cmd, want in (
+                (lite, 2),
+                ("git status", 0),
+                # A newline between `pub` and `publish`, escaped in the JSON.
+                ("dart pub \\\npublish -f", 2),
+                ("dart pub\npublish -f", 2),
+            ):
                 if _run_guarded(cmd, repo) != want:
                     bad.append(f"main: a crash on {cmd!r} is not exit {want}")
         finally:
@@ -526,7 +532,19 @@ def _self_test():
     return 1 if bad else 0
 
 
-_PUBLISH_TEXT = re.compile(r"pub\s+(?:publish|lish|lush)\b")
+# Loose on purpose: `pub` anywhere before a publish word, across lines.
+_PUBLISH_TEXT = re.compile(r"\bpub\b[\s\S]*\b(?:publish|lish|lush)\b")
+
+
+def _may_publish(raw):
+    """Whether the hook payload [raw] may hold a publish: judged on the
+    decoded command, as main() reads it, never on the JSON text (where an
+    escaped newline hides `pub\\npublish`). An unreadable payload may."""
+    try:
+        cmd = (json.loads(raw).get("tool_input") or {}).get("command") or ""
+    except Exception:  # noqa: BLE001 — unreadable: assume the worst
+        return True
+    return not isinstance(cmd, str) or bool(_PUBLISH_TEXT.search(cmd))
 
 
 def _guarded_main():
@@ -544,7 +562,7 @@ def _guarded_main():
     try:
         return main()
     except BaseException as e:  # noqa: BLE001 — a surprise blocks a publish
-        if not _PUBLISH_TEXT.search(raw):
+        if not _may_publish(raw):
             sys.stderr.write(
                 f"guard-release-registry failed ({e!r}) on a command with no "
                 "publish; allowed.\n"

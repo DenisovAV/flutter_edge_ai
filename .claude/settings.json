@@ -27,7 +27,6 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-release-registry.py\"",
-            "timeout": 60,
             "error_message": "Release blocked by the model registry: run `dart run bin/registry.dart release-check <package>` in tool/model_registry for the reasons (critical cells not verified, frozen fields not written), or override with RELEASE_SKIP_REGISTRY=\"reason\"."
           }
         ]

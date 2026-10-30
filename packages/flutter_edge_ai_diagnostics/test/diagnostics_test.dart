@@ -4,10 +4,11 @@ import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  // `flutter test` runs on the host. On Windows that is exactly the case this
-  // package refuses; macOS and Linux hosts are supported platforms (Linux is
-  // covered by the host tests below and in proc_memory_test.dart).
-  final supportedHost = Platform.isMacOS || Platform.isLinux;
+  // `flutter test` runs on the host. Every desktop host is a supported
+  // platform (Linux is covered by the host tests below and in
+  // proc_memory_test.dart, Windows in windows_memory_test.dart).
+  final supportedHost =
+      Platform.isMacOS || Platform.isLinux || Platform.isWindows;
 
   group('on an unsupported host platform', skip: supportedHost, () {
     test('isSupported is false', () {

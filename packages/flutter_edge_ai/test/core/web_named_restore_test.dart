@@ -198,6 +198,29 @@ void main() {
       },
     );
 
+    test(
+      'a LoRA recorded without its source says so, not "malformed"',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          PreferencesKeys.activeInferenceIdentity: jsonEncode({
+            ...unrecorded,
+            PreferencesKeys.activeInferenceLoraFilename: 'adapter.bin',
+          }),
+        });
+        await ServiceRegistry.initialize(webStorageMode: WebStorageMode.none);
+        await WebModelManager().ensureInitialized();
+        expect(
+          said,
+          contains(
+            allOf(
+              startsWith('flutter_edge_ai: '),
+              contains('adapter.bin) is recorded without its source'),
+            ),
+          ),
+        );
+      },
+    );
+
     test('EdgeAiLogLevel.none silences it', () async {
       edgeAiLogLevel = EdgeAiLogLevel.none;
       SharedPreferences.setMockInitialValues({

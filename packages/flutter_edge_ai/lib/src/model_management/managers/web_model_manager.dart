@@ -165,9 +165,14 @@ class WebModelManager extends ModelFileManager
     ModelSource? loraSource;
     if (loraFilename != null) {
       final loraEncoded = identity?[PreferencesKeys.activeInferenceLoraSource];
-      loraSource = loraEncoded == null
-          ? null
-          : ModelSource.tryDecode(loraEncoded);
+      if (loraEncoded == null) {
+        restoreNotice(
+          '[WebModelManager] active model restore: the LoRA of $filename '
+          '($loraFilename) is recorded without its source — skipping',
+        );
+        return;
+      }
+      loraSource = ModelSource.tryDecode(loraEncoded);
       if (loraSource == null) {
         restoreNotice(
           '[WebModelManager] active model restore: the LoRA of $filename '

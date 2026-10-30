@@ -182,6 +182,8 @@ void main() {
     await tester.pump();
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
+    // Not empty: an empty token is also what the field starts with, so only
+    // a real one would show a write to the disposed controller.
     service.token!.complete('hf_token');
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

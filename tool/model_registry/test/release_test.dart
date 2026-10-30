@@ -87,4 +87,41 @@ void main() {
       startsWith('git could not run'),
     ]);
   });
+
+  test('package code changed or added below lib/, hook/ or native/ is '
+      'named; other files are not', () {
+    final repo = Directory.systemTemp.createTempSync('release_package_code');
+    addTearDown(() => repo.deleteSync(recursive: true));
+    void git(List<String> args) {
+      final r = Process.runSync('git', args, workingDirectory: repo.path);
+      expect(r.exitCode, 0, reason: '${r.stderr}');
+    }
+
+    File write(String path, String text) => File(p.join(repo.path, path))
+      ..createSync(recursive: true)
+      ..writeAsStringSync(text);
+    git(['init', '-q']);
+    git(['config', 'user.email', 't@example.com']);
+    git(['config', 'user.name', 't']);
+    write('packages/a/lib/src/x.dart', '// v1');
+    write('packages/a/README.md', 'a');
+    git(['add', '-A']);
+    git(['commit', '-qm', 'init']);
+    expect(uncommittedPackageCode(repo.path), isEmpty);
+
+    write('packages/a/lib/src/x.dart', '// v2');
+    write('packages/a/lib/src/new.dart', '// new');
+    write('packages/a/hook/build.dart', '// hook');
+    write('packages/a/native/x/y.c', '// c');
+    write('packages/a/README.md', 'changed');
+    expect(
+      uncommittedPackageCode(repo.path),
+      unorderedEquals([
+        'packages/a/lib/src/x.dart',
+        'packages/a/lib/src/new.dart',
+        'packages/a/hook/build.dart',
+        'packages/a/native/x/y.c',
+      ]),
+    );
+  });
 }

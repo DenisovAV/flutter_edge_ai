@@ -34,11 +34,8 @@ Future<void> main(List<String> args) async {
   try {
     await _main(args);
   } on ProcessException catch (e) {
-    // git (or another tool) is not installed: say so, not a stack trace.
-    stderr.writeln(
-      '${e.executable} could not run (${e.message}); the registry tool '
-      'needs it on PATH',
-    );
+    // git (or another tool) could not run: its error, not a stack trace.
+    stderr.writeln('${e.executable} could not run: ${e.message}');
     exit(1);
   }
 }
@@ -260,17 +257,11 @@ int _evidence(
 
   // What ran is what the packages' code is at HEAD: an edit to it that is not
   // committed makes the commit a false record.
-  final dirty = git([
-    'status',
-    '--porcelain',
-    '--',
-    'packages/*/lib',
-    'packages/*/hook',
-    'packages/*/native',
-  ]);
+  final dirty = uncommittedPackageCode(repoRoot);
   if (dirty.isNotEmpty && !args.contains('--allow-dirty')) {
     stderr.writeln(
-      'uncommitted changes under packages/; commit them first:\n$dirty',
+      'uncommitted changes under packages/; commit them first:\n'
+      '${dirty.join('\n')}',
     );
     return 1;
   }

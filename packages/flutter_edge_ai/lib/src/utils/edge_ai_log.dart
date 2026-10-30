@@ -3,15 +3,15 @@ import 'package:flutter/foundation.dart';
 /// Verbosity for flutter_edge_ai's internal logs.
 ///
 /// - [none] — silence this log, the start-up restore notices included.
-/// - [info] — lifecycle, errors, non-PII diagnostics (default). In release
-///   builds, of this log, the start-up notices about active models that
-///   could not be restored.
+/// - [info] — lifecycle, errors, non-PII diagnostics (default). Release
+///   builds keep one part of this log: the start-up notices about active
+///   models that could not be restored.
 /// - [verbose] — adds model output / prompts / conversation history (debug
 ///   builds).
 ///
 /// Some messages are printed in every build whatever logLevel says:
 /// warnings about failures the app would not otherwise see, and a few
-/// notices (for example the sampler latch, once per engine, and the
+/// notices (for example the sampler latch, at most once per engine, and the
 /// hidden-reasoning note, once per chat).
 enum EdgeAiLogLevel { none, info, verbose }
 

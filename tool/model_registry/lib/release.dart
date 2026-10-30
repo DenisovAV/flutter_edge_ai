@@ -181,7 +181,7 @@ List<String> uncommittedUnder(
       ':(exclude,glob)**/example/pubspec.lock',
     ], workingDirectory: repoRoot);
   } on ProcessException catch (e) {
-    return ['git could not run (${e.message}): install git'];
+    return ['git could not run: ${e.message}'];
   }
   if (status.exitCode != 0) return ['git status failed: ${status.stderr}'];
   return [
@@ -209,8 +209,7 @@ bool everCommitted(String repoRoot, String path, {String git = 'git'}) {
     ], workingDirectory: repoRoot);
   } on ProcessException catch (e) {
     stderr.writeln(
-      'git could not run (${e.message}), so it cannot say whether $path was '
-      'ever committed: it is treated as shipped',
+      'git could not run: ${e.message}; $path is treated as shipped',
     );
     return true;
   }
@@ -222,4 +221,34 @@ bool everCommitted(String repoRoot, String path, {String git = 'git'}) {
     return true;
   }
   return '${log.stdout}'.trim().isNotEmpty;
+}
+
+/// The packages' code that differs from HEAD or is untracked: every file
+/// under any package's `lib/`, `hook/` and `native/`. What a run recorded as
+/// evidence ran is the code at HEAD, so an edit not committed makes the
+/// record false. Glob pathspecs: a plain `packages/*/lib` matches that path
+/// alone, nothing below it. A repository git cannot read is one entry, never
+/// an empty answer.
+///
+/// [git] names the executable; tests name one that is not there.
+List<String> uncommittedPackageCode(String repoRoot, {String git = 'git'}) {
+  final ProcessResult status;
+  try {
+    status = Process.runSync(git, [
+      'status',
+      '--porcelain',
+      '--untracked-files=all',
+      '--',
+      ':(glob)packages/*/lib/**',
+      ':(glob)packages/*/hook/**',
+      ':(glob)packages/*/native/**',
+    ], workingDirectory: repoRoot);
+  } on ProcessException catch (e) {
+    return ['git could not run: ${e.message}'];
+  }
+  if (status.exitCode != 0) return ['git status failed: ${status.stderr}'];
+  return [
+    for (final line in '${status.stdout}'.split('\n'))
+      if (line.trim().isNotEmpty) line.substring(3),
+  ];
 }

@@ -162,7 +162,9 @@ model to the engine that handles its file type. For RAG, register
 - `webStorageMode` **(Web only)**: storage strategy for model files (default: `cacheApi`).
   - `WebStorageMode.cacheApi`: Cache API with Blob URLs (for models <2GB).
   - `WebStorageMode.streaming`: OPFS streaming (for large models >2GB like E4B, 7B).
-  - `WebStorageMode.none`: no caching (ephemeral mode for testing).
+  - `WebStorageMode.none`: no caching (ephemeral mode for testing). Restore
+    notices about model files that are gone stay in the debug log in this
+    mode.
 
 <Info>
 
@@ -678,9 +680,11 @@ FlutterEdgeAi.logLevel = EdgeAiLogLevel.verbose;
 FlutterEdgeAi.logLevel = EdgeAiLogLevel.none;
 ```
 
-In release builds, of this log, the restore notices are printed, and
-`EdgeAiLogLevel.none` silences them too. Some messages are printed in every
-build whatever `logLevel` says: warnings about failures the app would not
-otherwise see, and a few notices (for example the sampler latch, once per
-engine, and the hidden-reasoning note, once per chat). The level is
+Release builds keep one part of this log, the restore notices, and
+`EdgeAiLogLevel.none` silences them too; under `WebStorageMode.none` the
+notices about model files that are gone stay in the debug log, since no file
+outlives a page load there. Some messages are printed in every build whatever
+`logLevel` says: warnings about failures the app would not otherwise see, and
+a few notices (for example the sampler latch, at most once per engine, and the
+hidden-reasoning note, once per chat). The level is
 process-global and per-isolate; set it once at startup.

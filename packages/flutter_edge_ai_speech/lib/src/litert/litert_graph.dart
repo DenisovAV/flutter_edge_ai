@@ -57,9 +57,10 @@ const int liteRtDelegatePrecisionFp32 = 2;
 /// 30 s window with the payload over two runs; ~4.7 s without, in one run of
 /// a main build with the decoder mask at -1e4). Parakeet f32 was killed by the
 /// system during its load at the default and at fp32; with fp16, madvise and
-/// GPU weight conversion it loaded and returned NaN at its first frame. Google's ASR sample
-/// (`litert-samples`, speech_recognition) forces fp32 on the GPU for every
-/// model it ships. Measured on Adreno 740 only; Metal, WebGPU and Mali are not.
+/// GPU weight conversion it loaded and returned NaN at its first frame.
+/// Google's ASR sample (`litert-samples`, speech_recognition) forces fp32 on
+/// the GPU for every model it ships. Measured on Adreno 740 only; Metal,
+/// WebGPU and Mali are not.
 ///
 /// No `enable_constant_tensors_sharing`: moonshine-tiny f32 aborted the process
 /// inside the accelerator (`EMBEDDING_LOOKUP: Unsupported external weights

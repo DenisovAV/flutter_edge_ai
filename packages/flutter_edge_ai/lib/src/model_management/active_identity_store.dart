@@ -59,7 +59,7 @@ abstract final class ActiveIdentityStore {
     if (encoded != null) {
       final decoded = _decode(encoded);
       if (decoded == null) {
-        edgeAiLog(
+        restoreNotice(
           '[ActiveIdentityStore] unreadable ${kind.name} identity — ignored',
         );
       }

@@ -365,10 +365,14 @@ void main() {
         throwsA(isA<DownloadCancelledException>()),
       );
       downloads.onDownloaded = null;
+      // The stopped install's file is still there: the next one checks it
+      // without downloading it again.
+      final downloaded = downloads.urls.length;
       await expectLater(
         wrongSize().install(),
         throwsA(isA<ModelValidationException>()),
       );
+      expect(downloads.urls, hasLength(downloaded));
       expect(
         FlutterEdgeAiPlugin.instance.modelManager.activeInferenceModel,
         isNull,
@@ -384,7 +388,7 @@ void main() {
       Map<String, FileExpectation> expected, {
       Map<String, String>? paths,
       bool usePaths = true,
-      Set<String> keep = const {},
+      Map<String, ModelSpec> keep = const {},
     }) async {
       final fs = ServiceRegistry.instance.fileSystemService;
       await checkInstalledFiles(
@@ -439,13 +443,16 @@ void main() {
         check(
           {'pathless.litertlm': const FileExpectation(size: 1)},
           paths: const {},
-          keep: const {'pathless.litertlm'},
+          keep: {'pathless.litertlm': spec},
         ),
         throwsA(
           isA<ModelValidationException>().having(
             (e) => e.message,
             'message',
-            contains('so it was kept'),
+            allOf(
+              contains('so it was kept'),
+              contains("(FlutterEdgeAi.uninstallModel('pathless.litertlm'))"),
+            ),
           ),
         ),
       );
@@ -471,7 +478,7 @@ void main() {
               .having(
                 (e) => e.message,
                 'message',
-                contains('the next install checks it again'),
+                contains('uninstall it before installing again'),
               ),
         ),
       );
@@ -532,6 +539,28 @@ void main() {
           )
           .modelFromNetwork('https://example.com/e2.litertlm')
           .install();
+    });
+
+    test('STT: fromCatalog with a tokenizer it refuses leaves the builder '
+        'as it was', () async {
+      await initialize();
+      final builder = FlutterEdgeAi.installStt()
+          .modelFromNetwork('https://example.com/mine_stt.tflite')
+          .tokenizerFromNetwork('https://example.com/mine.json')
+          .ofType(SttModelType.moonshine);
+      expect(
+        () => builder.fromCatalog(TestStt(tokenizerSize: -1)),
+        throwsArgumentError,
+      );
+      await builder.install();
+      final active =
+          FlutterEdgeAiPlugin.instance.modelManager.activeSttModel!
+              as SttModelSpec;
+      expect(
+        active.modelSource,
+        ModelSource.network('https://example.com/mine_stt.tflite'),
+      );
+      expect(active.sttModelType, SttModelType.moonshine);
     });
 
     test('STT: modelFromNetwork, or another type, drops the variant', () async {

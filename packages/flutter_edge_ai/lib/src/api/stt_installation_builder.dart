@@ -56,6 +56,10 @@ class SttInstallationBuilder {
   /// [StateError] before the download (not on the web), naming that model
   /// and the call that uninstalls it: uninstall it first.
   SttInstallationBuilder fromCatalog(SttVariant variant, {String? token}) {
+    // Both files' values first: a refused one leaves the builder as it was.
+    for (final file in variant.files) {
+      FileExpectation.checked(size: file.sizeBytes);
+    }
     modelFromNetwork(
       variant.model.url,
       token: token,
@@ -80,8 +84,10 @@ class SttInstallationBuilder {
   /// included. A file of another size is deleted with its record and
   /// [install] throws [ModelValidationException]; a negative size throws
   /// [ArgumentError] here. With it set, [install] throws [StateError] before
-  /// the download when an active model of any kind reads a file of this
-  /// name: uninstall that model first. On the web neither is checked.
+  /// the download when it would replace a file of this name that an active
+  /// model of any kind reads (one not installed yet, or installed from
+  /// another source): uninstall that model first. On the web neither is
+  /// checked.
   SttInstallationBuilder modelFromNetwork(
     String url, {
     String? token,
@@ -223,11 +229,13 @@ class SttInstallationBuilder {
   /// - [StateError] if model or tokenizer source not configured, or [ofType]
   ///   was not called, and, before the download, when a file with an
   ///   `expectedSize` would replace one an active model of any kind reads
+  ///   (not on the web)
   /// - [UnsupportedError] or [ArgumentError] for a [fromCatalog] variant that
   ///   cannot be installed here (see [fromCatalog]); [UnsupportedError] on
   ///   the web for a file over 2 GiB in the default storage
   /// - [ModelValidationException] if a file is not its `expectedSize` once
-  ///   installed (what the install wrote is then deleted with its record)
+  ///   installed (the first such file is then deleted with its record,
+  ///   unless an active model reads it)
   /// - [DownloadCancelledException] if cancelled via cancelToken
   /// - [Exception] on installation failure
   ///

@@ -75,7 +75,7 @@ class _SttScreenState extends State<SttScreen> {
         token = await AuthTokenService.loadToken();
       }
 
-      await installFromCatalogReplacingActive(
+      final replaced = await installFromCatalogReplacingActive(
         () => FlutterEdgeAi.installStt()
             .fromCatalog(widget.model.catalogVariant, token: token)
             .withProgress((percent) {
@@ -90,6 +90,13 @@ class _SttScreenState extends State<SttScreen> {
         confirm: (model, bytes) =>
             askToReplaceActiveModel(context, model, bytes),
       );
+      if (replaced case final CatalogInstallKept kept) {
+        if (mounted) {
+          setState(() => _isInitializing = false);
+          leaveKeeping(context, kept);
+        }
+        return;
+      }
 
       final recognizer = await FlutterEdgeAi.getActiveStt();
 

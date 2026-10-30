@@ -76,9 +76,10 @@ class InferenceInstallationBuilder {
   ///   earlier included. A file of another size is deleted with its record
   ///   and [install] throws [ModelValidationException]; a negative size
   ///   throws [ArgumentError] here. With it set, [install] throws
-  ///   [StateError] before the download when an active model of any kind
-  ///   reads a file of this name: uninstall that model first. On the web
-  ///   neither is checked.
+  ///   [StateError] before the download when it would replace a file of
+  ///   this name that an active model of any kind reads (one not installed
+  ///   yet, or installed from another source): uninstall that model first.
+  ///   On the web neither is checked.
   InferenceInstallationBuilder fromNetwork(
     String url, {
     String? token,
@@ -308,7 +309,8 @@ class InferenceInstallationBuilder {
   ///   not run here, and on the web for a file over 2 GiB in the default
   ///   storage
   /// - [ModelValidationException] if the file is not its `expectedSize` once
-  ///   installed (it is then deleted with its record)
+  ///   installed (it is then deleted with its record, unless an active
+  ///   model reads it)
   /// - [DownloadCancelledException] if cancelled via cancelToken
   /// - [Exception] on installation failure
   ///

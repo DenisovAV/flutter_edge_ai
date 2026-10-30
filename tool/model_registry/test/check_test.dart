@@ -525,6 +525,20 @@ void main() {
       ]);
     });
 
+    test('a ### subheading or a fenced # line stays in the release', () {
+      const sections = '''## 1.20.0
+### Added
+```sh
+# not a heading
+```
+- Model catalog: `LiteRtLmModels`.
+''';
+      expect(
+        problemsWith(sections, const {}),
+        contains(contains('1.20.0 released its catalog')),
+      );
+    });
+
     test('a snapshot of a version the CHANGELOG does not name', () {
       expect(
         problemsWith(changelog, {

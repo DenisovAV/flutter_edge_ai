@@ -73,11 +73,12 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
     });
 
     try {
-      await _downloadService.downloadModel(
+      final replaced = await _downloadService.downloadModel(
         token: widget.model.needsAuth
             ? _token
             : '', // Pass token only if needed
         onProgress: (progress) {
+          if (!mounted) return;
           setState(() {
             _progress = progress;
           });
@@ -85,6 +86,12 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
         confirmReplace: (model, bytes) =>
             askToReplaceActiveModel(context, model, bytes),
       );
+      if (!mounted) return;
+      if (replaced case final CatalogInstallKept kept) {
+        // Not an error: the installed model stays, nothing was downloaded.
+        scaffoldMessenger.showSnackBar(SnackBar(content: Text(kept.message)));
+        return;
+      }
       setState(() {
         needToDownload = false;
       });
@@ -97,6 +104,9 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
           licenseUrl: widget.model.licenseUrl,
           error: e,
         );
+      } else if (e is CatalogReplaceFailed) {
+        // What is already gone matters more than "failed".
+        scaffoldMessenger.showSnackBar(SnackBar(content: Text(e.message)));
       } else {
         scaffoldMessenger.showSnackBar(
           const SnackBar(content: Text('Failed to download the model.')),

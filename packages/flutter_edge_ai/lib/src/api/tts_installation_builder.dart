@@ -156,7 +156,8 @@ class TtsInstallationBuilder {
   /// - [UnsupportedError] or [ArgumentError] for a [fromCatalog] variant that
   ///   cannot be installed here (see [fromCatalog])
   /// - [ModelValidationException] if a [fromCatalog] file is not its size
-  ///   once installed (it is then deleted with its record)
+  ///   once installed (the first such file is then deleted with its
+  ///   record, unless an active model reads it)
   /// - [Exception] naming every missing file, if a local bundle is incomplete
   /// - [DownloadCancelledException] if cancelled via cancelToken
   /// - [Exception] on installation failure

@@ -78,7 +78,7 @@ class _TranslateScreenState extends State<TranslateScreen> {
         token = await AuthTokenService.loadToken();
       }
 
-      await installFromCatalogReplacingActive(
+      final replaced = await installFromCatalogReplacingActive(
         () =>
             FlutterEdgeAi.installModelFromCatalog(
               widget.model.catalogVariant,
@@ -91,6 +91,12 @@ class _TranslateScreenState extends State<TranslateScreen> {
         confirm: (model, bytes) =>
             askToReplaceActiveModel(context, model, bytes),
       );
+      if (replaced case final CatalogInstallKept kept) {
+        if (mounted) {
+          leaveKeeping(context, kept);
+        }
+        return;
+      }
 
       if (kDebugMode) {
         debugPrint('[TranslateScreen] Model installed, getting active…');

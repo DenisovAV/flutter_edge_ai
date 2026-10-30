@@ -100,7 +100,12 @@ def _checked(cmd, payload, var):
 def _unreadable(cmd, hook):
     """The block for a command this hook cannot read; None when it can."""
     if publish_command is None:
-        if re.search(r"pub\s+publish", cmd):
+        # Loosely, as anything could be: `pub` (or `packages`) and a publish
+        # word anywhere, quotes and backslashes dropped, or `$'…'` beside it.
+        text = re.sub(r"[\"'\\]", "", cmd)
+        if re.search(r"\b(?:pub|packages)\b", text) and (
+            re.search(r"\b(?:publish|lish|lush)\b", text) or "$'" in cmd
+        ):
             return (
                 f"BLOCKED: publish_command.py did not load ({_IMPORT_ERROR!r}), "
                 f"so this command cannot be read.\n(guard: .claude/hooks/{hook})\n"

@@ -140,7 +140,7 @@ class ChatScreenState extends State<ChatScreen> {
         final token = variant.file.gated
             ? await AuthTokenService.loadToken()
             : null;
-        await installFromCatalogReplacingActive(
+        final replaced = await installFromCatalogReplacingActive(
           () => FlutterEdgeAi.installModelFromCatalog(variant, token: token)
               .withProgress((percent) {
                 if (!mounted) return;
@@ -151,6 +151,12 @@ class ChatScreenState extends State<ChatScreen> {
           confirm: (model, bytes) =>
               askToReplaceActiveModel(context, model, bytes),
         );
+        if (replaced case final CatalogInstallKept kept) {
+          if (mounted) {
+            leaveKeeping(context, kept);
+          }
+          return;
+        }
       } else if (widget.model.hfRepo != null) {
         final installation = await installer
             .fromHuggingFace(widget.model.hfRepo!)

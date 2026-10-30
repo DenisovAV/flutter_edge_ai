@@ -46,12 +46,9 @@ class MobileModelManager extends ModelFileManager
       try {
         await restore();
       } catch (e, st) {
-        // Printed, so a release build reports it too; the stack trace is for
-        // debug builds.
-        // ignore: avoid_print
-        print(
-          'flutter_edge_ai: the active $kind model was not restored, '
-          'starting without one: $e',
+        // Said in release builds too; the stack trace is for debug builds.
+        restoreNotice(
+          'the active $kind model was not restored, starting without one: $e',
         );
         edgeAiLog('UnifiedModelManager: $kind restore failed at\n$st');
       }
@@ -198,7 +195,7 @@ class MobileModelManager extends ModelFileManager
       modelType = ModelType.values.byName(modelTypeName);
       fileType = ModelFileType.values.byName(fileTypeName);
     } catch (e) {
-      edgeAiLog(
+      restoreNotice(
         '[ModelManager] active model restore: unknown enum value ($modelTypeName / $fileTypeName) — skipping',
       );
       return;
@@ -231,7 +228,7 @@ class MobileModelManager extends ModelFileManager
 
     final filePath = await _installedFileLocation(filename);
     if (filePath == null) {
-      edgeAiLog(
+      restoreNotice(
         '[ModelManager] active model restore: $filename is not installed or '
         'missing — skipping',
       );
@@ -246,7 +243,7 @@ class MobileModelManager extends ModelFileManager
     if (loraFilename != null) {
       loraPath = await _installedFileLocation(loraFilename);
       if (loraPath == null) {
-        edgeAiLog(
+        restoreNotice(
           '[ModelManager] active model restore: the LoRA of $filename '
           '($loraFilename) is not installed or missing — skipping',
         );
@@ -262,7 +259,7 @@ class MobileModelManager extends ModelFileManager
       fileType: fileType,
       // Null when the file's own name is the recorded one — core keeps its
       // copies under their install names, so for them it always is —, else
-      // the recorded name (checked when it was installed, not again here).
+      // the recorded name, which InferenceModelSpec checks again.
       filename: renamedFrom(FileSource(filePath), filename),
     );
     edgeAiLog('[ModelManager] restored active inference model: $filename');
@@ -316,7 +313,7 @@ class MobileModelManager extends ModelFileManager
         .where((m) => m.id.startsWith('$modelId/'))
         .toList();
     if (!members.any((m) => m.id == primaryFilename)) {
-      edgeAiLog(
+      restoreNotice(
         '[ModelManager] active directory model restore: no primary record '
         '"$primaryFilename" — skipping',
       );
@@ -327,7 +324,7 @@ class MobileModelManager extends ModelFileManager
     for (final m in members) {
       final p = await ModelFileSystemManager.getModelFilePath(m.id);
       if (!File(p).existsSync()) {
-        edgeAiLog(
+        restoreNotice(
           '[ModelManager] active directory model restore: missing file $p '
           '— skipping',
         );
@@ -483,7 +480,7 @@ class MobileModelManager extends ModelFileManager
         }
         if (modelPath == null ||
             (!record.isSelfContained && tokenizerPath == null)) {
-          edgeAiLog(
+          restoreNotice(
             '[ModelManager] active embedding record: ${record.modelFilename} '
             'or ${record.tokenizerFilename} is not installed or missing — '
             'skipping',
@@ -563,7 +560,7 @@ class MobileModelManager extends ModelFileManager
     );
     if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
     if (modelPath == null || tokenizerPath == null) {
-      edgeAiLog(
+      restoreNotice(
         '[ModelManager] active embedding restore: $modelFilename or '
         '$effectiveTokenizerFilename is not installed or missing — skipping',
       );
@@ -639,7 +636,7 @@ class MobileModelManager extends ModelFileManager
       modelFilename,
       identity?[PreferencesKeys.activeSttSource],
     )) {
-      edgeAiLog(
+      restoreNotice(
         '[ModelManager] active STT restore: the stored source is not '
         '$modelFilename — skipping',
       );
@@ -650,7 +647,7 @@ class MobileModelManager extends ModelFileManager
     try {
       sttModelType = SttModelType.values.byName(sttModelTypeName);
     } catch (e) {
-      edgeAiLog(
+      restoreNotice(
         '[ModelManager] active STT restore: unknown SttModelType ($sttModelTypeName) — skipping',
       );
       return;
@@ -673,7 +670,7 @@ class MobileModelManager extends ModelFileManager
     final modelPath = await _installedFileLocation(modelFilename);
     final tokenizerPath = await _installedFileLocation(tokenizerName);
     if (modelPath == null || tokenizerPath == null) {
-      edgeAiLog(
+      restoreNotice(
         '[ModelManager] active STT restore: $modelFilename or $tokenizerName '
         'is not installed or missing — skipping',
       );
@@ -710,7 +707,7 @@ class MobileModelManager extends ModelFileManager
     try {
       ttsModelType = TtsModelType.values.byName(typeName);
     } catch (e) {
-      edgeAiLog(
+      restoreNotice(
         '[ModelManager] active TTS restore: unknown TtsModelType ($typeName) — skipping',
       );
       return;
@@ -733,19 +730,19 @@ class MobileModelManager extends ModelFileManager
           _ => await fs.getReadTargetPath(namespacedFn),
         };
       } catch (e) {
-        edgeAiLog(
+        restoreNotice(
           '[ModelManager] active TTS restore: cannot resolve $namespacedFn ($e) — skipping',
         );
         return;
       }
       if (p == null) {
-        edgeAiLog(
+        restoreNotice(
           '[ModelManager] active TTS restore: $namespacedFn is not installed — skipping',
         );
         return;
       }
       if (!File(p).existsSync()) {
-        edgeAiLog(
+        restoreNotice(
           '[ModelManager] active TTS restore: file missing ($namespacedFn) — skipping',
         );
         return;

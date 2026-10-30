@@ -40,16 +40,64 @@ of a quote-split string, `env -S` with a variable inside the word, `printf
 import os
 import re
 
-_PUBLISH_TEXT = re.compile(r"pub\s+publish")
-_PUB_WORD = re.compile(r"\bpub\b")
+# `pub`, or `packages`, flutter's alias of it (`flutter packages publish`).
+_PUB_WORD = re.compile(r"\b(?:pub|packages)\b")
 _SUBCOMMANDS = ("publish", "lish", "lush")  # pub's aliases for publish
 _SUB_WORD = re.compile(r"\b(?:publish|lish|lush)\b")
 _BRACES = re.compile(r"\{[^{}]*,[^{}]*\}")
+_ANSI_C = re.compile(r"\$'((?:[^'\\]|\\.)*)'", re.S)
+_ESCAPES = {
+    "a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n",
+    "r": "\r", "t": "\t", "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?",
+}
 
 
 def _mentions_publish(text):
     """`pub` and one of its publish subcommands, both visible in [text]."""
     return bool(_PUB_WORD.search(text) and _SUB_WORD.search(text))
+
+
+def _decode_ansi_c(body):
+    """The text bash makes of `$'[body]'`."""
+    out = []
+    i = 0
+    while i < len(body):
+        c = body[i]
+        if c != "\\" or i + 1 >= len(body):
+            out.append(c)
+            i += 1
+            continue
+        e = body[i + 1]
+        i += 2
+        if e in _ESCAPES:
+            out.append(_ESCAPES[e])
+        elif e in "xuU":
+            width = {"x": 2, "u": 4, "U": 8}[e]
+            m = re.match(rf"[0-9A-Fa-f]{{1,{width}}}", body[i:])
+            if m:
+                out.append(chr(int(m.group(0), 16)))
+                i += len(m.group(0))
+            else:
+                out.append("\\" + e)
+        elif e in "01234567":
+            m = re.match(r"[0-7]{0,2}", body[i:])
+            out.append(chr(int(e + m.group(0), 8) & 0xFF))
+            i += len(m.group(0))
+        elif e == "c" and i < len(body):
+            out.append(chr(ord(body[i]) & 0x1F))
+            i += 1
+        else:
+            out.append("\\" + e)
+    return "".join(out)
+
+
+def mentions_publish(text):
+    """Whether [text] may hold a publish, read loosely: `$'…'` decoded,
+    quotes and backslashes dropped, then `pub` (or `packages`) and a publish
+    word anywhere. Linear. For the paths that cannot read the command: when
+    in doubt, a publish."""
+    text = _ANSI_C.sub(lambda m: _decode_ansi_c(m.group(1)), text)
+    return _mentions_publish(re.sub(r"[\"'\\]", "", text))
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*$")
 _SHELLS = {"bash", "sh", "zsh", "dash", "ksh"}
 _KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}"}
@@ -87,10 +135,11 @@ class Publish:
 
 
 class _Word:
-    __slots__ = ("text", "expands", "assign_name", "subs")
+    __slots__ = ("text", "bare", "expands", "assign_name", "subs")
 
     def __init__(self):
         self.text = ""
+        self.bare = ""  # its unquoted characters, where braces expand
         self.expands = False  # an unquoted or double-quoted `$`/backtick
         self.assign_name = None  # NAME of an unquoted `NAME=` at the start
         self.subs = []  # command substitutions inside it, as text
@@ -311,6 +360,7 @@ class _Scanner:
                 self.backtick(w)
             else:
                 w.text += c
+                w.bare += c
                 self.i += 1
         return w
 
@@ -325,7 +375,7 @@ class _Scanner:
                 w.text += s[self.i + 1]
                 self.i += 2
             elif c == "$":
-                self.dollar(w)
+                self.dollar(w, quoted=True)
             elif c == "`":
                 self.backtick(w)
             else:
@@ -333,8 +383,17 @@ class _Scanner:
                 self.i += 1
         self.fail('a " that does not close')
 
-    def dollar(self, w):
+    def dollar(self, w, quoted=False):
         s = self.s
+        if not quoted and s.startswith("$'", self.i):
+            # ANSI-C quoting: a literal, its escapes decoded (`$'\x70ublish'`
+            # is `publish`).
+            m = _ANSI_C.match(s, self.i)
+            if m is None:
+                self.fail("a $' that does not close")
+            w.text += _decode_ansi_c(m.group(1))
+            self.i = m.end()
+            return
         w.expands = True
         if s.startswith("$((", self.i):
             depth = 0
@@ -446,7 +505,7 @@ def _strip_wrappers(words, env, pub_in_text=True, moves=None):
                 i += 1
             # `env -S "dart pub publish"`, `--split-string=…`: a wrapper's
             # option that holds a command this reader does not run.
-            if any(_PUBLISH_TEXT.search(t) for t in taken):
+            if any(mentions_publish(t) for t in taken):
                 raise PublishUnclear(
                     f"an option of `{os.path.basename(words[0].text)}` holds "
                     "`pub publish`"
@@ -531,16 +590,20 @@ class _Reader:
         self.found = []
 
     def run(self, text, base, env, depth=0):
+        # Where the command cannot be read, any sign of a publish in its text
+        # (read loosely) is one; text with none is not.
         if depth > 20:
-            raise PublishUnclear("commands nested more than 20 deep")
+            if mentions_publish(text):
+                raise PublishUnclear("commands nested more than 20 deep")
+            return
         try:
             events = _Scanner(text).events()
         except _ScanError as e:
-            if _PUBLISH_TEXT.search(text):
+            if mentions_publish(text):
                 raise PublishUnclear(f"the command cannot be read ({e})")
             return
         except RecursionError:
-            if _PUBLISH_TEXT.search(text):
+            if mentions_publish(text):
                 raise PublishUnclear("the command nests too deep to read")
             return
         # The words of every command, quotes removed: what a reader sees.
@@ -589,7 +652,10 @@ class _Reader:
                     self.run(sub, here, dict(env), depth + 1)
             own = dict(env)
             moves = []
-            words = _strip_wrappers(cmd.words, own, visible, moves)
+            # This command's own words: `env -S 'echo hi'` beside a grep for
+            # `dart pub publish` is not unclear.
+            here_visible = _mentions_publish(" ".join(w.text for w in cmd.words))
+            words = _strip_wrappers(cmd.words, own, here_visible, moves)
             for target in moves:
                 here = _resolve(target, here)
             for body in cmd.heredocs:
@@ -614,7 +680,7 @@ class _Reader:
                     self.run(script.text, here, own, depth + 1)
                     continue
                 if len(words) == 1 or all(w.text.startswith("-") for w in words[1:]):
-                    if not cmd.heredocs and _PUBLISH_TEXT.search(self.text):
+                    if not cmd.heredocs and mentions_publish(self.text):
                         raise PublishUnclear(
                             f"`{name}` reads its commands from stdin, which the "
                             "guard cannot see"
@@ -647,10 +713,26 @@ class _Reader:
             # A command or subcommand word that expands (`$D pub publish`,
             # `dart $SUB publish`, `{pub,publish}`) is unclear only when the
             # text, quotes removed, shows a publish: `$EDITOR "$FILE"` is not.
-            if visible and (
-                words[0].expands
-                or (name in ("dart", "flutter") and any(w.expands for w in words[1:3]))
-                or any(_BRACES.search(w.text) for w in words)
+            # An expanding command word counts when the text shows a publish
+            # and this command could be it: it names `pub` or a publish word,
+            # or is variables alone (`X='dart pub publish'; $X`) — so
+            # `$FLUTTER test && git commit -m 'pub publish'` is clear. Braces
+            # count when this command shows a publish (quoted ones do not
+            # expand); a dart/flutter subcommand when any of the text does
+            # (`X=publish; dart pub $X`).
+            text_here = " ".join(w.text for w in words)
+            if (
+                (
+                    visible
+                    and words[0].expands
+                    and (
+                        _PUB_WORD.search(text_here)
+                        or _SUB_WORD.search(text_here)
+                        or all(w.expands for w in words)
+                    )
+                )
+                or (visible and name in ("dart", "flutter") and any(w.expands for w in words[1:3]))
+                or (here_visible and any(_BRACES.search(w.bare) for w in words))
             ):
                 raise PublishUnclear(
                     f"`{words[0].text}` runs a command or subcommand built from "
@@ -681,9 +763,9 @@ class _Reader:
 
 
 def _pub_subcommand(words, k):
-    """The index of `publish|lish|lush` when words[k] is `pub` followed by
-    pub's global options and it; else None."""
-    if k >= len(words) or words[k].text != "pub":
+    """The index of `publish|lish|lush` when words[k] is `pub` (or flutter's
+    alias `packages`) followed by pub's global options and it; else None."""
+    if k >= len(words) or words[k].text not in ("pub", "packages"):
         return None
     j = k + 1
     while j < len(words) and words[j].text.startswith("-"):
@@ -845,6 +927,23 @@ _CASES = [
     ("echo 'dart pub publish' | sh", None),
     ('dart pub publish "unclosed', None),
     ("FOO=$(a dart pub publish", None),
+    # flutter's `packages` alias, ANSI-C quoting, and the aliases on paths
+    # that cannot read the command.
+    ("flutter packages publish --force", ["/r"]),
+    ("flutter packages -v lish", ["/r"]),
+    ("dart pub $'\\x70ublish' --force", ["/r"]),
+    ("dart $'\\160ub' publish", ["/r"]),
+    ('echo "$\'dart pub publish\'"', []),  # not ANSI-C inside double quotes
+    ("bash <<< 'dart pub lish --force'", None),
+    ("echo 'dart pub lish --force' | sh", None),
+    ('dart pub -v publish -f\necho "x', None),  # bash runs line 1 first
+    ("env -S 'dart pub lish'", None),
+    # Not a publish: no false blocks.
+    ("git commit -m 'fix {a,b} before dart pub publish'", []),
+    ("$FLUTTER test && git commit -m 'prep pub publish'", []),
+    ("env -S 'echo hi'; grep -r 'dart pub publish' docs", []),
+    ("echo " + "$(echo " * 21 + "x" + ")" * 21, []),
+    ("echo " + "$(echo " * 21 + "dart pub publish" + ")" * 21, None),
 ]
 
 

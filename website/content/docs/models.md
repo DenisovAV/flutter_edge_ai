@@ -405,10 +405,11 @@ model installed earlier from a `/resolve/main/` URL under the same name, or
 an older pin), is refused with a `StateError` before it downloads (not on the
 web). Its message names that model's kind, its name and the call that
 uninstalls it (`uninstallModel`, `uninstallEmbedder`, `uninstallStt` or
-`uninstallTts`): uninstall it first, then install. On the web, in the default `WebStorageMode.cacheApi`, a file over
-2 GiB is refused before it downloads; initialize with `webStorageMode:
-WebStorageMode.streaming` for the larger web bundles. `withProgress` weights the files by their pinned
-sizes. An LLM is installed under the registry's install name (for example
+`uninstallTts`): uninstall it first, then install. On the web a file over
+2 GiB is refused before it downloads unless the app initializes with
+`webStorageMode: WebStorageMode.streaming`, the only mode that holds it.
+`withProgress` weights the files by their pinned sizes, and reports 100 once
+the model is active. An LLM is installed under the registry's install name (for example
 `phi-4-mini-reasoning.litertlm`), which `isModelInstalled`, `getModelPath` and
 `uninstallModel` take. `install(activate: false)` installs an LLM without
 making it active. A LoRA is not installed through the catalog.

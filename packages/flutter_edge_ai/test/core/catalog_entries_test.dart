@@ -292,6 +292,18 @@ void main() {
       // example/lib/services/catalog_install.dart parses these sentences.
       expect(
         activeFileRefusal(
+          "it's.litertlm",
+          InferenceModelSpec(
+            name: 'm',
+            modelSource: ModelSource.network('https://example.com/m.litertlm'),
+            modelType: ModelType.general,
+            fileType: ModelFileType.litertlm,
+          ),
+        ),
+        contains(r"(FlutterEdgeAi.uninstallModel('it\'s.litertlm'))"),
+      );
+      expect(
+        activeFileRefusal(
           'm.litertlm',
           InferenceModelSpec(
             name: 'm',
@@ -328,6 +340,26 @@ void main() {
           ),
           'speech-to-text',
           'uninstallStt()',
+        ),
+        (
+          TtsModelSpec(
+            name: 'matcha',
+            sources: [ModelSource.network('https://example.com/m/a.tflite')],
+            ttsModelType: TtsModelType.matcha,
+          ),
+          'text-to-speech',
+          'uninstallTts()',
+        ),
+        (
+          // The file in the way is named, quoted as a Dart string.
+          InferenceModelSpec(
+            name: "it's",
+            modelSource: ModelSource.network('https://example.com/x'),
+            modelType: ModelType.general,
+            fileType: ModelFileType.litertlm,
+          ),
+          'inference',
+          r"uninstallModel('x')",
         ),
       ]) {
         expect(

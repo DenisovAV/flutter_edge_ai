@@ -116,18 +116,26 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading speech model';
         _downloadPercent = null;
       });
-      await installFromCatalogReplacingActive(
-        () => FlutterEdgeAi.installStt()
-            .fromCatalog(widget.sttModel.catalogVariant, token: sttToken)
-            .withProgress((percent) {
-              if (!mounted) return;
-              setState(() => _downloadPercent = percent);
-            })
-            .install(),
-        variant: widget.sttModel.catalogVariant,
-        confirm: (model, bytes) =>
-            askToReplaceActiveModel(context, model, bytes),
-      );
+      if (await installFromCatalogReplacingActive(
+            () => FlutterEdgeAi.installStt()
+                .fromCatalog(widget.sttModel.catalogVariant, token: sttToken)
+                .withProgress((percent) {
+                  if (!mounted) return;
+                  setState(() => _downloadPercent = percent);
+                })
+                .install(),
+            variant: widget.sttModel.catalogVariant,
+            confirm: (model, bytes) =>
+                askToReplaceActiveModel(context, model, bytes),
+          )
+          case final CatalogInstallKept kept) {
+        await closePartial();
+        if (mounted) {
+          setState(() => _isInitializing = false);
+          leaveKeeping(context, kept);
+        }
+        return;
+      }
       recognizer = await FlutterEdgeAi.getActiveStt();
 
       // --- TTS ---
@@ -139,18 +147,26 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading voice model';
         _downloadPercent = null;
       });
-      await installFromCatalogReplacingActive(
-        () => FlutterEdgeAi.installTts()
-            .fromCatalog(widget.ttsModel.catalogVariant)
-            .withProgress((percent) {
-              if (!mounted) return;
-              setState(() => _downloadPercent = percent);
-            })
-            .install(),
-        variant: widget.ttsModel.catalogVariant,
-        confirm: (model, bytes) =>
-            askToReplaceActiveModel(context, model, bytes),
-      );
+      if (await installFromCatalogReplacingActive(
+            () => FlutterEdgeAi.installTts()
+                .fromCatalog(widget.ttsModel.catalogVariant)
+                .withProgress((percent) {
+                  if (!mounted) return;
+                  setState(() => _downloadPercent = percent);
+                })
+                .install(),
+            variant: widget.ttsModel.catalogVariant,
+            confirm: (model, bytes) =>
+                askToReplaceActiveModel(context, model, bytes),
+          )
+          case final CatalogInstallKept kept) {
+        await closePartial();
+        if (mounted) {
+          setState(() => _isInitializing = false);
+          leaveKeeping(context, kept);
+        }
+        return;
+      }
       synth = await FlutterEdgeAi.getActiveTts();
 
       // --- LLM (no tools — see class doc) ---
@@ -172,15 +188,23 @@ class _VoiceScreenState extends State<VoiceScreen> {
       }
 
       if (widget.llmModel.catalogVariant case final variant?) {
-        await installFromCatalogReplacingActive(
-          () => FlutterEdgeAi.installModelFromCatalog(
-            variant,
-            token: llmToken,
-          ).withProgress(onLlmProgress).install(),
-          variant: variant,
-          confirm: (model, bytes) =>
-              askToReplaceActiveModel(context, model, bytes),
-        );
+        if (await installFromCatalogReplacingActive(
+              () => FlutterEdgeAi.installModelFromCatalog(
+                variant,
+                token: llmToken,
+              ).withProgress(onLlmProgress).install(),
+              variant: variant,
+              confirm: (model, bytes) =>
+                  askToReplaceActiveModel(context, model, bytes),
+            )
+            case final CatalogInstallKept kept) {
+          await closePartial();
+          if (mounted) {
+            setState(() => _isInitializing = false);
+            leaveKeeping(context, kept);
+          }
+          return;
+        }
       } else {
         await FlutterEdgeAi.installModel(
               modelType: widget.llmModel.modelType,

@@ -342,10 +342,25 @@ void checkClaims(
   List<Problem> problems,
 ) {
   final variants = variantsById(entries);
+  final unanswered = <String>{};
   for (final MapEntry(key: id, value: (entry, variant)) in variants.entries) {
     final package = '${entry.data['package']}';
     final snapshot = inputs.snapshots[package];
-    if (snapshot == null || variant['withhold'] != null) continue;
+    if (variant['withhold'] != null) continue;
+    if (snapshot == null) {
+      // No snapshot at all: every cell of the package would read refused.
+      if (unanswered.add(package)) {
+        problems.add(
+          Problem(
+            'snapshots/$package.json',
+            '-',
+            'missing: its cells would read refused. Run the package\'s '
+                'catalog test with UPDATE_GOLDENS=1',
+          ),
+        );
+      }
+      continue;
+    }
     if (!snapshot.containsKey(id)) {
       problems.add(
         Problem(

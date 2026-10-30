@@ -311,6 +311,24 @@ void main() {
       );
     });
 
+    test('a package with no snapshot at all', () {
+      final problems = <Problem>[];
+      final (inputs, _) = _repo('[]', problems);
+      final other = Entry('models/other.yaml', {
+        ..._llm().data,
+        'id': 'other',
+        'package': 'flutter_edge_ai_other',
+      });
+      checkClaims(inputs, [_llm(), other], problems);
+      expect(
+        problems.map((x) => '$x'),
+        contains(
+          'snapshots/flutter_edge_ai_other.json: -: missing: its cells would '
+          'read refused. Run the package\'s catalog test with UPDATE_GOLDENS=1',
+        ),
+      );
+    });
+
     test('one variant without an answer for a host', () {
       final problems = <Problem>[];
       final backends = {

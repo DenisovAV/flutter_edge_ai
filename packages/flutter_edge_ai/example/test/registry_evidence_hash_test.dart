@@ -38,6 +38,25 @@ void main() {
     file.writeAsBytesSync([0, 0, 0, 0]);
     expect(await fileSha256(file.path), isNot(_zeros3));
     expect(fileHashCount - before, 2);
+    // The same size, other bytes, a later modification time: hashed again.
+    file
+      ..writeAsBytesSync([1, 1, 1, 1])
+      ..setLastModifiedSync(DateTime.now().add(const Duration(minutes: 1)));
+    expect(await fileSha256(file.path), isNot(_zeros3));
+    expect(fileHashCount - before, 3);
+  });
+
+  test('a hash that fails another way is a reason too', () async {
+    final path = (File('${dir.path}/m.bin')..writeAsBytesSync([0, 0, 0])).path;
+    expect(
+      await pinnedBytesProblem(
+        path,
+        _artifact(_zeros3),
+        'v',
+        hash: (_) async => throw StateError('isolate died'),
+      ),
+      'cannot hash $path: Bad state: isolate died',
+    );
   });
 
   test('pinned bytes are compared without regard to case', () async {

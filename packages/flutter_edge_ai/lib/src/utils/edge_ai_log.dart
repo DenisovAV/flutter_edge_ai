@@ -30,6 +30,15 @@ void edgeAiLog(String message, {EdgeAiLogLevel level = EdgeAiLogLevel.info}) {
   debugPrint(sanitizeForLog(message));
 }
 
+/// Says that a start-up restore left a kind without its active model, in
+/// every build: [edgeAiLog] is silent in release builds, where an app would
+/// otherwise find its model gone at start without a word. One line, with
+/// `print`, whatever [edgeAiLogLevel] is.
+void restoreNotice(String message) {
+  // ignore: avoid_print
+  print('flutter_edge_ai: ${sanitizeForLog(message)}');
+}
+
 /// Rewrites U+FFFD (the replacement character) and unpaired UTF-16 surrogates
 /// to the literal text `U+FFFD`.
 ///

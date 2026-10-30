@@ -147,7 +147,12 @@ def main():
         return 2
 
     if publish_command is None:
-        if re.search(r"pub\s+publish", cmd):
+        # Loosely, as anything could be: `pub` (or `packages`) and a publish
+        # word anywhere, quotes and backslashes dropped, or `$'…'` beside it.
+        text = re.sub(r"[\"'\\]", "", cmd)
+        if re.search(r"\b(?:pub|packages)\b", text) and (
+            re.search(r"\b(?:publish|lish|lush)\b", text) or "$'" in cmd
+        ):
             return _block(
                 f"BLOCKED: publish_command.py did not load ({_IMPORT_ERROR!r}), "
                 "so this command cannot be read.\n"

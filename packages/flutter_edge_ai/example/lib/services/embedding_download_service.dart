@@ -73,7 +73,7 @@ class EmbeddingModelDownloadService {
   /// [onProgress] callback receives (modelProgress, tokenizerProgress) as doubles 0-100
   /// [confirmReplace] is asked before an active model in the way of a
   /// catalog install is uninstalled (see `installFromCatalogReplacingActive`).
-  Future<void> downloadModel(
+  Future<CatalogInstallResult> downloadModel(
     String token,
     void Function(double modelProgress, double tokenizerProgress) onProgress, {
     required Future<bool> Function(ActiveModelInTheWay model, int bytes)
@@ -88,7 +88,7 @@ class EmbeddingModelDownloadService {
         // A model registry build: fromCatalog installs the model and its
         // tokenizer under their fixed names and checks their sizes.
         final hasTokenizer = variant.tokenizer != null;
-        await installFromCatalogReplacingActive(
+        final replaced = await installFromCatalogReplacingActive(
           () => FlutterEdgeAi.installEmbedder()
               .fromCatalog(variant, token: authToken)
               .withModelProgress((progress) {
@@ -106,8 +106,10 @@ class EmbeddingModelDownloadService {
           variant: variant,
           confirm: confirmReplace,
         );
-        await persistVerifiedEmbeddingCatalogSelection(model);
-        return;
+        if (replaced is CatalogInstalled) {
+          await persistVerifiedEmbeddingCatalogSelection(model);
+        }
+        return replaced;
       }
       final builder = withCatalogEmbedderSources(
         FlutterEdgeAi.installEmbedder(),
@@ -127,6 +129,7 @@ class EmbeddingModelDownloadService {
           })
           .install();
       await persistVerifiedEmbeddingCatalogSelection(model);
+      return const CatalogInstalled();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Error downloading embedding model: $e');

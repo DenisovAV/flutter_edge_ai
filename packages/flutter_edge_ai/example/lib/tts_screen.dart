@@ -87,7 +87,7 @@ class _TtsScreenState extends State<TtsScreen> {
     _synth = null;
     await oldSynth?.close();
     try {
-      await installFromCatalogReplacingActive(
+      final replaced = await installFromCatalogReplacingActive(
         () => FlutterEdgeAi.installTts()
             .fromCatalog(_model.catalogVariant)
             .withProgress((percent) {
@@ -99,6 +99,13 @@ class _TtsScreenState extends State<TtsScreen> {
         confirm: (model, bytes) =>
             askToReplaceActiveModel(context, model, bytes),
       );
+      if (replaced case final CatalogInstallKept kept) {
+        if (mounted) {
+          setState(() => _isInitializing = false);
+          leaveKeeping(context, kept);
+        }
+        return;
+      }
 
       final synth = await FlutterEdgeAi.getActiveTts(
         language: _isQwen3 ? _language : null,

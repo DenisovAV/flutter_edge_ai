@@ -61,6 +61,12 @@ Future<void> recordEvidence({
       'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'cannot read it: ${e.message}'})}',
     );
     return;
+  } catch (e) {
+    // The worker isolate's own failure: a skip, never the test's failure.
+    print(
+      'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'cannot hash it: $e'})}',
+    );
+    return;
   }
   if (variant == null) {
     print(
@@ -96,18 +102,25 @@ Future<void> recordCatalogEvidence(
 
 /// Why the file at [path] is not [file]'s pinned bytes — not there, not
 /// readable, other bytes — or null when it is. [id] names the variant.
+///
+/// Any failure to hash it (a file error, or the worker isolate's own) is a
+/// reason, never an error that fails the test the evidence is for. [hash]
+/// replaces [fileSha256] in tests.
 Future<String?> pinnedBytesProblem(
   String path,
   ModelArtifact file,
-  String id,
-) async {
+  String id, {
+  Future<String> Function(String path) hash = fileSha256,
+}) async {
   if (!File(path).existsSync()) return 'not installed at $path';
   try {
-    return await fileSha256(path) == file.sha256.toLowerCase()
+    return await hash(path) == file.sha256.toLowerCase()
         ? null
         : 'not the pinned bytes of $id';
   } on FileSystemException catch (e) {
     return 'cannot read $path: ${e.message}';
+  } catch (e) {
+    return 'cannot hash $path: $e';
   }
 }
 

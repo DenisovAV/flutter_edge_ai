@@ -1040,22 +1040,33 @@ void _checkReleasedCatalogs(
     final released = <String>[]; // newest first
     final withCatalog = <String>{};
     String? section;
+    var fenced = false;
     for (final (i, line) in changelog.readAsLinesSync().indexed) {
+      // A `#` line inside a fenced block is code, not a heading.
+      if (line.trimLeft().startsWith('```')) fenced = !fenced;
+      if (fenced) {
+        if (section != null && line.toLowerCase().contains('model catalog')) {
+          withCatalog.add(section);
+        }
+        continue;
+      }
       if (heading.firstMatch(line) case final m?) {
         section = m.group(1);
         released.add(section!);
-      } else if (line.startsWith('#')) {
-        section = null;
+      } else if (namesAVersion.hasMatch(line)) {
         // A release heading in another form would be read as no release.
-        if (namesAVersion.hasMatch(line)) {
-          problems.add(
-            Problem(
-              rel,
-              'line ${i + 1}',
-              '"$line" names a version but is not "## X.Y.Z"',
-            ),
-          );
-        }
+        section = null;
+        problems.add(
+          Problem(
+            rel,
+            'line ${i + 1}',
+            '"$line" names a version but is not "## X.Y.Z"',
+          ),
+        );
+      } else if (RegExp(r'^#{1,2}\s').hasMatch(line)) {
+        // Another top-level section ends the release; a `###` subheading
+        // (`### Added`) is part of it.
+        section = null;
       } else if (section != null &&
           line.toLowerCase().contains('model catalog')) {
         withCatalog.add(section);

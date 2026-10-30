@@ -41,8 +41,9 @@ final class FileExpectation {
 const webCacheLimitBytes = 2 * 1024 * 1024 * 1024;
 
 /// Refuses, before anything is downloaded, a file whose expected size is over
-/// [webCacheLimitBytes] on the web in the default `WebStorageMode.cacheApi`:
-/// the download would fail part-way. `WebStorageMode.streaming` (OPFS) holds
+/// [webCacheLimitBytes] on the web in any storage mode but streaming (the
+/// default `WebStorageMode.cacheApi`, and `none`): the download would fail
+/// part-way. `WebStorageMode.streaming` (OPFS) holds
 /// it. [web] and [streaming] replace the runtime's answers in tests.
 void refuseTooLargeForWebCache(
   Map<String, FileExpectation> expected, {
@@ -57,8 +58,8 @@ void refuseTooLargeForWebCache(
   ];
   if (tooLarge.isEmpty) return;
   throw UnsupportedError(
-    '${tooLarge.join(', ')} is over 2 GiB, more than the web\'s default '
-    'storage (WebStorageMode.cacheApi) holds. Pass '
+    '${tooLarge.join(', ')} is over 2 GiB, more than this web storage mode '
+    'holds; only WebStorageMode.streaming does. Pass '
     'webStorageMode: WebStorageMode.streaming to FlutterEdgeAi.initialize.',
   );
 }
@@ -102,19 +103,33 @@ void refuseReplacingActive(
 /// over a file the active [model] reads.
 @visibleForTesting
 String activeFileRefusal(String filename, ModelSpec model) {
-  final (kind, uninstall) = switch (model) {
-    EmbeddingModelSpec() => ('embedding', 'FlutterEdgeAi.uninstallEmbedder()'),
-    SttModelSpec() => ('speech-to-text', 'FlutterEdgeAi.uninstallStt()'),
-    TtsModelSpec() => ('text-to-speech', 'FlutterEdgeAi.uninstallTts()'),
-    _ => (
-      'inference',
-      "FlutterEdgeAi.uninstallModel('${model.files.first.filename}')",
-    ),
+  final kind = switch (model.type) {
+    ModelManagementType.inference => 'inference',
+    ModelManagementType.embedding => 'embedding',
+    ModelManagementType.stt => 'speech-to-text',
+    ModelManagementType.tts => 'text-to-speech',
   };
+  final uninstall = _uninstallCall(filename, model);
   return 'This install would write $filename over the file the active $kind '
       'model ${model.name} reads, and checks it only afterwards. Uninstall '
       'that model first ($uninstall), or install under another file name.';
 }
+
+/// The call that uninstalls the active [model] reading [filename]: for an
+/// inference model the file itself (its main file or its LoRA:
+/// `uninstallModel` takes either record, and clears the active model that
+/// reads it) or a directory model's name, quoted as a Dart string.
+String _uninstallCall(String filename, ModelSpec model) => switch (model.type) {
+  ModelManagementType.inference =>
+    "FlutterEdgeAi.uninstallModel("
+        "'${_dartQuoted(filename.contains('/') ? model.name : filename)}')",
+  ModelManagementType.embedding => 'FlutterEdgeAi.uninstallEmbedder()',
+  ModelManagementType.stt => 'FlutterEdgeAi.uninstallStt()',
+  ModelManagementType.tts => 'FlutterEdgeAi.uninstallTts()',
+};
+
+String _dartQuoted(String text) =>
+    text.replaceAll(r'\', r'\\').replaceAll("'", r"\'");
 
 /// Checks the files of [spec] against [expected] (by file name), before the
 /// spec is made active: on every install, files installed earlier included,
@@ -140,7 +155,7 @@ Future<void> verifyInstalledFiles(
     fileSystem: registry.fileSystemService,
     keep: {
       for (final model in active)
-        for (final f in model.files) f.filename,
+        for (final f in model.files) f.filename: model,
     },
     // The record first: a file the system will not let go of yet (Windows
     // keeps a file open by another process) is then an orphan the next
@@ -156,7 +171,8 @@ Future<void> verifyInstalledFiles(
 
 /// [verifyInstalledFiles] over given [paths] (core's paths by `prefsKey`,
 /// null when core reports the spec not installed). [forget] deletes a file
-/// with its record, unless [keep] names it.
+/// with its record, unless [keep] names it (file name to the active model
+/// that reads it).
 @visibleForTesting
 Future<void> checkInstalledFiles(
   ModelSpec spec,
@@ -164,7 +180,7 @@ Future<void> checkInstalledFiles(
   required Map<String, String>? paths,
   required FileSystemService fileSystem,
   required Future<void> Function(ModelFile file, String? path) forget,
-  Set<String> keep = const {},
+  Map<String, ModelSpec> keep = const {},
 }) async {
   final names = {for (final file in spec.files) file.filename};
   for (final MapEntry(key: name, value: expectation) in expected.entries) {
@@ -173,11 +189,17 @@ Future<void> checkInstalledFiles(
     }
   }
 
-  /// Deletes [file] unless [keep] names it, and says what became of it. A
-  /// delete that fails is named, never thrown in place of the check's error.
+  /// Deletes [file] unless [keep] names it, and says what became of it and
+  /// the way out. A delete that fails is named, never thrown in place of the
+  /// check's error.
   Future<(String, Object?)> drop(ModelFile file, String? path) async {
-    if (keep.contains(file.filename)) {
-      return ('An active model reads this file name, so it was kept.', null);
+    if (keep[file.filename] case final model?) {
+      return (
+        'The active model ${model.name} reads this file, so it was kept: '
+            'uninstall it first (${_uninstallCall(file.filename, model)}), '
+            'then install again.',
+        null,
+      );
     }
     try {
       await forget(file, path);
@@ -187,9 +209,14 @@ Future<void> checkInstalledFiles(
         null,
       );
     } catch (e) {
-      // The record goes first, so it may be gone with the file still there:
-      // the next install then downloads over it, and checks it again.
-      return ('Deleting it failed ($e); the next install checks it again.', e);
+      // The record goes first: when it is gone the next install downloads
+      // over the file; when it is not, only an uninstall clears it.
+      return (
+        'Deleting it failed ($e). If isModelInstalled still lists '
+            '${file.filename}, uninstall it before installing again; if not, '
+            'the next install downloads over it.',
+        e,
+      );
     }
   }
 

@@ -112,8 +112,10 @@ class EmbeddingInstallationBuilder {
   /// included. A file of another size is deleted with its record and
   /// [install] throws [ModelValidationException]; a negative size throws
   /// [ArgumentError] here. With it set, [install] throws [StateError] before
-  /// the download when an active model of any kind reads a file of this
-  /// name: uninstall that model first. On the web neither is checked.
+  /// the download when it would replace a file of this name that an active
+  /// model of any kind reads (one not installed yet, or installed from
+  /// another source): uninstall that model first. On the web neither is
+  /// checked.
   EmbeddingInstallationBuilder modelFromNetwork(
     String url, {
     String? token,
@@ -315,7 +317,8 @@ class EmbeddingInstallationBuilder {
   ///
   /// and later [DownloadCancelledException] if cancelled via the cancel token,
   /// [ModelValidationException] if a file is not its `expectedSize` once
-  /// installed (what the install wrote is then deleted with its record), or
+  /// installed (the first such file is then deleted with its record, unless
+  /// an active model reads it), or
   /// an [Exception] on installation failure.
   ///
   /// Note: This method is idempotent - a file already installed from the same

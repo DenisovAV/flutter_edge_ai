@@ -45,6 +45,7 @@ import sys
 CATALOG_PACKAGES = {"flutter_edge_ai_litertlm", "flutter_edge_ai_speech"}
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_IMPORT_ERROR = None
 try:
     import publish_command
 except Exception as _e:  # noqa: BLE001 — main() blocks a publish without it
@@ -91,11 +92,22 @@ def _checked(cmd, payload, var):
     ]
 
 
+def _loosely_publishes(cmd):
+    """Whether [cmd] may hold a publish, read loosely and in linear time:
+    publish_command's reading when it loaded; else `pub` (or `packages`) and
+    a publish word anywhere, quotes and backslashes dropped, and any `$'…'`
+    beside a `pub` (its escapes could spell the rest)."""
+    if publish_command is not None:
+        return publish_command.mentions_publish(cmd)
+    text = re.sub(r"[\"'\\]", "", cmd)
+    pub = re.search(r"\b(?:pub|packages)\b", text)
+    return bool(pub and (re.search(r"\b(?:publish|lish|lush)\b", text) or "$'" in cmd))
+
+
 def _unreadable(cmd, hook):
     """The block for a command this hook cannot read; None when it can."""
     if publish_command is None:
-        # pub's aliases for publish too, as publish_command reads them.
-        if re.search(r"pub\s+(?:publish|lish|lush)\b", cmd):
+        if _loosely_publishes(cmd):
             return (
                 f"BLOCKED: publish_command.py did not load ({_IMPORT_ERROR!r}), "
                 f"so this command cannot be read.\n(guard: .claude/hooks/{hook})\n"
@@ -458,6 +470,11 @@ def _end_to_end():
                 # A newline between `pub` and `publish`, escaped in the JSON.
                 ("dart pub \\\npublish -f", 2),
                 ("dart pub\npublish -f", 2),
+                # Quotes, backslashes and ANSI-C escapes inside the word.
+                ("dart pub pu''blish -f", 2),
+                ("dart pub pu\\blish -f", 2),
+                ("dart pub $'\\x70ublish' -f", 2),
+                ("flutter packages publish -f", 2),
             ):
                 if _run_guarded(cmd, repo) != want:
                     bad.append(f"main: a crash on {cmd!r} is not exit {want}")
@@ -522,29 +539,50 @@ def _self_test():
             bad.append(f"publish_dir {cmd!r}: {got!r}")
     end_to_end_bad, end_to_end_checks = _end_to_end()
     bad += end_to_end_bad
+    # Without publish_command, the guard's own loose reading.
+    loaded = globals()["publish_command"]
+    globals()["publish_command"] = None
+    try:
+        fallback = [
+            ("dart pub -v publish -f", True),
+            ("flutter packages publish", True),
+            ("dart pub $'\\x70ublish'", True),
+            ("bash <<< 'dart pub lish'", True),
+            ("git status", False),
+        ]
+        for cmd, want in fallback:
+            if (_unreadable(cmd, "x") is not None) != want:
+                bad.append(f"fallback {cmd!r}: blocked={not want}")
+    finally:
+        globals()["publish_command"] = loaded
+    # Linear: a long text of `pub ` words is read at once.
+    import time
+
+    started = time.monotonic()
+    _may_publish(json.dumps({"tool_input": {"command": "pub " * 20000}}))
+    if time.monotonic() - started > 0.5:
+        bad.append("the crash-path reading is not linear")
+    extra_checks = len(fallback) + 1
     for line in bad:
         print(f"  FAIL {line}")
     total = (
-        len(_TESTS) + len(_DIR_TESTS) + end_to_end_checks
+        len(_TESTS) + len(_DIR_TESTS) + end_to_end_checks + extra_checks
         + len(publish_command._CASES)
     )
     print(f"  {total - len(bad)}/{total} pass")
     return 1 if bad else 0
 
 
-# Loose on purpose: `pub` anywhere before a publish word, across lines.
-_PUBLISH_TEXT = re.compile(r"\bpub\b[\s\S]*\b(?:publish|lish|lush)\b")
-
-
 def _may_publish(raw):
     """Whether the hook payload [raw] may hold a publish: judged on the
     decoded command, as main() reads it, never on the JSON text (where an
-    escaped newline hides `pub\\npublish`). An unreadable payload may."""
+    escaped newline hides `pub\\npublish`), and loosely (`pu""blish`,
+    `$'\\x70ublish'`). An unreadable payload may."""
     try:
         cmd = (json.loads(raw).get("tool_input") or {}).get("command") or ""
     except Exception:  # noqa: BLE001 — unreadable: assume the worst
         return True
-    return not isinstance(cmd, str) or bool(_PUBLISH_TEXT.search(cmd))
+    return not isinstance(cmd, str) or _loosely_publishes(cmd)
 
 
 def _guarded_main():
@@ -557,7 +595,14 @@ def _guarded_main():
     """
     import io
 
-    raw = sys.stdin.read()
+    try:
+        raw = sys.stdin.read()
+    except BaseException as e:  # noqa: BLE001 — a payload not read may publish
+        sys.stderr.write(
+            f"BLOCKED: guard-release-registry could not read the hook payload "
+            f"({e!r}).\n"
+        )
+        return 2
     sys.stdin = io.StringIO(raw)
     try:
         return main()

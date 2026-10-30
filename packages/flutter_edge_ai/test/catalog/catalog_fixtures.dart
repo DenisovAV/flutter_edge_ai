@@ -7,7 +7,8 @@ import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
 
 const rev = '0123456789abcdef0123456789abcdef01234567';
 
-/// A well-formed sha256 (64 hex digits) for a file no test hashes.
+/// A well-formed sha256 (64 hex digits): core checks its form, never the
+/// bytes.
 const sha64 =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -193,6 +194,7 @@ final class TestTts extends TtsVariant {
 final class TestStt extends SttVariant {
   TestStt({
     int modelSize = 1024 * 1024 + 16,
+    int tokenizerSize = 1024 * 1024 + 16,
     String? modelInstallFilename,
     this.backendsHere = const {PreferredBackend.cpu},
   }) : model = artifact(
@@ -200,7 +202,7 @@ final class TestStt extends SttVariant {
          size: modelSize,
          installFilename: modelInstallFilename,
        ),
-       tokenizer = artifact('tiny_stt_tokenizer.json');
+       tokenizer = artifact('tiny_stt_tokenizer.json', size: tokenizerSize);
 
   @override
   final ModelArtifact model;

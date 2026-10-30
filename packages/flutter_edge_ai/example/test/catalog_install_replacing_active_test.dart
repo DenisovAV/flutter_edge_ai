@@ -1,7 +1,9 @@
 // The example's catalog installs: on core's refusal to write over a file an
 // active model reads, the user is asked; on yes the model the refusal names
-// is uninstalled and the install runs again. The refusal's words are core's,
-// held by core's catalog_entries_test.dart.
+// is uninstalled and the install runs again, asking again for each further
+// model in the way. "Keep it" is a result, not an error, and what fails after
+// a model was uninstalled says that it is gone. The refusal's words are
+// core's, held by core's catalog_entries_test.dart.
 
 import 'package:flutter_edge_ai_example/services/catalog_install.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
@@ -14,42 +16,170 @@ StateError refusal(String kind, String name, String call) => StateError(
   '(FlutterEdgeAi.$call), or install under another file name.',
 );
 
+final embedder = refusal('embedding', 'emb', 'uninstallEmbedder()');
+final voice = refusal('text-to-speech', 'matcha', 'uninstallTts()');
+
 void main() {
   final variant = LiteRtLmModels.gemma4E2bIt.generic;
 
+  /// An install that throws [errors] in turn, then succeeds.
+  Future<void> Function() installing(List<Object> errors, List<int> runs) =>
+      () async {
+        runs.add(runs.length);
+        if (runs.length <= errors.length) throw errors[runs.length - 1];
+      };
+
   test('on yes, the model the refusal names is uninstalled and the install '
       'runs again', () async {
-    var installs = 0;
-    final uninstalled = <ActiveModelInTheWay>[];
+    final runs = <int>[];
+    final uninstalled = <String>[];
     final asked = <(String, int)>[];
     final result = await installFromCatalogReplacingActive(
-      () async {
-        installs++;
-        if (uninstalled.isEmpty) {
-          throw refusal('embedding', 'emb', 'uninstallEmbedder()');
-        }
-        return 'done';
-      },
+      installing([embedder], runs),
       variant: variant,
       confirm: (model, bytes) async {
         asked.add((model.name, bytes));
         return true;
       },
-      uninstall: (model) async => uninstalled.add(model),
+      uninstall: (model) async =>
+          uninstalled.add('${model.kind} ${model.name}'),
     );
-    expect(result, 'done');
-    expect(installs, 2);
+    expect(result, isA<CatalogInstalled>());
+    expect(runs, hasLength(2));
     expect(asked, [('emb', variant.file.sizeBytes)]);
-    expect(uninstalled.single.kind, 'embedding');
+    expect(uninstalled, ['embedding emb']);
   });
 
-  test('an inference model is named with its file', () {
+  test('a second model in the way gets the question too', () async {
+    final runs = <int>[];
+    final asked = <String>[];
+    final uninstalled = <String>[];
+    final result = await installFromCatalogReplacingActive(
+      installing([embedder, voice], runs),
+      variant: variant,
+      confirm: (model, _) async {
+        asked.add(model.name);
+        return true;
+      },
+      uninstall: (model) async => uninstalled.add(model.name),
+    );
+    expect(result, isA<CatalogInstalled>());
+    expect(asked, ['emb', 'matcha']);
+    expect(uninstalled, ['emb', 'matcha']);
+  });
+
+  test(
+    '"keep it" is a result, not an error, and nothing is uninstalled',
+    () async {
+      var uninstalled = false;
+      final result = await installFromCatalogReplacingActive(
+        installing([embedder], []),
+        variant: variant,
+        confirm: (_, _) async => false,
+        uninstall: (_) async => uninstalled = true,
+      );
+      expect(uninstalled, isFalse);
+      final kept = result as CatalogInstallKept;
+      expect(kept.model.name, 'emb');
+      expect(kept.message, 'Kept emb. Nothing was uninstalled or downloaded.');
+    },
+  );
+
+  test(
+    'an uninstall that fails says so, and that nothing downloaded',
+    () async {
+      final runs = <int>[];
+      await expectLater(
+        installFromCatalogReplacingActive(
+          installing([embedder], runs),
+          variant: variant,
+          confirm: (_, _) async => true,
+          uninstall: (_) async => throw StateError('close timed out'),
+        ),
+        throwsA(
+          isA<CatalogReplaceFailed>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              startsWith('Could not uninstall emb'),
+              endsWith('Nothing was downloaded.'),
+            ),
+          ),
+        ),
+      );
+      expect(runs, hasLength(1));
+    },
+  );
+
+  test('a reinstall that fails says the old model is already gone', () async {
+    await expectLater(
+      installFromCatalogReplacingActive(
+        installing([embedder, Exception('HTTP 401')], []),
+        variant: variant,
+        confirm: (_, _) async => true,
+        uninstall: (_) async {},
+      ),
+      throwsA(
+        isA<CatalogReplaceFailed>().having(
+          (e) => e.message,
+          'message',
+          allOf(
+            startsWith(
+              'emb was already uninstalled, but ${variant.id} did '
+              'not install',
+            ),
+            contains('HTTP 401'),
+          ),
+        ),
+      ),
+    );
+  });
+
+  test('keeping a second model after replacing a first says the first is '
+      'gone', () async {
+    var asks = 0;
+    await expectLater(
+      installFromCatalogReplacingActive(
+        installing([embedder, voice], []),
+        variant: variant,
+        confirm: (_, _) async => ++asks == 1,
+        uninstall: (_) async {},
+      ),
+      throwsA(
+        isA<CatalogReplaceFailed>().having(
+          (e) => e.message,
+          'message',
+          'emb was already uninstalled; matcha was kept, so ${variant.id} is '
+              'not installed.',
+        ),
+      ),
+    );
+  });
+
+  test('the same model in the way again is not asked about twice', () async {
+    var asks = 0;
+    await expectLater(
+      installFromCatalogReplacingActive(
+        installing([embedder, embedder], []),
+        variant: variant,
+        confirm: (_, _) async {
+          asks++;
+          return true;
+        },
+        uninstall: (_) async {},
+      ),
+      throwsA(isA<CatalogReplaceFailed>()),
+    );
+    expect(asks, 1);
+  });
+
+  test('an inference model is named with its file, escapes read', () {
     final model = ActiveModelInTheWay.of(
-      refusal('inference', 'gemma', "uninstallModel('gemma.litertlm')"),
+      refusal('inference', 'gemma', r"uninstallModel('it\'s.litertlm')"),
     )!;
     expect(model.kind, 'inference');
     expect(model.name, 'gemma');
-    expect(model.inferenceFile, 'gemma.litertlm');
+    expect(model.inferenceFile, "it's.litertlm");
     for (final (kind, call) in [
       ('speech-to-text', 'uninstallStt()'),
       ('text-to-speech', 'uninstallTts()'),
@@ -58,34 +188,18 @@ void main() {
     }
   });
 
-  test(
-    'on no, nothing is uninstalled and the refusal is the caller\'s',
-    () async {
-      var uninstalled = false;
-      await expectLater(
-        installFromCatalogReplacingActive<void>(
-          () async =>
-              throw refusal('inference', 'g', "uninstallModel('g.bin')"),
-          variant: variant,
-          confirm: (_, _) async => false,
-          uninstall: (_) async => uninstalled = true,
-        ),
-        throwsStateError,
-      );
-      expect(uninstalled, isFalse);
-    },
-  );
-
   test('any other error is the caller\'s, unasked', () async {
     var asked = false;
     await expectLater(
-      installFromCatalogReplacingActive<void>(
+      installFromCatalogReplacingActive(
         () async => throw StateError('something else'),
         variant: variant,
         confirm: (_, _) async => asked = true,
         uninstall: (_) async {},
       ),
-      throwsStateError,
+      throwsA(
+        isA<StateError>().having((e) => e.message, 'message', 'something else'),
+      ),
     );
     expect(asked, isFalse);
   });

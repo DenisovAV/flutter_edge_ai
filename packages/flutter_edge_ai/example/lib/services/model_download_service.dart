@@ -125,7 +125,7 @@ class ModelDownloadService {
   ///
   /// [confirmReplace] is asked before an active model in the way of a
   /// catalog install is uninstalled (see `installFromCatalogReplacingActive`).
-  Future<void> downloadModel({
+  Future<CatalogInstallResult> downloadModel({
     required String token,
     required Function(double) onProgress,
     required Future<bool> Function(ActiveModelInTheWay model, int bytes)
@@ -136,7 +136,7 @@ class ModelDownloadService {
       final authToken = token.isEmpty ? null : token;
 
       if (catalogVariant case final InferenceVariant variant) {
-        await installFromCatalogReplacingActive(
+        final replaced = await installFromCatalogReplacingActive(
           () =>
               FlutterEdgeAi.installModelFromCatalog(
                     variant,
@@ -148,7 +148,7 @@ class ModelDownloadService {
           variant: variant,
           confirm: confirmReplace,
         );
-        return;
+        return replaced;
       }
       // Modern API: Install inference model from network with progress tracking
       await FlutterEdgeAi.installModel(modelType: modelType, fileType: fileType)
@@ -157,6 +157,7 @@ class ModelDownloadService {
             onProgress(progress.toDouble());
           })
           .install();
+      return const CatalogInstalled();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Error downloading model: $e');

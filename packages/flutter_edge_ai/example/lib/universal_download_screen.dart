@@ -198,9 +198,10 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
 
     try {
       if (widget.model.kind == ModelKind.embedding) {
-        await _embeddingDownloadService!.downloadModel(
+        final replaced = await _embeddingDownloadService!.downloadModel(
           widget.model.needsAuth ? _token : '',
           (modelProg, tokenizerProg) {
+            if (!mounted) return;
             setState(() {
               _modelProgress = modelProg;
               _tokenizerProgress = tokenizerProg;
@@ -211,15 +212,16 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
               askToReplaceActiveModel(context, model, bytes),
         );
 
+        if (replaced case final CatalogInstallKept kept) {
+          _showKept(kept);
+          return;
+        }
         debugPrint('[UI] Embedding download completed');
-
-        setState(() {
-          needToDownload = false;
-        });
       } else {
-        await _inferenceDownloadService!.downloadModel(
+        final replaced = await _inferenceDownloadService!.downloadModel(
           token: widget.model.needsAuth ? _token : '',
           onProgress: (progress) {
+            if (!mounted) return;
             setState(() {
               _progress = progress;
             });
@@ -227,8 +229,13 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
           confirmReplace: (model, bytes) =>
               askToReplaceActiveModel(context, model, bytes),
         );
+        if (replaced case final CatalogInstallKept kept) {
+          _showKept(kept);
+          return;
+        }
       }
 
+      if (!mounted) return;
       setState(() {
         needToDownload = false;
       });
@@ -254,6 +261,15 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
     } catch (e) {
       await _handleDownloadError(e);
     }
+  }
+
+  /// The user kept the installed model: not an error, nothing downloaded.
+  void _showKept(CatalogInstallKept kept) {
+    if (!mounted) return;
+    setState(() => _progress = 0.0);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(kept.message)));
   }
 
   Future<void> _handleDownloadError(Object error) async {

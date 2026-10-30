@@ -1,7 +1,7 @@
 ## 2.5.5
 - `uninstallModel` removes a directory (ORT-GenAI) model by its name (#730).
 - `uninstallEmbedder`, `uninstallStt` and `uninstallTts` close the model loaded from those files (#735).
-- Model catalog and installer checks: `installModelFromCatalog`, `fromCatalog`, `expectedSize` (#734).
+- Model catalog and install checks (`installModelFromCatalog`, `fromCatalog`, `expectedSize`); progress ends at 100 once active (#734).
 - `installTts().withProgress` counts bytes across the bundle, not finished files (#751).
 
 ## 2.5.4

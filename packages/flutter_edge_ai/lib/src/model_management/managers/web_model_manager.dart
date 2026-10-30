@@ -67,12 +67,9 @@ class WebModelManager extends ModelFileManager
       try {
         await restore();
       } catch (e, st) {
-        // Printed, so a release build reports it too; the stack trace is for
-        // debug builds.
-        // ignore: avoid_print
-        print(
-          'flutter_edge_ai: the active $kind model was not restored, '
-          'starting without one: $e',
+        // Said in release builds too; the stack trace is for debug builds.
+        restoreNotice(
+          'the active $kind model was not restored, starting without one: $e',
         );
         edgeAiLog('WebModelManager: $kind restore failed at\n$st');
       }
@@ -108,7 +105,7 @@ class WebModelManager extends ModelFileManager
       modelType = ModelType.values.byName(modelTypeName);
       fileType = ModelFileType.values.byName(fileTypeName);
     } catch (e) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active model restore: unknown enum value — skipping',
       );
       return;
@@ -116,7 +113,7 @@ class WebModelManager extends ModelFileManager
 
     final source = ModelSource.tryDecode(sourceEncoded);
     if (source == null) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active model restore: malformed source — skipping',
       );
       return;
@@ -150,7 +147,7 @@ class WebModelManager extends ModelFileManager
     // later on the first getActiveModel() call.
     final repo = ServiceRegistry.instance.modelRepository;
     if (!await repo.isInstalled(filename)) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active model restore: $filename not in repository — skipping',
       );
       return;
@@ -166,7 +163,7 @@ class WebModelManager extends ModelFileManager
           ? null
           : ModelSource.tryDecode(loraEncoded);
       if (loraSource == null || !await repo.isInstalled(loraFilename)) {
-        edgeAiLog(
+        restoreNotice(
           '[WebModelManager] active model restore: the LoRA of $filename '
           '($loraFilename) is not installed — skipping',
         );
@@ -277,7 +274,7 @@ class WebModelManager extends ModelFileManager
             await repository.isInstalled(record.tokenizerFilename!);
         if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
         if (!modelInstalled || !tokenizerInstalled) {
-          edgeAiLog(
+          restoreNotice(
             '[WebModelManager] active embedding record: file missing — skipping',
           );
           return;
@@ -332,7 +329,7 @@ class WebModelManager extends ModelFileManager
     final modelSource = ModelSource.tryDecode(modelSourceEncoded);
     final tokenizerSource = ModelSource.tryDecode(tokenizerSourceEncoded);
     if (modelSource == null || tokenizerSource == null) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active embedding restore: malformed source — skipping',
       );
       return;
@@ -368,7 +365,7 @@ class WebModelManager extends ModelFileManager
     );
     if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
     if (!modelInstalled || !tokenizerInstalled) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active embedding restore: file missing — skipping',
       );
       return;
@@ -434,7 +431,7 @@ class WebModelManager extends ModelFileManager
       modelFilename,
       modelSourceEncoded,
     )) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active STT restore: the stored source is not '
         '$modelFilename — skipping',
       );
@@ -445,7 +442,7 @@ class WebModelManager extends ModelFileManager
     try {
       sttModelType = SttModelType.values.byName(sttModelTypeName);
     } catch (e) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active STT restore: unknown SttModelType ($sttModelTypeName) — skipping',
       );
       return;
@@ -454,7 +451,7 @@ class WebModelManager extends ModelFileManager
     final modelSource = ModelSource.tryDecode(modelSourceEncoded);
     final tokenizerSource = ModelSource.tryDecode(tokenizerSourceEncoded);
     if (modelSource == null || tokenizerSource == null) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active STT restore: malformed source — skipping',
       );
       return;
@@ -475,7 +472,7 @@ class WebModelManager extends ModelFileManager
     final repository = ServiceRegistry.instance.modelRepository;
     if (!await repository.isInstalled(modelFilename) ||
         !await repository.isInstalled(effectiveTokenizerFilename)) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active STT restore: file missing — skipping',
       );
       return;

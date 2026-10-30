@@ -215,6 +215,12 @@
   backends: [cpu]
   status: documented
   source: website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:497
+- what: Parakeet CTC on a phone's CPU, f32 and int8 (Galaxy S23)
+  variants: [parakeet-ctc-0.6b/f32, parakeet-ctc-0.6b/i8]
+  hosts: [android_arm64]
+  backends: [cpu]
+  status: documented
+  source: "PR #752, Galaxy S23 (Snapdragon 8 Gen 2), one 5 s window"
 - what: Matcha
   variants: [matcha-tts/bundle]
   hosts: [android_arm64, ios_arm64, macos_arm64, windows_x64, linux_x64]

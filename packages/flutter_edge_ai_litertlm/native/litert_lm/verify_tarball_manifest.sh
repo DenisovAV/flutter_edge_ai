@@ -415,13 +415,15 @@ for d in "$align_tmp"/litertlm-android_*; do
 done
 
 echo
-echo "==> Checking every libLiteRtLm exports the EmbeddingEngine C API"
-# flutter_edge_ai_litertlm's EmbeddingGemma 2 pass binds the EmbeddingEngine,
-# ModelInfo and error-reporter functions out of libLiteRtLm (R5 §4.11). They
-# leave the library through visibility attributes, not the Windows .def in
-# patch_c_api.sh, and no LLM test calls them — so a rebuild that drops one
-# would ship an embedder that fails at load on that platform alone. The list
-# is the pass's own (check_embedding_exports.py; a VM test keeps them equal).
+echo "==> Checking every bundle exports the C functions the Dart code binds"
+# check_embedding_exports.py holds each bundle to the functions the code looks
+# up, and a VM test keeps every list equal to the code: out of libLiteRtLm the
+# EmbeddingGemma 2 pass (EmbeddingEngine, ModelInfo, error reporter, R5 §4.11),
+# option scoring, the thinking token budget and the own-build symbol; out of
+# the library LiteRtBindings opens (libLiteRtLm on Apple and Android,
+# libLiteRt.so on Linux, LiteRt.dll on Windows) every LiteRT C function it
+# looks up, among them the speech-to-text GPU options (#747). A rebuild that
+# drops one ships a feature that fails at load on that platform alone.
 emb_fail=0
 for d in "$align_tmp"/litertlm-*; do
   [[ -d "$d" ]] || continue
@@ -431,9 +433,11 @@ for d in "$align_tmp"/litertlm-*; do
 done
 if [[ $emb_fail -eq 1 ]]; then
   echo
-  echo "❌ EMBEDDING EXPORTS CHECK FAILED — EmbeddingGemma 2 cannot load on that"
-  echo "   platform. Export the missing functions (Windows: they need"
-  echo "   LITERT_LM_C_API_EXPORT or a .def entry) and rebuild."
+  echo "❌ EXPORTS CHECK FAILED — a function the Dart code binds is missing on that"
+  echo "   platform (the [FAIL] lines above name it and the library). Export it"
+  echo "   (libLiteRtLm on Windows: LITERT_LM_C_API_EXPORT or a .def entry; the"
+  echo "   LiteRT C functions come from libLiteRt.so / LiteRt.dll as shipped by"
+  echo "   Google on Linux and Windows) and rebuild."
   exit 1
 fi
 

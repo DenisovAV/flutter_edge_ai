@@ -1985,6 +1985,13 @@
       "needsAuth": false,
       "isSupported": true
     },
+    "parakeetCtcInt8": {
+      "modelUrl": "https://huggingface.co/litert-community/parakeet-ctc-0.6b/resolve/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_i8.tflite",
+      "tokenizerUrl": "https://huggingface.co/nvidia/parakeet-ctc-0.6b/resolve/ad09ba1cc62743fbc9814de5d2016fca9096485a/tokenizer.json",
+      "sttModelType": "parakeet",
+      "needsAuth": false,
+      "isSupported": true
+    },
     "moonshineTinyInt8": {
       "modelUrl": "https://huggingface.co/litert-community/moonshine-tiny/resolve/eb73d789d7eebcd4d3d5f1a851692923a8e76763/moonshine_tiny_5s_i8.tflite",
       "tokenizerUrl": "https://huggingface.co/moonshine-ai/moonshine/resolve/48b4e427b587bcf67797a5be706d6ddc4a298149/ctranslate2/tiny/tokenizer.json",

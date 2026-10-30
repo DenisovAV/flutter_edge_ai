@@ -604,11 +604,15 @@ see [Speech](/docs/speech).
 | **[Moonshine Tiny](/docs/registry#moonshine-tiny)** | raw 16 kHz PCM | f32 109 MB, int8 52 MB | Android, iOS, macOS, Windows x64, Linux x64; f32 also Linux arm64 | ❌ |
 | **[Whisper Tiny](/docs/registry#whisper-tiny)** | log-mel | f32 151 MB, int8 41 MB | Android, iOS, macOS, Windows x64, Linux x64 | ❌ |
 | **[Whisper Base](/docs/registry#whisper-base)** | log-mel | int8 77 MB | Android, iOS, macOS, Windows x64, Linux x64 | ❌ |
-| **[Parakeet CTC 0.6B](/docs/registry#parakeet-ctc-0.6b)** | log-mel | f32 2.35 GB | macOS, Windows x64, Linux x64; not run on phones | ❌ |
+| **[Parakeet CTC 0.6B](/docs/registry#parakeet-ctc-0.6b)** | log-mel | f32 2.35 GB, int8 596 MB (phones, CPU) | f32: macOS, Windows x64, Linux x64, Android (Galaxy S23); int8: Android (Galaxy S23) | ❌ |
 
 Sizes are the model file; the tokenizer adds 0.4–2.5 MB. The registry also
-lists Whisper Base f32 (290 MB) and Parakeet CTC int8 (596 MB), which have not
-been run, and per-SoC NPU builds, which `flutter_edge_ai_speech` refuses.
+lists Whisper Base f32 (290 MB), which has not been run, and per-SoC NPU
+builds, which `flutter_edge_ai_speech` refuses. On a phone use Parakeet int8
+on the CPU: on a Galaxy S23 (Adreno 740) the f32 file did not load on the GPU
+and the int8 file transcribed the same text on the CPU in a third of the
+memory; see [Speech](/docs/speech#models-on-phones)
+([#747](https://github.com/DenisovAV/flutter_edge_ai/issues/747)).
 
 Whisper is **multilingual** — the shipped checkpoints are the multilingual ones
 (no `.en` suffix), so all 99 of Whisper's languages are available. Set a default

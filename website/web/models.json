@@ -6126,7 +6126,8 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "untested"
+        "status": "documented",
+        "source": "PR #752, Galaxy S23 (Snapdragon 8 Gen 2), one 5 s window"
        }
       },
       "ios_arm64": {
@@ -6199,7 +6200,8 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "untested"
+        "status": "documented",
+        "source": "PR #752, Galaxy S23 (Snapdragon 8 Gen 2), one 5 s window"
        }
       },
       "ios_arm64": {

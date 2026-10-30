@@ -109,6 +109,13 @@ needed as well — see [Installation → Web](/docs/installation#web).
 **Vision** works on Web with Gemma 4's `.task` web build; thinking mode
 (`extraContext`) is not available through MediaPipe on Web.
 
+MediaPipe on Web keeps nothing between calls, so the session sends the whole
+conversation, the model's replies included, with every turn. Each answer
+re-reads the history, so its time grows with the chat, and `maxNumImages`
+counts every image of the conversation. A turn that would exceed it fails with
+an error naming `maxNumImages`; nothing is dropped. Each `createSession` or
+`createChat` starts a new conversation.
+
 ## Backends
 
 | `PreferredBackend` | Android | iOS | Web |

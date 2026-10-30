@@ -7,6 +7,7 @@ import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
 LiteRtSttVariant _moonshineTiny() => LiteRtSpeechModels.moonshineTiny.f32;
 LiteRtSttVariant _whisperTiny() => LiteRtSpeechModels.whisperTiny.f32;
 LiteRtSttVariant _parakeetCtc() => LiteRtSpeechModels.parakeetCtc0_6b.f32;
+LiteRtSttVariant _parakeetCtcInt8() => LiteRtSpeechModels.parakeetCtc0_6b.i8;
 LiteRtSttVariant _moonshineTinyInt8() => LiteRtSpeechModels.moonshineTiny.i8;
 LiteRtSttVariant _whisperTinyInt8() => LiteRtSpeechModels.whisperTiny.i8;
 LiteRtSttVariant _whisperBaseInt8() => LiteRtSpeechModels.whisperBase.i8;
@@ -28,7 +29,8 @@ LiteRtSttVariant _whisperBaseInt8() => LiteRtSpeechModels.whisperBase.i8;
 /// on the f32-proven `SttCore` path (see `stt_int8_test.dart`).
 /// [parakeetCtc] runs the third family — a CTC model with its own NeMo mel
 /// frontend + greedy CTC decode (device-verified, see `parakeet_ctc_test.dart`).
-/// Desktop-only: 2.35 GB f32, no small/int8 export.
+/// The f32 file is 2.35 GB and meant for desktop; [parakeetCtcInt8] is the
+/// same model as int8 (596 MB), the one to use on phones, on the CPU (#747).
 enum SttModel {
   moonshineTiny(
     variant: _moonshineTiny,
@@ -46,10 +48,22 @@ enum SttModel {
 
   parakeetCtc(
     variant: _parakeetCtc,
-    displayName: 'Parakeet CTC 0.6B (desktop)',
+    displayName: 'Parakeet CTC 0.6B (f32, desktop)',
     size: '2.35GB',
-    // Desktop-only: 2.35 GB f32 (no small/int8 export) — highest-quality of the
-    // three STT families. Runs the CTC path (NeMo mel + greedy CTC decode).
+    // Desktop: 2.35 GB f32 — on a Galaxy S23 (8 GB) the system killed its GPU
+    // load; use [parakeetCtcInt8] on a phone. Runs the CTC path (NeMo mel +
+    // greedy CTC decode).
+    isSupported: true,
+  ),
+
+  parakeetCtcInt8(
+    variant: _parakeetCtcInt8,
+    displayName: 'Parakeet CTC 0.6B (int8, mobile)',
+    size: '596MB',
+    // Same transcript as the f32 file on a Galaxy S23, ~1.5 s per 5 s window on
+    // the CPU and a third of its memory (#747). CPU only: on Adreno 740 the int8
+    // files did not compile on the GPU without constant tensor sharing, which
+    // speech leaves off.
     isSupported: true,
   ),
 

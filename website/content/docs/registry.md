@@ -491,8 +491,8 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [f32](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32.tflite)<br>2.35&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
-| [i8](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_i8.tflite)<br>596&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [f32](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32.tflite)<br>2.35&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [i8](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_i8.tflite)<br>596&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [f32-npu-mt6877](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32_MediaTek_MT6877.tflite)<br>1.20&nbsp;GB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [f32-npu-mt6878](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32_MediaTek_MT6878.tflite)<br>1.18&nbsp;GB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [f32-npu-mt6879](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32_MediaTek_MT6879.tflite)<br>1.20&nbsp;GB | NPU&nbsp;⛔ |  |  |  |  |  |  |
@@ -514,6 +514,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [f32-npu-sm8850](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32_Qualcomm_SM8850.tflite)<br>1.21&nbsp;GB | NPU&nbsp;⛔ |  |  |  |  | NPU&nbsp;⛔ |  |
 | [f32-npu-tensor-g3](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32_Google_Tensor_G3.tflite)<br>2&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 
+- Documented: [PR #752](https://github.com/DenisovAV/flutter_edge_ai/pull/752), Galaxy S23 (Snapdragon 8 Gen 2), one 5 s window.
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L497)).
 
 <a id="whisper-base"></a>

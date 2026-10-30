@@ -45,6 +45,8 @@ variants:
     sha256: f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa
     size: 412363
     install_filename: tokenizer.json
+  example:
+  - parakeetCtcInt8
 - slug: f32-npu-mt6877
   file_type: tflite
   file:

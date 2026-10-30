@@ -1,6 +1,7 @@
 // [WebLlmBackend] over `@mediapipe/tasks-genai`'s `LlmInference`.
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart' show edgeAiLog;
 
@@ -117,12 +118,21 @@ class LlmInferenceBackend implements WebLlmBackend {
           ImagePromptPart(:final dataUrl) => <String, String>{
             'imageSource': dataUrl,
           }.jsify()!,
-          // Raw PCM bytes (16 kHz, 16-bit, mono).
+          // Raw PCM bytes (16 kHz, 16-bit, mono), in a buffer of their own:
+          // a view goes to JS as a Uint8Array whose `.buffer` is the whole
+          // buffer behind it, so a reader of that would get the rest too.
           AudioPromptPart(:final audioBytes) => <String, Object>{
-            'audioSource': audioBytes,
+            'audioSource': _ownBuffer(audioBytes),
           }.jsify()!,
           _ => throw StateError('Unsupported prompt part type: $part'),
         },
     ].toJS;
   }
 }
+
+/// [bytes], or a copy of them when they are a view of a larger buffer.
+Uint8List _ownBuffer(Uint8List bytes) =>
+    bytes.offsetInBytes == 0 &&
+        bytes.lengthInBytes == bytes.buffer.lengthInBytes
+    ? bytes
+    : Uint8List.fromList(bytes);

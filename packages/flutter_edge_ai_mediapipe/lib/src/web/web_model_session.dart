@@ -29,7 +29,14 @@ abstract interface class WebLlmBackend {
 /// One generation: what it has produced so far, and whether it is over.
 class _Run {
   final StringBuffer text = StringBuffer();
+
+  /// Whether the session is through with it: completed, failed, stopped or
+  /// closed. What the backend sends after that is not recorded.
   bool done = false;
+
+  /// Whether it began: the conversation's turn is open and the backend has the
+  /// call. A run stopped before that never reached either.
+  bool started = false;
 
   /// Completes when the backend call has ended, whatever way: after a stop
   /// that is later than the stop.
@@ -50,6 +57,7 @@ class WebModelSession extends InferenceModelSession {
     String? systemInstruction,
     WebChatTemplate? template,
     int? maxImages,
+    Duration previousCallWait = const Duration(seconds: 30),
   }) : this._(
          backend: backend,
          onClose: onClose,
@@ -61,6 +69,7 @@ class WebModelSession extends InferenceModelSession {
          template: template,
          maxImages: maxImages,
          preformatted: _formatsByHand(modelType, fileType),
+         previousCallWait: previousCallWait,
        );
 
   WebModelSession._({
@@ -74,7 +83,9 @@ class WebModelSession extends InferenceModelSession {
     required WebChatTemplate? template,
     required int? maxImages,
     required bool preformatted,
+    required Duration previousCallWait,
   }) : _backend = backend,
+       _previousCallWait = previousCallWait,
        _preformatted = preformatted,
        _conversation = WebConversation(
          // A message core wrote the markers into carries them already, so the
@@ -128,7 +139,25 @@ class WebModelSession extends InferenceModelSession {
   final bool supportImage; // Enabling image support
   final bool supportAudio; // Enabling audio support (Gemma 3n E4B)
   StreamController<String>? _controller;
-  _Run? _run;
+
+  /// The calls of this session that have not ended, oldest first: one in the
+  /// backend at most, and those waiting for it. A stop or a close ends every
+  /// one of them.
+  final List<_Run> _runs = [];
+
+  /// How long a call waits for the ones before it to end.
+  final Duration _previousCallWait;
+
+  _Run _register() {
+    final run = _Run();
+    _runs.add(run);
+    return run;
+  }
+
+  void _end(_Run run) {
+    run.end();
+    _runs.remove(run);
+  }
 
   final String? systemInstruction;
   bool _systemInstructionSent = false;
@@ -211,12 +240,20 @@ class WebModelSession extends InferenceModelSession {
 
   /// MediaPipe refuses a call while the one before it is still ending, which
   /// after a stop is a moment later than the stop itself.
-  Future<void> _previousEnded(_Run? run) async {
-    if (run == null || run.ended.isCompleted) return;
-    await run.ended.future.timeout(
-      const Duration(seconds: 30),
+  Future<void> _previousEnded(List<_Run> before) async {
+    final pending = [
+      for (final run in before)
+        if (!run.ended.isCompleted) run.ended.future,
+    ];
+    if (pending.isEmpty) return;
+    await Future.wait(pending).timeout(
+      _previousCallWait,
       onTimeout: () {
-        edgeAiLog('[WebModelSession] the previous call did not end in 30 s');
+        edgeAiLog(
+          '[WebModelSession] the previous call did not end in '
+          '${_previousCallWait.inSeconds} s',
+        );
+        return const [];
       },
     );
   }
@@ -239,29 +276,27 @@ class WebModelSession extends InferenceModelSession {
   @override
   Future<String> getResponse() async {
     _requireOpen();
-    // The run is this call's from here on, so a stop that comes while it
-    // waits for the previous call finds it and ends it before it starts.
-    final previous = _run;
-    final run = _run = _Run();
+    // Registered before it waits, so a stop that comes while it waits for the
+    // previous call finds it and ends it before it starts.
+    final before = [..._runs];
+    final run = _register();
     final List<PromptPart> prompt;
     try {
-      await _previousEnded(previous);
+      await _previousEnded(before);
       // Closed while it waited: it must not start a call on the shared
       // backend.
       _requireOpen();
       // Stopped while it waited: it ends with nothing generated, as a stopped
       // stream does, and the user's turn stays unanswered.
       if (run.done) {
-        run.end();
+        _end(run);
         return '';
       }
       prompt = _conversation.beginGeneration();
+      run.started = true;
     } catch (_) {
       run.done = true;
-      run.end();
-      // A refused start (the previous call still running past the wait) must
-      // leave that call where a stop can find it.
-      if (identical(_run, run)) _run = previous;
+      _end(run);
       rethrow;
     }
     try {
@@ -275,7 +310,7 @@ class WebModelSession extends InferenceModelSession {
       _fail(run);
       rethrow;
     } finally {
-      run.end();
+      _end(run);
     }
   }
 
@@ -290,12 +325,24 @@ class WebModelSession extends InferenceModelSession {
   }
 
   Future<void> _stream(StreamController<String> controller) async {
+    // Registered before it waits, as in [getResponse].
+    final before = [..._runs];
+    final run = _register();
     final List<PromptPart> prompt;
     try {
-      await _previousEnded(_run);
-      if (controller.isClosed) return;
+      await _previousEnded(before);
+      // Stopped, closed or replaced by a newer call while it waited.
+      if (run.done || controller.isClosed) {
+        run.done = true;
+        _end(run);
+        if (!controller.isClosed) await controller.close();
+        return;
+      }
       prompt = _conversation.beginGeneration();
+      run.started = true;
     } catch (e, stackTrace) {
+      run.done = true;
+      _end(run);
       if (!controller.isClosed) {
         controller
           ..addError(e, stackTrace)
@@ -303,7 +350,6 @@ class WebModelSession extends InferenceModelSession {
       }
       return;
     }
-    final run = _run = _Run();
     _backend
         .generateStream(prompt)
         .listen(
@@ -315,7 +361,7 @@ class WebModelSession extends InferenceModelSession {
             if (!controller.isClosed) controller.add(piece);
           },
           onError: (Object e, StackTrace st) {
-            run.end();
+            _end(run);
             if (run.done) return;
             _fail(run);
             if (controller.isClosed) return;
@@ -324,7 +370,7 @@ class WebModelSession extends InferenceModelSession {
               ..close();
           },
           onDone: () {
-            run.end();
+            _end(run);
             if (run.done) return;
             _complete(run, run.text.toString());
             controller.close();
@@ -332,29 +378,47 @@ class WebModelSession extends InferenceModelSession {
         );
   }
 
-  @override
-  Future<void> stopGeneration() async {
-    final run = _run;
-    // The backend is shared with the other sessions of the model, so only a
-    // run of this session is cancelled: a stop on an idle or closed session
-    // must not end the generation of the live one.
-    if (run != null && !run.done) {
-      // What was generated until now stays, as in a native session's cache.
-      // A call that is not streaming has produced nothing the session can
-      // see, so the user's turn stays unanswered.
+  /// Ends every call of this session that has not ended: the one in the
+  /// backend and those waiting for it. Returns whether one had started, so
+  /// the backend has something of this session's to cancel.
+  ///
+  /// With [record], the call that had started leaves what it streamed until
+  /// now in the conversation, as in a native session's cache; a call that is
+  /// not streaming has produced nothing the session can see, so its user turn
+  /// stays unanswered. Whatever a stopped call returns later is not recorded.
+  bool _stopRuns({required bool record}) {
+    var started = false;
+    for (final run in [..._runs]) {
+      if (run.done) continue;
       run.done = true;
-      final generated = run.text.toString();
-      _conversation.stopGeneration(
-        generated.isEmpty ? generated : _inHistory(generated),
-      );
-      try {
-        _backend.cancel();
-      } catch (e) {
-        if (kDebugMode) {
-          edgeAiLog('[WebModelSession] cancel error: $e');
-        }
+      if (!run.started) continue;
+      started = true;
+      if (record) {
+        final generated = run.text.toString();
+        _conversation.stopGeneration(
+          generated.isEmpty ? generated : _inHistory(generated),
+        );
       }
     }
+    return started;
+  }
+
+  void _cancelBackend() {
+    try {
+      _backend.cancel();
+    } catch (e) {
+      if (kDebugMode) {
+        edgeAiLog('[WebModelSession] cancel error: $e');
+      }
+    }
+  }
+
+  @override
+  Future<void> stopGeneration() async {
+    // The backend is shared with the other sessions of the model, so it is
+    // cancelled only for a call of this session: a stop on an idle or closed
+    // session must not end the generation of the live one.
+    if (_stopRuns(record: true)) _cancelBackend();
     _controller?.close();
     _controller = null;
   }
@@ -375,17 +439,7 @@ class WebModelSession extends InferenceModelSession {
     _closed = true;
     // The loaded model belongs to the model, not to a session: closing a
     // session ends its conversation, and the next session reuses the model.
-    final run = _run;
-    if (run != null && !run.done) {
-      run.done = true;
-      try {
-        _backend.cancel();
-      } catch (e) {
-        if (kDebugMode) {
-          edgeAiLog('[WebModelSession] cancel error: $e');
-        }
-      }
-    }
+    if (_stopRuns(record: false)) _cancelBackend();
     _conversation.clear();
     _controller?.close();
     _controller = null;

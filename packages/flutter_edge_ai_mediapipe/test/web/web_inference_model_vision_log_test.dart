@@ -7,7 +7,7 @@
 // createSession(enableVisionModality: true), including the Gemma 4
 // `-web.task` path the docs recommend for web images.
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Run:
+// Browser-only; tool/test_all.sh, and so CI, runs it with --platform chrome:
 //   flutter test --platform chrome test/web/web_inference_model_vision_log_test.dart
 @TestOn('browser')
 library;
@@ -18,68 +18,11 @@ import 'dart:js_interop_unsafe';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai/engine_web.dart';
 import 'package:flutter_edge_ai_mediapipe/src/web/web_inference_model.dart';
 import 'package:flutter_edge_ai_mediapipe/src/web/web_model_session.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Holds createSession at its first await, after the modality checks and
-/// before anything loads. It never answers: a resolver that threw would also
-/// fail the test, because createSession completes its init completer with the
-/// error while nothing listens to it, which surfaces as an uncaught error.
-final class _PendingResolver implements WebModelSourceResolver {
-  @override
-  Future<InferenceModelSpec> activeInferenceSpec() =>
-      Completer<InferenceModelSpec>().future;
-
-  @override
-  Future<({WebModelSource model, String? loraPath})>
-  resolveActiveInferenceModel() =>
-      Completer<({WebModelSource model, String? loraPath})>().future;
-}
-
-/// Answers with a Blob URL, so createSession goes on to build the LlmInference.
-final class _BlobResolver implements WebModelSourceResolver {
-  @override
-  Future<InferenceModelSpec> activeInferenceSpec() =>
-      Completer<InferenceModelSpec>().future;
-
-  @override
-  Future<({WebModelSource model, String? loraPath})>
-  resolveActiveInferenceModel() async =>
-      (model: const BlobUrlModelSource('blob:fake-model'), loraPath: null);
-}
-
-/// Answers with a Blob URL once [gate] completes.
-final class _GatedResolver implements WebModelSourceResolver {
-  _GatedResolver(this.gate);
-  final Future<void> gate;
-
-  @override
-  Future<InferenceModelSpec> activeInferenceSpec() =>
-      Completer<InferenceModelSpec>().future;
-
-  @override
-  Future<({WebModelSource model, String? loraPath})>
-  resolveActiveInferenceModel() async {
-    await gate;
-    return (model: const BlobUrlModelSource('blob:fake-model'), loraPath: null);
-  }
-}
-
-WebInferenceModel _model({
-  required bool supportImage,
-  bool supportAudio = false,
-  WebModelSourceResolver? resolver,
-}) => WebInferenceModel(
-  modelType: ModelType.gemma4,
-  onClose: () {},
-  maxTokens: 4096,
-  sourceResolver: resolver ?? _PendingResolver(),
-  supportImage: supportImage,
-  supportAudio: supportAudio,
-  maxNumImages: supportImage ? 4 : null,
-);
+import 'fake_media_pipe.dart';
 
 /// What createSession logs before its first await, which is where the
 /// modality checks are.
@@ -100,89 +43,6 @@ List<String> _visionLogs(
   return logged.where((line) => line.toLowerCase().contains('vision')).toList();
 }
 
-/// Stands in for the page's MediaPipe globals for the rest of the test.
-/// `created` gets the options of each LlmInference.createFromOptions call;
-/// the LlmInference it creates answers generateResponse with 'ok' and adds
-/// each prompt it is given to `prompts`.
-({List<JSObject> created, List<JSAny> prompts}) _fakeMediaPipe() {
-  final created = <JSObject>[];
-  final prompts = <JSAny>[];
-  final instance = JSObject()
-    ..setProperty(
-      'generateResponse'.toJS,
-      ((JSAny prompt, JSAny? _) {
-        prompts.add(prompt);
-        return Future<JSString>.value('ok'.toJS).toJS;
-      }).toJS,
-    );
-  _replaceGlobal(
-    'FilesetResolver',
-    JSObject()..setProperty(
-      'forGenAiTasks'.toJS,
-      ((JSString _) => Future<JSObject>.value(JSObject()).toJS).toJS,
-    ),
-  );
-  _replaceGlobal(
-    'LlmInference',
-    JSObject()..setProperty(
-      'createFromOptions'.toJS,
-      ((JSObject _, JSObject options) {
-        created.add(options);
-        return Future<JSObject>.value(instance).toJS;
-      }).toJS,
-    ),
-  );
-  return (created: created, prompts: prompts);
-}
-
-/// Like [_fakeMediaPipe], but generateResponse answers only when the test says
-/// so: `calls` holds one completer per call made, in order.
-({List<Completer<String>> calls, JSObject instance}) _heldMediaPipe() {
-  final calls = <Completer<String>>[];
-  final instance = JSObject()
-    ..setProperty(
-      'generateResponse'.toJS,
-      ((JSAny prompt, JSAny? _) {
-        final call = Completer<String>();
-        calls.add(call);
-        return call.future.then((text) => text.toJS).toJS;
-      }).toJS,
-    )
-    ..setProperty('cancelProcessing'.toJS, (() {}).toJS);
-  _replaceGlobal(
-    'FilesetResolver',
-    JSObject()..setProperty(
-      'forGenAiTasks'.toJS,
-      ((JSString _) => Future<JSObject>.value(JSObject()).toJS).toJS,
-    ),
-  );
-  _replaceGlobal(
-    'LlmInference',
-    JSObject()..setProperty(
-      'createFromOptions'.toJS,
-      ((JSObject _, JSObject options) => Future<JSObject>.value(
-        instance,
-      ).toJS).toJS,
-    ),
-  );
-  return (calls: calls, instance: instance);
-}
-
-/// Sets globalThis[name] for the rest of the test, then puts back what was
-/// there, or removes the key if there was nothing.
-void _replaceGlobal(String name, JSObject value) {
-  final existed = globalContext.has(name);
-  final saved = globalContext.getProperty<JSAny?>(name.toJS);
-  globalContext.setProperty(name.toJS, value);
-  addTearDown(() {
-    if (existed) {
-      globalContext.setProperty(name.toJS, saved);
-    } else {
-      globalContext.delete(name.toJS);
-    }
-  });
-}
-
 int? _maxNumImages(JSObject options) =>
     options.getProperty<JSNumber?>('maxNumImages'.toJS)?.toDartInt;
 
@@ -193,12 +53,12 @@ Message _imageMessage() =>
 
 void main() {
   test('a model created with supportImage: no vision warning', () {
-    expect(_visionLogs(_model(supportImage: true)), isEmpty);
+    expect(_visionLogs(testModel(supportImage: true)), isEmpty);
   });
 
   test('vision requested on a model created without supportImage: the warning '
       'names the engine and the ArgumentError an image will throw', () {
-    expect(_visionLogs(_model(supportImage: false)), [
+    expect(_visionLogs(testModel(supportImage: false)), [
       allOf(
         startsWith('[MediaPipe Web]'),
         contains('supportImage: true'),
@@ -209,11 +69,11 @@ void main() {
 
   test('vision not requested on a model without supportImage: no warning', () {
     expect(
-      _visionLogs(_model(supportImage: false), enableVisionModality: false),
+      _visionLogs(testModel(supportImage: false), enableVisionModality: false),
       isEmpty,
     );
     expect(
-      _visionLogs(_model(supportImage: false), enableVisionModality: null),
+      _visionLogs(testModel(supportImage: false), enableVisionModality: null),
       isEmpty,
     );
   });
@@ -242,8 +102,8 @@ void main() {
 
   test('a model created with supportImage gives the LlmInference '
       'maxNumImages, and an image reaches its prompt', () async {
-    final fake = _fakeMediaPipe();
-    final model = _model(supportImage: true, resolver: _BlobResolver());
+    final fake = fakeMediaPipe();
+    final model = testModel(supportImage: true, resolver: BlobResolver());
 
     final session = await model.createSession();
     expect(fake.created, hasLength(1));
@@ -267,185 +127,10 @@ void main() {
     );
   });
 
-  test('two createSession calls at once: the second closes the first, and '
-      'only the second stays open', () async {
-    _fakeMediaPipe();
-    final model = _model(supportImage: false, resolver: _BlobResolver());
-    final before = await model.createSession();
-
-    final results = await Future.wait([
-      model.createSession(),
-      model.createSession(),
-    ]);
-
-    // Each new session closes the one before it, in the order of the calls.
-    for (final closed in [before, results.first]) {
-      await expectLater(
-        closed.addQueryChunk(const Message(text: 'Hi', isUser: true)),
-        throwsStateError,
-      );
-    }
-    await results.last.addQueryChunk(const Message(text: 'Hi', isUser: true));
-    expect(model.session, same(results.last));
-  });
-
-  test('a stop that arrives while the call waits for the previous one '
-      'cancels it before it starts', () async {
-    final fake = _heldMediaPipe();
-    final model = _model(supportImage: false, resolver: _BlobResolver());
-
-    final first = await model.createSession();
-    await first.addQueryChunk(const Message(text: 'A', isUser: true));
-    first.getResponseAsync().listen((_) {});
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    expect(fake.calls, hasLength(1));
-
-    // The next session's call waits for the first one to end.
-    final second = await model.createSession();
-    await second.addQueryChunk(const Message(text: 'B', isUser: true));
-    second.getResponseAsync().listen((_) {});
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    await second.stopGeneration();
-
-    fake.calls.single.complete('done');
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(fake.calls, hasLength(1), reason: 'the stopped call must not run');
-  });
-
-  test(
-    'a closed model loads no LlmInference for a later createSession',
-    () async {
-      final fake = _fakeMediaPipe();
-      final model = _model(supportImage: false, resolver: _BlobResolver());
-      await model.close();
-
-      await expectLater(model.createSession(), throwsStateError);
-      expect(fake.created, isEmpty);
-    },
-  );
-
-  test('a createSession queued behind a load when the model closes loads '
-      'nothing of its own', () async {
-    final fake = _fakeMediaPipe();
-    final gate = Completer<void>();
-    final model = _model(
-      supportImage: false,
-      resolver: _GatedResolver(gate.future),
-    );
-
-    final first = expectLater(model.createSession(), throwsStateError);
-    final queued = expectLater(model.createSession(), throwsStateError);
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    final closing = model.close();
-    gate.complete();
-    await closing;
-    await first;
-    await queued;
-    expect(fake.created, hasLength(1), reason: 'only the first call loads');
-  });
-
-  test(
-    'a session handed out while the model closes is closed with it',
-    () async {
-      // close() can land at any await of createSession; each step is tried.
-      for (var step = 0; step < 12; step++) {
-        _fakeMediaPipe();
-        final model = _model(supportImage: false, resolver: _BlobResolver());
-        await model.createSession();
-        // A refusal is a right answer too; it is read once close() is done.
-        final creating = model.createSession().then<InferenceModelSession?>(
-          (session) => session,
-          onError: (Object e) => e is StateError ? null : throw e,
-        );
-        for (var i = 0; i < step; i++) {
-          await Future<void>.microtask(() {});
-        }
-        await model.close();
-        final session = await creating;
-        if (session == null) continue;
-        await expectLater(
-          session.addQueryChunk(const Message(text: 'Hi', isUser: true)),
-          throwsStateError,
-          reason: 'step $step: the session outlived its model',
-        );
-      }
-    },
-  );
-
-  test('a blocking call stopped while it waits for the previous one ends '
-      'empty, as a stream does', () async {
-    final fake = _heldMediaPipe();
-    final model = _model(supportImage: false, resolver: _BlobResolver());
-
-    final first = await model.createSession();
-    await first.addQueryChunk(const Message(text: 'A', isUser: true));
-    first.getResponseAsync().listen((_) {});
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    expect(fake.calls, hasLength(1));
-
-    final second = await model.createSession();
-    await second.addQueryChunk(const Message(text: 'B', isUser: true));
-    final reply = second.getResponse();
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    await second.stopGeneration();
-
-    fake.calls.single.complete('done');
-    expect(await reply, isEmpty);
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(fake.calls, hasLength(1), reason: 'the stopped call must not run');
-  });
-
-  test('a model closed while it loads does not hand out a session', () async {
-    _fakeMediaPipe();
-    final gate = Completer<void>();
-    final model = _model(
-      supportImage: false,
-      resolver: _GatedResolver(gate.future),
-    );
-
-    final creating = model.createSession();
-    final outcome = expectLater(creating, throwsStateError);
-    await Future<void>.delayed(const Duration(milliseconds: 10));
-    // close() waits for the load it finds in flight.
-    final closing = model.close();
-    gate.complete();
-    await closing;
-    await outcome;
-  });
-
-  test(
-    'audio is sent as its own bytes, not the whole buffer behind them',
-    () async {
-      final fake = _fakeMediaPipe();
-      final model = _model(
-        supportImage: false,
-        supportAudio: true,
-        resolver: _BlobResolver(),
-      );
-      final buffer = Uint8List.fromList(List.generate(16, (i) => i));
-      final view = Uint8List.sublistView(buffer, 4, 12);
-
-      final session = await model.createSession();
-      await session.addQueryChunk(
-        Message(text: 'What is said?', isUser: true, audioBytes: view),
-      );
-      await session.getResponse();
-
-      final parts = (fake.prompts.single as JSArray<JSAny>).toDart;
-      final audio = parts
-          .whereType<JSObject>()
-          .where((part) => part.has('audioSource'))
-          .single
-          .getProperty<JSUint8Array>('audioSource'.toJS)
-          .toDart;
-      expect(audio, view);
-    },
-  );
-
   test('a model created without supportImage gives the LlmInference no '
       'maxNumImages', () async {
-    final fake = _fakeMediaPipe();
-    final model = _model(supportImage: false, resolver: _BlobResolver());
+    final fake = fakeMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
 
     await model.createSession();
 

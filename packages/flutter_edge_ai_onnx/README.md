@@ -207,6 +207,17 @@ For host tests / local dev, `FLUTTER_GEMMA_ORT_GENAI_LIBS` (a directory
 containing both platform-default-named dylibs) bypasses the CodeAsset bundle
 entirely — see `test/onnx_generation_host_smoke_test.dart`.
 
+### Telemetry is off, and the Windows runtime
+
+ORT-GenAI 0.17.0 ships Microsoft's usage telemetry on every native host, on by
+default (0.14.0 had none). `GenAiFfiClient` sets `ORT_DISABLE_TELEMETRY=1` in
+the process before it opens the library, and keeps a value your app already
+set; to turn it on, set `ORT_DISABLE_TELEMETRY=0` before the first model loads.
+
+The 0.17.0 Windows DLLs import `MSVCP140_ATOMIC_WAIT.dll`, which the Visual C++
+2015-2022 redistributable provides. An app that ships the CRT app-local has to
+include that file too.
+
 ### On web (Transformers.js)
 
 On Web, `OnnxEngine` doesn't drive native ORT-GenAI at all — it runs the model

@@ -106,6 +106,7 @@ ai-edge-gallery/
 # fetch from there at `pub get` time. Not tracked in git to keep clones
 # lean (each set is ~350 MB across all platforms).
 **/native/litert_lm/prebuilt/
+**/native/onnx_genai/prebuilt/
 **/native/sqlite_vec/prebuilt/
 
 # Local chromedriver (puppeteer browsers install) — used by web integration tests

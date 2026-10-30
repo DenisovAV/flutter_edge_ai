@@ -70,8 +70,8 @@ enum SttModel {
     needsAuth: false,
     // Same transcript as the f32 file on a Galaxy S23, ~1.5 s per 5 s window on
     // the CPU and a third of its memory (#747). CPU only: on Adreno 740 the int8
-    // files did not compile on the GPU without constant tensor sharing
-    // (LiteRT-LM#3685).
+    // files did not compile on the GPU without constant tensor sharing, which
+    // speech leaves off.
     isSupported: true,
   ),
 

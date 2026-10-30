@@ -171,7 +171,8 @@ window, steady state over repeated transcriptions
 
 TTS is opt-in the same way: pass `LiteRtTtsBackend()` to `initialize()`, then
 install a voice and synthesize. **Matcha** (`litert-community/Matcha-TTS`) runs a
-4-graph LiteRT pipeline (G2P, text-encoder → CFM decoder → HiFi-GAN vocoder) fully
+3-graph LiteRT pipeline (text-encoder → CFM decoder → HiFi-GAN vocoder), with a
+neural G2P graph for words missing from its dictionary, fully
 on-device and returns 16-bit PCM at 22050 Hz.
 
 ```dart

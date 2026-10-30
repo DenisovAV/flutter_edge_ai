@@ -17,8 +17,9 @@ native bundle and exposes the LiteRT C API bindings (`LiteRtBindings`) used here
 - **STT** works end-to-end for **moonshine-tiny** (raw-PCM seq2seq), **Whisper**
   and **Parakeet** (log-mel) via `LiteRtSttBackend`.
 - **TTS** works end-to-end for **Matcha** (`litert-community/Matcha-TTS`, 22050 Hz
-  — a 4-graph LiteRT pipeline: G2P, encoder → CFM decoder → HiFi-GAN vocoder,
-  producing 16-bit PCM), **Qwen3-TTS** and **Inflect-Nano-v2** (both 24000 Hz) via
+  — a 3-graph LiteRT pipeline: encoder → CFM decoder → HiFi-GAN vocoder,
+  producing 16-bit PCM, plus a neural G2P graph for words missing from its
+  dictionary), **Qwen3-TTS** and **Inflect-Nano-v2** (both 24000 Hz) via
   `LiteRtTtsBackend`; `kokoro`/`supertonic` are follow-ons.
 
 Both backends are pure factories (`canHandle` always `true`) — the *model* is

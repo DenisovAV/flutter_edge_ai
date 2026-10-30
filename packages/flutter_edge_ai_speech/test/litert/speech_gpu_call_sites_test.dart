@@ -130,5 +130,16 @@ void main() {
     expect(_count(loop, r'return runGreedyDecode\('), 1);
     expect(_count(loop, r'final pick = greedyDecodeStep\('), 1);
     expect(_count(loop, r'return pick;'), 1);
+    // In that order: the pick, the unlock of the decoder output, the return.
+    // A return before the unlock would destroy a still-locked buffer.
+    final picked = loop.indexOf('final pick = greedyDecodeStep(');
+    final unlocked = loop.indexOf('.unlockTensorBuffer(outBufPtr.value)');
+    final returned = loop.indexOf('return pick;');
+    expect(picked, lessThan(unlocked));
+    expect(unlocked, lessThan(returned));
+    expect(
+      _count(loop.substring(picked, returned), r'\.unlockTensorBuffer\('),
+      1,
+    );
   });
 }

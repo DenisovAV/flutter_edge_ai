@@ -65,8 +65,8 @@ const int liteRtDelegatePrecisionFp32 = 2;
 /// type: 1`) when it was set together with precision fp32, texture weights,
 /// madvise and GPU weight conversion; the code path is a float32 embedding
 /// table shared as a constant (google-ai-edge/LiteRT-LM#3685). Without it the
-/// int8 files did not compile on Adreno 740 (moonshine-tiny, parakeet-ctc,
-/// status 3).
+/// int8 files did not compile on Adreno 740 (status 3): moonshine-tiny with no
+/// options and with `precision = 2` alone, parakeet-ctc with no options.
 const String sttGpuOptionsToml = 'precision = $liteRtDelegatePrecisionFp32\n';
 
 /// Identifier LiteRT's GPU accelerator looks its options up by.
@@ -151,8 +151,8 @@ String compiledModelFailureMessage(String path, int accelerator, int status) =>
     '${acceleratorName(accelerator)} (status=$status)';
 
 /// Throws a [StateError] ([compiledModelFailureMessage]) unless [status] is
-/// LiteRT's `kLiteRtStatusOk` (0). LiteRT's error statuses are positive (3 for
-/// an int8 file on the GPU, 504 for Matcha's G2P graph on Adreno, #747).
+/// LiteRT's `kLiteRtStatusOk` (0). On Adreno 740's GPU (#747) an int8 file
+/// failed with 3 and Matcha's G2P graph with 504.
 void checkCompiledModelStatus(
   int status, {
   required String path,

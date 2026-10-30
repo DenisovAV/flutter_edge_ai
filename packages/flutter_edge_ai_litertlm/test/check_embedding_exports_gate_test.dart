@@ -155,6 +155,28 @@ void main() {
       expect(out, contains('names no platform'));
     });
 
+    for (final label in [
+      'litertlm-ios_arm64',
+      'litertlm-ios_sim_arm64',
+      'litertlm-macos_arm64',
+    ]) {
+      test('$label: libLiteRtLm.dylib exporting all of them passes', () async {
+        final (rc, out) = await _runGate(label, {
+          'libLiteRtLm.dylib': 'litert',
+        });
+        expect(rc, 0, reason: out);
+        expect(out, contains('libLiteRtLm.dylib exports all'));
+      });
+
+      test('$label: libLiteRtLm.dylib missing one fails', () async {
+        final (rc, out) = await _runGate(label, {
+          'libLiteRtLm.dylib': 'litert:LiteRtAddOpaqueOptions',
+        });
+        expect(rc, 1, reason: out);
+        expect(out, contains('LiteRtAddOpaqueOptions'));
+      });
+    }
+
     test('Android: libLiteRtLm exporting all of them passes', () async {
       final (rc, out) = await _runGate('litertlm-android_arm64', {
         'libLiteRtLm.so': 'litert',

@@ -212,23 +212,22 @@ int? greedyDecodeStep(
 
 /// The greedy seq2seq decode loop over [pick], which runs one decoder step on
 /// the tokens so far and returns [greedyDecodeStep]'s result once that step's
-/// buffers are released. Starts from [promptIds]; each pick goes through
-/// [acceptDecodedToken] (step 0 is the first token after the prompt) and is
-/// appended; stops at [eosId] or at [maxTokens] tokens, prompt included.
+/// buffers are released. Starts from [promptIds]. The step number, counted
+/// from 0 at the first token after the prompt, is computed here only and
+/// handed to [pick] and to [acceptDecodedToken]; each pick is appended. Stops
+/// at [eosId] or at [maxTokens] tokens, prompt included.
 ///
 /// Pure: [SttCore]'s decoder passes the native step, tests pass a script.
 List<int> runGreedyDecode({
   required List<int> promptIds,
   required int maxTokens,
   required int eosId,
-  required int? Function(List<int> generated) pick,
+  required int? Function(List<int> generated, int step) pick,
 }) {
   final generated = List<int>.from(promptIds);
   while (true) {
-    final bestId = acceptDecodedToken(
-      pick(generated),
-      step: generated.length - promptIds.length,
-    );
+    final step = generated.length - promptIds.length;
+    final bestId = acceptDecodedToken(pick(generated, step), step: step);
     generated.add(bestId);
     if (shouldStopDecoding(bestId, generated.length, maxTokens, eosId: eosId)) {
       if (bestId != eosId && generated.length >= maxTokens) {
@@ -814,7 +813,7 @@ class SttCore {
         promptIds: promptIds,
         maxTokens: maxTokens,
         eosId: _eosId,
-        pick: (generated) {
+        pick: (generated, step) {
           final len = generated.length;
 
           // decode_args_1: i32[1, maxTokens] — token ids so far, right-padded
@@ -929,7 +928,7 @@ class SttCore {
               );
               final pick = greedyDecodeStep(
                 rowLogits,
-                step: len - promptIds.length,
+                step: step,
                 suppression: _resolvedSuppression,
               );
               _bindings

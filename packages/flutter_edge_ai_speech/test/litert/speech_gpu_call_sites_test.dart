@@ -22,11 +22,20 @@ int _count(String source, String pattern) =>
 int _at(String source, String pattern) =>
     RegExp(pattern).firstMatch(source)?.start ?? -1;
 
+/// Where [pattern] first matches in [source]; fails, naming [pattern], when
+/// it does not match at all.
+int _find(String source, String pattern) {
+  final at = _at(source, pattern);
+  expect(at, isNonNegative, reason: 'anchor $pattern not found');
+  return at;
+}
+
 /// [source] from its one match of [start] up to the first match of [end]
-/// after it; fails when [start] does not match exactly once.
+/// after it; fails when [start] does not match exactly once or [end] does
+/// not follow it.
 String _slice(String source, String start, String end) {
   expect(_count(source, start), 1, reason: 'anchor $start');
-  final rest = source.substring(_at(source, start));
+  final rest = source.substring(_find(source, start));
   final to = _at(rest, end);
   expect(to, isPositive, reason: 'anchor $end');
   return rest.substring(0, to);
@@ -34,10 +43,14 @@ String _slice(String source, String start, String end) {
 
 /// [source] without its `//` comments (doc comments included), so a
 /// commented-out copy of a line never satisfies a check. A `//` counts as a
-/// comment at the start of a line or after a space or tab: the `//` of
-/// `https://` in a string does not.
-String _withoutComments(String source) =>
-    source.replaceAll(RegExp(r'(^|[ \t])//.*$', multiLine: true), r'$1');
+/// comment at the start of a line or after a space or tab, and only the
+/// comment goes: the indentation or the code before it stays. The `//` of
+/// `https://` in a string is not a comment. `/* */` comments are not
+/// stripped.
+String _withoutComments(String source) => source.replaceAllMapped(
+  RegExp(r'(^|[ \t])//.*$', multiLine: true),
+  (m) => m[1]!,
+);
 
 void main() {
   // Keyed with '/' on every host and read with '\n' line ends and no
@@ -99,7 +112,9 @@ void main() {
       1,
     );
     final graph = sources['lib/src/litert/litert_graph.dart']!;
-    final load = graph.substring(graph.indexOf('LoadedGraph loadLiteRtGraph('));
+    final load = graph.substring(
+      _find(graph, r'LoadedGraph loadLiteRtGraph\('),
+    );
     expect(
       _count(load, r'configureSpeechAccelerator\([^;]*fp32OnGpu: false,'),
       1,
@@ -163,14 +178,14 @@ void main() {
     );
   });
 
-  test('SttCore hands the decoder its own EOS, suppression, mask and sizes', () {
+  test('SttCore hands the decoder its EOS, suppression, mask and sizes', () {
     final stt = sources['lib/src/litert/stt_core.dart']!;
     final call = _slice(
       stt,
       r'return runGreedyDecode\(',
       r'Float32List _readDecoderRow\(',
     );
-    final args = call.substring(0, _at(call, r'decoderRow:'));
+    final args = call.substring(0, _find(call, r'decoderRow:'));
     // Whisper's EOS is not moonshine's 2, and its suppression is what blocks
     // timestamps and step-zero tokens; a literal here breaks one of them.
     expect(_count(args, r'eosId:\s*_eosId,'), 1);
@@ -182,6 +197,8 @@ void main() {
     expect(_count(mask, r'maxTokens:\s*maxTokens,'), 1);
     expect(_count(mask, r'len:\s*len,'), 1);
     expect(_count(mask, r'convention:\s*_profile\.decoderMaskConvention,'), 1);
+    // `len` is the token count so far: the mask and the row read both use it.
+    expect(_count(call, r'final len = generated\.length;'), 1);
     // The row of the token just written, read with the decoder's own sizes.
     final read = _slice(call, r'return _readDecoderRow\(', r'\);');
     expect(_count(read, r'outBufPtr\.value,'), 1);
@@ -227,17 +244,52 @@ void main() {
     expect(
       _count(
         read,
-        r'\.lockTensorBuffer\([^;]*kLiteRtTensorBufferLockModeRead[^;]*\)\s*\.check\(',
+        r'\.lockTensorBuffer\([^;]*kLiteRtTensorBufferLockModeRead\b[^;]*\)'
+        r'\s*\.check\(',
       ),
       1,
     );
     expect(
       _count(
         read,
-        r'copied\s*=\s*logits\.sublist\(\s*row \* vocabSize,\s*\(row \+ 1\) \* vocabSize,?\s*\);',
+        r'copied\s*=\s*logits\.sublist\('
+        r'\s*row \* vocabSize,\s*\(row \+ 1\) \* vocabSize,?\s*\);',
       ),
       1,
     );
     expect(_count(read, r'\}\s*catch\s*\(_\)\s*\{'), 1);
+  });
+
+  group('_withoutComments', () {
+    test('drops whole-line and trailing comments, keeps the code', () {
+      expect(
+        _withoutComments('a = b; // note\n  // whole line\n  c();\n'),
+        'a = b; \n  \n  c();\n',
+      );
+    });
+
+    test('drops doc comments', () {
+      expect(_withoutComments('/// Doc.\nint x = 1;'), '\nint x = 1;');
+    });
+
+    test('keeps a URL in a string', () {
+      const line = "final u = 'https://huggingface.co/x';";
+      expect(_withoutComments(line), line);
+    });
+
+    test('a comment line between two chained calls leaves them adjacent', () {
+      // A comment kept as a literal `\$1` would break this match.
+      final stripped = _withoutComments(
+        '_bindings\n'
+        '    .unlockTensorBuffer(buffer)\n'
+        '    // Checked: a failed unlock is an error.\n'
+        "    .check('x');\n",
+      );
+      expect(stripped, isNot(contains(r'$1')));
+      expect(
+        _count(stripped, r'\.unlockTensorBuffer\(buffer\)\s*\.check\('),
+        1,
+      );
+    });
   });
 }

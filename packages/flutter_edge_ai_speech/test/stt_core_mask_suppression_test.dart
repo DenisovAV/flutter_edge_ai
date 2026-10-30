@@ -5,6 +5,7 @@ import 'package:flutter_edge_ai_speech/src/litert/stt_core.dart'
         acceptDecodedToken,
         applySuppression,
         greedyDecodeStep,
+        runGreedyDecode,
         writeDecoderMask;
 import 'package:flutter_edge_ai_speech/src/model/stt_model_profile.dart'
     show SttDecoderMaskConvention;
@@ -170,6 +171,81 @@ void main() {
         ),
         throwsStateError,
       );
+    });
+  });
+
+  group('runGreedyDecode (#747)', () {
+    test('decodes several steps from the prompt to EOS', () {
+      final seen = <List<int>>[];
+      final script = [5, 6, 2];
+      final ids = runGreedyDecode(
+        promptIds: const [1],
+        maxTokens: 8,
+        eosId: 2,
+        pick: (generated) {
+          seen.add(List.of(generated));
+          return script[seen.length - 1];
+        },
+      );
+      expect(ids, [1, 5, 6, 2]);
+      // Each step sees every token so far.
+      expect(seen, [
+        [1],
+        [1, 5],
+        [1, 5, 6],
+      ]);
+    });
+
+    test('a real step through greedyDecodeStep picks the argmax each time', () {
+      // Rows whose winners are 5, then 6, then EOS (2).
+      Float32List row(int winner) => Float32List(8)..[winner] = 1.0;
+      final rows = [row(5), row(6), row(2)];
+      var step = 0;
+      final ids = runGreedyDecode(
+        promptIds: const [1, 3],
+        maxTokens: 8,
+        eosId: 2,
+        pick: (generated) => greedyDecodeStep(
+          rows[step++],
+          step: generated.length - 2,
+          suppression: null,
+        ),
+      );
+      expect(ids, [1, 3, 5, 6, 2]);
+    });
+
+    test('a NaN at the second step throws, naming that step', () {
+      final rows = [
+        Float32List(4)..[3] = 1.0,
+        Float32List.fromList([0.1, double.nan, 0.2, 0.3]),
+      ];
+      var step = 0;
+      expect(
+        () => runGreedyDecode(
+          promptIds: const [1],
+          maxTokens: 8,
+          eosId: 2,
+          pick: (_) =>
+              greedyDecodeStep(rows[step++], step: step, suppression: null),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('NaN logits at step 1'),
+          ),
+        ),
+      );
+    });
+
+    test('stops at maxTokens, prompt included, without EOS', () {
+      final ids = runGreedyDecode(
+        promptIds: const [1, 4],
+        maxTokens: 5,
+        eosId: 2,
+        pick: (_) => 7,
+      );
+      expect(ids, [1, 4, 7, 7, 7]);
     });
   });
 }

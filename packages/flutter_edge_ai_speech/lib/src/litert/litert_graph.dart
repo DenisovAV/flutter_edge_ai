@@ -49,9 +49,10 @@ const int liteRtDelegatePrecisionFp32 = 2;
 ///
 /// fp32. With no options (the accelerator's default, fp16) moonshine-tiny f32
 /// returned NaN logits at its first decode step on a Galaxy S23 (Adreno 740);
-/// with this payload it transcribed the same text as on the CPU (#747).
-/// Attaching it also moved the accelerator's logged `kernel_batch_size` from 0
-/// to -1, so whether precision alone cures the NaN is not isolated.
+/// with this payload it transcribed the same text as on the CPU (#747). The
+/// precision is what cures it: every payload tried moved the accelerator's
+/// logged `kernel_batch_size` from 0 to -1, and one without precision
+/// (`enable_infinite_float_capping` alone) still gave NaN.
 /// whisper-tiny f32 gave the same text both ways, with no NaN, about 6% slower
 /// with the payload. Parakeet f32 was killed by the system during its load at
 /// the default and at fp32; with fp16, madvise and GPU weight conversion it
@@ -64,7 +65,8 @@ const int liteRtDelegatePrecisionFp32 = 2;
 /// type: 1`) when it was set together with precision fp32, texture weights,
 /// madvise and GPU weight conversion; the code path is a float32 embedding
 /// table shared as a constant (google-ai-edge/LiteRT-LM#3685). Without it the
-/// int8 files do not compile on the GPU.
+/// int8 files did not compile on Adreno 740 (moonshine-tiny, parakeet-ctc,
+/// status 3).
 const String sttGpuOptionsToml = 'precision = $liteRtDelegatePrecisionFp32\n';
 
 /// Identifier LiteRT's GPU accelerator looks its options up by.
@@ -158,6 +160,25 @@ void checkCompiledModelStatus(
 }) {
   if (status == 0) return;
   throw StateError(compiledModelFailureMessage(path, accelerator, status));
+}
+
+/// The compiled model `LiteRtCreateCompiledModel` wrote to [out], given the
+/// [status] it returned. [out] is freed on every path, once; a failed status
+/// throws ([checkCompiledModelStatus]) without reading [out]. [free] is
+/// [calloc]'s `free` (tests pass a recorder over it).
+LiteRtCompiledModel takeCompiledModel(
+  Pointer<LiteRtCompiledModel> out,
+  int status, {
+  required String path,
+  required int accelerator,
+  @visibleForTesting void Function(Pointer<NativeType>)? free,
+}) {
+  try {
+    checkCompiledModelStatus(status, path: path, accelerator: accelerator);
+    return out.value;
+  } finally {
+    (free ?? calloc.free)(out);
+  }
 }
 
 /// Sets [accelerator] on [options] and, when [fp32OnGpu] is true and it is the
@@ -297,14 +318,12 @@ LoadedGraph loadLiteRtGraph(
       options,
       compiledPtr,
     );
-    try {
-      checkCompiledModelStatus(status, path: path, accelerator: accelerator);
-    } catch (_) {
-      calloc.free(compiledPtr);
-      rethrow;
-    }
-    compiled = compiledPtr.value;
-    calloc.free(compiledPtr);
+    compiled = takeCompiledModel(
+      compiledPtr,
+      status,
+      path: path,
+      accelerator: accelerator,
+    );
 
     return LoadedGraph(model, options, compiled);
   } catch (_) {

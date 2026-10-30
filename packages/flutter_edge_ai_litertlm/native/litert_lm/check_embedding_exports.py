@@ -318,18 +318,30 @@ def find_main_library(bundle):
     return found
 
 
-def find_litert_c_library(bundle, label, main_library):
-    """The libraries LiteRtBindings opens on the bundle's platform, read from
-    [label]: every libLiteRt.so / LiteRt.dll in it on Linux / Windows (exactly
-    one is expected), the main library elsewhere (Apple, Android)."""
-    for platform, name in LITERT_C_LIBRARY.items():
-        if f"-{platform}" in label or label.startswith(platform):
-            found = []
-            for root, _, files in os.walk(bundle):
-                if name in files:
-                    found.append(os.path.join(root, name))
-            return name, found
-    return os.path.basename(main_library), [main_library]
+# Platforms a bundle label (litertlm-<platform>_<arch>) can name.
+KNOWN_PLATFORMS = ("android", "ios", "macos", "linux", "windows")
+
+
+def bundle_platform(label):
+    """The platform in a bundle label such as litertlm-linux_x86_64, or None
+    when the label names none of KNOWN_PLATFORMS."""
+    name = label.split("litertlm-", 1)[-1]
+    platform = name.split("_", 1)[0]
+    return platform if platform in KNOWN_PLATFORMS else None
+
+
+def find_litert_c_library(bundle, platform, main_library):
+    """The libraries LiteRtBindings opens on [platform]: every libLiteRt.so /
+    LiteRt.dll in the bundle on Linux / Windows (exactly one is expected), the
+    main library elsewhere (Apple, Android)."""
+    name = LITERT_C_LIBRARY.get(platform)
+    if name is None:
+        return os.path.basename(main_library), [main_library]
+    found = []
+    for root, _, files in os.walk(bundle):
+        if name in files:
+            found.append(os.path.join(root, name))
+    return name, found
 
 
 def main(argv):
@@ -369,8 +381,16 @@ def main(argv):
         else:
             print(f"  [ok]   {label} — {os.path.basename(library)} exports all "
                   f"{len(wanted)} {what}")
+    platform = bundle_platform(label)
+    if platform is None:
+        # Which library LiteRtBindings opens depends on the platform; a label
+        # that names none must not pass by checking the wrong one.
+        print(f"  [FAIL] {label} — the label names no platform "
+              f"({', '.join(KNOWN_PLATFORMS)}), so the library LiteRtBindings "
+              f"opens is unknown")
+        return 1
     litert_name, litert_libraries = find_litert_c_library(
-        bundle, label, library)
+        bundle, platform, library)
     if len(litert_libraries) != 1:
         print(f"  [FAIL] {label} — expected one {litert_name}, the library "
               f"LiteRtBindings opens there, found {len(litert_libraries)}: "

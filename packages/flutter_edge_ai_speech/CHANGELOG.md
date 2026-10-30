@@ -1,6 +1,6 @@
 ## Unreleased
 - Speech-to-text requests fp32 on the GPU: moonshine no longer returns NaN on Adreno (#747).
-- Requires the next flutter_edge_ai_litertlm (its opaque-options bindings).
+- Require the next `flutter_edge_ai_litertlm` (binds its opaque-options calls).
 
 ## 0.5.12
 - Docs: on macOS with Swift Package Manager on, no Podfile block from litertlm 1.19.0 (#689).

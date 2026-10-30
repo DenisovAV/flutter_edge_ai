@@ -53,8 +53,8 @@ enum SttModel {
     size: '2.35GB',
     sttModelType: SttModelType.parakeet,
     needsAuth: false,
-    // Desktop: 2.35 GB f32 — on an 8 GB phone its GPU load is killed by the
-    // system, use [parakeetCtcInt8] there. Runs the CTC path (NeMo mel +
+    // Desktop: 2.35 GB f32 — on a Galaxy S23 (8 GB) the system killed its GPU
+    // load; use [parakeetCtcInt8] on a phone. Runs the CTC path (NeMo mel +
     // greedy CTC decode).
     isSupported: true,
   ),
@@ -68,9 +68,10 @@ enum SttModel {
     size: '596MB',
     sttModelType: SttModelType.parakeet,
     needsAuth: false,
-    // Same transcript as the f32 file on a Galaxy S23, ~1.4 s per 5 s window on
-    // the CPU and a third of its memory (#747). CPU only: the int8 files do not
-    // compile on the GPU without constant tensor sharing (LiteRT-LM#3685).
+    // Same transcript as the f32 file on a Galaxy S23, ~1.5 s per 5 s window on
+    // the CPU and a third of its memory (#747). CPU only: on Adreno 740 the int8
+    // files did not compile on the GPU without constant tensor sharing
+    // (LiteRT-LM#3685).
     isSupported: true,
   ),
 

@@ -143,11 +143,11 @@ window, steady state over repeated transcriptions
 |------|---------|------------|------------------|
 | `moonshine_tiny_5s_f32.tflite` | GPU | ~0.25 s | ~0.44–0.68 GB |
 | `moonshine_tiny_5s_f32.tflite` | CPU | ~0.8 s | ~0.36 GB |
-| `parakeet_ctc_0.6b_5s_i8.tflite` | CPU | ~1.4 s | ~0.84 GB |
+| `parakeet_ctc_0.6b_5s_i8.tflite` | CPU | ~1.5 s | ~0.83 GB |
 | `parakeet_ctc_0.6b_5s_f32.tflite` | CPU | ~2.4 s | ~2.4 GB |
 | `parakeet_ctc_0.6b_5s_f32.tflite` | GPU | does not load | — |
 
-- Parakeet f32 does not load on the GPU of an 8 GB phone: the system kills the
+- Parakeet f32 does not load on the GPU of that phone: the system kills the
   app during `getActiveStt`, before the first transcription. Use the int8 file
   from the same repository, `parakeet_ctc_0.6b_5s_i8.tflite`, on the CPU: it
   transcribed the same text as the f32 file.
@@ -156,23 +156,22 @@ window, steady state over repeated transcriptions
   logits at its first decode step on Adreno 740; with the fp32 request it
   transcribes the same text as on the CPU, about three times faster. Whisper
   tiny gave the same text in both modes, with no NaN, about 6% slower with the
-  request. Which of the request's effects cures the NaN is not isolated (it
-  also changes the accelerator's kernel batch size), and it is measured on
-  Adreno 740 only, not on Mali, Metal or WebGPU.
-- The int8 (`_i8`) files do not compile on the GPU without constant tensor
-  sharing, which speech leaves off: with it set, moonshine f32 aborted inside
-  LiteRT
+  request. Measured on Adreno 740 only, not on Mali, Metal or WebGPU.
+- On Adreno 740 the int8 (`_i8`) files did not compile on the GPU without
+  constant tensor sharing, which speech leaves off: set together with four
+  other GPU options, it made moonshine f32 abort inside LiteRT
   ([LiteRT-LM#3685](https://github.com/google-ai-edge/LiteRT-LM/issues/3685)).
   Their GPU load fails with an error naming the file; run them on the CPU.
 - Matcha TTS does not load on the GPU of that phone: its G2P graph
   (`dp_g2p_matcha_fp16.tflite`) fails to compile there (LiteRT status 504), as
-  it did before #747. Run Matcha on the CPU (~7.6 s for one sentence).
+  it did before #747. Run Matcha on the CPU: about 7.6–8.0 s for a sentence of
+  3.4 s.
 
 ## Text-to-speech (Matcha)
 
 TTS is opt-in the same way: pass `LiteRtTtsBackend()` to `initialize()`, then
 install a voice and synthesize. **Matcha** (`litert-community/Matcha-TTS`) runs a
-3-graph LiteRT pipeline (text-encoder → CFM decoder → HiFi-GAN vocoder) fully
+4-graph LiteRT pipeline (G2P, text-encoder → CFM decoder → HiFi-GAN vocoder) fully
 on-device and returns 16-bit PCM at 22050 Hz.
 
 ```dart

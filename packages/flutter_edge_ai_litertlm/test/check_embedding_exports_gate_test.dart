@@ -17,8 +17,10 @@ import 'package:flutter_test/flutter_test.dart';
 const _gate = 'native/litert_lm/check_embedding_exports.py';
 
 /// Imports the gate, gives each fixture library the export table named in
-/// argv[3] (a JSON map of file name -> "all" or "all-but:<symbol>"), runs its
-/// main on argv[1] with label argv[2] and prints the exit code last.
+/// argv[3] (a JSON map of file name to a table: `main` is every symbol the
+/// gate wants from the main library, `litert` adds the LiteRT C functions,
+/// and a `:SYMBOL` suffix removes that one), runs its main on argv[1] with
+/// label argv[2] and prints the exit code last.
 const _driver = r'''
 import importlib.util, json, os, sys
 spec = importlib.util.spec_from_file_location("gate", sys.argv[4])
@@ -75,7 +77,15 @@ bool _hasPython() {
 }
 
 void main() {
-  final skip = _hasPython() ? false : 'python3 is not on PATH';
+  // Skipped only off CI: on CI a missing python3 must fail, not hide the gate.
+  final hasPython = _hasPython();
+  final skip = hasPython || Platform.environment.containsKey('CI')
+      ? false
+      : 'python3 is not on PATH';
+
+  test('python3 is available where the gate must run', () {
+    expect(hasPython, isTrue, reason: 'CI must run the release-gate tests');
+  }, skip: skip);
 
   // Main-library symbols only ("main"), or those plus the LiteRT C functions
   // LiteRtBindings looks up ("litert"); ":<symbol>" removes one.
@@ -117,6 +127,32 @@ void main() {
       });
       expect(rc, 1, reason: out);
       expect(out, contains('LiteRtDestroyOpaqueOptions'));
+    });
+
+    test('Windows: LiteRt.dll exporting all of them passes', () async {
+      final (rc, out) = await _runGate('litertlm-windows_x86_64', {
+        'LiteRtLm.dll': 'main',
+        'LiteRt.dll': 'litert',
+      });
+      expect(rc, 0, reason: out);
+      expect(out, contains('LiteRt.dll exports all'));
+    });
+
+    test('the main library missing one of its own functions fails', () async {
+      final (rc, out) = await _runGate('litertlm-linux_x86_64', {
+        'libLiteRtLm.so': 'main:litert_lm_clear_last_error',
+        'libLiteRt.so': 'litert',
+      });
+      expect(rc, 1, reason: out);
+      expect(out, contains('litert_lm_clear_last_error'));
+    });
+
+    test('a label that names no platform is refused', () async {
+      final (rc, out) = await _runGate('bundle-x', {
+        'libLiteRtLm.so': 'litert',
+      });
+      expect(rc, 1, reason: out);
+      expect(out, contains('names no platform'));
     });
 
     test('Android: libLiteRtLm exporting all of them passes', () async {

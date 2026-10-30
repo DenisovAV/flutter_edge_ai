@@ -53,7 +53,7 @@ import '../tokenizer/stt_special_tokens.dart'
     show ResolvedSuppression, SttSpecialTokenResolver;
 import '../tokenizer/stt_tokenizer.dart' show SttTokenizer;
 import 'litert_graph.dart'
-    show acceleratorFor, checkCompiledModelStatus, configureSpeechAccelerator;
+    show acceleratorFor, configureSpeechAccelerator, takeCompiledModel;
 import 'log_mel_frontend.dart' show computeLogMelSpectrogram, computeNemoLogMel;
 import 'mel_filter_assets.dart' show loadMelFilterAsset;
 
@@ -210,8 +210,41 @@ int? greedyDecodeStep(
   return argmax(rowLogits);
 }
 
+/// The greedy seq2seq decode loop over [pick], which runs one decoder step on
+/// the tokens so far and returns [greedyDecodeStep]'s result once that step's
+/// buffers are released. Starts from [promptIds]; each pick goes through
+/// [acceptDecodedToken] (step 0 is the first token after the prompt) and is
+/// appended; stops at [eosId] or at [maxTokens] tokens, prompt included.
+///
+/// Pure: [SttCore]'s decoder passes the native step, tests pass a script.
+List<int> runGreedyDecode({
+  required List<int> promptIds,
+  required int maxTokens,
+  required int eosId,
+  required int? Function(List<int> generated) pick,
+}) {
+  final generated = List<int>.from(promptIds);
+  while (true) {
+    final bestId = acceptDecodedToken(
+      pick(generated),
+      step: generated.length - promptIds.length,
+    );
+    generated.add(bestId);
+    if (shouldStopDecoding(bestId, generated.length, maxTokens, eosId: eosId)) {
+      if (bestId != eosId && generated.length >= maxTokens) {
+        edgeAiLog(
+          '[SttCore] decode hit the $maxTokens-token cap without EOS — '
+          'transcript may be truncated.',
+        );
+      }
+      return generated;
+    }
+  }
+}
+
 /// The token a seq2seq decode step picked: [next] from [greedyDecodeStep], or
-/// a [StateError] when it is null (the row held a NaN). [step] names the step.
+/// a [StateError] when it is null (the row held a NaN). [step] names the
+/// step, counted from 0 at the first token after the decoder prompt.
 ///
 /// Called after the step's tensor buffers are released, so the error never
 /// leaves a buffer locked.
@@ -470,18 +503,12 @@ class SttCore {
         options,
         compiledPtr,
       );
-      try {
-        checkCompiledModelStatus(
-          status,
-          path: modelPath,
-          accelerator: acceleratorFor(backend),
-        );
-      } catch (_) {
-        calloc.free(compiledPtr);
-        rethrow;
-      }
-      compiled = compiledPtr.value;
-      calloc.free(compiledPtr);
+      compiled = takeCompiledModel(
+        compiledPtr,
+        status,
+        path: modelPath,
+        accelerator: acceleratorFor(backend),
+      );
 
       edgeAiLog('[SttCore] loaded: backend=$backend');
 
@@ -783,164 +810,151 @@ class SttCore {
         maxTokens * maxTokens,
       );
 
-      final generated = List<int>.from(promptIds);
-      while (true) {
-        final len = generated.length;
+      return runGreedyDecode(
+        promptIds: promptIds,
+        maxTokens: maxTokens,
+        eosId: _eosId,
+        pick: (generated) {
+          final len = generated.length;
 
-        // decode_args_1: i32[1, maxTokens] — token ids so far, right-padded
-        // with 0.
-        for (var i = 0; i < maxTokens; i++) {
-          tokensHost[i] = i < len ? generated[i] : 0;
-        }
-
-        // decode_args_2: f32[1,1,maxTokens,maxTokens] — mask convention per
-        // `_profile.decoderMaskConvention` (moonshine: `paddingOnly`,
-        // verified recipe convention C; whisper: `causal`, per the Phase 0
-        // spike). Do not change moonshine's convention — see the recipe's
-        // "What NOT to do".
-        writeDecoderMask(
-          maskHost,
-          maxTokens: maxTokens,
-          len: len,
-          convention: _profile.decoderMaskConvention,
-        );
-
-        final tokType = LiteRtRankedTensorTypeView.calloc()
-          ..elementType = kLiteRtElementTypeInt32
-          ..rank = 2
-          ..setDimension(0, 1)
-          ..setDimension(1, maxTokens);
-        final maskType = LiteRtRankedTensorTypeView.calloc()
-          ..elementType = kLiteRtElementTypeFloat32
-          ..rank = 4
-          ..setDimension(0, 1)
-          ..setDimension(1, 1)
-          ..setDimension(2, maxTokens)
-          ..setDimension(3, maxTokens);
-        final outType = LiteRtRankedTensorTypeView.calloc()
-          ..elementType = kLiteRtElementTypeFloat32
-          ..rank = 3
-          ..setDimension(0, 1)
-          ..setDimension(1, maxTokens)
-          ..setDimension(2, vocabSize);
-
-        final tokBufPtr = calloc<LiteRtTensorBuffer>();
-        final maskBufPtr = calloc<LiteRtTensorBuffer>();
-        final outBufPtr = calloc<LiteRtTensorBuffer>();
-        var tokCreated = false, maskCreated = false, outCreated = false;
-        // The step's pick, or null for a NaN row; read once the buffers are
-        // released (acceptDecodedToken).
-        int? next;
-
-        try {
-          _bindings
-              .createTensorBufferFromHostMemory(
-                tokType.pointer,
-                tokensAlloc.aligned.cast(),
-                maxTokens * 4,
-                nullptr,
-                tokBufPtr,
-              )
-              .check('CreateTensorBufferFromHostMemory(decode tokens)');
-          tokCreated = true;
-
-          _bindings
-              .createTensorBufferFromHostMemory(
-                maskType.pointer,
-                maskAlloc.aligned.cast(),
-                maxTokens * maxTokens * 4,
-                nullptr,
-                maskBufPtr,
-              )
-              .check('CreateTensorBufferFromHostMemory(decode mask)');
-          maskCreated = true;
-
-          _bindings
-              .createTensorBufferFromHostMemory(
-                outType.pointer,
-                decodeOutAlloc.aligned.cast(),
-                maxTokens * vocabSize * 4,
-                nullptr,
-                outBufPtr,
-              )
-              .check('CreateTensorBufferFromHostMemory(decode out)');
-          outCreated = true;
-
-          // Exact input order: decode_args_0 (hidden), decode_args_1
-          // (tokens), decode_args_2 (mask).
-          final inputs = calloc<LiteRtTensorBuffer>(3);
-          inputs[0] = hiddenBufPtr.value;
-          inputs[1] = tokBufPtr.value;
-          inputs[2] = maskBufPtr.value;
-          try {
-            _bindings
-                .runCompiledModel(_compiledModel, 1, 3, inputs, 1, outBufPtr)
-                .check('LiteRtRunCompiledModel(decode)');
-          } finally {
-            calloc.free(inputs);
+          // decode_args_1: i32[1, maxTokens] — token ids so far, right-padded
+          // with 0.
+          for (var i = 0; i < maxTokens; i++) {
+            tokensHost[i] = i < len ? generated[i] : 0;
           }
 
-          final lockedPtr = calloc<Pointer<Void>>();
+          // decode_args_2: f32[1,1,maxTokens,maxTokens] — mask convention per
+          // `_profile.decoderMaskConvention` (moonshine: `paddingOnly`,
+          // verified recipe convention C; whisper: `causal`, per the Phase 0
+          // spike). Do not change moonshine's convention — see the recipe's
+          // "What NOT to do".
+          writeDecoderMask(
+            maskHost,
+            maxTokens: maxTokens,
+            len: len,
+            convention: _profile.decoderMaskConvention,
+          );
+
+          final tokType = LiteRtRankedTensorTypeView.calloc()
+            ..elementType = kLiteRtElementTypeInt32
+            ..rank = 2
+            ..setDimension(0, 1)
+            ..setDimension(1, maxTokens);
+          final maskType = LiteRtRankedTensorTypeView.calloc()
+            ..elementType = kLiteRtElementTypeFloat32
+            ..rank = 4
+            ..setDimension(0, 1)
+            ..setDimension(1, 1)
+            ..setDimension(2, maxTokens)
+            ..setDimension(3, maxTokens);
+          final outType = LiteRtRankedTensorTypeView.calloc()
+            ..elementType = kLiteRtElementTypeFloat32
+            ..rank = 3
+            ..setDimension(0, 1)
+            ..setDimension(1, maxTokens)
+            ..setDimension(2, vocabSize);
+
+          final tokBufPtr = calloc<LiteRtTensorBuffer>();
+          final maskBufPtr = calloc<LiteRtTensorBuffer>();
+          final outBufPtr = calloc<LiteRtTensorBuffer>();
+          var tokCreated = false, maskCreated = false, outCreated = false;
+
           try {
             _bindings
-                .lockTensorBuffer(
-                  outBufPtr.value,
-                  lockedPtr,
-                  kLiteRtTensorBufferLockModeRead,
+                .createTensorBufferFromHostMemory(
+                  tokType.pointer,
+                  tokensAlloc.aligned.cast(),
+                  maxTokens * 4,
+                  nullptr,
+                  tokBufPtr,
                 )
-                .check('LiteRtLockTensorBuffer(decode out)');
-            // Argmax is taken at tensor row `len - 1` (0-indexed) — the
-            // position of the token that was just written into the padded
-            // sequence, NOT row 0 and NOT the last row.
-            final row = len - 1;
-            final logits = lockedPtr.value.cast<Float>().asTypedList(
-              maxTokens * vocabSize,
-            );
-            final rowLogits = logits.sublist(
-              row * vocabSize,
-              (row + 1) * vocabSize,
-            );
-            next = greedyDecodeStep(
-              rowLogits,
-              step: len - promptIds.length,
-              suppression: _resolvedSuppression,
-            );
+                .check('CreateTensorBufferFromHostMemory(decode tokens)');
+            tokCreated = true;
+
             _bindings
-                .unlockTensorBuffer(outBufPtr.value)
-                .check('LiteRtUnlockTensorBuffer(decode out)');
+                .createTensorBufferFromHostMemory(
+                  maskType.pointer,
+                  maskAlloc.aligned.cast(),
+                  maxTokens * maxTokens * 4,
+                  nullptr,
+                  maskBufPtr,
+                )
+                .check('CreateTensorBufferFromHostMemory(decode mask)');
+            maskCreated = true;
+
+            _bindings
+                .createTensorBufferFromHostMemory(
+                  outType.pointer,
+                  decodeOutAlloc.aligned.cast(),
+                  maxTokens * vocabSize * 4,
+                  nullptr,
+                  outBufPtr,
+                )
+                .check('CreateTensorBufferFromHostMemory(decode out)');
+            outCreated = true;
+
+            // Exact input order: decode_args_0 (hidden), decode_args_1
+            // (tokens), decode_args_2 (mask).
+            final inputs = calloc<LiteRtTensorBuffer>(3);
+            inputs[0] = hiddenBufPtr.value;
+            inputs[1] = tokBufPtr.value;
+            inputs[2] = maskBufPtr.value;
+            try {
+              _bindings
+                  .runCompiledModel(_compiledModel, 1, 3, inputs, 1, outBufPtr)
+                  .check('LiteRtRunCompiledModel(decode)');
+            } finally {
+              calloc.free(inputs);
+            }
+
+            final lockedPtr = calloc<Pointer<Void>>();
+            try {
+              _bindings
+                  .lockTensorBuffer(
+                    outBufPtr.value,
+                    lockedPtr,
+                    kLiteRtTensorBufferLockModeRead,
+                  )
+                  .check('LiteRtLockTensorBuffer(decode out)');
+              // Argmax is taken at tensor row `len - 1` (0-indexed) — the
+              // position of the token that was just written into the padded
+              // sequence, NOT row 0 and NOT the last row.
+              final row = len - 1;
+              final logits = lockedPtr.value.cast<Float>().asTypedList(
+                maxTokens * vocabSize,
+              );
+              final rowLogits = logits.sublist(
+                row * vocabSize,
+                (row + 1) * vocabSize,
+              );
+              final pick = greedyDecodeStep(
+                rowLogits,
+                step: len - promptIds.length,
+                suppression: _resolvedSuppression,
+              );
+              _bindings
+                  .unlockTensorBuffer(outBufPtr.value)
+                  .check('LiteRtUnlockTensorBuffer(decode out)');
+              // Returned from inside the step, after its unlock; the finally
+              // blocks below release the step's buffers before
+              // runGreedyDecode reads it.
+              return pick;
+            } finally {
+              calloc.free(lockedPtr);
+            }
           } finally {
-            calloc.free(lockedPtr);
+            if (tokCreated) _bindings.destroyTensorBuffer(tokBufPtr.value);
+            if (maskCreated) _bindings.destroyTensorBuffer(maskBufPtr.value);
+            if (outCreated) _bindings.destroyTensorBuffer(outBufPtr.value);
+            calloc.free(tokBufPtr);
+            calloc.free(maskBufPtr);
+            calloc.free(outBufPtr);
+            tokType.free();
+            maskType.free();
+            outType.free();
           }
-        } finally {
-          if (tokCreated) _bindings.destroyTensorBuffer(tokBufPtr.value);
-          if (maskCreated) _bindings.destroyTensorBuffer(maskBufPtr.value);
-          if (outCreated) _bindings.destroyTensorBuffer(outBufPtr.value);
-          calloc.free(tokBufPtr);
-          calloc.free(maskBufPtr);
-          calloc.free(outBufPtr);
-          tokType.free();
-          maskType.free();
-          outType.free();
-        }
-
-        final bestId = acceptDecodedToken(next, step: len);
-
-        generated.add(bestId);
-        if (shouldStopDecoding(
-          bestId,
-          generated.length,
-          maxTokens,
-          eosId: _eosId,
-        )) {
-          if (bestId != _eosId && generated.length >= maxTokens) {
-            edgeAiLog(
-              '[SttCore] decode hit the $maxTokens-token cap without EOS — '
-              'transcript may be truncated.',
-            );
-          }
-          return generated;
-        }
-      }
+        },
+      );
     } finally {
       _bindings.destroyTensorBuffer(hiddenBufPtr.value);
       calloc.free(hiddenBufPtr);

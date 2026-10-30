@@ -6,8 +6,9 @@
 // configureSpeechAccelerator (which adds the fp32 GPU options for
 // speech-to-text only), never through
 // a direct setOptionsHardwareAccelerators call, every compile failure is
-// checked through checkCompiledModelStatus, and the seq2seq decoder picks each
-// token through greedyDecodeStep and acceptDecodedToken (whole-row NaN check).
+// taken through takeCompiledModel, and the seq2seq decoder is runGreedyDecode
+// over a native step that returns greedyDecodeStep's pick (whole-row NaN
+// check).
 @TestOn('vm')
 library;
 
@@ -95,16 +96,16 @@ void main() {
     );
   });
 
-  test('every compile status goes through checkCompiledModelStatus', () {
+  test('every compile result goes through takeCompiledModel', () {
     final checked = <String>[];
     for (final MapEntry(:key, :value) in sources.entries) {
       final compiles = _count(value, r'\.createCompiledModel\(');
       if (compiles == 0) continue;
       checked.add(key);
       expect(
-        _count(value, r'checkCompiledModelStatus\(\s*status,'),
+        _count(value, r'takeCompiledModel\(\s*compiledPtr,\s*status,'),
         compiles,
-        reason: '$key compiles a graph without checkCompiledModelStatus',
+        reason: '$key compiles a graph without takeCompiledModel',
       );
     }
     expect(
@@ -124,7 +125,10 @@ void main() {
     );
     expect(_count(loop, r'greedyDecodeStep\('), 1);
     expect(loop, isNot(contains('argmax(')));
-    // Its pick is the token, through the check that throws on a NaN row.
-    expect(_count(loop, r'acceptDecodedToken\(\s*next,'), 1);
+    // The loop is runGreedyDecode (tested on its own), and the native step
+    // returns greedyDecodeStep's pick straight from where it is computed.
+    expect(_count(loop, r'return runGreedyDecode\('), 1);
+    expect(_count(loop, r'final pick = greedyDecodeStep\('), 1);
+    expect(_count(loop, r'return pick;'), 1);
   });
 }

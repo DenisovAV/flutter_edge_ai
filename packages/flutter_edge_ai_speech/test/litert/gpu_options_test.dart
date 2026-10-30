@@ -9,6 +9,7 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai_litertlm/litert_bindings.dart'
     show
+        LiteRtCompiledModel,
         LiteRtOpaqueOptions,
         LiteRtOptions,
         kLiteRtHwAcceleratorCpu,
@@ -19,6 +20,7 @@ import 'package:flutter_edge_ai_speech/src/litert/litert_graph.dart'
         attachGpuOptions,
         checkCompiledModelStatus,
         compiledModelFailureMessage,
+        takeCompiledModel,
         configureSpeechAcceleratorWith,
         liteRtGpuOptionsIdentifier,
         sttGpuOptionsToml;
@@ -301,7 +303,7 @@ void main() {
     });
 
     // 3: an int8 file on the GPU; 504: Matcha's G2P graph on Adreno (#747).
-    for (final status in [3, 504, -1]) {
+    for (final status in [1, 2, 3, 504, -1]) {
       test('status $status throws the failure message', () {
         expect(
           () => checkCompiledModelStatus(
@@ -323,5 +325,55 @@ void main() {
         );
       });
     }
+  });
+
+  group('takeCompiledModel', () {
+    test('a compiled model is returned and its out pointer freed once', () {
+      final out = calloc<LiteRtCompiledModel>();
+      final compiled = Pointer<NativeType>.fromAddress(0xc0de).cast<Never>();
+      out.value = Pointer.fromAddress(0xc0de);
+      final freed = <int>[];
+      final result = takeCompiledModel(
+        out,
+        0,
+        path: '/models/a.tflite',
+        accelerator: kLiteRtHwAcceleratorGpu,
+        free: (p) {
+          freed.add(p.address);
+          calloc.free(p);
+        },
+      );
+      expect(result.address, compiled.address);
+      expect(freed, [out.address]);
+    });
+
+    test('a failed compile surfaces, with the pointer freed once', () {
+      final out = calloc<LiteRtCompiledModel>();
+      final freed = <int>[];
+      expect(
+        () => takeCompiledModel(
+          out,
+          3,
+          path: '/models/a.tflite',
+          accelerator: kLiteRtHwAcceleratorGpu,
+          free: (p) {
+            freed.add(p.address);
+            calloc.free(p);
+          },
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            compiledModelFailureMessage(
+              '/models/a.tflite',
+              kLiteRtHwAcceleratorGpu,
+              3,
+            ),
+          ),
+        ),
+      );
+      expect(freed, [out.address]);
+    });
   });
 }

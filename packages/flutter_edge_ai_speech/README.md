@@ -117,7 +117,8 @@ window, steady state over repeated transcriptions
   (`dp_g2p_matcha_fp16.tflite`, the fallback for words missing from its
   dictionary) is compiled when the voice loads and fails to compile there
   (LiteRT status 504), as it did before #747, so the load fails whatever the
-  text. Run Matcha on the CPU: about 7.6–8.0 s for a sentence of 3.4 s.
+  text. Run Matcha on the CPU: 6.9–8.0 s for a sentence of 3.4 s over three
+  runs.
 
 ### Speech-to-text output language (Whisper)
 

@@ -120,9 +120,11 @@ class FlutterEdgeAi {
   /// debug builds print according to this value. Default
   /// [EdgeAiLogLevel.info]. Use [EdgeAiLogLevel.verbose] to see model output
   /// and prompts while debugging. [EdgeAiLogLevel.none] silences everything
-  /// this level controls, those notices included. Not under it: a few
-  /// warnings about failures an app would not otherwise see (a model that
-  /// fails to close, for example) are printed in every build.
+  /// this level controls, those notices included.
+  ///
+  /// Some messages are printed in every build whatever logLevel says:
+  /// warnings about failures the app would not otherwise see, and a few
+  /// one-time notices (for example the sampler latch and hidden reasoning).
   ///
   /// Note: this is a process-global, per-isolate setting; set it once at
   /// startup. Background isolates snapshot the value at spawn time.

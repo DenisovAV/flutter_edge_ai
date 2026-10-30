@@ -200,20 +200,36 @@ class TtsInstallationBuilder {
 
     if (_catalogVariant case final variant?) {
       checkCatalogVariant(variant);
-      // The bundle's files come from the type; each must be one the catalog
-      // lists, checked before the installer takes the active voice out of
-      // service.
-      final listed = {for (final f in variant.files) f.installFilename};
+      // The bundle's files come from the type: the catalog must list
+      // exactly those, once each, checked before the installer takes the
+      // active voice out of service. A file the type does not install would
+      // be neither downloaded nor checked.
+      final listed = [for (final f in variant.files) f.installFilename];
+      final bundle = ttsModelType.manifest.toSet();
       final missing = [
-        for (final name in ttsModelType.manifest)
+        for (final name in bundle)
           if (!listed.contains(name)) name,
       ];
-      if (missing.isNotEmpty) {
+      final extra = {
+        for (final name in listed)
+          if (!bundle.contains(name)) name,
+      };
+      final twice = {
+        for (final name in listed)
+          if (listed.where((n) => n == name).length > 1) name,
+      };
+      final problems = [
+        if (missing.isNotEmpty) 'does not list ${missing.join(', ')}',
+        if (extra.isNotEmpty)
+          'lists ${extra.join(', ')}, which it does not install',
+        if (twice.isNotEmpty) 'lists ${twice.join(', ')} more than once',
+      ];
+      if (problems.isNotEmpty) {
         throw ArgumentError.value(
           variant,
           'variant',
-          '${variant.id} does not list ${missing.join(', ')}, which a '
-              '${ttsModelType.name} bundle installs',
+          '${variant.id} ${problems.join('; ')}: a ${ttsModelType.name} '
+              'bundle installs exactly its own files',
         );
       }
     }

@@ -275,6 +275,24 @@ void main() {
         'tiny-llm',
       );
     });
+
+    test('a built-in variant that lists a file is refused before any '
+        'download', () async {
+      await initialize();
+      await expectLater(
+        FlutterEdgeAi.installModelFromCatalog(
+          TestLlm('os', fileType: ModelFileType.builtIn),
+        ).install(),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => '${e.message}',
+            'message',
+            contains('nothing would install'),
+          ),
+        ),
+      );
+      expect(downloads.urls, isEmpty);
+    });
   });
 
   group('installEmbedder().fromCatalog', () {
@@ -693,6 +711,28 @@ void main() {
             .install(),
         throwsArgumentError,
       );
+      expect(downloads.urls, isEmpty);
+    });
+
+    test('a bundle file the type does not install, or one listed twice, is '
+        'refused before any download', () async {
+      await initialize();
+      for (final (what, variant) in [
+        ('an extra file', TestTts(extra: ['extra.bin'])),
+        ('a file twice', TestTts(repeatFirst: true)),
+      ]) {
+        await expectLater(
+          FlutterEdgeAi.installTts().fromCatalog(variant).install(),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => '${e.message}',
+              'message',
+              contains('installs exactly its own files'),
+            ),
+          ),
+          reason: what,
+        );
+      }
       expect(downloads.urls, isEmpty);
     });
 

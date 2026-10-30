@@ -158,11 +158,22 @@ final class TestTts extends TtsVariant {
     bool dropLast = false,
     this.revision = rev,
     String? baseUrl,
+    List<String> extra = const [],
+    bool repeatFirst = false,
   }) : baseUrl =
            baseUrl ??
            'https://huggingface.co/litert-community/tiny/resolve/$revision/',
        files = [
          for (final name in type.manifest)
+           ttsArtifact(type, name, size: size, revision: revision),
+         if (repeatFirst)
+           ttsArtifact(
+             type,
+             type.manifest.first,
+             size: size,
+             revision: revision,
+           ),
+         for (final name in extra)
            ttsArtifact(type, name, size: size, revision: revision),
        ]..length -= dropLast ? 1 : 0;
 

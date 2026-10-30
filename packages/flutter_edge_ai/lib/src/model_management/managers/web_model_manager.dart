@@ -77,13 +77,11 @@ class WebModelManager extends ModelFileManager
     edgeAiLog('WebModelManager initialized');
   }
 
-  /// Rehydrate `_activeInferenceModel` from the identity persisted by a
-  /// prior installation (#227). The Web `getModelFilePaths` flow
-  /// resolves to a real blob/Cache-API URL based on `spec.modelSource`, so
-  /// we have to recover the original ModelSource (not just a filename).
-  /// A restore skipped: said in release builds too ([restoreNotice]), except
-  /// under [WebStorageMode.none], where no file outlives a page load while
-  /// the active identities do, so every load skips and that is expected.
+  /// A restore skipped because a file or its record is gone: said in release
+  /// builds too ([restoreNotice]), except under [WebStorageMode.none], where
+  /// no file outlives a page load while the active identities do, so every
+  /// load skips and that is expected. A record that cannot be read (an
+  /// unknown type, a malformed source) is [restoreNotice] in every mode.
   void _restoreSkipped(String message) {
     if (ServiceRegistry.instance.webStorageMode == WebStorageMode.none) {
       edgeAiLog(message);
@@ -92,6 +90,10 @@ class WebModelManager extends ModelFileManager
     }
   }
 
+  /// Rehydrate `_activeInferenceModel` from the identity persisted by a
+  /// prior installation (#227). The Web `getModelFilePaths` flow
+  /// resolves to a real blob/Cache-API URL based on `spec.modelSource`, so
+  /// we have to recover the original ModelSource (not just a filename).
   Future<void> _restoreActiveInferenceModel() async {
     final prefs = await SharedPreferences.getInstance();
     final identity = ActiveIdentityStore.read(
@@ -116,7 +118,7 @@ class WebModelManager extends ModelFileManager
       modelType = ModelType.values.byName(modelTypeName);
       fileType = ModelFileType.values.byName(fileTypeName);
     } catch (e) {
-      _restoreSkipped(
+      restoreNotice(
         '[WebModelManager] active model restore: unknown enum value — skipping',
       );
       return;
@@ -124,7 +126,7 @@ class WebModelManager extends ModelFileManager
 
     final source = ModelSource.tryDecode(sourceEncoded);
     if (source == null) {
-      _restoreSkipped(
+      restoreNotice(
         '[WebModelManager] active model restore: malformed source — skipping',
       );
       return;
@@ -340,7 +342,7 @@ class WebModelManager extends ModelFileManager
     final modelSource = ModelSource.tryDecode(modelSourceEncoded);
     final tokenizerSource = ModelSource.tryDecode(tokenizerSourceEncoded);
     if (modelSource == null || tokenizerSource == null) {
-      _restoreSkipped(
+      restoreNotice(
         '[WebModelManager] active embedding restore: malformed source — skipping',
       );
       return;
@@ -442,7 +444,7 @@ class WebModelManager extends ModelFileManager
       modelFilename,
       modelSourceEncoded,
     )) {
-      _restoreSkipped(
+      restoreNotice(
         '[WebModelManager] active STT restore: the stored source is not '
         '$modelFilename — skipping',
       );
@@ -453,7 +455,7 @@ class WebModelManager extends ModelFileManager
     try {
       sttModelType = SttModelType.values.byName(sttModelTypeName);
     } catch (e) {
-      _restoreSkipped(
+      restoreNotice(
         '[WebModelManager] active STT restore: unknown SttModelType ($sttModelTypeName) — skipping',
       );
       return;
@@ -462,7 +464,7 @@ class WebModelManager extends ModelFileManager
     final modelSource = ModelSource.tryDecode(modelSourceEncoded);
     final tokenizerSource = ModelSource.tryDecode(tokenizerSourceEncoded);
     if (modelSource == null || tokenizerSource == null) {
-      _restoreSkipped(
+      restoreNotice(
         '[WebModelManager] active STT restore: malformed source — skipping',
       );
       return;

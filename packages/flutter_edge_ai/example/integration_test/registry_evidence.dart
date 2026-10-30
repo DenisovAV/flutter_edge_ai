@@ -25,11 +25,6 @@ import 'dart:isolate';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
-/// The registry build whose file has the bytes of [path], or null; hashed
-/// once per file version (see [fileSha256]).
-Future<CatalogVariant?> registryVariantOf(String path) async =>
-    variantWithSha256(await fileSha256(path), FlutterEdgeAi.catalog.models);
-
 /// The variant of [models] whose first file is pinned to [hex], compared
 /// without regard to case, or null.
 CatalogVariant? variantWithSha256(String hex, Iterable<CatalogModel> models) {

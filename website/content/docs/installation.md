@@ -664,7 +664,7 @@ debug builds it's shown according to `FlutterEdgeAi.logLevel`:
 
 | Level | What it prints (debug builds) |
 |---|---|
-| `EdgeAiLogLevel.none` | Nothing — fully silent, the restore notices included. |
+| `EdgeAiLogLevel.none` | Nothing from this log, the restore notices included. |
 | `EdgeAiLogLevel.info` *(default)* | Lifecycle, errors, diagnostics. **No** model output / prompts. |
 | `EdgeAiLogLevel.verbose` | Everything above **plus** model output, prompts, and conversation history. |
 
@@ -674,12 +674,13 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 // See the model's generated tokens and prompts while debugging:
 FlutterEdgeAi.logLevel = EdgeAiLogLevel.verbose;
 
-// Or silence logging entirely:
+// Or silence this log, the restore notices included:
 FlutterEdgeAi.logLevel = EdgeAiLogLevel.none;
 ```
 
 In release builds only the restore notices are printed, and
-`EdgeAiLogLevel.none` silences them too. Not under this setting: a few warnings
-about failures an app would not otherwise see (a model that fails to close, for
-example) are printed in every build. The level is process-global and
-per-isolate; set it once at startup.
+`EdgeAiLogLevel.none` silences them too. Some messages are printed in every
+build whatever `logLevel` says: warnings about failures the app would not
+otherwise see, and a few one-time notices (for example the sampler latch and
+hidden reasoning). The level is process-global and per-isolate; set it once at
+startup.

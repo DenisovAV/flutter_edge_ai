@@ -95,11 +95,13 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
       setState(() {
         needToDownload = false;
       });
-    } catch (e) {
-      if (!mounted) return;
+    } catch (e, stack) {
       await showInstallErrors(
         context,
-        installErrorViews(e, fallback: 'Failed to download the model.'),
+        e,
+        stack,
+        // The error itself, not only "failed": what the user can act on.
+        fallback: 'Failed to download the model: $e',
         gated: (error) => showGatedModelAccessDialog(
           context: context,
           modelUrl: widget.model.url,

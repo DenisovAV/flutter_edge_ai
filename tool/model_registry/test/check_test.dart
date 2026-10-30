@@ -556,6 +556,35 @@ void main() {
       );
     });
 
+    test('fences as CommonMark reads them', () {
+      // "```dart" inside an open block does not close it; a four-backtick
+      // fence closes on four, not three; a line indented four spaces is not
+      // a fence. The marker after each block is still read.
+      for (final (what, text) in [
+        (
+          '```dart inside',
+          '## 1.20.0\n```\n```dart\n# x\n```\n- Model catalog.\n',
+        ),
+        (
+          'four backticks',
+          '## 1.20.0\n````\n```\n# x\n````\n- Model catalog.\n',
+        ),
+        ('indented four', '## 1.20.0\n    ```\n- Model catalog.\n'),
+      ]) {
+        final problems = problemsWith(text, const {});
+        expect(
+          problems,
+          contains(contains('1.20.0 released its catalog')),
+          reason: what,
+        );
+        expect(
+          problems.where((x) => x.contains('never closes')),
+          isEmpty,
+          reason: what,
+        );
+      }
+    });
+
     test('a snapshot of a version the CHANGELOG does not name', () {
       expect(
         problemsWith(changelog, {
@@ -610,11 +639,50 @@ void main() {
         'evidence',
         'release-check',
       ]) {
-        final gate = releaseGate(command, [missing, other], releasing);
+        final gate = releaseGate(
+          command,
+          [missing, other],
+          releasing,
+          package: 'flutter_edge_ai_litertlm',
+        );
         expect(gate.blocking, [other], reason: command);
         expect(gate.pending, [missing], reason: command);
       }
       expect(releaseGate('check', [missing], releasing).blocking, [missing]);
+      // freeze and release-check of a package let only its own snapshot pass.
+      for (final command in ['freeze', 'release-check']) {
+        expect(
+          releaseGate(
+            command,
+            [missing],
+            releasing,
+            package: 'flutter_edge_ai_speech',
+          ).blocking,
+          [missing],
+          reason: command,
+        );
+        expect(
+          releaseGate(
+            command,
+            [missing],
+            releasing,
+            package: 'flutter_edge_ai_litertlm',
+          ).pending,
+          [missing],
+          reason: command,
+        );
+      }
+      // A snapshot git once held is a shipped one deleted: it stops freeze.
+      expect(
+        releaseGate(
+          'freeze',
+          [missing],
+          releasing,
+          package: 'flutter_edge_ai_litertlm',
+          everCommitted: (file) => file == missing.file,
+        ).blocking,
+        [missing],
+      );
       // An older version's snapshot is no release in progress.
       expect(
         releaseGate(

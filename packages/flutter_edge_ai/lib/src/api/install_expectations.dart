@@ -274,6 +274,15 @@ void checkCatalogVariant(CatalogVariant variant) {
       '(ModelFileType.builtIn) installs without one',
     );
   }
+  // The operating system provides a built-in model: files it listed would
+  // be neither downloaded nor checked.
+  if (builtIn && variant.files.isNotEmpty) {
+    throw ArgumentError(
+      '${variant.id} is a built-in model (ModelFileType.builtIn) and lists '
+      '${variant.files.length} file(s), which nothing would install '
+      '(${variant.catalogName})',
+    );
+  }
   for (final file in variant.files) {
     final problem = switch (file) {
       _ when !_commit.hasMatch(file.revision) =>

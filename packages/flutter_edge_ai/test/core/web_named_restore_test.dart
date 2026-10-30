@@ -147,6 +147,27 @@ void main() {
       },
     );
 
+    test(
+      'WebStorageMode.none still says a record that cannot be read',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          ...unrecorded,
+          PreferencesKeys.activeInferenceSource: 'not a source',
+        });
+        await ServiceRegistry.initialize(webStorageMode: WebStorageMode.none);
+        await WebModelManager().ensureInitialized();
+        expect(
+          said,
+          contains(
+            allOf(
+              startsWith('flutter_edge_ai: '),
+              contains('malformed source'),
+            ),
+          ),
+        );
+      },
+    );
+
     test('EdgeAiLogLevel.none silences it', () async {
       edgeAiLogLevel = EdgeAiLogLevel.none;
       SharedPreferences.setMockInitialValues({

@@ -707,20 +707,21 @@ class InferenceInstallationBuilder {
 
     // Each file owns the slice [i/total, (i+1)/total] of the progress and
     // streams within it, so the bar keeps moving during the multi-GB
-    // model.onnx download instead of freezing between files.
+    // model.onnx download instead of freezing between files. Held at 99, as
+    // for a single file, until the model is installed and active.
     final total = spec.files.length;
     final onProgress = _onProgress;
+    void report(double fraction) =>
+        onProgress?.call((fraction * 100).round().clamp(0, 99));
     final release = await installPlanned(
       _keepingActiveModel(await planInstall(spec.files), activate: activate),
       modelType: repo.ModelType.inference,
       cancelToken: _cancelToken,
       progress: [
         for (var i = 0; i < total; i++)
-          onProgress == null
-              ? null
-              : (pct) => onProgress((((i + pct / 100) / total) * 100).round()),
+          onProgress == null ? null : (pct) => report((i + pct / 100) / total),
       ],
-      onFileDone: (i) => onProgress?.call((((i + 1) / total) * 100).round()),
+      onFileDone: (i) => report((i + 1) / total),
     );
 
     final manager = FlutterEdgeAiPlugin.instance.modelManager;
@@ -728,6 +729,7 @@ class InferenceInstallationBuilder {
       await activateInstalledModel(manager, spec);
       await release.run(manager, spec);
     }
+    onProgress?.call(100);
     edgeAiLog(
       '✅ ONNX directory model installed${activate ? ' and set as active' : ''}: '
       '$modelId',

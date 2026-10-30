@@ -64,7 +64,17 @@ Future<void> main(List<String> args) async {
   final critical = readCritical(registry, result.problems);
   checkCritical(site, result.entries, critical, result.problems);
   // The release in progress: see releaseGate.
-  final gate = releaseGate(command!, result.problems, site.versions);
+  final gate = releaseGate(
+    command!,
+    result.problems,
+    site.versions,
+    package: args.length > 1 && !args[1].startsWith('--') ? args[1] : null,
+    // A snapshot git has ever held was shipped, not one a release adds.
+    everCommitted: (file) =>
+        '${Process.runSync('git', ['log', '--format=%H', '-1', '--', p.join(p.relative(p.absolute(registry.path), from: repoRoot), file)], workingDirectory: repoRoot).stdout}'
+            .trim()
+            .isNotEmpty,
+  );
   for (final problem in gate.pending) {
     stdout.writeln(
       'pending until `registry.dart freeze ${problem.awaitsFreeze!.$1}`: '
@@ -149,8 +159,10 @@ Future<void> main(List<String> args) async {
     exit(1);
   }
   if (stale > 0) exit(1);
+  final pending = {for (final x in gate.pending) x.awaitsFreeze!.$1};
   stdout.writeln(
-    '${result.entries.length} models, ${result.variantCount} variants: ok',
+    '${result.entries.length} models, ${result.variantCount} variants: '
+    '${pending.isEmpty ? 'ok' : 'ok but for the freeze of ${pending.join(', ')}'}',
   );
 }
 

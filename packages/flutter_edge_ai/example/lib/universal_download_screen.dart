@@ -159,13 +159,14 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
         _progress = 100.0;
       });
     } on BuiltInAiUnavailableException catch (e) {
-      if (mounted) _showErrorDialog(e.message);
+      if (!mounted) return;
+      _showErrorDialog(e.message);
       setState(() {
         needToDownload = true;
         _progress = 0.0;
       });
-    } catch (e) {
-      await _handleDownloadError(e);
+    } catch (e, stack) {
+      await _handleDownloadError(e, stack);
       if (mounted) setState(() => _progress = 0.0);
     }
   }
@@ -238,8 +239,8 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
       setState(() {
         needToDownload = false;
       });
-    } catch (e) {
-      await _handleDownloadError(e);
+    } catch (e, stack) {
+      await _handleDownloadError(e, stack);
     }
   }
 
@@ -251,6 +252,7 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
         await _inferenceDownloadService!.deleteModel();
       }
 
+      if (!mounted) return;
       setState(() {
         needToDownload = true;
         _progress = 0.0;
@@ -258,7 +260,8 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
         _tokenizerProgress = 0.0;
       });
     } catch (e) {
-      await _handleDownloadError(e);
+      // Deleting, not downloading: its own title.
+      if (mounted) await _showErrorDialog('$e', title: 'Delete error');
     }
   }
 
@@ -271,13 +274,14 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
     ).showSnackBar(SnackBar(content: Text(kept.message)));
   }
 
-  Future<void> _handleDownloadError(Object error) async {
+  Future<void> _handleDownloadError(Object error, StackTrace stack) async {
     // A failed replace first says the old model is gone, then the dialog its
-    // cause needs.
-    if (!mounted) return;
+    // cause needs; logged even when the screen is already gone.
     await showInstallErrors(
       context,
-      installErrorViews(error, fallback: error.toString()),
+      error,
+      stack,
+      fallback: error.toString(),
       gated: (cause) => showGatedModelAccessDialog(
         context: context,
         modelUrl: widget.model.url,
@@ -287,11 +291,14 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
     );
   }
 
-  Future<void> _showErrorDialog(String error) {
+  Future<void> _showErrorDialog(
+    String error, {
+    String title = 'Download error',
+  }) {
     return showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Download Error'),
+        title: Text(title),
         content: Text(error),
         actions: [
           TextButton(

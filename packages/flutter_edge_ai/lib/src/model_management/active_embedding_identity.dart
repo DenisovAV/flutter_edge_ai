@@ -4,6 +4,7 @@ import 'package:flutter_edge_ai/src/domain/model_source.dart';
 import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
 import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/src/utils/file_name_utils.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -317,16 +318,16 @@ bool _rejectionPrinted = false;
 String? get rejectedActiveEmbeddingIdentity => _rejectedActiveEmbeddingIdentity;
 
 /// Records that the persisted record was refused, and says so once per
-/// isolate — with `print`, because `edgeAiLog` is silent in release builds,
-/// where an app that "forgot" its embedder after an update gets debugged.
+/// isolate as a start-up restore notice ([restoreNotice]): release builds
+/// print it, where an app that "forgot" its embedder after an update gets
+/// debugged, and `EdgeAiLogLevel.none` silences it.
 void reportRejectedActiveEmbeddingIdentity(String reason) {
   _rejectedActiveEmbeddingIdentity = reason;
   if (_rejectionPrinted) return;
   _rejectionPrinted = true;
-  // ignore: avoid_print
-  print(
-    '[flutter_edge_ai] WARNING: the persisted active embedding model could '
-    'not be read ($reason), so no embedder is active. Install it again with '
+  restoreNotice(
+    'WARNING: the persisted active embedding model could not be read '
+    '($reason), so no embedder is active. Install it again with '
     'FlutterEdgeAi.installEmbedder().',
   );
 }

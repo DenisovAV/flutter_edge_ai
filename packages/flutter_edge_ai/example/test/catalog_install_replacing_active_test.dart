@@ -3,7 +3,8 @@
 // is uninstalled and the install runs again, asking again for each further
 // model in the way. "Keep it" is a result, not an error, and what fails after
 // a model was uninstalled says that it is gone. The refusal's words are
-// core's, held by core's catalog_entries_test.dart.
+// core's: its golden test/catalog/active_file_refusals.golden.txt, which a
+// test below parses.
 
 import 'dart:io';
 
@@ -22,6 +23,8 @@ StateError refusal(String kind, String name, String call) => StateError(
 
 final embedder = refusal('embedding', 'emb', 'uninstallEmbedder()');
 final voice = refusal('text-to-speech', 'matcha', 'uninstallTts()');
+
+var _calls = 0;
 
 void main() {
   final variant = LiteRtLmModels.gemma4E2bIt.generic;
@@ -185,6 +188,76 @@ void main() {
   });
 
   test(
+    'a third model removed: the repeated one is not among the gone',
+    () async {
+      await expectLater(
+        installFromCatalogReplacingActive(
+          installing([embedder, voice, embedder], []),
+          variant: variant,
+          confirm: (_, _) async => true,
+          uninstall: (_) async {},
+        ),
+        throwsA(
+          isA<CatalogReplaceFailed>().having(
+            (e) => e.message,
+            'message',
+            'Uninstalling emb did not release its file, so ${variant.id} is '
+                'not installed; matcha was already uninstalled.',
+          ),
+        ),
+      );
+    },
+  );
+
+  test('a failure after a replace keeps its own stack', () async {
+    final stack = StackTrace.fromString('the download');
+    try {
+      await installFromCatalogReplacingActive(
+        () async {
+          if (++_calls == 1) throw embedder;
+          Error.throwWithStackTrace(Exception('HTTP 401'), stack);
+        },
+        variant: variant,
+        confirm: (_, _) async => true,
+        uninstall: (_) async {},
+      );
+      fail('no failure');
+    } on CatalogReplaceFailed catch (_, st) {
+      expect('$st', 'the download');
+    }
+  });
+
+  test(
+    'uninstall() hands core\'s call the file, not the model\'s name',
+    () async {
+      final model = ActiveModelInTheWay.of(
+        refusal('inference', 'gemma', "uninstallModel('gemma-it.litertlm')"),
+      )!;
+      String? file;
+      await model.uninstall(via: (String f) async => file = f);
+      expect(file, 'gemma-it.litertlm');
+      var called = false;
+      await ActiveModelInTheWay.of(
+        embedder,
+      )!.uninstall(via: () async => called = true);
+      expect(called, isTrue);
+    },
+  );
+
+  test('a call that does not fit its kind is not read as a refusal', () {
+    expect(
+      ActiveModelInTheWay.of(refusal('inference', 'g', 'uninstallEmbedder()')),
+      isNull,
+    );
+    expect(
+      ActiveModelInTheWay.of(
+        refusal('embedding', 'e', "uninstallModel('e.tflite')"),
+      ),
+      isNull,
+    );
+  });
+
+  test(
     'core\'s own sentences, one per kind, are read with their core call',
     () {
       // Written by core's test/catalog/active_file_refusal_golden_test.dart,
@@ -332,14 +405,14 @@ void main() {
     const cause = DownloadException(DownloadError.unauthorized());
     final showing = showInstallErrors(
       context,
-      installErrorViews(
-        const CatalogReplaceFailed(
-          'emb was already uninstalled, but x did not install',
-          cause,
-        ),
-        fallback: 'failed',
+      const CatalogReplaceFailed(
+        'emb was already uninstalled, but x did not install',
+        cause,
       ),
+      StackTrace.empty,
+      fallback: 'failed',
       gated: (error) async => gated.add(error),
+      log: (_) {},
     );
     await tester.pumpAndSettle();
     // The message waits for the user; the gated dialog has not opened.
@@ -352,5 +425,34 @@ void main() {
     await tester.pumpAndSettle();
     await showing;
     expect(gated, [cause]);
+  });
+
+  testWidgets('a screen already gone still leaves the message in the log', (
+    tester,
+  ) async {
+    late BuildContext gone;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (c) {
+            gone = c;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    await tester.pumpWidget(const SizedBox());
+    expect(gone.mounted, isFalse);
+    final logged = <String>[];
+    await showInstallErrors(
+      gone,
+      const CatalogReplaceFailed('emb was already uninstalled, but x did not'),
+      StackTrace.fromString('the download'),
+      fallback: 'failed',
+      gated: (_) async {},
+      log: logged.add,
+    );
+    expect(logged.single, contains('emb was already uninstalled'));
+    expect(logged.single, contains('the download'));
   });
 }

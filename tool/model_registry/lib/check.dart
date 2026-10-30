@@ -1044,26 +1044,30 @@ void _checkReleasedCatalogs(
     final released = <String>[]; // newest first
     final withCatalog = <String>{};
     String? section;
-    // The fence that opened the block in force (``` or ~~~), and its line.
+    // The fence that opened the block in force, and its line. As in
+    // CommonMark: a fence is three or more ` or ~, indented at most three
+    // spaces; a backtick fence's info string holds no backtick; a block ends
+    // at a fence of the same character, at least as long, with nothing after
+    // it ("```dart" inside an open block does not close it).
     String? fence;
     var fenceLine = 0;
     for (final (i, line) in changelog.readAsLinesSync().indexed) {
-      // A `#` line inside a fenced block is code, not a heading. A block
-      // ends at a fence of the same kind.
-      final trimmed = line.trimLeft();
-      for (final mark in const ['```', '~~~']) {
-        if (!trimmed.startsWith(mark)) continue;
+      var fenced = fence != null;
+      if (_fence.firstMatch(line) case final m?) {
+        final marks = m[1]!;
+        final info = m[2]!;
         if (fence == null) {
-          fence = mark;
-          fenceLine = i + 1;
-        } else if (fence == mark) {
+          if (marks[0] != '`' || !info.contains('`')) {
+            fence = marks;
+            fenceLine = i + 1;
+            fenced = true;
+          }
+        } else if (marks[0] == fence[0] &&
+            marks.length >= fence.length &&
+            info.trim().isEmpty) {
           fence = null;
         }
       }
-      final fenced =
-          fence != null ||
-          trimmed.startsWith('```') ||
-          trimmed.startsWith('~~~');
       if (fenced) {
         if (section != null && line.toLowerCase().contains('model catalog')) {
           withCatalog.add(section);
@@ -1198,15 +1202,27 @@ Map<String, Object?> frozenValues(Map<String, Object?> v) {
 /// pubspec names ([versions]), does not stop `freeze`, `generate`, `evidence`
 /// or `release-check` (whose own reasons still refuse a missing snapshot);
 /// `check` and `live` are stopped by every problem.
+///
+/// `freeze` and `release-check` name a [package]: only its own snapshot is
+/// let pass, so another package's missing one still stops them. A snapshot
+/// that was ever committed ([everCommitted], by its path under the
+/// registry) is a shipped one deleted, not a release in progress: it stops
+/// every command, so `freeze` cannot write it again from today's registry.
 ({List<Problem> blocking, List<Problem> pending}) releaseGate(
   String command,
   List<Problem> problems,
-  Map<String, String> versions,
-) {
+  Map<String, String> versions, {
+  String? package,
+  bool Function(String file) everCommitted = _never,
+}) {
   const lenient = {'freeze', 'generate', 'evidence', 'release-check'};
+  const named = {'freeze', 'release-check'};
   bool releasing(Problem problem) => switch (problem.awaitsFreeze) {
-    (final package, final version) =>
-      lenient.contains(command) && versions[package] == version,
+    (final owner, final version) =>
+      lenient.contains(command) &&
+          versions[owner] == version &&
+          (!named.contains(command) || owner == package) &&
+          !everCommitted(problem.file),
     null => false,
   };
   return (
@@ -1220,3 +1236,8 @@ Map<String, Object?> frozenValues(Map<String, Object?> v) {
     ],
   );
 }
+
+bool _never(String file) => false;
+
+/// A fence line: up to three spaces, then three or more ` or ~, then the rest.
+final _fence = RegExp(r'^ {0,3}(`{3,}|~{3,})(.*)$');

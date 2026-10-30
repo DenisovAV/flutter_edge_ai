@@ -4,8 +4,9 @@ import 'package:flutter_edge_ai_example/utils/gated_model_access_dialog.dart';
 import 'package:flutter_edge_ai_example/utils/storage_quota_dialog.dart';
 
 /// The active model core's refusal names: an install would write over a file
-/// it reads. Read from the refusal's message, whose words core holds with a
-/// test (`activeFileRefusal` in its `catalog_entries_test.dart`).
+/// it reads. Read from the refusal's message, whose words core holds in a
+/// golden file (`test/catalog/active_file_refusals.golden.txt`) that this
+/// app's test parses too.
 final class ActiveModelInTheWay {
   const ActiveModelInTheWay({
     required this.kind,
@@ -26,18 +27,31 @@ final class ActiveModelInTheWay {
     r'over the file the active '
     r'(inference|embedding|speech-to-text|text-to-speech) model (.+) reads, '
     r'and checks it only afterwards\. Uninstall that model first '
-    r"\(FlutterEdgeAi\.(?:uninstallModel\('((?:[^'\\]|\\.)+)'\)|uninstall\w+\(\))\)",
+    r"\(FlutterEdgeAi\.(uninstall\w+)\((?:'((?:[^'\\]|\\.)+)')?\)\)",
   );
 
-  /// The model [error] names, or null when it is another error.
+  /// The call core names for each kind, and whether it takes the file.
+  static const _calls = {
+    'inference': ('uninstallModel', true),
+    'embedding': ('uninstallEmbedder', false),
+    'speech-to-text': ('uninstallStt', false),
+    'text-to-speech': ('uninstallTts', false),
+  };
+
+  /// The model [error] names, or null when it is another error, or one whose
+  /// call does not fit its kind (a wording this app does not know).
   static ActiveModelInTheWay? of(StateError error) {
     final match = _refusal.firstMatch(error.message);
     if (match == null) return null;
+    final kind = match[1]!;
+    final (call, takesFile) = _calls[kind]!;
+    final file = match[4];
+    if (match[3] != call || (file != null) != takesFile) return null;
     return ActiveModelInTheWay(
-      kind: match[1]!,
+      kind: kind,
       name: match[2]!,
       // Quoted as a Dart string: `\'` and `\\` are escapes.
-      inferenceFile: match[3]?.replaceAllMapped(RegExp(r'\\(.)'), (m) => m[1]!),
+      inferenceFile: file?.replaceAllMapped(RegExp(r'\\(.)'), (m) => m[1]!),
     );
   }
 
@@ -51,8 +65,9 @@ final class ActiveModelInTheWay {
     _ => FlutterEdgeAi.uninstallModel,
   };
 
-  /// Uninstalls it with the call of its kind.
-  Future<void> uninstall() => switch (uninstaller) {
+  /// Uninstalls it with the call of its kind: [uninstaller], or [via] in
+  /// tests, which then receives what core's call would.
+  Future<void> uninstall({Function? via}) => switch (via ?? uninstaller) {
     final Future<void> Function(String) byFile => byFile(inferenceFile!),
     final Future<void> Function() call => call(),
     _ => throw StateError('no uninstall call for a $kind model'),
@@ -115,15 +130,27 @@ Future<CatalogInstallResult> installFromCatalogReplacingActive(
   final bytes = variant.files.fold(0, (sum, f) => sum + f.sizeBytes);
   // By kind and name: an inference model and an embedder may share a name.
   final removed = <(String, String)>[];
-  String gone() =>
-      '${removed.map((m) => m.$2).join(' and ')} '
-      '${removed.length == 1 ? 'was' : 'were'} already uninstalled';
+
+  /// The models already uninstalled, but for [except].
+  String gone({(String, String)? except}) {
+    final names = [
+      for (final m in removed)
+        if (m != except) m.$2,
+    ];
+    return '${names.join(' and ')} ${names.length == 1 ? 'was' : 'were'} '
+        'already uninstalled';
+  }
+
+  // The failure's own stack goes with the wrapper that names what is gone.
   Never failAfterRemoval(Object error, StackTrace stack) {
     if (removed.isEmpty) Error.throwWithStackTrace(error, stack);
-    throw CatalogReplaceFailed(
-      '${gone()}, but ${variant.id} did not install: $error. Install it '
-      'again.',
-      error,
+    Error.throwWithStackTrace(
+      CatalogReplaceFailed(
+        '${gone()}, but ${variant.id} did not install: $error. Install it '
+        'again.',
+        error,
+      ),
+      stack,
     );
   }
 
@@ -135,12 +162,17 @@ Future<CatalogInstallResult> installFromCatalogReplacingActive(
     } on StateError catch (e, stack) {
       final model = ActiveModelInTheWay.of(e);
       if (model == null) failAfterRemoval(e, stack);
-      if (removed.contains((model.kind, model.name))) {
+      final key = (model.kind, model.name);
+      if (removed.contains(key)) {
         // The same model again: its uninstall did not release the file.
-        throw CatalogReplaceFailed(
-          'Uninstalling ${model.name} did not release its file, so '
-          '${variant.id} is not installed${removed.length > 1 ? '; ${gone()}' : ''}.',
-          e,
+        Error.throwWithStackTrace(
+          CatalogReplaceFailed(
+            'Uninstalling ${model.name} did not release its file, so '
+            '${variant.id} is not installed'
+            '${removed.length > 1 ? '; ${gone(except: key)}' : ''}.',
+            e,
+          ),
+          stack,
         );
       }
       inTheWay = model;
@@ -156,12 +188,15 @@ Future<CatalogInstallResult> installFromCatalogReplacingActive(
     }
     try {
       await (uninstall ?? (m) => m.uninstall())(inTheWay);
-    } catch (e) {
-      throw CatalogReplaceFailed(
-        'Could not uninstall ${inTheWay.name} ($e); it may be partly '
-        'removed${removed.isEmpty ? '' : ', and ${gone()}'}. Nothing was '
-        'downloaded.',
-        e,
+    } catch (e, stack) {
+      Error.throwWithStackTrace(
+        CatalogReplaceFailed(
+          'Could not uninstall ${inTheWay.name} ($e); it may be partly '
+          'removed${removed.isEmpty ? '' : ', and ${gone()}'}. Nothing was '
+          'downloaded.',
+          e,
+        ),
+        stack,
       );
     }
     removed.add((inTheWay.kind, inTheWay.name));
@@ -261,16 +296,25 @@ List<InstallErrorView> installErrorViews(
   return [dialogFor(error) ?? InstallErrorMessage(fallback)];
 }
 
-/// Shows [views] over [context] one after the other, each awaited: a message
-/// as a dialog (a snackbar's time would run out behind the next dialog's
-/// barrier, and with it "already uninstalled"), then the gated dialog
-/// ([gated]) or the storage one.
+/// Shows what [error] needs ([installErrorViews] with [fallback]) over
+/// [context], one after the other, each awaited: a message as a dialog (a
+/// snackbar's time would run out behind the next dialog's barrier, and with
+/// it "already uninstalled"), then the gated dialog ([gated]) or the storage
+/// one.
+///
+/// The error and its [stack] are logged ([log], `debugPrint` by default)
+/// first, so a screen that is already gone (the user backed out during a long
+/// download) still leaves "already uninstalled" somewhere.
 Future<void> showInstallErrors(
   BuildContext context,
-  List<InstallErrorView> views, {
+  Object error,
+  StackTrace stack, {
+  required String fallback,
   required Future<void> Function(Object error) gated,
+  void Function(String line)? log,
 }) async {
-  for (final view in views) {
+  (log ?? (line) => debugPrint(line))('Model install failed: $error\n$stack');
+  for (final view in installErrorViews(error, fallback: fallback)) {
     if (!context.mounted) return;
     switch (view) {
       case InstallErrorMessage(:final text):

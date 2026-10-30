@@ -2,13 +2,16 @@ import 'package:flutter/foundation.dart';
 
 /// Verbosity for flutter_edge_ai's internal logs.
 ///
-/// - [none] — silence this log entirely, the start-up restore notices
-///   included.
+/// - [none] — silence this log, the start-up restore notices included.
 /// - [info] — lifecycle, errors, non-PII diagnostics (default). In release
 ///   builds only the start-up notices about active models that could not be
 ///   restored.
 /// - [verbose] — adds model output / prompts / conversation history (debug
 ///   builds).
+///
+/// Some messages are printed in every build whatever logLevel says:
+/// warnings about failures the app would not otherwise see, and a few
+/// one-time notices (for example the sampler latch and hidden reasoning).
 enum EdgeAiLogLevel { none, info, verbose }
 
 /// Active log level. Top-level (Dart-canonical for process-global logger
@@ -38,7 +41,8 @@ void edgeAiLog(String message, {EdgeAiLogLevel level = EdgeAiLogLevel.info}) {
 /// Says that a start-up restore left a kind without its active model, in
 /// release builds too: [edgeAiLog] is silent there, where an app would
 /// otherwise find its model gone at start without a word. One line through
-/// [debugPrint]; silent under [EdgeAiLogLevel.none], as every plugin log is.
+/// [debugPrint] (an app that replaces `debugPrint` in release replaces this
+/// too); silent under [EdgeAiLogLevel.none], as [edgeAiLog] is.
 void restoreNotice(String message) {
   if (edgeAiLogLevel == EdgeAiLogLevel.none) return;
   debugPrint('flutter_edge_ai: ${sanitizeForLog(message)}');

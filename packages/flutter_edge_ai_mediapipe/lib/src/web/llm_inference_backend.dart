@@ -44,9 +44,9 @@ class LlmInferenceBackend implements WebLlmBackend {
   Future<String> generate(List<PromptPart> prompt) async {
     final stops = _stops;
     await _untilIdle();
-    if (stops != _stops) {
-      throw StateError('The generation was stopped before it started.');
-    }
+    // Stopped while it waited: it never starts and ends with nothing, as a
+    // stream stopped there does.
+    if (stops != _stops) return '';
     final jsPrompt = _jsPrompt(prompt);
     final reply = jsPrompt.isA<JSString>()
         ? _llm.generateResponse(jsPrompt as JSString, null)

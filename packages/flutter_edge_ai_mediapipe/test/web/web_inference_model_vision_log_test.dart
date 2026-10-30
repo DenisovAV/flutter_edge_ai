@@ -69,6 +69,7 @@ final class _GatedResolver implements WebModelSourceResolver {
 
 WebInferenceModel _model({
   required bool supportImage,
+  bool supportAudio = false,
   WebModelSourceResolver? resolver,
 }) => WebInferenceModel(
   modelType: ModelType.gemma4,
@@ -76,6 +77,7 @@ WebInferenceModel _model({
   maxTokens: 4096,
   sourceResolver: resolver ?? _PendingResolver(),
   supportImage: supportImage,
+  supportAudio: supportAudio,
   maxNumImages: supportImage ? 4 : null,
 );
 
@@ -310,6 +312,89 @@ void main() {
     expect(fake.calls, hasLength(1), reason: 'the stopped call must not run');
   });
 
+  test(
+    'a closed model loads no LlmInference for a later createSession',
+    () async {
+      final fake = _fakeMediaPipe();
+      final model = _model(supportImage: false, resolver: _BlobResolver());
+      await model.close();
+
+      await expectLater(model.createSession(), throwsStateError);
+      expect(fake.created, isEmpty);
+    },
+  );
+
+  test('a createSession queued behind a load when the model closes loads '
+      'nothing of its own', () async {
+    final fake = _fakeMediaPipe();
+    final gate = Completer<void>();
+    final model = _model(
+      supportImage: false,
+      resolver: _GatedResolver(gate.future),
+    );
+
+    final first = expectLater(model.createSession(), throwsStateError);
+    final queued = expectLater(model.createSession(), throwsStateError);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    final closing = model.close();
+    gate.complete();
+    await closing;
+    await first;
+    await queued;
+    expect(fake.created, hasLength(1), reason: 'only the first call loads');
+  });
+
+  test(
+    'a session handed out while the model closes is closed with it',
+    () async {
+      // close() can land at any await of createSession; each step is tried.
+      for (var step = 0; step < 12; step++) {
+        _fakeMediaPipe();
+        final model = _model(supportImage: false, resolver: _BlobResolver());
+        await model.createSession();
+        // A refusal is a right answer too; it is read once close() is done.
+        final creating = model.createSession().then<InferenceModelSession?>(
+          (session) => session,
+          onError: (Object e) => e is StateError ? null : throw e,
+        );
+        for (var i = 0; i < step; i++) {
+          await Future<void>.microtask(() {});
+        }
+        await model.close();
+        final session = await creating;
+        if (session == null) continue;
+        await expectLater(
+          session.addQueryChunk(const Message(text: 'Hi', isUser: true)),
+          throwsStateError,
+          reason: 'step $step: the session outlived its model',
+        );
+      }
+    },
+  );
+
+  test('a blocking call stopped while it waits for the previous one ends '
+      'empty, as a stream does', () async {
+    final fake = _heldMediaPipe();
+    final model = _model(supportImage: false, resolver: _BlobResolver());
+
+    final first = await model.createSession();
+    await first.addQueryChunk(const Message(text: 'A', isUser: true));
+    first.getResponseAsync().listen((_) {});
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(fake.calls, hasLength(1));
+
+    final second = await model.createSession();
+    await second.addQueryChunk(const Message(text: 'B', isUser: true));
+    final reply = second.getResponse();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await second.stopGeneration();
+
+    fake.calls.single.complete('done');
+    expect(await reply, isEmpty);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(fake.calls, hasLength(1), reason: 'the stopped call must not run');
+  });
+
   test('a model closed while it loads does not hand out a session', () async {
     _fakeMediaPipe();
     final gate = Completer<void>();
@@ -327,6 +412,35 @@ void main() {
     await closing;
     await outcome;
   });
+
+  test(
+    'audio is sent as its own bytes, not the whole buffer behind them',
+    () async {
+      final fake = _fakeMediaPipe();
+      final model = _model(
+        supportImage: false,
+        supportAudio: true,
+        resolver: _BlobResolver(),
+      );
+      final buffer = Uint8List.fromList(List.generate(16, (i) => i));
+      final view = Uint8List.sublistView(buffer, 4, 12);
+
+      final session = await model.createSession();
+      await session.addQueryChunk(
+        Message(text: 'What is said?', isUser: true, audioBytes: view),
+      );
+      await session.getResponse();
+
+      final parts = (fake.prompts.single as JSArray<JSAny>).toDart;
+      final audio = parts
+          .whereType<JSObject>()
+          .where((part) => part.has('audioSource'))
+          .single
+          .getProperty<JSUint8Array>('audioSource'.toJS)
+          .toDart;
+      expect(audio, view);
+    },
+  );
 
   test('a model created without supportImage gives the LlmInference no '
       'maxNumImages', () async {

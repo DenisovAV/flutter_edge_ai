@@ -14,7 +14,8 @@ abstract interface class WebLlmBackend {
   /// The number of tokens in [text].
   Future<int> sizeInTokens(String text);
 
-  /// Runs [prompt] and returns the reply.
+  /// Runs [prompt] and returns the reply; a call stopped before it started
+  /// returns an empty one.
   Future<String> generate(List<PromptPart> prompt);
 
   /// Runs [prompt] and streams the reply, in pieces that add up to it. A
@@ -210,8 +211,7 @@ class WebModelSession extends InferenceModelSession {
 
   /// MediaPipe refuses a call while the one before it is still ending, which
   /// after a stop is a moment later than the stop itself.
-  Future<void> _previousEnded() async {
-    final run = _run;
+  Future<void> _previousEnded(_Run? run) async {
     if (run == null || run.ended.isCompleted) return;
     await run.ended.future.timeout(
       const Duration(seconds: 30),
@@ -239,11 +239,31 @@ class WebModelSession extends InferenceModelSession {
   @override
   Future<String> getResponse() async {
     _requireOpen();
-    await _previousEnded();
-    // Closed while it waited: it must not start a call on the shared backend.
-    _requireOpen();
-    final prompt = _conversation.beginGeneration();
+    // The run is this call's from here on, so a stop that comes while it
+    // waits for the previous call finds it and ends it before it starts.
+    final previous = _run;
     final run = _run = _Run();
+    final List<PromptPart> prompt;
+    try {
+      await _previousEnded(previous);
+      // Closed while it waited: it must not start a call on the shared
+      // backend.
+      _requireOpen();
+      // Stopped while it waited: it ends with nothing generated, as a stopped
+      // stream does, and the user's turn stays unanswered.
+      if (run.done) {
+        run.end();
+        return '';
+      }
+      prompt = _conversation.beginGeneration();
+    } catch (_) {
+      run.done = true;
+      run.end();
+      // A refused start (the previous call still running past the wait) must
+      // leave that call where a stop can find it.
+      if (identical(_run, run)) _run = previous;
+      rethrow;
+    }
     try {
       final response = await _backend.generate(prompt);
       _complete(run, response);
@@ -272,7 +292,7 @@ class WebModelSession extends InferenceModelSession {
   Future<void> _stream(StreamController<String> controller) async {
     final List<PromptPart> prompt;
     try {
-      await _previousEnded();
+      await _previousEnded(_run);
       if (controller.isClosed) return;
       prompt = _conversation.beginGeneration();
     } catch (e, stackTrace) {

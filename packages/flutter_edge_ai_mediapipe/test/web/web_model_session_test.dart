@@ -140,18 +140,18 @@ void main() {
     final b = FakeBackend(['x']);
     final s = _session(b, system: 'Be brief', image: true, maxImages: 1);
     final png = Uint8List.fromList([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]);
-    await s.addQueryChunk(Message(text: 'a', isUser: true, imageBytes: png));
-    s.stopGeneration();
-    await s.addQueryChunk(const Message(text: 'plain', isUser: true));
-    // The second image does not fit; the instruction was in the first turn.
+    // The first message is the refused one: two images, room for one.
     await expectLater(
-      s.addQueryChunk(Message(text: 'b', isUser: true, imageBytes: png)),
+      s.addQueryChunk(
+        Message.withImages(text: 'a', imageBytes: [png, png], isUser: true),
+      ),
       throwsStateError,
     );
+    await s.addQueryChunk(const Message(text: 'plain', isUser: true));
     await s.getResponse();
     expect(
-      RegExp(r'\[System: Be brief\]').allMatches(_text(b.prompts.single)),
-      hasLength(1),
+      _text(b.prompts.single),
+      '<|turn>user\n[System: Be brief]\n\nplain<turn|>\n<|turn>model\n',
     );
   });
 
@@ -265,6 +265,41 @@ void main() {
     });
   });
 
+  group('Gemma 4 thinking is stripped', () {
+    test('from a reply the chat replays', () async {
+      final b = FakeBackend(['x']);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      await s.addQueryChunk(
+        const Message(text: '<|channel>thought\nhm<channel|>  Banana.  \n'),
+      );
+      await s.addQueryChunk(const Message(text: 'Ok?', isUser: true));
+      await s.getResponse();
+      expect(
+        _text(b.prompts.single),
+        contains('<|turn>model\nBanana.<turn|>\n<|turn>user\nOk?'),
+      );
+    });
+
+    test('from a stopped partial', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      b.live!.add('<|channel>thought\nhm<channel|>  Ban');
+      await Future<void>.delayed(Duration.zero);
+      await s.stopGeneration();
+      await s.addQueryChunk(const Message(text: 'Ok?', isUser: true));
+      b.replies.add('x');
+      await s.getResponse();
+      expect(
+        _text(b.prompts.last),
+        contains('<|turn>model\nBan<turn|>\n<|turn>user\nOk?'),
+      );
+    });
+  });
+
   test('stop keeps the generated partial and cancels the backend', () async {
     final b = FakeBackend([]);
     final s = _session(b);
@@ -282,6 +317,40 @@ void main() {
     expect(
       _text(b.prompts.last),
       contains('<|turn>model\nMango, which<turn|>'),
+    );
+  });
+
+  test('a stop while getResponse waits for the previous call ends it before '
+      'it starts', () async {
+    final b = FakeBackend([])..endOnCancel = false;
+    final s = _session(b);
+    await s.addQueryChunk(_user);
+    s.getResponseAsync().listen((_) {});
+    await Future<void>.delayed(Duration.zero);
+    final first = b.live!;
+    first.add('Mango');
+    await Future<void>.delayed(Duration.zero);
+    await s.stopGeneration();
+
+    await s.addQueryChunk(const Message(text: 'go on', isUser: true));
+    b.replies.add('never sent');
+    final next = s.getResponse();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await s.stopGeneration();
+    await first.close();
+    expect(await next, isEmpty);
+    expect(b.prompts, hasLength(1), reason: 'the stopped call must not run');
+
+    // The stopped turn is still the user's, and the next call answers it.
+    b.replies
+      ..clear()
+      ..add('ok');
+    await s.getResponse();
+    expect(
+      _text(b.prompts.last),
+      endsWith(
+        '<|turn>model\nMango<turn|>\n<|turn>user\ngo on<turn|>\n<|turn>model\n',
+      ),
     );
   });
 

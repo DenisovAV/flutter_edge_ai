@@ -166,6 +166,9 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     _sessionLane = done.future;
     try {
       await turn;
+      // Closed before this call's turn came: a load now would build a new
+      // LlmInference that nothing ever closes.
+      _requireOpen();
       final llm = await _loadModel(sampling, loraPath);
       // Closed while it loaded: close() has already released what it had, so
       // a session built now would sit on a model that is gone.
@@ -179,6 +182,9 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
       // outlived its chat would carry that chat into the next one.
       if (session case final previous?) {
         await previous.close();
+        // Closed while the previous session closed: close() has already let
+        // go of the backend, so a session now would outlive the model.
+        _requireOpen();
       }
       return session = WebModelSession(
         backend: _backend ??= LlmInferenceBackend(llm),
@@ -198,6 +204,10 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
 
   /// Ends when the [createSession] call before the current one has returned.
   Future<void> _sessionLane = Future<void>.value();
+
+  void _requireOpen() {
+    if (_isClosed) throw StateError('The model is closed.');
+  }
 
   /// Loads the model once; callers that arrive while it loads share the load.
   /// The sampling of the first session is the one the model keeps, as on every

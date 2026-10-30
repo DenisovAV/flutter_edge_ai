@@ -26,7 +26,7 @@ final class TaskChatFormat {
   final WebChatTemplate? template;
 
   /// Whether the file carries `prompt_templates` (field 17), the message
-  /// `@mediapipe/tasks-genai` 0.10.29 itself reads.
+  /// `@mediapipe/tasks-genai` 0.10.30 itself reads.
   final bool hasRuntimePromptTemplates;
 
   @override

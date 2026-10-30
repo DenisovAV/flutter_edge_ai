@@ -1,6 +1,7 @@
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_web.dart';
 
+import 'catalog/litert_catalog.dart' show LiteRtLmModels;
 import 'litert_lm_log_level.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
 import 'thinking_token_budget.dart';
@@ -11,7 +12,10 @@ import 'web/litert_lm_web_inference.dart';
 /// it constructs itself via `forActiveModel()`. `createModel` is a pure factory
 /// — core owns the singleton lifecycle via [InferenceModel.addCloseListener].
 class LiteRtLmEngine
-    implements InferenceEngineProvider, HuggingFaceResolverSource {
+    implements
+        InferenceEngineProvider,
+        HuggingFaceResolverSource,
+        ModelCatalogSource {
   const LiteRtLmEngine({
     this.backendFallback = true,
     this.nativeLogLevel,
@@ -38,6 +42,12 @@ class LiteRtLmEngine
   @override
   bool canHandle(InferenceModelSpec spec) =>
       spec.fileType == ModelFileType.litertlm;
+
+  /// The LLMs this engine runs, pinned to Hugging Face commits:
+  /// [LiteRtLmModels.catalog]. `FlutterEdgeAi.catalog` includes it once the
+  /// engine is passed to `initialize`.
+  @override
+  ModelCatalog get modelCatalog => LiteRtLmModels.catalog;
 
   /// The engine's own Hugging Face resolver (reads `litertlm_manifest.json`).
   /// Auto-registered by `FlutterEdgeAi.initialize(inferenceEngines: …)` — same

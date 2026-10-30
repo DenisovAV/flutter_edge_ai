@@ -25,16 +25,20 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # ^2.3.0: imports `package:flutter_edge_ai/engine.dart`, which 2.3.0 adds.
+  # The model catalog types (CatalogModel, SttVariant, TtsVariant) arrive in
+  # core 2.5.5; the floor moves to ^2.5.5 in the release PR (release skill, 1g).
+  # (2.3.0 added `package:flutter_edge_ai/engine.dart`, which this imports.)
   # (1.8.0 was the older floor: this version reads `config.language` to pick
   # Whisper's output language, and only core 1.8.0's
   # `getActiveStt(language:)` sets it.)
-  flutter_edge_ai: ^2.3.0
-  # ^1.13.0: the first litertlm that compiles against core 2.3.0 — an older
+  flutter_edge_ai: ^2.5.4
+  # LiteRtLmNpuTarget is a core NpuTarget, which the catalog uses, from the
+  # litertlm after 1.19.0; the floor moves to it in the release PR (1g).
+  # (1.13.0 was the first litertlm that compiles against core 2.3.0 — an older
   # one paired with it fails to compile inside litertlm. (1.7.0 was the older
   # floor: before it litertlm's LiteRtRankedTensorTypeView still used the MSVC
   # LiteRtLayout on Windows, and STT/TTS failed there with status 3.)
-  flutter_edge_ai_litertlm: ^1.13.0
+  flutter_edge_ai_litertlm: ^1.19.0
   ffi: ^2.1.0
   meta: ^1.9.0
 

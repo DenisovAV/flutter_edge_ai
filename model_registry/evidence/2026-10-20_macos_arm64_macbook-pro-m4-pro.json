@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-20",
+  "host": "macos_arm64",
+  "device": "MacBook Pro (M4 Pro)",
+  "commit": "6b2ce58a4685f74d592fdc7a821b5ead0ff9002e",
+  "packages": {
+    "flutter_edge_ai": "2.5.1",
+    "flutter_edge_ai_litertlm": "1.16.1",
+    "flutter_edge_ai_speech": "0.5.10"
+  },
+  "native": "f95b27723324217f41a5b0b7aa04a24755e237f75b64ed37d852da8c249bfb67",
+  "log_sha256": "4687a7a3026810fb0a0998b24755ede3b2f627bcd370b26c578cd7d4c5ebc882",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "text"
+      ],
+      "gpu": [
+        "audio",
+        "text",
+        "vision"
+      ]
+    },
+    "matcha-tts/bundle": {
+      "cpu": [
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

@@ -38,7 +38,7 @@ void main() {
       'QCS8275',
       'PTL',
       'Tensor_G6',
-      'MT6991',
+      'mt6991',
     ]);
     ids.addAll(npu.values);
 
@@ -249,7 +249,7 @@ void main() {
             ? 'Intel'
             : soc.startsWith('Tensor_')
             ? 'Google'
-            : soc.startsWith('MT')
+            : soc.startsWith('mt')
             ? 'MediaTek'
             : 'Qualcomm',
         reason: model.name,
@@ -265,15 +265,18 @@ void main() {
           : 'embeddinggemma-2-text-270m-litert-lm/resolve/'
                 '9be6e8b90982095dc05c2bd162e4b954ee4dbac7/'
                 'embeddinggemma-2-text-270m';
+      // MediaTek's compiler stamps the SoC in lower case; its file names
+      // carry it in upper case.
+      final fileSoc = vendor == 'MediaTek' ? soc.toUpperCase() : soc;
       expect(
         model.url,
-        'https://huggingface.co/litert-community/${repo}_${vendor}_$soc.litertlm',
+        'https://huggingface.co/litert-community/${repo}_${vendor}_$fileSoc.litertlm',
         reason: model.name,
       );
       expect(model.isLiteRtLmBundle, isTrue);
       expect(model.needsAuth, isFalse);
       expect(model.sha256, hasLength(64));
-      expect(model.filename, contains('_${vendor}_${soc}__rev-'));
+      expect(model.filename, contains('_${vendor}_${fileSoc}__rev-'));
       expect(model.embedderBackend, PreferredBackend.npu);
       expect(
         model.ragProfileId,

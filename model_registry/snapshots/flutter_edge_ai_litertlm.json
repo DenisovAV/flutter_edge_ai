@@ -1,0 +1,2012 @@
+{
+  "package": "flutter_edge_ai_litertlm",
+  "backends_here": {
+    "deepseek-r1-distill-qwen-1.5b/q8-ekv4096": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "fastvlm-0.5b/generic": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "fastvlm-0.5b/npu-sm8750": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "fastvlm-0.5b/npu-sm8850": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "functiongemma-270m-flutter-demo/q8-ekv1024": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "functiongemma-270m-it/generic": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "gemma-3-1b-it/q4-ekv4096": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "gemma-3-1b-it/npu-mt6989": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-3-1b-it/npu-mt6991": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-3-1b-it/npu-mt6993": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-3-1b-it/npu-sm8850": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-3-1b-it/npu-tensor-g5": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-3-1b-it/npu-tensor-g6": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-3-270m-it/q8": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "gemma-3-270m-it/npu-mt6991": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-3-270m-it/npu-mt6993": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-3n-e2b-it/generic": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "gemma-3n-e2b-it/web": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": [
+        "gpu"
+      ]
+    },
+    "gemma-3n-e2b-it/npu-mt6993": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-3n-e4b-it/generic": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "gemma-3n-e4b-it/web": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": [
+        "gpu"
+      ]
+    },
+    "gemma-4-e2b-it/generic": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "gemma-4-e2b-it/gpu": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "gemma-4-e2b-it/web": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": [
+        "gpu"
+      ]
+    },
+    "gemma-4-e2b-it/npu-tensor-g5": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-4-e2b-it/npu-tensor-g6": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-4-e2b-it/npu-lnl": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [
+        "npu"
+      ],
+      "web": []
+    },
+    "gemma-4-e2b-it/npu-ptl": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [
+        "npu"
+      ],
+      "web": []
+    },
+    "gemma-4-e2b-it/npu-qcs8275": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-4-e2b-it/npu-sm8750": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "gemma-4-e4b-it/generic": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "gemma-4-e4b-it/gpu": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "gemma-4-e4b-it/web": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": [
+        "gpu"
+      ]
+    },
+    "lfm2.5-230m/int4": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "lfm2.5-230m/int8": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "llava-onevision-0.5b/generic": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "phi-4-mini-instruct/q8-ekv4096": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "phi-4-mini-reasoning/generic": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "qwen2-vl-2b/generic": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "qwen2.5-1.5b-instruct/q8-ekv4096": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "qwen2.5-1.5b-instruct/f32-ekv4096": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "qwen3-0.6b/dynamic-int4": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "qwen3-0.6b/standard": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "qwen3-0.6b/mixed-int4": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "qwen3-0.6b/npu-mt6993": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "smollm3-3b/q4-block32-ekv4096": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "smollm3-3b/standard": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "smolvlm2-500m/generic": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "translategemma-4b-it/int4": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": []
+    },
+    "translategemma-4b-it/int8": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": []
+    },
+    "translategemma-4b-it/int4-multimodal": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": []
+    },
+    "embeddinggemma-2-740m/generic": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "gpu"
+      ]
+    },
+    "embeddinggemma-2-740m/npu-mt6991": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-740m/npu-mt6993": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-740m/npu-ptl": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [
+        "npu"
+      ],
+      "web": []
+    },
+    "embeddinggemma-2-740m/npu-qcs8275": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-740m/npu-sm8550": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-740m/npu-sm8650": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-740m/npu-sm8750": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-740m/npu-sm8850": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-740m/npu-tensor-g5": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-740m/npu-tensor-g6": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-270m/generic": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "gpu"
+      ]
+    },
+    "embeddinggemma-2-text-270m/npu-mt6991": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-270m/npu-mt6993": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-270m/npu-ptl": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [
+        "npu"
+      ],
+      "web": []
+    },
+    "embeddinggemma-2-text-270m/npu-qcs8275": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-270m/npu-sm8550": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-270m/npu-sm8650": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-270m/npu-sm8750": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-270m/npu-sm8850": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-270m/npu-tensor-g5": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-270m/npu-tensor-g6": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "gpu"
+      ]
+    },
+    "embeddinggemma-2-text-vision-440m/npu-mt6991": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-vision-440m/npu-mt6993": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-vision-440m/npu-ptl": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [
+        "npu"
+      ],
+      "web": []
+    },
+    "embeddinggemma-2-text-vision-440m/npu-qcs8275": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-vision-440m/npu-sm8550": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-vision-440m/npu-sm8650": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-vision-440m/npu-sm8750": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-vision-440m/npu-sm8850": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [
+        "npu"
+      ],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-vision-440m/npu-tensor-g5": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-2-text-vision-440m/npu-tensor-g6": {
+      "android_arm64": [
+        "npu"
+      ],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq256": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "embeddinggemma-300m/seq256-npu-mt6991": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq256-npu-mt6993": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq256-npu-sm8550": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq256-npu-sm8650": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq256-npu-sm8750": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq256-npu-sm8850": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq256-npu-tensor-g5": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq256-npu-tensor-g6": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq512": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "embeddinggemma-300m/seq512-npu-mt6991": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq512-npu-mt6993": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq512-npu-sm8550": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq512-npu-sm8650": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq512-npu-sm8750": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq512-npu-sm8850": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq512-npu-tensor-g5": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq512-npu-tensor-g6": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq1024": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "embeddinggemma-300m/seq1024-npu-mt6991": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq1024-npu-mt6993": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq1024-npu-sm8550": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq1024-npu-sm8650": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq1024-npu-sm8750": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq1024-npu-sm8850": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq1024-npu-tensor-g5": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq1024-npu-tensor-g6": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq2048": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "embeddinggemma-300m/seq2048-npu-mt6991": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq2048-npu-mt6993": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq2048-npu-sm8550": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq2048-npu-sm8650": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq2048-npu-sm8750": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq2048-npu-sm8850": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq2048-npu-tensor-g5": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "embeddinggemma-300m/seq2048-npu-tensor-g6": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "gecko-110m-en/seq64-quant": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "gecko-110m-en/seq256-quant": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "gecko-110m-en/seq512-quant": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "gecko-110m-en/seq1024-quant": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "gecko-110m-en/seq64-f32": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "gecko-110m-en/seq256-f32": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "gecko-110m-en/seq512-f32": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    },
+    "gecko-110m-en/seq1024-f32": {
+      "android_arm64": [
+        "cpu"
+      ],
+      "ios_arm64": [
+        "cpu"
+      ],
+      "macos_arm64": [
+        "cpu"
+      ],
+      "linux_x64": [
+        "cpu"
+      ],
+      "linux_arm64": [
+        "cpu"
+      ],
+      "windows_x64": [
+        "cpu"
+      ],
+      "web": [
+        "cpu",
+        "gpu"
+      ]
+    }
+  }
+}

@@ -269,12 +269,13 @@ shader compiler and NPU runtime — are bundled at build time.
 - Linux: `x64` and `arm64`. Building needs
   `clang cmake ninja-build libgtk-3-dev lld`. GPU needs the vendor Vulkan
   driver; Mesa's `llvmpipe` software fallback cannot run Gemma 4.
-- Linux arm64 NPU (Qualcomm boards: QCS6490, QCS8275, QCS9075, …) uses the same
+- Linux arm64 NPU (Qualcomm boards with a Hexagon V68–V81 DSP; bundles are published for the QCS8275 only) uses the same
   `qualcomm_npu: true` as Android; the build hook reads the QNN runtime out of
   Qualcomm's QAIRT SDK zip (about 32 MB by range request). On the board the
   user must be in group `fastrpc` and `qcom-fastrpc1` must be installed, or
-  the bundle compiled for the SoC (`gemma-4-E2B-it_qualcomm_qcs8275.litertlm`),
-  the one to use, is refused with the reason. A generic bundle never runs on
+  the bundle compiled for the SoC (`LiteRtLmModels.gemma4E2bIt.npuQcs8275`,
+  installed from the catalog: the file left the repository's `main`), the one
+  to use, is refused with the reason. A generic bundle never runs on
   the NPU on any platform: `npu` falls back to GPU, then CPU, for it, because
   it has no NPU graph.
 
@@ -315,7 +316,7 @@ Storage mode, set in `FlutterEdgeAi.initialize(webStorageMode: ...)`:
 
 | `WebStorageMode` | Use for |
 | --- | --- |
-| `cacheApi` (default) | models under about 2 GB |
+| `cacheApi` (default) | files up to 2 GiB (a catalog build over that is refused before it downloads) |
 | `streaming` | larger models — streams through OPFS |
 | `none` | no persistence; downloads every launch |
 

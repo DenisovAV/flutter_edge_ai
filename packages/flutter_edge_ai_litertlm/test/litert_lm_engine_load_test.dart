@@ -19,7 +19,7 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart'
     show NpuDispatch;
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuVendor;
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuStack;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
@@ -43,7 +43,7 @@ class _FakeHost extends LiteRtLmEngineHost {
   final String os;
   final String abiName;
   final NpuStackCheck stackCheck;
-  final Map<NpuVendor, NpuStackCheck> stacks;
+  final Map<NpuStack, NpuStackCheck> stacks;
   final bool npuShips;
 
   /// The error each backend's create throws; a backend not here succeeds.
@@ -54,10 +54,10 @@ class _FakeHost extends LiteRtLmEngineHost {
   int npuProbes = 0;
 
   /// Every vendor whose stack or device was asked about, in order.
-  final askedVendors = <NpuVendor>[];
+  final askedVendors = <NpuStack>[];
 
   /// The vendor whose dispatch directory each NPU attempt prepared.
-  final preparedFor = <NpuVendor>[];
+  final preparedFor = <NpuStack>[];
 
   /// The NPU dispatch handed to each attempt, in order (null for gpu/cpu).
   final npuDispatches = <NpuDispatch?>[];
@@ -80,21 +80,21 @@ class _FakeHost extends LiteRtLmEngineHost {
   String get abi => abiName;
 
   @override
-  Future<NpuStackCheck> stack(NpuVendor vendor) async {
+  Future<NpuStackCheck> stack(NpuStack vendor) async {
     stackChecks++;
     askedVendors.add(vendor);
     return stacks[vendor] ?? stackCheck;
   }
 
   @override
-  String? unreachable(NpuVendor vendor) {
+  String? unreachable(NpuStack vendor) {
     npuProbes++;
     askedVendors.add(vendor);
     return npuShips ? null : 'the fake host has no NPU';
   }
 
   @override
-  Future<String> prepareDispatchDir(NpuVendor vendor) async {
+  Future<String> prepareDispatchDir(NpuStack vendor) async {
     preparedFor.add(vendor);
     return '/fake/npu/${vendor.name}';
   }
@@ -388,8 +388,8 @@ void main() {
         write('sm8750.litertlm', _bundle(textStamp: ('Qualcomm', 'SM8750'))),
       );
       expect(host.attempts.map((a) => a.backend), ['npu']);
-      expect(host.askedVendors, [NpuVendor.qualcomm, NpuVendor.qualcomm]);
-      expect(host.preparedFor, [NpuVendor.qualcomm]);
+      expect(host.askedVendors, [NpuStack.qualcomm, NpuStack.qualcomm]);
+      expect(host.preparedFor, [NpuStack.qualcomm]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/qualcomm',
         disableHwMasking: false,
@@ -404,7 +404,7 @@ void main() {
         preferredBackend: PreferredBackend.npu,
       );
       expect(host.attempts.map((a) => a.backend), ['npu']);
-      expect(host.preparedFor, [NpuVendor.qualcomm]);
+      expect(host.preparedFor, [NpuStack.qualcomm]);
       await unread.close();
     },
   );
@@ -435,10 +435,10 @@ void main() {
         );
         expect(host.attempts.map((a) => a.backend), ['npu'], reason: soc);
         expect(host.askedVendors, [
-          NpuVendor.googleTensor,
-          NpuVendor.googleTensor,
+          NpuStack.googleTensor,
+          NpuStack.googleTensor,
         ], reason: soc);
-        expect(host.preparedFor, [NpuVendor.googleTensor], reason: soc);
+        expect(host.preparedFor, [NpuStack.googleTensor], reason: soc);
         expect(host.npuDispatches.single, (
           dir: '/fake/npu/googleTensor',
           disableHwMasking: false,
@@ -474,8 +474,8 @@ void main() {
         ),
       );
       expect(host.attempts.map((a) => a.backend), ['npu']);
-      expect(host.askedVendors, [NpuVendor.mediatek, NpuVendor.mediatek]);
-      expect(host.preparedFor, [NpuVendor.mediatek]);
+      expect(host.askedVendors, [NpuStack.mediatek, NpuStack.mediatek]);
+      expect(host.preparedFor, [NpuStack.mediatek]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/mediatek',
         disableHwMasking: false,
@@ -492,7 +492,7 @@ void main() {
     final path = writeUnread('unread.task');
     final model = await load(path, preferredBackend: PreferredBackend.npu);
     expect(host.attempts.map((a) => a.backend), ['npu']);
-    expect(host.askedVendors, [NpuVendor.intel, NpuVendor.intel]);
+    expect(host.askedVendors, [NpuStack.intel, NpuStack.intel]);
     expect(host.npuDispatches.single, (
       dir: '/fake/npu/intel',
       disableHwMasking: true,
@@ -530,7 +530,7 @@ void main() {
       npuShips: true,
       stack: const NpuStackCheck.missing(notEnabled),
       stacks: const {
-        NpuVendor.googleTensor: NpuStackCheck.missing(
+        NpuStack.googleTensor: NpuStackCheck.missing(
           'this app was built without the Google Tensor NPU bridge',
         ),
       },

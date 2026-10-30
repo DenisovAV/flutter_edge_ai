@@ -276,7 +276,7 @@ REQUIRED=(
   # libcdsprpc.so shim the QNN Stubs need (build_qualcomm_dispatch.sh).
   "linux_arm64:libLiteRtDispatch_Qualcomm.so"
   "linux_arm64:libcdsprpc.so"
-  # Intel's dispatch (NpuVendor.intel), in every Windows x64 build: rebuilt
+  # Intel's dispatch (NpuStack.intel), in every Windows x64 build: rebuilt
   # from the pin every release, never carried forward unchecked.
   "windows_x86_64:LiteRtDispatch.dll"
   # OpenVINO 2026.4: the NPU plugin loads it by name for blobs that run on

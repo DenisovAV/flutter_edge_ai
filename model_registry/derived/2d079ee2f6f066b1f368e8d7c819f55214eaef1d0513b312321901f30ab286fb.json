@@ -1,0 +1,53 @@
+{
+  "container_version": "1.7.0",
+  "size": 164626432,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": null,
+  "system_metadata": {
+    "author": "The ODML Authors",
+    "uuid": "a9b53e53-46c2-4bf3-a5b1-aa5043bdc029",
+    "creation_timestamp": "2026-09-30T18:56:28.714497+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "EmbeddingMetadataProto",
+      "length": 124
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 3149080,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_text_encoder",
+      "length": 21250720,
+      "items": {
+        "model_type": "tf_lite_text_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteWeights",
+      "model_type": "tf_lite_embedder",
+      "length": 67108864,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteWeights",
+      "model_type": "tf_lite_text_encoder",
+      "length": 68354048,
+      "items": {
+        "model_type": "tf_lite_text_encoder"
+      }
+    }
+  ]
+}

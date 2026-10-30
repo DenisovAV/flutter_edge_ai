@@ -41,7 +41,7 @@ library;
 /// process (`IsTheApiInitialized`, litert/runtime/dispatch/litert_dispatch.cc;
 /// a failed init fixes nothing). It is per copy of LiteRT: another plugin's
 /// `libLiteRt` (flutter_litert) keeps its own.
-enum NpuVendor {
+enum NpuStack {
   /// Qualcomm Hexagon through QNN, in apps that opt in with
   /// [qualcommNpuUserDefine].
   qualcomm(
@@ -69,7 +69,7 @@ enum NpuVendor {
   /// e301f74d, 24d962e9); a bare `Intel` is not LiteRT's stamp.
   intel('Intel', stampVendor: 'intelopenvino', abis: {'windows_x64'});
 
-  const NpuVendor(this.label, {required this.stampVendor, required this.abis});
+  const NpuStack(this.label, {required this.stampVendor, required this.abis});
 
   /// The vendor's name in messages.
   final String label;
@@ -85,7 +85,7 @@ enum NpuVendor {
 
   /// The vendor of a bundle stamped [vendor] (any case), or null when this
   /// package has no dispatch for it.
-  static NpuVendor? forStamp(String vendor) {
+  static NpuStack? forStamp(String vendor) {
     final lower = vendor.toLowerCase();
     for (final candidate in values) {
       if (candidate.stampVendor == lower) return candidate;
@@ -94,7 +94,7 @@ enum NpuVendor {
   }
 
   /// The vendors whose NPU bundles run on [abi], in declaration order.
-  static List<NpuVendor> forAbi(String abi) => [
+  static List<NpuStack> forAbi(String abi) => [
     for (final vendor in values)
       if (vendor.abis.contains(abi)) vendor,
   ];
@@ -323,72 +323,72 @@ const intelDispatchLib = 'LiteRtDispatch';
 
 /// The user_define that bundles [vendor]'s stack into an app, or null when
 /// every build for the vendor's ABIs carries it.
-String? npuUserDefine(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => qualcommNpuUserDefine,
-  NpuVendor.googleTensor => googleTensorNpuUserDefine,
-  NpuVendor.mediatek => mediatekNpuUserDefine,
-  NpuVendor.intel => null,
+String? npuUserDefine(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm => qualcommNpuUserDefine,
+  NpuStack.googleTensor => googleTensorNpuUserDefine,
+  NpuStack.mediatek => mediatekNpuUserDefine,
+  NpuStack.intel => null,
 };
 
 /// [vendor]'s dispatch library, as a CodeAsset name: what LiteRT finds in the
 /// dispatch directory, and — when [npuDispatchInNativeTarball] — what every
 /// native tarball of the vendor's ABIs must carry
 /// (`verify_tarball_manifest.sh` REQUIRED).
-String npuDispatchLib(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => qualcommDispatchLib,
-  NpuVendor.googleTensor => googleTensorDispatchLib,
-  NpuVendor.mediatek => mediatekDispatchLib,
-  NpuVendor.intel => intelDispatchLib,
+String npuDispatchLib(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm => qualcommDispatchLib,
+  NpuStack.googleTensor => googleTensorDispatchLib,
+  NpuStack.mediatek => mediatekDispatchLib,
+  NpuStack.intel => intelDispatchLib,
 };
 
 /// Whether [vendor]'s dispatch ships in this package's native tarball (built
 /// from the LiteRT pin), rather than being fetched by the build hook from the
 /// vendor's own publication (MediaTek: Google's AAR, whose build needs
 /// MediaTek's NeuroPilot SDK, which may not be redistributed on its own).
-bool npuDispatchInNativeTarball(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => true,
-  NpuVendor.googleTensor => true,
-  NpuVendor.mediatek => false,
-  NpuVendor.intel => true,
+bool npuDispatchInNativeTarball(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm => true,
+  NpuStack.googleTensor => true,
+  NpuStack.mediatek => false,
+  NpuStack.intel => true,
 };
 
 /// Every library of [vendor]'s stack on [operatingSystem]
 /// (`Platform.operatingSystem` spelling), as CodeAsset names: what
 /// NativeAssetsManifest.json lists when the build carries the stack, and what
 /// Android hands LiteRT as the dispatch directory.
-List<String> npuStackLibs(NpuVendor vendor, String operatingSystem) =>
+List<String> npuStackLibs(NpuStack vendor, String operatingSystem) =>
     switch (vendor) {
-      NpuVendor.qualcomm => switch (operatingSystem) {
+      NpuStack.qualcomm => switch (operatingSystem) {
         'android' => qualcommNpuLibs,
         'linux' => qualcommNpuLibsLinux,
         _ => throw ArgumentError.value(
           operatingSystem,
           'operatingSystem',
-          'NpuVendor.qualcomm has no stack here',
+          'NpuStack.qualcomm has no stack here',
         ),
       },
-      NpuVendor.googleTensor => switch (operatingSystem) {
+      NpuStack.googleTensor => switch (operatingSystem) {
         'android' => googleTensorNpuLibs,
         _ => throw ArgumentError.value(
           operatingSystem,
           'operatingSystem',
-          'NpuVendor.googleTensor has no stack here',
+          'NpuStack.googleTensor has no stack here',
         ),
       },
-      NpuVendor.mediatek => switch (operatingSystem) {
+      NpuStack.mediatek => switch (operatingSystem) {
         'android' => mediatekNpuLibs,
         _ => throw ArgumentError.value(
           operatingSystem,
           'operatingSystem',
-          'NpuVendor.mediatek has no stack here',
+          'NpuStack.mediatek has no stack here',
         ),
       },
-      NpuVendor.intel => switch (operatingSystem) {
+      NpuStack.intel => switch (operatingSystem) {
         'windows' => intelNpuLibs,
         _ => throw ArgumentError.value(
           operatingSystem,
           'operatingSystem',
-          'NpuVendor.intel has no stack here',
+          'NpuStack.intel has no stack here',
         ),
       },
     };
@@ -403,11 +403,11 @@ const qualcommAndroidFastRpcLib = 'libcdsprpc.so';
 /// app's linker namespace — the probe's, or the dispatch's at engine_create.
 /// A dispatch that opens a vendor runtime lists all of it (MediaTek's Neuron
 /// adapters, Tensor's `libedgetpu_litert.so`), not only what the probe opens.
-List<String> npuAndroidSystemLibs(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => const [qualcommAndroidFastRpcLib],
-  NpuVendor.googleTensor => const [googleTensorSystemRuntime],
-  NpuVendor.mediatek => mediatekAndroidSystemLibs,
-  NpuVendor.intel => const [],
+List<String> npuAndroidSystemLibs(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm => const [qualcommAndroidFastRpcLib],
+  NpuStack.googleTensor => const [googleTensorSystemRuntime],
+  NpuStack.mediatek => mediatekAndroidSystemLibs,
+  NpuStack.intel => const [],
 };
 
 /// The asset id the build hook registers [name] under — the key Flutter

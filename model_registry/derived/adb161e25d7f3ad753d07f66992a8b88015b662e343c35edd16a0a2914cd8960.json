@@ -1,0 +1,77 @@
+{
+  "container_version": "1.5.0",
+  "size": 1020411904,
+  "npu_target": "MediaTek/mt6993",
+  "llm_metadata_max_num_tokens": 1280,
+  "kv_cache_length": 1280,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_v_3": [
+        1,
+        1,
+        256,
+        1280
+      ],
+      "kv_cache_k_2": [
+        1,
+        1,
+        1280,
+        256
+      ]
+    },
+    "prefill_128": {
+      "kv_cache_v_3": [
+        1,
+        1,
+        256,
+        1280
+      ],
+      "kv_cache_k_2": [
+        1,
+        1,
+        1280,
+        256
+      ]
+    }
+  },
+  "system_metadata": {
+    "Authors": "ODML team",
+    "uuid": "e881e0b4-7c9a-4171-a049-4cf3ab313faa",
+    "creation_timestamp": "2026-04-17T01:12:45.963019+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 157290184,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_aux",
+      "length": 116592,
+      "items": {
+        "model_type": "tf_lite_aux"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 858229000,
+      "npu_target": "MediaTek/mt6993",
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    },
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 117
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689072
+    }
+  ]
+}

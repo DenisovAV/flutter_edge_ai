@@ -1,5 +1,5 @@
 // Which vendor's NPU a load runs on ([chooseNpuVendor]) and what this process
-// can tell about each vendor ([NpuVendor]): whether this build carries its
+// can tell about each vendor ([NpuStack]): whether this build carries its
 // stack, whether the device reaches it (the vendor's probe, in
 // backend_preference.dart), and the directory LiteRT loads its dispatch from.
 // The LLM engine (litert_lm_engine.dart) and the EmbeddingGemma 2 placement
@@ -35,17 +35,17 @@ abstract interface class LiteRtLmNpuHost {
   /// Whether this build carries [vendor]'s NPU stack where LiteRT will load
   /// it ([npuStackOf]): the opt-in Qualcomm stack in NativeAssetsManifest.json,
   /// Intel's dispatch beside the executable.
-  Future<NpuStackCheck> stack(NpuVendor vendor);
+  Future<NpuStackCheck> stack(NpuStack vendor);
 
   /// Why this device cannot run [vendor]'s stack, or null when it can
   /// ([npuUnreachable]: for Qualcomm on Android, FastRPC opens; on Linux, a
   /// compute DSP the user may open, and libcdsprpc.so.1; Windows has no
   /// probe). Asked only for a vendor of [abi].
-  String? unreachable(NpuVendor vendor);
+  String? unreachable(NpuStack vendor);
 
   /// The `dispatch_lib_dir` for LiteRT ([prepareNpuDispatchDir]). Throws
   /// [NpuDispatchUnavailableException] when the stack cannot be prepared.
-  Future<String> prepareDispatchDir(NpuVendor vendor);
+  Future<String> prepareDispatchDir(NpuStack vendor);
 }
 
 /// The host this process runs on.
@@ -59,14 +59,14 @@ final class LiteRtLmPlatformNpuHost implements LiteRtLmNpuHost {
   String get abi => '${Abi.current()}';
 
   @override
-  Future<NpuStackCheck> stack(NpuVendor vendor) => npuStackOf(vendor);
+  Future<NpuStackCheck> stack(NpuStack vendor) => npuStackOf(vendor);
 
   @override
-  String? unreachable(NpuVendor vendor) =>
+  String? unreachable(NpuStack vendor) =>
       npuUnreachable(vendor, operatingSystem, platformNpuProbes);
 
   @override
-  Future<String> prepareDispatchDir(NpuVendor vendor) =>
+  Future<String> prepareDispatchDir(NpuStack vendor) =>
       prepareNpuDispatchDir(vendor);
 }
 
@@ -79,7 +79,7 @@ sealed class NpuChoice {
 /// The load runs on [vendor]'s NPU.
 final class NpuChosen extends NpuChoice {
   const NpuChosen(this.vendor);
-  final NpuVendor vendor;
+  final NpuStack vendor;
 }
 
 /// No NPU this host reaches can run the load; [reason] says why, worded for
@@ -92,9 +92,9 @@ final class NpuRefused extends NpuChoice {
 /// The one rule for which vendor's NPU a load runs on, for the LLM engine and
 /// the EmbeddingGemma 2 placement alike.
 ///
-/// The candidates are the vendors of the host's ABI ([NpuVendor.forAbi]): for a
+/// The candidates are the vendors of the host's ABI ([NpuStack.forAbi]): for a
 /// bundle compiled for an NPU ([target], its `LiteRtStamp`), only that vendor;
-/// otherwise each in [NpuVendor] declaration order. The caller refuses a
+/// otherwise each in [NpuStack] declaration order. The caller refuses a
 /// stamped vendor this package or this host has no dispatch for before it
 /// asks, so that the refusal names the vendor rather than this host's stack.
 /// For each candidate the build is asked before the device: an app that did not
@@ -109,7 +109,7 @@ Future<NpuChoice> chooseNpuVendor({
 }) async {
   final compiledFor = target == null ? null : npuVendorOf(target);
   final candidates = [
-    for (final vendor in NpuVendor.forAbi(host.abi))
+    for (final vendor in NpuStack.forAbi(host.abi))
       if (target == null || vendor == compiledFor) vendor,
   ];
   if (candidates.isEmpty) {
@@ -153,21 +153,21 @@ typedef NpuDispatch = ({
 /// off. Intel: with it on, LiteRT sets up the kWH HW mask method, which Intel
 /// preview NPUs (LunarLake/PantherLake) do not fully support → CFG check
 /// failure 0xc0000409 (per Matt Kreileder's Intel NPU pipeline instructions).
-bool npuDisablesHwMasking(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => false,
-  NpuVendor.googleTensor => false,
-  NpuVendor.mediatek => false,
-  NpuVendor.intel => true,
+bool npuDisablesHwMasking(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm => false,
+  NpuStack.googleTensor => false,
+  NpuStack.mediatek => false,
+  NpuStack.intel => true,
 };
 
 /// Whether a load on [vendor]'s NPU writes weight banks to the temp directory
 /// that its process must claim (intel_weight_banks.dart). Intel: the Windows
 /// dispatch copies a bundle's shared weight pool there during the create.
-bool npuStagesWeightBanks(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => false,
-  NpuVendor.googleTensor => false,
-  NpuVendor.mediatek => false,
-  NpuVendor.intel => true,
+bool npuStagesWeightBanks(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm => false,
+  NpuStack.googleTensor => false,
+  NpuStack.mediatek => false,
+  NpuStack.intel => true,
 };
 
 /// Whether this build carries [vendor]'s NPU stack where LiteRT will load it:
@@ -177,11 +177,11 @@ bool npuStagesWeightBanks(NpuVendor vendor) => switch (vendor) {
 /// a stack that answers [NpuStackCheck.unknown] there would go unchecked:
 /// Intel's [prepareNpuDispatchDir] checks nothing (it only sweeps stale weight
 /// banks).
-Future<NpuStackCheck> npuStackOf(NpuVendor vendor) async => switch (vendor) {
-  NpuVendor.qualcomm => await checkNpuStackInManifest(vendor),
-  NpuVendor.googleTensor => await checkNpuStackInManifest(vendor),
-  NpuVendor.mediatek => await checkNpuStackInManifest(vendor),
-  NpuVendor.intel => checkIntelNpuStack(windowsNpuDispatchDir),
+Future<NpuStackCheck> npuStackOf(NpuStack vendor) async => switch (vendor) {
+  NpuStack.qualcomm => await checkNpuStackInManifest(vendor),
+  NpuStack.googleTensor => await checkNpuStackInManifest(vendor),
+  NpuStack.mediatek => await checkNpuStackInManifest(vendor),
+  NpuStack.intel => checkIntelNpuStack(windowsNpuDispatchDir),
 };
 
 /// The `dispatch_lib_dir` to hand LiteRT for [vendor] on this host: the
@@ -194,42 +194,42 @@ Future<NpuStackCheck> npuStackOf(NpuVendor vendor) async => switch (vendor) {
 /// that getter has no override seam, so the Windows arm is otherwise
 /// unreachable from a test run on another host.
 Future<String> prepareNpuDispatchDir(
-  NpuVendor vendor, {
+  NpuStack vendor, {
   String? operatingSystem,
 }) async => switch (vendor) {
-  NpuVendor.qualcomm => switch (operatingSystem ?? Platform.operatingSystem) {
+  NpuStack.qualcomm => switch (operatingSystem ?? Platform.operatingSystem) {
     'android' => await prepareAndroidNpuDispatchDir(
       npuStackLibs(vendor, 'android'),
       vendor,
     ),
     'linux' => prepareLinuxNpuDispatchDir(),
     final os => throw StateError(
-      'NpuVendor.qualcomm has no dispatch directory on $os',
+      'NpuStack.qualcomm has no dispatch directory on $os',
     ),
   },
-  NpuVendor.googleTensor => switch (operatingSystem ??
+  NpuStack.googleTensor => switch (operatingSystem ??
       Platform.operatingSystem) {
     'android' => await prepareAndroidNpuDispatchDir(
       npuStackLibs(vendor, 'android'),
       vendor,
     ),
     final os => throw StateError(
-      'NpuVendor.googleTensor has no dispatch directory on $os',
+      'NpuStack.googleTensor has no dispatch directory on $os',
     ),
   },
-  NpuVendor.mediatek => switch (operatingSystem ?? Platform.operatingSystem) {
+  NpuStack.mediatek => switch (operatingSystem ?? Platform.operatingSystem) {
     'android' => await prepareAndroidNpuDispatchDir(
       npuStackLibs(vendor, 'android'),
       vendor,
     ),
     final os => throw StateError(
-      'NpuVendor.mediatek has no dispatch directory on $os',
+      'NpuStack.mediatek has no dispatch directory on $os',
     ),
   },
-  NpuVendor.intel => switch (operatingSystem ?? Platform.operatingSystem) {
+  NpuStack.intel => switch (operatingSystem ?? Platform.operatingSystem) {
     'windows' => await _prepareIntelDispatchDir(),
     final os => throw StateError(
-      'NpuVendor.intel has no dispatch directory on $os',
+      'NpuStack.intel has no dispatch directory on $os',
     ),
   },
 };
@@ -254,7 +254,7 @@ Future<String> prepareNpuDispatchDir(
 /// from here because the build decides it.
 Future<String> prepareAndroidNpuDispatchDir(
   List<String> libs,
-  NpuVendor vendor,
+  NpuStack vendor,
 ) async {
   const bundledChannel = MethodChannel('flutter_gemma_bundled');
   final String? dir;

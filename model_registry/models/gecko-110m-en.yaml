@@ -1,0 +1,172 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: gecko-110m-en
+kind: embedder
+package: flutter_edge_ai_litertlm
+display_name: Gecko 110M (English)
+family: gecko
+arch_class: encoder
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+modalities:
+- text
+variants:
+- slug: seq64-quant
+  file_type: tflite
+  file:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: Gecko_64_quant.tflite
+    sha256: 19f04c9397c814c293d8c6caa045b89da298c77064d65e90d8f85f4c02ad466f
+    size: 112175104
+    install_filename: Gecko_64_quant__rev-61a0d0c2cdc9.tflite
+  tokenizer:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: sentencepiece.model
+    sha256: 839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c
+    size: 794346
+    install_filename: gecko-110m-en-seq64__sentencepiece__rev-61a0d0c2cdc9.model
+  rag_profile_id: gecko-110m-en-seq64-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 64
+  example:
+  - gecko64
+- slug: seq256-quant
+  file_type: tflite
+  file:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: Gecko_256_quant.tflite
+    sha256: 81505c2a296878467fba5bb066fe3646f75e04d19220fbf219c0c968f5ea2ce4
+    size: 114141184
+    install_filename: Gecko_256_quant__rev-61a0d0c2cdc9.tflite
+  tokenizer:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: sentencepiece.model
+    sha256: 839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c
+    size: 794346
+    install_filename: gecko-110m-en-seq256__sentencepiece__rev-61a0d0c2cdc9.model
+  rag_profile_id: gecko-110m-en-seq256-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 256
+  example:
+  - gecko256
+- slug: seq512-quant
+  file_type: tflite
+  file:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: Gecko_512_quant.tflite
+    sha256: 2b11bb47da36b6085e65f46af28609f64ec13feb039e8d319cdaa0a10d608b19
+    size: 120432640
+    install_filename: Gecko_512_quant__rev-61a0d0c2cdc9.tflite
+  tokenizer:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: sentencepiece.model
+    sha256: 839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c
+    size: 794346
+    install_filename: gecko-110m-en-seq512__sentencepiece__rev-61a0d0c2cdc9.model
+  rag_profile_id: gecko-110m-en-seq512-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 512
+  example:
+  - gecko512
+- slug: seq1024-quant
+  file_type: tflite
+  file:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: Gecko_1024_quant.tflite
+    sha256: 2334395c8192ea6466093dc39177c524535ba8318c876232096d023518d323e6
+    size: 145598464
+    install_filename: Gecko_1024_quant__rev-61a0d0c2cdc9.tflite
+  tokenizer:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: sentencepiece.model
+    sha256: 839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c
+    size: 794346
+    install_filename: gecko-110m-en-seq1024__sentencepiece__rev-61a0d0c2cdc9.model
+  rag_profile_id: gecko-110m-en-seq1024-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 1024
+- slug: seq64-f32
+  file_type: tflite
+  file:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: Gecko_64_f32.tflite
+    sha256: 31e402e85fd0f45ec82588939ba1f0424c1366b17dbe8a6cd431007bfeefabe3
+    size: 441231836
+    install_filename: Gecko_64_f32__rev-61a0d0c2cdc9.tflite
+  tokenizer:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: sentencepiece.model
+    sha256: 839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c
+    size: 794346
+    install_filename: gecko-110m-en-seq64-f32__sentencepiece__rev-61a0d0c2cdc9.model
+  rag_profile_id: gecko-110m-en-seq64-f32-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 64
+- slug: seq256-f32
+  file_type: tflite
+  file:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: Gecko_256_f32.tflite
+    sha256: eb738ab8cd002380ba5e052cd00cc6abf5e7d20fb94fa1ef447ab318bfe3a123
+    size: 443197916
+    install_filename: Gecko_256_f32__rev-61a0d0c2cdc9.tflite
+  tokenizer:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: sentencepiece.model
+    sha256: 839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c
+    size: 794346
+    install_filename: gecko-110m-en-seq256-f32__sentencepiece__rev-61a0d0c2cdc9.model
+  rag_profile_id: gecko-110m-en-seq256-f32-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 256
+- slug: seq512-f32
+  file_type: tflite
+  file:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: Gecko_512_f32.tflite
+    sha256: ab5b20c443e6fa60c1a5bad45e6f8d1b11e3c60d5850c2f62bb8402b904ae6c1
+    size: 449489372
+    install_filename: Gecko_512_f32__rev-61a0d0c2cdc9.tflite
+  tokenizer:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: sentencepiece.model
+    sha256: 839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c
+    size: 794346
+    install_filename: gecko-110m-en-seq512-f32__sentencepiece__rev-61a0d0c2cdc9.model
+  rag_profile_id: gecko-110m-en-seq512-f32-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 512
+- slug: seq1024-f32
+  file_type: tflite
+  file:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: Gecko_1024_f32.tflite
+    sha256: d594eebd0dc01b6009d6392cc3d6e6950f1104caf1712cedc62ac0373ea71183
+    size: 474655196
+    install_filename: Gecko_1024_f32__rev-61a0d0c2cdc9.tflite
+  tokenizer:
+    repo: litert-community/Gecko-110m-en
+    revision: 61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2
+    path: sentencepiece.model
+    sha256: 839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c
+    size: 794346
+    install_filename: gecko-110m-en-seq1024-f32__sentencepiece__rev-61a0d0c2cdc9.model
+  rag_profile_id: gecko-110m-en-seq1024-f32-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1
+  dimension: 768
+  max_input_tokens: 1024

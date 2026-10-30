@@ -292,14 +292,25 @@ Installing a name again from another source replaces it; core never deletes a
 file you installed with `fromFile`.
 
 ```dart
+// A build from the model catalog (2.5.5): model type, file type, a
+// commit-pinned URL, its install name and size come with it.
+await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
+    .withProgress((progress) => print('Downloading: $progress%'))
+    .install();
+
+// Your own file: say which engine runs it.
 await FlutterEdgeAi.installModel(
   modelType: ModelType.gemmaIt,
   fileType: ModelFileType.litertlm, // selects the engine — declare it
 ).fromNetwork(
-  'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
+  'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
 ).withProgress((progress) => print('Downloading: $progress%')).install();
 ```
 
+`FlutterEdgeAi.catalog` lists every build the registered packages offer
+(`LiteRtLmModels`, `LiteRtEmbedders`, `LiteRtSpeechModels`), each pinned to a
+Hugging Face commit; every build and where it has been run is on the
+[Model Registry](https://flutteredge.ai/docs/registry).
 `litert-community/Gemma3-1B-IT` is gated: accept its license on Hugging Face, then pass your token with `--dart-define=HUGGINGFACE_TOKEN=…`.
 
 ### Chat

@@ -1,0 +1,62 @@
+{
+  "container_version": "1.7.0",
+  "size": 559418036,
+  "npu_target": "Google/Tensor_G5",
+  "llm_metadata_max_num_tokens": null,
+  "system_metadata": {
+    "uuid": "8c4cbb61-3ebc-4862-8eaf-52a83d1588b3",
+    "creation_timestamp": "2026-09-25T08:01:32.683836+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "EmbeddingMetadataProto",
+      "length": 121
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 70257824,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_text_encoder",
+      "length": 91001312,
+      "npu_target": "Google/Tensor_G5",
+      "items": {
+        "model_type": "tf_lite_text_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_encoder",
+      "length": 391794256,
+      "npu_target": "Google/Tensor_G5",
+      "items": {
+        "model_type": "tf_lite_vision_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_adapter",
+      "length": 1584216,
+      "items": {
+        "model_type": "tf_lite_vision_adapter"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_end_of_vision",
+      "length": 2740,
+      "items": {
+        "model_type": "tf_lite_end_of_vision"
+      }
+    }
+  ]
+}

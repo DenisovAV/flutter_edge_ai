@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
 import 'package:flutter_edge_ai_example/utils/platform_io_helper.dart';
@@ -13,7 +14,13 @@ class ModelDownloadService {
     required this.modelType,
     this.fileType = ModelFileType.task,
     this.foreground,
+    this.catalogVariant,
   });
+
+  /// The model registry build to install, when the model is one: then it is
+  /// installed with `FlutterEdgeAi.installModelFromCatalog`, which takes the type,
+  /// file type and pinned URL from it and checks the file's size.
+  final CatalogVariant? catalogVariant;
 
   final String modelUrl;
   final String modelFilename;
@@ -45,13 +52,20 @@ class ModelDownloadService {
   }
 
   /// Checks if the model file exists and matches the remote file size.
+  /// The name core installs the model under: the catalog's install name for
+  /// a registry build, otherwise the URL's file name.
+  String get installedName {
+    if (catalogVariant case InferenceVariant(file: final file?)) {
+      return file.installFilename;
+    }
+    final uri = Uri.parse(modelUrl);
+    return uri.pathSegments.isNotEmpty ? uri.pathSegments.last : modelFilename;
+  }
+
   Future<bool> checkModelExistence(String token) async {
     try {
-      // Extract SAME filename that Modern API will use during download
-      final uri = Uri.parse(modelUrl);
-      final actualFilename = uri.pathSegments.isNotEmpty
-          ? uri.pathSegments.last
-          : modelFilename;
+      // The name core installs the model under.
+      final actualFilename = installedName;
 
       // Modern API: Check if model is installed using actual filename
       final isInstalled = await FlutterEdgeAi.isModelInstalled(actualFilename);
@@ -108,14 +122,34 @@ class ModelDownloadService {
   }
 
   /// Downloads the model file and tracks progress using Modern API.
-  Future<void> downloadModel({
+  ///
+  /// [confirmReplace] is asked before an active model in the way of a
+  /// catalog install is uninstalled (see `installFromCatalogReplacingActive`).
+  Future<CatalogInstallResult> downloadModel({
     required String token,
     required Function(double) onProgress,
+    required Future<bool> Function(ActiveModelInTheWay model, int bytes)
+    confirmReplace,
   }) async {
     try {
       // Convert empty string to null for cleaner API
       final authToken = token.isEmpty ? null : token;
 
+      if (catalogVariant case final InferenceVariant variant) {
+        final replaced = await installFromCatalogReplacingActive(
+          () =>
+              FlutterEdgeAi.installModelFromCatalog(
+                    variant,
+                    token: authToken,
+                    foreground: foreground,
+                  )
+                  .withProgress((progress) => onProgress(progress.toDouble()))
+                  .install(),
+          variant: variant,
+          confirm: confirmReplace,
+        );
+        return replaced;
+      }
       // Modern API: Install inference model from network with progress tracking
       await FlutterEdgeAi.installModel(modelType: modelType, fileType: fileType)
           .fromNetwork(modelUrl, token: authToken, foreground: foreground)
@@ -123,6 +157,7 @@ class ModelDownloadService {
             onProgress(progress.toDouble());
           })
           .install();
+      return const CatalogInstalled();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Error downloading model: $e');
@@ -134,11 +169,8 @@ class ModelDownloadService {
   /// Deletes the downloaded file and metadata.
   Future<void> deleteModel() async {
     try {
-      // Extract actual filename used by Modern API
-      final uri = Uri.parse(modelUrl);
-      final actualFilename = uri.pathSegments.isNotEmpty
-          ? uri.pathSegments.last
-          : modelFilename;
+      // The name core installed the model under.
+      final actualFilename = installedName;
 
       // Use Modern API to properly uninstall (deletes metadata + file)
       await FlutterEdgeAi.uninstallModel(actualFilename);

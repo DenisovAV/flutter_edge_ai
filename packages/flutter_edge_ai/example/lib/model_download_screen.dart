@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_edge_ai_example/services/catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/chat_screen.dart';
 import 'package:flutter_edge_ai_example/services/model_download_service.dart';
@@ -12,10 +13,15 @@ class ModelDownloadScreen extends StatefulWidget {
   final Model model;
   final PreferredBackend? selectedBackend;
 
+  /// Replaces the service the screen builds for [model]; for tests.
+  @visibleForTesting
+  final ModelDownloadService? downloadService;
+
   const ModelDownloadScreen({
     super.key,
     required this.model,
     this.selectedBackend,
+    this.downloadService,
   });
 
   @override
@@ -33,14 +39,17 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
   @override
   void initState() {
     super.initState();
-    _downloadService = ModelDownloadService(
-      modelUrl: widget.model.url,
-      modelFilename: widget.model.filename,
-      licenseUrl: widget.model.licenseUrl,
-      modelType: widget.model.modelType,
-      fileType: widget.model.fileType,
-      foreground: widget.model.foreground,
-    );
+    _downloadService =
+        widget.downloadService ??
+        ModelDownloadService(
+          modelUrl: widget.model.url,
+          modelFilename: widget.model.filename,
+          licenseUrl: widget.model.licenseUrl,
+          modelType: widget.model.modelType,
+          fileType: widget.model.fileType,
+          foreground: widget.model.foreground,
+          catalogVariant: widget.model.catalogVariant,
+        );
     _initialize();
   }
 
@@ -48,7 +57,7 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
     _token = await _downloadService.loadToken() ?? '';
     _tokenController.text = _token;
     needToDownload = !(await _downloadService.checkModelExistence(_token));
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _saveToken(String token) async {
@@ -71,33 +80,49 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
     });
 
     try {
-      await _downloadService.downloadModel(
+      final replaced = await _downloadService.downloadModel(
         token: widget.model.needsAuth
             ? _token
             : '', // Pass token only if needed
         onProgress: (progress) {
+          if (!mounted) return;
           setState(() {
             _progress = progress;
           });
         },
+        // A screen already gone asks nobody: the old model is kept.
+        confirmReplace: (model, bytes) => mounted
+            ? askToReplaceActiveModel(context, model, bytes)
+            : Future.value(false),
       );
+      if (!mounted) return;
+      if (replaced case final CatalogInstallKept kept) {
+        // Not an error: the installed model stays, nothing was downloaded.
+        scaffoldMessenger.showSnackBar(SnackBar(content: Text(kept.message)));
+        return;
+      }
       setState(() {
         needToDownload = false;
       });
-    } catch (e) {
-      if (!mounted) return;
-      if (isGatedAccessError(e)) {
-        await showGatedModelAccessDialog(
+    } catch (e, stack) {
+      // State.context throws once the screen is gone: then only the log.
+      if (!mounted) {
+        logInstallFailure(e, stack);
+        return;
+      }
+      await showInstallErrors(
+        context,
+        e,
+        stack,
+        // The error itself, not only "failed": what the user can act on.
+        fallback: 'Failed to download the model: $e',
+        gated: (error) => showGatedModelAccessDialog(
           context: context,
           modelUrl: widget.model.url,
           licenseUrl: widget.model.licenseUrl,
-          error: e,
-        );
-      } else {
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(content: Text('Failed to download the model.')),
-        );
-      }
+          error: error,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -110,6 +135,7 @@ class _ModelDownloadScreenState extends State<ModelDownloadScreen> {
 
   Future<void> _deleteModel() async {
     await _downloadService.deleteModel();
+    if (!mounted) return;
     setState(() {
       needToDownload = true;
     });

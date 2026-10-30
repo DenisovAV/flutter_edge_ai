@@ -24,6 +24,7 @@ import '../model_management/active_embedding_identity.dart';
 import '../model_management/active_identity_store.dart';
 import '../model_management/model_activation.dart';
 import '../model_management/install_rule.dart';
+import '../model_management/restored_filename.dart';
 import '../model_management/utils/local_file.dart';
 import '../model_management/utils/download_temp_reclaim.dart';
 import '../utils/file_name_utils.dart';
@@ -112,7 +113,7 @@ class FlutterEdgeAiMobile extends FlutterEdgeAiPlugin {
     List<int>? loraRanks,
     int? maxNumImages,
     bool supportImage = false,
-    bool supportAudio = false, // Enabling audio support (Gemma 3n E4B)
+    bool supportAudio = false, // e.g. Gemma 4 / Gemma 3n .litertlm
     MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,

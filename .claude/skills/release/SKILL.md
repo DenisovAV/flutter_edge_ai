@@ -104,6 +104,22 @@ silently do the other thing.
         "0 warnings" with no SKILL.md in the archive (#578)
 [ ] 8b  native bundle moved? → litertlm_native_tools_test.dart green on every
         platform in the release (the smoke suite never passes a tool), else N/A
+[ ] 8c  litertlm or speech in the release? → MANDATORY, else N/A. NO PUBLISH of
+        either package without a green release-check AT THIS HEAD:
+        after steps 2 and 7 (the pubspec version bumped, `## Unreleased`
+        renamed to it: until the freeze `check` reports that version's
+        snapshot missing, which freeze, generate, evidence and release-check
+        let pass), run the release-gate tests (litertlm_ffi_test,
+        embeddinggemma2_test, stt_moonshine_test, tts_smoke_test in
+        example/integration_test, on every host release_critical.yaml lists;
+        they print FEA_EVIDENCE lines), then in tool/model_registry
+        `dart run bin/registry.dart evidence --device … <log>` per host,
+        `dart run bin/registry.dart freeze <package>`, `generate`, and commit
+        the evidence, the snapshot and the generated files together. Then
+        `dart run bin/registry.dart release-check <package>` must print
+        "<package> <version>: ready to publish" on that commit, with nothing
+        uncommitted. Nothing enforces this but this step: run it again after
+        any later commit, and never skip it
 [ ] 10b  after publishing: pub.dev actually SERVES the new versions (its API
         lags minutes behind the upload); if a package's web/ changed
         (flutter_edge_ai_litertlm or flutter_edge_ai), sync every codelab copy to
@@ -325,6 +341,14 @@ the code needs a *higher* one. A pub.dev consumer who pins an older core alongsi
 the new satellite then gets a resolve that **fails to compile** (calls a
 method/param that core version lacks). This is a manual step; nothing automated
 catches it.
+
+**The model catalog (#734) is such a case, open until its release PR:** litertlm
+and speech use the catalog types (`ModelCatalogSource`, `NpuTarget`, …) that
+first ship in **core 2.5.5**, and speech uses `LiteRtLmNpuTarget extends NpuTarget`
+from the **next litertlm** (after 1.19.0). In that release PR set litertlm's
+`flutter_edge_ai: ^2.5.5`, speech's `flutter_edge_ai: ^2.5.5` and
+`flutter_edge_ai_litertlm: ^<that litertlm>`, fix the comments above those lines,
+and publish core first, then litertlm, then speech.
 
 **A floor naming an UNPUBLISHED core forces a publish ORDER — and dry-run is blind
 to it.** `dart pub publish --dry-run` only checks that a constraint is satisfiable in
@@ -701,7 +725,19 @@ git status --short                    # clean tree
 ```
 
 Only once `HEAD == origin/main`, the version on `main` is the one you intend to
-publish, and the tree is clean, proceed:
+publish, and the tree is clean, proceed.
+
+**`flutter_edge_ai_litertlm` or `flutter_edge_ai_speech`: no publish without a
+green `release-check` at this HEAD** (checklist 8c). Run it here, on the commit
+being published, right before the publish, and stop on anything but
+"ready to publish":
+
+```bash
+(cd tool/model_registry && dart run bin/registry.dart release-check <name>)
+# → <name> <version>: ready to publish
+```
+
+Then:
 
 ```bash
 # Run from the package dir so the guard-release-docs hook can resolve which

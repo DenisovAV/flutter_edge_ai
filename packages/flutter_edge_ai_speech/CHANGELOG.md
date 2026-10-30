@@ -1,4 +1,5 @@
 ## Unreleased
+- Model catalog: `LiteRtSpeechModels`, every STT and TTS build pinned to its commit (#734).
 - Speech-to-text requests fp32 on the GPU: moonshine no longer returns NaN on Adreno 740 (#747).
 
 ## 0.5.12

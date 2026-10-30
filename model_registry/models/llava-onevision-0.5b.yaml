@@ -1,0 +1,32 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: llava-onevision-0.5b
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: LLaVA-OneVision 0.5B
+family: llava
+arch_class: vision-language
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+model_type: general
+capabilities:
+  image: true
+  audio: false
+  function_calls: false
+  thinking: false
+runtime:
+  max_tokens: 4096
+  preferred_backend: gpu
+variants:
+- slug: generic
+  file_type: litertlm
+  file:
+    repo: litert-community/LLaVA-OneVision-0.5B
+    revision: f7e470a3f4c9de3b980fbd845358eaa958c70c67
+    path: LLaVA-OneVision-0.5B.litertlm
+    sha256: 7f7cd7ae3d2ae435a1f69651de02a9d51e916be60fdfef5cadc721725310971a
+    size: 828590400
+    install_filename: LLaVA-OneVision-0.5B.litertlm
+  example:
+  - llavaOneVision_0_5B

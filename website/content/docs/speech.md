@@ -14,7 +14,8 @@ You choose the model with `SttModelType` / `TtsModelType` and a profile-driven,
 model-agnostic pipeline resolves the matching runtime, so it isn't tied to one
 model. **moonshine**, **Whisper**, and **Parakeet** STT and **Matcha**,
 **Qwen3-TTS** (multilingual) and **Inflect-Nano-v2** (fast) TTS work end-to-end
-today; kokoro / supertonic TTS voices are follow-ons.
+today. `TtsModelType.kokoro` and `TtsModelType.supertonic` have no pipeline:
+using either throws `UnimplementedError`.
 
 <Info>
 
@@ -430,7 +431,7 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
 | macOS | ✅ FFI |
 | Windows | ✅ FFI |
 | Linux | ✅ FFI |
-| Web | 🚧 follow-on (the web arm is a stub that throws `UnsupportedError`) |
+| Web | ❌ (the web arm is a stub that throws `UnsupportedError`) |
 
 On macOS the app needs the same setup as every LiteRT-LM feature, see
 [Desktop → macOS](/docs/desktop#macos): a macOS 14.0 deployment target, and
@@ -457,7 +458,7 @@ every `flutter_edge_ai_litertlm` release has — earlier versions fail with
 | **Matcha** | TTS | text (Glow-TTS + CFM) | ✅ end-to-end |
 | **Qwen3-TTS** | TTS | text (AR codec-LM, 10 langs + `auto`) | ✅ end-to-end |
 | **Inflect-Nano-v2** | TTS | text (VITS, English) | ✅ end-to-end |
-| kokoro / supertonic | TTS | text | 🚧 voice follow-on |
+| kokoro / supertonic | TTS | text | no pipeline: `UnimplementedError` |
 
 Both pipelines are profile-driven (`SttModelProfile` / `TtsModelProfile`), so
 adding a new model family is a new profile rather than a new backend.

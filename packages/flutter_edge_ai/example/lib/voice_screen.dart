@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'services/catalog_install.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -115,19 +116,26 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading speech model';
         _downloadPercent = null;
       });
-      await FlutterEdgeAi.installStt()
-          .modelFromNetwork(widget.sttModel.modelUrl, token: sttToken)
-          .tokenizerFromNetwork(widget.sttModel.tokenizerUrl, token: sttToken)
-          .ofType(widget.sttModel.sttModelType)
-          .withModelProgress((percent) {
-            if (!mounted) return;
-            setState(() => _downloadPercent = percent);
-          })
-          .withTokenizerProgress((percent) {
-            if (!mounted) return;
-            setState(() => _downloadPercent = percent);
-          })
-          .install();
+      if (await installFromCatalogReplacingActive(
+            () => FlutterEdgeAi.installStt()
+                .fromCatalog(widget.sttModel.catalogVariant, token: sttToken)
+                .withProgress((percent) {
+                  if (!mounted) return;
+                  setState(() => _downloadPercent = percent);
+                })
+                .install(),
+            variant: widget.sttModel.catalogVariant,
+            confirm: (model, bytes) =>
+                askToReplaceActiveModel(context, model, bytes),
+          )
+          case final CatalogInstallKept kept) {
+        await closePartial();
+        if (mounted) {
+          setState(() => _isInitializing = false);
+          leaveKeeping(context, kept);
+        }
+        return;
+      }
       recognizer = await FlutterEdgeAi.getActiveStt();
 
       // --- TTS ---
@@ -139,14 +147,26 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading voice model';
         _downloadPercent = null;
       });
-      await FlutterEdgeAi.installTts()
-          .fromNetwork(widget.ttsModel.baseUrl)
-          .ofType(widget.ttsModel.ttsModelType)
-          .withProgress((percent) {
-            if (!mounted) return;
-            setState(() => _downloadPercent = percent);
-          })
-          .install();
+      if (await installFromCatalogReplacingActive(
+            () => FlutterEdgeAi.installTts()
+                .fromCatalog(widget.ttsModel.catalogVariant)
+                .withProgress((percent) {
+                  if (!mounted) return;
+                  setState(() => _downloadPercent = percent);
+                })
+                .install(),
+            variant: widget.ttsModel.catalogVariant,
+            confirm: (model, bytes) =>
+                askToReplaceActiveModel(context, model, bytes),
+          )
+          case final CatalogInstallKept kept) {
+        await closePartial();
+        if (mounted) {
+          setState(() => _isInitializing = false);
+          leaveKeeping(context, kept);
+        }
+        return;
+      }
       synth = await FlutterEdgeAi.getActiveTts();
 
       // --- LLM (no tools — see class doc) ---
@@ -162,15 +182,38 @@ class _VoiceScreenState extends State<VoiceScreen> {
         _stage = 'Downloading language model';
         _downloadPercent = null;
       });
-      await FlutterEdgeAi.installModel(
-        modelType: widget.llmModel.modelType,
-        fileType: widget.llmModel.fileType,
-      ).fromNetwork(widget.llmModel.url, token: llmToken).withProgress((
-        percent,
-      ) {
+      void onLlmProgress(int percent) {
         if (!mounted) return;
         setState(() => _downloadPercent = percent);
-      }).install();
+      }
+
+      if (widget.llmModel.catalogVariant case final variant?) {
+        if (await installFromCatalogReplacingActive(
+              () => FlutterEdgeAi.installModelFromCatalog(
+                variant,
+                token: llmToken,
+              ).withProgress(onLlmProgress).install(),
+              variant: variant,
+              confirm: (model, bytes) =>
+                  askToReplaceActiveModel(context, model, bytes),
+            )
+            case final CatalogInstallKept kept) {
+          await closePartial();
+          if (mounted) {
+            setState(() => _isInitializing = false);
+            leaveKeeping(context, kept);
+          }
+          return;
+        }
+      } else {
+        await FlutterEdgeAi.installModel(
+              modelType: widget.llmModel.modelType,
+              fileType: widget.llmModel.fileType,
+            )
+            .fromNetwork(widget.llmModel.url, token: llmToken)
+            .withProgress(onLlmProgress)
+            .install();
+      }
 
       final model = await FlutterEdgeAi.getActiveModel(
         maxTokens: widget.llmModel.maxTokens,

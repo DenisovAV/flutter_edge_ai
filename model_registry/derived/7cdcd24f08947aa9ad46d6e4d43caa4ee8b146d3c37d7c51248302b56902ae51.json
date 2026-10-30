@@ -1,0 +1,96 @@
+{
+  "container_version": "1.8.0",
+  "size": 856410804,
+  "npu_target": "IntelOpenVINO/PTL",
+  "llm_metadata_max_num_tokens": null,
+  "system_metadata": {
+    "uuid": "2b2f3bbd-19f1-43ca-b2e4-11a8d847ec7e",
+    "creation_timestamp": "2026-10-02T21:37:31.128186+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "EmbeddingMetadataProto",
+      "length": 121
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 70257824,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_text_encoder",
+      "length": 241709592,
+      "npu_target": "IntelOpenVINO/PTL",
+      "items": {
+        "model_type": "tf_lite_text_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_audio_encoder_hw",
+      "length": 101170662,
+      "npu_target": "IntelOpenVINO/PTL",
+      "items": {
+        "model_type": "tf_lite_audio_encoder_hw"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_audio_adapter",
+      "backend_constraint": [
+        "cpu"
+      ],
+      "length": 3155912,
+      "items": {
+        "model_type": "tf_lite_audio_adapter",
+        "backend_constraint": "cpu"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_end_of_audio",
+      "length": 2740,
+      "items": {
+        "model_type": "tf_lite_end_of_audio"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_encoder",
+      "length": 433745030,
+      "npu_target": "IntelOpenVINO/PTL",
+      "items": {
+        "model_type": "tf_lite_vision_encoder",
+        "prefer_activation_type": "fp16"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_adapter",
+      "backend_constraint": [
+        "cpu"
+      ],
+      "length": 1584216,
+      "items": {
+        "model_type": "tf_lite_vision_adapter",
+        "backend_constraint": "cpu"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_end_of_vision",
+      "length": 2740,
+      "items": {
+        "model_type": "tf_lite_end_of_vision"
+      }
+    }
+  ]
+}

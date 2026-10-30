@@ -158,7 +158,7 @@ void main() {
               contains('_Qualcomm_<SoC>.litertlm'),
               contains('<model>_Google_Tensor_G5|G6.litertlm'),
               contains('<model>_Intel_PTL.litertlm'),
-              contains('SM8850, SM8650, QCS8275 are verified'),
+              contains('https://flutteredge.ai/docs/registry'),
               contains('omit preferredBackend'),
             ),
           ),
@@ -198,7 +198,7 @@ void main() {
       expect(placement.target, _sm8850);
       expect(placement.dispatchDir, '/data/app/code_cache/npu');
       expect(host.asked, ['stack:qualcomm', 'reaches', 'dispatchDir']);
-      expect(host.vendors, {NpuVendor.qualcomm}, reason: 'one vendor asked');
+      expect(host.vendors, {NpuStack.qualcomm}, reason: 'one vendor asked');
     });
 
     test('with npu on Qualcomm Linux arm64 too', () async {
@@ -277,7 +277,7 @@ void main() {
       expect(placement.backend, PreferredBackend.npu);
       expect(placement.target, tensor);
       expect(host.asked, ['stack:googleTensor', 'reaches', 'dispatchDir']);
-      expect(host.vendors, {NpuVendor.googleTensor});
+      expect(host.vendors, {NpuStack.googleTensor});
     });
 
     test('a MediaTek bundle selects only the MediaTek dispatch', () async {
@@ -286,7 +286,7 @@ void main() {
       expect(placement.backend, PreferredBackend.npu);
       expect(placement.target, mediatek);
       expect(host.asked, ['stack:mediatek', 'reaches', 'dispatchDir']);
-      expect(host.vendors, {NpuVendor.mediatek});
+      expect(host.vendors, {NpuStack.mediatek});
     });
 
     test('compiled for Qualcomm is refused on Windows x64, which runs Intel '
@@ -394,7 +394,7 @@ void main() {
       expect(placement.target!.isIntel, isTrue);
       expect(placement.dispatchDir, r'C:\Apps\demo');
       expect(host.asked, ['stack:intel', 'reaches', 'dispatchDir']);
-      expect(host.vendors, {NpuVendor.intel});
+      expect(host.vendors, {NpuStack.intel});
     });
 
     test('without npu is refused like any per-SoC bundle', () async {
@@ -522,19 +522,14 @@ void main() {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
       expect(windowsNpuDispatchDir, exeDir);
       // No test runner ships LiteRtDispatch.dll beside itself.
-      final check = await const LiteRtLmPlatformNpuHost().stack(
-        NpuVendor.intel,
-      );
+      final check = await const LiteRtLmPlatformNpuHost().stack(NpuStack.intel);
       expect(check.bundled, isFalse);
       expect(check.reason, contains('($exeDir)'));
     });
 
     test('Windows hands LiteRT the executable\'s directory', () async {
       expect(
-        await prepareNpuDispatchDir(
-          NpuVendor.intel,
-          operatingSystem: 'windows',
-        ),
+        await prepareNpuDispatchDir(NpuStack.intel, operatingSystem: 'windows'),
         windowsNpuDispatchDir,
       );
     });
@@ -566,29 +561,29 @@ final class _FakeHost implements LiteRtLmNpuHost {
   final asked = <String>[];
 
   /// Every vendor a question named.
-  final vendors = <NpuVendor>{};
+  final vendors = <NpuStack>{};
 
   @override
-  Future<NpuStackCheck> stack(NpuVendor vendor) async {
+  Future<NpuStackCheck> stack(NpuStack vendor) async {
     asked.add('stack:${vendor.name}');
     vendors.add(vendor);
     return switch (vendor) {
-      NpuVendor.qualcomm => qualcomm,
-      NpuVendor.googleTensor => googleTensor,
-      NpuVendor.mediatek => mediatek,
-      NpuVendor.intel => intel,
+      NpuStack.qualcomm => qualcomm,
+      NpuStack.googleTensor => googleTensor,
+      NpuStack.mediatek => mediatek,
+      NpuStack.intel => intel,
     };
   }
 
   @override
-  String? unreachable(NpuVendor vendor) {
+  String? unreachable(NpuStack vendor) {
     asked.add('reaches');
     vendors.add(vendor);
     return reachable ? null : noNpuReason;
   }
 
   @override
-  Future<String> prepareDispatchDir(NpuVendor vendor) async {
+  Future<String> prepareDispatchDir(NpuStack vendor) async {
     asked.add('dispatchDir');
     vendors.add(vendor);
     final error = dispatchError;

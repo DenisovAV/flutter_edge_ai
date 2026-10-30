@@ -152,6 +152,7 @@ void main() {
                     SidebarLink(text: 'Getting Started', href: '/docs/getting-started'),
                     SidebarLink(text: 'Installation', href: '/docs/installation'),
                     SidebarLink(text: 'Models', href: '/docs/models'),
+                    SidebarLink(text: 'Model Registry', href: '/docs/registry'),
                   ],
                 ),
                 SidebarGroup(

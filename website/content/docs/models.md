@@ -96,13 +96,16 @@ for ONNX models ([`flutter_edge_ai_onnx`](/docs/onnx)), and
 devices. The Simulator stays CPU-only because Metal sim has a 256 MB
 single-allocation cap.
 
-² Web `.litertlm` is an **early preview** via `@litert-lm/core` — text, function calling and
-thinking. Only dedicated web exports (`-web.litertlm`) load — Gemma 4 and Gemma
-3n today; a native `.litertlm` installs on web and then fails at the first
-generation. No vision or audio. See the feature matrix in
-[Troubleshooting](/docs/troubleshooting). For image input on web use a
-MediaPipe `-web.task` build; no web engine takes audio. LoRA works only on
-MediaPipe `.task`.
+² Web `.litertlm` is an **early preview** via `@litert-lm/core`. A language
+model gets text, function calling and thinking, and only from a dedicated web
+export (`-web.litertlm`) — Gemma 4 and Gemma 3n today; a native language-model
+`.litertlm` installs on web and then fails at the first generation, and no
+`.litertlm` language model takes images or audio on web. EmbeddingGemma 2 is
+the exception: its generic `.litertlm` bundles embed text and images on web
+through WebGPU, and the 740m audio from litertlm 1.13.2 (see
+[Embedding models](#embedding-models)). See the feature matrix in
+[Troubleshooting](/docs/troubleshooting). For image input to a chat model on
+web use a MediaPipe `-web.task` build. LoRA works only on MediaPipe `.task`.
 
 ³ On desktop the OS model exists on **macOS** (Apple Foundation Models) and
 **Windows** (AI Foundry; Windows 11 25H2+ on Copilot+-class hardware, packaged
@@ -127,16 +130,16 @@ killed for memory while loading even Gemma 3 1B. See
 | **VibeVoice-ASR 2.2B (BitNet)** | Speech to text: a spoken clip in, its transcript out | ❌ | ❌ | ❌ | en, zh, fr, it, ko, pt, vi | 2.0GB |
 | **Phi-4 Mini** | Advanced reasoning and instruction following | ✅ | ❌ | ❌ | Multilingual | 3.9GB |
 | **Phi-4 Mini Reasoning** | Step-by-step reasoning | ❌ | ⚠️ ‡ | ❌ | Multilingual | 2.8GB |
-| **DeepSeek R1** | High-performance reasoning and code generation | ✅ | ✅ | ❌ | Multilingual | 1.7GB |
+| **DeepSeek R1** | High-performance reasoning and code generation | ✅ | ✅ | ❌ | Multilingual | 1.8–1.9GB |
 | **Qwen3 0.6B** | Compact multilingual chat with function calling | ✅ | ✅ | ❌ | Multilingual | 345MB |
 | **Qwen 2.5** | Strong multilingual chat and instruction following | ✅ | ❌ | ❌ | Multilingual | 0.5-1.6GB |
-| **Gemma 3 1B** | Balanced and efficient text generation | ❌ | ❌ | ❌ | Multilingual | 0.5GB |
+| **Gemma 3 1B** | Balanced and efficient text generation | ❌ | ❌ | ❌ | Multilingual | 0.6GB |
 | **Gemma 3 270M** | Ideal for fine-tuning (LoRA on the `.task` build) for specific tasks | ❌ | ❌ | ❌ | Multilingual | 0.3GB |
 | **FunctionGemma 270M** | Specialized for function calling on-device | ✅ | ❌ | ❌ | Multilingual | 284MB |
 | **SmolLM 135M** | Ultra-compact, resource-constrained devices | ❌ | ❌ | ❌ | English | 167MB |
 | **LFM2.5 230M (Liquid AI)** | Smallest desktop entry; no HF token needed | ❌ | ❌ | ❌ | Multilingual | 177MB |
 | **SmolLM3 3B** | Multilingual small LLM with reasoning mode | ❌ | ⚠️ ‡ | ❌ | Multilingual | 2.0GB |
-| **TranslateGemma 4B** † | Single-shot 55-language translation | ❌ | ❌ | ❌ | 55 languages | 2-4GB |
+| **TranslateGemma 4B** † | Single-shot 55-language translation | ❌ | ❌ | ❌ | 55 languages | 2.0–3.9GB |
 | **Phi-3.5 Mini (ONNX)** | Text chat through ORT-GenAI on native platforms | — | ❌ | ❌ | Multilingual | 2.8GB |
 | **Qwen 2.5 0.5B (ONNX)** | Text chat in the browser through Transformers.js | — | ❌ | ❌ | Multilingual | 0.5GB |
 | **Gemini Nano** (built-in) | The OS model on Android, and in Chrome | ✅ prompt-based | ❌ | ✅ Android | varies | system |
@@ -245,53 +248,88 @@ await FlutterEdgeAi.installModel(modelType: ModelType.phi)
 
 ## Supported models & platforms
 
-| Model | Size | Desktop | Mobile | Web | HF token |
-|---|---|:---:|:---:|:---:|:---:|
-| [Gemma 4 E2B](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm) | 2.6GB | ✅ | ✅ | ✅ | ❌ |
-| [Gemma 4 E4B](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) | 3.7GB | ✅ | ✅ | ✅ | ❌ |
-| [Gemma3n E2B](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm) | 3.7GB | ✅ | ✅ | ✅ | ✅ |
-| [Gemma3n E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-lm) | 4.9GB | ✅ | ✅ | ✅ | ✅ |
-| [FastVLM 0.5B](https://huggingface.co/litert-community/FastVLM-0.5B) | 1.2GB | ✅ | ❌ | ❌ | ❌ |
-| [Qwen2-VL 2B](https://huggingface.co/litert-community/Qwen2-VL-2B) | 1.8GB | ✅ | ✅ | ❌ | ❌ |
-| [SmolVLM2 500M](https://huggingface.co/litert-community/SmolVLM2-500M) | 0.36GB | ✅ | ✅ | ❌ | ❌ |
-| [LLaVA-OneVision 0.5B](https://huggingface.co/litert-community/LLaVA-OneVision-0.5B) | 0.83GB | ✅ | ✅ | ❌ | ❌ |
-| [VibeVoice-ASR-BitNet](https://huggingface.co/litert-community/VibeVoice-ASR-BitNet) ¹⁰ | 2.0GB | ✅ macOS | ✅ Android | ❌ | ❌ |
-| [Gemma-3 1B](https://huggingface.co/litert-community/Gemma3-1B-IT) | 0.5GB | ✅ | ✅ | ✅ | ✅ |
-| [Gemma 3 270M](https://huggingface.co/litert-community/gemma-3-270m-it) | 0.3GB | ✅ | ✅ | ✅ | ✅ |
-| [FunctionGemma 270M](https://huggingface.co/sasha-denisov/function-gemma-270M-it) | 284MB | ✅ | ✅ | ❌ | ❌ |
-| [Qwen3 0.6B](https://huggingface.co/litert-community/Qwen3-0.6B) ⁷ | 345MB | ✅ | ✅ | ❌ | ❌ |
-| [Qwen 2.5 1.5B](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct) | 1.6GB | ✅ | ✅ | ❌ | ❌ |
-| [Qwen 2.5 0.5B](https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct) | 0.5GB | ❌ | ✅ | ✅ ⁸ | ❌ |
-| [SmolLM 135M](https://huggingface.co/litert-community/SmolLM-135M-Instruct) | 167MB | ❌ | ✅ | ❌ | ❌ |
-| [LFM2.5 230M (Liquid AI)](https://huggingface.co/litert-community/LFM2.5-230M) | 177MB | ✅ | ✅ | ❌ | ❌ |
-| [SmolLM3 3B](https://huggingface.co/litert-community/SmolLM3-3B) | 2.0GB | ✅ | ✅ | ❌ | ❌ |
-| [Phi-4 Mini](https://huggingface.co/litert-community/Phi-4-mini-instruct) | 3.9GB | ✅ | ✅ | ❌ | ❌ |
-| [Phi-4 Mini Reasoning](https://huggingface.co/litert-community/Phi-4-mini-reasoning) | 2.8GB | ✅ | ✅ | ❌ | ❌ |
-| [DeepSeek R1](https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B) | 1.7GB | ❌ | ✅ | ❌ | ❌ |
-| [TranslateGemma 4B](https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized) † | 1.9-4GB | ✅ | ✅ | ❌ | ❌ |
-| [Phi-3.5 Mini (ONNX)](https://huggingface.co/microsoft/Phi-3.5-mini-instruct-onnx) ⁹ | 2.8GB | ✅ | ✅ | — | ❌ |
-| [Qwen 2.5 0.5B (ONNX)](https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct) ⁸ | 0.5GB | ❌ | ❌ | ✅ | ❌ |
-| [Gemini Nano](/docs/builtin-ai) (built-in) | system | ❌ | ✅ Android | ✅ Chrome | — |
-| [Apple Foundation Models](/docs/builtin-ai) (built-in) | system | ✅ macOS | ✅ iOS | ❌ | — |
-| [Phi Silica](/docs/builtin-ai) (built-in) | system | ✅ Windows | ❌ | ❌ | — |
+The LiteRT-LM (`.litertlm`) language models come from the
+[Model Registry](/docs/registry), the same files the catalog installs
+installs. A cell shows, per backend, the best that any build of the model has
+on that platform: 📝 documented to work, ⚪ the package runs it but no run has
+been recorded, ❌ known broken (✅ verified once runs are recorded). The
+registry page lists every build with its pinned file and the source of each
+mark.
 
-⁷ `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` (345 MB) from that repo is the
-catalog's file. `Qwen3-0.6B.litertlm` (614 MB) failed to load from
-`flutter_edge_ai_litertlm` 1.7.0 until the repo replaced its tokenizer on
-2026-10-13 at 15:53 UTC ([#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659), upstream
+<!-- registry:llm-platforms -->
+
+<!-- GENERATED by tool/model_registry from model_registry/. Edit the registry, not this table. -->
+
+| Model | Size | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web | HF token |
+|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| [DeepSeek R1 Distill Qwen 1.5B](/docs/registry#deepseek-r1-distill-qwen-1.5b) | 1.83&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [FastVLM 0.5B](/docs/registry#fastvlm-0.5b) | 1.16&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ |  | no |
+| [FunctionGemma 270M (Flutter demo fine-tune)](/docs/registry#functiongemma-270m-flutter-demo) | 284&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [FunctionGemma 270M](/docs/registry#functiongemma-270m-it) | 284&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [Gemma 3 1B](/docs/registry#gemma-3-1b-it) | 584&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ |  | yes |
+| [Gemma 3 270M](/docs/registry#gemma-3-270m-it) | 304&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | yes |
+| [Gemma 3n E2B](/docs/registry#gemma-3n-e2b-it) | 3.04–3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
+| [Gemma 3n E4B](/docs/registry#gemma-3n-e4b-it) | 4.28–4.92&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
+| [Gemma 4 E2B](/docs/registry#gemma-4-e2b-it) | 2.01–2.59&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 | no |
+| [Gemma 4 E4B](/docs/registry#gemma-4-e4b-it) | 2.97–3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | no |
+| [LFM2.5 230M](/docs/registry#lfm2.5-230m) | 177–266&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [LLaVA-OneVision 0.5B](/docs/registry#llava-onevision-0.5b) | 829&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [Phi-4 Mini Instruct](/docs/registry#phi-4-mini-instruct) | 3.91&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [Phi-4 Mini Reasoning](/docs/registry#phi-4-mini-reasoning) | 2.78&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [Qwen2-VL 2B](/docs/registry#qwen2-vl-2b) | 1.78&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [Qwen 2.5 1.5B Instruct](/docs/registry#qwen2.5-1.5b-instruct) | 1.60–6.18&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [Qwen3 0.6B](/docs/registry#qwen3-0.6b) | 345–498&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [SmolLM3 3B](/docs/registry#smollm3-3b) | 2.00–3.13&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [SmolVLM2 500M](/docs/registry#smolvlm2-500m) | 361&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
+| [TranslateGemma 4B](/docs/registry#translategemma-4b-it) | 2.01–3.92&nbsp;GB | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;⚪ |  | no |
+<!-- /registry:llm-platforms -->
+
+The Qwen3 0.6B build the catalog installs is
+`Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` (345 MB). `Qwen3-0.6B.litertlm`
+(614 MB) failed to load from `flutter_edge_ai_litertlm` 1.7.0 until the repo
+replaced its tokenizer on 2026-10-13 at 15:53 UTC
+([#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659), upstream
 [LiteRT-LM #3865](https://github.com/google-ai-edge/LiteRT-LM/issues/3865)); a
 copy downloaded before that still fails — uninstall it and install it again.
-Both are native exports, so neither runs on web.
 
-⁸ On web, Qwen 2.5 0.5B runs as the ONNX build from `onnx-community`, through
+### Other formats
+
+Not in the registry: MediaPipe `.task` files, ONNX models, the OS models, and
+VibeVoice.
+
+| Model | Format | Size | Desktop | Mobile | Web | HF token |
+|---|---|---|:---:|:---:|:---:|:---:|
+| [Gemma 4 E2B](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm) | `.task` | 2.0GB | ❌ | ❌ | ✅ | no |
+| [Gemma 4 E4B](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) | `.task` | 3.0GB | ❌ | ❌ | ✅ | no |
+| [Gemma3n E2B](https://huggingface.co/google/gemma-3n-E2B-it-litert-preview) | `.task` | 3.1GB | ❌ | ✅ | ❌ | yes |
+| [Gemma3n E4B](https://huggingface.co/google/gemma-3n-E4B-it-litert-preview) | `.task` | 4.4GB | ❌ | ✅ | ❌ | yes |
+| [Gemma 3 1B](https://huggingface.co/litert-community/Gemma3-1B-IT) | `.task` | 0.5GB | ❌ | ✅ | ✅ | yes |
+| [Gemma 3 270M](https://huggingface.co/litert-community/gemma-3-270m-it) | `.task` | 0.3GB | ❌ | ✅ | ✅ | yes |
+| [DeepSeek R1 Distill Qwen 1.5B](https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B) | `.task` | 1.86GB | ❌ | ✅ | ❌ | no |
+| [Qwen 2.5 1.5B](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct) | `.task` | 1.6GB | ❌ | ✅ | ❌ | no |
+| [Qwen 2.5 0.5B](https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct) | `.task` | 0.5GB | ❌ | ✅ | ❌ | no |
+| [SmolLM 135M](https://huggingface.co/litert-community/SmolLM-135M-Instruct) | `.task` | 167MB | ❌ | ✅ | ❌ | no |
+| [Phi-4 Mini](https://huggingface.co/litert-community/Phi-4-mini-instruct) | `.task` | 3.9GB | ❌ | ✅ | ❌ | no |
+| [FunctionGemma 270M](https://huggingface.co/sasha-denisov/function-gemma-270M-it) | `.task` | 284MB | ❌ | ✅ | ❌ | no |
+| [VibeVoice-ASR-BitNet](https://huggingface.co/litert-community/VibeVoice-ASR-BitNet) ⁹ | `.litertlm` | 2.0GB | ✅ macOS | ✅ Android | ❌ | no |
+| [Phi-3.5 Mini](https://huggingface.co/microsoft/Phi-3.5-mini-instruct-onnx) ⁸ | ONNX | 2.8GB | ✅ | ✅ | — | no |
+| [Qwen 2.5 0.5B](https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct) ⁷ | ONNX | 0.5GB | ❌ | ❌ | ✅ | no |
+| [Gemini Nano](/docs/builtin-ai) | built-in | system | ❌ | ✅ Android | ✅ Chrome | — |
+| [Apple Foundation Models](/docs/builtin-ai) | built-in | system | ✅ macOS | ✅ iOS | ❌ | — |
+| [Phi Silica](/docs/builtin-ai) | built-in | system | ✅ Windows | ❌ | ❌ | — |
+
+`.task` files run through [MediaPipe](/docs/mediapipe), which has no desktop
+engine.
+
+⁷ On web, Qwen 2.5 0.5B runs as the ONNX build from `onnx-community`, through
 Transformers.js ([`flutter_edge_ai_onnx`](/docs/onnx)). That build is web-only.
 
-⁹ An ORT-GenAI model directory — `fromHuggingFace` installs its CPU folder,
+⁸ An ORT-GenAI model directory — `fromHuggingFace` installs its CPU folder,
 `cpu_and_mobile/cpu-int4-awq-block-128-acc-level-4` — run on macOS arm64,
 Linux x64, Windows x64, Android arm64 and iOS arm64. It peaks at about 3.7 GB
 of RAM, so plan for a 6 GB+ phone. — means not run.
 
-¹⁰ Speech recognition, not chat: install it as `ModelType.general` (the
+⁹ Speech recognition, not chat: install it as `ModelType.general` (the
 repo's `litertlm_manifest.json` sets `maxTokens: 2048` and audio — pass
 `getActiveModel(defaults: r.runtime)`), send the clip as `audioBytes` with the
 text `This is a X.XX seconds audio, please transcribe it.` (the clip's length),
@@ -312,6 +350,77 @@ decided by the device at run time, and Edge runs Phi-4-mini through the same
 Prompt API — see [Built-in AI](/docs/builtin-ai).
 
 ## Installation sources
+
+### From the model catalog
+
+`flutter_edge_ai` 2.5.5, with the `flutter_edge_ai_litertlm` and
+`flutter_edge_ai_speech` releases that ship the catalog, installs a
+[Model Registry](/docs/registry) build by name through the usual installers.
+Each build carries its model type, file type, Hugging Face commit, file size
+and install file name, so there is no URL to copy and nothing to keep in step:
+
+```dart
+// A language model, an embedder, a speech model.
+await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
+    .withProgress((percent) => print('downloading: $percent%'))
+    .install();
+await FlutterEdgeAi.installEmbedder()
+    .fromCatalog(
+      LiteRtEmbedders.embeddinggemma300m.seq256,
+      token: huggingFaceToken, // the repository is gated
+    )
+    .install();
+await FlutterEdgeAi.installStt().fromCatalog(LiteRtSpeechModels.whisperTiny.f32)
+    .install();
+
+// Every model the registered packages offer, and the build for this device.
+for (final model in FlutterEdgeAi.catalog.models) {
+  final variant = model.variantFor(backend: PreferredBackend.gpu);
+  print('${model.id}: ${variant?.id ?? 'nothing for the GPU here'}');
+}
+```
+
+`variantFor` leaves out a build this runtime cannot run: a build compiled for
+an NPU whose vendor's dispatch the package does not ship for this processor
+architecture, a web export on a phone, any native build on a host the
+package's native libraries are not published for. A build compiled for an NPU
+is picked only for the SoC the app names (`variantFor(backend:
+PreferredBackend.npu, npu: …)`; without `npu:` it throws), because the
+package does not read the device's SoC. The app builds that target in the
+spelling the compiler stamps into the file, not the one Android reports:
+`LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8750')` (Android says `QTI`),
+`'Google'` with `'Tensor_G5'`, `'MediaTek'` with `'mt6993'` (any case),
+`'IntelOpenVINO'` with `'PTL'`. An install from the catalog refuses, before it
+downloads anything, a build whose `backendsHere` is empty here; whether this
+device has that NPU, and whether the app bundled the vendor's stack
+(`qualcomm_npu`, `google_tensor_npu`, `mediatek_npu`), is known only when the
+model loads. A
+build compiled for an NPU names the context it was compiled for
+(`requiredMaxTokens`); keep `maxTokens` at or below it. After the download,
+and before the model becomes active, each file's size is checked against the
+registry (not on the web): a file of another size is deleted with its record,
+unless an active model reads it, and `install()` throws
+`ModelValidationException`. An install that would
+write over a file an active model of any kind reads, from another source (a
+model installed earlier from a `/resolve/main/` URL under the same name, or
+an older pin), is refused with a `StateError` before it downloads (not on the
+web). Its message names that model's kind, its name and the call that
+uninstalls it (`uninstallModel`, `uninstallEmbedder`, `uninstallStt` or
+`uninstallTts`): uninstall it first, then install. On the web a file over
+2 GiB is refused before it downloads unless the app initializes with
+`webStorageMode: WebStorageMode.streaming`, the only mode that holds it.
+`withProgress` weights the files by their pinned sizes, and reports 100 once
+the model is active. An LLM is installed under the registry's install name (for example
+`phi-4-mini-reasoning.litertlm`), which `isModelInstalled`, `getModelPath` and
+`uninstallModel` take. `install(activate: false)` installs an LLM without
+making it active. A LoRA is not installed through the catalog.
+
+The catalog pins every file to a Hugging Face commit. A model installed
+earlier from a `/resolve/main/` URL is a different source, so its first
+install from the catalog downloads the file again (once); later installs from
+the catalog find it installed.
+
+### From a URL, an asset or a file
 
 ```dart
 // Network — .litertlm is the cross-platform default (Android/iOS/Desktop).
@@ -483,18 +592,27 @@ On-device speech via the opt-in [`flutter_edge_ai_speech`](/docs/speech) package
 selectable, profile-driven pipelines (you pick the model with `SttModelType` /
 `TtsModelType`). **moonshine-tiny**, **Whisper**, and **Parakeet** (STT) and
 **Matcha**, **Qwen3-TTS** (multilingual), and **Inflect-Nano-v2** (fast) TTS work
-end-to-end today; kokoro / supertonic TTS voices are follow-ons. Native only (no
+end-to-end today. `TtsModelType.kokoro` and `TtsModelType.supertonic` have no pipeline: using either throws `UnimplementedError`. Native only (no
 Web). See [Speech](/docs/speech) for usage.
 A `VoiceSession` also chains STT → LLM → TTS into a push-to-talk voice loop —
 see [Speech](/docs/speech).
 
 **Speech-to-text**
 
-| Model | Input | Size | Status | Auth |
+| Model | Input | Builds (size) | Documented on (CPU) | Auth |
 |---|---|---|---|---|
-| **[moonshine-tiny](https://huggingface.co/litert-community/moonshine-tiny)** | raw 16 kHz PCM | ~104 MB | ✅ end-to-end | ❌ |
-| **[Whisper](https://huggingface.co/litert-community/whisper-tiny)** (tiny / base) | log-mel | — | ✅ end-to-end | ❌ |
-| **[Parakeet](https://huggingface.co/litert-community/parakeet-ctc-0.6b)** (CTC 0.6B) | log-mel | 596 MB int8 (phones, CPU) / 2.35 GB f32 | ✅ end-to-end | ❌ |
+| **[Moonshine Tiny](/docs/registry#moonshine-tiny)** | raw 16 kHz PCM | f32 109 MB, int8 52 MB | Android, iOS, macOS, Windows x64, Linux x64; f32 also Linux arm64 | ❌ |
+| **[Whisper Tiny](/docs/registry#whisper-tiny)** | log-mel | f32 151 MB, int8 41 MB | Android, iOS, macOS, Windows x64, Linux x64 | ❌ |
+| **[Whisper Base](/docs/registry#whisper-base)** | log-mel | int8 77 MB | Android, iOS, macOS, Windows x64, Linux x64 | ❌ |
+| **[Parakeet CTC 0.6B](/docs/registry#parakeet-ctc-0.6b)** | log-mel | f32 2.35 GB, int8 596 MB (phones, CPU) | f32: macOS, Windows x64, Linux x64, Android (Galaxy S23); int8: Android (Galaxy S23) | ❌ |
+
+Sizes are the model file; the tokenizer adds 0.4–2.5 MB. The registry also
+lists Whisper Base f32 (290 MB), which has not been run, and per-SoC NPU
+builds, which `flutter_edge_ai_speech` refuses. On a phone use Parakeet int8
+on the CPU: on a Galaxy S23 (Adreno 740) the f32 file did not load on the GPU
+and the int8 file transcribed the same text on the CPU in a third of the
+memory; see [Speech](/docs/speech#models-on-phones)
+([#747](https://github.com/DenisovAV/flutter_edge_ai/issues/747)).
 
 Whisper is **multilingual** — the shipped checkpoints are the multilingual ones
 (no `.en` suffix), so all 99 of Whisper's languages are available. Set a default
@@ -524,11 +642,11 @@ are English-only.
 
 **Text-to-speech**
 
-| Model | Output | Size | Status | Auth |
+| Model | Output | Size | Documented on (CPU) | Auth |
 |---|---|---|---|---|
-| **[Matcha](https://huggingface.co/litert-community/Matcha-TTS)** | 16-bit PCM @ 22050 Hz | ~90 MB | ✅ end-to-end | ❌ |
-| **[Qwen3-TTS](https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base)** (10 langs + `auto`) | 16-bit PCM | ~1.9 GB | ✅ end-to-end | ❌ |
-| **[Inflect-Nano-v2](https://huggingface.co/sasha-denisov/inflect-nano-v2-litert)** (fast) | 16-bit PCM @ 24 kHz | ~36 MB | ✅ end-to-end | ❌ |
+| **[Matcha-TTS](/docs/registry#matcha-tts)** | 16-bit PCM @ 22050 Hz | 94 MB | Android, iOS, macOS, Windows x64, Linux x64, Linux arm64 | ❌ |
+| **[Qwen3-TTS 0.6B](/docs/registry#qwen3-tts-0.6b)** (10 languages + `auto`) | 16-bit PCM | 1.89 GB | macOS; not run elsewhere | ❌ |
+| **[Inflect-Nano-v2](/docs/registry#inflect-nano-v2)** (fast) | 16-bit PCM @ 24 kHz | 36 MB | Android, iOS, macOS, Windows x64, Linux x64 | ❌ |
 
 ## Embedding models
 
@@ -541,18 +659,18 @@ the maximum is never truncated: it throws `EmbeddingInputTooLongException`.
 
 | Model | Parameters | Dimensions | Max Seq Length | Size | Auth Required |
 |---|---|---|---|---|---|
-| **[EmbeddingGemma 2 text](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm)** (`.litertlm`; web from litertlm 1.13.1) | 270M | 768D | 1024 tokens | 165MB + 71MB weight cache (native) | ❌ |
-| **[EmbeddingGemma 2 text + vision](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm)** (`.litertlm`, text and images; web from litertlm 1.13.1) | 440M | 768D | 1024 tokens | 388MB + 71MB + 218MB weight caches (native) | ❌ |
-| **[EmbeddingGemma 2 text + vision + audio](https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm)** (`.litertlm`, text, images and audio, from litertlm 1.13.1; web audio from 1.13.2) | 740M | 768D | 1024 tokens | 485MB + 385MB weight caches (native) | ❌ |
-| **[Gecko 64](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 64 tokens | 110MB | ❌ |
-| **[Gecko 256](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 256 tokens | 114MB | ❌ |
-| **[Gecko 512](https://huggingface.co/litert-community/Gecko-110m-en)** | 110M | 768D | 512 tokens | 116MB | ❌ |
-| **[EmbeddingGemma 256](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 256 tokens | 179MB | ✅ |
-| **[EmbeddingGemma 512](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 512 tokens | 179MB | ✅ |
-| **[EmbeddingGemma 1024](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 1024 tokens | 183MB | ✅ |
-| **[EmbeddingGemma 2048](https://huggingface.co/litert-community/embeddinggemma-300m)** | 300M | 768D | 2048 tokens | 196MB | ✅ |
+| **[EmbeddingGemma 2 text](/docs/registry#embeddinggemma-2-text-270m)** (`.litertlm`; web from litertlm 1.13.1) | 270M | 768D | 1024 tokens | 165MB + 71MB weight cache (native) | ❌ |
+| **[EmbeddingGemma 2 text + vision](/docs/registry#embeddinggemma-2-text-vision-440m)** (`.litertlm`, text and images; web from litertlm 1.13.1) | 440M | 768D | 1024 tokens | 388MB + 71MB + 218MB weight caches (native) | ❌ |
+| **[EmbeddingGemma 2 text + vision + audio](/docs/registry#embeddinggemma-2-740m)** (`.litertlm`, text, images and audio, from litertlm 1.13.1; web audio from 1.13.2) | 740M | 768D | 1024 tokens | 485MB + 385MB weight caches (native) | ❌ |
+| **[Gecko 64](/docs/registry#gecko-110m-en)** | 110M | 768D | 64 tokens | 112MB | ❌ |
+| **[Gecko 256](/docs/registry#gecko-110m-en)** | 110M | 768D | 256 tokens | 114MB | ❌ |
+| **[Gecko 512](/docs/registry#gecko-110m-en)** | 110M | 768D | 512 tokens | 120MB | ❌ |
+| **[EmbeddingGemma 256](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 256 tokens | 179MB | ✅ |
+| **[EmbeddingGemma 512](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 512 tokens | 179MB | ✅ |
+| **[EmbeddingGemma 1024](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 1024 tokens | 183MB | ✅ |
+| **[EmbeddingGemma 2048](/docs/registry#embeddinggemma-300m)** | 300M | 768D | 2048 tokens | 196MB | ✅ |
 | **[EmbeddingGemma 2 GGUF](https://huggingface.co/ggml-org/embeddinggemma-2-GGUF)** (`.gguf` Q8_0, text; native, through `flutter_edge_ai_llama`) | text tower of google/embeddinggemma-2 | 768D | 1024 tokens | 310MB | ❌ |
-| **[all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)** (ONNX; native and web) | 22M | 384D | the graph's | 90MB (`model.onnx`) | ❌ |
+| **[all-MiniLM-L6-v2](https://huggingface.co/Xenova/all-MiniLM-L6-v2)** (ONNX; native and web) | 22M | 384D | the graph's | 90MB (`onnx/model.onnx`) | ❌ |
 | **[EmbeddingGemma-300M ONNX](https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX)** (ONNX; native only) | 300M | 768D | the graph's | 175MB–1.2GB by variant | ❌ |
 
 EmbeddingGemma 2 is one `.litertlm` file with its own tokenizer (no

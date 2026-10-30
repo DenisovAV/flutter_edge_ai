@@ -1,0 +1,41 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: qwen2.5-1.5b-instruct
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: Qwen 2.5 1.5B Instruct
+family: qwen2.5
+arch_class: dense
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+model_type: qwen
+capabilities:
+  image: false
+  audio: false
+  function_calls: true
+  thinking: false
+runtime:
+  max_tokens: 1024
+  preferred_backend: gpu
+variants:
+- slug: q8-ekv4096
+  file_type: litertlm
+  file:
+    repo: litert-community/Qwen2.5-1.5B-Instruct
+    revision: 5068b3fd9788a4ed5633dc868687f778143b73f3
+    path: Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm
+    sha256: c4a9b7289365ab80fe599b844b77ad253eb3c53fb0e5d963d699146a6f01255e
+    size: 1597922856
+    install_filename: Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm
+  example:
+  - qwen25_1_5B_Instruct
+- slug: f32-ekv4096
+  file_type: litertlm
+  file:
+    repo: litert-community/Qwen2.5-1.5B-Instruct
+    revision: 5068b3fd9788a4ed5633dc868687f778143b73f3
+    path: Qwen2.5-1.5B-Instruct_multi-prefill-seq_f32_ekv4096.litertlm
+    sha256: 708483abb477c10dd8db8cc6b4995bbd9cd2deda5539249a37c218028a669391
+    size: 6182436864
+    install_filename: Qwen2.5-1.5B-Instruct_multi-prefill-seq_f32_ekv4096.litertlm

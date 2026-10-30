@@ -159,6 +159,13 @@ class InferenceModelSpec extends ModelSpec {
   /// consumers of [modelSource] still see the entry the engine loads from).
   final List<DirectoryBundleFile>? _directoryFiles;
 
+  /// The name the model file is installed under; null = the last segment of
+  /// [modelSource] (the URL's file name, the asset's or the file's).
+  final String? _filename;
+
+  /// [filename] installs the model file under that name instead of its
+  /// source's file name. It keeps the source's extension, which the engines
+  /// and tools read; a directory model takes none.
   InferenceModelSpec({
     required String name,
     required ModelSource modelSource,
@@ -167,7 +174,9 @@ class InferenceModelSpec extends ModelSpec {
     required ModelType modelType,
     ModelFileType fileType = ModelFileType.task,
     List<DirectoryBundleFile>? directoryFiles,
-  }) : _name = name,
+    String? filename,
+  }) : _filename = filename,
+       _name = name,
        _modelSource = modelSource,
        _loraSource = loraSource,
        _replacePolicy = replacePolicy,
@@ -182,6 +191,9 @@ class InferenceModelSpec extends ModelSpec {
     // directory spec would otherwise surface far downstream as
     // "Bad state: No element" on `files.first`, not here. The install path
     // rejects these earlier; this guards direct construction of the public ctor.
+    if (filename != null) {
+      _checkFilename(filename, modelSource, directoryFiles);
+    }
     final bundle = _directoryFiles;
     if (bundle != null) {
       if (loraSource != null) {
@@ -224,7 +236,10 @@ class InferenceModelSpec extends ModelSpec {
     final bundle = _directoryFiles;
     if (bundle != null) return List<ModelFile>.unmodifiable(bundle);
 
-    final modelFile = InferenceModelFile.fromSource(_modelSource);
+    final filename = _filename;
+    final modelFile = filename == null
+        ? InferenceModelFile.fromSource(_modelSource)
+        : InferenceModelFile(source: _modelSource, filename: filename);
     final result = <ModelFile>[modelFile];
 
     if (_loraSource != null) {
@@ -263,7 +278,8 @@ class InferenceModelSpec extends ModelSpec {
         _replacePolicy == other._replacePolicy &&
         _modelType == other._modelType &&
         _fileType == other._fileType &&
-        _directoryFilesKey == other._directoryFilesKey;
+        _directoryFilesKey == other._directoryFilesKey &&
+        _filename == other._filename;
   }
 
   @override
@@ -276,6 +292,37 @@ class InferenceModelSpec extends ModelSpec {
       _modelType,
       _fileType,
       _directoryFilesKey,
+      _filename,
     );
+  }
+
+  static void _checkFilename(
+    String filename,
+    ModelSource source,
+    List<DirectoryBundleFile>? directoryFiles,
+  ) {
+    if (directoryFiles != null) {
+      throw ArgumentError.value(
+        filename,
+        'filename',
+        'a directory (ORT-GenAI) model is installed under its own files',
+      );
+    }
+    // A bare file name every platform's file system takes, as an embedder's.
+    FileNameUtils.validatePortableFileNameSegment(filename);
+    final own = InferenceModelFile.fromSource(source).filename;
+    String extensionOf(String name) {
+      final dot = name.lastIndexOf('.');
+      return dot < 0 ? '' : name.substring(dot).toLowerCase();
+    }
+
+    if (extensionOf(own) != extensionOf(filename)) {
+      throw ArgumentError.value(
+        filename,
+        'filename',
+        'must keep the extension of "$own" (${extensionOf(own)}), which the '
+            'engines read',
+      );
+    }
   }
 }

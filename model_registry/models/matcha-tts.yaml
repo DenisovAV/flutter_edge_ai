@@ -1,0 +1,65 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: matcha-tts
+kind: tts
+package: flutter_edge_ai_speech
+display_name: Matcha-TTS
+family: matcha
+arch_class: speech-synthesis
+license: mit
+license_url: https://opensource.org/license/mit
+tts_type: matcha
+variants:
+- slug: bundle
+  files:
+  - repo: litert-community/Matcha-TTS
+    revision: 6dd0418da3204f5704d7afb66722d795e84fcbe5
+    path: matcha_textenc_fp16.tflite
+    sha256: adf2642699b09a9f0cc302a64396554ac698401d93cffad4462792d6df8589a5
+    size: 14774576
+    install_filename: matcha_textenc_fp16.tflite
+  - repo: litert-community/Matcha-TTS
+    revision: 6dd0418da3204f5704d7afb66722d795e84fcbe5
+    path: matcha_decoder_fp16.tflite
+    sha256: 2c2e70235f0daaa9d82366416aad69b4f6e916f080a2da8b4b3b759f7cfd3069
+    size: 22614528
+    install_filename: matcha_decoder_fp16.tflite
+  - repo: litert-community/Matcha-TTS
+    revision: 6dd0418da3204f5704d7afb66722d795e84fcbe5
+    path: matcha_vocoder_fp16.tflite
+    sha256: 7d0b4d975eb1558d02c0fa781b329f5fc650cfee6bffcf311de4b190d62020ac
+    size: 28973856
+    install_filename: matcha_vocoder_fp16.tflite
+  - repo: litert-community/Matcha-TTS
+    revision: 6dd0418da3204f5704d7afb66722d795e84fcbe5
+    path: dp_g2p_matcha_fp16.tflite
+    sha256: 6e4b481f6874dfabc32ce73bf6f0ea1ba6ab5986ee6f76a27779364be8a53c73
+    size: 25785872
+    install_filename: dp_g2p_matcha_fp16.tflite
+  - repo: litert-community/Matcha-TTS
+    revision: 6dd0418da3204f5704d7afb66722d795e84fcbe5
+    path: g2p_dict.txt.gz
+    sha256: 5b3493a8cd4d20b72c7b91415afaf3f32335ebd81f349698e1cedc898c59f979
+    size: 1762038
+    install_filename: g2p_dict.txt.gz
+  - repo: litert-community/Matcha-TTS
+    revision: 6dd0418da3204f5704d7afb66722d795e84fcbe5
+    path: emb.bin
+    sha256: 18be34cda4afa1f59b9fb0b80d03f048bd9dd650e29846e4c6467e0b614c1ee7
+    size: 136704
+    install_filename: emb.bin
+  - repo: litert-community/Matcha-TTS
+    revision: 6dd0418da3204f5704d7afb66722d795e84fcbe5
+    path: config.json
+    sha256: 7363e9e4dda1613aebff7005f2e8c0c76d9b0a1cac31de0f3483bef3089c6906
+    size: 2071
+    install_filename: config.json
+  - repo: litert-community/Matcha-TTS
+    revision: 6dd0418da3204f5704d7afb66722d795e84fcbe5
+    path: g2p_meta.json
+    sha256: 7b87bfeaaa072be236e8491d771b0cb97cc92c3e5d83e3558fff8849868810f5
+    size: 1904
+    install_filename: g2p_meta.json
+  example:
+  - matcha

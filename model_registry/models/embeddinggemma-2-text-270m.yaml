@@ -1,0 +1,200 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: embeddinggemma-2-text-270m
+kind: embedder
+package: flutter_edge_ai_litertlm
+display_name: EmbeddingGemma 2 Text 270M
+family: embeddinggemma2
+arch_class: encoder
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+modalities:
+- text
+variants:
+- slug: generic
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m.litertlm
+    sha256: 2d079ee2f6f066b1f368e8d7c819f55214eaef1d0513b312321901f30ab286fb
+    size: 164626432
+    install_filename: embeddinggemma-2-text-270m__rev-9be6e8b90982.litertlm
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1
+  dimension: 768
+  max_input_tokens: 1024
+  example:
+  - embeddingGemma2Text270m
+- slug: npu-mt6991
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m_MediaTek_MT6991.litertlm
+    sha256: 7acc8e334d882216207c23b7a477179d5af530d67fd8e2cb50ab42d3457f90c0
+    size: 416350208
+    install_filename: embeddinggemma-2-text-270m_MediaTek_MT6991__rev-9be6e8b90982.litertlm
+  npu:
+    vendor: mediatek
+    soc: mt6991
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6991
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+  example:
+  - embeddingGemma2Text270mMt6991
+- slug: npu-mt6993
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m_MediaTek_MT6993.litertlm
+    sha256: eff006451073498117f454c7ab27f274b5fe14a54af49be239e8f480ee49fa36
+    size: 385925120
+    install_filename: embeddinggemma-2-text-270m_MediaTek_MT6993__rev-9be6e8b90982.litertlm
+  npu:
+    vendor: mediatek
+    soc: mt6993
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6993
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: npu-ptl
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m_Intel_PTL.litertlm
+    sha256: 048e219d702d23cf19cb9a75e7595e61e320bc61a3919e0cbf1a30dfb5cc64f4
+    size: 316715544
+    install_filename: embeddinggemma-2-text-270m_Intel_PTL__rev-9be6e8b90982.litertlm
+  npu:
+    vendor: intel
+    soc: PTL
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-ptl
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+  example:
+  - embeddingGemma2Text270mPtl
+- slug: npu-qcs8275
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m_Qualcomm_QCS8275.litertlm
+    sha256: 128c32151613a5bbf8b5695b2d9ae271057338febbf06e3aeebf29e1353cb51d
+    size: 208011264
+    install_filename: embeddinggemma-2-text-270m_Qualcomm_QCS8275__rev-9be6e8b90982.litertlm
+  npu:
+    vendor: qualcomm
+    soc: QCS8275
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-qcs8275
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+  example:
+  - embeddingGemma2Text270mQcs8275
+- slug: npu-sm8550
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m_Qualcomm_SM8550.litertlm
+    sha256: 6a5043146940e738cfa9111aa445b1cdb3dc7bbef30caef367622f14ada1a895
+    size: 207896576
+    install_filename: embeddinggemma-2-text-270m_Qualcomm_SM8550__rev-9be6e8b90982.litertlm
+  npu:
+    vendor: qualcomm
+    soc: SM8550
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8550
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: npu-sm8650
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m_Qualcomm_SM8650.litertlm
+    sha256: 7dabcb17eed982d6de4435aaf29cc56147a627f6ab20a1e37aadd7af5399457b
+    size: 207798272
+    install_filename: embeddinggemma-2-text-270m_Qualcomm_SM8650__rev-9be6e8b90982.litertlm
+  npu:
+    vendor: qualcomm
+    soc: SM8650
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8650
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+  example:
+  - embeddingGemma2Text270mSm8650
+- slug: npu-sm8750
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m_Qualcomm_SM8750.litertlm
+    sha256: b5615709768db4ca4fb4f04514e7e41b0680ccb12dd5f90371193f7fd12e7c99
+    size: 187596800
+    install_filename: embeddinggemma-2-text-270m_Qualcomm_SM8750__rev-9be6e8b90982.litertlm
+  npu:
+    vendor: qualcomm
+    soc: SM8750
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8750
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: npu-sm8850
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m_Qualcomm_SM8850.litertlm
+    sha256: 72992b649c812ae9e30ffa9ad88fc662e649f7b643500d28051fbd457ad0d22a
+    size: 202293248
+    install_filename: embeddinggemma-2-text-270m_Qualcomm_SM8850__rev-9be6e8b90982.litertlm
+  npu:
+    vendor: qualcomm
+    soc: SM8850
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+  example:
+  - embeddingGemma2Text270mSm8850
+- slug: npu-tensor-g5
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m_Google_Tensor_G5.litertlm
+    sha256: f066663433a31a8228b46f3271d2714a3b72a341ed4563cbc6d90f2e3dd0162d
+    size: 166007264
+    install_filename: embeddinggemma-2-text-270m_Google_Tensor_G5__rev-9be6e8b90982.litertlm
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G5
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g5
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+- slug: npu-tensor-g6
+  file_type: litertlm
+  file:
+    repo: litert-community/embeddinggemma-2-text-270m-litert-lm
+    revision: 9be6e8b90982095dc05c2bd162e4b954ee4dbac7
+    path: embeddinggemma-2-text-270m_Google_Tensor_G6.litertlm
+    sha256: 4cd282395a7b611ec8dec95160cd31a1f471a7b1cde1fc71717aa539c2a29883
+    size: 199532256
+    install_filename: embeddinggemma-2-text-270m_Google_Tensor_G6__rev-9be6e8b90982.litertlm
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G6
+  rag_profile_id: embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6
+  dimension: 768
+  max_input_tokens: 1024
+  preferred_backend: npu
+  example:
+  - embeddingGemma2Text270mTensorG6

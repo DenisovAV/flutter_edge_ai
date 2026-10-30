@@ -88,8 +88,9 @@ dependencies:
   then the CPU, with a notice; with `LiteRtLmEngine(backendFallback: false)`
   it is refused with a `LiteRtLmBundleException` (`wrongBackend`). To run on
   the NPU, install the bundle compiled for it.
-- Google Tensor G5/G6 bundles run on the NPU of a Pixel with that Tensor
-  generation and Android 16 or later (not a `BP2A` build). It is opt-in, as
+- Google Tensor G5/G6 bundles load on the NPU of a Pixel with that Tensor
+  generation and Android 16 or later (not a `BP2A` build); run so far on G6
+  only. It is opt-in, as
   Qualcomm's is:
   `google_tensor_npu: true` in the same `user_defines` block. Without it such
   a bundle fails with a `BackendInitException` that says how to enable it.
@@ -424,8 +425,9 @@ fails instead, with a `BackendInitException` whose one attempt says the stack
 is not enabled. See [LiteRT-LM](/docs/litertlm).
 
 **Linux arm64 (`flutter_edge_ai_litertlm` 1.11.0).** The same flag also bundles
-the Qualcomm NPU stack into Linux arm64 builds — Qualcomm Linux boards such as
-the QCS6490, QCS8275 or QCS9075. The hook reads the QNN runtime out of
+the Qualcomm NPU stack into Linux arm64 builds — a Qualcomm Linux board with a
+Hexagon V68–V81 DSP; Google publishes bundles for the QCS8275 (Arduino VENTUNO
+Q) only. The hook reads the QNN runtime out of
 Qualcomm's public QAIRT SDK zip (about 32 MB of it, by range request);
 `qualcomm_npu_qairt_zip` points it at a local copy. On the board the user must
 be in group `fastrpc`. A Linux x64 build ignores the flag.

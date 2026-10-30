@@ -1,0 +1,44 @@
+# Asks Hugging Face for every file the model registry pins
+# (model_registry/models/*.yaml): each must still be served at its commit with
+# the registry's sha256 and size. `registry.dart live` reads the LFS/Xet linked
+# etag and size from the redirect, and fetches and hashes a plain git file.
+#
+# It reaches the network, so it runs weekly and by hand — never on a pull
+# request. A red run means a pinned file is gone, has other bytes at that
+# commit, Hugging Face did not answer, or a file could not be checked: a gated
+# repository the token cannot read is noAccess and fails the run, so a missing
+# or expired HF_TOKEN, or an account that has not accepted a gated license,
+# shows as red rather than as files nobody looked at. It does not mean a pull
+# request broke something.
+name: Model registry live check (Hugging Face)
+
+on:
+  schedule:
+    # Weekly, Monday 06:41 UTC. Off the hour, and apart from the manifest check.
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Every pinned file against Hugging Face
+        working-directory: tool/model_registry
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          dart pub get
+          dart run bin/registry.dart live

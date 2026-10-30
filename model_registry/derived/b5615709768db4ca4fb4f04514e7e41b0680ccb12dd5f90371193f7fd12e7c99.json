@@ -1,0 +1,46 @@
+{
+  "container_version": "1.7.0",
+  "size": 187596800,
+  "npu_target": "Qualcomm/SM8750",
+  "llm_metadata_max_num_tokens": null,
+  "system_metadata": {
+    "author": "The ODML Authors",
+    "uuid": "2798b799-a80d-4ccf-a92b-595c761e5aac",
+    "creation_timestamp": "2026-09-29T18:53:17.762538+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "EmbeddingMetadataProto",
+      "length": 124
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 3149080,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_text_encoder",
+      "length": 112582384,
+      "npu_target": "Qualcomm/SM8750",
+      "items": {
+        "model_type": "tf_lite_text_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteWeights",
+      "model_type": "tf_lite_embedder",
+      "length": 67108864,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    }
+  ]
+}

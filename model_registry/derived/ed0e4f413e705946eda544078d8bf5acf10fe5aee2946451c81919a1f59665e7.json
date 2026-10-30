@@ -1,0 +1,88 @@
+{
+  "container_version": "1.6.0",
+  "size": 615713460,
+  "npu_target": "Google/Tensor_G6",
+  "llm_metadata_max_num_tokens": null,
+  "system_metadata": {
+    "uuid": "a41f800b-2fde-48bb-bfa1-c7e207d8e708",
+    "creation_timestamp": "2026-09-21T18:44:33.366001+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "EmbeddingMetadataProto",
+      "length": 121
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 70257824,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_text_encoder",
+      "length": 124526304,
+      "npu_target": "Google/Tensor_G6",
+      "items": {
+        "model_type": "tf_lite_text_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_audio_encoder_hw",
+      "length": 100264192,
+      "npu_target": "Google/Tensor_G6",
+      "items": {
+        "model_type": "tf_lite_audio_encoder_hw"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_audio_adapter",
+      "length": 2252528,
+      "npu_target": "Google/Tensor_G6",
+      "items": {
+        "model_type": "tf_lite_audio_adapter"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_end_of_audio",
+      "length": 2740,
+      "items": {
+        "model_type": "tf_lite_end_of_audio"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_encoder",
+      "length": 312017872,
+      "npu_target": "Google/Tensor_G6",
+      "items": {
+        "model_type": "tf_lite_vision_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_adapter",
+      "length": 1584216,
+      "items": {
+        "model_type": "tf_lite_vision_adapter"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_end_of_vision",
+      "length": 2740,
+      "items": {
+        "model_type": "tf_lite_end_of_vision"
+      }
+    }
+  ]
+}

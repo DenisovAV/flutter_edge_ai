@@ -1,0 +1,77 @@
+{
+  "container_version": "1.6.0",
+  "size": 2043971366,
+  "npu_target": "Google/Tensor_G6",
+  "llm_metadata_max_num_tokens": 1280,
+  "kv_cache_length": 1280,
+  "prefill_decode_signatures": {
+    "prefill_128": {
+      "kv_cache_k_0": [
+        1,
+        1,
+        1280,
+        256
+      ],
+      "kv_cache_v_0": [
+        1,
+        1,
+        256,
+        1280
+      ]
+    },
+    "decode": {
+      "kv_cache_k_0": [
+        1,
+        1,
+        1280,
+        256
+      ],
+      "kv_cache_v_0": [
+        1,
+        1,
+        256,
+        1280
+      ]
+    }
+  },
+  "system_metadata": {
+    "model_name": "gemma3-1b",
+    "uuid": "8feff5ee-8a54-4337-be94-f5bc8700a591",
+    "creation_timestamp": "2026-08-06T09:26:17.926648+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 1729280576,
+      "npu_target": "Google/Tensor_G6",
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 308286768,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_aux",
+      "length": 98564,
+      "items": {
+        "model_type": "tf_lite_aux"
+      }
+    },
+    {
+      "data_type": "HF_Tokenizer_Zlib",
+      "length": 6249829
+    },
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 1830
+    }
+  ]
+}

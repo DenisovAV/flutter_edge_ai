@@ -1,0 +1,98 @@
+{
+  "container_version": "1.6.0",
+  "size": 828590400,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": 2048,
+  "kv_cache_length": 2048,
+  "prefill_decode_signatures": {
+    "prefill_128": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        2048,
+        64
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        2048,
+        64
+      ]
+    },
+    "prefill_1024": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        2048,
+        64
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        2048,
+        64
+      ]
+    },
+    "decode": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        2048,
+        64
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        2048,
+        64
+      ]
+    }
+  },
+  "system_metadata": {
+    "Authors": "",
+    "uuid": "362cd97f-43cb-4510-ab8f-f15641a1b152",
+    "creation_timestamp": "2026-08-31T04:29:52.252803+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 1885
+    },
+    {
+      "data_type": "HF_Tokenizer_Zlib",
+      "length": 1967910
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 138018208,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 281761472,
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_encoder",
+      "length": 404903056,
+      "items": {
+        "model_type": "tf_lite_vision_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_adapter",
+      "length": 1870144,
+      "items": {
+        "model_type": "tf_lite_vision_adapter"
+      }
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "container_version": "1.4.0",
+  "size": 4919541760,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": null,
+  "kv_cache_length": 4096,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        256
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        256
+      ]
+    },
+    "prefill_16": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        256
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        256
+      ]
+    },
+    "prefill_256": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        256
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        256
+      ]
+    }
+  },
+  "system_metadata": {
+    "author": "The ODML Authors"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 3062
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4696020
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 271585104,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_per_layer_embedder",
+      "length": 1284522128,
+      "items": {
+        "model_type": "tf_lite_per_layer_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_audio_encoder_hw",
+      "backend_constraint": [
+        "cpu"
+      ],
+      "length": 664664920,
+      "items": {
+        "model_type": "tf_lite_audio_encoder_hw",
+        "backend_constraint": "cpu"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_audio_adapter",
+      "backend_constraint": [
+        "cpu"
+      ],
+      "length": 12595060,
+      "items": {
+        "model_type": "tf_lite_audio_adapter",
+        "backend_constraint": "cpu"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_end_of_audio",
+      "length": 8820,
+      "items": {
+        "model_type": "tf_lite_end_of_audio"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_adapter",
+      "backend_constraint": [
+        "cpu"
+      ],
+      "length": 17854628,
+      "items": {
+        "model_type": "tf_lite_vision_adapter",
+        "backend_constraint": "cpu"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_encoder",
+      "backend_constraint": [
+        "gpu"
+      ],
+      "length": 152736888,
+      "items": {
+        "model_type": "tf_lite_vision_encoder",
+        "backend_constraint": "gpu"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "backend_constraint": [
+        "cpu",
+        "gpu"
+      ],
+      "length": 2510766336,
+      "items": {
+        "model_type": "tf_lite_prefill_decode",
+        "backend_constraint": "cpu,gpu"
+      }
+    }
+  ]
+}

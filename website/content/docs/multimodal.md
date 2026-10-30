@@ -7,13 +7,14 @@ meta:
 ---
 
 flutter_edge_ai supports **text + image** input (vision) and **audio** input with
-the right models. Multimodal models require more memory and are recommended for
-devices with 8GB+ RAM.
+the right models. Gemma 4 E2B needs a phone with 6 GB of RAM or more: on a 4 GB
+phone the OS kills the app while the model loads. The larger Gemma 4 E4B and
+Gemma 3n files have no measured floor.
 
 ## Vision (image input)
 
 Vision needs a model with a vision encoder — e.g. **Gemma 4 E2B/E4B**, **Gemma 3n
-E2B/E4B** and **FastVLM 0.5B** (desktop); [Models](/docs/models) lists which
+E2B/E4B** and **FastVLM 0.5B** (every native platform; run on desktop only, see the [Model Registry](/docs/registry#fastvlm-0.5b)); [Models](/docs/models) lists which
 models take images. The OS built-in model takes images on Android (Gemini Nano —
 see [Built-in AI](/docs/builtin-ai)). **Gemma 4** vision runs on all
 four platforms (Android, iOS, Desktop, and Web with the MediaPipe `-web.task`

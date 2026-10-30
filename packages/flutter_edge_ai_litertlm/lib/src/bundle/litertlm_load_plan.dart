@@ -34,6 +34,7 @@
 //   published bundle compiles an encoder for the NPU next to a generic text
 //   model; an all-NPU build compiles both.
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 
 import '../litert_lm_load_errors.dart';
@@ -382,6 +383,13 @@ Set<PreferredBackend> _textBackendsAllowed(LiteRtLmBundleInfo? bundle) {
       : declared.difference(const {PreferredBackend.npu});
 }
 
+/// [_textBackendsAllowed], for the catalog test that checks the generated
+/// catalog against it.
+@visibleForTesting
+Set<PreferredBackend> textBackendsAllowedForTesting(
+  LiteRtLmBundleInfo? bundle,
+) => _textBackendsAllowed(bundle);
+
 /// Why a text model is compiled for no NPU
 /// ([LiteRtLmBundleInfo.isCompiledForNpu]).
 const _noNpuGraph =
@@ -556,7 +564,7 @@ PreferredBackend _encoderDefault(LiteRtLmSection encoder) {
 }
 
 /// Refuses a [target] NPU this package has no dispatch for on [abi]
-/// ([NpuVendor.abis]). [encoder] is the kind (vision, audio) of the encoder
+/// ([NpuStack.abis]). [encoder] is the kind (vision, audio) of the encoder
 /// compiled for it, null for the text model.
 void _checkNpuVendor(
   String path,
@@ -577,7 +585,7 @@ void _checkNpuVendor(
     LiteRtLmBundleProblem.unsupportedNpu,
     vendor == null
         ? '$what is compiled for the $target NPU. flutter_edge_ai_litertlm '
-              'runs ${npuSentenceList(NpuVendor.values.map((v) => v.label))} '
+              'runs ${npuSentenceList(NpuStack.values.map((v) => v.label))} '
               'NPU bundles only; $instead the generic bundle of this model to '
               'run it on the GPU or the CPU.'
         : '$what is compiled for the $target NPU, which runs on '

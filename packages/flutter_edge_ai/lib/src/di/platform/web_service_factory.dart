@@ -5,6 +5,8 @@ library;
 
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/web_storage_mode.dart';
+import '../../model_management/cancel_token.dart';
+import '../../services/remote_size_probe.dart';
 import '../../infrastructure/web_download_service.dart';
 import '../../infrastructure/web_file_system_service.dart';
 import '../../infrastructure/web_js_interop.dart';
@@ -66,4 +68,21 @@ DownloadService createDownloadService(
     opfsService: opfsService,
     webStorageMode: webStorageMode,
   );
+}
+
+/// The web asks no size before a download (a cross-origin HEAD would need the
+/// host's CORS for its headers): a byte-weighted `withProgress` there counts
+/// a file by its `expectedSize` (every catalog install has one), else every
+/// file the same.
+RemoteSizeProbe createRemoteSizeProbe() => const _NoRemoteSizes();
+
+final class _NoRemoteSizes implements RemoteSizeProbe {
+  const _NoRemoteSizes();
+
+  @override
+  Future<int?> sizeOf(
+    String url, {
+    String? token,
+    CancelToken? cancelToken,
+  }) async => null;
 }

@@ -1,6 +1,8 @@
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
+import 'catalog/litert_catalog.dart' show LiteRtLmModels;
+
 import 'dart:async';
 import 'dart:io' show FileSystemException;
 
@@ -137,6 +139,7 @@ class LiteRtLmEngine
     implements
         InferenceEngineProvider,
         HuggingFaceResolverSource,
+        ModelCatalogSource,
         MultiModelEngine {
   const LiteRtLmEngine({
     this.backendFallback = true,
@@ -211,6 +214,12 @@ class LiteRtLmEngine
   @override
   bool canHandle(InferenceModelSpec spec) =>
       spec.fileType == ModelFileType.litertlm;
+
+  /// The LLMs this engine runs, pinned to Hugging Face commits:
+  /// [LiteRtLmModels.catalog]. `FlutterEdgeAi.catalog` includes it once the
+  /// engine is passed to `initialize`.
+  @override
+  ModelCatalog get modelCatalog => LiteRtLmModels.catalog;
 
   /// The engine's own Hugging Face resolver: reads a repo's
   /// `litertlm_manifest.json`. Auto-registered by

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'services/catalog_install.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -77,13 +78,25 @@ class _TranslateScreenState extends State<TranslateScreen> {
         token = await AuthTokenService.loadToken();
       }
 
-      await FlutterEdgeAi.installModel(
-        modelType: widget.model.modelType,
-        fileType: widget.model.fileType,
-      ).fromNetwork(widget.model.url, token: token).withProgress((percent) {
-        if (!mounted) return;
-        setState(() => _downloadPercent = percent);
-      }).install();
+      final replaced = await installFromCatalogReplacingActive(
+        () =>
+            FlutterEdgeAi.installModelFromCatalog(
+              widget.model.catalogVariant,
+              token: token,
+            ).withProgress((percent) {
+              if (!mounted) return;
+              setState(() => _downloadPercent = percent);
+            }).install(),
+        variant: widget.model.catalogVariant,
+        confirm: (model, bytes) =>
+            askToReplaceActiveModel(context, model, bytes),
+      );
+      if (replaced case final CatalogInstallKept kept) {
+        if (mounted) {
+          leaveKeeping(context, kept);
+        }
+        return;
+      }
 
       if (kDebugMode) {
         debugPrint('[TranslateScreen] Model installed, getting active…');

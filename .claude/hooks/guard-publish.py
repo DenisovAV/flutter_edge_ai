@@ -268,10 +268,82 @@ def _run_main(cmd, cwd):
         sys.stdin = stdin
 
 
+_HOOK = "guard-publish"
+
+
+def _may_publish(raw):
+    """Whether the hook payload [raw] may hold a publish, read loosely; an
+    unreadable payload may."""
+    try:
+        cmd = (json.loads(raw).get("tool_input") or {}).get("command") or ""
+        if not isinstance(cmd, str):
+            return True
+        if publish_command is not None:
+            return publish_command.mentions_publish(cmd)
+        text = re.sub(r"[\"'\\]", "", cmd)
+        return bool(
+            re.search(r"\b(?:pub|packages)\b", text)
+            and (re.search(r"\b(?:publish|lish|lush)\b", text) or "$'" in cmd)
+        )
+    except BaseException:  # noqa: BLE001 — unsure: may publish
+        return True
+
+
+def _guarded_main():
+    """main(), failing closed for a publish only: a crash on a command that
+    may publish is exit 2 (block), never the exit 1 of a traceback, which a
+    PreToolUse hook reads as non-blocking; on any other command it allows."""
+    import io
+
+    try:
+        raw = sys.stdin.read()
+    except BaseException as e:  # noqa: BLE001 — a payload not read may publish
+        sys.stderr.write(f"BLOCKED: {_HOOK} could not read the hook payload ({e!r}).\n")
+        return 2
+    sys.stdin = io.StringIO(raw)
+    try:
+        return main()
+    except BaseException as e:  # noqa: BLE001 — a surprise blocks a publish
+        if not _may_publish(raw):
+            sys.stderr.write(f"{_HOOK} failed ({e!r}) on a command with no publish; allowed.\n")
+            return 0
+        sys.stderr.write(
+            f"BLOCKED: {_HOOK} failed ({e!r}); a publish in an unknown state is "
+            "not a safe one.\n"
+        )
+        return 2
+
+
+def _crash_blocks_publish_only():
+    """Self-test: with main() crashing, a publish blocks and `git status` does
+    not. Returns the failures."""
+    import contextlib
+    import io
+
+    bad = []
+    real = globals()["main"]
+    globals()["main"] = lambda: 1 / 0
+    try:
+        for cmd, want in (("dart pub publish -f", 2), ("dart pub\\\npublish", 2), ("git status", 0)):
+            stdin = sys.stdin
+            sys.stdin = io.StringIO(json.dumps({"tool_input": {"command": cmd}}))
+            try:
+                with contextlib.redirect_stderr(io.StringIO()):
+                    got = _guarded_main()
+            finally:
+                sys.stdin = stdin
+            if got != want:
+                bad.append(f"a crash on {cmd!r}: exit {got}, want {want}")
+    finally:
+        globals()["main"] = real
+    return bad
+
+
 def _self_test():
     import tempfile
 
     bad = list(publish_command.self_test())
+    bad += _crash_blocks_publish_only()
     for cmd, want in _TESTS:
         try:
             got = bool(_shipping(cmd, {"cwd": "/w"}))
@@ -306,7 +378,7 @@ def _self_test():
             bad.append(f"the second publish's dirty repository passed: exit {code}")
     for line in bad:
         print(f"  FAIL {line}")
-    total = len(_TESTS) + len(_DIR_TESTS) + 1 + len(publish_command._CASES)
+    total = len(_TESTS) + len(_DIR_TESTS) + 2 + len(publish_command._CASES)
     print(f"  {total - len(bad)}/{total} pass")
     return 1 if bad else 0
 
@@ -314,4 +386,4 @@ def _self_test():
 if __name__ == "__main__":
     if "--self-test" in sys.argv:
         sys.exit(_self_test())
-    sys.exit(main())
+    sys.exit(_guarded_main())

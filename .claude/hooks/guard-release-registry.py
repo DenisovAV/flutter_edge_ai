@@ -580,9 +580,9 @@ def _may_publish(raw):
     `$'\\x70ublish'`). An unreadable payload may."""
     try:
         cmd = (json.loads(raw).get("tool_input") or {}).get("command") or ""
-    except Exception:  # noqa: BLE001 — unreadable: assume the worst
+        return not isinstance(cmd, str) or _loosely_publishes(cmd)
+    except BaseException:  # noqa: BLE001 — unreadable or a reader bug: may publish
         return True
-    return not isinstance(cmd, str) or _loosely_publishes(cmd)
 
 
 def _guarded_main():

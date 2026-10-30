@@ -74,7 +74,9 @@ def _decode_ansi_c(body):
         elif e in "xuU":
             width = {"x": 2, "u": 4, "U": 8}[e]
             m = re.match(rf"[0-9A-Fa-f]{{1,{width}}}", body[i:])
-            if m:
+            # Past U+10FFFF there is no character (chr() would raise): kept
+            # as written.
+            if m and int(m.group(0), 16) <= 0x10FFFF:
                 out.append(chr(int(m.group(0), 16)))
                 i += len(m.group(0))
             else:
@@ -652,9 +654,13 @@ class _Reader:
                     self.run(sub, here, dict(env), depth + 1)
             own = dict(env)
             moves = []
-            # This command's own words: `env -S 'echo hi'` beside a grep for
-            # `dart pub publish` is not unclear.
-            here_visible = _mentions_publish(" ".join(w.text for w in cmd.words))
+            # `env -S`: unclear when its own words show a publish, or when one
+            # of them expands and any of the text does (`env -S "$X"`, X set
+            # elsewhere). `env -S 'echo hi'` beside a grep for `dart pub
+            # publish` is clear.
+            here_visible = _mentions_publish(" ".join(w.text for w in cmd.words)) or (
+                visible and any(w.expands for w in cmd.words)
+            )
             words = _strip_wrappers(cmd.words, own, here_visible, moves)
             for target in moves:
                 here = _resolve(target, here)
@@ -713,26 +719,14 @@ class _Reader:
             # A command or subcommand word that expands (`$D pub publish`,
             # `dart $SUB publish`, `{pub,publish}`) is unclear only when the
             # text, quotes removed, shows a publish: `$EDITOR "$FILE"` is not.
-            # An expanding command word counts when the text shows a publish
-            # and this command could be it: it names `pub` or a publish word,
-            # or is variables alone (`X='dart pub publish'; $X`) — so
-            # `$FLUTTER test && git commit -m 'pub publish'` is clear. Braces
-            # count when this command shows a publish (quoted ones do not
-            # expand); a dart/flutter subcommand when any of the text does
-            # (`X=publish; dart pub $X`).
-            text_here = " ".join(w.text for w in words)
-            if (
-                (
-                    visible
-                    and words[0].expands
-                    and (
-                        _PUB_WORD.search(text_here)
-                        or _SUB_WORD.search(text_here)
-                        or all(w.expands for w in words)
-                    )
-                )
-                or (visible and name in ("dart", "flutter") and any(w.expands for w in words[1:3]))
-                or (here_visible and any(_BRACES.search(w.bare) for w in words))
+            # Any of it counts when any of the text shows a publish: a variable
+            # set elsewhere can hold the rest (`$D --verbose $X`). So
+            # `$FLUTTER test && git commit -m 'pub publish'` blocks, a false
+            # block kept on purpose. Braces inside quotes do not expand.
+            if visible and (
+                words[0].expands
+                or (name in ("dart", "flutter") and any(w.expands for w in words[1:3]))
+                or any(_BRACES.search(w.bare) for w in words)
             ):
                 raise PublishUnclear(
                     f"`{words[0].text}` runs a command or subcommand built from "
@@ -802,7 +796,14 @@ def publishes(cmd, cwd):
     a guard blocks on it.
     """
     reader = _Reader(cmd)
-    reader.run(cmd, os.path.normpath(cwd) if cwd else None, {})
+    try:
+        reader.run(cmd, os.path.normpath(cwd) if cwd else None, {})
+    except PublishUnclear:
+        raise
+    except Exception as e:  # noqa: BLE001 — a reader bug never lets a publish by
+        if mentions_publish(cmd):
+            raise PublishUnclear(f"the command could not be read ({e!r})")
+        return []
     return reader.found
 
 
@@ -940,8 +941,14 @@ _CASES = [
     ("env -S 'dart pub lish'", None),
     # Not a publish: no false blocks.
     ("git commit -m 'fix {a,b} before dart pub publish'", []),
-    ("$FLUTTER test && git commit -m 'prep pub publish'", []),
     ("env -S 'echo hi'; grep -r 'dart pub publish' docs", []),
+    # Kept blocked: a variable set elsewhere can hold the rest of a publish.
+    ("$FLUTTER test && git commit -m 'prep pub publish'", None),
+    ("D=dart; X='pub publish'; $D --verbose $X", None),
+    ("X='dart pub publish'; env -S \"$X\"", None),
+    # An escape past U+10FFFF is kept as written, never a crash.
+    ("echo $'\\U7fffffff'", []),
+    ("dart pub publish $'\\U7fffffff'", ["/r"]),
     ("echo " + "$(echo " * 21 + "x" + ")" * 21, []),
     ("echo " + "$(echo " * 21 + "dart pub publish" + ")" * 21, None),
 ]
@@ -989,4 +996,21 @@ def self_test():
             took = time.perf_counter() - t
             if took > (0.05 if n == 40 else 0.5):
                 bad.append(f"{n} env prefixes took {took:.3f} s")
+    # A bug in the reader: a publish is unclear, anything else is not one.
+    real_run = _Reader.run
+
+    def broken(self, *args, **kwargs):
+        raise ValueError("reader bug")
+
+    _Reader.run = broken
+    try:
+        try:
+            publishes("dart pub publish", "/r")
+            bad.append("a reader bug let a publish through")
+        except PublishUnclear:
+            pass
+        if publishes("git status", "/r") != []:
+            bad.append("a reader bug on a plain command is not []")
+    finally:
+        _Reader.run = real_run
     return bad

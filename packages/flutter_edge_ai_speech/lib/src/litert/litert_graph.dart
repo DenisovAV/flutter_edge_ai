@@ -53,8 +53,8 @@ const int liteRtDelegatePrecisionFp32 = 2;
 /// precision is what cures it: every payload tried moved the accelerator's
 /// logged `kernel_batch_size` from 0 to -1, and one without precision
 /// (`enable_infinite_float_capping` alone) still gave NaN.
-/// whisper-tiny f32 gave the same text both ways, with no NaN, about 6% slower
-/// with the payload. Parakeet f32 was killed by the system during its load at
+/// whisper-tiny f32 gave the same text both ways, with no NaN (4.6-5.0 s per
+/// 30 s window with the payload over two runs, ~4.7 s without). Parakeet f32 was killed by the system during its load at
 /// the default and at fp32; with fp16, madvise and GPU weight conversion it
 /// loaded and returned NaN at its first frame. Google's ASR sample
 /// (`litert-samples`, speech_recognition) forces fp32 on the GPU for every

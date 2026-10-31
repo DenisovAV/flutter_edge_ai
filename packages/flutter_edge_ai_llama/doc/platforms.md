@@ -4,7 +4,7 @@ The connector provides GGUF inference through llamadart on Android, iOS, macOS,
 Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.5.0+ and published llamadart 0.15.1 with typed overflow reporting.
 A passing build does not qualify every device, model or accelerator.
 
-Version 0.0.4 pairs llamadart 0.15.1 with Apple
+Version 0.0.5 pairs llamadart 0.15.1 with Apple
 companion `llamadart_llama_cpp_flutter` 0.15.0. Published 0.0.2 pairs SDK
 0.15.0 with companion 0.15.0; 0.0.1 paired 0.13.1 with 0.13.0.
 

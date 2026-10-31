@@ -410,7 +410,11 @@ uninstalls it (`uninstallModel`, `uninstallEmbedder`, `uninstallStt` or
 2 GiB is refused before it downloads unless the app initializes with
 `webStorageMode: WebStorageMode.streaming`, the only mode that holds it.
 `withProgress` weights the files by their pinned sizes, and reports 100 once
-the model is active. An LLM is installed under the registry's install name (for example
+the model is active. A network install outside the catalog gets the same
+checks from `expectedSize:` (bytes) on `installModel().fromNetwork`,
+`installEmbedder().modelFromNetwork`/`tokenizerFromNetwork` and
+`installStt().modelFromNetwork`/`tokenizerFromNetwork` (core 2.5.5); a
+negative value throws `ArgumentError`. An LLM is installed under the registry's install name (for example
 `phi-4-mini-reasoning.litertlm`), which `isModelInstalled`, `getModelPath` and
 `uninstallModel` take. `install(activate: false)` installs an LLM without
 making it active. A LoRA is not installed through the catalog.

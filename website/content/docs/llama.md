@@ -82,13 +82,13 @@ if its adapter is missing; Web LoRA execution remains unsupported.
 ## Add it to your app
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
-Version 0.0.3 adds native embeddings with llamadart 0.15.1; 0.0.4 changes only
-the docs. This guide targets 0.0.4:
+Version 0.0.3 adds native embeddings with llamadart 0.15.1; 0.0.4 and 0.0.5
+change only the docs. This guide targets 0.0.5:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.4
-  flutter_edge_ai_llama: ^0.0.4
+  flutter_edge_ai: ^2.5.5
+  flutter_edge_ai_llama: ^0.0.5
 ```
 
 Core 2.5.0+ supplies the embedding SPI and typed tool history.

@@ -26,8 +26,8 @@ that uses them gets the analyzer warning `experimental_member_use`. Add
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.4
-  flutter_edge_ai_litertlm: ^1.19.0 # EmbeddingGemma 2 (.litertlm) and 1 (.tflite); option scoring
+  flutter_edge_ai: ^2.5.5
+  flutter_edge_ai_litertlm: ^1.20.0 # EmbeddingGemma 2 (.litertlm) and 1 (.tflite); option scoring
   # flutter_edge_ai_embeddings: ^2.3.2 # for a .tflite or ONNX embedder (EmbeddingGemma 1,
   #   Gecko, ...): its tokenizer, registered with embeddingTokenizers: [GemmaEmbeddingTokenizers()]
 ```

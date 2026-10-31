@@ -1,4 +1,5 @@
 ## Unreleased
+- The native library and the engine settings load off the calling isolate, so the UI keeps drawing (#756).
 - Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every LiteRT build pinned to its commit (#734).
 - `LiteRtBindings` binds the opaque-options calls the speech-to-text GPU options use (#747).
 - The option-scoring self-check runs in debug and profile builds only.

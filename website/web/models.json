@@ -493,8 +493,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_android_arm64_pixel-11-ddp-cubs-37-tensor-g6-powervr.json",
+        "note": "Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "ios_arm64": {
@@ -513,9 +514,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-20_macos_arm64_macbook-pro-m4-pro.json",
-        "note": "MacBook Pro (M4 Pro), 2026-10-20, flutter_edge_ai_litertlm 1.16.1"
+        "status": "verified",
+        "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
+        "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "windows_x64": {
@@ -524,8 +525,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
+        "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "linux_x64": {
@@ -533,8 +535,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
+        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "linux_arm64": {
@@ -865,8 +868,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
+        "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "windows_x64": {
@@ -875,8 +879,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
+        "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "linux_x64": {
@@ -884,8 +889,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
+        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "linux_arm64": {
@@ -4330,12 +4336,14 @@
      "cells": {
       "android_arm64": {
        "gpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
+        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
+        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "ios_arm64": {
@@ -4350,34 +4358,38 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-20_macos_arm64_macbook-pro-m4-pro.json",
-        "note": "MacBook Pro (M4 Pro), 2026-10-20, flutter_edge_ai_litertlm 1.16.1"
+        "status": "verified",
+        "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
+        "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-20_macos_arm64_macbook-pro-m4-pro.json",
-        "note": "MacBook Pro (M4 Pro), 2026-10-20, flutter_edge_ai_litertlm 1.16.1"
+        "status": "verified",
+        "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
+        "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "windows_x64": {
        "gpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
+        "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
+        "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "linux_x64": {
        "gpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
+        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
+        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "linux_arm64": {
@@ -4518,8 +4530,9 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_android_arm64_pixel-11-ddp-cubs-37-tensor-g6-powervr.json",
+        "note": "Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       }
      }
@@ -4543,8 +4556,9 @@
      "cells": {
       "windows_x64": {
        "npu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
+        "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       }
      }
@@ -4622,8 +4636,9 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
+        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "linux_arm64": {
@@ -5223,8 +5238,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:529"
+        "status": "verified",
+        "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
+        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
       },
       "ios_arm64": {
@@ -5242,8 +5258,8 @@
        },
        "cpu": {
         "status": "verified",
-        "source": "evidence/2026-10-20_macos_arm64_macbook-pro-m4-pro.json",
-        "note": "MacBook Pro (M4 Pro), 2026-10-20, flutter_edge_ai_speech 0.5.10"
+        "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
+        "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
       },
       "windows_x64": {
@@ -5251,8 +5267,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:529"
+        "status": "verified",
+        "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
+        "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
       },
       "linux_x64": {
@@ -5260,8 +5277,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:529"
+        "status": "verified",
+        "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
+        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
       },
       "linux_arm64": {
@@ -5312,8 +5330,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:495-496"
+        "status": "verified",
+        "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
+        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
       },
       "ios_arm64": {
@@ -5331,8 +5350,8 @@
        },
        "cpu": {
         "status": "verified",
-        "source": "evidence/2026-10-20_macos_arm64_macbook-pro-m4-pro.json",
-        "note": "MacBook Pro (M4 Pro), 2026-10-20, flutter_edge_ai_speech 0.5.10"
+        "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
+        "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
       },
       "windows_x64": {
@@ -5340,8 +5359,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:495-496"
+        "status": "verified",
+        "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
+        "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
       },
       "linux_x64": {
@@ -5349,8 +5369,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:495-496"
+        "status": "verified",
+        "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
+        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
       },
       "linux_arm64": {

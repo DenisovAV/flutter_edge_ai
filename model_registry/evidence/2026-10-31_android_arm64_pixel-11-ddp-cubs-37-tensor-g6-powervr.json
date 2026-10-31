@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "date": "2026-10-31",
+  "host": "android_arm64",
+  "device": "Pixel 11 (DDP cubs-37, Tensor G6, PowerVR)",
+  "commit": "7ad63e4b7c5be16e8f297e64a543100f12d686c6",
+  "packages": {
+    "flutter_edge_ai": "2.5.5",
+    "flutter_edge_ai_litertlm": "1.19.1",
+    "flutter_edge_ai_speech": "0.5.13"
+  },
+  "native": "d7ed14f761905cfe50bc06e3693e9abf934a96584c869410a78dfaef26080e62",
+  "log_sha256": "508a4eb74d84bee4d19dc07f3ffdaa3dfca31ea70cc8a424048f8d383f8d046d",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "audio",
+        "text",
+        "vision"
+      ],
+      "gpu": [
+        "text"
+      ]
+    },
+    "gemma-4-e2b-it/npu-tensor-g6": {
+      "npu": [
+        "deterministic text"
+      ]
+    }
+  }
+}

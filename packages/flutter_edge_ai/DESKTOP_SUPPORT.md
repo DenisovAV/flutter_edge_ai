@@ -101,7 +101,7 @@ No Java/JVM/JRE required.
 # pubspec.yaml
 dependencies:
   flutter_edge_ai: ^2.5.5            # core
-  flutter_edge_ai_litertlm: ^1.20.0  # .litertlm engine
+  flutter_edge_ai_litertlm: ^1.19.1  # .litertlm engine
 ```
 
 ```dart

@@ -1,7 +1,7 @@
 ## 0.5.13
 - Model catalog: `LiteRtSpeechModels`, every STT and TTS build pinned to its commit (#734).
 - Speech-to-text requests fp32 on the GPU: moonshine no longer returns NaN on Adreno 740 (#747).
-- Require `flutter_edge_ai` ^2.5.5 and `flutter_edge_ai_litertlm` ^1.20.0.
+- Require `flutter_edge_ai` ^2.5.5 and `flutter_edge_ai_litertlm` ^1.19.1.
 
 ## 0.5.12
 - Docs: on macOS with Swift Package Manager on, no Podfile block from litertlm 1.19.0 (#689).

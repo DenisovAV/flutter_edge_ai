@@ -81,7 +81,7 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 ```yaml
 dependencies:
   flutter_edge_ai: ^2.5.5
-  flutter_edge_ai_litertlm: ^1.20.0   # or any other engine from the table
+  flutter_edge_ai_litertlm: ^1.19.1   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with
@@ -388,7 +388,7 @@ for the decision by LiteTune carries the question, options, temperature and
 threshold in the file; pass the question and the options, with
 `InferenceDeciderCalibration.fromModel()` for the rest. Each option's id is
 scored as the model's reply, natively, on the CPU (`flutter_edge_ai_litertlm`
-1.16.0) or the GPU (1.20.0; not the NPU). It answers Choice, Noul (`answer.noul`, P(yes)) and Score
+1.16.0) or the GPU (1.19.1; not the NPU). It answers Choice, Noul (`answer.noul`, P(yes)) and Score
 (`answer.expectedLevel`) questions.
 
 ## Three things that fail quietly

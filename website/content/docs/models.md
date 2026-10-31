@@ -270,7 +270,7 @@ mark.
 | [Gemma 3 270M](/docs/registry#gemma-3-270m-it) | 304&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | yes |
 | [Gemma 3n E2B](/docs/registry#gemma-3n-e2b-it) | 3.04–3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ NPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
 | [Gemma 3n E4B](/docs/registry#gemma-3n-e4b-it) | 4.28–4.92&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | yes |
-| [Gemma 4 E2B](/docs/registry#gemma-4-e2b-it) | 2.01–2.59&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 | no |
+| [Gemma 4 E2B](/docs/registry#gemma-4-e2b-it) | 2.01–2.59&nbsp;GB | GPU&nbsp;✅ CPU&nbsp;✅ NPU&nbsp;✅ | GPU&nbsp;📝 CPU&nbsp;📝 | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ NPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;📝 CPU&nbsp;📝 NPU&nbsp;📝 | GPU&nbsp;📝 | no |
 | [Gemma 4 E4B](/docs/registry#gemma-4-e4b-it) | 2.97–3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 | no |
 | [LFM2.5 230M](/docs/registry#lfm2.5-230m) | 177–266&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
 | [LLaVA-OneVision 0.5B](/docs/registry#llava-onevision-0.5b) | 829&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  | no |
@@ -410,7 +410,11 @@ uninstalls it (`uninstallModel`, `uninstallEmbedder`, `uninstallStt` or
 2 GiB is refused before it downloads unless the app initializes with
 `webStorageMode: WebStorageMode.streaming`, the only mode that holds it.
 `withProgress` weights the files by their pinned sizes, and reports 100 once
-the model is active. An LLM is installed under the registry's install name (for example
+the model is active. A network install outside the catalog gets the same
+checks from `expectedSize:` (bytes) on `installModel().fromNetwork`,
+`installEmbedder().modelFromNetwork`/`tokenizerFromNetwork` and
+`installStt().modelFromNetwork`/`tokenizerFromNetwork` (core 2.5.5); a
+negative value throws `ArgumentError`. An LLM is installed under the registry's install name (for example
 `phi-4-mini-reasoning.litertlm`), which `isModelInstalled`, `getModelPath` and
 `uninstallModel` take. `install(activate: false)` installs an LLM without
 making it active. A LoRA is not installed through the catalog.

@@ -627,9 +627,9 @@ dependencies:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.4                 # core — always required
-  flutter_edge_ai_litertlm: ^1.19.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
-  flutter_edge_ai_mediapipe: ^1.2.4       # add if you run .task / .bin models
+  flutter_edge_ai: ^2.5.5                 # core — always required
+  flutter_edge_ai_litertlm: ^1.19.1       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai_mediapipe: ^1.2.5       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.3.2      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
   flutter_edge_ai_rag: ^1.1.2             # add for on-device RAG (RagIndex) + one store below
   flutter_edge_ai_qdrant: ^2.1.1          # native on-device RAG store (qdrant)

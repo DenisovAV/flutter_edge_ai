@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "date": "2026-10-31",
+  "host": "android_arm64",
+  "device": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830)",
+  "commit": "7ad63e4b7c5be16e8f297e64a543100f12d686c6",
+  "packages": {
+    "flutter_edge_ai": "2.5.5",
+    "flutter_edge_ai_litertlm": "1.19.1",
+    "flutter_edge_ai_speech": "0.5.13"
+  },
+  "native": "d7ed14f761905cfe50bc06e3693e9abf934a96584c869410a78dfaef26080e62",
+  "log_sha256": "9a2526e1a59ada57606325f8a7d35c1318816685aa3671f58949ed602c75cb70",
+  "log_url": null,
+  "cells": {
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "audio",
+        "text",
+        "vision"
+      ],
+      "gpu": [
+        "text"
+      ]
+    },
+    "gemma-4-e2b-it/npu-sm8750": {
+      "npu": [
+        "deterministic text"
+      ]
+    },
+    "matcha-tts/bundle": {
+      "cpu": [
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

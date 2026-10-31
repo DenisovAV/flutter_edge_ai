@@ -1,0 +1,558 @@
+{
+  "package": "flutter_edge_ai_speech",
+  "version": "0.5.13",
+  "variants": {
+    "inflect-nano-v2/bundle": {
+      "install_filename": "inflect_text_encoder_fp16.tflite,inflect_decoder_fp16.tflite,config.json,g2p_dict.txt.gz,dp_g2p_matcha_fp16.tflite,g2p_meta.json",
+      "sha256": "c778f516b8557c69734f4d4308084c411b8d3a4575566385d163209bf504f083,155d5072f104248983015e82d1b90968ab2e87bd7f96c4016928fc83231efbd0,7363e9e4dda1613aebff7005f2e8c0c76d9b0a1cac31de0f3483bef3089c6906,5b3493a8cd4d20b72c7b91415afaf3f32335ebd81f349698e1cedc898c59f979,6e4b481f6874dfabc32ce73bf6f0ea1ba6ab5986ee6f76a27779364be8a53c73,7b87bfeaaa072be236e8491d771b0cb97cc92c3e5d83e3558fff8849868810f5",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "matcha-tts/bundle": {
+      "install_filename": "matcha_textenc_fp16.tflite,matcha_decoder_fp16.tflite,matcha_vocoder_fp16.tflite,dp_g2p_matcha_fp16.tflite,g2p_dict.txt.gz,emb.bin,config.json,g2p_meta.json",
+      "sha256": "adf2642699b09a9f0cc302a64396554ac698401d93cffad4462792d6df8589a5,2c2e70235f0daaa9d82366416aad69b4f6e916f080a2da8b4b3b759f7cfd3069,7d0b4d975eb1558d02c0fa781b329f5fc650cfee6bffcf311de4b190d62020ac,6e4b481f6874dfabc32ce73bf6f0ea1ba6ab5986ee6f76a27779364be8a53c73,5b3493a8cd4d20b72c7b91415afaf3f32335ebd81f349698e1cedc898c59f979,18be34cda4afa1f59b9fb0b80d03f048bd9dd650e29846e4c6467e0b614c1ee7,7363e9e4dda1613aebff7005f2e8c0c76d9b0a1cac31de0f3483bef3089c6906,7b87bfeaaa072be236e8491d771b0cb97cc92c3e5d83e3558fff8849868810f5",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32": {
+      "install_filename": "moonshine_tiny_5s_f32.tflite",
+      "sha256": "16f281f1d3d23124e6adbdead8730d46f97cd105c299a9b94608d033c1151b12",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/i8": {
+      "install_filename": "moonshine_tiny_5s_i8.tflite",
+      "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt6877": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT6877.tflite",
+      "sha256": "aa89556f7f16ed4c98405f53e6d7335b9249191d644f12b814439d6cc735fe73",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt6878": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT6878.tflite",
+      "sha256": "955683ce3d968ba6e35cef741911d99e6981b21da6aa65928d7254f63345cbb0",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt6879": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT6879.tflite",
+      "sha256": "f3cec70fbefc3c0995e3b64ba168531e8f1ac1bca3243889ac527ac60908ed90",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt6897": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT6897.tflite",
+      "sha256": "95d48832839473d145b31e1b2e404d691fd568fe2c3bc0bc9d30c4fbb8989db2",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt6983": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT6983.tflite",
+      "sha256": "e0f359d0783191a97301e264d7e957310ccfff48ccee224b590334210471a06e",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt6985": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT6985.tflite",
+      "sha256": "f11b1f48b48bd3969b50e384ee846a9f56045ab64e632e3cd237448b5fa2060f",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt6989": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT6989.tflite",
+      "sha256": "171723ab7a9256d971b3b22c1acd221e7d1836f041c104673c4b9ff9e724004d",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt6991": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT6991.tflite",
+      "sha256": "4dbff02824f8fc67853fb7003987e79fd6ac0ddcf42d0675394f8c99be0ed8a3",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt6993": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT6993.tflite",
+      "sha256": "2821a5f1ac1457d879c581ef5e88949eefcb20ef734b827d8f347bb502b0ad38",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt8171": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT8171.tflite",
+      "sha256": "f65ad4e7d0d12e56748bfff2168b49bfec2eb3dc82ffe2d1801368eeab4a41ab",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt8188": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT8188.tflite",
+      "sha256": "9a0632e8b9004256e68d80b2ce760641cafaee1061847082f8a55c8f55daf093",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-mt8189": {
+      "install_filename": "moonshine_tiny_5s_f32_MediaTek_MT8189.tflite",
+      "sha256": "2b263c02ab3ebd3fec8a3253699f74af99b9eecaf990dd93bfec565fddb959cd",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-sa8255": {
+      "install_filename": "moonshine_tiny_5s_f32_Qualcomm_SA8255.tflite",
+      "sha256": "3c44a69c9c767dc4fceaa37760c0044f85668119bb72ccdad90e07000d8c4e17",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-sa8295": {
+      "install_filename": "moonshine_tiny_5s_f32_Qualcomm_SA8295.tflite",
+      "sha256": "fca5c9a7a785bfae9c3934fb2ce4d9a426dedc6828c002b2f1074ab470ffde13",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-sm8450": {
+      "install_filename": "moonshine_tiny_5s_f32_Qualcomm_SM8450.tflite",
+      "sha256": "b366e09eec0480cd9205c87add3a16b6cbcc43b19e7148d93413160453e8f7bd",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-sm8550": {
+      "install_filename": "moonshine_tiny_5s_f32_Qualcomm_SM8550.tflite",
+      "sha256": "14f47ef1267bd0cecd935f803271a723a3a95c27e574c216f483fc94eaebec75",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-sm8650": {
+      "install_filename": "moonshine_tiny_5s_f32_Qualcomm_SM8650.tflite",
+      "sha256": "2d1081120e7cb51169bdbeba713d9e93eb8071219600bbb2cc11b5a84dc16fc6",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-sm8750": {
+      "install_filename": "moonshine_tiny_5s_f32_Qualcomm_SM8750.tflite",
+      "sha256": "d45a43cc7fa0daf80d7291b9ec1f290ba655ca5ca86a02f9ca1098ffb66afa0a",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "moonshine-tiny/f32-npu-sm8850": {
+      "install_filename": "moonshine_tiny_5s_f32_Qualcomm_SM8850.tflite",
+      "sha256": "b2b5ec846a354680cbc82d42e7f0d72d3bbb466b5ce22db65cca5725b3630b86",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32.tflite",
+      "sha256": "8b4c970ac8814d065b1cf54af6c31facbb4ee4dc0c4926fc1ef6c9c13c8e5423",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/i8": {
+      "install_filename": "parakeet_ctc_0.6b_5s_i8.tflite",
+      "sha256": "3d0799f625842fded4580c9b51d321667f0bd5f334cb325fb1b9051c6534e102",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6877": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT6877.tflite",
+      "sha256": "994440d0ae302f860c09481ab5cbca55aba4e7b44133feeb0566f71d6bcf573f",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6878": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT6878.tflite",
+      "sha256": "9d985851b1a7615bafefcb161779a146e8c2a042a7e88adc23bb5c9cbf62b3fc",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6879": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT6879.tflite",
+      "sha256": "c9ef538f9731e9c96cf03616f2a77bd6c9bb31709634e0dd7f6fe455ab3aeff8",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6897": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT6897.tflite",
+      "sha256": "78310c00eef6c46b1bdfdcaa1fda9d12a70c0e0e449ae3ea7985936a0d5f1f3c",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6983": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT6983.tflite",
+      "sha256": "66dc0a55da54877ea4a562a519caf16ea9551e87bfe9d8c4b339583debcded5d",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6985": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT6985.tflite",
+      "sha256": "c24dd1fe215698ab24b65685de593116941cd1bb14e902eb4d5002db78c40415",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6989": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT6989.tflite",
+      "sha256": "495d466abe824d54da2d5ff33cfb13b61160cba81c4d7746d0edea02bf46da2a",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6991": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT6991.tflite",
+      "sha256": "1527b411e0331e22dcc5f0b8105e6effc846d43f1fed58644ebcaf6ce18efbe2",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6993": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT6993.tflite",
+      "sha256": "8470aeb1639a444b082f4217b533d8da4f14ee5bf715b9d11e9427a261badb57",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt8171": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT8171.tflite",
+      "sha256": "08fe9bee898933e19aa1d9cb5a4e11f33e066220a474a5337126736146f9c8a7",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt8188": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT8188.tflite",
+      "sha256": "eee1c1b381c1772e72033acfbf435cd5a9c1d19e8881cee2886c43a98e6a5524",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt8189": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_MediaTek_MT8189.tflite",
+      "sha256": "b0f37f5828fb7221a6d758954b4f483ac90f0abc6b2f469f3d7a44abe63e4fcc",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-sa8255": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_Qualcomm_SA8255.tflite",
+      "sha256": "6dbfe74bbfa6eb19bde24226d54fcefe9018ac46549a35c9461d8db5511d1da6",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-sa8295": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_Qualcomm_SA8295.tflite",
+      "sha256": "9f7f26cdff6ec13fa2455c1afaab204a2c8cab2e553627d74bc90851de5b40cd",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-sm8450": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_Qualcomm_SM8450.tflite",
+      "sha256": "4ef1a04099a1f6c391e036bf3f8af3bffeb169c3c1a529c34d2ebb6f5a53aa30",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-sm8550": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_Qualcomm_SM8550.tflite",
+      "sha256": "a702ca925d2b69eef886db4f11186c22c5dd0f610dab992426fcdc89bf3222c5",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-sm8650": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_Qualcomm_SM8650.tflite",
+      "sha256": "38da51cb643a37248a06bb3d72e18ebb9695444e2c2c6e08cafeca7ea69f5440",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-sm8750": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_Qualcomm_SM8750.tflite",
+      "sha256": "86ae6549115f817691ba1913d406a8a81fe8c65ad72474b3b6a0edebbe284f4e",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-sm8850": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_Qualcomm_SM8850.tflite",
+      "sha256": "30e431db44f40f7de869776ad37869e0e3847a30717232b3667e9ce4688352fb",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "parakeet-ctc-0.6b/f32-npu-tensor-g3": {
+      "install_filename": "parakeet_ctc_0.6b_5s_f32_Google_Tensor_G3.tflite",
+      "sha256": "d503174ccdf8bd484b89d13d706cb173d1a442ec90ab81b8d51b95cf0312ef44",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "f3f1dd45c3889ed2b5bf67180caf05f51d7d7e4948c20e5f24d8c24df9cc47aa",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "qwen3-tts-0.6b/bundle": {
+      "install_filename": "talker_int4.tflite,mtp_fp32.tflite,codec_decoder_fp32.tflite,tokenizer.json,text_embedding_fp16.npy,text_projection_fp32.npz,codec_embedding_fp32.npy,mtp_embeddings_fp16.npy,demo_speaker.npy",
+      "sha256": "e03df54e73ed1f88b2ae6d47bbf82dd64ea90a3620d753a0f3c8d6a8d60848db,7cc01b402637c850432ee9171c9cc9103813c0406b70c455ea8752833adf1f03,491e10c263c498d9f305ae655dbcce18455d54e44421480afe2d7da2b07da39d,a7d41145c408f3062e824f965be1c29854cd809e111cdf8170aa8b0bcd5d1fab,6fab9de0a8bc144aa3efefdacb5e8292b8499a9ae1d60fcee240bac528b7441e,ebb0f6a7aaacdbc903e825e33480b2da4d4b71c43c90acb0e89988049c77c100,47fa9e30f98b1528fc9b332d314f22a32fa33e187509a4d3537f8b2c31199e39,fea581b6a04f1cbec20b49511c36a00011411ccfba31f89b7571f82fe6b36706,b1527f54f68f44ca98bfddcaa9dc0018deb2db62590c9d2699efabbd0dfc1c3c",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-base/f32": {
+      "install_filename": "whisper_base_30s_f32.tflite",
+      "sha256": "83f90febae74f6db2b671d792ce844f93de5dfa6d6743cdba8c7a208c8dd708a",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-base/i8": {
+      "install_filename": "whisper_base_30s_i8.tflite",
+      "sha256": "f6943d9d293138850b729e074057956c664891c57837692b1bac4608c4506cd1",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32": {
+      "install_filename": "whisper_tiny_30s_f32.tflite",
+      "sha256": "0c8f0e2a1855909a0c027b4ac3c586fdd299e2b47bf1a4fdab51191bca1e0e89",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/i8": {
+      "install_filename": "whisper_tiny_30s_i8.tflite",
+      "sha256": "6748ac565a228c4a00b18d11ea1e2fd7cead3db6fba94e3f0bf35756b13ba4a9",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt6877": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT6877.tflite",
+      "sha256": "5796d1877d6bcc6e307d744bbfd3d1b99f8d517bbe59aa755dffbf0779a0a869",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt6878": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT6878.tflite",
+      "sha256": "0db6686f62bb7c473b1d30082703502138707c1da56408d7b49b0ffffd0bc430",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt6879": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT6879.tflite",
+      "sha256": "7522769c42180f98c176a232fa500bb34a1ac6e2bf6bcfa09801fcc19961f97e",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt6897": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT6897.tflite",
+      "sha256": "462ee83c1d5f58d7fde60de3efad489797f27e159662c772184b4c05f5ef62d9",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt6983": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT6983.tflite",
+      "sha256": "3902fd38bb485295c592b0c83edabf540b2e700ac0e0e22b92a55c3d0ee9bafe",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt6985": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT6985.tflite",
+      "sha256": "7a3b106d8e820c68967b1465141020b53aec379ac17b1c0c7fccfc99c5eaaa25",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt6989": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT6989.tflite",
+      "sha256": "fcc46116d520b7514e1d423e740e9703d5893f9c455f49a7acd130ef1cf58796",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt6991": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT6991.tflite",
+      "sha256": "539386c03dcac03f1409d672a9805973f5afc93a6f1d0e0d808570d16d111aa9",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt6993": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT6993.tflite",
+      "sha256": "8b0d0267c6c874705eff82124cebb7cabd7a843e775973bf15c5f650a59efb26",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt8171": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT8171.tflite",
+      "sha256": "6128e86917d78aca67b1f4ed0dcbe866f0cc8329593e72bca38c94fa6bfc7603",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt8188": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT8188.tflite",
+      "sha256": "208de1204756eb158dd1f0db971e850ad44a537521e0ab7bad61053d5f154939",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-mt8189": {
+      "install_filename": "whisper_tiny_30s_f32_MediaTek_MT8189.tflite",
+      "sha256": "948c2a1255e580506b619e704d22ea1c1415e17cc340c292a0b9cfc056d0b81f",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-sa8255": {
+      "install_filename": "whisper_tiny_30s_f32_Qualcomm_SA8255.tflite",
+      "sha256": "09115cde157641170fa80875456e07cfcdabcdfdb560478e0d601a4d550d2d0f",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-sa8295": {
+      "install_filename": "whisper_tiny_30s_f32_Qualcomm_SA8295.tflite",
+      "sha256": "628844c285638c4cb948ee8a22bde86062c6bb4be50cd924c4d5a71843607f6d",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-sm8450": {
+      "install_filename": "whisper_tiny_30s_f32_Qualcomm_SM8450.tflite",
+      "sha256": "ff876f01485f7b0140b5061056e3847e35e1a67b25166e5be9f7a9dc5bd95cab",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-sm8550": {
+      "install_filename": "whisper_tiny_30s_f32_Qualcomm_SM8550.tflite",
+      "sha256": "c00cdd5ced2c12682754a89069e32dff3ca465e5aa648ec1d0b717330a8ee207",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-sm8650": {
+      "install_filename": "whisper_tiny_30s_f32_Qualcomm_SM8650.tflite",
+      "sha256": "e72a316010b502e9607f53ad76eb6097b445d1272272611203b8638af04336e0",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-sm8750": {
+      "install_filename": "whisper_tiny_30s_f32_Qualcomm_SM8750.tflite",
+      "sha256": "6280afec96131a07a1af111684380bf1b6bfaf3fbba2001433e9205d3d887144",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "whisper-tiny/f32-npu-sm8850": {
+      "install_filename": "whisper_tiny_30s_f32_Qualcomm_SM8850.tflite",
+      "sha256": "67207435852ac403b90dcb60f57631526f528ceb88ff074993816c77a2f7e147",
+      "tokenizer_install_filename": "tokenizer.json",
+      "tokenizer_sha256": "27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566",
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    }
+  }
+}

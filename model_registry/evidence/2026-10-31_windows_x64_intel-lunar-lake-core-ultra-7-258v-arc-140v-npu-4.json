@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "date": "2026-10-31",
+  "host": "windows_x64",
+  "device": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4)",
+  "commit": "93e2c311cc975d9eac5fa04bd3f4f36f2ae75b42",
+  "packages": {
+    "flutter_edge_ai": "2.5.5",
+    "flutter_edge_ai_litertlm": "1.20.0",
+    "flutter_edge_ai_speech": "0.5.13"
+  },
+  "native": "9b550ad40c5ef33346596d21df9498217eb96662a7bd457272b6c5e6742d5d59",
+  "log_sha256": "2570c5217dd8a18ca7ff8c6ae7be8bfafbb70e7b86c8dd642394222c797d538c",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "cpu": [
+        "text to image retrieval"
+      ]
+    },
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "audio",
+        "text",
+        "vision"
+      ],
+      "gpu": [
+        "text"
+      ]
+    },
+    "gemma-4-e2b-it/npu-lnl": {
+      "npu": [
+        "deterministic text"
+      ]
+    },
+    "matcha-tts/bundle": {
+      "cpu": [
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

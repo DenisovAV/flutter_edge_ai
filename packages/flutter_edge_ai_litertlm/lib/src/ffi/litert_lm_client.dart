@@ -566,20 +566,24 @@ _rewindCancelledTurnOffMainIsolate({
 Future<void> Function(void Function() work) offMainIsolate = Isolate.run;
 
 /// How the library warm-up loads each library before `DynamicLibrary.open`
-/// does: [loadWithSystemLoader], best effort. Replaced by tests.
+/// does: [loadWithSystemLoader], best effort, returning the loader's handle
+/// or null. Replaced by tests. Read on the calling isolate and handed to the
+/// warm-up isolate, which would otherwise start from this default.
 @visibleForTesting
-void Function(String path) preloadNativeLibrary = _preloadWithSystemLoader;
+Pointer<Void>? Function(String path) preloadNativeLibrary =
+    _preloadWithSystemLoader;
 
-void _preloadWithSystemLoader(String path) {
+Pointer<Void>? _preloadWithSystemLoader(String path) {
   try {
-    loadWithSystemLoader(path);
-  } on Object catch (e) {
-    // The `DynamicLibrary.open` that follows loads it instead, and reports a
-    // failure in its own words.
+    return loadWithSystemLoader(path);
+  } on ArgumentError catch (e) {
+    // The loader returned no library. The `DynamicLibrary.open` that follows
+    // loads it instead, and reports a failure in its own words.
     edgeAiLog(
-      '[LiteRtLmFfi] the system loader did not load $path: $e',
+      '[LiteRtLmFfi] the system loader did not load $path: ${e.message}',
       level: EdgeAiLogLevel.verbose,
     );
+    return null;
   }
 }
 
@@ -588,13 +592,15 @@ void _preloadWithSystemLoader(String path) {
 const _rtldLazy = 1;
 
 /// Loads [path] with the platform's own loader, `dlopen` (`LoadLibraryW` on
-/// Windows), called as a plain FFI function, and leaves it loaded. Unlike
-/// `DynamicLibrary.open`, which loads inside the VM, a plain FFI call leaves
-/// its isolate at a safepoint while the loader runs, so a garbage collection
-/// elsewhere in the isolate group does not wait for the load. Throws an
-/// [ArgumentError] when the loader returns no library.
+/// Windows), called as a non-leaf FFI function, leaves it loaded and returns
+/// the loader's handle. Unlike `DynamicLibrary.open`, which runs the loader in
+/// the VM's own state, a non-leaf FFI call marks its isolate as at a safepoint
+/// while the loader runs, so a garbage collection elsewhere in the isolate
+/// group does not wait for the load. Throws an [ArgumentError] when the
+/// loader returns no library, with `dlerror`'s reason on the platforms that
+/// have it.
 @visibleForTesting
-void loadWithSystemLoader(String path) {
+Pointer<Void> loadWithSystemLoader(String path) {
   if (Platform.isWindows) {
     final loadLibrary = DynamicLibrary.open('kernel32.dll')
         .lookupFunction<
@@ -603,13 +609,14 @@ void loadWithSystemLoader(String path) {
         >('LoadLibraryW');
     final name = path.toNativeUtf16();
     try {
-      if (loadLibrary(name) == nullptr) {
+      final handle = loadLibrary(name);
+      if (handle == nullptr) {
         throw ArgumentError('LoadLibraryW could not load $path');
       }
+      return handle;
     } finally {
       malloc.free(name);
     }
-    return;
   }
   final process = DynamicLibrary.process();
   final dlopen = process
@@ -617,21 +624,50 @@ void loadWithSystemLoader(String path) {
         Pointer<Void> Function(Pointer<Utf8>, Int32),
         Pointer<Void> Function(Pointer<Utf8>, int)
       >('dlopen');
+  // Looked up before the dlopen: a lookup is itself a dlsym, which clears
+  // the reason a failed dlopen leaves for dlerror.
+  final dlerror = process
+      .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+        'dlerror',
+      );
   final name = path.toNativeUtf8();
   try {
-    if (dlopen(name, _rtldLazy) == nullptr) {
-      final reason = process
-          .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
-            'dlerror',
-          )();
+    final handle = dlopen(name, _rtldLazy);
+    if (handle == nullptr) {
+      final reason = dlerror();
       throw ArgumentError(
         'dlopen could not load $path: '
         '${reason == nullptr ? 'no reason given' : reason.toDartString()}',
       );
     }
+    return handle;
   } finally {
     malloc.free(name);
   }
+}
+
+/// Throws a [StateError] when the system loader's [preloaded] handle for
+/// [path] is not the library `DynamicLibrary.open` then returned as
+/// [opened]: two copies of one library are in the process. On macOS the
+/// preload's relative framework path is resolved through its caller's and
+/// the main executable's rpaths, the open's through FlutterMacOS's, which
+/// list `/usr/local/lib` before the app's Frameworks; a stray framework there
+/// would be the one bound, while the bundled copy's static registries also
+/// run. Null [preloaded] (no preload, or one that failed) is not checked.
+@visibleForTesting
+void requireSameLoadedLibrary(
+  Pointer<Void>? preloaded,
+  DynamicLibrary opened,
+  String path,
+) {
+  if (preloaded == null || preloaded == opened.handle) return;
+  throw StateError(
+    '$path is loaded twice: the system loader returned '
+    '0x${preloaded.address.toRadixString(16)} and DynamicLibrary.open '
+    '0x${opened.handle.address.toRadixString(16)}. Another copy of the '
+    'library is on the loader\'s search path (for example in '
+    '/usr/local/lib); remove it.',
+  );
 }
 
 /// Everything `litert_lm_engine_create` is made from, decided on the calling
@@ -729,27 +765,82 @@ Future<EngineCreateResult> Function(EngineCreateRequest request)
 createEngineOffMainIsolate = (request) =>
     Isolate.run(() => _createEngine(request));
 
-/// Makes the engine settings from [r], creates the engine from them and frees
-/// them, all on the isolate this runs on. `litert_lm_engine_settings_create`
-/// alone took 81 ms on an S25 Ultra, and a frame started 98 ms late around
-/// it when it ran on the calling isolate. The settings are freed here whether
-/// or not a setter or the create throws.
+/// Opens the library on the isolate this runs on, then makes the engine
+/// settings and the engine there ([createEngineWith]).
 EngineCreateResult _createEngine(EngineCreateRequest r) {
   edgeAiLogLevel = r.logLevel;
-  final banksBefore = r.listWeightBanks ? listIntelWeightBanks() : null;
-  final isolateSw = Stopwatch()..start();
+  final openSw = Stopwatch()..start();
   // Plain open (litert_lm_library.dart): `initialize` already loaded it with
   // the preloads and, on Android, the strict default scope this path needs
   // (#447).
   final lib = openLiteRtLmLibrary();
   edgeAiLog(
-    '[LiteRtLmFfi/perf]   isolate: DynamicLibrary.open: ${isolateSw.elapsedMilliseconds}ms',
+    '[LiteRtLmFfi/perf]   isolate: DynamicLibrary.open: ${openSw.elapsedMilliseconds}ms',
     level: EdgeAiLogLevel.verbose,
   );
-  final b = LiteRtLmBindings(lib);
+  return createEngineWith(
+    r,
+    LiteRtLmBindings(lib),
+    provides: lib.providesSymbol,
+    lookup: lib.lookup,
+  );
+}
+
+/// Makes the engine settings from [r] through [b], creates the engine from
+/// them and frees them, all on the isolate this runs on. The settings are
+/// freed whether or not a setter or the create throws. On an S25 Ultra a frame
+/// started 98 ms late around `litert_lm_engine_settings_create` when it ran on
+/// the calling isolate (81 ms of that isolate's wall time, which LiteRT-LM's
+/// source does not explain as the call's own work).
+///
+/// LiteRT-LM's thread-local last error is read through [lookup] when
+/// [provides] says the library has it: a NULL settings create throws a
+/// [LiteRtLmEngineCreateException] with it, and a NULL engine create returns
+/// it. [blockingSigprof] runs the create when [EngineCreateRequest.blockSigprof]
+/// is set. Called directly by tests, with fake bindings.
+@visibleForTesting
+EngineCreateResult createEngineWith(
+  EngineCreateRequest r,
+  LiteRtLmBindings b, {
+  required bool Function(String symbol) provides,
+  required Pointer<T> Function<T extends NativeType>(String symbol) lookup,
+  T Function<T>(T Function() body) blockingSigprof = withSigprofBlocked,
+}) {
+  final banksBefore = r.listWeightBanks ? listIntelWeightBanks() : null;
+  final isolateSw = Stopwatch()..start();
   final nativeLogLevel = r.nativeLogLevel;
   if (nativeLogLevel != null) {
     b.litert_lm_set_min_log_level(nativeLogLevel.nativeValue);
+  }
+
+  // LiteRT-LM keeps a failed call's status in a thread-local last error
+  // (`c/engine.cc`, for the settings create and the engine create alike), on
+  // every platform and in release builds, unlike its log, which this package
+  // captures in debug builds on three platforms only. Cleared before each of
+  // the two creates, because success never resets it, and read on this
+  // thread right after the one that failed. Every native-v0.18.0-e library
+  // exports it (the release gate checks); a library without it still loads
+  // models, with no reason to report.
+  final lastError = provides('litert_lm_clear_last_error');
+  void clearLastError() {
+    if (!lastError) return;
+    lookup<NativeFunction<Void Function()>>(
+      'litert_lm_clear_last_error',
+    ).asFunction<void Function()>()();
+  }
+
+  ({int code, String? message}) readLastError() {
+    if (!lastError) return (code: 0, message: null);
+    final code = lookup<NativeFunction<Int32 Function()>>(
+      'litert_lm_get_last_error_code',
+    ).asFunction<int Function()>()();
+    final message = lookup<NativeFunction<Pointer<Utf8> Function()>>(
+      'litert_lm_get_last_error_message',
+    ).asFunction<Pointer<Utf8> Function()>()();
+    return (
+      code: code,
+      message: code == 0 || message == nullptr ? null : message.toDartString(),
+    );
   }
 
   final modelPathPtr = r.modelPath.toNativeUtf8();
@@ -758,6 +849,7 @@ EngineCreateResult _createEngine(EngineCreateRequest r) {
   final audioBackendPtr = r.audioBackend?.toNativeUtf8();
   try {
     final settingsCreateStart = isolateSw.elapsedMilliseconds;
+    clearLastError();
     final settings = b.litert_lm_engine_settings_create(
       modelPathPtr.cast(),
       backendPtr.cast(),
@@ -768,7 +860,16 @@ EngineCreateResult _createEngine(EngineCreateRequest r) {
       '[LiteRtLmFfi/perf]   isolate: settings_create: ${isolateSw.elapsedMilliseconds - settingsCreateStart}ms',
     );
     if (settings == nullptr) {
-      throw Exception('Failed to create engine settings');
+      // A bad model path or backend name, or a header the GPU path could not
+      // read: LiteRT-LM says which.
+      final error = readLastError();
+      final message = error.message;
+      throw LiteRtLmEngineCreateException(
+        'Failed to create engine settings on ${r.backend}'
+        '${message == null ? '' : ': $message'}. Model: ${r.modelPath}',
+        nativeCode: error.code == 0 ? null : error.code,
+        nativeMessage: message,
+      );
     }
 
     try {
@@ -780,9 +881,16 @@ EngineCreateResult _createEngine(EngineCreateRequest r) {
       final cacheDir = r.cacheDir;
       if (cacheDir != null) {
         final cacheDirPtr = cacheDir.toNativeUtf8();
-        // Sets cache dir on main, vision, and audio executors (C API patched)
-        b.litert_lm_engine_settings_set_cache_dir(settings, cacheDirPtr.cast());
-        calloc.free(cacheDirPtr);
+        try {
+          // Sets cache dir on main, vision, and audio executors (C API
+          // patched)
+          b.litert_lm_engine_settings_set_cache_dir(
+            settings,
+            cacheDirPtr.cast(),
+          );
+        } finally {
+          calloc.free(cacheDirPtr);
+        }
       }
 
       if (r.maxNumImages > 0) {
@@ -824,11 +932,14 @@ EngineCreateResult _createEngine(EngineCreateRequest r) {
       final dispatchLibDir = r.dispatchLibDir;
       if (dispatchLibDir != null) {
         final dirPtr = dispatchLibDir.toNativeUtf8();
-        b.litert_lm_engine_settings_set_litert_dispatch_lib_dir(
-          settings,
-          dirPtr.cast(),
-        );
-        calloc.free(dirPtr);
+        try {
+          b.litert_lm_engine_settings_set_litert_dispatch_lib_dir(
+            settings,
+            dirPtr.cast(),
+          );
+        } finally {
+          calloc.free(dirPtr);
+        }
       }
 
       final kernelBatchSize = r.kernelBatchSize;
@@ -839,49 +950,29 @@ EngineCreateResult _createEngine(EngineCreateRequest r) {
         );
       }
 
-      // LiteRT-LM keeps a failed create's status in a thread-local last error
-      // (`c/engine.cc`), on every platform and in release builds, unlike its
-      // log, which this package captures in debug builds on three platforms
-      // only. Cleared first, because success never resets it, and read on
-      // this thread before any other native call. Every native-v0.18.0-e
-      // library exports it (the release gate checks); a library without it
-      // still loads models, with no reason to report.
-      final lastError = lib.providesSymbol('litert_lm_clear_last_error');
-      if (lastError) {
-        lib.lookupFunction<Void Function(), void Function()>(
-          'litert_lm_clear_last_error',
-        )();
-      }
+      clearLastError();
       final createStart = isolateSw.elapsedMilliseconds;
       int createEngine() => b.litert_lm_engine_create(settings).address;
       final ptr = r.blockSigprof
-          ? withSigprofBlocked(createEngine)
+          ? blockingSigprof(createEngine)
           : createEngine();
+      final error = ptr == 0 ? readLastError() : null;
       edgeAiLog(
         '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
         level: EdgeAiLogLevel.verbose,
       );
-      final banks = r.listWeightBanks && ptr != 0
+      if (error != null) {
+        return (
+          address: 0,
+          code: error.code,
+          message: error.message,
+          banks: null,
+        );
+      }
+      final banks = r.listWeightBanks
           ? (before: banksBefore, after: listIntelWeightBanks())
           : null;
-      if (ptr != 0 || !lastError) {
-        return (address: ptr, code: 0, message: null, banks: banks);
-      }
-      final code = lib.lookupFunction<Int32 Function(), int Function()>(
-        'litert_lm_get_last_error_code',
-      )();
-      final message = lib
-          .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
-            'litert_lm_get_last_error_message',
-          )();
-      return (
-        address: 0,
-        code: code,
-        message: code == 0 || message == nullptr
-            ? null
-            : message.toDartString(),
-        banks: null,
-      );
+      return (address: ptr, code: 0, message: null, banks: banks);
     } finally {
       // The engine keeps what it needs; the settings are done with either way.
       b.litert_lm_engine_settings_delete(settings);
@@ -1217,9 +1308,11 @@ class LiteRtLmFfiClient {
   ///
   /// Static, so that the process's first load can run on a spawned isolate
   /// ([_warmNativeLibraries]), which passes [preload]: it gets every library
-  /// right before `DynamicLibrary.open` does, except on Android.
+  /// right before `DynamicLibrary.open` does, except on Android. On macOS the
+  /// handle it returns must be the one the open returns
+  /// ([requireSameLoadedLibrary]).
   static ({DynamicLibrary lib, DynamicLibrary proxyLib}) _openNativeLibraries({
-    void Function(String path) preload = _preloadNothing,
+    Pointer<Void>? Function(String path) preload = _preloadNothing,
   }) {
     final DynamicLibrary lib;
     final DynamicLibrary proxyLib;
@@ -1238,14 +1331,19 @@ class LiteRtLmFfiClient {
       preload(proxyPath);
       proxyLib = DynamicLibrary.open(proxyPath);
     } else if (Platform.isMacOS) {
-      preload(macOSLiteRtLmFramework);
+      // Relative paths: dyld resolves the preload's through its caller's and
+      // the main executable's rpaths, the open's through FlutterMacOS's, so
+      // the two are checked to be one image.
+      final preloadedLib = preload(macOSLiteRtLmFramework);
       lib = requireOwnLiteRtLmBuild(
         openMacOSLiteRtLm(),
         macOSLiteRtLmFramework,
       );
+      requireSameLoadedLibrary(preloadedLib, lib, macOSLiteRtLmFramework);
       const proxyPath = 'StreamProxy.framework/StreamProxy';
-      preload(proxyPath);
+      final preloadedProxy = preload(proxyPath);
       proxyLib = DynamicLibrary.open(proxyPath);
+      requireSameLoadedLibrary(preloadedProxy, proxyLib, proxyPath);
     } else if (Platform.isLinux) {
       // Load order matters: libLiteRt.so must be loaded first with
       // RTLD_GLOBAL so libLiteRtLm.so (built with
@@ -1303,6 +1401,7 @@ class LiteRtLmFfiClient {
         }
       }
       const libPath = 'libLiteRtLm.so';
+      // Already loaded by the RTLD_GLOBAL chain above: a reference count.
       preload('$libDir/$libPath');
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isWindows) {
@@ -1332,6 +1431,7 @@ class LiteRtLmFfiClient {
         }
       }
       const libPath = 'LiteRtLm.dll';
+      // Already loaded by stream_proxy_load_global above: a reference count.
       preload(libPath);
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isAndroid) {
@@ -1349,11 +1449,13 @@ class LiteRtLmFfiClient {
       }
       // No [preload] on Android. The first open of libLiteRtLm has to stay
       // the strict default-scope one below (#447). And bionic files a library
-      // in the linker namespace of the code that calls dlopen: a plain FFI
+      // in the linker namespace of the code that calls dlopen: a non-leaf FFI
       // dlopen from Dart code (JIT code belongs to no library) could land
       // libStreamProxy.so, and through it libLiteRtLm, in another namespace
-      // than DynamicLibrary.open's, which would then load a second copy. The
-      // long load is a plain FFI call here already: stream_proxy_load_global.
+      // than DynamicLibrary.open's, which would then load a second copy. (In
+      // AOT the caller is libapp.so, probably the same namespace, but that is
+      // not measured; keep the preload off for release builds too.) The long
+      // load is a non-leaf FFI call here already: stream_proxy_load_global.
       proxyLib = DynamicLibrary.open('libStreamProxy.so');
       // Load LiteRtLm into the default search scope, as every release since
       // #447 has. Its one verified consumer was the StreamProxy of
@@ -1383,7 +1485,7 @@ class LiteRtLmFfiClient {
     return (lib: lib, proxyLib: proxyLib);
   }
 
-  static void _preloadNothing(String path) {}
+  static Pointer<Void>? _preloadNothing(String path) => null;
 
   /// Whether a spawned isolate has loaded the libraries for this one.
   static bool _librariesWarm = false;
@@ -1395,19 +1497,26 @@ class LiteRtLmFfiClient {
   /// default-scope check) on the calling isolate.
   ///
   /// Each library goes to the platform's own loader first, through
-  /// [preloadNativeLibrary]. `DynamicLibrary.open` keeps its isolate from
-  /// reaching a safepoint while it loads, so a garbage collection on the
-  /// calling isolate, in the same group, waited for the whole load: 171-174
-  /// ms of LiteRtLm on an M3 Max. A plain FFI call leaves the isolate at a
-  /// safepoint. A load that throws leaves the flag unset, so the next
-  /// initialize tries again.
+  /// [preloadNativeLibrary]. `DynamicLibrary.open` runs the loader in the
+  /// VM's own state, which is not a safepoint (`Ffi_dl_open` in the Dart VM),
+  /// so a garbage collection on the calling isolate, in the same group,
+  /// waited for the whole load: 171-174 ms of LiteRtLm on an M3 Max. A
+  /// non-leaf FFI call enters a safepoint for its duration. On Linux and
+  /// Windows the heavy loads (LiteRt, the accelerators, LiteRtLm) were such
+  /// calls already (stream_proxy_load_global), so the preload adds only
+  /// StreamProxy there; the gain is on iOS and macOS. A
+  /// load that throws leaves the flag unset, so the next initialize tries
+  /// again.
   static Future<void> _warmNativeLibraries() async {
     if (_librariesWarm) return;
     final isolateLogLevel = edgeAiLogLevel;
+    // Top-level variables are per isolate: the warm-up isolate would see the
+    // default loader, not one a test set here.
+    final preload = preloadNativeLibrary;
     final sw = Stopwatch()..start();
     await offMainIsolate(() {
       edgeAiLogLevel = isolateLogLevel;
-      _openNativeLibraries(preload: preloadNativeLibrary);
+      _openNativeLibraries(preload: preload);
     });
     _librariesWarm = true;
     edgeAiLog(
@@ -1562,6 +1671,7 @@ class LiteRtLmFfiClient {
     // The process's first load runs on a spawned isolate, so the open in
     // _ensureBindings finds the libraries already mapped.
     if (_bindings == null) await _warmNativeLibraries();
+    final bindingsSw = Stopwatch()..start();
     _ensureBindings();
     _backend = backend;
     // This engine's part of the shared native log starts here.
@@ -1569,8 +1679,10 @@ class LiteRtLmFfiClient {
     if (logPath != null && File(logPath).existsSync()) {
       _nativeLogOffset = File(logPath).lengthSync();
     }
-    final bindingsMs = initSw.elapsedMilliseconds;
-    edgeAiLog('[LiteRtLmFfi/perf] _ensureBindings: ${bindingsMs}ms');
+    // The warm-up above logs its own time.
+    edgeAiLog(
+      '[LiteRtLmFfi/perf] _ensureBindings: ${bindingsSw.elapsedMilliseconds}ms',
+    );
     // Log the resolved per-encoder backends: vision/audio follow the bundle
     // (the engine's load plan), independent of the text backend, so this makes
     // the choice visible when diagnosing "why isn't vision using my GPU".
@@ -1644,8 +1756,8 @@ class LiteRtLmFfiClient {
     }
 
     // The engine settings and the engine are both made on a spawned isolate:
-    // the settings create alone took 81 ms on an S25 Ultra, and the engine
-    // create takes seconds.
+    // a frame started 98 ms late around the settings create on the calling
+    // isolate of an S25 Ultra, and the engine create takes seconds.
     edgeAiLog(
       '[LiteRtLmFfi] Creating engine from $modelPath (backend=$backend, maxTokens=$maxTokens) ...',
     );

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ffi';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter_edge_ai/engine.dart';
@@ -180,6 +181,11 @@ void main() {
     expect(request.dispatchLibDir, '/vendor/dispatch');
     expect(request.disableHwMaskingForNpu, isTrue);
     expect(request.listWeightBanks, isTrue);
+    expect(
+      request.blockSigprof,
+      Platform.isLinux,
+      reason: "QNN's init fails under the debug VM's SIGPROF on Linux only",
+    );
   });
 
   test('a NULL engine fails initialize with the model path, and nothing is '

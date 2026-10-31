@@ -1,4 +1,6 @@
+import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/macos_load_error.dart'
@@ -18,7 +20,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// itself. What they cannot see is the timing: that needs a device.
 void main() {
   late Future<void> Function(void Function()) originalRunner;
-  late void Function(String) originalPreload;
+  late Pointer<Void>? Function(String) originalPreload;
 
   setUp(() {
     originalRunner = offMainIsolate;
@@ -99,6 +101,67 @@ void main() {
         expected,
       ], reason: 'the first library the platform code opens, by its own path');
     }
+  });
+
+  test('a loader set on the calling isolate is the one the warm-up isolate '
+      'uses', () async {
+    // The real runner: a spawned isolate starts with its own copy of every
+    // top-level variable, so the loader has to be handed over.
+    offMainIsolate = Isolate.run;
+    preloadNativeLibrary = (path) => throw _Preloaded(path);
+
+    await expectLater(
+      LiteRtLmFfiClient().initialize(modelPath: '/no/such/model.litertlm'),
+      throwsA(isA<_Preloaded>()),
+      reason:
+          'with the default loader the warm-up isolate would go on to '
+          "DynamicLibrary.open and fail with the Dart loader's error",
+    );
+  });
+
+  test('a failed system load says why', () {
+    if (Platform.isWindows) return;
+    expect(
+      () => loadWithSystemLoader('/no/such/dir/libLiteRtLm.so'),
+      throwsA(
+        isA<ArgumentError>().having(
+          (e) => e.message,
+          'message',
+          allOf(
+            contains('/no/such/dir/libLiteRtLm.so'),
+            isNot(contains('no reason given')),
+          ),
+        ),
+      ),
+      reason: "dlerror's reason, not lost to a dlsym after the dlopen",
+    );
+  });
+
+  test('the preloaded and the opened library must be one', () {
+    final process = DynamicLibrary.process();
+    expect(
+      () => requireSameLoadedLibrary(null, process, 'X.framework/X'),
+      returnsNormally,
+      reason: 'no preload, nothing to compare',
+    );
+    expect(
+      () => requireSameLoadedLibrary(process.handle, process, 'X.framework/X'),
+      returnsNormally,
+    );
+    expect(
+      () => requireSameLoadedLibrary(
+        Pointer.fromAddress(process.handle.address + 8),
+        process,
+        'X.framework/X',
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('X.framework/X is loaded twice'),
+        ),
+      ),
+    );
   });
 
   test(

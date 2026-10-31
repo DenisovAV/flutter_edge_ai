@@ -1,4 +1,5 @@
 ## Unreleased
+- The native library loads and engine settings are made off the calling isolate (#756).
 - Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every LiteRT build pinned to its commit (#734).
 - `LiteRtBindings` binds the opaque-options calls the speech-to-text GPU options use (#747).
 - The option-scoring self-check runs in debug and profile builds only.

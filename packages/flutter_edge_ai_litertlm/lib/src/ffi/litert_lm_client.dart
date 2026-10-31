@@ -592,9 +592,9 @@ Pointer<Void>? _preloadWithSystemLoader(String path) {
 const _rtldLazy = 1;
 
 /// Loads [path] with the platform's own loader, `dlopen` (`LoadLibraryW` on
-/// Windows), called as a plain FFI function, leaves it loaded and returns the
-/// loader's handle. Unlike `DynamicLibrary.open`, which runs the loader in
-/// the VM's own state, a plain FFI call marks its isolate as at a safepoint
+/// Windows), called as a non-leaf FFI function, leaves it loaded and returns
+/// the loader's handle. Unlike `DynamicLibrary.open`, which runs the loader in
+/// the VM's own state, a non-leaf FFI call marks its isolate as at a safepoint
 /// while the loader runs, so a garbage collection elsewhere in the isolate
 /// group does not wait for the load. Throws an [ArgumentError] when the
 /// loader returns no library, with `dlerror`'s reason on the platforms that
@@ -649,11 +649,11 @@ Pointer<Void> loadWithSystemLoader(String path) {
 /// Throws a [StateError] when the system loader's [preloaded] handle for
 /// [path] is not the library `DynamicLibrary.open` then returned as
 /// [opened]: two copies of one library are in the process. On macOS the
-/// preload's relative framework path is resolved through its caller's rpaths
-/// (App.framework, or none for JIT code), the open's through FlutterMacOS's,
-/// which also search `/usr/local/lib`; a stray framework there would be the
-/// one bound, while the bundled copy's static registries also run. Null
-/// [preloaded] (no preload, or one that failed) is not checked.
+/// preload's relative framework path is resolved through its caller's and
+/// the main executable's rpaths, the open's through FlutterMacOS's, which
+/// list `/usr/local/lib` before the app's Frameworks; a stray framework there
+/// would be the one bound, while the bundled copy's static registries also
+/// run. Null [preloaded] (no preload, or one that failed) is not checked.
 @visibleForTesting
 void requireSameLoadedLibrary(
   Pointer<Void>? preloaded,
@@ -790,7 +790,8 @@ EngineCreateResult _createEngine(EngineCreateRequest r) {
 /// them and frees them, all on the isolate this runs on. The settings are
 /// freed whether or not a setter or the create throws. On an S25 Ultra a frame
 /// started 98 ms late around `litert_lm_engine_settings_create` when it ran on
-/// the calling isolate, whose wall time in it was 81 ms.
+/// the calling isolate (81 ms of that isolate's wall time, which LiteRT-LM's
+/// source does not explain as the call's own work).
 ///
 /// LiteRT-LM's thread-local last error is read through [lookup] when
 /// [provides] says the library has it: a NULL settings create throws a
@@ -1330,9 +1331,9 @@ class LiteRtLmFfiClient {
       preload(proxyPath);
       proxyLib = DynamicLibrary.open(proxyPath);
     } else if (Platform.isMacOS) {
-      // Relative paths: dyld resolves the preload's through its caller's
-      // rpaths and the open's through FlutterMacOS's, so the two are checked
-      // to be one image.
+      // Relative paths: dyld resolves the preload's through its caller's and
+      // the main executable's rpaths, the open's through FlutterMacOS's, so
+      // the two are checked to be one image.
       final preloadedLib = preload(macOSLiteRtLmFramework);
       lib = requireOwnLiteRtLmBuild(
         openMacOSLiteRtLm(),
@@ -1448,13 +1449,13 @@ class LiteRtLmFfiClient {
       }
       // No [preload] on Android. The first open of libLiteRtLm has to stay
       // the strict default-scope one below (#447). And bionic files a library
-      // in the linker namespace of the code that calls dlopen: a plain FFI
+      // in the linker namespace of the code that calls dlopen: a non-leaf FFI
       // dlopen from Dart code (JIT code belongs to no library) could land
       // libStreamProxy.so, and through it libLiteRtLm, in another namespace
       // than DynamicLibrary.open's, which would then load a second copy. (In
       // AOT the caller is libapp.so, probably the same namespace, but that is
       // not measured; keep the preload off for release builds too.) The long
-      // load is a plain FFI call here already: stream_proxy_load_global.
+      // load is a non-leaf FFI call here already: stream_proxy_load_global.
       proxyLib = DynamicLibrary.open('libStreamProxy.so');
       // Load LiteRtLm into the default search scope, as every release since
       // #447 has. Its one verified consumer was the StreamProxy of
@@ -1499,10 +1500,11 @@ class LiteRtLmFfiClient {
   /// [preloadNativeLibrary]. `DynamicLibrary.open` runs the loader in the
   /// VM's own state, which is not a safepoint (`Ffi_dl_open` in the Dart VM),
   /// so a garbage collection on the calling isolate, in the same group,
-  /// waited for the whole load: 171-174 ms of LiteRtLm on an M3 Max. A plain
-  /// FFI call enters a safepoint for its duration. On Windows the heavy loads
-  /// (LiteRt.dll, the accelerators, LiteRtLm.dll) were plain FFI calls already
-  /// (stream_proxy_load_global); the preload adds StreamProxy.dll there. A
+  /// waited for the whole load: 171-174 ms of LiteRtLm on an M3 Max. A
+  /// non-leaf FFI call enters a safepoint for its duration. On Linux and
+  /// Windows the heavy loads (LiteRt, the accelerators, LiteRtLm) were such
+  /// calls already (stream_proxy_load_global), so the preload adds only
+  /// StreamProxy there; the gain is on iOS and macOS. A
   /// load that throws leaves the flag unset, so the next initialize tries
   /// again.
   static Future<void> _warmNativeLibraries() async {

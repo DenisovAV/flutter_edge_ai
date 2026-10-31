@@ -334,6 +334,28 @@ void main() {
     ]);
   });
 
+  for (final lastError in [true, false]) {
+    test('a NULL settings create with no reason (last error '
+        '${lastError ? 'code 0' : 'not exported'}) throws without one', () {
+      fake = _FakeLiteRtLm(settingsNull: true, lastError: lastError);
+
+      expect(
+        () => fake.create(_empty),
+        throwsA(
+          isA<LiteRtLmEngineCreateException>()
+              .having((e) => e.nativeCode, 'nativeCode', isNull)
+              .having((e) => e.nativeMessage, 'nativeMessage', isNull)
+              .having(
+                (e) => e.message,
+                'message',
+                'Failed to create engine settings on cpu. '
+                    'Model: /models/gemma.litertlm',
+              ),
+        ),
+      );
+    });
+  }
+
   test('a setter the library lacks throws, and the settings are deleted '
       'exactly once', () {
     fake = _FakeLiteRtLm(missing: {'litert_lm_engine_settings_set_cache_dir'});

@@ -48,7 +48,7 @@ case "$TARGET" in
   *) echo "ERROR: TARGET must be android_arm64 or linux_arm64, got '$TARGET'" >&2; exit 1 ;;
 esac
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/$TARGET"
-LITERT_DIR="/tmp/LiteRT"
+LITERT_DIR="${LITERT_DIR:-/tmp/LiteRT}"
 
 if [ "$TARGET" = linux_arm64 ]; then
   if [ "$(uname -s)" != Linux ] || [ "$(uname -m)" != aarch64 ]; then

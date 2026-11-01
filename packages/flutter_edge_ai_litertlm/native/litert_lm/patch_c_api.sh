@@ -838,4 +838,24 @@ else
   exit 1
 fi
 
+# ── 19. Android: the statically linked GPU accelerator is OpenCL only ──
+# From v0.19.0 libLiteRtLm links runtime/executor:default_static_gpu_accelerator
+# on Apple and Android. On Android that is LiteRT's combined ML Drift
+# accelerator, whose WebGPU delegate makes libLiteRtLm NEED
+# libwebgpu_dawn.so — which this bundle does not carry (Android GPU is
+# OpenCL only, see build_android.sh). LiteRT's ml_drift_cl_accelerator is the
+# same accelerator without WebGPU.
+ANDROID_CL_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/android_static_gpu_opencl.patch"
+if grep -q 'name = "default_static_gpu_accelerator"' "$DIR/runtime/executor/BUILD"; then
+  if git -C "$DIR" apply --check "$ANDROID_CL_PATCH" 2>/dev/null; then
+    git -C "$DIR" apply "$ANDROID_CL_PATCH"
+    echo "  OK: Android links the OpenCL-only GPU accelerator"
+  elif git -C "$DIR" apply --reverse --check "$ANDROID_CL_PATCH" 2>/dev/null; then
+    echo "  SKIP: Android OpenCL-only accelerator already applied"
+  else
+    echo "  ERROR: $ANDROID_CL_PATCH does not apply to this LiteRT-LM revision" >&2
+    exit 1
+  fi
+fi
+
 echo "Patch complete."

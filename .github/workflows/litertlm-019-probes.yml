@@ -16,7 +16,7 @@ permissions:
   actions: read
 
 env:
-  BUILD_RUN_ID: '41277710260'
+  BUILD_RUN_ID: '41281104298'
   FG_URL: https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm
   G4_URL: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm
   EG2_URL: https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/main/embeddinggemma-2-text-270m.litertlm
@@ -126,6 +126,10 @@ jobs:
           run mtp-on "$G4" cpu
           run mtp-adaptive "$G4" cpu
           run mtp-default "$G4" cpu
+          run determinism "$G4" cpu
+          run determinism "$FG" cpu
+          PROBE_THREADS=1 run determinism "$FG" cpu
+          run longprompt "$G4" cpu
           {
             echo "### ${{ matrix.platform }} (build run $BUILD_RUN_ID)"
             echo '```'

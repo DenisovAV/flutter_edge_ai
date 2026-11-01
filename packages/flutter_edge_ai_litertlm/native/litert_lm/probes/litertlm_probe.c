@@ -49,7 +49,10 @@ API(Status, litert_lm_set_min_log_level, (int))
 API(Status, litert_lm_engine_settings_create,
     (const char*, const char*, const char*, const char*, P*))
 API(Status, litert_lm_engine_settings_set_max_num_tokens, (P, int))
+API(Status, litert_lm_engine_settings_set_num_threads, (P, int))
 API(Status, litert_lm_engine_settings_set_cache_dir, (P, const char*))
+API(Status, litert_lm_engine_settings_set_litert_dispatch_lib_dir,
+    (P, const char*))
 API(Status, litert_lm_engine_settings_enable_benchmark, (P))
 API(Status, litert_lm_engine_settings_set_speculative_decoding_config, (P, P))
 API(void, litert_lm_engine_settings_delete, (P))
@@ -141,7 +144,9 @@ static int LoadAll(LibHandle lib) {
   LOAD(litert_lm_set_min_log_level);
   LOAD(litert_lm_engine_settings_create);
   LOAD(litert_lm_engine_settings_set_max_num_tokens);
+  LOAD(litert_lm_engine_settings_set_num_threads);
   LOAD(litert_lm_engine_settings_set_cache_dir);
+  LOAD(litert_lm_engine_settings_set_litert_dispatch_lib_dir);
   LOAD(litert_lm_engine_settings_enable_benchmark);
   LOAD(litert_lm_engine_settings_set_speculative_decoding_config);
   LOAD(litert_lm_engine_settings_delete);
@@ -232,6 +237,7 @@ static double Now(void) {
 }
 
 static const char* g_cache_dir = NULL;
+static const char* g_dispatch_dir = NULL;
 static int g_max_tokens = 1024;
 
 static P NewEngine(const char* model, const char* backend, int mtp_mode) {
@@ -241,6 +247,14 @@ static P NewEngine(const char* model, const char* backend, int mtp_mode) {
   CHECK(litert_lm_engine_settings_set_max_num_tokens(settings, g_max_tokens));
   if (g_cache_dir) {
     CHECK(litert_lm_engine_settings_set_cache_dir(settings, g_cache_dir));
+  }
+  if (getenv("PROBE_THREADS")) {
+    CHECK(litert_lm_engine_settings_set_num_threads(
+        settings, atoi(getenv("PROBE_THREADS"))));
+  }
+  if (g_dispatch_dir) {
+    CHECK(litert_lm_engine_settings_set_litert_dispatch_lib_dir(
+        settings, g_dispatch_dir));
   }
   CHECK(litert_lm_engine_settings_enable_benchmark(settings));
   if (mtp_mode >= 0) {
@@ -265,7 +279,8 @@ static P GreedySessionConfig(bool apply_template, int max_output) {
   CHECK(litert_lm_sampler_params_create(2, &sampler));
   CHECK(litert_lm_sampler_params_set_top_k(sampler, 1));
   CHECK(litert_lm_sampler_params_set_top_p(sampler, 1.0f));
-  CHECK(litert_lm_sampler_params_set_temperature(sampler, 1.0f));
+  CHECK(litert_lm_sampler_params_set_temperature(
+      sampler, getenv("PROBE_TEMP") ? (float)atof(getenv("PROBE_TEMP")) : 1.0f));
   CHECK(litert_lm_session_config_set_sampler_params(config, sampler));
   litert_lm_sampler_params_delete(sampler);
   if (!apply_template) {
@@ -652,6 +667,70 @@ static int CmdMtp(P engine, const char* mode) {
   return 0;
 }
 
+// #3508: a fact at the end of a prompt longer than one prefill chunk (128).
+// A runtime that drops every chunk after the first answers without it.
+static int CmdLongPrompt(P engine) {
+  static char prompt[8192];
+  size_t n = 0;
+  n += snprintf(prompt + n, sizeof prompt - n,
+                "Read these notes, then answer the question at the end. ");
+  for (int i = 0; i < 40; i++) {
+    n += snprintf(prompt + n, sizeof prompt - n,
+                  "Note %d: the weather report for district %d says light "
+                  "wind and some clouds. ",
+                  i + 1, i + 1);
+  }
+  n += snprintf(prompt + n, sizeof prompt - n,
+                "Final note: the secret word is PELICAN. Question: what is "
+                "the secret word? Reply with the word only.");
+  Status s;
+  P conv = NewConversation(engine, NULL, false, false, 16);
+  char* r = Send(conv, prompt, NULL, &s);
+  if (!r) {
+    printf("RESULT longprompt FAIL status=%d err=%s\n", s,
+           litert_lm_get_last_error_message());
+    return 1;
+  }
+  char text[512];
+  TextOf(r, text, sizeof text);
+  bool ok = strstr(text, "PELICAN") || strstr(text, "Pelican") ||
+            strstr(text, "pelican");
+  printf("RESULT longprompt %s prompt_chars=%zu answer=\"%s\"\n",
+         ok ? "PASS" : "FAIL", n, text);
+  free(r);
+  litert_lm_conversation_delete(conv);
+  return ok ? 0 : 1;
+}
+
+// Greedy determinism inside one process: the same prompt in two fresh
+// conversations on one engine must give the same text (the 0.18 smoke check
+// "greedy run1 == run2").
+static int CmdDeterminism(P engine) {
+  const char* prompt =
+      "Write one short paragraph about the ocean, about 80 words.";
+  char texts[2][8192];
+  for (int i = 0; i < 2; i++) {
+    Status s;
+    P conv = NewConversation(engine, NULL, false, false, 96);
+    char* r = Send(conv, prompt, NULL, &s);
+    if (!r) {
+      printf("RESULT determinism FAIL status=%d err=%s\n", s,
+             litert_lm_get_last_error_message());
+      return 1;
+    }
+    TextOf(r, texts[i], sizeof texts[i]);
+    free(r);
+    litert_lm_conversation_delete(conv);
+  }
+  bool same = !strcmp(texts[0], texts[1]);
+  size_t k = 0;
+  while (texts[0][k] && texts[0][k] == texts[1][k]) k++;
+  printf("RESULT determinism %s first_diff_at_char=%zu fnv=%016llx/%016llx\n",
+         same ? "PASS" : "FAIL", same ? (size_t)0 : k,
+         (unsigned long long)Fnv(texts[0]), (unsigned long long)Fnv(texts[1]));
+  return same ? 0 : 1;
+}
+
 // A tool call through the model's own constraint provider (Gemma) — the §12
 // bridge on Linux, the prebuilt provider elsewhere.
 static int CmdTools(P engine) {
@@ -741,8 +820,9 @@ int main(int argc, char** argv) {
   if (argc < 5) {
     fprintf(stderr,
             "usage: %s <libLiteRtLm> <multiconv|constrained|rewind|scoring|"
-            "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|eg2> <model> "
-            "<cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS\n",
+            "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|longprompt|determinism|eg2> "
+            "<model> <cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS, "
+            "PROBE_DISPATCH_DIR\n",
             argv[0]);
     return 64;
   }
@@ -765,6 +845,7 @@ int main(int argc, char** argv) {
   if (missing) return 4;
   litert_lm_set_min_log_level(3);
   g_cache_dir = getenv("PROBE_CACHE_DIR");
+  g_dispatch_dir = getenv("PROBE_DISPATCH_DIR");
   if (getenv("PROBE_MAX_TOKENS")) g_max_tokens = atoi(getenv("PROBE_MAX_TOKENS"));
   const char* cmd = argv[2];
   const char* model = argv[3];
@@ -780,6 +861,12 @@ int main(int argc, char** argv) {
           : !strcmp(mode, "adaptive") ? 2
                                       : -1;  // default: engine's own choice
   }
+  // PROBE_MTP=off|on|adaptive sets the speculative mode of any command.
+  if (mtp < 0 && getenv("PROBE_MTP")) {
+    const char* m = getenv("PROBE_MTP");
+    mtp = !strcmp(m, "off") ? 0 : !strcmp(m, "on") ? 1
+          : !strcmp(m, "adaptive") ? 2 : -1;
+  }
   P engine = NewEngine(model, backend, mtp);
   int rc;
   if (!strcmp(cmd, "multiconv")) rc = CmdMulticonv(engine);
@@ -788,6 +875,8 @@ int main(int argc, char** argv) {
   else if (!strcmp(cmd, "scoring")) rc = CmdScoring(engine);
   else if (mode) rc = CmdMtp(engine, mode);
   else if (!strcmp(cmd, "tools")) rc = CmdTools(engine);
+  else if (!strcmp(cmd, "longprompt")) rc = CmdLongPrompt(engine);
+  else if (!strcmp(cmd, "determinism")) rc = CmdDeterminism(engine);
   else {
     fprintf(stderr, "unknown command %s\n", cmd);
     rc = 64;

@@ -156,6 +156,18 @@ bazelisk build \
   '//c:libLiteRtLm.dylib' \
   '@litert//litert/vendors/google_tensor/dispatch:dispatch_api_so'
 
+# LiteRT-LM v0.19.0 stopped shipping prebuilt TopK GPU samplers (43b79e8); the
+# OpenCL one is built from source with ML Drift (47d7ba6). Older refs have no
+# such target and keep the prebuilt.
+if grep -q 'name = "top_k_opencl_sampler_so"' runtime/components/BUILD; then
+  bazelisk build \
+    -c opt \
+    --strip=always \
+    --config=android_arm64 \
+    --linkopt=-Wl,-z,max-page-size=16384 \
+    '//runtime/components:top_k_opencl_sampler_so'
+fi
+
 # 6. Copy + rename .dylib → .so (bazel target name is hardcoded to .dylib).
 mkdir -p "$PREBUILT_DIR"
 cp bazel-bin/c/libLiteRtLm.dylib "$PREBUILT_DIR/libLiteRtLm.so"
@@ -229,6 +241,10 @@ for lib in libGemmaModelConstraintProvider.so \
   if [ -f "prebuilt/android_arm64/$lib" ]; then
     cp "prebuilt/android_arm64/$lib" "$PREBUILT_DIR/$lib"
     echo "  $lib"
+  elif [ -f "bazel-bin/runtime/components/$lib" ]; then
+    cp "bazel-bin/runtime/components/$lib" "$PREBUILT_DIR/$lib"
+    chmod +w "$PREBUILT_DIR/$lib"
+    echo "  $lib (built from source)"
   else
     echo "ERROR: prebuilt/android_arm64/$lib not found in upstream" >&2
     exit 1

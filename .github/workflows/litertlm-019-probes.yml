@@ -1,0 +1,163 @@
+# LiteRT-LM v0.19.0 migration, phase 1: C-level probes on GitHub runners
+# (CPU) against the artifacts of a build-litertlm-native.yml run. Lives on the
+# native/litertlm-0.19 branch only and runs on push to it; nothing is
+# published. BUILD_RUN_ID names the build whose artifacts are probed.
+name: LiteRT-LM 0.19 probes
+
+on:
+  push:
+    branches: [native/litertlm-0.19]
+    paths:
+      - '.github/workflows/litertlm-019-probes.yml'
+      - 'packages/flutter_edge_ai_litertlm/native/litert_lm/probes/**'
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  BUILD_RUN_ID: '41277710260'
+  FG_URL: https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm
+  G4_URL: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm
+  EG2_URL: https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/main/embeddinggemma-2-text-270m.litertlm
+
+jobs:
+  probe:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_x86_64
+            runner: ubuntu-22.04
+            lib: libLiteRtLm.so
+          - platform: linux_arm64
+            runner: ubuntu-22.04-arm
+            lib: libLiteRtLm.so
+          - platform: windows_x86_64
+            runner: windows-latest
+            lib: LiteRtLm.dll
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: litertlm-${{ matrix.platform }}
+          path: lib
+          run-id: ${{ env.BUILD_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the probe (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          gcc -O2 -std=c11 -D_GNU_SOURCE -o lib/litertlm_probe \
+            packages/flutter_edge_ai_litertlm/native/litert_lm/probes/litertlm_probe.c -ldl -lm
+          ls -l lib
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+
+      - name: Build the probe (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          cl /nologo /O2 /Fe:lib\litertlm_probe.exe packages\flutter_edge_ai_litertlm\native\litert_lm\probes\litertlm_probe.c
+          dir lib
+
+      - uses: actions/cache@v4
+        with:
+          path: models
+          key: litertlm-probe-models-v1
+
+      - name: Fetch models
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          mkdir -p models
+          for u in "$FG_URL" "$G4_URL" "$EG2_URL"; do
+            f="models/$(basename "$u")"
+            want=$(curl -sIL -H "Authorization: Bearer $HF_TOKEN" "$u" | tr -d '\r' | awk 'tolower($1)=="content-length:"{n=$2} END{print n}')
+            if [ ! -s "$f" ] || [ "$(wc -c < "$f" | tr -d ' ')" != "$want" ]; then
+              curl -fsSL --retry 5 --retry-all-errors -C - -H "Authorization: Bearer $HF_TOKEN" -o "$f" "$u"
+            fi
+            have=$(wc -c < "$f" | tr -d ' ')
+            echo "$f want=$want have=$have"
+            [ "$have" = "$want" ] || { echo "::error::$f is truncated"; exit 1; }
+          done
+
+      - name: Run probes
+        run: |
+          P=lib/litertlm_probe
+          LIB="$PWD/lib/${{ matrix.lib }}"
+          if [ "$RUNNER_OS" = Windows ]; then
+            P=lib/litertlm_probe.exe
+            LIB="$(cygpath -w "$LIB")"
+          fi
+          FG=models/functiongemma-270M-it.litertlm
+          G4=models/gemma-4-E2B-it.litertlm
+          EG2=models/embeddinggemma-2-text-270m.litertlm
+          mkdir -p cache
+          export PROBE_CACHE_DIR="$PWD/cache"
+          run() {
+            echo "::group::$*"
+            "$P" "$LIB" "$@" 2>stderr.txt | tee -a probes.log
+            rc=${PIPESTATUS[0]}
+            tail -5 stderr.txt
+            echo "EXIT $rc $*" | tee -a probes.log
+            echo "::endgroup::"
+          }
+          run eg2 "$EG2" cpu
+          run tools "$FG" cpu
+          run tools "$G4" cpu
+          run multiconv "$FG" cpu
+          run multiconv "$G4" cpu
+          run constrained "$FG" cpu
+          run constrained "$G4" cpu
+          run rewind "$FG" cpu
+          run rewind "$G4" cpu
+          run scoring "$FG" cpu
+          run mtp-off "$G4" cpu
+          run mtp-on "$G4" cpu
+          run mtp-adaptive "$G4" cpu
+          run mtp-default "$G4" cpu
+          {
+            echo "### ${{ matrix.platform }} (build run $BUILD_RUN_ID)"
+            echo '```'
+            grep -E '^(RESULT|EXIT|INFO c_api)' probes.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probes-${{ matrix.platform }}
+          path: probes.log
+
+  # A gated bundle for the DDP run (#3508: Gemma 3 on the Qualcomm NPU), passed
+  # on as a short-lived artifact so the token never leaves GitHub.
+  gated-models:
+    name: gated models for DDP
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Fetch
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          mkdir -p gated
+          u=https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_q4_ekv1280_sm8750.litertlm
+          want=$(curl -sIL -H "Authorization: Bearer $HF_TOKEN" "$u" | tr -d '\r' | awk 'tolower($1)=="content-length:"{n=$2} END{print n}')
+          curl -fsSL --retry 5 --retry-all-errors -H "Authorization: Bearer $HF_TOKEN" -o gated/Gemma3-1B-IT_q4_ekv1280_sm8750.litertlm "$u"
+          have=$(wc -c < gated/Gemma3-1B-IT_q4_ekv1280_sm8750.litertlm | tr -d ' ')
+          echo "want=$want have=$have"
+          [ "$have" = "$want" ] || { echo "::error::truncated"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gated-gemma3-1b-sm8750
+          path: gated/
+          retention-days: 1

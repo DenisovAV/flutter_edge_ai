@@ -158,7 +158,24 @@ The prototype is `mediatek_dispatch_compat.c`, about 100 lines of C11, in
 - **Android build.** It cross-builds with NDK r29 for API 24: 7 KB, exports
   only `LiteRtDispatchQueryInterface`, NEEDs `libdl` and `libc`, every PT_LOAD
   aligned to 16 KB.
-- **Not run on a device yet.**
+- **Device run, 2026-11-01 (DDP Galaxy Tab S10+, MT6989, Android 16).** Our 0.19
+  Android build with the adapter and the 2.3.2 dispatch renamed
+  `libmtk_litert_dispatch_legacy.so`, both in the dispatch dir, with
+  `Gemma3-1B-IT_q4_ekv1280_mt6989.litertlm` and `max_num_tokens` 1280:
+  - **The NPU loads.** `engine_create` takes 5.9–6.6 s on `npu`. The MediaTek
+    dispatch is active: it logs Neuron runtime 8.2.26 and
+    `MediaTek GetInputRequirements` for each input. The same SONAME caused no
+    collision.
+  - **determinism: PASS**, identical greedy text twice.
+  - **longprompt: wrong answer** (the fact at the end is lost). This is the
+    Gemma 3 NPU problem of #3508, not the dispatch.
+  - **tools: fails** at `conversation_create` with "Failed to create
+    GemmaModelConstraintProvider". That is the Gemma 3 tool path, not the
+    dispatch; 0.18 was not checked with tools on this model.
+  - **multiconv: every second-turn answer is empty**, which is LiteRT-LM #4256
+    (MT6989, 0.18.1). The NPU's shared state is the other half of it.
+  - So the adapter works; what is left are model and executor issues that are
+    not ours.
 - **Changes on our side.**
   - The hook writes Google's library as `libmtk_litert_dispatch_legacy.so`. The
     name must not contain `libLiteRtDispatch`: the loader matches that substring
@@ -206,7 +223,7 @@ message naming the AAR. The CHANGELOG and the docs would say MediaTek NPU needs
 litertlm 1.19.x. Cheapest, but it removes a platform shipped in 2.5.x. It is
 the fallback if (a) fails on the device.
 
-**Recommendation: (a).** File the upstream issue (draft below) in parallel, and
+**Recommendation: (a)** (works on the device, above). File the upstream issue (draft below) in parallel, and
 drop the adapter when a V1 AAR appears. The next step is a DDP run on
 gts10pwifi-36 (MT6989) of:
 

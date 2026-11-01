@@ -92,6 +92,7 @@ jobs:
 
       - name: Run probes
         run: |
+          set +e
           P=lib/litertlm_probe
           LIB="$PWD/lib/${{ matrix.lib }}"
           if [ "$RUNNER_OS" = Windows ]; then
@@ -107,7 +108,7 @@ jobs:
             echo "::group::$*"
             "$P" "$LIB" "$@" 2>stderr.txt | tee -a probes.log
             rc=${PIPESTATUS[0]}
-            tail -5 stderr.txt
+            if [ "$rc" != 0 ]; then grep -vE "npu_registry|^$" stderr.txt | tail -25; fi
             echo "EXIT $rc $*" | tee -a probes.log
             echo "::endgroup::"
           }

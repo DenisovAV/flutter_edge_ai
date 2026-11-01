@@ -606,7 +606,7 @@ abstract class InferenceModel {
   /// (`@nonVirtual`); an engine supplies the scoring through
   /// `OptionScoringModel` (`package:flutter_edge_ai/engine.dart`), not by
   /// overriding this. `flutter_edge_ai_litertlm` scores natively, on the CPU
-  /// from 1.16.0 and on every GPU from 1.20.0; the NPU is refused. The
+  /// from 1.16.0 and on every GPU from 1.19.1; the NPU is refused. The
   /// temperature and threshold in the file are fitted on CPU probabilities,
   /// which the GPU does not reproduce exactly; its self-check checks that
   /// scores repeat, not that they are right, and runs in debug and profile

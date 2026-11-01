@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "date": "2026-10-31",
+  "host": "ios_arm64",
+  "device": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB",
+  "commit": "9366d0214a41bfb0c709a07affbd67ff9bac7be8",
+  "packages": {
+    "flutter_edge_ai": "2.5.5",
+    "flutter_edge_ai_litertlm": "1.19.1",
+    "flutter_edge_ai_speech": "0.5.13"
+  },
+  "native": "5d673601ef4691da74adee13e09230969399f41f7983aab9e305014663faaed1",
+  "log_sha256": "ceceba23b602af72158ff6e2247832e70d2af94506d6e68a915f3dc95d77fdf5",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "cpu": [
+        "text to image retrieval"
+      ]
+    },
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "audio",
+        "text",
+        "vision"
+      ],
+      "gpu": [
+        "text"
+      ]
+    },
+    "matcha-tts/bundle": {
+      "cpu": [
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

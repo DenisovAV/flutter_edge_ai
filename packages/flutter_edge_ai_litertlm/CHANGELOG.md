@@ -1,9 +1,10 @@
-## Unreleased
+## 1.19.1
 - The native library loads and engine settings are made off the calling isolate (#756).
 - Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every LiteRT build pinned to its commit (#734).
 - `LiteRtBindings` binds the opaque-options calls the speech-to-text GPU options use (#747).
 - The option-scoring self-check runs in debug and profile builds only.
 - `InferenceModel.createDecider` scores on the GPU too; the NPU stays refused.
+- Require `flutter_edge_ai` ^2.5.5.
 
 ## 1.19.0
 - EmbeddingGemma 2 text on the GPU on Linux x64; image and audio towers stay on CPU.

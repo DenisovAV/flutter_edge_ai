@@ -42,8 +42,8 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.5.4`,
-`flutter_edge_ai_litertlm: ^1.19.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.5.5`,
+`flutter_edge_ai_litertlm: ^1.19.1`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
@@ -65,7 +65,7 @@ SoC). Every build, and where each has been run:
 [Model Registry](https://flutteredge.ai/docs/registry).
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0, ^2.5.4 since 1.19.0), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0, ^2.5.4 since 1.19.0, ^2.5.5 since 1.19.1), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·

@@ -255,13 +255,20 @@ FORBIDDEN=(
   "android_arm64:libQnn*"
   "linux_arm64:libQnn*"
   # Built against MediaTek's NeuroPilot SDK, whose licence allows it only
-  # inside an application: apps fetch Google's build through `mediatek_npu`.
-  "android_arm64:libLiteRtDispatch_MediaTek.so"
+  # inside an application: apps fetch Google's build through `mediatek_npu`,
+  # and the hook stores it under this name (the libLiteRtDispatch_MediaTek.so
+  # in the archive is our own adapter, see REQUIRED).
+  "android_arm64:libmtk_litert_dispatch_legacy.so"
   "android_arm64:libLiteRtCompilerPlugin_MediaTek*"
   # Need libwebgpu_dawn.so, which no Android bundle carries (native-v0.18.0).
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
   "android_arm64:libLiteRtTopKWebGpuSampler.so"
+  # Our build of ML Drift's TopK WebGPU sampler crashed the first GPU decode
+  # on Linux and Windows (patch_c_api.sh section 20): CPU sampling there.
+  "linux_x86_64:libLiteRtTopKWebGpuSampler.so"
+  "linux_arm64:libLiteRtTopKWebGpuSampler.so"
+  "windows_x86_64:libLiteRtTopKWebGpuSampler.dll"
   # Upstream's name, which flutter_litert's framework also uses (native-v0.18.0).
   "ios_arm64:libLiteRtMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtMetalAccelerator.dylib"
@@ -272,6 +279,10 @@ REQUIRED=(
   # this open-source bridge, which late-binds the Pixel system runtime.
   "android_arm64:libLiteRtDispatch_GoogleTensor.so"
   "android_arm64:libLiteRtDispatch_Qualcomm.so"
+  # From LiteRT-LM v0.19.0: our adapter (mediatek_dispatch_compat.c) that
+  # gives Google's legacy MediaTek dispatch the versioned dispatch ABI the
+  # runtime now requires. Our own code; no NeuroPilot SDK in it.
+  "android_arm64:libLiteRtDispatch_MediaTek.so"
   # native-v0.18.0-c: Qualcomm NPU on Linux arm64 — our dispatch and the
   # libcdsprpc.so shim the QNN Stubs need (build_qualcomm_dispatch.sh).
   "linux_arm64:libLiteRtDispatch_Qualcomm.so"

@@ -1,0 +1,19 @@
+diff --git a/runtime/components/BUILD b/runtime/components/BUILD
+index b680c6fc..5cbbc722 100644
+--- a/runtime/components/BUILD
++++ b/runtime/components/BUILD
+@@ -251,6 +251,14 @@ cc_library(
+ cc_library(
+     name = "default_static_gpu_samplers",
+     deps = select({
++        # flutter_edge_ai (patch_c_api.sh section 20): no fused GPU sampler
++        # when the LiteRT C API is linked dynamically (Linux, Windows). This
++        # sampler is compiled here from ML Drift source against our
++        # libstdc++/MSVC and run against Google's prebuilt WebGPU
++        # accelerator; its first decode crashed (SIGSEGV on Linux,
++        # 0xC0000409 on Windows). Without it the sampler factory finds no
++        # GPU sampler and samples on the CPU; the logits stay on the GPU.
++        "@litert//litert:litert_runtime_link_mode_dynamic": [],
+         ":android_webgpu": [":top_k_webgpu_sampler_static"],
+         "@platforms//os:android": [":top_k_opencl_sampler_static"],
+         "//runtime/executor:ios_webgpu": [":top_k_webgpu_sampler_static"],

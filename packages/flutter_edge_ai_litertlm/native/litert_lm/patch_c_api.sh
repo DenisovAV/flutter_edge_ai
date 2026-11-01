@@ -858,4 +858,30 @@ if grep -q 'name = "default_static_gpu_accelerator"' "$DIR/runtime/executor/BUIL
   fi
 fi
 
+# ── 20. Linux and Windows: no fused GPU sampler ──
+# From v0.19.0 the TopK GPU samplers are compiled from ML Drift source
+# (upstream 47d7ba6, 7ea259d, 43b79e8) and runtime/components:
+# default_static_gpu_samplers links the WebGPU one into libLiteRtLm on every
+# non-Apple, non-Android target, including the dynamic-link mode Linux and
+# Windows use (litert_runtime_link_mode=dynamic), where the accelerator itself
+# stays out (it is Google's prebuilt libLiteRtWebGpuAccelerator). Our
+# libstdc++/MSVC build of the sampler then crashed the first GPU decode:
+# SIGSEGV in TopKWebGpuSampler::SampleToIdAndScoreBuffer on a T4,
+# 0xC0000409 in LiteRtLm.dll on Arc B390 and Arc 140V. This leaves the
+# sampler out in dynamic-link mode, as the accelerator already is; with no
+# sampler library shipped either, the sampler factory samples on the CPU and
+# the logits stay on the GPU.
+DESKTOP_SAMPLER_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/desktop_no_static_gpu_sampler.patch"
+if grep -q 'name = "default_static_gpu_samplers"' "$DIR/runtime/components/BUILD"; then
+  if git -C "$DIR" apply --check "$DESKTOP_SAMPLER_PATCH" 2>/dev/null; then
+    git -C "$DIR" apply "$DESKTOP_SAMPLER_PATCH"
+    echo "  OK: no fused GPU sampler in dynamic-link builds (Linux, Windows)"
+  elif git -C "$DIR" apply --reverse --check "$DESKTOP_SAMPLER_PATCH" 2>/dev/null; then
+    echo "  SKIP: no fused GPU sampler already applied"
+  else
+    echo "  ERROR: $DESKTOP_SAMPLER_PATCH does not apply to this LiteRT-LM revision" >&2
+    exit 1
+  fi
+fi
+
 echo "Patch complete."

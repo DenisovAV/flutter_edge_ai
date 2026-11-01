@@ -101,17 +101,6 @@ jobs:
             --define=litert_runtime_link_mode=dynamic \
             '//c:libLiteRtLm.dylib'
 
-      - name: Build libLiteRtTopKWebGpuSampler.so
-        # LiteRT-LM v0.19.0 no longer ships the TopK GPU samplers as prebuilts
-        # (43b79e8); they are built from source with ML Drift (47d7ba6).
-        # Without one, GPU decoding samples on the CPU.
-        if: ${{ !startsWith(inputs.litertlm_version, 'b2f686e2') }}
-        run: |
-          cd /tmp/LiteRT-LM
-          bazelisk build -c opt --strip=always \
-            --define=litert_runtime_link_mode=dynamic \
-            '//runtime/components:top_k_webgpu_sampler_so'
-
       - name: Build libStreamProxy.so
         run: |
           gcc -shared -fPIC -o /tmp/libStreamProxy.so \
@@ -122,8 +111,15 @@ jobs:
           mkdir -p artifacts
           cp /tmp/LiteRT-LM/bazel-bin/c/libLiteRtLm.dylib artifacts/libLiteRtLm.so
           cp /tmp/libStreamProxy.so artifacts/
-          sampler=/tmp/LiteRT-LM/bazel-bin/runtime/components/libLiteRtTopKWebGpuSampler.so
-          if [ -f "$sampler" ]; then cp "$sampler" artifacts/; fi
+          # No GPU sampler on Linux (patch_c_api.sh section 20): our build of
+          # ML Drift's TopK WebGPU sampler crashed the first GPU decode, so it
+          # is neither linked in nor shipped and GPU decoding samples on the
+          # CPU. The check fails a build that links it in again.
+          # (Its RTTI name N6litert2lm17TopKWebGpuSamplerE is in every build
+          # that links it, stripped or not.)
+          if grep -a -q '17TopKWebGpuSampler' artifacts/libLiteRtLm.so; then
+            echo "::error::libLiteRtLm.so links the TopK WebGPU sampler (section 20 did not apply)"; exit 1
+          fi
           # `|| true` used to hide an empty glob here. That was survivable when
           # libLiteRt.so was optional; it is not now. litert_runtime_link_mode=dynamic
           # deliberately keeps the LiteRt C API OUT of libLiteRtLm, so these
@@ -243,17 +239,6 @@ jobs:
             --define=litert_runtime_link_mode=dynamic \
             '//c:libLiteRtLm.dylib'
 
-      - name: Build libLiteRtTopKWebGpuSampler.so
-        # LiteRT-LM v0.19.0 no longer ships the TopK GPU samplers as prebuilts
-        # (43b79e8); they are built from source with ML Drift (47d7ba6).
-        # Without one, GPU decoding samples on the CPU.
-        if: ${{ !startsWith(inputs.litertlm_version, 'b2f686e2') }}
-        run: |
-          cd /tmp/LiteRT-LM
-          bazelisk build -c opt --strip=always \
-            --define=litert_runtime_link_mode=dynamic \
-            '//runtime/components:top_k_webgpu_sampler_so'
-
       - name: Test external weights by path (patch_c_api.sh section 13)
         if: ${{ !inputs.skip_path_weights }}
         # Section 13 repacks every TFLite model that has a TFLiteWeights
@@ -278,8 +263,15 @@ jobs:
           mkdir -p artifacts
           cp /tmp/LiteRT-LM/bazel-bin/c/libLiteRtLm.dylib artifacts/libLiteRtLm.so
           cp /tmp/libStreamProxy.so artifacts/
-          sampler=/tmp/LiteRT-LM/bazel-bin/runtime/components/libLiteRtTopKWebGpuSampler.so
-          if [ -f "$sampler" ]; then cp "$sampler" artifacts/; fi
+          # No GPU sampler on Linux (patch_c_api.sh section 20): our build of
+          # ML Drift's TopK WebGPU sampler crashed the first GPU decode, so it
+          # is neither linked in nor shipped and GPU decoding samples on the
+          # CPU. The check fails a build that links it in again.
+          # (Its RTTI name N6litert2lm17TopKWebGpuSamplerE is in every build
+          # that links it, stripped or not.)
+          if grep -a -q '17TopKWebGpuSampler' artifacts/libLiteRtLm.so; then
+            echo "::error::libLiteRtLm.so links the TopK WebGPU sampler (section 20 did not apply)"; exit 1
+          fi
           # `|| true` used to hide an empty glob here. That was survivable when
           # libLiteRt.so was optional; it is not now. litert_runtime_link_mode=dynamic
           # deliberately keeps the LiteRt C API OUT of libLiteRtLm, so these
@@ -516,6 +508,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path artifacts -Force
           Copy-Item C:\LiteRT-LM\bazel-bin\c\libLiteRtLm.dylib artifacts\LiteRtLm.dll
+          # Section 20: the TopK WebGPU sampler must not be linked in (its MSVC
+          # RTTI name, present whenever it is, as in the v0.19.0 build that
+          # crashed with 0xC0000409).
+          $dll = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes('artifacts\LiteRtLm.dll'))
+          if ($dll.Contains('AVTopKWebGpuSampler@lm@litert@@')) {
+            throw 'LiteRtLm.dll links the TopK WebGPU sampler (section 20 did not apply)'
+          }
           # The CRT check for #456 runs at the END of this step, once every DLL
           # is in artifacts\ — see "the allow-list is what a Flutter Windows
           # app already ships" below.
@@ -526,9 +525,11 @@ jobs:
           # so absence is a LoadLibrary failure on the user's machine, not a
           # degraded build. Test-Path is also true for a ~130-byte git-lfs pointer
           # stub, and Windows has no patchelf step to trip over one — assert size.
-          # No libLiteRtTopKWebGpuSampler.dll from v0.19.0 on: upstream stopped
-          # shipping prebuilt samplers and marks the WebGPU one incompatible
-          # with Windows, so GPU decoding there samples on the CPU.
+          # No GPU sampler on Windows (patch_c_api.sh section 20): from
+          # v0.19.0 upstream links the TopK WebGPU sampler into LiteRtLm.dll,
+          # and our MSVC build of it crashed the first GPU decode
+          # (0xC0000409). Section 20 leaves it out and no sampler DLL ships, so
+          # GPU decoding samples on the CPU.
           foreach ($base in @('libGemmaModelConstraintProvider','libLiteRt','libLiteRtWebGpuAccelerator','libwebgpu_dawn')) {
             $src = "$prebuilt\$base.dll"
             if (-not (Test-Path $src)) {

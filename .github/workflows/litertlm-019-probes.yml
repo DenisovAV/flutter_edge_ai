@@ -16,7 +16,7 @@ permissions:
   actions: read
 
 env:
-  BUILD_RUN_ID: '41281104298'
+  BUILD_RUN_ID: '41300996155'
   FG_URL: https://huggingface.co/sasha-denisov/function-gemma-270M-it/resolve/main/functiongemma-270M-it.litertlm
   G4_URL: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm
   EG2_URL: https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/main/embeddinggemma-2-text-270m.litertlm

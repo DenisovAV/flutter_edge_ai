@@ -12,7 +12,7 @@ Nothing is published: CI runs are artifact-only, no tag, no release.
 | Linux x86_64 | CI run 41277710260 (no §13), 41281104298 (§13) | ✅ both | `libLiteRtLm.so` now NEEDs `libwebgpu_dawn.so` (the WebGPU TopK sampler is linked in); Dawn already ships on Linux. |
 | Linux arm64 | same | ✅ both | §13 unit test passes in the §13 run. |
 | Linux arm64 Qualcomm dispatch | same | ✅ | Exports `LiteRtDispatchQueryInterface` (LiteRT's versioned dispatch ABI); the build check now follows the pin. |
-| Windows x86_64 (+ Intel NPU dispatch) | CI runs 41277710260, 41281104298 | ✅ both | No TopK WebGPU sampler exists for Windows any more (upstream marks it incompatible), so Windows GPU samples on the CPU. |
+| Windows x86_64 (+ Intel NPU dispatch) | CI runs 41277710260, 41281104298 | ✅ both | No separate TopK WebGPU sampler DLL any more; the sampler is compiled into `LiteRtLm.dll` (phase B). |
 | macOS arm64 | local | ✅ | Built with `--//runtime/executor:gpu_accelerator=metal` (see "Static GPU accelerator"). `minos` 11.0 / 14.0; the real framework id fits the Metal accelerator's header slack. |
 | iOS arm64 + simulator | local | ✅ | Static ML Drift Metal accelerator, no Dawn. |
 | Android arm64 | local | ✅ with §19 | Google Tensor and Qualcomm dispatches built from the pin, both export `LiteRtDispatchQueryInterface`; all PT_LOAD 16 KB aligned; DT_NEEDED closure passes. |
@@ -72,14 +72,42 @@ x86_64) and an Android arm64 emulator; GPU on macOS (Metal).
    (2.3.0 and the newer 2.3.2) exports only `LiteRtDispatchGetApi`, which the
    loader refuses. We cannot build that dispatch (NeuroPilot SDK). Until Google
    ships an AAR on the new ABI, MediaTek NPU is lost with 0.19.
-3. **No TopK sampler on Windows GPU** (upstream has none for Windows any more).
+3. **The TopK GPU sampler is compiled into libLiteRtLm on Linux and Windows** (no separate prebuilt any more), and it crashes the first GPU decode there (phase B).
 4. **macOS CPU greedy is nondeterministic** (above).
 
-## Not run (paid or blocked)
+## Phase B: devices (2026-11-01)
 
-DDP (Qualcomm NPU on SM8750, Adreno constrained/MTP, #3508 Gemma 3 NPU, Pixel 11
-Tensor G6, MediaTek refusal on a Tab S10+), GCE T4 (Linux GPU constrained/MTP,
-the web suites on `@litert-lm/core` 0.19.0), the Intel boxes (Windows NPU tool
-calls and §15, #4083 Gemma 4 12B on the Panther Lake GPU, Windows GPU
-constrained). The auto-mode classifier refused the DDP reservation and the SSH
-session because the approval came through the coordinating thread.
+Same harness and bundles: Android arm64 (local §19 build) through adb on DDP
+phones, Linux x86_64 on the GCE T4 VM and Windows x86_64 on the Intel boxes
+(both from CI run 41281104298, with §13). Galaxy S25 (SM8750, Adreno 830,
+Qualcomm NPU), Pixel 11 (Tensor G6), Galaxy Tab S10+ (MT6989), Tesla T4,
+Panther Lake (Arc B390 + NPU), Lunar Lake (Arc 140V + NPU).
+
+| Check | Result | Numbers / platforms | What it means for the Dart work |
+|---|---|---|---|
+| Linux and Windows GPU, conversation API | ❌ **crash at the first decode** | T4: SIGSEGV, backtrace `LlmLiteRtCompiledModelExecutorBase::SampleLogits` → `TopKWebGpuSampler::SampleToIdAndScoreBuffer` → `ml_drift::webgpu::InferenceContext::Execute` → `absl::StatusRep::Clone`. PTL and LNL: `0xC0000409` in `LiteRtLm.dll` at the same offset in every run; `LiteRtLm.dll` carries `TopKWebGpuSampler` too. Session-API checks (rewind, scoring: no sampling) pass on all three GPUs. Gemma 4 12B (#4083) could not be checked: it crashes the same way | v0.19 compiles the TopK GPU samplers from source and links them into libLiteRtLm (upstream 47d7ba6, 7ea259d, 43b79e8); on Linux/Windows our libstdc++/MSVC build of that code then runs against Google's prebuilt WebGPU accelerator. Windows stack not taken, so the Windows cause is the same signature, not a proven one. Blocks the migration on desktop GPU until fixed (§20 below) |
+| Several live conversations (#966) on the NPU | ❌ **shared state** | Qualcomm SM8750, Tensor G6, Intel PTL and LNL: all three conversations answer the last one's fact ("Chen"); CPU, Adreno and Metal keep 3/3 | On the NPU an open session cannot be one conversation of several on a shared engine: one live conversation per NPU engine, or rebuild. The NPU executor keeps one KV cache |
+| Constrained decoding on devices | ✅ | Gemma 4 E2B decode tok/s, none / schema / regex: Adreno 830 GPU 30.8 / 41.1 / 38.1; Qualcomm NPU 43.9 / 41.1 / 43.0; Intel PTL NPU 61.0 / 52.8 / 38.3; LNL NPU 57.0 / 52.7 / 39.6; T4 not measured (crash above). Tensor G6: valid output, numbers not published (Tensor SDK terms) | Typed responses work on every backend that decodes; JSON schema costs nothing on Adreno, ~5-15 % on the Intel NPU |
+| Tool calls on the NPU | ✅ | Gemma 4 E2B on Qualcomm SM8750, Tensor G6, Intel PTL, Intel LNL: `get_weather(city: Paris)`. FunctionGemma on Adreno answers in text (model decision, as on the arm64 CPU) | |
+| §16 + §18 rewind | ✅ GPU / ⛔ NPU | bit-identical on Adreno (FunctionGemma), T4, Arc B390, Arc 140V (Gemma 4 E2B). The NPU refuses the checkpoint rewind (`SetCurrentStep only supports rolling back one token`, PTL) | Unchanged: on the NPU the Dart side keeps rebuilding from text |
+| #3561 scoring | ✅ plain | pair differs on Adreno, T4 and Arc B390 (2.56) → `plain`; a target after a rewind bit-identical | Same as CPU/Metal |
+| MTP | ⚠️ no gain | Adreno 830, tok/s off / on / adaptive / default: 38.4 / 33.5 / 41.8 / 43.4; `on` and `adaptive` change the greedy text, `default` = off | Keep it off |
+| Greedy determinism | ✅ NPU, Adreno | Qualcomm, Tensor, Intel PTL/LNL NPU, Adreno: identical | The macOS CPU regression stays the only one |
+| Long prompt past one prefill chunk | ✅ Gemma 4 / ❌ Gemma 3 (#3508) | Gemma 4 E2B answers the fact at the end on Qualcomm, Tensor, Intel PTL and LNL NPUs. Gemma 3 1B `…_ekv1280_sm8750` on the Qualcomm NPU (max_num_tokens 1280) answers something else: #3508 is **not** fixed in 0.19 | Keep the Gemma 3 NPU long-prompt caveat |
+| MediaTek NPU | ❌ refused | Tab S10+ (MT6989): `Could not load symbol LiteRtDispatchQueryInterface: undefined symbol: LiteRtDispatchQueryInterface` → `No usable Dispatch runtime found` with Google's AAR 2.3.0 dispatch | Confirms finding 2 on a device |
+
+## Not run
+
+- Web: `@litert-lm/core` 0.19.0 (JSPI/Asyncify), the page lock with EG2. Needs
+  a web export and a browser with WebGPU; not done in this phase.
+- Mali GPU (no Mali phone in this round), iOS device.
+- Windows GPU constrained/MTP/tool calls and Gemma 4 12B (#4083): blocked by
+  the GPU sampler crash.
+
+## Proposed §20 (not built)
+
+Drop the statically linked TopK GPU samplers from libLiteRtLm on Linux and
+Windows (`default_static_gpu_samplers` empty when
+`litert_runtime_link_mode=dynamic`), so the GPU executor samples on the CPU, as
+Windows did on 0.18. Verify with the conversation probes on the T4 and an Intel
+Arc box; then decide whether to ship a GPU sampler at all on desktop.

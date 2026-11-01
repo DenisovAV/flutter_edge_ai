@@ -21,6 +21,10 @@ on:
       release_tag:
         description: 'Release tag to publish to (blank = native-<litertlm_version>). Use this for a re-release of the same upstream source, e.g. native-v0.17.0-a.'
         required: false
+      skip_path_weights:
+        description: 'Build without patch_c_api.sh section 13 (external weights by path) — the LiteRT-LM 0.19 check of whether it is still needed'
+        type: boolean
+        default: false
       qualcomm_dispatch_linux_only:
         description: 'Build only the Linux arm64 Qualcomm dispatch + libcdsprpc shim (an artifact to add to an existing linux_arm64 archive); never publishes'
         type: boolean
@@ -79,6 +83,8 @@ jobs:
           echo "provider ABI: source and provider agree (ComputeMask=$want)"
 
       - name: Patch C API
+        env:
+          LITERTLM_SKIP_PATH_WEIGHTS: ${{ inputs.skip_path_weights && '1' || '0' }}
         run: bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
 
       - name: Build libLiteRtLm.so
@@ -95,6 +101,17 @@ jobs:
             --define=litert_runtime_link_mode=dynamic \
             '//c:libLiteRtLm.dylib'
 
+      - name: Build libLiteRtTopKWebGpuSampler.so
+        # LiteRT-LM v0.19.0 no longer ships the TopK GPU samplers as prebuilts
+        # (43b79e8); they are built from source with ML Drift (47d7ba6).
+        # Without one, GPU decoding samples on the CPU.
+        if: ${{ !startsWith(inputs.litertlm_version, 'b2f686e2') }}
+        run: |
+          cd /tmp/LiteRT-LM
+          bazelisk build -c opt --strip=always \
+            --define=litert_runtime_link_mode=dynamic \
+            '//runtime/components:top_k_webgpu_sampler_so'
+
       - name: Build libStreamProxy.so
         run: |
           gcc -shared -fPIC -o /tmp/libStreamProxy.so \
@@ -105,6 +122,8 @@ jobs:
           mkdir -p artifacts
           cp /tmp/LiteRT-LM/bazel-bin/c/libLiteRtLm.dylib artifacts/libLiteRtLm.so
           cp /tmp/libStreamProxy.so artifacts/
+          sampler=/tmp/LiteRT-LM/bazel-bin/runtime/components/libLiteRtTopKWebGpuSampler.so
+          if [ -f "$sampler" ]; then cp "$sampler" artifacts/; fi
           # `|| true` used to hide an empty glob here. That was survivable when
           # libLiteRt.so was optional; it is not now. litert_runtime_link_mode=dynamic
           # deliberately keeps the LiteRt C API OUT of libLiteRtLm, so these
@@ -206,6 +225,8 @@ jobs:
           echo "provider ABI: source and provider agree (ComputeMask=$want)"
 
       - name: Patch C API
+        env:
+          LITERTLM_SKIP_PATH_WEIGHTS: ${{ inputs.skip_path_weights && '1' || '0' }}
         run: bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh /tmp/LiteRT-LM
 
       - name: Build libLiteRtLm.so
@@ -222,7 +243,19 @@ jobs:
             --define=litert_runtime_link_mode=dynamic \
             '//c:libLiteRtLm.dylib'
 
+      - name: Build libLiteRtTopKWebGpuSampler.so
+        # LiteRT-LM v0.19.0 no longer ships the TopK GPU samplers as prebuilts
+        # (43b79e8); they are built from source with ML Drift (47d7ba6).
+        # Without one, GPU decoding samples on the CPU.
+        if: ${{ !startsWith(inputs.litertlm_version, 'b2f686e2') }}
+        run: |
+          cd /tmp/LiteRT-LM
+          bazelisk build -c opt --strip=always \
+            --define=litert_runtime_link_mode=dynamic \
+            '//runtime/components:top_k_webgpu_sampler_so'
+
       - name: Test external weights by path (patch_c_api.sh section 13)
+        if: ${{ !inputs.skip_path_weights }}
         # Section 13 repacks every TFLite model that has a TFLiteWeights
         # section (EmbeddingGemma 2) so Google's runtime reads the weights by
         # path. Its unit test runs here, on one of the two platforms that
@@ -245,6 +278,8 @@ jobs:
           mkdir -p artifacts
           cp /tmp/LiteRT-LM/bazel-bin/c/libLiteRtLm.dylib artifacts/libLiteRtLm.so
           cp /tmp/libStreamProxy.so artifacts/
+          sampler=/tmp/LiteRT-LM/bazel-bin/runtime/components/libLiteRtTopKWebGpuSampler.so
+          if [ -f "$sampler" ]; then cp "$sampler" artifacts/; fi
           # `|| true` used to hide an empty glob here. That was survivable when
           # libLiteRt.so was optional; it is not now. litert_runtime_link_mode=dynamic
           # deliberately keeps the LiteRt C API OUT of libLiteRtLm, so these
@@ -310,14 +345,8 @@ jobs:
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
       PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
-      # libLiteRtWebGpuAccelerator.dll alone comes from a later upstream commit:
-      # 5f973f57 carries LiteRT #11120 (dp4a int8 FC/conv off on Intel GPUs;
-      # Gemma 4 12B returned no text under 512 prompt tokens on Intel D3D12,
-      # LiteRT-LM #4083). It imports nothing from libLiteRt.dll, and its Dawn
-      # imports resolve against the v0.18.0 webgpu_dawn.dll (byte-identical at
-      # both refs). native-v0.18.0-h ships exactly these bytes.
-      WEBGPU_ACCELERATOR_REF: '5f973f57011e6175f9a38a3adb2ccda73d5bb44e'
-      WEBGPU_ACCELERATOR_SHA256: '2fb3583681ffb28d2fa8c08803445839e579a8e67417bde480415a4360e18ed0'
+      # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: the
+      # v0.19.0 tag's own prebuilt is newer and its LiteRT pin contains #11120.
       ANDROID_NDK_HOME: ''
       BAZEL_OUTPUT_BASE: 'D:\b'
     steps:
@@ -359,15 +388,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "could not fetch the provider for $env:PREBUILT_REF" }
           $provPath = "C:\LiteRT-LM\prebuilt\windows_x86_64\libGemmaModelConstraintProvider.dll"
           Write-Host "provider: $((Get-Item $provPath).Length) bytes from $env:PREBUILT_REF"
-          $accPath = "C:\LiteRT-LM\prebuilt\windows_x86_64\libLiteRtWebGpuAccelerator.dll"
-          curl.exe -fsSL -o $accPath `
-            "https://media.githubusercontent.com/media/google-ai-edge/LiteRT-LM/$env:WEBGPU_ACCELERATOR_REF/prebuilt/windows_x86_64/libLiteRtWebGpuAccelerator.dll"
-          if ($LASTEXITCODE -ne 0) { throw "could not fetch the WebGPU accelerator for $env:WEBGPU_ACCELERATOR_REF" }
-          $accSha = (Get-FileHash $accPath -Algorithm SHA256).Hash.ToLower()
-          if ($accSha -ne $env:WEBGPU_ACCELERATOR_SHA256) {
-            throw "WebGPU accelerator from $env:WEBGPU_ACCELERATOR_REF is $accSha, expected $env:WEBGPU_ACCELERATOR_SHA256"
-          }
-          Write-Host "WebGPU accelerator: $((Get-Item $accPath).Length) bytes from $env:WEBGPU_ACCELERATOR_REF"
           # Fail before the hour of Bazel, not after it.
           # Absolute paths on purpose: `cd` moves PowerShell's location, not the
           # process working directory, so a .NET call with a relative path reads
@@ -386,6 +406,8 @@ jobs:
 
       - name: Patch C API
         shell: bash
+        env:
+          LITERTLM_SKIP_PATH_WEIGHTS: ${{ inputs.skip_path_weights && '1' || '0' }}
         run: bash packages/flutter_edge_ai_litertlm/native/litert_lm/patch_c_api.sh C:/LiteRT-LM
 
       - name: Build LiteRtLm.dll
@@ -504,7 +526,10 @@ jobs:
           # so absence is a LoadLibrary failure on the user's machine, not a
           # degraded build. Test-Path is also true for a ~130-byte git-lfs pointer
           # stub, and Windows has no patchelf step to trip over one — assert size.
-          foreach ($base in @('libGemmaModelConstraintProvider','libLiteRt','libLiteRtTopKWebGpuSampler','libLiteRtWebGpuAccelerator','libwebgpu_dawn')) {
+          # No libLiteRtTopKWebGpuSampler.dll from v0.19.0 on: upstream stopped
+          # shipping prebuilt samplers and marks the WebGPU one incompatible
+          # with Windows, so GPU decoding there samples on the CPU.
+          foreach ($base in @('libGemmaModelConstraintProvider','libLiteRt','libLiteRtWebGpuAccelerator','libwebgpu_dawn')) {
             $src = "$prebuilt\$base.dll"
             if (-not (Test-Path $src)) {
               throw "prebuilt companion missing: $base.dll - LiteRtLm.dll imports it"

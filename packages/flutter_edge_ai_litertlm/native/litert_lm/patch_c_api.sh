@@ -193,7 +193,7 @@ if ! grep -q "set_use_hw_masking_for_npu" "$DIR/c/engine.h"; then
 // crash because the NPU HW mask update path is not fully supported.\
 // Pass false to force CPU/SIMD mask update fallback.\
 LITERT_LM_C_API_EXPORT\
-void litert_lm_engine_settings_set_use_hw_masking_for_npu(\
+LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_masking_for_npu(\
     LiteRtLmEngineSettings* settings, bool value);\
 ' "$DIR/c/engine.h"
   rm -f "$DIR/c/engine.h.bak"
@@ -203,22 +203,30 @@ else
 fi
 
 if ! grep -q "set_use_hw_masking_for_npu" "$DIR/c/engine.cc"; then
-  sed -i.bak '/void litert_lm_engine_settings_set_activation_data_type/i\
-void litert_lm_engine_settings_set_use_hw_masking_for_npu(\
+  sed -i.bak '/^LiteRtLmStatusCode litert_lm_engine_settings_set_activation_data_type(/i\
+LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_masking_for_npu(\
     LiteRtLmEngineSettings* settings, bool value) {\
-  if (settings \&\& settings->settings) {\
-    auto\& exec = settings->settings->GetMutableMainExecutorSettings();\
-    litert::lm::NpuConfig config;\
-    auto current = exec.GetBackendConfig<litert::lm::NpuConfig>();\
-    if (current.ok()) {\
-      config = *current;\
-    }\
-    config.use_hw_masking_for_npu = value;\
-    exec.SetBackendConfig(config);\
+  if (!IsValidEngineSettings(settings)) {\
+    return kLiteRtLmStatusInvalidArgument;\
   }\
+  auto\& exec = settings->settings->GetMutableMainExecutorSettings();\
+  litert::lm::NpuConfig config;\
+  auto current = exec.GetBackendConfig<litert::lm::NpuConfig>();\
+  if (current.ok()) {\
+    config = *current;\
+  }\
+  config.use_hw_masking_for_npu = value;\
+  exec.SetBackendConfig(config);\
+  return kLiteRtLmStatusOk;\
 }\
+\
 ' "$DIR/c/engine.cc"
   rm -f "$DIR/c/engine.cc.bak"
+  grep -q '^LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_masking_for_npu(' \
+    "$DIR/c/engine.cc" || {
+    echo "  ERROR: section 4b: the set_activation_data_type anchor moved; no impl" >&2
+    exit 1
+  }
   echo "  OK: Added set_use_hw_masking_for_npu impl to c/engine.cc"
 else
   echo "  SKIP: c/engine.cc already has set_use_hw_masking_for_npu"
@@ -239,13 +247,13 @@ if ! grep -q "set_gpu_context_low_priority" "$DIR/c/engine.h"; then
 // prefill/decode does not starve the host UI compositor (#364). GPU-only;\
 // a no-op on backends whose delegate ignores context priority.\
 LITERT_LM_C_API_EXPORT\
-void litert_lm_engine_settings_set_gpu_context_low_priority(\
+LiteRtLmStatusCode litert_lm_engine_settings_set_gpu_context_low_priority(\
     LiteRtLmEngineSettings* settings, bool value);\
 \
 // Hints a GPU kernel batch size so the delegate periodically flushes, giving\
 // the UI compositor scheduling windows during long GPU work (#364).\
 LITERT_LM_C_API_EXPORT\
-void litert_lm_engine_settings_set_kernel_batch_size(\
+LiteRtLmStatusCode litert_lm_engine_settings_set_kernel_batch_size(\
     LiteRtLmEngineSettings* settings, int kernel_batch_size);\
 ' "$DIR/c/engine.h"
   rm -f "$DIR/c/engine.h.bak"
@@ -255,30 +263,41 @@ else
 fi
 
 if ! grep -q "set_gpu_context_low_priority" "$DIR/c/engine.cc"; then
-  sed -i.bak '/void litert_lm_engine_settings_set_activation_data_type/i\
-void litert_lm_engine_settings_set_gpu_context_low_priority(\
+  sed -i.bak '/^LiteRtLmStatusCode litert_lm_engine_settings_set_activation_data_type(/i\
+LiteRtLmStatusCode litert_lm_engine_settings_set_gpu_context_low_priority(\
     LiteRtLmEngineSettings* settings, bool value) {\
-  if (settings \&\& settings->settings) {\
-    auto\& main_settings = settings->settings->GetMutableMainExecutorSettings();\
-    auto advanced_settings = main_settings.GetAdvancedSettings().value_or(\
-        litert::lm::AdvancedSettings());\
-    advanced_settings.gpu_context_low_priority = value;\
-    main_settings.SetAdvancedSettings(advanced_settings);\
+  if (!IsValidEngineSettings(settings)) {\
+    return kLiteRtLmStatusInvalidArgument;\
   }\
+  auto\& main_settings = settings->settings->GetMutableMainExecutorSettings();\
+  auto advanced_settings = main_settings.GetAdvancedSettings().value_or(\
+      litert::lm::AdvancedSettings());\
+  advanced_settings.gpu_context_low_priority = value;\
+  main_settings.SetAdvancedSettings(advanced_settings);\
+  return kLiteRtLmStatusOk;\
 }\
 \
-void litert_lm_engine_settings_set_kernel_batch_size(\
+LiteRtLmStatusCode litert_lm_engine_settings_set_kernel_batch_size(\
     LiteRtLmEngineSettings* settings, int kernel_batch_size) {\
-  if (settings \&\& settings->settings) {\
-    auto\& main_settings = settings->settings->GetMutableMainExecutorSettings();\
-    auto advanced_settings = main_settings.GetAdvancedSettings().value_or(\
-        litert::lm::AdvancedSettings());\
-    advanced_settings.hint_kernel_batch_size = kernel_batch_size;\
-    main_settings.SetAdvancedSettings(advanced_settings);\
+  if (!IsValidEngineSettings(settings)) {\
+    return kLiteRtLmStatusInvalidArgument;\
   }\
+  auto\& main_settings = settings->settings->GetMutableMainExecutorSettings();\
+  auto advanced_settings = main_settings.GetAdvancedSettings().value_or(\
+      litert::lm::AdvancedSettings());\
+  advanced_settings.hint_kernel_batch_size = kernel_batch_size;\
+  main_settings.SetAdvancedSettings(advanced_settings);\
+  return kLiteRtLmStatusOk;\
 }\
+\
 ' "$DIR/c/engine.cc"
   rm -f "$DIR/c/engine.cc.bak"
+  for fn in set_gpu_context_low_priority set_kernel_batch_size; do
+    grep -q "^LiteRtLmStatusCode litert_lm_engine_settings_${fn}(" "$DIR/c/engine.cc" || {
+      echo "  ERROR: section 4c: the set_activation_data_type anchor moved; no $fn" >&2
+      exit 1
+    }
+  done
   echo "  OK: Added GPU smooth-UI knob impls to c/engine.cc"
 else
   echo "  SKIP: c/engine.cc already has set_gpu_context_low_priority"
@@ -383,19 +402,15 @@ else:
     # shell below). Bazel applies `patches` BEFORE `patch_cmds`, and fails the
     # fetch when a hunk does not apply — the loud failure a moved upstream
     # line has to produce. The macro it uses is defined by the awk above.
-    # patches/litert_openvino_2026_4_1.patch is upstream LiteRT 991d15588a
-    # verbatim: the OpenVINO SDK the Windows Intel dispatch builds against and
-    # ships with moves from 2026.3.1 to 2026.4.1. Intel's Gemma 4 12B bundle
-    # for Panther Lake carries blob metadata 2.7, which the 2026.3 NPU plugin
-    # refuses ("Imported blob metadata version: 2.7 but the current version
-    # is: 2.6"). Drop the patch once the LiteRT pin contains 991d15588a.
+    # OpenVINO 2026.4.1 (which Intel's Gemma 4 12B for Panther Lake needs) is
+    # in the LiteRT pin since v0.19.0 (dcb657e8 contains 991d15588a), so the
+    # backport patch is gone.
     content = content.replace(
         '    name = "litert",\n',
         '    name = "litert",\n'
         '    patches = [\n'
         '        "//:flutter_gemma_litert_gpu_registry.patch",\n'
         '        "//:flutter_gemma_litert_google_tensor_dispatch_oss.patch",\n'
-        '        "//:flutter_gemma_litert_openvino_2026_4_1.patch",\n'
         '    ],\n'
         '    patch_args = ["-p1"],\n', 1)
     if 'flutter_gemma_litert_gpu_registry.patch' not in content:
@@ -405,14 +420,11 @@ else:
     print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
     print("  OK: litert archive applies patches/litert_gpu_registry_apple.patch")
     print("  OK: LiteRT Google Tensor dispatch drops its unused internal hooks dependency")
-    print("  OK: LiteRT pins OpenVINO 2026.4.1 (upstream 991d15588a)")
 PYEOF
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
     "$DIR/flutter_gemma_litert_gpu_registry.patch"
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
     "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
-  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_openvino_2026_4_1.patch" \
-    "$DIR/flutter_gemma_litert_openvino_2026_4_1.patch"
 else
   if [ -f "$WORKSPACE_FILE" ]; then
     # A tree patched by an older patch_c_api.sh has the sed but not the diff:
@@ -432,16 +444,8 @@ else
     fi
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
       "$DIR/flutter_gemma_litert_gpu_registry.patch"
-    if ! grep -q "flutter_gemma_litert_openvino_2026_4_1.patch" \
-        "$WORKSPACE_FILE"; then
-      echo "  ERROR: $WORKSPACE_FILE has no OpenVINO 2026.4.1 patch;" \
-        "start from a fresh LiteRT-LM tree" >&2
-      exit 1
-    fi
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
       "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
-    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_openvino_2026_4_1.patch" \
-      "$DIR/flutter_gemma_litert_openvino_2026_4_1.patch"
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
     echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2
@@ -547,6 +551,12 @@ PYEOF
 # patch rests on: a moved upstream line fails the build here, not a user's
 # engine_create.
 PATHW_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+# LITERTLM_SKIP_PATH_WEIGHTS=1 builds without this section: the v0.19.0
+# migration's check of whether 0.18.1's EmbeddingGemma 2 ABI fix made it
+# unnecessary.
+if [ "${LITERTLM_SKIP_PATH_WEIGHTS:-0}" = "1" ]; then
+  echo "  SKIP: section 13 (LITERTLM_SKIP_PATH_WEIGHTS=1)"
+else
 for f in external_weights_by_path.h external_weights_by_path.cc \
     external_weights_by_path_test.cc; do
   cp "$PATHW_SRC_DIR/$f" "$DIR/runtime/components/$f"
@@ -589,6 +599,7 @@ if grep -q 'GetWeightInMemoryMap' "$DIR/runtime/components/model_resources_liter
   pathw_fail "ModelResourcesLitertLm now provides an in-memory weight map"
 fi
 echo "  OK: section 13 anchors hold"
+fi
 
 # ── 14. EmbeddingEngine response lengths (EmbeddingGemma 2) ──
 # EmbeddingEngineImpl fills EmbeddingResponse.input_length and
@@ -665,7 +676,7 @@ echo "  OK: section 15 anchors hold"
 #   failed), numbered so a late callback of an older send cannot overwrite it;
 # - adds litert_lm_conversation_rewind_cancelled_turn (LITERT_LM_C_API_EXPORT,
 #   and section 1's Windows .def): cancel whatever still runs, wait until every
-#   task has ended (Conversation::WaitUntilDone, backported from upstream main),
+#   task has ended (Conversation::WaitUntilDone, upstream since v0.19.0),
 #   and only then decide — completed: nothing to do; cancelled: rewind to the
 #   checkpoint and prefill the stopped exchange without decoding; anything
 #   else: the caller deletes the conversation. Deciding before the wait read a
@@ -757,8 +768,16 @@ if 'strip_prefix = "sentencepiece-0.2.2"' not in block:
     raise SystemExit("  ERROR: section 17: sentencepiece is no longer 0.2.2 — "
                      "re-check the NUL-piece refusal and re-create the patch")
 if 'patches' in block:
-    raise SystemExit("  ERROR: section 17: the sentencepiece archive already "
-                     "has patches; merge ours into them")
+    # LiteRT-LM v0.19.0 carries its own (third_party/sentencepiece/
+    # sentencepiece.patch): it accepts exactly the piece "\0" when it is
+    # NORMAL in a BPE model without byte_fallback — the Qwen3-0.6B and
+    # FastVLM-0.5B case. Ours is not needed on top; the test target below
+    # still pins the behaviour.
+    if block.count('patches = ["@//third_party/sentencepiece:sentencepiece.patch"]') != 1:
+        raise SystemExit("  ERROR: section 17: the sentencepiece archive has "
+                         "patches other than upstream's NUL-piece one")
+    print("  SKIP: section 17 patch — upstream carries a NUL-piece fix")
+    raise SystemExit(0)
 content = content.replace(
     anchor,
     anchor +
@@ -796,5 +815,23 @@ cc_test(
 BUILDEOF
 fi
 echo "  OK: section 17 test target in support/tokenizer"
+
+# ── 18. Rewind bookkeeping (upstream PR #4197: LiteRT-LM #3947, #4195) ──
+# 0.19.0's RollBackProcessedTokens turns the token before a rewind target into
+# a pending token with no embedding, and on a model that takes embeddings
+# (Gemma 4 E2B) the next prefill writes its id into the embedding input: one
+# KV cell is wrong after every section 16 rewind (measured 2026-10-28,
+# -1.152 vs -0.792). The same PR restores last_prefill_token_id on rewind
+# (#4195). Upstream's diff verbatim; drop it once the pin contains it.
+REWIND4197_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/rewind_bookkeeping_4197.patch"
+if git -C "$DIR" apply --check "$REWIND4197_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$REWIND4197_PATCH"
+  echo "  OK: rewind restores embeddings and the last prefill token (#4197)"
+elif git -C "$DIR" apply --reverse --check "$REWIND4197_PATCH" 2>/dev/null; then
+  echo "  SKIP: rewind bookkeeping (#4197) already applied"
+else
+  echo "  ERROR: $REWIND4197_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
 
 echo "Patch complete."

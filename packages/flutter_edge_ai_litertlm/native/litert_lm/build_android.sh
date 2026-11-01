@@ -22,7 +22,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/android_arm64"
-LITERT_LM_DIR="/tmp/LiteRT-LM"
+LITERT_LM_DIR="${LITERT_LM_DIR:-/tmp/LiteRT-LM}"
 DEFAULT_REF="b2f686e2ed4718fb84ec398a61dd59ca0f0aff27"   # v0.18.0
 VERSION="${1:-}"
 

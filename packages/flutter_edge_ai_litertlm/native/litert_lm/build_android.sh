@@ -240,6 +240,22 @@ echo "=== Building StreamProxy with $NDK_CLANG ==="
   "$SCRIPT_DIR/stream_proxy.c"
 echo "  libStreamProxy.so → $PREBUILT_DIR/"
 
+# 7b. The MediaTek dispatch adapter (LiteRT-LM v0.19.0 on): our
+#     libLiteRtDispatch_MediaTek.so gives Google's legacy MediaTek dispatch,
+#     which the hook stores as libmtk_litert_dispatch_legacy.so, the versioned
+#     dispatch ABI LiteRT now requires (mediatek_dispatch_compat.c). Its host
+#     test runs first; it is part of CI too.
+echo ""
+echo "=== MediaTek dispatch adapter ==="
+LITERT_DIR="${LITERT_DIR:-}" "$SCRIPT_DIR/run_mediatek_dispatch_compat_test.sh"
+"$NDK_CLANG" -std=c11 -O2 -shared -fPIC -fvisibility=hidden \
+  -Wall -Wextra -Werror \
+  -Wl,-z,max-page-size=16384 \
+  -Wl,-soname,libLiteRtDispatch_MediaTek.so \
+  -o "$PREBUILT_DIR/libLiteRtDispatch_MediaTek.so" \
+  "$SCRIPT_DIR/mediatek_dispatch_compat.c"
+echo "  libLiteRtDispatch_MediaTek.so → $PREBUILT_DIR/"
+
 # 8. Copy companion libs from upstream prebuilt (we don't rebuild these
 #    — they're Google's GPU accelerator + sampler binaries).
 #

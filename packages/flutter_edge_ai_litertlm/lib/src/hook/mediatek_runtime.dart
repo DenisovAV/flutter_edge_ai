@@ -10,6 +10,13 @@
 // it reaches users only inside that app. The NeuroPilot runtime itself is
 // never bundled: the dispatch opens it from the device.
 //
+// From LiteRT-LM v0.19.0 LiteRT loads a dispatch only through the versioned
+// dispatch ABI, which Google's build (2.3.0, 2.3.2) does not export. The
+// dispatch is therefore stored as libmtk_litert_dispatch_legacy.so, a name
+// LiteRT's dispatch scan never matches, and the libLiteRtDispatch_MediaTek.so
+// that LiteRT loads is our adapter from the native tarball
+// (native/litert_lm/mediatek_dispatch_compat.c), which opens it.
+//
 // The AAR also carries LiteRT's MediaTek compiler plugin (on-device
 // compilation); it is left out — only bundles compiled ahead of time for a
 // MediaTek SoC run here.
@@ -42,8 +49,9 @@ const mediatekRuntimeSha256 =
 const mediatekDefaultMavenBase = 'https://dl.google.com/dl/android/maven2';
 
 /// Bumped whenever what this file writes into the cache changes for the same
-/// AAR, so an older cache is not reused.
-const mediatekCacheFormat = 1;
+/// AAR, so an older cache is not reused. 2: the dispatch is stored as
+/// [mediatekLegacyDispatchLib], behind our adapter.
+const mediatekCacheFormat = 2;
 
 /// URL of the MediaTek dispatch AAR under the Maven repository [mavenBase].
 Uri mediatekRuntimeAarUrl(String mavenBase) {
@@ -62,9 +70,14 @@ String mediatekCacheEntryName() =>
     '$mediatekRuntimeVersion-${mediatekRuntimeSha256.substring(0, 8)}'
     '-p$mediatekCacheFormat';
 
-/// File names of the libraries a complete cache entry holds.
+/// The dispatch's path inside the AAR.
+const mediatekAarDispatchEntry = 'jni/arm64-v8a/libLiteRtDispatch_MediaTek.so';
+
+/// File names of the libraries a complete cache entry holds: Google's
+/// dispatch, under the name only our adapter opens. The adapter itself comes
+/// from the native tarball.
 List<String> get mediatekLibFileNames => [
-  for (final n in mediatekNpuLibs) androidLibFileName(n),
+  androidLibFileName(mediatekLegacyDispatchLib),
 ];
 
 /// Makes the dispatch from the AAR ready to bundle: refused unless every
@@ -90,11 +103,14 @@ Directory promoteMediatekCache(Directory cacheRoot, File aar) =>
       mediatekLibFileNames,
       () {
         final entries = extractZipEntriesFromFile(aar, {
-          for (final f in mediatekLibFileNames) 'jni/arm64-v8a/$f',
+          mediatekAarDispatchEntry,
         });
+        final legacy = androidLibFileName(mediatekLegacyDispatchLib);
         return {
-          for (final f in mediatekLibFileNames)
-            f: prepareMediatekLibrary(f, entries['jni/arm64-v8a/$f']!),
+          legacy: prepareMediatekLibrary(
+            legacy,
+            entries[mediatekAarDispatchEntry]!,
+          ),
         };
       },
       () =>

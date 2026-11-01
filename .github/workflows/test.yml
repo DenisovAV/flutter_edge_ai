@@ -77,6 +77,12 @@ jobs:
       - name: StreamProxy host test
         run: packages/flutter_edge_ai_litertlm/native/litert_lm/run_stream_proxy_test.sh
 
+      # The MediaTek dispatch adapter (versioned dispatch ABI over Google's
+      # legacy dispatch): a fake legacy dispatch queried the way LiteRT does,
+      # and a one-slot-shifted adapter that must fail.
+      - name: MediaTek dispatch adapter host test
+        run: packages/flutter_edge_ai_litertlm/native/litert_lm/run_mediatek_dispatch_compat_test.sh
+
       # Every package that has tests, each run from its OWN directory. The loop
       # lives in tool/test_all.sh so CI and the local "before committing"
       # command are the same code — a second copy here would drift, which is

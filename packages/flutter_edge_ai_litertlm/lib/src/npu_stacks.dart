@@ -162,14 +162,25 @@ const mediatekNpuMavenUrlUserDefine = 'mediatek_npu_maven_url';
 /// mirrors that need credentials.
 const mediatekNpuAarUserDefine = 'mediatek_npu_aar';
 
-/// Google's MediaTek dispatch, from the AAR (Apache 2.0). Not in this
-/// package's native tarball: the hook fetches it for [mediatekNpuUserDefine].
+/// The MediaTek dispatch LiteRT loads: our adapter
+/// (`native/litert_lm/mediatek_dispatch_compat.c`, in the native tarball),
+/// which gives Google's dispatch ([mediatekLegacyDispatchLib]) the versioned
+/// dispatch ABI LiteRT requires from LiteRT-LM v0.19.0.
 const mediatekDispatchLib = 'LiteRtDispatch_MediaTek';
 
-/// The complete app-bundled MediaTek stack: the dispatch only. The AAR's
-/// compiler plugin is left out: only bundles compiled ahead of time for a
-/// MediaTek SoC run here, never an on-device compile.
-const mediatekNpuLibs = [mediatekDispatchLib];
+/// Google's MediaTek dispatch from the AAR (Apache 2.0), which exports only
+/// the legacy dispatch entry point. Not in this package's native tarball: the
+/// hook fetches it for [mediatekNpuUserDefine] and stores it under this name,
+/// which LiteRT's dispatch scan (any `libLiteRtDispatch*` file) never matches,
+/// so only the adapter opens it. The name is the adapter's `LEGACY_NAME`.
+const mediatekLegacyDispatchLib = 'mtk_litert_dispatch_legacy';
+
+/// The complete app-bundled MediaTek stack: the adapter and Google's
+/// dispatch, staged into one dispatch directory (the adapter opens the
+/// dispatch from its own directory). The AAR's compiler plugin is left out:
+/// only bundles compiled ahead of time for a MediaTek SoC run here, never an
+/// on-device compile.
+const mediatekNpuLibs = [mediatekDispatchLib, mediatekLegacyDispatchLib];
 
 /// The NeuroPilot adapters the MediaTek dispatch opens from the device, in the
 /// order it tries them (`neuron_adapter_api.cc` at the LiteRT pin: the mgvi
@@ -341,14 +352,17 @@ String npuDispatchLib(NpuStack vendor) => switch (vendor) {
   NpuStack.intel => intelDispatchLib,
 };
 
-/// Whether [vendor]'s dispatch ships in this package's native tarball (built
-/// from the LiteRT pin), rather than being fetched by the build hook from the
-/// vendor's own publication (MediaTek: Google's AAR, whose build needs
-/// MediaTek's NeuroPilot SDK, which may not be redistributed on its own).
+/// Whether [vendor]'s dispatch — the library LiteRT loads — ships in this
+/// package's native tarball (built from the LiteRT pin), rather than being
+/// fetched by the build hook from the vendor's own publication. Every vendor's
+/// does since LiteRT-LM v0.19.0; for MediaTek that library is our adapter,
+/// and Google's dispatch behind it ([mediatekLegacyDispatchLib]) is still
+/// fetched, since building it needs MediaTek's NeuroPilot SDK, which may not
+/// be redistributed on its own.
 bool npuDispatchInNativeTarball(NpuStack vendor) => switch (vendor) {
   NpuStack.qualcomm => true,
   NpuStack.googleTensor => true,
-  NpuStack.mediatek => false,
+  NpuStack.mediatek => true,
   NpuStack.intel => true,
 };
 

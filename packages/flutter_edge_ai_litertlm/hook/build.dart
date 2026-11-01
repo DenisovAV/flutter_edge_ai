@@ -1090,10 +1090,15 @@ Future<void> _processBundle({
         );
       case NpuStack.googleTensor:
         throw StateError('NpuStack.googleTensor has no stack for $targetAbi');
-      // Not from the native bundle: Google's AAR, fetched (see
-      // mediatek_runtime.dart for why).
+      // Our adapter from the native bundle, Google's dispatch behind it from
+      // its AAR, fetched (see mediatek_runtime.dart for why).
       case NpuStack.mediatek when os == OS.android:
-        await _registerMediatekNpu(input: input, output: output, stage: stage);
+        await _registerMediatekNpu(
+          input: input,
+          output: output,
+          prebuiltDir: prebuiltDir,
+          stage: stage,
+        );
       case NpuStack.mediatek:
         throw StateError('NpuStack.mediatek has no stack for $targetAbi');
       // In every Windows x64 build, through windowsExtraLibs above.
@@ -1178,27 +1183,41 @@ void _registerBundledNpuStack({
 // Opt-in MediaTek NPU dispatch (Android)
 // ============================================================================
 
-/// Registers the MediaTek dispatch, for an app that set `mediatek_npu`
-/// (checked by the caller's vendor loop, from the table): Google's build of
-/// it, from the `litert-npu-runtime-mediatek` AAR via the cache.
+/// Registers the MediaTek stack, for an app that set `mediatek_npu` (checked
+/// by the caller's vendor loop, from the table): our adapter from the native
+/// bundle, and Google's dispatch behind it, from the
+/// `litert-npu-runtime-mediatek` AAR via the cache, under the name only the
+/// adapter opens.
 Future<void> _registerMediatekNpu({
   required BuildInput input,
   required BuildOutputBuilder output,
+  required Uri prebuiltDir,
   required Uri Function(Uri) stage,
 }) async {
-  if (npuDispatchInNativeTarball(NpuStack.mediatek)) {
+  if (!npuDispatchInNativeTarball(NpuStack.mediatek)) {
+    throw StateError('MediaTek: its dispatch is not in the native bundle');
+  }
+  final adapterFile = _dylibFileName(OS.android, mediatekDispatchLib);
+  final adapter = prebuiltDir.resolve(adapterFile);
+  if (!File.fromUri(adapter).existsSync()) {
     throw StateError(
-      'MediaTek: its dispatch is in the native bundle, not fetched',
+      '[$_packageName] $mediatekNpuUserDefine: $adapterFile is not in this '
+      "release's Android native bundle; MediaTek needs a $_packageName "
+      'release whose native bundle carries it. Remove $mediatekNpuUserDefine '
+      'until then.',
     );
   }
   final dir = await _ensureMediatekRuntime(input, output);
   for (final name in mediatekNpuLibs) {
+    final fileName = _dylibFileName(OS.android, name);
     output.assets.code.add(
       CodeAsset(
         package: _packageName,
         name: 'src/native/$name',
         linkMode: DynamicLoadingBundled(),
-        file: stage(dir.uri.resolve(_dylibFileName(OS.android, name))),
+        file: stage(
+          name == mediatekDispatchLib ? adapter : dir.uri.resolve(fileName),
+        ),
       ),
     );
   }

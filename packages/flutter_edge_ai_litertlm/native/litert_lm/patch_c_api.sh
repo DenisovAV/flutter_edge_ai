@@ -579,7 +579,11 @@ pathw_fail() {
 }
 PATHW_UTILS="$DIR/runtime/executor/litert_compiled_model_executor_utils.cc"
 # The group name the rewrite looks for is the one upstream gives the section.
-grep -qF 'external_weights.sections["tflite_weights"]' "$PATHW_UTILS" ||
+# v0.19.0 also lets a model reference another model's weights as
+# "tflite_weights:<model type>" (tied embeddings deduplicated across models,
+# 90aac9c); this section rewrites only a model's own group, so such a bundle
+# still fails on Linux and Windows.
+grep -qF 'kModelWeightGroupName = "tflite_weights";' "$PATHW_UTILS" ||
   pathw_fail "GetExternalWeightResources no longer names the group \"tflite_weights\""
 # NotFound from GetWeightsSectionOffset must still mean "no scoped file".
 grep -qF 'absl::IsNotFound(section_offset.status())' "$PATHW_UTILS" ||

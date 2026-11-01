@@ -1,6 +1,8 @@
+diff --git a/runtime/components/BUILD b/runtime/components/BUILD
+index b680c6f..38923dd 100644
 --- a/runtime/components/BUILD
 +++ b/runtime/components/BUILD
-@@ -284,11 +284,46 @@ cc_test(
+@@ -299,11 +299,46 @@ cc_test(
      ],
  )
  
@@ -47,7 +49,7 @@
          ":model_resources",
          "@com_google_absl//absl/container:flat_hash_map",
          "@com_google_absl//absl/log:absl_log",
-@@ -297,6 +332,7 @@ cc_library(
+@@ -313,6 +348,7 @@ cc_library(
          "@com_google_absl//absl/status:statusor",
          "@com_google_absl//absl/strings",
          "@com_google_absl//absl/strings:string_view",
@@ -55,9 +57,11 @@
          "@litert//litert/cc:litert_buffer_ref",
          "@litert//litert/cc:litert_macros",
          "@litert//litert/cc:litert_model",
+diff --git a/runtime/components/model_resources_litert_lm.cc b/runtime/components/model_resources_litert_lm.cc
+index 0d25170..d638df2 100644
 --- a/runtime/components/model_resources_litert_lm.cc
 +++ b/runtime/components/model_resources_litert_lm.cc
-@@ -37,9 +37,11 @@
+@@ -38,9 +38,11 @@
  #include "absl/strings/ascii.h"  // from @com_google_absl
  #include "absl/strings/str_cat.h"  // from @com_google_absl
  #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -67,8 +71,8 @@
  #include "litert/cc/litert_model.h"  // from @litert
 +#include "runtime/components/external_weights_by_path.h"
  #include "runtime/components/model_resources.h"
+ #include "runtime/proto/any2any_metadata.pb.h"
  #include "runtime/proto/embedding_metadata.pb.h"
- #include "runtime/util/litert_lm_loader.h"
 @@ -102,6 +104,39 @@ absl::StatusOr<const litert::Model*> ModelResourcesLitertLm::GetTFLiteModel(
      return it->second.get();
    }
@@ -109,25 +113,27 @@
    if (enable_file_backed_model_loading_) {
      auto scoped_file = litert_lm_loader_->GetScopedFile();
      auto section_location = litert_lm_loader_->GetSectionLocation(
-@@ -329,8 +364,18 @@ ModelResourcesLitertLm::GetScopedFile() {
- 
+@@ -389,8 +424,18 @@ ModelResourcesLitertLm::GetWeightsSectionOffset(
  absl::StatusOr<std::pair<size_t, size_t>>
- ModelResourcesLitertLm::GetWeightsSectionOffset(ModelType model_type) {
+ ModelResourcesLitertLm::GetWeightsSectionOffset(
+     absl::string_view model_type_str) {
 +#if LITERT_LM_PATH_WEIGHTS
 +  // flutter_gemma patch (section 13): GetTFLiteModel addressed the weights by
 +  // path. NotFound makes GetExternalWeightResources hand no ScopedWeightSource
 +  // to SetExternalWeightScopedFile, whose C++ map the prebuilt runtime cannot
 +  // read.
-+  (void)model_type;
++  (void)model_type_str;
 +  return absl::NotFoundError(
 +      "TFLiteWeights are addressed by path (flutter_gemma patch section 13)");
 +#else
    return litert_lm_loader_->GetSectionLocation(
-       BufferKey(schema::AnySectionDataType_TFLiteWeights, model_type));
+       BufferKey(schema::AnySectionDataType_TFLiteWeights, model_type_str));
 +#endif  // LITERT_LM_PATH_WEIGHTS
  }
  
  absl::StatusOr<FileRegion>
+diff --git a/runtime/components/model_resources_litert_lm.h b/runtime/components/model_resources_litert_lm.h
+index 1aa16ae..f21ed15 100644
 --- a/runtime/components/model_resources_litert_lm.h
 +++ b/runtime/components/model_resources_litert_lm.h
 @@ -27,6 +27,7 @@
@@ -136,10 +142,10 @@
  #include "litert/cc/litert_model.h"  // from @litert
 +#include "runtime/components/external_weights_by_path.h"
  #include "runtime/components/model_resources.h"
- #include "runtime/proto/asr_metadata.pb.h"
+ #include "runtime/proto/any2any_metadata.pb.h"
  #include "runtime/proto/embedding_metadata.pb.h"
-@@ -111,6 +112,13 @@ class ModelResourcesLitertLm : public ModelResources {
-       ModelType model_type) override;
+@@ -141,6 +142,13 @@ class ModelResourcesLitertLm : public ModelResources {
+       absl::string_view model_type_str) override;
  
   private:
 +  // flutter_gemma patch (section 13): the rewritten flatbuffers of models whose
@@ -150,5 +156,5 @@
 +      std::unique_ptr<external_weights_by_path::PathAddressedModel>>
 +      path_addressed_models_;
    absl::flat_hash_map<std::string, std::unique_ptr<litert::Model>> model_map_;
-   absl::flat_hash_map<ModelType, std::unique_ptr<Tokenizer>> tokenizer_map_;
+   absl::flat_hash_map<std::string, std::unique_ptr<Tokenizer>> tokenizer_map_;
    std::unique_ptr<proto::LlmMetadata> llm_metadata_;

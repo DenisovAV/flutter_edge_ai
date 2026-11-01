@@ -12,7 +12,7 @@ Nothing is published: CI runs are artifact-only, no tag, no release.
 | Linux x86_64 | CI run 41277710260 (no §13), 41281104298 (§13) | ✅ both | `libLiteRtLm.so` now NEEDs `libwebgpu_dawn.so` (the WebGPU TopK sampler is linked in); Dawn already ships on Linux. |
 | Linux arm64 | same | ✅ both | §13 unit test passes in the §13 run. |
 | Linux arm64 Qualcomm dispatch | same | ✅ | Exports `LiteRtDispatchQueryInterface` (LiteRT's versioned dispatch ABI); the build check now follows the pin. |
-| Windows x86_64 (+ Intel NPU dispatch) | CI run 41277710260 | ✅ | §13 run pending at the time of writing. No TopK WebGPU sampler exists for Windows any more (upstream marks it incompatible), so Windows GPU samples on the CPU. |
+| Windows x86_64 (+ Intel NPU dispatch) | CI runs 41277710260, 41281104298 | ✅ both | No TopK WebGPU sampler exists for Windows any more (upstream marks it incompatible), so Windows GPU samples on the CPU. |
 | macOS arm64 | local | ✅ | Built with `--//runtime/executor:gpu_accelerator=metal` (see "Static GPU accelerator"). `minos` 11.0 / 14.0; the real framework id fits the Metal accelerator's header slack. |
 | iOS arm64 + simulator | local | ✅ | Static ML Drift Metal accelerator, no Dawn. |
 | Android arm64 | local | ✅ with §19 | Google Tensor and Qualcomm dispatches built from the pin, both export `LiteRtDispatchQueryInterface`; all PT_LOAD 16 KB aligned; DT_NEEDED closure passes. |
@@ -26,7 +26,7 @@ Nothing is published: CI runs are artifact-only, no tag, no release.
 | §10b gpu_registry (Apple) | keep, re-created | Bazel refused the old hunk (it needs zero fuzz); macOS gained the bare `LiteRtMetalAccelerator` name. Possibly unnecessary now on Apple: the accelerator is linked in statically (below) |
 | §11 Qualcomm options on Linux | keep, re-created | upstream added `SetHtpFileReadMemoryBudgetMB(16)` inside the Android-only block |
 | §12 Linux constraint bridge | keep, **constants unchanged** | new providers (x86_64 `fc4e17a9…`, arm64 `4685001b…`) disassembled: `Start` returns in rax/x0, `StatusOr` through the hidden slot with rep 1, mask `{vtable, vocab@0x08, begin@0x10, size@0x18, cap@0x20}`; Gemma 4 tool calls pass on Linux x86_64 and arm64 |
-| §13 external weights by path | **keep**, re-created | without it EmbeddingGemma 2 fails engine create on Linux x86_64 and arm64 (`embedding_engine_impl.cc:585`) and crashes on Windows (exit 139); with it Linux passes (dim 768, norm 1.0). Rewrites a model's own `tflite_weights` group only: v0.19 bundles that reference another model's weights (`tflite_weights:<type>`, 90aac9c) still fail on Linux/Windows |
+| §13 external weights by path | **keep**, re-created | without it EmbeddingGemma 2 fails engine create on Linux x86_64 and arm64 (`embedding_engine_impl.cc:585`) and crashes on Windows (exit 139); with it Linux and Windows pass (dim 768, norm 1.0). Rewrites a model's own `tflite_weights` group only: v0.19 bundles that reference another model's weights (`tflite_weights:<type>`, 90aac9c) still fail on Linux/Windows |
 | §14 embedding response lengths | keep, 1.0 shape | `input_length` 14 read through the new getters on macOS and Linux |
 | §15 Windows no-fd loading | keep (applies) | #4023 closed upstream without a code change |
 | §16 rewind_cancelled_turn | keep, re-created | upstream `Conversation::WaitUntilDone` used; checkpoint saved synchronously right before the send's prefill |
@@ -50,9 +50,9 @@ x86_64) and an Android arm64 emulator; GPU on macOS (Metal).
 | #3561 scoring | ✅ fixed | the self-check pair now differs (FunctionGemma 11.69–12.02, Gemma 4 0.40 CPU / 1.89 Metal) → mode `plain`; a target after a rewind is bit-identical to one alone, CPU and Metal, 8/8 repeats | `once` and `_reprefillFor` can go; keep the self-check; re-fit nothing, but re-run the golden packs (litetune fitted under `once`) |
 | MTP / speculative decoding (Gemma 4 E2B has `tf_lite_mtp_drafter`) | ⚠️ no gain | decode tok/s off / on / adaptive / default: Metal 46.1 / 41.0 / 39.4 / 34.0; Linux x86_64 CPU 30.9 / 15.4 / 24.2 / 30.6; Linux arm64 28.6 / 21.8 / 26.8 / 28.4; Windows 19.5 / 13.5 / 17.4 / 19.4. On Metal, `on`/`adaptive` change the greedy text; on CPU the text is unchanged | Do not enable it by default; default behaves as off. Adreno not run yet |
 | Tool calls | ✅ (CPU, Metal) | Gemma 4 E2B: macOS CPU + Metal, Linux x86_64 and arm64 (§12 bridge, no abort), Windows. FunctionGemma answers in text instead of calling on arm64 (Linux, Android emulator) — a model decision, no failure | NPU (Qualcomm, Tensor, Intel) not run yet |
-| EmbeddingGemma 2 | ✅ with §13 | macOS 0.16 s/query, Linux x86_64 0.16 s, arm64 0.07 s; dim 768, norm 1.0 | §13 stays |
-| Long prompt past one prefill chunk | ✅ (CPU, Metal) | Gemma 4 E2B answers the fact at the end: Metal, Linux x86_64/arm64 | #3508 (Gemma 3 on the NPU) not run yet |
-| Greedy determinism | ❌ **regression on macOS CPU** | same prompt, two conversations, one engine: 0.18 PASS, 0.19 FAIL (FunctionGemma and Gemma 4, diverges at char 18–205) with the default thread count and with 4 or 6 threads; PASS with `num_threads` 1; Metal PASS; Linux x86_64/arm64 runners PASS; Android emulator PASS | Our "greedy run1 == run2" assertions will flake on Apple Silicon CPU. Not explained; an XNNPack/KleidiAI change in the LiteRT pin is a guess, not measured |
+| EmbeddingGemma 2 | ✅ with §13 | macOS 0.16 s/query, Linux x86_64 0.16 s, arm64 0.07 s, Windows 0.06 s; dim 768, norm 1.0 | §13 stays |
+| Long prompt past one prefill chunk | ✅ (CPU, Metal) | Gemma 4 E2B answers the fact at the end: Metal, Linux x86_64/arm64, Windows | #3508 (Gemma 3 on the NPU) not run yet |
+| Greedy determinism | ❌ **regression on macOS CPU** | same prompt, two conversations, one engine: 0.18 PASS, 0.19 FAIL (FunctionGemma and Gemma 4, diverges at char 18–205) with the default thread count and with 4 or 6 threads; PASS with `num_threads` 1; Metal PASS; Linux x86_64/arm64 and Windows runners PASS; Android emulator PASS | Our "greedy run1 == run2" assertions will flake on Apple Silicon CPU. Not explained; an XNNPack/KleidiAI change in the LiteRT pin is a guess, not measured |
 
 ## Findings that change the plan
 

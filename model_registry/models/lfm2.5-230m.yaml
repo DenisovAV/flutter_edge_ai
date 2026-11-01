@@ -1,0 +1,41 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: lfm2.5-230m
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: LFM2.5 230M
+family: lfm2
+arch_class: conv-attention-hybrid
+license: other
+license_url: https://huggingface.co/LiquidAI/LFM2.5-230M/blob/main/LICENSE
+model_type: general
+capabilities:
+  image: false
+  audio: false
+  function_calls: false
+  thinking: false
+runtime:
+  max_tokens: 4096
+  preferred_backend: gpu
+variants:
+- slug: int4
+  file_type: litertlm
+  file:
+    repo: litert-community/LFM2.5-230M
+    revision: 58f0603b4576964013c87bbd75124a358d48cd44
+    path: LFM2.5-230M_int4.litertlm
+    sha256: c9065e28358a1f2f61a9c0d86172d6d16254d0f9097a519e82fc1346c17f9c62
+    size: 176756720
+    install_filename: LFM2.5-230M_int4.litertlm
+  example:
+  - lfm25_230m
+- slug: int8
+  file_type: litertlm
+  file:
+    repo: litert-community/LFM2.5-230M
+    revision: 58f0603b4576964013c87bbd75124a358d48cd44
+    path: LFM2.5-230M_int8.litertlm
+    sha256: 3c891cb3ab299385b11d04b45b32593a2002f9a45abeb30b4be2385c09878179
+    size: 266053344
+    install_filename: LFM2.5-230M_int8.litertlm

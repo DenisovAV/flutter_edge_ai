@@ -1,0 +1,6 @@
+{
+  "size": 3038117888,
+  "problem": "notLitertlm",
+  "message": "https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4-Web.litertlm is not a .litertlm container (no LITERTLM magic)",
+  "first_bytes_hex": "2000000054464c330000000000001200"
+}

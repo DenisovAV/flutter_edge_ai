@@ -1,0 +1,17 @@
+# The hosts the registry records a status for: an operating system and a CPU
+# architecture, in `Abi.current()` spelling, plus the web. The website's
+# primary filter. Order is the website's column order.
+- id: android_arm64
+  label: Android
+- id: ios_arm64
+  label: iOS
+- id: macos_arm64
+  label: macOS
+- id: windows_x64
+  label: Windows x64
+- id: linux_x64
+  label: Linux x64
+- id: linux_arm64
+  label: Linux arm64
+- id: web
+  label: Web

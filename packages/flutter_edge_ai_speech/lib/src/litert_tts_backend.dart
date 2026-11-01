@@ -1,15 +1,23 @@
 import 'package:flutter_edge_ai/engine.dart';
+
+import 'catalog/speech_catalog.dart' show LiteRtSpeechModels;
 import 'litert/litert_speech_synthesizer.dart';
 import 'model/tts_model_profile.dart';
 
 /// LiteRT TTS backend. Sole TTS backend — the model is selected by
 /// [TtsModelSpec.ttsModelType], so `canHandle` is unconditionally true. Pure
 /// factory; core owns the singleton lifecycle via [SpeechSynthesizer.addCloseListener].
-class LiteRtTtsBackend implements TtsBackendProvider {
+class LiteRtTtsBackend implements TtsBackendProvider, ModelCatalogSource {
   const LiteRtTtsBackend();
 
   @override
   String get name => 'LiteRT TTS';
+
+  /// The text-to-speech models this backend runs, pinned to Hugging Face commits:
+  /// [LiteRtSpeechModels.ttsCatalog]. `FlutterEdgeAi.catalog` includes it once
+  /// the backend is passed to `initialize`.
+  @override
+  ModelCatalog get modelCatalog => LiteRtSpeechModels.ttsCatalog;
 
   @override
   int get priority => 0;

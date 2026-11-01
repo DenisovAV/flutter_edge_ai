@@ -17,16 +17,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
+    show LiteRtLmModels;
 // ignore: implementation_imports — reads core's file-system service to check install paths
 import 'package:flutter_edge_ai/src/di/service_registry.dart'
     show ServiceRegistry;
 import 'inference_test_helpers.dart' show registerTestEngines;
-
-// ── Model URLs (for iOS download, macOS/Android use local files) ──
-const _gemma4Url =
-    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
-
-const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
+import 'registry_evidence.dart';
 
 // ── Local paths ──
 String get _androidDir => '/data/local/tmp/flutter_gemma_test';
@@ -38,21 +35,70 @@ String get _windowsDir => '${Platform.environment['USERPROFILE']}\\models';
 Uint8List _testImage = Uint8List(0);
 Uint8List _testAudio = Uint8List(0);
 
-/// Install model: from file on macOS/Android, from network on iOS.
-Future<void> _install({
-  required String? localPath,
-  required String networkUrl,
-}) async {
+/// Whether the media are the example's bundled fixtures, whose content the
+/// checks below know: a black puppy on boards, and a woman saying "She had
+/// your dark suit in greasy wash water all year". A staged file of unknown
+/// content still runs the check, but records no registry evidence.
+bool _imageIsFixture = false;
+bool _audioIsFixture = false;
+
+/// [check]'s answer names what the bundled fixture holds: at least [least]
+/// of [words], without regard to case.
+void _expectNames(String answer, List<String> words, {int least = 1}) {
+  final low = answer.toLowerCase();
+  final hits = words.where(low.contains).length;
+  expect(
+    hits,
+    greaterThanOrEqualTo(least),
+    reason: 'expected $least of $words, got: "$answer"',
+  );
+}
+
+/// The Gemma 4 E2B file the group installed, or null when it installed the
+/// registry build from Hugging Face.
+String? _gemma4Path;
+
+/// Install Gemma 4 E2B: a staged file on macOS/Android/desktop, otherwise the
+/// registry's generic build (pinned to its Hugging Face commit).
+Future<void> _installGemma4(String? localPath) async {
   if (localPath != null && File(localPath).existsSync()) {
     await FlutterEdgeAi.installModel(
       modelType: ModelType.gemmaIt,
       fileType: ModelFileType.litertlm,
     ).fromFile(localPath).install();
+    _gemma4Path = localPath;
   } else {
-    await FlutterEdgeAi.installModel(
-      modelType: ModelType.gemmaIt,
-      fileType: ModelFileType.litertlm,
-    ).fromNetwork(networkUrl, token: _token).install();
+    // Gemma 4 is not gated.
+    await FlutterEdgeAi.installModelFromCatalog(
+      LiteRtLmModels.gemma4E2bIt.generic,
+    ).install();
+    _gemma4Path = null;
+  }
+}
+
+/// Registry evidence that [check] passed on the shared Gemma 4 E2B model, on
+/// the backend that ran it: the vision or audio encoder's own backend for
+/// those checks (Gemma 4's audio encoder is constrained to the CPU, so a GPU
+/// run's audio is not GPU audio), the text model's for the others.
+Future<void> _gemma4Evidence(String check) async {
+  final model = _sharedModel;
+  final backend = switch (check) {
+    'vision' => model?.activeVisionBackend,
+    'audio' => model?.activeAudioBackend,
+    _ => model?.activeBackend,
+  };
+  if (backend == null) {
+    fail('$check passed, but the model reports no backend for it');
+  }
+  final path = _gemma4Path;
+  if (path != null) {
+    await recordEvidence(path: path, backend: backend, check: check);
+  } else {
+    await recordCatalogEvidence(
+      LiteRtLmModels.gemma4E2bIt.generic,
+      backend: backend,
+      check: check,
+    );
   }
 }
 
@@ -222,9 +268,17 @@ void main() {
   setUpAll(() async {
     await registerTestEngines();
 
-    // Load test assets — try filesystem first (host paths on macOS/Linux/Windows
-    // and Android adb-pushed paths), then fall back to bundled Flutter assets
-    // (works on iOS device + simulator + any platform where assets/test/ ships).
+    // Load test assets — the bundled fixtures first, whose content the vision
+    // and audio checks assert, then the host files staged next to the models
+    // (Android adb-pushed paths, desktop Documents) when assets/test/ does
+    // not ship.
+    try {
+      final data = await rootBundle.load('assets/test/test_image.jpg');
+      _testImage = data.buffer.asUint8List();
+      _imageIsFixture = true;
+    } catch (_) {
+      /* asset not bundled — try the staged files */
+    }
     for (final path in [
       '$_androidDir/test_image.jpg',
       '$_macosDir/test_image.png',
@@ -234,18 +288,18 @@ void main() {
       if (Platform.isWindows) '$_windowsDir\\test_image.jpg',
       '${Platform.environment['HOME']}/Downloads/test_image.jpg',
     ]) {
+      if (_testImage.isNotEmpty) break;
       if (File(path).existsSync()) {
         _testImage = File(path).readAsBytesSync();
         break;
       }
     }
-    if (_testImage.isEmpty) {
-      try {
-        final data = await rootBundle.load('assets/test/test_image.jpg');
-        _testImage = data.buffer.asUint8List();
-      } catch (_) {
-        /* asset not bundled — leave empty */
-      }
+    try {
+      final data = await rootBundle.load('assets/test/test_audio.wav');
+      _testAudio = data.buffer.asUint8List();
+      _audioIsFixture = true;
+    } catch (_) {
+      /* asset not bundled — try the staged files */
     }
     for (final path in [
       '$_androidDir/test_audio.wav',
@@ -253,21 +307,17 @@ void main() {
       if (Platform.isLinux) '$_linuxDir/test_audio.wav',
       if (Platform.isWindows) '$_windowsDir\\test_audio.wav',
     ]) {
+      if (_testAudio.isNotEmpty) break;
       if (File(path).existsSync()) {
         _testAudio = File(path).readAsBytesSync();
         break;
       }
     }
-    if (_testAudio.isEmpty) {
-      try {
-        final data = await rootBundle.load('assets/test/test_audio.wav');
-        _testAudio = data.buffer.asUint8List();
-      } catch (_) {
-        /* asset not bundled — leave empty */
-      }
-    }
     print('Platform: ${Platform.operatingSystem}');
-    print('Assets: image=${_testImage.length}B, audio=${_testAudio.length}B');
+    print(
+      'Assets: image=${_testImage.length}B (fixture: $_imageIsFixture), '
+      'audio=${_testAudio.length}B (fixture: $_audioIsFixture)',
+    );
   });
 
   // ══════════════════════════════════════════════════════════════════
@@ -275,10 +325,7 @@ void main() {
   // ══════════════════════════════════════════════════════════════════
   group('Gemma4-E2B', () {
     setUpAll(() async {
-      await _install(
-        localPath: _localPath('gemma-4-E2B-it.litertlm'),
-        networkUrl: _gemma4Url,
-      );
+      await _installGemma4(_localPath('gemma-4-E2B-it.litertlm'));
     });
 
     tearDownAll(_closeSharedModel);
@@ -287,12 +334,14 @@ void main() {
       final r = await _chat(PreferredBackend.cpu, 4096, 'Say hi');
       print('[Gemma4 CPU] $r');
       expect(r, isNotEmpty);
+      await _gemma4Evidence('text');
     });
 
     testWidgets('GPU text', (t) async {
       final r = await _chat(PreferredBackend.gpu, 4096, 'What is 2+2?');
       print('[Gemma4 GPU] $r');
       expect(r, isNotEmpty);
+      await _gemma4Evidence('text');
     });
 
     testWidgets('GPU streaming', (t) async {
@@ -315,6 +364,12 @@ void main() {
       );
       print('[Gemma4 vision] $r');
       expect(r, isNotEmpty);
+      if (!_imageIsFixture) {
+        print('[Gemma4 vision] staged image of unknown content: no evidence');
+        return;
+      }
+      _expectNames(r, const ['dog', 'puppy', 'pup', 'labrador']);
+      await _gemma4Evidence('vision');
     });
 
     testWidgets('GPU audio', (t) async {
@@ -325,12 +380,25 @@ void main() {
       final r = await _chat(
         PreferredBackend.gpu,
         4096,
-        'What did you hear?',
+        'Transcribe this audio.',
         supportAudio: true,
         audio: _testAudio,
       );
       print('[Gemma4 audio] $r');
       expect(r, isNotEmpty);
+      if (!_audioIsFixture) {
+        print('[Gemma4 audio] staged audio of unknown content: no evidence');
+        return;
+      }
+      _expectNames(r, const [
+        'dark',
+        'suit',
+        'greasy',
+        'wash',
+        'water',
+        'year',
+      ], least: 3);
+      await _gemma4Evidence('audio');
     });
 
     testWidgets('GPU thinking', (t) async {
@@ -687,6 +755,9 @@ void main() {
   group('Gemma4-E2B NPU', () {
     tearDownAll(_closeSharedModel);
 
+    /// The NPU bundle the group staged, for the registry evidence.
+    String? npuPath;
+
     // Real NPU tests need a model precompiled for the target NPU (Intel
     // LunarLake / PantherLake or Qualcomm QNN). Generic Gemma 4 from HF
     // doesn't carry NPU executor sections. Whether `engine_create` rejects it
@@ -706,7 +777,15 @@ void main() {
           '$_androidDir/gemma-4-E2B-it_qualcomm_sm8750.litertlm',
         if (Platform.isAndroid)
           '$_androidDir/gemma-4-E2B-it_qualcomm_sm8850.litertlm',
-        // Windows (Intel NPU): LunarLake/PantherLake-compiled model.
+        // Android (Google Tensor G6, opt-in google_tensor_npu): Google's G6
+        // bundle from the same repo. LiteRT refuses it on another Tensor.
+        if (Platform.isAndroid)
+          '$_androidDir/gemma-4-E2B-it_Google_Tensor_G6.litertlm',
+        // Windows (Intel NPU): Google's Lunar Lake bundle from the same repo
+        // first — the registry build, so the run counts as its evidence —
+        // then a locally compiled one.
+        if (Platform.isWindows)
+          '$_windowsDir\\gemma-4-E2B-it_intel_LNL.litertlm',
         if (Platform.isWindows)
           '${Platform.environment['USERPROFILE']}\\dev-gemma4-2b-lnl\\gemma4_2b_lnl.litertlm',
         // Linux arm64 (Qualcomm QNN): the SoC's bundle staged in ~/models.
@@ -728,6 +807,7 @@ void main() {
 
     Future<InferenceModel?> _installAndGetNpu() async {
       final npuModelPath = _findNpuModel();
+      npuPath = npuModelPath;
       if (npuModelPath == null) {
         // A skip the report shows as one, not a pass: a bare `return` from the
         // test read as PASSED, which is how a missing model looked green.
@@ -828,6 +908,12 @@ void main() {
         r1,
         equals(r2),
         reason: 'NPU should ignore seed and produce deterministic output',
+      );
+      // _installAndGetNpu asserted that the NPU ran.
+      await recordEvidence(
+        path: npuPath!,
+        backend: PreferredBackend.npu,
+        check: 'deterministic text',
       );
     });
 

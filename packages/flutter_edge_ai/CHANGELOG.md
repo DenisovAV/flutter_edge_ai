@@ -1,6 +1,8 @@
 ## 2.5.5
 - `uninstallModel` removes a directory (ORT-GenAI) model by its name (#730).
 - `uninstallEmbedder`, `uninstallStt` and `uninstallTts` close the model loaded from those files (#735).
+- Model catalog: `installModelFromCatalog`, `fromCatalog`, and `expectedSize` checks on network installs (#734).
+- `installTts().withProgress` counts bytes across the bundle, not finished files (#751).
 
 ## 2.5.4
 - `ModelType.gemma4` on `.bin`/`.tflite`: Gemma 4's own turn markers, not Gemma 3's (#705).

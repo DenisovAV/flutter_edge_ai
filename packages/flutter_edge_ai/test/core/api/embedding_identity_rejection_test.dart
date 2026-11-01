@@ -3,10 +3,10 @@
 // said, in release builds too, and getActiveEmbedder names the reason instead
 // of the false "No active embedding model set".
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/mobile/flutter_edge_ai_mobile.dart';
@@ -14,6 +14,7 @@ import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.d
 import 'package:flutter_edge_ai/src/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
+import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -85,24 +86,36 @@ void main() {
     });
   });
 
+  test('under EdgeAiLogLevel.none a refused record says nothing, and still '
+      'fails closed', () async {
+    SharedPreferences.setMockInitialValues({
+      PreferencesKeys.activeEmbeddingIdentityRecord:
+          _litertlmWithTokenizerRecord(),
+    });
+    edgeAiLogLevel = EdgeAiLogLevel.none;
+    addTearDown(() => edgeAiLogLevel = EdgeAiLogLevel.info);
+    final manager = MobileModelManager();
+    final printed = await _said(manager.ensureInitialized);
+    expect(manager.activeEmbeddingModel, isNull);
+    expect(
+      rejectedActiveEmbeddingIdentity,
+      contains('carries its own tokenizer'),
+    );
+    expect(printed.where((l) => l.contains('could not be read')), isEmpty);
+  });
+
   test('a refused record fails closed, is printed once with its reason, and '
       'getActiveEmbedder says so', () async {
     SharedPreferences.setMockInitialValues({
       PreferencesKeys.activeEmbeddingIdentityRecord:
           _litertlmWithTokenizerRecord(),
     });
-    final printed = <String>[];
     final plugin = FlutterEdgeAiMobile();
-    await runZoned(
-      () async {
-        await plugin.modelManager.ensureInitialized();
-        // A second manager reading the same record says nothing new.
-        await MobileModelManager().ensureInitialized();
-      },
-      zoneSpecification: ZoneSpecification(
-        print: (self, parent, zone, line) => printed.add(line),
-      ),
-    );
+    final printed = await _said(() async {
+      await plugin.modelManager.ensureInitialized();
+      // A second manager reading the same record says nothing new.
+      await MobileModelManager().ensureInitialized();
+    });
 
     expect(plugin.modelManager.activeEmbeddingModel, isNull);
     final notices = printed.where((l) => l.contains('could not be read'));
@@ -185,14 +198,8 @@ void main() {
       PreferencesKeys.activeSttModelType: SttModelType.values.first.name,
     });
 
-    final printed = <String>[];
     final manager = MobileModelManager();
-    await runZoned(
-      manager.ensureInitialized,
-      zoneSpecification: ZoneSpecification(
-        print: (self, parent, zone, line) => printed.add(line),
-      ),
-    );
+    final printed = await _said(manager.ensureInitialized);
 
     expect(manager.activeEmbeddingModel, isNull, reason: 'fails closed');
     expect(
@@ -241,4 +248,18 @@ final class _FixedPathProvider extends PathProviderPlatform {
 
   @override
   Future<String?> getTemporaryPath() async => _path;
+}
+
+/// What [body] says through the log sink (`debugPrint`), which a start-up
+/// restore notice goes through.
+Future<List<String>> _said(Future<void> Function() body) async {
+  final said = <String>[];
+  final sink = debugPrint;
+  debugPrint = (message, {wrapWidth}) => said.add(message ?? '');
+  try {
+    await body();
+  } finally {
+    debugPrint = sink;
+  }
+  return said;
 }

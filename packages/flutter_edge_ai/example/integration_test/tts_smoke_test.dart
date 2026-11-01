@@ -1,11 +1,13 @@
 // Portable cross-platform on-device TTS e2e (Matcha). Runs the full public
-// flow (initialize -> installTts -> getActiveTts -> synthesize) and asserts a
+// flow (initialize -> installTts().fromCatalog -> getActiveTts -> synthesize) on the
+// registry's Matcha bundle, pinned to its Hugging Face commit, and asserts a
 // TOLERANCE oracle (non-silent + duration/sample-count/RMS within ±tolerance
 // of the macOS-CPU golden), NOT a byte-exact match: a different arch/libm/
 // accelerator can legitimately differ in the low float bits. Byte-identity to
 // the committed golden is reported informationally. This is the portable
 // counterpart to the byte-exact `tts_matcha_test.dart` (which is macOS-CPU
-// specific) — it is meant to pass on every native platform.
+// specific) — it is meant to pass on every native platform. A pass prints the
+// registry evidence line.
 //
 // Run: cd packages/flutter_edge_ai/example && \
 //   flutter test integration_test/tts_smoke_test.dart -d <device>
@@ -17,12 +19,16 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'
-    show FlutterEdgeAi, TtsModelType;
+    show FlutterEdgeAi, PreferredBackend, TtsModelType;
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
-    show LiteRtTtsBackend;
+    show LiteRtSpeechModels, LiteRtTtsBackend;
 
-const _modelUrl =
-    'https://huggingface.co/litert-community/Matcha-TTS/resolve/main/';
+import 'registry_evidence.dart';
+
+// A phone whose downloads crawl (a DDP phone reaches Hugging Face over
+// IPv6/NAT64 at a few KB/s) runs on a staged copy of the bundle, laid out like
+// the repository; the evidence then comes from its first file's sha256.
+const _bundleDir = String.fromEnvironment('TTS_BUNDLE_DIR');
 
 // Golden reference values (captured on macOS CPU).
 const _goldenSamples = 19456;
@@ -37,10 +43,15 @@ void main() {
     (_) async {
       await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
-      await FlutterEdgeAi.installTts()
-          .fromNetwork(_modelUrl)
-          .ofType(TtsModelType.matcha)
-          .install();
+      final variant = LiteRtSpeechModels.matchaTts.bundle;
+      if (_bundleDir.isNotEmpty) {
+        await FlutterEdgeAi.installTts()
+            .fromFile(_bundleDir)
+            .ofType(TtsModelType.matcha)
+            .install();
+      } else {
+        await FlutterEdgeAi.installTts().fromCatalog(variant).install();
+      }
 
       final synth = await FlutterEdgeAi.getActiveTts();
 
@@ -112,6 +123,20 @@ void main() {
           closeTo(_goldenRms, 0.02),
           reason: 'RMS out of ±0.02 tolerance vs golden ($_goldenRms)',
         );
+        // No preferredBackend: the synthesizer runs on the CPU.
+        if (_bundleDir.isNotEmpty) {
+          await recordEvidence(
+            path: '$_bundleDir/${variant.files.first.installFilename}',
+            backend: PreferredBackend.cpu,
+            check: 'synthesizes within the golden tolerance',
+          );
+        } else {
+          await recordCatalogEvidence(
+            variant,
+            backend: PreferredBackend.cpu,
+            check: 'synthesizes within the golden tolerance',
+          );
+        }
       } finally {
         await synth.close();
       }

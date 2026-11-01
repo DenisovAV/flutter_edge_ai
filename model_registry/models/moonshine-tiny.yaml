@@ -1,0 +1,410 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: moonshine-tiny
+kind: stt
+package: flutter_edge_ai_speech
+display_name: Moonshine Tiny
+family: moonshine
+arch_class: speech-recognition
+license: mit
+license_url: https://opensource.org/license/mit
+stt_type: moonshine
+variants:
+- slug: f32
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32.tflite
+    sha256: 16f281f1d3d23124e6adbdead8730d46f97cd105c299a9b94608d033c1151b12
+    size: 109373140
+    install_filename: moonshine_tiny_5s_f32.tflite
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+  example:
+  - moonshineTiny
+- slug: i8
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_i8.tflite
+    sha256: 97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9
+    size: 51936896
+    install_filename: moonshine_tiny_5s_i8.tflite
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+  example:
+  - moonshineTinyInt8
+- slug: f32-npu-mt6877
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT6877.tflite
+    sha256: aa89556f7f16ed4c98405f53e6d7335b9249191d644f12b814439d6cc735fe73
+    size: 101947496
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT6877.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6877
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6878
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT6878.tflite
+    sha256: 955683ce3d968ba6e35cef741911d99e6981b21da6aa65928d7254f63345cbb0
+    size: 98265852
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT6878.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6878
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6879
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT6879.tflite
+    sha256: f3cec70fbefc3c0995e3b64ba168531e8f1ac1bca3243889ac527ac60908ed90
+    size: 101947496
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT6879.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6879
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6897
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT6897.tflite
+    sha256: 95d48832839473d145b31e1b2e404d691fd568fe2c3bc0bc9d30c4fbb8989db2
+    size: 97534400
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT6897.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6897
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6983
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT6983.tflite
+    sha256: e0f359d0783191a97301e264d7e957310ccfff48ccee224b590334210471a06e
+    size: 98265852
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT6983.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6983
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6985
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT6985.tflite
+    sha256: f11b1f48b48bd3969b50e384ee846a9f56045ab64e632e3cd237448b5fa2060f
+    size: 98265852
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT6985.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6985
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6989
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT6989.tflite
+    sha256: 171723ab7a9256d971b3b22c1acd221e7d1836f041c104673c4b9ff9e724004d
+    size: 97291772
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT6989.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6989
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6991
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT6991.tflite
+    sha256: 4dbff02824f8fc67853fb7003987e79fd6ac0ddcf42d0675394f8c99be0ed8a3
+    size: 97548784
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT6991.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6991
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6993
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT6993.tflite
+    sha256: 2821a5f1ac1457d879c581ef5e88949eefcb20ef734b827d8f347bb502b0ad38
+    size: 94990336
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT6993.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6993
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt8171
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT8171.tflite
+    sha256: f65ad4e7d0d12e56748bfff2168b49bfec2eb3dc82ffe2d1801368eeab4a41ab
+    size: 97548784
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT8171.tflite
+  npu:
+    vendor: mediatek
+    soc: mt8171
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt8188
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT8188.tflite
+    sha256: 9a0632e8b9004256e68d80b2ce760641cafaee1061847082f8a55c8f55daf093
+    size: 98265852
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT8188.tflite
+  npu:
+    vendor: mediatek
+    soc: mt8188
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-mt8189
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_MediaTek_MT8189.tflite
+    sha256: 2b263c02ab3ebd3fec8a3253699f74af99b9eecaf990dd93bfec565fddb959cd
+    size: 97548784
+    install_filename: moonshine_tiny_5s_f32_MediaTek_MT8189.tflite
+  npu:
+    vendor: mediatek
+    soc: mt8189
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-sa8255
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_Qualcomm_SA8255.tflite
+    sha256: 3c44a69c9c767dc4fceaa37760c0044f85668119bb72ccdad90e07000d8c4e17
+    size: 77371856
+    install_filename: moonshine_tiny_5s_f32_Qualcomm_SA8255.tflite
+  npu:
+    vendor: qualcomm
+    soc: SA8255
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-sa8295
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_Qualcomm_SA8295.tflite
+    sha256: fca5c9a7a785bfae9c3934fb2ce4d9a426dedc6828c002b2f1074ab470ffde13
+    size: 77183440
+    install_filename: moonshine_tiny_5s_f32_Qualcomm_SA8295.tflite
+  npu:
+    vendor: qualcomm
+    soc: SA8295
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-sm8450
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_Qualcomm_SM8450.tflite
+    sha256: b366e09eec0480cd9205c87add3a16b6cbcc43b19e7148d93413160453e8f7bd
+    size: 77208016
+    install_filename: moonshine_tiny_5s_f32_Qualcomm_SM8450.tflite
+  npu:
+    vendor: qualcomm
+    soc: SM8450
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-sm8550
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_Qualcomm_SM8550.tflite
+    sha256: 14f47ef1267bd0cecd935f803271a723a3a95c27e574c216f483fc94eaebec75
+    size: 77371856
+    install_filename: moonshine_tiny_5s_f32_Qualcomm_SM8550.tflite
+  npu:
+    vendor: qualcomm
+    soc: SM8550
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-sm8650
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_Qualcomm_SM8650.tflite
+    sha256: 2d1081120e7cb51169bdbeba713d9e93eb8071219600bbb2cc11b5a84dc16fc6
+    size: 77392336
+    install_filename: moonshine_tiny_5s_f32_Qualcomm_SM8650.tflite
+  npu:
+    vendor: qualcomm
+    soc: SM8650
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-sm8750
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_Qualcomm_SM8750.tflite
+    sha256: d45a43cc7fa0daf80d7291b9ec1f290ba655ca5ca86a02f9ca1098ffb66afa0a
+    size: 77421008
+    install_filename: moonshine_tiny_5s_f32_Qualcomm_SM8750.tflite
+  npu:
+    vendor: qualcomm
+    soc: SM8750
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json
+- slug: f32-npu-sm8850
+  file_type: tflite
+  file:
+    repo: litert-community/moonshine-tiny
+    revision: eb73d789d7eebcd4d3d5f1a851692923a8e76763
+    path: moonshine_tiny_5s_f32_Qualcomm_SM8850.tflite
+    sha256: b2b5ec846a354680cbc82d42e7f0d72d3bbb466b5ce22db65cca5725b3630b86
+    size: 77588944
+    install_filename: moonshine_tiny_5s_f32_Qualcomm_SM8850.tflite
+  npu:
+    vendor: qualcomm
+    soc: SM8850
+  tokenizer:
+    repo: moonshine-ai/moonshine
+    revision: 48b4e427b587bcf67797a5be706d6ddc4a298149
+    path: ctranslate2/tiny/tokenizer.json
+    sha256: ed2324b3f699d8ba18a4030f33ba205d50b30ff46ff73f2b7d22661cc850efb4
+    size: 1985534
+    install_filename: tokenizer.json

@@ -1,4 +1,4 @@
-// The build side of each NPU vendor ([NpuVendor]) agrees with the table: the
+// The build side of each NPU vendor ([NpuStack]) agrees with the table: the
 // places the compiler cannot reach — the release gate that every native
 // tarball passes and the core plugin's AndroidManifest.xml — name what the
 // table says. A vendor added to the table without them fails here instead of
@@ -88,7 +88,7 @@ void main() {
       'each of its vendor\'s ABIs; one the hook fetches is forbidden there', () {
     final required = _tarballRules('REQUIRED');
     final forbidden = _tarballRules('FORBIDDEN');
-    for (final vendor in NpuVendor.values) {
+    for (final vendor in NpuStack.values) {
       for (final abi in vendor.abis) {
         final entry =
             '${_tarballOf(abi)}:${_fileOf(npuDispatchLib(vendor), _osOf(abi))}';
@@ -108,7 +108,7 @@ void main() {
   });
 
   test('every vendor\'s stack holds its dispatch, on each of its OSes', () {
-    for (final vendor in NpuVendor.values) {
+    for (final vendor in NpuStack.values) {
       for (final os in {for (final abi in vendor.abis) _osOf(abi)}) {
         expect(
           npuStackLibs(vendor, os),
@@ -130,7 +130,7 @@ void main() {
       ).allMatches(manifest))
         m.group(1)!,
     };
-    for (final vendor in NpuVendor.values) {
+    for (final vendor in NpuStack.values) {
       final onAndroid = vendor.abis.any((abi) => _osOf(abi) == 'android');
       final libs = npuAndroidSystemLibs(vendor);
       if (!onAndroid) {
@@ -147,7 +147,7 @@ void main() {
     // This test does not run the hook. That the hook's vendor loop reads
     // npuUserDefine(vendor) was measured 2026-10-18 on the example's APK:
     // 11 Qualcomm libraries with qualcomm_npu true, none with false.
-    for (final vendor in NpuVendor.values) {
+    for (final vendor in NpuStack.values) {
       final define = npuUserDefine(vendor);
       final reason = npuNotBundledReason(vendor);
       if (define == null) {

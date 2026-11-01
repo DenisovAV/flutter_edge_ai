@@ -8,6 +8,8 @@ AssetSource class final
 BundledSource class final
 CancelToken class
 CanceledError class final
+CatalogModel class abstract base
+CatalogVariant class sealed
 CloseNotifier mixin
 CorruptionAction enum
 CorruptionDetectionResult class
@@ -33,6 +35,7 @@ DownloadProgress class
 EdgeAiLogLevel enum
 EmbedderCloseTimeoutException class final
 EmbedderClosedException class final
+EmbedderVariant class abstract base
 EmbeddingBackendProvider class abstract base
 EmbeddingCancelledException class final
 EmbeddingDeciderCalibration class final experimental
@@ -86,10 +89,14 @@ InferenceInstallationBuilder class
 InferenceModel class abstract
 InferenceModelSession class abstract
 InferenceModelSpec class
+InferenceVariant class abstract base
 MediaPosition enum
 Message class
 MessageExtension extension
 MessageType enum
+ModelArtifact class final
+ModelCatalog class abstract base
+ModelCatalogSource class abstract interface
 ModelFile class abstract
 ModelFileManager class abstract
 ModelFileType enum
@@ -102,6 +109,7 @@ ModelSpec class abstract
 ModelStorageException class
 ModelThinkingFilter class
 ModelType enum
+ModelValidationException class
 MultiModelEngine class abstract interface
 MultimodalImageHandler class
 MultimodalImageResult class
@@ -110,6 +118,8 @@ NetworkError class final
 NetworkSource class final
 NoActiveModelError class
 NotFoundError class final
+NpuTarget class abstract base
+NpuVendor class final
 OptionScorer class abstract base experimental
 OptionScoringModel mixin base experimental
 OptionScoringRun class final experimental
@@ -142,6 +152,7 @@ SttInstallation class
 SttInstallationBuilder class
 SttModelSpec class
 SttModelType enum
+SttVariant class abstract base
 TaskType enum
 TextResponse class
 ThinkingResponse class
@@ -156,6 +167,7 @@ TtsInstallationBuilder class
 TtsModelSpec class
 TtsModelType enum
 TtsModelTypeManifest extension
+TtsVariant class abstract base
 UnauthorizedError class final
 UnknownError class final
 UnsupportedEmbeddingCombinationException class final

@@ -1,0 +1,51 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: gemma-3n-e4b-it
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: Gemma 3n E4B
+family: gemma3n
+arch_class: matformer-ple
+license: gemma
+license_url: https://ai.google.dev/gemma/terms
+model_type: gemmaIt
+capabilities:
+  image: true
+  audio: true
+  function_calls: true
+  thinking: false
+runtime:
+  max_tokens: 4096
+  preferred_backend: gpu
+variants:
+- slug: generic
+  file_type: litertlm
+  file:
+    repo: google/gemma-3n-E4B-it-litert-lm
+    revision: 297ed75955702dec3503e00c2c2ecbbf475300bc
+    path: gemma-3n-E4B-it-int4.litertlm
+    sha256: 2e67a6cd51dfe0f793431e6bd4ed8d029c88e10f52ca0469ad38445e3cd3c1f4
+    size: 4919541760
+    install_filename: gemma-3n-E4B-it-int4.litertlm
+    gated: manual
+  example:
+  - gemma3n_4B_litertlm
+- slug: web
+  file_type: litertlm
+  web_bundle: true
+  file:
+    repo: google/gemma-3n-E4B-it-litert-lm
+    revision: 297ed75955702dec3503e00c2c2ecbbf475300bc
+    path: gemma-3n-E4B-it-int4-Web.litertlm
+    sha256: 63730ba3225a23a90d3292d89fdeff1a7537cedeb72aa687de9a35732d057e52
+    size: 4275044352
+    install_filename: gemma-3n-E4B-it-int4-Web.litertlm
+    gated: manual
+  capabilities:
+    image: false
+    audio: false
+    function_calls: true
+    thinking: false
+  example:
+  - gemma3n_4B_litertlm

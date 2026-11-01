@@ -1,0 +1,95 @@
+{
+  "container_version": "1.5.0",
+  "size": 943226880,
+  "npu_target": "Qualcomm/SM8750",
+  "llm_metadata_max_num_tokens": 1280,
+  "kv_cache_length": 1280,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_v_3": [
+        1,
+        2,
+        64,
+        1280
+      ],
+      "kv_cache_k_2": [
+        1,
+        2,
+        1280,
+        64
+      ]
+    },
+    "prefill_128": {
+      "kv_cache_v_3": [
+        1,
+        2,
+        64,
+        1280
+      ],
+      "kv_cache_k_2": [
+        1,
+        2,
+        1280,
+        64
+      ]
+    }
+  },
+  "system_metadata": {
+    "Authors": "ODML team",
+    "uuid": "1aa121d9-9b25-4703-9b58-b974242b9151",
+    "creation_timestamp": "2026-04-28T22:10:04.767435+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 171
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 139785304,
+      "items": {
+        "model_type": "tf_lite_embedder",
+        "model_version": "1.0.1"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_aux",
+      "length": 102968,
+      "items": {
+        "model_type": "tf_lite_aux"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_adapter",
+      "length": 14230512,
+      "items": {
+        "model_type": "tf_lite_vision_adapter"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_encoder",
+      "length": 269198896,
+      "npu_target": "Qualcomm/SM8750",
+      "items": {
+        "model_type": "tf_lite_vision_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 517192928,
+      "npu_target": "Qualcomm/SM8750",
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 2647644
+    }
+  ]
+}

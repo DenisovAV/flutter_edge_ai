@@ -1,77 +1,67 @@
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' show TtsModelType;
+import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
+    show LiteRtSpeechModels, LiteRtTtsVariant;
+
+// The model registry's builds (LiteRtSpeechModels), as functions: a variant is
+// read through a getter, which is not a constant. Each bundle's files and
+// revision come from it; Qwen3-TTS stays pinned to the revision whose root
+// holds these files (its main moved them under legacy/ on 2026-10-16), and
+// Inflect's four G2P files come from Matcha at the revision core pins.
+LiteRtTtsVariant _matcha() => LiteRtSpeechModels.matchaTts.bundle;
+LiteRtTtsVariant _qwen3() => LiteRtSpeechModels.qwen3Tts0_6b.bundle;
+LiteRtTtsVariant _inflect() => LiteRtSpeechModels.inflectNanoV2.bundle;
 
 /// Catalog of on-device TTS models. SELECTABLE like STT — each entry carries
 /// the [TtsModelType] that tells the generic `LiteRtTtsBackend` which
 /// `TtsModelProfile` to run. Install uses one base URL + `.ofType`.
-/// [matcha] and [qwen3] are wired; kokoro/supertonic are follow-ons
-/// (isSupported false). [qwen3] additionally exposes 11 selectable
+/// [qwen3] additionally exposes 11 selectable
 /// languages (`tts_screen.dart`'s language dropdown, populated from
 /// `flutter_edge_ai_speech`'s `qwen3SupportedLanguages`) — [matcha] is
 /// English-only (its locale comes from its bundle, not a runtime param).
 enum TtsModel {
   matcha(
-    baseUrl: 'https://huggingface.co/litert-community/Matcha-TTS/resolve/main/',
+    variant: _matcha,
     displayName: 'Matcha-TTS',
     size: '~94MB',
-    ttsModelType: TtsModelType.matcha,
     isSupported: true,
   ),
   qwen3(
-    // Pinned: on main these files moved under legacy/ on 2026-10-16, so a
-    // resolve/main/ base answers 404 for every one of them.
-    baseUrl:
-        'https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/',
+    variant: _qwen3,
     displayName: 'Qwen3-TTS 0.6B (11 languages)',
     size: '~1.9GB',
-    ttsModelType: TtsModelType.qwen3,
     isSupported: true,
     notes:
         'CPU only, slow (RTF≈3 — ~3s of compute per 1s of audio), needs a '
         '6 GB-RAM-class device',
   ),
   inflect(
-    // The 2 tflites come from this repo; the 4 reused G2P files are fetched
-    // cross-repo from Matcha (routed by
-    // TtsModelType.inflect.fetchLocationFor).
-    baseUrl:
-        'https://huggingface.co/sasha-denisov/inflect-nano-v2-litert/resolve/main/',
+    variant: _inflect,
     displayName: 'Inflect-Nano-v2 (fast)',
     size: '~36MB',
-    ttsModelType: TtsModelType.inflect,
     isSupported: true,
     notes: 'Tiny + very fast. English only.',
-  ),
-  kokoro(
-    baseUrl: 'https://huggingface.co/litert-community/Kokoro-82M/resolve/main/',
-    displayName: 'Kokoro 82M',
-    size: '~415MB',
-    ttsModelType: TtsModelType.kokoro,
-    isSupported: false,
-    unsupportedReason:
-        'Needs its own TtsModelProfile (follow-on, not shipped yet)',
-  ),
-  supertonic(
-    baseUrl: 'https://huggingface.co/soniqo/Supertonic-3-LiteRT/resolve/main/',
-    displayName: 'Supertonic-3',
-    size: '~378MB',
-    ttsModelType: TtsModelType.supertonic,
-    isSupported: false,
-    unsupportedReason:
-        'Needs its own TtsModelProfile (follow-on, not shipped yet)',
   );
 
   const TtsModel({
-    required this.baseUrl,
+    required LiteRtTtsVariant Function() variant,
     required this.displayName,
     required this.size,
-    required this.ttsModelType,
     this.isSupported = true,
+    // Every entry is supported today; kept for the screen's disabled-entry
+    // rendering.
+    // ignore: unused_element_parameter
     this.unsupportedReason,
     this.notes,
-  });
+  }) : _variant = variant;
 
-  /// HuggingFace repo base URL each manifest filename is resolved against.
-  final String baseUrl;
+  final LiteRtTtsVariant Function() _variant;
+
+  /// The registry build this entry installs.
+  LiteRtTtsVariant get catalogVariant => _variant();
+
+  /// HuggingFace base URL, pinned to a commit, each manifest filename is
+  /// resolved against.
+  String get baseUrl => _variant().baseUrl;
 
   /// Display name shown in the selection UI.
   final String displayName;
@@ -81,7 +71,7 @@ enum TtsModel {
 
   /// Model family carried on the installed `TtsModelSpec` — selects the
   /// runtime `TtsModelProfile` in the generic `LiteRtTtsBackend`.
-  final TtsModelType ttsModelType;
+  TtsModelType get ttsModelType => _variant().type;
 
   /// Whether this catalog entry has a shipped `TtsModelProfile`. Entries
   /// with `isSupported: false` are listed for completeness but not wired.

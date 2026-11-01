@@ -50,6 +50,7 @@ final class _RecordingBuilder implements EmbeddingInstallationBuilder {
     String url, {
     String? token,
     String? filename,
+    int? expectedSize,
   }) {
     calls.add('modelFromNetwork($url, $filename, $token)');
     return this;
@@ -75,6 +76,7 @@ final class _RecordingBuilder implements EmbeddingInstallationBuilder {
     String url, {
     String? token,
     String? filename,
+    int? expectedSize,
   }) {
     calls.add('tokenizerFromNetwork($url, $filename, $token)');
     return this;

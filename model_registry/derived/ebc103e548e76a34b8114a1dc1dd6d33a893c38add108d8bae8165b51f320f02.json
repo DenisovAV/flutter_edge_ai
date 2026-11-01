@@ -1,0 +1,148 @@
+{
+  "container_version": "1.5.0",
+  "size": 3294593024,
+  "npu_target": "Qualcomm/QCS8275",
+  "llm_metadata_max_num_tokens": null,
+  "kv_cache_length": 4096,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_v_3": [
+        1,
+        1,
+        4096,
+        256
+      ],
+      "kv_cache_k_2": [
+        1,
+        1,
+        256,
+        4096
+      ]
+    },
+    "prefill_128": {
+      "kv_cache_v_3": [
+        1,
+        1,
+        4096,
+        256
+      ],
+      "kv_cache_k_2": [
+        1,
+        1,
+        256,
+        4096
+      ]
+    }
+  },
+  "system_metadata": {
+    "author": "The ODML Authors"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 12192
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 106959512,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_per_layer_embedder",
+      "length": 1394630752,
+      "items": {
+        "model_type": "tf_lite_per_layer_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_audio_encoder_hw",
+      "backend_constraint": [
+        "cpu"
+      ],
+      "length": 94052280,
+      "items": {
+        "model_type": "tf_lite_audio_encoder_hw",
+        "backend_constraint": "cpu"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_audio_adapter",
+      "backend_constraint": [
+        "cpu"
+      ],
+      "length": 9441244,
+      "items": {
+        "model_type": "tf_lite_audio_adapter",
+        "backend_constraint": "cpu"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_end_of_audio",
+      "length": 6772,
+      "items": {
+        "model_type": "tf_lite_end_of_audio"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_encoder",
+      "length": 219090120,
+      "items": {
+        "model_type": "tf_lite_vision_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_adapter",
+      "backend_constraint": [
+        "cpu"
+      ],
+      "length": 4727112,
+      "items": {
+        "model_type": "tf_lite_vision_adapter",
+        "backend_constraint": "cpu"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_end_of_vision",
+      "length": 6772,
+      "items": {
+        "model_type": "tf_lite_end_of_vision"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "backend_constraint": [
+        "npu"
+      ],
+      "length": 1460374896,
+      "npu_target": "Qualcomm/QCS8275",
+      "items": {
+        "model_type": "tf_lite_prefill_decode",
+        "backend_constraint": "npu"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_aux",
+      "length": 467312,
+      "npu_target": "Qualcomm/QCS8275",
+      "items": {
+        "model_type": "tf_lite_aux"
+      }
+    }
+  ]
+}

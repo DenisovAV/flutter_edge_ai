@@ -162,7 +162,7 @@ extension TtsModelTypeManifest on TtsModelType {
 
   /// Where a bundle member is fetched from, resolved by
   /// [sourceFor]. USUALLY a [TtsRelativeSuffix]
-  /// against the model's `resolve/main/` base ([plainFilename] itself, or a
+  /// against the model's base URL (`…/resolve/<revision>/`; [plainFilename] itself, or a
   /// `tables/`/`voices/` subdir for [TtsModelType.qwen3]'s
   /// embedding-table/demo-voice members). For [TtsModelType.inflect] the 4
   /// reused Matcha G2P files return a [TtsAbsoluteUrl] to the Matcha repo

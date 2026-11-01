@@ -28,7 +28,7 @@ Future<NpuStackCheck> _check(
   String abi = 'android_arm64',
   String os = 'android',
 }) => checkNpuStackInManifest(
-  NpuVendor.qualcomm,
+  NpuStack.qualcomm,
   read: () async => text,
   abi: abi,
   operatingSystem: os,
@@ -72,7 +72,7 @@ void main() {
   test('Google Tensor is opt-in: a build without it names its own flag, '
       'not Qualcomm\'s', () async {
     final bundled = await checkNpuStackInManifest(
-      NpuVendor.googleTensor,
+      NpuStack.googleTensor,
       read: () async => _manifest({
         'android_arm64': [..._base, ..._googleStack],
       }),
@@ -82,7 +82,7 @@ void main() {
     expect(bundled.bundled, isTrue);
 
     final missing = await checkNpuStackInManifest(
-      NpuVendor.googleTensor,
+      NpuStack.googleTensor,
       read: () async => _manifest({'android_arm64': _base}),
       abi: 'android_arm64',
       operatingSystem: 'android',
@@ -95,7 +95,7 @@ void main() {
   test('MediaTek is opt-in: a build without it names its own flag, not '
       'Qualcomm\'s', () async {
     final bundled = await checkNpuStackInManifest(
-      NpuVendor.mediatek,
+      NpuStack.mediatek,
       read: () async => _manifest({
         'android_arm64': [..._base, ..._mediatekStack],
       }),
@@ -105,7 +105,7 @@ void main() {
     expect(bundled.bundled, isTrue);
 
     final missing = await checkNpuStackInManifest(
-      NpuVendor.mediatek,
+      NpuStack.mediatek,
       read: () async => _manifest({'android_arm64': _base}),
       abi: 'android_arm64',
       operatingSystem: 'android',
@@ -128,7 +128,7 @@ void main() {
   test('an unreadable manifest is unknown, not "not enabled"', () async {
     // What rootBundle throws in a background isolate with no binding.
     final r = await checkNpuStackInManifest(
-      NpuVendor.qualcomm,
+      NpuStack.qualcomm,
       read: () async =>
           throw StateError('Binding has not yet been initialized'),
       abi: 'android_arm64',

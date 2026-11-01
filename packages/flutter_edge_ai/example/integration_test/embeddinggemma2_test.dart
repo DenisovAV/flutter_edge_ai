@@ -87,6 +87,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'goldens/eg2_text_golden.dart';
 import 'goldens/litertlm_llm_header.dart';
+import 'registry_evidence.dart';
 
 const _eg2 = catalog.EmbeddingModel.embeddingGemma2Text270m;
 const _urlOverride = String.fromEnvironment('EG2_MODEL_URL');
@@ -213,6 +214,22 @@ int _median(List<int> values) => (values.toList()..sort())[values.length ~/ 2];
 void _log(String line) {
   // ignore: avoid_print
   print('[eg2] $line');
+}
+
+/// Registry evidence that [check] passed on [model]'s installed bundle, on
+/// the backend that ran.
+Future<void> _evidence(
+  catalog.EmbeddingModel model,
+  EmbeddingModel embedder,
+  String check,
+) async {
+  final backend = embedder.activeBackend;
+  if (backend == null) return;
+  await recordEvidence(
+    path: await FlutterEdgeAi.getModelPath(model.filename),
+    backend: backend,
+    check: check,
+  );
 }
 
 /// The cached embedder, closed, so the next `getActiveEmbedder()` builds.
@@ -426,6 +443,7 @@ void main() {
       final best = scores.indexOf(scores.reduce(math.max));
       expect(best, i, reason: 'q$i ranks d$best first: $scores');
     }
+    await _evidence(_eg2, model, 'golden text vectors and ranking');
   });
 
   testWidgets('the 9 TaskTypes give 9 different vectors', (tester) async {
@@ -860,6 +878,7 @@ void main() {
         '${query.margin.toStringAsFixed(4)} ${query.misses}',
       );
       expect(raw.top1, 10, reason: '${raw.misses}');
+      await _evidence(_eg2Vision, model, 'text to image retrieval');
     }, timeout: const Timeout(Duration(minutes: 20)));
 
     testWidgets('image → image: each near-duplicate JPEG (75 %, quality 70) '

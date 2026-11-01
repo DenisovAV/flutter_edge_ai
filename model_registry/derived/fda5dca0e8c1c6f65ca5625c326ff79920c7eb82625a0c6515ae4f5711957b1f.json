@@ -1,0 +1,78 @@
+{
+  "container_version": "1.5.0",
+  "size": 693747712,
+  "npu_target": "Qualcomm/SM8850",
+  "llm_metadata_max_num_tokens": 1280,
+  "kv_cache_length": 1280,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_v_3": [
+        1,
+        1,
+        256,
+        1280
+      ],
+      "kv_cache_k_2": [
+        1,
+        1,
+        1280,
+        256
+      ]
+    },
+    "prefill_128": {
+      "kv_cache_v_3": [
+        1,
+        1,
+        256,
+        1280
+      ],
+      "kv_cache_k_2": [
+        1,
+        1,
+        1280,
+        256
+      ]
+    }
+  },
+  "system_metadata": {
+    "Authors": "ODML team",
+    "uuid": "c1a4e33a-b3ec-4a7a-ae39-4540e48c7ce9",
+    "creation_timestamp": "2026-04-16T22:51:45.926743+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 157290184,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_aux",
+      "length": 304496,
+      "npu_target": "Qualcomm/SM8850",
+      "items": {
+        "model_type": "tf_lite_aux"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 531396080,
+      "npu_target": "Qualcomm/SM8850",
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    },
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 117
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689072
+    }
+  ]
+}

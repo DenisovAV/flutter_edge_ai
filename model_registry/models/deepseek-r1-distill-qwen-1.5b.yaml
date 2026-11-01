@@ -1,0 +1,30 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: deepseek-r1-distill-qwen-1.5b
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: DeepSeek R1 Distill Qwen 1.5B
+family: qwen2.5
+arch_class: dense
+license: mit
+license_url: https://opensource.org/license/mit
+model_type: deepSeek
+capabilities:
+  image: false
+  audio: false
+  function_calls: true
+  thinking: true
+runtime:
+  max_tokens: 1024
+  preferred_backend: gpu
+variants:
+- slug: q8-ekv4096
+  file_type: litertlm
+  file:
+    repo: litert-community/DeepSeek-R1-Distill-Qwen-1.5B
+    revision: 9fd875541bb0f277e4b3cefe7d9622c4c1de2fb5
+    path: DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm
+    sha256: 69b35f01759eed765641ab4af589bbe98131fd2825662a086d9037409b8c1295
+    size: 1833451520
+    install_filename: DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm

@@ -559,6 +559,432 @@ _rewindCancelledTurnOffMainIsolate({
   });
 }
 
+/// How the library load reaches a spawned isolate. Always `Isolate.run` in
+/// production; replaced by tests, which have no native library behind the
+/// call.
+@visibleForTesting
+Future<void> Function(void Function() work) offMainIsolate = Isolate.run;
+
+/// How the library warm-up loads each library before `DynamicLibrary.open`
+/// does: [loadWithSystemLoader], best effort, returning the loader's handle
+/// or null. Replaced by tests. Read on the calling isolate and handed to the
+/// warm-up isolate, which would otherwise start from this default.
+@visibleForTesting
+Pointer<Void>? Function(String path) preloadNativeLibrary =
+    _preloadWithSystemLoader;
+
+Pointer<Void>? _preloadWithSystemLoader(String path) {
+  try {
+    return loadWithSystemLoader(path);
+  } on ArgumentError catch (e) {
+    // The loader returned no library. The `DynamicLibrary.open` that follows
+    // loads it instead, and reports a failure in its own words.
+    edgeAiLog(
+      '[LiteRtLmFfi] the system loader did not load $path: ${e.message}',
+      level: EdgeAiLogLevel.verbose,
+    );
+    return null;
+  }
+}
+
+/// `RTLD_LAZY`, the flag `DynamicLibrary.open` passes, on every platform that
+/// has `dlopen`.
+const _rtldLazy = 1;
+
+/// Loads [path] with the platform's own loader, `dlopen` (`LoadLibraryW` on
+/// Windows), called as a non-leaf FFI function, leaves it loaded and returns
+/// the loader's handle. Unlike `DynamicLibrary.open`, which runs the loader in
+/// the VM's own state, a non-leaf FFI call marks its isolate as at a safepoint
+/// while the loader runs, so a garbage collection elsewhere in the isolate
+/// group does not wait for the load. Throws an [ArgumentError] when the
+/// loader returns no library, with `dlerror`'s reason on the platforms that
+/// have it.
+@visibleForTesting
+Pointer<Void> loadWithSystemLoader(String path) {
+  if (Platform.isWindows) {
+    final loadLibrary = DynamicLibrary.open('kernel32.dll')
+        .lookupFunction<
+          Pointer<Void> Function(Pointer<Utf16>),
+          Pointer<Void> Function(Pointer<Utf16>)
+        >('LoadLibraryW');
+    final name = path.toNativeUtf16();
+    try {
+      final handle = loadLibrary(name);
+      if (handle == nullptr) {
+        throw ArgumentError('LoadLibraryW could not load $path');
+      }
+      return handle;
+    } finally {
+      malloc.free(name);
+    }
+  }
+  final process = DynamicLibrary.process();
+  final dlopen = process
+      .lookupFunction<
+        Pointer<Void> Function(Pointer<Utf8>, Int32),
+        Pointer<Void> Function(Pointer<Utf8>, int)
+      >('dlopen');
+  // Looked up before the dlopen: a lookup is itself a dlsym, which clears
+  // the reason a failed dlopen leaves for dlerror.
+  final dlerror = process
+      .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
+        'dlerror',
+      );
+  final name = path.toNativeUtf8();
+  try {
+    final handle = dlopen(name, _rtldLazy);
+    if (handle == nullptr) {
+      final reason = dlerror();
+      throw ArgumentError(
+        'dlopen could not load $path: '
+        '${reason == nullptr ? 'no reason given' : reason.toDartString()}',
+      );
+    }
+    return handle;
+  } finally {
+    malloc.free(name);
+  }
+}
+
+/// Throws a [StateError] when the system loader's [preloaded] handle for
+/// [path] is not the library `DynamicLibrary.open` then returned as
+/// [opened]: two copies of one library are in the process. On macOS the
+/// preload's relative framework path is resolved through its caller's and
+/// the main executable's rpaths, the open's through FlutterMacOS's, which
+/// list `/usr/local/lib` before the app's Frameworks; a stray framework there
+/// would be the one bound, while the bundled copy's static registries also
+/// run. Null [preloaded] (no preload, or one that failed) is not checked.
+@visibleForTesting
+void requireSameLoadedLibrary(
+  Pointer<Void>? preloaded,
+  DynamicLibrary opened,
+  String path,
+) {
+  if (preloaded == null || preloaded == opened.handle) return;
+  throw StateError(
+    '$path is loaded twice: the system loader returned '
+    '0x${preloaded.address.toRadixString(16)} and DynamicLibrary.open '
+    '0x${opened.handle.address.toRadixString(16)}. Another copy of the '
+    'library is on the loader\'s search path (for example in '
+    '/usr/local/lib); remove it.',
+  );
+}
+
+/// Everything `litert_lm_engine_create` is made from, decided on the calling
+/// isolate. Plain values only, so it crosses to the isolate that builds the
+/// engine by copy: the settings are created, used and freed there
+/// ([createEngineOffMainIsolate]), and no settings pointer is ever valid on
+/// two isolates.
+@visibleForTesting
+@immutable
+class EngineCreateRequest {
+  const EngineCreateRequest({
+    required this.modelPath,
+    required this.backend,
+    required this.maxTokens,
+    required this.logLevel,
+    this.visionBackend,
+    this.audioBackend,
+    this.cacheDir,
+    this.maxNumImages = 0,
+    this.enableSpeculativeDecoding,
+    this.activationDataType,
+    this.nativeLogLevel,
+    this.dispatchLibDir,
+    this.disableHwMaskingForNpu = false,
+    this.kernelBatchSize,
+    this.blockSigprof = false,
+    this.listWeightBanks = false,
+  });
+
+  final String modelPath;
+
+  /// Text backend wire name: 'cpu', 'gpu' or 'npu'.
+  final String backend;
+
+  final int maxTokens;
+
+  /// The caller's `edgeAiLogLevel`: a spawned isolate starts with its own
+  /// copy at the default level.
+  final EdgeAiLogLevel logLevel;
+
+  /// Null builds the engine without a vision encoder.
+  final String? visionBackend;
+
+  /// Null builds the engine without an audio encoder.
+  final String? audioBackend;
+
+  final String? cacheDir;
+
+  /// Applied only when positive.
+  final int maxNumImages;
+
+  /// Null leaves the model's own default.
+  final bool? enableSpeculativeDecoding;
+
+  /// The C API's number; null leaves the engine's own choice.
+  final int? activationDataType;
+
+  /// Applied with `litert_lm_set_min_log_level` before the settings are made;
+  /// null leaves the level as it is.
+  final LiteRtLmLogLevel? nativeLogLevel;
+
+  /// Where LiteRT loads the NPU dispatch from; null off the NPU.
+  final String? dispatchLibDir;
+
+  /// Turns the HW mask update path off (the NPU vendor decides).
+  final bool disableHwMaskingForNpu;
+
+  /// Flushes the GPU command queue every N ops (#364); null leaves the
+  /// engine's default.
+  final int? kernelBatchSize;
+
+  /// Runs the create with SIGPROF blocked (see withSigprofBlocked).
+  final bool blockSigprof;
+
+  /// Lists the Intel NPU weight banks before and after the create, so the
+  /// caller can claim the ones it wrote.
+  final bool listWeightBanks;
+}
+
+/// What the engine's isolate hands back: the engine's address (0 when
+/// `litert_lm_engine_create` returned NULL), LiteRT-LM's last error for a
+/// failed create, and the weight banks listed around a successful one.
+typedef EngineCreateResult = ({
+  int address,
+  int code,
+  String? message,
+  ({Set<String>? before, Set<String>? after})? banks,
+});
+
+/// How `initialize` reaches the isolate that makes the engine settings and
+/// the engine. Always a spawned isolate in production; replaced by tests,
+/// which have no native library behind the call.
+@visibleForTesting
+Future<EngineCreateResult> Function(EngineCreateRequest request)
+createEngineOffMainIsolate = (request) =>
+    Isolate.run(() => _createEngine(request));
+
+/// Opens the library on the isolate this runs on, then makes the engine
+/// settings and the engine there ([createEngineWith]).
+EngineCreateResult _createEngine(EngineCreateRequest r) {
+  edgeAiLogLevel = r.logLevel;
+  final openSw = Stopwatch()..start();
+  // Plain open (litert_lm_library.dart): `initialize` already loaded it with
+  // the preloads and, on Android, the strict default scope this path needs
+  // (#447).
+  final lib = openLiteRtLmLibrary();
+  edgeAiLog(
+    '[LiteRtLmFfi/perf]   isolate: DynamicLibrary.open: ${openSw.elapsedMilliseconds}ms',
+    level: EdgeAiLogLevel.verbose,
+  );
+  return createEngineWith(
+    r,
+    LiteRtLmBindings(lib),
+    provides: lib.providesSymbol,
+    lookup: lib.lookup,
+  );
+}
+
+/// Makes the engine settings from [r] through [b], creates the engine from
+/// them and frees them, all on the isolate this runs on. The settings are
+/// freed whether or not a setter or the create throws. On an S25 Ultra a frame
+/// started 98 ms late around `litert_lm_engine_settings_create` when it ran on
+/// the calling isolate (81 ms of that isolate's wall time, which LiteRT-LM's
+/// source does not explain as the call's own work).
+///
+/// LiteRT-LM's thread-local last error is read through [lookup] when
+/// [provides] says the library has it: a NULL settings create throws a
+/// [LiteRtLmEngineCreateException] with it, and a NULL engine create returns
+/// it. [blockingSigprof] runs the create when [EngineCreateRequest.blockSigprof]
+/// is set. Called directly by tests, with fake bindings.
+@visibleForTesting
+EngineCreateResult createEngineWith(
+  EngineCreateRequest r,
+  LiteRtLmBindings b, {
+  required bool Function(String symbol) provides,
+  required Pointer<T> Function<T extends NativeType>(String symbol) lookup,
+  T Function<T>(T Function() body) blockingSigprof = withSigprofBlocked,
+}) {
+  final banksBefore = r.listWeightBanks ? listIntelWeightBanks() : null;
+  final isolateSw = Stopwatch()..start();
+  final nativeLogLevel = r.nativeLogLevel;
+  if (nativeLogLevel != null) {
+    b.litert_lm_set_min_log_level(nativeLogLevel.nativeValue);
+  }
+
+  // LiteRT-LM keeps a failed call's status in a thread-local last error
+  // (`c/engine.cc`, for the settings create and the engine create alike), on
+  // every platform and in release builds, unlike its log, which this package
+  // captures in debug builds on three platforms only. Cleared before each of
+  // the two creates, because success never resets it, and read on this
+  // thread right after the one that failed. Every native-v0.18.0-e library
+  // exports it (the release gate checks); a library without it still loads
+  // models, with no reason to report.
+  final lastError = provides('litert_lm_clear_last_error');
+  void clearLastError() {
+    if (!lastError) return;
+    lookup<NativeFunction<Void Function()>>(
+      'litert_lm_clear_last_error',
+    ).asFunction<void Function()>()();
+  }
+
+  ({int code, String? message}) readLastError() {
+    if (!lastError) return (code: 0, message: null);
+    final code = lookup<NativeFunction<Int32 Function()>>(
+      'litert_lm_get_last_error_code',
+    ).asFunction<int Function()>()();
+    final message = lookup<NativeFunction<Pointer<Utf8> Function()>>(
+      'litert_lm_get_last_error_message',
+    ).asFunction<Pointer<Utf8> Function()>()();
+    return (
+      code: code,
+      message: code == 0 || message == nullptr ? null : message.toDartString(),
+    );
+  }
+
+  final modelPathPtr = r.modelPath.toNativeUtf8();
+  final backendPtr = r.backend.toNativeUtf8();
+  final visionBackendPtr = r.visionBackend?.toNativeUtf8();
+  final audioBackendPtr = r.audioBackend?.toNativeUtf8();
+  try {
+    final settingsCreateStart = isolateSw.elapsedMilliseconds;
+    clearLastError();
+    final settings = b.litert_lm_engine_settings_create(
+      modelPathPtr.cast(),
+      backendPtr.cast(),
+      visionBackendPtr?.cast<Char>() ?? nullptr,
+      audioBackendPtr?.cast<Char>() ?? nullptr,
+    );
+    edgeAiLog(
+      '[LiteRtLmFfi/perf]   isolate: settings_create: ${isolateSw.elapsedMilliseconds - settingsCreateStart}ms',
+    );
+    if (settings == nullptr) {
+      // A bad model path or backend name, or a header the GPU path could not
+      // read: LiteRT-LM says which.
+      final error = readLastError();
+      final message = error.message;
+      throw LiteRtLmEngineCreateException(
+        'Failed to create engine settings on ${r.backend}'
+        '${message == null ? '' : ': $message'}. Model: ${r.modelPath}',
+        nativeCode: error.code == 0 ? null : error.code,
+        nativeMessage: message,
+      );
+    }
+
+    try {
+      b.litert_lm_engine_settings_set_max_num_tokens(settings, r.maxTokens);
+
+      // Enable benchmarking for session metrics (token counts, timing)
+      b.litert_lm_engine_settings_enable_benchmark(settings);
+
+      final cacheDir = r.cacheDir;
+      if (cacheDir != null) {
+        final cacheDirPtr = cacheDir.toNativeUtf8();
+        try {
+          // Sets cache dir on main, vision, and audio executors (C API
+          // patched)
+          b.litert_lm_engine_settings_set_cache_dir(
+            settings,
+            cacheDirPtr.cast(),
+          );
+        } finally {
+          calloc.free(cacheDirPtr);
+        }
+      }
+
+      if (r.maxNumImages > 0) {
+        b.litert_lm_engine_settings_set_max_num_images(
+          settings,
+          r.maxNumImages,
+        );
+      }
+
+      // MTP / speculative decoding (LiteRT-LM v0.11.0+). Skip when null so
+      // the SDK uses the model's default; only call when caller explicitly
+      // forces on/off.
+      final enableSpeculativeDecoding = r.enableSpeculativeDecoding;
+      if (enableSpeculativeDecoding != null) {
+        b.litert_lm_engine_settings_set_enable_speculative_decoding(
+          settings,
+          enableSpeculativeDecoding,
+        );
+      }
+
+      // Activation type (0 F32, 1 F16, 2 I16, 3 I8). Skip when null: the
+      // engine then takes the model file's `prefer_activation_type`, else F16
+      // on GPU. F16 on some GPUs copies digits wrongly from long prompts
+      // (Adreno LiteRT-LM#3012, Metal #2814), and F32 fixes it at a slower
+      // prefill. The setter is upstream C API, so every platform's
+      // libLiteRtLm has it (and patch_c_api.sh's Windows .def exports it).
+      final activationDataType = r.activationDataType;
+      if (activationDataType != null) {
+        b.litert_lm_engine_settings_set_activation_data_type(
+          settings,
+          activationDataType,
+        );
+      }
+
+      if (r.disableHwMaskingForNpu) {
+        b.litert_lm_engine_settings_set_use_hw_masking_for_npu(settings, false);
+      }
+
+      final dispatchLibDir = r.dispatchLibDir;
+      if (dispatchLibDir != null) {
+        final dirPtr = dispatchLibDir.toNativeUtf8();
+        try {
+          b.litert_lm_engine_settings_set_litert_dispatch_lib_dir(
+            settings,
+            dirPtr.cast(),
+          );
+        } finally {
+          calloc.free(dirPtr);
+        }
+      }
+
+      final kernelBatchSize = r.kernelBatchSize;
+      if (kernelBatchSize != null) {
+        b.litert_lm_engine_settings_set_kernel_batch_size(
+          settings,
+          kernelBatchSize,
+        );
+      }
+
+      clearLastError();
+      final createStart = isolateSw.elapsedMilliseconds;
+      int createEngine() => b.litert_lm_engine_create(settings).address;
+      final ptr = r.blockSigprof
+          ? blockingSigprof(createEngine)
+          : createEngine();
+      final error = ptr == 0 ? readLastError() : null;
+      edgeAiLog(
+        '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
+        level: EdgeAiLogLevel.verbose,
+      );
+      if (error != null) {
+        return (
+          address: 0,
+          code: error.code,
+          message: error.message,
+          banks: null,
+        );
+      }
+      final banks = r.listWeightBanks
+          ? (before: banksBefore, after: listIntelWeightBanks())
+          : null;
+      return (address: ptr, code: 0, message: null, banks: banks);
+    } finally {
+      // The engine keeps what it needs; the settings are done with either way.
+      b.litert_lm_engine_settings_delete(settings);
+    }
+  } finally {
+    calloc.free(modelPathPtr);
+    calloc.free(backendPtr);
+    if (visionBackendPtr != null) calloc.free(visionBackendPtr);
+    if (audioBackendPtr != null) calloc.free(audioBackendPtr);
+  }
+}
+
 /// High-level Dart wrapper around the LiteRT-LM C API.
 ///
 /// Provides a clean async interface over the native C functions,
@@ -724,6 +1150,13 @@ class LiteRtLmFfiClient {
   void deleteConversationForTest(Pointer<LiteRtLmConversation> conv) =>
       _deleteConversation(conv);
 
+  /// Test seam: stand in for the bindings [_ensureBindings] would load, so
+  /// [initialize] runs on a host with no native library, and every native
+  /// call the calling isolate makes resolves through [bindings]' lookup,
+  /// where a test can see it.
+  @visibleForTesting
+  set bindingsForTest(LiteRtLmBindings bindings) => _bindings = bindings;
+
   /// Backing handle for the legacy single-conversation API
   /// ([createConversation] / [closeConversation] / [chat] / etc.). Kept so
   /// existing single-session call sites work unchanged while the new
@@ -868,15 +1301,19 @@ class LiteRtLmFfiClient {
         );
   }
 
-  /// Load the native library and create bindings.
+  /// Opens every native library the client needs, in the order each platform
+  /// requires, and returns the two it binds. Refuses another package's
+  /// LiteRT-LM under our library's name with a [StateError]
+  /// ([checkOwnLiteRtLmBuild]) before anything is bound to it.
   ///
-  /// Refuses another package's LiteRT-LM under our library's name with a
-  /// [StateError] ([checkOwnLiteRtLmBuild]) before anything is bound to it.
-  void _ensureBindings() {
-    if (_bindings != null) return;
-
-    final loadSw = Stopwatch()..start();
-    edgeAiLog('[LiteRtLmFfi] Loading native libraries...');
+  /// Static, so that the process's first load can run on a spawned isolate
+  /// ([_warmNativeLibraries]), which passes [preload]: it gets every library
+  /// right before `DynamicLibrary.open` does, except on Android. On macOS the
+  /// handle it returns must be the one the open returns
+  /// ([requireSameLoadedLibrary]).
+  static ({DynamicLibrary lib, DynamicLibrary proxyLib}) _openNativeLibraries({
+    Pointer<Void>? Function(String path) preload = _preloadNothing,
+  }) {
     final DynamicLibrary lib;
     final DynamicLibrary proxyLib;
     if (Platform.isIOS) {
@@ -887,16 +1324,26 @@ class LiteRtLmFfiClient {
       // because gpu_registry.cc uses relative-basename dlopen which iOS
       // dyld 4 cannot resolve from .framework names alone.
       const libPath = '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm';
+      preload(libPath);
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
-      proxyLib = DynamicLibrary.open(
-        '@executable_path/Frameworks/StreamProxy.framework/StreamProxy',
-      );
+      const proxyPath =
+          '@executable_path/Frameworks/StreamProxy.framework/StreamProxy';
+      preload(proxyPath);
+      proxyLib = DynamicLibrary.open(proxyPath);
     } else if (Platform.isMacOS) {
+      // Relative paths: dyld resolves the preload's through its caller's and
+      // the main executable's rpaths, the open's through FlutterMacOS's, so
+      // the two are checked to be one image.
+      final preloadedLib = preload(macOSLiteRtLmFramework);
       lib = requireOwnLiteRtLmBuild(
         openMacOSLiteRtLm(),
         macOSLiteRtLmFramework,
       );
-      proxyLib = DynamicLibrary.open('StreamProxy.framework/StreamProxy');
+      requireSameLoadedLibrary(preloadedLib, lib, macOSLiteRtLmFramework);
+      const proxyPath = 'StreamProxy.framework/StreamProxy';
+      final preloadedProxy = preload(proxyPath);
+      proxyLib = DynamicLibrary.open(proxyPath);
+      requireSameLoadedLibrary(preloadedProxy, proxyLib, proxyPath);
     } else if (Platform.isLinux) {
       // Load order matters: libLiteRt.so must be loaded first with
       // RTLD_GLOBAL so libLiteRtLm.so (built with
@@ -911,6 +1358,9 @@ class LiteRtLmFfiClient {
       // path — pass an absolute path so it resolves regardless of
       // LD_LIBRARY_PATH / RPATH inheritance.
       final libDir = '${File(Platform.resolvedExecutable).parent.path}/lib';
+      // The preload takes the same absolute path, for the same reason: a
+      // plain dlopen called from Dart code may not search Flutter's RPATH.
+      preload('$libDir/libStreamProxy.so');
       proxyLib = DynamicLibrary.open('libStreamProxy.so');
       final loadGlobal = proxyLib
           .lookupFunction<
@@ -951,6 +1401,8 @@ class LiteRtLmFfiClient {
         }
       }
       const libPath = 'libLiteRtLm.so';
+      // Already loaded by the RTLD_GLOBAL chain above: a reference count.
+      preload('$libDir/$libPath');
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isWindows) {
       // Preload LiteRt.dll first so the WebGPU accelerator and TopK sampler
@@ -959,7 +1411,7 @@ class LiteRtLmFfiClient {
       // (mirrors the Linux/Android RTLD_GLOBAL pattern). StreamProxy.dll goes
       // through the std-handle realignment, before any static-CRT DLL loads
       // (windows_std_handles.dart).
-      proxyLib = openBundledWindowsLibrary('StreamProxy.dll');
+      proxyLib = openBundledWindowsLibrary('StreamProxy.dll', preload: preload);
       final loadGlobal = proxyLib
           .lookupFunction<
             Pointer Function(Pointer<Utf8>),
@@ -979,6 +1431,8 @@ class LiteRtLmFfiClient {
         }
       }
       const libPath = 'LiteRtLm.dll';
+      // Already loaded by stream_proxy_load_global above: a reference count.
+      preload(libPath);
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isAndroid) {
       // LiteRT-LM ships native libs only for android_arm64 — bail with a
@@ -993,6 +1447,15 @@ class LiteRtLmFfiClient {
           'or run on an arm64-v8a device / Apple Silicon emulator.',
         );
       }
+      // No [preload] on Android. The first open of libLiteRtLm has to stay
+      // the strict default-scope one below (#447). And bionic files a library
+      // in the linker namespace of the code that calls dlopen: a non-leaf FFI
+      // dlopen from Dart code (JIT code belongs to no library) could land
+      // libStreamProxy.so, and through it libLiteRtLm, in another namespace
+      // than DynamicLibrary.open's, which would then load a second copy. (In
+      // AOT the caller is libapp.so, probably the same namespace, but that is
+      // not measured; keep the preload off for release builds too.) The long
+      // load is a non-leaf FFI call here already: stream_proxy_load_global.
       proxyLib = DynamicLibrary.open('libStreamProxy.so');
       // Load LiteRtLm into the default search scope, as every release since
       // #447 has. Its one verified consumer was the StreamProxy of
@@ -1019,6 +1482,59 @@ class LiteRtLmFfiClient {
         'Platform not supported for FFI: ${Platform.operatingSystem}',
       );
     }
+    return (lib: lib, proxyLib: proxyLib);
+  }
+
+  static Pointer<Void>? _preloadNothing(String path) => null;
+
+  /// Whether a spawned isolate has loaded the libraries for this one.
+  static bool _librariesWarm = false;
+
+  /// Pays the process's first load of the native libraries on a spawned
+  /// isolate. Libraries are loaded per process, not per isolate, so the open
+  /// in [_ensureBindings] then finds every one mapped and costs a reference
+  /// count, instead of mapping and relocating them (and, on Android, the
+  /// default-scope check) on the calling isolate.
+  ///
+  /// Each library goes to the platform's own loader first, through
+  /// [preloadNativeLibrary]. `DynamicLibrary.open` runs the loader in the
+  /// VM's own state, which is not a safepoint (`Ffi_dl_open` in the Dart VM),
+  /// so a garbage collection on the calling isolate, in the same group,
+  /// waited for the whole load: 171-174 ms of LiteRtLm on an M3 Max. A
+  /// non-leaf FFI call enters a safepoint for its duration. On Linux and
+  /// Windows the heavy loads (LiteRt, the accelerators, LiteRtLm) were such
+  /// calls already (stream_proxy_load_global), so the preload adds only
+  /// StreamProxy there; the gain is on iOS and macOS. A
+  /// load that throws leaves the flag unset, so the next initialize tries
+  /// again.
+  static Future<void> _warmNativeLibraries() async {
+    if (_librariesWarm) return;
+    final isolateLogLevel = edgeAiLogLevel;
+    // Top-level variables are per isolate: the warm-up isolate would see the
+    // default loader, not one a test set here.
+    final preload = preloadNativeLibrary;
+    final sw = Stopwatch()..start();
+    await offMainIsolate(() {
+      edgeAiLogLevel = isolateLogLevel;
+      _openNativeLibraries(preload: preload);
+    });
+    _librariesWarm = true;
+    edgeAiLog(
+      '[LiteRtLmFfi/perf] libraries loaded on a spawned isolate: '
+      '${sw.elapsedMilliseconds}ms',
+    );
+  }
+
+  /// Load the native library and create bindings.
+  ///
+  /// Meant to run after [_warmNativeLibraries], which leaves only a reference
+  /// count and symbol lookups to do here.
+  void _ensureBindings() {
+    if (_bindings != null) return;
+
+    final loadSw = Stopwatch()..start();
+    edgeAiLog('[LiteRtLmFfi] Loading native libraries...');
+    final (:lib, :proxyLib) = _openNativeLibraries();
 
     _bindings = LiteRtLmBindings(lib);
     _proxyLib = proxyLib;
@@ -1102,12 +1618,10 @@ class LiteRtLmFfiClient {
   /// one replaces it: LiteRT-LM keeps one level for the whole process.
   static LiteRtLmLogLevel? _nativeLogLevel;
 
-  /// Sets [level] every time, not only when it differs from the last one this
-  /// isolate set: a client on another isolate may have changed it since.
-  static void _applyNativeLogLevel(
-    LiteRtLmBindings bindings,
-    LiteRtLmLogLevel level,
-  ) {
+  /// Records [level], which the engine's isolate sets every time, not only
+  /// when it differs from the last one this isolate set: a client on another
+  /// isolate may have changed it since.
+  static void _noteNativeLogLevel(LiteRtLmLogLevel level) {
     final previous = _nativeLogLevel;
     if (previous != null && previous != level) {
       edgeAiLog(
@@ -1115,7 +1629,6 @@ class LiteRtLmFfiClient {
         'for every LiteRT-LM engine in the process',
       );
     }
-    bindings.litert_lm_set_min_log_level(level.nativeValue);
     _nativeLogLevel = level;
   }
 
@@ -1155,6 +1668,10 @@ class LiteRtLmFfiClient {
     }
     _thinkingTokenBudget = thinkingTokenBudget;
     final initSw = Stopwatch()..start();
+    // The process's first load runs on a spawned isolate, so the open in
+    // _ensureBindings finds the libraries already mapped.
+    if (_bindings == null) await _warmNativeLibraries();
+    final bindingsSw = Stopwatch()..start();
     _ensureBindings();
     _backend = backend;
     // This engine's part of the shared native log starts here.
@@ -1162,8 +1679,10 @@ class LiteRtLmFfiClient {
     if (logPath != null && File(logPath).existsSync()) {
       _nativeLogOffset = File(logPath).lengthSync();
     }
-    final bindingsMs = initSw.elapsedMilliseconds;
-    edgeAiLog('[LiteRtLmFfi/perf] _ensureBindings: ${bindingsMs}ms');
+    // The warm-up above logs its own time.
+    edgeAiLog(
+      '[LiteRtLmFfi/perf] _ensureBindings: ${bindingsSw.elapsedMilliseconds}ms',
+    );
     // Log the resolved per-encoder backends: vision/audio follow the bundle
     // (the engine's load plan), independent of the text backend, so this makes
     // the choice visible when diagnosing "why isn't vision using my GPU".
@@ -1175,318 +1694,194 @@ class LiteRtLmFfiClient {
         '(text=$backend)',
       );
     }
-    final b = _bindings!;
-    if (nativeLogLevel != null) _applyNativeLogLevel(b, nativeLogLevel);
+    if (nativeLogLevel != null) _noteNativeLogLevel(nativeLogLevel);
 
-    // Create engine settings
-    final modelPathPtr = modelPath.toNativeUtf8();
-    final backendPtr = backend.toNativeUtf8();
-    // Vision + audio encoders run on visionBackend/audioBackend, NOT the text
-    // backend: what the engine's load plan chose from the bundle (the
-    // section's backend_constraint, else the NPU it is compiled for, else CPU,
-    // because the VISION encoder's STABLEHLO_COMPOSITE ops fail to prepare on
-    // the Metal/WebGPU delegates — hard-fails at conversation_create, no
-    // fallback, LiteRT-LM#2461).
-    final visionBackendPtr = enableVision
-        ? visionBackend.toNativeUtf8()
-        : nullptr;
-    final audioBackendPtr = enableAudio ? audioBackend.toNativeUtf8() : nullptr;
+    final npuDispatchDir = backend == 'npu' ? npuDispatch!.dir : null;
 
-    try {
-      final npuDispatchDir = backend == 'npu' ? npuDispatch!.dir : null;
+    // The bundle's own sampler: the container header and its LlmMetadata
+    // section, a few KB read before the engine exists. A bad or unreadable
+    // file is reported, not thrown (see acceptBundleSamplerRead); a bug in the
+    // reader throws, before the engine is created.
+    final readSw = Stopwatch()..start();
+    final samplerRead = await tryReadBundleSampler(modelPath);
+    edgeAiLog(
+      '[LiteRtLmFfi/perf] bundle sampler read: ${readSw.elapsedMilliseconds}ms',
+      level: EdgeAiLogLevel.verbose,
+    );
 
-      // The bundle's own sampler: the container header and its LlmMetadata
-      // section, a few KB read before the engine exists. A bad or unreadable
-      // file is reported, not thrown (see acceptBundleSamplerRead); a bug in the
-      // reader throws, so it is read before the settings it would leak.
-      final readSw = Stopwatch()..start();
-      final samplerRead = await tryReadBundleSampler(modelPath);
+    if (activationDataType != null) {
       edgeAiLog(
-        '[LiteRtLmFfi/perf] bundle sampler read: ${readSw.elapsedMilliseconds}ms',
-        level: EdgeAiLogLevel.verbose,
+        '[LiteRtLmFfi] activation_data_type=$activationDataType '
+        '(${_activationName(activationDataType)}, backend=$backend; only the '
+        'GPU executor reads it)',
       );
+    }
 
-      final settingsCreateStart = initSw.elapsedMilliseconds;
-      final settings = b.litert_lm_engine_settings_create(
-        modelPathPtr.cast(),
-        backendPtr.cast(),
-        visionBackendPtr == nullptr ? nullptr : visionBackendPtr.cast(),
-        audioBackendPtr == nullptr ? nullptr : audioBackendPtr.cast(),
-      );
+    // The vendor decides (`npuDisablesHwMasking`): Intel turns the HW mask
+    // update path off.
+    final disableHwMasking = backend == 'npu' && npuDispatch!.disableHwMasking;
+    if (disableHwMasking) {
+      edgeAiLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=false');
+    }
+
+    if (npuDispatchDir != null) {
       edgeAiLog(
-        '[LiteRtLmFfi/perf] settings_create: ${initSw.elapsedMilliseconds - settingsCreateStart}ms',
+        '[LiteRtLmFfi] NPU ${Platform.operatingSystem}: '
+        'dispatch_lib_dir=$npuDispatchDir',
       );
+    }
 
-      if (settings == nullptr) {
-        throw Exception('Failed to create engine settings');
-      }
-
-      // Configure settings
-      b.litert_lm_engine_settings_set_max_num_tokens(settings, maxTokens);
-
-      // Enable benchmarking for session metrics (token counts, timing)
-      b.litert_lm_engine_settings_enable_benchmark(settings);
-
-      if (cacheDir != null) {
-        final cacheDirPtr = cacheDir.toNativeUtf8();
-        // Sets cache dir on main, vision, and audio executors (C API patched)
-        b.litert_lm_engine_settings_set_cache_dir(settings, cacheDirPtr.cast());
-        calloc.free(cacheDirPtr);
-      }
-
-      if (maxNumImages > 0) {
-        b.litert_lm_engine_settings_set_max_num_images(settings, maxNumImages);
-      }
-
-      // MTP / speculative decoding (LiteRT-LM v0.11.0+). Skip when null so
-      // the SDK uses the model's default; only call when caller explicitly
-      // forces on/off.
-      if (enableSpeculativeDecoding != null) {
-        b.litert_lm_engine_settings_set_enable_speculative_decoding(
-          settings,
-          enableSpeculativeDecoding,
-        );
-      }
-
-      // Activation type (0 F32, 1 F16, 2 I16, 3 I8). Skip when null: the engine
-      // then takes the model file's `prefer_activation_type`, else F16 on GPU.
-      // F16 on some GPUs copies digits wrongly from long prompts (Adreno
-      // LiteRT-LM#3012, Metal #2814), and F32 fixes it at a slower prefill.
-      // The setter is upstream C API, so every platform's libLiteRtLm has it
-      // (and patch_c_api.sh's Windows .def exports it).
-      if (activationDataType != null) {
-        b.litert_lm_engine_settings_set_activation_data_type(
-          settings,
-          activationDataType,
-        );
-        edgeAiLog(
-          '[LiteRtLmFfi] activation_data_type=$activationDataType '
-          '(${_activationName(activationDataType)}, backend=$backend; only the '
-          'GPU executor reads it)',
-        );
-      }
-
-      // The vendor decides (`npuDisablesHwMasking`): Intel turns the HW mask
-      // update path off.
-      if (backend == 'npu' && npuDispatch!.disableHwMasking) {
-        b.litert_lm_engine_settings_set_use_hw_masking_for_npu(settings, false);
-        edgeAiLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=false');
-      }
-
-      if (npuDispatchDir != null) {
-        final dirPtr = npuDispatchDir.toNativeUtf8();
-        b.litert_lm_engine_settings_set_litert_dispatch_lib_dir(
-          settings,
-          dirPtr.cast(),
-        );
-        calloc.free(dirPtr);
-        edgeAiLog(
-          '[LiteRtLmFfi] NPU ${Platform.operatingSystem}: '
-          'dispatch_lib_dir=$npuDispatchDir',
-        );
-      }
-
-      // #364: on Android, flush the OpenCL command queue every N ops during a
-      // GPU prefill so it doesn't starve the Flutter raster/compositor thread.
-      // By default LiteRT-LM's OpenCL backend dispatches the ENTIRE graph as one
-      // uninterruptible batch (gpu_backend_opencl_litert.cc: "dispatch all
-      // kernels in one batch" when kernel_batch_size<=0), so a ~2s prefill
-      // freezes the compositor (repro'd on Adreno S23 Ultra: raster p95
-      // 6.8ms->123ms). A positive hint_kernel_batch_size inserts a clFlush every
-      // N ops, giving the display work interleave points. Upstream auto-applies
-      // 4 for "generic" models to ensure smooth UI, but recognized Gemma types
-      // aren't generic (engine_settings.cc gates the default on has_generic_model)
-      // so gemma4/3/3n get NO flush unless we set it. Measured on dm3q: kb=4
-      // (upstream value) still janks (p95 63ms), kb=2 is flat (p95 7.3ms ~=
-      // baseline) with no TTFT cost, so 2 — not 4. NOT gpu_context_low_priority:
-      // it only reorders cross-context submission (no Adreno preemption of a
-      // running dispatch) and measured strictly worse (jank + TTFT both up).
-      // Gated to Android: Metal (iOS/macOS) doesn't starve the compositor, and
-      // the setter symbol only ships in the Android native rebuild.
-      if (Platform.isAndroid && backend == 'gpu') {
-        b.litert_lm_engine_settings_set_kernel_batch_size(settings, 2);
-        edgeAiLog(
-          '[LiteRtLmFfi] Android GPU: hint_kernel_batch_size=2 (#364 smooth UI)',
-        );
-      }
-
-      // Create engine in a background isolate to avoid blocking UI.
-      // Pass settings pointer as int address (Pointer can't cross isolates).
+    // #364: on Android, flush the OpenCL command queue every N ops during a
+    // GPU prefill so it doesn't starve the Flutter raster/compositor thread.
+    // By default LiteRT-LM's OpenCL backend dispatches the ENTIRE graph as one
+    // uninterruptible batch (gpu_backend_opencl_litert.cc: "dispatch all
+    // kernels in one batch" when kernel_batch_size<=0), so a ~2s prefill
+    // freezes the compositor (repro'd on Adreno S23 Ultra: raster p95
+    // 6.8ms->123ms). A positive hint_kernel_batch_size inserts a clFlush every
+    // N ops, giving the display work interleave points. Upstream auto-applies
+    // 4 for "generic" models to ensure smooth UI, but recognized Gemma types
+    // aren't generic (engine_settings.cc gates the default on has_generic_model)
+    // so gemma4/3/3n get NO flush unless we set it. Measured on dm3q: kb=4
+    // (upstream value) still janks (p95 63ms), kb=2 is flat (p95 7.3ms ~=
+    // baseline) with no TTFT cost, so 2 — not 4. NOT gpu_context_low_priority:
+    // it only reorders cross-context submission (no Adreno preemption of a
+    // running dispatch) and measured strictly worse (jank + TTFT both up).
+    // Gated to Android: Metal (iOS/macOS) doesn't starve the compositor, and
+    // the setter symbol only ships in the Android native rebuild.
+    final kernelBatchSize = Platform.isAndroid && backend == 'gpu' ? 2 : null;
+    if (kernelBatchSize != null) {
       edgeAiLog(
-        '[LiteRtLmFfi] Creating engine from $modelPath (backend=$backend, maxTokens=$maxTokens) ...',
+        '[LiteRtLmFfi] Android GPU: hint_kernel_batch_size=$kernelBatchSize (#364 smooth UI)',
       );
-      edgeAiLog(
-        '[LiteRtLmFfi/perf] === START litert_lm_engine_create (native — model load + accelerator init + KV cache prefill) ===',
-      );
-      final settingsAddr = settings.address;
-      final sw = Stopwatch()..start();
-      // Snapshot the log level so the spawned isolate (a fresh copy of the
-      // per-isolate top-level `edgeAiLogLevel`, default info) honours the
-      // caller's setting instead of leaking perf logs at the default level.
-      final isolateLogLevel = edgeAiLogLevel;
-      // The QNN backend's init fails under the debug VM's SIGPROF sampling on
-      // Linux (see withSigprofBlocked); Android's FastRPC client survives it.
-      final blockSigprof = npuDispatchDir != null && Platform.isLinux;
-      // The Intel dispatch writes a bundle's weights to a bank in the temp
-      // directory during the create: the ones new after it are this load's.
-      // Listed on the create's isolate; claimed here, where the lock handles
-      // live as long as the engine.
-      final claimBanks = backend == 'npu' && npuDispatch!.stagesWeightBanks;
-      final engineAddr = await Isolate.run(() {
-        edgeAiLogLevel = isolateLogLevel;
-        final banksBefore = claimBanks ? listIntelWeightBanks() : null;
-        final isolateSw = Stopwatch()..start();
-        // Plain open (litert_lm_library.dart): `_ensureBindings()` above
-        // already loaded it with the preloads and, on Android, the strict
-        // default scope this path needs (#447).
-        final lib = openLiteRtLmLibrary();
-        edgeAiLog(
-          '[LiteRtLmFfi/perf]   isolate: DynamicLibrary.open: ${isolateSw.elapsedMilliseconds}ms',
-          level: EdgeAiLogLevel.verbose,
-        );
-        final lookupStart = isolateSw.elapsedMilliseconds;
-        final create = lib
-            .lookupFunction<
-              Pointer Function(Pointer),
-              Pointer Function(Pointer)
-            >('litert_lm_engine_create');
-        edgeAiLog(
-          '[LiteRtLmFfi/perf]   isolate: lookupFunction: ${isolateSw.elapsedMilliseconds - lookupStart}ms',
-          level: EdgeAiLogLevel.verbose,
-        );
-        final createStart = isolateSw.elapsedMilliseconds;
-        // LiteRT-LM keeps a failed create's status in a thread-local last
-        // error (`c/engine.cc`), on every platform and in release builds,
-        // unlike its log, which this package captures in debug builds on
-        // three platforms only. Cleared first, because success never resets
-        // it, and read on this thread before any other native call. Every
-        // native-v0.18.0-e library exports it (the release gate checks); a
-        // library without it still loads models, with no reason to report.
-        final lastError = lib.providesSymbol('litert_lm_clear_last_error');
-        if (lastError) {
-          lib.lookupFunction<Void Function(), void Function()>(
-            'litert_lm_clear_last_error',
-          )();
-        }
-        int createEngine() => create(Pointer.fromAddress(settingsAddr)).address;
-        final ptr = blockSigprof
-            ? withSigprofBlocked(createEngine)
-            : createEngine();
-        edgeAiLog(
-          '[LiteRtLmFfi/perf]   isolate: native litert_lm_engine_create: ${isolateSw.elapsedMilliseconds - createStart}ms',
-          level: EdgeAiLogLevel.verbose,
-        );
-        final banks = claimBanks && ptr != 0
-            ? (before: banksBefore, after: listIntelWeightBanks())
-            : null;
-        if (ptr != 0 || !lastError) {
-          return (address: ptr, code: 0, message: null, banks: banks);
-        }
-        final code = lib.lookupFunction<Int32 Function(), int Function()>(
-          'litert_lm_get_last_error_code',
-        )();
-        final message = lib
-            .lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>(
-              'litert_lm_get_last_error_message',
-            )();
-        return (
-          address: 0,
-          code: code,
-          message: code == 0 || message == nullptr
-              ? null
-              : message.toDartString(),
-          banks: null,
-        );
-      });
-      _engine = Pointer<LiteRtLmEngine>.fromAddress(engineAddr.address);
-      if (engineAddr.banks case (:final before, :final after)) {
-        // shutdown() released the last engine's claim; a second initialize
-        // without it would leak those handles.
-        assert(_intelBanks == null);
-        final claim = IntelWeightBankClaim.newSince(before, after);
-        _intelBanks = claim;
-        if (claim.banks.isNotEmpty) {
-          edgeAiLog(
-            '[LiteRtLmFfi] Intel NPU weight bank(s) of this engine: '
-            '${claim.banks.join(', ')}',
-          );
-        }
-      }
-      sw.stop();
-      edgeAiLog(
-        '[LiteRtLmFfi/perf] === END litert_lm_engine_create: ${sw.elapsedMilliseconds}ms (includes isolate spawn ~50-200ms) ===',
-      );
-      edgeAiLog(
-        '[LiteRtLmFfi] litert_lm_engine_create took ${sw.elapsedMilliseconds}ms',
-      );
-      b.litert_lm_engine_settings_delete(settings);
+    }
 
-      if (_engine == null || _engine == nullptr) {
-        // Read the model's backend constraint BEFORE _dumpNativeLog() truncates
-        // the log. A GPU-only model (e.g. Gemma 4 12B, whose decoder section
-        // declares `section_backend_constraint: gpu`) fails engine_create on the
-        // CPU backend with an otherwise opaque null — turn that into an
-        // actionable error instead of the generic create failure below.
-        final constraint = _backendConstraintFromNativeLog();
-        _dumpNativeLog();
-        final nativeCode = engineAddr.code == 0 ? null : engineAddr.code;
-        final nativeMessage = engineAddr.message;
-        final because = nativeMessage == null ? '' : ': $nativeMessage';
-        if (constraint != null && constraint != backend) {
-          throw LiteRtLmEngineCreateException(
-            'This .litertlm model requires the "$constraint" backend — it '
-            'declares section_backend_constraint: $constraint, but the '
-            '"$backend" backend was requested. Use PreferredBackend.$constraint '
-            '(or omit preferredBackend to try GPU first).',
-            nativeCode: nativeCode,
-            nativeMessage: nativeMessage,
-          );
-        }
-        // Only the GPU executor reads the activation type, so only a float32
-        // GPU attempt can have failed because of it.
-        final float32OnGpu = activationDataType == 0 && backend == 'gpu';
+    // The engine settings and the engine are both made on a spawned isolate:
+    // a frame started 98 ms late around the settings create on the calling
+    // isolate of an S25 Ultra, and the engine create takes seconds.
+    edgeAiLog(
+      '[LiteRtLmFfi] Creating engine from $modelPath (backend=$backend, maxTokens=$maxTokens) ...',
+    );
+    edgeAiLog(
+      '[LiteRtLmFfi/perf] === START litert_lm_engine_create (native — settings + model load + accelerator init + KV cache prefill) ===',
+    );
+    final sw = Stopwatch()..start();
+    final engineAddr = await createEngineOffMainIsolate(
+      EngineCreateRequest(
+        modelPath: modelPath,
+        backend: backend,
+        maxTokens: maxTokens,
+        // The spawned isolate honors the caller's level instead of leaking
+        // perf logs at the default.
+        logLevel: edgeAiLogLevel,
+        // Vision + audio encoders run on visionBackend/audioBackend, NOT the
+        // text backend: what the engine's load plan chose from the bundle (the
+        // section's backend_constraint, else the NPU it is compiled for, else
+        // CPU, because the VISION encoder's STABLEHLO_COMPOSITE ops fail to
+        // prepare on the Metal/WebGPU delegates — hard-fails at
+        // conversation_create, no fallback, LiteRT-LM#2461).
+        visionBackend: enableVision ? visionBackend : null,
+        audioBackend: enableAudio ? audioBackend : null,
+        cacheDir: cacheDir,
+        maxNumImages: maxNumImages,
+        enableSpeculativeDecoding: enableSpeculativeDecoding,
+        activationDataType: activationDataType,
+        nativeLogLevel: nativeLogLevel,
+        dispatchLibDir: npuDispatchDir,
+        disableHwMaskingForNpu: disableHwMasking,
+        kernelBatchSize: kernelBatchSize,
+        // The QNN backend's init fails under the debug VM's SIGPROF sampling
+        // on Linux (see withSigprofBlocked); Android's FastRPC client
+        // survives it.
+        blockSigprof: npuDispatchDir != null && Platform.isLinux,
+        // The Intel dispatch writes a bundle's weights to a bank in the temp
+        // directory during the create: the ones new after it are this load's.
+        // Listed on the create's isolate; claimed here, where the lock handles
+        // live as long as the engine.
+        listWeightBanks: backend == 'npu' && npuDispatch!.stagesWeightBanks,
+      ),
+    );
+    _engine = Pointer<LiteRtLmEngine>.fromAddress(engineAddr.address);
+    if (engineAddr.banks case (:final before, :final after)) {
+      // shutdown() released the last engine's claim; a second initialize
+      // without it would leak those handles.
+      assert(_intelBanks == null);
+      final claim = IntelWeightBankClaim.newSince(before, after);
+      _intelBanks = claim;
+      if (claim.banks.isNotEmpty) {
+        edgeAiLog(
+          '[LiteRtLmFfi] Intel NPU weight bank(s) of this engine: '
+          '${claim.banks.join(', ')}',
+        );
+      }
+    }
+    sw.stop();
+    edgeAiLog(
+      '[LiteRtLmFfi/perf] === END litert_lm_engine_create: ${sw.elapsedMilliseconds}ms (includes isolate spawn ~50-200ms and the settings) ===',
+    );
+    edgeAiLog(
+      '[LiteRtLmFfi] litert_lm_engine_create took ${sw.elapsedMilliseconds}ms',
+    );
+
+    if (_engine == null || _engine == nullptr) {
+      // Read the model's backend constraint BEFORE _dumpNativeLog() truncates
+      // the log. A GPU-only model (e.g. Gemma 4 12B, whose decoder section
+      // declares `section_backend_constraint: gpu`) fails engine_create on the
+      // CPU backend with an otherwise opaque null — turn that into an
+      // actionable error instead of the generic create failure below.
+      final constraint = _backendConstraintFromNativeLog();
+      _dumpNativeLog();
+      final nativeCode = engineAddr.code == 0 ? null : engineAddr.code;
+      final nativeMessage = engineAddr.message;
+      final because = nativeMessage == null ? '' : ': $nativeMessage';
+      if (constraint != null && constraint != backend) {
         throw LiteRtLmEngineCreateException(
-          'Failed to create engine on $backend$because. Model: $modelPath'
-          '${float32OnGpu ? ' (float32 activations need more GPU memory than '
-                    'the default. If you set activationDataType, try without '
-                    'it; if you did not, the engine chose float32 for a '
-                    'FunctionGemma bundle that declares no '
-                    'prefer_activation_type, and ActivationDataType.float16 '
-                    'asks for the default instead)' : ''}',
+          'This .litertlm model requires the "$constraint" backend — it '
+          'declares section_backend_constraint: $constraint, but the '
+          '"$backend" backend was requested. Use PreferredBackend.$constraint '
+          '(or omit preferredBackend to try GPU first).',
           nativeCode: nativeCode,
           nativeMessage: nativeMessage,
         );
       }
-
-      _isInitialized = true;
-      acceptBundleSamplerRead(samplerRead);
-      final channelWarning = thinkingBudgetChannelWarning(
-        _thinkingTokenBudget,
-        samplerRead,
-        modelPath,
+      // Only the GPU executor reads the activation type, so only a float32
+      // GPU attempt can have failed because of it.
+      final float32OnGpu = activationDataType == 0 && backend == 'gpu';
+      throw LiteRtLmEngineCreateException(
+        'Failed to create engine on $backend$because. Model: $modelPath'
+        '${float32OnGpu ? ' (float32 activations need more GPU memory than '
+                  'the default. If you set activationDataType, try without '
+                  'it; if you did not, the engine chose float32 for a '
+                  'FunctionGemma bundle that declares no '
+                  'prefer_activation_type, and ActivationDataType.float16 '
+                  'asks for the default instead)' : ''}',
+        nativeCode: nativeCode,
+        nativeMessage: nativeMessage,
       );
-      // A release build is where an uncapped turn gets reported, and
-      // edgeAiLog is silent there.
-      // ignore: avoid_print
-      if (channelWarning != null) print(channelWarning);
-      edgeAiLog(
-        '[LiteRtLmFfi/perf] initialize() total: ${initSw.elapsedMilliseconds}ms',
-      );
-      edgeAiLog('[LiteRtLmFfi] Engine initialized successfully');
-
-      // Auto-dump the SDK's stderr log after successful engine_create so
-      // users can see what happens inside the native call (model load time,
-      // accelerator init, sampler dlopen attempts, KV cache prefill, etc.).
-      // No-op when stderr redirection isn't wired (release / Android /
-      // Windows). Safe to call before _isInitialized was true since the
-      // dump only reads a file, doesn't touch native state.
-      _dumpNativeLog();
-    } finally {
-      calloc.free(modelPathPtr);
-      calloc.free(backendPtr);
-      if (visionBackendPtr != nullptr) calloc.free(visionBackendPtr);
-      if (audioBackendPtr != nullptr) calloc.free(audioBackendPtr);
     }
+
+    _isInitialized = true;
+    acceptBundleSamplerRead(samplerRead);
+    final channelWarning = thinkingBudgetChannelWarning(
+      _thinkingTokenBudget,
+      samplerRead,
+      modelPath,
+    );
+    // A release build is where an uncapped turn gets reported, and
+    // edgeAiLog is silent there.
+    // ignore: avoid_print
+    if (channelWarning != null) print(channelWarning);
+    edgeAiLog(
+      '[LiteRtLmFfi/perf] initialize() total: ${initSw.elapsedMilliseconds}ms',
+    );
+    edgeAiLog('[LiteRtLmFfi] Engine initialized successfully');
+
+    // Auto-dump the SDK's stderr log after successful engine_create so
+    // users can see what happens inside the native call (model load time,
+    // accelerator init, sampler dlopen attempts, KV cache prefill, etc.).
+    // No-op when stderr redirection isn't wired (release / Android /
+    // Windows). Safe to call before _isInitialized was true since the
+    // dump only reads a file, doesn't touch native state.
+    _dumpNativeLog();
   }
 
   /// Keeps the bundle-sampler [read] for the engine just created and says what

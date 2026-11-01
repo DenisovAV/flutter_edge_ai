@@ -21,6 +21,12 @@ export 'src/litert_stt_backend_stub.dart'
 export 'src/litert_tts_backend_stub.dart'
     if (dart.library.ffi) 'src/litert_tts_backend.dart';
 
+// The models this package runs, generated from the project's model registry:
+// `LiteRtSpeechModels.moonshineTiny`, `LiteRtSpeechModels.matchaTts`. Plain
+// Dart on every platform; nothing runs on the web.
+export 'src/catalog/speech_catalog.dart'
+    hide debugSpeechCatalogAbi, debugSpeechCatalogOnWeb;
+
 // Voice loop — pure-Dart orchestration (no ffi), exported unconditionally.
 export 'src/voice/voice_event.dart';
 export 'src/voice/voice_responder.dart';

@@ -17,12 +17,12 @@ CI that fails on warnings fail.
    embedding backend. `InferenceModel.createDecider(question:, options:,
    calibration:)` needs a small LLM TRAINED on that one decision (a `.litertlm`
    tuned by LiteTune, which writes the decision into the file), natively, on
-   the CPU (`flutter_edge_ai_litertlm` 1.16.0) or the GPU (1.20.0); the NPU,
+   the CPU (`flutter_edge_ai_litertlm` 1.16.0) or the GPU (1.19.1); the NPU,
    any other model, and every model on the web throw
    `DeciderUnsupportedException`. The file's calibration is fitted on the
    CPU: load with `preferredBackend: PreferredBackend.cpu` to use it as
    fitted (a load without it tries the GPU first). Its scoring self-check runs
-   in debug and profile builds only (litertlm 1.20.0; release scores in a
+   in debug and profile builds only (litertlm 1.19.1; release scores in a
    fixed mode): run the decider once in debug on the target hardware. Both return a `Decider` whose `DeciderAnswer` reads the same, so code
    that reads answers (choice, ranked, abstainReason, provenance) needs no
    change when one replaces the other; check `decider.capabilities`

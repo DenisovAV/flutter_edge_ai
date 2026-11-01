@@ -1,7 +1,8 @@
-// On-device STT integration test — installs moonshine-tiny from HuggingFace and
-// transcribes the bundled clip through the public API
-// (installStt -> getActiveStt -> transcribe). Runs on every native target
-// (macOS/iOS/Android/desktop). Web is not covered — the STT web arm is a stub.
+// On-device STT integration test — installs the registry's moonshine-tiny f32
+// build (installStt().fromCatalog, pinned to its Hugging Face commit) and transcribes
+// the bundled clip through the public API (getActiveStt -> transcribe). Runs on
+// every native target (macOS/iOS/Android/desktop). Web is not covered — the STT
+// web arm is a stub. A pass prints the registry evidence line.
 //
 // Run: flutter test integration_test/stt_moonshine_test.dart -d <device>
 //        [--dart-define=HUGGINGFACE_TOKEN=hf_xxx]
@@ -15,11 +16,15 @@ import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 
-const _modelUrl =
-    'https://huggingface.co/litert-community/moonshine-tiny/resolve/main/moonshine_tiny_5s_f32.tflite';
-const _tokenizerUrl =
-    'https://huggingface.co/moonshine-ai/moonshine/resolve/main/ctranslate2/tiny/tokenizer.json';
+import 'registry_evidence.dart';
+
 const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
+
+// A phone whose downloads crawl (a DDP phone reaches Hugging Face over
+// IPv6/NAT64 at a few KB/s) runs on staged copies of the same two files; the
+// evidence then comes from the model file's sha256.
+const _modelFile = String.fromEnvironment('STT_MODEL_FILE');
+const _tokenizerFile = String.fromEnvironment('STT_TOKENIZER_FILE');
 
 /// WAV data chunk starts after the 44-byte canonical PCM header.
 const _wavHeaderBytes = 44;
@@ -35,14 +40,16 @@ void main() {
       sttBackends: const [LiteRtSttBackend()],
     );
 
-    await FlutterEdgeAi.installStt()
-        .modelFromNetwork(_modelUrl, token: _token.isEmpty ? null : _token)
-        .tokenizerFromNetwork(
-          _tokenizerUrl,
-          token: _token.isEmpty ? null : _token,
-        )
-        .ofType(SttModelType.moonshine)
-        .install();
+    final variant = LiteRtSpeechModels.moonshineTiny.f32;
+    if (_modelFile.isNotEmpty) {
+      await FlutterEdgeAi.installStt()
+          .modelFromFile(_modelFile)
+          .tokenizerFromFile(_tokenizerFile)
+          .ofType(SttModelType.moonshine)
+          .install();
+    } else {
+      await FlutterEdgeAi.installStt().fromCatalog(variant).install();
+    }
 
     final recognizer = await FlutterEdgeAi.getActiveStt();
 
@@ -68,6 +75,20 @@ void main() {
     expect(low, contains('she'), reason: 'got: "$transcript"');
     expect(low, contains('watch'), reason: 'got: "$transcript"');
     expect(low, contains('year'), reason: 'got: "$transcript"');
+    // No preferredBackend: the recognizer runs on the CPU.
+    if (_modelFile.isNotEmpty) {
+      await recordEvidence(
+        path: _modelFile,
+        backend: PreferredBackend.cpu,
+        check: 'transcribes the bundled clip',
+      );
+    } else {
+      await recordCatalogEvidence(
+        variant,
+        backend: PreferredBackend.cpu,
+        check: 'transcribes the bundled clip',
+      );
+    }
 
     await recognizer.close();
   }, timeout: const Timeout(Duration(minutes: 10)));

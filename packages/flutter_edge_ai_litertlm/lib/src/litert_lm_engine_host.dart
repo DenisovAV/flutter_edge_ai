@@ -35,16 +35,16 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
   String get abi => '${Abi.current()}';
 
   @override
-  Future<NpuStackCheck> stack(NpuVendor vendor) => _npu.stack(vendor);
+  Future<NpuStackCheck> stack(NpuStack vendor) => _npu.stack(vendor);
 
   /// On Android it opens a vendor library.
   @override
-  String? unreachable(NpuVendor vendor) => _npu.unreachable(vendor);
+  String? unreachable(NpuStack vendor) => _npu.unreachable(vendor);
 
   /// On Android it extracts the vendor's libraries out of the APK when the
   /// installer did not.
   @override
-  Future<String> prepareDispatchDir(NpuVendor vendor) =>
+  Future<String> prepareDispatchDir(NpuStack vendor) =>
       _npu.prepareDispatchDir(vendor);
 
   /// A client for one backend attempt.

@@ -1,0 +1,30 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: functiongemma-270m-flutter-demo
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: FunctionGemma 270M (Flutter demo fine-tune)
+family: gemma3
+arch_class: dense
+license: unspecified
+license_url: https://huggingface.co/sasha-denisov/functiongemma-flutter-gemma-demo
+model_type: functionGemma
+capabilities:
+  image: false
+  audio: false
+  function_calls: true
+  thinking: false
+runtime:
+  max_tokens: 1024
+  preferred_backend: gpu
+variants:
+- slug: q8-ekv1024
+  file_type: litertlm
+  file:
+    repo: sasha-denisov/functiongemma-flutter-gemma-demo
+    revision: 8ec9e7e36db12e8ca040b4b28263fdb793943996
+    path: functiongemma-flutter_q8_ekv1024.litertlm
+    sha256: 2afdc6caeb53f389229d1b5a23d5bf503b844ccd76a8d869ce10db3d14bd66f8
+    size: 284426240
+    install_filename: functiongemma-flutter_q8_ekv1024.litertlm

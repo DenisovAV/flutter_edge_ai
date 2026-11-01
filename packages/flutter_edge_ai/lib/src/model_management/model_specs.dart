@@ -15,6 +15,7 @@ import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.
 import 'package:flutter_edge_ai/src/utils/file_name_utils.dart';
 import 'package:flutter_edge_ai/src/utils/file_names.dart'
     show isSelfContainedEmbeddingFilename;
+import 'package:meta/meta.dart' show internal;
 
 part 'types/model_spec.dart';
 part 'types/inference_model_spec.dart';

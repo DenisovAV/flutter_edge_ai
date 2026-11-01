@@ -20,6 +20,7 @@ import 'dart:io' show FileSystemException, Platform;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../catalog/litert_catalog.dart' show LiteRtEmbedders;
 import 'litert_embedding_pass.dart';
 import 'litert_lm_embedding_pass.dart';
 import 'litert_lm_npu.dart';
@@ -43,7 +44,14 @@ import 'weight_cache_notice.dart';
 /// per-SoC bundle without it, and `npu` where it cannot run are refused with
 /// an `EmbeddingLoadException`, because NPU and CPU vectors are not
 /// interchangeable.
-final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
+final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
+    implements ModelCatalogSource {
+  /// The embedding models this backend runs, pinned to Hugging Face
+  /// commits: [LiteRtEmbedders.catalog]. `FlutterEdgeAi.catalog` includes it
+  /// once the backend is passed to `initialize`.
+  @override
+  ModelCatalog get modelCatalog => LiteRtEmbedders.catalog;
+
   /// [visionTokensPerImage] is how many vision tokens an EmbeddingGemma 2
   /// image gets: 140 (the default, closest to the reference model) or 70
   /// (about twice as fast, slightly less faithful). The two give different

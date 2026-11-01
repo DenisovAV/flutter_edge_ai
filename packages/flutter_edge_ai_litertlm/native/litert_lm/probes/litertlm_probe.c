@@ -32,8 +32,11 @@ static void* Sym(LibHandle h, const char* name) {
 #else
 #include <dlfcn.h>
 typedef void* LibHandle;
+// Dart's DynamicLibrary.open does not ask for RTLD_GLOBAL; neither does this
+// unless PROBE_RTLD_GLOBAL is set (an app's own load is what is measured).
 static LibHandle OpenLib(const char* path) {
-  return dlopen(path, RTLD_NOW | RTLD_GLOBAL);
+  return dlopen(path, RTLD_NOW | (getenv("PROBE_RTLD_GLOBAL") ? RTLD_GLOBAL
+                                                                : RTLD_LOCAL));
 }
 static void* Sym(LibHandle h, const char* name) { return dlsym(h, name); }
 #endif

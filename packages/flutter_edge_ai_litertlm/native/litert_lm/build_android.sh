@@ -68,14 +68,35 @@ git checkout -f "$TARGET_REF"
 echo "Building from: $(git log --oneline -1)"
 
 # 3. Ensure cc_binary(linkshared=True) target exists in c/BUILD
+# Only the C APIs leave the library: litert_lm_* for the Dart client and
+# LiteRt* for the companions that resolve the runtime through NEEDED (the TopK
+# sampler, #270; the NPU dispatches). Everything else stays local. From
+# v0.19.0 libLiteRtLm NEEDs libEGL/libGLES (the static OpenCL accelerator),
+# whose vendor stack loads the system libprotobuf-cpp-lite in the same dlopen;
+# with our ~3900 protobuf symbols exported, its constructors bound to ours and
+# SIGSEGVed (Galaxy S25 Ultra, 2026-11-01). Upstream's own //c:litert-lm does
+# the same with c/litert_lm_c_api_linux.lds.
+cat > c/flutter_edge_ai_android_exports.lds << 'LDSEOF'
+{
+  global:
+    litert_lm_*;
+    LiteRt*;
+  local:
+    *;
+};
+LDSEOF
 if ! grep -q '"libLiteRtLm.dylib"' c/BUILD; then
   cat >> c/BUILD << 'BUILDEOF'
 
 cc_binary(
     name = "libLiteRtLm.dylib",
+    additional_linker_inputs = [":flutter_edge_ai_android_exports.lds"],
     linkshared = True,
     linkopts = select({
-        "@platforms//os:android": ["-Wl,-soname,libLiteRtLm.so"],
+        "@platforms//os:android": [
+            "-Wl,-soname,libLiteRtLm.so",
+            "-Wl,--version-script=$(location :flutter_edge_ai_android_exports.lds)",
+        ],
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],

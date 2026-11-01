@@ -1,0 +1,4 @@
+This install would write it's.litertlm over the file the active inference model gemma reads, and checks it only afterwards. Uninstall that model first (FlutterEdgeAi.uninstallModel('it\'s.litertlm')), or install under another file name.
+This install would write emb.tflite over the file the active embedding model emb reads, and checks it only afterwards. Uninstall that model first (FlutterEdgeAi.uninstallEmbedder()), or install under another file name.
+This install would write stt.tflite over the file the active speech-to-text model stt reads, and checks it only afterwards. Uninstall that model first (FlutterEdgeAi.uninstallStt()), or install under another file name.
+This install would write a.tflite over the file the active text-to-speech model matcha reads, and checks it only afterwards. Uninstall that model first (FlutterEdgeAi.uninstallTts()), or install under another file name.

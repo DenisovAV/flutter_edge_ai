@@ -1,0 +1,129 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: gemma-3-1b-it
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: Gemma 3 1B
+family: gemma3
+arch_class: dense
+license: gemma
+license_url: https://ai.google.dev/gemma/terms
+model_type: gemmaIt
+capabilities:
+  image: false
+  audio: false
+  function_calls: false
+  thinking: false
+runtime:
+  max_tokens: 1024
+  preferred_backend: gpu
+variants:
+- slug: q4-ekv4096
+  file_type: litertlm
+  file:
+    repo: litert-community/Gemma3-1B-IT
+    revision: d448835d84411a08f577e25f3afebe528402d73b
+    path: Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm
+    sha256: 1325ae366d31950f137c9c357b9fa89448b176d76998180c08ceaca78bba98be
+    size: 584417280
+    install_filename: Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm
+    gated: auto
+  example:
+  - gemma3_1B
+- slug: npu-mt6989
+  file_type: litertlm
+  file:
+    repo: litert-community/Gemma3-1B-IT
+    revision: d448835d84411a08f577e25f3afebe528402d73b
+    path: Gemma3-1B-IT_q4_ekv1280_mt6989.litertlm
+    sha256: 10b10bb55851448c54840d3730650f6242245828a904d0baa2255ec5c0e8ff89
+    size: 1032830976
+    install_filename: Gemma3-1B-IT_q4_ekv1280_mt6989.litertlm
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6989
+  fixed_max_tokens: 1280
+  runtime:
+    preferred_backend: npu
+- slug: npu-mt6991
+  file_type: litertlm
+  file:
+    repo: litert-community/Gemma3-1B-IT
+    revision: d448835d84411a08f577e25f3afebe528402d73b
+    path: Gemma3-1B-IT_q4_ekv1280_mt6991.litertlm
+    sha256: 4bab56bdc34b38ab5341e578c2c8c9d8a4a88de752b9420c506a383535846faf
+    size: 1033814016
+    install_filename: Gemma3-1B-IT_q4_ekv1280_mt6991.litertlm
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6991
+  fixed_max_tokens: 1280
+  runtime:
+    preferred_backend: npu
+- slug: npu-mt6993
+  file_type: litertlm
+  file:
+    repo: litert-community/Gemma3-1B-IT
+    revision: d448835d84411a08f577e25f3afebe528402d73b
+    path: Gemma3-1B-IT_q4_ekv1280_mt6993.litertlm
+    sha256: adb161e25d7f3ad753d07f66992a8b88015b662e343c35edd16a0a2914cd8960
+    size: 1020411904
+    install_filename: Gemma3-1B-IT_q4_ekv1280_mt6993.litertlm
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6993
+  fixed_max_tokens: 1280
+  runtime:
+    preferred_backend: npu
+- slug: npu-sm8850
+  file_type: litertlm
+  file:
+    repo: litert-community/Gemma3-1B-IT
+    revision: d448835d84411a08f577e25f3afebe528402d73b
+    path: Gemma3-1B-IT_q4_ekv1280_sm8850.litertlm
+    sha256: fda5dca0e8c1c6f65ca5625c326ff79920c7eb82625a0c6515ae4f5711957b1f
+    size: 693747712
+    install_filename: Gemma3-1B-IT_q4_ekv1280_sm8850.litertlm
+    gated: auto
+  npu:
+    vendor: qualcomm
+    soc: SM8850
+  fixed_max_tokens: 1280
+  runtime:
+    preferred_backend: npu
+- slug: npu-tensor-g5
+  file_type: litertlm
+  file:
+    repo: litert-community/Gemma3-1B-IT
+    revision: d448835d84411a08f577e25f3afebe528402d73b
+    path: Gemma3-1B-IT_q8_ekv1280_Google_Tensor_G5.litertlm
+    sha256: 1ed29548b302764ce32ebf03d7df8fff943218b76d14230e97ee4bd0224cd8d1
+    size: 1678542365
+    install_filename: Gemma3-1B-IT_q8_ekv1280_Google_Tensor_G5.litertlm
+    gated: auto
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G5
+  fixed_max_tokens: 1280
+  runtime:
+    preferred_backend: npu
+- slug: npu-tensor-g6
+  file_type: litertlm
+  file:
+    repo: litert-community/Gemma3-1B-IT
+    revision: d448835d84411a08f577e25f3afebe528402d73b
+    path: Gemma3-1B-IT_q8_ekv1280_Google_Tensor_G6.litertlm
+    sha256: f34684a6db0799bdcf6ed0331aca4e98756f153e4371f3872b80c1efc4bc9e36
+    size: 2043971366
+    install_filename: Gemma3-1B-IT_q8_ekv1280_Google_Tensor_G6.litertlm
+    gated: auto
+  npu:
+    vendor: google-tensor
+    soc: Tensor_G6
+  fixed_max_tokens: 1280
+  runtime:
+    preferred_backend: npu

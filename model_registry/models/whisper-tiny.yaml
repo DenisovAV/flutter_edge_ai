@@ -1,0 +1,410 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: whisper-tiny
+kind: stt
+package: flutter_edge_ai_speech
+display_name: Whisper Tiny
+family: whisper
+arch_class: speech-recognition
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+stt_type: whisper
+variants:
+- slug: f32
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32.tflite
+    sha256: 0c8f0e2a1855909a0c027b4ac3c586fdd299e2b47bf1a4fdab51191bca1e0e89
+    size: 150979184
+    install_filename: whisper_tiny_30s_f32.tflite
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+  example:
+  - whisperTiny
+- slug: i8
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_i8.tflite
+    sha256: 6748ac565a228c4a00b18d11ea1e2fd7cead3db6fba94e3f0bf35756b13ba4a9
+    size: 41116288
+    install_filename: whisper_tiny_30s_i8.tflite
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+  example:
+  - whisperTinyInt8
+- slug: f32-npu-mt6877
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT6877.tflite
+    sha256: 5796d1877d6bcc6e307d744bbfd3d1b99f8d517bbe59aa755dffbf0779a0a869
+    size: 158197360
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT6877.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6877
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6878
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT6878.tflite
+    sha256: 0db6686f62bb7c473b1d30082703502138707c1da56408d7b49b0ffffd0bc430
+    size: 155711828
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT6878.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6878
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6879
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT6879.tflite
+    sha256: 7522769c42180f98c176a232fa500bb34a1ac6e2bf6bcfa09801fcc19961f97e
+    size: 158197360
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT6879.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6879
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6897
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT6897.tflite
+    sha256: 462ee83c1d5f58d7fde60de3efad489797f27e159662c772184b4c05f5ef62d9
+    size: 155814356
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT6897.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6897
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6983
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT6983.tflite
+    sha256: 3902fd38bb485295c592b0c83edabf540b2e700ac0e0e22b92a55c3d0ee9bafe
+    size: 155711828
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT6983.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6983
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6985
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT6985.tflite
+    sha256: 7a3b106d8e820c68967b1465141020b53aec379ac17b1c0c7fccfc99c5eaaa25
+    size: 155711828
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT6985.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6985
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6989
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT6989.tflite
+    sha256: fcc46116d520b7514e1d423e740e9703d5893f9c455f49a7acd130ef1cf58796
+    size: 155634208
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT6989.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6989
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6991
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT6991.tflite
+    sha256: 539386c03dcac03f1409d672a9805973f5afc93a6f1d0e0d808570d16d111aa9
+    size: 155717804
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT6991.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6991
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt6993
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT6993.tflite
+    sha256: 8b0d0267c6c874705eff82124cebb7cabd7a843e775973bf15c5f650a59efb26
+    size: 155720152
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT6993.tflite
+  npu:
+    vendor: mediatek
+    soc: mt6993
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt8171
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT8171.tflite
+    sha256: 6128e86917d78aca67b1f4ed0dcbe866f0cc8329593e72bca38c94fa6bfc7603
+    size: 155717804
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT8171.tflite
+  npu:
+    vendor: mediatek
+    soc: mt8171
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt8188
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT8188.tflite
+    sha256: 208de1204756eb158dd1f0db971e850ad44a537521e0ab7bad61053d5f154939
+    size: 155711828
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT8188.tflite
+  npu:
+    vendor: mediatek
+    soc: mt8188
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-mt8189
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_MediaTek_MT8189.tflite
+    sha256: 948c2a1255e580506b619e704d22ea1c1415e17cc340c292a0b9cfc056d0b81f
+    size: 155717804
+    install_filename: whisper_tiny_30s_f32_MediaTek_MT8189.tflite
+  npu:
+    vendor: mediatek
+    soc: mt8189
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-sa8255
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_Qualcomm_SA8255.tflite
+    sha256: 09115cde157641170fa80875456e07cfcdabcdfdb560478e0d601a4d550d2d0f
+    size: 119933264
+    install_filename: whisper_tiny_30s_f32_Qualcomm_SA8255.tflite
+  npu:
+    vendor: qualcomm
+    soc: SA8255
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-sa8295
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_Qualcomm_SA8295.tflite
+    sha256: 628844c285638c4cb948ee8a22bde86062c6bb4be50cd924c4d5a71843607f6d
+    size: 118782288
+    install_filename: whisper_tiny_30s_f32_Qualcomm_SA8295.tflite
+  npu:
+    vendor: qualcomm
+    soc: SA8295
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-sm8450
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_Qualcomm_SM8450.tflite
+    sha256: ff876f01485f7b0140b5061056e3847e35e1a67b25166e5be9f7a9dc5bd95cab
+    size: 118831440
+    install_filename: whisper_tiny_30s_f32_Qualcomm_SM8450.tflite
+  npu:
+    vendor: qualcomm
+    soc: SM8450
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-sm8550
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_Qualcomm_SM8550.tflite
+    sha256: c00cdd5ced2c12682754a89069e32dff3ca465e5aa648ec1d0b717330a8ee207
+    size: 119949648
+    install_filename: whisper_tiny_30s_f32_Qualcomm_SM8550.tflite
+  npu:
+    vendor: qualcomm
+    soc: SM8550
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-sm8650
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_Qualcomm_SM8650.tflite
+    sha256: e72a316010b502e9607f53ad76eb6097b445d1272272611203b8638af04336e0
+    size: 119859536
+    install_filename: whisper_tiny_30s_f32_Qualcomm_SM8650.tflite
+  npu:
+    vendor: qualcomm
+    soc: SM8650
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-sm8750
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_Qualcomm_SM8750.tflite
+    sha256: 6280afec96131a07a1af111684380bf1b6bfaf3fbba2001433e9205d3d887144
+    size: 119916880
+    install_filename: whisper_tiny_30s_f32_Qualcomm_SM8750.tflite
+  npu:
+    vendor: qualcomm
+    soc: SM8750
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json
+- slug: f32-npu-sm8850
+  file_type: tflite
+  file:
+    repo: litert-community/whisper-tiny
+    revision: d0662bbcb13106e6f740632b9ff961c8e22f7a13
+    path: whisper_tiny_30s_f32_Qualcomm_SM8850.tflite
+    sha256: 67207435852ac403b90dcb60f57631526f528ceb88ff074993816c77a2f7e147
+    size: 120109392
+    install_filename: whisper_tiny_30s_f32_Qualcomm_SM8850.tflite
+  npu:
+    vendor: qualcomm
+    soc: SM8850
+  tokenizer:
+    repo: openai/whisper-tiny
+    revision: 169d4a4341b33bc18d8881c4b69c2e104e1cc0af
+    path: tokenizer.json
+    sha256: 27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566
+    size: 2480466
+    install_filename: tokenizer.json

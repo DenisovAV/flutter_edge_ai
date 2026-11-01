@@ -103,7 +103,7 @@ import '../ffi/litert_lm_embedding_bindings.dart';
 import '../ffi/litert_lm_library.dart';
 import '../ffi/npu_vendor_host.dart' show npuStagesWeightBanks;
 import '../ffi/sigprof_mask.dart';
-import '../npu_stacks.dart' show NpuVendor;
+import '../npu_stacks.dart' show NpuStack;
 import 'embedding_parts.dart';
 import 'litert_lm_embedding_common.dart';
 import 'litertlm_container_io.dart';
@@ -286,15 +286,15 @@ EmbeddingPass buildLiteRtLmEmbeddingPass(LiteRtLmEmbeddingConfig config) =>
 @visibleForTesting
 String liteRtLmNpuProbeFailureCauses(LiteRtLmNpuTarget target) =>
     switch (npuVendorOf(target)) {
-      NpuVendor.intel =>
+      NpuStack.intel =>
         'on another SoC, or on a PC without an Intel NPU or its driver',
-      NpuVendor.qualcomm =>
+      NpuStack.qualcomm =>
         'on another SoC, or with a QNN runtime that has no Skel for this '
             "device's Hexagon version",
-      NpuVendor.googleTensor =>
+      NpuStack.googleTensor =>
         'on another Tensor generation (G5 and G6 bundles are not '
             'interchangeable), or without a compatible Pixel system runtime',
-      NpuVendor.mediatek =>
+      NpuStack.mediatek =>
         'on another SoC, or with a NeuroPilot runtime on this device that '
             "does not match the bundle's NeuroPilot SDK version",
       // The placement refuses a bundle of a vendor with no dispatch here

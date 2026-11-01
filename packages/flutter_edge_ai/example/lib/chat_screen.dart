@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'services/catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 import 'package:flutter_edge_ai_example/chat_widget.dart';
@@ -132,7 +133,31 @@ class ChatScreenState extends State<ChatScreen> {
       // `hfRepo`; everything else keeps the fromNetwork branch below.
       ModelRuntimeDefaults? hfDefaults;
 
-      if (widget.model.hfRepo != null) {
+      if (widget.model.catalogVariant case final variant?) {
+        // A model registry build: installModelFromCatalog takes the model
+        // type, file type, pinned URL and install name from it and checks the
+        // file's size.
+        final token = variant.file.gated
+            ? await AuthTokenService.loadToken()
+            : null;
+        final replaced = await installFromCatalogReplacingActive(
+          () => FlutterEdgeAi.installModelFromCatalog(variant, token: token)
+              .withProgress((percent) {
+                if (!mounted) return;
+                setState(() => _downloadPercent = percent);
+              })
+              .install(),
+          variant: variant,
+          confirm: (model, bytes) =>
+              askToReplaceActiveModel(context, model, bytes),
+        );
+        if (replaced case final CatalogInstallKept kept) {
+          if (mounted) {
+            leaveKeeping(context, kept);
+          }
+          return;
+        }
+      } else if (widget.model.hfRepo != null) {
         final installation = await installer
             .fromHuggingFace(widget.model.hfRepo!)
             .withProgress((percent) {

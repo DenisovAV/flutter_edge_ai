@@ -1,0 +1,112 @@
+{
+  "container_version": "1.6.0",
+  "size": 1783424544,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": 4096,
+  "kv_cache_length": 4096,
+  "prefill_decode_signatures": {
+    "prefill_128": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        128
+      ]
+    },
+    "prefill_512": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        128
+      ]
+    },
+    "prefill_1024": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        128
+      ]
+    },
+    "decode": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        128
+      ]
+    }
+  },
+  "system_metadata": {
+    "Authors": "",
+    "uuid": "13d532fe-1524-4c09-9daa-c746ea56d3d9",
+    "creation_timestamp": "2026-08-31T04:30:02.157408+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 1906
+    },
+    {
+      "data_type": "HF_Tokenizer_Zlib",
+      "length": 1967897
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 235199136,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 874259104,
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_encoder",
+      "length": 637714480,
+      "items": {
+        "model_type": "tf_lite_vision_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_adapter",
+      "length": 34203168,
+      "items": {
+        "model_type": "tf_lite_vision_adapter"
+      }
+    }
+  ]
+}

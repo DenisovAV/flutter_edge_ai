@@ -80,8 +80,7 @@ await FlutterEdgeAi.installModel(
   modelType: ModelType.gemma4,
   fileType: ModelFileType.litertlm,
 ).fromNetwork(
-  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
-  token: 'hf_...',
+  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm',
 ).install();
 
 // Create the model once and keep it for the app's lifetime.
@@ -206,7 +205,7 @@ board, Qualcomm's FastRPC library has to be present (`qcom-fastrpc1` on Ubuntu;
 Qualcomm's images ship it) and the user has to be in group `fastrpc`
 (`sudo usermod -aG fastrpc $USER`, then log in again). Without either, a bundle
 compiled for an NPU is refused with a `BackendInitException` that names what is
-missing. Use the bundle compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
+missing. Use the bundle compiled for your SoC. Google publishes Linux-board bundles for the QCS8275 only (Gemma 4 E2B, EmbeddingGemma 2; see the [Model Registry](/docs/registry)): install `LiteRtLmModels.gemma4E2bIt.npuQcs8275` from the catalog, since the file is no longer on the repository's `main`. The QCS6490 and QCS9075 have the stack but no bundle to run. A Linux
 x64 build ignores the flag.
 
 <Warning>
@@ -214,7 +213,7 @@ x64 build ignores the flag.
 **EmbeddingGemma 2 on the NPU** uses the same flag on Qualcomm Android and
 Linux arm64, with the per-SoC bundles, and never falls back: see
 [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-on-a-qualcomm-npu).
-Google Tensor G5/G6 bundles (270m, 440m) take `google_tensor_npu: true` instead
+Google Tensor G5/G6 bundles (270m, 440m, 740m) take `google_tensor_npu: true` instead
 (from 1.15.0): see
 [EmbeddingGemma 2 on a Google Tensor NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-google-tensor-npu).
 MediaTek MT6991/MT6993 bundles take `mediatek_npu: true` (from 1.17.0; not run
@@ -223,7 +222,8 @@ On Windows x64 the Intel Panther Lake bundles need no flag (from 1.13.2): see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 
 **For LLMs, NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
-those work on Qualcomm, Intel and Google Tensor G6. Google publishes no Gemma 4
+those work on Qualcomm, Intel and Google Tensor G6 (per build: the
+[Model Registry](/docs/registry#gemma-4-e2b-it)). Google publishes no Gemma 4
 bundle for MediaTek: Gemma 3 1B `…_mt6989` generates on a Dimensity 9300+, and whether it
 keeps its prefill chunks is not measured. Most **Gemma 3** bundles
 do not on Qualcomm or Intel (Tensor not measured), and they fail
@@ -250,9 +250,12 @@ with no error and nothing in the log:
 
 Both are tracked upstream in
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).
-Because the safe context is a property of the compiled bundle, `maxTokens` is
-**not** clamped up to 1024 on the NPU attempt (it is on CPU and GPU — see below),
-so pass the `cache_length` the bundle was compiled for. Only a bundle compiled
+An NPU bundle is compiled for one KV-cache length: 4096 for every Gemma 4 E2B
+NPU build, 1280 for Gemma 3 1B and FastVLM, 4096 for Gemma 3 270M (the
+catalog's `requiredMaxTokens`, and the context the
+[Model Registry](/docs/registry) gives each NPU build). `maxTokens` is **not**
+clamped up to 1024 on the NPU attempt (it is on CPU and GPU — see below); keep
+it at or below that length. Only a bundle compiled
 for an NPU runs on one. A generic bundle is never tried there: it has no NPU
 graph, and LiteRT would try to compile it on the device with a compiler
 plugin, which no NPU stack here ships, and run it on the CPU while reporting

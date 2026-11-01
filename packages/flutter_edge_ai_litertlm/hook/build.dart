@@ -166,7 +166,7 @@ class _NativeBundle {
     if (os == OS.android) {
       // Every vendor stack that runs on Android, from the table (Qualcomm's is
       // androidExtraLibs).
-      for (final vendor in NpuVendor.values) {
+      for (final vendor in NpuStack.values) {
         if (!vendor.abis.any((abi) => abi.startsWith('android_'))) continue;
         for (final name in npuStackLibs(vendor, 'android')) {
           yield _dylibFileName(os, name);
@@ -406,7 +406,7 @@ final _litertlmBundle = _NativeBundle(
     // DXC runtime
     'dxil',
     'dxcompiler',
-    // Intel NPU stack (NpuVendor.intel), in every Windows x64 build. ONE SET
+    // Intel NPU stack (NpuStack.intel), in every Windows x64 build. ONE SET
     // WITH THE WINDOWS WORKFLOW'S `$ovWanted`: see intelNpuLibs.
     ...intelNpuLibs,
   ],
@@ -1033,7 +1033,7 @@ Future<void> _processBundle({
     }
   }
 
-  // The NPU stack of each vendor of this target (NpuVendor.abis), the same
+  // The NPU stack of each vendor of this target (NpuStack.abis), the same
   // table the runtime chooses a vendor from. The ABI string is Abi.current()'s
   // spelling, which code_assets' OS and Architecture names share.
   //
@@ -1044,7 +1044,7 @@ Future<void> _processBundle({
   // and make NativeAssetsManifest.json, which the runtime gate reads, claim a
   // stack the developer never enabled.
   final targetAbi = '${os.name}_${input.config.code.targetArchitecture.name}';
-  for (final vendor in NpuVendor.values) {
+  for (final vendor in NpuStack.values) {
     if (!vendor.abis.any((abi) => abi.startsWith('${os.name}_'))) continue;
     final define = npuUserDefine(vendor);
     if (define != null &&
@@ -1063,7 +1063,7 @@ Future<void> _processBundle({
       continue;
     }
     switch (vendor) {
-      case NpuVendor.qualcomm when os == OS.android:
+      case NpuStack.qualcomm when os == OS.android:
         if (bundle.androidExtraLibs.isEmpty) break;
         await _registerQualcommNpu(
           input: input,
@@ -1071,7 +1071,7 @@ Future<void> _processBundle({
           prebuiltDir: prebuiltDir,
           stage: stage,
         );
-      case NpuVendor.qualcomm when os == OS.linux:
+      case NpuStack.qualcomm when os == OS.linux:
         if (bundle.linuxExtraLibs.isEmpty) break;
         await _registerQualcommNpuLinux(
           input: input,
@@ -1079,25 +1079,25 @@ Future<void> _processBundle({
           prebuiltDir: prebuiltDir,
           stage: stage,
         );
-      case NpuVendor.qualcomm:
-        throw StateError('NpuVendor.qualcomm has no stack for $targetAbi');
-      case NpuVendor.googleTensor when os == OS.android:
+      case NpuStack.qualcomm:
+        throw StateError('NpuStack.qualcomm has no stack for $targetAbi');
+      case NpuStack.googleTensor when os == OS.android:
         _registerBundledNpuStack(
           vendor: vendor,
           output: output,
           prebuiltDir: prebuiltDir,
           stage: stage,
         );
-      case NpuVendor.googleTensor:
-        throw StateError('NpuVendor.googleTensor has no stack for $targetAbi');
+      case NpuStack.googleTensor:
+        throw StateError('NpuStack.googleTensor has no stack for $targetAbi');
       // Not from the native bundle: Google's AAR, fetched (see
       // mediatek_runtime.dart for why).
-      case NpuVendor.mediatek when os == OS.android:
+      case NpuStack.mediatek when os == OS.android:
         await _registerMediatekNpu(input: input, output: output, stage: stage);
-      case NpuVendor.mediatek:
-        throw StateError('NpuVendor.mediatek has no stack for $targetAbi');
+      case NpuStack.mediatek:
+        throw StateError('NpuStack.mediatek has no stack for $targetAbi');
       // In every Windows x64 build, through windowsExtraLibs above.
-      case NpuVendor.intel:
+      case NpuStack.intel:
         break;
     }
   }
@@ -1142,7 +1142,7 @@ Future<void> _processBundle({
 /// archive. A file missing there is a native release that does not carry the
 /// stack yet: the build fails rather than ship a flag that does nothing.
 void _registerBundledNpuStack({
-  required NpuVendor vendor,
+  required NpuStack vendor,
   required BuildOutputBuilder output,
   required Uri prebuiltDir,
   required Uri Function(Uri) stage,
@@ -1186,7 +1186,7 @@ Future<void> _registerMediatekNpu({
   required BuildOutputBuilder output,
   required Uri Function(Uri) stage,
 }) async {
-  if (npuDispatchInNativeTarball(NpuVendor.mediatek)) {
+  if (npuDispatchInNativeTarball(NpuStack.mediatek)) {
     throw StateError(
       'MediaTek: its dispatch is in the native bundle, not fetched',
     );

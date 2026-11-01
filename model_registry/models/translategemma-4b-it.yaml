@@ -1,0 +1,58 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: translategemma-4b-it
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: TranslateGemma 4B
+family: gemma3
+arch_class: dense
+license: other
+license_url: https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized
+model_type: gemmaIt
+capabilities:
+  image: false
+  audio: false
+  function_calls: false
+  thinking: false
+runtime:
+  max_tokens: 1024
+  preferred_backend: cpu
+variants:
+- slug: int4
+  file_type: litertlm
+  file:
+    repo: barakplasma/translategemma-4b-it-android-task-quantized
+    revision: a45b06a66177e5cbc6d95babe2f89c1df75c0219
+    path: artifacts/int4-generic/translategemma-4b-it-int4-generic.litertlm
+    sha256: 94d2edceddeefe94aeb81fa3446f0b392c91e62f187392e049d4f74b2bb2315b
+    size: 2011201536
+    install_filename: translategemma-4b-it-int4-generic.litertlm
+  withhold_backends: &id001
+    gpu:
+      reason: On GPU the model emits only <pad> tokens.
+      issue: https://github.com/google-ai-edge/LiteRT-LM/issues/1748
+  example:
+  - translateGemma4Int4
+- slug: int8
+  file_type: litertlm
+  file:
+    repo: barakplasma/translategemma-4b-it-android-task-quantized
+    revision: a45b06a66177e5cbc6d95babe2f89c1df75c0219
+    path: artifacts/dynamic_int8-generic/translategemma-4b-it-dynamic_int8-generic.litertlm
+    sha256: 6ccc74202695d3079797d1c1b5cc4a9e4a069a53f5a1b6c3e25c8775f295858b
+    size: 3920576512
+    install_filename: translategemma-4b-it-dynamic_int8-generic.litertlm
+  withhold_backends: *id001
+  example:
+  - translateGemma4Int8
+- slug: int4-multimodal
+  file_type: litertlm
+  file:
+    repo: barakplasma/translategemma-4b-it-android-task-quantized
+    revision: a45b06a66177e5cbc6d95babe2f89c1df75c0219
+    path: artifacts/int4-multimodal/translategemma-4b-it-int4-multimodal.litertlm
+    sha256: 1bc8e828fbe56dfb503ac033ac84a9eb941d85a9c196803167fa39b35f7fb033
+    size: 2757894128
+    install_filename: translategemma-4b-it-int4-multimodal.litertlm
+  withhold_backends: *id001

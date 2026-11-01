@@ -79,7 +79,7 @@ void main() {
         print('[mtk] does not open: $lib (${'$e'.split('\n').first})');
       }
     }
-    final stack = await checkNpuStackInManifest(NpuVendor.mediatek);
+    final stack = await checkNpuStackInManifest(NpuStack.mediatek);
     print('[mtk] stack bundled=${stack.bundled} ${stack.reason ?? ''}');
     final refusal = mediaTekDeviceRefusal(_prop);
     final probe = platformNpuProbes.androidMediaTekRuntime();

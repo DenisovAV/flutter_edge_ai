@@ -1,0 +1,32 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: smolvlm2-500m
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: SmolVLM2 500M
+family: smolvlm
+arch_class: vision-language
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+model_type: general
+capabilities:
+  image: true
+  audio: false
+  function_calls: false
+  thinking: false
+runtime:
+  max_tokens: 4096
+  preferred_backend: gpu
+variants:
+- slug: generic
+  file_type: litertlm
+  file:
+    repo: litert-community/SmolVLM2-500M
+    revision: 78a25681a0811230bfa3079504a717e9a4a139d1
+    path: SmolVLM2-500M.litertlm
+    sha256: b808b328d845a600a33c5295f93d9217487317bd334dbc91b2a8d50e26e60ad0
+    size: 360822960
+    install_filename: SmolVLM2-500M.litertlm
+  example:
+  - smolVLM2_500M

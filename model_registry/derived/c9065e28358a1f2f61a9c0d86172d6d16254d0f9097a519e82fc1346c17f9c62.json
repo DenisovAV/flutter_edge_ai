@@ -1,0 +1,179 @@
+{
+  "container_version": "1.7.0",
+  "size": 176756720,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": 4096,
+  "kv_cache_length": 1024,
+  "prefill_decode_signatures": {
+    "prefill_1024": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "prefill_512": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "prefill_256": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "prefill_128": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "prefill_64": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "prefill_32": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "prefill_16": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "prefill_8": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "prefill_4": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "prefill_2": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "prefill_1": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    },
+    "decode": {
+      "kv_cache_c_0": [
+        1,
+        1024,
+        2
+      ],
+      "kv_cache_c_1": [
+        1,
+        1024,
+        2
+      ]
+    }
+  },
+  "system_metadata": {
+    "uuid": "f38c09ef-5ebc-445a-b3a1-4aa0855499e5",
+    "creation_timestamp": "2026-10-13T12:07:09.878869+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 5011
+    },
+    {
+      "data_type": "ExecutorMetadataProto",
+      "length": 1289
+    },
+    {
+      "data_type": "HF_Tokenizer_Zlib",
+      "length": 906962
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 175790064,
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    }
+  ]
+}

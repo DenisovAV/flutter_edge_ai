@@ -2,9 +2,17 @@ import 'package:flutter/foundation.dart';
 
 /// Verbosity for flutter_edge_ai's internal logs.
 ///
-/// - [none] — silence the plugin entirely.
-/// - [info] — lifecycle, errors, non-PII diagnostics (default in debug).
-/// - [verbose] — adds model output / prompts / conversation history.
+/// - [none] — silence this log, the start-up restore notices included.
+/// - [info] — lifecycle, errors, non-PII diagnostics (default). Release
+///   builds keep one part of this log: the start-up notices about active
+///   models that could not be restored.
+/// - [verbose] — adds model output / prompts / conversation history (debug
+///   builds).
+///
+/// Some messages are printed in every build whatever logLevel says:
+/// warnings about failures the app would not otherwise see, and a few
+/// notices (for example the sampler latch, at most once per engine, and the
+/// hidden-reasoning note, once per chat).
 enum EdgeAiLogLevel { none, info, verbose }
 
 /// Active log level. Top-level (Dart-canonical for process-global logger
@@ -15,19 +23,37 @@ enum EdgeAiLogLevel { none, info, verbose }
 /// set this from data passed at spawn (see the embedding worker).
 EdgeAiLogLevel edgeAiLogLevel = EdgeAiLogLevel.info;
 
-/// Internal log entry point. Every plugin log routes through here.
+/// The plugin's debug log. Silent in release builds and under
+/// [EdgeAiLogLevel.none]; in debug builds it prints when [level] <=
+/// [edgeAiLogLevel].
 ///
-/// - Release builds: silent regardless of level. `kDebugMode` is a compile-time
-///   `false`, so the body is dead-code-eliminated. (Callers that interpolate a
-///   large/hot variable must still guard the CALL SITE with `if (kDebugMode)`
-///   to avoid building the string in release.)
-/// - Debug builds: prints when [level] <= [edgeAiLogLevel], after sanitizing
-///   U+FFFD so it can't crash `flutter run` (issue #306).
+/// Not every message goes through it: the start-up restore notices go
+/// through [restoreNotice] (release builds keep them), and some warnings and
+/// notices are printed with `print` in every build whatever the
+/// level (see [EdgeAiLogLevel]).
+///
+/// - Release builds: `kDebugMode` is a compile-time `false`, so the body is
+///   dead-code-eliminated. (Callers that interpolate a large/hot variable must
+///   still guard the CALL SITE with `if (kDebugMode)` to avoid building the
+///   string in release.)
+/// - Debug builds: the message is sanitized for U+FFFD first, so it can't
+///   crash `flutter run` (issue #306).
 void edgeAiLog(String message, {EdgeAiLogLevel level = EdgeAiLogLevel.info}) {
   if (!kDebugMode) return;
   if (edgeAiLogLevel == EdgeAiLogLevel.none) return;
   if (level.index > edgeAiLogLevel.index) return;
   debugPrint(sanitizeForLog(message));
+}
+
+/// Says that a start-up restore left a kind without its active model, in
+/// release builds too: [edgeAiLog] is silent there, where an app would
+/// otherwise find its model gone at start without a word. Printed through
+/// [debugPrint] (an app that replaces `debugPrint` in release replaces this
+/// too), prefixed `flutter_edge_ai: `; silent under [EdgeAiLogLevel.none], as
+/// [edgeAiLog] is.
+void restoreNotice(String message) {
+  if (edgeAiLogLevel == EdgeAiLogLevel.none) return;
+  debugPrint('flutter_edge_ai: ${sanitizeForLog(message)}');
 }
 
 /// Rewrites U+FFFD (the replacement character) and unpaired UTF-16 surrogates

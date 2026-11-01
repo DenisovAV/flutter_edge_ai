@@ -132,6 +132,25 @@ void main() {
     expect(p.basename(File(modelPath).parent.path), _modelId);
   });
 
+  test('progress says 100 only once the directory model is active', () async {
+    await ServiceRegistry.initialize(downloadService: download);
+    HuggingFaceResolverRegistry.instance.registerAll([
+      _ScriptedResolver(ModelFileType.onnx, _dirModel),
+    ]);
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final atHundred = <String?>[];
+    final progress = <int>[];
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.general,
+      fileType: ModelFileType.onnx,
+    ).fromHuggingFace('org/repo').withProgress((p) {
+      progress.add(p);
+      if (p == 100) atHundred.add(manager.activeInferenceModel?.name);
+    }).install();
+    expect(atHundred, [_modelId]);
+    expect(progress.last, 100);
+  });
+
   test('the directory model restores on a cold relaunch (repository is the '
       'source of truth, not a FileSource)', () async {
     await ServiceRegistry.initialize(downloadService: download);

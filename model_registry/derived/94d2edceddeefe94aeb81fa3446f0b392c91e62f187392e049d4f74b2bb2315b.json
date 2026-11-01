@@ -1,0 +1,60 @@
+{
+  "container_version": "1.5.0",
+  "size": 2011201536,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": 2048,
+  "kv_cache_length": 1024,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_k_0": [
+        1,
+        4,
+        1024,
+        256
+      ],
+      "kv_cache_k_1": [
+        1,
+        4,
+        1024,
+        256
+      ]
+    },
+    "prefill_1024": {
+      "kv_cache_k_0": [
+        1,
+        4,
+        1024,
+        256
+      ],
+      "kv_cache_k_1": [
+        1,
+        4,
+        1024,
+        256
+      ]
+    }
+  },
+  "system_metadata": {
+    "model_name": "TranslateGemma-4B-IT-int4",
+    "authors": "google",
+    "quantization": "int4"
+  },
+  "sections": [
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 2006457648,
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689074
+    },
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 896
+    }
+  ]
+}

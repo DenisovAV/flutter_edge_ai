@@ -6,7 +6,7 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../npu_stacks.dart';
 
-/// Whether this build carries a vendor's NPU stack ([NpuVendor]) where LiteRT
+/// Whether this build carries a vendor's NPU stack ([NpuStack]) where LiteRT
 /// will load it, and why not: from NativeAssetsManifest.json for a stack the
 /// build registers ([checkNpuStackInManifest]; Qualcomm on Android and Linux
 /// arm64), by file presence for Intel's beside the Windows executable
@@ -43,7 +43,7 @@ typedef NativeAssetsManifestReader = Future<String> Function();
 Future<String> _readFromBundle() =>
     rootBundle.loadString('NativeAssetsManifest.json', cache: false);
 
-final _cached = <NpuVendor, NpuStackCheck>{};
+final _cached = <NpuStack, NpuStackCheck>{};
 
 /// Whether this build registered [vendor]'s NPU stack on [operatingSystem]
 /// ([npuStackLibs]).
@@ -57,7 +57,7 @@ final _cached = <NpuVendor, NpuStackCheck>{};
 /// Only a successful read is cached. A failed read is not an answer about the
 /// build either, so it is [NpuStackCheck.unknown], not "not enabled".
 Future<NpuStackCheck> checkNpuStackInManifest(
-  NpuVendor vendor, {
+  NpuStack vendor, {
   NativeAssetsManifestReader? read,
   String? abi,
   String? operatingSystem,
@@ -109,11 +109,11 @@ Future<NpuStackCheck> checkNpuStackInManifest(
 /// Why a build that carries none of [vendor]'s stack cannot use its NPU: how
 /// to opt in, for a stack that is opt-in; a broken native bundle otherwise,
 /// since every build for the vendor's ABIs is meant to carry it.
-String npuNotBundledReason(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => qualcommNpuNotEnabledReason,
-  NpuVendor.googleTensor => googleTensorNpuNotEnabledReason,
-  NpuVendor.mediatek => mediatekNpuNotEnabledReason,
-  NpuVendor.intel =>
+String npuNotBundledReason(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm => qualcommNpuNotEnabledReason,
+  NpuStack.googleTensor => googleTensorNpuNotEnabledReason,
+  NpuStack.mediatek => mediatekNpuNotEnabledReason,
+  NpuStack.intel =>
     'this build carries none of the Intel NPU stack; use a '
         'flutter_edge_ai_litertlm whose native release bundles it and rebuild',
 };

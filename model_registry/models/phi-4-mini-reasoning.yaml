@@ -1,0 +1,32 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: phi-4-mini-reasoning
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: Phi-4 Mini Reasoning
+family: phi4
+arch_class: dense
+license: mit
+license_url: https://opensource.org/license/mit
+model_type: phi
+capabilities:
+  image: false
+  audio: false
+  function_calls: false
+  thinking: true
+runtime:
+  max_tokens: 4096
+  preferred_backend: gpu
+variants:
+- slug: generic
+  file_type: litertlm
+  file:
+    repo: litert-community/Phi-4-mini-reasoning
+    revision: 62a183af7b3d3d46f8df17dde9bf8381988bbf68
+    path: model.litertlm
+    sha256: d507262ca3d01d93d59c573a82e6f2eeb3aec21d9a67c31fb4c0f93d17225b8f
+    size: 2784187376
+    install_filename: phi-4-mini-reasoning.litertlm
+  example:
+  - phi4MiniReasoning

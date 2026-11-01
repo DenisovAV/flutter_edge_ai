@@ -1,3 +1,5 @@
+import 'package:flutter_edge_ai/src/api/bundle_progress.dart';
+import 'package:flutter_edge_ai/src/api/install_expectations.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
@@ -43,7 +45,60 @@ class EmbeddingInstallationBuilder {
   // `.json`) works on every native platform via dart_sentencepiece_tokenizer.
   void Function(int progress)? _onModelProgress;
   void Function(int progress)? _onTokenizerProgress;
+  void Function(int progress)? _onProgress;
   CancelToken? _cancelToken;
+
+  /// What each network file must be once installed.
+  FileExpectation _modelExpected = const FileExpectation();
+  FileExpectation _tokenizerExpected = const FileExpectation();
+
+  /// The catalog variant this builder installs ([fromCatalog]).
+  EmbedderVariant? _catalogVariant;
+
+  /// Install a model registry build: its pinned model and tokenizer URLs,
+  /// install names and sizes, and the profile its vectors belong to. The
+  /// sizes are checked before the model becomes active (not on the web),
+  /// and [withProgress] weights by them without asking the network.
+  ///
+  /// When an active model of any kind reads a file of the same name from
+  /// another source (an older pin), [install] throws [StateError] before
+  /// the download (not on the web), naming that model and the call that
+  /// uninstalls it: uninstall it first.
+  ///
+  /// [install] throws [UnsupportedError] before anything downloads for a
+  /// variant whose `backendsHere` is empty (it does not run in this runtime).
+  /// [token] is used for both files; without it, the token passed to
+  /// `FlutterEdgeAi.initialize` is used for huggingface.co.
+  EmbeddingInstallationBuilder fromCatalog(
+    EmbedderVariant variant, {
+    String? token,
+  }) {
+    // Both files' values first: a refused one leaves the builder as it was.
+    for (final file in [variant.model, ?variant.tokenizer]) {
+      FileExpectation.checked(size: file.sizeBytes);
+      _validateFilename(file.installFilename);
+    }
+    modelFromNetwork(
+      variant.model.url,
+      token: token,
+      filename: variant.model.installFilename,
+      expectedSize: variant.model.sizeBytes,
+    );
+    if (variant.tokenizer case final tokenizer?) {
+      tokenizerFromNetwork(
+        tokenizer.url,
+        token: token,
+        filename: tokenizer.installFilename,
+        expectedSize: tokenizer.sizeBytes,
+      );
+    } else {
+      _tokenizerSource = null;
+      _tokenizerFilename = null;
+      _tokenizerExpected = const FileExpectation();
+    }
+    _catalogVariant = variant;
+    return this;
+  }
 
   // === Model source setters ===
 
@@ -51,20 +106,39 @@ class EmbeddingInstallationBuilder {
   ///
   /// [filename] pins the installed/cache identity instead of deriving it from
   /// the URL basename. Prefer a revision-qualified basename for mutable hosts.
+  ///
+  /// [expectedSize]: the file's size in bytes once downloaded, checked on
+  /// every install before the model becomes active, a file installed earlier
+  /// included. A file of another size is deleted with its record and
+  /// [install] throws [ModelValidationException]; a negative size throws
+  /// [ArgumentError] here. With it set, [install] throws [StateError] before
+  /// the download when it would replace a file of this name that an active
+  /// model of any kind reads (one not installed yet, or installed from
+  /// another source): uninstall that model first. On the web neither is
+  /// checked.
   EmbeddingInstallationBuilder modelFromNetwork(
     String url, {
     String? token,
     String? filename,
+    int? expectedSize,
   }) {
+    // Checked first: a refused value leaves the builder as it was.
+    final expected = FileExpectation.checked(size: expectedSize);
+    final name = _validateFilename(filename);
     _modelSource = ModelSource.network(url, authToken: token);
-    _modelFilename = _validateFilename(filename);
+    _catalogVariant = null;
+    _modelFilename = name;
+    _modelExpected = expected;
     return this;
   }
 
   /// Set model source from Flutter asset
   EmbeddingInstallationBuilder modelFromAsset(String path, {String? filename}) {
+    final name = _validateFilename(filename);
     _modelSource = ModelSource.asset(path);
-    _modelFilename = _validateFilename(filename);
+    _catalogVariant = null;
+    _modelExpected = const FileExpectation();
+    _modelFilename = name;
     return this;
   }
 
@@ -73,15 +147,21 @@ class EmbeddingInstallationBuilder {
     String resourceName, {
     String? filename,
   }) {
+    final name = _validateFilename(filename);
     _modelSource = ModelSource.bundled(resourceName);
-    _modelFilename = _validateFilename(filename);
+    _catalogVariant = null;
+    _modelExpected = const FileExpectation();
+    _modelFilename = name;
     return this;
   }
 
   /// Set model source from external file path
   EmbeddingInstallationBuilder modelFromFile(String path, {String? filename}) {
+    final name = _validateFilename(filename);
     _modelSource = ModelSource.file(path);
-    _modelFilename = _validateFilename(filename);
+    _catalogVariant = null;
+    _modelExpected = const FileExpectation();
+    _modelFilename = name;
     return this;
   }
 
@@ -97,14 +177,21 @@ class EmbeddingInstallationBuilder {
   /// [token] optional auth token for the URL (e.g. HuggingFace).
   /// [filename] pins the installed/cache identity; it must already be unique
   /// to the owning embedding profile because explicit names bypass automatic
-  /// tokenizer namespacing.
+  /// tokenizer namespacing. [expectedSize] as for
+  /// [modelFromNetwork].
   EmbeddingInstallationBuilder tokenizerFromNetwork(
     String url, {
     String? token,
     String? filename,
+    int? expectedSize,
   }) {
+    // Checked first: a refused value leaves the builder as it was.
+    final expected = FileExpectation.checked(size: expectedSize);
+    final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.network(url, authToken: token);
-    _tokenizerFilename = _validateFilename(filename);
+    _catalogVariant = null;
+    _tokenizerFilename = name;
+    _tokenizerExpected = expected;
     return this;
   }
 
@@ -113,8 +200,11 @@ class EmbeddingInstallationBuilder {
     String path, {
     String? filename,
   }) {
+    final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.asset(path);
-    _tokenizerFilename = _validateFilename(filename);
+    _catalogVariant = null;
+    _tokenizerExpected = const FileExpectation();
+    _tokenizerFilename = name;
     return this;
   }
 
@@ -123,8 +213,11 @@ class EmbeddingInstallationBuilder {
     String resourceName, {
     String? filename,
   }) {
+    final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.bundled(resourceName);
-    _tokenizerFilename = _validateFilename(filename);
+    _catalogVariant = null;
+    _tokenizerExpected = const FileExpectation();
+    _tokenizerFilename = name;
     return this;
   }
 
@@ -133,8 +226,11 @@ class EmbeddingInstallationBuilder {
     String path, {
     String? filename,
   }) {
+    final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.file(path);
-    _tokenizerFilename = _validateFilename(filename);
+    _catalogVariant = null;
+    _tokenizerExpected = const FileExpectation();
+    _tokenizerFilename = name;
     return this;
   }
 
@@ -158,6 +254,21 @@ class EmbeddingInstallationBuilder {
     void Function(int progress) onProgress,
   ) {
     _onTokenizerProgress = onProgress;
+    return this;
+  }
+
+  /// Progress of the whole install, 0 to 100, by bytes across the model and
+  /// its tokenizer, as `TtsInstallationBuilder.withProgress` counts: sizes
+  /// read before the first download (a HEAD request per network file unless
+  /// its `expectedSize` is set, none on the web; the disk for files installed
+  /// already), files
+  /// installed already counted from the start, every file the same weight
+  /// when a size is unknown. Values only rise, and a successful install ends
+  /// with 100 once the model is active.
+  EmbeddingInstallationBuilder withProgress(
+    void Function(int progress) onProgress,
+  ) {
+    _onProgress = onProgress;
     return this;
   }
 
@@ -199,8 +310,17 @@ class EmbeddingInstallationBuilder {
   ///   backend registered yet the install goes ahead (the app may register
   ///   one later) and says so once in the debug log.
   ///
+  /// - [UnsupportedError] for a [fromCatalog] variant that does not run here,
+  ///   and on the web for a file over 2 GiB unless the app uses
+  ///   `WebStorageMode.streaming`
+  /// - [StateError] when a file with an `expectedSize` would replace one an
+  ///   active model of any kind reads (not on the web)
+  ///
   /// and later [DownloadCancelledException] if cancelled via the cancel token,
-  /// or an [Exception] on installation failure.
+  /// [ModelValidationException] if a file is not its `expectedSize` once
+  /// installed (the first such file is then deleted with its record, unless
+  /// an active model reads it), or
+  /// an [Exception] on installation failure.
   ///
   /// Note: This method is idempotent - a file already installed from the same
   /// source is skipped and the spec is just (re-)set as active. One installed
@@ -214,6 +334,7 @@ class EmbeddingInstallationBuilder {
   Future<EmbeddingInstallation> install() async {
     // Check cancellation before starting
     _cancelToken?.throwIfCancelled();
+    if (_catalogVariant case final variant?) checkCatalogVariant(variant);
 
     final modelSource = _modelSource;
     if (modelSource == null) {
@@ -243,19 +364,55 @@ class EmbeddingInstallationBuilder {
     );
     _requireABackendThatCanRun(spec);
 
+    // What each file must be, by its index in spec.files (model, tokenizer).
+    final expectations = [_modelExpected, _tokenizerExpected];
+    final expected = {
+      for (final (i, file) in spec.files.indexed)
+        file.filename: expectations[i],
+    };
+    refuseTooLargeForWebCache(expected);
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final steps = await planInstall(spec.files);
+    final activeBefore = activeModelsOf(manager);
+    refuseReplacingActive(steps, expected, activeBefore);
+    final progress = await startBundleProgress(
+      _onProgress,
+      steps,
+      known: {
+        for (final (i, file) in spec.files.indexed)
+          if (expectations[i].size case final size?) file.prefsKey: size,
+      },
+      cancelToken: _cancelToken,
+      bundle: spec.name,
+    );
+    final perFile = [_onModelProgress, _onTokenizerProgress];
+
     // The model, then its tokenizer, each by its own record (see
     // install_rule.dart).
     final release = await installPlanned(
-      await planInstall(spec.files),
+      steps,
       modelType: repo.ModelType.embedding,
       cancelToken: _cancelToken,
-      progress: [_onModelProgress, _onTokenizerProgress],
+      progress: [
+        for (var i = 0; i < spec.files.length; i++)
+          if (perFile[i] == null && progress == null)
+            null
+          else
+            (int percent) {
+              perFile[i]?.call(percent);
+              progress?.report(i, percent);
+            },
+      ],
+      onFileDone: (i) => progress?.report(i, 100),
     );
 
     // AUTO-SET as active embedding model (even if already installed)
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    _cancelToken?.throwIfCancelled();
+    await verifyInstalledFiles(spec, expected, active: activeBefore);
+    _cancelToken?.throwIfCancelled();
     await activateInstalledModel(manager, spec);
     await release.run(manager, spec);
+    progress?.complete();
 
     edgeAiLog('✅ Embedding model installed and set as active: ${spec.name}');
 

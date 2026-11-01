@@ -162,7 +162,9 @@ model to the engine that handles its file type. For RAG, register
 - `webStorageMode` **(Web only)**: storage strategy for model files (default: `cacheApi`).
   - `WebStorageMode.cacheApi`: Cache API with Blob URLs (for models <2GB).
   - `WebStorageMode.streaming`: OPFS streaming (for large models >2GB like E4B, 7B).
-  - `WebStorageMode.none`: no caching (ephemeral mode for testing).
+  - `WebStorageMode.none`: no caching (ephemeral mode for testing). Restore
+    notices about model files that are gone stay in the debug log in this
+    mode.
 
 <Info>
 
@@ -332,7 +334,7 @@ generic bundle never runs on the NPU, flag or not. See
 dispatch, built from LiteRT and covered by Google's Tensor SDK terms; the
 runtime it drives is part of the Pixel system image. It runs on a Pixel with
 that Tensor generation and Android 16 or later, except on a build whose ID
-starts with `BP2A`, which LiteRT does not run the NPU on. See [LiteRT-LM](/docs/litertlm).
+starts with `BP2A`, which LiteRT does not run the NPU on. Run so far on Tensor G6 only, with debug builds. See [LiteRT-LM](/docs/litertlm).
 
 **MediaTek NPU (opt-in).** A bundle compiled for a MediaTek SoC
 (`…_MediaTek_MT6991.litertlm`, `…_mt6991.litertlm`) needs `mediatek_npu: true`
@@ -657,13 +659,14 @@ To use a gated repo: visit the model page → "Request Access" button.
 
 ## Logging
 
-Flutter Edge AI's internal logs are **silent in release builds** — model output,
-prompts, and conversation history are never written to logcat / syslog. In debug
-builds they're shown according to `FlutterEdgeAi.logLevel`:
+In release builds Flutter Edge AI's internal log prints the start-up notices
+about active models that could not be restored — model output,
+prompts, and conversation history are never written to logcat / syslog. In
+debug builds it's shown according to `FlutterEdgeAi.logLevel`:
 
-| Level | What it prints (debug only) |
+| Level | What it prints (debug builds) |
 |---|---|
-| `EdgeAiLogLevel.none` | Nothing — fully silent. |
+| `EdgeAiLogLevel.none` | Nothing from this log, the restore notices included. |
 | `EdgeAiLogLevel.info` *(default)* | Lifecycle, errors, diagnostics. **No** model output / prompts. |
 | `EdgeAiLogLevel.verbose` | Everything above **plus** model output, prompts, and conversation history. |
 
@@ -673,9 +676,15 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 // See the model's generated tokens and prompts while debugging:
 FlutterEdgeAi.logLevel = EdgeAiLogLevel.verbose;
 
-// Or silence logging entirely:
+// Or silence this log, the restore notices included:
 FlutterEdgeAi.logLevel = EdgeAiLogLevel.none;
 ```
 
-Release builds are always silent regardless of this setting. The level is
+Release builds keep one part of this log, the restore notices, and
+`EdgeAiLogLevel.none` silences them too; under `WebStorageMode.none` the
+notices about model files that are gone stay in the debug log, since no file
+outlives a page load there. Some messages are printed in every build whatever
+`logLevel` says: warnings about failures the app would not otherwise see, and
+a few notices (for example the sampler latch, at most once per engine, and the
+hidden-reasoning note, once per chat). The level is
 process-global and per-isolate; set it once at startup.

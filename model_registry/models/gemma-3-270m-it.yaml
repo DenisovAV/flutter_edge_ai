@@ -1,0 +1,65 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: gemma-3-270m-it
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: Gemma 3 270M
+family: gemma3
+arch_class: dense
+license: gemma
+license_url: https://ai.google.dev/gemma/terms
+model_type: gemmaIt
+capabilities:
+  image: false
+  audio: false
+  function_calls: false
+  thinking: false
+runtime:
+  max_tokens: 1024
+  preferred_backend: gpu
+variants:
+- slug: q8
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-3-270m-it
+    revision: 9d2093270fb5aa49a986b49b5779d763dde7b630
+    path: gemma3-270m-it-q8.litertlm
+    sha256: 757e9119fa5bd667a2774fb470ac4afcd3190a21c677f8e69a5d6bc908abdd63
+    size: 304005120
+    install_filename: gemma3-270m-it-q8.litertlm
+    gated: auto
+  example:
+  - gemma3_270M
+- slug: npu-mt6991
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-3-270m-it
+    revision: 9d2093270fb5aa49a986b49b5779d763dde7b630
+    path: gemma3-270m-it-q8.mediatek.mt6991.litertlm
+    sha256: d4d3c01888195cc5b29d9b083eb574b360453964e89cd0d3cf3ea15f5de73df0
+    size: 554467328
+    install_filename: gemma3-270m-it-q8.mediatek.mt6991.litertlm
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6991
+  fixed_max_tokens: 4096
+  runtime:
+    preferred_backend: npu
+- slug: npu-mt6993
+  file_type: litertlm
+  file:
+    repo: litert-community/gemma-3-270m-it
+    revision: 9d2093270fb5aa49a986b49b5779d763dde7b630
+    path: gemma3-270m-it-q8.mediatek.mt6993.litertlm
+    sha256: fe85d0bc30f208a7d7d5767e5e3bcba4bbea23ca8da5ccc82a0ca9620554c412
+    size: 554663936
+    install_filename: gemma3-270m-it-q8.mediatek.mt6993.litertlm
+    gated: auto
+  npu:
+    vendor: mediatek
+    soc: mt6993
+  fixed_max_tokens: 4096
+  runtime:
+    preferred_backend: npu

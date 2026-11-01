@@ -58,9 +58,10 @@ from the installed file names (`'<namespace>@<files joined by +>'`, with `%`,
 installing a model under different file names changes the id and the old
 location refuses to open instead of mixing two embedding spaces. EmbeddingGemma
 1 and 2 are both 768-dimensional: the id is the only thing that tells them
-apart. The id follows file NAMES, not bytes: install with revision-qualified
-`filename:`s, as below, so new weights under the same download name get a new
-id too.
+apart. The id follows file NAMES, not bytes: install the registry build, as
+below — its file names carry the revision — so new weights under the same
+download name get a new id too. An app that installed under other names keeps
+them: its id follows those.
 
 ```dart
 import 'package:flutter/foundation.dart';
@@ -72,9 +73,6 @@ import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-const revision = '29888fcee3216acadc7e844906e5fe0d79a61875';
-const modelBase =
-    'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/$revision';
 // EmbeddingGemma is gated: build with --dart-define=HUGGINGFACE_TOKEN=hf_...
 const hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
@@ -83,15 +81,8 @@ await FlutterEdgeAi.initialize(
   embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
   huggingFaceToken: hfToken.isEmpty ? null : hfToken,
 );
-await FlutterEdgeAi.installEmbedder()
-    .modelFromNetwork(
-      '$modelBase/embeddinggemma-300M_seq256_mixed-precision.tflite',
-      filename: 'embeddinggemma-300m-seq256-mp__rev-29888fcee321.tflite',
-    )
-    .tokenizerFromNetwork(
-      '$modelBase/sentencepiece.model',
-      filename: 'embeddinggemma-300m__sentencepiece__rev-29888fcee321.model',
-    )
+// The registry build: commit 29888fce, revision-qualified file names.
+await FlutterEdgeAi.installEmbedder().fromCatalog(LiteRtEmbedders.embeddinggemma300m.seq256)
     .install();
 
 final rag = FlutterEdgeAiRag(
@@ -460,11 +451,11 @@ final npuIndex = await rag.open(
 );
 ```
 
-- Verified SoCs: SM8850, SM8650 and QCS8275. Google also publishes SM8550,
-  SM8750 (load, not verified by us), Intel PTL (Windows, below), Tensor G5/G6
-  (below) and
-  MediaTek MT6991/MT6993 (below). What a bundle targets is read from the
-  bundle.
+- Run on device: SM8850, SM8650 and QCS8275. Google also publishes SM8550,
+  SM8750 (accepted by the loader, not run by us), Intel PTL (Windows, below),
+  Tensor G5/G6 (below; G6 run, G5 not) and MediaTek MT6991/MT6993 (below).
+  Per build: https://flutteredge.ai/docs/registry. What a bundle targets is
+  read from the bundle.
 - Its vectors are close to the CPU bundle's, not equal (SM8650: cosine
   0.79–0.86 for a few words, 0.99 from about 200 words; images 0.86–0.88), so
   never compare NPU vectors with CPU ones; within the NPU space retrieval
@@ -483,11 +474,12 @@ final npuIndex = await rag.open(
 - Give an NPU index its own profile id (above); never open a CPU index with an
   NPU embedder or the reverse. `FlutterEdgeAiActiveEmbedder.forActiveModel`
   keys on the file name, so it separates them by itself.
-- **Intel Panther Lake (Windows x64, `flutter_edge_ai_litertlm` 1.13.2).** `…_Intel_PTL.litertlm` (270m, 440m) loads the
+- **Intel Panther Lake (Windows x64, `flutter_edge_ai_litertlm` 1.13.2).** `…_Intel_PTL.litertlm` (270m, 440m, 740m) loads the
   same way with `preferredBackend: PreferredBackend.npu`, with no opt-in flag:
   every Windows x64 build carries the Intel stack (LiteRtDispatch.dll,
   OpenVINO, TBB) beside the executable, and its absence is refused by name.
-  Profile id: the CPU text id plus `-npu-ptl`, shared by the 270m and the 440m.
+  Profile id: the CPU text id plus `-npu-ptl`, shared by the 270m, the 440m and
+  the 740m.
   An Intel bundle on Android or Linux is refused. The 270m was measured on a
   Panther Lake PC (2026-10-21, OpenVINO 2026.4.1, the stack of
   `flutter_edge_ai_litertlm` 1.17.0): 768-dimensional vectors, load about

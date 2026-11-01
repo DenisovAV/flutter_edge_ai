@@ -52,6 +52,10 @@ enum WebStorageMode {
   /// - Models re-downloaded on each page reload
   /// - Not suitable for production
   ///
+  /// The start-up restore notices about model files that are gone stay in
+  /// the debug log in this mode (every reload finds them gone); a record
+  /// that cannot be read is still reported in every build.
+  ///
   /// Use for: Development, testing, privacy-sensitive scenarios
   none,
 }

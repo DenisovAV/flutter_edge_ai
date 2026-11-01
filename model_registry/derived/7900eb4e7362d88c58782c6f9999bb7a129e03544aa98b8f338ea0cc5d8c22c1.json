@@ -1,0 +1,62 @@
+{
+  "container_version": "1.6.0",
+  "size": 497516544,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": 2048,
+  "kv_cache_length": 2048,
+  "prefill_decode_signatures": {
+    "prefill_256": {
+      "kv_cache_k_0": [
+        1,
+        8,
+        2048,
+        128
+      ],
+      "kv_cache_v_0": [
+        1,
+        8,
+        128,
+        2048
+      ]
+    },
+    "decode": {
+      "kv_cache_k_0": [
+        1,
+        8,
+        2048,
+        128
+      ],
+      "kv_cache_v_0": [
+        1,
+        8,
+        128,
+        2048
+      ]
+    }
+  },
+  "system_metadata": {
+    "Authors": "ODML"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 4332
+    },
+    {
+      "data_type": "EmbeddingMetadataProto",
+      "length": 3787
+    },
+    {
+      "data_type": "HF_Tokenizer_Zlib",
+      "length": 2134349
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 495310432,
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    }
+  ]
+}

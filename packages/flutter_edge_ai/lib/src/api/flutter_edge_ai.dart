@@ -1,5 +1,10 @@
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
+    show
+        kIsWeb,
+        defaultTargetPlatform,
+        listEquals,
+        TargetPlatform,
+        visibleForTesting;
 import 'package:flutter_edge_ai/src/api/inference_installation_builder.dart';
 import 'package:flutter_edge_ai/src/api/embedding_installation_builder.dart';
 import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.dart'
@@ -46,6 +51,8 @@ import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
 import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
+import 'package:flutter_edge_ai/src/catalog/model_catalog.dart';
+import 'package:flutter_edge_ai/src/catalog/registered_catalog.dart';
 
 /// Modern API facade for Flutter Edge AI
 ///
@@ -108,10 +115,17 @@ import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
 class FlutterEdgeAi {
   /// Controls flutter_edge_ai's internal log verbosity.
   ///
-  /// Debug builds only -- release builds are always silent regardless of this
-  /// value (no model output / prompts leak into logcat/syslog). Default
-  /// [EdgeAiLogLevel.info]. Use [EdgeAiLogLevel.verbose] to see model output and
-  /// prompts while debugging, or [EdgeAiLogLevel.none] to silence the plugin.
+  /// Of the log this value controls, release builds print the start-up
+  /// notices about active models that could not be restored (no model output
+  /// or prompts reach logcat/syslog); debug builds print according to this
+  /// value. Default [EdgeAiLogLevel.info]. Use [EdgeAiLogLevel.verbose] to see
+  /// model output and prompts while debugging. [EdgeAiLogLevel.none]
+  /// silences this log, those notices included.
+  ///
+  /// Some messages are printed in every build whatever logLevel says:
+  /// warnings about failures the app would not otherwise see, and a few
+  /// notices (for example the sampler latch, at most once per engine, and the
+  /// hidden-reasoning note, once per chat).
   ///
   /// Note: this is a process-global, per-isolate setting; set it once at
   /// startup. Background isolates snapshot the value at spawn time.
@@ -347,6 +361,92 @@ class FlutterEdgeAi {
     return TtsInstallationBuilder();
   }
 
+  /// The models the packages passed to [initialize] offer, as one catalog.
+  ///
+  /// Each engine or backend that implements [ModelCatalogSource] adds its
+  /// catalog, so only models a registered package can run are listed. A model
+  /// two packages offer is one model; the variants of the package registered
+  /// first come first. Choose a variant with [CatalogModel.variantFor] and
+  /// install it with [installModelFromCatalog] (an LLM) or `fromCatalog` on
+  /// [installEmbedder], [installStt] or [installTts].
+  ///
+  /// Throws [StateError] before [initialize] and after [dispose], when two
+  /// packages offer the same variant id, and when a registered catalog breaks
+  /// the id rules (a variant id that is not `<model id>/<slug>`, a model id
+  /// with a `/`, a variant listed twice): one faulty catalog makes the whole
+  /// getter throw, rather than leave a variant no id finds.
+  static ModelCatalog get catalog {
+    // Throws the not-initialized StateError.
+    final registry = ServiceRegistry.instance;
+    final providers = [
+      ...EngineRegistry.instance.registered,
+      ...EmbeddingRegistry.instance.registered,
+      ...SttRegistry.instance.registered,
+      ...TtsRegistry.instance.registered,
+    ];
+    // Built once for the registered providers (in their order): a getter an
+    // app reads from build() does not merge the catalogs again.
+    if (_catalog case (
+      final r,
+      final p,
+      final c,
+    ) when identical(r, registry) && listEquals(p, providers)) {
+      return c;
+    }
+    final built = RegisteredCatalog(providers);
+    _catalog = (registry, providers, built);
+    return built;
+  }
+
+  static (ServiceRegistry, List<Object>, ModelCatalog)? _catalog;
+
+  /// An installation builder for the LLM [variant]: its model type and file
+  /// type, its pinned URL, the name the file is installed under and its
+  /// size, which is checked before the model becomes active (not on the web,
+  /// where the browser keeps the file). On the web a file over 2 GiB is
+  /// refused before it downloads in every storage mode but
+  /// `WebStorageMode.streaming`, the one that holds it.
+  ///
+  /// [token] is used for the download; without it, the token passed to
+  /// [initialize] is used for huggingface.co. [foreground] is
+  /// `InferenceInstallationBuilder.fromNetwork(foreground:)`.
+  ///
+  /// `install()` throws [UnsupportedError], before anything downloads, for a
+  /// variant whose [CatalogVariant.backendsHere] is empty (its package does
+  /// not run it in this runtime). That is a check of the runtime and its
+  /// processor architecture only: whether this device has the NPU a build
+  /// was compiled for, and whether the app bundled that vendor's stack, is
+  /// known at load.
+  ///
+  /// The catalog pins each file to a revision: a model installed earlier
+  /// from a `/resolve/main/` URL (or an older pin) is another source under
+  /// the same name, and its first install from the catalog downloads the
+  /// file again. When an active model of any kind reads a file of that name,
+  /// `install()` throws [StateError] before the download instead of writing
+  /// over it (not on the web), naming that model and the call that
+  /// uninstalls it: uninstall it first, then install.
+  ///
+  /// ```dart
+  /// final variant = FlutterEdgeAi.catalog
+  ///     .byId('gemma-4-e2b-it')!
+  ///     .variantFor(backend: PreferredBackend.gpu)! as InferenceVariant;
+  /// await FlutterEdgeAi.installModelFromCatalog(variant)
+  ///     .withProgress((p) => print('$p%'))
+  ///     .install();
+  /// final model = await FlutterEdgeAi.getActiveModel(
+  ///   defaults: variant.runtimeDefaults,
+  /// );
+  /// ```
+  static InferenceInstallationBuilder installModelFromCatalog(
+    InferenceVariant variant, {
+    String? token,
+    bool? foreground,
+  }) => inferenceBuilderFromCatalog(
+    variant,
+    token: token,
+    foreground: foreground,
+  );
+
   /// Check if a model is installed
   ///
   /// Parameters:
@@ -379,7 +479,8 @@ class FlutterEdgeAi {
   /// - [preferredAudioBackend]: audio-encoder backend override; null as for
   /// [preferredVisionBackend] (optional)
   /// - [supportImage]: Enable multimodal image support (default: false)
-  /// - [supportAudio]: Enable audio input support for Gemma 3n E4B (default: false)
+  /// - [supportAudio]: Enable audio input, for a model with an audio encoder,
+  ///   e.g. Gemma 4 or Gemma 3n `.litertlm` (E2B, E4B); native only (default: false)
   /// - [maxNumImages]: Maximum number of images if supportImage is true
   /// - [multimodalOrder]: the order in which a user message's images, audio
   ///   and text reach the model. Null picks the order of the active model's
@@ -431,7 +532,7 @@ class FlutterEdgeAi {
   ///   preferredBackend: PreferredBackend.gpu,
   /// );
   ///
-  /// // Create with audio support (Gemma 3n E4B only)
+  /// // Create with audio support (e.g. Gemma 4 or Gemma 3n .litertlm, native)
   /// final audioModel = await FlutterEdgeAi.getActiveModel(
   ///   supportAudio: true,
   /// );
@@ -1438,6 +1539,7 @@ class FlutterEdgeAi {
   }
 
   static void _resetCoreState() {
+    _catalog = null;
     ServiceRegistry.reset();
     EngineRegistry.instance.reset();
     EmbeddingRegistry.instance.reset();

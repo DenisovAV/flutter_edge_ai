@@ -47,9 +47,9 @@ used below).
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.4
+  flutter_edge_ai: ^2.5.5
   flutter_edge_ai_agent: ^0.4.1
-  flutter_edge_ai_litertlm: ^1.19.0   # an inference engine (LiteRtLmEngine)
+  flutter_edge_ai_litertlm: ^1.19.1   # an inference engine (LiteRtLmEngine)
 ```
 
 The agent is **not supported on Web** — never verified end-to-end, and the example app disables it. See the note below.
@@ -104,7 +104,7 @@ await FlutterEdgeAi.initialize(
 // 2. Install + load a function-calling model (Gemma 4 E2B/E4B recommended).
 await FlutterEdgeAi
     .installModel(modelType: ModelType.gemma4, fileType: ModelFileType.litertlm)
-    .fromNetwork(gemma4E2BUrl)
+    .fromNetwork('https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm')
     .install();
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
 

@@ -11,40 +11,59 @@ import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('NpuVendor.forStamp', () {
+  group('NpuStack.forStamp', () {
     test('matches the stamp LiteRT writes, in any case', () {
-      expect(NpuVendor.forStamp('Qualcomm'), NpuVendor.qualcomm);
-      expect(NpuVendor.forStamp('QUALCOMM'), NpuVendor.qualcomm);
-      expect(NpuVendor.forStamp('Google'), NpuVendor.googleTensor);
-      expect(NpuVendor.forStamp('GOOGLE'), NpuVendor.googleTensor);
+      expect(NpuStack.forStamp('Qualcomm'), NpuStack.qualcomm);
+      expect(NpuStack.forStamp('QUALCOMM'), NpuStack.qualcomm);
+      expect(NpuStack.forStamp('Google'), NpuStack.googleTensor);
+      expect(NpuStack.forStamp('GOOGLE'), NpuStack.googleTensor);
       // Read from Google's embeddinggemma-2-text-270m_MediaTek_MT6991.litertlm:
       // vendor `MediaTek`, SoC `mt6991`.
-      expect(NpuVendor.forStamp('MediaTek'), NpuVendor.mediatek);
-      expect(NpuVendor.forStamp('mediatek'), NpuVendor.mediatek);
-      expect(NpuVendor.forStamp('IntelOpenVINO'), NpuVendor.intel);
-      expect(NpuVendor.forStamp('intelopenvino'), NpuVendor.intel);
+      expect(NpuStack.forStamp('MediaTek'), NpuStack.mediatek);
+      expect(NpuStack.forStamp('mediatek'), NpuStack.mediatek);
+      expect(NpuStack.forStamp('IntelOpenVINO'), NpuStack.intel);
+      expect(NpuStack.forStamp('intelopenvino'), NpuStack.intel);
     });
 
     test('has no vendor for a stamp this package has no dispatch for', () {
       for (final stamp in ['Samsung', 'Intel', '']) {
-        expect(NpuVendor.forStamp(stamp), isNull, reason: stamp);
+        expect(NpuStack.forStamp(stamp), isNull, reason: stamp);
       }
+    });
+
+    test('a target names core\'s vendor for every stack, by the one table', () {
+      for (final stack in NpuStack.values) {
+        final target = LiteRtLmNpuTarget(vendor: stack.stampVendor, soc: 'x');
+        expect(target.npuVendor, isNotNull, reason: stack.name);
+      }
+      expect(
+        const LiteRtLmNpuTarget(vendor: 'Unknown', soc: 'x').npuVendor,
+        isNull,
+      );
+    });
+
+    test('== is the stamp as written; sameSoc ignores case', () {
+      const a = LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991');
+      const b = LiteRtLmNpuTarget(vendor: 'mediatek', soc: 'mt6991');
+      expect(a, isNot(b));
+      expect(a, const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'MT6991'));
+      expect(a.sameSoc(b), isTrue);
     });
 
     test('npuVendorOf reads a target the same way', () {
       expect(
         npuVendorOf(const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850')),
-        NpuVendor.qualcomm,
+        NpuStack.qualcomm,
       );
       expect(
         npuVendorOf(
           const LiteRtLmNpuTarget(vendor: 'Google', soc: 'Tensor_G5'),
         ),
-        NpuVendor.googleTensor,
+        NpuStack.googleTensor,
       );
       expect(
         npuVendorOf(const LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6991')),
-        NpuVendor.mediatek,
+        NpuStack.mediatek,
       );
       expect(
         npuVendorOf(const LiteRtLmNpuTarget(vendor: 'Samsung', soc: 'E9955')),
@@ -53,18 +72,18 @@ void main() {
     });
   });
 
-  group('NpuVendor.forAbi', () {
+  group('NpuStack.forAbi', () {
     test(
       'Qualcomm, Google and MediaTek on Android, Qualcomm on Linux, Intel on '
       'Windows',
       () {
-        expect(NpuVendor.forAbi('android_arm64'), [
-          NpuVendor.qualcomm,
-          NpuVendor.googleTensor,
-          NpuVendor.mediatek,
+        expect(NpuStack.forAbi('android_arm64'), [
+          NpuStack.qualcomm,
+          NpuStack.googleTensor,
+          NpuStack.mediatek,
         ]);
-        expect(NpuVendor.forAbi('linux_arm64'), [NpuVendor.qualcomm]);
-        expect(NpuVendor.forAbi('windows_x64'), [NpuVendor.intel]);
+        expect(NpuStack.forAbi('linux_arm64'), [NpuStack.qualcomm]);
+        expect(NpuStack.forAbi('windows_x64'), [NpuStack.intel]);
       },
     );
 
@@ -76,7 +95,7 @@ void main() {
         'macos_arm64',
         'ios_arm64',
       ]) {
-        expect(NpuVendor.forAbi(abi), isEmpty, reason: abi);
+        expect(NpuStack.forAbi(abi), isEmpty, reason: abi);
       }
     });
   });
@@ -86,7 +105,7 @@ void main() {
     // Guards a vendor added later without repeating its strings: a typo in an
     // ABI would silently drop that host, a mixed-case stamp would never match.
     final abiNames = {for (final abi in Abi.values) '$abi'};
-    for (final vendor in NpuVendor.values) {
+    for (final vendor in NpuStack.values) {
       expect(abiNames, containsAll(vendor.abis), reason: vendor.name);
       expect(vendor.abis, isNotEmpty, reason: vendor.name);
       expect(
@@ -96,8 +115,8 @@ void main() {
       );
     }
     expect(
-      NpuVendor.values.map((v) => v.stampVendor).toSet(),
-      hasLength(NpuVendor.values.length),
+      NpuStack.values.map((v) => v.stampVendor).toSet(),
+      hasLength(NpuStack.values.length),
     );
   });
 

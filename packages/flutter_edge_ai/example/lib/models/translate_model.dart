@@ -1,4 +1,6 @@
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
+    show LiteRtLmModels, LiteRtLmVariant;
 
 import '../translation/prompt_strategy.dart';
 import '../translation/translate_gemma_xml_strategy.dart';
@@ -26,47 +28,50 @@ import 'base_model.dart';
 /// An earlier version of this note said the float32 `EMBEDDING_LOOKUP` layout
 /// makes the GPU partitioner abort. Nothing aborts in those runs, so that
 /// description does not match these bundles.
+// The model registry's builds (LiteRtLmModels), as functions: a variant is
+// read through a getter, which is not a constant. Its GPU is withheld (the
+// model writes only <pad> there, LiteRT-LM#1748), so it runs on the CPU.
+LiteRtLmVariant _int4() => LiteRtLmModels.translategemma4bIt.int4;
+LiteRtLmVariant _int8() => LiteRtLmModels.translategemma4bIt.int8;
+
 enum TranslateModel implements TranslateModelInterface {
   /// INT4 quantization, ~2 GB. Recommended default — loads faster and fits
   /// in 6 GB free RAM on modern phones.
   translateGemma4Int4(
-    url:
-        'https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized/resolve/main/artifacts/int4-generic/translategemma-4b-it-int4-generic.litertlm',
-    filename: 'translategemma-4b-it-int4-generic.litertlm',
+    variant: _int4,
     displayName: 'TranslateGemma 4B (int4)',
     size: '1.87GB',
-    needsAuth: false,
     preferredBackend: PreferredBackend.cpu,
     maxTokens: 1024,
   ),
 
   /// Dynamic INT8, ~4 GB. Better translation quality; needs 8 GB free RAM.
   translateGemma4Int8(
-    url:
-        'https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized/resolve/main/artifacts/dynamic_int8-generic/translategemma-4b-it-dynamic_int8-generic.litertlm',
-    filename: 'translategemma-4b-it-dynamic_int8-generic.litertlm',
+    variant: _int8,
     displayName: 'TranslateGemma 4B (int8)',
     size: '4GB',
-    needsAuth: false,
     preferredBackend: PreferredBackend.cpu,
     maxTokens: 1024,
   );
 
   const TranslateModel({
-    required this.url,
-    required this.filename,
+    required LiteRtLmVariant Function() variant,
     required this.displayName,
     required this.size,
-    required this.needsAuth,
     required this.preferredBackend,
     required this.maxTokens,
-  });
+  }) : _variant = variant;
+
+  final LiteRtLmVariant Function() _variant;
+
+  /// The registry build this entry installs.
+  LiteRtLmVariant get catalogVariant => _variant();
 
   @override
-  final String url;
+  String get url => _variant().file.url;
 
   @override
-  final String filename;
+  String get filename => _variant().file.installFilename;
 
   @override
   final String displayName;
@@ -75,7 +80,7 @@ enum TranslateModel implements TranslateModelInterface {
   final String size;
 
   @override
-  final bool needsAuth;
+  bool get needsAuth => _variant().file.gated;
 
   @override
   final PreferredBackend preferredBackend;

@@ -25,9 +25,10 @@ library;
 ///   NPU is still offered npu, and has been measured reporting
 ///   `activeBackend == npu` while running elsewhere. There, npu is a request,
 ///   not a proof.
+///   Which builds have run where: https://flutteredge.ai/docs/registry
 ///
-/// [gpu] and [npu] fall back if unavailable — GPU, then CPU. [cpu] does not
-/// fall back: it is the last resort already.
+/// [gpu] falls back to the CPU when the GPU is unavailable; [npu] as above.
+/// [cpu] does not fall back: it is the last resort already.
 enum PreferredBackend {
   cpu,
   gpu,

@@ -10,6 +10,7 @@ import 'package:flutter_edge_ai/src/model_management/constants/preferences_keys.
 import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.dart';
 import 'package:flutter_edge_ai/src/model_management/active_identity_store.dart';
 import 'package:flutter_edge_ai/src/model_management/model_activation.dart';
+import 'package:flutter_edge_ai/src/model_management/restored_filename.dart';
 import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/src/utils/file_name_utils.dart';
 
@@ -55,18 +56,37 @@ class WebModelManager extends ModelFileManager
   Future<void> ensureInitialized() => initialize();
 
   Future<void> _doInit() async {
-    try {
-      await _restoreActiveInferenceModel();
-      await _restoreActiveEmbeddingModel();
-      await _restoreActiveSttModel();
-      edgeAiLog('WebModelManager initialized');
-    } catch (e, st) {
-      // Best-effort restore: a failure must not abort app startup — start with
-      // no active model. (#314 follow-up; mirrors MobileModelManager.)
-      // Include the stack trace so an unexpected restore bug stays diagnosable.
-      edgeAiLog(
-        'WebModelManager: active-model restore failed, starting with no active model: $e\n$st',
-      );
+    // Best-effort restore, one kind at a time: a failure must not abort app
+    // startup, nor cost the other kinds their active model. (#314 follow-up;
+    // mirrors MobileModelManager.)
+    for (final (kind, restore) in [
+      ('inference', _restoreActiveInferenceModel),
+      ('embedding', _restoreActiveEmbeddingModel),
+      ('stt', _restoreActiveSttModel),
+    ]) {
+      try {
+        await restore();
+      } catch (e, st) {
+        // Said in release builds too; the stack trace is for debug builds.
+        restoreNotice(
+          'the active $kind model was not restored, starting without one: $e',
+        );
+        edgeAiLog('WebModelManager: $kind restore failed at\n$st');
+      }
+    }
+    edgeAiLog('WebModelManager initialized');
+  }
+
+  /// A restore skipped because a file or its record is gone: said in release
+  /// builds too ([restoreNotice]), except under [WebStorageMode.none], where
+  /// no file outlives a page load while the active identities do, so every
+  /// load skips and that is expected. A record that cannot be read (an
+  /// unknown type, a malformed source) is [restoreNotice] in every mode.
+  void _restoreSkipped(String message) {
+    if (ServiceRegistry.instance.webStorageMode == WebStorageMode.none) {
+      edgeAiLog(message);
+    } else {
+      restoreNotice(message);
     }
   }
 
@@ -98,7 +118,7 @@ class WebModelManager extends ModelFileManager
       modelType = ModelType.values.byName(modelTypeName);
       fileType = ModelFileType.values.byName(fileTypeName);
     } catch (e) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active model restore: unknown enum value — skipping',
       );
       return;
@@ -106,7 +126,7 @@ class WebModelManager extends ModelFileManager
 
     final source = ModelSource.tryDecode(sourceEncoded);
     if (source == null) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active model restore: malformed source — skipping',
       );
       return;
@@ -135,28 +155,47 @@ class WebModelManager extends ModelFileManager
       return;
     }
 
+    // The LoRA is part of what was activated, as on mobile: restoring the
+    // model without it would load it with no adapter and no error. Its
+    // source is read before any file is looked for, as the embedding and STT
+    // restores read theirs: a record that cannot be read is reported in
+    // every storage mode, also when the files are gone (as under
+    // WebStorageMode.none, after every page load).
+    final loraFilename = identity?[PreferencesKeys.activeInferenceLoraFilename];
+    ModelSource? loraSource;
+    if (loraFilename != null) {
+      final loraEncoded = identity?[PreferencesKeys.activeInferenceLoraSource];
+      if (loraEncoded == null) {
+        restoreNotice(
+          '[WebModelManager] active model restore: the LoRA of $filename '
+          '($loraFilename) is recorded without its source — skipping',
+        );
+        return;
+      }
+      loraSource = ModelSource.tryDecode(loraEncoded);
+      if (loraSource == null) {
+        restoreNotice(
+          '[WebModelManager] active model restore: the LoRA of $filename '
+          '($loraFilename) has a malformed source — skipping',
+        );
+        return;
+      }
+    }
+
     // Verify the underlying file is still installed in the Web repository
     // before we set it active — otherwise getModelFilePaths() will throw
     // later on the first getActiveModel() call.
     final repo = ServiceRegistry.instance.modelRepository;
     if (!await repo.isInstalled(filename)) {
-      edgeAiLog(
+      _restoreSkipped(
         '[WebModelManager] active model restore: $filename not in repository — skipping',
       );
       return;
     }
 
-    // The LoRA is part of what was activated, as on mobile: restoring the
-    // model without it would load it with no adapter and no error.
-    final loraFilename = identity?[PreferencesKeys.activeInferenceLoraFilename];
-    ModelSource? loraSource;
     if (loraFilename != null) {
-      final loraEncoded = identity?[PreferencesKeys.activeInferenceLoraSource];
-      loraSource = loraEncoded == null
-          ? null
-          : ModelSource.tryDecode(loraEncoded);
-      if (loraSource == null || !await repo.isInstalled(loraFilename)) {
-        edgeAiLog(
+      if (!await repo.isInstalled(loraFilename)) {
+        _restoreSkipped(
           '[WebModelManager] active model restore: the LoRA of $filename '
           '($loraFilename) is not installed — skipping',
         );
@@ -170,6 +209,11 @@ class WebModelManager extends ModelFileManager
       loraSource: loraSource,
       modelType: modelType,
       fileType: fileType,
+      // The name it was installed under: `fromNetwork(filename:)` keeps the
+      // file under a name other than the URL's, and the install is recorded
+      // by that name. A name that is the URL's own was never checked as a
+      // name of its own, and is not now.
+      filename: renamedFrom(source, filename),
     );
     edgeAiLog('[WebModelManager] restored active inference model: $filename');
   }
@@ -262,7 +306,7 @@ class WebModelManager extends ModelFileManager
             await repository.isInstalled(record.tokenizerFilename!);
         if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
         if (!modelInstalled || !tokenizerInstalled) {
-          edgeAiLog(
+          _restoreSkipped(
             '[WebModelManager] active embedding record: file missing — skipping',
           );
           return;
@@ -317,7 +361,7 @@ class WebModelManager extends ModelFileManager
     final modelSource = ModelSource.tryDecode(modelSourceEncoded);
     final tokenizerSource = ModelSource.tryDecode(tokenizerSourceEncoded);
     if (modelSource == null || tokenizerSource == null) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active embedding restore: malformed source — skipping',
       );
       return;
@@ -353,7 +397,7 @@ class WebModelManager extends ModelFileManager
     );
     if (!_activeEmbeddingIdentityCoordinator.isLeaseCurrent(lease)) return;
     if (!modelInstalled || !tokenizerInstalled) {
-      edgeAiLog(
+      _restoreSkipped(
         '[WebModelManager] active embedding restore: file missing — skipping',
       );
       return;
@@ -419,7 +463,7 @@ class WebModelManager extends ModelFileManager
       modelFilename,
       modelSourceEncoded,
     )) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active STT restore: the stored source is not '
         '$modelFilename — skipping',
       );
@@ -430,7 +474,7 @@ class WebModelManager extends ModelFileManager
     try {
       sttModelType = SttModelType.values.byName(sttModelTypeName);
     } catch (e) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active STT restore: unknown SttModelType ($sttModelTypeName) — skipping',
       );
       return;
@@ -439,7 +483,7 @@ class WebModelManager extends ModelFileManager
     final modelSource = ModelSource.tryDecode(modelSourceEncoded);
     final tokenizerSource = ModelSource.tryDecode(tokenizerSourceEncoded);
     if (modelSource == null || tokenizerSource == null) {
-      edgeAiLog(
+      restoreNotice(
         '[WebModelManager] active STT restore: malformed source — skipping',
       );
       return;
@@ -460,7 +504,7 @@ class WebModelManager extends ModelFileManager
     final repository = ServiceRegistry.instance.modelRepository;
     if (!await repository.isInstalled(modelFilename) ||
         !await repository.isInstalled(effectiveTokenizerFilename)) {
-      edgeAiLog(
+      _restoreSkipped(
         '[WebModelManager] active STT restore: file missing — skipping',
       );
       return;

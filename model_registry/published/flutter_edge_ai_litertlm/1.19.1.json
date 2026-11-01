@@ -1,0 +1,1022 @@
+{
+  "package": "flutter_edge_ai_litertlm",
+  "version": "1.19.1",
+  "variants": {
+    "deepseek-r1-distill-qwen-1.5b/q8-ekv4096": {
+      "install_filename": "DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm",
+      "sha256": "69b35f01759eed765641ab4af589bbe98131fd2825662a086d9037409b8c1295",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-740m/generic": {
+      "install_filename": "embeddinggemma-2-740m__rev-24d962e906c7.litertlm",
+      "sha256": "e7a8a2204b91e0f96e92960e84a09a89212e1633dcb7575a9bf3378b4df77f4c",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-vis140"
+    },
+    "embeddinggemma-2-740m/npu-mt6991": {
+      "install_filename": "embeddinggemma-2-740m_MediaTek_MT6991__rev-24d962e906c7.litertlm",
+      "sha256": "99e6a35b824b4f7ad4f7c7f20c59ba380aa90e0b4442aadfee3674230c6c7cca",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6991",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6991-vis140"
+    },
+    "embeddinggemma-2-740m/npu-mt6993": {
+      "install_filename": "embeddinggemma-2-740m_MediaTek_MT6993__rev-24d962e906c7.litertlm",
+      "sha256": "ed2a2554bfb6d7abcafd0e9e36ee2f8d7de82888e7ed0fc52dd144e65b171742",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6993",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6993-vis140"
+    },
+    "embeddinggemma-2-740m/npu-ptl": {
+      "install_filename": "embeddinggemma-2-740m_Intel_PTL__rev-24d962e906c7.litertlm",
+      "sha256": "7cdcd24f08947aa9ad46d6e4d43caa4ee8b146d3c37d7c51248302b56902ae51",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-ptl",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-ptl-vis140"
+    },
+    "embeddinggemma-2-740m/npu-qcs8275": {
+      "install_filename": "embeddinggemma-2-740m_Qualcomm_QCS8275__rev-24d962e906c7.litertlm",
+      "sha256": "4d99a14e63e01cd2947961a1b4939395ad50d3a101a411e05f8397f4a80dbd80",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-qcs8275",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-qcs8275-vis140"
+    },
+    "embeddinggemma-2-740m/npu-sm8550": {
+      "install_filename": "embeddinggemma-2-740m_Qualcomm_SM8550__rev-24d962e906c7.litertlm",
+      "sha256": "802686a865fd7350f2ce4b6fa17ce02a411f56b5b508ec2bd8cb7310b2db82e6",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8550",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8550-vis140"
+    },
+    "embeddinggemma-2-740m/npu-sm8650": {
+      "install_filename": "embeddinggemma-2-740m_Qualcomm_SM8650__rev-24d962e906c7.litertlm",
+      "sha256": "3b8a18c6d043b8132c4eda45611296e1ae455ada82cda8b591ec0ca141e041c5",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8650",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8650-vis140"
+    },
+    "embeddinggemma-2-740m/npu-sm8750": {
+      "install_filename": "embeddinggemma-2-740m_Qualcomm_SM8750__rev-24d962e906c7.litertlm",
+      "sha256": "ac1973c0195dc6e28a621651f2f5e04d35fdc7a7b11cdbbe94f29f5dccb57996",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8750",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8750-vis140"
+    },
+    "embeddinggemma-2-740m/npu-sm8850": {
+      "install_filename": "embeddinggemma-2-740m_Qualcomm_SM8850__rev-24d962e906c7.litertlm",
+      "sha256": "19f6e8db6aa74b116d1c558c862ee131f60ce093576d3c8dd1898f656ca8080b",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850-vis140"
+    },
+    "embeddinggemma-2-740m/npu-tensor-g5": {
+      "install_filename": "embeddinggemma-2-740m_Google_Tensor_G5__rev-24d962e906c7.litertlm",
+      "sha256": "5b53d76c2c7c66d2dc6230ff158ea0033ac5939ac7cfcf827c3a22cdfc742a5e",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g5",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g5-vis140"
+    },
+    "embeddinggemma-2-740m/npu-tensor-g6": {
+      "install_filename": "embeddinggemma-2-740m_Google_Tensor_G6__rev-24d962e906c7.litertlm",
+      "sha256": "ed0e4f413e705946eda544078d8bf5acf10fe5aee2946451c81919a1f59665e7",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6-vis140"
+    },
+    "embeddinggemma-2-text-270m/generic": {
+      "install_filename": "embeddinggemma-2-text-270m__rev-9be6e8b90982.litertlm",
+      "sha256": "2d079ee2f6f066b1f368e8d7c819f55214eaef1d0513b312321901f30ab286fb",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-270m/npu-mt6991": {
+      "install_filename": "embeddinggemma-2-text-270m_MediaTek_MT6991__rev-9be6e8b90982.litertlm",
+      "sha256": "7acc8e334d882216207c23b7a477179d5af530d67fd8e2cb50ab42d3457f90c0",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6991",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-270m/npu-mt6993": {
+      "install_filename": "embeddinggemma-2-text-270m_MediaTek_MT6993__rev-9be6e8b90982.litertlm",
+      "sha256": "eff006451073498117f454c7ab27f274b5fe14a54af49be239e8f480ee49fa36",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6993",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-270m/npu-ptl": {
+      "install_filename": "embeddinggemma-2-text-270m_Intel_PTL__rev-9be6e8b90982.litertlm",
+      "sha256": "048e219d702d23cf19cb9a75e7595e61e320bc61a3919e0cbf1a30dfb5cc64f4",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-ptl",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-270m/npu-qcs8275": {
+      "install_filename": "embeddinggemma-2-text-270m_Qualcomm_QCS8275__rev-9be6e8b90982.litertlm",
+      "sha256": "128c32151613a5bbf8b5695b2d9ae271057338febbf06e3aeebf29e1353cb51d",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-qcs8275",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-270m/npu-sm8550": {
+      "install_filename": "embeddinggemma-2-text-270m_Qualcomm_SM8550__rev-9be6e8b90982.litertlm",
+      "sha256": "6a5043146940e738cfa9111aa445b1cdb3dc7bbef30caef367622f14ada1a895",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8550",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-270m/npu-sm8650": {
+      "install_filename": "embeddinggemma-2-text-270m_Qualcomm_SM8650__rev-9be6e8b90982.litertlm",
+      "sha256": "7dabcb17eed982d6de4435aaf29cc56147a627f6ab20a1e37aadd7af5399457b",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8650",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-270m/npu-sm8750": {
+      "install_filename": "embeddinggemma-2-text-270m_Qualcomm_SM8750__rev-9be6e8b90982.litertlm",
+      "sha256": "b5615709768db4ca4fb4f04514e7e41b0680ccb12dd5f90371193f7fd12e7c99",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8750",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-270m/npu-sm8850": {
+      "install_filename": "embeddinggemma-2-text-270m_Qualcomm_SM8850__rev-9be6e8b90982.litertlm",
+      "sha256": "72992b649c812ae9e30ffa9ad88fc662e649f7b643500d28051fbd457ad0d22a",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-270m/npu-tensor-g5": {
+      "install_filename": "embeddinggemma-2-text-270m_Google_Tensor_G5__rev-9be6e8b90982.litertlm",
+      "sha256": "f066663433a31a8228b46f3271d2714a3b72a341ed4563cbc6d90f2e3dd0162d",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g5",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-270m/npu-tensor-g6": {
+      "install_filename": "embeddinggemma-2-text-270m_Google_Tensor_G6__rev-9be6e8b90982.litertlm",
+      "sha256": "4cd282395a7b611ec8dec95160cd31a1f471a7b1cde1fc71717aa539c2a29883",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "install_filename": "embeddinggemma-2-text-vision-440m__rev-e301f74d5551.litertlm",
+      "sha256": "92dcbea108899e5d6e30d919b0744f90d9967e80c67a4ab5503ac16d54f62eb0",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-vis140"
+    },
+    "embeddinggemma-2-text-vision-440m/npu-mt6991": {
+      "install_filename": "embeddinggemma-2-text-vision-440m_MediaTek_MT6991__rev-e301f74d5551.litertlm",
+      "sha256": "53cb4b8b3d8ca3e022ceec1dd809ddd26c281721c4652e1fadc82d2433cbc5de",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6991",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6991-vis140"
+    },
+    "embeddinggemma-2-text-vision-440m/npu-mt6993": {
+      "install_filename": "embeddinggemma-2-text-vision-440m_MediaTek_MT6993__rev-e301f74d5551.litertlm",
+      "sha256": "1cfc52d73266fe0e099e853b816150c22deb32fea421cabf9647dc8d8112ede9",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6993",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-mt6993-vis140"
+    },
+    "embeddinggemma-2-text-vision-440m/npu-ptl": {
+      "install_filename": "embeddinggemma-2-text-vision-440m_Intel_PTL__rev-e301f74d5551.litertlm",
+      "sha256": "7f4c104b30ea6185516439aef534b84d9e7066366112506d5d8843e350fd08c9",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-ptl",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-ptl-vis140"
+    },
+    "embeddinggemma-2-text-vision-440m/npu-qcs8275": {
+      "install_filename": "embeddinggemma-2-text-vision-440m_Qualcomm_QCS8275__rev-e301f74d5551.litertlm",
+      "sha256": "ce8ccce80a12f6bc9acfe664b76c3cc46a698f0da81ae857f706b06b9a4c7d38",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-qcs8275",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-qcs8275-vis140"
+    },
+    "embeddinggemma-2-text-vision-440m/npu-sm8550": {
+      "install_filename": "embeddinggemma-2-text-vision-440m_Qualcomm_SM8550__rev-e301f74d5551.litertlm",
+      "sha256": "4427eecca4289555e72b297308f4c9cf97110a657de25dd2fe7946ac824f6214",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8550",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8550-vis140"
+    },
+    "embeddinggemma-2-text-vision-440m/npu-sm8650": {
+      "install_filename": "embeddinggemma-2-text-vision-440m_Qualcomm_SM8650__rev-e301f74d5551.litertlm",
+      "sha256": "ec7d2ee513830337343567409f32fea4a3e4f8f7b94facd0a20f3d3523cd7480",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8650",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8650-vis140"
+    },
+    "embeddinggemma-2-text-vision-440m/npu-sm8750": {
+      "install_filename": "embeddinggemma-2-text-vision-440m_Qualcomm_SM8750__rev-e301f74d5551.litertlm",
+      "sha256": "c5c05cb59833541a2d0d9374c7b50d2c3a406a4a84c85762775e5f9c6d96cd0c",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8750",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8750-vis140"
+    },
+    "embeddinggemma-2-text-vision-440m/npu-sm8850": {
+      "install_filename": "embeddinggemma-2-text-vision-440m_Qualcomm_SM8850__rev-e301f74d5551.litertlm",
+      "sha256": "661369235aa9fc23cf04a213d4e445c4634073832279f5a261ed22650a8ebc5b",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-sm8850-vis140"
+    },
+    "embeddinggemma-2-text-vision-440m/npu-tensor-g5": {
+      "install_filename": "embeddinggemma-2-text-vision-440m_Google_Tensor_G5__rev-e301f74d5551.litertlm",
+      "sha256": "96cdbae7b3dd6fa0f829fef2d0dd5bafc0179890d9bafbfe972db852e818d758",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g5",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g5-vis140"
+    },
+    "embeddinggemma-2-text-vision-440m/npu-tensor-g6": {
+      "install_filename": "embeddinggemma-2-text-vision-440m_Google_Tensor_G6__rev-e301f74d5551.litertlm",
+      "sha256": "40e98aeed9ef08abfd91d5d309f64f4fa06195c513931e917bcf5ea41a910668",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6",
+      "image_rag_profile_id": "embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1-npu-tensor_g6-vis140"
+    },
+    "embeddinggemma-300m/seq256": {
+      "install_filename": "embeddinggemma-300M_seq256_mixed-precision__rev-29888fcee321.tflite",
+      "sha256": "37115ef7bff76cd37dd86abe503ff511b1032bf85fc624a85c49c84899e92bc5",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq256__sentencepiece__rev-29888fcee321.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq256-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq256-npu-mt6991": {
+      "install_filename": "embeddinggemma-300M_seq256_mixed-precision.mediatek.mt6991__rev-459f1d37fec9.tflite",
+      "sha256": "066e924697e81230f527e9d09ef2c8052a788de44cdf1854c599b03e0956020b",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq256-mt6991__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6991",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq256-npu-mt6993": {
+      "install_filename": "embeddinggemma-300M_seq256_mixed-precision.mediatek.mt6993__rev-459f1d37fec9.tflite",
+      "sha256": "dfcef4645e74e6587cdb57a3b68e96eb2eb974ee8d49279d1c95fadaef01271e",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq256-mt6993__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6993",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq256-npu-sm8550": {
+      "install_filename": "embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8550__rev-459f1d37fec9.tflite",
+      "sha256": "d2e7f905fbf04fe5ba9137be75bd60dae368878ee1910698a9d3f805c8ad6641",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq256-sm8550__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8550",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq256-npu-sm8650": {
+      "install_filename": "embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8650__rev-459f1d37fec9.tflite",
+      "sha256": "f58530f8a729f5de2407ea0beacd15034ed803c82842f4254b22eea5ca4d57c4",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq256-sm8650__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8650",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq256-npu-sm8750": {
+      "install_filename": "embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8750__rev-459f1d37fec9.tflite",
+      "sha256": "b55c394309b349de5c917666b953f9364c4b248cd1cecff22d4fbb42bac4c67f",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq256-sm8750__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8750",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq256-npu-sm8850": {
+      "install_filename": "embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8850__rev-459f1d37fec9.tflite",
+      "sha256": "134ae8fccbf1c390a35b685771aa18704ac83569a06284285a3a42ef343bf209",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq256-sm8850__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8850",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq256-npu-tensor-g5": {
+      "install_filename": "embeddinggemma-300M_seq256_mixed-precision.google.tensor_g5__rev-459f1d37fec9.tflite",
+      "sha256": "e49a10b5769296953906fd4b7d75805a2d8729d4cd3a2c53c887390332da3ace",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq256-tensor-g5__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g5",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq256-npu-tensor-g6": {
+      "install_filename": "embeddinggemma-300M_seq256_mixed-precision.google.tensor_g6__rev-459f1d37fec9.tflite",
+      "sha256": "3ed0bdc4aa284dd1ba07cc5591744e681880a6d773fa799fbc92fe7e6314c7ce",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq256-tensor-g6__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq256-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g6",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq512": {
+      "install_filename": "embeddinggemma-300M_seq512_mixed-precision__rev-29888fcee321.tflite",
+      "sha256": "ad09e81557203cb0e177abf9bf8727dfe138a7d394aa0f70f0b2ed16432e121a",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq512__sentencepiece__rev-29888fcee321.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq512-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq512-npu-mt6991": {
+      "install_filename": "embeddinggemma-300M_seq512_mixed-precision.mediatek.mt6991__rev-459f1d37fec9.tflite",
+      "sha256": "7776785538a594d77fc72d22e5a8d3548a8b616e99897b5b7040b8dc211d0767",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq512-mt6991__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6991",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq512-npu-mt6993": {
+      "install_filename": "embeddinggemma-300M_seq512_mixed-precision.mediatek.mt6993__rev-459f1d37fec9.tflite",
+      "sha256": "8ae9ffccdd1ff29e019b872297476d0be9c21f30911e162246f1059f16ddf24e",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq512-mt6993__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6993",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq512-npu-sm8550": {
+      "install_filename": "embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8550__rev-459f1d37fec9.tflite",
+      "sha256": "a47e4f049a29b55ffdfad0ab78dc4a3d43608829350568253c30501e7d6053ef",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq512-sm8550__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8550",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq512-npu-sm8650": {
+      "install_filename": "embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8650__rev-459f1d37fec9.tflite",
+      "sha256": "412bb42e65bbcab91158ebf514ba5597a6e7312076fba0c07c8278948398779e",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq512-sm8650__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8650",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq512-npu-sm8750": {
+      "install_filename": "embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8750__rev-459f1d37fec9.tflite",
+      "sha256": "d9ccceaa73ab38f5b72bdf48fb370fd84c06c28e9b05aa1d5a91c3f03b2ae217",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq512-sm8750__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8750",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq512-npu-sm8850": {
+      "install_filename": "embeddinggemma-300M_seq512_mixed-precision.qualcomm.sm8850__rev-459f1d37fec9.tflite",
+      "sha256": "d25c0e6e7eeb0fdec75ee4e06cb67ce5a193c4fcc0dd1eb87eaafa0c75bf7700",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq512-sm8850__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8850",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq512-npu-tensor-g5": {
+      "install_filename": "embeddinggemma-300M_seq512_mixed-precision.google.tensor_g5__rev-459f1d37fec9.tflite",
+      "sha256": "de396c28f9af37977fae920eca8bb571c876ce34c845326a8151a7bc60097f86",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq512-tensor-g5__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g5",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq512-npu-tensor-g6": {
+      "install_filename": "embeddinggemma-300M_seq512_mixed-precision.google.tensor_g6__rev-459f1d37fec9.tflite",
+      "sha256": "8b4a7b805dfc7b44ce4713cb0236e823ed9ebb902842d1da0a0ed0aa333f14e1",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq512-tensor-g6__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq512-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g6",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq1024": {
+      "install_filename": "embeddinggemma-300M_seq1024_mixed-precision__rev-29888fcee321.tflite",
+      "sha256": "8b0b8bbd0aa95f9f747c25a6c87cd05a8286933282660f6a50da877662917e31",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq1024__sentencepiece__rev-29888fcee321.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq1024-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq1024-npu-mt6991": {
+      "install_filename": "embeddinggemma-300M_seq1024_mixed-precision.mediatek.mt6991__rev-459f1d37fec9.tflite",
+      "sha256": "2cedc201332ba6562448cd2d4ab624840c0e2b1076a7d10909c1fc5e13e2dc49",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq1024-mt6991__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6991",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq1024-npu-mt6993": {
+      "install_filename": "embeddinggemma-300M_seq1024_mixed-precision.mediatek.mt6993__rev-459f1d37fec9.tflite",
+      "sha256": "1dfa2b1d37ff4a59e5e42d3d27d133fb721dbfd2d9c88801a21442ef4cd4cc0e",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq1024-mt6993__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6993",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq1024-npu-sm8550": {
+      "install_filename": "embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8550__rev-459f1d37fec9.tflite",
+      "sha256": "74cfad70f31d3759e9a6ada6c4f31d601f245e6bb957391e56b2fa7c38e5dd68",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq1024-sm8550__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8550",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq1024-npu-sm8650": {
+      "install_filename": "embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8650__rev-459f1d37fec9.tflite",
+      "sha256": "acdb80aa131e0c1d45379aa9eb29459cc5d2d49280e7b0f67de1d81dbccf7283",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq1024-sm8650__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8650",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq1024-npu-sm8750": {
+      "install_filename": "embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8750__rev-459f1d37fec9.tflite",
+      "sha256": "3c68b9887a0148f25443e6287a6f9ada838ada89dddf6de36830a943becd5ca8",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq1024-sm8750__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8750",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq1024-npu-sm8850": {
+      "install_filename": "embeddinggemma-300M_seq1024_mixed-precision.qualcomm.sm8850__rev-459f1d37fec9.tflite",
+      "sha256": "e57de03a0b531a8a4ad850a0d11cf3c9dca81f7902217c3df356082194817df5",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq1024-sm8850__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8850",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq1024-npu-tensor-g5": {
+      "install_filename": "embeddinggemma-300M_seq1024_mixed-precision.google.tensor_g5__rev-459f1d37fec9.tflite",
+      "sha256": "e3aeec6a721366c360478856501c895ce0e6e8b91b7e0168359f4b25a7d6c6a5",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq1024-tensor-g5__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g5",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq1024-npu-tensor-g6": {
+      "install_filename": "embeddinggemma-300M_seq1024_mixed-precision.google.tensor_g6__rev-459f1d37fec9.tflite",
+      "sha256": "8469a099d33bc5c5335bc99e5dea1c028d81e0e5615917fd1f3006f78bf5ae2e",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq1024-tensor-g6__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq1024-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g6",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq2048": {
+      "install_filename": "embeddinggemma-300M_seq2048_mixed-precision__rev-29888fcee321.tflite",
+      "sha256": "d39b0bb3346bfb4f884f3bbce3196b261895aeece7e7ac02ffb44ed6e0f39381",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq2048__sentencepiece__rev-29888fcee321.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq2048-mp-rev-29888fcee321-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq2048-npu-mt6991": {
+      "install_filename": "embeddinggemma-300M_seq2048_mixed-precision.mediatek.mt6991__rev-459f1d37fec9.tflite",
+      "sha256": "dc56fcfd305fea2a3daaec82bff772a9de3f746a8b7bf216fa015e8b2d9c6785",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq2048-mt6991__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6991",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq2048-npu-mt6993": {
+      "install_filename": "embeddinggemma-300M_seq2048_mixed-precision.mediatek.mt6993__rev-459f1d37fec9.tflite",
+      "sha256": "64c5e51d918e8047850dd1d4debcf81ec4e6985d9ae5cbc0a17521de45b5f59b",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq2048-mt6993__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-mt6993",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq2048-npu-sm8550": {
+      "install_filename": "embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8550__rev-459f1d37fec9.tflite",
+      "sha256": "15d5d5dca08ccc7f026bdeb3983b4a0856b527654cad5c7e72027ae5edfbc0e7",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq2048-sm8550__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8550",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq2048-npu-sm8650": {
+      "install_filename": "embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8650__rev-459f1d37fec9.tflite",
+      "sha256": "3665698c5b632f621d85e2b4b6d135fadd0a92365a1b4e510afbc6dbcca4a870",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq2048-sm8650__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8650",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq2048-npu-sm8750": {
+      "install_filename": "embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8750__rev-459f1d37fec9.tflite",
+      "sha256": "21e814671507b5a1a1748b2200275d6c7f9fdf0e8fcdb42d84f5c3164a712d92",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq2048-sm8750__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8750",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq2048-npu-sm8850": {
+      "install_filename": "embeddinggemma-300M_seq2048_mixed-precision.qualcomm.sm8850__rev-459f1d37fec9.tflite",
+      "sha256": "7172747e73500528d2f61de8df43609ff6344eb61b9e9e1f40acd9e0e38cbb55",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq2048-sm8850__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-sm8850",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq2048-npu-tensor-g5": {
+      "install_filename": "embeddinggemma-300M_seq2048_mixed-precision.google.tensor_g5__rev-459f1d37fec9.tflite",
+      "sha256": "e659122c0ab3d02075a9e624efd7c8919a8f2e9dbc2d7284f41cb437e675f060",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq2048-tensor-g5__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g5",
+      "image_rag_profile_id": null
+    },
+    "embeddinggemma-300m/seq2048-npu-tensor-g6": {
+      "install_filename": "embeddinggemma-300M_seq2048_mixed-precision.google.tensor_g6__rev-459f1d37fec9.tflite",
+      "sha256": "83500348f3ddeb82df1b6cacda879d49a2de83ac45d94738e6659cbf4c88d756",
+      "tokenizer_install_filename": "embeddinggemma-300m-seq2048-tensor-g6__sentencepiece__rev-459f1d37fec9.model",
+      "tokenizer_sha256": "d6daa52d93d7aad10e8388bd526c4e501d914b47177398d1d9621f1fe48438c7",
+      "rag_profile_id": "embeddinggemma-300m-seq2048-mp-rev-459f1d37fec9-retrieval-prefix-meanpool-l2-v1-npu-tensor_g6",
+      "image_rag_profile_id": null
+    },
+    "fastvlm-0.5b/generic": {
+      "install_filename": "FastVLM-0.5B.litertlm",
+      "sha256": "ccba1e8bfa0bab78345f5d009fdffd20bd8c907cf39b4bc632e391b0a96f3b18",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "fastvlm-0.5b/npu-sm8750": {
+      "install_filename": "FastVLM-0.5B.qualcomm.sm8750.litertlm",
+      "sha256": "bb3625f0d887927b01a6f8a3444580514b6165e09a8eb1af276cc14ed22d783e",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "fastvlm-0.5b/npu-sm8850": {
+      "install_filename": "FastVLM-0.5B.qualcomm.sm8850.litertlm",
+      "sha256": "0eb6860d5c3800dc02c86515a54387f0d8289e5096db291ff6e4a993e312b482",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "functiongemma-270m-flutter-demo/q8-ekv1024": {
+      "install_filename": "functiongemma-flutter_q8_ekv1024.litertlm",
+      "sha256": "2afdc6caeb53f389229d1b5a23d5bf503b844ccd76a8d869ce10db3d14bd66f8",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "functiongemma-270m-it/generic": {
+      "install_filename": "functiongemma-270M-it.litertlm",
+      "sha256": "680fead1cca41a23220c904500a515d06e41f5c66d130aa4a9cc5905ec529a8e",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gecko-110m-en/seq64-quant": {
+      "install_filename": "Gecko_64_quant__rev-61a0d0c2cdc9.tflite",
+      "sha256": "19f04c9397c814c293d8c6caa045b89da298c77064d65e90d8f85f4c02ad466f",
+      "tokenizer_install_filename": "gecko-110m-en-seq64__sentencepiece__rev-61a0d0c2cdc9.model",
+      "tokenizer_sha256": "839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c",
+      "rag_profile_id": "gecko-110m-en-seq64-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "gecko-110m-en/seq256-quant": {
+      "install_filename": "Gecko_256_quant__rev-61a0d0c2cdc9.tflite",
+      "sha256": "81505c2a296878467fba5bb066fe3646f75e04d19220fbf219c0c968f5ea2ce4",
+      "tokenizer_install_filename": "gecko-110m-en-seq256__sentencepiece__rev-61a0d0c2cdc9.model",
+      "tokenizer_sha256": "839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c",
+      "rag_profile_id": "gecko-110m-en-seq256-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "gecko-110m-en/seq512-quant": {
+      "install_filename": "Gecko_512_quant__rev-61a0d0c2cdc9.tflite",
+      "sha256": "2b11bb47da36b6085e65f46af28609f64ec13feb039e8d319cdaa0a10d608b19",
+      "tokenizer_install_filename": "gecko-110m-en-seq512__sentencepiece__rev-61a0d0c2cdc9.model",
+      "tokenizer_sha256": "839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c",
+      "rag_profile_id": "gecko-110m-en-seq512-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "gecko-110m-en/seq1024-quant": {
+      "install_filename": "Gecko_1024_quant__rev-61a0d0c2cdc9.tflite",
+      "sha256": "2334395c8192ea6466093dc39177c524535ba8318c876232096d023518d323e6",
+      "tokenizer_install_filename": "gecko-110m-en-seq1024__sentencepiece__rev-61a0d0c2cdc9.model",
+      "tokenizer_sha256": "839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c",
+      "rag_profile_id": "gecko-110m-en-seq1024-quant-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "gecko-110m-en/seq64-f32": {
+      "install_filename": "Gecko_64_f32__rev-61a0d0c2cdc9.tflite",
+      "sha256": "31e402e85fd0f45ec82588939ba1f0424c1366b17dbe8a6cd431007bfeefabe3",
+      "tokenizer_install_filename": "gecko-110m-en-seq64-f32__sentencepiece__rev-61a0d0c2cdc9.model",
+      "tokenizer_sha256": "839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c",
+      "rag_profile_id": "gecko-110m-en-seq64-f32-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "gecko-110m-en/seq256-f32": {
+      "install_filename": "Gecko_256_f32__rev-61a0d0c2cdc9.tflite",
+      "sha256": "eb738ab8cd002380ba5e052cd00cc6abf5e7d20fb94fa1ef447ab318bfe3a123",
+      "tokenizer_install_filename": "gecko-110m-en-seq256-f32__sentencepiece__rev-61a0d0c2cdc9.model",
+      "tokenizer_sha256": "839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c",
+      "rag_profile_id": "gecko-110m-en-seq256-f32-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "gecko-110m-en/seq512-f32": {
+      "install_filename": "Gecko_512_f32__rev-61a0d0c2cdc9.tflite",
+      "sha256": "ab5b20c443e6fa60c1a5bad45e6f8d1b11e3c60d5850c2f62bb8402b904ae6c1",
+      "tokenizer_install_filename": "gecko-110m-en-seq512-f32__sentencepiece__rev-61a0d0c2cdc9.model",
+      "tokenizer_sha256": "839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c",
+      "rag_profile_id": "gecko-110m-en-seq512-f32-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "gecko-110m-en/seq1024-f32": {
+      "install_filename": "Gecko_1024_f32__rev-61a0d0c2cdc9.tflite",
+      "sha256": "d594eebd0dc01b6009d6392cc3d6e6950f1104caf1712cedc62ac0373ea71183",
+      "tokenizer_install_filename": "gecko-110m-en-seq1024-f32__sentencepiece__rev-61a0d0c2cdc9.model",
+      "tokenizer_sha256": "839ffa4b9afae8d77834a88b87781849aa021975d6063dec6085633fcaf7171c",
+      "rag_profile_id": "gecko-110m-en-seq1024-f32-rev-61a0d0c2cdc9-retrieval-prefix-meanpool-l2-v1",
+      "image_rag_profile_id": null
+    },
+    "gemma-3-1b-it/q4-ekv4096": {
+      "install_filename": "Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm",
+      "sha256": "1325ae366d31950f137c9c357b9fa89448b176d76998180c08ceaca78bba98be",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3-1b-it/npu-mt6989": {
+      "install_filename": "Gemma3-1B-IT_q4_ekv1280_mt6989.litertlm",
+      "sha256": "10b10bb55851448c54840d3730650f6242245828a904d0baa2255ec5c0e8ff89",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3-1b-it/npu-mt6991": {
+      "install_filename": "Gemma3-1B-IT_q4_ekv1280_mt6991.litertlm",
+      "sha256": "4bab56bdc34b38ab5341e578c2c8c9d8a4a88de752b9420c506a383535846faf",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3-1b-it/npu-mt6993": {
+      "install_filename": "Gemma3-1B-IT_q4_ekv1280_mt6993.litertlm",
+      "sha256": "adb161e25d7f3ad753d07f66992a8b88015b662e343c35edd16a0a2914cd8960",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3-1b-it/npu-sm8850": {
+      "install_filename": "Gemma3-1B-IT_q4_ekv1280_sm8850.litertlm",
+      "sha256": "fda5dca0e8c1c6f65ca5625c326ff79920c7eb82625a0c6515ae4f5711957b1f",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3-1b-it/npu-tensor-g5": {
+      "install_filename": "Gemma3-1B-IT_q8_ekv1280_Google_Tensor_G5.litertlm",
+      "sha256": "1ed29548b302764ce32ebf03d7df8fff943218b76d14230e97ee4bd0224cd8d1",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3-1b-it/npu-tensor-g6": {
+      "install_filename": "Gemma3-1B-IT_q8_ekv1280_Google_Tensor_G6.litertlm",
+      "sha256": "f34684a6db0799bdcf6ed0331aca4e98756f153e4371f3872b80c1efc4bc9e36",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3-270m-it/q8": {
+      "install_filename": "gemma3-270m-it-q8.litertlm",
+      "sha256": "757e9119fa5bd667a2774fb470ac4afcd3190a21c677f8e69a5d6bc908abdd63",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3-270m-it/npu-mt6991": {
+      "install_filename": "gemma3-270m-it-q8.mediatek.mt6991.litertlm",
+      "sha256": "d4d3c01888195cc5b29d9b083eb574b360453964e89cd0d3cf3ea15f5de73df0",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3-270m-it/npu-mt6993": {
+      "install_filename": "gemma3-270m-it-q8.mediatek.mt6993.litertlm",
+      "sha256": "fe85d0bc30f208a7d7d5767e5e3bcba4bbea23ca8da5ccc82a0ca9620554c412",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3n-e2b-it/generic": {
+      "install_filename": "gemma-3n-E2B-it-int4.litertlm",
+      "sha256": "2ed7bc3a0026c93d5b8a4544b352d9d00cd66ff0bac3ef6a20ac3d2cba4010d6",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3n-e2b-it/web": {
+      "install_filename": "gemma-3n-E2B-it-int4-Web.litertlm",
+      "sha256": "b6c8e1081ec80730f14473a5ece941b48da5d8e2a80c97c2963da153f3eff3d2",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3n-e2b-it/npu-mt6993": {
+      "install_filename": "gemma-3n-E2B-it-int4.mediatek.mt6993.litertlm",
+      "sha256": "ba38d54766a3a51cb977499a852d9839843c496a4f2f16c8b472a2cd52b8ab94",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3n-e4b-it/generic": {
+      "install_filename": "gemma-3n-E4B-it-int4.litertlm",
+      "sha256": "2e67a6cd51dfe0f793431e6bd4ed8d029c88e10f52ca0469ad38445e3cd3c1f4",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-3n-e4b-it/web": {
+      "install_filename": "gemma-3n-E4B-it-int4-Web.litertlm",
+      "sha256": "63730ba3225a23a90d3292d89fdeff1a7537cedeb72aa687de9a35732d057e52",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e2b-it/generic": {
+      "install_filename": "gemma-4-E2B-it.litertlm",
+      "sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e2b-it/gpu": {
+      "install_filename": "gemma-4-E2B-it-gpu.litertlm",
+      "sha256": "a53a59001894c58e6bdb5b9b227709f91a2e3e556baa7d85acf9c55402ba5cf5",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e2b-it/web": {
+      "install_filename": "gemma-4-E2B-it-web.litertlm",
+      "sha256": "3a08e8d94e23b814ae5414469c370c503813949acb8ceaa17e4ebf8a35af35b5",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e2b-it/npu-tensor-g5": {
+      "install_filename": "gemma-4-E2B-it_Google_Tensor_G5.litertlm",
+      "sha256": "af1082986639ecde7db95d91be6fe54f8b6b458104734c5bafc204e69d6852dc",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e2b-it/npu-tensor-g6": {
+      "install_filename": "gemma-4-E2B-it_Google_Tensor_G6.litertlm",
+      "sha256": "f86c7c19c736e9307267946edef58b0a45494a9127036d54d90dd6b7617c95b7",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e2b-it/npu-lnl": {
+      "install_filename": "gemma-4-E2B-it_intel_LNL.litertlm",
+      "sha256": "dacc900381bdc837696fc5deb1f3b7dbfe0854295dc3934564e1841086ab0383",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e2b-it/npu-ptl": {
+      "install_filename": "gemma-4-E2B-it_intel_PTL.litertlm",
+      "sha256": "8c0877f721ff0c057a007b330bbf9f6ec4d0278e730f88db95f2252372c701e8",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e2b-it/npu-qcs8275": {
+      "install_filename": "gemma-4-E2B-it_qualcomm_qcs8275.litertlm",
+      "sha256": "ebc103e548e76a34b8114a1dc1dd6d33a893c38add108d8bae8165b51f320f02",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e2b-it/npu-sm8750": {
+      "install_filename": "gemma-4-E2B-it_qualcomm_sm8750.litertlm",
+      "sha256": "41dd675fbe735b6029012b5576a5716bac614fd8156de0128db4c9dff3cebd4e",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e4b-it/generic": {
+      "install_filename": "gemma-4-E4B-it.litertlm",
+      "sha256": "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e4b-it/gpu": {
+      "install_filename": "gemma-4-E4B-it-gpu.litertlm",
+      "sha256": "4912bb5a9c30993c51a7711f763212077458529312175df0573a78323a2bb7ff",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "gemma-4-e4b-it/web": {
+      "install_filename": "gemma-4-E4B-it-web.litertlm",
+      "sha256": "3904d826d5dddd25ea173e85204caec09e68ba038116e9b992b69cbdc94f57a0",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "lfm2.5-230m/int4": {
+      "install_filename": "LFM2.5-230M_int4.litertlm",
+      "sha256": "c9065e28358a1f2f61a9c0d86172d6d16254d0f9097a519e82fc1346c17f9c62",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "lfm2.5-230m/int8": {
+      "install_filename": "LFM2.5-230M_int8.litertlm",
+      "sha256": "3c891cb3ab299385b11d04b45b32593a2002f9a45abeb30b4be2385c09878179",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "llava-onevision-0.5b/generic": {
+      "install_filename": "LLaVA-OneVision-0.5B.litertlm",
+      "sha256": "7f7cd7ae3d2ae435a1f69651de02a9d51e916be60fdfef5cadc721725310971a",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "phi-4-mini-instruct/q8-ekv4096": {
+      "install_filename": "Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+      "sha256": "7764d4deb53800578307be33039476b38a6c370fff71bedb3c0552563e23ab02",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "phi-4-mini-reasoning/generic": {
+      "install_filename": "phi-4-mini-reasoning.litertlm",
+      "sha256": "d507262ca3d01d93d59c573a82e6f2eeb3aec21d9a67c31fb4c0f93d17225b8f",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "qwen2-vl-2b/generic": {
+      "install_filename": "Qwen2-VL-2B.litertlm",
+      "sha256": "cf481776bcb16fe539a38c924a67fc213bb5ee55e6fa600729f060e64849066b",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "qwen2.5-1.5b-instruct/q8-ekv4096": {
+      "install_filename": "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+      "sha256": "c4a9b7289365ab80fe599b844b77ad253eb3c53fb0e5d963d699146a6f01255e",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "qwen2.5-1.5b-instruct/f32-ekv4096": {
+      "install_filename": "Qwen2.5-1.5B-Instruct_multi-prefill-seq_f32_ekv4096.litertlm",
+      "sha256": "708483abb477c10dd8db8cc6b4995bbd9cd2deda5539249a37c218028a669391",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "qwen3-0.6b/dynamic-int4": {
+      "install_filename": "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
+      "sha256": "03e7da1eb1108b50dffaa9bb52cc7bcbad2eb0c66ca990267f480c1e545d2856",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "qwen3-0.6b/mixed-int4": {
+      "install_filename": "qwen3_0_6b_mixed_int4.litertlm",
+      "sha256": "7900eb4e7362d88c58782c6f9999bb7a129e03544aa98b8f338ea0cc5d8c22c1",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "qwen3-0.6b/npu-mt6993": {
+      "install_filename": "Qwen3-0.6B.mediatek.mt6993.litertlm",
+      "sha256": "cc87c8a3df6eb680266a385c22fc3e867824495ff676583716ebe77e6ddd6c97",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "smollm3-3b/q4-block32-ekv4096": {
+      "install_filename": "SmolLM3-3B_q4_block32_ekv4096.litertlm",
+      "sha256": "bdd7eb05b6764fb5a5173bdbdd59354a26f66e4c20b040f0d3da3532071d18f6",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "smollm3-3b/standard": {
+      "install_filename": "SmolLM3-3B.litertlm",
+      "sha256": "c1c6c635194745456d03ba3a851b9ebf3a2714218ce35d930d9eb93f7cf97e20",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "smolvlm2-500m/generic": {
+      "install_filename": "SmolVLM2-500M.litertlm",
+      "sha256": "b808b328d845a600a33c5295f93d9217487317bd334dbc91b2a8d50e26e60ad0",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "translategemma-4b-it/int4": {
+      "install_filename": "translategemma-4b-it-int4-generic.litertlm",
+      "sha256": "94d2edceddeefe94aeb81fa3446f0b392c91e62f187392e049d4f74b2bb2315b",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "translategemma-4b-it/int8": {
+      "install_filename": "translategemma-4b-it-dynamic_int8-generic.litertlm",
+      "sha256": "6ccc74202695d3079797d1c1b5cc4a9e4a069a53f5a1b6c3e25c8775f295858b",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    },
+    "translategemma-4b-it/int4-multimodal": {
+      "install_filename": "translategemma-4b-it-int4-multimodal.litertlm",
+      "sha256": "1bc8e828fbe56dfb503ac033ac84a9eb941d85a9c196803167fa39b35f7fb033",
+      "tokenizer_install_filename": null,
+      "tokenizer_sha256": null,
+      "rag_profile_id": null,
+      "image_rag_profile_id": null
+    }
+  }
+}

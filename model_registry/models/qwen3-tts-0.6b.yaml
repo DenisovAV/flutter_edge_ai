@@ -1,0 +1,71 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: qwen3-tts-0.6b
+kind: tts
+package: flutter_edge_ai_speech
+display_name: Qwen3-TTS 0.6B
+family: qwen3
+arch_class: speech-synthesis
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+tts_type: qwen3
+variants:
+- slug: bundle
+  files:
+  - repo: litert-community/Qwen3-TTS-12Hz-0.6B-Base
+    revision: 5ad41057956abe19b6a3b78e677a0356ea606663
+    path: talker_int4.tflite
+    sha256: e03df54e73ed1f88b2ae6d47bbf82dd64ea90a3620d753a0f3c8d6a8d60848db
+    size: 255998768
+    install_filename: talker_int4.tflite
+  - repo: litert-community/Qwen3-TTS-12Hz-0.6B-Base
+    revision: 5ad41057956abe19b6a3b78e677a0356ea606663
+    path: mtp_fp32.tflite
+    sha256: 7cc01b402637c850432ee9171c9cc9103813c0406b70c455ea8752833adf1f03
+    size: 440526692
+    install_filename: mtp_fp32.tflite
+  - repo: litert-community/Qwen3-TTS-12Hz-0.6B-Base
+    revision: 5ad41057956abe19b6a3b78e677a0356ea606663
+    path: codec_decoder_fp32.tflite
+    sha256: 491e10c263c498d9f305ae655dbcce18455d54e44421480afe2d7da2b07da39d
+    size: 456820324
+    install_filename: codec_decoder_fp32.tflite
+  - repo: litert-community/Qwen3-TTS-12Hz-0.6B-Base
+    revision: 5ad41057956abe19b6a3b78e677a0356ea606663
+    path: tokenizer.json
+    sha256: a7d41145c408f3062e824f965be1c29854cd809e111cdf8170aa8b0bcd5d1fab
+    size: 11424262
+    install_filename: tokenizer.json
+  - repo: litert-community/Qwen3-TTS-12Hz-0.6B-Base
+    revision: 5ad41057956abe19b6a3b78e677a0356ea606663
+    path: tables/text_embedding_fp16.npy
+    sha256: 6fab9de0a8bc144aa3efefdacb5e8292b8499a9ae1d60fcee240bac528b7441e
+    size: 622329984
+    install_filename: text_embedding_fp16.npy
+  - repo: litert-community/Qwen3-TTS-12Hz-0.6B-Base
+    revision: 5ad41057956abe19b6a3b78e677a0356ea606663
+    path: tables/text_projection_fp32.npz
+    sha256: ebb0f6a7aaacdbc903e825e33480b2da4d4b71c43c90acb0e89988049c77c100
+    size: 25179078
+    install_filename: text_projection_fp32.npz
+  - repo: litert-community/Qwen3-TTS-12Hz-0.6B-Base
+    revision: 5ad41057956abe19b6a3b78e677a0356ea606663
+    path: tables/codec_embedding_fp32.npy
+    sha256: 47fa9e30f98b1528fc9b332d314f22a32fa33e187509a4d3537f8b2c31199e39
+    size: 12583040
+    install_filename: codec_embedding_fp32.npy
+  - repo: litert-community/Qwen3-TTS-12Hz-0.6B-Base
+    revision: 5ad41057956abe19b6a3b78e677a0356ea606663
+    path: tables/mtp_embeddings_fp16.npy
+    sha256: fea581b6a04f1cbec20b49511c36a00011411ccfba31f89b7571f82fe6b36706
+    size: 62914688
+    install_filename: mtp_embeddings_fp16.npy
+  - repo: litert-community/Qwen3-TTS-12Hz-0.6B-Base
+    revision: 5ad41057956abe19b6a3b78e677a0356ea606663
+    path: voices/demo_speaker.npy
+    sha256: b1527f54f68f44ca98bfddcaa9dc0018deb2db62590c9d2699efabbd0dfc1c3c
+    size: 4224
+    install_filename: demo_speaker.npy
+  example:
+  - qwen3

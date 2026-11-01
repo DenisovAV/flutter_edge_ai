@@ -73,7 +73,8 @@ class NpuDispatchUnavailableException implements Exception {
   String toString() => 'NpuDispatchUnavailableException: $message';
 }
 
-/// LiteRT-LM's `engine_create` returned no engine for a backend.
+/// LiteRT-LM's `engine_settings_create` or `engine_create` returned NULL for a
+/// backend.
 class LiteRtLmEngineCreateException implements Exception {
   const LiteRtLmEngineCreateException(
     this.message, {
@@ -84,8 +85,8 @@ class LiteRtLmEngineCreateException implements Exception {
   /// What failed and, when known, what to try.
   final String message;
 
-  /// The status code LiteRT-LM reported for the failed create (its C API's
-  /// last error), or null when it reported none.
+  /// The status code LiteRT-LM reported for the failed settings create or
+  /// engine create (its C API's last error), or null when it reported none.
   final int? nativeCode;
 
   /// LiteRT-LM's own message for the failed create, e.g. "Main backend

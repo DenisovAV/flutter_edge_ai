@@ -133,39 +133,37 @@ class QdrantEdgeClient {
   static Future<({QdrantEdgeClient client, int dim})?> openExisting({
     required String path,
   }) async {
-    // `probeShard` (SDK 0.8.0-dev.3) answers the one question this method has
-    // to ask, and it is the SDK's to answer: is there a shard here, and will it
-    // load? Before it existed, `EdgeShard.load` raised the SAME error for "this
-    // directory holds no shard" and "this shard will not load", so this package
-    // guessed from the filesystem — looking for `edge_config.json` and parsing
-    // it. That guess reported a full corpus as an empty store, because the
-    // engine reads a shard whose config file is missing perfectly well. The
-    // heuristic is gone; the SDK is asked instead.
-    final qe.ShardProbe probe;
+    // `EdgeShard.load(path, config: null)` answers the one question this method
+    // has to ask, and it is the SDK's to answer: is there a shard here, and will
+    // it load? (SDK 0.8.0-dev.3 to 0.8.0-dev.5 asked a separate `probeShard`;
+    // 0.9 folds the answer into load's own errors, so it cannot disagree with
+    // load.) Before either existed, this package guessed from the filesystem —
+    // looking for `edge_config.json` and parsing it. That guess reported a full
+    // corpus as an empty store, because the engine reads a shard whose config
+    // file is missing perfectly well. The heuristic is gone; the SDK is asked.
+    if (!Directory(path).existsSync()) return null;
+    final qe.EdgeShard shard;
     try {
-      probe = qe.probeShard(path: path);
+      shard = qe.EdgeShard.load(path: path, config: null);
+    } on qe.UnreadableEdgeException catch (e) {
+      // Positive evidence that something of ours is here and will not open.
+      // Never report this as "no shard" — that is the silent-empty-index
+      // defect this method exists to prevent.
+      throw QdrantException(
+        'A qdrant shard is present at $path but cannot be read: ${e.reason}',
+      );
+    } on qe.OperationExceptionEdgeException catch (e) {
+      // The engine's "nothing stored here" (no config and no segments): an
+      // empty directory, unrelated files, or one a failed first open left.
+      if (e.reason.contains('no segments were loaded')) return null;
+      _rethrow(e);
     } catch (e) {
-      // The probe is an FFI call like any other: a Rust panic here arrives as
-      // UniffiInternalError, which is not an EdgeException, so without this it
-      // crossed the package boundary as a type the caller cannot name.
+      // A Rust panic arrives as UniffiInternalError, which is not an
+      // EdgeException, so without this it crossed the package boundary as a
+      // type the caller cannot name.
       _rethrow(e);
     }
-    switch (probe.presence) {
-      case qe.EdgeShardPresence.none:
-        return null;
-      case qe.EdgeShardPresence.unreadable:
-        // Positive evidence that something of ours is here and will not open.
-        // Never report this as "no shard" — that is the silent-empty-index
-        // defect this release exists to remove.
-        throw QdrantException(
-          'A qdrant shard is present at $path but cannot be read'
-          '${probe.reason == null ? '' : ': ${probe.reason}'}',
-        );
-      case qe.EdgeShardPresence.loadable:
-        break;
-    }
     try {
-      final shard = qe.EdgeShard.load(path: path, config: null);
       final cfg = shard.config();
       final size = cfg.vectorData['']?.size;
       if (size == null) {

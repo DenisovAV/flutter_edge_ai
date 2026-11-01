@@ -1,7 +1,14 @@
 // A store written by the PUBLISHED flutter_edge_ai_qdrant 2.0.1 (with
 // flutter_edge_ai_rag 1.0.0) opens in this version as a text binding,
-// searches, and is left byte for byte as it was — shard included (R5 §6.5,
-// §6.6).
+// searches, and this package writes nothing to it: its records and the shard's
+// edge_config.json are left byte for byte as they were (R5 §6.5, §6.6).
+//
+// The shard's own files are the engine's. Qdrant Edge 0.9 (qdrant_edge
+// 0.9.0-dev.1) brings a shard written by an older engine to its current
+// layout when it opens it (it resizes segment storage files and records the
+// WAL's first index), so `segments/` and `wal/` are not compared byte for
+// byte; that the data survives is what the binding, count and search checks
+// below assert.
 //
 // test/fixtures/v2_0_1/text_store.tar.gz was written once by
 // tool/rag_store_compat/generate_v2_0_1_fixtures.sh against the hosted
@@ -42,12 +49,19 @@ void main() {
     return p.join(temp.path, 'text_store');
   }
 
-  /// Every file of [location] against a pristine extraction, byte for byte.
+  /// Every file of [location] outside the engine's `segments/` and `wal/`
+  /// against a pristine extraction, byte for byte.
   Future<void> expectUnchanged(String location) async {
     final pristine = await extractFixture();
+    bool engineOwned(String relative) {
+      final parts = p.split(relative);
+      return parts.length > 1 && (parts[1] == 'segments' || parts[1] == 'wal');
+    }
+
     List<String> files(String root) => [
       for (final file in Directory(root).listSync(recursive: true))
-        if (file is File) p.relative(file.path, from: root),
+        if (file is File && !engineOwned(p.relative(file.path, from: root)))
+          p.relative(file.path, from: root),
     ]..sort();
     expect(files(location), files(pristine));
     for (final file in files(pristine)) {

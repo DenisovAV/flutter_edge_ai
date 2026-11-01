@@ -471,11 +471,10 @@ void main() {
       // nothing in it. That must stay quiet, or every read on a store that
       // never held data would refuse.
       //
-      // Note what changed with SDK 0.8.0-dev.3: this package used to decide
-      // "is there a shard here" by looking at file names, and deliberately did
-      // not count `wal/`. `probeShard` now decides, and it calls a lone `wal/`
-      // *incomplete* rather than absent — a stricter answer than the one this
-      // package invented, and the SDK's to make.
+      // This package used to decide "is there a shard here" by looking at file
+      // names. Since SDK 0.9 `EdgeShard.load(path, config: null)` decides: an
+      // empty directory is its "no segments were loaded" error, read as "no
+      // shard".
       Directory('${tmp.path}/$storeDirName').createSync(recursive: true);
       final store = QdrantVectorStore();
       addTearDown(store.close);
@@ -1001,54 +1000,60 @@ void main() {
       await store.close();
     });
 
-    test('a shard copied mid-session is readable only after a flush', () async {
-      // The black-box half, and the one that reproduces #492 inside a single
-      // process. A copy of the directory taken BEFORE the flush is what a
-      // process killed mid-session leaves on disk — and it reopens EMPTY, with
-      // no error, which is exactly what the reporter saw. Taken after, the same
-      // copy carries every document.
-      //
-      // This asserts the contract's outcome rather than this engine's file
-      // names, so it survives a qdrant release that reorganises its segments.
-      final store = QdrantVectorStore();
-      await initializeBound4(store, tmp.path);
-      await write(store, 20);
+    test(
+      'a shard copied mid-session is readable, before a flush and after',
+      () async {
+        // The black-box half of #492. A copy of the directory taken BEFORE the
+        // flush is what a process killed mid-session leaves on disk. Up to
+        // qdrant_edge 0.8 it reopened EMPTY, with no error — what the reporter
+        // saw — because the engine never replayed its WAL on load. Qdrant Edge
+        // 0.9 does (qdrant/qdrant#11084), so the copy now carries every
+        // document either way; the id-tracker test above is the one that pins
+        // what flush itself persists.
+        //
+        // This asserts the contract's outcome rather than this engine's file
+        // names, so it survives a qdrant release that reorganises its segments.
+        final store = QdrantVectorStore();
+        await initializeBound4(store, tmp.path);
+        await write(store, 20);
 
-      Future<Directory> snapshot(String suffix) async {
-        final dir = Directory('${tmp.path}_$suffix')..createSync();
-        addTearDown(() {
-          try {
-            dir.deleteSync(recursive: true);
-          } catch (_) {}
-        });
-        final result = await Process.run('cp', [
-          '-R',
-          '${tmp.path}/$storeDirName',
-          '${dir.path}/$storeDirName',
-        ]);
-        expect(result.exitCode, 0, reason: 'cp failed: ${result.stderr}');
-        return dir;
-      }
+        Future<Directory> snapshot(String suffix) async {
+          final dir = Directory('${tmp.path}_$suffix')..createSync();
+          addTearDown(() {
+            try {
+              dir.deleteSync(recursive: true);
+            } catch (_) {}
+          });
+          final result = await Process.run('cp', [
+            '-R',
+            '${tmp.path}/$storeDirName',
+            '${dir.path}/$storeDirName',
+          ]);
+          expect(result.exitCode, 0, reason: 'cp failed: ${result.stderr}');
+          return dir;
+        }
 
-      final beforeFlush = await snapshot('before');
-      await store.flush();
-      final afterFlush = await snapshot('after');
-      await store.close();
+        final beforeFlush = await snapshot('before');
+        await store.flush();
+        final afterFlush = await snapshot('after');
+        await store.close();
 
-      final unflushed = QdrantVectorStore();
-      await initializeBound4(unflushed, beforeFlush.path);
-      expect(
-        (await unflushed.getStats()).documentCount,
-        0,
-        reason: 'this is #492: an unflushed shard reopens empty, and quietly',
-      );
-      await unflushed.close();
+        final unflushed = QdrantVectorStore();
+        await initializeBound4(unflushed, beforeFlush.path);
+        expect(
+          (await unflushed.getStats()).documentCount,
+          20,
+          reason: '#492: an unflushed shard must not reopen empty',
+        );
+        await unflushed.close();
 
-      final flushed = QdrantVectorStore();
-      await initializeBound4(flushed, afterFlush.path);
-      expect((await flushed.getStats()).documentCount, 20);
-      await flushed.close();
-    }, skip: Platform.isWindows ? 'shells out to cp' : null);
+        final flushed = QdrantVectorStore();
+        await initializeBound4(flushed, afterFlush.path);
+        expect((await flushed.getStats()).documentCount, 20);
+        await flushed.close();
+      },
+      skip: Platform.isWindows ? 'shells out to cp' : null,
+    );
 
     test('leaves the store usable — it is not a close', () async {
       // Scope, stated because it is easy to over-read: this pins that the

@@ -291,7 +291,9 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       // The zip keeps the AAR's `jni/arm64-v8a/` layout.
       genai: _Archive(
         url:
-            'https://github.com/DenisovAV/flutter_edge_ai/releases/'
+            // TEMPORARY: fork-hosted until the maintainer publishes the zip on
+            // DenisovAV/flutter_edge_ai (same tag, same bytes, same sha256).
+            'https://github.com/samarthsinh2660/flutter_gemma/releases/'
             'download/native-onnx-genai-v0.17.0-a/'
             'onnxruntime-genai-android-0.17.0-a.zip',
         sha256:

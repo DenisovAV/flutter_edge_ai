@@ -31,7 +31,9 @@
 // there and downloads nothing:
 //   adb shell mkdir -p /data/local/tmp/flutter_gemma_test/phi-3.5-mini-instruct-cpu-int4-awq-block-128-acc-level-4
 //   adb push <every file of _modelFiles> /data/local/tmp/flutter_gemma_test/phi-3.5-mini-instruct-cpu-int4-awq-block-128-acc-level-4/
-// A staged directory that lacks a file fails the test instead of being
+//   adb shell chmod 644 /data/local/tmp/flutter_gemma_test/phi-3.5-mini-instruct-cpu-int4-awq-block-128-acc-level-4/*
+// (the app reads the files as another user). A staged directory that lacks a
+// file, or holds one the app cannot read, fails the test instead of being
 // topped up from the network.
 //
 // GO/NO-GO BAR this test's printed numbers are judged against (see the
@@ -82,20 +84,34 @@ const _stagedDirName =
 const _stagedDir = '/data/local/tmp/flutter_gemma_test/$_stagedDirName';
 
 /// The staged model directory when it exists, after checking that every file
-/// of [_modelFiles] is there; null when nothing is staged.
+/// of [_modelFiles] is there, non-empty and readable by the app; null when
+/// nothing is staged.
 Directory? _stagedModelDir() {
   final dir = Directory(_stagedDir);
   if (!dir.existsSync()) return null;
-  final missing = [
-    for (final name in _modelFiles)
-      if (!File('${dir.path}/$name').existsSync() ||
-          File('${dir.path}/$name').lengthSync() == 0)
-        name,
+  final missing = <String>[];
+  final unreadable = <String>[];
+  for (final name in _modelFiles) {
+    final file = File('${dir.path}/$name');
+    if (!file.existsSync() || file.lengthSync() == 0) {
+      missing.add(name);
+      continue;
+    }
+    try {
+      file.openSync().closeSync();
+    } on FileSystemException {
+      unreadable.add(name);
+    }
+  }
+  final problems = [
+    if (missing.isNotEmpty) 'lacks ${missing.join(', ')}',
+    if (unreadable.isNotEmpty)
+      'cannot read ${unreadable.join(', ')} (chmod 644)',
   ];
-  if (missing.isNotEmpty) {
+  if (problems.isNotEmpty) {
     throw StateError(
-      '$_stagedDir is staged but lacks ${missing.join(', ')}: push every '
-      'file of the model directory, or remove the directory to download',
+      '$_stagedDir is staged but ${problems.join(' and ')}: push every file '
+      'of the model directory readable, or remove the directory to download',
     );
   }
   return dir;
@@ -186,6 +202,10 @@ void main() {
           // ignore: avoid_print
           print('[onnx android smoke] using the staged model at $_stagedDir');
         } else {
+          // ignore: avoid_print
+          print(
+            '[onnx android smoke] no staged model at $_stagedDir, downloading',
+          );
           final docsDir = await getApplicationDocumentsDirectory();
           modelDir = Directory('${docsDir.path}/onnx_android_smoke_model');
           if (!modelDir.existsSync()) modelDir.createSync(recursive: true);
@@ -209,7 +229,7 @@ void main() {
           configFile.existsSync(),
           isTrue,
           reason:
-              'download did not produce genai_config.json at '
+              'no genai_config.json in the model directory at '
               '${configFile.path}',
         );
 

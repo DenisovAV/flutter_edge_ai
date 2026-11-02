@@ -8,8 +8,12 @@
 # Google Play rejects (API 35+) and a 16 KB-page device cannot load. With
 # ENABLE_TELEMETRY=OFF the library needs only liblog/libm/libdl/libc.
 #
-# Needs: git, python3, cmake, ninja or make, unzip, zip, curl, readelf, and an
-# Android NDK >= r28 (16 KB-aligned by default). No Rust: guidance is not built.
+# Needs: git, Python 3.10+ with `requests` (build.py), cmake with ctest,
+# ninja or make, unzip, zip, curl, sha256sum, strings, readelf (on macOS the
+# NDK's llvm-readelf, linked or aliased as readelf on PATH), and an Android
+# NDK >= r28 (16 KB-aligned by default). No Rust: guidance is not built.
+# The output is not byte-reproducible across machines: the NDK version, the
+# build directory (in __FILE__ strings) and the zip entry times change it.
 #
 #   NDK=$HOME/Android/Sdk/ndk/28.2.13676358 \
 #   ANDROID_HOME=$HOME/Android/Sdk \

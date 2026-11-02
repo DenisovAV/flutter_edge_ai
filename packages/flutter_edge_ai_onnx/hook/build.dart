@@ -277,27 +277,28 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime.so',
         assetName: 'onnxruntime',
       ),
-      // NOT on Maven Central (probed com.microsoft.onnxruntime[.genai|-genai]
-      // — all 404) — same GitHub-release supply chain as the desktop GenAI
-      // archives above, just a differently-shaped AAR asset. GenAI's AAR
-      // ships arm64-v8a + x86_64 only (no armeabi-v7a) — arm64 is the only
-      // viable device ABI, not a policy choice.
-      // Not Microsoft's AAR. Its 0.17.0 `libonnxruntime-genai.so` lists
+      // Microsoft's GenAI AAR is not on Maven Central (probed
+      // com.microsoft.onnxruntime[.genai|-genai], all 404) and ships
+      // arm64-v8a + x86_64 only (no armeabi-v7a): arm64 is the only viable
+      // device ABI, not a policy choice.
+      // This is not Microsoft's AAR. Its 0.17.0 `libonnxruntime-genai.so` lists
       // `libmat.so` (the 1DS telemetry SDK) in DT_NEEDED, and that file is
       // 4 KB-aligned: Google Play rejects it for apps that target API 35+ and a
       // 16 KB-page device cannot load it. This is the same v0.17.0 source built
       // by `native/build_genai_android.sh` with ENABLE_TELEMETRY=OFF, so it
       // needs only liblog/libm/libdl/libc and every PT_LOAD is 16 KB-aligned.
-      // The zip keeps the AAR's `jni/arm64-v8a/` layout.
+      // The zip keeps the AAR's `jni/arm64-v8a/` layout. The build is not
+      // byte-reproducible across machines (the NDK version, the build
+      // directory in `__FILE__` strings and the zip entry times all change
+      // the bytes), so a rebuild has a new sha256: this pin is the build
+      // published on this repository's release.
       genai: _Archive(
         url:
-            // TEMPORARY: fork-hosted until the maintainer publishes the zip on
-            // DenisovAV/flutter_edge_ai (same tag, same bytes, same sha256).
-            'https://github.com/samarthsinh2660/flutter_gemma/releases/'
-            'download/native-onnx-genai-v0.17.0-a/'
+            'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+            'native-onnx-genai-v0.17.0-a/'
             'onnxruntime-genai-android-0.17.0-a.zip',
         sha256:
-            'fde5732759bc445c8e01932c5a85652448e02c7c89a090a0982d0c5b9f5535cf',
+            'fe491a77f3bac8e72ae45814394a705a1c8bbf3aa69e1fd97106d8d1ea6cef76',
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
       ),
@@ -334,7 +335,7 @@ class _OrtBundle {
   String get version => ort == null
       ? 'genai-0.17.0'
       : dirName.startsWith('android')
-      ? 'ort-1.27.0_genai-0.17.0-a'
+      ? 'ort-1.27.0_genai-0.17.0-a.fe491a77'
       : 'ort-1.27.0_genai-0.17.0';
 
   List<_Archive> get archives => [?ort, genai];

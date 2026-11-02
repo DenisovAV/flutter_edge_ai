@@ -1,11 +1,9 @@
 // ORT-GenAI `InferenceModel` — text-only v1 (hardened plan Phase 3, Task 2).
 // Shape mirrors `FfiInferenceModel`
 // (`flutter_edge_ai_litertlm/lib/src/ffi/ffi_inference_model.dart`)'s
-// createSession singleton lane (issue #308 pattern), minus `openSession`
-// (ORT-GenAI's one persistent generator per client is a v2 follow-on — the
-// base `InferenceModel.openSession` UnsupportedError is inherited unchanged)
-// and minus `createChat` (the base `InferenceModel.createChat`, which routes
-// through `createSession`, is inherited unchanged too).
+// createSession singleton lane (issue #308 pattern) plus its `openSession`
+// cap; the base `InferenceModel.createChat`/`openChat`, which route through
+// `createSession`/`openSession`, are inherited unchanged.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show VoidCallback;
@@ -15,8 +13,18 @@ import 'ffi/gen_ai_client.dart';
 import 'onnx_sampling.dart';
 import 'onnx_session.dart';
 
-/// An ORT-GenAI text model: one [GenAiClient] (and its worker isolate), one
-/// session at a time.
+/// An ORT-GenAI text model: one [GenAiClient] (and its worker isolate), the
+/// legacy [createSession] session and any number of [openSession] sessions —
+/// each with a generator of its own, turns served one at a time.
+///
+/// **Cost of an open session.** Every session that has had a turn holds one
+/// ORT-GenAI generator whose KV cache is allocated in full at its first turn:
+/// about 0.75 MiB × `max_length` (the model's [maxTokens]) — 771 MiB at 1024
+/// and 3077 MiB at 4096 for Phi-3.5-mini int4 on Linux CPU — resident from
+/// then on; closing the session frees it. Windows gives it back to the OS;
+/// on Linux the RSS did not fall at 512 to 2048. That is why
+/// [maxConcurrentSessions] defaults to 2 on Android and iOS and to unlimited on
+/// desktop.
 ///
 /// It closes itself when its worker dies — an uncaught error, or the isolate
 /// ended under it: it turns closed, runs [onClose] and fires its close
@@ -31,6 +39,7 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
     required this.activeBackend,
     this.fileType = ModelFileType.onnx,
     this.configTopK,
+    this.maxConcurrentSessions,
     required this.onClose,
   }) {
     // A worker that dies on its own turns this model closed and tells its
@@ -56,12 +65,18 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
   @override
   final PreferredBackend? activeBackend;
 
+  /// Cap on concurrent [openSession] sessions; null = unlimited. The legacy
+  /// [createSession] session does not count.
+  final int? maxConcurrentSessions;
+
   /// Legacy hook fired alongside [CloseNotifier.fireCloseListeners] — the
   /// engine passes a no-op; core registers its singleton-reset via
   /// [addCloseListener] instead (same split as `FfiInferenceModel`).
   final VoidCallback onClose;
 
   OnnxSession? _session;
+  final Set<OnnxSession> _openSessions = {};
+  int _nextSessionId = 1;
   Completer<InferenceModelSession>? _createCompleter;
   bool _isClosed = false;
 
@@ -84,6 +99,95 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
   InferenceModelSession? get session => _session;
 
   @override
+  List<InferenceModelSession> get sessions =>
+      List.unmodifiable([?_session, ..._openSessions]);
+
+  StateError _closedError() {
+    final death = _deathReason;
+    return StateError(
+      death == null
+          ? 'Model is closed. Create a new instance to use it again'
+          : 'Model is closed because $death. Create a new instance to use it '
+                'again',
+    );
+  }
+
+  /// Opens a session with a generator of its own, independent of [session]
+  /// and of every other open session: its history is not replayed, and
+  /// closing it gives back its KV cache. Turns of different sessions are
+  /// served one at a time.
+  ///
+  /// Throws [StateError] when [maxConcurrentSessions] sessions are already
+  /// open. See the class doc for what an open session costs.
+  @override
+  Future<InferenceModelSession> openSession({
+    double? temperature,
+    int? randomSeed,
+    int? topK,
+    double? topP,
+    String? loraPath,
+    bool? enableVisionModality,
+    bool? enableAudioModality,
+    String? systemInstruction,
+    bool enableThinking = false,
+    List<Tool> tools = const [],
+    int? maxOutputTokens,
+  }) async {
+    if (_isClosed) throw _closedError();
+    _rejectUnsupported(loraPath, enableVisionModality, enableAudioModality);
+    final cap = maxConcurrentSessions;
+    if (cap != null && _openSessions.length >= cap) {
+      throw StateError(
+        'Max concurrent sessions ($cap) reached. Close an existing session '
+        'before opening a new one. Each open session holds a KV cache of about '
+        '0.75 MiB x max_length ($maxTokens) once it has had a turn.',
+      );
+    }
+    final sampling = withSamplingTopK(
+      SamplingParams(
+        temperature: temperature,
+        topK: topK,
+        topP: topP,
+        randomSeed: randomSeed,
+      )..validate(),
+      modelType: modelType,
+      configTopK: configTopK,
+    );
+    late final OnnxSession opened;
+    opened = OnnxSession(
+      client: client,
+      modelType: modelType,
+      fileType: fileType,
+      systemInstruction: systemInstruction,
+      maxOutputTokens: maxOutputTokens,
+      sampling: sampling,
+      sessionId: _nextSessionId++,
+      onClose: () => _openSessions.remove(opened),
+    );
+    _openSessions.add(opened);
+    return opened;
+  }
+
+  void _rejectUnsupported(
+    String? loraPath,
+    bool? enableVisionModality,
+    bool? enableAudioModality,
+  ) {
+    if (loraPath != null) {
+      throw UnsupportedError(
+        'LoRA weights are not supported on the ONNX GenAI path '
+        '(loraPath=$loraPath). Use a MediaPipe .task model instead.',
+      );
+    }
+    if (enableVisionModality == true || enableAudioModality == true) {
+      throw UnsupportedError(
+        'Vision/audio modalities are not supported on the ONNX GenAI '
+        'session (v1, text-only). Use a MediaPipe .task or .litertlm model.',
+      );
+    }
+  }
+
+  @override
   Future<InferenceModelSession> createSession({
     double? temperature,
     int? randomSeed,
@@ -97,27 +201,8 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
     List<Tool> tools = const [],
     int? maxOutputTokens,
   }) async {
-    if (_isClosed) {
-      final death = _deathReason;
-      throw StateError(
-        death == null
-            ? 'Model is closed. Create a new instance to use it again'
-            : 'Model is closed because $death. Create a new instance to use '
-                  'it again',
-      );
-    }
-    if (loraPath != null) {
-      throw UnsupportedError(
-        'LoRA weights are not supported on the ONNX GenAI path '
-        '(loraPath=$loraPath). Use a MediaPipe .task model instead.',
-      );
-    }
-    if (enableVisionModality == true || enableAudioModality == true) {
-      throw UnsupportedError(
-        'Vision/audio modalities are not supported on the ONNX GenAI '
-        'session (v1, text-only). Use a MediaPipe .task or .litertlm model.',
-      );
-    }
+    if (_isClosed) throw _closedError();
+    _rejectUnsupported(loraPath, enableVisionModality, enableAudioModality);
 
     // Single-flight guard for concurrent callers; sequential calls fall
     // through and close the previous session before opening a fresh one —
@@ -223,6 +308,10 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
       // Idempotent/cheap on the client and worker either way.
       await client.stopGeneration();
       await _session?.close();
+      // Together, and copied because close() removes a session from the set:
+      // each close waits for its reset while the worker may be busy, and one
+      // after the other that would add up.
+      await Future.wait([for (final s in _openSessions.toList()) s.close()]);
     } catch (e, st) {
       fail('closing the session', e, st);
     }
@@ -256,6 +345,11 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
   void _onWorkerDied(String reason) {
     _deathReason = reason;
     _isClosed = true;
+    // The sessions are unusable now; closing them takes them out of
+    // `sessions` and runs their own cleanup (the dead client ignores it).
+    for (final s in _openSessions.toList()) {
+      unawaited(s.close().catchError((Object _) {}));
+    }
     try {
       _notifyClosed();
     } catch (e, st) {

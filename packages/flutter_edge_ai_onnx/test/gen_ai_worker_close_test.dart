@@ -743,11 +743,16 @@ void main() {
           listenerCalls++;
           if (!listened.isCompleted) listened.complete();
         });
+        await model.openSession();
+        expect(model.sessions, hasLength(1));
         await listened.future.timeout(const Duration(seconds: 10));
       });
 
       expect(listenerCalls, 1);
       expect(onCloseCalls, 1);
+      // An opened session does not outlive the worker that served it.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(model.sessions, isEmpty);
       await expectLater(
         model.createSession(),
         throwsA(

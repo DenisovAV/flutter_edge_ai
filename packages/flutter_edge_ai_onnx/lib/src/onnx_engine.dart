@@ -98,6 +98,13 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
   @visibleForTesting
   static bool? debugForceUnsupportedHost;
 
+  /// Cap on concurrent `openSession` sessions when the app sets none: each
+  /// open session holds a KV cache of about 0.75 MiB x `max_length` (771 MiB
+  /// at 1024 on Phi-3.5-mini int4), so a phone gets 2 and a desktop none.
+  @visibleForTesting
+  static int? get defaultMaxConcurrentSessions =>
+      (Platform.isAndroid || Platform.isIOS) ? 2 : null;
+
   @override
   bool canHandle(InferenceModelSpec spec) {
     if (spec.fileType != ModelFileType.onnx) return false;
@@ -181,6 +188,8 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       activeBackend: null,
       fileType: spec.fileType,
       configTopK: configTopK,
+      maxConcurrentSessions:
+          config.maxConcurrentSessions ?? defaultMaxConcurrentSessions,
       onClose: () {},
     );
   }

@@ -118,8 +118,22 @@ profile, not of the output's name, and should move there.
 
 ## Inference — `OnnxEngine`
 
-Text-only, one session at a time (v1): `openSession` and `openChat` throw
-`UnsupportedError`. No vision, no audio, no LoRA. Sampling
+Text-only (v1): no vision, no audio, no LoRA. `createSession` is the one
+legacy session; `openSession` / `openChat` open further independent sessions
+on the same loaded model (native only; on web they still throw
+`UnsupportedError`). Each holds its own ORT-GenAI generator, so its context
+is its own and closing it frees it; turns of different sessions run one at a
+time, and nothing is replayed. **Cost:** a generator allocates its whole KV
+cache at its first turn, about **0.75 MiB × `maxTokens`**, resident from then
+on (Phi-3.5-mini int4 on Linux CPU: 771 MiB at 1024, 1539 at 2048, 3077 at
+4096). On Windows closing a session gives the whole amount back (commit
+-383 MiB at 512, -768 MiB at 1024). On Linux the process's RSS did not go down
+at 512, 1024 and 2048 (it did at 4096), so there budget the peak, not the
+count of open sessions. Opening more than `maxConcurrentSessions` throws a
+`StateError`; unset, that is **2 on Android and iOS and unlimited on desktop**.
+An unset cap cannot mean "unlimited" on a phone: pass a larger
+`maxConcurrentSessions` to allow more. The cap does not count the
+`createSession` session. Sampling
 follows the model's `genai_config.json` (greedy unless it sets `do_sample`);
 the `temperature`, `topK`, `topP` and `randomSeed` you pass override it, and
 `temperature: 0` or `topK: 1` keeps decoding greedy. Natively, a temperature
@@ -286,9 +300,10 @@ are native-only. See [Web setup](#web-setup).
 
 - No vision, no audio, no multimodal input on the inference arm — text only.
 - No LoRA.
-- One inference session at a time (`createSession` closes any live session
-  before opening a new one, same as every other engine in this monorepo);
-  `openSession` and `openChat` throw `UnsupportedError`.
+- `createSession` keeps one session (it closes any live one before opening a
+  new one, as every engine here does). Native `openSession` / `openChat`
+  sessions are independent and capped (see Inference above); on web they
+  still throw `UnsupportedError`.
 
 ## Web setup
 

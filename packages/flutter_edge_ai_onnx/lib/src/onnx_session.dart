@@ -26,8 +26,14 @@ class OnnxSession extends InferenceModelSession {
     this.systemInstruction,
     this.maxOutputTokens,
     this.sampling = const SamplingParams(),
+    this.sessionId,
     required this.onClose,
   });
+
+  /// Which generator this session drives: null is the legacy singleton
+  /// session (`createSession`), any other value an `openSession` session with
+  /// a generator — and KV cache — of its own.
+  final int? sessionId;
 
   final GenAiClient client;
   final ModelType modelType;
@@ -108,6 +114,7 @@ class OnnxSession extends InferenceModelSession {
       isFirstTurn: startFresh,
       maxOutputTokens: maxOutputTokens,
       searchOptions: onnxSearchOptions(sampling),
+      sessionId: sessionId,
     );
     _isFirstTurn = false;
     _forceResetOnNextTurn = false;
@@ -200,12 +207,12 @@ class OnnxSession extends InferenceModelSession {
   @override
   Future<void> stopGeneration() {
     _stoppedThisTurn = true;
-    return client.stopGeneration();
+    return client.stopGeneration(sessionId: sessionId);
   }
 
   @override
   SessionMetrics getSessionMetrics() {
-    final stats = client.lastGenerationStats;
+    final stats = client.generationStatsOf(sessionId);
     if (stats == null) return SessionMetrics();
     return SessionMetrics(
       inputTokens: stats.promptTokens,
@@ -232,8 +239,8 @@ class OnnxSession extends InferenceModelSession {
     // (defense-in-depth, see `serveGenAiWorker` in gen_ai_worker.dart), but
     // sending the stop first here keeps this session from sitting on an
     // abandoned decode any longer than necessary.
-    await client.stopGeneration();
-    await client.resetSession();
+    await client.stopGeneration(sessionId: sessionId);
+    await client.resetSession(sessionId: sessionId);
     onClose();
   }
 }

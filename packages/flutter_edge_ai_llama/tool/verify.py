@@ -183,7 +183,7 @@ def main():
     parser.add_argument("--platform", choices=("android", "ios", "macos", "windows", "linux", "web"))
     parser.add_argument("--device")
     parser.add_argument("--simulator-retry", action="store_true",
-                        help="iOS simulator only: bound each attempt to 10 minutes; reboot and retry startup once")
+                        help="iOS simulator only: bound build/startup/test to 20 minutes per attempt; reboot and retry startup once")
     parser.add_argument("--cpu-threads", type=int,
                         help="Packaged runtime smoke: explicit CPU generation/batch thread budget")
     parser.add_argument("--native-diagnostics", action="store_true",
@@ -324,7 +324,7 @@ def main():
         command = [flutter, "test", "integration_test/connector_smoke_test.dart", "-d", args.device, fixture, *thread_defines, "--reporter", "json"]
         try:
             run(command, PACKAGE / "example", smoke="packaged native runtime installs",
-                smoke_timeout=600 if args.simulator_retry else None)
+                smoke_timeout=1200 if args.simulator_retry else None)
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
             report = error.output or ""
             startup_failure = ("Error waiting for a debug connection" in report or
@@ -336,7 +336,7 @@ def main():
             subprocess.run(["xcrun", "simctl", "shutdown", args.device], check=False, timeout=30)
             run(["xcrun", "simctl", "boot", args.device])
             subprocess.run(["xcrun", "simctl", "bootstatus", args.device, "-b"], check=True, timeout=120)
-            run(command, PACKAGE / "example", smoke="packaged native runtime installs", smoke_timeout=600)
+            run(command, PACKAGE / "example", smoke="packaged native runtime installs", smoke_timeout=1200)
             print("::warning::iOS simulator passed only after a startup retry; inspect the first attempt above.", flush=True)
     elif args.lane == "capabilities":
         labels = {"tools": "native typed thinking", "audio": "native audio projector", "vision": "native vision projector", "lora": "native LoRA session", "gpu": "explicit GPU loads"}

@@ -966,4 +966,25 @@ cp "$XNN_SRC_DIR/patches/tensorflow_xnnpack_patch_file.patch" \
 cp "$XNN_SRC_DIR/patches/xnnpack_pf32_sme2_apple.patch" \
   "$DIR/flutter_gemma_xnnpack_pf32_sme2_apple.patch"
 
+# ── 22. NPU executor: save every KV cache buffer of a conversation ──
+# LiteRT-LM keeps several conversations on one engine by saving the active
+# one (CloneContext) and restoring the next (RestoreContext). The NPU
+# executor saved only the KV buffers its prefill signature takes; a layer
+# only the decode signature reads (Gemma 4 E2B on the Qualcomm SM8750
+# bundle: kv_cache_k_14 and kv_cache_v_14 of 30) kept the previous
+# conversation's values, measured on a DDP Galaxy S25 Ultra 2026-11-02 (N1,
+# doc/research/npu-0.19.md): every conversation then answered with the last
+# one's fact. Saving every buffer in input_kv_cache_buffers covers them;
+# RestoreContext already restores whatever was saved.
+NPU_SAVE_ALL_KV_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/npu_context_save_all_kv.patch"
+if git -C "$DIR" apply --check "$NPU_SAVE_ALL_KV_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$NPU_SAVE_ALL_KV_PATCH"
+  echo "  OK: NPU CloneContext saves every KV cache buffer"
+elif git -C "$DIR" apply --reverse --check "$NPU_SAVE_ALL_KV_PATCH" 2>/dev/null; then
+  echo "  SKIP: NPU CloneContext already saves every KV cache buffer"
+else
+  echo "  ERROR: $NPU_SAVE_ALL_KV_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
 echo "Patch complete."

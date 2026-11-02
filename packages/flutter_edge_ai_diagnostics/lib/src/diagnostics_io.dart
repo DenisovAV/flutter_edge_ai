@@ -33,7 +33,8 @@ abstract final class FlutterEdgeAiDiagnostics {
   /// process's page tables for each read: about 3.7 ms per resident GiB on one
   /// Linux machine (1.7 ms idle, about 30 ms with 7 GiB resident). Call it at a
   /// few points, not per frame or per token. iOS and macOS reads are Mach calls
-  /// and Windows reads are two `kernel32` calls; both take microseconds.
+  /// that take microseconds; Windows reads are two `kernel32` calls, not timed
+  /// (no measurement is recorded).
   static Future<MemorySnapshot> memorySnapshot() async {
     if (Platform.isAndroid || Platform.isLinux) return readProcMemorySnapshot();
     if (Platform.isIOS || Platform.isMacOS) return readMachMemorySnapshot();

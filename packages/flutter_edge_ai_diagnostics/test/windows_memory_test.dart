@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart'
-    show FlutterEdgeAiDiagnostics, MemoryReadException;
+    show FlutterEdgeAiDiagnostics, MemoryReadException, MemorySnapshot;
 import 'package:flutter_edge_ai_diagnostics/src/windows/windows_memory.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -168,10 +168,40 @@ void main() {
           isA<MemoryReadException>().having(
             (e) => e.message,
             'message',
-            allOf(contains('101'), contains('100')),
+            contains('101 above WorkingSetSize 100'),
           ),
         ),
       );
+    });
+
+    test('a commit peak below the current commit is a failed read that names '
+        'both values', () {
+      expect(
+        () => _decode(
+          _reply(
+            workingSet: 100,
+            pagefileUsage: 9,
+            peakPagefileUsage: 7,
+            privateWorkingSet: 50,
+          ),
+          processMemoryCountersSize,
+        ),
+        throwsA(
+          isA<MemoryReadException>().having(
+            (e) => e.message,
+            'message',
+            contains('PeakPagefileUsage 7 below PagefileUsage 9'),
+          ),
+        ),
+      );
+    });
+
+    test('a commit peak equal to the commit is a value, not an error', () {
+      final c = _decode(
+        _reply(workingSet: 100, pagefileUsage: 9, peakPagefileUsage: 9),
+        processMemoryCountersSize,
+      );
+      expect(c.peakCommitBytes, 9);
     });
 
     test('a private working set equal to the working set is 0, not an '
@@ -415,9 +445,19 @@ void main() {
         pageReadWrite,
       );
       expect(block, isNot(nullptr));
-      final during = await FlutterEdgeAiDiagnostics.memorySnapshot();
-      expect(virtualFree(block, 0, memRelease), isNot(0));
-      final after = await FlutterEdgeAiDiagnostics.memorySnapshot();
+      // Released on every path, so a failed expect cannot leave 512 MiB
+      // committed for the tests after this one.
+      var released = false;
+      late final MemorySnapshot during;
+      late final MemorySnapshot after;
+      try {
+        during = await FlutterEdgeAiDiagnostics.memorySnapshot();
+        expect(virtualFree(block, 0, memRelease), isNot(0));
+        released = true;
+        after = await FlutterEdgeAiDiagnostics.memorySnapshot();
+      } finally {
+        if (!released) virtualFree(block, 0, memRelease);
+      }
 
       expect(
         during.anonymousBytes! - before.anonymousBytes!,

@@ -76,11 +76,12 @@ void markUnwritten(Uint8List buffer) =>
 /// A field the call did not write still holds the marker: that is how an OS
 /// that predates `PrivateWorkingSetSize` is told apart from a process whose
 /// value is genuinely small. Throws [MemoryReadException] when a field every
-/// Windows writes is still unwritten, and when `PrivateWorkingSetSize` is
-/// written but larger than `WorkingSetSize`: the OS reported the value, so a
-/// reply that contradicts itself is a failed read, not a gap. It was not
-/// observed (53.5 million reads on Windows 11 build 26200 while another isolate
-/// emptied and refilled the working set).
+/// Windows writes is still unwritten, and when the reply contradicts itself:
+/// a `PeakPagefileUsage` below `PagefileUsage`, or a `PrivateWorkingSetSize`
+/// written but larger than `WorkingSetSize`. The OS reported those values, so
+/// such a reply is a failed read, not a gap. Neither was observed (53.5
+/// million reads on Windows 11 build 26200 while another isolate emptied and
+/// refilled the working set).
 WindowsProcessCounters windowsCountersFromReply(ByteData info, int cb) {
   if (cb != processMemoryCountersSize && cb != processMemoryCountersEx2Size) {
     throw ArgumentError.value(cb, 'cb', 'not a PROCESS_MEMORY_COUNTERS size');
@@ -104,6 +105,12 @@ WindowsProcessCounters windowsCountersFromReply(ByteData info, int cb) {
   final workingSet = field(workingSetSizeOffset, 'WorkingSetSize');
   final commit = field(pagefileUsageOffset, 'PagefileUsage');
   final peak = field(peakPagefileUsageOffset, 'PeakPagefileUsage');
+  if (peak < commit) {
+    throw MemoryReadException(
+      'K32GetProcessMemoryInfo reported PeakPagefileUsage $peak below '
+      'PagefileUsage $commit',
+    );
+  }
 
   int? fileBacked;
   if (cb >= processMemoryCountersEx2Size) {

@@ -56,15 +56,16 @@ final class MemorySnapshot {
   ///   CPU raised it by 389 to 392 MiB and the private working set by 102 to
   ///   105 MiB (one machine), and with the first prompt the rises reached 527
   ///   to 531 and 225 to 229 MiB: about three quarters of the commit arrives
-  ///   at load, while most of the private working set (and of
-  ///   [fileBackedBytes]) arrives with the first prompt. On the GPU the load
-  ///   raised it by 1,075 to 1,083 MiB, so part of a GPU model's memory may
-  ///   be in it; how much is not measured. After a GPU model is closed it
-  ///   falls with a delay: in two runs (RTX 3050) it stayed
-  ///   about 360 MiB above its start for about 2 s and settled by about 8 s,
-  ///   about 65 MiB above it after the first load and at most about 16 MiB
-  ///   after later ones (one machine, four cycles per process). Read it at
-  ///   least 8 s after a close.
+  ///   at load, while slightly more than half of the private working set
+  ///   (about 55%) and most of [fileBackedBytes] arrive with the first prompt.
+  ///   On the GPU the load raised it by 1,075 to 1,083 MiB, so part of a GPU
+  ///   model's memory may be in it; how much is not measured. After a GPU
+  ///   model is closed it falls with a delay. On one machine (RTX 3050,
+  ///   FunctionGemma 270M, debug build, two runs of four load/close cycles
+  ///   per process) it stayed about 360 MiB above its start for about 2 s and
+  ///   stopped falling by about 8 s, leaving about 65 MiB after the first
+  ///   cycle in a process and at most about 16 MiB after later cycles.
+  ///   Elsewhere, read it again until it stops falling before you compare.
   ///
   /// Null only on an Android or Linux kernel without `smaps_rollup`. Vendor
   /// kernels may backport it. On iOS, macOS and Windows it is never null.

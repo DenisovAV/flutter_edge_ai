@@ -39,9 +39,10 @@ void main() {
       expect(snapshot.fileBackedBytes, isNotNull);
       expect(snapshot.fileBackedBytes, greaterThan(0));
     } else if (Platform.isWindows) {
-      // WorkingSetSize - PrivateWorkingSetSize: the process's own DLLs. This
-      // device is a Windows 10/11 that fills the extended struct, so null here
-      // means the cb 96 request broke.
+      // WorkingSetSize - PrivateWorkingSetSize: the shareable working set
+      // (mapped files, DLL pages, modified shared pages), never 0 for a
+      // running process. This device is a Windows 10/11 that fills the
+      // extended struct, so null here means the cb 96 request broke.
       expect(snapshot.fileBackedBytes, isNotNull);
       expect(snapshot.fileBackedBytes, greaterThan(0));
     } else {

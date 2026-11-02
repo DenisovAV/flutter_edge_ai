@@ -50,14 +50,18 @@ void main() {
     }
     // The peak is the kernel's lifetime high-water mark of the footprint (of
     // commit on Windows), read in the same call, so it is at least the current
-    // value. Android keeps no anonymous-only peak, and neither does Linux.
+    // value; on Windows it can trail commit by up to about 0.5 MiB while
+    // commit grows (the kernel raises the usage first), so 1 MiB is allowed.
+    // Android keeps no anonymous-only peak, and neither does Linux.
     if (Platform.isAndroid || Platform.isLinux) {
       expect(snapshot.anonymousPeakBytes, isNull);
     } else {
       expect(snapshot.anonymousPeakBytes, isNotNull);
       expect(
         snapshot.anonymousPeakBytes,
-        greaterThanOrEqualTo(snapshot.anonymousBytes!),
+        greaterThanOrEqualTo(
+          snapshot.anonymousBytes! - (Platform.isWindows ? 1024 * 1024 : 0),
+        ),
       );
     }
     // availableBytes is legitimately null on the iOS simulator (no jetsam

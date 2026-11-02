@@ -92,8 +92,9 @@ final class MemorySnapshot {
   ///   contents to disk first (the standby, free and zero lists). It is not
   ///   this app's headroom: Windows does not kill a process when RAM runs low,
   ///   and an allocation fails once the machine's commit reaches the commit
-  ///   limit (RAM plus the page files), not when RAM runs out. That headroom
-  ///   is `ullAvailPageFile` of the same call ("the maximum amount of
+  ///   limit (RAM plus the page files; a page file that grows raises it, and a
+  ///   job object's limit, if any, applies first), not when RAM runs out. That
+  ///   headroom is `ullAvailPageFile` of the same call ("the maximum amount of
   ///   memory the current process can commit", per Microsoft), which this
   ///   package does not read.
   /// - **macOS:** null. `os_proc_available_memory()` is iOS-only and macOS has
@@ -175,7 +176,11 @@ final class MemorySnapshot {
   ///   snapshot before and compare, and treat the value as an upper bound.
   /// - **Windows:** `PeakPagefileUsage`, the highest commit charge since the
   ///   process started, the peak of the same quantity [anonymousBytes] holds
-  ///   there. Also a lifetime mark: take a snapshot before and compare.
+  ///   there. Also a lifetime mark: take a snapshot before and compare. While
+  ///   commit grows it can trail [anonymousBytes] by up to about 0.5 MiB (the
+  ///   kernel raises the usage before the peak; 516 KiB at most on one
+  ///   Windows 11 machine while other threads committed), so it is not always
+  ///   at least [anonymousBytes].
   /// - **Android and Linux:** null. The kernel keeps no peak of anonymous
   ///   memory; `VmHWM` includes file-backed pages and would be a different
   ///   number.

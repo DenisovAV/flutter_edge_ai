@@ -174,34 +174,15 @@ void main() {
       );
     });
 
-    test('a commit peak below the current commit is a failed read that names '
-        'both values', () {
-      expect(
-        () => _decode(
-          _reply(
-            workingSet: 100,
-            pagefileUsage: 9,
-            peakPagefileUsage: 7,
-            privateWorkingSet: 50,
-          ),
-          processMemoryCountersSize,
-        ),
-        throwsA(
-          isA<MemoryReadException>().having(
-            (e) => e.message,
-            'message',
-            contains('PeakPagefileUsage 7 below PagefileUsage 9'),
-          ),
-        ),
-      );
-    });
-
-    test('a commit peak equal to the commit is a value, not an error', () {
+    test('a commit peak that trails the commit is returned as reported', () {
+      // The kernel raises the usage before the peak, so a read while another
+      // thread commits can see this; it is not a failed read.
       final c = _decode(
-        _reply(workingSet: 100, pagefileUsage: 9, peakPagefileUsage: 9),
+        _reply(workingSet: 100, pagefileUsage: 9, peakPagefileUsage: 7),
         processMemoryCountersSize,
       );
-      expect(c.peakCommitBytes, 9);
+      expect(c.commitBytes, 9);
+      expect(c.peakCommitBytes, 7);
     });
 
     test('a private working set equal to the working set is 0, not an '
@@ -383,9 +364,11 @@ void main() {
       expect(snapshot.availableBytes, greaterThan(0));
       // The peak of commit is read in the same call, so it is at least commit.
       expect(snapshot.anonymousPeakBytes, isNotNull);
+      // The peak can trail commit by up to about 0.5 MiB while commit grows
+      // (the kernel raises the usage first), so allow 1 MiB.
       expect(
         snapshot.anonymousPeakBytes,
-        greaterThanOrEqualTo(snapshot.anonymousBytes!),
+        greaterThanOrEqualTo(snapshot.anonymousBytes! - _mib),
       );
       // Null only on a Windows that predates the extended struct. The
       // runner (Server 2025) and Windows 11 build 26200 both fill it, so a
@@ -408,9 +391,10 @@ void main() {
           greaterThan(128 * _mib),
           reason: 'commit counts memory when it is allocated, not touched',
         );
+        // The peak may trail commit by up to about 0.5 MiB; allow 1 MiB.
         expect(
           during.anonymousPeakBytes,
-          greaterThanOrEqualTo(during.anonymousBytes!),
+          greaterThanOrEqualTo(during.anonymousBytes! - _mib),
         );
       } finally {
         malloc.free(block);
@@ -463,9 +447,10 @@ void main() {
         during.anonymousBytes! - before.anonymousBytes!,
         greaterThan(384 * _mib),
       );
+      // The peak may trail commit by up to about 0.5 MiB; allow 1 MiB.
       expect(
         after.anonymousPeakBytes,
-        greaterThanOrEqualTo(during.anonymousBytes!),
+        greaterThanOrEqualTo(during.anonymousBytes! - _mib),
       );
       expect(
         after.anonymousPeakBytes! - after.anonymousBytes!,

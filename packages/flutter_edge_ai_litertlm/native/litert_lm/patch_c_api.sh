@@ -917,4 +917,53 @@ if grep -q 'name = "default_static_gpu_samplers"' "$DIR/runtime/components/BUILD
   fi
 fi
 
+# ── 21. XNNPACK: no pf32 SME2 GEMM / x32 SME2 LHS packing on Apple ──
+# On SME2 CPUs (Apple M4/M5) XNNPACK's KleidiAI pf32 SME2 f32 GEMM gives
+# thread-count-dependent results: up to 2.5 nat per token between sessions at
+# 4 threads, a repeated wrong answer at other counts, 1 thread off on some
+# models (google/XNNPACK#11789; doc/research/macos-cpu-nondeterminism-0.19.md
+# on research/macos-cpu-nondeterminism-0.19). patches/
+# xnnpack_pf32_sme2_apple.patch skips only those three SME2 branches when
+# XNN_PLATFORM_MAC or XNN_PLATFORM_IOS; elsewhere it compiles to the same code.
+# TensorFlow defines the XNNPACK repository this build uses (it comes before
+# LiteRT's, which Bazel then skips), so the hook is a second patch on the
+# org_tensorflow archive that adds our file to that tf_http_archive's
+# patch_file. Both apply at fetch time without fuzz: a TensorFlow that moves
+# the XNNPACK pin, or an XNNPACK whose config lines moved, fails the build
+# until the patch is re-checked. Drop both when #11789 is fixed.
+XNN_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+if ! grep -q "flutter_gemma_tensorflow_xnnpack_patch_file.patch" "$WORKSPACE_FILE"; then
+  python3 << 'PYEOF' || exit 1
+import os
+ws = os.environ['WORKSPACE_FILE']
+content = open(ws).read()
+anchor = '    name = "org_tensorflow",\n'
+if content.count(anchor) != 1:
+    raise SystemExit("  ERROR: section 21: the org_tensorflow http_archive is not in WORKSPACE")
+start = content.index(anchor)
+end = content.find('\n)', start)
+block = content[start:end]
+upstream = 'patches = ["@//third_party/tensorflow:tensorflow.patch"]'
+if block.count(upstream) != 1:
+    raise SystemExit("  ERROR: section 21: org_tensorflow's patches are not upstream's one "
+                     "tensorflow.patch; re-check how the XNNPACK patch is hooked in")
+if 'patch_args' in block:
+    raise SystemExit("  ERROR: section 21: org_tensorflow sets patch_args; the TensorFlow "
+                     "patch is written for the default -p0")
+new_block = block.replace(
+    upstream,
+    'patches = ["@//third_party/tensorflow:tensorflow.patch", '
+    '"//:flutter_gemma_tensorflow_xnnpack_patch_file.patch"]', 1)
+open(ws, 'w').write(content[:start] + new_block + content[end:])
+print("  OK: org_tensorflow applies patches/tensorflow_xnnpack_patch_file.patch "
+      "(XNNPACK gets patches/xnnpack_pf32_sme2_apple.patch)")
+PYEOF
+else
+  echo "  SKIP: XNNPACK SME2 patch already hooked into org_tensorflow"
+fi
+cp "$XNN_SRC_DIR/patches/tensorflow_xnnpack_patch_file.patch" \
+  "$DIR/flutter_gemma_tensorflow_xnnpack_patch_file.patch"
+cp "$XNN_SRC_DIR/patches/xnnpack_pf32_sme2_apple.patch" \
+  "$DIR/flutter_gemma_xnnpack_pf32_sme2_apple.patch"
+
 echo "Patch complete."

@@ -8,15 +8,52 @@
 # Google Play rejects (API 35+) and a 16 KB-page device cannot load. With
 # ENABLE_TELEMETRY=OFF the library needs only liblog/libm/libdl/libc.
 #
-# Needs: git, python3, cmake, ninja or make, unzip, zip, curl, readelf, and an
-# Android NDK >= r28 (16 KB-aligned by default). No Rust: guidance is not built.
+# Needs: git, Python 3.10+ with `requests` (build.py), cmake with ctest,
+# ninja or make, unzip, zip, curl, sha256sum, readelf (on macOS the
+# NDK's llvm-readelf, linked or aliased as readelf on PATH), and an Android
+# NDK >= r28 (16 KB-aligned by default). No Rust: guidance is not built.
+# The output is not byte-reproducible across machines: the NDK version, the
+# build directory (in __FILE__ strings) and the zip entry times change it.
 #
 #   NDK=$HOME/Android/Sdk/ndk/28.2.13676358 \
 #   ANDROID_HOME=$HOME/Android/Sdk \
 #   packages/flutter_edge_ai_onnx/native/build_genai_android.sh [WORKDIR]
 #
 # Prints the zip's SHA-256: that is the pin in hook/build.dart.
+#
+#   build_genai_android.sh --check LIB
+#
+# runs only the three checks below on an existing library. Measured on the
+# 0.17.0 files: our library passes; Microsoft's AAR `libonnxruntime-genai.so`
+# fails the first two (it is 16 KB-aligned), and the third check alone fails
+# its 4 KB-aligned `libmat.so`; a copy of ours with "OneCollector" appended
+# fails the second. The old `strings | grep -q` form missed Microsoft's
+# library (pipe status 141).
+#
+# TODO(next rebuild): build with --android_api=24, the package's minSdk (this
+# build used 27), and keep the build directory out of the library's debug
+# strings (__FILE__).
 set -euo pipefail
+
+# The three properties the hook and the review depend on. Each tool's output
+# is read whole before it is searched: under pipefail, `tool | grep -q` fails
+# with SIGPIPE (141) when grep stops at its first match, and the `if` then
+# reads a found string as "not found".
+check_lib() {
+  local lib=$1 out
+  out=$(readelf -dW "$lib")
+  if grep -q 'NEEDED.*libmat' <<<"$out"; then
+    echo "$lib still needs libmat.so" >&2; return 1; fi
+  if grep -aqi 'OneCollector' "$lib"; then
+    echo "the 1DS endpoint is still in $lib" >&2; return 1; fi
+  out=$(readelf -lW "$lib" | awk '/LOAD/ {print $NF}')
+  if grep -qv '^0x4000$' <<<"$out"; then
+    echo "a PT_LOAD segment of $lib is not 16 KB-aligned" >&2; return 1; fi
+}
+
+if [ "${1:-}" = --check ]; then
+  check_lib "${2:?--check LIB}" && echo "$2: ok"; exit
+fi
 
 GENAI_TAG=v0.17.0
 GENAI_COMMIT=1d67be30e5b1ed0c264f6f41c598f85157e8288b
@@ -48,13 +85,7 @@ fi
 
 LIB=src/build/Android/Release/libonnxruntime-genai.so
 
-# The three properties the hook and the review depend on.
-if readelf -dW "$LIB" | grep -q 'NEEDED.*libmat'; then
-  echo "libonnxruntime-genai.so still needs libmat.so" >&2; exit 1; fi
-if strings -a "$LIB" | grep -qi 'OneCollector'; then
-  echo "the 1DS endpoint is still in the library" >&2; exit 1; fi
-if readelf -lW "$LIB" | awk '/LOAD/ {print $NF}' | grep -qv '^0x4000$'; then
-  echo "a PT_LOAD segment is not 16 KB-aligned" >&2; exit 1; fi
+check_lib "$LIB"
 
 rm -rf stage && mkdir -p stage/jni/arm64-v8a
 cp "$LIB" stage/jni/arm64-v8a/

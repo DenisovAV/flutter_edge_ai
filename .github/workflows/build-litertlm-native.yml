@@ -239,6 +239,19 @@ jobs:
             --define=litert_runtime_link_mode=dynamic \
             '//c:libLiteRtLm.dylib'
 
+      - name: Test SentencePiece NUL pieces (patch_c_api.sh section 17)
+        # A byte-level BPE vocabulary carries NUL-byte pieces (Qwen3-0.6B,
+        # FastVLM-0.5B: "\0"; Phi-4-mini-instruct also "\0\0"). LiteRT-LM
+        # v0.19.0's own patch accepts only the one-byte piece; section 17
+        # restores ours on top. Run here because nothing else exercises it:
+        # section 17 was dropped once on the strength of FastVLM alone.
+        run: |
+          cd /tmp/LiteRT-LM
+          bazelisk test -c opt --strip=always \
+            --define=litert_runtime_link_mode=dynamic \
+            --test_output=errors \
+            '//support/tokenizer:sentencepiece_nul_piece_test'
+
       - name: Test external weights by path (patch_c_api.sh section 13)
         if: ${{ !inputs.skip_path_weights }}
         # Section 13 repacks every TFLite model that has a TFLiteWeights

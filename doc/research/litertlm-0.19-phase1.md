@@ -30,7 +30,7 @@ Nothing is published: CI runs are artifact-only, no tag, no release.
 | §14 embedding response lengths | keep, 1.0 shape | `input_length` 14 read through the new getters on macOS and Linux |
 | §15 Windows no-fd loading | keep (applies) | #4023 closed upstream without a code change |
 | §16 rewind_cancelled_turn | keep, re-created | upstream `Conversation::WaitUntilDone` used; checkpoint saved synchronously right before the send's prefill |
-| §17 SentencePiece NUL piece | **drop** | v0.19.0 carries its own `third_party/sentencepiece/sentencepiece.patch`; FastVLM-0.5B (NUL piece) loads and answers on macOS without ours |
+| §17 SentencePiece NUL piece | **keep**, re-created as a second patch on top of upstream's | v0.19.0 carries its own `third_party/sentencepiece/sentencepiece.patch`, but it accepts only the one-byte piece `"\0"` (NORMAL, BPE, no byte_fallback). That covers FastVLM-0.5B and the pre-e6687177 Qwen3-0.6B (only id 188 = `"\0"`), not Phi-4-mini-instruct q8, whose vocabulary also holds the merge `"\0\0"` (id 156344): "piece must not include null character" on our 0.19 build (XNNPACK thread). Tokenizer sections read by HTTP range: Phi-4-mini 2 NUL pieces, Qwen3 old 1, FastVLM 1; Qwen3 new, Qwen3 dynamic, Phi-4-mini-reasoning and LFM2.5 use HF_Tokenizer_Zlib. `patches/sentencepiece_nul_piece_on_upstream.patch` (-p0, applied after upstream's) restores our rule; `sentencepiece_nul_piece_test` gains the `"\0\0"` case |
 | §18 = upstream PR #4197 (new) | keep until upstream merges | makes §16 exact on Gemma 4 E2B (below) |
 | §19 Android OpenCL-only static accelerator (new) | keep | without it `libLiteRtLm.so` NEEDs `libwebgpu_dawn.so` on Android (`default_static_gpu_accelerator` → `ml_drift_gpu_accelerator` → `delegate_webgpu` → Dawn) |
 | OpenVINO 2026.4.1 backport | **drop** | in the LiteRT pin |
@@ -74,6 +74,11 @@ x86_64) and an Android arm64 emulator; GPU on macOS (Metal).
    ships an AAR on the new ABI, MediaTek NPU is lost with 0.19.
 3. **The TopK GPU sampler is compiled into libLiteRtLm on Linux and Windows** (no separate prebuilt any more), and it crashes the first GPU decode there (phase B).
 4. **macOS CPU greedy is nondeterministic** (above).
+5. **LFM2.5-230M int8: sessions differ even with one thread, on every build**
+   (reported by the XNNPACK thread, `research/macos-cpu-nondeterminism-0.19`;
+   not measured here). It looks like state carried from one session to the
+   next rather than thread scheduling. Not explained.
+6. **§17 is still needed** (Phi-4-mini, see Patches).
 
 ## Phase B: devices (2026-11-01)
 

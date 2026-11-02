@@ -7,7 +7,8 @@
 # 4. gpu_registry.cc dlopen rewrite for App-Store-safe framework paths (Apple)
 # 16. litert_lm_conversation_rewind_cancelled_turn: a stopped turn is rewound
 #     instead of leaving the conversation poisoned
-# 17. SentencePiece loads a BPE vocabulary with a NUL-byte piece (#659)
+# 17. SentencePiece loads a BPE vocabulary with a NUL-byte piece (#659); on
+#     v0.19.0 a second patch on top of upstream's, which accepts only "\0"
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -756,8 +757,9 @@ sp_fail() {
   echo "  ERROR: section 17: $1" >&2
   exit 1
 }
+SP_PATCH_CHOICE_FILE="$(mktemp)"
 if ! grep -q "flutter_gemma_sentencepiece_nul_piece.patch" "$WORKSPACE_FILE"; then
-  python3 << 'PYEOF' || exit 1
+  SP_PATCH_CHOICE="$SP_PATCH_CHOICE_FILE" python3 << 'PYEOF' || exit 1
 import os
 ws = os.environ['WORKSPACE_FILE']
 content = open(ws).read()
@@ -773,15 +775,29 @@ if 'strip_prefix = "sentencepiece-0.2.2"' not in block:
                      "re-check the NUL-piece refusal and re-create the patch")
 if 'patches' in block:
     # LiteRT-LM v0.19.0 carries its own (third_party/sentencepiece/
-    # sentencepiece.patch): it accepts exactly the piece "\0" when it is
-    # NORMAL in a BPE model without byte_fallback — the Qwen3-0.6B and
-    # FastVLM-0.5B case. Ours is not needed on top; the test target below
-    # still pins the behaviour.
-    if block.count('patches = ["@//third_party/sentencepiece:sentencepiece.patch"]') != 1:
+    # sentencepiece.patch): it accepts exactly the one-byte piece "\0" when it
+    # is NORMAL in a BPE model without byte_fallback — enough for Qwen3-0.6B
+    # and FastVLM-0.5B, not for Phi-4-mini-instruct, whose vocabulary also
+    # holds the merge "\0\0" (id 156344; "piece must not include null
+    # character" on our v0.19.0 build). Ours goes second, against the
+    # upstream-patched file and in its -p0 form (patch_args apply to both).
+    upstream = 'patches = ["@//third_party/sentencepiece:sentencepiece.patch"]'
+    if block.count(upstream) != 1:
         raise SystemExit("  ERROR: section 17: the sentencepiece archive has "
                          "patches other than upstream's NUL-piece one")
-    print("  SKIP: section 17 patch — upstream carries a NUL-piece fix")
+    if 'patch_args' in block:
+        raise SystemExit("  ERROR: section 17: the sentencepiece archive sets "
+                         "patch_args; re-create the on-upstream patch for it")
+    content = content.replace(
+        upstream,
+        'patches = ["@//third_party/sentencepiece:sentencepiece.patch", '
+        '"//:flutter_gemma_sentencepiece_nul_piece.patch"]', 1)
+    open(ws, 'w').write(content)
+    open(os.environ['SP_PATCH_CHOICE'], 'w').write('on_upstream')
+    print("  OK: sentencepiece archive applies upstream's patch, then "
+          "patches/sentencepiece_nul_piece_on_upstream.patch")
     raise SystemExit(0)
+open(os.environ['SP_PATCH_CHOICE'], 'w').write('plain')
 content = content.replace(
     anchor,
     anchor +
@@ -793,8 +809,25 @@ PYEOF
 else
   echo "  SKIP: sentencepiece NUL-piece patch already in WORKSPACE"
 fi
-cp "$SP_SRC_DIR/patches/sentencepiece_nul_piece.patch" \
-  "$DIR/flutter_gemma_sentencepiece_nul_piece.patch"
+# Which file the WORKSPACE entry names: against upstream's patch (v0.19.0
+# on) or against the bare 0.2.2 source. A WORKSPACE patched by an earlier run
+# keeps its choice, read back from the entry.
+sp_choice="$(cat "$SP_PATCH_CHOICE_FILE")"
+rm -f "$SP_PATCH_CHOICE_FILE"
+if [ -z "$sp_choice" ]; then
+  if grep -q 'sentencepiece.patch", "//:flutter_gemma_sentencepiece_nul_piece.patch"' "$WORKSPACE_FILE"; then
+    sp_choice=on_upstream
+  else
+    sp_choice=plain
+  fi
+fi
+if [ "$sp_choice" = on_upstream ]; then
+  cp "$SP_SRC_DIR/patches/sentencepiece_nul_piece_on_upstream.patch" \
+    "$DIR/flutter_gemma_sentencepiece_nul_piece.patch"
+else
+  cp "$SP_SRC_DIR/patches/sentencepiece_nul_piece.patch" \
+    "$DIR/flutter_gemma_sentencepiece_nul_piece.patch"
+fi
 cp "$SP_SRC_DIR/sentencepiece_nul_piece_test.cc" \
   "$DIR/support/tokenizer/sentencepiece_nul_piece_test.cc"
 SP_TOKENIZER_BUILD="$DIR/support/tokenizer/BUILD"

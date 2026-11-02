@@ -3,7 +3,9 @@
 //
 // SentencePiece 0.2.2 refuses any piece that contains a NUL byte, so a
 // byte-level BPE vocabulary converted without byte_fallback (Qwen3-0.6B and
-// FastVLM-0.5B carry byte 0x00 as piece 188) no longer loads. The patch keeps
+// FastVLM-0.5B carry byte 0x00 as piece 188, Phi-4-mini-instruct also the
+// merge "\0\0") no longer loads; LiteRT-LM v0.19.0's own patch accepts only
+// the one-byte piece. The patch keeps
 // the refusal only where a Darts trie is built over the piece; these tests pin
 // both halves.
 
@@ -110,6 +112,20 @@ TEST(SentencePieceNulPieceTest, BpeNulPieceRoundTrips) {
   auto text = (*tokenizer)->TokenIdsToText({7, 5, 3}, false);
   ASSERT_TRUE(text.ok()) << text.status();
   EXPECT_EQ(*text, kNul + "ab" + kNul);
+}
+
+// Phi-4-mini-instruct's converted vocabulary also holds the merge "\0\0"
+// (id 156344). LiteRT-LM v0.19.0's own sentencepiece.patch accepts only the
+// one-byte piece "\0", so this is the case section 17 still exists for.
+TEST(SentencePieceNulPieceTest, BpeMergedNulPieceLoads) {
+  std::vector<Piece> vocabulary = BpeVocabulary();
+  vocabulary.push_back({kNul + kNul, -0.3});  // 8
+  auto tokenizer = SentencePieceTokenizer::CreateFromProto(
+      MakeModel(TrainerSpec::BPE, vocabulary));
+  ASSERT_TRUE(tokenizer.ok()) << tokenizer.status();
+  auto ids = (*tokenizer)->TextToTokenIds(kNul + kNul + "b");
+  ASSERT_TRUE(ids.ok()) << ids.status();
+  EXPECT_THAT(*ids, ElementsAre(8, 5));
 }
 
 // Unigram builds a Darts trie over all its pieces, and Darts throws on a NUL

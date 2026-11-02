@@ -38,7 +38,7 @@ or [Getting started](https://flutteredge.ai/docs/getting-started).
 | **Speech, agents, diagnostics** | | |
 | [`flutter_edge_ai_speech`](packages/flutter_edge_ai_speech/README.md) | Speech-to-text, text-to-speech and the `VoiceSession` voice loop. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_speech) · [site](https://flutteredge.ai/docs/speech) |
 | [`flutter_edge_ai_agent`](packages/flutter_edge_ai_agent/README.md) | Agent skills (`SKILL.md`) the model picks and runs: text, JS, native intents and MCP tools. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_agent) · [site](https://flutteredge.ai/docs/agent) |
-| [`flutter_edge_ai_diagnostics`](packages/flutter_edge_ai_diagnostics/README.md) | Process memory diagnostics on Android, iOS, macOS and Linux. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_diagnostics) · [site](https://flutteredge.ai/docs/diagnostics) |
+| [`flutter_edge_ai_diagnostics`](packages/flutter_edge_ai_diagnostics/README.md) | Process memory diagnostics on Android, iOS, macOS, Linux and Windows. | [pub.dev](https://pub.dev/packages/flutter_edge_ai_diagnostics) · [site](https://flutteredge.ai/docs/diagnostics) |
 | **Genkit** | | |
 | [`genkit_flutter_edge_ai`](packages/genkit_flutter_edge_ai/README.md) | Genkit Dart plugin: on-device models and embedders as Genkit models. | [pub.dev](https://pub.dev/packages/genkit_flutter_edge_ai) · [site](https://flutteredge.ai/docs/genkit) |
 | [`genkit_hybrid`](packages/genkit_hybrid/README.md) | Hybrid routing for Genkit: on-device and cloud models behind one routing policy. Depends only on `genkit`. | [pub.dev](https://pub.dev/packages/genkit_hybrid) · [site](https://flutteredge.ai/docs/genkit) |

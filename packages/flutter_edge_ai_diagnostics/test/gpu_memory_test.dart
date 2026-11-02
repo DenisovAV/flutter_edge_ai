@@ -307,13 +307,18 @@ void main() {
     });
   });
 
-  group('gpuMemory', skip: Platform.isMacOS || Platform.isLinux, () {
-    test('throws off Android, iOS, macOS and Linux like memorySnapshot', () {
-      expect(
-        // ignore: experimental_member_use
-        FlutterEdgeAiDiagnostics.gpuMemory(),
-        throwsA(isA<UnsupportedError>()),
-      );
-    });
-  });
+  group(
+    'gpuMemory',
+    skip: Platform.isMacOS || Platform.isLinux || Platform.isWindows,
+    () {
+      test('throws off Android, iOS, macOS, Linux and Windows like '
+          'memorySnapshot', () {
+        expect(
+          // ignore: experimental_member_use
+          FlutterEdgeAiDiagnostics.gpuMemory(),
+          throwsA(isA<UnsupportedError>()),
+        );
+      });
+    },
+  );
 }

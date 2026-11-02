@@ -6,22 +6,24 @@ import 'android/proc_memory.dart';
 import 'gpu_memory_reading.dart';
 import 'ios/mach_memory.dart';
 import 'memory_snapshot.dart';
+import 'windows/windows_memory.dart';
 
-/// Memory diagnostics read from the OS: Android, iOS, macOS and Linux.
+/// Memory diagnostics read from the OS: Android, iOS, macOS, Linux and Windows.
 abstract final class FlutterEdgeAiDiagnostics {
   /// Whether [memorySnapshot] can run on this platform. [gpuMemory] runs on
-  /// the same platforms and returns null on iOS, macOS and Linux.
+  /// the same platforms and returns null on iOS, macOS, Linux and Windows.
   static bool get isSupported =>
       Platform.isAndroid ||
       Platform.isIOS ||
       Platform.isMacOS ||
-      Platform.isLinux;
+      Platform.isLinux ||
+      Platform.isWindows;
 
   /// Reads this process's memory from the OS.
   ///
-  /// Throws [UnsupportedError] off Android, iOS, macOS and Linux rather than
-  /// returning a snapshot of nulls: the numbers only mean something where the
-  /// OS keeps them. Throws `MemoryReadException` when the OS read itself
+  /// Throws [UnsupportedError] off Android, iOS, macOS, Linux and Windows
+  /// rather than returning a snapshot of nulls: the numbers only mean
+  /// something where the OS keeps them. Throws `MemoryReadException` when the OS read itself
   /// fails (a permission refusal such as AppArmor's included); a null field is
   /// reserved for a value that does not exist here.
   ///
@@ -30,21 +32,25 @@ abstract final class FlutterEdgeAiDiagnostics {
   /// process's page tables for each read: about 3.7 ms per resident GiB on one
   /// Linux machine (1.7 ms idle, about 30 ms with 7 GiB resident). Call it at a
   /// few points, not per frame or per token. iOS and macOS reads are Mach calls
-  /// that take microseconds.
+  /// that take microseconds, and so are the Windows reads (two `kernel32`
+  /// calls).
   static Future<MemorySnapshot> memorySnapshot() async {
     if (Platform.isAndroid || Platform.isLinux) return readProcMemorySnapshot();
     if (Platform.isIOS || Platform.isMacOS) return readMachMemorySnapshot();
+    if (Platform.isWindows) return readWindowsMemorySnapshot();
     throw UnsupportedError(
-      'flutter_edge_ai_diagnostics supports Android, iOS, macOS and Linux, '
-      'not ${Platform.operatingSystem}.',
+      'flutter_edge_ai_diagnostics supports Android, iOS, macOS, Linux and '
+      'Windows, not ${Platform.operatingSystem}.',
     );
   }
 
   /// Reads the GPU memory that is mapped into this process (experimental).
   ///
-  /// Null means there is no reader for this device: iOS, macOS and Linux (not
-  /// read there; on desktop Linux GPU memory is in neither snapshot field, and
-  /// on an integrated GPU it is system RAM the snapshot does not show) and a
+  /// Null means there is no reader for this device: iOS, macOS, Linux and
+  /// Windows (not read there; on desktop Linux GPU memory is in neither
+  /// snapshot field, and on an integrated GPU it is system RAM the snapshot
+  /// does not show; on Windows a GPU model's memory is not in the snapshot
+  /// either, and DXGI `QueryVideoMemoryInfo` is not read yet) and a
   /// GPU with no `/dev/kgsl-3d0` (a Mali GPU, not measured). On an
   /// Adreno phone the answer is never null: a process that has not used the GPU
   /// yet (a headless engine, a background isolate, a read before the first
@@ -52,7 +58,7 @@ abstract final class FlutterEdgeAiDiagnostics {
   /// (`File('/dev/kgsl-3d0').existsSync()` is true from an app on a vivo 1933
   /// and a Galaxy S26+, although `typeSync` says not found).
   ///
-  /// Throws [UnsupportedError] off Android, iOS, macOS and Linux, and
+  /// Throws [UnsupportedError] off Android, iOS, macOS, Linux and Windows, and
   /// `MemoryReadException` when `/proc/self/smaps` cannot be read or parsed.
   /// It reads the per-mapping `smaps`, which the kernel builds mapping by
   /// mapping while holding the process's `mmap_lock`, so it can stall the
@@ -64,10 +70,15 @@ abstract final class FlutterEdgeAiDiagnostics {
   @experimental
   static Future<GpuMemoryReading?> gpuMemory() async {
     if (Platform.isAndroid) return readGpuMemoryReading();
-    if (Platform.isIOS || Platform.isMacOS || Platform.isLinux) return null;
+    if (Platform.isIOS ||
+        Platform.isMacOS ||
+        Platform.isLinux ||
+        Platform.isWindows) {
+      return null;
+    }
     throw UnsupportedError(
-      'flutter_edge_ai_diagnostics supports Android, iOS, macOS and Linux, '
-      'not ${Platform.operatingSystem}.',
+      'flutter_edge_ai_diagnostics supports Android, iOS, macOS, Linux and '
+      'Windows, not ${Platform.operatingSystem}.',
     );
   }
 }

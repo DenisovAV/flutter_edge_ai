@@ -1,5 +1,5 @@
 // Device test for flutter_edge_ai_diagnostics: proves the numbers are real on an
-// actual Android, iOS or macOS process, which host tests cannot do for iOS and
+// actual Android, iOS, macOS, Linux or Windows process, which host tests cannot do for iOS and
 // macOS at all.
 //
 //   flutter test integration_test/diagnostics_memory_test.dart -d <device-id> --no-uninstall
@@ -21,7 +21,7 @@ import 'voice_test_helpers.dart' show stagedModelPath;
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  // Off Android, iOS, macOS and Linux memorySnapshot() throws by design, so
+  // Off Android, iOS, macOS, Linux and Windows memorySnapshot() throws by design, so
   // these skip there rather than fail.
   final skip = !FlutterEdgeAiDiagnostics.isSupported;
 
@@ -38,12 +38,18 @@ void main() {
     if (Platform.isAndroid || Platform.isLinux) {
       expect(snapshot.fileBackedBytes, isNotNull);
       expect(snapshot.fileBackedBytes, greaterThan(0));
+    } else if (Platform.isWindows) {
+      // WorkingSetSize - PrivateWorkingSetSize: the process's own DLLs. This
+      // device is a Windows 10/11 that fills the extended struct, so null here
+      // means the cb 96 request broke.
+      expect(snapshot.fileBackedBytes, isNotNull);
+      expect(snapshot.fileBackedBytes, greaterThan(0));
     } else {
       expect(snapshot.fileBackedBytes, isNull);
     }
-    // The peak is the kernel's lifetime high-water mark of the footprint, read
-    // in the same call, so it is at least the current value. Android keeps no
-    // anonymous-only peak, and neither does Linux.
+    // The peak is the kernel's lifetime high-water mark of the footprint (of
+    // commit on Windows), read in the same call, so it is at least the current
+    // value. Android keeps no anonymous-only peak, and neither does Linux.
     if (Platform.isAndroid || Platform.isLinux) {
       expect(snapshot.anonymousPeakBytes, isNull);
     } else {
@@ -58,7 +64,10 @@ void main() {
     // device, a Linux machine or a real iPhone is held to it.
     if (Platform.isMacOS) {
       expect(snapshot.availableBytes, isNull);
-    } else if (Platform.isAndroid || Platform.isLinux || !_isIosSimulator) {
+    } else if (Platform.isAndroid ||
+        Platform.isLinux ||
+        Platform.isWindows ||
+        !_isIosSimulator) {
       expect(snapshot.availableBytes, isNotNull);
       expect(snapshot.availableBytes, greaterThan(0));
     }

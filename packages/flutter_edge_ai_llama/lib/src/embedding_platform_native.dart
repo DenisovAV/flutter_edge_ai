@@ -21,6 +21,22 @@ String? nativeEmbeddingGpuRefusal({
   return null;
 }
 
+/// Whether llamadart intentionally selects CPU for automatic placement.
+/// macOS x64 includes Rosetta; explicit GPU requests retain their own policy.
+bool nativeEmbeddingAutoUsesCpu({
+  bool? isAndroid,
+  bool? isIOS,
+  bool? isMacosX64,
+  String? Function(String)? readVariable,
+}) =>
+    (isMacosX64 ?? Abi.current() == Abi.macosX64) ||
+    nativeEmbeddingGpuRefusal(
+          isAndroid: isAndroid,
+          isIOS: isIOS,
+          readVariable: readVariable,
+        ) !=
+        null;
+
 typedef _Getenv = Pointer<Utf8> Function(Pointer<Utf8>);
 
 String? _environmentVariable(String name) {

@@ -58,8 +58,8 @@ final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
   /// CPU after LlamaUnsupportedException. Android and iOS simulators refuse
   /// explicit GPU attempts before loading. Other load errors are not retried.
   /// Automatic selection accepts CPU or GPU and warns when it selects CPU,
-  /// except on Android and iOS simulators, where llamadart's automatic
-  /// placement is CPU by design.
+  /// except on Android, iOS simulators and macOS x64/Rosetta, where
+  /// llamadart's automatic placement is CPU by design.
   /// With false, explicit placement mismatches fail as EmbeddingLoadException.
   /// Unknown placement is always refused.
   const LlamaEmbeddingBackend({this.backendFallback = true})
@@ -269,9 +269,11 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
     if (params.device == llama.ComputeDevice.auto &&
         params.gpuLayers > 0 &&
         activeBackend == PreferredBackend.cpu &&
-        // llamadart resolves automatic placement to CPU on Android and iOS
-        // simulators, the same targets that refuse explicit GPU embeddings.
-        (_config.gpuRefusal ?? nativeEmbeddingGpuRefusal)() == null) {
+        // Automatic CPU placement also covers macOS x64/Rosetta. Keep the
+        // existing test override and explicit GPU refusal policy independent.
+        (_config.gpuRefusal != null
+            ? _config.gpuRefusal!() == null
+            : !nativeEmbeddingAutoUsesCpu())) {
       // ignore: avoid_print
       print(
         '[flutter_edge_ai_llama] WARNING: automatic GGUF embedding '

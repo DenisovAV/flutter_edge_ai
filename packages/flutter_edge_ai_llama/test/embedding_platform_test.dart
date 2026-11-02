@@ -6,6 +6,41 @@ import 'embedding_platform_environment_stub.dart'
     if (dart.library.ffi) 'embedding_platform_environment_native.dart';
 
 void main() {
+  for (final (name, android, ios, macosX64, udid, expected)
+      in <(String, bool, bool, bool, String?, bool)>[
+        ('Android', true, false, false, null, true),
+        ('iOS simulator', false, true, false, 'simulator-uuid', true),
+        ('physical iOS', false, true, false, null, false),
+        ('macOS x64/Rosetta', false, false, true, null, true),
+        ('other native hosts', false, false, false, null, false),
+      ]) {
+    test('automatic CPU placement: $name', () {
+      expect(
+        nativeEmbeddingAutoUsesCpu(
+          isAndroid: android,
+          isIOS: ios,
+          isMacosX64: macosX64,
+          readVariable: (_) => udid,
+        ),
+        expected,
+      );
+      if (macosX64) {
+        expect(
+          nativeEmbeddingGpuRefusal(
+            isAndroid: android,
+            isIOS: ios,
+            readVariable: (_) => fail('macOS must not query simulator'),
+          ),
+          isNull,
+          reason: 'Automatic CPU selection must not refuse explicit GPU.',
+        );
+      }
+    }, skip: kIsWeb);
+  }
+  test('Web has no native automatic placement policy', () {
+    expect(nativeEmbeddingAutoUsesCpu(), isFalse);
+  }, skip: !kIsWeb);
+
   test('Android refuses explicit GPU without simulator environment access', () {
     expect(
       nativeEmbeddingGpuRefusal(

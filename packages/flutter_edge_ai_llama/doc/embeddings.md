@@ -1,11 +1,12 @@
 # GGUF text embeddings
 
 Version 0.0.3 adds `LlamaEmbeddingBackend` to the existing llama engine package.
-It requires core 2.5.0 and llamadart
+That release requires core 2.5.0 and llamadart
 0.15.1 with typed native overflow reporting. The core foundation is
 [flutter_edge_ai #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685);
 the typed SDK error is [llamadart #1201](https://github.com/leehack/llamadart/pull/1201).
-The manifest bounds the published SDK to `>=0.15.1 <0.15.2`.
+The current source manifest bounds the published SDK to `>=0.17.5 <0.17.6`.
+Full platform qualification of that update is pending.
 Source qualification does not replace standalone hosted qualification. Do not
 use a dependency override in production.
 
@@ -75,8 +76,10 @@ may retry once on CPU. Its warning retains the first error; if CPU also fails,
 the final load error includes both failures and preserves the CPU cause and stack.
 Automatic requests retain SDK automatic selection and never retry load errors.
 An automatic load that requested GPU layers but reports CPU emits one
-release-visible warning per new successful load, except on Android (every device) and on iOS
-simulators, where llamadart's automatic placement is CPU by design. Core
+release-visible warning per new successful load, except on Android (every device), iOS
+simulators and macOS x64/Rosetta, where llamadart's automatic placement is CPU by design.
+Explicit GPU refusal remains limited to Android and iOS simulators; macOS x64
+still allows an explicit Metal request. Core
 continues to report an explicit GPU fallback once when it is loaded; reuse
 repeats neither warning.
 `activeBackend` always reports the verified loaded placement. Register
@@ -88,7 +91,7 @@ NPU, image/audio input and Web embeddings are refused. Browser registration does
 not claim GGUF embedding files, so an unsupported install can fail its pre-check.
 Inference remains independently available on the package's existing platforms.
 
-Source qualification uses the pinned fixture in `tool/embedding_model.json`,
+Historical source qualification uses the pinned fixture in `tool/embedding_model.json`,
 published llamadart 0.15.1 and the core source. macOS CPU/Metal and Linux/Windows
 CPU embeddings have been measured. Android has an attributed Pixel 8a diagnostic;
 iOS embeddings remain unqualified. See the [per-platform results](platforms.md#embedding-qualification-by-platform).

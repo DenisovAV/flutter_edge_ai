@@ -79,8 +79,14 @@ void markUnwritten(Uint8List buffer) =>
 /// Windows writes is still unwritten, and when `PrivateWorkingSetSize` is
 /// written but larger than `WorkingSetSize`: the OS reported the value, so a
 /// reply that contradicts itself is a failed read, not a gap. It was not
-/// observed (53.5 million reads on Windows 11 build 26200 while another isolate
-/// emptied and refilled the working set).
+/// observed (over 53 million reads on Windows 11 build 26200 while another
+/// isolate emptied and refilled the working set).
+///
+/// `PeakPagefileUsage` below `PagefileUsage` is not checked: it happens in
+/// normal use, because the kernel raises the usage before the peak, so a
+/// read while another thread commits can see the peak trail (by up to 516
+/// KiB on that machine, thousands of times per run). Both are returned as
+/// the OS reported them.
 WindowsProcessCounters windowsCountersFromReply(ByteData info, int cb) {
   if (cb != processMemoryCountersSize && cb != processMemoryCountersEx2Size) {
     throw ArgumentError.value(cb, 'cb', 'not a PROCESS_MEMORY_COUNTERS size');

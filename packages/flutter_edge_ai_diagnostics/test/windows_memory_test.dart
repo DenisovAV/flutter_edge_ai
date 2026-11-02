@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai_diagnostics/flutter_edge_ai_diagnostics.dart'
-    show FlutterEdgeAiDiagnostics, MemoryReadException;
+    show FlutterEdgeAiDiagnostics, MemoryReadException, MemorySnapshot;
 import 'package:flutter_edge_ai_diagnostics/src/windows/windows_memory.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -168,10 +168,21 @@ void main() {
           isA<MemoryReadException>().having(
             (e) => e.message,
             'message',
-            allOf(contains('101'), contains('100')),
+            contains('101 above WorkingSetSize 100'),
           ),
         ),
       );
+    });
+
+    test('a commit peak that trails the commit is returned as reported', () {
+      // The kernel raises the usage before the peak, so a read while another
+      // thread commits can see this; it is not a failed read.
+      final c = _decode(
+        _reply(workingSet: 100, pagefileUsage: 9, peakPagefileUsage: 7),
+        processMemoryCountersSize,
+      );
+      expect(c.commitBytes, 9);
+      expect(c.peakCommitBytes, 7);
     });
 
     test('a private working set equal to the working set is 0, not an '
@@ -353,9 +364,11 @@ void main() {
       expect(snapshot.availableBytes, greaterThan(0));
       // The peak of commit is read in the same call, so it is at least commit.
       expect(snapshot.anonymousPeakBytes, isNotNull);
+      // The peak can trail commit by up to about 0.5 MiB while commit grows
+      // (the kernel raises the usage first), so allow 1 MiB.
       expect(
         snapshot.anonymousPeakBytes,
-        greaterThanOrEqualTo(snapshot.anonymousBytes!),
+        greaterThanOrEqualTo(snapshot.anonymousBytes! - _mib),
       );
       // Null only on a Windows that predates the extended struct. The
       // runner (Server 2025) and Windows 11 build 26200 both fill it, so a
@@ -378,9 +391,10 @@ void main() {
           greaterThan(128 * _mib),
           reason: 'commit counts memory when it is allocated, not touched',
         );
+        // The peak may trail commit by up to about 0.5 MiB; allow 1 MiB.
         expect(
           during.anonymousPeakBytes,
-          greaterThanOrEqualTo(during.anonymousBytes!),
+          greaterThanOrEqualTo(during.anonymousBytes! - _mib),
         );
       } finally {
         malloc.free(block);
@@ -415,17 +429,28 @@ void main() {
         pageReadWrite,
       );
       expect(block, isNot(nullptr));
-      final during = await FlutterEdgeAiDiagnostics.memorySnapshot();
-      expect(virtualFree(block, 0, memRelease), isNot(0));
-      final after = await FlutterEdgeAiDiagnostics.memorySnapshot();
+      // Released on every path, so a failed expect cannot leave 512 MiB
+      // committed for the tests after this one.
+      var released = false;
+      late final MemorySnapshot during;
+      late final MemorySnapshot after;
+      try {
+        during = await FlutterEdgeAiDiagnostics.memorySnapshot();
+        expect(virtualFree(block, 0, memRelease), isNot(0));
+        released = true;
+        after = await FlutterEdgeAiDiagnostics.memorySnapshot();
+      } finally {
+        if (!released) virtualFree(block, 0, memRelease);
+      }
 
       expect(
         during.anonymousBytes! - before.anonymousBytes!,
         greaterThan(384 * _mib),
       );
+      // The peak may trail commit by up to about 0.5 MiB; allow 1 MiB.
       expect(
         after.anonymousPeakBytes,
-        greaterThanOrEqualTo(during.anonymousBytes!),
+        greaterThanOrEqualTo(during.anonymousBytes! - _mib),
       );
       expect(
         after.anonymousPeakBytes! - after.anonymousBytes!,

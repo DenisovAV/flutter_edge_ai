@@ -56,15 +56,16 @@ final class MemorySnapshot {
   ///   CPU raised it by 389 to 392 MiB and the private working set by 102 to
   ///   105 MiB (one machine), and with the first prompt the rises reached 527
   ///   to 531 and 225 to 229 MiB: about three quarters of the commit arrives
-  ///   at load, while most of the private working set (and of
-  ///   [fileBackedBytes]) arrives with the first prompt. On the GPU the load
-  ///   raised it by 1,075 to 1,083 MiB, so part of a GPU model's memory may
-  ///   be in it; how much is not measured. After a GPU model is closed it
-  ///   falls with a delay: in two runs (RTX 3050) it stayed
-  ///   about 360 MiB above its start for about 2 s and settled by about 8 s,
-  ///   about 65 MiB above it after the first load and at most about 16 MiB
-  ///   after later ones (one machine, four cycles per process). Read it at
-  ///   least 8 s after a close.
+  ///   at load, while slightly more than half of the private working set
+  ///   (about 55%) and most of [fileBackedBytes] arrive with the first prompt.
+  ///   On the GPU the load raised it by 1,075 to 1,083 MiB, so part of a GPU
+  ///   model's memory may be in it; how much is not measured. After a GPU
+  ///   model is closed it falls with a delay. On one machine (RTX 3050,
+  ///   FunctionGemma 270M, debug build, two runs of four load/close cycles
+  ///   per process) it stayed about 360 MiB above its start for about 2 s and
+  ///   stopped falling by about 8 s, leaving about 65 MiB after the first
+  ///   cycle in a process and at most about 16 MiB after later cycles.
+  ///   Elsewhere, read it again until it stops falling before you compare.
   ///
   /// Null only on an Android or Linux kernel without `smaps_rollup`. Vendor
   /// kernels may backport it. On iOS, macOS and Windows it is never null.
@@ -91,8 +92,9 @@ final class MemorySnapshot {
   ///   contents to disk first (the standby, free and zero lists). It is not
   ///   this app's headroom: Windows does not kill a process when RAM runs low,
   ///   and an allocation fails once the machine's commit reaches the commit
-  ///   limit (RAM plus the page files), not when RAM runs out. That headroom
-  ///   is `ullAvailPageFile` of the same call ("the maximum amount of
+  ///   limit (RAM plus the page files; a page file that grows raises it, and a
+  ///   job object's limit, if any, applies first), not when RAM runs out. That
+  ///   headroom is `ullAvailPageFile` of the same call ("the maximum amount of
   ///   memory the current process can commit", per Microsoft), which this
   ///   package does not read.
   /// - **macOS:** null. `os_proc_available_memory()` is iOS-only and macOS has
@@ -174,7 +176,11 @@ final class MemorySnapshot {
   ///   snapshot before and compare, and treat the value as an upper bound.
   /// - **Windows:** `PeakPagefileUsage`, the highest commit charge since the
   ///   process started, the peak of the same quantity [anonymousBytes] holds
-  ///   there. Also a lifetime mark: take a snapshot before and compare.
+  ///   there. Also a lifetime mark: take a snapshot before and compare. While
+  ///   commit grows it can trail [anonymousBytes] by up to about 0.5 MiB (the
+  ///   kernel raises the usage before the peak; 516 KiB at most on one
+  ///   Windows 11 machine while other threads committed), so it is not always
+  ///   at least [anonymousBytes].
   /// - **Android and Linux:** null. The kernel keeps no peak of anonymous
   ///   memory; `VmHWM` includes file-backed pages and would be a different
   ///   number.

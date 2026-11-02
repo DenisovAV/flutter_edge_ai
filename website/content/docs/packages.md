@@ -27,7 +27,7 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 | **`flutter_edge_ai_sqlite`** | SQLite + `sqlite-vec` provider for `flutter_edge_ai_rag`. Exact + portable. | All (incl. Web) |
 | **`flutter_edge_ai_agent`** | On-device [agent skills](/docs/agent) — SKILL.md catalog + tool-calling loop (text / JS / native-intent / MCP). | Native, no Web (JS skills: no Linux) |
 | **`flutter_edge_ai_speech`** | On-device [speech](/docs/speech) — speech-to-text + text-to-speech + a `VoiceSession` voice loop (moonshine/Whisper/Parakeet STT + Matcha/Qwen3/Inflect TTS) via the LiteRT C API + `dart:ffi`. | Native (no Web) |
-| **`flutter_edge_ai_diagnostics`** | [Memory diagnostics](/docs/diagnostics) — the anonymous footprint (the memory the OS cannot reclaim) and the memory still available, read from the OS. No native code, no dependency on core. | Android + iOS + macOS |
+| **`flutter_edge_ai_diagnostics`** | [Memory diagnostics](/docs/diagnostics) — the anonymous footprint (the memory the OS cannot reclaim) and the memory still available, read from the OS. No native code, no dependency on core. | Android + iOS + macOS + Linux + Windows |
 
 Which runtime gives you text generation, embeddings and speech on each platform
 is on the [Capabilities](/docs/capabilities) page.

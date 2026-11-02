@@ -152,10 +152,10 @@ void main() {
       });
     }
 
-    test(
-      'a private working set above the working set nulls only fileBackedBytes',
-      () {
-        final c = _decode(
+    test('a private working set above the working set is a failed read that '
+        'names both values, not a null', () {
+      expect(
+        () => _decode(
           _reply(
             workingSet: 100,
             pagefileUsage: 7,
@@ -163,12 +163,30 @@ void main() {
             privateWorkingSet: 101,
           ),
           processMemoryCountersEx2Size,
-        );
-        expect(c.fileBackedBytes, isNull);
-        expect(c.commitBytes, 7);
-        expect(c.peakCommitBytes, 9);
-      },
-    );
+        ),
+        throwsA(
+          isA<MemoryReadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('101'), contains('100')),
+          ),
+        ),
+      );
+    });
+
+    test('a private working set equal to the working set is 0, not an '
+        'error', () {
+      final c = _decode(
+        _reply(
+          workingSet: 100,
+          pagefileUsage: 7,
+          peakPagefileUsage: 9,
+          privateWorkingSet: 100,
+        ),
+        processMemoryCountersEx2Size,
+      );
+      expect(c.fileBackedBytes, 0);
+    });
 
     test('a size that is not a PROCESS_MEMORY_COUNTERS size is refused', () {
       expect(() => _decode(_reply(), 80), throwsA(isA<ArgumentError>()));
@@ -339,17 +357,20 @@ void main() {
         snapshot.anonymousPeakBytes,
         greaterThanOrEqualTo(snapshot.anonymousBytes!),
       );
-      // Null only on a Windows that predates the extended struct; the file
-      // backed part of any running process (its own DLLs) is above zero.
-      if (snapshot.fileBackedBytes != null) {
-        expect(snapshot.fileBackedBytes, greaterThan(0));
-      }
+      // Null only on a Windows that predates the extended struct. The
+      // runner (Server 2025) and Windows 11 build 26200 both fill it, so a
+      // null here is a broken cb 96 path that fell back to the basic struct.
+      // The shareable part of any running process (its own DLLs) is above 0.
+      expect(snapshot.fileBackedBytes, isNotNull);
+      expect(snapshot.fileBackedBytes, greaterThan(0));
     });
 
     test('anonymousBytes is the commit charge: it follows an allocation that '
         'is not touched', () async {
       final before = await FlutterEdgeAiDiagnostics.memorySnapshot();
-      final block = calloc<Uint8>(256 * _mib);
+      // malloc, not calloc: package:ffi's calloc zeroes the block on Windows,
+      // which touches every page.
+      final block = malloc<Uint8>(256 * _mib);
       try {
         final during = await FlutterEdgeAiDiagnostics.memorySnapshot();
         expect(
@@ -362,8 +383,55 @@ void main() {
           greaterThanOrEqualTo(during.anonymousBytes!),
         );
       } finally {
-        calloc.free(block);
+        malloc.free(block);
       }
+    });
+
+    test('anonymousPeakBytes is the peak, not the current commit: it stays '
+        'up after a commit is released', () async {
+      // VirtualAlloc/VirtualFree, so the release returns the commit for sure
+      // (a heap may keep a freed block). In a fresh process commit equals its
+      // peak, so only a gap made on purpose tells the two fields apart.
+      final kernel32 = DynamicLibrary.open('kernel32.dll');
+      final virtualAlloc = kernel32
+          .lookupFunction<
+            Pointer<Void> Function(Pointer<Void>, IntPtr, Uint32, Uint32),
+            Pointer<Void> Function(Pointer<Void>, int, int, int)
+          >('VirtualAlloc');
+      final virtualFree = kernel32
+          .lookupFunction<
+            Int32 Function(Pointer<Void>, IntPtr, Uint32),
+            int Function(Pointer<Void>, int, int)
+          >('VirtualFree');
+      const memCommitReserve = 0x1000 | 0x2000; // MEM_COMMIT | MEM_RESERVE
+      const memRelease = 0x8000;
+      const pageReadWrite = 0x04;
+
+      final before = await FlutterEdgeAiDiagnostics.memorySnapshot();
+      final block = virtualAlloc(
+        nullptr,
+        512 * _mib,
+        memCommitReserve,
+        pageReadWrite,
+      );
+      expect(block, isNot(nullptr));
+      final during = await FlutterEdgeAiDiagnostics.memorySnapshot();
+      expect(virtualFree(block, 0, memRelease), isNot(0));
+      final after = await FlutterEdgeAiDiagnostics.memorySnapshot();
+
+      expect(
+        during.anonymousBytes! - before.anonymousBytes!,
+        greaterThan(384 * _mib),
+      );
+      expect(
+        after.anonymousPeakBytes,
+        greaterThanOrEqualTo(during.anonymousBytes!),
+      );
+      expect(
+        after.anonymousPeakBytes! - after.anonymousBytes!,
+        greaterThan(384 * _mib),
+        reason: 'the released commit leaves the peak where it was',
+      );
     });
 
     test('PagefileUsage, which anonymousBytes reads, equals PrivateUsage', () {

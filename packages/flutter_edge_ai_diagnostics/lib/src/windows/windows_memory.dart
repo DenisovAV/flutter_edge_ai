@@ -76,9 +76,11 @@ void markUnwritten(Uint8List buffer) =>
 /// A field the call did not write still holds the marker: that is how an OS
 /// that predates `PrivateWorkingSetSize` is told apart from a process whose
 /// value is genuinely small. Throws [MemoryReadException] when a field every
-/// Windows writes is still unwritten. A private working set larger than the
-/// working set (the kernel reads the two separately, so a trim between them can
-/// produce it) leaves only `fileBackedBytes` null; commit stays valid.
+/// Windows writes is still unwritten, and when `PrivateWorkingSetSize` is
+/// written but larger than `WorkingSetSize`: the OS reported the value, so a
+/// reply that contradicts itself is a failed read, not a gap. It was not
+/// observed (53.5 million reads on Windows 11 build 26200 while another isolate
+/// emptied and refilled the working set).
 WindowsProcessCounters windowsCountersFromReply(ByteData info, int cb) {
   if (cb != processMemoryCountersSize && cb != processMemoryCountersEx2Size) {
     throw ArgumentError.value(cb, 'cb', 'not a PROCESS_MEMORY_COUNTERS size');
@@ -110,9 +112,13 @@ WindowsProcessCounters windowsCountersFromReply(ByteData info, int cb) {
       Endian.little,
     );
     if (privateWorkingSet != _unwritten64) {
-      if (privateWorkingSet <= workingSet) {
-        fileBacked = workingSet - privateWorkingSet;
+      if (privateWorkingSet > workingSet) {
+        throw MemoryReadException(
+          'K32GetProcessMemoryInfo reported PrivateWorkingSetSize '
+          '$privateWorkingSet above WorkingSetSize $workingSet',
+        );
       }
+      fileBacked = workingSet - privateWorkingSet;
     }
   }
   return WindowsProcessCounters(
@@ -141,9 +147,11 @@ typedef ProcessMemoryQuery = bool Function(int cb);
 /// Asks [query] for the largest struct first, then for the basic one, both on
 /// [buffer] (at least [processMemoryCountersEx2Size] bytes).
 ///
-/// The `_EX2` struct (`cb` 96) needs a Windows 10 or 11 with the 2023 update;
-/// if the call refuses it, the basic struct every version fills is asked for
-/// instead and `fileBackedBytes` is null. A call that fails on both throws
+/// The `_EX2` struct (`cb` 96) needs, as Microsoft lists it, "Windows 10 22H2
+/// with September 2023 cumulative update or Windows 11 22H2 with September
+/// 2023 cumulative update" (no server version is listed); if the call refuses
+/// it, the basic struct every version fills is asked for instead and
+/// `fileBackedBytes` is null. A call that fails on both throws
 /// [MemoryReadException] with [lastError]'s code.
 WindowsProcessCounters readProcessCounters(
   Uint8List buffer,
@@ -226,8 +234,9 @@ _Kernel32? _kernel32;
 
 /// Reads this process's memory from `kernel32`.
 ///
-/// Runs on Windows, x64 and ARM64; the FFI calls are exercised by the package
-/// tests on a `windows-latest` runner and by
+/// Written for Windows x64 and ARM64, which share these layouts; only x64 is
+/// run. The FFI calls are exercised by the package tests on a
+/// `windows-latest` runner and by
 /// `flutter_edge_ai/example/integration_test/diagnostics_memory_test.dart`.
 /// Throws [MemoryReadException] when a symbol is missing or a call fails; the
 /// error code in the message is read by a second FFI call after the failure,

@@ -1,5 +1,5 @@
 ## 0.6.0
-- Windows: `memorySnapshot()` reads the commit charge, working set and available memory from `kernel32`; `gpuMemory()` returns null there.
+- Windows: `memorySnapshot()` reads `kernel32`; `gpuMemory()` returns null there.
 
 ## 0.5.0
 - Linux: `memorySnapshot()` reads `/proc` as on Android; `gpuMemory()` returns null there.

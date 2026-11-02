@@ -23,17 +23,17 @@ abstract final class FlutterEdgeAiDiagnostics {
   ///
   /// Throws [UnsupportedError] off Android, iOS, macOS, Linux and Windows
   /// rather than returning a snapshot of nulls: the numbers only mean
-  /// something where the OS keeps them. Throws `MemoryReadException` when the OS read itself
-  /// fails (a permission refusal such as AppArmor's included); a null field is
-  /// reserved for a value that does not exist here.
+  /// something where the OS keeps them. Throws `MemoryReadException` when the
+  /// OS read itself fails (a permission refusal such as AppArmor's included)
+  /// or returns a reply that contradicts itself; a null field is reserved for
+  /// a value that does not exist here.
   ///
   /// On Android and Linux the `/proc` files are read asynchronously, so calling
   /// this from the UI isolate does not block it, but the kernel walks the
   /// process's page tables for each read: about 3.7 ms per resident GiB on one
   /// Linux machine (1.7 ms idle, about 30 ms with 7 GiB resident). Call it at a
   /// few points, not per frame or per token. iOS and macOS reads are Mach calls
-  /// that take microseconds, and so are the Windows reads (two `kernel32`
-  /// calls).
+  /// and Windows reads are two `kernel32` calls; both take microseconds.
   static Future<MemorySnapshot> memorySnapshot() async {
     if (Platform.isAndroid || Platform.isLinux) return readProcMemorySnapshot();
     if (Platform.isIOS || Platform.isMacOS) return readMachMemorySnapshot();
@@ -49,9 +49,9 @@ abstract final class FlutterEdgeAiDiagnostics {
   /// Null means there is no reader for this device: iOS, macOS, Linux and
   /// Windows (not read there; on desktop Linux GPU memory is in neither
   /// snapshot field, and on an integrated GPU it is system RAM the snapshot
-  /// does not show; on Windows a GPU model's memory is not in the snapshot
-  /// either, and DXGI `QueryVideoMemoryInfo` is not read yet) and a
-  /// GPU with no `/dev/kgsl-3d0` (a Mali GPU, not measured). On an
+  /// does not show; on Windows how much of a GPU model's memory the snapshot
+  /// holds is not measured, and DXGI `QueryVideoMemoryInfo` is not read yet)
+  /// and a GPU with no `/dev/kgsl-3d0` (a Mali GPU, not measured). On an
   /// Adreno phone the answer is never null: a process that has not used the GPU
   /// yet (a headless engine, a background isolate, a read before the first
   /// frame) gets a reading of zeros, because the device node exists

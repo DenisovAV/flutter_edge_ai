@@ -54,17 +54,26 @@ final class MemorySnapshot {
   ///   it is touched, so it reads higher than the resident figure and is not
   ///   comparable with the other platforms: a FunctionGemma 270M load on the
   ///   CPU raised it by 389 to 392 MiB and the private working set by 102 to
-  ///   105 MiB (one machine). Most of a model's memory arrives with the first
-  ///   prompt, not at load. GPU memory is not read (see
-  ///   `FlutterEdgeAiDiagnostics.gpuMemory`).
+  ///   105 MiB (one machine), and with the first prompt the rises reached 527
+  ///   to 531 and 225 to 229 MiB: about three quarters of the commit arrives
+  ///   at load, while most of the private working set (and of
+  ///   [fileBackedBytes]) arrives with the first prompt. On the GPU the load
+  ///   raised it by 1,075 to 1,083 MiB, so part of a GPU model's memory may
+  ///   be in it; how much is not measured. After a GPU model is closed it
+  ///   falls with a delay: in two runs (RTX 3050) it stayed
+  ///   about 360 MiB above its start for about 2 s and settled by about 8 s,
+  ///   about 65 MiB above it after the first load and at most about 16 MiB
+  ///   after later ones (one machine, four cycles per process). Read it at
+  ///   least 8 s after a close.
   ///
   /// Null only on an Android or Linux kernel without `smaps_rollup`. Vendor
   /// kernels may backport it. On iOS, macOS and Windows it is never null.
   final int? anonymousBytes;
 
-  /// Memory still available before the OS starts reclaiming or killing.
+  /// Memory still available before the OS starts reclaiming or killing (on
+  /// Windows, which kills nothing for low memory, see below).
   ///
-  /// The two platforms answer different questions, because they enforce
+  /// The platforms answer different questions, because they enforce
   /// memory differently:
   ///
   /// - **iOS:** `os_proc_available_memory()`, the headroom left before *this
@@ -78,9 +87,14 @@ final class MemorySnapshot {
   ///   is the cgroup's, not this number.
   ///
   /// - **Windows:** `ullAvailPhys` from `GlobalMemoryStatusEx`, the physical
-  ///   memory that can be used without paging, on *the whole machine*. Windows
-  ///   has no per-app limit, so it is an upper bound for this app, not
-  ///   headroom, and it ignores a job object's memory limit.
+  ///   memory on *the whole machine* that can be reused without writing its
+  ///   contents to disk first (the standby, free and zero lists). It is not
+  ///   this app's headroom: Windows does not kill a process when RAM runs low,
+  ///   and an allocation fails once the machine's commit reaches the commit
+  ///   limit (RAM plus the page files), not when RAM runs out. That headroom
+  ///   is `ullAvailPageFile` of the same call ("the maximum amount of
+  ///   memory the current process can commit", per Microsoft), which this
+  ///   package does not read.
   /// - **macOS:** null. `os_proc_available_memory()` is iOS-only and macOS has
   ///   no per-app limit to measure headroom against.
   ///
@@ -90,8 +104,9 @@ final class MemorySnapshot {
   /// it is never null.
   final int? availableBytes;
 
-  /// Resident clean pages: mostly mapped files on a CPU backend, and GPU
-  /// driver buffers too on some GPU backends (see below).
+  /// Resident clean pages on Android and Linux (mostly mapped files on a CPU
+  /// backend, and GPU driver buffers too on some GPU backends), and the
+  /// shareable working set on Windows (see below).
   ///
   /// - **Android:** `Private_Clean + Shared_Clean` from
   ///   `/proc/self/smaps_rollup`. A mapped model appears as its clean pages
@@ -128,17 +143,20 @@ final class MemorySnapshot {
   ///   Linux 7.0: 512 MiB swapped out and read back showed as 512 MiB
   ///   `Private_Clean`, `Swap` 0), which moves memory from [anonymousBytes]
   ///   into this field, as zram readback does on Android.
-  /// - **Windows:** `WorkingSetSize - PrivateWorkingSetSize`: the resident
-  ///   pages that are not private to the process. They are file-backed or
-  ///   shareable pages, DLL code included, so this is not "model weights": a
-  ///   LiteRT-LM model on the CPU is mapped at load and faulted in by the first
-  ///   prompt (this figure rose by about 361 MiB for a 271 MiB file, and the
-  ///   DLL pages could not be told apart), while ORT-GenAI's weights landed in
-  ///   the private working set and not here. Read before loading and subtract.
-  ///   Trimming the working set (minimizing the window) changed nothing without
-  ///   memory pressure; what it does under pressure is not measured. Null when
-  ///   the OS does not fill `PrivateWorkingSetSize` (a Windows that predates
-  ///   the extended struct; not tested on one).
+  /// - **Windows:** `WorkingSetSize - PrivateWorkingSetSize`: the shareable
+  ///   working set, every resident page that is not private to the process.
+  ///   That is mapped files and DLL code, but also modified shared pages (a
+  ///   written pagefile-backed section or shared view), so it is neither
+  ///   "clean" nor "model weights". A LiteRT-LM model on the CPU is mapped at
+  ///   load and faulted in by the first prompt (113 MiB before, 138 MiB after
+  ///   the load and 402 MiB after the prompt, for a 284 MB file; the DLL pages
+  ///   could not be told apart), while ORT-GenAI's weights landed in the
+  ///   private working set and not here. Read before loading and subtract.
+  ///   `EmptyWorkingSet` emptied the private working set (249.9 to 0.8 MiB)
+  ///   and left commit unchanged; minimizing the window changed nothing
+  ///   without memory pressure, and what it does under pressure is not
+  ///   measured. Null when the OS does not fill `PrivateWorkingSetSize` (a
+  ///   Windows that predates the extended struct; not tested on one).
   /// - **iOS and macOS:** null. This package does not read a corresponding
   ///   value yet; `TASK_VM_INFO.external` is a possible follow-up.
   ///

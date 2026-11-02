@@ -73,7 +73,11 @@ x86_64) and an Android arm64 emulator; GPU on macOS (Metal).
    loader refuses. We cannot build that dispatch (NeuroPilot SDK). Until Google
    ships an AAR on the new ABI, MediaTek NPU is lost with 0.19.
 3. **The TopK GPU sampler is compiled into libLiteRtLm on Linux and Windows** (no separate prebuilt any more), and it crashes the first GPU decode there (phase B).
-4. **macOS CPU greedy is nondeterministic** (above).
+4. **macOS CPU greedy is nondeterministic** (above). Cause: XNNPACK's KleidiAI
+   pf32 SME2 f32 GEMM on SME2 CPUs (Apple M4/M5) gives thread-count-dependent
+   results (google/XNNPACK#11789). §21 (`patches/xnnpack_pf32_sme2_apple.patch`,
+   by the XNNPACK thread) skips those SME2 branches on macOS and iOS; with it
+   the 11-model macOS matrix is deterministic and 1 = 4 = 12 threads.
 5. **LFM2.5-230M int8: sessions differ even with one thread, on every build**
    (reported by the XNNPACK thread, `research/macos-cpu-nondeterminism-0.19`;
    not measured here). It looks like state carried from one session to the
@@ -109,10 +113,31 @@ Panther Lake (Arc B390 + NPU), Lunar Lake (Arc 140V + NPU).
 - Windows GPU constrained/MTP/tool calls and Gemma 4 12B (#4083): blocked by
   the GPU sampler crash.
 
-## Proposed §20 (not built)
+## §20: no fused GPU sampler on Linux and Windows (built, re-checked)
 
-Drop the statically linked TopK GPU samplers from libLiteRtLm on Linux and
-Windows (`default_static_gpu_samplers` empty when
-`litert_runtime_link_mode=dynamic`), so the GPU executor samples on the CPU, as
-Windows did on 0.18. Verify with the conversation probes on the T4 and an Intel
-Arc box; then decide whether to ship a GPU sampler at all on desktop.
+`patches/desktop_no_static_gpu_sampler.patch` leaves
+`runtime/components:default_static_gpu_samplers` empty when
+`litert_runtime_link_mode=dynamic`, and no sampler library ships; CI fails a
+build whose libLiteRtLm still carries the sampler's RTTI name. Build run
+41300996155 (Linux libLiteRtLm also no longer NEEDs `libwebgpu_dawn.so`).
+LiteRT-LM logs "GPU sampler unavailable. Falling back to CPU sampling" and
+samples on the CPU; the logits stay on the GPU.
+
+Re-check 2026-11-02, Gemma 4 E2B on the GPU, conversation API (the path that
+crashed before):
+
+| Check | Tesla T4 (Linux) | Arc B390 (Windows, Panther Lake) |
+|---|---|---|
+| tools | PASS | PASS |
+| multiconv (3 conversations) | PASS 3/3 | PASS 3/3 |
+| constrained (none / schema / regex tok/s) | 15.5 / 72.5 / 73.0, schema and regex PASS | 61.5 / 55.2 / 49.6, PASS |
+| determinism | PASS | PASS |
+| long prompt | PASS ("PELICAN") | PASS |
+| MTP off / on (tok/s) | 70.3 / 7.1, `on` changes the text | 60.4 / 18.2, `on` changes the text |
+| §16 + §18 rewind | exact | exact |
+| #4083 Gemma 4 12B | — | long prompt PASS, determinism PASS (create 23.5 s cold, 8.3 s warm) |
+
+The T4 unconstrained run (15.5 tok/s, 4.85 s for 17 tokens) is slow against
+the same model's 70.3 tok/s in mtp-off; it was measured once and is not
+explained. Arc 140V (Lunar Lake) was not re-run.
+

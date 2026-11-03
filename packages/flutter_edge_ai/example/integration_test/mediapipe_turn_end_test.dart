@@ -19,6 +19,7 @@
 import 'dart:async';
 import 'dart:io' show File, Platform;
 
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path_provider/path_provider.dart';
@@ -71,82 +72,101 @@ const _count = Message(
   isUser: true,
 );
 
+/// The two chat lanes: an open chat (multi-session) and the legacy
+/// singleton chat, which run on different native paths.
+final _lanes = <(String, Future<InferenceChat> Function(InferenceModel model))>[
+  ('openChat', (m) => m.openChat(temperature: 0, topK: 1)),
+  ('createChat', (m) => m.createChat(temperature: 0, topK: 1)),
+];
+
+/// A session on the same lane as the chat of [lane].
+Future<InferenceModelSession> _sessionOn(String lane, InferenceModel model) =>
+    lane == 'openChat'
+    ? model.openSession(temperature: 0, topK: 1)
+    : model.createSession(temperature: 0, topK: 1);
+
 void main() {
   initIntegrationTest();
 
-  testWidgets('a cancelled stream, then a blocking turn, ends', (_) async {
-    final model = await _ensureModel();
-    final chat = await model.openChat(temperature: 0, topK: 1);
-    try {
-      await chat.addQuery(_count);
-      final first = Completer<void>();
-      final sub = chat.generateChatResponseAsync().listen((_) {
-        if (!first.isCompleted) first.complete();
-      }, onError: (_) {});
-      await first.future.timeout(const Duration(seconds: 60));
-      await sub.cancel();
+  for (final (lane, open) in _lanes) {
+    testWidgets('$lane: a cancelled stream, then a blocking turn, ends', (
+      _,
+    ) async {
+      final model = await _ensureModel();
+      final chat = await open(model);
+      try {
+        await chat.addQuery(_count);
+        final first = Completer<void>();
+        final sub = chat.generateChatResponseAsync().listen((_) {
+          if (!first.isCompleted) first.complete();
+        }, onError: (_) {});
+        await first.future.timeout(const Duration(seconds: 60));
+        await sub.cancel();
 
-      await chat.addQuery(const Message(text: 'Say hi.', isUser: true));
-      final outcome = await chat
-          .generateChatResponse()
-          .then<Object>((r) => r, onError: (Object e) => e)
-          .timeout(
-            const Duration(seconds: 120),
-            onTimeout: () => fail('the blocking turn never ended'),
-          );
-      print('[turn-end 1] blocking turn after a cancelled stream: $outcome');
-      expect(outcome, isNot(isA<TimeoutException>()));
-    } finally {
-      await chat.close();
-    }
-  });
+        await chat.addQuery(const Message(text: 'Say hi.', isUser: true));
+        final outcome = await chat
+            .generateChatResponse()
+            .then<Object>((r) => r, onError: (Object e) => e)
+            .timeout(
+              const Duration(seconds: 120),
+              onTimeout: () => fail('the blocking turn never ended'),
+            );
+        print(
+          '[turn-end $lane 1] blocking turn after a cancelled stream: '
+          '$outcome',
+        );
+        // A reply, or the platform refusing while the detached generation
+        // still runs; never a turn left waiting.
+        expect(outcome, anyOf(isA<ModelResponse>(), isA<PlatformException>()));
+      } finally {
+        await chat.close();
+      }
+    });
 
-  testWidgets('a close during a blocking turn is a StateError, and the '
-      'history keeps what was generated', (_) async {
-    final model = await _ensureModel();
-    final chat = await model.openChat(temperature: 0, topK: 1);
-    await chat.addQuery(
-      const Message(
-        text: 'Write a long story about a lighthouse.',
-        isUser: true,
-      ),
-    );
-    final reply = chat.generateChatResponse();
-    await Future<void>.delayed(const Duration(seconds: 5));
-    await chat.close();
-    await expectLater(
-      reply.timeout(const Duration(seconds: 60)),
-      throwsA(isA<StateError>()),
-    );
-    print(
-      '[turn-end 2] history after the close: ${chat.fullHistory.length} '
-      'messages, last "${chat.fullHistory.last.text}"',
-    );
-  });
-
-  testWidgets('a long greedy reply is the same through the chat\'s blocking '
-      'turn as through getResponse', (_) async {
-    final model = await _ensureModel();
-    final session = await model.openSession(temperature: 0, topK: 1);
-    final String direct;
-    try {
-      await session.addQueryChunk(_count);
-      direct = await session.getResponse();
-    } finally {
-      await session.close();
-    }
-
-    final chat = await model.openChat(temperature: 0, topK: 1);
-    try {
-      await chat.addQuery(_count);
-      final viaChat = await chat.generateChatResponse();
-      print(
-        '[turn-end 3] direct ${direct.length} chars, chat '
-        '${(viaChat as TextResponse).token.length} chars',
+    testWidgets('$lane: a close during a blocking turn is a StateError, and '
+        'the history keeps what was generated', (_) async {
+      final model = await _ensureModel();
+      final chat = await open(model);
+      await chat.addQuery(
+        const Message(
+          text: 'Write a long story about a lighthouse.',
+          isUser: true,
+        ),
       );
-      expect(viaChat.token.trim(), direct.trim());
-    } finally {
+      final reply = chat.generateChatResponse();
+      // Long enough for prefill and the first words on a phone's CPU.
+      await Future<void>.delayed(const Duration(seconds: 10));
       await chat.close();
-    }
-  });
+      await expectLater(
+        reply.timeout(const Duration(seconds: 60)),
+        throwsA(isA<StateError>()),
+      );
+      final last = chat.fullHistory.last;
+      expect(last.isUser, isFalse, reason: 'the partial reply is kept');
+      expect(last.text, isNotEmpty);
+    });
+
+    testWidgets('$lane: a long greedy reply is the same through the chat\'s '
+        'blocking turn as through getResponse', (_) async {
+      final model = await _ensureModel();
+      final session = await _sessionOn(lane, model);
+      final String direct;
+      try {
+        await session.addQueryChunk(_count);
+        direct = await session.getResponse();
+      } finally {
+        await session.close();
+      }
+
+      final chat = await open(model);
+      try {
+        await chat.addQuery(_count);
+        final viaChat = await chat.generateChatResponse();
+        expect((viaChat as TextResponse).token.trim(), direct.trim());
+        expect(chat.fullHistory.last.text, direct.trim());
+      } finally {
+        await chat.close();
+      }
+    });
+  }
 }

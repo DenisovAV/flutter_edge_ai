@@ -76,26 +76,93 @@ void main() {
     );
   });
 
-  test('a stop keeps the partial reply although the native cancel arrives '
-      'as an error (iOS)', () async {
+  test(
+    'a stop keeps the partial reply although the native cancel arrives '
+    'as an error with no end after it (iOS), and the next turn runs',
+    () async {
+      final events = _events();
+      _answer('generateResponseAsync');
+      final session = _legacy();
+      _answer(
+        'stopGeneration',
+        then: () => events.then(
+          (sink) =>
+              sink.error(code: 'cancelled', message: 'MediaPipe cancelled'),
+        ),
+      );
+      final turn = _turn(session);
+      final text = turn.text.toList();
+      final sink = await events;
+      sink.success({'partialResult': 'Par'});
+      await pumpEventQueue();
+      await session.stopGeneration();
+      expect(await text.timeout(const Duration(seconds: 5)), ['Par']);
+      expect(await turn.end, TurnEnd.stopped);
+
+      // The stopped turn released the session: the next one starts and ends.
+      final next = _turn(session);
+      final nextText = next.text.toList();
+      await pumpEventQueue();
+      sink
+        ..success({'partialResult': 'ok'})
+        ..endOfStream();
+      expect(await nextText.timeout(const Duration(seconds: 5)), ['ok']);
+    },
+  );
+
+  test('a failed generation ends the stream: an error, then done', () async {
     final events = _events();
     _answer('generateResponseAsync');
-    final session = _legacy();
-    _answer(
-      'stopGeneration',
-      then: () => events.then((sink) {
-        sink.error(code: 'cancelled', message: 'MediaPipe cancelled');
-        sink.endOfStream();
-      }),
+    final ended = Completer<List<Object>>();
+    final errors = <Object>[];
+    _legacy().getResponseAsync().listen(
+      (_) {},
+      onError: errors.add,
+      onDone: () => ended.complete(errors),
     );
+    (await events).error(code: 'ERROR', message: 'decode failed');
+    expect(await ended.future.timeout(const Duration(seconds: 5)), [
+      isA<PlatformException>(),
+    ]);
+  });
+
+  test('a failed native start ends the stream after its error', () async {
+    unawaited(_events());
+    _answer('generateResponseAsync', error: PlatformException(code: 'busy'));
+    final ended = Completer<void>();
+    _legacy().getResponseAsync().listen(
+      (_) {},
+      onError: (_) {},
+      onDone: ended.complete,
+    );
+    await ended.future.timeout(const Duration(seconds: 5));
+  });
+
+  test('closing an open session while its turn waits for the generation '
+      'lock leaves the lock free', () async {
+    unawaited(_events());
+    _answer('generateResponseAsyncForSession');
+    _answer('closeSessionId');
+    final mutex = Mutex();
+    final session = MultiSessionMobileInferenceModelSession(
+      sessionId: 8,
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.task,
+      supportImage: false,
+      supportAudio: false,
+      generationMutex: mutex,
+      onClose: () {},
+    );
+    // Another session holds the lock.
+    await mutex.acquire();
     final turn = _turn(session);
     final text = turn.text.toList();
-    final sink = await events;
-    sink.success({'partialResult': 'Par'});
     await pumpEventQueue();
-    await session.stopGeneration();
-    expect(await text, ['Par']);
-    expect(await turn.end, TurnEnd.stopped);
+    await session.close();
+    expect(await text.timeout(const Duration(seconds: 5)), isEmpty);
+    mutex.release();
+    await pumpEventQueue();
+    expect(mutex.isLocked, isFalse, reason: 'the closed turn took the lock');
   });
 
   test('a close the consumer did not ask for is TurnEnd.closed, with the '

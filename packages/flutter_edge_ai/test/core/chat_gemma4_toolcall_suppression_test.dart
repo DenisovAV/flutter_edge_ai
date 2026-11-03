@@ -18,6 +18,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// it leaked token-by-token into the UI (tester screenshot). The structured
 /// call is still surfaced from `lastRawResponse` at end-of-stream.
 class _SdkSession implements InferenceModelSession, RawSdkResponseSession {
+  @override
+  EngineTurn startTurn() => EngineTurn(text: getResponseAsync(), end: null);
+
   _SdkSession(this.tokens, this.raw);
 
   final List<String> tokens;

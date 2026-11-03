@@ -76,8 +76,9 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
 
   /// Cap on concurrent [openSession] sessions; null = unlimited. Accepted
   /// for API symmetry. The MediaPipe web `.task` path doesn't support
-  /// concurrent sessions yet (openSession inherits the interface's
-  /// UnsupportedError), so this is currently informational.
+  /// concurrent sessions yet (it does not implement openEngineSession, so
+  /// openSession fails with UnsupportedError), so this is currently
+  /// informational.
   final int? maxConcurrentSessions;
 
   @override

@@ -8,7 +8,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
-import 'package:flutter_edge_ai/engine.dart' show RuntimeConfig, Tool;
+import 'package:flutter_edge_ai/engine.dart'
+    show ModelType, RuntimeConfig, Tool;
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart'
     show BuiltInAiEngine;
 import 'package:flutter_edge_ai_builtin_ai/src/builtin_ai_model.dart'
@@ -213,6 +214,27 @@ void main() {
       await first.close();
       // The cap is a live count, not a high-water mark.
       await model.openSession();
+    });
+
+    test(
+      'openChat takes the model\'s own type, as createChat does (D8)',
+      () async {
+        final model = await newModel();
+        final chat = await model.openChat();
+        expect(chat.modelType, ModelType.general);
+        expect(chat.supportAudio, isFalse);
+        expect(model.sessions, contains(chat.session));
+        expect(model.session, isNull);
+      },
+    );
+
+    test('openChat refuses audio, as createChat does', () async {
+      final model = await newModel();
+      await expectLater(
+        model.openChat(supportAudio: true),
+        throwsUnsupportedError,
+      );
+      expect(model.sessions, isEmpty);
     });
 
     test('audio is rejected rather than silently dropped', () async {

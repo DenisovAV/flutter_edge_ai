@@ -2544,7 +2544,8 @@ class LiteRtLmFfiClient {
     if (_virtualTurnInFlight) {
       _pendingReleaseToken = conversationToken;
       final conv = _virtualConv;
-      if (conv != null) _cancelOn(conv);
+      // A close, not a stop: a turn nobody stopped ends with a StateError.
+      if (conv != null) _turns.cancelForClose(conv);
       return;
     }
     final conv = _virtualConv;

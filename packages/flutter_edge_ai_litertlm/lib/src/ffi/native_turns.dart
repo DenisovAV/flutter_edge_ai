@@ -31,6 +31,11 @@ class NativeTurn {
   /// cancelling its subscription.
   bool cancelRequested = false;
 
+  /// The conversation's session or model was closed while this ran, before
+  /// anyone asked to stop it: a streamed send then ends with a
+  /// [StateError], not as a reply that merely stopped early.
+  bool closedUnderConsumer = false;
+
   /// The conversation was released while this ran; it is deleted at the end.
   bool deleteWhenEnded = false;
 }
@@ -98,6 +103,15 @@ class NativeTurns<C extends Object> {
       return;
     }
     turn.deleteWhenEnded = true;
+    cancelForClose(conversation);
+  }
+
+  /// Stops [conversation]'s running operation because its session or model
+  /// is closing. Unlike [cancel], an operation nobody had asked to stop then
+  /// ends as closed under its consumer.
+  void cancelForClose(C conversation) {
+    final turn = _running[conversation];
+    if (turn != null && !turn.cancelRequested) turn.closedUnderConsumer = true;
     cancel(conversation);
   }
 
@@ -115,6 +129,8 @@ class NativeTurns<C extends Object> {
 /// - A cancelled end that nobody asked for is an error
 ///   ([LiteRtLmTurnCancelledException]), never a clean end: it means the
 ///   conversation is poisoned.
+/// - A cancelled end caused by closing the session or model, before anyone
+///   asked to stop, is a [StateError]: the reply is incomplete.
 /// - A consumer that cancels its subscription asks native to stop and waits
 ///   for native's end, up to [consumerCancelWait]; the operation itself keeps
 ///   running to its end either way.
@@ -145,7 +161,15 @@ class NativeTurnStream<C extends Object> {
 
   void cancelled() => _end(
     NativeTurnEnd.cancelled,
-    error: turn.cancelRequested ? null : const LiteRtLmTurnCancelledException(),
+    error: turn.closedUnderConsumer
+        ? StateError(
+            'The session was closed during this turn (close(), '
+            'uninstallModel, or a replaced active model); the reply is '
+            'incomplete.',
+          )
+        : turn.cancelRequested
+        ? null
+        : const LiteRtLmTurnCancelledException(),
   );
 
   void failed(Object error) => _end(NativeTurnEnd.failed, error: error);

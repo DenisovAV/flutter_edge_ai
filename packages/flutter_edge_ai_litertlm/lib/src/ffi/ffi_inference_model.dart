@@ -218,8 +218,10 @@ base class FfiInferenceModel extends InferenceModel
   }
 
   @override
-  List<InferenceModelSession> get sessions =>
-      List.unmodifiable([if (_session != null) _session!, ..._openSessions]);
+  List<InferenceModelSession> get engineSessions => [
+    if (_session != null) _session!,
+    ..._openSessions,
+  ];
 
   /// [explicit], completed from the bundle's own sampler, then the family's
   /// defaults, then the fallback.
@@ -367,19 +369,22 @@ base class FfiInferenceModel extends InferenceModel
   }
 
   @override
-  Future<InferenceModelSession> openSession({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    String? loraPath,
-    bool? enableVisionModality,
-    bool? enableAudioModality,
-    String? systemInstruction,
-    bool enableThinking = false,
-    List<Tool> tools = const [],
-    int? maxOutputTokens,
-  }) async {
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    final SessionRequest(
+      :temperature,
+      :randomSeed,
+      :topK,
+      :topP,
+      :loraPath,
+      :enableVisionModality,
+      :enableAudioModality,
+      :systemInstruction,
+      :enableThinking,
+      :tools,
+      :maxOutputTokens,
+    ) = request;
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
@@ -437,6 +442,30 @@ base class FfiInferenceModel extends InferenceModel
     _openSessions.add(session);
     return session;
   }
+
+  /// [openChat]'s unset values are this model's own, as [createChat] fills
+  /// them.
+  @override
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) =>
+      ResolvedChatRequest(
+        modelType: request.modelType ?? modelType,
+        supportImage: request.supportImage ?? supportImage,
+        supportAudio: request.supportAudio ?? supportAudio,
+        supportsFunctionCalls: request.supportsFunctionCalls ?? false,
+        tools: request.tools,
+        maxFunctionBufferLength:
+            request.maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
+        temperature: request.temperature,
+        randomSeed: request.randomSeed,
+        topK: request.topK,
+        topP: request.topP,
+        tokenBuffer: request.tokenBuffer,
+        loraPath: request.loraPath,
+        enableThinking: request.enableThinking,
+        toolChoice: request.toolChoice,
+        systemInstruction: request.systemInstruction,
+        maxOutputTokens: request.maxOutputTokens,
+      );
 
   @override
   Future<InferenceChat> createChat({

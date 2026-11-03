@@ -1,3 +1,7 @@
+## Unreleased
+- Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and audio.
+- Android/iOS: two overlapping `openSession` calls cannot both pass `maxConcurrentSessions`.
+
 ## 1.2.5
 - MediaPipe GenAI 0.10.35 on Android and iOS, 0.10.30 on the web.
 - Web: a multi-turn chat keeps the model's replies; each turn resends the conversation (#705).

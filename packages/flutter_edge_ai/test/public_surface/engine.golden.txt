@@ -10,6 +10,8 @@ CancelToken class
 CanceledError class final
 CatalogModel class abstract base
 CatalogVariant class sealed
+ChatRequest class final
+ChatTurnHooks class base
 CloseNotifier mixin
 CorruptionAction enum
 CorruptionDetectionResult class
@@ -60,6 +62,7 @@ EmbeddingTokenizerFactory typedef
 EmbeddingTokenizerProvider class abstract
 EmbeddingTokenizerRegistry class
 EncodedMediaFormat class final
+EngineTurn class final
 ErrorHandlingResult class
 ErrorType enum
 EstimatedDimensions class
@@ -130,6 +133,7 @@ ProcessedImage class
 RankedOption class final experimental
 RateLimitedError class final
 RawSdkResponseSession mixin
+ResolvedChatRequest class final
 ResolvedHfFile class
 ResolvedHfModel class
 ResolvedSampling class final
@@ -142,6 +146,7 @@ SdkResponseParser class
 SdkTextExtractor class
 ServerError class final
 SessionMetrics class
+SessionRequest class final
 SkillExecutorProvider class abstract
 SkillExecutorRegistry class
 SpeechRecognizer class abstract
@@ -168,6 +173,7 @@ TtsModelSpec class
 TtsModelType enum
 TtsModelTypeManifest extension
 TtsVariant class abstract base
+TurnEnd enum
 UnauthorizedError class final
 UnknownError class final
 UnsupportedEmbeddingCombinationException class final

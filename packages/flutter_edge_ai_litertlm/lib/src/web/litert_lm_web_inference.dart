@@ -97,9 +97,16 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
   @override
   InferenceModelSession? get session => _session;
 
+  /// Open sessions still being built: they count against
+  /// [maxConcurrentSessions] from the check on, so two calls that overlap
+  /// cannot both pass it.
+  int _openingSessions = 0;
+
   @override
-  List<InferenceModelSession> get sessions =>
-      List.unmodifiable([if (_session != null) _session!, ..._openSessions]);
+  List<InferenceModelSession> get engineSessions => [
+    if (_session != null) _session!,
+    ..._openSessions,
+  ];
 
   Future<void> _ensureEngine() async {
     if (_engine != null) return;
@@ -272,19 +279,22 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
   }
 
   @override
-  Future<InferenceModelSession> openSession({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    String? loraPath,
-    bool? enableVisionModality,
-    bool? enableAudioModality,
-    String? systemInstruction,
-    bool enableThinking = false,
-    List<Tool> tools = const [],
-    int? maxOutputTokens,
-  }) async {
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    final SessionRequest(
+      :temperature,
+      :randomSeed,
+      :topK,
+      :topP,
+      :loraPath,
+      :enableVisionModality,
+      :enableAudioModality,
+      :systemInstruction,
+      :enableThinking,
+      :tools,
+      :maxOutputTokens,
+    ) = request;
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
@@ -297,7 +307,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       );
     }
     final cap = maxConcurrentSessions;
-    if (cap != null && _openSessions.length >= cap) {
+    if (cap != null && _openSessions.length + _openingSessions >= cap) {
       throw StateError(
         'Max concurrent sessions ($cap) reached. Close an existing session '
         'before opening a new one.',
@@ -315,15 +325,23 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       randomSeed: randomSeed,
     );
     final sampling = _resolveSampling(explicit, thinking: enableThinking);
-    await _ensureEngine();
-    final conversation = await _buildConversation(
-      sampling: sampling,
-      systemInstruction: systemInstruction,
-      enableThinking: enableThinking,
-      tools: tools,
-      maxOutputTokens: maxOutputTokens,
-      sw: Stopwatch()..start(),
-    );
+    // Counted from the cap check until the session is in [_openSessions]:
+    // the awaits below would otherwise let a second call pass the check.
+    _openingSessions++;
+    final LiteRtLmConversation conversation;
+    try {
+      await _ensureEngine();
+      conversation = await _buildConversation(
+        sampling: sampling,
+        systemInstruction: systemInstruction,
+        enableThinking: enableThinking,
+        tools: tools,
+        maxOutputTokens: maxOutputTokens,
+        sw: Stopwatch()..start(),
+      );
+    } finally {
+      _openingSessions--;
+    }
 
     late final LiteRtLmWebSession session;
     session = LiteRtLmWebSession(

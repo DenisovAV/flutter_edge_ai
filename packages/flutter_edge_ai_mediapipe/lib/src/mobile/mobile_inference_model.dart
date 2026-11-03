@@ -49,6 +49,30 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     thinking: thinking,
   );
 
+  /// [openChat]'s unset values are this model's own, as [createChat] fills
+  /// them.
+  @override
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) =>
+      ResolvedChatRequest(
+        modelType: request.modelType ?? modelType,
+        supportImage: request.supportImage ?? false,
+        supportAudio: request.supportAudio ?? supportAudio,
+        supportsFunctionCalls: request.supportsFunctionCalls ?? false,
+        tools: request.tools,
+        maxFunctionBufferLength:
+            request.maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
+        temperature: request.temperature,
+        randomSeed: request.randomSeed,
+        topK: request.topK,
+        topP: request.topP,
+        tokenBuffer: request.tokenBuffer,
+        loraPath: request.loraPath,
+        enableThinking: request.enableThinking,
+        toolChoice: request.toolChoice,
+        systemInstruction: request.systemInstruction,
+        maxOutputTokens: request.maxOutputTokens,
+      );
+
   @override
   Future<InferenceChat> createChat({
     double? temperature,
@@ -139,9 +163,16 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
   @override
   InferenceModelSession? get session => _session;
 
+  /// Open sessions still being created natively: they count against
+  /// [maxConcurrentSessions] from the check on, so two calls that overlap
+  /// cannot both pass it.
+  int _openingSessions = 0;
+
   @override
-  List<InferenceModelSession> get sessions =>
-      List.unmodifiable([if (_session != null) _session!, ..._openSessions]);
+  List<InferenceModelSession> get engineSessions => [
+    if (_session != null) _session!,
+    ..._openSessions,
+  ];
 
   @override
   Future<InferenceModelSession> createSession({
@@ -267,26 +298,27 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
   }
 
   @override
-  Future<InferenceModelSession> openSession({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    String? loraPath,
-    bool? enableVisionModality,
-    bool? enableAudioModality,
-    String? systemInstruction,
-    bool enableThinking = false,
-    List<Tool> tools = const [],
-    int? maxOutputTokens,
-  }) async {
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    final SessionRequest(
+      :temperature,
+      :randomSeed,
+      :topK,
+      :topP,
+      :loraPath,
+      :enableVisionModality,
+      :enableAudioModality,
+      :systemInstruction,
+      :enableThinking,
+    ) = request;
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
       );
     }
     final cap = maxConcurrentSessions;
-    if (cap != null && _openSessions.length >= cap) {
+    if (cap != null && _openSessions.length + _openingSessions >= cap) {
       throw StateError(
         'Max concurrent sessions ($cap) reached. Close an existing session '
         'before opening a new one.',
@@ -305,18 +337,25 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
       randomSeed: randomSeed,
       thinking: enableThinking,
     );
-    await platformService.createSessionForId(
-      sessionId: id,
-      randomSeed: sampling.randomSeed,
-      temperature: sampling.temperature,
-      topK: sampling.topK,
-      topP: sampling.topP,
-      loraPath: loraPath,
-      enableVisionModality: enableVisionModality ?? supportImage,
-      enableAudioModality: enableAudioModality ?? supportAudio,
-      systemInstruction: systemInstruction,
-      enableThinking: enableThinking,
-    );
+    // Counted from the cap check until the session is in [_openSessions]:
+    // the native call below would otherwise let a second call pass the check.
+    _openingSessions++;
+    try {
+      await platformService.createSessionForId(
+        sessionId: id,
+        randomSeed: sampling.randomSeed,
+        temperature: sampling.temperature,
+        topK: sampling.topK,
+        topP: sampling.topP,
+        loraPath: loraPath,
+        enableVisionModality: enableVisionModality ?? supportImage,
+        enableAudioModality: enableAudioModality ?? supportAudio,
+        systemInstruction: systemInstruction,
+        enableThinking: enableThinking,
+      );
+    } finally {
+      _openingSessions--;
+    }
 
     late final MultiSessionMobileInferenceModelSession session;
     session = MultiSessionMobileInferenceModelSession(

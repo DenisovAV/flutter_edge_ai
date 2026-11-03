@@ -676,8 +676,9 @@ void main() {
     // while native streaming thread may still be producing tokens. Race
     // between Dart close() and native cancel.
     //
-    // Fix expectation: closing a session mid-stream must complete cleanly
-    // (no exception leaking out of the stream subscription, no hang).
+    // Fix expectation: closing a session mid-stream must end the stream (no
+    // hang, no crash). It ends with a StateError when the close cut the turn
+    // short (B90), which the subscription's onError receives.
     testWidgets('close() during active stream must terminate cleanly', (
       _,
     ) async {

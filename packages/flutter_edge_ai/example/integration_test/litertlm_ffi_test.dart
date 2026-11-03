@@ -703,11 +703,17 @@ void main() {
       await a.addQueryChunk(
         const Message(text: 'Count slowly to twenty.', isUser: true),
       );
-      final sub = a.getResponseAsync().listen((_) {});
+      final ends = <Object>[];
+      final sub = a.getResponseAsync().listen(
+        (_) {},
+        // A turn the close ends is a StateError, not a reply (B90).
+        onError: ends.add,
+      );
       await Future<void>.delayed(const Duration(milliseconds: 200));
       // Close A while its turn is (likely) still streaming.
       await a.close();
       await sub.cancel();
+      expect(ends, everyElement(isA<StateError>()));
 
       final rb = await _ask(b, 'Say hi in one word.');
       print('[multi-session C5] B after A.close-mid-gen = "$rb"');

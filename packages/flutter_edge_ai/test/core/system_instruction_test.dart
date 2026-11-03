@@ -8,6 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// Session stub that implements systemInstruction prepend logic,
 /// mirroring MobileInferenceModelSession / WebModelSession behavior.
 class _SessionWithInstruction implements InferenceModelSession {
+  @override
+  EngineTurn startTurn() => EngineTurn(text: getResponseAsync(), end: null);
+
   final List<Message> addedMessages = [];
   final String? systemInstruction;
   bool _systemInstructionSent = false;

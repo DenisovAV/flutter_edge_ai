@@ -873,4 +873,83 @@ void main() {
     await s.getResponse();
     expect(_text(b.prompts.single), isNot(contains('hidden thought')));
   });
+
+  group('startTurn', () {
+    // ignore: invalid_use_of_protected_member
+    EngineTurn turn(WebModelSession s) => s.startTurn();
+
+    for (final (how, expected) in [
+      ('stop', TurnEnd.stopped),
+      ('close', TurnEnd.closed),
+    ]) {
+      test('a $how mid-turn is $expected, with the partial text', () async {
+        final b = FakeBackend([]);
+        final s = _session(b);
+        await s.addQueryChunk(_user);
+        final t = turn(s);
+        final text = t.text.toList();
+        await pumpEventQueue();
+        b.live!.add('Ban');
+        await pumpEventQueue();
+        if (how == 'stop') {
+          await s.stopGeneration();
+        } else {
+          await s.close();
+        }
+        expect(await text.timeout(const Duration(seconds: 5)), ['Ban']);
+        expect(await t.end, expected);
+      });
+    }
+
+    test('a stop in one turn does not mark the next one stopped', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      final first = turn(s);
+      final firstText = first.text.toList();
+      await pumpEventQueue();
+      b.live!.add('Ban');
+      await pumpEventQueue();
+      await s.stopGeneration();
+      await firstText;
+      expect(await first.end, TurnEnd.stopped);
+
+      b.replies.add('Banana.');
+      await s.addQueryChunk(const Message(text: 'again', isUser: true));
+      final second = turn(s);
+      await second.text.toList();
+      expect(await second.end, TurnEnd.endOfSequence);
+    });
+
+    test('a turn that runs to its end is endOfSequence', () async {
+      final s = _session(FakeBackend(['Banana.']));
+      await s.addQueryChunk(_user);
+      final t = turn(s);
+      expect((await t.text.toList()).join(), 'Banana.');
+      expect(await t.end, TurnEnd.endOfSequence);
+    });
+
+    test('a chat whose session is closed mid-turn keeps the partial reply, '
+        'then throws StateError', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      final chat = InferenceChat(
+        sessionCreator: () async => s,
+        maxTokens: 1024,
+        modelType: ModelType.gemma4,
+      );
+      await chat.initSession();
+      await chat.addQueryChunk(_user);
+      final done = chat.generateChatResponseAsync().toList();
+      await pumpEventQueue();
+      b.live!.add('Ban');
+      await pumpEventQueue();
+      await s.close();
+      await expectLater(
+        done.timeout(const Duration(seconds: 5)),
+        throwsStateError,
+      );
+      expect(chat.fullHistory.last.text, 'Ban');
+    });
+  });
 }

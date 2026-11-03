@@ -17,6 +17,18 @@ class LiteRtLmTurnCancelledException implements Exception {
       'stopped; the conversation answers nothing until it is rebuilt';
 }
 
+/// A turn ended by closing its session or model before anyone asked to stop
+/// it (B90): a [StateError], so a consumer of `getResponseAsync` sees one,
+/// and a type of its own, so the session's `startTurn` can report the close
+/// as `TurnEnd.closed` and end the text cleanly instead.
+class LiteRtLmTurnClosedException extends StateError {
+  LiteRtLmTurnClosedException()
+    : super(
+        'The session was closed during this turn (close(), uninstallModel, '
+        'or a replaced active model); the reply is incomplete.',
+      );
+}
+
 /// One native operation on a conversation — a streamed send or a rewind —
 /// from its start until native has posted its end.
 class NativeTurn {
@@ -130,7 +142,8 @@ class NativeTurns<C extends Object> {
 ///   ([LiteRtLmTurnCancelledException]), never a clean end: it means the
 ///   conversation is poisoned.
 /// - A cancelled end caused by closing the session or model, before anyone
-///   asked to stop, is a [StateError]: the reply is incomplete.
+///   asked to stop, is a [LiteRtLmTurnClosedException] (a [StateError]): the
+///   reply is incomplete.
 /// - A consumer that cancels its subscription asks native to stop and waits
 ///   for native's end, up to [consumerCancelWait]; the operation itself keeps
 ///   running to its end either way.
@@ -162,11 +175,7 @@ class NativeTurnStream<C extends Object> {
   void cancelled() => _end(
     NativeTurnEnd.cancelled,
     error: turn.closedUnderConsumer
-        ? StateError(
-            'The session was closed during this turn (close(), '
-            'uninstallModel, or a replaced active model); the reply is '
-            'incomplete.',
-          )
+        ? LiteRtLmTurnClosedException()
         : turn.cancelRequested
         ? null
         : const LiteRtLmTurnCancelledException(),

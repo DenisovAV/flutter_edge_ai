@@ -12,7 +12,9 @@ import 'package:flutter/foundation.dart';
 import '../litertlm_decision_section.dart';
 import '../option_scoring_self_check.dart';
 import 'litert_lm_client.dart';
-import 'native_turns.dart' show LiteRtLmTurnCancelledException;
+import '../reported_engine_turn.dart';
+import 'native_turns.dart'
+    show LiteRtLmTurnCancelledException, LiteRtLmTurnClosedException;
 
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
@@ -340,6 +342,7 @@ base class FfiInferenceModel extends InferenceModel
         supportImage: enableVisionModality ?? supportImage,
         supportAudio: enableAudioModality ?? supportAudio,
         enableThinking: enableThinking,
+        maxOutputTokens: maxOutputTokens,
         // Identity-guarded so a late close of a superseded session can't
         // null a newer `_session`. Does NOT touch `_createCompleter` —
         // that is owned by the `finally` below, not by session teardown.
@@ -437,6 +440,7 @@ base class FfiInferenceModel extends InferenceModel
       supportImage: enableVisionModality ?? supportImage,
       supportAudio: enableAudioModality ?? supportAudio,
       enableThinking: enableThinking,
+      maxOutputTokens: maxOutputTokens,
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);
@@ -586,6 +590,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     required this.supportImage,
     required this.supportAudio,
     this.enableThinking = false,
+    this.maxOutputTokens,
     required this.onClose,
   });
 
@@ -595,7 +600,13 @@ class FfiInferenceModelSession extends InferenceModelSession
   final bool supportImage;
   final bool supportAudio;
   final bool enableThinking;
+
+  /// The cap on each reply, which decides what a completed turn reports.
+  final int? maxOutputTokens;
   final VoidCallback onClose;
+
+  /// [stopGeneration] was called during the current turn.
+  bool _stopAsked = false;
 
   final StringBuffer _queryBuffer = StringBuffer();
   final List<Uint8List> _pendingImages = [];
@@ -918,7 +929,32 @@ class FfiInferenceModelSession extends InferenceModelSession
 
   @override
   Future<void> stopGeneration() async {
+    _stopAsked = true;
     handle.cancelGeneration();
+  }
+
+  /// How the turn ended, for core's chat: a close the consumer did not ask
+  /// for ends [getResponseAsync] with a [LiteRtLmTurnClosedException]; here
+  /// the text ends cleanly and `end` is [TurnEnd.closed], so the chat keeps
+  /// the partial reply before it raises (decision H).
+  ///
+  /// On LiteRT-LM 0.18 a completed turn cannot tell a natural end from
+  /// `maxOutputTokens`, nor a full context in decode from either: a session
+  /// with a cap reports [TurnEnd.outputLimit] (the safe side), one without
+  /// [TurnEnd.endOfSequence]. Structured output stays refused here until the
+  /// native turn-end record (L1) says which.
+  @override
+  EngineTurn startTurn() {
+    _stopAsked = false;
+    return reportedEngineTurn(
+      getResponseAsync(),
+      stopped: () => _stopAsked,
+      closed: () => _isClosed,
+      isCloseError: (error) => error is LiteRtLmTurnClosedException,
+      completed: maxOutputTokens == null
+          ? TurnEnd.endOfSequence
+          : TurnEnd.outputLimit,
+    );
   }
 
   @override

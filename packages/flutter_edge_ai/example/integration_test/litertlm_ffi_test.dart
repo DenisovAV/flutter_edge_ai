@@ -703,17 +703,31 @@ void main() {
       await a.addQueryChunk(
         const Message(text: 'Count slowly to twenty.', isUser: true),
       );
-      final ends = <Object>[];
-      final sub = a.getResponseAsync().listen(
-        (_) {},
-        // A turn the close ends is a StateError, not a reply (B90).
-        onError: ends.add,
+      final firstChunk = Completer<void>();
+      final ended = Completer<Object?>();
+      a.getResponseAsync().listen(
+        (_) {
+          if (!firstChunk.isCompleted) firstChunk.complete();
+        },
+        // A turn the close ends is a StateError, not a reply (B90): the
+        // virtual session's close goes through NativeTurns.cancelForClose.
+        onError: (Object e) {
+          if (!ended.isCompleted) ended.complete(e);
+        },
+        onDone: () {
+          if (!ended.isCompleted) ended.complete(null);
+        },
       );
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      // Close A while its turn is (likely) still streaming.
+      // Close A once its turn is surely streaming, then wait for the stream's
+      // own end: cancelling first would hide how it ended.
+      await firstChunk.future.timeout(const Duration(seconds: 60));
       await a.close();
-      await sub.cancel();
-      expect(ends, everyElement(isA<StateError>()));
+      final end = await ended.future.timeout(const Duration(seconds: 60));
+      expect(
+        end,
+        isA<StateError>(),
+        reason: 'a 20-count closed after its first chunk ends with the close',
+      );
 
       final rb = await _ask(b, 'Say hi in one word.');
       print('[multi-session C5] B after A.close-mid-gen = "$rb"');

@@ -1,5 +1,6 @@
 ## Unreleased
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and audio.
+- Android: a streamed reply no longer loses chunks while the UI thread is busy.
 
 ## 1.2.6
 - Require `flutter_edge_ai` >=2.3.0 <2.6.0.

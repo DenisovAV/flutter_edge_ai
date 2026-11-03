@@ -347,6 +347,14 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     // Closed while the engine or the conversation was being created: the
     // model has deleted (or is deleting) its engine.
     if (_isClosed) {
+      try {
+        await conversation.delete().toDart;
+      } catch (e) {
+        edgeAiLog(
+          '[LiteRtLmWebInferenceModel] deleting a conversation built while '
+          'the model closed failed: $e',
+        );
+      }
       throw StateError('Model was closed while opening a session');
     }
 
@@ -920,15 +928,10 @@ class LiteRtLmWebSession extends InferenceModelSession
   @override
   Future<int> sizeInTokens(String text) async => (text.length / 2).ceil();
 
-  /// Stops the in-flight generation both locally (closes the Dart stream)
-  /// and upstream (calls `conversation.cancel()` per the @litert-lm/core JS
-  /// API). The cancel call is wrapped in try/catch because the early-preview
-  /// API may throw if no generation is in flight.
   /// How the turn ended, for core's chat: a stop is [TurnEnd.stopped], a
   /// close the consumer did not ask for [TurnEnd.closed] (the chat keeps the
-  /// partial reply, then raises: decision H). A completed turn cannot tell a
-  /// natural end from `maxOutputTokens`: with a cap it reports
-  /// [TurnEnd.outputLimit] (the safe side).
+  /// partial reply, then raises: decision H). A completed turn reports
+  /// [liteRtLmPlaceholderCompletedEnd], a guess.
   @override
   EngineTurn startTurn() {
     _stopAsked = false;
@@ -936,12 +939,14 @@ class LiteRtLmWebSession extends InferenceModelSession
       getResponseAsync(),
       stopped: () => _stopAsked,
       closed: () => _isClosed,
-      completed: maxOutputTokens == null
-          ? TurnEnd.endOfSequence
-          : TurnEnd.outputLimit,
+      completed: liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
     );
   }
 
+  /// Stops the in-flight generation both locally (closes the Dart stream)
+  /// and upstream (calls `conversation.cancel()` per the @litert-lm/core JS
+  /// API). The cancel call is wrapped in try/catch because the early-preview
+  /// API may throw if no generation is in flight.
   @override
   Future<void> stopGeneration() async {
     _stopAsked = true;

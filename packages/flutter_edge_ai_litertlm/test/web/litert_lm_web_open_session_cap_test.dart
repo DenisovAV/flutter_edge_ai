@@ -72,4 +72,43 @@ void main() {
     await model.openSession();
     expect(model.sessions, hasLength(1));
   });
+
+  test('a model closed while openSession builds its conversation deletes '
+      'that conversation and fails the open', () async {
+    final gate = Completer<void>();
+    var deleted = 0;
+    final engine = JSObject()
+      ..['createConversation'] =
+          ((JSAny? options) => gate.future
+                  .then<JSObject>(
+                    (_) => JSObject()
+                      ..['cancel'] = (() {}).toJS
+                      ..['delete'] = (() {
+                        deleted++;
+                        return Future<void>.value().toJS;
+                      }).toJS,
+                  )
+                  .toJS)
+              .toJS
+      ..['delete'] = (() {}).toJS;
+    globalContext['litertLmReady'] = Future<void>.value().toJS;
+    globalContext['Engine'] = JSObject()
+      ..['create'] = ((JSAny? options) => Future<JSObject>.value(
+        engine,
+      ).toJS).toJS;
+
+    final model = LiteRtLmWebInferenceModel(
+      sourceResolver: _Resolver(),
+      maxTokens: 1024,
+      modelType: ModelType.gemmaIt,
+      onClose: () {},
+    );
+    final open = model.openSession();
+    await pumpEventQueue();
+    await model.close();
+    gate.complete();
+    await expectLater(open, throwsStateError);
+    expect(deleted, 1);
+    expect(model.sessions, isEmpty);
+  });
 }

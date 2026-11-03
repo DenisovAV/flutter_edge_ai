@@ -57,6 +57,10 @@ extension type LiteRtLmConversation._(JSObject _) implements JSObject {
   /// Cancels an in-flight `sendMessageStreaming` generation upstream.
   /// Per the @litert-lm/core JS API.
   external void cancel();
+
+  /// Frees the conversation (`Conversation.delete(): Promise<void>` in
+  /// @litert-lm/core 0.18.0).
+  external JSPromise<JSAny?> delete();
 }
 
 /// Convenience extension to call `iter.next()` on a JS AsyncIterator

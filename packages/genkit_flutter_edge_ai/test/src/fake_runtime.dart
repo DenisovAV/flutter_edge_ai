@@ -226,9 +226,8 @@ class FakeInferenceChat extends gemma.InferenceChat {
   gemma.SessionMetrics? sessionMetrics;
 
   @override
-  gemma.InferenceModelSession get session => closeCallCount > 0
-      ? throw StateError('FakeInferenceChat is closed')
-      : _MetricsSession(sessionMetrics);
+  gemma.InferenceModelSession get session =>
+      _MetricsSession(sessionMetrics, closed: closeCallCount > 0);
 
   @override
   Future<void> initSession() async {
@@ -419,13 +418,19 @@ final class FakeEmbeddingModel extends gemma.EmbeddingModel {
 /// A session that only reports its metrics, and fails to when it has none,
 /// as on an engine that reports nothing.
 class _MetricsSession implements gemma.InferenceModelSession {
-  _MetricsSession(this.metrics);
+  _MetricsSession(this.metrics, {required this.closed});
 
   final gemma.SessionMetrics? metrics;
 
+  /// The chat was closed: a closed session reports nothing.
+  final bool closed;
+
   @override
-  gemma.SessionMetrics getSessionMetrics() =>
-      metrics ?? (throw StateError('FakeInferenceChat has no session metrics'));
+  gemma.SessionMetrics getSessionMetrics() {
+    if (closed) throw StateError('FakeInferenceChat is closed');
+    return metrics ??
+        (throw StateError('FakeInferenceChat has no session metrics'));
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

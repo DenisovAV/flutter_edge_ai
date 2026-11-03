@@ -339,6 +339,118 @@ void main() {
     });
   });
 
+  group('a cancelled subscription is a stop', () {
+    test('it cancels its call and keeps the partial reply in the '
+        'history', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      final sub = s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      b.live!.add('Bana');
+      await Future<void>.delayed(Duration.zero);
+
+      await sub.cancel();
+      expect(b.cancelled, [b.calls.single]);
+      await Future<void>.delayed(Duration.zero);
+      expect(s.pendingCalls, 0);
+
+      b.replies.add('x');
+      await s.addQueryChunk(const Message(text: 'next', isUser: true));
+      await s.getResponse();
+      expect(_text(b.prompts.last), contains('<|turn>model\nBana<turn|>'));
+      expect(_text(b.prompts.last), contains('next'));
+    });
+
+    test('the other session\'s queued call runs next', () async {
+      final b = SharedBackend();
+      final a = _session(b);
+      final other = _session(b);
+      await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+      await other.addQueryChunk(const Message(text: 'QB', isUser: true));
+      final sub = a.getResponseAsync().listen((_) {});
+      final otherText = other.getResponseAsync().join();
+      await Future<void>.delayed(Duration.zero);
+      expect(b.started, hasLength(1));
+
+      await sub.cancel();
+      expect(b.cancelled, 1);
+      await Future<void>.delayed(Duration.zero);
+      expect(b.started, hasLength(2));
+      b.live.last.add('B');
+      await b.live.last.close();
+      expect(await otherText, 'B');
+    });
+
+    test('a call still waiting never starts', () async {
+      final b = SharedBackend();
+      final a = _session(b);
+      final other = _session(b);
+      await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+      await other.addQueryChunk(const Message(text: 'QB', isUser: true));
+      final aText = a.getResponseAsync().join();
+      final sub = other.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+
+      await sub.cancel();
+      expect(b.cancelled, 0, reason: "the running call is a's");
+      b.live.single.add('A');
+      await b.live.single.close();
+      expect(await aText, 'A');
+      await Future<void>.delayed(Duration.zero);
+      expect(b.started, hasLength(1));
+      expect(other.pendingCalls, 0);
+    });
+
+    test('a call waiting for this session\'s stopped one never '
+        'starts', () async {
+      final b = FakeBackend([])..endOnCancel = false;
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      await s.stopGeneration(); // the stopped call is still ending
+      await s.addQueryChunk(const Message(text: 'go on', isUser: true));
+      final sub = s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      await sub.cancel();
+      await b.live!.close();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(b.prompts, hasLength(1), reason: 'the cancelled call never ran');
+      expect(s.pendingCalls, 0);
+    });
+
+    test('through startTurn: the end is stopped and the call is '
+        'cancelled', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      // ignore: invalid_use_of_protected_member
+      final turn = s.startTurn();
+      final sub = turn.text.listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      b.live!.add('ab');
+      await Future<void>.delayed(Duration.zero);
+      await sub.cancel();
+      expect(await turn.end, TurnEnd.stopped);
+      expect(b.cancels, 1);
+    });
+
+    test('a newer call that replaces the stream is not a stop', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      final first = b.live!;
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      expect(b.cancels, 0);
+      await first.close();
+    });
+  });
+
   group('a closed session', () {
     test('does not cancel the generation of the live one', () async {
       final b = FakeBackend([]);

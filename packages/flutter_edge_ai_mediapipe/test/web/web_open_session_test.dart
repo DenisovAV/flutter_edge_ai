@@ -180,6 +180,18 @@ void main() {
     expect(fake.closed, hasLength(fake.created.length));
   });
 
+  test('openChat takes the model\'s own type unless one is passed', () async {
+    fakeMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final own = await model.openChat();
+    final passed = await model.openChat(modelType: ModelType.qwen);
+    expect(own.modelType, ModelType.gemma4);
+    expect(passed.modelType, ModelType.qwen);
+    await own.close();
+    await passed.close();
+    await model.close();
+  });
+
   test('openChat runs a chat on its own session', () async {
     final fake = fakeMediaPipe();
     final model = testModel(supportImage: false, resolver: BlobResolver());

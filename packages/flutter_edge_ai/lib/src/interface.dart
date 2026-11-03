@@ -801,9 +801,10 @@ abstract class InferenceModelSession {
   ///
   /// To stop generating early, prefer [stopGeneration] — it reaches the native
   /// engine and stops it decoding on every engine. `cancel()`ing the
-  /// [StreamSubscription] also stops native decoding on the `.litertlm` FFI
-  /// engine, but on other engines it only detaches the Dart side while native
-  /// keeps decoding, so [stopGeneration] is the portable choice.
+  /// [StreamSubscription] also stops decoding on the `.litertlm` FFI engine
+  /// and on MediaPipe web, but on other engines it only detaches the Dart
+  /// side while native keeps decoding, so [stopGeneration] is the portable
+  /// choice.
   ///
   /// Silently *abandoning* the stream (dropping the subscription without
   /// cancelling, so it is only GC'd) cannot be intercepted on any engine — the

@@ -92,6 +92,30 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     ..._openSessions,
   ];
 
+  /// [openChat]'s unset model type is this model's own, as on every other
+  /// engine. The rest keeps core's defaults, as the web [createChat] does.
+  @override
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) =>
+      ResolvedChatRequest(
+        modelType: request.modelType ?? modelType,
+        supportImage: request.supportImage ?? false,
+        supportAudio: request.supportAudio ?? false,
+        supportsFunctionCalls: request.supportsFunctionCalls ?? false,
+        tools: request.tools,
+        maxFunctionBufferLength:
+            request.maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
+        temperature: request.temperature,
+        randomSeed: request.randomSeed,
+        topK: request.topK,
+        topP: request.topP,
+        tokenBuffer: request.tokenBuffer,
+        loraPath: request.loraPath,
+        enableThinking: request.enableThinking,
+        toolChoice: request.toolChoice,
+        systemInstruction: request.systemInstruction,
+        maxOutputTokens: request.maxOutputTokens,
+      );
+
   @override
   Future<InferenceModelSession> createSession({
     double? temperature,

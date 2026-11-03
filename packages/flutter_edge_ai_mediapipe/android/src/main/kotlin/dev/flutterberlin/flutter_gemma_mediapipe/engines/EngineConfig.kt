@@ -2,6 +2,7 @@ package dev.flutterberlin.flutter_gemma_mediapipe.engines
 
 import dev.flutterberlin.flutter_gemma_mediapipe.PreferredBackend
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 
 /**
@@ -33,10 +34,16 @@ data class SessionConfig(
 
 /**
  * Helper to create SharedFlow instances with consistent configuration.
+ *
+ * The buffer is unbounded and never drops: generation callbacks `tryEmit`
+ * each chunk while the collector waits for the main thread to hand the
+ * previous one to Dart, so a bounded drop-oldest buffer lost chunks whenever
+ * the UI thread was busy, and the turn still ended as done. A chunk is a few
+ * characters, and a turn emits at most a few thousand.
  */
 object FlowFactory {
     fun <T> createSharedFlow(): MutableSharedFlow<T> = MutableSharedFlow(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        extraBufferCapacity = Channel.UNLIMITED,
+        onBufferOverflow = BufferOverflow.SUSPEND
     )
 }

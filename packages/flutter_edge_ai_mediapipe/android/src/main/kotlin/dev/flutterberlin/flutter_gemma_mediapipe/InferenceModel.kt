@@ -8,6 +8,7 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import java.io.File
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.*
@@ -45,14 +46,16 @@ class InferenceModel(
     val llmInference: LlmInference
 
     private val _partialResults = MutableSharedFlow<Pair<String, Boolean>>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        // Unbounded, never dropping: see FlowFactory.createSharedFlow.
+        extraBufferCapacity = Channel.UNLIMITED,
+        onBufferOverflow = BufferOverflow.SUSPEND
     )
     val partialResults: SharedFlow<Pair<String, Boolean>> = _partialResults.asSharedFlow()
 
     private val _errors = MutableSharedFlow<Throwable>(
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+        // Unbounded, never dropping: see FlowFactory.createSharedFlow.
+        extraBufferCapacity = Channel.UNLIMITED,
+        onBufferOverflow = BufferOverflow.SUSPEND
     )
     val errors: SharedFlow<Throwable> = _errors.asSharedFlow()
 

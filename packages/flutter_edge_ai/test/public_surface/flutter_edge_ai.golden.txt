@@ -145,6 +145,7 @@ TtsInstallationBuilder class
 TtsModelSpec class
 TtsModelType enum
 TtsVariant class abstract base
+TurnEnd enum
 UnauthorizedError class final
 UnknownError class final
 UnsupportedEmbeddingCombinationException class final

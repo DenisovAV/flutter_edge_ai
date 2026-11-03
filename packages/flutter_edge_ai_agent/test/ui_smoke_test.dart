@@ -6,10 +6,12 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/noop_session.dart';
+
 /// Minimal [InferenceChat] so an [AgentSession] (and thus [AgentChatView]) can
 /// be constructed without a real model — mirrors `agent_session_test.dart`.
 class _FakeChat extends InferenceChat {
-  _FakeChat() : super(sessionCreator: null, maxTokens: 1024);
+  _FakeChat({super.turnHooks}) : super(sessionCreator: null, maxTokens: 1024);
 
   @override
   Future<void> initSession() async {}
@@ -21,10 +23,17 @@ class _FakeChat extends InferenceChat {
 /// A [_FakeChat] whose generations follow a script, one list of responses per
 /// generation, so [AgentChatView] can be driven through a whole turn.
 class _ScriptedChat extends _FakeChat {
-  _ScriptedChat(this._generations);
+  _ScriptedChat(List<List<ModelResponse>> generations)
+    : super(turnHooks: ScriptedTurnHooks(_inOrder(generations))) {
+    session = NoopSession();
+  }
 
-  final List<List<ModelResponse>> _generations;
-  int _next = 0;
+  static Stream<ModelResponse> Function() _inOrder(
+    List<List<ModelResponse>> generations,
+  ) {
+    var next = 0;
+    return () => Stream.fromIterable(generations[next++]);
+  }
 
   @override
   Future<void> addQueryChunk(
@@ -32,10 +41,6 @@ class _ScriptedChat extends _FakeChat {
     bool noTool = false,
     bool prefix = false,
   ]) async {}
-
-  @override
-  Stream<ModelResponse> generateChatResponseAsync() =>
-      Stream.fromIterable(_generations[_next++]);
 }
 
 /// A `SkillExecutor` handling one [SkillType] so the session resolves an

@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// Every path through which `InferenceChat` records a tool call stores the
 /// calls it returned, beside the text it has always stored.
 class _Session implements InferenceModelSession, RawSdkResponseSession {
+  @override
+  EngineTurn startTurn() => EngineTurn(text: getResponseAsync(), end: null);
+
   _Session(this.tokens, this.raw);
 
   final List<String> tokens;

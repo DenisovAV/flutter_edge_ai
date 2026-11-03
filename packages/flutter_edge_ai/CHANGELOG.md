@@ -1,3 +1,9 @@
+## Unreleased
+- Engine SPI: `openEngineSession`, `resolveChatRequest`, `ChatTurnHooks`; `openSession`, `openChat` and chat turns are `@nonVirtual`.
+- `openChat` fills unset values with the model's own, as `createChat` does.
+- A chat turn ended by a close the app did not ask for ends with a `StateError`.
+- A chat's failed token count or session rebuild is the turn's error, not a log line.
+
 ## 2.5.6
 - `createModel` stays deprecated until 3.0.0, not 2.6.0 (#768).
 - Skills: native ONNX `openSession`/`openChat` (onnx 0.8.0) and memory diagnostics on Windows.

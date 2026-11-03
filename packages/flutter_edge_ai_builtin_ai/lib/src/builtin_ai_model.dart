@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart'
     show
+        ChatRequest,
         CloseNotifier,
         InferenceChat,
         InferenceModel,
@@ -11,7 +12,9 @@ import 'package:flutter_edge_ai/engine.dart'
         ModelFileType,
         ModelType,
         PreferredBackend,
+        ResolvedChatRequest,
         SamplingParams,
+        SessionRequest,
         Tool,
         ToolChoice,
         defaultMaxFunctionBufferLength,
@@ -171,8 +174,10 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
   InferenceModelSession? get session => _session;
 
   @override
-  List<InferenceModelSession> get sessions =>
-      List.unmodifiable([?_session, ..._openSessions]);
+  List<InferenceModelSession> get engineSessions => [
+    ?_session,
+    ..._openSessions,
+  ];
 
   Future<BuiltInAiSession> _newSession({
     required double? temperature,
@@ -305,19 +310,21 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
   }
 
   @override
-  Future<InferenceModelSession> openSession({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    String? loraPath,
-    bool? enableVisionModality,
-    bool? enableAudioModality,
-    String? systemInstruction,
-    bool enableThinking = false,
-    List<Tool> tools = const [],
-    int? maxOutputTokens,
-  }) async {
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    final SessionRequest(
+      :temperature,
+      :randomSeed,
+      :topK,
+      :topP,
+      :loraPath,
+      :enableVisionModality,
+      :enableAudioModality,
+      :systemInstruction,
+      :enableThinking,
+      :maxOutputTokens,
+    ) = request;
     if (loraPath != null) {
       throw UnsupportedError('LoRA is not exposed by this engine.');
     }
@@ -340,6 +347,34 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
     );
     _openSessions.add(created);
     return created;
+  }
+
+  /// [openChat]'s unset values are this model's own, as [createChat] fills
+  /// them; audio is refused, as there.
+  @override
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) {
+    if (request.supportAudio == true) {
+      throw UnsupportedError('Audio is not supported by built-in OS models');
+    }
+    return ResolvedChatRequest(
+      modelType: request.modelType ?? modelType,
+      supportImage: request.supportImage ?? supportImage,
+      supportAudio: false,
+      supportsFunctionCalls: request.supportsFunctionCalls ?? false,
+      tools: request.tools,
+      maxFunctionBufferLength:
+          request.maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
+      temperature: request.temperature,
+      randomSeed: request.randomSeed,
+      topK: request.topK,
+      topP: request.topP,
+      tokenBuffer: request.tokenBuffer,
+      loraPath: request.loraPath,
+      enableThinking: request.enableThinking,
+      toolChoice: request.toolChoice,
+      systemInstruction: request.systemInstruction ?? systemInstruction,
+      maxOutputTokens: request.maxOutputTokens,
+    );
   }
 
   @override

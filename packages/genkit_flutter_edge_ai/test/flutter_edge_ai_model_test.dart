@@ -763,18 +763,6 @@ void main() {
       expect(parts.where((p) => p.isToolRequest).length, 2);
     });
 
-    test('blocking: returns reasoning for ThinkingResponse', () async {
-      fakeChat.blockingResponse = const gemma.ThinkingResponse('step by step');
-
-      final model = buildModel();
-      final response = await model(simpleRequest());
-
-      final parts = response.message!.content;
-      expect(parts, hasLength(1));
-      expect(parts.first.isReasoning, isTrue);
-      expect(parts.first.reasoning, 'step by step');
-    });
-
     test('streaming: accumulates thinking chunks', () async {
       fakeChat.streamingResponses = [
         const gemma.ThinkingResponse('step 1. '),

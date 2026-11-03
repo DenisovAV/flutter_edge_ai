@@ -113,6 +113,50 @@ void main() {
       );
     });
 
+    test('a turn ended by closing its conversation, before any stop, is a '
+        'StateError (B90): the reply is incomplete, not done', () async {
+      final send = NativeTurnStream(turns, 'a');
+      final out = send.stream.toList();
+      send.chunk('Hi');
+      turns.release('a');
+      send.cancelled();
+      await expectLater(out, throwsA(isA<StateError>()));
+      expect(log, ['cancel a', 'delete a']);
+    });
+
+    test('cancelForClose (a virtual session closing) ends a running turn '
+        'with a StateError too, without deleting the conversation', () async {
+      final send = NativeTurnStream(turns, 'a');
+      final out = send.stream.toList();
+      turns.cancelForClose('a');
+      send.cancelled();
+      await expectLater(out, throwsA(isA<StateError>()));
+      expect(log, ['cancel a']);
+    });
+
+    test('a close after the consumer\'s own stop keeps the clean end: the '
+        'consumer asked first', () async {
+      final send = NativeTurnStream(turns, 'a');
+      final out = send.stream.toList();
+      send.chunk('Hi');
+      turns.cancel('a');
+      turns.release('a');
+      send.cancelled();
+      expect(await out, ['Hi']);
+    });
+
+    test(
+      'a turn that native completes before a close lands is a reply',
+      () async {
+        final send = NativeTurnStream(turns, 'a');
+        final out = send.stream.toList();
+        send.chunk('Hi');
+        turns.release('a');
+        send.finished();
+        expect(await out, ['Hi']);
+      },
+    );
+
     test('a chunk after a stop repeats the cancel', () {
       final send = NativeTurnStream(turns, 'a');
       send.stream.listen(null);

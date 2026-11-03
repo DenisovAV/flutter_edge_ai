@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter_edge_ai/engine.dart' show ChatTurnHooks;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_runtime.dart';
 
@@ -173,19 +174,46 @@ class FakeInferenceModel extends gemma.InferenceModel {
 }
 
 /// Fake chat that returns preconfigured responses.
+///
+/// Core runs both generation paths through one [ChatTurnHooks.responses], so
+/// whichever of [blockingResponse] and [streamingResponses] a test assigned
+/// last is what every turn produces; [generateChatResponse] collects it.
 class FakeInferenceChat extends gemma.InferenceChat {
-  FakeInferenceChat() : super(sessionCreator: null, maxTokens: 1024);
+  FakeInferenceChat() : this._(_FakeTurns());
 
-  /// Response returned by [generateChatResponse].
-  gemma.ModelResponse blockingResponse = const gemma.TextResponse(
+  FakeInferenceChat._(this._turns)
+    : super(sessionCreator: null, maxTokens: 1024, turnHooks: _turns) {
+    _turns.chat = this;
+  }
+
+  final _FakeTurns _turns;
+
+  /// The turn when a test scripted it as one response, as a blocking call
+  /// returns it.
+  gemma.ModelResponse get blockingResponse => _blockingResponse;
+  set blockingResponse(gemma.ModelResponse response) {
+    _blockingResponse = response;
+    _streamed = false;
+  }
+
+  gemma.ModelResponse _blockingResponse = const gemma.TextResponse(
     'fake response',
   );
 
-  /// Responses yielded by [generateChatResponseAsync].
-  List<gemma.ModelResponse> streamingResponses = [
+  /// The turn when a test scripted it as chunks, as a stream yields them.
+  List<gemma.ModelResponse> get streamingResponses => _streamingResponses;
+  set streamingResponses(List<gemma.ModelResponse> responses) {
+    _streamingResponses = responses;
+    _streamed = true;
+  }
+
+  List<gemma.ModelResponse> _streamingResponses = [
     const gemma.TextResponse('fake '),
     const gemma.TextResponse('response'),
   ];
+
+  /// Which script was assigned last; the defaults read the same either way.
+  bool _streamed = false;
 
   /// Messages received via [addQueryChunk].
   final List<gemma.Message> receivedMessages = [];
@@ -198,13 +226,9 @@ class FakeInferenceChat extends gemma.InferenceChat {
   gemma.SessionMetrics? sessionMetrics;
 
   @override
-  gemma.InferenceModelSession get session => switch (sessionMetrics) {
-    _ when closeCallCount > 0 => throw StateError(
-      'FakeInferenceChat is closed',
-    ),
-    final metrics? => _MetricsSession(metrics),
-    null => throw StateError('FakeInferenceChat has no session'),
-  };
+  gemma.InferenceModelSession get session => closeCallCount > 0
+      ? throw StateError('FakeInferenceChat is closed')
+      : _MetricsSession(sessionMetrics);
 
   @override
   Future<void> initSession() async {
@@ -240,18 +264,26 @@ class FakeInferenceChat extends gemma.InferenceChat {
   /// When set, the next [generateChatResponse] fails with it (once).
   Object? generationError;
 
-  /// Called as [generateChatResponse] starts.
+  /// Called as a turn scripted with [blockingResponse] starts.
   void Function()? onGenerate;
 
-  @override
-  Future<gemma.ModelResponse> generateChatResponse() async {
+  Stream<gemma.ModelResponse> _turn() async* {
+    if (_streamed) {
+      for (final (index, response) in streamingResponses.indexed) {
+        yield response;
+        // With a gate, the stream pauses after its first chunk until the
+        // gate opens, so a test can cancel mid-stream.
+        if (index == 0) await generationGate?.future;
+      }
+      return;
+    }
     onGenerate?.call();
     await generationGate?.future;
     if (generationError case final error?) {
       generationError = null;
       throw error;
     }
-    return blockingResponse;
+    yield blockingResponse;
   }
 
   /// When true, [stopGeneration] throws before returning its future.
@@ -273,16 +305,6 @@ class FakeInferenceChat extends gemma.InferenceChat {
     if (stopError case final error?) throw error;
   }
 
-  @override
-  Stream<gemma.ModelResponse> generateChatResponseAsync() async* {
-    for (final (index, response) in streamingResponses.indexed) {
-      yield response;
-      // With a gate, the stream pauses after its first chunk until the gate
-      // opens, so a test can cancel mid-stream.
-      if (index == 0) await generationGate?.future;
-    }
-  }
-
   /// Closes that have completed, failed ones included. A close completes a
   /// turn of the event loop after it is called, so a caller that does not
   /// await it is caught counting zero.
@@ -297,6 +319,17 @@ class FakeInferenceChat extends gemma.InferenceChat {
     closeCallCount++;
     if (closeError case final error?) throw error;
   }
+}
+
+/// The turns of a [FakeInferenceChat], as core's chat asks for them.
+final class _FakeTurns extends ChatTurnHooks {
+  late final FakeInferenceChat chat;
+
+  @override
+  Stream<gemma.ModelResponse> responses(
+    gemma.InferenceModelSession session, {
+    required int tokenBuffer,
+  }) => chat._turn();
 }
 
 /// Fake embedding model in the shape core 2.3 requires of a fake: a `final
@@ -383,14 +416,16 @@ final class FakeEmbeddingModel extends gemma.EmbeddingModel {
   }
 }
 
-/// A session that only reports its metrics.
+/// A session that only reports its metrics, and fails to when it has none,
+/// as on an engine that reports nothing.
 class _MetricsSession implements gemma.InferenceModelSession {
   _MetricsSession(this.metrics);
 
-  final gemma.SessionMetrics metrics;
+  final gemma.SessionMetrics? metrics;
 
   @override
-  gemma.SessionMetrics getSessionMetrics() => metrics;
+  gemma.SessionMetrics getSessionMetrics() =>
+      metrics ?? (throw StateError('FakeInferenceChat has no session metrics'));
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

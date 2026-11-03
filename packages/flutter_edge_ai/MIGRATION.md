@@ -4,6 +4,12 @@
 
 ### `implements InferenceModel`
 
+A class that `implements InferenceModel` declares two new members,
+`readDecisionSection` and `openOptionScorer`: fail both with
+`DeciderUnsupportedException`. A class that `extends InferenceModel` inherits
+defaults that do. An engine that mixed in `OptionScoringModel`, which is
+removed, drops the mixin and keeps its two overrides.
+
 A class that `implements InferenceModel` declares four new members, all in
 `package:flutter_edge_ai/engine.dart`: `openEngineSession(SessionRequest)`
 (fail it with `UnsupportedError` if the class opens no sessions),

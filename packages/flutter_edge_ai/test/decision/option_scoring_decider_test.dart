@@ -493,7 +493,7 @@ void main() {
             (e) => e.message,
             'message',
             allOf(
-              contains('does not score options'),
+              startsWith('This model does not score options'),
               contains('EmbeddingModel.createDecider'),
             ),
           ),

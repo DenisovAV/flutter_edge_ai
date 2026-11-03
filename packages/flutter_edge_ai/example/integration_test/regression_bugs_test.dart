@@ -699,7 +699,9 @@ void main() {
         );
 
         final stream = session.getResponseAsync();
-        final completer = Completer<void>();
+        // How the stream itself ended: its error, or null for done. The
+        // close returning is not the end.
+        final completer = Completer<Object?>();
         var receivedAny = false;
 
         final sub = stream.listen(
@@ -708,22 +710,19 @@ void main() {
               receivedAny = true;
               // Mid-stream close — this races with native generation.
               // Schedule async to avoid reentry into the stream.
-              Future.microtask(() async {
-                await session.close();
-                if (!completer.isCompleted) completer.complete();
-              });
+              Future.microtask(session.close);
             }
           },
-          onError: (_) {
-            if (!completer.isCompleted) completer.complete();
+          onError: (Object e) {
+            if (!completer.isCompleted) completer.complete(e);
           },
           onDone: () {
-            if (!completer.isCompleted) completer.complete();
+            if (!completer.isCompleted) completer.complete(null);
           },
           cancelOnError: true,
         );
 
-        await completer.future.timeout(
+        final end = await completer.future.timeout(
           const Duration(seconds: 60),
           onTimeout: () {
             throw StateError(
@@ -737,6 +736,8 @@ void main() {
           isTrue,
           reason: 'Stream emitted at least one chunk before close.',
         );
+        // A 'long story' closed after its first chunk is cut short (B90).
+        expect(end, isA<StateError>());
       } finally {
         await model.close();
       }

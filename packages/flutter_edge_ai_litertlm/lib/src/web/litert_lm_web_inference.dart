@@ -15,6 +15,7 @@ import 'package:mutex/mutex.dart';
 import 'litert_lm_page_lock.dart';
 import 'litert_lm_web.dart';
 import '../ffi/engine_sampler_latch.dart';
+import '../reported_engine_turn.dart';
 import '../thinking_context.dart';
 import 'litert_lm_web_session_config.dart';
 
@@ -258,6 +259,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         generationMutex: generationMutex,
         onGeneration: () =>
             _noteGeneration(sampling, explicit: !explicit.isEmpty),
+        maxOutputTokens: maxOutputTokens,
         onClose: () {
           _session = null;
           _createCompleter = null;
@@ -342,6 +344,11 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
     } finally {
       _openingSessions--;
     }
+    // Closed while the engine or the conversation was being created: the
+    // model has deleted (or is deleting) its engine.
+    if (_isClosed) {
+      throw StateError('Model was closed while opening a session');
+    }
 
     late final LiteRtLmWebSession session;
     session = LiteRtLmWebSession(
@@ -351,6 +358,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       generationMutex: generationMutex,
       onGeneration: () =>
           _noteGeneration(sampling, explicit: !explicit.isEmpty),
+      maxOutputTokens: maxOutputTokens,
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);
@@ -554,6 +562,7 @@ class LiteRtLmWebSession extends InferenceModelSession
     required this.generationMutex,
     required this.onClose,
     this.onGeneration,
+    this.maxOutputTokens,
   });
 
   final LiteRtLmConversation conversation;
@@ -568,6 +577,12 @@ class LiteRtLmWebSession extends InferenceModelSession
 
   /// Called after each message is sent, for the owning model's sampler latch.
   final VoidCallback? onGeneration;
+
+  /// The cap on each reply, which decides what a completed turn reports.
+  final int? maxOutputTokens;
+
+  /// [stopGeneration] was called during the current turn.
+  bool _stopAsked = false;
 
   final StringBuffer _queryBuffer = StringBuffer();
   bool _isClosed = false;
@@ -909,8 +924,27 @@ class LiteRtLmWebSession extends InferenceModelSession
   /// and upstream (calls `conversation.cancel()` per the @litert-lm/core JS
   /// API). The cancel call is wrapped in try/catch because the early-preview
   /// API may throw if no generation is in flight.
+  /// How the turn ended, for core's chat: a stop is [TurnEnd.stopped], a
+  /// close the consumer did not ask for [TurnEnd.closed] (the chat keeps the
+  /// partial reply, then raises: decision H). A completed turn cannot tell a
+  /// natural end from `maxOutputTokens`: with a cap it reports
+  /// [TurnEnd.outputLimit] (the safe side).
+  @override
+  EngineTurn startTurn() {
+    _stopAsked = false;
+    return reportedEngineTurn(
+      getResponseAsync(),
+      stopped: () => _stopAsked,
+      closed: () => _isClosed,
+      completed: maxOutputTokens == null
+          ? TurnEnd.endOfSequence
+          : TurnEnd.outputLimit,
+    );
+  }
+
   @override
   Future<void> stopGeneration() async {
+    _stopAsked = true;
     _isCancelled = true;
     try {
       conversation.cancel();

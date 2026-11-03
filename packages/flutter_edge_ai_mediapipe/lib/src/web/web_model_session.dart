@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
 
+import '../reported_engine_turn.dart';
 import 'web_prompt.dart';
 
 /// What the session needs from `LlmInference`: a stateless call that takes
@@ -454,8 +455,26 @@ class WebModelSession extends InferenceModelSession {
     }
   }
 
+  /// [stopGeneration] was called during the current turn.
+  bool _stopAsked = false;
+
+  /// How the turn ended, for core's chat: a stop is [TurnEnd.stopped], a
+  /// close the consumer did not ask for [TurnEnd.closed], so the chat keeps
+  /// the partial reply (decision H). MediaPipe has no output cap here.
+  @override
+  EngineTurn startTurn() {
+    _stopAsked = false;
+    return reportedEngineTurn(
+      getResponseAsync(),
+      stopped: () => _stopAsked,
+      closed: () => _closed,
+      completed: TurnEnd.endOfSequence,
+    );
+  }
+
   @override
   Future<void> stopGeneration() async {
+    _stopAsked = true;
     // The backend is shared with the other sessions of the model, so it is
     // cancelled only for a call of this session: a stop on an idle or closed
     // session must not end the generation of the live one.

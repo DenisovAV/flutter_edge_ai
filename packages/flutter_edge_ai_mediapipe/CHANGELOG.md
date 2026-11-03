@@ -2,6 +2,7 @@
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and audio.
 - Android: a streamed reply no longer loses chunks while the UI thread is busy.
 - A turn that fails or is stopped before any text is taken out of the session, as the chat takes it back.
+- Web: `openSession` and `openChat` open sessions of their own over the loaded model.
 
 ## 1.2.6
 - Require `flutter_edge_ai` >=2.3.0 <2.6.0.

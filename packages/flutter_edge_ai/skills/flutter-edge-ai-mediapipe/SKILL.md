@@ -36,7 +36,7 @@ await FlutterEdgeAi.installModel(
 final InferenceModel model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 ```
 
-Sessions, chats, streaming and the common traps work as in the flutter-edge-ai-inference skill — except that `openSession` / `openChat` (its concurrent-conversation pattern) work on Android and iOS only; on web they throw `UnsupportedError`.
+Sessions, chats, streaming and the common traps work as in the flutter-edge-ai-inference skill — except that on web the `openSession` / `openChat` sessions (its concurrent-conversation pattern) share the one loaded `LlmInference`: their turns run one at a time, each resends that session's whole conversation, and the sampling is the one the first session loaded the model with.
 
 ## iOS
 

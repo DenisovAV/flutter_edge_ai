@@ -57,6 +57,7 @@ WebInferenceModel testModel({
   required bool supportImage,
   bool supportAudio = false,
   WebModelSourceResolver? resolver,
+  int? maxConcurrentSessions,
 }) => WebInferenceModel(
   modelType: ModelType.gemma4,
   onClose: () {},
@@ -65,6 +66,7 @@ WebInferenceModel testModel({
   supportImage: supportImage,
   supportAudio: supportAudio,
   maxNumImages: supportImage ? 4 : null,
+  maxConcurrentSessions: maxConcurrentSessions,
 );
 
 /// Stands in for the page's MediaPipe globals for the rest of the test.
@@ -109,19 +111,29 @@ fakeMediaPipe() {
 }
 
 /// Like [fakeMediaPipe], but generateResponse answers only when the test says
-/// so: `calls` holds one completer per call made, in order.
-({List<Completer<String>> calls, JSObject instance}) heldMediaPipe() {
+/// so: `calls` holds one completer per call made, in order, and `prompts` the
+/// prompt of each. `cancels` counts the cancelProcessing calls.
+({
+  List<Completer<String>> calls,
+  List<JSAny> prompts,
+  JSObject instance,
+  List<void> cancels,
+})
+heldMediaPipe() {
   final calls = <Completer<String>>[];
+  final prompts = <JSAny>[];
+  final cancels = <void>[];
   final instance = JSObject()
     ..setProperty(
       'generateResponse'.toJS,
       ((JSAny prompt, JSAny? _) {
         final call = Completer<String>();
         calls.add(call);
+        prompts.add(prompt);
         return call.future.then((text) => text.toJS).toJS;
       }).toJS,
     )
-    ..setProperty('cancelProcessing'.toJS, (() {}).toJS)
+    ..setProperty('cancelProcessing'.toJS, (() => cancels.add(null)).toJS)
     ..setProperty('close'.toJS, (() {}).toJS);
   replaceGlobal(
     'FilesetResolver',
@@ -139,7 +151,7 @@ fakeMediaPipe() {
       ).toJS).toJS,
     ),
   );
-  return (calls: calls, instance: instance);
+  return (calls: calls, prompts: prompts, instance: instance, cancels: cancels);
 }
 
 /// Sets globalThis[name] for the rest of the test, then puts back what was

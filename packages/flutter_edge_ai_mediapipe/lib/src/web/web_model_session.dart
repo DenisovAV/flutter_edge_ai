@@ -7,29 +7,37 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
 
 import '../reported_engine_turn.dart';
+import 'web_llm_lane.dart';
 import 'web_prompt.dart';
 
+export 'web_llm_lane.dart' show WebLlmCall;
+
 /// What the session needs from `LlmInference`: a stateless call that takes
-/// the whole prompt.
+/// the whole prompt. Every session of the model shares one backend, which
+/// runs their calls one at a time, in the order they were made.
 abstract interface class WebLlmBackend {
   /// The number of tokens in [text].
   Future<int> sizeInTokens(String text);
 
-  /// Runs [prompt] and returns the reply; a call stopped before it started
-  /// returns an empty one.
-  Future<String> generate(List<PromptPart> prompt);
+  /// Runs [prompt] as [call] and returns the reply; a call stopped before it
+  /// started returns an empty one.
+  Future<String> generate(List<PromptPart> prompt, WebLlmCall call);
 
-  /// Runs [prompt] and streams the reply, in pieces that add up to it. A
-  /// failure is an error on the stream.
-  Stream<String> generateStream(List<PromptPart> prompt);
+  /// Runs [prompt] as [call] and streams the reply, in pieces that add up to
+  /// it. A failure is an error on the stream.
+  Stream<String> generateStream(List<PromptPart> prompt, WebLlmCall call);
 
-  /// Asks a running generation to stop.
-  void cancel();
+  /// Asks [call] to stop: one still waiting never starts, one running is
+  /// cancelled. The calls of other sessions go on.
+  void cancel(WebLlmCall call);
 }
 
 /// One generation: what it has produced so far, and whether it is over.
 class _Run {
   final StringBuffer text = StringBuffer();
+
+  /// This generation in the backend, which a stop cancels.
+  final WebLlmCall call = WebLlmCall();
 
   /// Whether the session is through with it: completed, failed, stopped or
   /// closed. What the backend sends after that is not recorded.
@@ -361,7 +369,7 @@ class WebModelSession extends InferenceModelSession {
       rethrow;
     }
     try {
-      final response = await _backend.generate(prompt);
+      final response = await _backend.generate(prompt, run.call);
       _complete(run, response);
       return response;
     } catch (e, stackTrace) {
@@ -416,7 +424,7 @@ class WebModelSession extends InferenceModelSession {
       return;
     }
     _backend
-        .generateStream(prompt)
+        .generateStream(prompt, run.call)
         .listen(
           (piece) {
             if (run.done) return;
@@ -444,20 +452,20 @@ class WebModelSession extends InferenceModelSession {
   }
 
   /// Ends every call of this session that has not ended: the one in the
-  /// backend and those waiting for it. Returns whether one had started, so
+  /// backend and those waiting for it. Returns the ones that had started, so
   /// the backend has something of this session's to cancel.
   ///
   /// With [record], the call that had started leaves what it streamed until
   /// now in the conversation, as in a native session's cache; a call that
   /// produced nothing the session can see has its user turn taken back (rule
   /// A). Whatever a stopped call returns later is not recorded.
-  bool _stopRuns({required bool record}) {
-    var started = false;
+  List<_Run> _stopRuns({required bool record}) {
+    final started = <_Run>[];
     for (final run in [..._runs]) {
       if (run.done) continue;
       run.markDone();
       if (!run.started) continue;
-      started = true;
+      started.add(run);
       if (record) {
         final generated = run.text.toString();
         _conversation.stopGeneration(
@@ -473,12 +481,14 @@ class WebModelSession extends InferenceModelSession {
     return started;
   }
 
-  void _cancelBackend() {
-    try {
-      _backend.cancel();
-    } catch (e) {
-      if (kDebugMode) {
-        edgeAiLog('[WebModelSession] cancel error: $e');
+  void _cancelBackend(List<_Run> runs) {
+    for (final run in runs) {
+      try {
+        _backend.cancel(run.call);
+      } catch (e) {
+        if (kDebugMode) {
+          edgeAiLog('[WebModelSession] cancel error: $e');
+        }
       }
     }
   }
@@ -503,10 +513,10 @@ class WebModelSession extends InferenceModelSession {
   @override
   Future<void> stopGeneration() async {
     _stopAsked = true;
-    // The backend is shared with the other sessions of the model, so it is
-    // cancelled only for a call of this session: a stop on an idle or closed
-    // session must not end the generation of the live one.
-    if (_stopRuns(record: true)) _cancelBackend();
+    // The backend is shared with the other sessions of the model, so only
+    // this session's calls are cancelled: a stop here must not end another
+    // session's generation.
+    _cancelBackend(_stopRuns(record: true));
     _controller?.close();
     _controller = null;
   }
@@ -531,7 +541,7 @@ class WebModelSession extends InferenceModelSession {
     _closed = true;
     // The loaded model belongs to the model, not to a session: closing a
     // session ends its conversation, and the next session reuses the model.
-    if (_stopRuns(record: false)) _cancelBackend();
+    _cancelBackend(_stopRuns(record: false));
     _conversation.clear();
     _controller?.close();
     _controller = null;

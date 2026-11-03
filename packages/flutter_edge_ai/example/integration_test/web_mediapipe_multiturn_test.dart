@@ -8,7 +8,8 @@
 /// reply out cannot answer it.
 ///
 /// One test per web `.task` of the example catalog, greedy, with the exact
-/// replies of both turns in the output.
+/// replies of both turns in the output. Two `openChat` chats on one model
+/// keep a history each, and a stop in one leaves the other's reply whole.
 ///
 /// Run: chromedriver --port=4444 & ; from example/
 ///   flutter drive --driver=test_driver/web_mediapipe_multiturn_driver.dart \
@@ -247,6 +248,129 @@ void main() {
           expect(after.trim(), isNotEmpty);
         } finally {
           await chat.close();
+        }
+      },
+    );
+  }
+
+  for (final task in _models) {
+    testWidgets(
+      '${task.name}: two openChat chats, interleaved, each answer from their '
+      'own history',
+      skip: task.url == null || !task.name.contains(_only),
+      timeout: const Timeout(Duration(minutes: 20)),
+      (tester) async {
+        final model = await _load(task);
+        final a = await model.openChat(
+          modelType: task.type,
+          temperature: 0,
+          topK: 1,
+        );
+        final b = await model.openChat(
+          modelType: task.type,
+          temperature: 0,
+          topK: 1,
+        );
+        try {
+          expect(model.sessions, hasLength(2));
+          final a1 = await _ask(a, 'Say the number 4821 and nothing else.');
+          final b1 = await _ask(b, 'Say the number 7305 and nothing else.');
+          // Each second turn is answerable only from its own chat's first.
+          final a2 = await _ask(a, _number2);
+          final b2 = await _ask(b, _number2);
+          // ignore: avoid_print
+          print(
+            '[${task.name}] openChat: a ${_quoted(a1)} -> ${_quoted(a2)}, '
+            'b ${_quoted(b1)} -> ${_quoted(b2)}',
+          );
+          replies['${task.name}#openChat'] = {
+            'a1': a1,
+            'a2': a2,
+            'b1': b1,
+            'b2': b2,
+          };
+          expect(a1, contains('4821'));
+          expect(b1, contains('7305'));
+          expect(a2, contains('4822'), reason: 'chat a lost its own reply');
+          expect(b2, contains('7306'), reason: 'chat b lost its own reply');
+        } finally {
+          await a.close();
+          await b.close();
+        }
+        expect(model.sessions, isEmpty);
+      },
+    );
+  }
+
+  for (final task in _models) {
+    testWidgets(
+      '${task.name}: a stop in one openChat chat leaves the other\'s reply '
+      'whole',
+      skip: task.url == null || !task.name.contains(_only),
+      timeout: const Timeout(Duration(minutes: 20)),
+      (tester) async {
+        final model = await _load(task);
+        final a = await model.openChat(
+          modelType: task.type,
+          temperature: 0,
+          topK: 1,
+        );
+        final b = await model.openChat(
+          modelType: task.type,
+          temperature: 0,
+          topK: 1,
+        );
+        try {
+          await a.addQueryChunk(
+            const Message(
+              text: 'Count from 1 to 30, separated by commas.',
+              isUser: true,
+            ),
+          );
+          final aText = StringBuffer();
+          final aDone = Completer<void>();
+          a.generateChatResponseAsync().listen(
+            (r) {
+              if (r is TextResponse) aText.write(r.token);
+            },
+            onError: aDone.completeError,
+            onDone: aDone.complete,
+          );
+          // b's turn waits for a's call; it is stopped before it runs.
+          await b.addQueryChunk(
+            const Message(text: 'Say only the word blue.', isUser: true),
+          );
+          final bText = StringBuffer();
+          final bSub = b.generateChatResponseAsync().listen((r) {
+            if (r is TextResponse) bText.write(r.token);
+          }, onError: (_) {});
+          await Future<void>.delayed(const Duration(milliseconds: 200));
+          await b.stopGeneration();
+          await bSub.cancel();
+
+          await aDone.future.timeout(const Duration(minutes: 5));
+          // ignore: avoid_print
+          print(
+            '[${task.name}] stop in b: a ${_quoted(aText.toString())}, '
+            'b ${_quoted(bText.toString())}',
+          );
+          replies['${task.name}#openChatStop'] = {
+            'a': aText.toString(),
+            'b': bText.toString(),
+          };
+          expect(
+            aText.toString(),
+            contains('30'),
+            reason: "b's stop cut a's reply short",
+          );
+
+          final after = await _ask(b, 'Say only the word done.');
+          // ignore: avoid_print
+          print('[${task.name}] b after stop: ${_quoted(after)}');
+          expect(after.trim(), isNotEmpty);
+        } finally {
+          await a.close();
+          await b.close();
         }
       },
     );

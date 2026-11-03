@@ -609,15 +609,31 @@ class GenAiFfiClient implements GenAiClient {
       _waiting[session] = waiting;
     }
     final stopped = _stoppedWhileWaiting.remove(session);
-    if (cancelled() ||
-        stopped ||
-        (session != null && _released.contains(session))) {
-      // Nothing to run: the consumer cancelled, a stop was filed, or the
-      // session was released while this turn waited behind another session's.
+    if (cancelled()) {
+      // The consumer is gone: nobody is left to tell.
       _mutex.release();
-      if (!cancelled() && !stopped) {
-        controller.addError(StateError('ONNX session $session was closed'));
-      }
+      await controller.close();
+      return;
+    }
+    // A client that shut down or died, and a released session, come before a
+    // stop: closing a session files its stop first, and the caller waiting on
+    // this turn must get the reason, not an empty reply that looks like
+    // success.
+    if (_closed) {
+      _mutex.release();
+      controller.addError(_unusable('GenAiFfiClient shut down'));
+      await controller.close();
+      return;
+    }
+    if (session != null && _released.contains(session)) {
+      _mutex.release();
+      controller.addError(StateError('ONNX session $session was closed'));
+      await controller.close();
+      return;
+    }
+    if (stopped) {
+      // A stop was filed while this turn waited behind another session's.
+      _mutex.release();
       await controller.close();
       return;
     }
@@ -694,6 +710,10 @@ class GenAiFfiClient implements GenAiClient {
     if (_closed || commandPort == null) return;
     if (sessionId != null) _released.add(sessionId);
     _stats.remove(sessionId);
+    // A turn of this session still running must not write its stats back when
+    // it ends: they would outlive the reset (and a new legacy session would
+    // report them).
+    _streamSession.removeWhere((_, session) => session == sessionId);
     final ack = Completer<void>();
     _resetAcks.add(ack);
     commandPort.send(ResetSessionRequest(sessionId));

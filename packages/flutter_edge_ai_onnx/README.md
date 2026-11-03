@@ -124,7 +124,9 @@ on the same loaded model (native only; on web they still throw
 `UnsupportedError`). Each holds its own ORT-GenAI generator, so its context
 is its own and closing it frees it; turns of different sessions run one at a
 time, and nothing is replayed. **Cost:** a generator allocates its whole KV
-cache at its first turn, about **0.75 MiB × `maxTokens`**, resident from then
+cache at its first turn, `maxTokens` × the cache size per token (2 × layers ×
+KV heads × head size × dtype size; **0.75 MiB** for Phi-3.5-mini int4, which the
+figures below are for), resident from then
 on (Phi-3.5-mini int4 on Linux CPU: 771 MiB at 1024, 1539 at 2048, 3077 at
 4096). On Windows closing a session gives the whole amount back (commit
 -383 MiB at 512, -768 MiB at 1024). On Linux the process's RSS did not go down

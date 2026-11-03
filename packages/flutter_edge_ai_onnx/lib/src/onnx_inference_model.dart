@@ -19,7 +19,9 @@ import 'onnx_session.dart';
 ///
 /// **Cost of an open session.** Every session that has had a turn holds one
 /// ORT-GenAI generator whose KV cache is allocated in full at its first turn:
-/// about 0.75 MiB × `max_length` (the model's [maxTokens]) — 771 MiB at 1024
+/// `max_length` (the model's [maxTokens]) × the cache size per token
+/// (2 × layers × KV heads × head size × dtype size; 0.75 MiB for Phi-3.5-mini
+/// int4, which the figures here are for) — 771 MiB at 1024
 /// and 3077 MiB at 4096 for Phi-3.5-mini int4 on Linux CPU — resident from
 /// then on; closing the session frees it. Windows gives it back to the OS;
 /// on Linux the RSS did not fall at 512 to 2048. That is why
@@ -139,8 +141,11 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
     if (cap != null && _openSessions.length >= cap) {
       throw StateError(
         'Max concurrent sessions ($cap) reached. Close an existing session '
-        'before opening a new one. Each open session holds a KV cache of about '
-        '0.75 MiB x max_length ($maxTokens) once it has had a turn.',
+        'before opening a new one. Each open session holds a KV cache that is '
+        'allocated at its first turn: per token 2 x layers x KV heads x head '
+        'size x dtype size (0.75 MiB for Phi-3.5-mini int4), times '
+        'max_length ($maxTokens). The createSession session is not counted '
+        'and holds a generator too.',
       );
     }
     final sampling = withSamplingTopK(
@@ -302,10 +307,9 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
     }
 
     try {
-      // OnnxSession.close() already stops+resets; this extra stop is
-      // defense-in-depth for the (currently unreachable, but not worth
-      // relying on) case of a live generation with no owning session.
-      // Idempotent/cheap on the client and worker either way.
+      // Stops the legacy (`createSession`) session's turn; opened sessions
+      // stop their own in OnnxSession.close(), below. Idempotent/cheap on the
+      // client and worker either way.
       await client.stopGeneration();
       await _session?.close();
       // Together, and copied because close() removes a session from the set:
@@ -348,7 +352,8 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
     // The sessions are unusable now; closing them takes them out of
     // `sessions` and runs their own cleanup (the dead client ignores it).
     for (final s in _openSessions.toList()) {
-      unawaited(s.close().catchError((Object _) {}));
+      // A close that fails on a dead worker has nobody to tell.
+      unawaited(s.close().then<void>((_) {}, onError: (Object _) {}));
     }
     try {
       _notifyClosed();

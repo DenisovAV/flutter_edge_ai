@@ -239,8 +239,13 @@ class OnnxSession extends InferenceModelSession {
     // (defense-in-depth, see `serveGenAiWorker` in gen_ai_worker.dart), but
     // sending the stop first here keeps this session from sitting on an
     // abandoned decode any longer than necessary.
-    await client.stopGeneration(sessionId: sessionId);
-    await client.resetSession(sessionId: sessionId);
-    onClose();
+    try {
+      await client.stopGeneration(sessionId: sessionId);
+      await client.resetSession(sessionId: sessionId);
+    } finally {
+      // Even when a custom client throws: the model must not keep a cap slot
+      // for a session that is closed.
+      onClose();
+    }
   }
 }

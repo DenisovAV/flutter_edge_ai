@@ -56,10 +56,13 @@ void main() {
   setUpAll(() async => tmp = await Directory.systemTemp.createTemp('multi_s'));
   tearDownAll(() => tmp.delete(recursive: true));
 
-  Future<(GenAiFfiClient, File)> loaded(String name) async {
+  Future<(GenAiFfiClient, File)> loaded(
+    String name, {
+    Map<String, Object?> extra = const {},
+  }) async {
     final log = File('${tmp.path}/$name.log');
     final client = GenAiFfiClient(workerEntry: fakeGenAiWorkerEntry);
-    await client.load(jsonEncode({'log': log.path}));
+    await client.load(jsonEncode({'log': log.path, ...extra}));
     addTearDown(client.shutdown);
     return (client, log);
   }
@@ -210,6 +213,7 @@ void main() {
 
     // A's turn parks on the client's lock behind B's.
     final a = client.generate(_turn(1, first: true)).toList();
+    final aErrors = expectLater(a, throwsA(isA<StateError>()));
     await Future<void>.delayed(const Duration(milliseconds: 100));
     await client.stopGeneration(sessionId: 1);
     final released = client.resetSession(sessionId: 1);
@@ -217,10 +221,75 @@ void main() {
     await client.stopGeneration(sessionId: 2);
     await _until(() => bDone, 'B to end');
     await released;
-    // Stopped and released, as OnnxSession.close does: it ends with nothing.
-    expect(await a, isEmpty);
+    // Stopped and released, as OnnxSession.close does: the waiting caller is
+    // told, it does not get an empty reply that looks like success.
+    await aErrors;
     expect(_linesOf(log), isNot(contains('generate:1')));
   });
+
+  test('a session released without a stop, while its turn waits, errors and '
+      'never builds a generator', () async {
+    final (client, log) = await loaded('parked_release_only');
+    var bDone = false;
+    client
+        .generate(_turn(2, first: true, untilStopped: true))
+        .listen((_) {}, onDone: () => bDone = true);
+    await _waitForLine(log, 'generate:2');
+
+    final a = client.generate(_turn(1, first: true)).toList();
+    final aErrors = expectLater(a, throwsA(isA<StateError>()));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final released = client.resetSession(sessionId: 1);
+
+    await client.stopGeneration(sessionId: 2);
+    await _until(() => bDone, 'B to end');
+    await released;
+    await aErrors;
+    expect(_linesOf(log), isNot(contains('generate:1')));
+  });
+
+  test('a turn waiting behind another session\'s errors when the worker dies, '
+      'not an empty reply', () async {
+    final (client, log) = await loaded(
+      'parked_death',
+      extra: {'dieAfterMs': 600},
+    );
+    final b = client
+        .generate(_turn(2, first: true, untilStopped: true))
+        .toList();
+    await _waitForLine(log, 'generate:2');
+    final a = client.generate(_turn(1, first: true)).toList();
+    final bFailed = expectLater(b, throwsA(isA<StateError>()));
+    await bFailed;
+    // As the model does on a dead worker: stop, then release, then A wakes.
+    await client.stopGeneration(sessionId: 1);
+    await client.resetSession(sessionId: 1);
+    await expectLater(
+      a,
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('exited unexpectedly'),
+        ),
+      ),
+    );
+  });
+
+  test(
+    'stats do not come back when the session was reset during its turn',
+    () async {
+      final (client, log) = await loaded('stats_after_reset');
+      var done = false;
+      client
+          .generate(_turn(1, first: true, untilStopped: true))
+          .listen((_) {}, onDone: () => done = true);
+      await _waitForLine(log, 'generate:1');
+      await client.resetSession(sessionId: 1);
+      await _until(() => done, 'the turn to end');
+      expect(client.generationStatsOf(1), isNull);
+    },
+  );
 
   test('a stream cancelled while its turn waits behind another session\'s '
       'never reaches the worker', () async {

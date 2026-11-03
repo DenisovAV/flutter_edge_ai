@@ -4,7 +4,8 @@
 //
 // Reuses the model directory `onnx_inference_smoke_test.dart` downloads
 // (`onnx_android_smoke_model` in the app's documents directory) — run that
-// test once first on a phone that does not have it. Drives the ORT-GenAI
+// test once first on a phone that does not have it, with `--no-uninstall`
+// too, or the model it downloads is deleted with the app. Drives the ORT-GenAI
 // client directly, like that test, because the install layer cannot yet hand
 // a whole ORT-GenAI directory to `FlutterEdgeAi.installModel`.
 //

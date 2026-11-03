@@ -130,12 +130,14 @@ session; since 0.8.0 `openSession` / `openChat` open further independent
 sessions on the same loaded model, natively (on Web they still throw
 `UnsupportedError`). Each session has its own generator and so its own
 context; turns of different sessions run one at a time and nothing is
-replayed. A generator allocates its whole KV cache at its first turn, about
-0.75 MiB × `maxTokens` (Phi-3.5-mini int4 on Linux CPU: 771 MiB at 1024, 3077
+replayed. A generator allocates its whole KV cache at its first turn,
+`maxTokens` × the cache size per token (2 × layers × KV heads × head size ×
+dtype size; 0.75 MiB for Phi-3.5-mini int4, on Linux CPU 771 MiB at 1024, 3077
 at 4096), so opening more than `maxConcurrentSessions` throws a `StateError`;
-unset, that is 2 on Android and iOS and unlimited on desktop. Pass a larger `maxConcurrentSessions` to allow more on a phone. The
-`createSession` session is not counted. Windows gives a closed session's memory
-back (commit −383 MiB at 512, −768 MiB at 1024); on Linux the RSS did not
+unset, that is 2 on Android and iOS and unlimited on desktop. Pass a larger
+`maxConcurrentSessions` to allow more on a phone. The `createSession` session
+is not counted, though it holds a generator too. Windows gives a closed
+session's memory back (commit −383 MiB at 512, −768 MiB at 1024); on Linux the RSS did not
 fall at 512 to 2048. Sampling
 follows the model's own config (`genai_config.json` natively,
 `generation_config.json` on Web), which is greedy unless it sets `do_sample`;

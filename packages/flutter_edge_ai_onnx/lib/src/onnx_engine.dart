@@ -13,8 +13,8 @@ import 'onnx_inference_model.dart';
 ///
 /// **macOS/Linux/Windows x64 + arm64/Android arm + iOS arm64 (hardened plan Phase 3,
 /// design §11 D2).** [createModel] productionizes the ORT-GenAI FFI path
-/// (`GenAiFfiClient` → `OnnxInferenceModel`/`OnnxSession`) — text-only, one
-/// session at a time, sampling as the caller sets it, else as the model's
+/// (`GenAiFfiClient` → `OnnxInferenceModel`/`OnnxSession`) — text-only,
+/// independent `openSession` sessions (one generator each; web has one), sampling as the caller sets it, else as the model's
 /// `genai_config.json` does. macOS/Linux/Windows x64/Android arm64
 /// are device-verified — Android on FTL (Pixel 8 Pro, 2026-08-19: ~10.4
 /// tok/s, ~3.74 GB peak RSS, flat-APK co-location with no ORT_LIB_PATH fix
@@ -99,8 +99,8 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
   static bool? debugForceUnsupportedHost;
 
   /// Cap on concurrent `openSession` sessions when the app sets none: each
-  /// open session holds a KV cache of about 0.75 MiB x `max_length` (771 MiB
-  /// at 1024 on Phi-3.5-mini int4), so a phone gets 2 and a desktop none.
+  /// open session holds a KV cache of `max_length` x 2 x layers x KV heads x
+  /// head size x dtype size (771 MiB at 1024 on Phi-3.5-mini int4), so a phone gets 2 and a desktop none.
   @visibleForTesting
   static int? get defaultMaxConcurrentSessions =>
       (Platform.isAndroid || Platform.isIOS) ? 2 : null;

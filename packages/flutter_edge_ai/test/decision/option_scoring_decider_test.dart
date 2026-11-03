@@ -185,7 +185,26 @@ final class _Scorer extends OptionScorer {
   }
 }
 
-final class _Model extends InferenceModel with OptionScoringModel {
+/// Reads its decision and inherits InferenceModel's openOptionScorer.
+final class _ReadsOnlyModel extends InferenceModel {
+  _ReadsOnlyModel(this.payload);
+
+  final String payload;
+
+  @override
+  int get maxTokens => 1024;
+
+  @override
+  bool get isClosed => false;
+
+  @override
+  Future<String?> readDecisionSection() async => payload;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+final class _Model extends InferenceModel {
   _Model(this.payload, this.scorer, {this.context = 1024, this.readError});
 
   final String? payload;
@@ -456,6 +475,27 @@ void main() {
             (e) => e.message,
             'message',
             contains('an Engine per option (method fresh_engine'),
+          ),
+        ),
+      );
+    });
+
+    test('an engine that reads a decision but does not override '
+        'openOptionScorer is refused by its default', () async {
+      await expectLater(
+        _ReadsOnlyModel(jsonEncode(payload)).createDecider(
+          question: payload['question'] as String,
+          options: _optionsOf(payload),
+          calibration: const InferenceDeciderCalibration.fromModel(),
+        ),
+        throwsA(
+          isA<DeciderUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('does not score options'),
+              contains('EmbeddingModel.createDecider'),
+            ),
           ),
         ),
       );

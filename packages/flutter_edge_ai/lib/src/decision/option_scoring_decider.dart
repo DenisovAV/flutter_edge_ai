@@ -1,7 +1,8 @@
 // InferenceModel.createDecider for an engine that scores options
-// (OptionScoringModel): the decision litetune writes into the model file, the
-// prompt rendered as litetune trained the model, each option scored as the
-// model's reply, and the answer. Not exported.
+// (InferenceModel.readDecisionSection, openOptionScorer): the decision
+// litetune writes into the model file, the prompt rendered as litetune
+// trained the model, each option scored as the model's reply, and the
+// answer. Not exported.
 //
 // The contract is litetune's decision contract, version 1. Each step mirrors
 // litetune's own code (0.5.0; 0.6.0 adds the section's `method`):
@@ -18,7 +19,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import '../embedding/embedding_modality.dart';
-import '../interface.dart' show InferenceModel;
+import '../interface.dart'
+    show InferenceModel, openOptionScorerOf, readDecisionSectionOf;
 import '../model_management/cancel_token.dart' show CancelToken;
 import 'decider.dart';
 import 'decider_exceptions.dart';
@@ -363,7 +365,7 @@ const _maxLogSumExp = 1e-3;
 
 /// [InferenceModel.createDecider] on a model whose engine scores options.
 Future<Decider> createOptionScoringDecider(
-  OptionScoringModel model, {
+  InferenceModel model, {
   required String question,
   required List<DeciderOption> options,
   required InferenceDeciderCalibration calibration,
@@ -371,7 +373,7 @@ Future<Decider> createOptionScoringDecider(
 }) async {
   final String? payload;
   try {
-    payload = await model.readDecisionSection();
+    payload = await readDecisionSectionOf(model);
   } on FormatException catch (e) {
     throw DeciderUnsupportedException(
       'The decision of the model file of ${model.runtimeType} cannot be '
@@ -402,7 +404,7 @@ Future<Decider> createOptionScoringDecider(
     calibration: calibration,
   );
   throwIfDeciderCancelled(cancelToken);
-  final scorer = await model.openOptionScorer();
+  final scorer = await openOptionScorerOf(model);
   // A cancel while the engine prepares (LiteRT-LM's self-check is a couple
   // of dozen native runs) closes the scorer, which stops the runs this scorer
   // started; the StateError a closed scorer then throws reads as the cancel
@@ -668,7 +670,7 @@ final class OptionScoringDecider extends Decider {
           _section.listed[i].id: i,
       };
 
-  final OptionScoringModel _model;
+  final InferenceModel _model;
   final OptionScorer _scorer;
   final DecisionSection _section;
   final List<String> _targets;

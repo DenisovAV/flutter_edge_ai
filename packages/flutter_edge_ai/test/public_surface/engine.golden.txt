@@ -121,7 +121,6 @@ NotFoundError class final
 NpuTarget class abstract base
 NpuVendor class final
 OptionScorer class abstract base experimental
-OptionScoringModel mixin base experimental
 OptionScoringRun class final experimental
 OrphanedFileInfo class
 ParallelFunctionCallResponse class

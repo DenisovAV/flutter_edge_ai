@@ -1,5 +1,7 @@
-// The decider SPI (OptionScorer, DeciderUnsupportedException) is @experimental.
-// ignore_for_file: experimental_member_use
+// The decider SPI (OptionScorer, DeciderUnsupportedException) is @experimental;
+// openOptionScorer is @protected (core's decider calls it), and these tests
+// call it directly.
+// ignore_for_file: experimental_member_use, invalid_use_of_protected_member
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';

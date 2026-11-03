@@ -3,9 +3,9 @@
 # (UPDATE_GOLDENS=1 regenerates). One block per type: its declaration,
 # then one line per public member it declares, sorted by kind and name.
 
-base mixin OptionScoringModel on InferenceModel
-  method Future<OptionScorer> openOptionScorer() abstract
-  method Future<String?> readDecisionSection() abstract
+abstract class InferenceModel
+  method Future<OptionScorer> openOptionScorer() @protected @experimental
+  method Future<String?> readDecisionSection() @protected @experimental
 
 abstract base class OptionScorer
   constructor const OptionScorer()

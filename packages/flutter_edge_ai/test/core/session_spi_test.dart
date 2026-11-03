@@ -429,6 +429,20 @@ void main() {
       expect(chat.fullHistory.single.text, 'hello');
     });
 
+    test('a {"message": …} reply that arrives in one chunk is committed as '
+        'the message', () async {
+      final chat = InferenceChat(
+        sessionCreator: () async => _TurnSession(tokens: ['{"message": "hi"}']),
+        maxTokens: 1024,
+        supportsFunctionCalls: true,
+        tools: const [_tool],
+      );
+      await chat.initSession();
+      final streamed = await chat.generateChatResponseAsync().toList();
+      expect(streamed.whereType<TextResponse>().single.token, 'hi');
+      expect(chat.fullHistory.single.text, 'hi');
+    });
+
     test(
       'reasoning stays out of a blocking reply when thinking is off',
       () async {
@@ -517,6 +531,25 @@ void main() {
   });
 
   group('ChatTurnHooks', () {
+    test(
+      'a blocking turn through the hooks leaves reasoning out of its text',
+      () async {
+        final chat = InferenceChat(
+          sessionCreator: () async => _TurnSession(),
+          maxTokens: 1024,
+          turnHooks: ScriptedTurnHooks(
+            () => Stream.fromIterable(const [
+              ThinkingResponse('why'),
+              TextResponse('answer'),
+            ]),
+          ),
+        );
+        await chat.initSession();
+        final reply = await chat.generateChatResponse();
+        expect((reply as TextResponse).token, 'answer');
+      },
+    );
+
     test('the engine\'s token count decides when the chat rebuilds', () async {
       final sessions = <_TurnSession>[];
       final hooks = _RecordingHooks()..tokens = 5000;

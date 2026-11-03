@@ -801,6 +801,12 @@ abstract class InferenceModelSession {
   /// cancelling, so it is only GC'd) cannot be intercepted on any engine — the
   /// accelerator keeps decoding the whole turn for output no one consumes,
   /// wasting compute and delaying the next turn's teardown.
+  ///
+  /// Closing the session or its model during a turn ends the stream: with a
+  /// [StateError] on the `.litertlm` FFI engine (the reply is incomplete),
+  /// with what was generated so far elsewhere. An [InferenceChat] over a
+  /// LiteRT-LM or MediaPipe session keeps that partial reply and then throws
+  /// [StateError] either way.
   Stream<String> getResponseAsync();
 
   Future<int> sizeInTokens(String text);
@@ -860,7 +866,9 @@ enum TurnEnd {
 /// Contract: [end] never completes with an error (a failed turn puts its
 /// error on [text]); it completes after [text] is done, and also when the
 /// consumer cancels [text]. An engine that cannot say how its turns end
-/// passes `end: null`.
+/// passes `end: null` and must keep `StructuredOutputSupport.none`; so must
+/// an engine whose [end] is a guess for some turns (LiteRT-LM 0.18 cannot
+/// tell `endOfSequence` from `outputLimit` or `contextLimit`).
 final class EngineTurn {
   EngineTurn({required this.text, required this.end});
 

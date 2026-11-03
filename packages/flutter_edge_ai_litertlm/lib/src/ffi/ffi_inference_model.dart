@@ -938,11 +938,9 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// the text ends cleanly and `end` is [TurnEnd.closed], so the chat keeps
   /// the partial reply before it raises (decision H).
   ///
-  /// On LiteRT-LM 0.18 a completed turn cannot tell a natural end from
-  /// `maxOutputTokens`, nor a full context in decode from either: a session
-  /// with a cap reports [TurnEnd.outputLimit] (the safe side), one without
-  /// [TurnEnd.endOfSequence]. Structured output stays refused here until the
-  /// native turn-end record (L1) says which.
+  /// A completed turn reports [liteRtLmPlaceholderCompletedEnd]: a guess on
+  /// LiteRT-LM 0.18, so structured output stays refused here until the
+  /// native turn-end record (L1, read in L2) says which end it was.
   @override
   EngineTurn startTurn() {
     _stopAsked = false;
@@ -951,9 +949,7 @@ class FfiInferenceModelSession extends InferenceModelSession
       stopped: () => _stopAsked,
       closed: () => _isClosed,
       isCloseError: (error) => error is LiteRtLmTurnClosedException,
-      completed: maxOutputTokens == null
-          ? TurnEnd.endOfSequence
-          : TurnEnd.outputLimit,
+      completed: liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
     );
   }
 

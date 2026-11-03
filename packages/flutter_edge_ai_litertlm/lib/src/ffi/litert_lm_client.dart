@@ -2539,6 +2539,20 @@ class LiteRtLmFfiClient {
   /// deleting the pointer now would be a use-after-free. We also cancel the
   /// in-flight generation so the turn finishes promptly and the deferred
   /// teardown runs.
+  /// Marks a virtual turn as running on [conv] for [conversationToken] and
+  /// returns its stream, with no native call, so a test can drive what
+  /// [releaseVirtualConversation] does to a turn in flight.
+  @visibleForTesting
+  NativeTurnStream<Pointer<LiteRtLmConversation>> startVirtualTurnForTest(
+    Object conversationToken,
+    Pointer<LiteRtLmConversation> conv,
+  ) {
+    _virtualConv = conv;
+    _virtualActiveToken = conversationToken;
+    _virtualTurnInFlight = true;
+    return NativeTurnStream(_turns, conv);
+  }
+
   void releaseVirtualConversation(Object conversationToken) {
     if (_virtualActiveToken != conversationToken) return;
     if (_virtualTurnInFlight) {

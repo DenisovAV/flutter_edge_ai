@@ -283,8 +283,9 @@ class InferenceChat {
   /// [generateChatResponseAsync] streams the text as well.
   ///
   /// Fails with [StateError] when the session or its model is closed during
-  /// the turn by anything but the consumer's own stop; the text generated
-  /// until then is in [fullHistory].
+  /// the turn by anything but the consumer's own stop, on an engine that
+  /// reports it (LiteRT-LM and MediaPipe; built-in AI, llama and ONNX do
+  /// not yet); the text generated until then is in [fullHistory].
   ///
   /// Core implements this once for every engine (`@nonVirtual`); an engine
   /// changes a chat's turns through [ChatTurnHooks].
@@ -474,8 +475,9 @@ class InferenceChat {
   /// over re-driving this stream directly.
   ///
   /// Ends with [StateError] when the session or its model is closed during
-  /// the turn by anything but the consumer's own stop; the text streamed
-  /// until then is in [fullHistory]. A failure to count the reply's tokens or
+  /// the turn by anything but the consumer's own stop, on an engine that
+  /// reports it (LiteRT-LM and MediaPipe; built-in AI, llama and ONNX do
+  /// not yet); the text streamed until then is in [fullHistory]. A failure to count the reply's tokens or
   /// to rebuild the session after a full context is the stream's error too,
   /// after the reply has been committed to [fullHistory].
   ///

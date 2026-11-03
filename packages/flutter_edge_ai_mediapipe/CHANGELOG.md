@@ -1,5 +1,6 @@
 ## Unreleased
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and audio.
+- Android: a streamed reply no longer loses chunks while the UI thread is busy.
 
 ## 1.2.5
 - MediaPipe GenAI 0.10.35 on Android and iOS, 0.10.30 on the web.

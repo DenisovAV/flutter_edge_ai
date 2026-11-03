@@ -147,5 +147,36 @@ void main() {
         await session.close();
       }
     });
+
+    testWidgets('openSession sessions keep their own context', (tester) async {
+      final model = await _ensureModel();
+      // Greedy, so the recall below does not depend on sampling.
+      final alice = await model.openSession(topK: 1);
+      final bob = await model.openSession(topK: 1);
+      try {
+        Future<String> ask(InferenceModelSession s, String text) async {
+          await s.addQueryChunk(Message(text: text, isUser: true));
+          return s.getResponse().timeout(const Duration(minutes: 2));
+        }
+
+        await ask(alice, 'My name is Alice. Reply with OK.');
+        await ask(bob, 'My name is Bob. Reply with OK.');
+        expect(model.sessions, containsAll([alice, bob]));
+        final a = await ask(alice, 'What is my name? One word.');
+        final b = await ask(bob, 'What is my name? One word.');
+        expect(
+          a.toLowerCase(),
+          allOf(contains('alice'), isNot(contains('bob'))),
+        );
+        expect(
+          b.toLowerCase(),
+          allOf(contains('bob'), isNot(contains('alice'))),
+        );
+      } finally {
+        await alice.close();
+        await bob.close();
+      }
+      expect(model.sessions, isNot(contains(alice)));
+    });
   });
 }

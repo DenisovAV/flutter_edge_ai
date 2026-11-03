@@ -14,6 +14,7 @@ import 'package:mutex/mutex.dart';
 import 'package:flutter_edge_ai/engine.dart';
 
 import '../onnx_sampling.dart';
+import '../reported_engine_turn.dart';
 import 'transformers_js_interop.dart';
 import 'transformers_web_resolver.dart';
 
@@ -43,6 +44,12 @@ import 'transformers_web_resolver.dart';
 /// native tool calling are warn-and-ignore: whether/how the repo's own
 /// `chat_template` emits a thinking channel or tool-call JSON is entirely
 /// up to that template, not something this engine drives.
+///
+/// Besides the legacy [createSession] session, `openSession` / `openChat`
+/// open further [OnnxWebSession]s on the same pipeline: each keeps its own
+/// history, and turns of all of them are served one at a time. An open
+/// session costs only its history (there is no KV cache between calls), so
+/// [maxConcurrentSessions] is unset unless the app sets it.
 class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
   OnnxWebInferenceModel({
     required this.resolver,
@@ -50,6 +57,7 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
     required this.modelType,
     this.fileType = ModelFileType.onnx,
     this.preferredBackend,
+    this.maxConcurrentSessions,
     required this.onClose,
   });
 
@@ -70,10 +78,13 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
   @override
   PreferredBackend? get activeBackend => _activeBackend;
 
-  /// Serializes generation on the single (singleton-lane) session — v1 has
-  /// no `openSession`, but the mutex still guards against overlapping
-  /// `getResponseAsync` calls on the same session (mirrors every other
-  /// engine's "concurrent contexts, serialized inference" posture).
+  /// Cap on concurrent `openSession` sessions; null = unlimited. The legacy
+  /// [createSession] session does not count.
+  final int? maxConcurrentSessions;
+
+  /// Serializes generation across every session of this model — the legacy
+  /// one and each open one share the pipeline (mirrors every other engine's
+  /// "concurrent contexts, serialized inference" posture).
   final Mutex generationMutex = Mutex();
 
   final VoidCallback onClose;
@@ -82,6 +93,12 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
   TransformersTokenizer? _tokenizer;
   Completer<void>? _pipelineCompleter;
   OnnxWebSession? _session;
+  final Set<OnnxWebSession> _openSessions = {};
+
+  /// Open sessions still waiting for the pipeline: they count against
+  /// [maxConcurrentSessions] from the check on, so two calls that overlap
+  /// cannot both pass it.
+  int _openingSessions = 0;
   Completer<InferenceModelSession>? _createCompleter;
   bool _isClosed = false;
 
@@ -119,6 +136,12 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
 
   @override
   InferenceModelSession? get session => _session;
+
+  @override
+  List<InferenceModelSession> get engineSessions => [
+    ?_session,
+    ..._openSessions,
+  ];
 
   Future<void> _ensurePipeline() async {
     if (_pipeline != null) return;
@@ -197,20 +220,86 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
         .toDart;
   }
 
+  /// Opens a session with a history of its own on the shared pipeline,
+  /// independent of [session] and of every other open session; turns of
+  /// different sessions are served one at a time.
+  ///
+  /// Throws [StateError] when [maxConcurrentSessions] sessions are already
+  /// open.
   @override
-  Future<InferenceModelSession> createSession({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    String? loraPath,
-    bool? enableVisionModality,
-    bool? enableAudioModality,
-    String? systemInstruction,
-    bool enableThinking = false,
-    List<Tool> tools = const [],
-    int? maxOutputTokens,
-  }) async {
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    final SessionRequest(
+      :temperature,
+      :randomSeed,
+      :topK,
+      :topP,
+      :loraPath,
+      :enableVisionModality,
+      :enableAudioModality,
+      :systemInstruction,
+      :enableThinking,
+      :tools,
+      :maxOutputTokens,
+    ) = request;
+    _checkRequest(
+      loraPath: loraPath,
+      enableVisionModality: enableVisionModality,
+      enableAudioModality: enableAudioModality,
+      enableThinking: enableThinking,
+      tools: tools,
+    );
+    final cap = maxConcurrentSessions;
+    if (cap != null && _openSessions.length + _openingSessions >= cap) {
+      throw StateError(
+        'Max concurrent sessions ($cap) reached. Close an existing session '
+        'before opening a new one. The createSession session is not counted.',
+      );
+    }
+    // Checked before the pipeline loads: values it rejects must not load it.
+    final sampling = SamplingParams(
+      temperature: temperature,
+      topK: topK,
+      topP: topP,
+      randomSeed: randomSeed,
+    )..validate();
+    _noteIgnoredOnWeb(randomSeed: randomSeed, topP: topP);
+    // Counted from the cap check until the session is in [_openSessions]:
+    // the await below would otherwise let a second call pass the check.
+    _openingSessions++;
+    try {
+      await _ensurePipeline();
+    } finally {
+      _openingSessions--;
+    }
+    // Closed while the pipeline was loading: the model has dropped it.
+    if (_isClosed) {
+      throw StateError('Model was closed while opening a session');
+    }
+    late final OnnxWebSession opened;
+    opened = OnnxWebSession(
+      pipeline: _pipeline!,
+      tokenizer: _tokenizer!,
+      systemInstruction: systemInstruction,
+      maxOutputTokens: maxOutputTokens,
+      sampling: sampling,
+      generationMutex: generationMutex,
+      onClose: () => _openSessions.remove(opened),
+    );
+    _openSessions.add(opened);
+    return opened;
+  }
+
+  /// What [createSession] and [openEngineSession] refuse, and what they
+  /// accept but do not apply.
+  void _checkRequest({
+    required String? loraPath,
+    required bool? enableVisionModality,
+    required bool? enableAudioModality,
+    required bool enableThinking,
+    required List<Tool> tools,
+  }) {
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
@@ -242,6 +331,29 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
         'the Transformers.js path — ignoring ${tools.length} tool(s).',
       );
     }
+  }
+
+  @override
+  Future<InferenceModelSession> createSession({
+    double? temperature,
+    int? randomSeed,
+    int? topK,
+    double? topP,
+    String? loraPath,
+    bool? enableVisionModality,
+    bool? enableAudioModality,
+    String? systemInstruction,
+    bool enableThinking = false,
+    List<Tool> tools = const [],
+    int? maxOutputTokens,
+  }) async {
+    _checkRequest(
+      loraPath: loraPath,
+      enableVisionModality: enableVisionModality,
+      enableAudioModality: enableAudioModality,
+      enableThinking: enableThinking,
+      tools: tools,
+    );
 
     // Single-flight guard for concurrent callers; sequential calls fall
     // through and close the previous session before opening a fresh one —
@@ -309,6 +421,10 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
     _isClosed = true;
     try {
       await _session?.close();
+      // Copied: close() takes a session out of the set.
+      for (final s in _openSessions.toList()) {
+        await s.close();
+      }
     } finally {
       _pipeline = null;
       _tokenizer = null;
@@ -364,6 +480,13 @@ class OnnxWebSession extends InferenceModelSession {
   /// [stopGeneration] / a cancelled subscription / [close].
   InterruptableStoppingCriteria? _activeStoppingCriteria;
 
+  /// How to stop each of this session's turns that is listened to and not
+  /// over yet: the one generating, and any still waiting for the mutex.
+  final Set<void Function()> _turnStops = {};
+
+  /// [stopGeneration] was called during the current turn.
+  bool _stopAsked = false;
+
   void _assertNotClosed() {
     if (_isClosed) throw StateError('Session is closed');
   }
@@ -413,6 +536,21 @@ class OnnxWebSession extends InferenceModelSession {
         mutexHeld = false;
         generationMutex.release();
       }
+    }
+
+    // Signal only — never releases the mutex. The onListen coroutine owns
+    // release in every terminal path; for an in-flight generation the lock
+    // must stay held until the Transformers.js Promise SETTLES (via
+    // runGeneration), and for a still-queued turn onListen releases right
+    // after it acquires and sees `cancelled`. Releasing here would either
+    // race a pre-acquire cancel into a deadlock or let a next turn overlap.
+    void stop() {
+      cancelled = true;
+      // Interrupt ONLY when THIS stream owns the running generation: the
+      // mutex is model-wide, so a still-queued turn (mutexHeld == false) has
+      // nothing running to interrupt, and its own `cancelled = true` makes
+      // its onListen bail right after it acquires.
+      if (mutexHeld) _activeStoppingCriteria?.interrupt();
     }
 
     void onToken(String text) {
@@ -466,6 +604,7 @@ class OnnxWebSession extends InferenceModelSession {
     }
 
     controller.onListen = () async {
+      _turnStops.add(stop);
       try {
         await generationMutex.acquire();
         mutexHeld = true;
@@ -506,24 +645,11 @@ class OnnxWebSession extends InferenceModelSession {
           controller.addError(e, st);
           await controller.close();
         }
+      } finally {
+        _turnStops.remove(stop);
       }
     };
-    controller.onCancel = () {
-      // Signal only — do NOT release the mutex here. The onListen coroutine
-      // owns release in every terminal path; for an in-flight generation the
-      // lock must stay held until the Transformers.js Promise SETTLES (via
-      // runGeneration), and for a still-queued turn onListen releases right
-      // after it acquires and sees `cancelled`. Releasing here would either
-      // race a pre-acquire cancel into a deadlock or let a next turn overlap.
-      cancelled = true;
-      // Interrupt ONLY when THIS stream owns the running generation.
-      // `_activeStoppingCriteria` is session-global and points at whichever
-      // turn currently holds the mutex; a still-queued stream (mutexHeld ==
-      // false) that interrupted it would truncate a DIFFERENT, un-cancelled,
-      // actively-running turn. Its own `cancelled = true` still makes its
-      // onListen bail right after it acquires.
-      if (mutexHeld) _activeStoppingCriteria?.interrupt();
-    };
+    controller.onCancel = stop;
     return controller.stream;
   }
 
@@ -537,12 +663,36 @@ class OnnxWebSession extends InferenceModelSession {
     return tokenizer.encode(text.toJS).toDart.length;
   }
 
-  /// Interrupts the in-flight generation at the next token boundary (not
-  /// instantaneous — see [InterruptableStoppingCriteria]'s doc). A no-op if
-  /// nothing is currently generating.
+  /// How the turn ended, for core's chat: a stop is [TurnEnd.stopped], a
+  /// close the consumer did not ask for [TurnEnd.closed] (the chat keeps the
+  /// partial reply, then raises: decision H).
+  ///
+  /// A turn that runs to its end reports [TurnEnd.endOfSequence]: a
+  /// placeholder. Transformers.js resolves the same way at the end of
+  /// sequence and at `max_new_tokens` (512 when `maxOutputTokens` is unset),
+  /// so the two are not told apart; nothing reads it in core 2.6.0's plain
+  /// turns, and this engine keeps `StructuredOutputSupport.none`.
+  @override
+  EngineTurn startTurn() {
+    _stopAsked = false;
+    return reportedEngineTurn(
+      getResponseAsync(),
+      stopped: () => _stopAsked,
+      closed: () => _isClosed,
+      completed: TurnEnd.endOfSequence,
+    );
+  }
+
+  /// Interrupts this session's generation at the next token boundary (not
+  /// instantaneous — see [InterruptableStoppingCriteria]'s doc), and drops a
+  /// turn of it still waiting behind another session's. A no-op if this
+  /// session has no turn under way; another session's turn is never touched.
   @override
   Future<void> stopGeneration() async {
-    _activeStoppingCriteria?.interrupt();
+    _stopAsked = true;
+    for (final stop in _turnStops.toList()) {
+      stop();
+    }
   }
 
   /// Transformers.js does not surface a benchmark-info API; return empty

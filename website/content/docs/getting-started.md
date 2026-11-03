@@ -463,10 +463,10 @@ On native `.litertlm` (except the NPU) a `maxTokens` below 1024 is clamped up to
 A single loaded model can serve several **independent** dialogues at once.
 `openSession()` returns a session with its own conversation history, detached
 from the legacy `model.session` singleton; `openChat()` is the same for the
-higher-level chat API. ONNX on the web does not support it: `openSession()`
-throws `UnsupportedError` there. Native ONNX does, with one ORT-GenAI generator
-per session, capped by `maxConcurrentSessions`. MediaPipe on the web does too:
-its sessions share the one loaded model, take turns on it, and share the
+higher-level chat API. Native ONNX has one ORT-GenAI generator per session,
+capped by `maxConcurrentSessions`; on the web each ONNX session keeps its own
+history on the one Transformers.js pipeline. MediaPipe on the web supports it
+too: its sessions share the one loaded model, take turns on it, and share the
 sampling and LoRA of the session that loaded it.
 
 The model weights (the big, expensive part — hundreds of MB to several GB) are

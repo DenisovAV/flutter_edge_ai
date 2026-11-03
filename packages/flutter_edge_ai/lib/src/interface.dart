@@ -366,16 +366,23 @@ abstract class InferenceModel {
   ///   at once (each with its own KV cache), generation serialized by a
   ///   mutex.
   ///
-  /// **Memory caveat**: each concurrent session holds its own context
-  /// (~100-500 MB depending on model + maxTokens). On mobile with large
-  /// models (Gemma 4 E2B+), several concurrent sessions can OOM the process.
-  /// Multi-session is most reliable on desktop and on high-end mobile with
-  /// small models (Gemma 3 1B / 270M). For larger models on phones the safer
-  /// pattern is still close+recreate with [InferenceChat]'s built-in history
-  /// replay. Cap the count with `maxConcurrentSessions` on
+  /// **Memory caveat** — what an open session costs depends on the engine:
+  /// - `.task` (MediaPipe, Android/iOS): its own KV cache (~100-500 MB
+  ///   depending on model + maxTokens). On mobile with large models
+  ///   (Gemma 4 E2B+), several concurrent sessions can OOM the process; for
+  ///   them the safer pattern is still close+recreate with
+  ///   [InferenceChat]'s built-in history replay.
+  /// - `.litertlm` (FFI): only its history, kept in Dart; switching
+  ///   sessions replays that history into the one native conversation,
+  ///   which takes time on each switch.
+  /// - GGUF (`flutter_edge_ai_llama`): the sessions share one runtime and
+  ///   allocate no separate native KV caches.
+  /// - `.litertlm` web and built-in AI: not measured.
+  ///
+  /// Cap the count with `maxConcurrentSessions` on
   /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`.
   ///
-  /// Not yet available on the MediaPipe **web** `.task` path — throws
+  /// Not available on ONNX or on the MediaPipe **web** `.task` path — throws
   /// [UnsupportedError] there.
   ///
   /// Throws [StateError] when the model's `maxConcurrentSessions` (set on

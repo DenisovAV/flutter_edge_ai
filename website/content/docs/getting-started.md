@@ -492,10 +492,16 @@ parallel on-device inference would contend for the accelerator and risk OOM.
 
 </Warning>
 
-**Memory:** each open session holds its own context (~100–500 MB depending on
-model + `maxTokens`). On phones with large models (Gemma 4 E2B+), several
-concurrent sessions can OOM. Cap the count with `maxConcurrentSessions:` on
-`getActiveModel(...)` — `openSession()` throws `StateError` past the cap.
+**Memory:** what an open session costs depends on the engine. A MediaPipe
+`.task` session on Android or iOS holds its own KV cache (~100–500 MB depending
+on model + `maxTokens`), so on phones with large models (Gemma 4 E2B+) several
+concurrent sessions can OOM. A native `.litertlm` session keeps only its
+history; switching sessions replays it into the one native conversation, which
+takes time; GGUF sessions share one runtime with no separate native KV cache.
+`.litertlm` on the web and built-in AI are not measured. Cap the count with
+`maxConcurrentSessions:` on `getActiveModel(...)` — `openSession()` throws
+`StateError` past the cap. ONNX and MediaPipe on the web have no
+`openSession()`.
 
 If you only ever have one conversation at a time, stick with the simpler
 `createSession()` / `createChat()` singleton API — you don't need this.

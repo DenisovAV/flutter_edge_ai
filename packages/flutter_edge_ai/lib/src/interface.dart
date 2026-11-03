@@ -71,7 +71,7 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   ///
   /// Deprecated: apps call `FlutterEdgeAi.getActiveModel()`, which this
   /// forwards to on mobile and desktop, where [modelType] and [fileType] are
-  /// ignored (the active model's spec decides). Removed in 2.6.0.
+  /// ignored (the active model's spec decides). Removed in 3.0.0.
   ///
   /// [modelType] — model type to create.
   /// [maxTokens] — the model's CONTEXT WINDOW: the total number of tokens
@@ -110,12 +110,8 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// cannot be created falls back to CPU without an error. The vision and
   /// audio encoders keep the model's own type, and MediaPipe, ONNX, built-in
   /// AI and the web engines ignore the setting.
-  /// [maxConcurrentSessions] — optional cap on the number of sessions open
-  /// at once via [InferenceModel.openSession]. `null` (default) = no cap,
-  /// backward-compatible. When set, the (cap+1)-th [InferenceModel.openSession]
-  /// throws [StateError]. Use this on mobile with large models to guard
-  /// against OOM from multiple concurrent KV caches.
-  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 2.6.0.')
+  /// [maxConcurrentSessions] — as on `FlutterEdgeAi.getActiveModel`.
+  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 3.0.0.')
   Future<InferenceModel> createModel({
     required ModelType modelType,
     ModelFileType fileType = ModelFileType.task,
@@ -370,20 +366,28 @@ abstract class InferenceModel {
   ///   at once (each with its own KV cache), generation serialized by a
   ///   mutex.
   ///
-  /// **Memory caveat**: each concurrent session holds its own context
-  /// (~100-500 MB depending on model + maxTokens). On mobile with large
-  /// models (Gemma 4 E2B+), several concurrent sessions can OOM the process.
-  /// Multi-session is most reliable on desktop and on high-end mobile with
-  /// small models (Gemma 3 1B / 270M). For larger models on phones the safer
-  /// pattern is still close+recreate with [InferenceChat]'s built-in history
-  /// replay. Use [maxConcurrentSessions] on `createModel` to cap the count.
+  /// **Memory caveat** — what an open session costs depends on the engine:
+  /// - `.task` (MediaPipe, Android/iOS): its own KV cache (~100-500 MB
+  ///   depending on model + maxTokens). On mobile with large models
+  ///   (Gemma 4 E2B+), several concurrent sessions can OOM the process; for
+  ///   them the safer pattern is still close+recreate with
+  ///   [InferenceChat]'s built-in history replay.
+  /// - `.litertlm` (FFI): only its history, kept in Dart; switching
+  ///   sessions replays that history into the one native conversation,
+  ///   which takes time on each switch.
+  /// - GGUF (`flutter_edge_ai_llama`): the sessions share one runtime and
+  ///   allocate no separate native KV caches.
+  /// - `.litertlm` web and built-in AI: not measured.
   ///
-  /// Not yet available on the MediaPipe **web** `.task` path — throws
+  /// Cap the count with `maxConcurrentSessions` on
+  /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`.
+  ///
+  /// Not available on ONNX or on the MediaPipe **web** `.task` path — throws
   /// [UnsupportedError] there.
   ///
-  /// Throws [StateError] if `maxConcurrentSessions` (set on
-  /// [FlutterEdgeAiPlugin.createModel]) is exceeded — close an existing
-  /// session before opening a new one.
+  /// Throws [StateError] when the model's `maxConcurrentSessions` (set on
+  /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`) would be
+  /// exceeded — close an existing session before opening a new one.
   Future<InferenceModelSession> openSession({
     double? temperature,
     int? randomSeed,

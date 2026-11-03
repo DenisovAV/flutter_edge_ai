@@ -48,7 +48,6 @@ class AssetSourceHandler implements SourceHandler {
     }
 
     final filename = targetFilename ?? path.basename(source.path);
-    // ignore: deprecated_member_use_from_same_package
     final targetPath = await fileSystem.getWriteTargetPath(filename);
 
     // LargeFileHandler's `targetName` parameter is *just* a filename — the
@@ -106,7 +105,6 @@ class AssetSourceHandler implements SourceHandler {
     }
 
     final filename = targetFilename ?? path.basename(source.path);
-    // ignore: deprecated_member_use_from_same_package
     final targetPath = await fileSystem.getWriteTargetPath(filename);
 
     if (_streamsIntoModelDirectory) {

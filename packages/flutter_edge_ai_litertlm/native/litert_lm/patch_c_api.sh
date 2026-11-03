@@ -96,6 +96,7 @@ EXPORTS
   litert_lm_conversation_create
   litert_lm_conversation_delete
   litert_lm_conversation_get_benchmark_info
+  litert_lm_conversation_get_last_turn_end
   litert_lm_conversation_rewind_cancelled_turn
   litert_lm_conversation_send_message
   litert_lm_conversation_send_message_stream
@@ -984,6 +985,36 @@ elif git -C "$DIR" apply --reverse --check "$NPU_SAVE_ALL_KV_PATCH" 2>/dev/null;
   echo "  SKIP: NPU CloneContext already saves every KV cache buffer"
 else
   echo "  ERROR: $NPU_SAVE_ALL_KV_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
+# ── 23. How a turn ended: the turn-end record ──
+# A streamed reply ends with the same final chunk whether the model ended it
+# (stop token), it reached max_output_tokens (Tasks::Decode returns kDone for
+# both), or its decode filled the context window (kMaxNumTokensReached, a
+# normal completion while return_error_on_max_tokens_reached is off, which no C
+# setter reaches). An input that does not fit ends with RESOURCE_EXHAUSTED (or,
+# longer than the whole window, INVALID_ARGUMENT) and leaves the session failed:
+# its failed prefill stays a dependency of every later task (measured on
+# v0.19.0, macOS CPU and Metal). Section 16 read it as "failed, delete".
+# Decode now marks a stop by max_output_tokens on its kDone Responses (a field,
+# not a new TaskState, so every kDone consumer is unchanged); the conversation
+# records how its last decode ended before the callback that reports it; the C
+# wrapper turns that and the status into the LiteRtLmTurnEnd it keeps per send
+# (section 16), with the absl code, behind
+# litert_lm_conversation_get_last_turn_end. The over-long input is reported as
+# RESOURCE_EXHAUSTED too, and rewind_cancelled_turn rewinds a conversation
+# whose input did not fit to that turn's checkpoint, which makes it usable;
+# after a turn that hit max_output_tokens or the window in its decode it
+# changes nothing. Needs sections 16 and 18.
+TURN_END_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/conversation_turn_end_record.patch"
+if git -C "$DIR" apply --check "$TURN_END_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$TURN_END_PATCH"
+  echo "  OK: conversations record how each turn ended"
+elif git -C "$DIR" apply --reverse --check "$TURN_END_PATCH" 2>/dev/null; then
+  echo "  SKIP: turn-end record already applied"
+else
+  echo "  ERROR: $TURN_END_PATCH does not apply to this LiteRT-LM revision" >&2
   exit 1
 fi
 

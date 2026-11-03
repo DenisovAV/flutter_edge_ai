@@ -140,7 +140,19 @@ API(void, litert_lm_embedding_response_delete, (P))
     }                                                              \
   } while (0)
 
+// Exports only our patched libraries have (patch_c_api.sh sections 16, 23):
+// optional, so the probe still runs on an unpatched library.
+typedef Status (*get_last_turn_end_t)(P, int*, int*);
+static get_last_turn_end_t litert_lm_conversation_get_last_turn_end;
+typedef Status (*rewind_cancelled_turn_t)(P, const char*, const char*, P,
+                                          int*);
+static rewind_cancelled_turn_t litert_lm_conversation_rewind_cancelled_turn;
+
 static int LoadAll(LibHandle lib) {
+  litert_lm_conversation_get_last_turn_end =
+      (get_last_turn_end_t)Sym(lib, "litert_lm_conversation_get_last_turn_end");
+  litert_lm_conversation_rewind_cancelled_turn = (rewind_cancelled_turn_t)Sym(
+      lib, "litert_lm_conversation_rewind_cancelled_turn");
   int missing = 0;
   LOAD(litert_lm_get_api_version);
   LOAD(litert_lm_get_last_error_message);
@@ -316,13 +328,175 @@ static P NewConversation(P engine, const char* tools, bool constrained,
 }
 
 // Sends one user message; returns a malloc'd copy of the response JSON.
+static char* Send(P conv, const char* text, P optional_args, Status* status);
+static void DecodeStats(P conv, double* tok_s, size_t* tokens, int* max_nt);
+
+// The turn-end record (section 23): how each kind of end is reported, and
+// that a conversation whose input did not fit stays usable. Run with a small
+// context, PROBE_MAX_TOKENS=256, so a long reply reaches it.
+static const char* TurnEndName(int e) {
+  switch (e) {
+    case 0: return "none";
+    case 1: return "completed";
+    case 2: return "cancelled";
+    case 3: return "failed";
+    case 4: return "running";
+    case 5: return "output_limit";
+    case 6: return "context_limit";
+    case 7: return "context_full";
+    default: return "?";
+  }
+}
+static int CheckTurnEnd(const char* label, P conv, int want) {
+  int end = -1, code = -1;
+  Status s = litert_lm_conversation_get_last_turn_end(conv, &end, &code);
+  bool ok = s == 0 && end == want;
+  printf("RESULT turnend_%s %s end=%s code=%d want=%s\n", label,
+         ok ? "PASS" : "FAIL", TurnEndName(end), code, TurnEndName(want));
+  return ok ? 0 : 1;
+}
+// Repeats a short sentence into a malloc'd text of about `chars` characters
+// (roughly 4.5 characters per token).
+static char* Filler(size_t chars) {
+  const char* sentence = "The quick brown fox jumps over the dog. ";
+  char* text = calloc(chars + 64, 1);
+  while (strlen(text) + strlen(sentence) < chars) strcat(text, sentence);
+  return text;
+}
+static int CmdTurnEnd(P engine) {
+  if (!litert_lm_conversation_get_last_turn_end) {
+    printf("RESULT turnend FAIL library has no "
+           "litert_lm_conversation_get_last_turn_end\n");
+    return 1;
+  }
+  int fail = 0;
+  Status s;
+  char* r;
+  // A fresh conversation: nothing sent.
+  P a = NewConversation(engine, NULL, false, false, 0);
+  fail += CheckTurnEnd("fresh", a, 0);
+  // 1. The model ends the reply.
+  r = Send(a, "Reply with the single word OK.", NULL, &s);
+  free(r);
+  fail += CheckTurnEnd("stop_token", a, 1);
+  litert_lm_conversation_delete(a);
+  // 2. max_output_tokens (8).
+  P b = NewConversation(engine, NULL, false, false, 8);
+  r = Send(b, "Count from 1 to 60, separated by spaces.", NULL, &s);
+  free(r);
+  fail += CheckTurnEnd("max_output_tokens", b, 5);
+  litert_lm_conversation_delete(b);
+  // 3. The decode fills the context window. The prompt takes about 40% of
+  // it, so the window ends before a model decides to stop on its own; a
+  // model that still stops first is reported, not failed.
+  P c = NewConversation(engine, NULL, false, false, 0);
+  {
+    char* filler = Filler((size_t)g_max_tokens * 18 / 10);
+    char* prompt = calloc(strlen(filler) + 128, 1);
+    sprintf(prompt, "%sNow write every number from 1 to 2000, separated by "
+            "spaces.", filler);
+    r = Send(c, prompt, NULL, &s);
+    free(r);
+    free(prompt);
+    free(filler);
+  }
+  {
+    int end = -1, code = -1;
+    litert_lm_conversation_get_last_turn_end(c, &end, &code);
+    if (end == 1) {
+      double tok_s = 0;
+      size_t tokens = 0;
+      int max_nt = 0;
+      DecodeStats(c, &tok_s, &tokens, &max_nt);
+      printf("INFO turnend_max_num_tokens the model ended its reply after %zu "
+             "tokens of a %d-token window: not a check\n", tokens, max_nt);
+    } else {
+      fail += CheckTurnEnd("max_num_tokens", c, 6);
+    }
+  }
+  litert_lm_conversation_delete(c);
+  // 4a. An input longer than the whole window. Upstream refuses it before its
+  // prefill with INVALID_ARGUMENT and leaves the conversation failed; section
+  // 23 reports it as the full context window it is (RESOURCE_EXHAUSTED), and
+  // rewind_cancelled_turn makes the conversation usable again.
+  P d = NewConversation(engine, NULL, false, false, 32);
+  char* big = Filler((size_t)g_max_tokens * 6);
+  r = Send(d, big, NULL, &s);
+  free(r);
+  free(big);
+  fail += CheckTurnEnd("input_longer_than_window", d, 7);
+  if (litert_lm_conversation_rewind_cancelled_turn) {
+    int end = -1;
+    Status rs =
+        litert_lm_conversation_rewind_cancelled_turn(d, NULL, NULL, NULL, &end);
+    bool ok = rs == 0 && end == 7;
+    printf("RESULT turnend_rewind_after_input_longer_than_window %s status=%d "
+           "end=%s\n", ok ? "PASS" : "FAIL", rs, TurnEndName(end));
+    fail += !ok;
+  }
+  r = Send(d, "Reply with the single word OK.", NULL, &s);
+  printf("RESULT turnend_usable_after_input_longer_than_window %s status=%d\n",
+         r ? "PASS" : "FAIL", s);
+  fail += !r;
+  free(r);
+  litert_lm_conversation_delete(d);
+
+  // 4b. An input that fits the window but not what the history left of it:
+  // RESOURCE_EXHAUSTED, the input is not prefilled and the session is left
+  // failed (its prefill stays a dependency of the next task, measured on
+  // v0.19.0); rewind_cancelled_turn rewinds it to the turn's checkpoint.
+  P e = NewConversation(engine, NULL, false, false, 8);
+  char* half = Filler((size_t)g_max_tokens * 23 / 10);
+  r = Send(e, half, NULL, &s);  // about half of a 256-token window
+  printf("INFO turnend_first_half send %s status=%d\n", r ? "ok" : "failed",
+         s);
+  free(r);
+  r = Send(e, half, NULL, &s);  // does not fit what is left
+  printf("INFO turnend_second_half send status=%d err=%s\n", s,
+         r ? "" : litert_lm_get_last_error_message());
+  free(r);
+  fail += CheckTurnEnd("context_full", e, 7);
+  if (litert_lm_conversation_rewind_cancelled_turn) {
+    int end = -1;
+    Status rs =
+        litert_lm_conversation_rewind_cancelled_turn(e, NULL, NULL, NULL, &end);
+    bool ok = rs == 0 && end == 7;
+    printf("RESULT turnend_rewind_after_context_full %s status=%d end=%s\n",
+           ok ? "PASS" : "FAIL", rs, TurnEndName(end));
+    fail += !ok;
+  }
+  r = Send(e, "Reply with the single word OK.", NULL, &s);
+  printf("RESULT turnend_usable_after_context_full %s status=%d\n",
+         r ? "PASS" : "FAIL", s);
+  fail += !r;
+  free(r);
+  {
+    // The reply is capped at 8 tokens: either normal end is right.
+    int end = -1, code = -1;
+    litert_lm_conversation_get_last_turn_end(e, &end, &code);
+    bool ok = end == 1 || end == 5;
+    printf("RESULT turnend_after_context_full %s end=%s code=%d "
+           "want=completed|output_limit\n", ok ? "PASS" : "FAIL",
+           TurnEndName(end), code);
+    fail += !ok;
+  }
+  free(half);
+  litert_lm_conversation_delete(e);
+  printf("RESULT turnend %s %d check(s) failed\n", fail ? "FAIL" : "PASS",
+         fail);
+  return fail ? 1 : 0;
+}
+
+// Sends one user message; returns a malloc'd copy of the response JSON.
 static char* Send(P conv, const char* text, P optional_args, Status* status) {
-  char msg[4096];
+  size_t cap = strlen(text) + 64;
+  char* msg = malloc(cap);
   // `text` is ASCII without quotes or backslashes in every probe.
-  snprintf(msg, sizeof msg, "{\"role\":\"user\",\"content\":\"%s\"}", text);
+  snprintf(msg, cap, "{\"role\":\"user\",\"content\":\"%s\"}", text);
   P resp = NULL;
   *status = litert_lm_conversation_send_message(conv, msg, NULL, optional_args,
                                                 &resp);
+  free(msg);
   if (*status != 0) return NULL;
   const char* json = NULL;
   CHECK(litert_lm_json_response_get_string(resp, &json));
@@ -823,7 +997,8 @@ int main(int argc, char** argv) {
   if (argc < 5) {
     fprintf(stderr,
             "usage: %s <libLiteRtLm> <multiconv|constrained|rewind|scoring|"
-            "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|longprompt|determinism|eg2> "
+            "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|longprompt|determinism|"
+            "turnend|eg2> "
             "<model> <cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS, "
             "PROBE_DISPATCH_DIR\n",
             argv[0]);
@@ -880,6 +1055,7 @@ int main(int argc, char** argv) {
   else if (!strcmp(cmd, "tools")) rc = CmdTools(engine);
   else if (!strcmp(cmd, "longprompt")) rc = CmdLongPrompt(engine);
   else if (!strcmp(cmd, "determinism")) rc = CmdDeterminism(engine);
+  else if (!strcmp(cmd, "turnend")) rc = CmdTurnEnd(engine);
   else {
     fprintf(stderr, "unknown command %s\n", cmd);
     rc = 64;

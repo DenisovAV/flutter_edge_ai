@@ -78,10 +78,16 @@ final _deciderGolden = File('test/public_surface/decider_members.golden.txt');
 /// options with it (engine.dart). Engines compile against it member by
 /// member, as against the embedding SPI.
 const _optionScoringTypes = [
-  'OptionScoringModel',
+  'InferenceModel',
   'OptionScorer',
   'OptionScoringRun',
 ];
+
+/// `InferenceModel` is in the option-scoring golden for its two scoring
+/// members only; the rest of it is not this SPI.
+const _optionScoringMembers = {
+  'InferenceModel': {'openOptionScorer', 'readDecisionSection'},
+};
 
 final _optionScoringGolden = File(
   'test/public_surface/option_scoring_spi_members.golden.txt',
@@ -115,6 +121,7 @@ void main() {
       _render(
         namespace,
         types: _optionScoringTypes,
+        onlyMembers: _optionScoringMembers,
         functions: const [],
         library: 'engine.dart',
         title: 'the option-scoring SPI',
@@ -151,6 +158,7 @@ void main() {
 String _render(
   Map<String, Element> namespace, {
   required List<String> types,
+  Map<String, Set<String>> onlyMembers = const {},
   required List<String> functions,
   required String library,
   required String title,
@@ -170,10 +178,22 @@ String _render(
     if (element is! InterfaceElement) {
       throw StateError('$name is a ${element.runtimeType}, not a class/enum');
     }
+    final only = onlyMembers[name];
+    final members = _members(element);
+    if (only != null) {
+      final rendered = {for (final m in members) m.$1};
+      final missing = only.difference(rendered);
+      if (missing.isNotEmpty) {
+        throw StateError('$name declares no member ${missing.join(', ')}');
+      }
+    }
     lines
       ..add('')
       ..add(_declaration(element))
-      ..addAll(_members(element).map((m) => '  $m'));
+      ..addAll([
+        for (final m in members)
+          if (only == null || only.contains(m.$1)) '  ${m.$2}',
+      ]);
   }
   lines.add('');
   for (final name in functions) {
@@ -227,9 +247,9 @@ String _typeParameters(TypeParameterizedElement element) {
   return '<${rendered.join(', ')}>';
 }
 
-/// One line per public member [element] itself declares; inherited members
-/// belong to the supertype's block.
-List<String> _members(InterfaceElement element) {
+/// One line per public member [element] itself declares, with its name;
+/// inherited members belong to the supertype's block.
+List<(String, String)> _members(InterfaceElement element) {
   final byKind = <(int, String, String)>[];
   void add(int order, String name, String line) =>
       byKind.add((order, name, line));
@@ -321,7 +341,7 @@ List<String> _members(InterfaceElement element) {
     final byOrder = a.$1.compareTo(b.$1);
     return byOrder != 0 ? byOrder : a.$2.compareTo(b.$2);
   });
-  return [for (final m in byKind) m.$3];
+  return [for (final m in byKind) (m.$2, m.$3)];
 }
 
 /// `ReturnType name<T>(params)`.

@@ -1253,4 +1253,142 @@ void main() {
       await expectLater(call, throwsA(isA<StateError>()));
     });
   });
+
+  group('the chat', () {
+    test('a blocking request closes its chat', () async {
+      await buildModel()(simpleRequest());
+
+      expect(fakeChat.closeCallCount, 1);
+    });
+
+    test('a streaming request closes its chat', () async {
+      await buildModel()(simpleRequest(), onChunk: (_) {});
+
+      expect(fakeChat.closeCallCount, 1);
+    });
+
+    test('the usage is read before the chat is closed', () async {
+      fakeChat.sessionMetrics = gemma.SessionMetrics(
+        inputTokens: 7,
+        outputTokens: 3,
+      );
+
+      final response = await buildModel()(simpleRequest());
+
+      expect(response.usage?.inputTokens, 7);
+      expect(fakeChat.closeCallCount, 1);
+    });
+
+    test(
+      'a failed generation closes its chat and reports its own error',
+      () async {
+        fakeChat.generationError = StateError('generation failed');
+
+        await expectLater(
+          buildModel()(simpleRequest()),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              'generation failed',
+            ),
+          ),
+        );
+        expect(fakeChat.closeCallCount, 1);
+      },
+    );
+
+    test('a failed query closes its chat', () async {
+      fakeChat.addQueryChunkError = ArgumentError('bad message');
+
+      await expectLater(
+        buildModel()(simpleRequest()),
+        throwsA(isA<GenkitException>()),
+      );
+      expect(fakeChat.closeCallCount, 1);
+    });
+
+    test('a cancelled request closes its chat after the stop landed', () async {
+      fakeChat.generationGate = Completer<void>();
+      fakeChat.stopLanding = Completer<void>();
+      final controller = CancellationController();
+
+      final call = buildModel()(simpleRequest(), cancel: controller.token);
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      controller.cancel();
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(
+        fakeChat.closeCallCount,
+        0,
+        reason: 'closing under a stop in flight',
+      );
+
+      fakeChat.stopLanding!.complete();
+      await expectLater(call, throwsA(isA<CancelledException>()));
+      expect(fakeChat.closeCallCount, 1);
+    });
+
+    test('the chat is closed before the next request generates', () async {
+      fakeChat.generationGate = Completer<void>();
+      final model = buildModel();
+
+      final first = model(simpleRequest('first'));
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final second = model(simpleRequest('second'));
+      int? closedWhenSecondGenerated;
+      fakeChat.onGenerate = () {
+        closedWhenSecondGenerated = fakeChat.closeCallCount;
+      };
+      fakeChat.generationGate!.complete();
+      await Future.wait([first, second]);
+
+      expect(closedWhenSecondGenerated, 1);
+      expect(fakeChat.closeCallCount, 2);
+    });
+
+    test('a failed close after an answer is reported', () async {
+      fakeChat.closeError = StateError('close failed');
+
+      await expectLater(
+        buildModel()(simpleRequest()),
+        throwsA(
+          isA<GenkitException>().having(
+            (e) => e.message,
+            'message',
+            contains('close failed'),
+          ),
+        ),
+      );
+    });
+
+    test(
+      'a failed close after a failed generation keeps both errors',
+      () async {
+        fakeChat.generationError = StateError('generation failed');
+        fakeChat.closeError = StateError('close failed');
+
+        await expectLater(
+          buildModel()(simpleRequest()),
+          throwsA(
+            isA<GenkitException>()
+                .having((e) => e.cause, 'cause', isA<StateError>())
+                .having(
+                  (e) => e.message,
+                  'message',
+                  allOf(
+                    contains('generation failed'),
+                    contains('close failed'),
+                  ),
+                ),
+          ),
+        );
+      },
+    );
+  });
 }

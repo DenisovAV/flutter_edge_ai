@@ -184,11 +184,15 @@ class FakeInferenceChat extends gemma.InferenceChat {
   int addQueryChunkCallCount = 0;
 
   /// What the chat's session reports after a generation; without it the
-  /// session is unset, as on an engine that reports nothing.
+  /// session is unset, as on an engine that reports nothing. A closed chat
+  /// has no session either.
   gemma.SessionMetrics? sessionMetrics;
 
   @override
   gemma.InferenceModelSession get session => switch (sessionMetrics) {
+    _ when closeCallCount > 0 => throw StateError(
+      'FakeInferenceChat is closed',
+    ),
     final metrics? => _MetricsSession(metrics),
     null => throw StateError('FakeInferenceChat has no session'),
   };
@@ -270,8 +274,16 @@ class FakeInferenceChat extends gemma.InferenceChat {
     }
   }
 
+  int closeCallCount = 0;
+
+  /// When set, [close] fails with it.
+  Object? closeError;
+
   @override
-  Future<void> close() async {}
+  Future<void> close() async {
+    closeCallCount++;
+    if (closeError case final error?) throw error;
+  }
 }
 
 /// Fake embedding model in the shape core 2.3 requires of a fake: a `final

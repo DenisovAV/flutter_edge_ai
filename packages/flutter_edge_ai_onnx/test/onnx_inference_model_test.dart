@@ -220,6 +220,23 @@ void main() {
       await expectLater(model.openSession(), throwsStateError);
     });
 
+    test('openChat takes the model\'s own type, not Gemma\'s (D8)', () async {
+      final model = OnnxInferenceModel(
+        client: FakeGenAiClient(),
+        maxTokens: 1024,
+        modelType: ModelType.phi,
+        activeBackend: PreferredBackend.cpu,
+        onClose: () {},
+      );
+      final chat = await model.openChat();
+      expect(chat.modelType, ModelType.phi);
+      expect(chat.supportImage, isFalse);
+      await chat.close();
+      final asked = await model.openChat(modelType: ModelType.qwen3);
+      expect(asked.modelType, ModelType.qwen3);
+      await asked.close();
+    });
+
     test('openChat runs on an opened session', () async {
       final client = FakeGenAiClient();
       final model = _model(client);

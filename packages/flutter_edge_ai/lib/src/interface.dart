@@ -385,7 +385,9 @@ abstract class InferenceModel {
   /// - `.litertlm` web and built-in AI: not measured.
   ///
   /// Cap the count with `maxConcurrentSessions` on
-  /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`.
+  /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`. Null sets
+  /// no cap unless the engine applies a platform default: ONNX caps open
+  /// sessions at 2 on Android and iOS.
   ///
   /// Not available on ONNX on the web or on the MediaPipe **web** `.task`
   /// path — throws

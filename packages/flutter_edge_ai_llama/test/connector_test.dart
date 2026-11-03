@@ -1046,7 +1046,7 @@ void main() {
       engine.templatePrompt = '<think></think>';
       engine.firstText = '<think>secret';
       engine.blockGeneration = true;
-      final session = await model.openSession();
+      final session = await model.openSession() as LlamaInferenceSession;
       await session.addQueryChunk(
         edge.Message.text(text: 'abandoned', isUser: true),
       );

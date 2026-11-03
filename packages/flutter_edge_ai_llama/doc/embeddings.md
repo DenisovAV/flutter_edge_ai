@@ -1,11 +1,12 @@
 # GGUF text embeddings
 
 Version 0.0.3 adds `LlamaEmbeddingBackend` to the existing llama engine package.
-It requires core 2.5.0 and llamadart
+That release requires core 2.5.0 and llamadart
 0.15.1 with typed native overflow reporting. The core foundation is
 [flutter_edge_ai #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685);
 the typed SDK error is [llamadart #1201](https://github.com/leehack/llamadart/pull/1201).
-The manifest bounds the published SDK to `>=0.15.1 <0.15.2`.
+The current source / next release manifest bounds the published SDK to `>=0.17.5 <0.17.6`.
+Full platform qualification of that update is pending.
 Source qualification does not replace standalone hosted qualification. Do not
 use a dependency override in production.
 
@@ -65,9 +66,13 @@ until a rebuild is needed or the model is closed. A CPU model loaded by an
 unrelated CPU/automatic request does not suppress the first explicit GPU attempt.
 Other explicit CPU/GPU switches replace the current model. The backend declares `{cpu, gpu}` through
 `honouredBackends(spec)` and reports actual loaded placement. Unknown placement
-is refused. Explicit GPU embeddings are refused on Android (every device) and on iOS simulators
-before SDK loading or the qualification probe. With fallback enabled, that refusal
-allows one CPU attempt. Physical iOS and macOS retain GPU support; physical iOS
+is refused. Current source / next release refuses explicit GPU embeddings on
+Android (every device), iOS simulators and macOS x64/Rosetta before SDK loading
+or the qualification probe. The macOS x64 guard is conservative: upstream
+reports Intel/AMD Metal corruption, but EG2 corruption has not been measured
+here ([llamadart #1597](https://github.com/leehack/llamadart/issues/1597)). With fallback enabled, that refusal
+allows one CPU attempt; `backendFallback: false` fails the request. Physical
+iOS and macOS arm64 retain GPU support; physical iOS
 embedding execution still needs qualification.
 
 Only an explicit GPU attempt that throws the SDK's `LlamaUnsupportedException`
@@ -75,9 +80,9 @@ may retry once on CPU. Its warning retains the first error; if CPU also fails,
 the final load error includes both failures and preserves the CPU cause and stack.
 Automatic requests retain SDK automatic selection and never retry load errors.
 An automatic load that requested GPU layers but reports CPU emits one
-release-visible warning per new successful load, except on Android (every device) and on iOS
-simulators, where llamadart's automatic placement is CPU by design. Core
-continues to report an explicit GPU fallback once when it is loaded; reuse
+release-visible warning per new successful load, except on Android (every device), iOS
+simulators and macOS x64/Rosetta, where llamadart's automatic placement is CPU by design.
+Core continues to report an explicit GPU fallback once when it is loaded; reuse
 repeats neither warning.
 `activeBackend` always reports the verified loaded placement. Register
 `LlamaEmbeddingBackend(backendFallback: false)` for exactly one load attempt;
@@ -88,7 +93,7 @@ NPU, image/audio input and Web embeddings are refused. Browser registration does
 not claim GGUF embedding files, so an unsupported install can fail its pre-check.
 Inference remains independently available on the package's existing platforms.
 
-Source qualification uses the pinned fixture in `tool/embedding_model.json`,
+Historical source qualification uses the pinned fixture in `tool/embedding_model.json`,
 published llamadart 0.15.1 and the core source. macOS CPU/Metal and Linux/Windows
 CPU embeddings have been measured. Android has an attributed Pixel 8a diagnostic;
 iOS embeddings remain unqualified. See the [per-platform results](platforms.md#embedding-qualification-by-platform).

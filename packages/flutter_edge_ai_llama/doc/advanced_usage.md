@@ -62,9 +62,18 @@ Calls commit before being delivered; all
 calls must be answered before the next generation.
 
 Thinking deltas become `ThinkingResponse` only when `enableThinking` is true.
-The model can ignore the thinking switch; hidden reasoning still consumes
-runtime/output budget. The low-level String session methods return answer text
-and JSON tool calls; use the chat `generateChatResponseAsync()` API for typed thinking and tools. The synchronous chat response follows Edge AI's
+String session methods omit typed reasoning with either flag value; use chat
+`generateChatResponseAsync()` for typed thinking and tools. With thinking off,
+the connector hides SDK reasoning-channel deltas. In current source / next
+release, llamadart 0.17.5 can classify new `<think>` blocks as content after a
+prompt-ending empty thought. For affected Hermes, DeepSeek V3 and Qwen3 Coder XML
+templates, the adapter also hides consecutive leading thought blocks across
+stream chunks, preserving the earlier thinking-off behavior. Templates without
+that empty-thought ending are unaffected. Later literal tags and structured
+tool arguments remain unchanged. Unmarked reasoning cannot be detected, and
+the model can ignore the switch; hidden reasoning still consumes runtime/output
+budget. Thinking off therefore does not guarantee reasoning-free content.
+The synchronous chat response follows Edge AI's
 single-response API: it returns a call group when present, otherwise joined text.
 
 ## Images, audio and LoRA
@@ -174,11 +183,11 @@ replacement cancels that turn; an invalid tool declaration leaves it usable. GLM
 subset; schemas requiring richer constraints fail explicitly for those grammars.
 Other formats retain the full schema. If any tool cannot be represented as typed
 parameters, the entire set omits that typed view so shared XML grammars do not
-lose argument names. The adapter keeps its schema bridge: llamadart 0.15.1's
-`ToolDefinition.fromJsonSchema` supports a
-narrower set of formats and would reject XML tools. XML nullable-string decoding is a separate SDK limitation; nullable
-string arguments can come back as text instead of calls. Use scalar string
-properties for those models until the SDK parser is fixed.
+lose argument names. The adapter keeps its schema bridge: llamadart 0.17.5's
+`ToolDefinition.fromJsonSchema` supports a narrower set of formats and rejects
+formats such as Qwen3 Coder XML. XML nullable-string decoding is a separate SDK
+limitation; nullable string arguments can come back as text instead of calls.
+Use scalar string properties for those models until the SDK parser is fixed.
 
 The connector rejects a loaded context smaller than requested; request a smaller
 `maxTokens` explicitly rather than relying on a silent Web fallback. A fatal SDK

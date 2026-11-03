@@ -55,23 +55,27 @@ typedef _EngineLoader =
 final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
   /// Creates the qualified native text embedding provider.
   /// With [backendFallback] true, an explicit GPU request may retry once on
-  /// CPU after LlamaUnsupportedException. Android and iOS simulators refuse
-  /// explicit GPU attempts before loading. Other load errors are not retried.
+  /// CPU after LlamaUnsupportedException. Android, iOS simulators and macOS
+  /// x64/Rosetta refuse explicit GPU attempts before loading. Other load errors
+  /// are not retried.
   /// Automatic selection accepts CPU or GPU and warns when it selects CPU,
-  /// except on Android and iOS simulators, where llamadart's automatic
-  /// placement is CPU by design.
+  /// except on Android, iOS simulators and macOS x64/Rosetta, where
+  /// llamadart's automatic placement is CPU by design.
   /// With false, explicit placement mismatches fail as EmbeddingLoadException.
   /// Unknown placement is always refused.
   const LlamaEmbeddingBackend({this.backendFallback = true})
     : _loader = null,
-      _gpuRefusal = null;
+      _gpuRefusal = null,
+      _autoUsesCpu = null;
 
   const LlamaEmbeddingBackend._(
     this._loader,
-    this._gpuRefusal, {
+    this._gpuRefusal,
+    this._autoUsesCpu, {
     this.backendFallback = true,
   });
   final String? Function()? _gpuRefusal;
+  final bool Function()? _autoUsesCpu;
   final _EngineLoader? _loader;
 
   /// Whether an unsupported explicit GPU request may retry once on CPU.
@@ -140,6 +144,7 @@ final class LlamaEmbeddingBackend extends EmbeddingBackendProvider {
         _loader,
         backendFallback,
         _gpuRefusal,
+        _autoUsesCpu,
       ),
       activeBackend: null,
     );
@@ -153,8 +158,10 @@ final class _PassConfig {
     this.loader,
     this.backendFallback,
     this.gpuRefusal,
+    this.autoUsesCpu,
   );
   final String? Function()? gpuRefusal;
+  final bool Function()? autoUsesCpu;
   final String path;
   final PreferredBackend? backend;
   final _EngineLoader? loader;
@@ -269,9 +276,7 @@ final class _LlamaEmbeddingPass extends EmbeddingPass {
     if (params.device == llama.ComputeDevice.auto &&
         params.gpuLayers > 0 &&
         activeBackend == PreferredBackend.cpu &&
-        // llamadart resolves automatic placement to CPU on Android and iOS
-        // simulators, the same targets that refuse explicit GPU embeddings.
-        (_config.gpuRefusal ?? nativeEmbeddingGpuRefusal)() == null) {
+        !(_config.autoUsesCpu ?? nativeEmbeddingAutoUsesCpu)()) {
       // ignore: avoid_print
       print(
         '[flutter_edge_ai_llama] WARNING: automatic GGUF embedding '
@@ -395,8 +400,10 @@ LlamaEmbeddingBackend createLlamaEmbeddingBackendForTest({
   required Future<llama.LlamaEngine> Function(String, llama.ModelParams) loader,
   bool backendFallback = true,
   String? Function()? gpuRefusal,
+  bool Function()? autoUsesCpu,
 }) => LlamaEmbeddingBackend._(
   loader,
   gpuRefusal,
+  autoUsesCpu,
   backendFallback: backendFallback,
 );

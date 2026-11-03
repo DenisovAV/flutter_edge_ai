@@ -13,8 +13,9 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 ## Try the example
 
-The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+** and
-published llamadart **0.15.1** with typed overflow reporting. Connector CI uses
+The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**.
+Published 0.0.5 uses llamadart **0.15.1**; current source / next release uses
+**0.17.5**, both with typed overflow reporting. Connector CI uses
 Flutter 3.47.1 for reproducible checks. From the repository root:
 
 ```
@@ -32,7 +33,8 @@ The example also has Android, iOS, Linux, Windows and Web runners. Android downl
 into app-owned storage; the installed model restores after restart. The UI focuses on text chat, cancellation and a usable phone
 layout. See the
 [package README](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md)
-for the Web asset preparation and hosting headers.
+for the Web asset preparation and hosting headers. After an upgrade, rerun
+`tool/fetch_web_assets.py` from that package or checkout to refresh its staged Web assets.
 
 ## Stream a chat response
 
@@ -83,7 +85,7 @@ if its adapter is missing; Web LoRA execution remains unsupported.
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
 Version 0.0.3 adds native embeddings with llamadart 0.15.1; 0.0.4 and 0.0.5
-change only the docs. This guide targets 0.0.5:
+change only the docs. Use the hosted package until the next release:
 
 ```
 dependencies:
@@ -113,8 +115,8 @@ when this connector or Flutter Edge AI LiteRT-LM is in the app graph. Keep the
 explicit selection as defence in depth; selecting both LiteRT-LM owners is rejected. The monorepo configures llama.cpp for its own workspace tests; that
 does not suppress another engine package's independently owned runtime.
 Apple Flutter apps add `llamadart_llama_cpp_flutter 0.15.0` directly and enable
-SwiftPM, as in this package's example. To keep an app llama.cpp only, omit the
-separate LiteRT-LM engine and companion dependencies.
+SwiftPM. The repository example follows the next-release pins. To keep an app
+llama.cpp only, omit the separate LiteRT-LM engine and companion dependencies.
 
 For an Apple workspace app on SDK 0.15.1, declare the companion directly in the
 app member and put hook settings at the workspace root. Run `flutter pub get`
@@ -136,10 +138,19 @@ and iOS embedding execution remain unqualified. See the
 [per-platform embedding evidence](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md#embedding-qualification-by-platform).
 Explicit GPU embeddings on Android (every device) and on iOS simulators fall back to CPU by
 default. Register `LlamaEmbeddingBackend(backendFallback: false)` to refuse
-those requests before loading. Automatic requests keep SDK automatic selection.
+those requests before loading. Current source / next release applies the same
+refusal and CPU fallback policy to macOS x64/Rosetta as a conservative guard
+for upstream-reported Intel/AMD Metal corruption; macOS arm64 Metal is unaffected.
+Automatic requests keep SDK automatic selection.
 Media and Web embeddings remain unavailable in the initial profile.
 
 ## Capabilities and qualification
+
+Current source / next release pins llamadart `>=0.17.5 <0.17.6`, Apple companion `0.17.3`,
+native artifacts `v0.8.0-1` and Web bridge `v0.1.79`. Full platform
+qualification of these pins is pending; earlier qualification evidence does
+not qualify the updated pair. These pins require a source checkout until release;
+the hosted installation recipe above remains on the published pair.
 
 The adapter implements tools, thinking, independent histories, native LoRA,
 and projector-backed image/audio input. Each requires a

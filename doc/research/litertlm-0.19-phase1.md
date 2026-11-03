@@ -221,3 +221,17 @@ smaller history), not a retry.
 > later prefill of the session fails with
 > `INTERNAL: Prefill turn prefill:N already started.` `Tasks::Decode` has the
 > same shape for `TimeDecodeTurnStart`.
+
+## LiteRT C API at the 0.19 pin (`dcb657e8`, was `26895c9f`; macOS, 2026-11-04)
+
+- **Headers.** The ten headers the bindings read (`litert_{model,environment,options,tensor_buffer,compiled_model,layout,model_types,common,tensor_buffer_types,opaque_options}.h`) were diffed across the two pins. All 24 functions in `LITERT_BINDINGS_SYMBOLS` keep their declarations. `litert_layout.h` and `litert_model_types.h` (the structs we mirror) are byte-identical. The rest is additions: delegation metrics, `LiteRtGetRuntimeAbiVersion`, `LiteRtCreateTensorBufferFromCustomHandle`, and `kLiteRtStatusErrorFailedPrecondition = 11`. Every status value is explicit and none moved.
+- **Probe.** `probes/litert_probe.c` makes the `.tflite` pass's calls in its order. It is compiled against the pin's headers, with each pointer typed from its declaration, so a moved signature fails the build. It covers 19 of the 24 functions; the opaque-options and buffer-requirement calls used by speech are covered by the header diff only.
+
+| Gecko 110m seq64 (registry sha256) | 0.19 (`mac23`) | 0.18.0-h (release archive) |
+|---|---|---|
+| CPU | PASS: dim 768, norm 1.0, repeat bit-identical, the two inputs cos 0.223 | PASS, **vectors bit-identical to 0.19** |
+| Metal | `LiteRtCreateCompiledModel` 504 (589 of 633 ops on the GPU, then compile fails) | the same 504, with the Metal framework staged and registered |
+
+The Gecko Metal failure is therefore not new in 0.19. EmbeddingGemma 1 was not
+run: its repository is gated and this Mac has no Hugging Face token. Linux,
+Windows and Android are left for the CI artifacts.

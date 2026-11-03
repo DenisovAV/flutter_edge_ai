@@ -88,10 +88,10 @@ index daea9e4..2c9d1b9 100644
          absl::StatusCode::kInternal,
          "The last turn failed; the conversation cannot continue.");
 diff --git a/c/conversation.h b/c/conversation.h
-index 6e61512..a8b3598 100644
+index 6e61512..a953374 100644
 --- a/c/conversation.h
 +++ b/c/conversation.h
-@@ -659,14 +659,37 @@ typedef enum {
+@@ -659,14 +659,38 @@ typedef enum {
    kLiteRtLmTurnEndCancelled = 2,  // cancelled; the conversation is poisoned
    kLiteRtLmTurnEndFailed = 3,     // ended with an error
    kLiteRtLmTurnEndRunning = 4,    // had not ended when the wait timed out
@@ -100,10 +100,11 @@ index 6e61512..a8b3598 100644
 +  kLiteRtLmTurnEndOutputLimit = 5,   // the reply reached max_output_tokens
 +  kLiteRtLmTurnEndContextLimit = 6,  // the decode filled the context window
 +                                     // (max_num_tokens); the reply is cut
-+  kLiteRtLmTurnEndContextFull = 7,   // the input did not fit the context
-+                                     // window: it was not prefilled and is not
-+                                     // in the history, and the conversation
-+                                     // fails until rewind_cancelled_turn
++  kLiteRtLmTurnEndContextFull = 7,   // the input did not fit what the context
++                                     // window has left (or the window has no
++                                     // room for any prefill): it is not in the
++                                     // history, and the conversation fails
++                                     // until rewind_cancelled_turn
  } LiteRtLmTurnEnd;
  
 +// flutter_edge_ai (patch_c_api.sh section 23). How the last send on

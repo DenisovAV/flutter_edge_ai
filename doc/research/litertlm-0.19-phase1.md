@@ -235,3 +235,71 @@ smaller history), not a retry.
 The Gecko Metal failure is therefore not new in 0.19. EmbeddingGemma 1 was not
 run: its repository is gated and this Mac has no Hugging Face token. Linux,
 Windows and Android are left for the CI artifacts.
+
+## Pre-tag probe 1: §16 across conversations, and §24 (macOS, 2026-11-04)
+
+Probe command `convrewind [image]`, Gemma 4 E2B, window 1024, CPU and Metal.
+A streamed reply on conversation A is cancelled mid-decode and a turn runs on
+B. A is then rewound with the stopped exchange (the user message plus the
+partial reply produced, as the Dart client passes it) and asked a follow-up.
+The same path without B must give the same greedy follow-up. A control
+conversation seeded with that exchange through `config_set_messages` is
+reported beside it.
+
+**Found: a rewind followed by a prefill could lose the history.** A rewind
+with the partial "The salt-laced wind was Elara's" left the conversation at
+5 tokens instead of 34. The model then answered "I am Gemma 4, a Large
+Language Model developed by Google Deep Hungary.", while the control
+conversation recalled the story. It happened on CPU and Metal, with and
+without B. With "…Bob's" the count was 33 and the answer correct.
+
+Cause: after `RewindToCheckpoint` the executor's step is at the checkpoint,
+but its processed tokens still hold the stopped send's tokens. The resource
+manager's prefill drops the input tokens that match them (`RemoveMatchingTokens`).
+When all of them match, it calls the executor with the new step in the prefill
+params only. The executor takes its step from `SetCurrentStep`, so the rest of
+the input was prefilled at the checkpoint's step, and the matched tokens were
+lost. That is the usual case after a stop: the partial reply ends with the
+token the executor holds as pending. The other branch already calls
+`SetCurrentStep`.
+
+**§24** (`patches/resource_manager_matched_step.patch`) adds that call to the
+full-match branch.
+
+With §24:
+
+| Run | CPU | Metal |
+|---|---|---|
+| text, the stream's own partial | PASS | PASS |
+| text, forced "…Elara's" / "…Elara" / "…Bob's" | PASS, 34 / 32 / 33 tokens | PASS, 34 / 32 / 33 tokens |
+| image (house_scene.png, ~300 tokens) | PASS | PASS |
+
+On Metal the follow-up depends on how far the cancelled decode got, because
+reused positions hold decode-written KV, which is not bit-identical to the same
+tokens prefilled. The probe therefore compares only runs that stopped at the
+same step, read with `get_token_count` after the final chunk. On CPU every run
+matches.
+
+### Upstream issue draft (not posted)
+
+> **Prefill after `rewind_to_checkpoint` drops the history when the input
+> starts with every token the executor processed after the checkpoint**
+>
+> LiteRT-LM v0.19.0 (`771b06e1`), macOS arm64, CPU and Metal, conversation
+> and session API.
+>
+> 1. Save a checkpoint, prefill a message, decode a few tokens, stop.
+> 2. Rewind to the checkpoint and prefill a text that begins with the same
+>    tokens (the message and the tokens decoded so far) and continues.
+> 3. `GetCurrentStep()` is the length of the continuation only (Gemma 4 E2B:
+>    5 instead of 34), and the model no longer sees the message.
+>
+> `ResourceManager`'s prefill drops the tokens that match the processed ones
+> with `RemoveMatchingTokens`. When the processed tokens are all matched
+> (`processed_tokens->TokenCount() == current_step`), it calls
+> `llm_executor_->Prefill(new_inputs, new_prefill_query_params)` with the new
+> step set on the params only. `LlmLiteRtCompiledModelExecutorBase::Prefill`
+> does not read `ExecutorPrefillParams::GetCurrentStep()`, so the
+> continuation is prefilled from the step the rewind set. The branch below it
+> calls `llm_executor_->SetCurrentStep(current_step)` first. Calling it in
+> this branch too fixes it.

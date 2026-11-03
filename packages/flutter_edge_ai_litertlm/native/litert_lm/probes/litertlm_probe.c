@@ -95,6 +95,13 @@ API(Status, litert_lm_conversation_create, (P, P, P*))
 API(void, litert_lm_conversation_delete, (P))
 API(Status, litert_lm_conversation_send_message,
     (P, const char*, const char*, P, P*))
+API(Status, litert_lm_conversation_send_message_stream,
+    (P, const char*, const char*, P, void (*)(void*, const void*), void*))
+API(Status, litert_lm_conversation_cancel_process, (P))
+API(Status, litert_lm_conversation_config_set_messages, (P, const char*))
+API(Status, litert_lm_stream_chunk_get_text, (const void*, const char**))
+API(Status, litert_lm_stream_chunk_get_error, (const void*, const char**))
+API(Status, litert_lm_stream_chunk_is_final, (const void*, bool*))
 API(Status, litert_lm_json_response_get_string, (P, const char**))
 API(void, litert_lm_json_response_delete, (P))
 API(Status, litert_lm_conversation_optional_args_create, (P*))
@@ -198,6 +205,12 @@ static int LoadAll(LibHandle lib) {
   LOAD(litert_lm_conversation_create);
   LOAD(litert_lm_conversation_delete);
   LOAD(litert_lm_conversation_send_message);
+  LOAD(litert_lm_conversation_send_message_stream);
+  LOAD(litert_lm_conversation_cancel_process);
+  LOAD(litert_lm_conversation_config_set_messages);
+  LOAD(litert_lm_stream_chunk_get_text);
+  LOAD(litert_lm_stream_chunk_get_error);
+  LOAD(litert_lm_stream_chunk_is_final);
   LOAD(litert_lm_json_response_get_string);
   LOAD(litert_lm_json_response_delete);
   LOAD(litert_lm_conversation_optional_args_create);
@@ -252,6 +265,14 @@ static double Now(void) {
   timespec_get(&ts, TIME_UTC);
   return ts.tv_sec + ts.tv_nsec / 1e9;
 }
+static void SleepMs(int ms) {
+#if defined(_WIN32)
+  Sleep(ms);
+#else
+  struct timespec ts = {ms / 1000, (ms % 1000) * 1000000L};
+  nanosleep(&ts, NULL);
+#endif
+}
 
 static const char* g_cache_dir = NULL;
 static const char* g_dispatch_dir = NULL;
@@ -259,8 +280,9 @@ static int g_max_tokens = 1024;
 
 static P NewEngine(const char* model, const char* backend, int mtp_mode) {
   P settings = NULL, engine = NULL;
-  CHECK(litert_lm_engine_settings_create(model, backend, NULL, NULL,
-                                         &settings));
+  // PROBE_VISION=cpu|gpu creates the vision executor (images in convrewind).
+  CHECK(litert_lm_engine_settings_create(model, backend, getenv("PROBE_VISION"),
+                                         NULL, &settings));
   CHECK(litert_lm_engine_settings_set_max_num_tokens(settings, g_max_tokens));
   if (g_cache_dir) {
     CHECK(litert_lm_engine_settings_set_cache_dir(settings, g_cache_dir));
@@ -579,6 +601,275 @@ static int CmdPrefillRoom(P engine) {
   litert_lm_conversation_delete(c);
   printf("RESULT prefillroom %s %d check(s) failed\n", fail ? "FAIL" : "PASS",
          fail);
+  return fail ? 1 : 0;
+}
+
+// Pre-tag probe 1: section 16 across conversations. A streamed reply on A is
+// cancelled mid-decode, a turn runs on B, then A is rewound with the stopped
+// exchange (the user message and the part of the reply produced, as the Dart
+// client passes it) and asked a follow-up. The same path without B must give
+// the same greedy follow-up, byte for byte: the turn on B left nothing in A.
+// Run once without and once with an image (argument 5, PROBE_VISION set).
+typedef struct {
+  volatile int chunks;
+  volatile int final;
+  char text[16384];
+  size_t len;
+} Stream;
+static void TextOf(const char* json, char* out, size_t cap);
+static void OnChunk(void* data, const void* chunk) {
+  Stream* st = (Stream*)data;
+  const char* t = NULL;
+  bool fin = false;
+  if (litert_lm_stream_chunk_get_text(chunk, &t) == 0 && t) {
+    char piece[4096];
+    TextOf(t, piece, sizeof piece);
+    size_t n = strlen(piece);
+    if (st->len + n + 1 < sizeof st->text) {
+      memcpy(st->text + st->len, piece, n + 1);
+      st->len += n;
+    }
+  }
+  st->chunks++;
+  if (litert_lm_stream_chunk_is_final(chunk, &fin) == 0 && fin) st->final = 1;
+}
+// JSON string body of `in` (quotes, backslashes and control characters).
+static char* JsonEscape(const char* in) {
+  char* out = malloc(strlen(in) * 6 + 1);
+  size_t n = 0;
+  for (const unsigned char* c = (const unsigned char*)in; *c; c++) {
+    if (*c == '"' || *c == '\\') {
+      out[n++] = '\\';
+      out[n++] = (char)*c;
+    } else if (*c < 0x20) {
+      n += (size_t)sprintf(out + n, "\\u%04x", *c);
+    } else {
+      out[n++] = (char)*c;
+    }
+  }
+  out[n] = 0;
+  return out;
+}
+static char* Base64File(const char* path) {
+  FILE* f = fopen(path, "rb");
+  if (!f) return NULL;
+  fseek(f, 0, SEEK_END);
+  long size = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  unsigned char* bytes = malloc((size_t)size);
+  size_t got = fread(bytes, 1, (size_t)size, f);
+  fclose(f);
+  static const char* abc =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  char* out = malloc(((size_t)got + 2) / 3 * 4 + 1);
+  size_t n = 0;
+  for (size_t i = 0; i < got; i += 3) {
+    unsigned v = bytes[i] << 16;
+    if (i + 1 < got) v |= bytes[i + 1] << 8;
+    if (i + 2 < got) v |= bytes[i + 2];
+    out[n++] = abc[(v >> 18) & 63];
+    out[n++] = abc[(v >> 12) & 63];
+    out[n++] = i + 1 < got ? abc[(v >> 6) & 63] : '=';
+    out[n++] = i + 2 < got ? abc[v & 63] : '=';
+  }
+  out[n] = 0;
+  free(bytes);
+  return out;
+}
+// One run of probe 1. `partial` is the stopped reply to rewind with: NULL to
+// take this run's own (returned through `got_partial`).
+static char* ConvRewindRun(P engine, const char* user_json, bool with_b,
+                           const char* partial, char** got_partial,
+                           size_t* decoded_step, int* fail) {
+  Status s;
+  P a = NewConversation(engine, NULL, false, false, 48);
+  P b = with_b ? NewConversation(engine, NULL, false, false, 16) : NULL;
+  Stream* st = calloc(1, sizeof(Stream));
+  s = litert_lm_conversation_send_message_stream(a, user_json, NULL, NULL,
+                                                 OnChunk, st);
+  if (s != 0) {
+    printf("RESULT convrewind_stream FAIL status=%d err=%s\n", s,
+           litert_lm_get_last_error_message());
+    (*fail)++;
+    return NULL;
+  }
+  double t0 = Now();
+  while (st->chunks < 6 && !st->final && Now() - t0 < 120) SleepMs(5);
+  bool cancelled_mid = !st->final;
+  litert_lm_conversation_cancel_process(a);
+  if (with_b) {
+    char* r = Send(b, "Name one planet. Answer with one word.", NULL, &s);
+    char text[256] = "";
+    if (r) TextOf(r, text, sizeof text);
+    printf("INFO convrewind turn_on_b status=%d answer=\"%s\"\n", s, text);
+    if (!r) (*fail)++;
+    free(r);
+  }
+  // The rewind waits until A's stopped send has ended and its callbacks ran.
+  const char* use = partial;
+  char* esc_user_partial = NULL;
+  // The step the cancelled decode reached, read once its final chunk is in:
+  // the rewind reuses the KV positions its tokens match (section 24), and on
+  // a GPU positions written by a decode are not bit-identical to the same
+  // tokens prefilled, so only runs that stopped at the same step compare.
+  {
+    double t1 = Now();
+    while (!st->final && Now() - t1 < 30) SleepMs(5);
+    *decoded_step = 0;
+    litert_lm_conversation_get_token_count(a, decoded_step);
+  }
+  if (!use || getenv("PROBE_WAIT_FINAL")) {
+    double t1 = Now();
+    while (!st->final && Now() - t1 < 30) SleepMs(5);
+  }
+  if (!use) {
+    *got_partial = strdup(st->text);
+    use = *got_partial;
+  }
+  esc_user_partial = JsonEscape(use);
+  size_t cap = strlen(user_json) + strlen(esc_user_partial) + 128;
+  char* exchange = malloc(cap);
+  snprintf(exchange, cap,
+           "[%s,{\"role\":\"assistant\",\"content\":[{\"type\":\"text\","
+           "\"text\":\"%s\"}]}]",
+           user_json, esc_user_partial);
+  int end = -1;
+  Status rs =
+      litert_lm_conversation_rewind_cancelled_turn(a, exchange, NULL, NULL, &end);
+  bool rewound = rs == 0 && end == 2;
+  size_t count = 0;
+  litert_lm_conversation_get_token_count(a, &count);
+  printf("RESULT convrewind_rewind%s %s status=%d end=%s cancelled_mid=%d "
+         "chunks=%d tokens=%zu\n", with_b ? "_with_b" : "",
+         rewound ? "PASS" : "FAIL", rs, TurnEndName(end), cancelled_mid,
+         st->chunks, count);
+  if (!rewound) (*fail)++;
+  free(exchange);
+  free(esc_user_partial);
+  char* r = Send(a, "In one short sentence, what were you just describing?",
+                 NULL, &s);
+  char* answer = NULL;
+  if (r) {
+    char text[2048];
+    TextOf(r, text, sizeof text);
+    answer = strdup(text);
+    free(r);
+  } else {
+    printf("RESULT convrewind_follow_up FAIL status=%d err=%s\n", s,
+           litert_lm_get_last_error_message());
+    (*fail)++;
+  }
+  if (b) litert_lm_conversation_delete(b);
+  litert_lm_conversation_delete(a);
+  free(st);
+  return answer;
+}
+static int CmdConvRewind(P engine, const char* image) {
+  if (!litert_lm_conversation_rewind_cancelled_turn) {
+    printf("RESULT convrewind FAIL library has no rewind_cancelled_turn\n");
+    return 1;
+  }
+  const char* prompt =
+      image ? "Describe this picture in great detail, object by object."
+            : "Write a long story about a lighthouse keeper and a storm.";
+  char* blob = image ? Base64File(image) : NULL;
+  if (image && !blob) {
+    printf("RESULT convrewind FAIL cannot read %s\n", image);
+    return 1;
+  }
+  size_t cap = strlen(prompt) + (blob ? strlen(blob) : 0) + 128;
+  char* user = malloc(cap);
+  if (blob) {
+    snprintf(user, cap,
+             "{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"blob\":"
+             "\"%s\"},{\"type\":\"text\",\"text\":\"%s\"}]}",
+             blob, prompt);
+  } else {
+    snprintf(user, cap,
+             "{\"role\":\"user\",\"content\":[{\"type\":\"text\","
+             "\"text\":\"%s\"}]}",
+             prompt);
+  }
+  int fail = 0;
+  char* partial = NULL;
+  // PROBE_PARTIAL forces the stopped reply every run rewinds with.
+  const char* forced = getenv("PROBE_PARTIAL");
+  size_t step_b = 0, step = 0, step_again = 0;
+  char* with_b =
+      ConvRewindRun(engine, user, true, forced, &partial, &step_b, &fail);
+  if (forced) partial = strdup(forced);
+  // Runs without B until one stops at B's step (at most 6), then one more at
+  // that step for the repeat check.
+  char* without_b = NULL;
+  char* again = NULL;
+  for (int i = 0; partial && i < 6 && !again; i++) {
+    char* r = ConvRewindRun(engine, user, false, partial, NULL, &step, &fail);
+    printf("INFO convrewind no_b_run=%d decoded_step=%zu (b: %zu)\n", i, step,
+           step_b);
+    if (step != step_b) {
+      free(r);
+    } else if (!without_b) {
+      without_b = r;
+    } else {
+      again = r;
+      step_again = step;
+    }
+  }
+  if (!again) {
+    printf("RESULT convrewind_same_step INFO no two runs without B stopped at "
+           "B's step %zu\n", step_b);
+  }
+  (void)step_again;
+  printf("INFO convrewind partial=\"%.120s\"\n", partial ? partial : "");
+  if (partial) {
+    // Control without any rewind: a new conversation whose history is the
+    // same exchange, given as its preface. Its follow-up may differ in
+    // rendering from a rewound one; reported, not checked.
+    char* esc = JsonEscape(partial);
+    size_t hcap = strlen(user) + strlen(esc) + 128;
+    char* history = malloc(hcap);
+    snprintf(history, hcap,
+             "[%s,{\"role\":\"assistant\",\"content\":[{\"type\":\"text\","
+             "\"text\":\"%s\"}]}]",
+             user, esc);
+    P cfg = NULL, conv = NULL;
+    P sc = GreedySessionConfig(true, 48);
+    CHECK(litert_lm_conversation_config_create(&cfg));
+    CHECK(litert_lm_conversation_config_set_session_config(cfg, sc));
+    CHECK(litert_lm_conversation_config_set_messages(cfg, history));
+    CHECK(litert_lm_conversation_create(engine, cfg, &conv));
+    litert_lm_conversation_config_delete(cfg);
+    litert_lm_session_config_delete(sc);
+    size_t pcount = 0;
+    litert_lm_conversation_get_token_count(conv, &pcount);
+    printf("INFO convrewind preface_control tokens=%zu\n", pcount);
+    Status cs;
+    char* r = Send(conv,
+                   "In one short sentence, what were you just describing?",
+                   NULL, &cs);
+    char text[2048] = "";
+    if (r) TextOf(r, text, sizeof text);
+    printf("INFO convrewind preface_control status=%d answer=\"%s\"\n", cs,
+           text);
+    free(r);
+    litert_lm_conversation_delete(conv);
+    free(history);
+    free(esc);
+  }
+  bool same = with_b && without_b && !strcmp(with_b, without_b);
+  bool repeat = !again || (without_b && !strcmp(without_b, again));
+  printf("RESULT convrewind_repeatable %s\n", repeat ? "PASS" : "FAIL");
+  printf("RESULT convrewind_b_left_nothing %s with_b=\"%s\" without_b=\"%s\"\n",
+         same ? "PASS" : "FAIL", with_b ? with_b : "", without_b ? without_b : "");
+  fail += !same + !repeat;
+  free(with_b);
+  free(without_b);
+  free(again);
+  free(partial);
+  free(user);
+  free(blob);
+  printf("RESULT convrewind%s %s %d check(s) failed\n", image ? "_image" : "",
+         fail ? "FAIL" : "PASS", fail);
   return fail ? 1 : 0;
 }
 
@@ -1093,7 +1384,7 @@ int main(int argc, char** argv) {
     fprintf(stderr,
             "usage: %s <libLiteRtLm> <multiconv|constrained|rewind|scoring|"
             "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|longprompt|determinism|"
-            "turnend|prefillroom|eg2> "
+            "turnend|prefillroom|convrewind [image]|eg2> "
             "<model> <cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS, "
             "PROBE_DISPATCH_DIR\n",
             argv[0]);
@@ -1152,6 +1443,8 @@ int main(int argc, char** argv) {
   else if (!strcmp(cmd, "determinism")) rc = CmdDeterminism(engine);
   else if (!strcmp(cmd, "turnend")) rc = CmdTurnEnd(engine);
   else if (!strcmp(cmd, "prefillroom")) rc = CmdPrefillRoom(engine);
+  else if (!strcmp(cmd, "convrewind"))
+    rc = CmdConvRewind(engine, argc > 5 ? argv[5] : NULL);
   else {
     fprintf(stderr, "unknown command %s\n", cmd);
     rc = 64;

@@ -1028,4 +1028,28 @@ else
   exit 1
 fi
 
+# ── 24. A prefill that reuses the KV positions a rewind left keeps its step ──
+# After a rewind (section 16, or upstream's own rewind_to_checkpoint) the
+# executor's step is back at the checkpoint, but its processed tokens still
+# hold what the stopped send prefilled and decoded. The resource manager's
+# prefill drops the input tokens that match them and, when they all match
+# (the stopped exchange of a stopped reply usually does: it ends with the
+# reply's last token, which the executor holds as its pending token), calls
+# the executor with the step after them in the prefill params only. The
+# executor takes its step from SetCurrentStep, so the rest of the input was
+# prefilled from the checkpoint's step and the matched tokens were lost:
+# Gemma 4 E2B rewound with "The salt-laced wind was Elara's" held 5 tokens
+# instead of 34 and forgot the conversation (macOS CPU and Metal, 2026-11-04,
+# probe command convrewind). The other branch already sets the step.
+MATCHED_STEP_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/resource_manager_matched_step.patch"
+if git -C "$DIR" apply --check "$MATCHED_STEP_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$MATCHED_STEP_PATCH"
+  echo "  OK: a prefill after a rewind keeps the matched tokens' step"
+elif git -C "$DIR" apply --reverse --check "$MATCHED_STEP_PATCH" 2>/dev/null; then
+  echo "  SKIP: matched-step fix already applied"
+else
+  echo "  ERROR: $MATCHED_STEP_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
 echo "Patch complete."

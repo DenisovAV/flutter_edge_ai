@@ -86,15 +86,21 @@ class GenerateError {
   final String error;
 }
 
-/// Main → worker: stop the in-flight generation, if any. NOT gated by the
-/// client's `_mutex` — it must be able to interrupt a call holding it.
+/// Main → worker: stop [sessionId]'s generation, if it is the one in flight
+/// (or queued). A stop for one session never cuts off another's turn. NOT
+/// gated by the client's `_mutex` — it must be able to interrupt a call
+/// holding it. A null [sessionId] is the legacy session.
 class StopSignal {
-  const StopSignal();
+  const StopSignal([this.sessionId]);
+  final int? sessionId;
 }
 
-/// Main → worker: destroy the live generator so the next turn starts fresh.
+/// Main → worker: destroy [sessionId]'s live generator so its next turn starts
+/// fresh (and, for an opened session, so its KV cache is released). A null
+/// [sessionId] is the legacy session.
 class ResetSessionRequest extends QueuedRequest {
-  const ResetSessionRequest();
+  const ResetSessionRequest([this.sessionId]);
+  final int? sessionId;
 }
 
 /// Worker → main: [ResetSessionRequest] handled. [error] is set, with its

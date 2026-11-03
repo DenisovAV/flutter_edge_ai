@@ -101,7 +101,7 @@ can be registered on its own:
 
 - **`OnnxEngine`** — text generation via [ORT-GenAI](https://github.com/microsoft/onnxruntime-genai)
   on native, [Transformers.js](https://huggingface.co/docs/transformers.js) on
-  Web. Text-only, one session at a time in v1 — no vision, no audio, no LoRA
+  Web. Text-only; native supports independent `openSession` sessions (web: one at a time) — no vision, no audio, no LoRA
   yet.
 - **`OnnxEmbeddingBackend`** — embeddings via plain ONNX Runtime
   (WordPiece/BERT-style and SentencePiece models) on native, onnxruntime-web

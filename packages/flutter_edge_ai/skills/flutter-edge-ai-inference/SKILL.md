@@ -188,7 +188,7 @@ The chat keeps the history: add the next user message and generate again. `gener
 
 `createSession` and `createChat` fill a single slot on the model, so a second one closes the first. For concurrent conversations use `openSession` / `openChat`, and close each one.
 
-They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` / `supportAudio:` if the chat sends images or audio) explicitly, or the chat runs as `ModelType.gemmaIt` with images and audio off. They work on `.litertlm` (native and web), on MediaPipe Android and iOS, on built-in AI, and on `flutter_edge_ai_llama`, whose `openChat` does take the installed model's type and image/audio support, as its `createChat` does; everywhere else — ONNX and MediaPipe web — they throw `UnsupportedError`.
+They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` / `supportAudio:` if the chat sends images or audio) explicitly, or the chat runs as `ModelType.gemmaIt` with images and audio off. They work on `.litertlm` (native and web), on MediaPipe Android and iOS, on native ONNX (`flutter_edge_ai_onnx` 0.8.0; one generator per session, capped by `maxConcurrentSessions`), on built-in AI, and on `flutter_edge_ai_llama`, whose `openChat` does take the installed model's type and image/audio support, as its `createChat` does; everywhere else — ONNX and MediaPipe on web — they throw `UnsupportedError`.
 
 ```dart
 final summariser = await model.openChat(modelType: ModelType.gemma4);

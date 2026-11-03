@@ -1,3 +1,6 @@
+## 0.8.0
+- **Breaking:** `GenAiClient` gains `sessionId` on `stopGeneration` / `resetSession`; native `openSession` / `openChat` open independent sessions, capped at 2 on phones (#703).
+
 ## 0.7.0
 - Bundle ORT-GenAI 0.17.0 (was 0.14.0) on every host, with its telemetry switched off (#704).
 

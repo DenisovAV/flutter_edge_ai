@@ -141,3 +141,83 @@ The T4 unconstrained run (15.5 tok/s, 4.85 s for 17 tokens) is slow against
 the same model's 70.3 tok/s in mtp-off; it was measured once and is not
 explained. Arc 140V (Lunar Lake) was not re-run.
 
+
+## §23: the turn-end record and a full window (macOS, 2026-11-04)
+
+`patches/conversation_turn_end_record.patch`, probe commands `turnend` and
+`prefillroom`. Gemma 4 E2B with a 1024-token window, FunctionGemma 270M with
+256 (`turnend`) or 1024 (`prefillroom`); macOS CPU and Metal.
+
+| Check | Result |
+|---|---|
+| `turnend`: fresh, stop token, max_output_tokens, decode fills the window, input longer than the window, input that does not fit what is left | PASS on all four (FunctionGemma CPU/Metal, Gemma 4 CPU/Metal). FunctionGemma on Metal ends its reply before the window fills: reported, not checked |
+| `prefillroom`: a short message (17 positions with the reply) sent until refused | Gemma 4 refused at **125** positions left, CPU and Metal, two Metal runs identical; FunctionGemma on Metal refused at **249** |
+| After that refusal | turn end `context_full` (RESOURCE_EXHAUSTED), the rewind restores the count (899), the same send is refused the same way |
+| Upstream behaviour (library without the two edits below) | `FAILED_PRECONDITION`, turn end `failed`, the rewind refused, the next send `INTERNAL: Task failed with state: 7` |
+
+What the refusal is: `GetOptimizedPrefillWorkGroups` erases every prefill
+signature longer than `GetNumEntries() - current_step` and, when none is left,
+refuses with "Chosen prefill work group size exceeds available state entries
+(N)". So it is fixed by the remaining room and the bundle's smallest prefill
+signature (Gemma 4 E2B: 128, FunctionGemma: 256), not by timing or the GPU:
+the window has room for decode steps but not for any new input. §23 now
+reports both refusals of that function as RESOURCE_EXHAUSTED, so the turn
+reads as `context_full` from the status alone, without §23 having to guess
+the signature sizes. Upstream's unit test
+`GetOptimizedPrefillWorkGroups_MaxPrefillSequenceLengthExceededError` is
+changed with it.
+
+The rewind first failed with `INTERNAL: Prefill turn prefill:15 already
+started`: `Tasks::Prefill` starts a `BenchmarkInfo` prefill turn before
+`executor.Prefill` and ends it only on success, so a failed prefill leaves the
+start mark and every later prefill of the session is refused. The Dart client
+always calls `enable_benchmark`. `Decode` has the same shape (any early return
+between `TimeDecodeTurnStart` and `TimeDecodeTurnEnd`). §23 forgets an unended
+turn's start on every exit from both functions
+(`BenchmarkInfo::AbandonPrefillTurn` / `AbandonDecodeTurn`); upstream's test
+that a double start is an error stays as it is.
+
+For the Dart work: a `context_full` after a short input means the window has
+no room for a prefill left; the next turn needs a new conversation (or a
+smaller history), not a retry.
+
+### Upstream issue draft (not posted)
+
+> **Prefill of an input that fits the context window fails with
+> FAILED_PRECONDITION when the remaining room is smaller than the smallest
+> prefill signature, and the session stays failed**
+>
+> LiteRT-LM v0.19.0 (`771b06e1`), macOS arm64, CPU and GPU (Metal), C API.
+> Gemma 4 E2B `.litertlm`, `max_num_tokens` 1024, one conversation.
+>
+> 1. Send a long user message, then short ones ("Reply with the single word
+>    OK.", 17 positions with the reply) until the conversation holds 899
+>    tokens (`litert_lm_conversation_get_token_count`).
+> 2. The next short message fails:
+>    `FAILED_PRECONDITION: Chosen prefill work group size exceeds available state entries (125).`
+> 3. Every later send on that conversation fails with
+>    `INTERNAL: Task failed with state: 7`.
+>
+> The input fits: `Tasks::Prefill`'s own check (`current_step + num_tokens >=
+> max_num_tokens`) lets it through. `GetOptimizedPrefillWorkGroups`
+> (`litert_compiled_model_executor_utils.cc`) then erases every prefill
+> signature longer than `state_->GetNumEntries() - current_step`, and Gemma 4
+> E2B's smallest is 128. The result is the same for every run with the same
+> history, CPU and Metal; FunctionGemma 270M (smallest signature 256) is
+> refused with 249 positions left of 1024, so a quarter of its window can
+> never take new input.
+>
+> Expected, either:
+> - the input is prefilled anyway (a smaller signature, or the decode
+>   signature one token at a time, for the tail of the window); or
+> - the refusal says RESOURCE_EXHAUSTED, as the over-long input check in
+>   `Tasks::Prefill` does, so a caller can tell a full window from a failed
+>   run. FAILED_PRECONDITION reads as a bug in the caller.
+>
+> Related, seen once the session is made usable again (we rewind it to a
+> checkpoint): `Tasks::Prefill` calls `BenchmarkInfo::TimePrefillTurnStart()`
+> before `executor.Prefill` and `TimePrefillTurnEnd` only after it succeeds,
+> so with benchmark enabled a failed prefill leaves the start mark and every
+> later prefill of the session fails with
+> `INTERNAL: Prefill turn prefill:N already started.` `Tasks::Decode` has the
+> same shape for `TimeDecodeTurnStart`.

@@ -281,10 +281,40 @@ index 8610fa9..f0f186a 100644
    // Declare the session after model_data_processor_ and other members it
    // depends on so that the session is destroyed before them. This is to avoid
 diff --git a/runtime/core/tasks.cc b/runtime/core/tasks.cc
-index 6912ae4..0d121bb 100644
+index 6912ae4..a121141 100644
 --- a/runtime/core/tasks.cc
 +++ b/runtime/core/tasks.cc
-@@ -582,7 +582,10 @@ absl::StatusOr<Responses> Prefill(
+@@ -572,6 +572,29 @@ absl::Status PrefillLastSampledTokens(LlmExecutor& executor,
+ 
+ }  // namespace
+ 
++// flutter_edge_ai (patch_c_api.sh section 23): on every exit from a prefill
++// or decode turn, forget its start if it never reached its end, so a turn
++// that failed (a prefill the executor refused, a decode step error) does not
++// fail every later turn of the session with "already started".
++class AbandonUnendedTurn {
++ public:
++  AbandonUnendedTurn(std::optional<BenchmarkInfo>& benchmark_info,
++                     bool prefill)
++      : benchmark_info_(benchmark_info), prefill_(prefill) {}
++  ~AbandonUnendedTurn() {
++    if (!benchmark_info_.has_value()) return;
++    if (prefill_) {
++      benchmark_info_->AbandonPrefillTurn();
++    } else {
++      benchmark_info_->AbandonDecodeTurn();
++    }
++  }
++
++ private:
++  std::optional<BenchmarkInfo>& benchmark_info_;
++  bool prefill_;
++};
++
+ absl::StatusOr<Responses> Prefill(
+     LlmExecutor& executor, ExecutorInputs& inputs, bool wait_for_completion,
+     std::optional<BenchmarkInfo>& benchmark_info) {
+@@ -582,7 +605,10 @@ absl::StatusOr<Responses> Prefill(
                            text_data->GetTokenIds().TensorType());
    auto num_tokens = token_id_tensor_type.Layout().Dimensions().back();
    if (num_tokens >= max_num_tokens) {
@@ -296,7 +326,23 @@ index 6912ae4..0d121bb 100644
          "Input token ids are too long. Exceeding the maximum number of tokens "
          "allowed: ",
          num_tokens, " >= ", max_num_tokens));
-@@ -739,6 +742,8 @@ absl::StatusOr<Responses> Decode(
+@@ -615,6 +641,7 @@ absl::StatusOr<Responses> Prefill(
+   if (benchmark_info.has_value()) {
+     ABSL_RETURN_IF_ERROR(benchmark_info->TimePrefillTurnStart());
+   }
++  AbandonUnendedTurn abandon_unended_prefill(benchmark_info, /*prefill=*/true);
+   ABSL_RETURN_IF_ERROR(executor.Prefill(inputs, params));
+   if (benchmark_info.has_value()) {
+     ABSL_RETURN_IF_ERROR(benchmark_info->TimePrefillTurnEnd(num_token_ids));
+@@ -676,6 +703,7 @@ absl::StatusOr<Responses> Decode(
+         benchmark_info->GetBenchmarkParams().num_decode_tokens();
+     ABSL_RETURN_IF_ERROR(benchmark_info->TimeDecodeTurnStart());
+   }
++  AbandonUnendedTurn abandon_unended_decode(benchmark_info, /*prefill=*/false);
+ 
+   // The final decoded texts for each candidate.
+   std::vector<std::string> final_texts(num_output_candidates);
+@@ -739,6 +767,8 @@ absl::StatusOr<Responses> Decode(
            benchmark_info, sampler, std::move(repetition_penalty_config),
            std::move(no_repeat_ngram_config), std::move(suppress_tokens_config),
            constraint, cancelled, speculative_decoding_config));
@@ -305,7 +351,7 @@ index 6912ae4..0d121bb 100644
    while (true) {
      if (cancelled != nullptr && cancelled->load()) {
        if (benchmark_info.has_value()) {
-@@ -766,6 +771,7 @@ absl::StatusOr<Responses> Decode(
+@@ -766,6 +796,7 @@ absl::StatusOr<Responses> Decode(
      if (!all_done.ok()) {
        return all_done.status();
      }
@@ -313,7 +359,7 @@ index 6912ae4..0d121bb 100644
      std::vector<std::string> step_texts;
      std::vector<std::vector<int>> step_token_ids;
      std::vector<float> step_scores;
-@@ -865,11 +871,19 @@ absl::StatusOr<Responses> Decode(
+@@ -865,11 +896,19 @@ absl::StatusOr<Responses> Decode(
      ABSL_RETURN_IF_ERROR(PrefillLastSampledTokens(executor, *decoded_ids));
    }
  
@@ -334,7 +380,7 @@ index 6912ae4..0d121bb 100644
    }
  
    // Finalize scores for non-streaming custom sampling.
-@@ -885,9 +899,12 @@ absl::StatusOr<Responses> Decode(
+@@ -885,9 +924,12 @@ absl::StatusOr<Responses> Decode(
    TaskState task_state = executor.GetCurrentStep().value() >= max_num_tokens
                               ? TaskState::kMaxNumTokensReached
                               : TaskState::kDone;
@@ -350,8 +396,27 @@ index 6912ae4..0d121bb 100644
  }
  
  absl::StatusOr<Responses> Score(
+diff --git a/runtime/engine/io_types.cc b/runtime/engine/io_types.cc
+index 546e429..435e50b 100644
+--- a/runtime/engine/io_types.cc
++++ b/runtime/engine/io_types.cc
+@@ -215,6 +215,14 @@ absl::Status BenchmarkInfo::TimePrefillTurnEnd(uint64_t num_prefill_tokens) {
+   return absl::OkStatus();
+ }
+ 
++void BenchmarkInfo::AbandonPrefillTurn() {
++  start_time_map_.erase(absl::StrCat("prefill:", prefill_turn_index_));
++}
++
++void BenchmarkInfo::AbandonDecodeTurn() {
++  start_time_map_.erase(absl::StrCat("decode:", decode_turn_index_));
++}
++
+ absl::StatusOr<BenchmarkTurnData> BenchmarkInfo::GetPrefillTurn(
+     int turn_index) const {
+   if (turn_index < 0 ||
 diff --git a/runtime/engine/io_types.h b/runtime/engine/io_types.h
-index e8cc70e..eedbb83 100644
+index e8cc70e..455c2ec 100644
 --- a/runtime/engine/io_types.h
 +++ b/runtime/engine/io_types.h
 @@ -162,10 +162,20 @@ class Responses {
@@ -375,3 +440,58 @@ index e8cc70e..eedbb83 100644
    // The output vector of response tokens (as strings).
    std::vector<std::string> response_texts_;
  
+@@ -250,6 +260,12 @@ class BenchmarkInfo {
+   absl::Status TimePrefillTurnEnd(uint64_t num_prefill_tokens);
+   absl::Status TimeDecodeTurnStart();
+   absl::Status TimeDecodeTurnEnd(uint64_t num_decode_tokens);
++  // flutter_edge_ai (patch_c_api.sh section 23): forget the start of the
++  // current prefill/decode turn when it never reached its end, i.e. the turn
++  // failed. Without it every later turn of the session fails with "already
++  // started". No-op after the turn's end (the index has moved on).
++  void AbandonPrefillTurn();
++  void AbandonDecodeTurn();
+   absl::Status TimeTextToTokenIdsStart();
+   absl::Status TimeTextToTokenIdsEnd(uint64_t num_tokens);
+   // Time the duration between two consecutive marks. Useful for profiling the
+diff --git a/runtime/executor/litert_compiled_model_executor_utils.cc b/runtime/executor/litert_compiled_model_executor_utils.cc
+index cbf51d7..42f1e1d 100644
+--- a/runtime/executor/litert_compiled_model_executor_utils.cc
++++ b/runtime/executor/litert_compiled_model_executor_utils.cc
+@@ -557,7 +557,12 @@ GetOptimizedPrefillWorkGroups(
+       return pair.first > max_prefill_sequence_length.value();
+     });
+     if (available_runner_set.empty()) {
+-      return absl::FailedPreconditionError(absl::StrCat(
++      // flutter_edge_ai (patch_c_api.sh section 23): every prefill signature
++      // is longer than what the context window has left, so the input cannot
++      // be prefilled however short it is: the window is full for this graph.
++      // RESOURCE_EXHAUSTED, as for an input that does not fit, so the
++      // conversation drops the turn and can be rewound.
++      return absl::ResourceExhaustedError(absl::StrCat(
+           "Chosen prefill work group size exceeds available state entries (",
+           max_prefill_sequence_length.value(), ")."));
+     }
+@@ -670,7 +675,9 @@ GetOptimizedPrefillWorkGroups(
+   }
+ 
+   if (input_length > 0) {
+-    return absl::FailedPreconditionError(
++    // flutter_edge_ai section 23: the same, for an input the remaining chunks
++    // cannot hold.
++    return absl::ResourceExhaustedError(
+         absl::StrCat("Prefill input length exceeds available state entries "
+                      "(remaining capacity: ",
+                      max_prefill_sequence_length.value_or(0), ")."));
+diff --git a/runtime/executor/litert_compiled_model_executor_utils_test.cc b/runtime/executor/litert_compiled_model_executor_utils_test.cc
+index 7738369..b554e42 100644
+--- a/runtime/executor/litert_compiled_model_executor_utils_test.cc
++++ b/runtime/executor/litert_compiled_model_executor_utils_test.cc
+@@ -543,7 +543,7 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+   // cannot fit in 0 capacity.
+   EXPECT_THAT(GetOptimizedPrefillWorkGroups(
+                   prefill_runner_set, 300, /*max_prefill_sequence_length=*/256),
+-              StatusIs(absl::StatusCode::kFailedPrecondition));
++              StatusIs(absl::StatusCode::kResourceExhausted));
+ }
+ 
+ TEST(LlmLiteRTCompiledModelExecutorUtilsTest, GetPrefillRunnerSetFromModel) {

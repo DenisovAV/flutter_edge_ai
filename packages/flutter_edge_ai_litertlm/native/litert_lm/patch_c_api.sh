@@ -1006,7 +1006,17 @@ fi
 # RESOURCE_EXHAUSTED too, and rewind_cancelled_turn rewinds a conversation
 # whose input did not fit to that turn's checkpoint, which makes it usable;
 # after a turn that hit max_output_tokens or the window in its decode it
-# changes nothing. Needs sections 16 and 18.
+# changes nothing. A CPU/GPU executor refuses a prefill when every prefill
+# signature is longer than the positions left (Gemma 4 E2B: 125 left, CPU and
+# Metal; FunctionGemma 270M on Metal: 249), however short the input, which
+# tasks.cc's own check lets through; upstream says FAILED_PRECONDITION, so the
+# window reads as an error. Both such refusals in
+# GetOptimizedPrefillWorkGroups say RESOURCE_EXHAUSTED: the turn ends
+# context_full and is rewound like the others. A prefill or decode that fails
+# after its benchmark turn started never ended that turn, so every later turn
+# of the session failed with "Prefill turn prefill:N already started" (the
+# Dart client always enables benchmark); tasks.cc forgets an unended turn's
+# start on every exit. Needs sections 16 and 18.
 TURN_END_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/conversation_turn_end_record.patch"
 if git -C "$DIR" apply --check "$TURN_END_PATCH" 2>/dev/null; then
   git -C "$DIR" apply "$TURN_END_PATCH"

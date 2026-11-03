@@ -102,6 +102,7 @@ API(Status, litert_lm_conversation_optional_args_set_constraint,
     (P, int, const char*))
 API(void, litert_lm_conversation_optional_args_delete, (P))
 API(Status, litert_lm_conversation_get_benchmark_info, (P, P*))
+API(Status, litert_lm_conversation_get_token_count, (P, size_t*))
 API(Status, litert_lm_benchmark_info_get_num_decode_turns, (P, size_t*))
 API(Status, litert_lm_benchmark_info_get_decode_tokens_per_sec_at,
     (P, size_t, double*))
@@ -203,6 +204,7 @@ static int LoadAll(LibHandle lib) {
   LOAD(litert_lm_conversation_optional_args_set_constraint);
   LOAD(litert_lm_conversation_optional_args_delete);
   LOAD(litert_lm_conversation_get_benchmark_info);
+  LOAD(litert_lm_conversation_get_token_count);
   LOAD(litert_lm_benchmark_info_get_num_decode_turns);
   LOAD(litert_lm_benchmark_info_get_decode_tokens_per_sec_at);
   LOAD(litert_lm_benchmark_info_get_decode_token_count_at);
@@ -483,6 +485,99 @@ static int CmdTurnEnd(P engine) {
   free(half);
   litert_lm_conversation_delete(e);
   printf("RESULT turnend %s %d check(s) failed\n", fail ? "FAIL" : "PASS",
+         fail);
+  return fail ? 1 : 0;
+}
+
+// Less room left than the smallest prefill chunk (section 23). A CPU/GPU
+// executor erases every prefill signature longer than the positions the
+// window has left; when none is left it refuses even a short input that
+// tasks.cc's own check lets through. Upstream says FAILED_PRECONDITION and
+// the conversation is failed; section 23 says RESOURCE_EXHAUSTED, so the turn
+// ends context_full and the rewind applies. The probe fills the window, then
+// sends one short message per step until a send is refused, and prints the
+// positions left at each step: run it twice to see the threshold repeat.
+static int CmdPrefillRoom(P engine) {
+  if (!litert_lm_conversation_get_last_turn_end) {
+    printf("RESULT prefillroom FAIL library has no "
+           "litert_lm_conversation_get_last_turn_end\n");
+    return 1;
+  }
+  const char* shortmsg = "Reply with the single word OK.";
+  P c = NewConversation(engine, NULL, false, false, 4);
+  Status s;
+  char* r;
+  // Fill to about 300 positions short of the window.
+  {
+    char* filler = Filler((size_t)(g_max_tokens - 300) * 4);
+    r = Send(c, filler, NULL, &s);
+    free(filler);
+    free(r);
+    if (s != 0) {
+      printf("RESULT prefillroom FAIL filler send status=%d err=%s\n", s,
+             litert_lm_get_last_error_message());
+      return 1;
+    }
+  }
+  int fail = 0;
+  size_t count = 0;
+  for (int step = 0; step < 64; step++) {
+    litert_lm_conversation_get_token_count(c, &count);
+    long left = (long)g_max_tokens - (long)count;
+    r = Send(c, shortmsg, NULL, &s);
+    int end = -1, code = -1;
+    litert_lm_conversation_get_last_turn_end(c, &end, &code);
+    if (r) {
+      size_t after = 0;
+      litert_lm_conversation_get_token_count(c, &after);
+      printf("INFO prefillroom step=%d left=%ld ok used=%zu end=%s\n", step,
+             left, after - count, TurnEndName(end));
+      free(r);
+      continue;
+    }
+    const char* err = litert_lm_get_last_error_message();
+    bool room = err && strstr(err, "exceeds available state entries");
+    printf("INFO prefillroom step=%d left=%ld refused status=%d end=%s "
+           "code=%d err=%s\n", step, left, s, TurnEndName(end), code,
+           err ? err : "");
+    if (!room) {
+      // Another refusal (tasks.cc's own check, or a failure): reported, the
+      // probe stops here.
+      printf("RESULT prefillroom INFO refused by something else at left=%ld\n",
+             left);
+      break;
+    }
+    printf("RESULT prefillroom_end %s end=%s code=%d want=context_full\n",
+           end == 7 ? "PASS" : "FAIL", TurnEndName(end), code);
+    fail += end != 7;
+    if (litert_lm_conversation_rewind_cancelled_turn) {
+      int rend = -1;
+      Status rs = litert_lm_conversation_rewind_cancelled_turn(c, NULL, NULL,
+                                                               NULL, &rend);
+      size_t back = 0;
+      litert_lm_conversation_get_token_count(c, &back);
+      bool ok = rs == 0 && back == count;
+      printf("RESULT prefillroom_rewind %s status=%d end=%s count=%zu "
+             "before=%zu\n", ok ? "PASS" : "FAIL", rs, TurnEndName(rend), back,
+             count);
+      fail += !ok;
+      // The window has no more room for a prefill: the same send is refused
+      // the same way, which is the determinism check within one run.
+      r = Send(c, shortmsg, NULL, &s);
+      litert_lm_conversation_get_last_turn_end(c, &end, &code);
+      const char* err2 = litert_lm_get_last_error_message();
+      bool same = !r && end == 7 && err2 &&
+                  strstr(err2, "exceeds available state entries");
+      printf("RESULT prefillroom_again %s left=%ld end=%s status=%d err=%s\n",
+             same ? "PASS" : "FAIL", left, TurnEndName(end), s,
+             err2 ? err2 : "");
+      fail += !same;
+      free(r);
+    }
+    break;
+  }
+  litert_lm_conversation_delete(c);
+  printf("RESULT prefillroom %s %d check(s) failed\n", fail ? "FAIL" : "PASS",
          fail);
   return fail ? 1 : 0;
 }
@@ -998,7 +1093,7 @@ int main(int argc, char** argv) {
     fprintf(stderr,
             "usage: %s <libLiteRtLm> <multiconv|constrained|rewind|scoring|"
             "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|longprompt|determinism|"
-            "turnend|eg2> "
+            "turnend|prefillroom|eg2> "
             "<model> <cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS, "
             "PROBE_DISPATCH_DIR\n",
             argv[0]);
@@ -1056,6 +1151,7 @@ int main(int argc, char** argv) {
   else if (!strcmp(cmd, "longprompt")) rc = CmdLongPrompt(engine);
   else if (!strcmp(cmd, "determinism")) rc = CmdDeterminism(engine);
   else if (!strcmp(cmd, "turnend")) rc = CmdTurnEnd(engine);
+  else if (!strcmp(cmd, "prefillroom")) rc = CmdPrefillRoom(engine);
   else {
     fprintf(stderr, "unknown command %s\n", cmd);
     rc = 64;

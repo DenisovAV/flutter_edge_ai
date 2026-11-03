@@ -1,9 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- Chats run on core's `InferenceChat` through `ChatTurnHooks`; `openChat` rules are in `resolveChatRequest`.
-
 ## 0.0.6
 
 - Update llamadart to 0.17.5 with matching Apple and Web runtimes (#764).

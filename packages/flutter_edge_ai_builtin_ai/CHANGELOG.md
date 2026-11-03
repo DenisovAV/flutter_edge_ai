@@ -1,5 +1,5 @@
 ## Unreleased
-- Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and instruction.
+- Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and image support.
 
 ## 0.3.8
 - Require `flutter_edge_ai` >=2.3.0 <2.6.0.

@@ -71,6 +71,39 @@ void main() {
     expect(model.sessions, hasLength(1));
   });
 
+  test('a model closed while openSession waits on the platform closes the '
+      'new native session and fails the open', () async {
+    final gate = Completer<void>();
+    _mockCreateSessionForId([], gate: gate.future);
+    const codec = PlatformService.pigeonChannelCodec;
+    final closedIds = <Object?>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    for (final method in ['closeSessionId', 'closeModel']) {
+      final channel =
+          'dev.flutter.pigeon.flutter_gemma_mediapipe.PlatformService.$method';
+      messenger.setMockMessageHandler(channel, (message) async {
+        if (method == 'closeSessionId') {
+          closedIds.add((codec.decodeMessage(message) as List<Object?>).first);
+        }
+        return codec.encodeMessage(<Object?>[null]);
+      });
+      addTearDown(() => messenger.setMockMessageHandler(channel, null));
+    }
+    final model = MobileInferenceModel(
+      maxTokens: 1024,
+      onClose: () {},
+      modelType: ModelType.gemmaIt,
+    );
+    final open = model.openSession();
+    await pumpEventQueue();
+    await model.close();
+    gate.complete();
+    await expectLater(open, throwsStateError);
+    expect(closedIds, hasLength(1));
+    expect(model.sessions, isEmpty);
+  });
+
   test(
     'openChat takes the model\'s own type, as createChat does (D8)',
     () async {

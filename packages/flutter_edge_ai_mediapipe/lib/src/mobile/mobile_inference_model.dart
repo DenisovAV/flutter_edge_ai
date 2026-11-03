@@ -356,6 +356,12 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     } finally {
       _openingSessions--;
     }
+    // Closed while the native session was being created: it would outlive
+    // the model.
+    if (_isClosed) {
+      await platformService.closeSessionId(id);
+      throw StateError('Model was closed while opening a session');
+    }
 
     late final MultiSessionMobileInferenceModelSession session;
     session = MultiSessionMobileInferenceModelSession(

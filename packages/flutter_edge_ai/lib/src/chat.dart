@@ -140,8 +140,9 @@ class InferenceChat {
   /// itself ([ChatTurnHooks.history]), this is that transcript.
   List<Message> get fullHistory {
     final current = _sessionIfAny;
-    return (current == null ? null : _hooks.history(current)) ??
-        List.unmodifiable(_fullHistory);
+    return List.unmodifiable(
+      (current == null ? null : _hooks.history(current)) ?? _fullHistory,
+    );
   }
 
   /// Tokens in use: the engine's count when its session keeps one
@@ -642,6 +643,9 @@ class InferenceChat {
                   );
                 }
                 yield TextResponse(message);
+                // The reply is the message, not its JSON: that is what the
+                // history keeps.
+                buffer.write(message);
                 funcBuffer = '';
                 shouldAddToBuffer = false; // Don't add JSON tokens to buffer
                 continue;
@@ -853,6 +857,7 @@ class InferenceChat {
             level: EdgeAiLogLevel.verbose,
           );
           yield TextResponse(message);
+          _commitText(message);
           _throwIfClosed(end);
           return;
         }
@@ -1229,14 +1234,26 @@ class InferenceChat {
       for (final message in replayHistory) {
         await addQueryChunk(message);
       }
+      await _hooks.replayFinished(session);
     } catch (error, stack) {
-      _resetHistory();
-      await session.close();
-      session = await sessionCreator!();
-      await _hooks.replayFailed(session, error);
+      try {
+        _resetHistory();
+        await session.close();
+        session = await sessionCreator!();
+        await _hooks.replayFailed(session, error);
+      } catch (recoveryError) {
+        // The replay's error is what the caller has to act on; a release
+        // build is where a failed recovery shows, and edgeAiLog is silent
+        // there.
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai] WARNING: InferenceChat.clearHistory could not '
+          'start over after a failed replay ($recoveryError); the chat has no '
+          'usable session.',
+        );
+      }
       Error.throwWithStackTrace(error, stack);
     }
-    await _hooks.replayFinished(session);
   }
 
   bool get supportsImages => supportImage;

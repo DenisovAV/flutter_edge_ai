@@ -389,6 +389,8 @@ void main() {
         expect(off.tools, isEmpty);
         expect(off.supportsFunctionCalls, isFalse);
         await off.close();
+        // 0 is a valid buffer: the whole context is the chat's.
+        await (await create(tokenBuffer: 0)).close();
         final on = await create(tools: const [tool]);
         expect(on.tools.single.name, 'get_time');
         expect(on.supportsFunctionCalls, isTrue);

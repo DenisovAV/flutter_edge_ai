@@ -292,11 +292,18 @@ Future<ModelResponse> _generate(
   } catch (failure, failureStack) {
     try {
       await chat.close();
-    } catch (closeError) {
-      // The request's own error is the one reported, with the failed close
-      // in it: a log line is invisible in a release build.
+    } catch (closeError, closeStack) {
+      _reportFailedClose(closeError, closeStack);
+      // A cancel stays a CancelledException, which callers catch by type.
+      // (`rethrow` here would throw the close error.)
+      if (failure is CancelledException) {
+        Error.throwWithStackTrace(failure, failureStack);
+      }
+      // Otherwise the request's own error is the one reported, with the
+      // failed close in it.
       throw GenkitException(
-        '$failure; closing the chat also failed: $closeError',
+        '${failure is GenkitException ? failure.message : failure}; closing '
+        'the chat also failed: $closeError',
         status: failure is GenkitException ? failure.status : null,
         cause: failure,
         stackTrace: failureStack,
@@ -304,11 +311,25 @@ Future<ModelResponse> _generate(
     }
     rethrow;
   }
-  await withRuntimeErrors(
-    'Could not close the chat on the on-device model',
-    chat.close,
-  );
+  // The answer is complete: a failed close must not turn it into an error,
+  // which a router could retry elsewhere with the same prompt.
+  try {
+    await chat.close();
+  } catch (closeError, closeStack) {
+    _reportFailedClose(closeError, closeStack);
+  }
   return response;
+}
+
+/// Says that closing a request's chat threw. `print`, as core's
+/// `ModelCloseGate` does: a release build drops debug logs, and release is
+/// where a session left open gets debugged.
+void _reportFailedClose(Object error, StackTrace stack) {
+  // ignore: avoid_print
+  print(
+    '[genkit_flutter_edge_ai] WARNING: closing the chat of a request threw; '
+    'its session may still be open: $error\n$stack',
+  );
 }
 
 /// Sends [prepared] to [chat] and returns the model's answer, with the usage

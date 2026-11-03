@@ -70,6 +70,13 @@ class FakeInferenceModel extends gemma.InferenceModel {
   FakeInferenceChat? chatToReturn;
   int createChatCallCount = 0;
 
+  /// Without [chatToReturn], each [createChat] returns a fresh chat from this
+  /// (a plain one when unset) and records it in [chats].
+  FakeInferenceChat Function()? newChat;
+
+  /// The chats [createChat] returned, in order.
+  final List<FakeInferenceChat> chats = [];
+
   @override
   int get maxTokens => _maxTokens;
 
@@ -131,7 +138,9 @@ class FakeInferenceModel extends gemma.InferenceModel {
       topP: topP,
       randomSeed: randomSeed,
     );
-    return chatToReturn ?? FakeInferenceChat();
+    final chat = chatToReturn ?? newChat?.call() ?? FakeInferenceChat();
+    chats.add(chat);
+    return chat;
   }
 
   @override
@@ -274,6 +283,9 @@ class FakeInferenceChat extends gemma.InferenceChat {
     }
   }
 
+  /// Closes that have completed, failed ones included. A close completes a
+  /// turn of the event loop after it is called, so a caller that does not
+  /// await it is caught counting zero.
   int closeCallCount = 0;
 
   /// When set, [close] fails with it.
@@ -281,6 +293,7 @@ class FakeInferenceChat extends gemma.InferenceChat {
 
   @override
   Future<void> close() async {
+    await Future<void>.delayed(Duration.zero);
     closeCallCount++;
     if (closeError case final error?) throw error;
   }

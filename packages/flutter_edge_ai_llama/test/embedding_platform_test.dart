@@ -24,17 +24,21 @@ void main() {
         ),
         expected,
       );
-      if (macosX64) {
-        expect(
-          nativeEmbeddingGpuRefusal(
-            isAndroid: android,
-            isIOS: ios,
-            readVariable: (_) => fail('macOS must not query simulator'),
-          ),
-          isNull,
-          reason: 'Automatic CPU selection must not refuse explicit GPU.',
-        );
-      }
+    }, skip: kIsWeb);
+  }
+
+  for (final macosX64 in [false, true]) {
+    test('macOS GPU refusal: x64/Rosetta=$macosX64', () {
+      expect(
+        nativeEmbeddingGpuRefusal(
+          isAndroid: false,
+          isIOS: false,
+          isMacosX64: macosX64,
+          readVariable: (_) => fail('macOS must not query simulator'),
+        ),
+        macosX64 ? contains('macOS x64/Rosetta') : isNull,
+        reason: 'macOS arm64 retains explicit Metal support.',
+      );
     }, skip: kIsWeb);
   }
   test('Web has no native automatic placement policy', () {
@@ -46,6 +50,7 @@ void main() {
       nativeEmbeddingGpuRefusal(
         isAndroid: true,
         isIOS: false,
+        isMacosX64: false,
         readVariable: (_) => fail('Android must not query simulator'),
       ),
       contains('Android'),
@@ -57,6 +62,7 @@ void main() {
         nativeEmbeddingGpuRefusal(
           isAndroid: false,
           isIOS: true,
+          isMacosX64: false,
           readVariable: (name) {
             expect(name, 'SIMULATOR_UDID');
             return udid;
@@ -68,7 +74,11 @@ void main() {
   }
   test('libc environment probe agrees with the host simulator variable', () {
     expect(
-      nativeEmbeddingGpuRefusal(isAndroid: false, isIOS: true),
+      nativeEmbeddingGpuRefusal(
+        isAndroid: false,
+        isIOS: true,
+        isMacosX64: false,
+      ),
       hostHasSimulatorUdid ? contains('iOS simulators') : isNull,
     );
   }, skip: !supportsLibcProbe);
@@ -77,6 +87,7 @@ void main() {
       nativeEmbeddingGpuRefusal(
         isAndroid: false,
         isIOS: false,
+        isMacosX64: false,
         readVariable: (_) => fail('non-iOS must not query simulator'),
       ),
       isNull,

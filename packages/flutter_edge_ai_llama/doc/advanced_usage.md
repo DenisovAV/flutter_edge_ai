@@ -63,8 +63,12 @@ calls must be answered before the next generation.
 
 Thinking deltas become `ThinkingResponse` only when `enableThinking` is true.
 The model can ignore the thinking switch; hidden reasoning still consumes
-runtime/output budget. The low-level String session methods return answer text
-and JSON tool calls; use the chat `generateChatResponseAsync()` API for typed thinking and tools. The synchronous chat response follows Edge AI's
+runtime/output budget. In current source / next release (llamadart 0.17.5),
+the connector hides SDK reasoning-channel deltas when `enableThinking: false`,
+but some templates preserve model-emitted `<think>` blocks as ordinary content. Raw
+String session methods can therefore return those tags; the flag is not a
+guarantee that content contains no reasoning text. Use the chat
+`generateChatResponseAsync()` API for typed thinking and tools. The synchronous chat response follows Edge AI's
 single-response API: it returns a call group when present, otherwise joined text.
 
 ## Images, audio and LoRA

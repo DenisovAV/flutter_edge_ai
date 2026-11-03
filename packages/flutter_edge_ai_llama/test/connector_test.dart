@@ -798,6 +798,44 @@ void main() {
     );
   });
 
+  for (final streaming in [false, true]) {
+    test(
+      'thinking off preserves SDK content in ${streaming ? "streamed" : "collected"} sessions',
+      () async {
+        engine.script = [
+          _thinking('hidden channel'),
+          _chunk('<thi'),
+          _chunk('nk>literal content</think>answer'),
+        ];
+        final session = await model.openSession(enableThinking: false);
+        await session.addQueryChunk(
+          edge.Message.text(text: 'hello', isUser: true),
+        );
+        final response = streaming
+            ? (await session.getResponseAsync().toList()).join()
+            : await session.getResponse();
+        expect(response, '<think>literal content</think>answer');
+        expect(engine.lastThinking, isFalse);
+      },
+    );
+  }
+
+  test('thinking off preserves SDK content in typed chat', () async {
+    engine.script = [
+      _thinking('hidden channel'),
+      _chunk('<think>literal content</think>answer'),
+    ];
+    final chat = await model.openChat(enableThinking: false);
+    await chat.addQuery(edge.Message.text(text: 'hello', isUser: true));
+    final responses = await chat.generateChatResponseAsync().toList();
+    expect(responses.whereType<edge.ThinkingResponse>(), isEmpty);
+    expect(
+      responses.whereType<edge.TextResponse>().map((r) => r.token).join(),
+      '<think>literal content</think>answer',
+    );
+    expect(engine.lastThinking, isFalse);
+  });
+
   const tool = edge.Tool(
     name: 'search',
     description: 'Search',

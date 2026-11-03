@@ -2,6 +2,7 @@
 String? nativeEmbeddingGpuRefusal({
   bool? isAndroid,
   bool? isIOS,
+  bool? isMacosX64,
   String? Function(String)? readVariable,
 }) => null;
 

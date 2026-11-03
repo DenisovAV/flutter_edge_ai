@@ -1,10 +1,10 @@
 # Platform support
 
 The connector provides GGUF inference through llamadart on Android, iOS, macOS,
-Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.5.0+ and published llamadart 0.17.5 with typed overflow reporting.
+Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.5.0+ and, for current source / next release, llamadart 0.17.5 with typed overflow reporting.
 A passing build does not qualify every device, model or accelerator.
 
-Current source pairs llamadart `>=0.17.5 <0.17.6` with exact Apple
+Current source / next release pairs llamadart `>=0.17.5 <0.17.6` with exact Apple
 companion `llamadart_llama_cpp_flutter` 0.17.3; full platform qualification is
 pending. Published 0.0.5 pairs SDK 0.15.1 with companion 0.15.0.
 Published 0.0.2 pairs SDK 0.15.0 with companion 0.15.0; 0.0.1 paired 0.13.1 with 0.13.0.
@@ -30,6 +30,9 @@ preserved because the SDK cannot distinguish corrupt weights from insufficient
 memory. Other SDK failures map to `StateError`; wrappers retain the cause and stack.
 
 ## Consumer setup
+
+This section describes current source / next release. For published 0.0.5,
+use the hosted [README recipe](../README.md#add-it-to-your-app).
 
 Declare `ModelFileType.gguf` and register `LlamaEngineProvider`. Put this selection
 in the **application/workspace root** pubspec; dependency settings do not propagate:
@@ -57,7 +60,10 @@ includes both. Do not apply those kernel entitlements on macOS. From
 companions come from its own Swift package): an app with this connector, its
 companion and `flutter_edge_ai_litertlm` builds and loads both native libraries
 (macOS, 2026-10-24). Running both engines' models in one app is not qualified.
-The Windows llama.cpp bundle includes its Visual C++ runtime DLLs. Android's example uses
+The Windows llama.cpp bundle includes its Visual C++ runtime DLLs. The current
+native v0.8.0-1 bundle ships app-local CRT DLLs that can also be used by ONNX or
+LiteRT-LM DLLs in a combined app; that coexistence remains unqualified here.
+Android's example uses
 API 28+ and includes arm64-v8a / x86_64 only; 32-bit armeabi-v7a is unsupported.
 The emulator lane runs x86_64. A maintainer-run Galaxy S24 ARM64 CPU smoke passed
 on the earlier 0.12.2/0.0.23 pair (see the dated PR record). This is not a recurring
@@ -191,7 +197,11 @@ this phone do not qualify other GPUs: the ggml-vulkan small-matmul-tile defect
 can produce incorrect unit-norm embeddings on affected devices
 ([llama.cpp #28637](https://github.com/ggml-org/llama.cpp/issues/28637)).
 The adapter therefore refuses explicit GPU embeddings on Android and iOS
-simulators before loading. With `backendFallback: true`, an explicit GPU
+simulators before loading. Current source / next release also conservatively
+refuses them on macOS x64/Rosetta because upstream reports Intel/AMD Metal
+corruption ([llamadart #1597](https://github.com/leehack/llamadart/issues/1597));
+EG2 corruption on that host has not been measured here. macOS arm64 Metal is
+unaffected. With `backendFallback: true`, an explicit GPU
 request can load CPU instead; with `false`, the request fails. The diagnostic
 GPU timings above describe the measured unguarded path.
 See the [embedding guide](embeddings.md) for the supported model profile and

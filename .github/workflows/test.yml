@@ -124,7 +124,7 @@ jobs:
         run: dart tool/check_skills.dart
 
       - name: Lint the skill files
-        run: dart run skills_lint@0.5.1
+        run: dart run skills_lint@0.5.3
 
   # The model registry (model_registry/README.md): every rule
   # `registry.dart check` applies — the schema, the facts read from the files'

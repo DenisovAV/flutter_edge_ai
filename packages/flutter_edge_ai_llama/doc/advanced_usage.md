@@ -184,10 +184,10 @@ subset; schemas requiring richer constraints fail explicitly for those grammars.
 Other formats retain the full schema. If any tool cannot be represented as typed
 parameters, the entire set omits that typed view so shared XML grammars do not
 lose argument names. The adapter keeps its schema bridge: llamadart 0.17.5's
-`ToolDefinition.fromJsonSchema` supports a
-narrower set of formats and would reject XML tools. XML nullable-string decoding is a separate SDK limitation; nullable
-string arguments can come back as text instead of calls. Use scalar string
-properties for those models until the SDK parser is fixed.
+`ToolDefinition.fromJsonSchema` supports a narrower set of formats and rejects
+formats such as Qwen3 Coder XML. XML nullable-string decoding is a separate SDK
+limitation; nullable string arguments can come back as text instead of calls.
+Use scalar string properties for those models until the SDK parser is fixed.
 
 The connector rejects a loaded context smaller than requested; request a smaller
 `maxTokens` explicitly rather than relying on a silent Web fallback. A fatal SDK

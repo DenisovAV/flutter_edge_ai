@@ -115,8 +115,8 @@ when this connector or Flutter Edge AI LiteRT-LM is in the app graph. Keep the
 explicit selection as defence in depth; selecting both LiteRT-LM owners is rejected. The monorepo configures llama.cpp for its own workspace tests; that
 does not suppress another engine package's independently owned runtime.
 Apple Flutter apps add `llamadart_llama_cpp_flutter 0.15.0` directly and enable
-SwiftPM, as in this package's example. To keep an app llama.cpp only, omit the
-separate LiteRT-LM engine and companion dependencies.
+SwiftPM. The repository example follows the next-release pins. To keep an app
+llama.cpp only, omit the separate LiteRT-LM engine and companion dependencies.
 
 For an Apple workspace app on SDK 0.15.1, declare the companion directly in the
 app member and put hook settings at the workspace root. Run `flutter pub get`

@@ -70,6 +70,13 @@ class FakeInferenceModel extends gemma.InferenceModel {
   FakeInferenceChat? chatToReturn;
   int createChatCallCount = 0;
 
+  /// Without [chatToReturn], each [createChat] returns a fresh chat from this
+  /// (a plain one when unset) and records it in [chats].
+  FakeInferenceChat Function()? newChat;
+
+  /// The chats [createChat] returned, in order.
+  final List<FakeInferenceChat> chats = [];
+
   @override
   int get maxTokens => _maxTokens;
 
@@ -131,7 +138,9 @@ class FakeInferenceModel extends gemma.InferenceModel {
       topP: topP,
       randomSeed: randomSeed,
     );
-    return chatToReturn ?? FakeInferenceChat();
+    final chat = chatToReturn ?? newChat?.call() ?? FakeInferenceChat();
+    chats.add(chat);
+    return chat;
   }
 
   @override
@@ -184,11 +193,15 @@ class FakeInferenceChat extends gemma.InferenceChat {
   int addQueryChunkCallCount = 0;
 
   /// What the chat's session reports after a generation; without it the
-  /// session is unset, as on an engine that reports nothing.
+  /// session is unset, as on an engine that reports nothing. A closed chat
+  /// has no session either.
   gemma.SessionMetrics? sessionMetrics;
 
   @override
   gemma.InferenceModelSession get session => switch (sessionMetrics) {
+    _ when closeCallCount > 0 => throw StateError(
+      'FakeInferenceChat is closed',
+    ),
     final metrics? => _MetricsSession(metrics),
     null => throw StateError('FakeInferenceChat has no session'),
   };
@@ -270,8 +283,20 @@ class FakeInferenceChat extends gemma.InferenceChat {
     }
   }
 
+  /// Closes that have completed, failed ones included. A close completes a
+  /// turn of the event loop after it is called, so a caller that does not
+  /// await it is caught counting zero.
+  int closeCallCount = 0;
+
+  /// When set, [close] fails with it.
+  Object? closeError;
+
   @override
-  Future<void> close() async {}
+  Future<void> close() async {
+    await Future<void>.delayed(Duration.zero);
+    closeCallCount++;
+    if (closeError case final error?) throw error;
+  }
 }
 
 /// Fake embedding model in the shape core 2.3 requires of a fake: a `final

@@ -284,6 +284,63 @@ Future<ModelResponse> _generate(
     ),
   );
 
+  // The chat is this request's alone. It is closed before the request's turn
+  // ends, whatever happened, so its session never outlives the request.
+  final ModelResponse response;
+  try {
+    response = await _respond(chat, prepared, context);
+  } catch (failure, failureStack) {
+    try {
+      await chat.close();
+    } catch (closeError, closeStack) {
+      _reportFailedClose(closeError, closeStack);
+      // A cancel stays a CancelledException, which callers catch by type.
+      // (`rethrow` here would throw the close error.)
+      if (failure is CancelledException) {
+        Error.throwWithStackTrace(failure, failureStack);
+      }
+      // Otherwise the request's own error is the one reported, with the
+      // failed close in it.
+      throw GenkitException(
+        '${failure is GenkitException ? failure.message : failure}; closing '
+        'the chat also failed: $closeError',
+        status: failure is GenkitException ? failure.status : null,
+        cause: failure,
+        stackTrace: failureStack,
+      );
+    }
+    rethrow;
+  }
+  // The answer is complete: a failed close must not turn it into an error,
+  // which a router could retry elsewhere with the same prompt.
+  try {
+    await chat.close();
+  } catch (closeError, closeStack) {
+    _reportFailedClose(closeError, closeStack);
+  }
+  return response;
+}
+
+/// Says that closing a request's chat threw. `print`, as core's
+/// `ModelCloseGate` does: a release build drops debug logs, and release is
+/// where a session left open gets debugged.
+void _reportFailedClose(Object error, StackTrace stack) {
+  // ignore: avoid_print
+  print(
+    '[genkit_flutter_edge_ai] WARNING: closing the chat of a request threw; '
+    'its session may still be open: $error\n$stack',
+  );
+}
+
+/// Sends [prepared] to [chat] and returns the model's answer, with the usage
+/// its session reports. The caller closes [chat].
+Future<ModelResponse> _respond(
+  gemma.InferenceChat chat,
+  _PreparedRequest prepared,
+  ActionFnArg<ModelResponseChunk, ModelRequest, void> context,
+) async {
+  final cancel = context.cancel;
+
   for (final message in prepared.messages) {
     await withRuntimeErrors(
       'Could not pass the request to the on-device model',

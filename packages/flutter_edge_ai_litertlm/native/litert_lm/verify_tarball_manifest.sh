@@ -298,6 +298,13 @@ REQUIRED=(
   "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
   "macos_arm64:libLiteRtLmMetalAccelerator.dylib"
+  # From LiteRT-LM v0.19.0 libLiteRtLm links a static GPU accelerator and
+  # sampler (section 19: OpenCL only on Android; Metal on Apple), which may make
+  # these unused. Kept until a Mali and an Adreno run without them, and the
+  # Apple framework above until an iPhone and a macOS run: shipping one by
+  # mistake costs a few MB, dropping one by mistake costs a native cut.
+  "android_arm64:libLiteRtOpenClAccelerator.so"
+  "android_arm64:libLiteRtTopKOpenClSampler.so"
 )
 echo
 echo "==> Checking files that must, and must not, ship"

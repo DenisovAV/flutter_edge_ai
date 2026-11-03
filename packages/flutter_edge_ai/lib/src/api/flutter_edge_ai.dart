@@ -504,7 +504,7 @@ class FlutterEdgeAi {
   ///   set, an `openSession` that would exceed it throws [StateError]. The
   ///   engines count the sessions `openSession` opened, except built-in AI,
   ///   which counts every session of the OS model, the `createSession` one
-  ///   included. It has no effect where `openSession` is unsupported (ONNX,
+  ///   included, and there `createSession` throws too. It has no effect where `openSession` is unsupported (ONNX,
   ///   MediaPipe on the web) (optional)
   /// - [defaults]: overridable runtime defaults from a HF manifest (see
   ///   [resolveHuggingFace] / [ResolvedHfModel.runtime]). Each explicit argument

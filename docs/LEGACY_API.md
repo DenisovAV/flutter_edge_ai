@@ -18,6 +18,10 @@
 > The embedding examples' `generateEmbedding` / `generateEmbeddings` /
 > `getDimension` are deprecated since 2.3.0 and removed in 2.5.0: use
 > `embed(EmbeddingInput.text(t), taskType: …)`, `embedAll` and `dimension`.
+> `FlutterEdgeAiPlugin.instance.createModel` is deprecated since 2.5.0 and
+> removed in 3.0.0: use `FlutterEdgeAi.getActiveModel(…)`, or
+> `FlutterEdgeAi.openModel` for several models (see the
+> [migration guide](../packages/flutter_edge_ai/MIGRATION.md#flutteredgeaiplugincreatemodel-is-deprecated)).
 > For new projects, use the [Modern API](../packages/flutter_edge_ai/README.md#quick-start) instead.
 > The RAG examples describe the pre-2.0 core/plugin API; RAG now lives in
 > `flutter_edge_ai_rag`; follow the
@@ -964,7 +968,7 @@ When you no longer need to perform any further inferences, call the close method
 await inferenceModel.close();
 ```
 
-If you need to use the inference again later, remember to call `createModel` again before generating responses.
+If you need to use the inference again later, call `FlutterEdgeAi.getActiveModel()` again before generating responses.
 
 ## Migration from Legacy to Modern API
 
@@ -1113,7 +1117,7 @@ await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
 final response = await chat.generateChatResponse();
 ```
 
-**Legacy API (Still supported):**
+**Legacy API (deprecated since 2.5.0, removed in 3.0.0):**
 
 ```dart
 // Works with both Legacy and Modern installation methods

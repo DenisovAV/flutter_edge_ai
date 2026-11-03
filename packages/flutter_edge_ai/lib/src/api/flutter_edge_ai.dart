@@ -499,6 +499,13 @@ class FlutterEdgeAi {
   ///   more GPU memory, and a GPU engine that cannot be created falls back to
   ///   CPU silently, so check `activeBackend` afterwards. MediaPipe, ONNX,
   ///   built-in AI and the web engines ignore it (optional)
+  /// - [maxConcurrentSessions]: cap on the sessions open at once through
+  ///   `InferenceModel.openSession`. Null (the default) sets no cap. When
+  ///   set, an `openSession` that would exceed it throws [StateError]. The
+  ///   engines count the sessions `openSession` opened, except built-in AI,
+  ///   which counts every session of the OS model, the `createSession` one
+  ///   included. It has no effect where `openSession` is unsupported (ONNX,
+  ///   MediaPipe on the web) (optional)
   /// - [defaults]: overridable runtime defaults from a HF manifest (see
   ///   [resolveHuggingFace] / [ResolvedHfModel.runtime]). Each explicit argument
   ///   above wins over the matching field here, which in turn wins over the SDK

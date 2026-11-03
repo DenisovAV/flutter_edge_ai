@@ -60,9 +60,15 @@ includes both. Do not apply those kernel entitlements on macOS. From
 companions come from its own Swift package): an app with this connector, its
 companion and `flutter_edge_ai_litertlm` builds and loads both native libraries
 (macOS, 2026-10-24). Running both engines' models in one app is not qualified.
-The Windows llama.cpp bundle includes its Visual C++ runtime DLLs. The current
-native v0.8.0-1 bundle ships app-local CRT DLLs that can also be used by ONNX or
-LiteRT-LM DLLs in a combined app; that coexistence remains unqualified here.
+For current source / next release, the verified
+[native v0.8.0-1 Windows x64 archive](https://github.com/leehack/llamadart-native/releases/download/v0.8.0-1/llamadart-native-windows-x64-v0.8.0-1.tar.gz)
+contains `msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll` and `vcomp140.dll`;
+it does not contain `vcruntime140_threads.dll`. Its SHA-256 matches the SDK pin:
+`e7bbc544cfc65780569b62823157f91e1bff45b79332b61fa1da87ff8fd62121`.
+This archive evidence does not establish CRT packaging for published 0.0.5 or
+Windows arm64. Older/custom bundles follow the SDK's redistributable diagnostics.
+The app-local CRT DLLs can also be used by ONNX or LiteRT-LM DLLs in a combined
+app; that coexistence remains unqualified here.
 Android's example uses
 API 28+ and includes arm64-v8a / x86_64 only; 32-bit armeabi-v7a is unsupported.
 The emulator lane runs x86_64. A maintainer-run Galaxy S24 ARM64 CPU smoke passed

@@ -164,7 +164,10 @@ and uses its SwiftPM companion instead of bundling a second runtime.
 All apps using llamadart in the workspace must select the same companions.
 If the hook warns that it cannot choose a consistent setup, fix those declarations or use
 separate workspaces. See the [tested workspace scope](doc/platforms.md#apple-workspaces).
-The Windows llama.cpp bundle includes its Visual C++ runtime DLLs.
+For current source / next release, the verified native `v0.8.0-1` Windows x64
+archive includes app-local Visual C++ runtime DLLs; this evidence does not cover
+published 0.0.5 or Windows arm64. Older/custom bundles follow the SDK's
+redistributable diagnostics. See the [archive evidence and combined-app limitation](doc/platforms.md#consumer-setup).
 See [platform setup](doc/platforms.md#consumer-setup) for backend selection.
 
 ### Stream a response

@@ -62,13 +62,18 @@ Calls commit before being delivered; all
 calls must be answered before the next generation.
 
 Thinking deltas become `ThinkingResponse` only when `enableThinking` is true.
-The model can ignore the thinking switch; hidden reasoning still consumes
-runtime/output budget. In current source / next release (llamadart 0.17.5),
-the connector hides SDK reasoning-channel deltas when `enableThinking: false`,
-but some templates preserve model-emitted `<think>` blocks as ordinary content. Raw
-String session methods can therefore return those tags; the flag is not a
-guarantee that content contains no reasoning text. Use the chat
-`generateChatResponseAsync()` API for typed thinking and tools. The synchronous chat response follows Edge AI's
+String session methods omit typed reasoning with either flag value; use chat
+`generateChatResponseAsync()` for typed thinking and tools. With thinking off,
+the connector hides SDK reasoning-channel deltas. In current source / next
+release, llamadart 0.17.5 can classify new `<think>` blocks as content after a
+prompt-ending empty thought. For affected Hermes, DeepSeek V3 and Qwen3 Coder XML
+templates, the adapter also hides consecutive leading thought blocks across
+stream chunks, preserving the earlier thinking-off behavior. Templates without
+that empty-thought ending are unaffected. Later literal tags and structured
+tool arguments remain unchanged. Unmarked reasoning cannot be detected, and
+the model can ignore the switch; hidden reasoning still consumes runtime/output
+budget. Thinking off therefore does not guarantee reasoning-free content.
+The synchronous chat response follows Edge AI's
 single-response API: it returns a call group when present, otherwise joined text.
 
 ## Images, audio and LoRA

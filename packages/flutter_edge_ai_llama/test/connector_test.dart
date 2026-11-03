@@ -8,6 +8,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_edge_ai_llama/src/llama_inference_model.dart';
+import 'package:flutter_edge_ai_llama/src/llama_inference_session.dart';
 import 'package:flutter_edge_ai_llama/src/runtime_error.dart';
 import 'package:flutter_edge_ai_llama/src/llama_engine_provider.dart'
     show createLlamaProviderForTest;
@@ -800,7 +801,7 @@ void main() {
 
   for (final streaming in [false, true]) {
     test(
-      'thinking off preserves SDK content in ${streaming ? "streamed" : "collected"} sessions',
+      'content-only templates preserve literal tags in ${streaming ? "streamed" : "collected"} sessions',
       () async {
         engine.script = [
           _thinking('hidden channel'),
@@ -820,7 +821,7 @@ void main() {
     );
   }
 
-  test('thinking off preserves SDK content in typed chat', () async {
+  test('content-only templates preserve literal tags in typed chat', () async {
     engine.script = [
       _thinking('hidden channel'),
       _chunk('<think>literal content</think>answer'),
@@ -836,6 +837,201 @@ void main() {
     expect(engine.lastThinking, isFalse);
   });
 
+  for (final format in [
+    llama.ChatFormat.hermes,
+    llama.ChatFormat.deepseekV3,
+    llama.ChatFormat.qwen3CoderXml,
+  ]) {
+    for (final api in [
+      'session',
+      'streamed session',
+      'chat',
+      'streamed chat',
+    ]) {
+      test('closed ${format.name} thought is hidden in $api', () async {
+        engine.templateFormat = format.index;
+        engine.templatePrompt = 'assistant\n<think>\n\n</think>\n';
+        const raw =
+            ' \n<think>reason</think>\t<think>more</think>answer <think>literal</think>';
+        const visible = 'answer <think>literal</think>';
+        final chunkings = [
+          [raw],
+          raw.split(''),
+          for (var split = 1; split < raw.length; split++)
+            [raw.substring(0, split), raw.substring(split)],
+        ];
+        for (final tokens in chunkings) {
+          engine.script = [
+            ...tokens.map(_chunk),
+            _chunk(
+              null,
+              finishReason: 'stop',
+              usage: const llama.LlamaGenerationUsage(
+                promptTokens: 10,
+                completionTokens: 30,
+              ),
+            ),
+          ];
+          final chat = api.contains('chat') ? await model.openChat() : null;
+          final session =
+              (chat?.session ?? await model.openSession())
+                  as LlamaInferenceSession;
+          if (chat != null) {
+            await chat.addQuery(edge.Message.text(text: 'first', isUser: true));
+          } else {
+            await session.addQueryChunk(
+              edge.Message.text(text: 'first', isUser: true),
+            );
+          }
+          final String answer;
+          if (chat != null) {
+            answer = api.startsWith('streamed')
+                ? (await chat.generateChatResponseAsync().toList())
+                      .whereType<edge.TextResponse>()
+                      .map((r) => r.token)
+                      .join()
+                : (await chat.generateChatResponse() as edge.TextResponse)
+                      .token;
+          } else {
+            answer = api.startsWith('streamed')
+                ? (await session.getResponseAsync().toList()).join()
+                : await session.getResponse();
+          }
+          expect(answer, visible, reason: '${tokens.length} chunks');
+          expect(session.hiddenThinkingCharacters, 10);
+          expect(session.messages.last.text, visible);
+          expect(session.getSessionMetrics().outputTokens, 30);
+          engine.script = [_chunk('next answer')];
+          await session.addQueryChunk(
+            edge.Message.text(text: 'next', isUser: true),
+          );
+          await session.getResponse();
+          final assistant = engine.requests.last.firstWhere(
+            (m) => m.role == llama.LlamaChatRole.assistant,
+          );
+          expect(assistant.content, visible);
+          expect(session.hiddenThinkingCharacters, 0);
+          await session.close();
+        }
+      });
+    }
+  }
+
+  test(
+    'closed-thought compatibility leaves other literal text unchanged',
+    () async {
+      const raw = '<think>literal</think>answer';
+      for (final (format, prompt, enabled, forcedOpen) in [
+        (llama.ChatFormat.contentOnly, '<think></think>', false, false),
+        (llama.ChatFormat.hermes, 'assistant', false, false),
+        (llama.ChatFormat.hermes, '<think>not empty</think>', false, false),
+        (llama.ChatFormat.hermes, '<think></think>', true, false),
+        (llama.ChatFormat.hermes, '<think></think>', false, true),
+      ]) {
+        engine.templateFormat = format.index;
+        engine.templatePrompt = prompt;
+        engine.templateThinkingForcedOpen = forcedOpen;
+        engine.script = raw.split('').map(_chunk).toList();
+        final session = await model.openSession(enableThinking: enabled);
+        await session.addQueryChunk(
+          edge.Message.text(text: 'literal', isUser: true),
+        );
+        expect(await session.getResponse(), raw);
+        await session.close();
+      }
+      engine.templateThinkingForcedOpen = false;
+      engine.templatePrompt = '<think></think>';
+      for (final text in [
+        'answer <think>literal</think>',
+        '{"literal":"<think>keep</think>"}',
+        '<thinking>literal</thinking>',
+      ]) {
+        engine.script = text.split('').map(_chunk).toList();
+        final session = await model.openSession();
+        await session.addQueryChunk(
+          edge.Message.text(text: 'literal', isUser: true),
+        );
+        expect(await session.getResponse(), text);
+        await session.close();
+      }
+    },
+  );
+
+  test(
+    'hidden and truncated leading thoughts fail and do not commit',
+    () async {
+      engine.templateFormat = llama.ChatFormat.hermes.index;
+      engine.templatePrompt = '<think></think>';
+      for (final raw in [
+        '<think>secret</think>',
+        '<think>secret</thi',
+        '<thi',
+      ]) {
+        for (final finish in ['stop', 'length']) {
+          engine.script = [
+            ...raw.split('').map(_chunk),
+            _chunk(null, finishReason: finish),
+          ];
+          final chat = await model.openChat();
+          await chat.addQuery(
+            edge.Message.text(text: 'abandoned', isUser: true),
+          );
+          final shown = <edge.ModelResponse>[];
+          await expectLater(
+            chat.generateChatResponseAsync().map((r) {
+              shown.add(r);
+              return r;
+            }).toList(),
+            throwsA(isA<StateError>()),
+          );
+          expect(shown, isEmpty);
+          expect(chat.fullHistory, isEmpty);
+          engine.script = [_chunk('<think>again</think>answer')];
+          await chat.addQuery(edge.Message.text(text: 'retry', isUser: true));
+          expect(
+            (await chat.generateChatResponse() as edge.TextResponse).token,
+            'answer',
+          );
+          expect(engine.requests.last.map((m) => m.content), ['retry']);
+          await chat.close();
+        }
+      }
+    },
+  );
+
+  test(
+    'cancelling inside a hidden thought resets the next turn filter',
+    () async {
+      engine.templateFormat = llama.ChatFormat.hermes.index;
+      engine.templatePrompt = '<think></think>';
+      engine.firstText = '<think>secret';
+      engine.blockGeneration = true;
+      final session = await model.openSession();
+      await session.addQueryChunk(
+        edge.Message.text(text: 'abandoned', isUser: true),
+      );
+      final shown = <String>[];
+      final subscription = session.getResponseAsync().listen(shown.add);
+      await Future<void>(() async {
+        while (engine.active == 0) {
+          await Future<void>.delayed(Duration.zero);
+        }
+      }).timeout(const Duration(seconds: 2));
+      await session.stopGeneration().timeout(const Duration(seconds: 2));
+      await subscription.cancel();
+      expect(shown, isEmpty);
+      expect(session.messages, isEmpty);
+      engine.blockGeneration = false;
+      engine.script = [_chunk('<think>new</think>answer')];
+      await session.addQueryChunk(
+        edge.Message.text(text: 'retry', isUser: true),
+      );
+      expect(await session.getResponse(), 'answer');
+      expect(session.hiddenThinkingCharacters, 3);
+      expect(engine.requests.last.map((m) => m.content), ['retry']);
+    },
+  );
+
   const tool = edge.Tool(
     name: 'search',
     description: 'Search',
@@ -848,6 +1044,76 @@ void main() {
       'additionalProperties': false,
     },
   );
+  for (final closesThought in [false, true]) {
+    test(
+      'hidden leading text preserves structured calls and replay (closed: $closesThought)',
+      () async {
+        engine.templateFormat = llama.ChatFormat.qwen3CoderXml.index;
+        engine.templatePrompt = '<think>\n</think>';
+        engine.script = [
+          _chunk('<think>secret${closesThought ? '</think>' : ''}'),
+          _toolChunk(
+            0,
+            'search',
+            '{"q":"<think>literal</think>"}',
+            id: 'call00001',
+          ),
+          _chunk(
+            null,
+            finishReason: 'tool_calls',
+            usage: const llama.LlamaGenerationUsage(
+              promptTokens: 10,
+              completionTokens: 20,
+            ),
+          ),
+        ];
+        final chat = await model.openChat(tools: [tool]);
+        await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
+        final responses = await chat.generateChatResponseAsync().toList();
+        expect(responses.whereType<edge.TextResponse>(), isEmpty);
+        expect(responses.whereType<edge.ThinkingResponse>(), isEmpty);
+        final response = responses
+            .whereType<edge.FunctionCallResponse>()
+            .single;
+        expect(response.args, {'q': '<think>literal</think>'});
+        expect(
+          chat.fullHistory.where(
+            (m) => !m.isUser && m.type == edge.MessageType.text,
+          ),
+          isEmpty,
+        );
+        expect(chat.fullHistory.any((m) => m.text.contains('secret')), isFalse);
+        expect(chat.session.getSessionMetrics().outputTokens, 20);
+        await chat.addQuery(
+          edge.Message.toolResponse(
+            toolCallId: response.id,
+            toolName: response.name,
+            response: {'found': true},
+          ),
+        );
+        engine.script = [_chunk('done')];
+        expect(
+          (await chat.generateChatResponse() as edge.TextResponse).token,
+          'done',
+        );
+        final assistant = engine.requests.last.firstWhere(
+          (m) => m.role == llama.LlamaChatRole.assistant,
+        );
+        expect(assistant.parts.whereType<llama.LlamaTextContent>(), isEmpty);
+        expect(
+          assistant.parts.whereType<llama.LlamaThinkingContent>(),
+          isEmpty,
+        );
+        expect(
+          assistant.parts
+              .whereType<llama.LlamaToolCallContent>()
+              .single
+              .arguments,
+          {'q': '<think>literal</think>'},
+        );
+      },
+    );
+  }
   for (final stopped in [false, true]) {
     test(
       'tool results survive ${stopped ? "stop" : "error"} and remain replayable',
@@ -3233,6 +3499,9 @@ class _FakeEngine extends llama.LlamaEngine {
   Object? templateError;
   int contextSize = 2048;
   int templateFormat = 0;
+  String templatePrompt = 'rendered';
+  bool templateThinkingForcedOpen = false;
+  String firstText = 'Hello';
   Object? disposalError;
   List<llama.LlamaCompletionChunk>? script;
   List<List<llama.LlamaCompletionChunk>> scripts = [];
@@ -3336,8 +3605,9 @@ class _FakeEngine extends llama.LlamaEngine {
     if (templateError != null) throw templateError!;
     lastTemplateTools = tools ?? [];
     return llama.LlamaChatTemplateResult(
-      prompt: 'rendered',
+      prompt: templatePrompt,
       format: templateFormat,
+      thinkingForcedOpen: templateThinkingForcedOpen,
       tokenCount: promptCounter?.call(messages) ?? promptTokens,
     );
   }
@@ -3371,7 +3641,7 @@ class _FakeEngine extends llama.LlamaEngine {
         return;
       }
       if (blockGeneration) _release = Completer<void>();
-      yield _chunk('Hello');
+      yield _chunk(firstText);
       if (generationError != null) throw generationError!;
       if (failAfterFirstToken) {
         throw llama.LlamaInferenceException('test failure');

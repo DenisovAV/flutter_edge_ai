@@ -165,6 +165,8 @@ class MobileInferenceModelSession extends InferenceModelSession {
               controller.addError(
                 Exception(event['message'] ?? 'Unknown async error occurred'),
               );
+              // A failed generation is over: no end follows it.
+              controller.close();
             } else if (event is Map && event.containsKey('partialResult')) {
               final partial = event['partialResult'] as String;
               controller.add(partial);
@@ -176,6 +178,9 @@ class MobileInferenceModelSession extends InferenceModelSession {
         onError: (error, st) {
           if (!controller.isClosed) {
             controller.addError(error, st);
+            // A failed or cancelled generation is over: neither Android's
+            // error path nor an older iOS plugin sends an end after it.
+            controller.close();
           }
         },
         onDone: () {
@@ -424,6 +429,12 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
       try {
         if (message != null) await addQueryChunk(message);
         await generationMutex.acquire();
+        // Closed or cancelled while it waited: cleanup has already run and
+        // would not release a lock taken after it.
+        if (finished) {
+          generationMutex.release();
+          return;
+        }
         mutexHeld = true;
         subscription = eventChannel.receiveBroadcastStream().listen(
           (event) {

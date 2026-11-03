@@ -957,8 +957,9 @@ final class ChatRequest {
 }
 
 /// A [ChatRequest] with every value set, as the engine resolved it in
-/// [InferenceModel.resolveChatRequest]. Every field is required, so a value
-/// an engine forgets to carry over is a compile error, not a silent default.
+/// [InferenceModel.resolveChatRequest]. Every field but
+/// [runtimeInjectsToolDeclarations] is required, so a value an engine forgets
+/// to carry over is a compile error, not a silent default.
 final class ResolvedChatRequest {
   const ResolvedChatRequest({
     required this.modelType,

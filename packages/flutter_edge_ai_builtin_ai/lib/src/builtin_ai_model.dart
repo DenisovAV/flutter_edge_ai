@@ -350,11 +350,16 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
   }
 
   /// [openChat]'s unset values are this model's own, as [createChat] fills
-  /// them; audio is refused, as there.
+  /// them. Audio is refused with an [ArgumentError], a request this engine
+  /// cannot serve (`createChat` throws [UnsupportedError] for it).
   @override
   ResolvedChatRequest resolveChatRequest(ChatRequest request) {
     if (request.supportAudio == true) {
-      throw UnsupportedError('Audio is not supported by built-in OS models');
+      throw ArgumentError.value(
+        true,
+        'supportAudio',
+        'Audio is not supported by built-in OS models',
+      );
     }
     return ResolvedChatRequest(
       modelType: request.modelType ?? modelType,

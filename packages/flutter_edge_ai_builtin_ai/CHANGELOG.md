@@ -1,5 +1,5 @@
 ## Unreleased
-- Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and instruction.
+- Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and image support.
 
 ## 0.3.7
 - Require `flutter_local_ai` ^0.3.0; generation failures expose `PlatformException` details.

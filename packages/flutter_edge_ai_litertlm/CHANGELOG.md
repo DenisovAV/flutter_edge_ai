@@ -1,7 +1,6 @@
 ## Unreleased
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and media.
-- A turn ended by closing its session or model ends with a `StateError`, not as a reply.
-- Web: two overlapping `openSession` calls cannot both pass `maxConcurrentSessions`.
+- Native: a turn cut short by closing its session or model ends with a `StateError`.
 
 ## 1.19.1
 - The native library loads and engine settings are made off the calling isolate (#756).

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -281,6 +282,27 @@ void main() {
       expect(model.requests.last.modelType, ModelType.qwen3);
     });
 
+    test('openChat passes sampling, LoRA, thinking and audio to every '
+        'session it opens', () async {
+      final model = _Model(resolver: _ownDefaults);
+      await model.openChat(
+        temperature: 0.3,
+        randomSeed: 5,
+        topK: 2,
+        topP: 0.7,
+        loraPath: 'adapter',
+        enableThinking: true,
+        supportAudio: true,
+      );
+      final r = model.requests.single;
+      expect(
+        [r.temperature, r.randomSeed, r.topK, r.topP, r.loraPath],
+        [0.3, 5, 2, 0.7, 'adapter'],
+      );
+      expect(r.enableThinking, isTrue);
+      expect(r.enableAudioModality, isTrue);
+    });
+
     test('a caller value wins over the engine\'s', () async {
       final model = _Model(resolver: _ownDefaults);
       final chat = await model.openChat(
@@ -392,6 +414,37 @@ void main() {
       expect(chat.fullHistory.single.text, 'Par');
     });
 
+    test('a {"message": …} reply is the message, in the stream and in the '
+        'history', () async {
+      final chat = InferenceChat(
+        sessionCreator: () async =>
+            _TurnSession(tokens: ['{"message": ', '"hello"}']),
+        maxTokens: 1024,
+        supportsFunctionCalls: true,
+        tools: const [_tool],
+      );
+      await chat.initSession();
+      final streamed = await chat.generateChatResponseAsync().toList();
+      expect(streamed.whereType<TextResponse>().single.token, 'hello');
+      expect(chat.fullHistory.single.text, 'hello');
+    });
+
+    test(
+      'reasoning stays out of a blocking reply when thinking is off',
+      () async {
+        final chat = InferenceChat(
+          sessionCreator: () async =>
+              _TurnSession(tokens: ['<think>why</think>', 'answer']),
+          maxTokens: 1024,
+          modelType: ModelType.qwen3,
+        );
+        await chat.initSession();
+        final reply = await chat.generateChatResponse();
+        expect((reply as TextResponse).token, 'answer');
+        expect(chat.fullHistory.single.text, 'answer');
+      },
+    );
+
     test('a stop and the other ends are replies', () async {
       for (final end in TurnEnd.values.where((e) => e != TurnEnd.closed)) {
         final chat = chatOver(_TurnSession(tokens: ['ok'], end: end));
@@ -464,6 +517,65 @@ void main() {
   });
 
   group('ChatTurnHooks', () {
+    test('the engine\'s token count decides when the chat rebuilds', () async {
+      final sessions = <_TurnSession>[];
+      final hooks = _RecordingHooks()..tokens = 5000;
+      final chat = InferenceChat(
+        sessionCreator: () async {
+          final s = _TurnSession(tokens: ['a']);
+          sessions.add(s);
+          return s;
+        },
+        maxTokens: 1024,
+        tokenBuffer: 0,
+        turnHooks: hooks,
+      );
+      await chat.initSession();
+      await chat.generateChatResponseAsync().toList();
+      expect(sessions, hasLength(2), reason: 'rebuilt on the hook count');
+    });
+
+    test('a rebuild replays the engine\'s transcript into the new session '
+        'and reports it finished', () async {
+      final sessions = <_TurnSession>[];
+      const kept = [Message(text: 'q', isUser: true), Message(text: 'a')];
+      final hooks = _RecordingHooks()
+        ..transcript = kept
+        ..tokens = 5000;
+      final chat = InferenceChat(
+        sessionCreator: () async {
+          final s = _TurnSession(tokens: ['a']);
+          sessions.add(s);
+          return s;
+        },
+        maxTokens: 1024,
+        tokenBuffer: 0,
+        turnHooks: hooks,
+      );
+      await chat.initSession();
+      await chat.generateChatResponseAsync().toList();
+      expect(sessions.last.staged.map((m) => m.text), ['q', 'a']);
+      expect(hooks.calls, ['finished']);
+    });
+
+    test('imageMessageCount counts the engine\'s transcript', () async {
+      final hooks = _RecordingHooks()
+        ..transcript = [
+          Message(
+            text: 'look',
+            isUser: true,
+            imageBytes: Uint8List.fromList([1, 2, 3]),
+          ),
+        ];
+      final chat = InferenceChat(
+        sessionCreator: () async => _TurnSession(),
+        maxTokens: 1024,
+        turnHooks: hooks,
+      );
+      await chat.initSession();
+      expect(chat.imageMessageCount, 1);
+    });
+
     test('responses replaces the whole turn on both paths', () async {
       final session = _TurnSession();
       final chat = InferenceChat(
@@ -519,6 +631,30 @@ void main() {
         expect(chat.fullHistory.single.text, 'a');
       },
     );
+
+    test('a replayFinished that throws is a failed replay: the chat starts '
+        'over and the error is rethrown', () async {
+      final hooks = _ThrowingFinishHooks();
+      var opened = 0;
+      final chat = InferenceChat(
+        sessionCreator: () async {
+          opened++;
+          return _TurnSession();
+        },
+        maxTokens: 1024,
+        turnHooks: hooks,
+      );
+      await chat.initSession();
+      await expectLater(
+        chat.clearHistory(
+          replayHistory: const [Message(text: 'a', isUser: true)],
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(opened, 3);
+      expect(chat.fullHistory, isEmpty);
+      expect(hooks.failed, isTrue);
+    });
 
     test('a replay that throws leaves the chat empty on a new session, calls '
         'replayFailed, and rethrows', () async {
@@ -631,4 +767,19 @@ final class _BareModel extends InferenceModel {
 
   @override
   Future<void> close() async {}
+}
+
+/// Hooks whose [replayFinished] fails, as llama's `commitReplay` can.
+final class _ThrowingFinishHooks extends ChatTurnHooks {
+  bool failed = false;
+
+  @override
+  Future<void> replayFinished(InferenceModelSession session) async =>
+      throw StateError('commit failed');
+
+  @override
+  Future<void> replayFailed(
+    InferenceModelSession session,
+    Object error,
+  ) async => failed = true;
 }

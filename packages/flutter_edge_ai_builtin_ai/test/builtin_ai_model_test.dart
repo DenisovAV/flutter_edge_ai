@@ -228,11 +228,26 @@ void main() {
       },
     );
 
+    test(
+      'openChat on a model loaded with image support supports images',
+      () async {
+        final model = await newModel(
+          const RuntimeConfig(
+            maxTokens: 4096,
+            modelPath: '',
+            supportImage: true,
+          ),
+        );
+        final chat = await model.openChat();
+        expect(chat.supportImage, isTrue);
+      },
+    );
+
     test('openChat refuses audio, as createChat does', () async {
       final model = await newModel();
       await expectLater(
         model.openChat(supportAudio: true),
-        throwsUnsupportedError,
+        throwsArgumentError,
       );
       expect(model.sessions, isEmpty);
     });

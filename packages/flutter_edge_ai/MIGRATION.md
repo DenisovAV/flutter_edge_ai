@@ -1,5 +1,37 @@
 # Migration guide
 
+## flutter_edge_ai 2.6.0
+
+### `implements InferenceModel`
+
+A class that `implements InferenceModel` declares four new members, all in
+`package:flutter_edge_ai/engine.dart`: `openEngineSession(SessionRequest)`
+(fail it with `UnsupportedError` if the class opens no sessions),
+`resolveChatRequest(ChatRequest)` (return a `ResolvedChatRequest`),
+`createChatTurnHooks(ResolvedChatRequest)` (return `ChatTurnHooks()`) and
+`engineSessions`. A class that `extends InferenceModel` inherits core's
+defaults. `openSession`, `openChat` and `sessions` are `@nonVirtual`: an
+engine that overrode them moves its `openSession` body to
+`openEngineSession`, its `openChat` defaults to `resolveChatRequest`, and its
+`sessions` to `engineSessions`.
+
+### `implements InferenceModelSession`
+
+A class that `implements InferenceModelSession` declares `startTurn()`,
+returning an `EngineTurn` (from `package:flutter_edge_ai/engine.dart`):
+`EngineTurn(text: getResponseAsync(), end: null)` when it cannot say how a
+turn ended. A class that `extends InferenceModelSession` inherits that.
+
+### Chat turns
+
+`InferenceChat.generateChatResponse` and `generateChatResponseAsync` are
+`@nonVirtual`: a subclass that overrides them, an app's test fake among
+them, gets an `invalid_override_of_non_virtual_member` warning. Script the
+turns through `InferenceChat(turnHooks:)` instead, with a `ChatTurnHooks`
+subclass whose `responses` returns the turn's stream, and give a chat built
+with `sessionCreator: null` a session (`chat.session = …`), which the hooks
+receive.
+
 ## flutter_edge_ai 2.5.0: several open models, removed and deprecated members, embedding providers
 
 ### Removed members

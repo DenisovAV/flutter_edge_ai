@@ -23,9 +23,18 @@
 // the tok/s numbers stay comparable) into
 // `getApplicationDocumentsDirectory()`. The repo is public/ungated — no HF
 // token needed (verified: a plain HEAD/GET redirects straight to the CDN,
-// no 401/403). Deliberately downloaded into the app's own documents dir
-// rather than staged under `/data/local/tmp`: the bundle is a whole
-// directory, and a download needs no staging step on the phone.
+// no 401/403), into the app's own documents dir.
+//
+// A phone's own download can be far too slow for a DDP session (DDP Galaxy
+// S25 Ultra, 2026-11-02: the 2.7 GB .onnx.data reached 3.8% in 15 minutes).
+// So when the directory is already staged on the phone, the test reads it
+// there and downloads nothing:
+//   adb shell mkdir -p /data/local/tmp/flutter_gemma_test/phi-3.5-mini-instruct-cpu-int4-awq-block-128-acc-level-4
+//   adb push <every file of _modelFiles> /data/local/tmp/flutter_gemma_test/phi-3.5-mini-instruct-cpu-int4-awq-block-128-acc-level-4/
+//   adb shell chmod 644 /data/local/tmp/flutter_gemma_test/phi-3.5-mini-instruct-cpu-int4-awq-block-128-acc-level-4/*
+// (the app reads the files as another user). A staged directory that lacks a
+// file, or holds one the app cannot read, fails the test instead of being
+// topped up from the network.
 //
 // GO/NO-GO BAR this test's printed numbers are judged against (see the
 // Android plan's Task 4 — NOT asserted here; a hard throughput assertion
@@ -67,6 +76,46 @@ const _modelFiles = [
   'tokenizer_config.json',
   'special_tokens_map.json',
 ];
+
+/// Where `adb push` stages the model directory (the example's other Android
+/// tests read their models from `/data/local/tmp/flutter_gemma_test/` too).
+const _stagedDirName =
+    'phi-3.5-mini-instruct-cpu-int4-awq-block-128-acc-level-4';
+const _stagedDir = '/data/local/tmp/flutter_gemma_test/$_stagedDirName';
+
+/// The staged model directory when it exists, after checking that every file
+/// of [_modelFiles] is there, non-empty and readable by the app; null when
+/// nothing is staged.
+Directory? _stagedModelDir() {
+  final dir = Directory(_stagedDir);
+  if (!dir.existsSync()) return null;
+  final missing = <String>[];
+  final unreadable = <String>[];
+  for (final name in _modelFiles) {
+    final file = File('${dir.path}/$name');
+    if (!file.existsSync() || file.lengthSync() == 0) {
+      missing.add(name);
+      continue;
+    }
+    try {
+      file.openSync().closeSync();
+    } on FileSystemException {
+      unreadable.add(name);
+    }
+  }
+  final problems = [
+    if (missing.isNotEmpty) 'lacks ${missing.join(', ')}',
+    if (unreadable.isNotEmpty)
+      'cannot read ${unreadable.join(', ')} (chmod 644)',
+  ];
+  if (problems.isNotEmpty) {
+    throw StateError(
+      '$_stagedDir is staged but ${problems.join(' and ')}: push every file '
+      'of the model directory readable, or remove the directory to download',
+    );
+  }
+  return dir;
+}
 
 /// Downloads [url] to [dest] via a temp-then-rename (an interrupted FTL run
 /// never leaves a partial file that a retry would mistake for complete —
@@ -146,21 +195,33 @@ void main() {
     'bundled CodeAsset .so pair — functional + TTFT/decode-tok/s + RSS',
     (tester) async {
       await tester.runAsync(() async {
-        final docsDir = await getApplicationDocumentsDirectory();
-        final modelDir = Directory('${docsDir.path}/onnx_android_smoke_model');
-        if (!modelDir.existsSync()) modelDir.createSync(recursive: true);
+        final staged = _stagedModelDir();
+        final Directory modelDir;
+        if (staged != null) {
+          modelDir = staged;
+          // ignore: avoid_print
+          print('[onnx android smoke] using the staged model at $_stagedDir');
+        } else {
+          // ignore: avoid_print
+          print(
+            '[onnx android smoke] no staged model at $_stagedDir, downloading',
+          );
+          final docsDir = await getApplicationDocumentsDirectory();
+          modelDir = Directory('${docsDir.path}/onnx_android_smoke_model');
+          if (!modelDir.existsSync()) modelDir.createSync(recursive: true);
 
-        final downloadClient = HttpClient();
-        try {
-          for (final name in _modelFiles) {
-            await _downloadFile(
-              downloadClient,
-              '$_repoBase/$name',
-              File('${modelDir.path}/$name'),
-            );
+          final downloadClient = HttpClient();
+          try {
+            for (final name in _modelFiles) {
+              await _downloadFile(
+                downloadClient,
+                '$_repoBase/$name',
+                File('${modelDir.path}/$name'),
+              );
+            }
+          } finally {
+            downloadClient.close(force: true);
           }
-        } finally {
-          downloadClient.close(force: true);
         }
 
         final configFile = File('${modelDir.path}/genai_config.json');
@@ -168,7 +229,7 @@ void main() {
           configFile.existsSync(),
           isTrue,
           reason:
-              'download did not produce genai_config.json at '
+              'no genai_config.json in the model directory at '
               '${configFile.path}',
         );
 

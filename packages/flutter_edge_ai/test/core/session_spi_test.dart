@@ -163,6 +163,7 @@ ResolvedChatRequest _ownDefaults(ChatRequest request) => ResolvedChatRequest(
   toolChoice: request.toolChoice,
   systemInstruction: request.systemInstruction,
   maxOutputTokens: request.maxOutputTokens,
+  responseFormat: request.responseFormat,
 );
 
 final class _RecordingHooks extends ChatTurnHooks {
@@ -364,6 +365,7 @@ void main() {
           toolChoice: r.toolChoice,
           systemInstruction: null,
           maxOutputTokens: null,
+          responseFormat: null,
         ),
       );
       expect((await forced.openChat()).runtimeInjectsToolDeclarations, isTrue);

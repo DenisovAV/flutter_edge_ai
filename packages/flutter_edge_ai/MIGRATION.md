@@ -21,6 +21,16 @@ engine that overrode them moves its `openSession` body to
 `openEngineSession`, its `openChat` defaults to `resolveChatRequest`, and its
 `sessions` to `engineSessions`.
 
+For typed responses it also declares `structuredOutputSupport` and
+`refusalFor(ResponseFormat)`, which core implements once for every class that
+`extends InferenceModel`, and the engine SPI behind them,
+`engineStructuredOutputSupport` and `engineRefusalFor(JsonSchemaResponseFormat)`;
+its `openSession` and `openChat` take `ResponseFormat? responseFormat`. Such a
+class gets none of core's format checks, so it should refuse every format:
+`StructuredOutputSupport.none(reason)`, and from `refusalFor` a
+`ResponseFormatUnsupportedException`, which `openSession` and `openChat`
+throw when a format is passed.
+
 ### `implements InferenceModelSession`
 
 A class that `implements InferenceModelSession` declares `startTurn()`,

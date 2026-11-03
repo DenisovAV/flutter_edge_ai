@@ -72,6 +72,7 @@ ImageProcessingException class
 ImageProcessor class
 ImageTokenizationException class
 ImageTokenizer class
+IncompleteStructuredOutputException class final
 InferenceChat class
 InferenceDeciderCalibration class final experimental
 InferenceEngineProvider class abstract
@@ -81,6 +82,7 @@ InferenceModel class abstract
 InferenceModelSession class abstract
 InferenceModelSpec class
 InferenceVariant class abstract base
+JsonSchemaResponseFormat class final
 MediaPosition enum
 Message class
 MessageType enum
@@ -106,6 +108,7 @@ MultimodalOrder class final
 NetworkError class final
 NetworkSource class final
 NoActiveModelError class
+NonConformingStructuredOutputException class final
 NotFoundError class final
 NpuTarget class abstract base
 NpuVendor class final
@@ -120,6 +123,8 @@ ResolvedHfFile class
 ResolvedHfModel class
 ResolvedSampling class final
 ResponseAction enum
+ResponseFormat class abstract final
+ResponseFormatUnsupportedException class final
 ResponseValidationResult class
 SamplingParams class final
 ScoreKind class final experimental
@@ -129,6 +134,9 @@ SkillExecutorProvider class abstract
 SpeechRecognizer class abstract
 SpeechSynthesizer class abstract
 StorageStats class
+StructuredDelivery enum
+StructuredOutputException class sealed
+StructuredOutputSupport class final
 SttBackendProvider class abstract
 SttInstallation class
 SttInstallationBuilder class

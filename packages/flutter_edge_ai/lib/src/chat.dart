@@ -11,9 +11,13 @@ import 'package:flutter_edge_ai/src/parsing/sdk_response_parser.dart';
 import 'package:flutter_edge_ai/src/parsing/sdk_text_extractor.dart';
 import 'package:flutter_edge_ai/src/tool.dart';
 import 'package:flutter_edge_ai/src/interface.dart';
+import 'package:flutter_edge_ai/src/structured/response_format.dart';
+import 'package:flutter_edge_ai/src/structured/structured_output.dart';
+import 'package:flutter_edge_ai/src/structured/structured_session.dart';
 import 'package:mutex/mutex.dart';
 
 import 'model.dart';
+
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 
 /// Default maximum length for function call buffer before flushing as text.
@@ -41,8 +45,10 @@ class InferenceChat {
   final ModelFileType fileType; // Add fileType parameter
   final ToolChoice toolChoice; // Tool calling mode
 
-  /// The engine's session this chat generates on. Set by [initSession], and
-  /// again whenever the chat rebuilds its session.
+  /// The session this chat generates on: core's structured session for a
+  /// chat with a [responseFormat], else the engine's. Set by [initSession],
+  /// and again whenever the chat rebuilds its session. [ChatTurnHooks] always
+  /// receive the engine's own.
   InferenceModelSession get session => _session ?? (throw _NoSessionError());
   set session(InferenceModelSession value) => _session = value;
   InferenceModelSession? _session;
@@ -55,6 +61,18 @@ class InferenceChat {
       return null;
     }
   }
+
+  /// The format every reply must have, read from [session] (core's structured
+  /// session carries it), so a chat over a session that enforces nothing
+  /// cannot claim one. Null before the chat has a session.
+  ResponseFormat? get responseFormat {
+    final current = _sessionIfAny;
+    return current == null ? null : responseFormatOf(current);
+  }
+
+  /// The engine's own session behind [current], which is what the hooks get.
+  static InferenceModelSession _engine(InferenceModelSession current) =>
+      engineSessionOf(current);
 
   /// Per-turn behaviour supplied by the engine (or a test); core's own when
   /// none was given.
@@ -161,7 +179,8 @@ class InferenceChat {
   List<Message> get fullHistory {
     final current = _sessionIfAny;
     return List.unmodifiable(
-      (current == null ? null : _hooks.history(current)) ?? _fullHistory,
+      (current == null ? null : _hooks.history(_engine(current))) ??
+          _fullHistory,
     );
   }
 
@@ -169,7 +188,7 @@ class InferenceChat {
   /// ([ChatTurnHooks.tokenCount]), else this chat's.
   int get currentTokens {
     final current = _sessionIfAny;
-    return (current == null ? null : _hooks.tokenCount(current)) ??
+    return (current == null ? null : _hooks.tokenCount(_engine(current))) ??
         _currentTokens;
   }
 
@@ -217,7 +236,7 @@ class InferenceChat {
     bool noTool = false,
     bool prefix = false,
   ]) async {
-    final hooked = _hooks.addQueryChunk(session, message);
+    final hooked = _hooks.addQueryChunk(_engine(session), message);
     if (hooked != null) return hooked;
     _stagedFrom ??= (
       full: _fullHistory.length,
@@ -322,11 +341,20 @@ class InferenceChat {
   /// taken back as well. Turns an engine runs through
   /// [ChatTurnHooks.responses] keep their own history.
   ///
+  /// In a chat with a [responseFormat] the reply is text, and a reply that
+  /// fails the format's check is committed to [fullHistory], then thrown: a
+  /// [StructuredOutputException] ([IncompleteStructuredOutputException] or
+  /// [NonConformingStructuredOutputException]). Such a turn always runs
+  /// core's path; [ChatTurnHooks.responses] is not called for it.
+  ///
   /// Core implements this once for every engine (`@nonVirtual`); an engine
   /// changes a chat's turns through [ChatTurnHooks].
   @nonVirtual
   Future<ModelResponse> generateChatResponse() async {
-    final hooked = _hooks.responses(session, tokenBuffer: tokenBuffer);
+    if (responseFormat != null) {
+      return _collectResponses(_streamStructuredResponse());
+    }
+    final hooked = _hooks.responses(_engine(session), tokenBuffer: tokenBuffer);
     if (hooked != null) return _collectResponses(hooked);
     return _generateCoreResponse();
   }
@@ -632,6 +660,12 @@ class InferenceChat {
   /// taken back as well. Turns an engine runs through
   /// [ChatTurnHooks.responses] keep their own history.
   ///
+  /// In a chat with a [responseFormat] the stream yields the reply's text,
+  /// and a reply that fails the format's check is committed to
+  /// [fullHistory], then the stream's error: a [StructuredOutputException].
+  /// Such a turn always runs core's path; [ChatTurnHooks.responses] is not
+  /// called for it. Cancelling the subscription stops the generation.
+  ///
   /// Core implements this once for every engine (`@nonVirtual`); an engine
   /// changes a chat's turns through [ChatTurnHooks].
   @nonVirtual
@@ -640,10 +674,39 @@ class InferenceChat {
     // Without a session yet, core's stream fails when it is listened to, as
     // it always has.
     final current = _sessionIfAny;
+    if (current != null && responseFormatOf(current) != null) {
+      return _streamStructuredResponse();
+    }
     return (current == null
             ? null
-            : _hooks.responses(current, tokenBuffer: tokenBuffer)) ??
+            : _hooks.responses(_engine(current), tokenBuffer: tokenBuffer)) ??
         _streamCoreResponse();
+  }
+
+  /// One turn of a chat with a [responseFormat], over core's structured
+  /// session: text only, no thinking filter and no tool parsing (both are
+  /// refused with a format). The reply is committed before its check's
+  /// failure is thrown, as a plain turn's is before a close's.
+  Stream<ModelResponse> _streamStructuredResponse() async* {
+    final buffer = StringBuffer();
+    StructuredOutputException? failure;
+    StackTrace? failureStack;
+    try {
+      await for (final chunk in session.getResponseAsync()) {
+        buffer.write(chunk);
+        yield TextResponse(chunk);
+      }
+    } on StructuredOutputException catch (error, stack) {
+      failure = error;
+      failureStack = stack;
+    }
+    final response = buffer.toString();
+    _commitText(response);
+    if (failure case IncompleteStructuredOutputException(end: TurnEnd.closed)) {
+      Error.throwWithStackTrace(failure, failureStack!);
+    }
+    await _accountReply(response, emittedFunctionCall: false);
+    if (failure != null) Error.throwWithStackTrace(failure, failureStack!);
   }
 
   Stream<ModelResponse> _streamCoreResponse() async* {
@@ -1065,11 +1128,25 @@ class InferenceChat {
     if (!emittedFunctionCall) _commitText(response);
     _throwIfClosed(end);
 
+    await _accountReply(response, emittedFunctionCall: emittedFunctionCall);
+
+    edgeAiLog(
+      'InferenceChat: generateChatResponseAsync completed successfully',
+    );
+  }
+
+  /// After a committed reply: counts its tokens, rebuilds the session when
+  /// the context is nearly full, and starts a single-turn model's next turn
+  /// on a fresh session.
+  Future<void> _accountReply(
+    String response, {
+    required bool emittedFunctionCall,
+  }) async {
     edgeAiLog('InferenceChat: Calculating response tokens...');
     final responseTokens = await session.sizeInTokens(response);
     _currentTokens += responseTokens;
     edgeAiLog('InferenceChat: Current total tokens: $_currentTokens');
-    final used = _hooks.tokenCount(session) ?? _currentTokens;
+    final used = _hooks.tokenCount(_engine(session)) ?? _currentTokens;
     if (used >= (maxTokens - tokenBuffer)) {
       edgeAiLog('InferenceChat: Token limit reached, recreating session...');
       await _recreateSessionWithReducedChunks();
@@ -1096,10 +1173,6 @@ class InferenceChat {
         'InferenceChat: Single-turn model with function call - keeping history for tool response',
       );
     }
-
-    edgeAiLog(
-      'InferenceChat: generateChatResponseAsync completed successfully',
-    );
   }
 
   /// Drive flutter_edge_ai's function-calling loop to completion. Stream this
@@ -1330,16 +1403,16 @@ class InferenceChat {
   Future<void> _recreateSessionWithReducedChunks() async {
     // A session that keeps the transcript itself is rebuilt from it: the
     // engine owns what fits its context.
-    final engineHistory = _hooks.history(session);
+    final engineHistory = _hooks.history(_engine(session));
     if (engineHistory != null) {
       final kept = List.of(engineHistory);
       await session.close();
       session = await sessionCreator!();
       for (final message in kept) {
-        await (_hooks.addQueryChunk(session, message) ??
+        await (_hooks.addQueryChunk(_engine(session), message) ??
             session.addQueryChunk(message));
       }
-      await _hooks.replayFinished(session);
+      await _hooks.replayFinished(_engine(session));
       return;
     }
 
@@ -1392,13 +1465,13 @@ class InferenceChat {
       for (final message in replayHistory) {
         await addQueryChunk(message);
       }
-      await _hooks.replayFinished(session);
+      await _hooks.replayFinished(_engine(session));
     } catch (error, stack) {
       try {
         _resetHistory();
         await session.close();
         session = await sessionCreator!();
-        await _hooks.replayFailed(session, error);
+        await _hooks.replayFailed(_engine(session), error);
       } catch (recoveryError) {
         // The replay's error is what the caller has to act on; a release
         // build is where a failed recovery shows, and edgeAiLog is silent

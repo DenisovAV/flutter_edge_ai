@@ -128,6 +128,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
       toolChoice: request.toolChoice,
       systemInstruction: request.systemInstruction,
       maxOutputTokens: request.maxOutputTokens,
+      responseFormat: request.responseFormat,
     );
   }
 

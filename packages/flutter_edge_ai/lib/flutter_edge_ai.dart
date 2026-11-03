@@ -25,6 +25,18 @@ export 'src/interface.dart'
 export 'src/model_file_manager_interface.dart'
     show ModelFileManager, ModelReplacePolicy;
 
+// Typed responses: openSession/openChat(responseFormat:) and what they throw.
+export 'src/structured/response_format.dart'
+    show JsonSchemaResponseFormat, ResponseFormat;
+export 'src/structured/structured_output.dart'
+    show
+        IncompleteStructuredOutputException,
+        NonConformingStructuredOutputException,
+        ResponseFormatUnsupportedException,
+        StructuredDelivery,
+        StructuredOutputException,
+        StructuredOutputSupport;
+
 // Public parameter types that exported APIs require.
 export 'src/domain/model_source.dart'
     show AssetSource, BundledSource, FileSource, ModelSource, NetworkSource;

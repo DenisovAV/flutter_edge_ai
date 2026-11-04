@@ -8,6 +8,11 @@
 // 3. A long greedy reply is the same through the chat's blocking turn
 //    (streamed chunks, joined) as through the session's own getResponse
 //    (one native call): no chunk is lost on the way.
+// 4. Rule A: a turn the chat takes back (stopped before any text, or failed
+//    on an input longer than the context window) is taken out of the native
+//    session too, which MediaPipe does by building the session again and
+//    replaying the earlier turns. The turn after it recalls the earlier
+//    history and not the taken-back message.
 //
 // Model: Gemma 3n E2B .task, CPU, as ios_mediapipe_033_test.dart.
 // Not run by CI. Usage (Android or iOS):
@@ -168,5 +173,131 @@ void main() {
         await chat.close();
       }
     });
+
+    testWidgets('$lane: a turn stopped before any text is taken out of the '
+        'session; the next turn recalls the earlier one and not it', (_) async {
+      final model = await _ensureModel();
+      final chat = await open(model);
+      try {
+        await _tellName(chat);
+
+        // Stopped before the first token: the long input keeps the model in
+        // prefill while the stop lands.
+        await chat.addQuery(
+          Message(
+            text:
+                'My favourite colour is $_takenBackWord. ${_filler(150)} '
+                'Repeat my favourite colour.',
+            isUser: true,
+          ),
+        );
+        final shown = <String>[];
+        final sub = chat.generateChatResponseAsync().listen((r) {
+          if (r is TextResponse) shown.add(r.token);
+        }, onError: (_) {});
+        await chat.stopGeneration();
+        await sub.asFuture<void>().timeout(const Duration(seconds: 60));
+        if (shown.join().trim().isNotEmpty) {
+          markTestSkipped(
+            '[turn-end $lane 4] text arrived before the stop landed '
+            '("${shown.join()}"): not a zero-text stop on this device',
+          );
+          return;
+        }
+        expect(
+          chat.fullHistory.any((m) => m.text.contains(_takenBackWord)),
+          isFalse,
+          reason: 'the chat took the turn back',
+        );
+
+        await _expectRecall(chat, lane, 'after a stop');
+      } finally {
+        await chat.close();
+      }
+    });
+
+    testWidgets('$lane: a turn that fails on an input too long for the '
+        'context is taken out of the session; the next turn recalls the '
+        'earlier one and not it', (_) async {
+      final model = await _ensureModel();
+      final chat = await open(model);
+      try {
+        await _tellName(chat);
+
+        // Several times the 1024-token context: MediaPipe refuses it.
+        await chat.addQuery(
+          Message(
+            text: 'My favourite colour is $_takenBackWord. ${_filler(1500)}',
+            isUser: true,
+          ),
+        );
+        Object? failure;
+        try {
+          await chat.generateChatResponse().timeout(
+            const Duration(seconds: 120),
+          );
+        } catch (e) {
+          failure = e;
+        }
+        print('[turn-end $lane 5] the over-long turn ended with: $failure');
+        if (failure == null) {
+          markTestSkipped(
+            '[turn-end $lane 5] the engine answered an input past its '
+            'context window: no failure to take back on this device',
+          );
+          return;
+        }
+        expect(
+          chat.fullHistory.any((m) => m.text.contains(_takenBackWord)),
+          isFalse,
+          reason: 'the chat took the failed turn back',
+        );
+
+        await _expectRecall(chat, lane, 'after a failure');
+      } finally {
+        await chat.close();
+      }
+    });
   }
+}
+
+/// A word no reply would contain unless the model saw the taken-back turn.
+const _takenBackWord = 'vermilion';
+
+/// [words] words of filler.
+String _filler(int words) => List.filled(words, 'lighthouse').join(' ');
+
+/// The turn the taken-back one follows: a fact the rebuilt session must keep.
+Future<void> _tellName(InferenceChat chat) async {
+  await chat.addQuery(
+    const Message(
+      text: 'My name is Ada. Reply with the single word OK.',
+      isUser: true,
+    ),
+  );
+  await chat.generateChatResponse().timeout(const Duration(seconds: 120));
+}
+
+/// A turn on the session as it is now: it must know the name, and must not
+/// know the taken-back colour.
+Future<void> _expectRecall(InferenceChat chat, String lane, String what) async {
+  await chat.addQuery(
+    const Message(
+      text:
+          'What is my name, and what is my favourite colour? If you were not '
+          'told one, say unknown.',
+      isUser: true,
+    ),
+  );
+  final reply = await chat.generateChatResponse().timeout(
+    const Duration(seconds: 120),
+  );
+  final text = (reply as TextResponse).token.toLowerCase();
+  print('[turn-end $lane] recall $what: "$text"');
+  expect(text, contains('ada'), reason: 'the earlier turn was replayed');
+  expect(
+    text,
+    isNot(contains(_takenBackWord)),
+    reason: 'the taken-back message is not in the session',
+  );
 }

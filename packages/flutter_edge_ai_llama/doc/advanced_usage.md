@@ -114,8 +114,10 @@ final chat = await model.openChat(
 A structured turn that streamed a reply is recorded in the session's history
 whatever its end, as core records the reply before it checks it: a turn cut by
 `maxOutputTokens`, the context, a stop or a close ends with that reply in the
-history. A turn with no reply (stopped before its first token, or an input
-that does not fit the context) is not recorded. A chat's structured turns drop
+history. A turn with no reply (stopped before its first token) is not
+recorded. An input that does not fit the context fails the turn with a
+`StateError`, on plain and structured sessions alike, and nothing of that turn
+is kept. A chat's structured turns drop
 the oldest turns for `tokenBuffer` before the turn, as plain ones do, and
 again after the reply until the kept history is under `maxTokens -
 tokenBuffer`, so the chat does not rebuild its session every turn once the

@@ -25,8 +25,11 @@ import 'structured_output_schema.dart';
 /// session's [messages]. And a turn cut by the output cap, the context, a
 /// stop or a close ends its text cleanly: [startTurn]'s end says which, and
 /// core turns it into the format's error. A turn with no reply (stopped
-/// while queued or before its first token, or an input the context cannot
-/// hold) is rolled back as a plain one is.
+/// while queued or before its first token) is rolled back as a plain one
+/// is. An input the context cannot hold is refused the same way on plain and
+/// structured sessions: rolled back, an error on the text and the end
+/// [edge.TurnEnd.contextLimit], which tells core's chat to take the turn's
+/// messages back.
 class LlamaInferenceSession extends edge.InferenceModelSession {
   /// Creates a session; the model retains ownership of [engine].
   LlamaInferenceSession({
@@ -397,7 +400,9 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   /// during the turn, [edge.TurnEnd.outputLimit] or
   /// [edge.TurnEnd.contextLimit] for llamadart's `length` finish (whichever
   /// budget the request ran out of), else [edge.TurnEnd.endOfSequence]. An
-  /// error ends the text, and then the end is [edge.TurnEnd.closed], unread.
+  /// error ends the text, and then the end is [edge.TurnEnd.closed], except
+  /// for an input the context cannot hold: a [StateError] on the text, end
+  /// [edge.TurnEnd.contextLimit], and nothing of the turn kept.
   @override
   EngineTurn startTurn() {
     final turn = _startTurn(responseFormat == null ? null : chatTokenBuffer);
@@ -637,6 +642,9 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     // How the turn ended, once the generation has decided it; a stop or a
     // close that cut it short leaves it null.
     edge.TurnEnd? reached;
+    // Set when the context cannot hold the input: the turn's error then ends
+    // with contextLimit instead of closed.
+    var inputRefused = false;
     try {
       await _queue.run<void>(() async {
         if (_stopped || _closed) return;
@@ -712,20 +720,12 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           }
           final remaining = contextSize - promptTokens;
           if (remaining <= 0) {
-            reached = edge.TurnEnd.contextLimit;
-            const advice = 'Shorten the latest input or increase the context.';
-            // Nothing was generated: the turn is rolled back below, and a
-            // structured one ends cleanly for core to report, which has no
-            // room for this advice.
-            if (structured) {
-              edgeAiLog(
-                'GGUF structured turn: the rendered prompt ($promptTokens '
-                'tokens) fills the $contextSize-token context. $advice',
-              );
-              return;
-            }
+            // The input is refused: nothing was generated, the staged input
+            // is rolled back below, and the error with end contextLimit is
+            // how every engine says so (plain and structured alike).
+            inputRefused = true;
             throw StateError(
-              'The rendered prompt ($promptTokens tokens) fills the $contextSize-token context. $advice',
+              'The rendered prompt ($promptTokens tokens) fills the $contextSize-token context. Shorten the latest input or increase the context.',
             );
           }
           final generationLimit = math.min(outputLimit ?? remaining, remaining);
@@ -1032,7 +1032,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         // or a close arrived after it.
         finish(
           reportedError
-              ? edge.TurnEnd.closed
+              ? (inputRefused ? edge.TurnEnd.contextLimit : edge.TurnEnd.closed)
               : reached ??
                     (!_userStopped && _closed
                         ? edge.TurnEnd.closed

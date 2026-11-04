@@ -3676,26 +3676,43 @@ void main() {
       });
     }
 
-    test('an input the context cannot hold is rolled back', () async {
-      final session = await structured.openSession(responseFormat: object);
-      engine.promptTokens = 2048;
-      await session.addQueryChunk(user('too long'));
-      await expectLater(
-        session.getResponse(),
-        throwsA(
-          isA<edge.IncompleteStructuredOutputException>()
-              .having((e) => e.end, 'end', edge.TurnEnd.contextLimit)
-              .having((e) => e.partialText, 'partialText', ''),
-        ),
-      );
-      expect(engine.requests, isEmpty);
-      expect(engineSession().messages, isEmpty);
-      engine.promptTokens = 10;
-      engine.script = [_chunk('{}'), stop];
-      await session.addQueryChunk(user('short'));
-      expect(await session.getResponse(), '{}');
-      expect(engine.requests.single.map((m) => m.content), ['short']);
-    });
+    for (final structuredSession in [true, false]) {
+      test('an input the context cannot hold is refused '
+          '(${structuredSession ? 'structured' : 'plain'})', () async {
+        // The contract every engine keeps: an error on the text, end
+        // contextLimit, and nothing of the turn kept, so core's chat can
+        // take the turn's messages back.
+        final session = await structured.openSession(
+          responseFormat: structuredSession ? object : null,
+        );
+        final llamaSession = engineSession();
+        engine.promptTokens = 2048;
+        await session.addQueryChunk(user('too long'));
+        final turn = llamaSession.startTurn();
+        await expectLater(
+          turn.text.join(),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              contains('fills the 2048-token context'),
+            ),
+          ),
+        );
+        expect(await turn.end, edge.TurnEnd.contextLimit);
+        expect(engine.requests, isEmpty);
+        expect(llamaSession.messages, isEmpty);
+        // Through core's own session the error reaches the caller as is.
+        await session.addQueryChunk(user('too long again'));
+        await expectLater(session.getResponse(), throwsA(isA<StateError>()));
+        expect(llamaSession.messages, isEmpty);
+        engine.promptTokens = 10;
+        engine.script = [_chunk('{}'), stop];
+        await session.addQueryChunk(user('short'));
+        expect(await session.getResponse(), '{}');
+        expect(engine.requests.single.map((m) => m.content), ['short']);
+      });
+    }
 
     for (final how in ['stop', 'cancel', 'close']) {
       test('a $how mid-reply is incomplete and keeps what streamed', () async {
@@ -3818,7 +3835,16 @@ void main() {
       await session.addQueryChunk(user('q'));
       turn = engineSession().startTurn();
       await expectLater(turn.text.join(), throwsA(isA<StateError>()));
+      expect(await turn.end, edge.TurnEnd.contextLimit);
+      // Any other error ends the turn closed.
+      engine
+        ..promptTokens = 10
+        ..templateError = llama.LlamaInferenceException('template failed');
+      await session.addQueryChunk(user('q'));
+      turn = engineSession().startTurn();
+      await expectLater(turn.text.join(), throwsA(isA<StateError>()));
       expect(await turn.end, edge.TurnEnd.closed);
+      engine.templateError = null;
     });
 
     test('a structured chat reads its history from the session', () async {

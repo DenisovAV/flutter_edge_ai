@@ -361,9 +361,7 @@ final _litertlmBundle = _NativeBundle(
     // flutter_litert ships a framework under the upstream name, and an app
     // bundle holds only one (see patch_c_api.sh §10).
     'LiteRtLmMetalAccelerator',
-    'LiteRtTopKMetalSampler', // macOS + iOS device GPU sampler (Metal)
     'LiteRtWebGpuAccelerator', // Linux/Windows GPU (WebGPU → Vulkan/DX12)
-    'LiteRtTopKWebGpuSampler', // Linux/Windows GPU sampler
     'LiteRt', // Linux/Windows core runtime
     'webgpu_dawn', // Linux/Windows Dawn WebGPU (split to a shared lib in v0.14.0)
   ],
@@ -372,6 +370,12 @@ final _litertlmBundle = _NativeBundle(
     // OpenCL accelerator and sampler in (patch_c_api.sh section 19).
     'LiteRtOpenClAccelerator',
     'LiteRtTopKOpenClSampler',
+    // Not shipped since native-v0.19.0-a: Linux and Windows build no GPU
+    // sampler (section 20, CPU sampling), and Apple links its sampler into
+    // libLiteRtLm. A stale 0.18 copy in the cache is deleted, never bundled.
+    'LiteRtTopKWebGpuSampler',
+    'libLiteRtTopKWebGpuSampler',
+    'LiteRtTopKMetalSampler',
     // Not shipped on any platform since native-v0.18.0: on Android it needs
     // Dawn, which no bundle carries.
     'LiteRtGpuAccelerator',
@@ -407,7 +411,6 @@ final _litertlmBundle = _NativeBundle(
   windowsExtraLibs: [
     'libGemmaModelConstraintProvider',
     'libLiteRt',
-    'libLiteRtTopKWebGpuSampler',
     'libLiteRtWebGpuAccelerator',
     'libwebgpu_dawn', // lib-prefixed for the accelerator's PE import (v0.14.0)
     // DXC runtime
@@ -1193,11 +1196,8 @@ Future<void> _registerMediatekNpu({
   required BuildOutputBuilder output,
   required Uri Function(Uri) stage,
 }) async {
-  if (mediatekNpuRefused) {
-    throw StateError(
-      '[$_packageName] $mediatekNpuUserDefine is set, but $mediatekNpuRefusedReason.',
-    );
-  }
+  final refusal = mediatekNpuBuildRefusal(_packageName);
+  if (refusal != null) throw StateError(refusal);
   if (npuDispatchInNativeTarball(NpuStack.mediatek)) {
     throw StateError(
       'MediaTek: its dispatch is in the native bundle, not fetched',

@@ -129,7 +129,13 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     _refuse(
       '$file is compiled for a ${target.vendor} NPU (${target.soc}). '
       'flutter_edge_ai_litertlm runs EmbeddingGemma 2 NPU bundles on '
-      '${npuSentenceList(NpuStack.values.map((v) => v.label))} NPUs only. '
+      '${npuSentenceList(offeredNpuStacks.map((v) => v.label))} NPUs only. '
+      'Install the generic EmbeddingGemma 2 bundle to embed on CPU.',
+    );
+  }
+  if (vendor == NpuStack.mediatek && mediatekNpuRefused) {
+    _refuse(
+      '$file is compiled for the $target NPU: $mediatekNpuRefusedReason. '
       'Install the generic EmbeddingGemma 2 bundle to embed on CPU.',
     );
   }
@@ -137,7 +143,8 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     _refuse(
       '$file is compiled for the $target NPU, and on ${host.operatingSystem} '
       '(${host.abi}) flutter_edge_ai_litertlm runs '
-      '${npuSentenceList(hostVendors.map((v) => v.label))} NPU bundles only; '
+      '${npuSentenceList(hostVendors.where(offeredNpuStacks.contains).map((v) => v.label))} '
+      'NPU bundles only; '
       '${vendor.label} ones run on ${npuSentenceList(vendor.abis)}. Install the '
       'generic EmbeddingGemma 2 bundle to embed here on CPU.',
     );
@@ -173,7 +180,7 @@ String liteRtLmGenericOnNpuRefusal(String file) =>
     '$file is the generic EmbeddingGemma 2 bundle: it has no NPU graph and '
     'runs on CPU only. To embed on the NPU, install the bundle compiled for '
     "this device's SoC (litert-community publishes "
-    '${npuSentenceList(NpuStack.values.map(_bundleNames))} '
+    '${npuSentenceList(offeredNpuStacks.map(_bundleNames))} '
     'beside it; which have run on which device: $liteRtLmRegistryUrl) and load '
     'it with PreferredBackend.npu. To run this bundle, omit preferredBackend.';
 

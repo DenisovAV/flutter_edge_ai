@@ -326,6 +326,13 @@ const intelNpuLibs = [
 /// conversation answers its second message empty (LiteRT-LM #4256).
 const mediatekNpuRefused = true;
 
+/// The vendors whose NPU this release runs, in [NpuStack] order: every one
+/// but MediaTek while [mediatekNpuRefused]. Messages that tell an app where
+/// the NPU runs name these, so none sends it to a load that is refused.
+Iterable<NpuStack> get offeredNpuStacks => NpuStack.values.where(
+  (vendor) => !(vendor == NpuStack.mediatek && mediatekNpuRefused),
+);
+
 /// Why the MediaTek NPU is refused ([mediatekNpuRefused]).
 const mediatekNpuRefusedReason =
     'the MediaTek NPU is not supported by this flutter_edge_ai_litertlm '

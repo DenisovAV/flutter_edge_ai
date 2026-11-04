@@ -365,12 +365,9 @@ String _whereNpuRuns(NpuStack vendor) => switch (vendor) {
         'true)',
   NpuStack.googleTensor => 'Google Tensor G5/G6 Android devices',
   NpuStack.mediatek =>
-    mediatekNpuRefused
-        ? 'no MediaTek device in this release (flutter_edge_ai_litertlm '
-              '1.19.x runs the MediaTek NPU)'
-        : 'MediaTek Dimensity Android devices (in apps built with '
-              'hooks.user_defines.flutter_edge_ai_litertlm.'
-              '$mediatekNpuUserDefine: true)',
+    'MediaTek Dimensity Android devices (in apps built with '
+        'hooks.user_defines.flutter_edge_ai_litertlm.$mediatekNpuUserDefine: '
+        'true)',
   NpuStack.intel => 'on Windows (Intel LunarLake/PantherLake)',
 };
 
@@ -479,7 +476,7 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
     print(
       '[flutter_edge_ai] WARNING: $logTag npu was requested, but $reason — '
       'trying ${backends.map(ffiBackendWireName).join(" -> ")} instead. NPU '
-      'runs on ${npuSentenceList(NpuStack.values.map(_whereNpuRuns))}. '
+      'runs on ${npuSentenceList(offeredNpuStacks.map(_whereNpuRuns))}. '
       'InferenceModel.activeBackend names what actually ran.',
     );
   }

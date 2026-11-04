@@ -110,6 +110,15 @@ String? thinkingBudgetChannelWarning(
       'still think until maxOutputTokens.';
 }
 
+/// What the Windows client loads into the process, in order, before it opens
+/// LiteRtLm.dll: every one a file of the Windows native archive.
+@visibleForTesting
+const windowsPreloadLibraries = [
+  'LiteRt.dll',
+  'libLiteRtWebGpuAccelerator.dll',
+  'LiteRtLm.dll',
+];
+
 /// Callback typedef with Uint8 for bool (C _Bool = 1 byte)
 typedef _StreamCallbackNative =
     Void Function(
@@ -1498,10 +1507,12 @@ class LiteRtLmFfiClient {
       preload('$libDir/$libPath');
       lib = requireOwnLiteRtLmBuild(DynamicLibrary.open(libPath), libPath);
     } else if (Platform.isWindows) {
-      // Preload LiteRt.dll first so the WebGPU accelerator and TopK sampler
-      // can resolve LiteRt* C API + their own exports through the process
-      // module list before sampler_factory does its LoadLibrary lookup
-      // (mirrors the Linux/Android RTLD_GLOBAL pattern). StreamProxy.dll goes
+      // Preload LiteRt.dll first so the WebGPU accelerator can resolve the
+      // LiteRt* C API through the process module list (mirrors the
+      // Linux/Android RTLD_GLOBAL pattern). No GPU sampler ships since
+      // native-v0.19.0-a (patch_c_api.sh section 20: CPU sampling on
+      // Windows), so none is preloaded: windowsPreloadLibraries must name only
+      // files of the Windows archive (test/windows_preload_test.dart). StreamProxy.dll goes
       // through the std-handle realignment, before any static-CRT DLL loads
       // (windows_std_handles.dart).
       proxyLib = openBundledWindowsLibrary('StreamProxy.dll', preload: preload);
@@ -1510,12 +1521,7 @@ class LiteRtLmFfiClient {
             Pointer Function(Pointer<Utf8>),
             Pointer Function(Pointer<Utf8>)
           >('stream_proxy_load_global');
-      for (final name in const [
-        'LiteRt.dll',
-        'libLiteRtTopKWebGpuSampler.dll',
-        'libLiteRtWebGpuAccelerator.dll',
-        'LiteRtLm.dll',
-      ]) {
+      for (final name in windowsPreloadLibraries) {
         final pathPtr = name.toNativeUtf8();
         final handle = loadGlobal(pathPtr);
         calloc.free(pathPtr);

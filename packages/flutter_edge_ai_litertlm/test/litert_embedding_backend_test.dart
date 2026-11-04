@@ -437,7 +437,7 @@ void main() {
                 Abi.current() == Abi.windowsX64
                     ? 'runs Intel NPU bundles only'
                     : 'Qualcomm Android and Qualcomm Linux arm64, and on Google '
-                          'Tensor G5/G6 Android devices, and on MediaTek Dimensity Android devices, and on Intel NPUs with '
+                          'Tensor G5/G6 Android devices, and on Intel NPUs with '
                           'Windows x64, only',
               ),
               contains('${Abi.current()}'),

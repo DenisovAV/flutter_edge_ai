@@ -114,8 +114,8 @@ void main() {
     );
   });
 
-  test('an error keeps the turn it failed on, with the system instruction '
-      'and the tools prompt', () async {
+  test('an error takes back the turn it failed on, with the system '
+      'instruction and the tools prompt, as the chat does (rule A)', () async {
     final b = FakeBackend(['ok'])..failWith = StateError('webgpu lost');
     final s = _session(b, system: 'Be brief');
     // The chat sends the tools prompt and then the question.
@@ -123,24 +123,28 @@ void main() {
     await s.addQueryChunk(const Message(text: 'Q1', isUser: true));
     await expectLater(s.getResponse(), throwsStateError);
     b.failWith = null;
+    // The chat sends the turn again; the instruction comes with it again.
+    await s.addQueryChunk(const Message(text: 'TOOLS', isUser: true));
+    await s.addQueryChunk(const Message(text: 'Q1', isUser: true));
     await s.getResponse();
     final sent = _text(b.prompts.last);
-    expect(sent, contains('[System: Be brief]'));
-    expect(sent, contains('TOOLS'));
-    expect(sent, contains('Q1'));
+    expect('[System: Be brief]'.allMatches(sent), hasLength(1));
+    expect('TOOLS'.allMatches(sent), hasLength(1));
+    expect('Q1'.allMatches(sent), hasLength(1));
     expect(b.prompts.first, isNotEmpty);
   });
 
-  test('a stream error keeps the turn it failed on', () async {
+  test('a stream error takes back the turn it failed on', () async {
     final b = FakeBackend(['ok'])..failWith = StateError('lost');
     final s = _session(b, system: 'Be brief');
     await s.addQueryChunk(const Message(text: 'Q1', isUser: true));
     await expectLater(s.getResponseAsync().toList(), throwsStateError);
     b.failWith = null;
+    await s.addQueryChunk(const Message(text: 'Q2', isUser: true));
     await s.getResponse();
     expect(
       _text(b.prompts.last),
-      '<|turn>user\n[System: Be brief]\n\nQ1<turn|>\n<|turn>model\n',
+      '<|turn>user\n[System: Be brief]\n\nQ2<turn|>\n<|turn>model\n',
     );
   });
 
@@ -363,17 +367,46 @@ void main() {
     expect(await next, isEmpty);
     expect(b.prompts, hasLength(1), reason: 'the stopped call must not run');
 
-    // The stopped turn is still the user's, and the next call answers it.
+    // The stopped call produced nothing: its turn is taken back (rule A),
+    // and the next message is the user's next turn.
     b.replies
       ..clear()
       ..add('ok');
+    await s.addQueryChunk(const Message(text: 'again', isUser: true));
     await s.getResponse();
     expect(
       _text(b.prompts.last),
       endsWith(
-        '<|turn>model\nMango<turn|>\n<|turn>user\ngo on<turn|>\n<|turn>model\n',
+        '<|turn>model\nMango<turn|>\n<|turn>user\nagain<turn|>\n<|turn>model\n',
       ),
     );
+    expect(_text(b.prompts.last), isNot(contains('go on')));
+  });
+
+  test('a stop while a streamed call waits for the previous one takes its '
+      'user turn back (rule A)', () async {
+    final b = FakeBackend([])..endOnCancel = false;
+    final s = _session(b);
+    await s.addQueryChunk(_user);
+    s.getResponseAsync().listen((_) {});
+    await Future<void>.delayed(Duration.zero);
+    final first = b.live!;
+    first.add('Mango');
+    await Future<void>.delayed(Duration.zero);
+    await s.stopGeneration();
+
+    await s.addQueryChunk(const Message(text: 'go on', isUser: true));
+    final waiting = s.getResponseAsync().toList();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    await s.stopGeneration();
+    await first.close();
+    expect(await waiting, isEmpty);
+
+    b.replies.add('ok');
+    await s.addQueryChunk(const Message(text: 'again', isUser: true));
+    await s.getResponse();
+    expect(_text(b.prompts.last), isNot(contains('go on')));
+    expect(_text(b.prompts.last), contains('again'));
   });
 
   group('overlapping blocking calls', () {
@@ -397,7 +430,9 @@ void main() {
       b.replies.add('ok');
       await s.getResponse();
       expect(_text(b.prompts.last), isNot(contains('partial')));
-      expect(_text(b.prompts.last), '<|turn>user\na\nb<turn|>\n<|turn>model\n');
+      // Nothing of the stopped call reached the conversation: its turn is
+      // taken back (rule A).
+      expect(_text(b.prompts.last), '<|turn>user\nb<turn|>\n<|turn>model\n');
     });
 
     test('a call still running behind two that gave up waiting stays '
@@ -900,6 +935,51 @@ void main() {
         expect(await t.end, expected);
       });
     }
+
+    test('a streamed turn stopped before any text takes its user turn '
+        'back (rule A)', () async {
+      final b = FakeBackend([]);
+      final s = _session(b, system: 'Be brief');
+      await s.addQueryChunk(_user);
+      final t = turn(s);
+      final text = t.text.toList();
+      await pumpEventQueue();
+      await s.stopGeneration();
+      expect(await text.timeout(const Duration(seconds: 5)), isEmpty);
+      expect(await t.end, TurnEnd.stopped);
+
+      b.replies.add('ok');
+      await s.addQueryChunk(const Message(text: 'next', isUser: true));
+      await s.getResponse();
+      final sent = _text(b.prompts.last);
+      expect(sent, isNot(contains('yellow fruit')));
+      expect(sent, contains('[System: Be brief]'), reason: 'carried again');
+    });
+
+    test('a chat over a web session stopped before any text: the chat and '
+        'the session both drop the turn', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      final chat = InferenceChat(
+        sessionCreator: () async => s,
+        maxTokens: 1024,
+        tokenBuffer: 0,
+        modelType: ModelType.gemma4,
+      );
+      await chat.initSession();
+      await chat.addQueryChunk(_user);
+      final done = chat.generateChatResponseAsync().toList();
+      await pumpEventQueue();
+      await chat.stopGeneration();
+      await done.timeout(const Duration(seconds: 5));
+      expect(chat.fullHistory, isEmpty);
+
+      b.replies.add('ok');
+      await chat.addQueryChunk(const Message(text: 'next', isUser: true));
+      await chat.generateChatResponseAsync().toList();
+      expect(_text(b.prompts.last), isNot(contains('yellow fruit')));
+      expect(chat.fullHistory.map((m) => m.text), ['next', 'ok']);
+    });
 
     test('a stop in one turn does not mark the next one stopped', () async {
       final b = FakeBackend([]);

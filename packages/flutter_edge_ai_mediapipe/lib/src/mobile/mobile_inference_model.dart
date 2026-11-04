@@ -247,7 +247,7 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
       // LoRA support is fully integrated via Modern API (InferenceInstallationBuilder)
       final resolvedLoraPath = loraPath;
 
-      await platformService.createSession(
+      Future<void> createNative() => platformService.createSession(
         randomSeed: sampling.randomSeed,
         temperature: sampling.temperature,
         topK: sampling.topK,
@@ -260,6 +260,7 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
         systemInstruction: systemInstruction,
         enableThinking: enableThinking,
       );
+      await createNative();
 
       late final MobileInferenceModelSession session;
       session = MobileInferenceModelSession(
@@ -268,6 +269,9 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
         supportImage: enableVisionModality ?? supportImage,
         supportAudio: enableAudioModality ?? supportAudio,
         systemInstruction: systemInstruction,
+        // The native createSession replaces the one native session: a
+        // take-back rebuilds it and replays what it held.
+        recreateNative: createNative,
         // Identity-guarded so a late close of a superseded session can't
         // null a newer `_session`. Does NOT touch `_createCompleter` —
         // that is owned by the `finally` below, not by session teardown.
@@ -340,19 +344,20 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     // Counted from the cap check until the session is in [_openSessions]:
     // the native call below would otherwise let a second call pass the check.
     _openingSessions++;
+    Future<void> createNative() => platformService.createSessionForId(
+      sessionId: id,
+      randomSeed: sampling.randomSeed,
+      temperature: sampling.temperature,
+      topK: sampling.topK,
+      topP: sampling.topP,
+      loraPath: loraPath,
+      enableVisionModality: enableVisionModality ?? supportImage,
+      enableAudioModality: enableAudioModality ?? supportAudio,
+      systemInstruction: systemInstruction,
+      enableThinking: enableThinking,
+    );
     try {
-      await platformService.createSessionForId(
-        sessionId: id,
-        randomSeed: sampling.randomSeed,
-        temperature: sampling.temperature,
-        topK: sampling.topK,
-        topP: sampling.topP,
-        loraPath: loraPath,
-        enableVisionModality: enableVisionModality ?? supportImage,
-        enableAudioModality: enableAudioModality ?? supportAudio,
-        systemInstruction: systemInstruction,
-        enableThinking: enableThinking,
-      );
+      await createNative();
     } finally {
       _openingSessions--;
     }
@@ -372,6 +377,11 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
       supportAudio: enableAudioModality ?? supportAudio,
       systemInstruction: systemInstruction,
       generationMutex: _generationMutex,
+      // A take-back closes this native session and builds it again, same id.
+      recreateNative: () async {
+        await platformService.closeSessionId(id);
+        await createNative();
+      },
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);

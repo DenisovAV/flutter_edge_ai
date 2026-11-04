@@ -210,17 +210,26 @@ final class WebConversation {
 
   /// The generation was stopped. What was generated until then stays in the
   /// conversation as the model's reply, as it does in a native session's
-  /// cache; when nothing was, the user turn stays unanswered.
+  /// cache; when nothing was, the session takes the user turn back
+  /// ([dropPendingUserTurn]), as the chat does (rule A).
   void stopGeneration(String generated) {
     _generating = false;
     if (generated.isNotEmpty) _appendModel(generated);
   }
 
-  /// The generation failed. The user's turn stays unanswered, with everything
-  /// in it (a system instruction, a tools prompt), as a failed message stays
-  /// in the history of a native chat; a retry answers it.
+  /// The generation failed. The session takes the user's turn back
+  /// ([dropPendingUserTurn]), with everything in it (a system instruction, a
+  /// tools prompt), as the chat takes a failed turn back.
   void failGeneration() {
     _generating = false;
+  }
+
+  /// Removes the user turn the model has not answered, if there is one, and
+  /// returns whether it did.
+  bool dropPendingUserTurn() {
+    if (!hasPendingUserTurn) return false;
+    _turns.removeLast();
+    return true;
   }
 
   /// Forgets the conversation.

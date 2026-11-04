@@ -250,7 +250,23 @@ class WebModelSession extends InferenceModelSession {
     _conversation.addUser(parts);
     // Only now: a message the conversation refused must not use up the
     // instruction.
-    if (addsSystemInstruction) _systemInstructionSent = true;
+    if (addsSystemInstruction) {
+      _systemInstructionSent = true;
+      _systemInstructionPending = true;
+    }
+  }
+
+  /// The pending user turn carries the system instruction.
+  bool _systemInstructionPending = false;
+
+  /// Takes back the user turn the model has not answered: the turn failed,
+  /// or was stopped before any text (rule A, as the chat does). The next
+  /// message carries the system instruction again when this one did.
+  void _takeBackPending() {
+    if (_conversation.dropPendingUserTurn() && _systemInstructionPending) {
+      _systemInstructionSent = false;
+    }
+    _systemInstructionPending = false;
   }
 
   /// MediaPipe refuses a call while the one before it is still ending, which
@@ -305,14 +321,16 @@ class WebModelSession extends InferenceModelSession {
     if (run.done) return;
     run.markDone();
     _conversation.completeGeneration(_inHistory(reply));
+    _systemInstructionPending = false;
   }
 
-  /// Ends [run] without a reply: the user's turn stays, to be answered by a
-  /// retry.
+  /// Ends [run] without a reply: the user's turn is taken back, as the chat
+  /// takes a failed turn back.
   void _fail(_Run run) {
     if (run.done) return;
     run.markDone();
     _conversation.failGeneration();
+    _takeBackPending();
   }
 
   @override
@@ -329,9 +347,10 @@ class WebModelSession extends InferenceModelSession {
       // backend.
       _requireOpen();
       // Stopped while it waited: it ends with nothing generated, as a stopped
-      // stream does, and the user's turn stays unanswered.
+      // stream does, and the user's turn is taken back.
       if (run.done) {
         _end(run);
+        _takeBackPending();
         return '';
       }
       prompt = _conversation.beginGeneration();
@@ -376,8 +395,12 @@ class WebModelSession extends InferenceModelSession {
       // Stopped, closed or replaced by a newer call while it waited: each
       // closes this controller (a stop or close marks the run done as well).
       if (controller.isClosed) {
+        // Stopped or closed (the run is done): the user's turn is taken back.
+        // Replaced by a newer call: that call answers it.
+        final stopped = run.done;
         run.markDone();
         _end(run);
+        if (stopped) _takeBackPending();
         return;
       }
       prompt = _conversation.beginGeneration();
@@ -425,9 +448,9 @@ class WebModelSession extends InferenceModelSession {
   /// the backend has something of this session's to cancel.
   ///
   /// With [record], the call that had started leaves what it streamed until
-  /// now in the conversation, as in a native session's cache; a call that is
-  /// not streaming has produced nothing the session can see, so its user turn
-  /// stays unanswered. Whatever a stopped call returns later is not recorded.
+  /// now in the conversation, as in a native session's cache; a call that
+  /// produced nothing the session can see has its user turn taken back (rule
+  /// A). Whatever a stopped call returns later is not recorded.
   bool _stopRuns({required bool record}) {
     var started = false;
     for (final run in [..._runs]) {
@@ -440,6 +463,11 @@ class WebModelSession extends InferenceModelSession {
         _conversation.stopGeneration(
           generated.isEmpty ? generated : _inHistory(generated),
         );
+        if (generated.isEmpty) {
+          _takeBackPending();
+        } else {
+          _systemInstructionPending = false;
+        }
       }
     }
     return started;

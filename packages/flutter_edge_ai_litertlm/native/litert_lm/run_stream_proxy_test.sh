@@ -18,8 +18,19 @@ if command -v setarch >/dev/null 2>&1 && setarch "$(uname -m)" -R true 2>/dev/nu
   run=(setarch "$(uname -m)" -R "$D/stream_proxy_test")
 fi
 
+# The scenario list comes from the binary, through the same wrapper: if
+# ThreadSanitizer aborts at startup, `list` fails too, and a run that ran no
+# scenario must not pass.
+scenarios="$("${run[@]}" list)" || { echo "FAIL: the test binary did not start (list)"; exit 1; }
 fail=0
-for s in $("$D/stream_proxy_test" list); do
+ran=0
+for s in $scenarios; do
+  ran=$((ran + 1))
   "${run[@]}" "$s" "$D" || { echo "FAIL $s"; fail=1; }
 done
+if [ "$ran" -eq 0 ]; then
+  echo "FAIL: no scenario ran"
+  exit 1
+fi
+echo "$ran scenario(s) run"
 exit $fail

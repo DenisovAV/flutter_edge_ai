@@ -78,9 +78,10 @@
 //   first chunk — a prompt that does not fit.
 // After every turn the worker settles it (unless it is closing): with
 // `logSettle: true` in the engine configuration the engine logs
-// `settle:<session>:<keep|rewind>`. A rewind takes the turn back off the
-// session's turn count (`echoSession`); a turn that threw before its
-// "prefill" (`contextFull`) counts as not run.
+// `settle:<session>:<keep|keepStopped|rewind>`. A rewind takes the turn back
+// off the session's turn count (`echoSession`), while keepStopped, like keep,
+// leaves it on; a turn that threw before its "prefill" (`contextFull`) counts
+// as not run.
 // A guided turn whose session has no "generator" yet (its first turn, or the
 // first after a reset) logs `guidance:<session>:<schema>`: the schema the
 // generator would be created with.
@@ -170,6 +171,7 @@ class _ScriptedEngine implements GenAiWorkerEngine {
   Future<GenAiTurnResult> generate(
     GenAiTurn turn, {
     String? guidance,
+    List<Map<String, String>>? seedHistory,
     required void Function(String piece) emit,
     required bool Function() stopRequested,
   }) async {

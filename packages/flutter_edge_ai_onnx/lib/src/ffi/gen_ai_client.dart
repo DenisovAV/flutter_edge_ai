@@ -576,6 +576,7 @@ class GenAiFfiClient implements GenAiClient {
   ({Stream<String> text, Future<TurnEnd> end}) _startTurn(
     GenAiTurn turn, {
     String? guidance,
+    List<Map<String, String>>? seedHistory,
   }) {
     final end = Completer<TurnEnd>();
     // If the consumer cancels its subscription (a plain `break` out of
@@ -610,6 +611,7 @@ class GenAiFfiClient implements GenAiClient {
         () => cancelled,
         end,
         guidance: guidance,
+        seedHistory: seedHistory,
         onSent: (id) => requestId = id,
       ),
     );
@@ -633,6 +635,7 @@ class GenAiFfiClient implements GenAiClient {
     bool Function() cancelled,
     Completer<TurnEnd> end, {
     String? guidance,
+    List<Map<String, String>>? seedHistory,
     required void Function(int id) onSent,
   }) async {
     void endAs(TurnEnd how) {
@@ -709,7 +712,9 @@ class GenAiFfiClient implements GenAiClient {
     _streamSession[id] = turn.sessionId;
     _turnEnds[id] = end;
     try {
-      commandPort.send(GenerateRequest(id, turn, guidance: guidance));
+      commandPort.send(
+        GenerateRequest(id, turn, guidance: guidance, seedHistory: seedHistory),
+      );
       onSent(id);
       await done.future;
     } catch (e) {
@@ -867,13 +872,22 @@ Future<String>? unexpectedExitOf(GenAiClient client) => switch (client) {
 /// gives `end: null` and cannot take [guidance] ([StateError]): only the
 /// worker of a [GenAiFfiClient] sets it on a generator. Not exported, like
 /// [unexpectedExitOf].
+///
+/// [seedHistory] starts a first turn's new generator from a conversation
+/// given as text — what a session rebuilt from its history holds; for tests
+/// that compare against that.
 ({Stream<String> text, Future<TurnEnd>? end}) startGenAiTurn(
   GenAiClient client,
   GenAiTurn turn, {
   String? guidance,
+  @visibleForTesting List<Map<String, String>>? seedHistory,
 }) {
   if (client is GenAiFfiClient) {
-    final started = client._startTurn(turn, guidance: guidance);
+    final started = client._startTurn(
+      turn,
+      guidance: guidance,
+      seedHistory: seedHistory,
+    );
     return (text: started.text, end: started.end);
   }
   if (guidance != null) {
@@ -1249,6 +1263,11 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
   /// Whether a failed rewind has been reported; once per model.
   bool _rewindFailureReported = false;
 
+  /// The token that closes a finished turn, as the model last ended one —
+  /// what a stopped turn is closed with ([AfterTurn.keepStopped]). Until the
+  /// model has ended a turn, the first `eos_token_id` in genai_config.json.
+  int? _endOfTurnToken;
+
   OrtGenAiBindings get _bindings =>
       _oga ?? (throw StateError('ORT-GenAI engine used before it was loaded'));
 
@@ -1297,6 +1316,8 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
       pkg_ffi.calloc.free(modelOut);
     }
 
+    _endOfTurnToken = _configEosToken(_init.modelDir);
+
     final tokenizerOut = pkg_ffi.calloc<ffi.Pointer<OgaTokenizer>>();
     try {
       _check(
@@ -1317,6 +1338,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
   Future<GenAiTurnResult> generate(
     GenAiTurn turn, {
     String? guidance,
+    List<Map<String, String>>? seedHistory,
     required void Function(String piece) emit,
     required bool Function() stopRequested,
   }) async {
@@ -1332,6 +1354,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
         _history[session] = [
           if (turn.systemInstruction?.isNotEmpty ?? false)
             {'role': 'system', 'content': turn.systemInstruction!},
+          ...?seedHistory,
         ];
       }
       final history = _history[session] ??= [];
@@ -1429,6 +1452,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
       final stream = tokenizerStream;
 
       var generatedCount = 0;
+      int? lastToken;
       final cap = turn.maxOutputTokens;
 
       void decodeAndEmit() {
@@ -1441,6 +1465,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
             'OgaGenerator_GetNextTokens',
           );
           token = outPtr.value[outCount.value - 1];
+          lastToken = token;
         } finally {
           pkg_ffi.calloc.free(outPtr);
           pkg_ffi.calloc.free(outCount);
@@ -1519,6 +1544,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
                 _init.contextWindow
             ? TurnEnd.contextLimit
             : TurnEnd.endOfSequence;
+        if (end == TurnEnd.endOfSequence) _endOfTurnToken = lastToken;
       } else {
         end = TurnEnd.outputLimit;
       }
@@ -1657,6 +1683,93 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
     _dropGenerator(sessionId);
   }
 
+  /// [AfterTurn.keepStopped]: the stopped turn's tokens stay — the prompt
+  /// and the reply as far as the user saw it — and the model's end-of-turn
+  /// token closes them, so the context is that of a turn whose reply ended
+  /// there. The last token is rewound and appended again with the
+  /// end-of-turn token: the rewind resets a guided session's grammar, and
+  /// tokens appended after a rewind are never committed into it. Without
+  /// room for the end-of-turn token, or where the model cannot rewind, the
+  /// turn is rewound instead (see [endTurn]); the exchange then stays in the
+  /// history a rebuild reads.
+  bool _closeStoppedTurn(
+    int? sessionId,
+    (String, StringBuffer)? exchange,
+    int? start,
+    List<Map<String, String>>? history,
+  ) {
+    final generator = _generators[sessionId];
+    if (generator == null || start == null || exchange == null) return true;
+    void remember() => history?.addAll([
+      {'role': 'user', 'content': exchange.$1},
+      {'role': 'assistant', 'content': exchange.$2.toString()},
+    ]);
+    final oga = _bindings;
+    final length = oga.OgaGenerator_GetSequenceCount(generator, 0);
+    final end = _endOfTurnToken;
+    if (end == null || length <= start || length + 1 >= _init.contextWindow) {
+      return endTurn(sessionId: sessionId, how: AfterTurn.rewind);
+    }
+    final last = oga.OgaGenerator_GetSequenceData(generator, 0)[length - 1];
+    final tokens = pkg_ffi.calloc<ffi.Int32>(2);
+    try {
+      tokens[0] = last;
+      tokens[1] = end;
+      _check(
+        oga.OgaGenerator_RewindTo(generator, length - 1),
+        'OgaGenerator_RewindTo',
+      );
+      _check(
+        oga.OgaGenerator_AppendTokens(generator, tokens, 2),
+        'OgaGenerator_AppendTokens (stopped turn)',
+      );
+      remember();
+      return true;
+    } catch (e) {
+      // The generator may now be anywhere between the two calls: rebuild it
+      // from the history, which keeps the exchange.
+      _dropGenerator(sessionId);
+      remember();
+      _reportRewindFailure(e);
+      return false;
+    } finally {
+      pkg_ffi.calloc.free(tokens);
+    }
+  }
+
+  void _reportRewindFailure(Object error) {
+    if (_rewindFailureReported) return;
+    _rewindFailureReported = true;
+    // `print`: edgeAiLog is silent in release.
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_onnx] WARNING: ORT-GenAI could not rewind this model '
+      '($error). After a turn that does not end on its own, a session\'s '
+      "next turn rebuilds its context from the conversation's text instead, "
+      'which costs a full prefill. Said once per model.',
+    );
+  }
+
+  /// The first `model.eos_token_id` in [modelDir]'s genai_config.json, or
+  /// null when it has none or does not parse.
+  static int? _configEosToken(String modelDir) {
+    try {
+      final config = jsonDecode(
+        File('$modelDir/genai_config.json').readAsStringSync(),
+      );
+      final eos = config is Map && config['model'] is Map
+          ? (config['model'] as Map)['eos_token_id']
+          : null;
+      return switch (eos) {
+        final int id => id,
+        [final int id, ...] => id,
+        _ => null,
+      };
+    } on Object {
+      return null;
+    }
+  }
+
   void _dropGenerator(int? sessionId) {
     // Forgotten first, so a throw below cannot hand the next turn a
     // generator that is half destroyed.
@@ -1678,6 +1791,8 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
             ..add({'role': 'assistant', 'content': exchange.$2.toString()});
         }
         return true;
+      case AfterTurn.keepStopped:
+        return _closeStoppedTurn(sessionId, exchange, start, history);
       case AfterTurn.rewind:
         final generator = _generators[sessionId];
         if (generator == null || start == null) return true;
@@ -1696,18 +1811,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
           // whisper, LFM2 and decoder pipelines): its next turn rebuilds the
           // generator from the session's history, as text.
           _dropGenerator(sessionId);
-          if (!_rewindFailureReported) {
-            _rewindFailureReported = true;
-            // `print`: edgeAiLog is silent in release.
-            // ignore: avoid_print
-            print(
-              '[flutter_edge_ai_onnx] WARNING: ORT-GenAI could not rewind '
-              'this model ($e). After a turn that does not end on its own, '
-              "a session's next turn rebuilds its context from the "
-              "conversation's text instead, which costs a full prefill. "
-              'Said once per model.',
-            );
-          }
+          _reportRewindFailure(e);
           return false;
         }
     }

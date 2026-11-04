@@ -367,6 +367,28 @@ void main() {
       ]);
     }, skip: _hostHasGuidance ? false : 'this host has no guidance');
 
+    test('a stopped turn is incomplete; its exchange is kept, and the next '
+        'turn is a value', () async {
+      final (model, log) = await loaded('guided_stop');
+      final session = await model.openSession(responseFormat: _schema);
+      await session.addQueryChunk(
+        Message(text: _script(['{"a"'], untilStopped: true), isUser: true),
+      );
+      final reply = expectLater(
+        session.getResponse(),
+        throwsA(
+          isA<IncompleteStructuredOutputException>()
+              .having((e) => e.end, 'end', TurnEnd.stopped)
+              .having((e) => e.partialText, 'partialText', '{"a"'),
+        ),
+      );
+      await _waitForLine(log, 'generate:1');
+      await session.stopGeneration();
+      await reply;
+      expect(_linesOf(log).last, 'settle:1:keepStopped');
+      expect(await _ask(session, _script(['{"a": 2}'])), '{"a": 2}');
+    }, skip: _hostHasGuidance ? false : 'this host has no guidance');
+
     test('a session closed during its turn ends it closed', () async {
       final (model, log) = await loaded('closed');
       final session = await model.openSession(responseFormat: _schema);
@@ -416,8 +438,8 @@ void main() {
       expect(_linesOf(log), contains('settle:1:rewind'));
     });
 
-    test('a stop is rewound too: the history stays, without the stopped '
-        'turn', () async {
+    test('a stop keeps its exchange: the next turn has the history with the '
+        'stopped turn in it', () async {
       final (model, log) = await loaded('stop');
       final session = await model.openSession();
       await _ask(session, _script(['x']));
@@ -432,9 +454,10 @@ void main() {
       );
       await session.stopGeneration();
       await stopped;
+      expect(_linesOf(log), contains('settle:1:keepStopped'));
       expect(
         await _ask(session, _script(['y'], echoSession: true)),
-        '[session=1 turn=2]y',
+        '[session=1 turn=3]y',
       );
     });
 
@@ -460,16 +483,12 @@ void main() {
     expect(promptFits(10, 3, 12), isFalse);
   });
 
-  test('what a turn leaves behind: kept at its end of sequence, and at an '
-      'unguided cap; rewound otherwise', () {
+  test('what a turn leaves behind: kept at its end of sequence and at an '
+      'unguided cap, kept closed after a stop, rewound otherwise', () {
     for (final guided in [false, true]) {
       expect(afterTurn(TurnEnd.endOfSequence, guided: guided), AfterTurn.keep);
-      for (final end in [
-        TurnEnd.contextLimit,
-        TurnEnd.stopped,
-        TurnEnd.closed,
-        null,
-      ]) {
+      expect(afterTurn(TurnEnd.stopped, guided: guided), AfterTurn.keepStopped);
+      for (final end in [TurnEnd.contextLimit, TurnEnd.closed, null]) {
         expect(afterTurn(end, guided: guided), AfterTurn.rewind);
       }
     }

@@ -37,11 +37,14 @@ abstract interface class GenAiWorkerEngine {
   /// worker.
   ///
   /// [guidance] is the session's JSON schema, set on a generator the turn
-  /// creates; null = unguided. A prompt that does not fit the context window
-  /// throws [GenAiContextFullException].
+  /// creates; null = unguided. [seedHistory], on a first turn, is the
+  /// conversation the new generator starts from, as text (after the system
+  /// message). A prompt that does not fit the context window throws
+  /// [GenAiContextFullException].
   Future<GenAiTurnResult> generate(
     GenAiTurn turn, {
     String? guidance,
+    List<Map<String, String>>? seedHistory,
     required void Function(String piece) emit,
     required bool Function() stopRequested,
   });
@@ -76,16 +79,25 @@ enum AfterTurn {
   /// The generator goes back to its length before the turn, so the session
   /// keeps its history without the turn.
   rewind,
+
+  /// A stopped turn: its exchange — the prompt and the reply as far as it
+  /// got, the tokens the user saw — stays in the generator, closed with the
+  /// model's end-of-turn token, as if the reply had ended there. Core's chat
+  /// keeps the partial reply in its history, so the model's context must
+  /// hold it too (LiteRT-LM keeps a stopped exchange the same way, §16). The
+  /// grammar of a guided session is reset, so the next turn is guided from
+  /// its start.
+  keepStopped,
 }
 
 /// The rule for what a turn that ended [end] (null: it failed) leaves
 /// behind, so the session stays usable with its history — design 2.6.0 §3,
 /// "the engine restores the context to before this turn":
 /// - an end of sequence is kept;
-/// - a full context window, a prompt that did not fit, a stop and a failure
-///   are rewound: the session keeps its earlier turns, without this one
-///   (and without the dangling reply the next turn would otherwise
-///   continue);
+/// - a stop keeps its exchange, closed as a finished turn
+///   ([AfterTurn.keepStopped]), guided or not;
+/// - a full context window, a prompt that did not fit and a failure are
+///   rewound: the session keeps its earlier turns, without this one;
 /// - a turn at `maxOutputTokens` is rewound when guided — ORT-GenAI resets
 ///   the grammar only when the generator is done or rewound, and the next
 ///   prompt would otherwise be committed into the half-parsed value — and
@@ -93,10 +105,8 @@ enum AfterTurn {
 AfterTurn afterTurn(TurnEnd? end, {required bool guided}) => switch (end) {
   TurnEnd.endOfSequence => AfterTurn.keep,
   TurnEnd.outputLimit => guided ? AfterTurn.rewind : AfterTurn.keep,
-  TurnEnd.contextLimit ||
-  TurnEnd.stopped ||
-  TurnEnd.closed ||
-  null => AfterTurn.rewind,
+  TurnEnd.stopped => AfterTurn.keepStopped,
+  TurnEnd.contextLimit || TurnEnd.closed || null => AfterTurn.rewind,
 };
 
 /// What [GenAiWorkerEngine.generate] returns: the turn's counters and how it
@@ -292,7 +302,12 @@ Future<void> _serve(
   bool Function() closeRequested,
 ) async {
   switch (request) {
-    case GenerateRequest(:final id, :final turn, :final guidance):
+    case GenerateRequest(
+      :final id,
+      :final turn,
+      :final guidance,
+      :final seedHistory,
+    ):
       // The turn is settled (kept, rewound or reset) before its reply is
       // sent and before the next request is served, so no later turn — of
       // this session or another — ever meets a generator the turn left
@@ -319,6 +334,7 @@ Future<void> _serve(
         final GenAiTurnResult(:stats, :end) = await engine.generate(
           turn,
           guidance: guidance,
+          seedHistory: seedHistory,
           emit: (piece) => replyTo.send(Chunk(id, piece)),
           stopRequested: stopRequested,
         );

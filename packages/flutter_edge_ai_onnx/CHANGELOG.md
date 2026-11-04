@@ -1,5 +1,5 @@
 ## Unreleased
-- `responseFormat` via ORT-GenAI guidance on macOS arm64; cut turns rewind, keeping history (#195).
+- `responseFormat` via ORT-GenAI guidance on macOS arm64; a stopped or cut turn keeps the session's history (#195).
 - Cancelling a paused stream no longer stops the session's next turn (#703).
 
 ## 0.8.0

@@ -177,10 +177,14 @@ class OnnxSession extends InferenceModelSession {
   /// What a turn leaves behind is settled by the worker of a
   /// [GenAiFfiClient] before it serves anything else (`afterTurn`): an end
   /// of sequence is kept, and so is an unguided turn at `maxOutputTokens`;
-  /// any other end — a full context window, a prompt that did not fit, a
-  /// stop, a failure, a guided turn at its cap — is rewound, so the session
-  /// keeps its earlier turns without this one. With any other client the
-  /// session itself starts the next turn fresh after a stop or a failure.
+  /// a stopped turn keeps its exchange — the prompt and the reply as far as
+  /// the user saw it, closed with the model's end-of-turn token, as core's
+  /// chat keeps the partial reply in its history; any other end — a full
+  /// context window, a prompt that did not fit, a failure, a guided turn at
+  /// its cap — is rewound, so the session keeps its earlier turns without
+  /// this one. A guided session's grammar starts again either way. With any
+  /// other client the session itself starts the next turn fresh after a stop
+  /// or a failure.
   ///
   /// On a guided session, a prompt that does not fit ends the turn
   /// [TurnEnd.contextLimit] with no error (core then raises

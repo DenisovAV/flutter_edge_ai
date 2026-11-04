@@ -51,7 +51,7 @@ sealed class QueuedRequest {
 
 /// Main → worker: start streaming a turn.
 class GenerateRequest extends QueuedRequest {
-  GenerateRequest(this.id, this.turn, {this.guidance});
+  GenerateRequest(this.id, this.turn, {this.guidance, this.seedHistory});
   final int id;
   final GenAiTurn turn;
 
@@ -61,6 +61,11 @@ class GenerateRequest extends QueuedRequest {
   /// session sends the same value on every turn, so a generator it creates
   /// again is guided again.
   final String? guidance;
+
+  /// On a first turn, the conversation (`role`/`content` messages after the
+  /// system message) the new generator starts from, as text — what a session
+  /// rebuilt from its history would hold. Null = none.
+  final List<Map<String, String>>? seedHistory;
 }
 
 /// Worker → main: one decoded text piece for [id].

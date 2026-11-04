@@ -147,21 +147,36 @@ a format, saying so. Android (this repository's ORT-GenAI build), iOS
 `model.structuredOutputSupport` first.
 
 **After a turn that does not end on its own**, the session stays usable with
-its history: the worker rewinds the generator to where it was before that turn
-(`OgaGenerator_RewindTo`, which also resets the grammar) before it serves the
-next one. That covers a full context window (in the prompt or during decode),
-a stop, a failure, and a guided turn at `maxOutputTokens`; an unguided turn at
-its cap is kept and continued, as before. A prompt that does not fit leaves
-the conversation as it was: a structured session ends that turn
-`TurnEnd.contextLimit` (`IncompleteStructuredOutputException`), a plain one
-fails it with a `StateError`. Measured on Phi-3.5-mini (macOS, greedy): after a
-stopped turn, and after a guided turn cut at its cap, the next reply is the
-same, byte for byte, as with the same history and no cut turn. A model
-ORT-GenAI cannot rewind (phi3v, whisper, LFM2, decoder pipelines) gets its
-context rebuilt from the session's own conversation text instead, at the cost
-of a full prefill, with one printed warning per model. The rewound turn is not
-in the engine's context: `InferenceChat` still keeps a partial reply in its
-own history.
+its history. The worker settles the turn before it serves the next one:
+- **A stop** keeps the exchange: the prompt and the reply as far as the user
+  saw it stay in the context, closed with the model's end-of-turn token, as if
+  the reply had ended there. Core's `InferenceChat` keeps the partial reply in
+  its history, so the model sees what the user saw (LiteRT-LM does the same).
+- **A full context window** (in the prompt or during decode), **a failure**,
+  and **a guided turn at `maxOutputTokens`** are rewound to where the
+  generator was before the turn (`OgaGenerator_RewindTo`): the earlier turns
+  stay, this one goes.
+- An unguided turn at its cap is kept and continued, as before.
+
+A guided session's grammar starts again after each of these. A prompt that
+does not fit leaves the conversation as it was: a structured session ends that
+turn `TurnEnd.contextLimit` (`IncompleteStructuredOutputException`), a plain
+one fails it with a `StateError`.
+
+Measured on Phi-3.5-mini (macOS, greedy):
+- After a turn cut at its cap and rewound, the next reply is the same, byte
+  for byte, as with no cut turn.
+- After a stop, asked for the story's first words, the model quotes the
+  partial reply (`"Once upon"`), the same as from the conversation written as
+  text with the partial reply in it; with the turn dropped it has no story to
+  quote.
+- Longer continuations of those two contexts can drift apart: ORT-GenAI never
+  computes a finished turn's end token, and the chat template writes a newline
+  after it, so they are not token-identical.
+
+A model ORT-GenAI cannot rewind (phi3v, whisper, LFM2, decoder pipelines) gets
+its context rebuilt from the session's own conversation text instead, at the
+cost of a full prefill, with one printed warning per model.
 An unset cap cannot mean "unlimited" on a phone: pass a larger
 `maxConcurrentSessions` to allow more. The cap does not count the
 `createSession` session. Sampling

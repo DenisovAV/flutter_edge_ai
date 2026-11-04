@@ -137,8 +137,8 @@ void main() {
     await _run(client, _turn(2, first: true));
     final b = <String>[];
     var bDone = false;
-    // B's second turn; its stop below is rewound, so its context stays its
-    // first turn.
+    // B's second turn; its stop below keeps its exchange, so B's context
+    // holds both turns.
     client
         .generate(_turn(2, untilStopped: true))
         .listen(b.add, onDone: () => bDone = true);
@@ -169,7 +169,7 @@ void main() {
       await _run(client, _turn(3, first: true)),
       startsWith('[session=3 turn=1]'),
     );
-    expect(await _run(client, _turn(2)), startsWith('[session=2 turn=2]'));
+    expect(await _run(client, _turn(2)), startsWith('[session=2 turn=3]'));
   });
 
   test(

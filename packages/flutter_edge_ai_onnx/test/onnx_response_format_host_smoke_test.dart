@@ -1,8 +1,9 @@
 // Host smoke test for response formats (PR 9c) — REAL ORT-GenAI guidance
 // through the real `dart:ffi` worker: a guided session's replies are values
 // of its schema where the same prompt unguided is not one, on every turn; a
-// cut turn (stopped, or at its cap) is rewound exactly — the next turn is
-// the same as with no cut turn at all; a context window filled during decode
+// stopped turn keeps its exchange — the next reply is the same as from the
+// conversation with the partial reply written in — and a turn cut at its cap
+// is rewound exactly, as if it never ran; a context window filled during decode
 // ends `contextLimit` and the session goes on with its history; the whole
 // dialect compiles; and a prompt longer than the window ends a structured
 // turn `contextLimit` and fails a plain one, leaving both conversations.
@@ -176,9 +177,11 @@ void main() {
     int? cap,
     String? guidance,
     bool stopAfterFirstChunk = false,
+    List<Map<String, String>>? seedHistory,
   }) async {
     final started = startGenAiTurn(
       client,
+      seedHistory: seedHistory,
       GenAiTurn(
         userContent: text,
         sessionId: session,
@@ -204,65 +207,114 @@ void main() {
   }
 
   test(
-    'a cut turn is rewound: the same generator keeps its history, and the '
-    'next turn is the same as with no cut turn at all',
+    'a stopped turn keeps its exchange: the model sees the partial reply the '
+    'user saw, and the next guided turn is a value',
     () async {
-      final guidance = genAiGuidanceSchema(_poem as JsonSchemaResponseFormat);
       const fact = 'My secret word is PINEAPPLE. Reply with OK only.';
+      const story = 'Write a long story about the sea.';
       const question = 'What is my secret word? Answer with that word only.';
+      List<Map<String, String>> seed(List<String> turns) => [
+        for (var k = 0; k < turns.length; k++)
+          {'role': k.isEven ? 'user' : 'assistant', 'content': turns[k]},
+      ];
 
-      // Unguided, stopped at its first chunk, against the same history
-      // without that turn.
-      await turn(100, fact, fresh: true, cap: 8);
-      expect(
-        (await turn(
-          100,
-          'Write a long story about the sea.',
-          stopAfterFirstChunk: true,
-        )).$2,
-        TurnEnd.stopped,
+      // Unguided.
+      final (ok, _) = await turn(100, fact, fresh: true, cap: 8);
+      final (partial, stopEnd) = await turn(
+        100,
+        story,
+        stopAfterFirstChunk: true,
       );
+      expect(stopEnd, TurnEnd.stopped);
+      // Kept, the model quotes what it had started ("Once upon"); with the
+      // turn dropped it has no story to quote. Measured the same as the
+      // conversation with the partial reply written in as text (the rebuild
+      // path). That is not token-identical — ORT-GenAI never computes a
+      // finished turn's EOS (AppendTokens does not feed the pending token),
+      // and the template writes "\n" after each <|end|> — so a long
+      // continuation can drift; this short answer does not.
+      const quote =
+          'What were the first words of the story you started? Quote them.';
+      final (quoted, _) = await turn(100, quote, cap: 24);
+      final (written, _) = await turn(
+        101,
+        quote,
+        fresh: true,
+        cap: 24,
+        seedHistory: seed([fact, ok, story, partial]),
+      );
+      final (dropped, _) = await turn(
+        106,
+        quote,
+        fresh: true,
+        cap: 24,
+        seedHistory: seed([fact, ok]),
+      );
+      expect(quoted, written, reason: 'unguided: context after the stop');
+      expect(quoted.toLowerCase(), contains(partial.trim().toLowerCase()));
+      expect(dropped, isNot(quoted));
       final (afterStop, _) = await turn(100, question, cap: 12);
-      await turn(101, fact, fresh: true, cap: 8);
-      final (control, _) = await turn(101, question, cap: 12);
-      expect(afterStop, control, reason: 'rewind after a stop is not exact');
       expect(afterStop.toLowerCase(), contains('pineapple'));
 
-      // Guided, cut at its cap, against the same history without that turn:
-      // also proves the grammar is reset (a reused, unrewound generator
-      // fails the next prefill: "Error committing tokens").
-      await turn(102, _ask, fresh: true, cap: 120, guidance: guidance);
+      // Guided: the stopped value stays as plain context, and the grammar
+      // starts again for the next turn.
+      final guidance = genAiGuidanceSchema(_poem as JsonSchemaResponseFormat);
+      final (first, _) = await turn(
+        102,
+        _ask,
+        fresh: true,
+        cap: 120,
+        guidance: guidance,
+      );
+      final (cut, cutEnd) = await turn(
+        102,
+        'Now one about a storm.',
+        cap: 120,
+        guidance: guidance,
+        stopAfterFirstChunk: true,
+      );
+      expect(cutEnd, TurnEnd.stopped);
+      const moon = 'Now one about the moon.';
+      final (afterCut, afterCutEnd) = await turn(
+        102,
+        moon,
+        cap: 120,
+        guidance: guidance,
+      );
+      // For the record, not asserted: the same conversation as text.
+      await turn(
+        103,
+        moon,
+        fresh: true,
+        cap: 120,
+        guidance: guidance,
+        seedHistory: seed([_ask, first, 'Now one about a storm.', cut]),
+      );
+      expect(afterCutEnd, TurnEnd.endOfSequence);
+      expect(jsonDecode(afterCut), isA<Map>());
+
+      // Cut at its cap instead: rewound, nothing kept — the same as no cut
+      // turn at all.
+      await turn(104, _ask, fresh: true, cap: 120, guidance: guidance);
       expect(
         (await turn(
-          102,
+          104,
           'Now one about a storm.',
           cap: 6,
           guidance: guidance,
         )).$2,
         TurnEnd.outputLimit,
       );
-      final (afterCut, cutEnd) = await turn(
-        102,
-        'Now one about the moon.',
-        cap: 120,
-        guidance: guidance,
-      );
-      await turn(103, _ask, fresh: true, cap: 120, guidance: guidance);
-      final (guidedControl, _) = await turn(
-        103,
-        'Now one about the moon.',
-        cap: 120,
-        guidance: guidance,
-      );
-      expect(cutEnd, TurnEnd.endOfSequence);
-      expect(jsonDecode(afterCut), isA<Map>());
-      expect(afterCut, guidedControl, reason: 'rewind after a cut not exact');
-      for (final id in [100, 101, 102, 103]) {
+      final (afterCap, _) = await turn(104, moon, cap: 120, guidance: guidance);
+      await turn(105, _ask, fresh: true, cap: 120, guidance: guidance);
+      final (noCut, _) = await turn(105, moon, cap: 120, guidance: guidance);
+      expect(afterCap, noCut, reason: 'rewind after a cap is not exact');
+      for (final id in [100, 101, 102, 103, 104, 105, 106]) {
         await client.resetSession(sessionId: id);
       }
     },
     skip: available ? false : 'needs ORT-GenAI libs and a model',
-    timeout: const Timeout(Duration(minutes: 10)),
+    timeout: const Timeout(Duration(minutes: 15)),
   );
 
   test(

@@ -11,11 +11,17 @@ import '../embedding/litertlm_npu_target.dart'
         readLiteRtLmLinearAttentionState,
         readLiteRtLmPrefillLengths,
         readLiteRtLmSectionStamps;
+import '../litertlm_bundle_sampler.dart'
+    show executorMetadataHasLinearAttention;
 import 'litertlm_bundle_info.dart';
 
 /// Larger than any header seen (a few KB); a bigger value is a corrupt file,
 /// not one to read into memory.
 const _maxHeaderBytes = 1 << 20;
+
+/// Larger than any executor metadata seen (a few hundred bytes); a bigger
+/// value is a corrupt file.
+const _maxExecutorMetadataBytes = 1 << 20;
 
 /// What the `.litertlm` file at [path] says about itself: its container
 /// version, system metadata and sections, each `TFLiteModel` section with the
@@ -139,7 +145,9 @@ Future<List<int>> readLiteRtLmPrefillSignatureLengths(String path) async {
 
 /// Whether the main model of the `.litertlm` LLM at [path] keeps linear
 /// attention state ([readLiteRtLmLinearAttentionState]): a hybrid model such
-/// as LFM2.5. A conversation on such a model is never rewound to an earlier
+/// as LFM2.5: a `TYPE_LINEAR_ATTENTION` state buffer in the bundle's executor
+/// metadata, or else a main-model input named as LiteRT-LM names that state.
+/// A conversation on such a model is never rewound to an earlier
 /// step, which would restore its KV cache but not that state (core 2.6.0
 /// design §6.4b); it is rebuilt from text instead. False when the bundle has
 /// no main section.
@@ -150,12 +158,32 @@ Future<List<int>> readLiteRtLmPrefillSignatureLengths(String path) async {
 Future<bool> readLiteRtLmHasLinearAttentionState(String path) async {
   final info = await readLiteRtLmBundleInfo(path);
   final main = info.textModel;
-  if (main == null) return false;
   final file = await File(path).open();
   try {
+    final length = await file.length();
+    // A bundle with executor metadata has its state built from it, under any
+    // tensor names (`LitertState::MetadataBasedCreate`).
+    for (final section in info.sections) {
+      if (section.dataType != 'ExecutorMetadataProto') continue;
+      if (section.end <= section.begin ||
+          section.end > length ||
+          section.end - section.begin > _maxExecutorMetadataBytes) {
+        throw RangeError(
+          'ExecutorMetadata section ${section.begin}..'
+          '${section.end}',
+        );
+      }
+      final bytes = await _read(
+        file,
+        section.begin,
+        section.end - section.begin,
+      );
+      if (executorMetadataHasLinearAttention(bytes)) return true;
+    }
+    if (main == null) return false;
     return await readLiteRtLmLinearAttentionState(
       file,
-      await file.length(),
+      length,
       main.begin,
       main.end,
     );

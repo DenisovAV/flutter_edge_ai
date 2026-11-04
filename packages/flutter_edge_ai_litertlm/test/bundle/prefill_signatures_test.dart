@@ -18,6 +18,8 @@ import 'dart:typed_data';
 import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_reader.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart'
     show readLiteRtLmLinearAttentionState, readLiteRtLmPrefillLengths;
+import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart'
+    show executorMetadataHasLinearAttention;
 import 'package:flutter_test/flutter_test.dart';
 
 /// A minimal FlatBuffer writer: objects are appended in order, and a
@@ -260,6 +262,50 @@ void main() {
         ? 'GEMMA4_E2B_NPU_LITERTLM is not set'
         : null,
   );
+
+  group('executorMetadataHasLinearAttention', () {
+    // Protobuf: field key = number << 3 | wire type.
+    List<int> len(int field, List<int> bytes) => [
+      field << 3 | 2,
+      bytes.length,
+      ...bytes,
+    ];
+    List<int> varint(int field, int value) => [field << 3, value];
+    Uint8List metadata(List<int> types, {int outer = 1}) => Uint8List.fromList(
+      len(outer, [
+        ...varint(1, 4096), // max_history_size
+        for (final t in types)
+          ...len(2, [...len(1, 'kv_in'.codeUnits), ...varint(6, t)]),
+      ]),
+    );
+
+    test('a TYPE_LINEAR_ATTENTION state buffer, under any name', () {
+      expect(executorMetadataHasLinearAttention(metadata([1, 2, 5])), isTrue);
+    });
+
+    test('KV caches only, another message, or nothing: not linear', () {
+      expect(
+        executorMetadataHasLinearAttention(metadata([1, 2, 3, 4])),
+        isFalse,
+      );
+      expect(
+        executorMetadataHasLinearAttention(metadata([5], outer: 2)),
+        isFalse,
+        reason: 'llm_npu_executor_metadata holds no state buffers',
+      );
+      expect(executorMetadataHasLinearAttention(Uint8List(0)), isFalse);
+    });
+
+    test('a truncated message throws instead of reading as not linear', () {
+      final bytes = metadata([5]);
+      expect(
+        () => executorMetadataHasLinearAttention(
+          Uint8List.sublistView(bytes, 0, bytes.length - 3),
+        ),
+        throwsA(anyOf(isA<RangeError>(), isA<FormatException>())),
+      );
+    });
+  });
 
   group('readLiteRtLmLinearAttentionState', () {
     Future<bool> stateOf(Uint8List model) async {

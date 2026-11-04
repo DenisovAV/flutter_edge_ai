@@ -105,6 +105,13 @@ class InferenceChat {
   bool _toolsInstructionSent =
       false; // Flag to track if tools instruction was sent
 
+  /// Where the histories stood before the messages staged for the next turn,
+  /// so that a turn whose input the engine refused for the context window
+  /// ([TurnEnd.contextLimit] with an error) can take them back: the engine
+  /// never added them to its context. Null once a turn has started.
+  ({int full, int model, int prefixes, int tokens, bool toolsInstructionSent})?
+  _stagedFrom;
+
   /// Determines if model history should be cleared after each turn
   /// FunctionGemma requires single-turn mode (no multi-turn context)
   bool get _isSingleTurnModel => modelType == ModelType.functionGemma;
@@ -199,6 +206,13 @@ class InferenceChat {
   ]) async {
     final hooked = _hooks.addQueryChunk(session, message);
     if (hooked != null) return hooked;
+    _stagedFrom ??= (
+      full: _fullHistory.length,
+      model: _modelHistory.length,
+      prefixes: _prefixes.length,
+      tokens: _currentTokens,
+      toolsInstructionSent: _toolsInstructionSent,
+    );
     var messageToSend = message;
 
     // Only add tools prompt for the first user text message (not a tool response)
@@ -321,6 +335,49 @@ class InferenceChat {
     return TextResponse(text.toString());
   }
 
+  /// [turn]'s text. A turn that fails and whose end is [TurnEnd.contextLimit]
+  /// was refused before the model saw its input (it did not fit what the
+  /// context window had left, and the engine restored its context to before
+  /// the turn): the messages staged for it are taken back out of the history
+  /// before the error reaches the caller, so the chat's history stays the
+  /// model's. Any other failure leaves the history as it is.
+  Stream<String> _takingBackRefusedInput(EngineTurn turn) {
+    final staged = _stagedFrom;
+    _stagedFrom = null;
+    final end = turn.end;
+    if (end == null) return turn.text;
+    late final StreamController<String> out;
+    StreamSubscription<String>? source;
+    (Object, StackTrace)? failure;
+    out = StreamController<String>(
+      onListen: () {
+        source = turn.text.listen(
+          out.add,
+          onError: (Object error, StackTrace stack) =>
+              failure ??= (error, stack),
+          onDone: () async {
+            final failed = failure;
+            if (failed != null) {
+              if (staged != null && await end == TurnEnd.contextLimit) {
+                _fullHistory.length = staged.full;
+                _modelHistory.length = staged.model;
+                _prefixes.length = staged.prefixes;
+                _currentTokens = staged.tokens;
+                _toolsInstructionSent = staged.toolsInstructionSent;
+              }
+              out.addError(failed.$1, failed.$2);
+            }
+            await out.close();
+          },
+        );
+      },
+      onPause: () => source?.pause(),
+      onResume: () => source?.resume(),
+      onCancel: () => source?.cancel(),
+    );
+    return out.stream;
+  }
+
   /// Records the model's text reply in the history; an empty one is not a
   /// turn worth recording (#325).
   void _commitText(String text) {
@@ -344,7 +401,7 @@ class InferenceChat {
   Future<ModelResponse> _generateCoreResponse() async {
     edgeAiLog('InferenceChat: Getting response from native model...');
     final turn = startEngineTurn(session);
-    final response = await turn.text.join();
+    final response = await _takingBackRefusedInput(turn).join();
     final end = await turn.end;
     final cleanedResponse = ModelThinkingFilter.cleanResponse(
       response,
@@ -547,7 +604,7 @@ class InferenceChat {
     // a prose chunk and join it to the next one. It is kept in sdkSwallowed, so
     // a call that cannot be read at end-of-stream still reaches the caller.
     final turn = startEngineTurn(session);
-    final originalStream = turn.text
+    final originalStream = _takingBackRefusedInput(turn)
         .where((token) {
           if (!sdkPassthrough || !isSdkToolCallChunk(token)) return true;
           sdkSwallowed.write(token);
@@ -1216,6 +1273,7 @@ class InferenceChat {
   }
 
   void _resetHistory() {
+    _stagedFrom = null;
     _fullHistory.clear();
     _prefixes.clear();
     _modelHistory.clear();

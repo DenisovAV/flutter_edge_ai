@@ -15,7 +15,9 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show LiteRtLmFfiClient;
+import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart'
     show NpuDispatch;
@@ -72,6 +74,12 @@ class _FakeHost extends LiteRtLmEngineHost {
 
   @override
   Future<String> cacheDir() async => Directory.systemTemp.path;
+
+  /// What the device's GPU family probe answers.
+  AndroidGpuFamily? gpuFamily;
+
+  @override
+  AndroidGpuFamily? androidGpuFamily() => gpuFamily;
 
   @override
   String get operatingSystem => os;
@@ -939,6 +947,93 @@ void main() {
           'gpu create failed',
         ),
       ),
+    );
+  });
+
+  group('open sessions at load', () {
+    test('an Adreno GPU load gets native open sessions; the same load that '
+        'fell back to the CPU is judged on the CPU, which is virtual on '
+        'Android', () async {
+      host = _FakeHost(os: 'android', abiName: 'android_arm64')
+        ..gpuFamily = AndroidGpuFamily.adreno;
+      debugLiteRtLmEngineHost = host;
+      final path = write('generic.litertlm', _bundle());
+      final gpu =
+          await load(path, preferredBackend: PreferredBackend.gpu)
+              as FfiInferenceModel;
+      expect(gpu.activeBackend, PreferredBackend.gpu);
+      expect(gpu.openSessionBacking, OpenSessionBacking.native);
+      await gpu.close();
+
+      host = _FakeHost(
+        os: 'android',
+        abiName: 'android_arm64',
+        failures: {'gpu': Exception('no OpenCL')},
+      )..gpuFamily = AndroidGpuFamily.adreno;
+      debugLiteRtLmEngineHost = host;
+      final cpu =
+          await load(path, preferredBackend: PreferredBackend.gpu)
+              as FfiInferenceModel;
+      expect(cpu.activeBackend, PreferredBackend.cpu);
+      expect(cpu.openSessionBacking, OpenSessionBacking.virtual);
+      await cpu.close();
+    });
+
+    test('a file whose model inputs are read: linear attention state false; '
+        'one that cannot be read: unknown, said once in release builds, '
+        'createSession still rewinds and open sessions are rebuilt', () async {
+      final read =
+          await load(write('generic.litertlm', _bundle())) as FfiInferenceModel;
+      expect(read.linearAttentionState, isFalse);
+      expect(read.openSessionNoRewindReason, isNull);
+      await read.close();
+
+      final printed = <String>[];
+      final unread = await runZoned(
+        () async => await load(writeUnread('model.task')) as FfiInferenceModel,
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+      expect(unread.linearAttentionState, isNull);
+      expect(unread.noRewindReason, isNull, reason: 'createSession rewinds');
+      expect(unread.openSessionNoRewindReason, contains('could not be read'));
+      expect(
+        printed.where(
+          (l) =>
+              l.startsWith('[flutter_edge_ai_litertlm] could not read whether'),
+        ),
+        hasLength(1),
+      );
+      await unread.close();
+    });
+
+    test(
+      'a load that asked for the NPU and fell back to the CPU on Android '
+      'is judged on the CPU (virtual), not on the NPU it asked for',
+      () async {
+        host = _FakeHost(
+          os: 'android',
+          abiName: 'android_arm64',
+          npuShips: true,
+          stacks: {NpuStack.qualcomm: const NpuStackCheck.missing('off')},
+          failures: {
+            'npu': Exception('no dispatch'),
+            'gpu': Exception('no OpenCL'),
+          },
+        );
+        debugLiteRtLmEngineHost = host;
+        final model =
+            await load(
+                  writeUnread('model.task'),
+                  preferredBackend: PreferredBackend.npu,
+                )
+                as FfiInferenceModel;
+        expect(host.attempts.map((a) => a.backend), contains('npu'));
+        expect(model.activeBackend, PreferredBackend.cpu);
+        expect(model.openSessionBacking, OpenSessionBacking.virtual);
+        await model.close();
+      },
     );
   });
 }

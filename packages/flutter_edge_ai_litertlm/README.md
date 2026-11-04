@@ -132,8 +132,11 @@ read from the files (LiteRT-LM 0.19):
 | LFM2.5 230M | int4, int8 | 1 | 1023 | 4095 |
 | FastVLM 0.5B, SmolVLM2 500M, LLaVA-OneVision 0.5B, Qwen2-VL 2B | generic | 128 | 896 | 3968 |
 
-TranslateGemma's int4 and int8 bundles prefill 1024 positions at a time: in a
-1024 window only the first message fits, so give them a larger `maxTokens`.
+The usable columns assume the bundle's KV cache is at least that large (the
+`ekv` in a file name is its size). TranslateGemma's int4 and int8 bundles
+prefill 1024 positions at a time: in a 1024 window only the first message of
+a conversation fits, and `InferenceChat`'s `tokenBuffer` rotation never
+triggers before that, so give them a larger `maxTokens`.
 Not in the table: the Gemma 4 `-gpu` and `-web` bundles, whose decoder carries
 no prefill signatures to read; the Gemma 3n `-Web` files, plain TFLite files
 for the web rather than `.litertlm` containers; and NPU bundles, which prefill
@@ -141,14 +144,17 @@ in their own context groups and have one compiled window (Gemma 3 1B: 1280,
 Gemma 3 270M: 4096, Gemma 3n E2B: 2048, Gemma 4 E2B: 4096, FastVLM: 1280,
 Qwen3 0.6B: 4096).
 
-When an input does not fit, the turn ends with `TurnEnd.contextLimit` in
-core's chat (`getResponseAsync` called directly fails with the native error),
-and the session answers again from where it was: LiteRT-LM rewinds the
-conversation to before that turn. Nothing of its history is dropped. When
-the window has no room for any input left, every later turn ends the same
-way: close the session and open a new one. `InferenceChat` does that by
-itself, by its `tokenBuffer`. On the NPU the window is the one the bundle was
-compiled for; when it differs from `maxTokens`, the first turn prints it.
+When an input does not fit what the window has left, the turn fails with an
+exception that names `TurnEnd.contextLimit` (`LiteRtLmContextFullException`),
+before the model has seen the input. LiteRT-LM restores the conversation to
+before that turn, and an `InferenceChat` takes the refused message back out
+of its history, so a shorter message can follow. When even a short message is
+refused, the window has no room for any input left: close the session and
+open a new one (`InferenceChat.clearHistory()` for a chat). Nothing of the
+history is dropped behind your back. `InferenceChat`'s `tokenBuffer` rotation
+counts replies and images, not your own messages, so it does not prevent a
+long message from being refused. On the NPU the window is the one the bundle
+was compiled for; when it differs from `maxTokens`, the first turn prints it.
 
 ## Open sessions
 
@@ -170,21 +176,31 @@ Replayed as text: iOS, Android CPU, Android GPUs other than Adreno and Mali
 (two greedy conversations diverged on a PowerVR GPU), Linux arm64 GPU and
 NPU. MediaTek NPU is refused at load.
 
-After a stopped turn, the next turn rewinds the conversation to before the
-stopped one and puts that turn back, partial reply included. On the NPU,
-which rolls back one token at most, and on a model with linear attention
-state (LFM2.5), which a rewind cannot restore, the conversation is rebuilt
-from the text of its history instead; images and audio of earlier turns are
-lost then, and a line in the log says so once per session.
+After a stopped turn, or a turn whose input did not fit, the next turn
+rewinds the conversation to before it (a stopped turn is put back, partial
+reply included). On the NPU, which rolls back one token at most, and on a
+model with linear attention state (LFM2.5), which a rewind cannot restore,
+the conversation is rebuilt from the text of its history instead: images and
+audio of earlier turns are lost then, and a line in the log says so once per
+session. The same holds for an `openSession` session when the model file
+could not be read to tell; that is printed when the model loads.
 
 Every idle session keeps a copy of its KV cache, so an open session costs
-memory while it is open. Measured on macOS (M5 Pro), Gemma 4 E2B at
-`maxTokens: 4096`: 36.8 MiB more per idle session, on the CPU and on Metal.
-Over turns alternating between two sessions (a turn of a few tokens took
-about 150-220 ms), resident memory moved by 4 MiB in 100 turns on Metal, and
-by 72 MiB in 100 and 33 MiB in 300 turns on the CPU: no steady growth. Phones
-and the other backends are not measured yet. There is no default cap on the number of
-sessions; `maxConcurrentSessions` on `getActiveModel` sets one.
+memory while it is open, and the cost grows with `maxTokens`. Measured on
+macOS (M5 Pro) with Gemma 4 E2B, as resident memory: 36.8 MiB more per idle
+session at `maxTokens: 4096` and about 9.6 MiB at 1024, on the CPU and on
+Metal (from the third session on; the first two reuse freed memory). Over
+turns alternating between two sessions, resident memory moved by 1-4 MiB on
+Metal and by 2-72 MiB on the CPU across runs of 20 to 300 turns, with no
+steady growth. On Linux, Windows and Android GPUs the copies may be kept in
+GPU memory, and phones and the other backends are not measured yet. There is
+no default cap on the number of sessions; `maxConcurrentSessions` on
+`getActiveModel` sets one.
+
+A send to another session than the one the engine ran last first saves the
+previous session's KV cache and restores this one, inside the native send
+call, on the isolate that sends. On Metal that held the calling isolate for
+about 135 ms at `maxTokens: 4096` (34 ms at 1024); on the CPU, about 1.5 ms.
 
 ## Multimodal order
 

@@ -1,9 +1,13 @@
+import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
+import 'dart:ffi';
+import 'dart:async';
 // Which open sessions are native conversations (core 2.6.0 design §1.1): only
 // where several live conversations on one engine were verified, virtual (text
 // replay, no media) everywhere else; and what the model does with each.
 import 'dart:typed_data';
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
@@ -207,4 +211,103 @@ void main() {
     expect(reason(PreferredBackend.cpu, linear: true), contains('linear'));
     expect(reason(PreferredBackend.gpu, linear: true), contains('linear'));
   });
+
+  test('androidGpuFamilyFrom: Adreno by /dev/kgsl-3d0, Mali by /dev/mali0, '
+      'anything else other', () {
+    AndroidGpuFamily family(Set<String> nodes) =>
+        androidGpuFamilyFrom(nodes.contains);
+    expect(family({'/dev/kgsl-3d0'}), AndroidGpuFamily.adreno);
+    expect(family({'/dev/mali0'}), AndroidGpuFamily.mali);
+    expect(family({'/dev/pvr_sync'}), AndroidGpuFamily.other);
+    expect(family({}), AndroidGpuFamily.other);
+  });
+
+  test('a model closed while a native open session creates its conversation '
+      'gives no session and deletes the conversation', () async {
+    final gate = Completer<void>();
+    final client = _SlowClient(gate);
+    final m = FfiInferenceModel(
+      ffiClient: client,
+      maxTokens: 1024,
+      modelType: ModelType.gemmaIt,
+      activeBackend: PreferredBackend.cpu,
+      openSessionBacking: OpenSessionBacking.native,
+      onClose: () {},
+    );
+    final opening = m.openSession();
+    final failed = expectLater(
+      opening,
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('closed while opening'),
+        ),
+      ),
+    );
+    await pumpEventQueue();
+    final closing = m.close();
+    gate.complete();
+    await failed;
+    await closing;
+    expect(m.sessions, isEmpty);
+    expect(client.created.single.isClosed, isTrue);
+  });
+  test('a virtual session reports no turn end for a turn of its own that '
+      'never reached native, not the end another turn left', () async {
+    final conv = Pointer<LiteRtLmConversation>.fromAddress(0x2000);
+    final client = LiteRtLmFfiClient()
+      ..registerLiveForTest(conv)
+      ..recordTurnEndForTest(conv, NativeLastTurnEnd.contextFull);
+    final m = FfiInferenceModel(
+      ffiClient: client,
+      maxTokens: 1024,
+      modelType: ModelType.gemmaIt,
+      activeBackend: PreferredBackend.cpu,
+      supportImage: true,
+      onClose: () {},
+    );
+    final session = await m.openSession() as FfiInferenceModelSession;
+    final handle = session.handle;
+    // A context_full end recorded for this session's token.
+    client.watchVirtualTurnEnd(
+      (handle as dynamic).token as Object,
+      conv,
+      Future.value(NativeTurnEnd.failed),
+    );
+    await pumpEventQueue();
+    expect(handle.lastTurnEnd, isNull, reason: 'no turn of its own yet');
+    await session.addQueryChunk(
+      Message(
+        text: 'What is this?',
+        isUser: true,
+        imageBytes: Uint8List.fromList([1, 2, 3]),
+      ),
+    );
+    await expectLater(session.getResponse(), throwsUnsupportedError);
+    expect(handle.lastTurnEnd, isNull, reason: 'refused before native');
+  });
+}
+
+/// A client whose conversation create waits for [gate].
+class _SlowClient extends LiteRtLmFfiClient {
+  _SlowClient(this.gate);
+  final Completer<void> gate;
+  final created = <LiteRtLmConversationHandle>[];
+
+  @override
+  Future<LiteRtLmConversationHandle> createConversationHandle({
+    String? systemMessage,
+    String? toolsJson,
+    String? messagesJson,
+    required ResolvedSampling sampling,
+    required bool samplingExplicit,
+    int? maxOutputTokens,
+    required MultimodalOrder multimodalOrder,
+  }) async {
+    await gate.future;
+    final handle = LiteRtLmConversationHandle.forTest(this);
+    created.add(handle);
+    return handle;
+  }
 }

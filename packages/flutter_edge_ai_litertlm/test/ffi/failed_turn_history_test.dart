@@ -1,3 +1,8 @@
+import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
+import 'package:flutter_edge_ai/engine.dart';
+import 'dart:ffi';
+import 'dart:async';
 // A failed turn stays in a session's history (a rebuild replays it) unless
 // native ended it context_full (section 23): that input was refused before
 // the model saw it. Both conversation handles follow one rule.
@@ -39,32 +44,90 @@ void main() {
     );
   });
 
-  test('a virtual turn native ended context_full makes the next turn rebuild '
-      'the shared conversation (it fails every send until rewound)', () {
-    final source = File('lib/src/ffi/litert_lm_client.dart').readAsStringSync();
-    expect(
-      source,
-      contains(
-        'if (e is LiteRtLmTurnCancelledException ||\n'
-        '                _virtualTurnEnds[conversationToken] ==\n'
-        '                    NativeLastTurnEnd.contextFull) {\n'
-        '              _virtualConvStopped = true;',
-      ),
-    );
-  });
+  group('virtual turn ends', () {
+    final conv = Pointer<LiteRtLmConversation>.fromAddress(0x1000);
 
-  test('a virtual session reads its own turn end, kept per session: another '
-      'session taking the shared conversation does not erase it', () {
-    final client = LiteRtLmFfiClient();
-    final a = Object();
-    final b = Object();
-    client
-      ..recordVirtualTurnEndForTest(a, NativeLastTurnEnd.contextFull)
-      ..recordVirtualTurnEndForTest(b, NativeLastTurnEnd.completed);
-    expect(client.virtualLastTurnEnd(a), NativeLastTurnEnd.contextFull);
-    expect(client.virtualLastTurnEnd(b), NativeLastTurnEnd.completed);
-    client.releaseVirtualConversation(a);
-    expect(client.virtualLastTurnEnd(a), isNull, reason: 'closed session');
-    expect(client.virtualLastTurnEnd(b), NativeLastTurnEnd.completed);
+    test('a session keeps its own turn end when another session deletes the '
+        'shared conversation as soon as the lock goes, and a context_full '
+        'turn marks the conversation for a rebuild', () async {
+      final client = LiteRtLmFfiClient()..registerLiveForTest(conv);
+      final turns = NativeTurns<Pointer<LiteRtLmConversation>>(
+        cancelNative: (_) {},
+        deleteNative: (_) {},
+      );
+      final send = NativeTurnStream(turns, conv);
+      final a = Object();
+      client.recordTurnEndForTest(conv, NativeLastTurnEnd.contextFull);
+      // The watcher first, then the release, which hands the lock to a
+      // queued session that deletes the conversation and its record.
+      client.watchVirtualTurnEnd(a, conv, send.turn.ended);
+      unawaited(
+        send.turn.ended.whenComplete(
+          () => client.deleteConversationForTest(conv),
+        ),
+      );
+      final text = send.stream.toList();
+      send.failed(Exception('Stream error: RESOURCE_EXHAUSTED'));
+      await expectLater(text, throwsException);
+      expect(client.isConversationLiveForTest(conv), isFalse);
+      expect(client.virtualLastTurnEnd(a), NativeLastTurnEnd.contextFull);
+      expect(client.virtualConversationNeedsRebuildForTest, isTrue);
+    });
+
+    test('another end keeps the shared conversation', () async {
+      final client = LiteRtLmFfiClient()..registerLiveForTest(conv);
+      final turns = NativeTurns<Pointer<LiteRtLmConversation>>(
+        cancelNative: (_) {},
+        deleteNative: (_) {},
+      );
+      final send = NativeTurnStream(turns, conv);
+      final a = Object();
+      client
+        ..recordTurnEndForTest(conv, NativeLastTurnEnd.completed)
+        ..watchVirtualTurnEnd(a, conv, send.turn.ended);
+      final text = send.stream.toList();
+      send.finished();
+      await text;
+      await pumpEventQueue();
+      expect(client.virtualLastTurnEnd(a), NativeLastTurnEnd.completed);
+      expect(client.virtualConversationNeedsRebuildForTest, isFalse);
+    });
+
+    test('a turn that fails before its send forgets the session\'s previous '
+        'end', () async {
+      final client = LiteRtLmFfiClient()..registerLiveForTest(conv);
+      final turns = NativeTurns<Pointer<LiteRtLmConversation>>(
+        cancelNative: (_) {},
+        deleteNative: (_) {},
+      );
+      final send = NativeTurnStream(turns, conv);
+      final a = Object();
+      client
+        ..recordTurnEndForTest(conv, NativeLastTurnEnd.contextFull)
+        ..watchVirtualTurnEnd(a, conv, send.turn.ended);
+      final first = send.stream.toList();
+      send.failed(Exception('x'));
+      await expectLater(first, throwsException);
+      await pumpEventQueue();
+      expect(client.virtualLastTurnEnd(a), NativeLastTurnEnd.contextFull);
+      // The next turn of the session fails at its create (no engine here).
+      await expectLater(
+        client
+            .startVirtualTurn(
+              conversationToken: a,
+              messageJson: '{}',
+              history: const [],
+              sampling: SamplingParams.resolve(
+                const SamplingParams(),
+                modelType: ModelType.gemmaIt,
+              ),
+              samplingExplicit: false,
+              thinking: false,
+            )
+            .toList(),
+        throwsStateError,
+      );
+      expect(client.virtualLastTurnEnd(a), isNull);
+    });
   });
 }

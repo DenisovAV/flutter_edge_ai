@@ -458,8 +458,7 @@ class LiteRtLmEngine
     edgeAiLog(
       '[LiteRtLmEngine] open sessions: ${openSessionBacking.name} '
       'conversations on ${ffiRuntime.activeBackend.name} (${host.abi})'
-      '${linearAttentionState ? '; linear attention state: rebuilt from '
-                'text, never rewound' : ''}',
+      '; linear attention state: ${linearAttentionState ?? 'unread'}',
     );
     return FfiInferenceModel(
       ffiClient: ffiRuntime.client,
@@ -487,19 +486,26 @@ class LiteRtLmEngine
   }
 
   /// Whether the model at [path] keeps linear attention state
-  /// ([readLiteRtLmHasLinearAttentionState]). A file whose inputs cannot be
-  /// read is taken to keep it: its conversations are then rebuilt from text
-  /// instead of rewound, which is slower but never wrong.
-  static Future<bool> _readLinearAttentionState(String path) async {
+  /// ([readLiteRtLmHasLinearAttentionState]), or null when the file cannot be
+  /// read to tell. Then `createSession` rewinds as before and `openSession`
+  /// sessions are rebuilt from text, and the cause is printed once per load:
+  /// it changes how a stopped turn is recovered.
+  static Future<bool?> _readLinearAttentionState(String path) async {
+    Object cause;
     try {
       return await readLiteRtLmHasLinearAttentionState(path);
     } on LiteRtLmBundleException catch (e) {
-      edgeAiLog('[LiteRtLmEngine] $e; conversations will not be rewound');
-      return true;
+      cause = e;
     } on FileSystemException catch (e) {
-      edgeAiLog('[LiteRtLmEngine] $e; conversations will not be rewound');
-      return true;
+      cause = e;
     }
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] could not read whether this model keeps '
+      'linear attention state ($cause): its openSession sessions are rebuilt '
+      'from text after a stop or a full context, never rewound.',
+    );
+    return null;
   }
 
   /// [path]'s bundle info, or null when the file is not one this package

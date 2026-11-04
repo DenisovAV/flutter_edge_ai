@@ -92,20 +92,33 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
 
   /// The model keeps linear attention state (a hybrid model such as LFM2.5,
   /// `readLiteRtLmHasLinearAttentionState`): no conversation of it is ever
-  /// rewound, since a rewind restores the KV cache but not that state.
-  final bool linearAttentionState;
+  /// rewound, since a rewind restores the KV cache but not that state. Null
+  /// when the file could not be read to tell: `createSession` then rewinds
+  /// as before, and `openSession` sessions are rebuilt from text.
+  final bool? linearAttentionState;
 
-  /// Why a conversation of this model is rebuilt from text instead of being
-  /// rewound after a stopped turn or a full context, or null when it rewinds.
+  /// Why a [createSession] conversation of this model is rebuilt from text
+  /// instead of being rewound after a stopped turn or a full context, or null
+  /// when it rewinds.
   @visibleForTesting
   String? get noRewindReason => _noRewindReason;
 
   String? get _noRewindReason => activeBackend == PreferredBackend.npu
       ? 'the NPU executor rolls back one token at most'
-      : linearAttentionState
+      : linearAttentionState == true
       ? 'this model keeps linear attention state, which a rewind cannot '
             'restore'
       : null;
+
+  /// The same for an [openSession] conversation: also rebuilt when whether
+  /// the model keeps linear attention state could not be read.
+  @visibleForTesting
+  String? get openSessionNoRewindReason =>
+      _noRewindReason ??
+      (linearAttentionState == null
+          ? 'whether this model keeps linear attention state could not be '
+                'read from its file'
+          : null);
   final VoidCallback onClose;
 
   FfiInferenceModelSession? _session;
@@ -476,7 +489,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         handle = RecoveringConversationHandle(
           first,
           reopen: (messagesJson) => open(messagesJson: messagesJson),
-          noRewindReason: _noRewindReason,
+          noRewindReason: openSessionNoRewindReason,
         );
       case OpenSessionBacking.virtual:
         // Where several live conversations were not verified on this backend,
@@ -670,6 +683,20 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// [stopGeneration] was called during the current turn.
   bool _stopAsked = false;
 
+  /// [turn] with a failure native ended `context_full` replaced by a
+  /// [LiteRtLmContextFullException], which says what happened and what the
+  /// caller can do; any other failure is passed on as it is.
+  Stream<String> _namingContextFull(Stream<String> turn) => turn.transform(
+    StreamTransformer.fromHandlers(
+      handleError: (error, stack, sink) => sink.addError(
+        handle.lastTurnEnd == NativeLastTurnEnd.contextFull
+            ? LiteRtLmContextFullException(error)
+            : error,
+        stack,
+      ),
+    ),
+  );
+
   final StringBuffer _queryBuffer = StringBuffer();
   final List<Uint8List> _pendingImages = [];
   Uint8List? _pendingAudio;
@@ -804,7 +831,9 @@ class FfiInferenceModelSession extends InferenceModelSession
     if (_nativeTools) {
       final rawBuffer = StringBuffer();
       final textBuffer = StringBuffer();
-      await for (final rawChunk in _rawTurn(text, images, audio, toolMessage)) {
+      await for (final rawChunk in _namingContextFull(
+        _rawTurn(text, images, audio, toolMessage),
+      )) {
         if (firstChunkMs == null) {
           firstChunkMs = genSw.elapsedMilliseconds;
           edgeAiLog(
@@ -822,11 +851,13 @@ class FfiInferenceModelSession extends InferenceModelSession
 
     _lastRawResponse = null;
     final buffer = StringBuffer();
-    await for (final chunk in handle.chat(
-      text,
-      imageBytes: images,
-      audioBytes: audio,
-      enableThinking: enableThinking,
+    await for (final chunk in _namingContextFull(
+      handle.chat(
+        text,
+        imageBytes: images,
+        audioBytes: audio,
+        enableThinking: enableThinking,
+      ),
     )) {
       if (firstChunkMs == null) {
         firstChunkMs = genSw.elapsedMilliseconds;
@@ -879,7 +910,9 @@ class FfiInferenceModelSession extends InferenceModelSession
 
     if (_nativeTools) {
       final rawBuffer = StringBuffer();
-      await for (final rawChunk in _rawTurn(text, images, audio, toolMessage)) {
+      await for (final rawChunk in _namingContextFull(
+        _rawTurn(text, images, audio, toolMessage),
+      )) {
         if (firstChunkMs == null) {
           firstChunkMs = genSw.elapsedMilliseconds;
           edgeAiLog(
@@ -896,11 +929,13 @@ class FfiInferenceModelSession extends InferenceModelSession
     }
 
     _lastRawResponse = null;
-    await for (final chunk in handle.chat(
-      text,
-      imageBytes: images,
-      audioBytes: audio,
-      enableThinking: enableThinking,
+    await for (final chunk in _namingContextFull(
+      handle.chat(
+        text,
+        imageBytes: images,
+        audioBytes: audio,
+        enableThinking: enableThinking,
+      ),
     )) {
       if (firstChunkMs == null) {
         firstChunkMs = genSw.elapsedMilliseconds;
@@ -1000,12 +1035,13 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// the text ends cleanly and `end` is [TurnEnd.closed], so the chat keeps
   /// the partial reply before it raises (decision H).
   ///
-  /// A completed turn reports what native's turn-end record says
+  /// A turn's end is what native's turn-end record says
   /// ([liteRtLmCompletedTurnEnd]). A turn native ended `context_full` (the
-  /// input did not fit what the window has left) ends its text cleanly with
-  /// [TurnEnd.contextLimit]; the handle restores the conversation before the
-  /// next turn (core 2.6.0 design §6.4b). Called through [getResponseAsync]
-  /// directly, that turn fails with native's error instead.
+  /// input did not fit what the window has left) fails its text with a
+  /// [LiteRtLmContextFullException], and its end is [TurnEnd.contextLimit];
+  /// core's chat then takes the refused message back out of its history. The
+  /// handle restores the conversation before the next turn (core 2.6.0
+  /// design §6.4b).
   @override
   EngineTurn startTurn() {
     _stopAsked = false;
@@ -1014,9 +1050,6 @@ class FfiInferenceModelSession extends InferenceModelSession
       stopped: () => _stopAsked,
       closed: () => _isClosed,
       isCloseError: (error) => error is LiteRtLmTurnClosedException,
-      endForError: (_) => handle.lastTurnEnd == NativeLastTurnEnd.contextFull
-          ? TurnEnd.contextLimit
-          : null,
       completed: () =>
           liteRtLmCompletedTurnEnd(handle.lastTurnEnd, maxOutputTokens),
     );
@@ -1037,6 +1070,26 @@ class FfiInferenceModelSession extends InferenceModelSession
     handle.close();
     onClose();
   }
+}
+
+/// A turn whose input did not fit what the context window had left (native's
+/// turn-end record `context_full`): the turn ended as [TurnEnd.contextLimit]
+/// before the model saw the input. The session was restored to before it and
+/// answers a shorter message; when even a short one is refused, the window
+/// has no room for any input left, and the session must be closed and a new
+/// one opened (nothing of its history is dropped behind the caller's back).
+final class LiteRtLmContextFullException implements Exception {
+  const LiteRtLmContextFullException(this.nativeError);
+
+  /// The error native ended the turn with.
+  final Object nativeError;
+
+  @override
+  String toString() =>
+      'LiteRtLmContextFullException: the input does not fit what the '
+      'context window has left (TurnEnd.contextLimit); the session is '
+      'restored to before this turn. Send a shorter message, or close the '
+      'session and open a new one. Native: $nativeError';
 }
 
 /// How a native turn whose text ran to its end ended, from native's turn-end
@@ -1649,6 +1702,7 @@ class _VirtualConversationHandle implements ConversationHandle {
       );
     }
 
+    _latestStarted = true;
     try {
       await for (final rawChunk in client.startVirtualTurn(
         conversationToken: token,
@@ -1731,6 +1785,7 @@ class _VirtualConversationHandle implements ConversationHandle {
     Uint8List? audioBytes,
     bool enableThinking = false,
   }) {
+    _latestStarted = false;
     _rejectMedia(imageBytes, audioBytes);
     return _run(_userMessage(text), raw: false, enableThinking: enableThinking);
   }
@@ -1742,6 +1797,7 @@ class _VirtualConversationHandle implements ConversationHandle {
     Uint8List? audioBytes,
     bool enableThinking = false,
   }) {
+    _latestStarted = false;
     _rejectMedia(imageBytes, audioBytes);
     return _run(_userMessage(text), raw: true, enableThinking: enableThinking);
   }
@@ -1776,8 +1832,13 @@ class _VirtualConversationHandle implements ConversationHandle {
   @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
+  /// The latest turn reached native; a turn refused before (images or audio
+  /// on a virtual session) has no end of its own to report.
+  bool _latestStarted = false;
+
   @override
-  NativeLastTurnEnd? get lastTurnEnd => client.virtualLastTurnEnd(token);
+  NativeLastTurnEnd? get lastTurnEnd =>
+      _latestStarted ? client.virtualLastTurnEnd(token) : null;
 
   @override
   void close() {

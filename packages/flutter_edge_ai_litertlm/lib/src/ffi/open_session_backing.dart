@@ -23,6 +23,15 @@ enum OpenSessionBacking {
 /// device node the driver exposes.
 enum AndroidGpuFamily { adreno, mali, other }
 
+/// The GPU family of an Android device whose device nodes [exists] reports:
+/// `/dev/kgsl-3d0` Adreno, `/dev/mali0` Mali, anything else (and a node the
+/// app may not stat, which reads as absent) [AndroidGpuFamily.other].
+AndroidGpuFamily androidGpuFamilyFrom(bool Function(String path) exists) {
+  if (exists('/dev/kgsl-3d0')) return AndroidGpuFamily.adreno;
+  if (exists('/dev/mali0')) return AndroidGpuFamily.mali;
+  return AndroidGpuFamily.other;
+}
+
 /// The hosts whose CPU ran several live conversations on one engine, each
 /// keeping its own history (the `multiconv` probe, 3/3, on native-v0.19.0-a's
 /// patch set): macOS arm64 (M5 Pro), Linux x86_64, Linux arm64 and Windows

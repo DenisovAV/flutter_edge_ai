@@ -190,21 +190,31 @@ void main() {
     });
   }
 
-  test('a turn native ended context_full ends its text cleanly with '
-      'contextLimit; getResponseAsync itself still fails', () async {
+  test('a turn native ended context_full fails its text with a '
+      'LiteRtLmContextFullException that names contextLimit, and its end is '
+      'contextLimit; getResponseAsync fails the same way', () async {
     final handle = _Handle()..turnEnd = NativeLastTurnEnd.contextFull;
     final turn = startEngineTurnForTest(_session(handle));
     final text = turn.text.toList();
     await handle.sent.future;
     handle.send.failed(Exception('Stream error: RESOURCE_EXHAUSTED'));
-    expect(await text, isEmpty);
+    await expectLater(
+      text,
+      throwsA(
+        isA<LiteRtLmContextFullException>().having(
+          (e) => '$e',
+          'message',
+          allOf(contains('contextLimit'), contains('RESOURCE_EXHAUSTED')),
+        ),
+      ),
+    );
     expect(await turn.end, TurnEnd.contextLimit);
 
     final plain = _Handle()..turnEnd = NativeLastTurnEnd.contextFull;
     final failing = _session(plain).getResponseAsync().toList();
     await plain.sent.future;
     plain.send.failed(Exception('Stream error: RESOURCE_EXHAUSTED'));
-    await expectLater(failing, throwsException);
+    await expectLater(failing, throwsA(isA<LiteRtLmContextFullException>()));
   });
 
   test('any other failed turn keeps its error on the text', () async {
@@ -236,7 +246,7 @@ void main() {
     final note = npuContextWindowNote(asked: 4096, window: 1280)!;
     expect(note, contains('1280'));
     expect(note, contains('4096'));
-    expect(note, contains('contextLimit'));
+    expect(note, contains('one KV cache'));
   });
 }
 

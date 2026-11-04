@@ -4,6 +4,7 @@
 - `openChat` fills unset values with the model's own, as `createChat` does.
 - On LiteRT-LM and MediaPipe, a chat turn closed by the app keeps its partial reply, then throws `StateError`.
 - A chat's failed token count or session rebuild is the turn's error, not a log line.
+- A chat turn whose input does not fit the context window leaves that message out of the history.
 
 ## 2.5.5
 - `uninstallModel` removes a directory (ORT-GenAI) model by its name (#730).

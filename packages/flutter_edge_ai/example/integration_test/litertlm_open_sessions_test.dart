@@ -5,18 +5,24 @@
 //
 // What it checks, through the Dart engine:
 // - the backing the load chose (native where verified; set
-//   OPEN_EXPECT_BACKING=virtual on a backend that is not);
+//   OPEN_EXPECT_BACKING=virtual on a backend that is not: images and audio
+//   are then expected to be refused);
 // - three sessions interleaved, each recalling only its own code word;
 // - an image in one session, a turn on another, the image recalled;
 // - a stop in one session, a turn on another, the stopped session recalls
 //   its earlier turns (rewound on CPU/GPU, rebuilt from text on the NPU or a
 //   model with linear attention state);
+// - an audio clip in one session, a turn on another, the clip recalled;
 // - a full context: an input longer than the window and one longer than the
-//   room left both end with TurnEnd.contextLimit, the session then answers
-//   again with its history intact; once no prefill fits, every turn ends
-//   contextLimit and nothing is dropped;
-// - the memory one idle open session adds, and RSS and switch time over
-//   OPEN_SWITCHES switches (printed as RESULT lines).
+//   room left both fail their turn with LiteRtLmContextFullException (end
+//   TurnEnd.contextLimit), the session then answers again with its history
+//   intact; once no prefill fits, every turn ends that way and nothing is
+//   dropped; in openChat and createChat the refused message is taken back
+//   out of the history;
+// - measured, printed as RESULT lines: the memory one idle open session adds
+//   (anonymous and file-backed bytes, and the GPU memory the device reports),
+//   how long the native send call holds the calling isolate on a switch, and
+//   memory and turn time over OPEN_SWITCHES switches.
 //
 // Models: macOS in the example's container Documents (see
 // litertlm_ffi_test.dart), Linux ~/models, Windows %USERPROFILE%\models,
@@ -27,7 +33,8 @@
 //     --dart-define=OPEN_BACKEND=gpu
 // Optional: OPEN_MODEL (file name, default gemma-4-E2B-it.litertlm),
 // OPEN_MODEL_TYPE (a ModelType name, default gemma4), OPEN_MAX_TOKENS (4096),
-// OPEN_MEDIA (true: the model takes images), OPEN_SWITCHES (100).
+// OPEN_MEDIA / OPEN_AUDIO (true: the model takes images / audio),
+// OPEN_SWITCHES (100).
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -58,6 +65,7 @@ const _modelTypeName = String.fromEnvironment(
 );
 const _maxTokens = int.fromEnvironment('OPEN_MAX_TOKENS', defaultValue: 4096);
 const _media = bool.fromEnvironment('OPEN_MEDIA', defaultValue: true);
+const _audio = bool.fromEnvironment('OPEN_AUDIO', defaultValue: true);
 const _switches = int.fromEnvironment('OPEN_SWITCHES', defaultValue: 100);
 const _expectBacking = String.fromEnvironment(
   'OPEN_EXPECT_BACKING',
@@ -100,26 +108,31 @@ Future<String> _ask(InferenceModelSession s, String text) async {
 }
 
 /// One turn through the engine's own turn API, as core's chat runs it: the
-/// text, and how the turn ended.
-Future<(String, TurnEnd)> _turn(InferenceModelSession s, String text) async {
+/// text, how it ended, and the error it failed with, if any.
+Future<(String, TurnEnd, Object?)> _turn(
+  InferenceModelSession s,
+  String text,
+) async {
   await s.addQueryChunk(Message(text: text, isUser: true));
   // ignore: invalid_use_of_protected_member
   final turn = s.startTurn();
-  final reply = await turn.text.join();
+  final reply = StringBuffer();
+  Object? error;
+  try {
+    await turn.text.forEach(reply.write);
+  } catch (e) {
+    error = e;
+  }
   final end = await turn.end!;
   debugPrint(
     '[open/$_backendName] turn of ${text.length} chars -> $end '
-    '"${reply.length > 60 ? '${reply.substring(0, 60)}…' : reply}"',
+    '${error == null ? '' : '(${error.runtimeType}) '}'
+    '"${reply.length > 60 ? '${'$reply'.substring(0, 60)}…' : reply}"',
   );
-  return (reply, end);
+  return ('$reply', end, error);
 }
 
-Future<int> _anonymousBytes() async {
-  final bytes =
-      (await FlutterEdgeAiDiagnostics.memorySnapshot()).anonymousBytes;
-  if (bytes == null) throw StateError('anonymousBytes is not reported here');
-  return bytes;
-}
+int _median(List<int> xs) => (List.of(xs)..sort())[xs.length ~/ 2];
 
 String _mib(num bytes) => (bytes / (1 << 20)).toStringAsFixed(1);
 
@@ -140,6 +153,7 @@ void main() {
       maxTokens: _maxTokens,
       preferredBackend: backend,
       supportImage: _media,
+      supportAudio: _audio,
     );
     return model = loaded as FfiInferenceModel;
   }
@@ -204,38 +218,80 @@ void main() {
     }
   });
 
-  testWidgets('an image stays in its session across a turn on another', (
-    tester,
-  ) async {
-    if (!_media) {
-      _result('media=not run (OPEN_MEDIA=false)');
-      return;
-    }
+  /// Images and audio: kept across a turn on another session where open
+  /// sessions are native; refused where they are virtual.
+  Future<void> mediaCheck({
+    required String label,
+    required Message Function() message,
+    required String question,
+    required List<String> expected,
+  }) async {
+    final m = await ensureModel();
     final a = await open();
     final b = await open();
     try {
-      final image = (await rootBundle.load(
-        'assets/eg2_vision/circle.png',
-      )).buffer.asUint8List();
-      await a.addQueryChunk(
-        Message.withImage(
-          text: 'Look at this picture. Reply with OK only.',
-          imageBytes: image,
-          isUser: true,
-        ),
-      );
+      await a.addQueryChunk(message());
+      if (m.openSessionBacking == OpenSessionBacking.virtual) {
+        await expectLater(a.getResponse(), throwsA(isA<UnsupportedError>()));
+        _result('$label=refused (virtual)');
+        return;
+      }
       await a.getResponse();
       await _ask(b, 'Name a fruit. One word.');
-      final shape = (await _ask(
-        a,
-        'What shape is in the picture I showed you? Answer in one word.',
-      )).toLowerCase();
-      _result('media=${shape.contains('circle') ? 'PASS' : 'FAIL'}');
-      expect(shape, contains('circle'));
+      final reply = (await _ask(a, question)).toLowerCase();
+      final hit = expected.any(reply.contains);
+      _result('$label=${hit ? 'PASS' : 'FAIL'}');
+      expect(hit, isTrue, reason: 'expected one of $expected: "$reply"');
     } finally {
       await a.close();
       await b.close();
     }
+  }
+
+  testWidgets('an image stays in its session across a turn on another '
+      '(refused on virtual sessions)', (tester) async {
+    if (!_media) {
+      _result('image=not run (OPEN_MEDIA=false)');
+      return;
+    }
+    final image = (await rootBundle.load(
+      'assets/eg2_vision/circle.png',
+    )).buffer.asUint8List();
+    await mediaCheck(
+      label: 'image',
+      message: () => Message.withImage(
+        text: 'Look at this picture. Reply with OK only.',
+        imageBytes: image,
+        isUser: true,
+      ),
+      question:
+          'What shape is in the picture I showed you? Answer in one word.',
+      expected: const ['circle'],
+    );
+  });
+
+  testWidgets('an audio clip stays in its session across a turn on another '
+      '(refused on virtual sessions)', (tester) async {
+    if (!_audio) {
+      _result('audio=not run (OPEN_AUDIO=false)');
+      return;
+    }
+    final audio = (await rootBundle.load(
+      'assets/test/test_audio.wav',
+    )).buffer.asUint8List();
+    await mediaCheck(
+      label: 'audio',
+      message: () => Message.withAudio(
+        text: 'Transcribe this clip.',
+        audioBytes: audio,
+        isUser: true,
+      ),
+      // The clip: "She had your dark suit in greasy wash water all year".
+      question:
+          'In the clip I played you, what was in the greasy wash water? A '
+          'few words.',
+      expected: const ['suit'],
+    );
   });
 
   testWidgets('a stop in one session, a turn on another, and the stopped '
@@ -296,51 +352,61 @@ void main() {
     }
   });
 
-  testWidgets('a full context ends contextLimit, the session answers again, '
-      'and nothing of its history is dropped', (tester) async {
+  testWidgets('an input that does not fit fails its turn with '
+      'LiteRtLmContextFullException (end contextLimit), the session answers '
+      'again, and nothing of its history is dropped', (tester) async {
     final m = await ensureModel();
     final s = await open();
     try {
       await _ask(s, 'My name is Zorblax. Reply with OK only.');
       // Longer than the whole window.
       final tooLong = List.filled(m.maxTokens + 200, 'lorem').join(' ');
-      final (_, endTooLong) = await _turn(s, 'Summarise: $tooLong');
+      final (_, endTooLong, errorTooLong) = await _turn(
+        s,
+        'Summarise: $tooLong',
+      );
       expect(endTooLong, TurnEnd.contextLimit);
+      expect(errorTooLong, isA<LiteRtLmContextFullException>());
       final name1 = (await _ask(
         s,
         'What is my name? Answer with the name only.',
       )).toLowerCase();
       expect(name1, contains('zorblax'), reason: 'history kept after a rewind');
 
-      // Fill the window a chunk at a time until a turn ends contextLimit.
+      // Fill the window a chunk at a time until a turn ends contextLimit,
+      // then with smaller inputs until even those do not fit.
       final chunk = List.filled(300, 'blue').join(' ');
       TurnEnd? end;
       var turns = 0;
       while (turns < 40) {
         turns++;
-        (_, end) = await _turn(s, 'Reply with OK only. $chunk');
+        (_, end, _) = await _turn(s, 'Reply with OK only. $chunk');
         if (end == TurnEnd.contextLimit) break;
       }
       expect(end, TurnEnd.contextLimit, reason: 'the window never filled');
-      // Then smaller inputs, until even those do not fit: what is left is
-      // then below the bundle's smallest prefill signature.
       final small = List.filled(40, 'blue').join(' ');
       for (var i = 0; i < 80; i++) {
         turns++;
-        (_, end) = await _turn(s, 'Reply with OK only. $small');
+        (_, end, _) = await _turn(s, 'Reply with OK only. $small');
         if (end == TurnEnd.contextLimit) break;
       }
-      // A short input: it fits the window unless no prefill signature does.
-      final (shortReply, shortEnd) = await _turn(s, 'What is my name?');
+      final (shortReply, shortEnd, shortError) = await _turn(
+        s,
+        'What is my name?',
+      );
+      TurnEnd? again;
+      Object? againError;
+      if (shortEnd == TurnEnd.contextLimit) {
+        (_, again, againError) = await _turn(s, 'Hi');
+      }
       _result(
         'contextfull tooLong=$endTooLong recalled=${name1.contains('zorblax')} '
-        'filledAfter=$turns short=$shortEnd',
+        'filledAfter=$turns short=$shortEnd again=$again',
       );
       if (shortEnd == TurnEnd.contextLimit) {
-        // No room left for any prefill: every later turn ends the same way,
-        // and the session is not truncated behind the app's back.
-        final (_, again) = await _turn(s, 'Hi');
+        expect(shortError, isA<LiteRtLmContextFullException>());
         expect(again, TurnEnd.contextLimit);
+        expect(againError, isA<LiteRtLmContextFullException>());
       } else {
         expect(shortReply.toLowerCase(), contains('zorblax'));
       }
@@ -349,8 +415,56 @@ void main() {
     }
   });
 
-  testWidgets('measures the memory one idle open session adds, and drift over '
-      'switches (RESULT lines, no assertion)', (tester) async {
+  for (final kind in ['openChat', 'createChat']) {
+    testWidgets('$kind: a refused input fails the chat turn by name and '
+        'leaves the history as the model has it', (tester) async {
+      final m = await ensureModel();
+      final chat = kind == 'openChat'
+          ? await m.openChat(topK: 1)
+          : await m.createChat(topK: 1);
+      try {
+        await chat.addQueryChunk(
+          const Message(
+            text: 'My name is Zorblax. Reply with OK only.',
+            isUser: true,
+          ),
+        );
+        await chat.generateChatResponse();
+        final before = [for (final x in chat.fullHistory) x.text];
+        final tooLong = List.filled(m.maxTokens + 200, 'lorem').join(' ');
+        await chat.addQueryChunk(
+          Message(text: 'Summarise: $tooLong', isUser: true),
+        );
+        Object? error;
+        try {
+          await chat.generateChatResponse();
+        } catch (e) {
+          error = e;
+        }
+        final after = [for (final x in chat.fullHistory) x.text];
+        await chat.addQueryChunk(
+          const Message(
+            text: 'What is my name? Answer with the name only.',
+            isUser: true,
+          ),
+        );
+        final name = await chat.generateChatResponse();
+        _result(
+          'chat/$kind refused=${error.runtimeType} '
+          'historyKept=${after.length == before.length}',
+        );
+        expect(error, isA<LiteRtLmContextFullException>());
+        expect(after, before, reason: 'the refused message is taken back');
+        expect((name as TextResponse).token.toLowerCase(), contains('zorblax'));
+      } finally {
+        await chat.close();
+      }
+    });
+  }
+
+  testWidgets('measures the memory one idle open session adds, the send '
+      'call on a switch, and drift over switches (RESULT lines, no '
+      'assertion)', (tester) async {
     if (!FlutterEdgeAiDiagnostics.isSupported) {
       _result('memory=not supported here');
       return;
@@ -360,11 +474,28 @@ void main() {
     // baseline.
     final first = await open();
     await _ask(first, 'Reply with OK only.');
-    final base = await _anonymousBytes();
+    final sameSends = <int>[];
+    for (var i = 0; i < 10; i++) {
+      await _ask(first, 'Reply with OK only.');
+      sameSends.add(m.ffiClient.lastSendCallMicros!);
+    }
+    Future<(int, int?, int?)> read() async {
+      final snapshot = await FlutterEdgeAiDiagnostics.memorySnapshot();
+      // Experimental: KGSL (Adreno) only, null elsewhere.
+      // ignore: experimental_member_use
+      final gpu = await FlutterEdgeAiDiagnostics.gpuMemory();
+      return (
+        snapshot.anonymousBytes ?? 0,
+        snapshot.fileBackedBytes,
+        gpu == null ? null : gpu.inAnonymousBytes + gpu.inFileBackedBytes,
+      );
+    }
+
+    String delta(int? now, int? then) =>
+        now == null || then == null ? 'n/a' : _mib(now - then);
+    final base = await read();
     const extra = 4;
     final idle = <InferenceModelSession>[];
-    final deltas = <int>[];
-    var previous = base;
     try {
       for (var i = 0; i < extra; i++) {
         final s = await open();
@@ -373,35 +504,43 @@ void main() {
         // A turn on the first session switches the new one out: its KV is
         // saved as an idle snapshot.
         await _ask(first, 'Reply with OK only.');
-        final now = await _anonymousBytes();
-        deltas.add(now - previous);
-        previous = now;
+        final now = await read();
+        _result(
+          'idle_sessions=${i + 1} anon_mib=${delta(now.$1, base.$1)} '
+          'file_mib=${delta(now.$2, base.$2)} gpu_mib=${delta(now.$3, base.$3)} '
+          'maxTokens=${m.maxTokens} backend=${m.activeBackend?.name}',
+        );
       }
-      final perSession = (previous - base) / extra;
-      _result(
-        'idle_session_mib=${_mib(perSession)} maxTokens=${m.maxTokens} '
-        'deltas_mib=${deltas.map(_mib).join(',')}',
-      );
 
-      // Switch drift: alternate two sessions.
-      final a = first;
+      // Switches: alternate two sessions.
       final b = idle.first;
-      final before = await _anonymousBytes();
+      final before = await read();
+      final switchSends = <int>[];
       final sw = Stopwatch()..start();
       for (var i = 0; i < _switches; i++) {
-        await _ask(i.isEven ? a : b, 'Reply with OK only.');
+        await _ask(i.isEven ? first : b, 'Reply with OK only.');
+        switchSends.add(m.ffiClient.lastSendCallMicros!);
         if ((i + 1) % 50 == 0) {
+          final now = await read();
           debugPrint(
-            '[open] after ${i + 1} switches: '
-            '${_mib(await _anonymousBytes() - before)} MiB',
+            '[open] after ${i + 1} switches: anon ${delta(now.$1, before.$1)} '
+            'MiB, gpu ${delta(now.$3, before.$3)} MiB',
           );
         }
       }
-      final perTurnMs = sw.elapsedMilliseconds / _switches;
-      final after = await _anonymousBytes();
+      final after = await read();
       _result(
-        'switches=$_switches turn_ms=${perTurnMs.toStringAsFixed(0)} '
-        'drift_mib=${_mib(after - before)}',
+        'switches=$_switches turn_ms='
+        '${(sw.elapsedMilliseconds / _switches).toStringAsFixed(0)} '
+        'drift_anon_mib=${delta(after.$1, before.$1)} '
+        'drift_gpu_mib=${delta(after.$3, before.$3)}',
+      );
+      _result(
+        'send_call_ms same=${(_median(sameSends) / 1000).toStringAsFixed(1)} '
+        'switch_median=${(_median(switchSends) / 1000).toStringAsFixed(1)} '
+        'switch_max='
+        '${(switchSends.reduce((x, y) => x > y ? x : y) / 1000).toStringAsFixed(1)} '
+        'maxTokens=${m.maxTokens}',
       );
     } finally {
       for (final s in idle) {

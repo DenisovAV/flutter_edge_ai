@@ -8,7 +8,7 @@
 // - LITERTLM_LLM=<a .litertlm LLM> (Gemma 4 E2B for the image case);
 //   LITERTLM_LLM_TYPE=<ModelType name, default gemma4>;
 // - LITERTLM_BACKEND=cpu|gpu (default cpu), LITERTLM_MAX_TOKENS (4096),
-//   LITERTLM_MEDIA=1 to run the image case, LITERTLM_SWITCHES (100);
+//   LITERTLM_MEDIA=1 to run the image case, LITERTLM_AUDIO=1 the audio one, LITERTLM_SWITCHES (100);
 // - a libLiteRtLm with §1-§25 (native-v0.19.0-a), e.g. the L1 build staged
 //   in native/litert_lm/prebuilt/macos_arm64/.
 //
@@ -34,10 +34,13 @@ final _backend = PreferredBackend.values.byName(
 );
 final _maxTokens = int.parse(_env['LITERTLM_MAX_TOKENS'] ?? '4096');
 final _media = _env['LITERTLM_MEDIA'] == '1';
+final _audio = _env['LITERTLM_AUDIO'] == '1';
 final _switches = int.parse(_env['LITERTLM_SWITCHES'] ?? '100');
 final _idle = int.parse(_env['LITERTLM_IDLE'] ?? '4');
-final _skip = _modelPath == null || !File(_modelPath!).existsSync()
+final _skip = _modelPath == null
     ? 'LITERTLM_LLM is not set'
+    : !File(_modelPath!).existsSync()
+    ? 'LITERTLM_LLM names no file: $_modelPath'
     : null;
 
 class _Host extends LiteRtLmEngineHost {
@@ -66,16 +69,32 @@ String _short(String s) {
   return one.length > 80 ? '${one.substring(0, 80)}…' : one;
 }
 
-Future<(String, TurnEnd)> _turn(InferenceModelSession s, String text) async {
+/// One turn through the engine's own turn API, as core's chat runs it: the
+/// text, how it ended, and the error it failed with, if any.
+Future<(String, TurnEnd, Object?)> _turn(
+  InferenceModelSession s,
+  String text,
+) async {
   await s.addQueryChunk(Message(text: text, isUser: true));
   // ignore: invalid_use_of_protected_member
   final turn = s.startTurn();
-  final reply = await turn.text.join();
+  final reply = StringBuffer();
+  Object? error;
+  try {
+    await turn.text.forEach(reply.write);
+  } catch (e) {
+    error = e;
+  }
   final end = await turn.end!;
   // ignore: avoid_print
-  print('[open] turn of ${text.length} chars -> $end "${_short(reply)}"');
-  return (reply, end);
+  print(
+    '[open] turn of ${text.length} chars -> $end '
+    '${error == null ? '' : '(${error.runtimeType}) '}"${_short('$reply')}"',
+  );
+  return ('$reply', end, error);
 }
+
+int _median(List<int> xs) => (List.of(xs)..sort())[xs.length ~/ 2];
 
 String _mib(num bytes) => (bytes / (1 << 20)).toStringAsFixed(1);
 
@@ -109,6 +128,7 @@ void main() {
                 modelPath: _modelPath!,
                 preferredBackend: _backend,
                 supportImage: _media,
+                supportAudio: _audio,
               ),
             )
             as FfiInferenceModel;
@@ -190,6 +210,35 @@ void main() {
     }
   }, skip: _skip ?? (_media ? null : 'LITERTLM_MEDIA is not 1'));
 
+  test('an audio clip stays in its session across a turn on another', () async {
+    final a = await open();
+    final b = await open();
+    try {
+      await a.addQueryChunk(
+        Message.withAudio(
+          text: 'Transcribe this clip.',
+          audioBytes: File(
+            '../flutter_edge_ai/example/assets/test/test_audio.wav',
+          ).readAsBytesSync(),
+          isUser: true,
+        ),
+      );
+      await a.getResponse();
+      await _ask(b, 'Name a fruit. One word.');
+      // The clip: "She had your dark suit in greasy wash water all year".
+      final reply = (await _ask(
+        a,
+        'In the clip I played you, what was in the greasy wash water? A '
+        'few words.',
+      )).toLowerCase();
+      _result('audio=${reply.contains('suit') ? 'PASS' : 'FAIL'}');
+      expect(reply, contains('suit'));
+    } finally {
+      await a.close();
+      await b.close();
+    }
+  }, skip: _skip ?? (_audio ? null : 'LITERTLM_AUDIO is not 1'));
+
   test('a stop in one session, a turn on another, and the stopped session '
       'still recalls its turns', () async {
     _log.clear();
@@ -245,14 +294,19 @@ void main() {
     }
   }, skip: _skip);
 
-  test('a full context ends contextLimit, the session answers again, and '
-      'nothing of its history is dropped', () async {
+  test('an input that does not fit fails its turn with '
+      'LiteRtLmContextFullException (end contextLimit), the session answers '
+      'again, and nothing of its history is dropped', () async {
     final s = await open();
     try {
       await _ask(s, 'My name is Zorblax. Reply with OK only.');
       final tooLong = List.filled(model.maxTokens + 200, 'lorem').join(' ');
-      final (_, endTooLong) = await _turn(s, 'Summarise: $tooLong');
+      final (_, endTooLong, errorTooLong) = await _turn(
+        s,
+        'Summarise: $tooLong',
+      );
       expect(endTooLong, TurnEnd.contextLimit);
+      expect(errorTooLong, isA<LiteRtLmContextFullException>());
       final name1 = (await _ask(
         s,
         'What is my name? Answer with the name only.',
@@ -264,7 +318,7 @@ void main() {
       var turns = 0;
       while (turns < 40) {
         turns++;
-        (_, end) = await _turn(s, 'Reply with OK only. $chunk');
+        (_, end, _) = await _turn(s, 'Reply with OK only. $chunk');
         if (end == TurnEnd.contextLimit) break;
       }
       expect(end, TurnEnd.contextLimit, reason: 'the window never filled');
@@ -273,20 +327,26 @@ void main() {
       final small = List.filled(40, 'blue').join(' ');
       for (var i = 0; i < 80; i++) {
         turns++;
-        (_, end) = await _turn(s, 'Reply with OK only. $small');
+        (_, end, _) = await _turn(s, 'Reply with OK only. $small');
         if (end == TurnEnd.contextLimit) break;
       }
-      final (shortReply, shortEnd) = await _turn(s, 'What is my name?');
+      final (shortReply, shortEnd, shortError) = await _turn(
+        s,
+        'What is my name?',
+      );
       TurnEnd? again;
+      Object? againError;
       if (shortEnd == TurnEnd.contextLimit) {
-        (_, again) = await _turn(s, 'Hi');
+        (_, again, againError) = await _turn(s, 'Hi');
       }
       _result(
         'contextfull tooLong=$endTooLong recalled=${name1.contains('zorblax')} '
         'filledAfter=$turns short=$shortEnd again=$again',
       );
       if (shortEnd == TurnEnd.contextLimit) {
+        expect(shortError, isA<LiteRtLmContextFullException>());
         expect(again, TurnEnd.contextLimit);
+        expect(againError, isA<LiteRtLmContextFullException>());
       } else {
         expect(shortReply.toLowerCase(), contains('zorblax'));
       }
@@ -295,10 +355,63 @@ void main() {
     }
   }, skip: _skip);
 
-  test('measures the memory one idle open session adds, and drift over '
-      'switches (RESULT lines, no assertion)', () async {
+  for (final open in ['openChat', 'createChat']) {
+    test('$open: a refused input fails the chat turn by name and leaves the '
+        'history as the model has it', () async {
+      final chat = open == 'openChat'
+          ? await model.openChat(topK: 1)
+          : await model.createChat(topK: 1);
+      try {
+        await chat.addQueryChunk(
+          const Message(
+            text: 'My name is Zorblax. Reply with OK only.',
+            isUser: true,
+          ),
+        );
+        await chat.generateChatResponse();
+        final before = [for (final m in chat.fullHistory) m.text];
+        final tooLong = List.filled(model.maxTokens + 200, 'lorem').join(' ');
+        await chat.addQueryChunk(
+          Message(text: 'Summarise: $tooLong', isUser: true),
+        );
+        Object? error;
+        try {
+          await chat.generateChatResponse();
+        } catch (e) {
+          error = e;
+        }
+        final after = [for (final m in chat.fullHistory) m.text];
+        await chat.addQueryChunk(
+          const Message(
+            text: 'What is my name? Answer with the name only.',
+            isUser: true,
+          ),
+        );
+        final name = await chat.generateChatResponse();
+        _result(
+          'chat/$open refused=${error.runtimeType} '
+          'historyKept=${after.length == before.length} '
+          'recalled=${'$name'.toLowerCase().contains('zorblax')}',
+        );
+        expect(error, isA<LiteRtLmContextFullException>());
+        expect(after, before, reason: 'the refused message is taken back');
+        expect((name as TextResponse).token.toLowerCase(), contains('zorblax'));
+      } finally {
+        await chat.close();
+      }
+    }, skip: _skip);
+  }
+
+  test('measures the memory one idle open session adds, the send call on a '
+      'switch, and drift over switches (RESULT lines, no assertion)', () async {
     final first = await open();
     await _ask(first, 'Reply with OK only.');
+    // Sends to the same conversation: no switch inside the call.
+    final sameSends = <int>[];
+    for (var i = 0; i < 10; i++) {
+      await _ask(first, 'Reply with OK only.');
+      sameSends.add(model.ffiClient.lastSendCallMicros!);
+    }
     final base = ProcessInfo.currentRss;
     final extra = _idle;
     final idle = <InferenceModelSession>[];
@@ -320,9 +433,11 @@ void main() {
       );
       final b = idle.first;
       final before = ProcessInfo.currentRss;
+      final switchSends = <int>[];
       final sw = Stopwatch()..start();
       for (var i = 0; i < _switches; i++) {
         await _ask(i.isEven ? first : b, 'Reply with OK only.');
+        switchSends.add(model.ffiClient.lastSendCallMicros!);
         if ((i + 1) % 50 == 0) {
           debugPrint(
             '[open] after ${i + 1} switches: '
@@ -334,6 +449,12 @@ void main() {
         'switches=$_switches turn_ms='
         '${(sw.elapsedMilliseconds / _switches).toStringAsFixed(0)} '
         'drift_rss_mib=${_mib(ProcessInfo.currentRss - before)}',
+      );
+      _result(
+        'send_call_ms same=${(_median(sameSends) / 1000).toStringAsFixed(1)} '
+        'switch_median=${(_median(switchSends) / 1000).toStringAsFixed(1)} '
+        'switch_max=${(switchSends.reduce((a, b) => a > b ? a : b) / 1000).toStringAsFixed(1)} '
+        'maxTokens=${model.maxTokens}',
       );
     } finally {
       for (final s in idle) {

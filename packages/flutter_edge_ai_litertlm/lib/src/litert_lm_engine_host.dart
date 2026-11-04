@@ -5,7 +5,7 @@
 // path_provider, a native library or a device. Not exported.
 
 import 'dart:ffi' show Abi;
-import 'dart:io' show File, FileSystemException, Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
@@ -50,16 +50,9 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
 
   /// The GPU family of an Android device, told by the device node its driver
   /// exposes (`/dev/kgsl-3d0` Adreno, `/dev/mali0` Mali); null elsewhere.
-  AndroidGpuFamily? androidGpuFamily() {
-    if (!Platform.isAndroid) return null;
-    try {
-      if (File('/dev/kgsl-3d0').existsSync()) return AndroidGpuFamily.adreno;
-      if (File('/dev/mali0').existsSync()) return AndroidGpuFamily.mali;
-    } on FileSystemException {
-      // A denied stat: not a family this package verified.
-    }
-    return AndroidGpuFamily.other;
-  }
+  AndroidGpuFamily? androidGpuFamily() => Platform.isAndroid
+      ? androidGpuFamilyFrom((path) => File(path).existsSync())
+      : null;
 
   /// A client for one backend attempt.
   LiteRtLmFfiClient createClient() => LiteRtLmFfiClient();

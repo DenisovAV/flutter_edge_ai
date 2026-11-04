@@ -120,16 +120,18 @@ bool keepLastSendAfter(NativeTurnEnd how, NativeLastTurnEnd? end) =>
 
 /// What an NPU engine says, once, when the context window its executor runs
 /// with ([window], read after the first turn) is not the `maxTokens` it was
-/// [asked] for; null when they agree. An NPU bundle has one compiled KV
-/// cache, and LiteRT-LM fits the window to the bundle.
+/// [asked] for; null when they agree. An NPU bundle has one compiled KV cache,
+/// and LiteRT-LM lowers `max_num_tokens` to the bundle's metadata (or, without
+/// it, to the cache). When the metadata is above the cache (upstream #4184)
+/// the window read here is the metadata's, and a context past the cache fails
+/// natively; this note cannot see that case.
 @visibleForTesting
 String? npuContextWindowNote({required int asked, required int window}) =>
     window == asked
     ? null
     : '[flutter_edge_ai_litertlm] this NPU bundle runs with a context window '
-          'of $window tokens, not the maxTokens $asked asked for: the bundle '
-          'is compiled for one KV cache size. A conversation past $window '
-          'tokens ends with contextLimit. Shown once per engine.';
+          'of $window tokens, not the maxTokens $asked asked for: it is '
+          'compiled for one KV cache size. Shown once per engine.';
 
 /// The StreamProxy entries the client binds; a StreamProxy without one of
 /// them is refused by name. Kept equal to the release gate's
@@ -421,6 +423,12 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     this._conversation,
     this._multimodalOrder,
   );
+
+  /// A handle with no native conversation (already closed), for a test
+  /// client's `createConversationHandle`.
+  @visibleForTesting
+  LiteRtLmConversationHandle.forTest(LiteRtLmFfiClient client)
+    : this._(client, null, MultimodalOrder.imagesAudioText);
 
   final LiteRtLmFfiClient _client;
   Pointer<LiteRtLmConversation>? _conversation;
@@ -1158,6 +1166,14 @@ class LiteRtLmFfiClient {
   /// that sets no sampling gets its family's defaults, not the bundle's.
   String? get bundleSamplerError => _bundleSamplerRead.error;
   BundleSamplerRead _bundleSamplerRead = const BundleSamplerRead.notRead();
+
+  /// How long the last `send_message_stream` call held the calling isolate,
+  /// in microseconds. On a send to another conversation than the one the
+  /// executor last ran, LiteRT-LM saves the outgoing conversation's KV cache
+  /// and restores this one inside that call (`SaveCheckpoint`), so a switch
+  /// is paid here, on the isolate that sends. Read by the open-session suites.
+  @visibleForTesting
+  int? lastSendCallMicros;
 
   /// The loaded model's file and context window, for [_prefillRoomOn].
   String? _modelPath;
@@ -2643,7 +2659,7 @@ class LiteRtLmFfiClient {
     controller.onListen = () async {
       // A turn that fails before its send has no end of its own: never read
       // the session's previous one for it.
-      _virtualTurnEnds.remove(conversationToken);
+      _virtualTurnEnds[conversationToken] = null;
       try {
         await _nativeMutex.acquire();
         mutexHeld = true;
@@ -2701,31 +2717,18 @@ class LiteRtLmFfiClient {
           extraContext: extraContext,
           thinking: thinking,
         );
+        // Registered before the release below, so it runs first, while the
+        // shared conversation and its record still exist.
+        watchVirtualTurnEnd(conversationToken, conv, send.turn.ended);
         // The lock goes when native has ended the turn, not when the consumer
         // stops listening: until then the conversation is still in use.
-        // How this turn ended, kept for its session: registered before the
-        // release below, so it runs first, while the shared conversation and
-        // its record still exist. A session queued on the lock may delete
-        // that conversation as soon as the lock goes, before this session
-        // reads the end of its own turn.
-        unawaited(
-          send.turn.ended.then((_) {
-            final end = _lastTurnEnds[conv]?.end;
-            if (end != null) _virtualTurnEnds[conversationToken] = end;
-          }),
-        );
         unawaited(send.turn.ended.whenComplete(releaseAndCleanup));
         inner = send.stream.listen(
           controller.add,
           onError: (Object e, StackTrace st) {
-            // Native cancelled a turn nobody stopped, or ended it
-            // context_full (section 23: every later send fails until a
-            // rewind): the conversation is poisoned, so the next turn
-            // rebuilds it from the session's history, which this turn's
-            // refused input is not in.
-            if (e is LiteRtLmTurnCancelledException ||
-                _virtualTurnEnds[conversationToken] ==
-                    NativeLastTurnEnd.contextFull) {
+            // Native cancelled a turn nobody stopped: the conversation is
+            // poisoned, so the next turn rebuilds it.
+            if (e is LiteRtLmTurnCancelledException) {
               _virtualConvStopped = true;
             }
             controller.addError(e, st);
@@ -2812,7 +2815,6 @@ class LiteRtLmFfiClient {
   }
 
   void releaseVirtualConversation(Object conversationToken) {
-    _virtualTurnEnds.remove(conversationToken);
     if (_virtualActiveToken != conversationToken) return;
     if (_virtualTurnInFlight) {
       _pendingReleaseToken = conversationToken;
@@ -2874,6 +2876,7 @@ class LiteRtLmFfiClient {
         // the API consumer's perspective — the stream just stops cleanly
         // at whatever token was last delivered. A CANCELLED nobody asked for
         // is: the turn depended on an earlier cancelled one.
+        _noteNpuWindow(conv);
         if (error.startsWith('CANCELLED')) {
           send.cancelled();
         } else {
@@ -2990,6 +2993,7 @@ class LiteRtLmFfiClient {
     }
 
     b.litert_lm_clear_last_error();
+    final sendCall = Stopwatch()..start();
     final result = b.litert_lm_conversation_send_message_stream(
       conv,
       messagePtr.cast(),
@@ -3002,6 +3006,7 @@ class LiteRtLmFfiClient {
     // A refused send leaves its message in LiteRT-LM's thread-local last
     // error (`c/conversation.cc`); read it before any other native call.
     final nativeError = result == 0 ? null : b.lastError();
+    lastSendCallMicros = sendCall.elapsedMicroseconds;
     b.litert_lm_conversation_optional_args_delete(optionalArgs);
     if (result == 0) {
       _noteGeneration(conv);
@@ -3368,7 +3373,9 @@ class LiteRtLmFfiClient {
     // ignore: avoid_print
     print(
       '[flutter_edge_ai_litertlm] WARNING: a turn end could not be read '
-      '($why); turns are not affected. Shown once.',
+      '($why). Turns still run, but a turn whose input does not fit the '
+      'context window cannot be told from another failure, so the '
+      'conversation is not restored after it. Shown once.',
     );
   }
 
@@ -3381,14 +3388,45 @@ class LiteRtLmFfiClient {
       _virtualTurnEnds[token];
 
   /// The end of each virtual session's last turn, snapshot when native ended
-  /// it ([startVirtualTurn]): the shared conversation's own record goes with
-  /// it when another session takes it over.
-  final Map<Object, NativeLastTurnEnd> _virtualTurnEnds = {};
+  /// it ([watchVirtualTurnEnd]): the shared conversation's own record goes
+  /// with it when another session takes it over. Keyed weakly by the
+  /// session's token, so a closed session leaves nothing behind.
+  final Expando<NativeLastTurnEnd> _virtualTurnEnds = Expando();
 
-  /// Test seam: what [startVirtualTurn] snapshots when native ends a turn.
+  /// When native ends the virtual turn [ended] of the session holding
+  /// [token] on [conv], keeps how it ended for that session, and marks the
+  /// shared conversation for a rebuild when the turn ended `context_full`
+  /// (section 23: every later send fails until a rewind; the session's
+  /// history, which the refused input is not in, is replayed instead). Must
+  /// be registered on [ended] before the listener that releases the lock: a
+  /// session queued on the lock may delete [conv], and its record, as soon
+  /// as the lock goes.
   @visibleForTesting
-  void recordVirtualTurnEndForTest(Object token, NativeLastTurnEnd end) =>
-      _virtualTurnEnds[token] = end;
+  void watchVirtualTurnEnd(
+    Object token,
+    Pointer<LiteRtLmConversation> conv,
+    Future<NativeTurnEnd> ended,
+  ) {
+    unawaited(
+      ended.then((_) {
+        final end = _lastTurnEnds[conv]?.end;
+        _virtualTurnEnds[token] = end;
+        if (end == NativeLastTurnEnd.contextFull) _virtualConvStopped = true;
+      }),
+    );
+  }
+
+  /// Test seam: native's record for [conv], as [_recordTurnEnd] keeps it.
+  @visibleForTesting
+  void recordTurnEndForTest(
+    Pointer<LiteRtLmConversation> conv,
+    NativeLastTurnEnd end,
+  ) => _lastTurnEnds[conv] = (end: end, code: 0);
+
+  /// Test seam: whether the next virtual turn rebuilds the shared
+  /// conversation.
+  @visibleForTesting
+  bool get virtualConversationNeedsRebuildForTest => _virtualConvStopped;
 
   /// Legacy: cancel on the implicit [_legacyHandle] conversation.
   void cancelGeneration() {
@@ -3501,7 +3539,6 @@ class LiteRtLmFfiClient {
     _liveConvs.clear();
     _sentConvs.clear();
     _lastTurnEnds.clear();
-    _virtualTurnEnds.clear();
     _engineGeneration++;
 
     _isInitialized = false;

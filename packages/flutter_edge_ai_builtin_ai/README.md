@@ -189,10 +189,36 @@ competing tool loops for one turn. Pass `supportsFunctionCalls: true` to `create
 the `tools`: it defaults to `false` here. Gemini Nano handles single-turn calls; multi-turn agent
 chaining is not supported on Web (see `flutter_edge_ai_agent`).
 
+### Typed responses (`responseFormat`)
+
+`openSession(responseFormat:)` and `openChat(responseFormat:)` are wired to `flutter_local_ai`'s
+schema call on Apple Foundation Models (`GenerationSchema`), Chrome's Prompt API
+(`responseConstraint`) and Windows AI Foundry (`GenerateStructuredJsonResponseAsync`). Each
+platform is enabled only after a device run of
+`example/integration_test/builtin_ai_structured_test.dart`. **None has had one yet**, so today
+every platform refuses a format with a `ResponseFormatUnsupportedException` that says so; read
+`model.structuredOutputSupport` or `model.refusalFor(format)` before opening. Android always
+refuses one: ML Kit GenAI takes a schema only as a compile-time type.
+
+Where it is enabled:
+- The reply arrives as **one chunk** once it is complete (`StructuredDelivery.buffered`): there is
+  no streamed structured call.
+- The schema keywords enforced are `type`, `properties`, `required`, `items`, `minItems`,
+  `maxItems` and `enum` (plus the annotations `description`, `title`, `examples`).
+  `additionalProperties`, `const` and the numeric and length bounds are refused with their path.
+- Also refused: an `enum` that is not all strings or that comes with a non-`string` type, a `null`
+  type, and an array without `items`. On Apple, an object with no properties is refused too
+  (`ResponseFormat.jsonObject()` included), because its `GenerationSchema` can only produce `{}`.
+- Apple Foundation Models adds the schema to the prompt itself (`includeSchemaInPrompt` defaults to
+  true); flutter_edge_ai adds nothing to the prompt.
+- A stop, a close and a full context window end the turn with an
+  `IncompleteStructuredOutputException` (`TurnEnd.stopped`, `closed`, `contextLimit`).
+
 ### Reaching what flutter_edge_ai's interface has no slot for
 
-Native tool calling (Apple, OS 26+) and schema-constrained JSON output are `flutter_local_ai`
-features with no equivalent in flutter_edge_ai's `InferenceModelSession`. They stay available through
+Native tool calling (Apple, OS 26+) is a `flutter_local_ai` feature with no equivalent in
+flutter_edge_ai's `InferenceModelSession`, and so is schema-constrained output on a platform that
+does not take a `responseFormat` yet. They stay available through
 `flutter_local_ai`'s own API — `LocalAi`, `LocalAiModel.create()`, `LocalAiSession` — which you can
 use alongside this engine, since it is the same package driving the same native host:
 

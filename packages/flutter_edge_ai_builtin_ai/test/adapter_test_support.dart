@@ -19,7 +19,7 @@ import 'package:flutter_edge_ai/engine.dart'
         ModelType,
         RuntimeConfig;
 import 'package:flutter_local_ai/flutter_local_ai.dart'
-    show LocalAiAvailability;
+    show LocalAiAvailability, LocalAiGenerationOverrides;
 import 'package:flutter_local_ai/testing.dart' show FakeLocalAiHost;
 
 /// The spec the engine is meant to claim. [fileType] is a parameter so a
@@ -119,4 +119,45 @@ class TurnOrderHost extends FakeLocalAiHost {
     for (final call in calls)
       if (call == 'addImage' || call == 'addQueryChunk') call,
   ];
+}
+
+/// A host whose structured calls wait until the test answers them, or until
+/// a stop fails them as Apple fails a cancelled request.
+///
+/// [FakeLocalAiHost.generateStructuredResponse] answers at once, so a stop, a
+/// cancel or a close can never land while its turn is running.
+class PendingStructuredHost extends FakeLocalAiHost {
+  /// The call in flight, completed by the test or by [stopGeneration].
+  Completer<String>? pending;
+
+  @override
+  Future<String> generateStructuredResponse({
+    required int sessionId,
+    required String schemaJson,
+    LocalAiGenerationOverrides? overrides,
+  }) {
+    // Recorded (schema included) through the fake, whose answer is dropped.
+    unawaited(
+      super.generateStructuredResponse(
+        sessionId: sessionId,
+        schemaJson: schemaJson,
+        overrides: overrides,
+      ),
+    );
+    return (pending = Completer<String>()).future;
+  }
+
+  /// When set, [stopGeneration] waits for it before it fails the call in
+  /// flight, so a value can arrive while a stop is still under way.
+  Completer<void>? stopGate;
+
+  @override
+  Future<void> stopGeneration(int sessionId) async {
+    await super.stopGeneration(sessionId);
+    await stopGate?.future;
+    final call = pending;
+    if (call != null && !call.isCompleted) {
+      call.completeError(StateError('cancelled at the model'));
+    }
+  }
 }

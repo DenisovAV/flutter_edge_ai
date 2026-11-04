@@ -1,5 +1,7 @@
 ## Unreleased
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and image support.
+- `responseFormat` wired to Apple, Chrome and Windows schemas; each refused until its device run.
+- `getResponse`/`getResponseAsync` on a closed session fail asynchronously instead of throwing.
 
 ## 0.3.8
 - Require `flutter_edge_ai` >=2.3.0 <2.6.0.

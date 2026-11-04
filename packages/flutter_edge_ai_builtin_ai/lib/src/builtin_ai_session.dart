@@ -1,15 +1,20 @@
+import 'dart:async';
 import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter_edge_ai/engine.dart'
     show
+        EngineTurn,
         InferenceModelSession,
+        JsonSchemaResponseFormat,
         Message,
         MessageExtension,
         ModelFileType,
         ModelType,
-        SessionMetrics;
-import 'package:flutter_local_ai/flutter_local_ai.dart' show LocalAiSession;
-import 'package:meta/meta.dart' show experimental;
+        SessionMetrics,
+        TurnEnd;
+import 'package:flutter_local_ai/flutter_local_ai.dart'
+    show LocalAiGenerationException, LocalAiSession;
+import 'package:meta/meta.dart' show experimental, internal;
 
 /// A generation session on an OS built-in model, adapting flutter_local_ai's
 /// [LocalAiSession] to flutter_edge_ai's [InferenceModelSession].
@@ -37,8 +42,9 @@ class BuiltInAiSession extends InferenceModelSession {
   /// The underlying flutter_local_ai session.
   ///
   /// This is the supported escape hatch for the capabilities flutter_edge_ai's
-  /// [InferenceModelSession] has no slot for — native tool calling and
-  /// schema-constrained output (`getStructuredResponse`). It is the same
+  /// [InferenceModelSession] has no slot for — native tool calling, and
+  /// schema-constrained output (`getStructuredResponse`) where
+  /// `responseFormat` is not enabled yet. It is the same
   /// native session this adapter drives, so anything read or generated through
   /// it shares this session's context.
   ///
@@ -80,11 +86,20 @@ class BuiltInAiSession extends InferenceModelSession {
     await _session.addQueryChunk(prompt);
   }
 
+  // flutter_local_ai checks that the session is open before it returns, so a
+  // closed session throws synchronously; here the failure is the future's
+  // and the stream's, as on every other engine (B82).
   @override
-  Future<String> getResponse() => _session.getResponse();
+  Future<String> getResponse() => Future.sync(_session.getResponse);
 
   @override
-  Stream<String> getResponseAsync() => _session.getResponseAsync();
+  Stream<String> getResponseAsync() {
+    try {
+      return _session.getResponseAsync();
+    } catch (error, stack) {
+      return Stream.error(error, stack);
+    }
+  }
 
   @override
   Future<int> sizeInTokens(String text) => _session.sizeInTokens(text);
@@ -104,5 +119,126 @@ class BuiltInAiSession extends InferenceModelSession {
     // owned by the model, so it can be retried.
     await _session.close();
     _onClose();
+  }
+}
+
+/// A built-in session opened with a response format: every turn sends the
+/// format's schema and reports how it ended.
+///
+/// Not exported: an app holds core's structured session around this one,
+/// and core checks every reply. The reply arrives as one chunk
+/// (`StructuredDelivery.buffered`): flutter_local_ai has no streamed
+/// structured call.
+@internal
+final class StructuredBuiltInAiSession extends BuiltInAiSession {
+  StructuredBuiltInAiSession({
+    required super.session,
+    required super.modelType,
+    required super.fileType,
+    required super.supportImage,
+    required super.onClose,
+    required this.format,
+    super.maxNumImages,
+  });
+
+  /// What every reply must be; its schema is sent with each turn.
+  final JsonSchemaResponseFormat format;
+
+  _StructuredTurn? _turn;
+
+  /// The OS's codes for a full context window: the FoundationModels names on
+  /// OS 27 and OS 26.
+  static const _contextLimitCodes = {
+    'contextSizeExceeded',
+    'exceededContextWindowSize',
+  };
+
+  @override
+  EngineTurn startTurn() {
+    final turn = _turn = _StructuredTurn();
+    turn.text.onListen = () {
+      Future<String> reply;
+      try {
+        reply = _session.getStructuredResponse(format.schema);
+      } catch (error, stack) {
+        // A closed session throws synchronously (B82).
+        reply = Future.error(error, stack);
+      }
+      reply.then(
+        (text) => turn.finish(
+          turn.stopRequested ? TurnEnd.stopped : TurnEnd.endOfSequence,
+          text,
+        ),
+        onError: (Object error, StackTrace stack) {
+          if (turn.stopRequested) {
+            turn.finish(TurnEnd.stopped);
+          } else if (error is LocalAiGenerationException &&
+              _contextLimitCodes.contains(error.errorCode)) {
+            turn.finish(TurnEnd.contextLimit);
+          } else {
+            turn.fail(error, stack);
+          }
+        },
+      );
+    };
+    // A cancelled subscription is a stop, at the model too.
+    turn.text.onCancel = () async {
+      if (!turn.ended) await stopGeneration();
+    };
+    return EngineTurn(text: turn.text.stream, end: turn.end.future);
+  }
+
+  @override
+  Stream<String> getResponseAsync() => startTurn().text;
+
+  @override
+  Future<String> getResponse() => getResponseAsync().join();
+
+  /// Stops the turn at the model and ends it as [TurnEnd.stopped], whatever
+  /// the platform then answers (Apple fails a cancelled request, Chrome
+  /// returns '').
+  @override
+  Future<void> stopGeneration() async {
+    final turn = _turn;
+    if (turn != null && !turn.ended) turn.stopRequested = true;
+    await super.stopGeneration();
+    turn?.finish(TurnEnd.stopped);
+  }
+
+  @override
+  Future<void> close() async {
+    _turn?.finish(TurnEnd.closed);
+    await super.close();
+  }
+
+  /// The model closed under this session: a turn still running ends as
+  /// [TurnEnd.closed].
+  void modelClosed() => _turn?.finish(TurnEnd.closed);
+}
+
+/// One structured turn: its text and how it ended, each settled once.
+final class _StructuredTurn {
+  final text = StreamController<String>();
+  final end = Completer<TurnEnd>();
+  bool stopRequested = false;
+
+  bool get ended => end.isCompleted;
+
+  /// Delivers [reply] (if any), closes the text, then reports [how].
+  void finish(TurnEnd how, [String reply = '']) {
+    if (ended) return;
+    if (reply.isNotEmpty) text.add(reply);
+    unawaited(text.close());
+    end.complete(how);
+  }
+
+  /// Puts [error] on the text. A failed turn has no end of its own, and
+  /// core's structured session reads none after an error; it is reported as
+  /// [TurnEnd.closed], as core reports a turn that failed to start.
+  void fail(Object error, StackTrace stack) {
+    if (ended) return;
+    text.addError(error, stack);
+    unawaited(text.close());
+    end.complete(TurnEnd.closed);
   }
 }

@@ -450,6 +450,19 @@ class InferenceChat {
     return out.stream;
   }
 
+  /// How [turn] ended, once its text has: null when the engine does not say,
+  /// or does not say within [chatTurnErrorEndTimeout] (an engine that keeps
+  /// the SPI contract completes it with the text).
+  static Future<TurnEnd?> _endOf(EngineTurn turn) async {
+    final end = turn.end;
+    if (end == null) return null;
+    try {
+      return await end.timeout(chatTurnErrorEndTimeout);
+    } on TimeoutException {
+      return null;
+    }
+  }
+
   /// Records the model's text reply in the history; an empty one is not a
   /// turn worth recording (#325).
   void _commitText(String text) {
@@ -474,7 +487,7 @@ class InferenceChat {
     edgeAiLog('InferenceChat: Getting response from native model...');
     final turn = startEngineTurn(session);
     final response = await _takingBackOnError(turn).join();
-    final end = await turn.end;
+    final end = await _endOf(turn);
     final cleanedResponse = ModelThinkingFilter.cleanResponse(
       response,
       enableThinking: enableThinking,
@@ -901,7 +914,7 @@ class InferenceChat {
     }
 
     edgeAiLog('InferenceChat: Native token stream ended');
-    final end = await turn.end;
+    final end = await _endOf(turn);
 
     // The stream ended before we classified this Gemma 4 turn (e.g. a
     // whitespace-only reply) — the probed tokens are plain text, flush them.

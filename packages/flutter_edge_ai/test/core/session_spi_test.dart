@@ -21,6 +21,9 @@ final class _TurnSession extends InferenceModelSession {
 
   /// When set, the next turn's text is this stream, as the engine gives it.
   Stream<String>? nextText;
+
+  /// When set, the turns' end is this future (one that never completes, say).
+  Future<TurnEnd>? endFuture;
   final staged = <Message>[];
   int turns = 0;
   bool closed = false;
@@ -42,7 +45,7 @@ final class _TurnSession extends InferenceModelSession {
               yield* Stream.fromIterable(tokens);
               throw failure;
             })(),
-      end: end == null ? null : Future.value(end),
+      end: endFuture ?? (end == null ? null : Future.value(end)),
     );
   }
 
@@ -1060,6 +1063,23 @@ void _failedTurnTests() {
         expect(chat.currentTokens, 0);
       });
     }
+
+    test('a zero-text turn whose end never completes ends within '
+        'chatTurnErrorEndTimeout and keeps its message: an end it never '
+        'learns is not a stop', () async {
+      final previous = chatTurnErrorEndTimeout;
+      chatTurnErrorEndTimeout = const Duration(milliseconds: 50);
+      addTearDown(() => chatTurnErrorEndTimeout = previous);
+      final session = _TurnSession(tokens: const [])
+        ..endFuture = Completer<TurnEnd>().future;
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+      await chat.generateChatResponseAsync().toList().timeout(
+        const Duration(seconds: 2),
+      );
+      expect(chat.fullHistory.single.text, 'q');
+    });
 
     test('a stop in one turn does not take back the next one', () async {
       final session = _TurnSession(tokens: ['Par']);

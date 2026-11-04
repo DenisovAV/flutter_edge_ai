@@ -19,7 +19,7 @@ if command -v setarch >/dev/null 2>&1 && setarch "$(uname -m)" -R true 2>/dev/nu
 fi
 
 fail=0
-for s in ok bad_args shadowed empty_error_is_null failed_text failed_error failed_final failed_on_final concurrent; do
+for s in $("$D/stream_proxy_test" list); do
   "${run[@]}" "$s" "$D" || { echo "FAIL $s"; fail=1; }
 done
 exit $fail

@@ -1,6 +1,6 @@
 name: flutter_edge_ai_llama
 description: Cross-platform GGUF inference and native EmbeddingGemma 2 text embeddings for Flutter Edge AI, powered by llamadart.
-version: 0.0.5
+version: 0.0.6
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_llama
 
@@ -23,7 +23,9 @@ dependencies:
   ffi: ^2.1.4
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.5.0
+  # <2.6.0: core 2.6.0 changes the engine SPI this version overrides, so pub
+  # keeps an app on core 2.5.x until it moves this package to its 2.6.0 line.
+  flutter_edge_ai: '>=2.5.0 <2.6.0'
   llamadart: '>=0.17.5 <0.17.6'
 
 dev_dependencies:

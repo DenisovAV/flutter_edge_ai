@@ -1,5 +1,6 @@
-## Unreleased
+## 1.19.2
 - Android GPU: the #364 prefill flush is set on Adreno only; other GPUs use the engine default (#763).
+- Require `flutter_edge_ai` >=2.5.5 <2.6.0.
 
 ## 1.19.1
 - The native library loads and engine settings are made off the calling isolate (#756).

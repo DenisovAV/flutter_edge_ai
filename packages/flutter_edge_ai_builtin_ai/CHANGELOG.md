@@ -1,3 +1,6 @@
+## 0.3.8
+- Require `flutter_edge_ai` >=2.3.0 <2.6.0.
+
 ## 0.3.7
 - Require `flutter_local_ai` ^0.3.0; generation failures expose `PlatformException` details.
 

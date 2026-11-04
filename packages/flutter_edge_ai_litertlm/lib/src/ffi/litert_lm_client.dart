@@ -118,6 +118,17 @@ String? thinkingBudgetChannelWarning(
 bool keepLastSendAfter(NativeTurnEnd how, NativeLastTurnEnd? end) =>
     how == NativeTurnEnd.cancelled || end == NativeLastTurnEnd.contextFull;
 
+/// The absl status code `RESOURCE_EXHAUSTED`.
+const absResourceExhausted = 8;
+
+/// Whether native ended a turn [NativeLastTurnEnd.failed] with
+/// `RESOURCE_EXHAUSTED` ([code]): a resource other than the context window
+/// ran out (a failed allocation; section 23 ends the context-window cases
+/// [NativeLastTurnEnd.contextFull]). The prefill failed, the conversation
+/// fails every later send, and native does not rewind it.
+bool turnRanOutOfResources(NativeLastTurnEnd? end, int? code) =>
+    end == NativeLastTurnEnd.failed && code == absResourceExhausted;
+
 /// What an NPU engine says, once, when the context window its executor runs
 /// with ([window], read after the first turn) is not the `maxTokens` it was
 /// [asked] for; null when they agree. An NPU bundle has one compiled KV cache,
@@ -398,6 +409,11 @@ abstract class ConversationHandle {
   /// when the send ended), or null before one has ended here.
   NativeLastTurnEnd? get lastTurnEnd;
 
+  /// The absl status code native's last send ended with (§23's record):
+  /// non-zero only for [NativeLastTurnEnd.failed] and
+  /// [NativeLastTurnEnd.contextFull]; null when [lastTurnEnd] is.
+  int? get lastTurnCode;
+
   void close();
 }
 
@@ -587,6 +603,12 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   NativeLastTurnEnd? get lastTurnEnd {
     final conv = _conversation;
     return conv == null ? null : _client._lastTurnEnds[conv]?.end;
+  }
+
+  @override
+  int? get lastTurnCode {
+    final conv = _conversation;
+    return conv == null ? null : _client._lastTurnEnds[conv]?.code;
   }
 
   /// Whether this conversation can still take an input, or null when that
@@ -3385,13 +3407,17 @@ class LiteRtLmFfiClient {
   /// native recorded it when the turn ended; null before one has ended, or
   /// when the turn never reached native.
   NativeLastTurnEnd? virtualLastTurnEnd(Object token) =>
-      _virtualTurnEnds[token];
+      _virtualTurnEnds[token]?.end;
+
+  /// The status code that turn ended with; see [virtualLastTurnEnd].
+  int? virtualLastTurnCode(Object token) => _virtualTurnEnds[token]?.code;
 
   /// The end of each virtual session's last turn, snapshot when native ended
   /// it ([watchVirtualTurnEnd]): the shared conversation's own record goes
   /// with it when another session takes it over. Keyed weakly by the
   /// session's token, so a closed session leaves nothing behind.
-  final Expando<NativeLastTurnEnd> _virtualTurnEnds = Expando();
+  final Expando<({NativeLastTurnEnd end, int code})> _virtualTurnEnds =
+      Expando();
 
   /// When native ends the virtual turn [ended] of the session holding
   /// [token] on [conv], keeps how it ended for that session, and marks the
@@ -3409,9 +3435,17 @@ class LiteRtLmFfiClient {
   ) {
     unawaited(
       ended.then((_) {
-        final end = _lastTurnEnds[conv]?.end;
-        _virtualTurnEnds[token] = end;
-        if (end == NativeLastTurnEnd.contextFull) _virtualConvStopped = true;
+        final record = _lastTurnEnds[conv];
+        _virtualTurnEnds[token] = record;
+        // A turn native ended context_full, or failed for want of resources
+        // (RESOURCE_EXHAUSTED without section 23's context-window mark):
+        // every later send on the conversation fails until it is rewound,
+        // and the second is never rewound.
+        if (record != null &&
+            (record.end == NativeLastTurnEnd.contextFull ||
+                turnRanOutOfResources(record.end, record.code))) {
+          _virtualConvStopped = true;
+        }
       }),
     );
   }
@@ -3420,8 +3454,9 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   void recordTurnEndForTest(
     Pointer<LiteRtLmConversation> conv,
-    NativeLastTurnEnd end,
-  ) => _lastTurnEnds[conv] = (end: end, code: 0);
+    NativeLastTurnEnd end, {
+    int code = 0,
+  }) => _lastTurnEnds[conv] = (end: end, code: code);
 
   /// Test seam: whether the next virtual turn rebuilds the shared
   /// conversation.

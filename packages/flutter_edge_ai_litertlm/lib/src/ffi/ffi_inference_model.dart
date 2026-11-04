@@ -1468,7 +1468,8 @@ class RecoveringConversationHandle implements ConversationHandle {
         // before it reached the model, and recording it would replay into a
         // rebuild a message the model never saw (core 2.6.0 design §6.4b; L3
         // recovers such a turn).
-        if (!failed || failedTurnReachedModel(_live.lastTurnEnd)) {
+        if (!failed ||
+            failedTurnReachedModel(_live.lastTurnEnd, _live.lastTurnCode)) {
           _history
             ..add(message)
             ..add(reply);
@@ -1485,6 +1486,19 @@ class RecoveringConversationHandle implements ConversationHandle {
           _stopped = true;
           _stoppedReply = reply;
           _rebuildBecause = 'the context window was full';
+        }
+        // A send that failed for want of another resource (a failed
+        // allocation: RESOURCE_EXHAUSTED without section 23's context-window
+        // mark) leaves the conversation failing every later send, and native
+        // does not rewind it: the next turn rebuilds it from the history
+        // above, which this turn is not in.
+        if (failed &&
+            !stopped &&
+            latest &&
+            turnRanOutOfResources(_live.lastTurnEnd, _live.lastTurnCode)) {
+          _stopped = true;
+          _stoppedReply = null;
+          _rebuildBecause = 'the engine ran out of resources for the last turn';
         }
       }
       done.complete();
@@ -1582,6 +1596,9 @@ class RecoveringConversationHandle implements ConversationHandle {
   NativeLastTurnEnd? get lastTurnEnd => _latestSent ? _live.lastTurnEnd : null;
 
   @override
+  int? get lastTurnCode => _latestSent ? _live.lastTurnCode : null;
+
+  @override
   void close() {
     if (_closed) return;
     _closed = true;
@@ -1610,11 +1627,15 @@ class RecoveringConversationHandle implements ConversationHandle {
 /// Whether a turn that failed still reached the model, so a session's
 /// history keeps it for the replay a rebuild does: every failed turn but one
 /// native ended context_full or refused before it started (section 23),
-/// whose input the model never saw. Both [RecoveringConversationHandle] and the virtual
+/// whose input the model never saw, and one that failed for want of
+/// resources ([turnRanOutOfResources], [code]), whose prefill failed and
+/// whose conversation is rebuilt without it. Both [RecoveringConversationHandle] and the virtual
 /// sessions follow it; L3 recovers such a turn (core 2.6.0 design §6.4b).
 @visibleForTesting
-bool failedTurnReachedModel(NativeLastTurnEnd? end) =>
-    end != NativeLastTurnEnd.contextFull && end != NativeLastTurnEnd.refused;
+bool failedTurnReachedModel(NativeLastTurnEnd? end, [int? code]) =>
+    end != NativeLastTurnEnd.contextFull &&
+    end != NativeLastTurnEnd.refused &&
+    !turnRanOutOfResources(end, code);
 
 class _VirtualConversationHandle implements ConversationHandle {
   _VirtualConversationHandle({
@@ -1725,7 +1746,7 @@ class _VirtualConversationHandle implements ConversationHandle {
     } catch (_) {
       // A turn native ended context_full never reached the model (section
       // 23): replaying it would feed a rebuild a message the model never saw.
-      if (!failedTurnReachedModel(lastTurnEnd)) recorded = true;
+      if (!failedTurnReachedModel(lastTurnEnd, lastTurnCode)) recorded = true;
       rethrow;
     } finally {
       // Also record on error/cancel so the user turn isn't lost.
@@ -1839,6 +1860,10 @@ class _VirtualConversationHandle implements ConversationHandle {
   @override
   NativeLastTurnEnd? get lastTurnEnd =>
       _latestStarted ? client.virtualLastTurnEnd(token) : null;
+
+  @override
+  int? get lastTurnCode =>
+      _latestStarted ? client.virtualLastTurnCode(token) : null;
 
   @override
   void close() {

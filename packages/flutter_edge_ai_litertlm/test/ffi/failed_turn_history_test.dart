@@ -25,6 +25,12 @@ void main() {
         );
       }
       expect(failedTurnReachedModel(null), isTrue);
+      expect(
+        failedTurnReachedModel(NativeLastTurnEnd.failed, absResourceExhausted),
+        isFalse,
+        reason: 'a resource ran out: the prefill failed',
+      );
+      expect(failedTurnReachedModel(NativeLastTurnEnd.failed, 13), isTrue);
     },
   );
 
@@ -34,12 +40,14 @@ void main() {
     ).readAsStringSync();
     expect(
       source,
-      contains('if (!failed || failedTurnReachedModel(_live.lastTurnEnd)) {'),
+      contains('failedTurnReachedModel(_live.lastTurnEnd, _live.lastTurnCode)'),
       reason: 'RecoveringConversationHandle',
     );
     expect(
       source,
-      contains('if (!failedTurnReachedModel(lastTurnEnd)) recorded = true;'),
+      contains(
+        'if (!failedTurnReachedModel(lastTurnEnd, lastTurnCode)) recorded = true;',
+      ),
       reason: '_VirtualConversationHandle',
     );
   });
@@ -128,6 +136,30 @@ void main() {
         throwsStateError,
       );
       expect(client.virtualLastTurnEnd(a), isNull);
+    });
+
+    test('a turn that ran out of resources also marks the shared conversation '
+        'for a rebuild', () async {
+      final client = LiteRtLmFfiClient()..registerLiveForTest(conv);
+      final turns = NativeTurns<Pointer<LiteRtLmConversation>>(
+        cancelNative: (_) {},
+        deleteNative: (_) {},
+      );
+      final send = NativeTurnStream(turns, conv);
+      final a = Object();
+      client
+        ..recordTurnEndForTest(
+          conv,
+          NativeLastTurnEnd.failed,
+          code: absResourceExhausted,
+        )
+        ..watchVirtualTurnEnd(a, conv, send.turn.ended);
+      final text = send.stream.toList();
+      send.failed(Exception('Stream error: RESOURCE_EXHAUSTED'));
+      await expectLater(text, throwsException);
+      await pumpEventQueue();
+      expect(client.virtualLastTurnCode(a), absResourceExhausted);
+      expect(client.virtualConversationNeedsRebuildForTest, isTrue);
     });
   });
 }

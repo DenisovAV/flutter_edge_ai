@@ -46,6 +46,9 @@ class _Handle implements ConversationHandle {
   NativeLastTurnEnd? get lastTurnEnd => turnEnd;
 
   @override
+  int? get lastTurnCode => null;
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

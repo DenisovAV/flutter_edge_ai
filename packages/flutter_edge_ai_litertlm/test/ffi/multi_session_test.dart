@@ -86,6 +86,9 @@ class _FakeConversationHandle implements ConversationHandle {
   NativeLastTurnEnd? get lastTurnEnd => null;
 
   @override
+  int? get lastTurnCode => null;
+
+  @override
   void close() => isClosed = true;
 }
 

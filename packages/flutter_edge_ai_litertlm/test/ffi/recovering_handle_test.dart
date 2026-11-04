@@ -126,6 +126,12 @@ class _Conversation implements ConversationHandle {
   @override
   NativeLastTurnEnd? get lastTurnEnd => turnEnd;
 
+  /// The status code native's last send ended with.
+  int? turnCode;
+
+  @override
+  int? get lastTurnCode => turnCode;
+
   /// Like the native handle: closing cancels a turn that still runs.
   @override
   void close() {
@@ -876,6 +882,40 @@ void main() {
       first.rewindOutcome = StateError('client closed');
       await expectLater(handle.chat('two').join(), throwsStateError);
       expect(handle.lastTurnEnd, isNull);
+    });
+
+    test('a turn that failed for want of resources (RESOURCE_EXHAUSTED '
+        'without the context-window mark) fails, is not in the history, and '
+        'the next turn rebuilds the conversation without it', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      expect(await handle.chat('one').join(), 'Hello there.');
+      first
+        ..failWith = Exception('Stream error: RESOURCE_EXHAUSTED: allocation')
+        ..turnEnd = NativeLastTurnEnd.failed
+        ..turnCode = absResourceExhausted;
+      await expectLater(handle.chat('big').join(), throwsException);
+      expect(await handle.chat('two').join(), 'Hello there.');
+      expect(first.rewinds, isEmpty, reason: 'native does not rewind it');
+      final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+      expect(
+        [
+          for (final m in seed)
+            if ((m as Map)['role'] == 'user')
+              ((m['content'] as List).single as Map)['text'],
+        ],
+        ['one'],
+      );
+      expect(reopened.single.sent, ['two']);
+    });
+
+    test('another failure is neither recovered nor taken out', () async {
+      first
+        ..failWith = Exception('Stream error: INTERNAL')
+        ..turnEnd = NativeLastTurnEnd.failed
+        ..turnCode = 13;
+      await expectLater(handle.chat('one').join(), throwsException);
+      await handle.chat('two').join();
+      expect(reopened, isEmpty);
     });
   });
 }

@@ -169,12 +169,15 @@ The model decides this when it loads; there is no setting.
 | Backend | Own conversation per session | Measured on (LiteRT-LM 0.19) |
 |---|---|---|
 | CPU | macOS arm64, Linux x86_64, Linux arm64, Windows x86_64 | three interleaved conversations, each recalling its own fact |
-| GPU | macOS (Metal), Linux x86_64 (Vulkan), Windows x86_64 (D3D12), Android Adreno and Mali | the same, on M5 Pro, Tesla T4, Arc B390 and Arc 140V, Adreno 830, Mali-G715 |
+| GPU | macOS (Metal), Android Adreno and Mali | the same, on M5 Pro, Adreno 830, Mali-G715 |
 | NPU | Qualcomm and Google Tensor on Android, Intel on Windows | the same, past the first context group |
 
 Replayed as text: iOS, Android CPU, Android GPUs other than Adreno and Mali
 (two greedy conversations diverged on a PowerVR GPU), Linux arm64 GPU and
-NPU. MediaTek NPU is refused at load.
+NPU, and the Linux and Windows GPUs: they ran correctly on a Tesla T4
+(Vulkan) and on Intel Arc (D3D12), but the load cannot tell which GPU it got,
+so no other vendor is given native conversations on that evidence. MediaTek
+NPU is refused at load.
 
 After a stopped turn, or a turn whose input did not fit, the next turn
 rewinds the conversation to before it (a stopped turn is put back, partial

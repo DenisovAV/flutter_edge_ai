@@ -53,15 +53,15 @@ void main() {
       });
     });
 
-    test('GPU: Metal on macOS, Linux x86_64 and Windows x86_64; not iOS, not '
-        'Linux arm64', () {
+    test('GPU: Metal on macOS only; Linux and Windows (whose device the load '
+        'cannot tell), iOS and Linux arm64 are virtual', () {
       final native = {
         for (final abi in _abis)
           if (abi != 'android_arm64' &&
               backing(abi, PreferredBackend.gpu) == OpenSessionBacking.native)
             abi,
       };
-      expect(native, {'macos_arm64', 'linux_x64', 'windows_x64'});
+      expect(native, {'macos_arm64'});
     });
 
     test('Android GPU: Adreno and Mali only; any other family or an unread '

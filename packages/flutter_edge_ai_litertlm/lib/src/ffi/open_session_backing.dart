@@ -44,15 +44,20 @@ const liteRtLmConversationsCpuAbis = {
   'windows_x64',
 };
 
-/// The hosts whose GPU ran them: Metal on macOS, Vulkan on a Tesla T4 (Linux
-/// x86_64) and D3D12 on Arc B390 and Arc 140V (Windows x86_64), all with §20
-/// on the desktop. Android is decided per GPU family
-/// ([liteRtLmConversationsAndroidGpus]). Not run: iOS Metal, Linux arm64.
-const liteRtLmConversationsGpuAbis = {
-  'macos_arm64',
-  'linux_x64',
-  'windows_x64',
-};
+/// The desktop hosts whose GPU gets native open sessions: Metal on macOS
+/// (M5 Pro: three interleaved conversations, images, audio, stops). Android is
+/// decided per GPU family ([liteRtLmConversationsAndroidGpus]).
+///
+/// Linux x86_64 and Windows x86_64 stay virtual (decision 2b, 2026-11-04):
+/// the runs there were on one vendor each (a Tesla T4 over Vulkan, Intel Arc
+/// B390 and 140V over D3D12), and native conversations are given only to the
+/// vendor that ran, once the load can tell which device it got. LiteRT-LM has
+/// no API for that: the only report is an INFO log line of Google's prebuilt
+/// WebGPU accelerator ("Selected adapter: ..., vendor=..., backend=..."),
+/// which this package captures only in debug builds on Linux and never on
+/// Windows, so a release build could not decide the same way. Not run: iOS
+/// Metal, Linux arm64.
+const liteRtLmConversationsGpuAbis = {'macos_arm64'};
 
 /// The Android GPU families that ran them: Adreno 830 (Galaxy S25 Ultra) and
 /// Mali-G715 (Pixel 8a), every probe command on Gemma 4 E2B (L1 paid runs,

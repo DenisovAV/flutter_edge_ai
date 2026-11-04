@@ -133,6 +133,18 @@ on (Phi-3.5-mini int4 on Linux CPU: 771 MiB at 1024, 1539 at 2048, 3077 at
 at 512, 1024 and 2048 (it did at 4096), so there budget the peak, not the
 count of open sessions. Opening more than `maxConcurrentSessions` throws a
 `StateError`; unset, that is **2 on Android and iOS and unlimited on desktop**.
+An unset cap cannot mean "unlimited" on a phone: pass a larger
+`maxConcurrentSessions` to allow more. The cap does not count the
+`createSession` session. Sampling
+follows the model's `genai_config.json` (greedy unless it sets `do_sample`);
+the `temperature`, `topK`, `topP` and `randomSeed` you pass override it, and
+`temperature: 0` or `topK: 1` keeps decoding greedy. Natively, a temperature
+or `topP` without `topK` over a config with `top_k: 1` also gets a top-k (the
+family's, else 40), so it samples. On web the seed is not applied yet and
+`topP` is ignored (Transformers.js samples with top-k only); each is said once
+when set. Models install as `ModelFileType.onnx` and use ORT-GenAI's own chat
+template (`OgaTokenizerApplyChatTemplate`) — the engine never builds turn
+markers itself.
 
 **Response formats.** `openSession` / `openChat(responseFormat:)` are enforced
 by ORT-GenAI's guidance (llguidance): the session's JSON schema is set on its
@@ -177,19 +189,6 @@ Measured on Phi-3.5-mini (macOS, greedy):
 A model ORT-GenAI cannot rewind (phi3v, whisper, LFM2, decoder pipelines) gets
 its context rebuilt from the session's own conversation text instead, at the
 cost of a full prefill, with one printed warning per model.
-
-An unset cap cannot mean "unlimited" on a phone: pass a larger
-`maxConcurrentSessions` to allow more. The cap does not count the
-`createSession` session. Sampling
-follows the model's `genai_config.json` (greedy unless it sets `do_sample`);
-the `temperature`, `topK`, `topP` and `randomSeed` you pass override it, and
-`temperature: 0` or `topK: 1` keeps decoding greedy. Natively, a temperature
-or `topP` without `topK` over a config with `top_k: 1` also gets a top-k (the
-family's, else 40), so it samples. On web the seed is not applied yet and
-`topP` is ignored (Transformers.js samples with top-k only); each is said once
-when set. Models install as `ModelFileType.onnx` and use ORT-GenAI's own chat
-template (`OgaTokenizerApplyChatTemplate`) — the engine never builds turn
-markers itself.
 
 Natively `activeBackend` is `null`: ORT-GenAI picks the execution provider from the
 model's `genai_config.json`, whose execution-provider section the plugin does

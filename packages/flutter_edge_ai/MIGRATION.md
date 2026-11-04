@@ -1,5 +1,15 @@
 # Migration guide
 
+## flutter_edge_ai 2.6.0
+
+### `implements InferenceModel`
+
+A class that `implements InferenceModel` declares two new members,
+`readDecisionSection` and `openOptionScorer`: fail both with
+`DeciderUnsupportedException`. A class that `extends InferenceModel` inherits
+defaults that do. An engine that mixed in `OptionScoringModel`, which is
+removed, drops the mixin and keeps its two overrides.
+
 ## flutter_edge_ai 2.5.0: several open models, removed and deprecated members, embedding providers
 
 ### Removed members

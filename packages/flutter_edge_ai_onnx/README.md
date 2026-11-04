@@ -63,7 +63,7 @@ Either arm can be registered on its own — they don't depend on each other.
 | Linux x64 | ✅ bundled | ✅ device-verified |
 | Windows x64 | ✅ bundled | ✅ device-verified |
 | Windows ARM64 | ✅ bundled | ✅ verified on a Windows 11 ARM64 runner |
-| Android (arm64) | ✅ bundled (AAR-extracted) | ✅ device-verified |
+| Android (arm64) | ✅ bundled | ✅ device-verified |
 | iOS (arm64) | ✅ bundled | ✅ device-verified |
 | Web | N/A — Transformers.js + onnxruntime-web, no native archive | ✅ both arms |
 
@@ -91,7 +91,7 @@ a different reason (so a catch-all embedding backend like
 `LiteRtEmbeddingBackend` never silently claims an `.onnx`/`.ort` file); its
 platform gate lives in `describe` instead, as a loud `EmbeddingLoadException`.
 
-Android needs **`minSdk 24`** — both the ORT and ORT-GenAI AARs declare
+Android needs **`minSdk 24`** — ORT's Android AAR declares
 `minSdkVersion=24`; raise your app's `android/app/build.gradle(.kts)`
 `minSdk` to 24 or higher if it's lower today. The device-verified Android
 model (Phi-3.5-mini 3.8B int4) peaks at ~3.74 GB RSS — plan for 6 GB+ RAM
@@ -206,6 +206,17 @@ configuration; it just works.
 For host tests / local dev, `FLUTTER_GEMMA_ORT_GENAI_LIBS` (a directory
 containing both platform-default-named dylibs) bypasses the CodeAsset bundle
 entirely — see `test/onnx_generation_host_smoke_test.dart`.
+
+### Telemetry is off, and the Windows runtime
+
+ORT-GenAI 0.17.0 ships Microsoft's usage telemetry on every native host, on by
+default (0.14.0 had none). `GenAiFfiClient` sets `ORT_DISABLE_TELEMETRY=1` in
+the process before it opens the library, and keeps a value your app already
+set; to turn it on, set `ORT_DISABLE_TELEMETRY=0` before the first model loads.
+
+The 0.17.0 Windows DLLs import `MSVCP140_ATOMIC_WAIT.dll`, which the Visual C++
+2015-2022 redistributable provides. An app that ships the CRT app-local has to
+include that file too.
 
 ### On web (Transformers.js)
 

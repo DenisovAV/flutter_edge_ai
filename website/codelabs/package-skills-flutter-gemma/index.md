@@ -574,7 +574,7 @@ works for each:
 * **transcribe and speak** — `flutter-edge-ai-speech`
 * **use the model the OS already has** — `flutter-edge-ai-builtin-ai`
 * **pick one of N options, or say "none of these"** — `flutter-edge-ai-decisions`
-* **measure process memory on Android, iOS, macOS and Linux** — `flutter-edge-ai-diagnostics`
+* **measure process memory on Android, iOS, macOS, Linux and Windows** — `flutter-edge-ai-diagnostics`
 * **run `.task` or ONNX models** — `flutter-edge-ai-mediapipe`,
   `flutter-edge-ai-onnx`
 

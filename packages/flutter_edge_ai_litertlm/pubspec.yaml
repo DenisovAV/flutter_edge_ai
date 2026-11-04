@@ -27,8 +27,9 @@ dependencies:
     sdk: flutter
   # 2.5.5 brought the model catalog (`ModelCatalogSource`, `CatalogModel`,
   # `NpuTarget`) this version offers its models through.
-  # 2.5.0 brought the option-scoring SPI it implements (`OptionScoringModel`,
-  # `OptionScorer`) and `MultiModelEngine` (for `FlutterEdgeAi.openModel`).
+  # 2.5.0 brought the option-scoring SPI it implements (`OptionScorer`; the
+  # members moved from the `OptionScoringModel` mixin onto `InferenceModel`
+  # in 2.6.0) and `MultiModelEngine` (for `FlutterEdgeAi.openModel`).
   # 2.4.0 brought
   # what it fills: `InferenceModel.activeVisionBackend` /
   # `activeAudioBackend`, sends a message's media in the

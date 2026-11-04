@@ -58,7 +58,7 @@ Auth errors (401/403/404) fail fast after one attempt — they are not retried. 
 - Reduce `maxTokens` if you hit memory pressure — but **keep it at 1024 or higher for `.litertlm` models** (see "maxTokens vs maxOutputTokens" below). To shorten replies, use `maxOutputTokens`, not a smaller `maxTokens`.
 - Use smaller models (1B-2B parameters) for devices with <6GB RAM. Gemma 4 E2B needs 6 GB or more (a 4 GB phone is killed while it loads); the larger Gemma 4 E4B and Gemma 3n files have no measured floor.
 - Close sessions and models when not needed; monitor usage with `sizeInTokens()`.
-- To see what a model actually costs, measure the memory the OS cannot reclaim before and after loading it with [`flutter_edge_ai_diagnostics`](/docs/diagnostics) (Android + iOS + macOS + Linux). The RSS a profiler shows also counts mmapped weights the OS can drop, so it does not show that cost.
+- To see what a model actually costs, measure the memory the OS cannot reclaim before and after loading it with [`flutter_edge_ai_diagnostics`](/docs/diagnostics) (Android + iOS + macOS + Linux + Windows). The RSS a profiler shows also counts mmapped weights the OS can drop, so it does not show that cost.
 
 ## maxTokens vs maxOutputTokens
 

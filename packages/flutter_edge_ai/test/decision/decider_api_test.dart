@@ -898,7 +898,10 @@ void main() {
             isA<DeciderUnsupportedException>().having(
               (e) => e.message,
               'message',
-              contains('EmbeddingModel.createDecider'),
+              allOf(
+                startsWith('This model does not score options'),
+                contains('EmbeddingModel.createDecider'),
+              ),
             ),
           ),
         );

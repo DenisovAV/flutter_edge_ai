@@ -18,19 +18,19 @@
 // `LC_LOAD_DYLIB` on onnxruntime). So iOS registers exactly one CodeAsset
 // (`ort: null` in `_OrtBundle`, see its doc) where every other platform
 // registers two — there is no co-location problem to solve and no second
-// "onnxruntime" archive to add; do not add one. Android's own archive is a
-// differently-shaped AAR (a zip
-// containing per-ABI `.so` files under `jni/<abi>/` — see [_archivesFor]'s
-// doc) but the (host-verifiable) extraction is landed: only arm64-v8a is
-// registered (ORT-GenAI's AAR ships no armeabi-v7a slice, so arm64-only is
-// the only viable device ABI, not just policy). `stage()`'s canonical-rename
-// copy applies on macOS/iOS (framework-name derivation) AND Linux
-// (Microsoft's tarball ships the versioned `.so.X.Y.Z`, not the bare name
-// `_candidateNames` dlopens) — Android is a no-op like Windows: both AARs'
-// `.so` files already ship under the bare canonical name
-// (`libonnxruntime.so`, `libonnxruntime-genai.so`) that `_candidateNames`
-// bare-name dlopens on that platform, so CodeAssets register straight from
-// the cache dir (matches `flutter_edge_ai_litertlm`'s Android posture, which
+// "onnxruntime" archive to add; do not add one. Android's two archives are zips
+// (ORT's AAR from Maven Central and our ORT-GenAI build, which keeps the AAR
+// layout) containing per-ABI `.so` files under `jni/<abi>/` — see
+// [_archivesFor]'s doc — and the (host-verifiable) extraction is landed: only
+// arm64-v8a is registered (Microsoft's ORT-GenAI AAR ships no armeabi-v7a
+// slice, so arm64-only is the only viable device ABI, not just policy).
+// `stage()`'s canonical-rename copy applies on macOS/iOS (framework-name
+// derivation) AND Linux (Microsoft's tarball ships the versioned `.so.X.Y.Z`,
+// not the bare name `_candidateNames` dlopens) — Android is a no-op like
+// Windows: both archives' `.so` files already ship under the bare canonical
+// name (`libonnxruntime.so`, `libonnxruntime-genai.so`) that `_candidateNames`
+// bare-name dlopens on that platform, so CodeAssets register straight from the
+// cache dir (matches `flutter_edge_ai_litertlm`'s Android posture, which
 // ships 12+ flat CodeAssets with runtime bare-name cross-dlopen, device-
 // proven). Windows stays a no-op for a different reason: its `.dll`s already
 // ship under the bare canonical name AND active staging is what breaks
@@ -47,6 +47,7 @@ import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter_edge_ai_onnx/src/hook/elf_page_align.dart';
 import 'package:hooks/hooks.dart';
 
 const _packageName = 'flutter_edge_ai_onnx';
@@ -62,7 +63,8 @@ class _Archive {
     this.thinArch,
   });
 
-  /// Full download URL (Microsoft's own release, not ours).
+  /// Full download URL: Microsoft's release, except the Android ORT-GenAI
+  /// zip, which is our build on this repository's release.
   final String url;
 
   /// Expected SHA256 of the downloaded `.tar.gz`/`.tgz` bytes.
@@ -98,7 +100,7 @@ class _Archive {
 
 /// Archives for this version pair, keyed by (os, arch[, iOSSdk]). macOS
 /// arm64, linux_x64, windows_x64/windows_arm64, android_arm64, and ios arm64 (device +
-/// Apple-Silicon simulator) are landed (host-fetchable — the Android AAR
+/// Apple-Silicon simulator) are landed (host-fetchable — the Android zip
 /// extraction and the iOS zip extraction are both build-time steps, no
 /// device involved to GET the CodeAssets bundled; the device throughput/RAM
 /// go/no-go is a separate, later gate on top of this — see
@@ -106,10 +108,10 @@ class _Archive {
 /// simulator on iOS (exact `flutter_edge_ai_litertlm` precedent,
 /// `_prebuiltDirName`) — unused for every other OS. Returns null for any
 /// unsupported (os, arch) — notably Android x86_64 (emulator, out of scope),
-/// Android armeabi-v7a (ORT-GenAI ships no such AAR slice), and iOS x86_64
-/// (Intel-Mac simulator; ORT-GenAI's iOS xcframework only ships arm64 device
-/// + an arm64/x86_64 simulator fat slice, never a bare x86_64-only one, and
-/// `dart:ffi`'s `Abi` has no distinct simulator ABI anyway — see
+/// Android armeabi-v7a (Microsoft's ORT-GenAI AAR ships no such slice), and iOS
+/// x86_64 (Intel-Mac simulator; ORT-GenAI's iOS xcframework only ships arm64
+/// device + an arm64/x86_64 simulator fat slice, never a bare x86_64-only one,
+/// and `dart:ffi`'s `Abi` has no distinct simulator ABI anyway — see
 /// `OnnxEngine._isSupportedHost`'s doc).
 _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
   if (os == OS.iOS) {
@@ -121,9 +123,9 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     if (arch != Architecture.arm64) return null;
     const url =
         'https://github.com/microsoft/onnxruntime-genai/releases/'
-        'download/v0.14.0/onnxruntime-genai-ios-0.14.0.zip';
+        'download/v0.17.0/onnxruntime-genai-ios-0.17.0.zip';
     const sha256Hex =
-        '6734735af0827d503031a9e17e034cafeb9b54311d333b3dc6aa1ed73476137f';
+        '699697a1cf0699978083478a028857c188814f027a41b100dad1116cf45ce6cb';
     if (iOSSdk == IOSSdk.iPhoneSimulator) {
       return const _OrtBundle(
         dirName: 'ios_sim_arm64',
@@ -171,11 +173,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.14.0/onnxruntime-genai-0.14.0-osx-arm64.tar.gz',
+            'download/v0.17.0/onnxruntime-genai-0.17.0-osx-arm64.tar.gz',
         sha256:
-            '56583c98e3939d2cfd5a3812471be44017ce2752776d389015ff583a8d758312',
+            'be267c676885305267c2a416324a4a5fe522d04b3efb0386d13e40a675aa7df0',
         extractedLibPath:
-            'onnxruntime-genai-0.14.0-osx-arm64/lib/libonnxruntime-genai.dylib',
+            'onnxruntime-genai-0.17.0-osx-arm64/lib/libonnxruntime-genai.dylib',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -196,11 +198,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.14.0/onnxruntime-genai-0.14.0-linux-x64.tar.gz',
+            'download/v0.17.0/onnxruntime-genai-0.17.0-linux-x64.tar.gz',
         sha256:
-            '7b37f13619ee01263278fb1c24a950e219d75c9fa90586b1623d3e8bab9076b0',
+            '482a17113556ff76c53820b801f391cdcbaac0b6c4089065182683c03fdbc8d9',
         extractedLibPath:
-            'onnxruntime-genai-0.14.0-linux-x64/lib/libonnxruntime-genai.so',
+            'onnxruntime-genai-0.17.0-linux-x64/lib/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -220,11 +222,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.14.0/onnxruntime-genai-0.14.0-win-x64.zip',
+            'download/v0.17.0/onnxruntime-genai-0.17.0-win-x64.zip',
         sha256:
-            '8a303e52dc7be8fb2a5331929af451a25ac59774102d7fd09ef673adc85c5ebf',
+            '0bc5c187f9d6bd91582b7a0439fd47474a2a3cbc67941e6144eb11e0d09bb0b3',
         extractedLibPath:
-            'onnxruntime-genai-0.14.0-win-x64/lib/onnxruntime-genai.dll',
+            'onnxruntime-genai-0.17.0-win-x64/lib/onnxruntime-genai.dll',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -244,11 +246,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.14.0/onnxruntime-genai-0.14.0-win-arm64.zip',
+            'download/v0.17.0/onnxruntime-genai-0.17.0-win-arm64.zip',
         sha256:
-            'b6daeedb6395406e4cefbd6577a0d2196611e360086f7767c153b1d4b3cb3f1b',
+            'fab16090987daf17e5bb9763f70b7249116674a05cd81d625bc11075a098341e',
         extractedLibPath:
-            'onnxruntime-genai-0.14.0-win-arm64/lib/onnxruntime-genai.dll',
+            'onnxruntime-genai-0.17.0-win-arm64/lib/onnxruntime-genai.dll',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -256,11 +258,12 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
   if (os == OS.android && arch == Architecture.arm64) {
     return const _OrtBundle(
       dirName: 'android_arm64',
-      // Both archives are AARs — a zip containing per-ABI .so files under
-      // jni/<abi>/, plus AndroidManifest.xml/classes.jar/*4j_jni.so
-      // (ORT's Java wrapper) or *-genai-jni.so (GenAI's) noise this hook has
-      // no use for — rather than a flat tarball like every other platform
-      // here. [_Archive.extractedLibPath] pointing at the single concrete
+      // ORT's archive is Microsoft's AAR — a zip containing per-ABI .so
+      // files under jni/<abi>/, plus AndroidManifest.xml/classes.jar/
+      // *4j_jni.so (ORT's Java wrapper) noise this hook has no use for —
+      // rather than a flat tarball like every other platform here; the
+      // ORT-GenAI zip below keeps only the AAR's jni/arm64-v8a/ library.
+      // [_Archive.extractedLibPath] pointing at the single concrete
       // `.so` inside `jni/arm64-v8a/` skips that Java-wrapper noise for
       // free, same mechanism as the macOS/Linux/Windows entries picking one
       // file out of their own archive's larger layout.
@@ -276,17 +279,29 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime.so',
         assetName: 'onnxruntime',
       ),
-      // NOT on Maven Central (probed com.microsoft.onnxruntime[.genai|-genai]
-      // — all 404) — same GitHub-release supply chain as the desktop GenAI
-      // archives above, just a differently-shaped AAR asset. GenAI's AAR
-      // ships arm64-v8a + x86_64 only (no armeabi-v7a) — arm64 is the only
-      // viable device ABI, not a policy choice.
+      // Microsoft's GenAI AAR is not on Maven Central (probed
+      // com.microsoft.onnxruntime[.genai|-genai], all 404) and ships
+      // arm64-v8a + x86_64 only (no armeabi-v7a): arm64 is the only viable
+      // device ABI, not a policy choice.
+      // This is not Microsoft's AAR. Its 0.17.0 `libonnxruntime-genai.so`
+      // lists `libmat.so` (the 1DS telemetry SDK) in DT_NEEDED, and that file
+      // is 4 KB-aligned: Google Play rejects it for apps that target API 35+
+      // and a 16 KB-page device cannot load it. This is the same v0.17.0
+      // source built by `native/build_genai_android.sh` with
+      // ENABLE_TELEMETRY=OFF, so it needs only liblog/libm/libdl/libc and
+      // every PT_LOAD is 16 KB-aligned.
+      // The zip keeps the AAR's `jni/arm64-v8a/` layout. The build is not
+      // byte-reproducible across machines (the NDK version, the build
+      // directory in `__FILE__` strings and the zip entry times all change
+      // the bytes), so a rebuild has a new sha256: this pin is the build
+      // published on this repository's release.
       genai: _Archive(
         url:
-            'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.14.0/onnxruntime-genai-android-0.14.0.aar',
+            'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
+            'native-onnx-genai-v0.17.0-a/'
+            'onnxruntime-genai-android-0.17.0-a.zip',
         sha256:
-            'c2e9b967a1ecdf766246fbee8572c6637df01183cc263f9b954c01a9ec591f69',
+            'fe491a77f3bac8e72ae45814394a705a1c8bbf3aa69e1fd97106d8d1ea6cef76',
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
       ),
@@ -320,8 +335,11 @@ class _OrtBundle {
   final _Archive genai;
 
   /// Cache-invalidation key — bump whenever either archive's URL/sha changes.
-  String get version =>
-      ort == null ? 'genai-0.14.0' : 'ort-1.27.0_genai-0.14.0';
+  String get version => ort == null
+      ? 'genai-0.17.0'
+      : dirName.startsWith('android')
+      ? 'ort-1.27.0_genai-0.17.0-a.fe491a77'
+      : 'ort-1.27.0_genai-0.17.0';
 
   List<_Archive> get archives => [?ort, genai];
 }
@@ -436,9 +454,9 @@ Future<bool> _downloadVerifyExtract(_Archive archive, Directory destDir) async {
       // Windows archives (ORT/ORT-GenAI's own release layout) are PKZIP, not
       // tar.gz — `-z` unconditionally forces a gzip decompress pass, which
       // fails outright on a real .zip (true of both GNU tar and bsdtar).
-      // Android's two archives are AARs, which are ALSO PKZIP under the
-      // hood (an AAR is just a zip with a fixed internal layout) — same
-      // "not gzip" problem, just a different file extension.
+      // Android's two archives (ORT's AAR and the ORT-GenAI `.zip`) are
+      // ALSO PKZIP (an AAR is just a zip with a fixed internal layout) —
+      // same "not gzip" problem.
       final lowerName = archive.archiveFileName.toLowerCase();
       final isZip = lowerName.endsWith('.zip') || lowerName.endsWith('.aar');
       final ProcessResult result;
@@ -567,12 +585,12 @@ void main(List<String> args) async {
     final bundle = _archivesFor(os, arch, iOSSdk: iOSSdk);
     if (bundle == null) return; // unsupported target this phase — see doc.
 
-    // Both Android AARs (onnxruntime-android + onnxruntime-genai-android)
-    // declare minSdkVersion=24 in their own AndroidManifest.xml. There is no
+    // ORT's Android AAR (onnxruntime-android) declares minSdkVersion=24 in its
+    // own AndroidManifest.xml, and this package holds apps to it. There is no
     // Gradle module here to force a manifest-merger floor (unlike
-    // flutter_local_ai's minSdk-26 module under builtin_ai), so an app with a lower
-    // minSdk builds cleanly and only fails at runtime `dlopen` — and only on
-    // API 21-23 devices, the hardest kind of bug to catch pre-release. So
+    // flutter_local_ai's minSdk-26 module under builtin_ai), so an app with a
+    // lower minSdk builds cleanly and only fails at runtime `dlopen` — and only
+    // on API 21-23 devices, the hardest kind of bug to catch pre-release. So
     // fail the build here — and actually fail it. This used to write the
     // diagnostic and `return`, which produced a GREEN build that dies at the
     // first dlopen on every device, i.e. exactly the outcome the paragraph
@@ -698,6 +716,10 @@ void main(List<String> args) async {
           'extract. Delete it and build again.',
         );
       }
+      // Google Play rejects a 4 KB-aligned library for apps that target API
+      // 35+ and a 16 KB-page device cannot load one, so an Android library
+      // below 16 KB is a broken build, not something to bundle.
+      if (os == OS.android) requireAndroidPageAlign(src);
       final canonicalFileName = switch (os) {
         OS.linux || OS.android => 'lib${archive.assetName}.so',
         OS.windows => '${archive.assetName}.dll',

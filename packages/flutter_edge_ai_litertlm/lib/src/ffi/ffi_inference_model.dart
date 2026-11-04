@@ -1,5 +1,5 @@
-// The decider SPI (OptionScoringModel) is @experimental; this model is its
-// LiteRT-LM implementation.
+// The decider SPI (InferenceModel.readDecisionSection, openOptionScorer) is
+// @experimental; this model is its LiteRT-LM implementation.
 // ignore_for_file: experimental_member_use
 
 import 'dart:async';
@@ -17,11 +17,10 @@ import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
 ///
-/// Scores options for `createDecider` ([OptionScoringModel]) on the CPU and
+/// Scores options for `createDecider` ([openOptionScorer]) on the CPU and
 /// GPU backends (not the NPU), from the decision litetune wrote into the
 /// model file ([decisionRead], read when the model was loaded).
-base class FfiInferenceModel extends InferenceModel
-    with CloseNotifier, OptionScoringModel {
+base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   FfiInferenceModel({
     required this.ffiClient,
     required this.maxTokens,

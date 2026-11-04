@@ -10,7 +10,8 @@ import 'package:flutter_edge_ai/src/sampling.dart';
 import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
 import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
-import 'package:meta/meta.dart' show experimental, internal, nonVirtual;
+import 'package:meta/meta.dart'
+    show experimental, internal, nonVirtual, protected;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 // Conditional default instance: the mobile/desktop default pulls dart:io;
@@ -21,7 +22,7 @@ import 'decision/decider.dart' show Decider;
 import 'decision/decider_exceptions.dart' show DeciderUnsupportedException;
 import 'decision/decider_method.dart' show InferenceDeciderCalibration;
 import 'decision/inference_decider.dart' show checkInferenceDeciderArguments;
-import 'decision/option_scoring.dart' show OptionScoringModel;
+import 'decision/option_scoring.dart' show OptionScorer;
 import 'decision/option_scoring_decider.dart' show createOptionScoringDecider;
 import 'decision/decider_option.dart' show DeciderOption;
 import 'model_management/cancel_token.dart' show CancelToken;
@@ -603,10 +604,10 @@ abstract class InferenceModel {
   /// (`isClosed`), and `choose` fails with [StateError].
   ///
   /// Core implements this once for every engine that extends this class
-  /// (`@nonVirtual`); an engine supplies the scoring through
-  /// `OptionScoringModel` (`package:flutter_edge_ai/engine.dart`), not by
-  /// overriding this. `flutter_edge_ai_litertlm` scores natively, on the CPU
-  /// from 1.16.0 and on every GPU from 1.19.1; the NPU is refused. The
+  /// (`@nonVirtual`); an engine supplies the scoring by overriding
+  /// [readDecisionSection] and [openOptionScorer], not this.
+  /// `flutter_edge_ai_litertlm` scores natively, on the CPU from 1.16.0 and
+  /// on every GPU from 1.19.1; the NPU is refused. The
   /// temperature and threshold in the file are fitted on CPU probabilities,
   /// which the GPU does not reproduce exactly; its self-check checks that
   /// scores repeat, not that they are right, and runs in debug and profile
@@ -635,26 +636,72 @@ abstract class InferenceModel {
       calibration: calibration,
       cancelToken: cancelToken,
     );
-    final self = this;
-    if (self is OptionScoringModel) {
-      return createOptionScoringDecider(
-        self,
-        question: question,
-        options: options,
-        calibration: calibration,
-        cancelToken: cancelToken,
-      );
-    }
-    throw const DeciderUnsupportedException(
-      'This model does not score options: only a model trained on the '
-      'decision, on an engine that scores options (flutter_edge_ai_litertlm, '
-      'natively, on the CPU or GPU), does. Create the decider from an '
-      'EmbeddingModel instead: EmbeddingModel.createDecider().',
+    return createOptionScoringDecider(
+      this,
+      question: question,
+      options: options,
+      calibration: calibration,
+      cancelToken: cancelToken,
     );
   }
 
+  /// The decision the model file was trained for: the UTF-8 JSON payload
+  /// litetune writes into it (decision contract version 1), however the
+  /// engine's container carries it — a `litetune.decision` section in a
+  /// `.litertlm`. Null when the file carries none: it is an ordinary chat
+  /// model, and [createDecider] refuses it.
+  ///
+  /// Throws [FormatException] when the file's decision cannot be read: a
+  /// container the engine does not understand, a decision stored twice or
+  /// in another form; core turns it into `DeciderUnsupportedException`. An
+  /// engine that cannot read its file at all may throw that directly.
+  ///
+  /// For engines: core calls it from [createDecider]; an app never does.
+  /// Default: the engine does not score, and fails with
+  /// `DeciderUnsupportedException`.
+  ///
+  /// Experimental: may change in a minor release while the API settles.
+  @protected
+  @experimental
+  Future<String?> readDecisionSection() => Future.error(_noOptionScoring);
+
+  /// The engine's scoring calls, for one decider. Fails with
+  /// `DeciderUnsupportedException` when this model cannot score here — a
+  /// backend the engine does not score on, for one — and with
+  /// [StateError] when the model is closed.
+  ///
+  /// For engines: core calls it from [createDecider]; an app never does.
+  /// Default: the engine does not score, and fails with
+  /// `DeciderUnsupportedException`.
+  ///
+  /// Experimental: may change in a minor release while the API settles.
+  @protected
+  @experimental
+  Future<OptionScorer> openOptionScorer() => Future.error(_noOptionScoring);
+
   Future<void> close();
 }
+
+/// What [InferenceModel.readDecisionSection] and
+/// [InferenceModel.openOptionScorer] fail with on an engine that does not
+/// score options.
+const _noOptionScoring = DeciderUnsupportedException(
+  'This model does not score options: only a model trained on the '
+  'decision, on an engine that scores options (flutter_edge_ai_litertlm, '
+  'natively, on the CPU or GPU), does. Create the decider from an '
+  'EmbeddingModel instead: EmbeddingModel.createDecider().',
+);
+
+/// [InferenceModel.readDecisionSection], for core's decider, which lives in
+/// another library and so cannot call a `@protected` member.
+@internal
+Future<String?> readDecisionSectionOf(InferenceModel model) =>
+    model.readDecisionSection();
+
+/// [InferenceModel.openOptionScorer], for core's decider.
+@internal
+Future<OptionScorer> openOptionScorerOf(InferenceModel model) =>
+    model.openOptionScorer();
 
 /// Session metrics containing token usage and performance statistics.
 class SessionMetrics {

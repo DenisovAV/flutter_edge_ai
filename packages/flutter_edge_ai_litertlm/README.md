@@ -273,7 +273,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in; G5 not run), MediaTek MT6991/MT6993 (Android, opt-in, not run on device yet) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in; G5 not run) and Intel Panther Lake NPUs (Windows x64); MediaTek MT6991/MT6993 refused in this release | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -364,15 +364,18 @@ final vector = await embedder.embed(
   averages them instead of truncating; the averaged vector is never returned).
   Either way an over-long input costs a full embedding before it is refused.
   Split before embedding.
-- **CPU natively, WebGPU on the web, GPU on Linux x64 when asked
-  (1.19.0).** `activeBackend` is `PreferredBackend.cpu` natively and
-  `PreferredBackend.gpu` on the web. On Linux x64,
+- **CPU natively, WebGPU on the web, GPU on Linux x64, Windows x64 and
+  macOS when asked.** `activeBackend` is `PreferredBackend.cpu` natively and
+  `PreferredBackend.gpu` on the web. On Linux x64 (1.19.0), Windows x64 and
+  macOS (LiteRT-LM 0.19, `native-v0.19.0-a`),
   `preferredBackend: PreferredBackend.gpu` runs the text tower of a generic
-  bundle on the GPU (LiteRT-LM's GPU executor over WebGPU on Vulkan). Linux
-  x64 only; Windows x64 is refused on native-v0.18.0-h (LiteRT-LM accelerator
-  crash), tracked in #744: there `gpu` fails the load with an
-  `EmbeddingLoadException` that says so, and the app loads it with
-  `preferredBackend: cpu` (or unset) instead.
+  bundle on the GPU (LiteRT-LM's GPU executor over WebGPU on Vulkan and DX12,
+  over Metal on macOS). Windows x64 was refused on native-v0.18.0-h, whose
+  accelerator ended the process at the first load (#744); on 0.19 the 270m
+  runs on the GPU on Panther Lake (Arc B390) and Lunar Lake (Arc 140V), and
+  the 270m and 740m text towers on Metal (24 ms per text, C probe,
+  2026-11-04). iOS, Android and Linux arm64 are not measured: there `gpu` is
+  not applied.
   Measured on the 270m, 2026-10-22: Linux on a Tesla T4 32-64 ms per text vs
   232-308 ms on its CPU (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs
   83-90 ms); min cos 0.997 to the
@@ -656,9 +659,8 @@ Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), MediaTek NPU
 ([below](#mediatek-npu-on-android-opt-in)), Qualcomm NPU
 ([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
 ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and `gpu` for the
-EmbeddingGemma 2 asked for with `gpu` on Linux x64 (1.19.0; Linux x64 only;
-Windows x64 is refused on native-v0.18.0-h (LiteRT-LM accelerator crash),
-tracked in #744); any other `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
+EmbeddingGemma 2 asked for with `gpu` on Linux x64 (1.19.0), Windows x64 and
+macOS (LiteRT-LM 0.19); any other `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
 the output buffer lived after the first embedding, and
 `window.getLiteRtEmbeddingFullyAccelerated()` says whether the graph landed
@@ -700,9 +702,9 @@ assert(embedder.activeBackend == PreferredBackend.npu);
   `google_tensor_npu` ([below](#google-tensor-npu-on-android-opt-in)), the
   G6 270m and 440m run on a Pixel 11 (G5 not run), Intel PTL runs on Windows
   ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek
-  MT6991/MT6993 are accepted in apps built with `mediatek_npu`
-  ([below](#mediatek-npu-on-android-opt-in)) but not run on such a device
-  yet. Per build: https://flutteredge.ai/docs/registry.
+  MT6991/MT6993 are refused in this release
+  ([below](#mediatek-npu-on-android-opt-in)). Per build:
+  https://flutteredge.ai/docs/registry.
   What a bundle is compiled for is read from the bundle itself, not from its
   name.
 - **Fast, and close to — not equal to — the CPU vectors.** Measured on an
@@ -915,13 +917,13 @@ Native platforms need no web setup.
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ FFI (GPU via OpenCL; NPU on Qualcomm, Google Tensor G5/G6 or MediaTek — each opt-in, below) |
+| Android  | ✅ FFI (GPU via OpenCL; NPU on Qualcomm or Google Tensor G5/G6 — each opt-in, below; MediaTek refused in this release) |
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
 | Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
-The native library (`native-v0.18.0-h`, LiteRT-LM v0.18.0) is fetched at build
+The native library (`native-v0.19.0-a`, LiteRT-LM v0.19.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and macOS 14.0. On macOS the companion libraries come from this
@@ -934,11 +936,10 @@ Without them the first model load fails; the error contains
 
 `PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and
 only on Windows, on Google Tensor G5/G6 Pixels with Android 16 or later (not a
-`BP2A` build), on MediaTek Android devices (Android 12 or later) whose
-NeuroPilot adapters open in the app, on
+`BP2A` build), on
 Android devices with Qualcomm FastRPC (`libcdsprpc.so`), and on Qualcomm Linux
-arm64 boards; the Tensor, MediaTek and Qualcomm paths only in apps that opted
-in (below). A
+arm64 boards; the Tensor and Qualcomm paths only in apps that opted in
+(below). MediaTek is refused in this release. A
 generic bundle falls back to GPU, then CPU, and prints why; a bundle compiled
 for an NPU is refused elsewhere ([Where a model runs](#where-a-model-runs)).
 Windows has no device probe: a bundle compiled for the Intel NPU is not refused
@@ -1176,6 +1177,14 @@ Tensor G5 and a release-signed build. On one Pixel the EdgeTPU service logged
 that the app is not on its allowlist; that did not stop the debug run.
 
 ### MediaTek NPU on Android (opt-in)
+
+**Refused in this release.** LiteRT-LM 0.19's LiteRT loads an NPU dispatch
+only through `LiteRtDispatchQueryInterface`, which Google's
+`litert-npu-runtime-mediatek` dispatch (2.3.0, 2.3.2) does not export, and on
+the MediaTek NPU measured (MT6989) a conversation's second message comes back
+empty (LiteRT-LM #4256). `mediatek_npu: true` fails the build with that
+reason, and a MediaTek bundle on the NPU is refused at load.
+flutter_edge_ai_litertlm 1.19.x runs the MediaTek NPU as described below.
 
 A bundle compiled ahead of time for a MediaTek SoC (`…_mt6991.litertlm`,
 `…_MediaTek_MT6991.litertlm`; its `LiteRtStamp` names `MediaTek` and the SoC,

@@ -122,6 +122,9 @@ class InferenceChat {
   /// not answer them.
   bool _lastTurnTakenBack = false;
 
+  /// [stopGeneration] was called during the current core turn.
+  bool _stopAskedThisTurn = false;
+
   /// Determines if model history should be cleared after each turn
   /// FunctionGemma requires single-turn mode (no multi-turn context)
   bool get _isSingleTurnModel => modelType == ModelType.functionGemma;
@@ -315,14 +318,14 @@ class InferenceChat {
   /// any tool call it had committed, are taken back out of [fullHistory]
   /// before the error reaches the caller (for an input too long for the
   /// context window the error is a [ContextLimitException]). A stop is not a
-  /// failure. Turns an engine runs through [ChatTurnHooks.responses] keep
-  /// their own history.
+  /// failure and keeps what was generated; a turn stopped before any text is
+  /// taken back as well. Turns an engine runs through
+  /// [ChatTurnHooks.responses] keep their own history.
   ///
   /// Core implements this once for every engine (`@nonVirtual`); an engine
   /// changes a chat's turns through [ChatTurnHooks].
   @nonVirtual
   Future<ModelResponse> generateChatResponse() async {
-    _lastTurnTakenBack = false;
     final hooked = _hooks.responses(session, tokenBuffer: tokenBuffer);
     if (hooked != null) return _collectResponses(hooked);
     return _generateCoreResponse();
@@ -366,51 +369,79 @@ class InferenceChat {
     final staged = _stagedFrom;
     _stagedFrom = null;
     _lastTurnTakenBack = false;
+    _stopAskedThisTurn = false;
     late final StreamController<String> out;
     StreamSubscription<String>? source;
     (Object, StackTrace)? failure;
+    var sawText = false;
     var finished = false;
     Timer? bound;
+
+    void takeBack() {
+      if (staged == null) return;
+      _fullHistory.length = staged.full;
+      _modelHistory.length = staged.model;
+      _prefixes.length = staged.prefixes;
+      _currentTokens = staged.tokens;
+      _toolsInstructionSent = staged.toolsInstructionSent;
+      _lastTurnTakenBack = true;
+    }
+
+    /// Whether a turn that ended without an error was a stop: the chat's own
+    /// [stopGeneration], or the engine saying so (bounded, as below).
+    Future<bool> wasStopped() async {
+      if (_stopAskedThisTurn) return true;
+      final end = turn.end;
+      if (end == null) return false;
+      try {
+        return await end.timeout(chatTurnErrorEndTimeout) == TurnEnd.stopped;
+      } on TimeoutException {
+        return false;
+      }
+    }
 
     /// Ends the turn once: when the text closes, or, after an error, at the
     /// latest [chatTurnErrorEndTimeout] later, so an engine whose failed text
     /// never closes cannot hold the turn. A failed turn is taken back either
-    /// way.
-    void finish() {
+    /// way, and so is a stopped one that produced no text: nothing of it is
+    /// an exchange worth keeping (llama drops it as well).
+    Future<void> finish() async {
       if (finished) return;
       finished = true;
       bound?.cancel();
       final failed = failure;
       if (failed != null) {
-        if (staged != null) {
-          _fullHistory.length = staged.full;
-          _modelHistory.length = staged.model;
-          _prefixes.length = staged.prefixes;
-          _currentTokens = staged.tokens;
-          _toolsInstructionSent = staged.toolsInstructionSent;
-          _lastTurnTakenBack = true;
-        }
+        takeBack();
         out.addError(failed.$1, failed.$2);
+      } else if (!sawText && await wasStopped()) {
+        takeBack();
       }
       // Its done ends the consumer's subscription, and onCancel lets the
       // source go: a failed text that never closes is not held.
-      unawaited(out.close());
+      await out.close();
     }
 
     out = StreamController<String>(
       onListen: () {
         source = turn.text.listen(
-          out.add,
+          (chunk) {
+            if (chunk.isNotEmpty) sawText = true;
+            out.add(chunk);
+          },
           onError: (Object error, StackTrace stack) {
             if (failure != null) return;
             failure = (error, stack);
-            bound = Timer(chatTurnErrorEndTimeout, finish);
+            bound = Timer(chatTurnErrorEndTimeout, () => unawaited(finish()));
           },
-          onDone: finish,
+          onDone: () => unawaited(finish()),
         );
       },
       onPause: () => source?.pause(),
       onResume: () => source?.resume(),
+      // The consumer's cancel before the turn ended is a stop: a failure it
+      // has not seen yet is not delivered, and nothing is taken back. (Through
+      // the chat's stream a cancel arrives at its next chunk, so a turn
+      // cancelled before any text ends as its engine ends it.)
       onCancel: () {
         bound?.cancel();
         return source?.cancel();
@@ -584,8 +615,9 @@ class InferenceChat {
   /// any tool call it had committed, are taken back out of [fullHistory]
   /// before the error reaches the caller (for an input too long for the
   /// context window the error is a [ContextLimitException]). A stop is not a
-  /// failure. Turns an engine runs through [ChatTurnHooks.responses] keep
-  /// their own history.
+  /// failure and keeps what was generated; a turn stopped before any text is
+  /// taken back as well. Turns an engine runs through
+  /// [ChatTurnHooks.responses] keep their own history.
   ///
   /// Core implements this once for every engine (`@nonVirtual`); an engine
   /// changes a chat's turns through [ChatTurnHooks].
@@ -1373,7 +1405,10 @@ class InferenceChat {
 
   int get imageMessageCount => fullHistory.where((msg) => msg.hasImage).length;
 
-  Future<void> stopGeneration() => session.stopGeneration();
+  Future<void> stopGeneration() {
+    _stopAskedThisTurn = true;
+    return session.stopGeneration();
+  }
 
   Future<void> close() => session.close();
 

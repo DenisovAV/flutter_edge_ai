@@ -5,6 +5,10 @@
 // so this builds against either: -DC_API_018 for native-v0.18.x, nothing for
 // 1.0.
 //
+// A line "image:<path>" or "audio:<path>" embeds that file as one part
+// instead; EG2_VISION=1 / EG2_AUDIO=1 declare the towers (on the CPU, 140
+// vision tokens per image), as the Dart pass does.
+//
 //   cc -O1 [-DC_API_018] -o eg2_text eg2_text.c -ldl
 //   eg2_text <lib> <model.litertlm> <cpu|gpu> <texts.txt> <out.f32> [<cache dir>]
 #include <dlfcn.h>
@@ -12,6 +16,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static char* ReadWholeFile(const char* path, size_t* size) {
+  FILE* f = fopen(path, "rb");
+  if (!f) return NULL;
+  fseek(f, 0, SEEK_END);
+  long n = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  char* data = malloc((size_t)n);
+  *size = fread(data, 1, (size_t)n, f);
+  fclose(f);
+  return data;
+}
 
 typedef void* P;
 static void* g_lib;
@@ -38,9 +54,15 @@ int main(int argc, char** argv) {
   }
   P settings = NULL, engine = NULL, opts = NULL;
 #ifdef C_API_018
+  const char* vb = getenv("EG2_VISION") ? "cpu" : NULL;
+  const char* ab = getenv("EG2_AUDIO") ? "cpu" : NULL;
   settings = S(P (*)(const char*, const char*, const char*, const char*),
                "litert_lm_embedding_engine_settings_create")(argv[2], argv[3],
-                                                             NULL, NULL);
+                                                             vb, ab);
+  if (vb)
+    S(void (*)(P, int),
+      "litert_lm_embedding_engine_settings_set_vision_tokens_per_image")(
+        settings, 140);
   S(void (*)(P, int), "litert_lm_embedding_engine_settings_set_max_input_length")(
       settings, 1024);
   if (argc > 6)
@@ -58,7 +80,21 @@ int main(int argc, char** argv) {
                          P*) =
       S(int (*)(const char*, const char*, const char*, const char*, P*),
         "litert_lm_embedding_engine_settings_create");
-  settings_create(argv[2], argv[3], NULL, NULL, &settings);
+  const char* vb = getenv("EG2_VISION") ? "cpu" : NULL;
+  const char* ab = getenv("EG2_AUDIO") ? "cpu" : NULL;
+  settings_create(argv[2], argv[3], vb, ab, &settings);
+  // EG2_AUDIO_THREADS / EG2_THREADS: the audio tower's and the engine's CPU
+  // thread counts (to see whether a result depends on them).
+  if (getenv("EG2_AUDIO_THREADS"))
+    S(int (*)(P, int), "litert_lm_embedding_engine_settings_set_audio_num_threads")(
+        settings, atoi(getenv("EG2_AUDIO_THREADS")));
+  if (getenv("EG2_THREADS"))
+    S(int (*)(P, int), "litert_lm_embedding_engine_settings_set_num_threads")(
+        settings, atoi(getenv("EG2_THREADS")));
+  if (vb)
+    S(int (*)(P, int),
+      "litert_lm_embedding_engine_settings_set_vision_tokens_per_image")(
+        settings, 140);
   S(int (*)(P, int), "litert_lm_embedding_engine_settings_set_max_input_length")(
       settings, 1024);
   if (argc > 6)
@@ -86,9 +122,22 @@ int main(int argc, char** argv) {
     if (!line[0]) continue;
     P input = NULL, resp = NULL;
     const float* v = NULL;
+    int type = 0;
+    const char* data = line;
+    size_t size = strlen(line);
+    char* blob = NULL;
+    if (!strncmp(line, "image:", 6) || !strncmp(line, "audio:", 6)) {
+      type = line[0] == 'i' ? 1 : 3;
+      blob = ReadWholeFile(line + 6, &size);
+      if (!blob) {
+        printf("RESULT eg2_text FAIL cannot read %s\n", line + 6);
+        return 1;
+      }
+      data = blob;
+    }
 #ifdef C_API_018
     input = S(P (*)(int, const void*, size_t), "litert_lm_input_data_create")(
-        0, line, strlen(line));
+        type, data, size);
     resp = S(P (*)(P, const P*, size_t, P),
              "litert_lm_embedding_engine_compute_embedding")(engine, &input, 1,
                                                              opts);
@@ -98,7 +147,7 @@ int main(int argc, char** argv) {
     }
 #else
     S(int (*)(int, const void*, size_t, P*), "litert_lm_input_data_create")(
-        0, line, strlen(line), &input);
+        type, data, size, &input);
     S(int (*)(P, const P*, size_t, P, P*),
       "litert_lm_embedding_engine_compute_embedding")(engine, &input, 1, opts,
                                                       &resp);
@@ -115,6 +164,7 @@ int main(int argc, char** argv) {
     fwrite(v, sizeof(float), dim, out);
     S(void (*)(P), "litert_lm_embedding_response_delete")(resp);
     S(void (*)(P), "litert_lm_input_data_delete")(input);
+    free(blob);
     n++;
   }
   fclose(in);

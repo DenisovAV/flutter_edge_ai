@@ -495,3 +495,53 @@ What dropping the framework would change (not done; iPhone run first):
 - Docs: AGENTS.md (macOS companions, #689), `DESKTOP_SUPPORT.md`, website
   `desktop.md` / `getting-started.md`, the inference skill's
   `platform-setup.md`, CHANGELOGs at release.
+
+## EG2 image and audio drift, 0.18 → 0.19 (2026-11-04)
+
+`probes/eg2_text.c` takes `image:` / `audio:` lines and declares the towers
+(`EG2_VISION`, `EG2_AUDIO`; towers on the CPU, 140 vision tokens), as the Dart
+pass does. The 440m was run with 8 images, the 740m with the same 8 images and
+9 clips (7 WAV 16 kHz mono, one 44.1 kHz stereo, one MP3 and one FLAC of the same
+recording). Each set includes a text line as a control. Runs:
+- macOS 0.19 (official build) and 0.18.0-h;
+- Linux arm64 0.19 (CI 41749984146) and 0.18.0-h, in Docker.
+
+| Comparison | text | images (440m and 740m, 8 each) | audio (740m, 9 clips), cos |
+|---|---|---|---|
+| Linux 0.19 vs Linux 0.18 | identical | identical | **0.917–0.991** |
+| macOS 0.19 vs Linux 0.19 | identical | identical | **0.959–0.998** |
+| macOS 0.18 vs Linux 0.18 | 1.0000 | 0.9974–0.9996 | 0.992–0.997 |
+| macOS 0.19 vs macOS 0.18 | 1.0000 | 0.9974–0.9996 | 0.928–0.995 |
+
+**Images behave like text.** 0.19 changed nothing; only Apple 0.18 was off.
+
+**Audio changed in 0.19 on every platform**, and on 0.19 macOS and Linux no
+longer agree with each other. Each platform repeats bit for bit across runs, and
+the result does not depend on the audio tower's thread count (1, 4 and default
+give identical vectors on macOS).
+
+What it is not:
+- decoding or resampling: the 16 kHz mono WAV clips drift as much (0.917–0.958
+  on Linux) as the rest, and the 44.1 kHz stereo copy drifts like its 16 kHz
+  original (0.961 vs 0.959);
+- the mel configuration: both versions take the same HTK path, with the same
+  "Missing 10 bands … fft 257, 128 mel" warning; 0.19's Slaney mel and power
+  spectrum are opt-in and off for EG2;
+- the preprocessor choice: both use `AudioPreprocessorMiniAudio` (kissfft) with
+  `CreateDefaultGemma4Config`.
+
+What changed upstream on that path between the pins:
+- `support/preprocessor/audio_preprocessor_miniaudio.cc`: decoded frame counts,
+  trimmed to the resampler's expected output, and a dry-run dimension path;
+- `audio_preprocessor_utils.cc`: new streaming segmentation (`CountFramedSegments`);
+- `mel_filterbank.cc`: Slaney added;
+- `c/embedding_engine.cc`: +314/−191.
+
+The encoder graph itself cannot be compared alone: its `.litertlm` sections
+take external weights and do not compile standalone (status 3). Which of
+segmentation, encoder execution or kernels moved is therefore not isolated.
+The next step would be a 0.19 build with the 0.18 `support/preprocessor` sources
+(an A/B on one machine).
+
+Consequence: audio vectors stored with 0.18 should not be queried with 0.19,
+and on 0.19 Apple and Linux audio vectors of one clip differ at cos 0.96–0.998.

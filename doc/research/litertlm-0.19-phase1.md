@@ -66,7 +66,10 @@ x86_64) and an Android arm64 emulator; GPU on macOS (Metal).
    SwiftPM companion and maybe §10b. On Android §19 keeps it OpenCL-only;
    `libLiteRtOpenClAccelerator.so` and `libLiteRtTopKOpenClSampler.so` are
    probably unnecessary too. Each needs a device run (Mali and Adreno) before
-   anything is dropped.
+   anything is dropped. **Android: done.** Adreno 830 and Mali-G715 gave the same
+   results without them (DDP, 2026-11-04, `litertlm-0.19-l1-paid-runs.md`), and
+   both left the Android archive (approved 2026-11-04). Apple: pending an
+   iPhone run.
 2. **MediaTek NPU breaks on v0.19.0.** LiteRT `dcb657e8` loads only
    `LiteRtDispatchQueryInterface`; Google's `litert-npu-runtime-mediatek` AAR
    (2.3.0 and the newer 2.3.2) exports only `LiteRtDispatchGetApi`, which the

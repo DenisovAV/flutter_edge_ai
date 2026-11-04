@@ -50,9 +50,6 @@ void main() {
     p = 'libLiteRtGpuAccelerator.so'.toNativeUtf8();
     loadGlobal(p);
     calloc.free(p);
-    p = 'libLiteRtOpenClAccelerator.so'.toNativeUtf8();
-    loadGlobal(p);
-    calloc.free(p);
 
     lib = DynamicLibrary.open('libLiteRtLm.so');
     print('Library loaded (RTLD_GLOBAL + GPU preloaded)');

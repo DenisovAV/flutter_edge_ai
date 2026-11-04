@@ -357,14 +357,16 @@ final _litertlmBundle = _NativeBundle(
     // bundle holds only one (see patch_c_api.sh §10).
     'LiteRtLmMetalAccelerator',
     'LiteRtTopKMetalSampler', // macOS + iOS device GPU sampler (Metal)
-    'LiteRtOpenClAccelerator', // Android GPU (OpenCL)
     'LiteRtWebGpuAccelerator', // Linux/Windows GPU (WebGPU → Vulkan/DX12)
-    'LiteRtTopKOpenClSampler', // Android OpenCL GPU sampler — honors seed
     'LiteRtTopKWebGpuSampler', // Linux/Windows GPU sampler
     'LiteRt', // Linux/Windows core runtime
     'webgpu_dawn', // Linux/Windows Dawn WebGPU (split to a shared lib in v0.14.0)
   ],
   legacyFileNames: [
+    // Not shipped since native-v0.19.0-a: libLiteRtLm.so links Android's
+    // OpenCL accelerator and sampler in (patch_c_api.sh section 19).
+    'LiteRtOpenClAccelerator',
+    'LiteRtTopKOpenClSampler',
     // Not shipped on any platform since native-v0.18.0: on Android it needs
     // Dawn, which no bundle carries.
     'LiteRtGpuAccelerator',

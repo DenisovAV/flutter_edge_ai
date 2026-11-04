@@ -53,6 +53,11 @@ INTENTIONAL_DROPS=(
   "linux_arm64:libLiteRtTopKWebGpuSampler.so"
   "windows_x86_64:LiteRtTopKWebGpuSampler.dll"
   "windows_x86_64:libLiteRtTopKWebGpuSampler.dll"
+  # native-v0.19.0-a: libLiteRtLm.so links the OpenCL accelerator and sampler
+  # in (section 19); Adreno 830 and Mali-G715 run the GPU without the separate
+  # libraries with the same results (DDP, 2026-11-04).
+  "android_arm64:libLiteRtOpenClAccelerator.so"
+  "android_arm64:libLiteRtTopKOpenClSampler.so"
   # native-v0.18.0: the QNN runtime left the bundle. Qualcomm licenses it for
   # redistribution only inside an application, so an app opts in with
   # `qualcomm_npu: true` and its build hook fetches com.qualcomm.qti:qnn-runtime
@@ -270,6 +275,10 @@ FORBIDDEN=(
   # build_android.sh builds it only with BUILD_MEDIATEK_ADAPTER=1.
   "android_arm64:libLiteRtDispatch_MediaTek.so"
   "android_arm64:libLiteRtCompilerPlugin_MediaTek*"
+  # Linked into libLiteRtLm.so since native-v0.19.0-a (section 19): a separate
+  # copy would be a second OpenCL accelerator in the process.
+  "android_arm64:libLiteRtOpenClAccelerator.so"
+  "android_arm64:libLiteRtTopKOpenClSampler.so"
   # Need libwebgpu_dawn.so, which no Android bundle carries (native-v0.18.0).
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
@@ -304,13 +313,10 @@ REQUIRED=(
   "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
   "macos_arm64:libLiteRtLmMetalAccelerator.dylib"
-  # From LiteRT-LM v0.19.0 libLiteRtLm links a static GPU accelerator and
-  # sampler (section 19: OpenCL only on Android; Metal on Apple), which may make
-  # these unused. Kept until a Mali and an Adreno run without them, and the
-  # Apple framework above until an iPhone and a macOS run: shipping one by
-  # mistake costs a few MB, dropping one by mistake costs a native cut.
-  "android_arm64:libLiteRtOpenClAccelerator.so"
-  "android_arm64:libLiteRtTopKOpenClSampler.so"
+  # From LiteRT-LM v0.19.0 libLiteRtLm links a static GPU accelerator (section
+  # 19: Metal on Apple). The Apple framework above stays until an iPhone and a
+  # macOS run without it: shipping one by mistake costs a few MB, dropping one
+  # by mistake costs a native cut.
 )
 echo
 echo "==> Checking files that must, and must not, ship"

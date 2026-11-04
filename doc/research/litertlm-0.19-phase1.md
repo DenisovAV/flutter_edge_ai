@@ -415,3 +415,34 @@ probably iOS (not measured), which take the same build path. Not run:
 
 The talker's random-input difference is large, but it is the 0.18 Apple
 outlier too, not 0.19; whether it was audible was not measured.
+
+## L1 smoke matrix, free part: macOS and Linux arm64 (2026-11-04)
+
+Builds: macOS from the §1-§25 tree (the official `build_macos.sh` build gives
+the same vectors byte for byte); Linux arm64 from CI run 41749984146 in an
+`ubuntu:24.04` container on the same Mac (CPU only).
+
+| Check | macOS CPU | macOS Metal | Linux arm64 CPU |
+|---|---|---|---|
+| Gemma 4 E2B: all 12 probe commands + `chat` | PASS | PASS | PASS (13/13) |
+| Gemma 4 E2B: `convrewind` with an image | PASS | PASS | PASS |
+| FunctionGemma 270M: determinism, rewind, scoring, prefillroom, convrewind, deleteduring, xsession, turnend | PASS | PASS | PASS |
+| FunctionGemma 270M: tools, multiconv, longprompt | the model's own answers, the same on builds without §24/§25 | same | not run |
+| LFM2.5-230M int8 `xsession` (§25) | PASS | PASS | PASS |
+| EG2 270m text | PASS, 0.09 s | PASS, 0.02 s | PASS |
+| EG2 740m text / image / audio / combined (towers on CPU) | PASS: input lengths 14 / 134 / 79 / 223 | PASS, same lengths | PASS |
+| FastVLM 0.5B (#268), text and image | PASS ("Paris."; "A simple drawing of a house and a sun…") | PASS | PASS |
+| Old Qwen3 0.6B file (#659, `a6e678a1d43b`) | loads; with 64 output tokens the reply is all thinking ("France's capital is Paris…") | loads, answers | loads, thinking only, as on macOS |
+| Phi-4 mini q8 (§17, two-NUL piece) | PASS ("Paris.") | PASS | PASS |
+
+**EG2 cache files on 0.19:** the names are the ones the Dart pass checks
+(`requireWeightCache`):
+- CPU: `<file>_<mtime>_<size>.{text_encoder,vision_encoder,streaming_audio_encoder,vision_adapter,audio_adapter}.xnnpack_cache`;
+- GPU: `<file>.text_encoder_<mtime>_<size>_mldrift_{weight,program}_cache.bin`.
+
+**New: EG2 on the macOS GPU works on 0.19.** The 270m and 740m text towers
+run on Metal: 24 ms, ML Drift caches written. On 0.18 this path SIGBUSed in
+LiteRT's external weight loader, which is why the Dart catalog does not honour
+`gpu` on macOS (`liteRtLmEmbeddingGpuAbis`). Lifting that is an L2 decision.
+
+Paid runs: `litertlm-0.19-l1-paid-runs.md`.

@@ -123,6 +123,8 @@ API(void, litert_lm_speculative_decoding_config_delete, (P))
 API(Status, litert_lm_embedding_engine_settings_create,
     (const char*, const char*, const char*, const char*, P*))
 API(Status, litert_lm_embedding_engine_settings_set_max_input_length, (P, int))
+API(Status, litert_lm_embedding_engine_settings_set_vision_tokens_per_image,
+    (P, int))
 API(Status, litert_lm_embedding_engine_settings_set_cache_dir,
     (P, const char*))
 API(void, litert_lm_embedding_engine_settings_delete, (P))
@@ -228,6 +230,7 @@ static int LoadAll(LibHandle lib) {
   LOAD(litert_lm_speculative_decoding_config_delete);
   LOAD(litert_lm_embedding_engine_settings_create);
   LOAD(litert_lm_embedding_engine_settings_set_max_input_length);
+  LOAD(litert_lm_embedding_engine_settings_set_vision_tokens_per_image);
   LOAD(litert_lm_embedding_engine_settings_set_cache_dir);
   LOAD(litert_lm_embedding_engine_settings_delete);
   LOAD(litert_lm_embedding_engine_create);
@@ -1438,6 +1441,102 @@ static int CmdXSession(P engine, const char* model, const char* backend) {
   return fail || carried || !same ? 1 : 0;
 }
 
+// One greedy turn, optionally with an image (argument 5; PROBE_VISION set),
+// printing the reply: the smoke check that a model loads, tokenizes and
+// answers. PASS = a non-empty reply.
+static int CmdChat(P engine, const char* image) {
+  const char* prompt = image ? "Describe this picture in one sentence."
+                             : "What is the capital of France? Answer in one "
+                               "short sentence.";
+  char* blob = image ? Base64File(image) : NULL;
+  size_t cap = strlen(prompt) + (blob ? strlen(blob) : 0) + 128;
+  char* msg = malloc(cap);
+  if (blob) {
+    snprintf(msg, cap,
+             "{\"role\":\"user\",\"content\":[{\"type\":\"image\",\"blob\":"
+             "\"%s\"},{\"type\":\"text\",\"text\":\"%s\"}]}",
+             blob, prompt);
+  } else {
+    snprintf(msg, cap,
+             "{\"role\":\"user\",\"content\":[{\"type\":\"text\","
+             "\"text\":\"%s\"}]}",
+             prompt);
+  }
+  P conv = NewConversation(engine, NULL, false, false, 64);
+  P resp = NULL;
+  double t0 = Now();
+  Status s = litert_lm_conversation_send_message(conv, msg, NULL, NULL, &resp);
+  double dt = Now() - t0;
+  char text[4096] = "";
+  if (s == 0) {
+    const char* json = NULL;
+    CHECK(litert_lm_json_response_get_string(resp, &json));
+    TextOf(json ? json : "", text, sizeof text);
+    if (getenv("PROBE_RAW")) printf("INFO chat raw=%.600s\n", json ? json : "");
+    litert_lm_json_response_delete(resp);
+  }
+  bool ok = s == 0 && text[0];
+  printf("RESULT chat%s %s status=%d %.2fs reply=\"%.200s\" err=%s\n",
+         image ? "_image" : "", ok ? "PASS" : "FAIL", s, dt, text,
+         s ? litert_lm_get_last_error_message() : "");
+  litert_lm_conversation_delete(conv);
+  free(msg);
+  free(blob);
+  return ok ? 0 : 1;
+}
+
+// NPU check: a conversation longer than the first context group. A states a
+// code word, then grows past PROBE_CTX_FILL tokens (default 1100) with filler
+// turns; B runs a turn, which makes the engine save A's context and restore
+// it (section 22: every KV buffer, every group); A must still recall the
+// code word. Prints the token count at each step.
+static int CmdCtxGroup(P engine) {
+  int fill = getenv("PROBE_CTX_FILL") ? atoi(getenv("PROBE_CTX_FILL")) : 1100;
+  Status s;
+  char* r;
+  P a = NewConversation(engine, NULL, false, false, 16);
+  P b = NewConversation(engine, NULL, false, false, 16);
+  r = Send(a, "Remember this code word: PELICAN. Reply with the single word OK.",
+           NULL, &s);
+  free(r);
+  size_t count = 0;
+  litert_lm_conversation_get_token_count(a, &count);
+  printf("INFO ctxgroup a after code word tokens=%zu\n", count);
+  char* filler = Filler(400);
+  for (int i = 0; i < 64 && (int)count < fill; i++) {
+    char* msg = calloc(strlen(filler) + 64, 1);
+    sprintf(msg, "%sReply with the single word OK.", filler);
+    r = Send(a, msg, NULL, &s);
+    free(msg);
+    if (!r) {
+      printf("RESULT ctxgroup_fill FAIL step=%d tokens=%zu status=%d err=%s\n",
+             i, count, s, litert_lm_get_last_error_message());
+      return 1;
+    }
+    free(r);
+    litert_lm_conversation_get_token_count(a, &count);
+  }
+  free(filler);
+  printf("INFO ctxgroup a filled tokens=%zu (target %d)\n", count, fill);
+  r = Send(b, "Name one planet. Answer with one word.", NULL, &s);
+  char text[512] = "";
+  if (r) TextOf(r, text, sizeof text);
+  printf("INFO ctxgroup b status=%d answer=\"%s\"\n", s, text);
+  free(r);
+  r = Send(a, "What was the code word I asked you to remember? Answer with "
+              "the word only.", NULL, &s);
+  text[0] = 0;
+  if (r) TextOf(r, text, sizeof text);
+  bool ok = r && strstr(text, "PELICAN") != NULL;
+  printf("RESULT ctxgroup %s tokens=%zu answer=\"%s\" status=%d err=%s\n",
+         ok ? "PASS" : "FAIL", count, text, s,
+         r ? "" : litert_lm_get_last_error_message());
+  free(r);
+  litert_lm_conversation_delete(b);
+  litert_lm_conversation_delete(a);
+  return ok ? 0 : 1;
+}
+
 static int CmdDeterminism(P engine) {
   const char* prompt =
       "Write one short paragraph about the ocean, about 80 words.";
@@ -1490,34 +1589,25 @@ static int CmdTools(P engine) {
 }
 
 // EmbeddingGemma 2: one query, its dimension, length and norm.
-static int CmdEg2(const char* model, const char* backend) {
-  P settings = NULL, engine = NULL, opts = NULL, input = NULL, resp = NULL;
-  CHECK(litert_lm_embedding_engine_settings_create(model, backend, NULL, NULL,
-                                                   &settings));
-  CHECK(litert_lm_embedding_engine_settings_set_max_input_length(settings,
-                                                                 1024));
-  if (g_cache_dir) {
-    CHECK(litert_lm_embedding_engine_settings_set_cache_dir(settings,
-                                                            g_cache_dir));
-  }
+static char* ReadFile(const char* path, size_t* size) {
+  FILE* f = fopen(path, "rb");
+  if (!f) return NULL;
+  fseek(f, 0, SEEK_END);
+  long n = ftell(f);
+  fseek(f, 0, SEEK_SET);
+  char* data = malloc((size_t)n);
+  *size = fread(data, 1, (size_t)n, f);
+  fclose(f);
+  return data;
+}
+// One EmbeddingGemma 2 request of the given parts; prints the vector's shape.
+static int Eg2Embed(P engine, P opts, const char* label, P* parts, size_t n) {
+  P resp = NULL;
   double t0 = Now();
-  Status s = litert_lm_embedding_engine_create(settings, &engine);
+  Status s = litert_lm_embedding_engine_compute_embedding(engine, parts, n,
+                                                          opts, &resp);
   if (s != 0) {
-    printf("RESULT eg2_create FAIL status=%d err=%s\n", s,
-           litert_lm_get_last_error_message());
-    return 1;
-  }
-  printf("INFO eg2 create %.2fs\n", Now() - t0);
-  CHECK(litert_lm_embedding_options_create(&opts));
-  CHECK(litert_lm_embedding_options_set_input_overflow_strategy(opts, 1));
-  const char* text = "task: search result | query: how do plants make food";
-  CHECK(litert_lm_input_data_create(0, text, strlen(text), &input));
-  const P inputs[1] = {input};
-  t0 = Now();
-  s = litert_lm_embedding_engine_compute_embedding(engine, inputs, 1, opts,
-                                                   &resp);
-  if (s != 0) {
-    printf("RESULT eg2_embed FAIL status=%d err=%s\n", s,
+    printf("RESULT eg2_%s FAIL status=%d err=%s\n", label, s,
            litert_lm_get_last_error_message());
     return 1;
   }
@@ -1536,17 +1626,88 @@ static int CmdEg2(const char* model, const char* backend) {
     norm += (double)v[i] * v[i];
   }
   norm = sqrt(norm);
-  bool ok = finite && dim > 0 && norm > 0.5 && norm < 2.0;
-  printf("RESULT eg2 %s dim=%zu input_length=%d truncated=%d norm=%.4f "
-         "first=%.5f,%.5f,%.5f embed=%.3fs\n",
-         ok ? "PASS" : "FAIL", dim, in_len, trunc, norm, v ? v[0] : NAN,
-         v && dim > 1 ? v[1] : NAN, v && dim > 2 ? v[2] : NAN, dt);
+  bool ok = finite && dim > 0 && norm > 0.5 && norm < 2.0 && trunc <= 0;
+  printf("RESULT eg2_%s %s dim=%zu input_length=%d truncated=%d norm=%.4f "
+         "first=%.5f,%.5f embed=%.3fs\n",
+         label, ok ? "PASS" : "FAIL", dim, in_len, trunc, norm,
+         v ? v[0] : NAN, v && dim > 1 ? v[1] : NAN, dt);
   litert_lm_embedding_response_delete(resp);
-  litert_lm_input_data_delete(input);
+  return ok ? 0 : 1;
+}
+// EmbeddingGemma 2: text, and with PROBE_EG2_IMAGE / PROBE_EG2_AUDIO an image,
+// an audio clip and the three combined in one request, with the towers on
+// the CPU as the Dart pass names them. With PROBE_CACHE_DIR, lists the cache
+// files the engine wrote (the names requireWeightCache checks).
+static int CmdEg2(const char* model, const char* backend) {
+  P settings = NULL, engine = NULL, opts = NULL;
+  const char* image_path = getenv("PROBE_EG2_IMAGE");
+  const char* audio_path = getenv("PROBE_EG2_AUDIO");
+  CHECK(litert_lm_embedding_engine_settings_create(
+      model, backend, image_path ? "cpu" : NULL, audio_path ? "cpu" : NULL,
+      &settings));
+  CHECK(litert_lm_embedding_engine_settings_set_max_input_length(settings,
+                                                                 1024));
+  if (image_path) {
+    CHECK(litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
+        settings, 140));
+  }
+  if (g_cache_dir) {
+    CHECK(litert_lm_embedding_engine_settings_set_cache_dir(settings,
+                                                            g_cache_dir));
+  }
+  double t0 = Now();
+  Status s = litert_lm_embedding_engine_create(settings, &engine);
+  if (s != 0) {
+    printf("RESULT eg2_create FAIL status=%d err=%s\n", s,
+           litert_lm_get_last_error_message());
+    return 1;
+  }
+  printf("INFO eg2 create %.2fs\n", Now() - t0);
+  CHECK(litert_lm_embedding_options_create(&opts));
+  CHECK(litert_lm_embedding_options_set_input_overflow_strategy(opts, 1));
+  int fail = 0;
+  const char* text = "task: search result | query: how do plants make food";
+  P text_part = NULL, image_part = NULL, audio_part = NULL;
+  CHECK(litert_lm_input_data_create(0, text, strlen(text), &text_part));
+  fail += Eg2Embed(engine, opts, "text", &text_part, 1);
+  size_t size = 0;
+  char* bytes;
+  if (image_path && (bytes = ReadFile(image_path, &size))) {
+    CHECK(litert_lm_input_data_create(1, bytes, size, &image_part));
+    free(bytes);
+    fail += Eg2Embed(engine, opts, "image", &image_part, 1);
+  }
+  if (audio_path && (bytes = ReadFile(audio_path, &size))) {
+    CHECK(litert_lm_input_data_create(3, bytes, size, &audio_part));
+    free(bytes);
+    fail += Eg2Embed(engine, opts, "audio", &audio_part, 1);
+  }
+  if (image_part || audio_part) {
+    P parts[3];
+    size_t n = 0;
+    parts[n++] = text_part;
+    if (image_part) parts[n++] = image_part;
+    if (audio_part) parts[n++] = audio_part;
+    fail += Eg2Embed(engine, opts, "combined", parts, n);
+  }
+  if (image_part) litert_lm_input_data_delete(image_part);
+  if (audio_part) litert_lm_input_data_delete(audio_part);
+  litert_lm_input_data_delete(text_part);
   litert_lm_embedding_options_delete(opts);
   litert_lm_embedding_engine_delete(engine);
   litert_lm_embedding_engine_settings_delete(settings);
-  return ok ? 0 : 1;
+#if !defined(_WIN32)
+  if (g_cache_dir) {
+    char cmd[2048];
+    snprintf(cmd, sizeof cmd,
+             "ls -l '%s' | awk 'NR>1 {print \"INFO eg2_cache_file \" $5 \" \" $9}'",
+             g_cache_dir);
+    fflush(stdout);
+    if (system(cmd) != 0) printf("INFO eg2_cache_file listing failed\n");
+  }
+#endif
+  printf("RESULT eg2 %s %d check(s) failed\n", fail ? "FAIL" : "PASS", fail);
+  return fail ? 1 : 0;
 }
 
 int main(int argc, char** argv) {
@@ -1554,7 +1715,7 @@ int main(int argc, char** argv) {
     fprintf(stderr,
             "usage: %s <libLiteRtLm> <multiconv|constrained|rewind|scoring|"
             "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|longprompt|determinism|"
-            "turnend|prefillroom|convrewind [image]|deleteduring|xsession|eg2> "
+            "turnend|prefillroom|convrewind [image]|deleteduring|xsession|chat [image]|ctxgroup|eg2> "
             "<model> <cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS, "
             "PROBE_DISPATCH_DIR\n",
             argv[0]);
@@ -1615,6 +1776,8 @@ int main(int argc, char** argv) {
   else if (!strcmp(cmd, "prefillroom")) rc = CmdPrefillRoom(engine);
   else if (!strcmp(cmd, "deleteduring")) rc = CmdDeleteDuring(engine);
   else if (!strcmp(cmd, "xsession")) rc = CmdXSession(engine, model, backend);
+  else if (!strcmp(cmd, "chat")) rc = CmdChat(engine, argc > 5 ? argv[5] : NULL);
+  else if (!strcmp(cmd, "ctxgroup")) rc = CmdCtxGroup(engine);
   else if (!strcmp(cmd, "convrewind"))
     rc = CmdConvRewind(engine, argc > 5 ? argv[5] : NULL);
   else {

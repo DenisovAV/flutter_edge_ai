@@ -26,6 +26,17 @@ final class _Session extends InferenceModelSession {
   /// The end future fails instead of completing (a contract breach).
   bool endFails = false;
 
+  /// The end completes only when the test calls [finish]: not at a cancel
+  /// of the text, not at a stop (an engine whose end lags its stop).
+  bool lateEnd = false;
+
+  /// The end of an endless turn has already completed while its text is
+  /// still open (a contract breach: the turn is over).
+  bool endEarly = false;
+
+  /// What sizeInTokens returns; null = the text's length.
+  int? sizeOverride;
+
   /// Thrown by sizeInTokens; [sizeCalls] counts the calls.
   Object? sizeError;
   int sizeCalls = 0;
@@ -52,6 +63,7 @@ final class _Session extends InferenceModelSession {
     }
     if (endless) {
       final open = _open = Completer<TurnEnd>();
+      if (endEarly) open.complete(TurnEnd.endOfSequence);
       final controller = live = StreamController<String>();
       for (final token in tokens) {
         controller.add(token);
@@ -59,7 +71,7 @@ final class _Session extends InferenceModelSession {
       // The contract: the end completes when the consumer cancels the text.
       controller.onCancel = () {
         // Also called once a closed controller's done is delivered.
-        if (!controller.isClosed) finish(TurnEnd.stopped);
+        if (!controller.isClosed && !lateEnd) finish(TurnEnd.stopped);
       };
       return EngineTurn(text: controller.stream, end: open.future);
     }
@@ -87,7 +99,7 @@ final class _Session extends InferenceModelSession {
   Future<int> sizeInTokens(String text) async {
     sizeCalls++;
     if (sizeError case final error?) throw error;
-    return text.length;
+    return sizeOverride ?? text.length;
   }
 
   @override
@@ -98,7 +110,7 @@ final class _Session extends InferenceModelSession {
     stops++;
     if (stopError case final error?) throw error;
     await live?.close();
-    finish(TurnEnd.stopped);
+    if (!lateEnd) finish(TurnEnd.stopped);
     if (stopGate case final gate?) {
       await gate.future;
       stopLandedOn = turns;
@@ -899,6 +911,146 @@ void main() {
         throwsA(isA<IncompleteStructuredOutputException>()),
       );
       expect(chat.currentTokens, greaterThanOrEqualTo(middle + 5));
+    });
+  });
+
+  group('a failed rebuild after a failed structured reply', () {
+    test('the format failure is the turn\'s error; the rebuild\'s is thrown '
+        'by the next turn, until clearHistory', () async {
+      final engine = _Session(tokens: ['{"id": 1}'])..sizeOverride = 2000;
+      final model = _Model(support: _all)..nextSession = () => engine;
+      final chat = await model.openChat(responseFormat: _order);
+      await chat.addQueryChunk(const Message(text: 'Hi', isUser: true));
+      final rebuildError = StateError('rebuild failed');
+      model.nextSession = () => throw rebuildError;
+      await expectLater(
+        chat.generateChatResponse(),
+        throwsA(
+          isA<NonConformingStructuredOutputException>().having(
+            (e) => e.schemaPath,
+            'schemaPath',
+            '/properties/id/type',
+          ),
+        ),
+      );
+      expect(engine.closed, isTrue);
+      final stagedBefore = engine.staged.length;
+
+      await expectLater(
+        chat.addQueryChunk(const Message(text: 'Again', isUser: true)),
+        throwsA(same(rebuildError)),
+      );
+      await expectLater(
+        chat.generateChatResponse(),
+        throwsA(same(rebuildError)),
+      );
+      await expectLater(
+        chat.generateChatResponseAsync().drain<void>(),
+        throwsA(same(rebuildError)),
+      );
+      expect(engine.staged, hasLength(stagedBefore));
+      expect(engine.turns, 1);
+
+      final fresh = _Session(tokens: ['{"id": "A"}']);
+      model.nextSession = () => fresh;
+      await chat.clearHistory();
+      await chat.addQueryChunk(const Message(text: 'Hi', isUser: true));
+      expect(
+        await chat.generateChatResponse(),
+        isA<TextResponse>().having((r) => r.token, 'token', '{"id": "A"}'),
+      );
+    });
+  });
+
+  test('a single-turn model\'s failed rebuild is kept the same way', () async {
+    final engine = _Session(tokens: ['{"id"'], end: TurnEnd.outputLimit);
+    final model = _Model(support: _all)..nextSession = () => engine;
+    final chat = await model.openChat(
+      responseFormat: _order,
+      modelType: ModelType.functionGemma,
+    );
+    await chat.addQueryChunk(const Message(text: 'Hi', isUser: true));
+    final rebuildError = StateError('rebuild failed');
+    model.nextSession = () => throw rebuildError;
+    await expectLater(
+      chat.generateChatResponse(),
+      throwsA(
+        isA<IncompleteStructuredOutputException>().having(
+          (e) => e.end,
+          'end',
+          TurnEnd.outputLimit,
+        ),
+      ),
+    );
+    await expectLater(
+      chat.addQueryChunk(const Message(text: 'Again', isUser: true)),
+      throwsA(same(rebuildError)),
+    );
+  });
+
+  group('review follow-ups: the cancelled turn', () {
+    Future<(_Session, InferenceModelSession)> open(_Session engine) async {
+      final model = _Model(support: _all)..nextSession = () => engine;
+      return (engine, await model.openSession(responseFormat: _order));
+    }
+
+    test('the next turn waits for an end that lags the stop', () async {
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id"'])
+          ..endless = true
+          ..lateEnd = true,
+      );
+      final first = Completer<void>();
+      final subscription = session.getResponseAsync().listen(
+        (_) => first.isCompleted ? null : first.complete(),
+      );
+      await first.future;
+      final cancelled = subscription.cancel();
+      await pumpEventQueue();
+      expect(engine.stops, 1);
+      engine
+        ..endless = false
+        ..lateEnd = false
+        ..tokens = ['{"id": "B"}'];
+      final next = session.getResponse();
+      await pumpEventQueue();
+      expect(engine.turns, 1);
+      engine.finish(TurnEnd.stopped);
+      await cancelled;
+      expect(await next, '{"id": "B"}');
+      expect(engine.turns, 2);
+    });
+
+    test('a turn whose end came already is not stopped on cancel', () async {
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id"'])
+          ..endless = true
+          ..endEarly = true,
+      );
+      final first = Completer<void>();
+      final subscription = session.getResponseAsync().listen(
+        (_) => first.isCompleted ? null : first.complete(),
+      );
+      await first.future;
+      await pumpEventQueue();
+      await subscription.cancel();
+      expect(engine.stops, 0);
+    });
+
+    test('a turn that failed to start reports closed', () async {
+      final (engine, session) = await open(
+        _Session()..startError = StateError('boom'),
+      );
+      final failedStart = startEngineTurn(session);
+      await _drain(failedStart.text);
+      expect(await failedStart.end, TurnEnd.closed);
+
+      engine
+        ..startError = null
+        ..end = null;
+      final noEnd = startEngineTurn(session);
+      await _drain(noEnd.text);
+      expect(await noEnd.end, TurnEnd.closed);
     });
   });
 

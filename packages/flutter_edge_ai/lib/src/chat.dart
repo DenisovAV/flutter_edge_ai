@@ -235,6 +235,7 @@ class InferenceChat {
     bool noTool = false,
     bool prefix = false,
   ]) async {
+    _throwIfRebuildFailed();
     final hooked = _hooks.addQueryChunk(_engine(session), message);
     if (hooked != null) return hooked;
     _stagedFrom ??= (
@@ -689,12 +690,16 @@ class InferenceChat {
   /// A reply that failed the format's check (incomplete or non-conforming)
   /// is committed and counted before that failure is thrown, as a plain
   /// turn's reply is before a close's; a reply cut by a close is not counted
-  /// (the session is gone). A failed count or rebuild after such a reply is
-  /// printed, never thrown over the format's failure. Any other error — the
+  /// (the session is gone). A failed count after such a reply is printed,
+  /// never thrown over the format's failure; a failed session rebuild is kept
+  /// and thrown by the next turn ([addQueryChunk], [generateChatResponse],
+  /// [generateChatResponseAsync]) before the closed session is touched, until
+  /// [clearHistory] gets the chat a new session. Any other error — the
   /// engine's own, a `ResponseFormatUnsupportedException` from an engine that
   /// refuses the schema at the first send among them — reaches the caller
   /// unchanged, and nothing is committed, as for a plain turn.
   Stream<ModelResponse> _streamStructuredResponse() async* {
+    _throwIfRebuildFailed();
     final buffer = StringBuffer();
     StructuredOutputException? failure;
     StackTrace? failureStack;
@@ -720,18 +725,34 @@ class InferenceChat {
       Error.throwWithStackTrace(failure, failureStack!);
     }
     try {
-      await _accountReply(response, emittedFunctionCall: false);
-    } catch (accountingError) {
+      await _accountReply(
+        response,
+        emittedFunctionCall: false,
+        onRebuildFailed: (error, stack) =>
+            _failedRebuild = (error: error, stack: stack),
+      );
+    } catch (countError) {
       // The format's failure is what the caller acts on; a release build is
       // where this shows, and edgeAiLog is silent there.
       // ignore: avoid_print
       print(
         '[flutter_edge_ai] WARNING: after a structured reply that failed its '
-        'check, counting its tokens or rebuilding the session failed too '
-        '($accountingError).',
+        'check, counting its tokens failed too ($countError).',
       );
     }
     Error.throwWithStackTrace(failure, failureStack!);
+  }
+
+  /// A session rebuild that failed after a structured reply whose own
+  /// failure was that turn's error. The chat still holds the session it
+  /// closed, so every later turn throws this instead of a misleading "session
+  /// is closed", until [clearHistory] gets the chat a new session.
+  ({Object error, StackTrace stack})? _failedRebuild;
+
+  void _throwIfRebuildFailed() {
+    if (_failedRebuild case (:final error, :final stack)) {
+      Error.throwWithStackTrace(error, stack);
+    }
   }
 
   Stream<ModelResponse> _streamCoreResponse() async* {
@@ -1163,10 +1184,23 @@ class InferenceChat {
   /// After a committed reply: counts its tokens, rebuilds the session when
   /// the context is nearly full, and starts a single-turn model's next turn
   /// on a fresh session.
+  ///
+  /// With [onRebuildFailed], a failed rebuild goes to it instead of being
+  /// thrown; a failed count is thrown either way.
   Future<void> _accountReply(
     String response, {
     required bool emittedFunctionCall,
+    void Function(Object error, StackTrace stack)? onRebuildFailed,
   }) async {
+    Future<void> rebuild(Future<void> Function() step) async {
+      if (onRebuildFailed == null) return step();
+      try {
+        await step();
+      } catch (error, stack) {
+        onRebuildFailed(error, stack);
+      }
+    }
+
     edgeAiLog('InferenceChat: Calculating response tokens...');
     final responseTokens = await session.sizeInTokens(response);
     _currentTokens += responseTokens;
@@ -1174,7 +1208,7 @@ class InferenceChat {
     final used = _hooks.tokenCount(_engine(session)) ?? _currentTokens;
     if (used >= (maxTokens - tokenBuffer)) {
       edgeAiLog('InferenceChat: Token limit reached, recreating session...');
-      await _recreateSessionWithReducedChunks();
+      await rebuild(_recreateSessionWithReducedChunks);
       edgeAiLog('InferenceChat: Session recreated successfully');
     }
 
@@ -1190,8 +1224,10 @@ class InferenceChat {
       _toolsInstructionSent = false;
 
       // Recreate session to clear native state
-      await session.close();
-      session = await sessionCreator!();
+      await rebuild(() async {
+        await session.close();
+        session = await sessionCreator!();
+      });
       edgeAiLog('InferenceChat: Model history cleared and session recreated');
     } else if (_isSingleTurnModel && emittedFunctionCall) {
       edgeAiLog(
@@ -1485,6 +1521,7 @@ class InferenceChat {
     _resetHistory();
     await session.close();
     session = await sessionCreator!();
+    _failedRebuild = null;
     if (replayHistory == null) return;
     try {
       for (final message in replayHistory) {

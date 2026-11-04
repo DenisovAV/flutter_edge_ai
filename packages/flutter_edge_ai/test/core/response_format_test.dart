@@ -408,12 +408,32 @@ void main() {
         () => ResponseFormat.jsonSchema(schema),
         throwsA(isA<ArgumentError>()),
       );
+      final list = <Object?>[];
+      list.add(list);
+      expect(
+        () => ResponseFormat.jsonSchema({'type': 'object', 'examples': list}),
+        throwsA(isA<ArgumentError>()),
+      );
       final direct = <String, Object?>{'type': 'object'};
       direct['properties'] = {'self': direct};
       expect(
         () => ResponseFormat.jsonSchema(direct),
         throwsA(isA<ArgumentError>()),
       );
+    });
+
+    test('a list or map used twice, not inside itself, is accepted', () {
+      final sharedList = <Object?>['a'];
+      final sharedMap = <String, Object?>{'type': 'string'};
+      final format = _schema({
+        'type': 'object',
+        'properties': {'a': sharedMap, 'b': sharedMap},
+        'examples': [sharedList, sharedList],
+      });
+      expect(format.schema['examples'], [
+        ['a'],
+        ['a'],
+      ]);
     });
 
     test('nesting through properties counts too', () {
@@ -502,6 +522,7 @@ void main() {
       for (final (schema, text) in [
         (<String, Object?>{'type': 'number'}, '1e400'),
         (<String, Object?>{'type': 'object'}, '{"v": -1e400}'),
+        (<String, Object?>{'type': 'array'}, '[1, 1e400]'),
       ]) {
         expect(
           check(schema, text),

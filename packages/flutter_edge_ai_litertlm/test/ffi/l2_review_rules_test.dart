@@ -3,7 +3,6 @@
 // skipped scoring self-check does not read as passed.
 // The decider SPI is @experimental.
 // ignore_for_file: experimental_member_use
-import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';

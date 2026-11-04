@@ -57,6 +57,10 @@ typedef enum {
                                      // room for any prefill): it is not in the
                                      // history, and the conversation fails
                                      // until rewind_cancelled_turn
+  kLiteRtLmTurnEndRefused = 8,  // the last send was refused before it started
+                                // (a NULL argument or a message that is not
+                                // JSON): nothing ran and the conversation is
+                                // as the send before it left it
 } LiteRtLmTurnEnd;
 
 // flutter_edge_ai (patch_c_api.sh section 23). How the last send on
@@ -64,8 +68,10 @@ typedef enum {
 // ended with (0 unless it is kLiteRtLmTurnEndFailed or
 // kLiteRtLmTurnEndContextFull). It is settled before that send's final
 // callback runs: read it after the final chunk, or after send_message
-// returns. While a send runs it is kLiteRtLmTurnEndRunning. Either out
-// pointer may be NULL.
+// returns. While a send runs it is kLiteRtLmTurnEndRunning. A send refused
+// before it starts is kLiteRtLmTurnEndRefused with its status code, so a
+// caller never reads the end of the send before it. Either out pointer may be
+// NULL.
 LITERT_LM_C_API_EXPORT
 LiteRtLmStatusCode litert_lm_conversation_get_last_turn_end(
     LiteRtLmConversation* conversation, int* out_turn_end,

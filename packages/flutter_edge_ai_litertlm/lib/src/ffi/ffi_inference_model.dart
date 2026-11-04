@@ -1338,12 +1338,12 @@ class RecoveringConversationHandle implements ConversationHandle {
 /// only switching to a different session pays the teardown+replay cost.
 /// Whether a turn that failed still reached the model, so a session's
 /// history keeps it for the replay a rebuild does: every failed turn but one
-/// native ended context_full (section 23), whose input was refused before
-/// the model saw it. Both [RecoveringConversationHandle] and the virtual
+/// native ended context_full or refused before it started (section 23),
+/// whose input the model never saw. Both [RecoveringConversationHandle] and the virtual
 /// sessions follow it; L3 recovers such a turn (core 2.6.0 design §6.4b).
 @visibleForTesting
 bool failedTurnReachedModel(NativeLastTurnEnd? end) =>
-    end != NativeLastTurnEnd.contextFull;
+    end != NativeLastTurnEnd.contextFull && end != NativeLastTurnEnd.refused;
 
 class _VirtualConversationHandle implements ConversationHandle {
   _VirtualConversationHandle({

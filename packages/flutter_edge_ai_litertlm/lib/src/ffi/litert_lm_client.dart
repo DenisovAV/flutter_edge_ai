@@ -252,7 +252,14 @@ enum NativeLastTurnEnd {
   /// has no room for any prefill signature (status RESOURCE_EXHAUSTED). The
   /// input is not in the history, and the conversation fails every later send
   /// until it is rewound to the turn's checkpoint.
-  contextFull;
+  contextFull,
+
+  /// The last send was refused before it started (a NULL argument, a message
+  /// that is not JSON), with its status: nothing ran, and the conversation is
+  /// as the send before it left it. Reported so that the end of that earlier
+  /// send is never read as this one's; a rewind still decides by the last
+  /// send that started.
+  refused;
 
   /// The end native reported as [code], or null for a code this client does
   /// not know.
@@ -288,6 +295,8 @@ StoppedTurnRewind stoppedTurnRewindOutcome(
         return StoppedTurnRewind.notCancelled;
       case NativeLastTurnEnd.failed:
       case NativeLastTurnEnd.running:
+      // A rewind reports the last send that started, never a refusal.
+      case NativeLastTurnEnd.refused:
       case null:
         throw StoppedTurnRewindException(
           0,

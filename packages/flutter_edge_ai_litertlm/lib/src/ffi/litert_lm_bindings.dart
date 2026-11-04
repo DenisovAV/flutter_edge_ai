@@ -4250,7 +4250,8 @@ enum LiteRtLmTurnEnd {
   kLiteRtLmTurnEndRunning(4),
   kLiteRtLmTurnEndOutputLimit(5),
   kLiteRtLmTurnEndContextLimit(6),
-  kLiteRtLmTurnEndContextFull(7);
+  kLiteRtLmTurnEndContextFull(7),
+  kLiteRtLmTurnEndRefused(8);
 
   final int value;
   const LiteRtLmTurnEnd(this.value);
@@ -4264,6 +4265,7 @@ enum LiteRtLmTurnEnd {
     5 => kLiteRtLmTurnEndOutputLimit,
     6 => kLiteRtLmTurnEndContextLimit,
     7 => kLiteRtLmTurnEndContextFull,
+    8 => kLiteRtLmTurnEndRefused,
     _ => throw ArgumentError('Unknown value for LiteRtLmTurnEnd: $value'),
   };
 }

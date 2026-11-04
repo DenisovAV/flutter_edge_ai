@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// `LiteRtLmTurnEnd` in the patched `c/conversation.h` (sections 16 and 23).
 const _none = 0, _completed = 1, _cancelled = 2, _failed = 3, _running = 4;
-const _outputLimit = 5, _contextLimit = 6, _contextFull = 7;
+const _outputLimit = 5, _contextLimit = 6, _contextFull = 7, _refused = 8;
 
 void main() {
   test('NativeLastTurnEnd is in the C enum\'s order, and a code it does not '
@@ -25,8 +25,23 @@ void main() {
       NativeLastTurnEnd.fromCode(_contextFull),
       NativeLastTurnEnd.contextFull,
     );
-    expect(NativeLastTurnEnd.fromCode(8), isNull);
+    expect(NativeLastTurnEnd.fromCode(_refused), NativeLastTurnEnd.refused);
+    expect(NativeLastTurnEnd.fromCode(9), isNull);
     expect(NativeLastTurnEnd.fromCode(-1), isNull);
+  });
+
+  test('0 with refused is a library outside the contract (a rewind reports '
+      'the last send that started): rebuild', () {
+    expect(
+      () => stoppedTurnRewindOutcome(0, _refused, null),
+      throwsA(
+        isA<StoppedTurnRewindException>().having(
+          (e) => e.lastTurnEnd,
+          'lastTurnEnd',
+          NativeLastTurnEnd.refused,
+        ),
+      ),
+    );
   });
 
   test('0 after a context_full send is a rewind: the failed prefill is '

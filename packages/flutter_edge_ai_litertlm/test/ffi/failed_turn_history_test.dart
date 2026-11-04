@@ -8,16 +8,20 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('only a context_full turn did not reach the model', () {
-    for (final end in NativeLastTurnEnd.values) {
-      expect(
-        failedTurnReachedModel(end),
-        end != NativeLastTurnEnd.contextFull,
-        reason: '$end',
-      );
-    }
-    expect(failedTurnReachedModel(null), isTrue);
-  });
+  test(
+    'only a context_full turn and a refused send did not reach the model',
+    () {
+      for (final end in NativeLastTurnEnd.values) {
+        expect(
+          failedTurnReachedModel(end),
+          end != NativeLastTurnEnd.contextFull &&
+              end != NativeLastTurnEnd.refused,
+          reason: '$end',
+        );
+      }
+      expect(failedTurnReachedModel(null), isTrue);
+    },
+  );
 
   test('the recovering handle and the virtual sessions both follow it', () {
     final source = File(

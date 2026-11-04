@@ -3,6 +3,7 @@
 - `openChat` fills unset values with the model's own, as `createChat` does.
 - On LiteRT-LM and MediaPipe, a chat turn closed by the app keeps its partial reply, then throws `StateError`.
 - A chat's failed token count or session rebuild is the turn's error, not a log line.
+- A chat turn the engine fails commits nothing; `ContextLimitException` marks an input too long for the context.
 
 ## 2.5.6
 - `createModel` stays deprecated until 3.0.0, not 2.6.0 (#768).

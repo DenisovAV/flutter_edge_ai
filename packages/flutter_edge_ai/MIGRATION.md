@@ -32,6 +32,18 @@ subclass whose `responses` returns the turn's stream, and give a chat built
 with `sessionCreator: null` a session (`chat.session = …`), which the hooks
 receive.
 
+### A failed chat turn commits nothing
+
+When the engine fails a turn of an `InferenceChat` (its text ends with an
+error), the messages staged for that turn, and any tool call the turn had
+committed, are taken back out of `fullHistory` before the error reaches the
+caller; up to 2.5.x they stayed. `generateChatResponseWithTools` then answers
+no tool call of that turn. A stop or a cancelled subscription is not a
+failure and keeps what was generated. An engine that refuses an input too
+long for what the context window has left fails the turn with the new
+`ContextLimitException` (and `TurnEnd.contextLimit`): resend a shorter input,
+or start the chat over.
+
 ## flutter_edge_ai 2.5.x: engines that keep core below 2.6.0
 
 > These versions require `flutter_edge_ai` `<2.6.0`, so `flutter pub upgrade` keeps

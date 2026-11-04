@@ -19,7 +19,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// must equal it: a native bump that changes the Windows archive fails here
 /// until this list is taken again from the new archive.
 const _windowsArchiveSha256 =
-    '96f39468c91db4ceca0e761f1f5b1957aea6e8fb4669b18767c4f13cf0560d44';
+    '2aca72970136b81087b4b6d6327d10f7c7f649b53285d90b1c070ef9f388d43d';
 
 /// `tar -tzf litertlm-windows_x86_64.tar.gz` of native-v0.19.0-a, the archive
 /// of [_windowsArchiveSha256].

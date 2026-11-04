@@ -1,20 +1,14 @@
+import 'dart:js_interop';
+
+import 'package:flutter/foundation.dart' show kIsWasm;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 
-/// The Web backends on which the discriminating structured output run
-/// passed: WebGPU in Chrome on macOS arm64 (2026-11-04, bridge assets
-/// v0.1.79, SmolLM2 135M). Wasm has not run.
-const Set<edge.PreferredBackend> structuredOutputQualifiedWebBackends = {
-  edge.PreferredBackend.gpu,
-};
+import 'structured_output_web_policy.dart';
+
+@JS('navigator.userAgent')
+external String get _userAgent;
 
 /// Why a response format is refused in this browser for a model loaded on
-/// [backend], or null when it has run there.
-String? structuredOutputHostRefusal(edge.PreferredBackend? backend) {
-  if (backend != null &&
-      structuredOutputQualifiedWebBackends.contains(backend)) {
-    return null;
-  }
-  return 'GGUF response formats have not been run on the Web'
-      '${backend == null ? '' : ' with the ${backend.name} backend'} yet; '
-      'they are refused there until they have.';
-}
+/// [backend], or null where it has run ([webStructuredOutputRefusal]).
+String? structuredOutputHostRefusal(edge.PreferredBackend? backend) =>
+    webStructuredOutputRefusal(backend, userAgent: _userAgent, wasm: kIsWasm);

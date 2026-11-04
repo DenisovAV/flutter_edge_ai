@@ -15,7 +15,7 @@ pending. 0.0.3 to 0.0.5 paired SDK 0.15.1 with companion 0.15.0.
 | CPU | Supported | Supported through Wasm |
 | GPU | Depends on the selected backend and device | Depends on browser WebGPU and runtime capabilities |
 | Tools and thinking | Compatible model/template required | Compatible model/template/grammar required |
-| Response formats (`responseFormat`) | macOS arm64 CPU and Metal; refused on other hosts until they have run | WebGPU in Chrome; refused on Wasm |
+| Response formats (`responseFormat`) | macOS arm64 CPU and Metal; refused on other hosts until they have run | Chrome running a dart2wasm build on WebGPU; refused on llama.cpp's WebAssembly CPU runtime, in dart2js builds and in other browsers |
 | Images and audio | Compatible app-owned projector required | Compatible projector and bridge capabilities required |
 | LoRA | Installed adapter loads with the model; temporary session overrides are serialized | This connector does not wire Web adapters; it rejects installed or session adapters |
 | GGUF embeddings | EmbeddingGemma 2 text; see per-platform status below | Unavailable |

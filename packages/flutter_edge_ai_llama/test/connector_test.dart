@@ -10,7 +10,6 @@ import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:flutter_edge_ai_llama/src/llama_inference_model.dart';
 import 'package:flutter_edge_ai_llama/src/llama_inference_session.dart';
 import 'package:flutter_edge_ai_llama/src/runtime_error.dart';
-import 'package:flutter_edge_ai_llama/src/structured_output_platform.dart';
 import 'package:flutter_edge_ai_llama/src/llama_engine_provider.dart'
     show createLlamaProviderForTest;
 import 'package:flutter_test/flutter_test.dart';
@@ -23,6 +22,7 @@ import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 // ignore: implementation_imports — verifies the pinned shared XML grammar.
 import 'package:llamadart/src/core/template/handlers/qwen3_coder_xml_handler.dart';
 
+import 'host_abi_stub.dart' if (dart.library.ffi) 'host_abi_native.dart';
 import 'lora_fixture_stub.dart' if (dart.library.io) 'lora_fixture_native.dart';
 
 void main() {
@@ -3838,40 +3838,79 @@ void main() {
       ]);
     });
 
-    test(
-      'a structured chat turn drops the oldest turns for its buffer',
-      () async {
-        final chat = await structured.openChat(
-          responseFormat: object,
-          tokenBuffer: 100,
-        );
-        engine.promptCounter = (messages) => messages.length * 700;
-        engine.script = [_chunk('{}'), stop];
-        await chat.addQuery(user('one'));
-        await chat.generateChatResponse();
-        engine.script = [_chunk('{}'), stop];
-        await chat.addQuery(user('two'));
-        await chat.generateChatResponse();
-        expect(engine.requests.last.map((m) => m.content), ['two']);
-      },
-    );
+    for (final (buffer, request) in [
+      (300, ['two']),
+      (1, ['one', '{}', 'two']),
+    ]) {
+      test(
+        'input staged on chat.session gets the chat buffer ($buffer)',
+        () async {
+          // 3 messages of 600 tokens leave 248 of 2048: a buffer of 300 drops
+          // the first turn, a buffer of 1 does not.
+          final chat = await structured.openChat(
+            responseFormat: object,
+            tokenBuffer: buffer,
+          );
+          engine.promptCounter = (messages) => messages.length * 600;
+          engine.script = [_chunk('{}'), stop];
+          await chat.session.addQueryChunk(user('one'));
+          await chat.generateChatResponse();
+          engine.script = [_chunk('{}'), stop];
+          await chat.session.addQueryChunk(user('two'));
+          await chat.generateChatResponse();
+          expect(engine.requests.last.map((m) => m.content), request);
+        },
+      );
+    }
 
-    test('an overflow rebuild replays the session history', () async {
+    test('a long structured chat at full context keeps its session', () async {
+      // Each message is 450 tokens and each reply reports prompt + 450: the
+      // kept four messages (1800) reach the rebuild threshold 2048 - 256, so
+      // the session drops the oldest turn after each reply instead of core
+      // rebuilding it.
       final chat = await structured.openChat(
         responseFormat: object,
         tokenBuffer: 256,
       );
-      engine.script = [
-        _chunk('{"a":1}'),
-        _chunk(
-          null,
-          finishReason: 'stop',
-          usage: const llama.LlamaGenerationUsage(
-            promptTokens: 1800,
-            completionTokens: 100,
+      engine.promptCounter = (messages) => messages.length * 450;
+      final session = chat.session;
+      for (var turn = 1; turn <= 6; turn++) {
+        engine.script = [
+          _chunk('{"t":$turn}'),
+          _chunk(
+            null,
+            finishReason: 'stop',
+            usage: llama.LlamaGenerationUsage(
+              promptTokens: (turn == 1 ? 1 : 3) * 450,
+              completionTokens: 450,
+            ),
           ),
-        ),
-      ];
+        ];
+        await chat.addQuery(user('u$turn'));
+        final reply = await chat.generateChatResponse() as edge.TextResponse;
+        expect(reply.token, '{"t":$turn}');
+        expect(chat.session, same(session), reason: 'turn $turn');
+        if (turn > 1) {
+          expect(engine.requests.last.map((m) => m.content), [
+            'u${turn - 1}',
+            '{"t":${turn - 1}}',
+            'u$turn',
+          ]);
+        }
+      }
+      expect(engineSession().retainedTokens, 900);
+      expect(chat.currentTokens, 900);
+    });
+
+    test('a reply too long to trim rebuilds the session', () async {
+      // One turn of 2000 tokens cannot be trimmed under 1792: core rebuilds
+      // the session from its history.
+      final chat = await structured.openChat(
+        responseFormat: object,
+        tokenBuffer: 256,
+      );
+      engine.promptCounter = (messages) => messages.length * 1000;
+      engine.script = [_chunk('{"a":1}'), stop];
       await chat.addQuery(user('one'));
       final before = chat.session;
       await chat.generateChatResponse();
@@ -3882,11 +3921,89 @@ void main() {
       await chat.addQuery(user('two'));
       await chat.generateChatResponse();
       expect(engine.lastResponseFormat, isNotNull);
-      expect(engine.requests.last.map((m) => m.content), [
-        'one',
-        '{"a":1}',
-        'two',
-      ]);
+      // The replayed turn is dropped again to keep the buffer free.
+      expect(engine.requests.last.map((m) => m.content), ['two']);
+    });
+
+    test('a failed rebuild is the turn error, after its reply', () async {
+      final refusing = _RefusingRebuildModel(engine);
+      addTearDown(refusing.close);
+      final chat = await refusing.openChat(
+        responseFormat: object,
+        tokenBuffer: 256,
+      );
+      engine.promptCounter = (messages) => messages.length * 1000;
+      engine.script = [_chunk('{"a":1}'), stop];
+      await chat.addQuery(user('one'));
+      await expectLater(
+        chat.generateChatResponse(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'rebuild refused',
+          ),
+        ),
+      );
+      expect(chat.fullHistory.map((m) => m.text), ['one', '{"a":1}']);
+    });
+
+    for (final how in ['stop', 'close']) {
+      test('a cancel error after a $how cuts the turn', () async {
+        final session = await structured.openSession(responseFormat: object);
+        engine
+          ..blockGeneration = true
+          ..firstText = '{"a":'
+          ..cancelError = llama.LlamaInferenceException('generation cancelled');
+        await session.addQueryChunk(user('q'));
+        final firstToken = Completer<void>();
+        final failure = Completer<Object>();
+        final subscription = session.getResponseAsync().listen((_) {
+          if (!firstToken.isCompleted) firstToken.complete();
+        }, onError: failure.complete);
+        await firstToken.future;
+        final llamaSession = engineSession();
+        if (how == 'stop') {
+          await session.stopGeneration();
+        } else {
+          await session.close();
+        }
+        expect(
+          await failure.future,
+          isA<edge.IncompleteStructuredOutputException>()
+              .having(
+                (e) => e.end,
+                'end',
+                how == 'stop' ? edge.TurnEnd.stopped : edge.TurnEnd.closed,
+              )
+              .having((e) => e.partialText, 'partialText', '{"a":'),
+        );
+        await subscription.cancel();
+        expect(llamaSession.messages.map((m) => m.text), ['q', '{"a":']);
+      });
+    }
+
+    test('llama.cpp poisoning after a stop is still an error', () async {
+      final session = await structured.openSession(responseFormat: object);
+      engine
+        ..blockGeneration = true
+        ..firstText = '{"a":'
+        ..cancelError = llama.LlamaInferenceException(
+          'llama.cpp raised an exception: abort',
+        );
+      await session.addQueryChunk(user('q'));
+      final firstToken = Completer<void>();
+      final failure = Completer<Object>();
+      final subscription = session.getResponseAsync().listen((_) {
+        if (!firstToken.isCompleted) firstToken.complete();
+      }, onError: failure.complete);
+      await firstToken.future;
+      await session.stopGeneration();
+      expect(
+        await failure.future,
+        isNot(isA<edge.StructuredOutputException>()),
+      );
+      await subscription.cancel();
     });
 
     test(
@@ -3941,6 +4058,30 @@ void main() {
             '/items/maximum',
           ),
           ({'type': 'integer', 'minimum': 105}, '/minimum'),
+          (
+            {
+              'type': 'object',
+              'properties': {
+                't': {'minLength': 1},
+              },
+            },
+            '/properties/t/minLength',
+          ),
+          (
+            {
+              'type': 'object',
+              'properties': {
+                'a': {
+                  'type': 'object',
+                  'properties': {
+                    'b': {'type': 'number', 'minimum': 0},
+                  },
+                },
+                'a.properties.b': {'type': 'string'},
+              },
+            },
+            '/properties/a/properties/b/minimum',
+          ),
           (
             {
               'type': 'object',
@@ -4065,15 +4206,37 @@ void main() {
       expect(loaded.structuredOutputSupport.reason, contains('probe failed'));
       await loaded.close();
 
-      engine.capabilityError = null;
-      loaded = await load();
-      final host = structuredOutputHostRefusal(edge.PreferredBackend.cpu);
-      expect(loaded.structuredOutputSupport.reason, host);
-      if (host == null) {
+      // Each half of the capability check refuses on its own.
+      for (final (structuredOutput, grammar) in [
+        (true, false),
+        (false, true),
+      ]) {
+        engine
+          ..capabilityError = null
+          ..structuredSupport = structuredOutput
+          ..grammarSupport = grammar;
+        loaded = await load();
         expect(
-          loaded.structuredOutputSupport.keywords,
-          edge.ResponseFormat.dialect,
+          loaded.structuredOutputSupport.reason,
+          contains('grammar'),
+          reason: 'structured output $structuredOutput, grammar $grammar',
         );
+        await loaded.close();
+      }
+
+      // The table, written out: a CPU model is enabled on macOS arm64 only
+      // (the Web enables WebGPU, never CPU).
+      engine
+        ..structuredSupport = true
+        ..grammarSupport = true;
+      loaded = await load();
+      final support = loaded.structuredOutputSupport;
+      if (!kIsWeb && hostAbi() == 'macos_arm64') {
+        expect(support.isSupported, isTrue, reason: '$support');
+        expect(support.keywords, edge.ResponseFormat.dialect);
+      } else {
+        expect(support.isSupported, isFalse);
+        expect(support.reason, contains('have not been run'));
       }
       await loaded.close();
     });
@@ -4198,6 +4361,7 @@ class _FakeEngine extends llama.LlamaEngine {
   String? failLoraSetPath;
   bool toolSupport = true;
   bool visionSupport = true;
+  Object? cancelError;
   bool structuredSupport = false;
   bool grammarSupport = false;
   Map<String, dynamic>? lastResponseFormat;
@@ -4344,6 +4508,7 @@ class _FakeEngine extends llama.LlamaEngine {
       }
       if (blockGeneration) {
         await _release!.future;
+        if (cancelError != null) throw cancelError!;
         return;
       }
       yield _chunk(' world');
@@ -4440,3 +4605,25 @@ llama.LlamaCompletionChunk _toolChunk(
 edge.ModelSource _source(String path) => kIsWeb
     ? edge.ModelSource.network('https://models.invalid/${path.split('/').last}')
     : edge.ModelSource.file(path);
+
+/// Opens the chat's first session, then refuses every later one: core's
+/// rebuild after a full context fails.
+class _RefusingRebuildModel extends LlamaInferenceModel {
+  _RefusingRebuildModel(llama.LlamaEngine engine)
+    : super(
+        engine: engine,
+        maxTokens: 2048,
+        activeBackend: edge.PreferredBackend.cpu,
+        structuredOutput: const edge.StructuredOutputSupport(
+          keywords: edge.ResponseFormat.dialect,
+        ),
+      );
+
+  int _opens = 0;
+
+  @override
+  Future<LlamaInferenceSession> openEngineSession(SessionRequest request) {
+    if (++_opens > 1) return Future.error(StateError('rebuild refused'));
+    return super.openEngineSession(request);
+  }
+}

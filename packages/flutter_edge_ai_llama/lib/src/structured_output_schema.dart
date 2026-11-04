@@ -37,12 +37,9 @@ edge.ResponseFormatUnsupportedException? llamaSchemaRefusal(
     );
     return null;
   } on llama.LlamaException catch (error) {
-    final start = error.message.indexOf(r'$');
     return edge.ResponseFormatUnsupportedException(
       "llama.cpp's grammar cannot enforce this schema: ${error.message}",
-      schemaPath: start < 0
-          ? null
-          : _pointer(schema, error.message.substring(start)),
+      schemaPath: _pointer(schema, error.message),
     );
   }
 }
@@ -74,58 +71,85 @@ Map<String, dynamic> _mutableSchema(edge.JsonSchemaResponseFormat format) {
   return schema;
 }
 
-/// The JSON Pointer of the llamadart path that starts [message]
+/// The JSON Pointer of the llamadart path in [message]
 /// (`$.properties.a.minLength is …`) in [schema]: `/properties/a/minLength`.
-/// Property names may contain dots and spaces, so each is matched, longest
-/// first, against the names [schema] declares; the path ends at the first
-/// character no name or keyword explains. A path that ends on a subschema
-/// names its integer bound when it has one (llamadart reports a bound it
-/// cannot build on the subschema), else the subschema itself; the root is
-/// null (the whole format).
+///
+/// Property names may contain dots and spaces, so a path can be read more
+/// than one way (`a.b` the name, or `a` then `b`). Every reading is tried,
+/// longest name first, and one counts only if it ends on a keyword that
+/// subschema has, or on a subschema. A path that ends on a subschema names
+/// the keyword llamadart refused there: the length, item or object keyword
+/// a typeless subschema has, or the integer bound it cannot build; else the
+/// subschema itself. The root alone is null (the whole format).
 String? _pointer(Map<String, dynamic> schema, String message) {
-  var rest = message.substring(1);
-  Object? node = schema;
-  final tokens = <String>[];
-  bool ends(String text) =>
-      text.isEmpty || !RegExp(r'^[A-Za-z0-9_]').hasMatch(text);
-  while (rest.startsWith('.') && rest.length > 1) {
-    if (node is! Map) return null;
-    rest = rest.substring(1);
-    final properties = node['properties'];
-    if (rest.startsWith('properties.') && properties is Map) {
-      rest = rest.substring('properties.'.length);
-      String? name;
-      for (final key in properties.keys.cast<String>()) {
-        if (rest.startsWith(key) &&
-            ends(rest.substring(key.length)) &&
-            key.length > (name?.length ?? -1)) {
-          name = key;
-        }
-      }
-      if (name == null) return null;
-      tokens.addAll(['properties', name]);
-      node = properties[name];
-      rest = rest.substring(name.length);
-    } else if (rest.startsWith('items') &&
-        ends(rest.substring('items'.length)) &&
-        node['items'] is Map) {
-      tokens.add('items');
-      node = node['items'];
-      rest = rest.substring('items'.length);
-    } else {
-      final keyword = RegExp(r'^[A-Za-z]+').firstMatch(rest)?.group(0);
-      if (keyword == null) return null;
-      tokens.add(keyword);
-      node = null;
-      rest = '';
-    }
-  }
-  if (node is Map) {
-    final bound = ['minimum', 'maximum'].where(node.containsKey).firstOrNull;
-    if (bound != null) tokens.add(bound);
-  }
-  if (tokens.isEmpty) return null;
+  final start = message.indexOf(r'$');
+  if (start < 0) return null;
+  final tokens = _resolve(schema, message.substring(start + 1), message);
+  if (tokens == null || tokens.isEmpty) return null;
   return tokens
       .map((token) => '/${token.replaceAll('~', '~0').replaceAll('/', '~1')}')
       .join();
+}
+
+/// The tokens of [rest], the part of llamadart's path after [node], or null
+/// when no reading of it names something [node] has.
+List<String>? _resolve(
+  Map<dynamic, dynamic> node,
+  String rest,
+  String message,
+) {
+  if (!rest.startsWith('.') || rest.length == 1) {
+    return [?_refusedKeywordAt(node, message)];
+  }
+  rest = rest.substring(1);
+  final properties = node['properties'];
+  if (rest.startsWith('properties.') && properties is Map) {
+    final after = rest.substring('properties.'.length);
+    final names =
+        properties.keys
+            .cast<String>()
+            .where(
+              (name) =>
+                  after.startsWith(name) &&
+                  _pathEnds(after.substring(name.length)),
+            )
+            .toList()
+          ..sort((a, b) => b.length.compareTo(a.length));
+    for (final name in names) {
+      final child = properties[name];
+      if (child is! Map) continue;
+      final tail = _resolve(child, after.substring(name.length), message);
+      if (tail != null) return ['properties', name, ...tail];
+    }
+  }
+  final items = node['items'];
+  if (rest.startsWith('items') &&
+      _pathEnds(rest.substring('items'.length)) &&
+      items is Map) {
+    final tail = _resolve(items, rest.substring('items'.length), message);
+    if (tail != null) return ['items', ...tail];
+  }
+  final keyword = RegExp(r'^[A-Za-z]+').firstMatch(rest)?.group(0);
+  if (keyword != null &&
+      node.containsKey(keyword) &&
+      _pathEnds(rest.substring(keyword.length))) {
+    return [keyword];
+  }
+  return null;
+}
+
+/// Whether a path segment ends where [text] starts.
+bool _pathEnds(String text) =>
+    text.isEmpty || !RegExp(r'^[A-Za-z0-9_]').hasMatch(text);
+
+/// The keyword llamadart refused on a subschema it named as a whole.
+String? _refusedKeywordAt(Map<dynamic, dynamic> node, String message) {
+  final candidates = message.contains('string length keyword')
+      ? const ['minLength', 'maxLength', 'pattern', 'format']
+      : message.contains('array keyword')
+      ? const ['items', 'minItems', 'maxItems']
+      : message.contains('object keyword')
+      ? const ['properties', 'required', 'additionalProperties']
+      : const ['minimum', 'maximum'];
+  return candidates.where(node.containsKey).firstOrNull;
 }

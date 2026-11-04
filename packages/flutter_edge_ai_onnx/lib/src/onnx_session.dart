@@ -184,6 +184,10 @@ class OnnxSession extends InferenceModelSession {
   /// [stopGeneration] or a cancelled subscription stopped,
   /// [TurnEnd.stopped]; otherwise the worker's end-of-sequence, output or
   /// context limit. A failed turn's error is on the text.
+  ///
+  /// The turn is sent when this is called, as core's chat and structured
+  /// session expect; listen to [EngineTurn.text] right away. A text never
+  /// listened to cannot stop the turn, which then decodes to its end.
   @override
   EngineTurn startTurn() {
     _assertNotClosed();

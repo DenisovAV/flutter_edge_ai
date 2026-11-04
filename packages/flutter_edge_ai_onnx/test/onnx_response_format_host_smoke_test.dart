@@ -182,14 +182,68 @@ void main() {
       );
       await session.close();
 
-      // The same, then a turn with room: on a fresh generator, guided again.
-      final roomy = await model.openSession(
-        topK: 1,
-        maxOutputTokens: 120,
-        responseFormat: _poem,
+      // One generator, turn by turn, with per-turn caps: why the session
+      // starts a fresh generator after a cut turn. ORT-GenAI resets the
+      // grammar only when the generator is done, so the next prompt is
+      // committed into the half-parsed value.
+      final guidance = genAiGuidanceSchema(_poem as JsonSchemaResponseFormat);
+      Future<(String, TurnEnd, Object?)> turn({
+        required bool fresh,
+        required int cap,
+      }) async {
+        final started = startGenAiTurn(
+          client,
+          GenAiTurn(
+            userContent: _ask,
+            sessionId: 998,
+            isFirstTurn: fresh,
+            maxOutputTokens: cap,
+            searchOptions: const {'do_sample': false},
+          ),
+          guidance: guidance,
+        );
+        final text = StringBuffer();
+        Object? error;
+        try {
+          await started.text.forEach(text.write);
+        } catch (e) {
+          error = e;
+        }
+        final end = await started.end!;
+        // ignore: avoid_print
+        print(
+          '[format smoke] fresh=$fresh cap=$cap -> $end '
+          '${jsonEncode(text.toString())}${error == null ? '' : ' error: $error'}',
+        );
+        return (text.toString(), end, error);
+      }
+
+      expect((await turn(fresh: true, cap: 6)).$2, TurnEnd.outputLimit);
+      // The premise: the same generator again does not give a value.
+      final (reused, reusedEnd, reusedError) = await turn(
+        fresh: false,
+        cap: 120,
       );
-      expect(jsonDecode(await _reply(roomy, _ask)), isA<Map>());
-      await roomy.close();
+      Object? decoded;
+      try {
+        decoded = jsonDecode(reused.trim());
+      } on FormatException {
+        decoded = null;
+      }
+      expect(
+        reusedError != null ||
+            decoded is! Map ||
+            reusedEnd != TurnEnd.endOfSequence,
+        isTrue,
+        reason:
+            'a reused generator after a cut gave a whole value: '
+            'the fresh-generator rule may no longer be needed',
+      );
+      // What the session does instead: a fresh generator, guided again.
+      final (again, againEnd, _) = await turn(fresh: true, cap: 120);
+      expect(againEnd, TurnEnd.endOfSequence);
+      expect(jsonDecode(again), isA<Map>());
+      await client.resetSession(sessionId: 998);
     },
     skip: available ? false : 'needs ORT-GenAI libs and a model',
     timeout: const Timeout(Duration(minutes: 10)),

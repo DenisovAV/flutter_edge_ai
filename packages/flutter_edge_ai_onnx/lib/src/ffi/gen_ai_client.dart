@@ -1342,10 +1342,12 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
           'OgaTokenizerEncode',
         );
         promptTokens = oga.OgaSequencesGetSequenceCount(sequences, 0);
-        // Checked here, not left to AppendTokenSequences' own throw, so the
-        // turn can say it ended on the context window.
+        // Checked here, not left to ORT-GenAI's own throws, so the turn can
+        // say it ended on the context window. A prompt that fills it exactly
+        // is full too: AppendTokenSequences takes it, then the first
+        // GenerateNextToken throws at max_length.
         final used = oga.OgaGenerator_GetSequenceCount(generator, 0);
-        if (used + promptTokens > _init.contextWindow) {
+        if (used + promptTokens >= _init.contextWindow) {
           throw GenAiContextFullException(
             'ORT-GenAI prompt of $promptTokens tokens does not fit the '
             'context window: $used of ${_init.contextWindow} tokens '

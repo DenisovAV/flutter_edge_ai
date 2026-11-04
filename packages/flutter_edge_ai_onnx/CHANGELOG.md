@@ -1,3 +1,7 @@
+## Unreleased
+- `openSession`/`openChat(responseFormat:)` enforced by ORT-GenAI guidance on macOS, Linux and Windows (#195).
+- Cancelling a paused stream no longer stops the session's next turn (#703).
+
 ## 0.8.0
 - Native `openSession` / `openChat` open independent sessions, capped at 2 on phones; **breaking** for `GenAiClient` implementers (#703).
 - Bundle ORT-GenAI 0.17.0 (was 0.14.0) on every host, with its telemetry switched off (#704).

@@ -133,6 +133,19 @@ on (Phi-3.5-mini int4 on Linux CPU: 771 MiB at 1024, 1539 at 2048, 3077 at
 at 512, 1024 and 2048 (it did at 4096), so there budget the peak, not the
 count of open sessions. Opening more than `maxConcurrentSessions` throws a
 `StateError`; unset, that is **2 on Android and iOS and unlimited on desktop**.
+
+**Response formats.** `openSession` / `openChat(responseFormat:)` are enforced
+by ORT-GenAI's guidance (llguidance): the session's JSON schema is set on its
+own generator, so every reply is a value of the format, and core checks each
+one. The whole `ResponseFormat.dialect` is enforced on macOS arm64, Linux x64,
+Windows x64 and Windows ARM64, the hosts whose ORT-GenAI 0.17.0 build includes
+guidance, for a model directory with a `tokenizer.json` (guidance reads it).
+Android (this repository's ORT-GenAI build), iOS (Microsoft's) and the web
+refuse a format with `ResponseFormatUnsupportedException`; read
+`model.structuredOutputSupport` first. A guided turn that does not end on its
+own (`maxOutputTokens`, a stop, a full context) leaves the grammar mid-value,
+so the session's next turn starts on a fresh generator, without the earlier
+turns, as after any stop.
 An unset cap cannot mean "unlimited" on a phone: pass a larger
 `maxConcurrentSessions` to allow more. The cap does not count the
 `createSession` session. Sampling

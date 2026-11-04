@@ -35,8 +35,13 @@ abstract interface class GenAiWorkerEngine {
   /// return as soon as [stopRequested] reports true: that yield is how a
   /// `StopSignal`, `ResetSessionRequest` or `Close` sent mid-turn reaches the
   /// worker.
-  Future<GenAiGenerationStats> generate(
+  ///
+  /// [guidance] is the session's JSON schema, set on a generator the turn
+  /// creates; null = unguided. A prompt that does not fit the context window
+  /// throws [GenAiContextFullException].
+  Future<GenAiTurnResult> generate(
     GenAiTurn turn, {
+    String? guidance,
     required void Function(String piece) emit,
     required bool Function() stopRequested,
   });
@@ -51,6 +56,28 @@ abstract interface class GenAiWorkerEngine {
   /// Frees every native handle. Called exactly once, also after a failed
   /// [load], so it must cope with a partial one.
   void close();
+}
+
+/// What [GenAiWorkerEngine.generate] returns: the turn's counters and how it
+/// ended — [TurnEnd.endOfSequence], [TurnEnd.outputLimit],
+/// [TurnEnd.contextLimit], or [TurnEnd.stopped] when it returned because
+/// `stopRequested` reported true. The loop turns a stop that a close caused
+/// into [TurnEnd.closed].
+final class GenAiTurnResult {
+  const GenAiTurnResult(this.stats, this.end);
+  final GenAiGenerationStats stats;
+  final TurnEnd end;
+}
+
+/// Thrown by [GenAiWorkerEngine.generate] when the prompt does not fit what is
+/// left of the context window; the turn's error then reports
+/// [TurnEnd.contextLimit].
+final class GenAiContextFullException implements Exception {
+  const GenAiContextFullException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 /// The error a queued request gets when a [Close] arrived before it started.
@@ -101,24 +128,34 @@ Future<void> serveGenAiWorker(WorkerInit init, GenAiWorkerEngine engine) async {
   // stop filed. A stop names its session, so one session's stop never cuts
   // off the turn of another.
   final stopped = <int?>{};
+  // Turns stopped by request id: a cancelled subscription names its own turn,
+  // so a stop that arrives after that turn ended stops nothing.
+  final stoppedRequests = <int>{};
   var hasRunning = false;
   int? runningSession;
+  int? runningRequest;
   Completer<void>? wake;
 
   bool isLive(int? sessionId) =>
       (hasRunning && runningSession == sessionId) ||
       queued.any((r) => r is GenerateRequest && r.turn.sessionId == sessionId);
 
+  bool isLiveRequest(int requestId) =>
+      runningRequest == requestId ||
+      queued.any((r) => r is GenerateRequest && r.id == requestId);
+
   commandPort.listen((msg) {
     switch (msg) {
       case GenerateRequest():
         // A turn starts un-stopped, and any StopSignal for its session filed
-        // from here on — even before the turn has started — stops it. A stop
-        // names a session, not a turn, so the worker cannot tell a late stop
-        // for the session's previous turn from one meant for this one: one
-        // filed before this request is dropped, one filed after it applies.
-        // The client sends a turn only after the previous one finished, so
-        // this never un-stops a running generation.
+        // from here on — even before the turn has started — stops it. A
+        // session stop (`stopGeneration`) names a session, not a turn, so the
+        // worker cannot tell a late one for the session's previous turn from
+        // one meant for this one: one filed before this request is dropped,
+        // one filed after it applies. A cancelled subscription's stop names
+        // its request instead (StopSignal.request), so it never reaches a
+        // later turn. The client sends a turn only after the previous one
+        // finished, so this never un-stops a running generation.
         stopped.remove(msg.turn.sessionId);
         queued.add(msg);
       case CountTokensRequest():
@@ -129,6 +166,8 @@ Future<void> serveGenAiWorker(WorkerInit init, GenAiWorkerEngine engine) async {
         // decode. Another session's turn is left alone.
         if (isLive(msg.sessionId)) stopped.add(msg.sessionId);
         queued.add(msg);
+      case StopSignal(:final requestId?):
+        if (isLiveRequest(requestId)) stoppedRequests.add(requestId);
       case StopSignal(:final sessionId):
         if (isLive(sessionId)) stopped.add(sessionId);
       case Close():
@@ -163,21 +202,29 @@ Future<void> serveGenAiWorker(WorkerInit init, GenAiWorkerEngine engine) async {
       final sessionId = request is GenerateRequest
           ? request.turn.sessionId
           : null;
+      final requestId = request is GenerateRequest ? request.id : null;
       if (request is GenerateRequest) {
         hasRunning = true;
         runningSession = sessionId;
+        runningRequest = requestId;
       }
       try {
         await _serve(
           request,
           engine,
           init.replyTo,
-          () => closeRequested || stopped.contains(sessionId),
+          () =>
+              closeRequested ||
+              stopped.contains(sessionId) ||
+              stoppedRequests.contains(requestId),
+          () => closeRequested,
         );
       } finally {
         if (request is GenerateRequest) {
           hasRunning = false;
+          runningRequest = null;
           stopped.remove(sessionId);
+          stoppedRequests.remove(requestId);
         }
       }
     }
@@ -201,24 +248,28 @@ Future<void> _serve(
   GenAiWorkerEngine engine,
   SendPort replyTo,
   bool Function() stopRequested,
+  bool Function() closeRequested,
 ) async {
   switch (request) {
-    case GenerateRequest(:final id, :final turn):
+    case GenerateRequest(:final id, :final turn, :final guidance):
       try {
-        final stats = await engine.generate(
+        final GenAiTurnResult(:stats, :end) = await engine.generate(
           turn,
+          guidance: guidance,
           emit: (piece) => replyTo.send(Chunk(id, piece)),
           stopRequested: stopRequested,
         );
         replyTo.send(
           GenerateDone(
             id,
-            stopRequested(),
+            end == TurnEnd.stopped && closeRequested() ? TurnEnd.closed : end,
             stats.promptTokens,
             stats.generatedTokens,
             stats.decodeMs,
           ),
         );
+      } on GenAiContextFullException catch (e) {
+        replyTo.send(GenerateError(id, '$e', end: TurnEnd.contextLimit));
       } catch (e, st) {
         edgeAiLog('[GenAiFfiClient/worker] generate failed: $e\n$st');
         replyTo.send(GenerateError(id, '$e'));

@@ -18,7 +18,9 @@
 // worker blocked for good.
 //
 // Engine configuration — the `modelDir` passed to `GenAiFfiClient.load` —
-// is JSON when the test needs it (anything else means the defaults):
+// is JSON when the test needs it, or a directory whose `fake_config.json`
+// holds that JSON (a directory the test can also put a `tokenizer.json` in);
+// anything else means the defaults:
 //   {"log": "/tmp/x.log", "failLoad": true, "throwOnClose": true}
 // - `log`: the engine appends one line per call (`load`, `generate`,
 //   `count`, `reset`, `close`, `tail` for a turn's last call, and how an
@@ -70,11 +72,19 @@
 // - `throw`: when true, the turn throws — a native call that failed.
 // - `throwUnprintable`: the turn throws an error whose `toString` throws, so
 //   serving it fails and the serving loop itself throws.
+// - `end`: the name of the [TurnEnd] a turn that ran its chunks reports
+//   (default `endOfSequence`); a turn a stop cut short reports `stopped`.
+// - `contextFull`: the turn throws [GenAiContextFullException] before its
+//   first chunk — a prompt that does not fit.
+// A guided turn whose session has no "generator" yet (its first turn, or the
+// first after a reset) logs `guidance:<session>:<schema>`: the schema the
+// generator would be created with.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:flutter_edge_ai/engine.dart' show TurnEnd;
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_client.dart';
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_protocol.dart';
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_worker.dart';
@@ -100,7 +110,13 @@ class _UnprintableError {
 }
 
 class _ScriptedEngine implements GenAiWorkerEngine {
-  _ScriptedEngine(String modelDir) : _config = _objectOrNull(modelDir) ?? {};
+  _ScriptedEngine(String modelDir) : _config = _configOf(modelDir);
+
+  static Map<String, dynamic> _configOf(String modelDir) {
+    final file = File('$modelDir/fake_config.json');
+    if (file.existsSync()) return _objectOrNull(file.readAsStringSync()) ?? {};
+    return _objectOrNull(modelDir) ?? {};
+  }
 
   final Map<String, dynamic> _config;
 
@@ -146,13 +162,17 @@ class _ScriptedEngine implements GenAiWorkerEngine {
   }
 
   @override
-  Future<GenAiGenerationStats> generate(
+  Future<GenAiTurnResult> generate(
     GenAiTurn turn, {
+    String? guidance,
     required void Function(String piece) emit,
     required bool Function() stopRequested,
   }) async {
     _log(turn.sessionId == null ? 'generate' : 'generate:${turn.sessionId}');
     if (turn.isFirstTurn) _turns.remove(turn.sessionId);
+    if (guidance != null && !_turns.containsKey(turn.sessionId)) {
+      _log('guidance:${turn.sessionId}:$guidance');
+    }
     final turnNumber = _turns[turn.sessionId] =
         (_turns[turn.sessionId] ?? 0) + 1;
     final script = _objectOrNull(turn.userContent);
@@ -163,10 +183,9 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       Isolate.current.kill(priority: Isolate.immediate);
       // Unreachable in practice — kill() terminates before this returns —
       // but the function must still return on every path.
-      return const GenAiGenerationStats(
-        promptTokens: 0,
-        generatedTokens: 0,
-        decodeMs: 0,
+      return const GenAiTurnResult(
+        GenAiGenerationStats(promptTokens: 0, generatedTokens: 0, decodeMs: 0),
+        TurnEnd.closed,
       );
     }
     final chunks = script == null
@@ -179,6 +198,9 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       throw StateError('fake generation failed');
     }
     if (script?['throwUnprintable'] == true) throw _UnprintableError();
+    if (script?['contextFull'] == true) {
+      throw const GenAiContextFullException('fake prompt does not fit');
+    }
     if (script?['crash'] == true) {
       scheduleMicrotask(() => throw StateError('fake native crash'));
     }
@@ -195,6 +217,7 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       generated++;
     }
 
+    var stopped = false;
     for (final chunk in chunks) {
       if (delayMs > 0) {
         await Future<void>.delayed(Duration(milliseconds: delayMs));
@@ -203,7 +226,10 @@ class _ScriptedEngine implements GenAiWorkerEngine {
         // interleave, same shape as the real engine's `await Future(() {})`.
         await Future<void>(() {});
       }
-      if (stopRequested()) break;
+      if (stopRequested()) {
+        stopped = true;
+        break;
+      }
       emit(chunk);
       generated++;
     }
@@ -213,7 +239,8 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       while (!stopRequested() && DateTime.now().isBefore(deadline)) {
         await Future<void>(() {});
       }
-      _log(stopRequested() ? 'stopped' : 'deadline');
+      stopped = stopRequested();
+      _log(stopped ? 'stopped' : 'deadline');
     }
 
     if (script?['gateAtTail'] == true) {
@@ -221,10 +248,18 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       _blockUntilReleased();
     }
 
-    return GenAiGenerationStats(
-      promptTokens: chunks.length,
-      generatedTokens: generated,
-      decodeMs: generated,
+    final scriptedEnd = script?['end'];
+    return GenAiTurnResult(
+      GenAiGenerationStats(
+        promptTokens: chunks.length,
+        generatedTokens: generated,
+        decodeMs: generated,
+      ),
+      stopped
+          ? TurnEnd.stopped
+          : scriptedEnd is String
+          ? TurnEnd.values.byName(scriptedEnd)
+          : TurnEnd.endOfSequence,
     );
   }
 

@@ -114,7 +114,16 @@ conversation, the model's replies included, with every turn. Each answer
 re-reads the history, so its time grows with the chat, and `maxNumImages`
 counts every image of the conversation. A turn that would exceed it fails with
 an error naming `maxNumImages`; nothing is dropped. Each `createSession` or
-`createChat` starts a new conversation.
+`createChat` starts a new conversation and closes the previous one.
+
+`openSession` and `openChat` work on Web too. Each session keeps its own
+conversation; they share the one loaded model and take turns on it, so a
+session's turn waits for the other sessions' turns for as long as they run,
+unless they are stopped (a wait past 30 s prints a warning once). They also
+share its sampling and LoRA: those of the session that loaded the model apply
+to every session, and a later session that asks for others gets a one-time
+warning. A stop, a close or a cancelled response stream ends only that
+session's turn.
 
 ## Backends
 

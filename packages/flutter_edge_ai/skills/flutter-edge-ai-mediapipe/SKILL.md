@@ -36,7 +36,7 @@ await FlutterEdgeAi.installModel(
 final InferenceModel model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 ```
 
-Sessions, chats, streaming and the common traps work as in the flutter-edge-ai-inference skill — except that on web the `openSession` / `openChat` sessions (its concurrent-conversation pattern) share the one loaded `LlmInference`: their turns run one at a time, each resends that session's whole conversation, and the sampling is the one the first session loaded the model with.
+Sessions, chats, streaming and the common traps work as in the flutter-edge-ai-inference skill — except that on web the `openSession` / `openChat` sessions (its concurrent-conversation pattern) share the one loaded `LlmInference`: their turns run one at a time (a turn waits for the other sessions' turns as long as they run, unless they are stopped), each resends that session's whole conversation, and the sampling and LoRA are the ones the first session loaded the model with (a later session that asks for others gets a one-time printed warning).
 
 ## iOS
 

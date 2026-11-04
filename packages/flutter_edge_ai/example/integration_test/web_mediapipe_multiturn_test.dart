@@ -8,8 +8,9 @@
 /// reply out cannot answer it.
 ///
 /// One test per web `.task` of the example catalog, greedy, with the exact
-/// replies of both turns in the output. Two `openChat` chats on one model
-/// keep a history each, and a stop in one leaves the other's reply whole.
+/// replies of both turns in the output. Two `openChat` chats on one model,
+/// with turns in flight at once, keep a history each, and a stop in one while
+/// the other decodes leaves the other's reply whole.
 ///
 /// Run: chromedriver --port=4444 & ; from example/
 ///   flutter drive --driver=test_driver/web_mediapipe_multiturn_driver.dart \
@@ -114,6 +115,16 @@ Future<InferenceModel> _load(_WebTask task) async {
     fileType: ModelFileType.task,
   ).fromNetwork(task.url!).install();
   return FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+}
+
+/// A streamed turn, as an app shows one; any error fails the test.
+Future<String> _askStreaming(InferenceChat chat, String question) async {
+  await chat.addQueryChunk(Message(text: question, isUser: true));
+  final text = StringBuffer();
+  await for (final r in chat.generateChatResponseAsync()) {
+    if (r is TextResponse) text.write(r.token);
+  }
+  return text.toString();
 }
 
 Future<String> _ask(InferenceChat chat, String question) async {
@@ -255,8 +266,8 @@ void main() {
 
   for (final task in _models) {
     testWidgets(
-      '${task.name}: two openChat chats, interleaved, each answer from their '
-      'own history',
+      '${task.name}: two openChat chats with turns in flight at once each '
+      'answer from their own history',
       skip: task.url == null || !task.name.contains(_only),
       timeout: const Timeout(Duration(minutes: 20)),
       (tester) async {
@@ -273,11 +284,20 @@ void main() {
         );
         try {
           expect(model.sessions, hasLength(2));
-          final a1 = await _ask(a, 'Say the number 4821 and nothing else.');
-          final b1 = await _ask(b, 'Say the number 7305 and nothing else.');
+          // No await between the two turns: both are in flight, so the
+          // second waits in the model's lane, and each chat counts its reply
+          // (sizeInTokens) right after its stream, while the other's runs.
+          final first = await Future.wait([
+            _askStreaming(a, 'Say the number 4821 and nothing else.'),
+            _askStreaming(b, 'Say the number 7305 and nothing else.'),
+          ]);
           // Each second turn is answerable only from its own chat's first.
-          final a2 = await _ask(a, _number2);
-          final b2 = await _ask(b, _number2);
+          final second = await Future.wait([
+            _askStreaming(a, _number2),
+            _askStreaming(b, _number2),
+          ]);
+          final [a1, b1] = first;
+          final [a2, b2] = second;
           // ignore: avoid_print
           print(
             '[${task.name}] openChat: a ${_quoted(a1)} -> ${_quoted(a2)}, '
@@ -304,8 +324,8 @@ void main() {
 
   for (final task in _models) {
     testWidgets(
-      '${task.name}: a stop in one openChat chat leaves the other\'s reply '
-      'whole',
+      '${task.name}: a stop in one openChat chat while the other runs leaves '
+      'the other\'s reply whole',
       skip: task.url == null || !task.name.contains(_only),
       timeout: const Timeout(Duration(minutes: 20)),
       (tester) async {
@@ -320,33 +340,63 @@ void main() {
           temperature: 0,
           topK: 1,
         );
+        final errors = <Object>[];
         try {
           await a.addQueryChunk(
             const Message(
-              text: 'Count from 1 to 30, separated by commas.',
+              text: 'Count from 1 to 60, separated by commas.',
               isUser: true,
             ),
           );
           final aText = StringBuffer();
+          final aStarted = Completer<void>();
           final aDone = Completer<void>();
           a.generateChatResponseAsync().listen(
             (r) {
               if (r is TextResponse) aText.write(r.token);
+              if (aText.isNotEmpty && !aStarted.isCompleted) {
+                aStarted.complete();
+              }
             },
-            onError: aDone.completeError,
-            onDone: aDone.complete,
+            onError: (Object e) {
+              errors.add(e);
+              if (!aDone.isCompleted) aDone.complete();
+            },
+            onDone: () {
+              if (!aDone.isCompleted) aDone.complete();
+            },
           );
-          // b's turn waits for a's call; it is stopped before it runs.
+          await aStarted.future.timeout(const Duration(minutes: 5));
+
+          // a is decoding; b's turn queues behind it and is stopped there.
           await b.addQueryChunk(
             const Message(text: 'Say only the word blue.', isUser: true),
           );
           final bText = StringBuffer();
-          final bSub = b.generateChatResponseAsync().listen((r) {
-            if (r is TextResponse) bText.write(r.token);
-          }, onError: (_) {});
+          final bDone = Completer<void>();
+          b.generateChatResponseAsync().listen(
+            (r) {
+              if (r is TextResponse) bText.write(r.token);
+            },
+            onError: (Object e) {
+              errors.add(e);
+              if (!bDone.isCompleted) bDone.complete();
+            },
+            onDone: () {
+              if (!bDone.isCompleted) bDone.complete();
+            },
+          );
           await Future<void>.delayed(const Duration(milliseconds: 200));
+          expect(
+            aDone.isCompleted,
+            isFalse,
+            reason:
+                'a must still be running when b stops, or nothing is '
+                'tested',
+          );
           await b.stopGeneration();
-          await bSub.cancel();
+          await bDone.future.timeout(const Duration(seconds: 10));
+          expect(bText.toString(), isEmpty, reason: 'b never ran');
 
           await aDone.future.timeout(const Duration(minutes: 5));
           // ignore: avoid_print
@@ -358,13 +408,14 @@ void main() {
             'a': aText.toString(),
             'b': bText.toString(),
           };
+          expect(errors, isEmpty);
           expect(
             aText.toString(),
-            contains('30'),
+            contains('60'),
             reason: "b's stop cut a's reply short",
           );
 
-          final after = await _ask(b, 'Say only the word done.');
+          final after = await _askStreaming(b, 'Say only the word done.');
           // ignore: avoid_print
           print('[${task.name}] b after stop: ${_quoted(after)}');
           expect(after.trim(), isNotEmpty);

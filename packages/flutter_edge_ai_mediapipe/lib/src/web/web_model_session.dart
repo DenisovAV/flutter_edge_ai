@@ -19,9 +19,9 @@ abstract interface class WebLlmBackend {
   /// The number of tokens in [text].
   Future<int> sizeInTokens(String text);
 
-  /// Runs [prompt] as [call] and returns the reply; a call stopped before it
-  /// started returns an empty one.
-  Future<String> generate(List<PromptPart> prompt, WebLlmCall call);
+  /// Runs [prompt] as [call] and returns the reply, or null when [call] was
+  /// cancelled before it started.
+  Future<String?> generate(List<PromptPart> prompt, WebLlmCall call);
 
   /// Runs [prompt] as [call] and streams the reply, in pieces that add up to
   /// it. A failure is an error on the stream.
@@ -34,10 +34,12 @@ abstract interface class WebLlmBackend {
 
 /// One generation: what it has produced so far, and whether it is over.
 class _Run {
+  _Run(String owner) : call = WebLlmCall(owner: owner);
+
   final StringBuffer text = StringBuffer();
 
   /// This generation in the backend, which a stop cancels.
-  final WebLlmCall call = WebLlmCall();
+  final WebLlmCall call;
 
   /// Whether the session is through with it: completed, failed, stopped or
   /// closed. What the backend sends after that is not recorded.
@@ -171,8 +173,12 @@ class WebModelSession extends InferenceModelSession {
   /// settle, and every later turn would wait as long.
   final Duration previousCallWait;
 
+  /// Names this session in the backend's warnings.
+  final String _name = 'session ${++_sessionCount}';
+  static int _sessionCount = 0;
+
   _Run _register() {
-    final run = _Run();
+    final run = _Run(_name);
     _runs.add(run);
     return run;
   }
@@ -370,6 +376,13 @@ class WebModelSession extends InferenceModelSession {
     }
     try {
       final response = await _backend.generate(prompt, run.call);
+      if (response == null) {
+        // Cancelled before it ran, while it waited for another session's
+        // call: a close is an error, as for a call closed while it waits for
+        // this session's own; a stop ends with nothing generated.
+        _requireOpen();
+        return '';
+      }
       _complete(run, response);
       return response;
     } catch (e, stackTrace) {
@@ -515,9 +528,12 @@ class WebModelSession extends InferenceModelSession {
   /// [stopGeneration] was called during the current turn.
   bool _stopAsked = false;
 
-  /// How the turn ended, for core's chat: a stop is [TurnEnd.stopped], a
-  /// close the consumer did not ask for [TurnEnd.closed], so the chat keeps
-  /// the partial reply (decision H). MediaPipe has no output cap here.
+  /// How the turn ended, for core's chat: a stop (or a cancelled
+  /// subscription) is [TurnEnd.stopped], a close the consumer did not ask for
+  /// [TurnEnd.closed], so the chat keeps the partial reply (decision H).
+  /// Every other end is reported as [TurnEnd.endOfSequence], a placeholder:
+  /// MediaPipe cannot say whether the context filled, so this engine keeps
+  /// no structured output support (design section 3).
   @override
   EngineTurn startTurn() {
     _stopAsked = false;

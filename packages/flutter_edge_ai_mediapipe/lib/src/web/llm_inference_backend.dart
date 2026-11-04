@@ -16,23 +16,24 @@ class LlmInferenceBackend implements WebLlmBackend {
   /// The calls of every session of the model, one at a time.
   final WebLlmLane _lane = WebLlmLane();
 
+  /// A call of the lane too: MediaPipe refuses it while a generation runs,
+  /// and core's chat counts a reply right after its stream, when another
+  /// session's call may already run.
   @override
-  Future<int> sizeInTokens(String text) async =>
-      _llm.sizeInTokens(text.toJS).toDartInt;
+  Future<int> sizeInTokens(String text) async => (await _lane.run(
+    WebLlmCall(owner: 'sizeInTokens'),
+    () async => _llm.sizeInTokens(text.toJS).toDartInt,
+  ))!;
 
   @override
-  Future<String> generate(List<PromptPart> prompt, WebLlmCall call) async {
-    final reply = await _lane.run(call, () async {
-      final jsPrompt = _jsPrompt(prompt);
-      final reply = jsPrompt.isA<JSString>()
-          ? _llm.generateResponse(jsPrompt as JSString, null)
-          : _llm.generateResponseMultimodal(jsPrompt, null);
-      return (await reply.toDart).toDart;
-    });
-    // Stopped while it waited: it never started and ends with nothing, as a
-    // stream stopped there does.
-    return reply ?? '';
-  }
+  Future<String?> generate(List<PromptPart> prompt, WebLlmCall call) =>
+      _lane.run(call, () async {
+        final jsPrompt = _jsPrompt(prompt);
+        final reply = jsPrompt.isA<JSString>()
+            ? _llm.generateResponse(jsPrompt as JSString, null)
+            : _llm.generateResponseMultimodal(jsPrompt, null);
+        return (await reply.toDart).toDart;
+      });
 
   @override
   Stream<String> generateStream(List<PromptPart> prompt, WebLlmCall call) {

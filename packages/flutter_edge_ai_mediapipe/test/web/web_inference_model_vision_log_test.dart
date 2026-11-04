@@ -144,7 +144,7 @@ class _NoBackend implements WebLlmBackend {
   @override
   Future<int> sizeInTokens(String text) => throw UnimplementedError();
   @override
-  Future<String> generate(List<PromptPart> prompt, WebLlmCall call) =>
+  Future<String?> generate(List<PromptPart> prompt, WebLlmCall call) =>
       throw UnimplementedError();
   @override
   Stream<String> generateStream(List<PromptPart> prompt, WebLlmCall call) =>

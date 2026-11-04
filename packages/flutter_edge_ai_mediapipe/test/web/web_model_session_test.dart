@@ -34,7 +34,7 @@ class FakeBackend implements WebLlmBackend {
   Future<int> sizeInTokens(String text) async => text.length;
 
   @override
-  Future<String> generate(List<PromptPart> prompt, WebLlmCall call) async {
+  Future<String?> generate(List<PromptPart> prompt, WebLlmCall call) async {
     prompts.add(prompt);
     calls.add(call);
     if (failWith != null) throw failWith!;
@@ -83,12 +83,11 @@ class SharedBackend implements WebLlmBackend {
   Future<int> sizeInTokens(String text) async => text.length;
 
   @override
-  Future<String> generate(List<PromptPart> prompt, WebLlmCall call) async =>
-      await lane.run(call, () async {
+  Future<String?> generate(List<PromptPart> prompt, WebLlmCall call) async =>
+      lane.run(call, () async {
         started.add(prompt);
         return 'R${started.length}';
-      }) ??
-      '';
+      });
 
   @override
   Stream<String> generateStream(List<PromptPart> prompt, WebLlmCall call) {

@@ -22,6 +22,23 @@ Future<void> _settle() =>
 
 String _prompt(JSAny prompt) => (prompt as JSString).toDart;
 
+/// Runs [body] and returns what it printed.
+Future<List<String>> _printed(Future<void> Function() body) async {
+  final lines = <String>[];
+  await runZoned(
+    body,
+    zoneSpecification: ZoneSpecification(
+      print: (self, parent, zone, line) => lines.add(line),
+    ),
+  );
+  return lines;
+}
+
+List<String> _warnings(List<String> lines) => [
+  for (final line in lines)
+    if (line.contains('every session of this web model shares')) line,
+];
+
 void main() {
   test(
     'open sessions keep a conversation each over one LlmInference',
@@ -189,6 +206,173 @@ void main() {
     expect(passed.modelType, ModelType.qwen);
     await own.close();
     await passed.close();
+    await model.close();
+  });
+
+  test('sizeInTokens waits for the calls in MediaPipe, which refuses it '
+      'while one runs', () async {
+    final fake = heldMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final a = await model.openSession();
+    final b = await model.openSession();
+    await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+    await b.addQueryChunk(const Message(text: 'QB', isUser: true));
+    // Two calls in flight, and a count behind them.
+    final aReply = a.getResponse();
+    final bReply = b.getResponse();
+    final size = a.sizeInTokens('four');
+    await _settle();
+    expect(fake.calls, hasLength(1));
+
+    fake.calls.single.complete('A');
+    await _settle();
+    expect(fake.calls, hasLength(2));
+    fake.calls.last.complete('B');
+    expect(await size, 4);
+    expect(await aReply, 'A');
+    expect(await bReply, 'B');
+    await model.close();
+  });
+
+  test('two chats that stream at once both end without a busy '
+      'error', () async {
+    final fake = busyMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final a = await model.openChat();
+    final b = await model.openChat();
+    await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+    await b.addQueryChunk(const Message(text: 'QB', isUser: true));
+    // No await between the two: both turns are in flight together, and each
+    // chat counts its reply when its stream ends.
+    final replies = await Future.wait([
+      a.generateChatResponseAsync().toList(),
+      b.generateChatResponseAsync().toList(),
+    ]);
+    expect(fake.errors, isEmpty);
+    for (final reply in replies) {
+      expect(reply.whereType<TextResponse>().map((r) => r.token).join(), 'ok');
+    }
+    expect(fake.prompts, hasLength(2));
+    await a.close();
+    await b.close();
+    await model.close();
+  });
+
+  test('a later session that asks for another sampling is told once', () async {
+    fakeMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final lines = await _printed(() async {
+      await model.openSession();
+      // Unset on both sides: the family defaults again, nothing to say.
+      await model.openSession();
+      await model.openSession(temperature: 0, topK: 1);
+      await model.openSession(temperature: 0.3);
+    });
+    final warnings = _warnings(lines);
+    expect(warnings, hasLength(1), reason: lines.join('\n'));
+    // Greedy reaches MediaPipe as topK 1 (temperature 0 is sent as 1).
+    expect(warnings.single, contains('topK 1,'));
+    expect(warnings.single, contains('loaded with temperature'));
+    expect(warnings.single, contains('topK 40'));
+    await model.close();
+  });
+
+  test('a later session that asks for another LoRA is told', () async {
+    fakeMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final lines = await _printed(() async {
+      await model.openSession();
+      await model.openSession(loraPath: 'blob:lora');
+    });
+    final warnings = _warnings(lines);
+    expect(warnings, hasLength(1), reason: lines.join('\n'));
+    expect(warnings.single, contains('LoRA blob:lora'));
+    expect(warnings.single, contains('no LoRA'));
+    await model.close();
+  });
+
+  test('a closed legacy session leaves sessions; a replaced one does not '
+      'take the new one with it', () async {
+    fakeMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final first = await model.createSession();
+    final second = await model.createSession();
+    expect(model.sessions, [second], reason: 'first was closed by second');
+    await first.close();
+    expect(model.sessions, [second]);
+    await second.close();
+    expect(model.sessions, isEmpty);
+    await model.close();
+  });
+
+  test('openChat takes the model\'s image and audio support', () async {
+    fakeMediaPipe();
+    final model = testModel(
+      supportImage: true,
+      supportAudio: true,
+      resolver: BlobResolver(),
+    );
+    final own = await model.openChat();
+    final off = await model.openChat(supportImage: false, supportAudio: false);
+    expect(own.supportImage, isTrue);
+    expect(own.supportAudio, isTrue);
+    expect(off.supportImage, isFalse);
+    expect(off.supportAudio, isFalse);
+    await own.close();
+    await off.close();
+    await model.close();
+  });
+
+  test('a closed model loads no LlmInference for openSession', () async {
+    final fake = fakeMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    await model.close();
+    await expectLater(model.openSession(), throwsStateError);
+    expect(fake.created, isEmpty);
+  });
+
+  test('a failed load frees its place under the cap', () async {
+    final fake = fakeMediaPipe();
+    final model = testModel(
+      supportImage: false,
+      resolver: FlakyResolver(1),
+      maxConcurrentSessions: 1,
+    );
+    await expectLater(model.openSession(), throwsStateError);
+    final session = await model.openSession();
+    expect(model.sessions, [session]);
+    expect(fake.created, hasLength(1));
+    await model.close();
+  });
+
+  test('the legacy session does not count against the cap', () async {
+    fakeMediaPipe();
+    final model = testModel(
+      supportImage: false,
+      resolver: BlobResolver(),
+      maxConcurrentSessions: 1,
+    );
+    final legacy = await model.createSession();
+    final open = await model.openSession();
+    expect(model.sessions, [legacy, open]);
+    await model.close();
+  });
+
+  test('a blocking call closed while it waits for another session\'s call '
+      'throws StateError', () async {
+    final fake = heldMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final a = await model.openSession();
+    final b = await model.openSession();
+    await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+    await b.addQueryChunk(const Message(text: 'QB', isUser: true));
+    final aReply = a.getResponse();
+    final bReply = expectLater(b.getResponse(), throwsStateError);
+    await _settle();
+    await b.close();
+    await bReply;
+    fake.calls.single.complete('A');
+    expect(await aReply, 'A');
     await model.close();
   });
 

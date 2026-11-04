@@ -92,14 +92,14 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     ..._openSessions,
   ];
 
-  /// [openChat]'s unset model type is this model's own, as on every other
-  /// engine. The rest keeps core's defaults, as the web [createChat] does.
+  /// [openChat]'s unset model type, image and audio support are this
+  /// model's own (D8); the rest keeps core's defaults.
   @override
   ResolvedChatRequest resolveChatRequest(ChatRequest request) =>
       ResolvedChatRequest(
         modelType: request.modelType ?? modelType,
-        supportImage: request.supportImage ?? false,
-        supportAudio: request.supportAudio ?? false,
+        supportImage: request.supportImage ?? supportImage,
+        supportAudio: request.supportAudio ?? supportAudio,
         supportsFunctionCalls: request.supportsFunctionCalls ?? false,
         tools: request.tools,
         maxFunctionBufferLength:
@@ -153,7 +153,11 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
       // Closed before this call's turn came: a load now would build a new
       // LlmInference that nothing ever closes.
       _requireOpen();
-      final llm = await _loadModel(sampling, loraPath);
+      final llm = await _loadModel(
+        sampling,
+        loraPath,
+        explicit: temperature != null || topK != null || randomSeed != null,
+      );
       // Closed while it loaded: close() has already released what it had, so
       // a session built now would sit on a model that is gone.
       if (_isClosed) {
@@ -170,11 +174,17 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
         // go of the backend, so a session now would outlive the model.
         _requireOpen();
       }
-      return session = _newSession(
+      late final WebModelSession created;
+      created = _newSession(
         llm,
         systemInstruction: systemInstruction,
-        onClose: onClose,
+        onClose: () {
+          // A closed session leaves [sessions]; a later one is not touched.
+          if (identical(session, created)) session = null;
+          onClose();
+        },
       );
+      return session = created;
     } finally {
       done.complete();
     }
@@ -277,8 +287,9 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
   /// own, and each of its turns sends that whole conversation. The sessions
   /// share the model's `LlmInference`, so their calls run one at a time, in
   /// the order they were made; a stop or a close ends only this session's
-  /// call. The sampling is the model's: the first session that loads it
-  /// sets it, as for [createSession].
+  /// call. The sampling and LoRA are the model's: the first session that
+  /// loads it sets them, as for [createSession], and a later one that asks
+  /// for others is told once (printed).
   @override
   Future<InferenceModelSession> openEngineSession(
     SessionRequest request,
@@ -304,7 +315,14 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     final LlmInference llm;
     _openingSessions++;
     try {
-      llm = await _loadModel(sampling, request.loraPath);
+      llm = await _loadModel(
+        sampling,
+        request.loraPath,
+        explicit:
+            request.temperature != null ||
+            request.topK != null ||
+            request.randomSeed != null,
+      );
     } finally {
       _openingSessions--;
     }
@@ -331,19 +349,78 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
   }
 
   /// Loads the model once; callers that arrive while it loads share the load.
-  /// The sampling of the first session is the one the model keeps, as on every
-  /// engine (LiteRT-LM#2080).
+  /// The sampling and LoRA of the first session are the ones the model keeps:
+  /// MediaPipe sets them on the `LlmInference`, which every session shares. A
+  /// later session that asks for others is told once per model.
   Future<LlmInference> _loadModel(
     ResolvedSampling sampling,
-    String? loraPath,
-  ) async {
-    final pending = _llmFuture ??= _createModel(sampling, loraPath);
+    String? loraPath, {
+    required bool explicit,
+  }) async {
+    var pending = _llmFuture;
+    if (pending == null) {
+      pending = _llmFuture = _createModel(sampling, loraPath);
+      _loadedWith = (
+        sampling: sampling,
+        explicit: explicit,
+        loraPath: loraPath,
+      );
+    } else {
+      _warnIfIgnored(sampling, loraPath, explicit: explicit);
+    }
     try {
       return await pending;
     } catch (_) {
-      if (identical(_llmFuture, pending)) _llmFuture = null;
+      if (identical(_llmFuture, pending)) {
+        _llmFuture = null;
+        _loadedWith = null;
+      }
       rethrow;
     }
+  }
+
+  /// What the loaded model was created with.
+  ({ResolvedSampling sampling, bool explicit, String? loraPath})? _loadedWith;
+  bool _ignoredWarned = false;
+
+  /// Prints once per model when a later session asks for a sampling or a
+  /// LoRA other than the loaded ones, and the caller chose either side. topP
+  /// is left out: MediaPipe web has none, which is said on its own.
+  void _warnIfIgnored(
+    ResolvedSampling sampling,
+    String? loraPath, {
+    required bool explicit,
+  }) {
+    final loaded = _loadedWith;
+    if (loaded == null || _ignoredWarned) return;
+    String describe(ResolvedSampling s) =>
+        'temperature ${s.temperature}, topK ${s.topK}, randomSeed '
+        '${s.randomSeed}';
+    final asked = <String>[];
+    final kept = <String>[];
+    final other = loaded.sampling;
+    if ((explicit || loaded.explicit) &&
+        (other.temperature != sampling.temperature ||
+            other.topK != sampling.topK ||
+            other.randomSeed != sampling.randomSeed)) {
+      asked.add(describe(sampling));
+      kept.add(describe(other));
+    }
+    if (loraPath != null && loraPath != loaded.loraPath) {
+      asked.add('LoRA $loraPath');
+      kept.add(loaded.loraPath == null ? 'no LoRA' : 'LoRA ${loaded.loraPath}');
+    }
+    if (asked.isEmpty) return;
+    _ignoredWarned = true;
+    // Printed, because a release build is where it gets reported and
+    // edgeAiLog is silent there.
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_mediapipe] WARNING: a session asks for '
+      '${asked.join('; ')}, but every session of this web model shares the '
+      'LlmInference loaded with ${kept.join('; ')}. Close and reload the '
+      'model to change it. Shown once per model.',
+    );
   }
 
   Future<LlmInference> _createModel(

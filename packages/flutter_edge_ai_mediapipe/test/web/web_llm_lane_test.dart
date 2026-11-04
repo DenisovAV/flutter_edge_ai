@@ -133,4 +133,66 @@ void main() {
     await expectLater(a, throwsStateError);
     expect(await b, 'b');
   });
+
+  test('a wait past slowWaitWarning is told once, naming the call it '
+      'waits for', () async {
+    final warnings = <String>[];
+    final lane = WebLlmLane(
+      slowWaitWarning: const Duration(milliseconds: 20),
+      warn: warnings.add,
+    );
+    final first = Completer<String>();
+    unawaited(lane.run(WebLlmCall(owner: 'session 1'), () => first.future));
+    final b = lane.run(WebLlmCall(owner: 'session 2'), () async => 'b');
+    final c = lane.run(WebLlmCall(owner: 'session 3'), () async => 'c');
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(warnings, hasLength(1));
+    expect(warnings.single, contains('session 2'));
+    expect(warnings.single, contains('the call of session 1'));
+    first.complete('a');
+    await b;
+    await c;
+  });
+
+  test('a wait that ends in time is not told', () async {
+    final warnings = <String>[];
+    final lane = WebLlmLane(
+      slowWaitWarning: const Duration(milliseconds: 50),
+      warn: warnings.add,
+    );
+    final first = Completer<String>();
+    unawaited(lane.run(WebLlmCall(), () => first.future));
+    final b = lane.run(WebLlmCall(), () async => 'b');
+    first.complete('a');
+    await b;
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    expect(warnings, isEmpty);
+  });
+
+  test('a stopped call let go of is told once', () async {
+    final warnings = <String>[];
+    final lane = WebLlmLane(
+      stoppedCallWait: const Duration(milliseconds: 10),
+      warn: warnings.add,
+    );
+    for (var i = 0; i < 2; i++) {
+      final call = WebLlmCall(owner: 'session 1');
+      unawaited(lane.run(call, () => Completer<String>().future));
+      await _settle();
+      lane.cancel(call);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+    }
+    expect(warnings, hasLength(1));
+    expect(warnings.single, contains('session 1'));
+  });
+
+  test('a call runs once', () async {
+    final lane = WebLlmLane();
+    final call = WebLlmCall();
+    await lane.run(call, () async => 'a');
+    await expectLater(
+      lane.run(call, () async => 'b'),
+      throwsA(isA<AssertionError>()),
+    );
+  });
 }

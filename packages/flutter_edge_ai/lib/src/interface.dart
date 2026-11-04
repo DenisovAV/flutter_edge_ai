@@ -383,8 +383,10 @@ abstract class InferenceModel {
   ///   allocated at its first turn; capped at 2 on Android and iOS when
   ///   `maxConcurrentSessions` is unset.
   /// - `.task` (MediaPipe web): only its history, kept in Dart. The sessions
-  ///   share the model's one `LlmInference`, so their calls run one at a
-  ///   time, and each turn resends the session's whole conversation.
+  ///   share the model's one `LlmInference`, its sampling and its LoRA, so
+  ///   their calls run one at a time: a turn waits for the other sessions'
+  ///   turns, as long as they run, unless they are stopped. Each turn
+  ///   resends the session's whole conversation.
   /// - `.litertlm` web and built-in AI: not measured.
   ///
   /// Cap the count with `maxConcurrentSessions` on
@@ -441,11 +443,7 @@ abstract class InferenceModel {
   @protected
   Future<InferenceModelSession> openEngineSession(SessionRequest request) =>
       Future.error(
-        UnsupportedError(
-          'openSession() is not supported for $runtimeType. '
-          'Concurrent sessions are available on `.litertlm` (FFI native + '
-          'web) and `.task` (MediaPipe Android, iOS and web).',
-        ),
+        UnsupportedError('openSession() is not supported for $runtimeType.'),
       );
 
   /// Every live session: the legacy [session] (if any) and each open

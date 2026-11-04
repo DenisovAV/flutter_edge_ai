@@ -133,6 +133,15 @@ heldMediaPipe() {
         return call.future.then((text) => text.toJS).toJS;
       }).toJS,
     )
+    ..setProperty(
+      'sizeInTokens'.toJS,
+      ((JSString text) {
+        if (calls.any((call) => !call.isCompleted)) {
+          throw StateError('engine is currently loading or processing');
+        }
+        return text.toDart.length.toJS;
+      }).toJS,
+    )
     ..setProperty('cancelProcessing'.toJS, (() => cancels.add(null)).toJS)
     ..setProperty('close'.toJS, (() {}).toJS);
   replaceGlobal(
@@ -152,6 +161,85 @@ heldMediaPipe() {
     ),
   );
   return (calls: calls, prompts: prompts, instance: instance, cancels: cancels);
+}
+
+/// Like [fakeMediaPipe], but as busy as the real one: generateResponse answers
+/// 'ok' a moment later, streaming it through the progress callback, and
+/// sizeInTokens throws while a call runs, as `@mediapipe/tasks-genai` 0.10.30
+/// does ("engine is currently loading or processing").
+({List<JSAny> prompts, List<String> errors}) busyMediaPipe() {
+  final prompts = <JSAny>[];
+  final errors = <String>[];
+  var busy = false;
+  final instance = JSObject()
+    ..setProperty(
+      'generateResponse'.toJS,
+      ((JSAny prompt, JSFunction? progress) {
+        if (busy) {
+          errors.add('generateResponse while busy');
+          throw StateError('Previous invocation or loading is still ongoing.');
+        }
+        busy = true;
+        prompts.add(prompt);
+        return Future<JSString>.delayed(const Duration(milliseconds: 5), () {
+          progress?.callAsFunction(null, 'ok'.toJS, true.toJS);
+          busy = false;
+          return 'ok'.toJS;
+        }).toJS;
+      }).toJS,
+    )
+    ..setProperty(
+      'sizeInTokens'.toJS,
+      ((JSString text) {
+        if (busy) {
+          errors.add('sizeInTokens while busy');
+          throw StateError(
+            'Cannot process because LLM inference engine is currently '
+            'loading or processing.',
+          );
+        }
+        return text.toDart.length.toJS;
+      }).toJS,
+    )
+    ..setProperty('cancelProcessing'.toJS, (() {}).toJS)
+    ..setProperty('close'.toJS, (() {}).toJS);
+  replaceGlobal(
+    'FilesetResolver',
+    JSObject()..setProperty(
+      'forGenAiTasks'.toJS,
+      ((JSString _) => Future<JSObject>.value(JSObject()).toJS).toJS,
+    ),
+  );
+  replaceGlobal(
+    'LlmInference',
+    JSObject()..setProperty(
+      'createFromOptions'.toJS,
+      ((JSObject _, JSObject options) => Future<JSObject>.value(
+        instance,
+      ).toJS).toJS,
+    ),
+  );
+  return (prompts: prompts, errors: errors);
+}
+
+/// Answers with a Blob URL, after failing its first [failures] calls.
+final class FlakyResolver implements WebModelSourceResolver {
+  FlakyResolver(this.failures);
+  int failures;
+
+  @override
+  Future<InferenceModelSpec> activeInferenceSpec() =>
+      Completer<InferenceModelSpec>().future;
+
+  @override
+  Future<({WebModelSource model, String? loraPath})>
+  resolveActiveInferenceModel() async {
+    if (failures > 0) {
+      failures--;
+      throw StateError('no model file');
+    }
+    return (model: const BlobUrlModelSource('blob:fake-model'), loraPath: null);
+  }
 }
 
 /// Sets globalThis[name] for the rest of the test, then puts back what was

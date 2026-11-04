@@ -125,6 +125,14 @@ API(Status, litert_lm_embedding_engine_settings_create,
 API(Status, litert_lm_embedding_engine_settings_set_max_input_length, (P, int))
 API(Status, litert_lm_embedding_engine_settings_set_vision_tokens_per_image,
     (P, int))
+API(Status, litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir,
+    (P, const char*))
+API(Status,
+    litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir,
+    (P, const char*))
+API(Status,
+    litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir,
+    (P, const char*))
 API(Status, litert_lm_embedding_engine_settings_set_cache_dir,
     (P, const char*))
 API(void, litert_lm_embedding_engine_settings_delete, (P))
@@ -231,6 +239,9 @@ static int LoadAll(LibHandle lib) {
   LOAD(litert_lm_embedding_engine_settings_create);
   LOAD(litert_lm_embedding_engine_settings_set_max_input_length);
   LOAD(litert_lm_embedding_engine_settings_set_vision_tokens_per_image);
+  LOAD(litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir);
+  LOAD(litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir);
+  LOAD(litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir);
   LOAD(litert_lm_embedding_engine_settings_set_cache_dir);
   LOAD(litert_lm_embedding_engine_settings_delete);
   LOAD(litert_lm_embedding_engine_create);
@@ -1642,9 +1653,21 @@ static int CmdEg2(const char* model, const char* backend) {
   P settings = NULL, engine = NULL, opts = NULL;
   const char* image_path = getenv("PROBE_EG2_IMAGE");
   const char* audio_path = getenv("PROBE_EG2_AUDIO");
+  // As the Dart pass: on the NPU the vision tower follows the bundle (no
+  // backend named) and the audio tower runs on the CPU; elsewhere both towers
+  // are named cpu.
+  bool npu = !strcmp(backend, "npu");
   CHECK(litert_lm_embedding_engine_settings_create(
-      model, backend, image_path ? "cpu" : NULL, audio_path ? "cpu" : NULL,
-      &settings));
+      model, backend, image_path && !npu ? "cpu" : NULL,
+      audio_path ? "cpu" : NULL, &settings));
+  if (g_dispatch_dir) {
+    CHECK(litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir(
+        settings, g_dispatch_dir));
+    CHECK(litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir(
+        settings, g_dispatch_dir));
+    CHECK(litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir(
+        settings, g_dispatch_dir));
+  }
   CHECK(litert_lm_embedding_engine_settings_set_max_input_length(settings,
                                                                  1024));
   if (image_path) {

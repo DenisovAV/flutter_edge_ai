@@ -98,3 +98,34 @@ probes run as command-line tools on macOS only. Whether iOS took the same
 About 2 h of DDP (60 + 35 + 25 min, three devices, one at a time), 45 min of T4, 80 min on the
 Intel boxes (one machine at a time). Each line above is cancelled as soon as
 its script's last `RESULT` line is in.
+
+## Results: DDP Galaxy S25 Ultra (pa3q-35, SM8750, Adreno 830), 2026-11-04
+
+Session `session-3olmn6k9u8yzk`, 02:50–04:07 UTC (77 billed minutes,
+extended once). The phone's own curl reached only ~0.5 MB/s, so models went
+over the forwarder (3.3–6 MB/s) instead. Android archive: the local L1 build
+(§1-§25, no MediaTek adapter).
+
+| Check | Result |
+|---|---|
+| Qualcomm NPU, Gemma 4 E2B SM8750: multiconv, longprompt, deleteduring, chat | PASS (3/3, "PELICAN", 0.23 s reply) |
+| NPU turnend | every end kind right (stop token, output limit, context limit, context_full code 8); the rewind after context_full is refused (status 3), and the conversation stays usable without it |
+| NPU rewind / convrewind | refused: "NPU executor's SetCurrentStep only supports rolling back one step", as on 0.18 (the Dart client rebuilds from text on the NPU) |
+| **NPU ctxgroup** (window 4096): A past 1100 tokens, a turn on B, A recalls the code word | **PASS** at 1104 tokens (with window 1024 the probe's own window ran out at 1006) |
+| Adreno 830 GPU, Gemma 4 E2B: all 13 commands | PASS |
+| Adreno without `libLiteRtOpenClAccelerator.so` and `libLiteRtTopKOpenClSampler.so` | multiconv, chat, determinism: same results as with them (timing only), so the GPU runs on the accelerator linked into libLiteRtLm: the Adreno half of the drop evidence |
+| LFM2.5 xsession on Adreno (§25) | PASS |
+| EG2 on the NPU: 270m and 440m text; 440m image (289 ms); 740m text, image, audio (tower on CPU, 121 ms), combined | PASS |
+| EG2 270m on Adreno (not measured before) | PASS, 52 ms |
+| Drift, Android CPU 0.19 vs Linux arm64 0.19 | EG1, Gecko, Moonshine, Whisper i8, Matcha decoder, talker (169/169): bit-identical; EG1 retrieval identical to macOS 0.19 |
+| #770 `multi_session_mediapipe_test.dart` (branch `feat/core-session-spi`) | PASS, 3 tests |
+| #745 ONNX smoke (Phi-3.5 mini int4, branch `fix/onnx-android-smoke-staged-model`) | PASS: 23.2 tok/s median decode, peak RSS 3.7 GB |
+
+Not done on this session:
+- FastVLM with an image on Adreno (FastVLM passed on macOS and Linux).
+- The native-v0.18.0-h side of the Android drift: our `litert_drift` segfaults on the 0.18 Android library (it ran fine on 0.18 macOS); not chased on billed time.
+
+Note for L2: the EG2 740m NPU bundle fails engine create unless an audio
+backend is named (`embedding_engine_impl.cc:409`), because its audio encoder is
+compiled for CPU/GPU only. The Dart pass names `cpu` when audio is declared; a
+740m NPU load without declared audio should be checked.

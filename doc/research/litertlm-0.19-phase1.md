@@ -530,18 +530,81 @@ What it is not:
 - the preprocessor choice: both use `AudioPreprocessorMiniAudio` (kissfft) with
   `CreateDefaultGemma4Config`.
 
-What changed upstream on that path between the pins:
-- `support/preprocessor/audio_preprocessor_miniaudio.cc`: decoded frame counts,
-  trimmed to the resampler's expected output, and a dry-run dimension path;
-- `audio_preprocessor_utils.cc`: new streaming segmentation (`CountFramedSegments`);
-- `mel_filterbank.cc`: Slaney added;
-- `c/embedding_engine.cc`: +314/−191.
+Upstream changes on that path between the pins are not where the drift comes from:
+- LiteRT-LM `7b753b8c` ("Skip full media preprocessing when counting tokens"):
+  frame counting trimmed to the resampler's output (`GetDecodedFrameCount`) and
+  `CountFramedSegments`. Both feed only `GetPreprocessedAudioDimensions` /
+  `PreprocessDryRun`, which `Conversation::CountTokens()` uses. The embedding
+  engine's `Preprocess()` is unchanged. The commit message describes a
+  performance change and calls out no bug fix.
+- `d6272ea9` adds Slaney mel and power spectrum, opt-in (`slaney_mel_ = false`).
+  The HTK path is unchanged.
+- `a82895c4` is a span refactor in `ToLogMelSpectrogram`.
+- `runtime/core/embedding_engine_impl.cc`: `ModelType` → proto enum, and
+  vision and audio weights loaded through one path. `embedding_engine_settings.cc`
+  is byte-identical.
+- miniaudio is 0.11.22 at both pins.
 
-The encoder graph itself cannot be compared alone: its `.litertlm` sections
-take external weights and do not compile standalone (status 3). Which of
-segmentation, encoder execution or kernels moved is therefore not isolated.
-The next step would be a 0.19 build with the 0.18 `support/preprocessor` sources
-(an A/B on one machine).
+So a 0.19 build with 0.18's `support/preprocessor` sources would run the same
+code. It was not built.
 
-Consequence: audio vectors stored with 0.18 should not be queried with 0.19,
-and on 0.19 Apple and Linux audio vectors of one clip differ at cos 0.96–0.998.
+### Audio A/B against Google's builds and the reference model (macOS + Linux arm64, 2026-11-04)
+
+The test covers four LiteRT builds on each platform. Two come from
+Google's `litert-lm-api` wheels, 0.18.0 and 0.19.0 (macOS arm64 and manylinux
+aarch64); their `liblitert-lm` exports the same embedding C API. The other two
+are ours, 0.18.0-h and the 0.19 candidate. They are compared with the reference
+model `google/embeddinggemma-2` (transformers 5.22.1, sentence-transformers
+6.2.0, fp32 on the CPU). The data:
+- the 9 example clips;
+- a labelled set of 30 sentences, each spoken by two voices (macOS `say`,
+  Daniel and Karen, 16 kHz mono WAV), with a paraphrase query and a verbatim
+  query per sentence.
+
+Cos to the reference over the 60 clips (the text rows are identical across all
+eight builds: min 0.977, mean 0.989):
+
+| Build | audio min | audio mean |
+|---|---|---|
+| Google 0.18, macOS / Linux | 0.895 / 0.919 | 0.977 / 0.978 |
+| ours 0.18.0-h, macOS / Linux | 0.879 / 0.902 | 0.977 / 0.978 |
+| Google 0.19, macOS / Linux | 0.975 / 0.964 | 0.984 / 0.984 |
+| ours 0.19, macOS / Linux | 0.970 / 0.961 | 0.984 / 0.983 |
+
+Agreement between builds over the 60 clips:
+
+| Pair | min | mean |
+|---|---|---|
+| Google vs ours, same version and platform (4 pairs) | 0.976–0.990 | 0.997–0.998 |
+| macOS vs Linux, same build (3 pairs) | 0.977–0.989 | 0.998 |
+| 0.18 vs 0.19, Google build, macOS / Linux | 0.890 / 0.915 | 0.990 / 0.991 |
+
+Retrieval: every build ranks every pair first, for 30 paraphrase→audio,
+verbatim→audio and voice→voice queries. Mixed versions do the same: a 0.19
+query over a 0.18 index ranks 30/30. The mean margin over the best wrong
+candidate is 0.143–0.148 (text→audio) and 0.27 (voice→voice) on every build.
+Mixing versions lowers the worst voice→voice margin from about 0.21 to 0.14.
+
+Findings:
+- **0.19 is no regression.** Measured against the reference, it is equal on
+  average and better at the worst clip: no clip below 0.96, while 0.18 has
+  outliers down to 0.88. The change is upstream: Google's own wheels move the
+  same way, and our 0.19 build agrees with Google's as closely as two builds of
+  one version agree (mean 0.998).
+- **Cause:** the text tower and the preprocessing code are unchanged, and the
+  thread count has no effect. That leaves the CPU execution of the audio tower
+  under the new LiteRT pin (`26895c9f` → `dcb657e8`, 647 commits, among them an
+  XNNPACK bump `4fe2408e`). Not bisected.
+- **macOS vs Linux on 0.19 is no bug.** Over the 60 clips the two platforms
+  agree as closely as on 0.18 (mean 0.998). Neither is consistently closer to
+  the reference (0.984 / 0.983). The worst example-clip pairs are the MP3 copy
+  and the doctor clip.
+- **The audio tower amplifies small input differences** in every LiteRT build.
+  The reference puts the 44.1 kHz stereo copy at 0.996 to its WAV original, the
+  builds at 0.954–0.994; for the MP3 copy, 0.991 against 0.923–0.972. This is
+  true of 0.18 as much as 0.19.
+
+Consequence: no §26 patch is needed. Retrieval on a 0.18 audio index queried
+with 0.19 still works. Individual vectors move by up to cos 0.89, so a
+version-scoped audio profile id remains a product decision, not a correctness
+fix.

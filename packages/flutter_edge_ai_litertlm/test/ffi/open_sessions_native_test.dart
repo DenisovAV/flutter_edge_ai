@@ -22,6 +22,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
+    show sendOffMainIsolate;
 import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
@@ -104,6 +106,10 @@ void main() {
 
   setUpAll(() async {
     if (_skip != null) return;
+    // Diagnostic: LITERTLM_SYNC_SEND=1 runs a switching send's native call
+    // inline instead of on a spawned isolate.
+    if (_env['LITERTLM_SYNC_SEND'] == '1')
+      sendOffMainIsolate = (w) async => w();
     final printer = debugPrint;
     debugPrint = (String? message, {int? wrapWidth}) {
       if (message != null && message.startsWith('[FfiInferenceModel]')) {
@@ -258,7 +264,10 @@ void main() {
       await for (final _ in a.getResponseAsync()) {
         if (++chunks == 1) await a.stopGeneration();
       }
-      await _ask(b, 'Name a colour of the sky. One word.');
+      // Diagnostic: LITERTLM_STOP_NO_B=1 leaves the other session's turn out.
+      if (_env['LITERTLM_STOP_NO_B'] != '1') {
+        await _ask(b, 'Name a colour of the sky. One word.');
+      }
       final colour = (await _ask(
         a,
         'What is my favourite colour? One word.',
@@ -402,65 +411,77 @@ void main() {
     }, skip: _skip);
   }
 
-  test('measures the memory one idle open session adds, the send call on a '
-      'switch, and drift over switches (RESULT lines, no assertion)', () async {
-    final first = await open();
-    await _ask(first, 'Reply with OK only.');
-    // Sends to the same conversation: no switch inside the call.
-    final sameSends = <int>[];
-    for (var i = 0; i < 10; i++) {
+  test(
+    'measures the memory one idle open session adds, the send call on a '
+    'switch, and drift over switches (RESULT lines; asserts only that a switch does not hold the calling isolate)',
+    () async {
+      final first = await open();
       await _ask(first, 'Reply with OK only.');
-      sameSends.add(model.ffiClient.lastSendCallMicros!);
-    }
-    final base = ProcessInfo.currentRss;
-    final extra = _idle;
-    final idle = <InferenceModelSession>[];
-    final deltas = <int>[];
-    var previous = base;
-    try {
-      for (var i = 0; i < extra; i++) {
-        final s = await open();
-        idle.add(s);
-        await _ask(s, 'Reply with OK only.');
+      // Sends to the same conversation: no switch inside the call.
+      final sameSends = <int>[];
+      for (var i = 0; i < 10; i++) {
         await _ask(first, 'Reply with OK only.');
-        final now = ProcessInfo.currentRss;
-        deltas.add(now - previous);
-        previous = now;
+        sameSends.add(model.ffiClient.lastSendCallMicros!);
       }
-      _result(
-        'idle_session_rss_mib=${_mib((previous - base) / extra)} '
-        'maxTokens=${model.maxTokens} deltas_mib=${deltas.map(_mib).join(',')}',
-      );
-      final b = idle.first;
-      final before = ProcessInfo.currentRss;
-      final switchSends = <int>[];
-      final sw = Stopwatch()..start();
-      for (var i = 0; i < _switches; i++) {
-        await _ask(i.isEven ? first : b, 'Reply with OK only.');
-        switchSends.add(model.ffiClient.lastSendCallMicros!);
-        if ((i + 1) % 50 == 0) {
-          debugPrint(
-            '[open] after ${i + 1} switches: '
-            '${_mib(ProcessInfo.currentRss - before)} MiB',
-          );
+      final base = ProcessInfo.currentRss;
+      final extra = _idle;
+      final idle = <InferenceModelSession>[];
+      final deltas = <int>[];
+      var previous = base;
+      try {
+        for (var i = 0; i < extra; i++) {
+          final s = await open();
+          idle.add(s);
+          await _ask(s, 'Reply with OK only.');
+          await _ask(first, 'Reply with OK only.');
+          final now = ProcessInfo.currentRss;
+          deltas.add(now - previous);
+          previous = now;
         }
+        _result(
+          'idle_session_rss_mib=${_mib((previous - base) / extra)} '
+          'maxTokens=${model.maxTokens} deltas_mib=${deltas.map(_mib).join(',')}',
+        );
+        final b = idle.first;
+        final before = ProcessInfo.currentRss;
+        final switchSends = <int>[];
+        final switchNative = <int>[];
+        final sw = Stopwatch()..start();
+        for (var i = 0; i < _switches; i++) {
+          await _ask(i.isEven ? first : b, 'Reply with OK only.');
+          switchSends.add(model.ffiClient.lastSendCallMicros!);
+          switchNative.add(model.ffiClient.lastSendNativeMicros!);
+          if ((i + 1) % 50 == 0) {
+            debugPrint(
+              '[open] after ${i + 1} switches: '
+              '${_mib(ProcessInfo.currentRss - before)} MiB',
+            );
+          }
+        }
+        _result(
+          'switches=$_switches turn_ms='
+          '${(sw.elapsedMilliseconds / _switches).toStringAsFixed(0)} '
+          'drift_rss_mib=${_mib(ProcessInfo.currentRss - before)}',
+        );
+        _result(
+          'send_ui_block_ms same=${(_median(sameSends) / 1000).toStringAsFixed(1)} '
+          'switch_median=${(_median(switchSends) / 1000).toStringAsFixed(1)} '
+          'switch_max='
+          '${(switchSends.reduce((x, y) => x > y ? x : y) / 1000).toStringAsFixed(1)} '
+          'switch_native_median='
+          '${(_median(switchNative) / 1000).toStringAsFixed(1)} '
+          'maxTokens=${model.maxTokens}',
+        );
+        // A switching send runs on a spawned isolate: the calling isolate is
+        // held only to start it.
+        expect(_median(switchSends), lessThan(2000));
+      } finally {
+        for (final s in idle) {
+          await s.close();
+        }
+        await first.close();
       }
-      _result(
-        'switches=$_switches turn_ms='
-        '${(sw.elapsedMilliseconds / _switches).toStringAsFixed(0)} '
-        'drift_rss_mib=${_mib(ProcessInfo.currentRss - before)}',
-      );
-      _result(
-        'send_call_ms same=${(_median(sameSends) / 1000).toStringAsFixed(1)} '
-        'switch_median=${(_median(switchSends) / 1000).toStringAsFixed(1)} '
-        'switch_max=${(switchSends.reduce((a, b) => a > b ? a : b) / 1000).toStringAsFixed(1)} '
-        'maxTokens=${model.maxTokens}',
-      );
-    } finally {
-      for (final s in idle) {
-        await s.close();
-      }
-      await first.close();
-    }
-  }, skip: _skip);
+    },
+    skip: _skip,
+  );
 }

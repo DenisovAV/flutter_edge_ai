@@ -20,6 +20,13 @@ import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 /// Must accommodate verbose formats (DeepSeek tags, parallel calls).
 const int defaultMaxFunctionBufferLength = 1024;
 
+/// How long a chat turn whose text failed waits for the turn's end before
+/// it delivers the error without it; see `_takingBackRefusedInput`. An
+/// engine that keeps the SPI contract ends its text, and so the turn, right
+/// after an error.
+@visibleForTesting
+Duration chatTurnErrorEndTimeout = const Duration(seconds: 5);
+
 class InferenceChat {
   final Future<InferenceModelSession> Function()? sessionCreator;
   final int maxTokens;
@@ -349,26 +356,58 @@ class InferenceChat {
     late final StreamController<String> out;
     StreamSubscription<String>? source;
     (Object, StackTrace)? failure;
+    var finishing = false;
+    Timer? bound;
+
+    /// Delivers the turn's outcome once: after the source has closed, or,
+    /// after an error, once the turn's end is known — bounded by
+    /// [chatTurnErrorEndTimeout], so an engine whose failed text never
+    /// closes cannot hold the turn. Without the end in time the error is
+    /// delivered and the history is left as it is.
+    Future<void> finish({required bool sourceClosed}) async {
+      if (finishing) return;
+      finishing = true;
+      bound?.cancel();
+      final failed = failure;
+      if (failed != null) {
+        TurnEnd? how;
+        try {
+          // The end follows the text's close; without that close it is not
+          // waited for.
+          how = sourceClosed
+              ? await end.timeout(chatTurnErrorEndTimeout)
+              : null;
+        } on TimeoutException {
+          how = null;
+        }
+        if (staged != null && how == TurnEnd.contextLimit) {
+          _fullHistory.length = staged.full;
+          _modelHistory.length = staged.model;
+          _prefixes.length = staged.prefixes;
+          _currentTokens = staged.tokens;
+          _toolsInstructionSent = staged.toolsInstructionSent;
+        }
+        out.addError(failed.$1, failed.$2);
+        unawaited(source?.cancel());
+      }
+      await out.close();
+    }
+
     out = StreamController<String>(
       onListen: () {
         source = turn.text.listen(
           out.add,
-          onError: (Object error, StackTrace stack) =>
-              failure ??= (error, stack),
-          onDone: () async {
-            final failed = failure;
-            if (failed != null) {
-              if (staged != null && await end == TurnEnd.contextLimit) {
-                _fullHistory.length = staged.full;
-                _modelHistory.length = staged.model;
-                _prefixes.length = staged.prefixes;
-                _currentTokens = staged.tokens;
-                _toolsInstructionSent = staged.toolsInstructionSent;
-              }
-              out.addError(failed.$1, failed.$2);
-            }
-            await out.close();
+          onError: (Object error, StackTrace stack) {
+            if (failure != null) return;
+            failure = (error, stack);
+            // An engine ends its text after an error (the SPI contract);
+            // one that does not is not waited for past the bound.
+            bound = Timer(
+              chatTurnErrorEndTimeout,
+              () => unawaited(finish(sourceClosed: false)),
+            );
           },
+          onDone: () => finish(sourceClosed: true),
         );
       },
       onPause: () => source?.pause(),

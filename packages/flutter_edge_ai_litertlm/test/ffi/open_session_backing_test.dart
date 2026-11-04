@@ -287,6 +287,24 @@ void main() {
     await expectLater(session.getResponse(), throwsUnsupportedError);
     expect(handle.lastTurnEnd, isNull, reason: 'refused before native');
   });
+  test('a native open session on a model whose file could not be read is '
+      'rebuilt, never rewound; createSession keeps rewinding', () async {
+    final gate = Completer<void>()..complete();
+    final m = FfiInferenceModel(
+      ffiClient: _SlowClient(gate),
+      maxTokens: 1024,
+      modelType: ModelType.gemmaIt,
+      activeBackend: PreferredBackend.cpu,
+      openSessionBacking: OpenSessionBacking.native,
+      linearAttentionState: null,
+      onClose: () {},
+    );
+    final session = await m.openSession() as FfiInferenceModelSession;
+    final handle = session.handle as RecoveringConversationHandle;
+    expect(handle.noRewindReason, contains('could not be read'));
+    expect(m.noRewindReason, isNull);
+    await session.close();
+  });
 }
 
 /// A client whose conversation create waits for [gate].

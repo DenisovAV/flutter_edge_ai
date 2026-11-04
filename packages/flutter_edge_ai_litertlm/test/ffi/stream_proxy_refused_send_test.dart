@@ -38,7 +38,8 @@ void main() {
     expect(
       client,
       contains(
-        '    if (result != 0) {\n'
+        '        return;\n'
+        '      }\n'
         '      // No callback comes for a refused send: its proxy is freed here.\n'
         '      releaseRefusedStreamProxy(result, proxyData, _proxyDestroy!);\n',
       ),

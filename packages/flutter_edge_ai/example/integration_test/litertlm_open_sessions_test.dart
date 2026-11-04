@@ -463,8 +463,8 @@ void main() {
   }
 
   testWidgets('measures the memory one idle open session adds, the send '
-      'call on a switch, and drift over switches (RESULT lines, no '
-      'assertion)', (tester) async {
+      'call on a switch, and drift over switches (RESULT lines; asserts only '
+      'that a switch does not hold the calling isolate)', (tester) async {
     if (!FlutterEdgeAiDiagnostics.isSupported) {
       _result('memory=not supported here');
       return;
@@ -516,10 +516,12 @@ void main() {
       final b = idle.first;
       final before = await read();
       final switchSends = <int>[];
+      final switchNative = <int>[];
       final sw = Stopwatch()..start();
       for (var i = 0; i < _switches; i++) {
         await _ask(i.isEven ? first : b, 'Reply with OK only.');
         switchSends.add(m.ffiClient.lastSendCallMicros!);
+        switchNative.add(m.ffiClient.lastSendNativeMicros!);
         if ((i + 1) % 50 == 0) {
           final now = await read();
           debugPrint(
@@ -536,12 +538,17 @@ void main() {
         'drift_gpu_mib=${delta(after.$3, before.$3)}',
       );
       _result(
-        'send_call_ms same=${(_median(sameSends) / 1000).toStringAsFixed(1)} '
+        'send_ui_block_ms same=${(_median(sameSends) / 1000).toStringAsFixed(1)} '
         'switch_median=${(_median(switchSends) / 1000).toStringAsFixed(1)} '
         'switch_max='
         '${(switchSends.reduce((x, y) => x > y ? x : y) / 1000).toStringAsFixed(1)} '
+        'switch_native_median='
+        '${(_median(switchNative) / 1000).toStringAsFixed(1)} '
         'maxTokens=${m.maxTokens}',
       );
+      // A switching send runs on a spawned isolate: the calling isolate is
+      // held only to start it.
+      expect(_median(switchSends), lessThan(2000));
     } finally {
       for (final s in idle) {
         await s.close();

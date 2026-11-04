@@ -1,4 +1,4 @@
-# L3: the cost of a session switch on the sending isolate (design note, no change yet)
+# L3: the cost of a session switch on the sending isolate
 
 2026-11-04. Review item I3 of #781: with open sessions as native
 conversations, a send to another conversation than the one the executor ran
@@ -37,7 +37,33 @@ or faster than Metal. The device suite
 (`example/integration_test/litertlm_open_sessions_test.dart`) prints the same
 `send_call_ms` line per backend.
 
-## Proposal (for a decision, not implemented)
+## Implemented (2026-11-04)
+
+A send to another conversation than the one the executor ran last
+(`LiteRtLmFfiClient._executorConv`, reset by anything else that runs on the
+executor: a conversation create, option scoring, a render, a delete) calls
+`send_message_stream` on a spawned isolate (`_sendMessageStreamOffMainIsolate`,
+as the create and rewind helpers do). The stream callback stays the client's
+`NativeCallable.listener`; the message and extra context stay allocated by the
+client and are freed only once both the call has returned and the stream has
+ended; a refused send's status and last error are read on the spawned isolate.
+A same-conversation send stays inline (0.3-1 ms).
+
+| Gemma 3 1B, `maxTokens` 4096, macOS, load about 30 | calling isolate held, switching send (median / max) | the native call itself (median) |
+|---|---|---|
+| CPU | 0.0 / 0.4 ms | 3.9 ms |
+| Metal | 0.0 / 0.5 ms | 451 ms |
+
+| Gemma 4 E2B, `maxTokens` 4096, macOS, load about 5 | calling isolate held, switching send (median / max) | the native call itself (median) |
+|---|---|---|
+| CPU | 0.0 / 0.7 ms | 1.4 ms |
+| Metal | 0.0 / 0.6 ms | 146.6 ms |
+
+The suites assert the median below 2 ms. Phones and the desktop
+GPUs print the same `send_ui_block_ms` line in the device suite.
+
+## The proposal as written before
+
 
 Run `send_message_stream` on a spawned isolate, as `conversation_create` and
 `rewind_cancelled_turn` already are (`_createConversationOffMainIsolate`,

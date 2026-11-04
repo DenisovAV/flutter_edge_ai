@@ -199,8 +199,11 @@ no default cap on the number of sessions; `maxConcurrentSessions` on
 
 A send to another session than the one the engine ran last first saves the
 previous session's KV cache and restores this one, inside the native send
-call, on the isolate that sends. On Metal that held the calling isolate for
-about 135 ms at `maxTokens: 4096` (34 ms at 1024); on the CPU, about 1.5 ms.
+call. That call then runs on a spawned isolate, so the isolate that sends
+(the UI isolate in an app) is not held by the copy: measured on macOS with
+Gemma 4 E2B at `maxTokens: 4096`, it held the calling isolate under 1 ms
+while the copy took about 147 ms on Metal and 1.4 ms on the CPU. The copy
+still delays that turn's first token.
 
 ## Multimodal order
 

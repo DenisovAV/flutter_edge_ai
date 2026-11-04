@@ -106,29 +106,4 @@ void main() {
     expect(order, ['text done', 'end']);
     expect(await t.end, TurnEnd.endOfSequence);
   });
-
-  test('an error with a known end ends the text cleanly with that end; a '
-      'stop still wins', () async {
-    EngineTurn known() => reportedEngineTurn(
-      source.stream,
-      stopped: () => stopped,
-      closed: () => closed,
-      endForError: (_) => TurnEnd.contextLimit,
-      completed: () => completed,
-    );
-    var t = known();
-    var text = t.text.toList();
-    source.addError(Exception('RESOURCE_EXHAUSTED'));
-    expect(await text, isEmpty);
-    expect(await t.end, TurnEnd.contextLimit);
-
-    source = StreamController<String>();
-    t = known();
-    text = t.text.toList();
-    await pumpEventQueue();
-    stopped = true;
-    source.addError(Exception('CANCELLED'));
-    expect(await text, isEmpty);
-    expect(await t.end, TurnEnd.stopped);
-  });
 }

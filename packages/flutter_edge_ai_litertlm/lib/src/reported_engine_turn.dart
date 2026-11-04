@@ -17,18 +17,14 @@ import 'package:flutter_edge_ai/engine.dart';
 /// decision H). Any other error stays on the text; `end` is then not read. A
 /// turn that runs to its end reports what [completed] returns, called once
 /// the text has ended, so it can read a record the engine writes at the end
-/// of the turn. `end` completes after the text has closed.
-///
-/// An error for which [endForError] names an end (LiteRT-LM: a turn native
-/// ended `context_full`, [TurnEnd.contextLimit]) is not the turn's error
-/// either: the text ends cleanly and `end` is that end, unless the turn was
-/// stopped or closed meanwhile.
+/// of the turn, also after an error that stays on the text (LiteRT-LM: a turn
+/// native ended `context_full` reports [TurnEnd.contextLimit] there). `end`
+/// completes after the text has closed.
 EngineTurn reportedEngineTurn(
   Stream<String> text, {
   required bool Function() stopped,
   required bool Function() closed,
   bool Function(Object error)? isCloseError,
-  TurnEnd? Function(Object error)? endForError,
   required TurnEnd Function() completed,
 }) {
   final end = Completer<TurnEnd>();
@@ -64,20 +60,15 @@ EngineTurn reportedEngineTurn(
       source = text.listen(
         out.add,
         onError: (Object error, StackTrace stack) {
-          TurnEnd? known;
           if (isCloseError?.call(error) ?? false) {
             closeSeen = true;
           } else if (!stopped() && !closedNow()) {
-            known = endForError?.call(error);
-            if (known == null) {
-              out.addError(error, stack);
-              return;
-            }
+            out.addError(error, stack);
+            return;
           }
-          // The stop's or the close's own error, or one with a known end,
-          // ends the turn here.
+          // The stop's or the close's own error ends the turn here.
           unawaited(source?.cancel());
-          unawaited(endAs(known ?? how()));
+          unawaited(endAs(how()));
         },
         onDone: () => unawaited(endAs(how())),
       );

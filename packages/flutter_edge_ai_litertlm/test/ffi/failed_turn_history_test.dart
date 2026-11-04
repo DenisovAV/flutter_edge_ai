@@ -161,5 +161,57 @@ void main() {
       expect(client.virtualLastTurnCode(a), absResourceExhausted);
       expect(client.virtualConversationNeedsRebuildForTest, isTrue);
     });
+
+    test('through startVirtualTurn: a context_full turn keeps its end for its '
+        'session although the next session, queued on the lock, deletes the '
+        'shared conversation as soon as the lock goes', () async {
+      final client = LiteRtLmFfiClient();
+      final convs = <Pointer<LiteRtLmConversation>>[];
+      final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
+      client
+        ..virtualCreateForTest = () async {
+          final c = Pointer<LiteRtLmConversation>.fromAddress(
+            0x3000 + 16 * convs.length,
+          );
+          client.registerLiveForTest(c);
+          convs.add(c);
+          return c;
+        }
+        ..virtualSendForTest = (c) {
+          final send = client.newTurnForTest(c);
+          sends.add(send);
+          return send;
+        };
+      final sampling = SamplingParams.resolve(
+        const SamplingParams(),
+        modelType: ModelType.gemmaIt,
+      );
+      Stream<String> turn(Object token) => client.startVirtualTurn(
+        conversationToken: token,
+        messageJson: '{}',
+        history: const [],
+        sampling: sampling,
+        samplingExplicit: false,
+        thinking: false,
+      );
+      final a = Object();
+      final b = Object();
+      final aText = turn(a).toList();
+      await pumpEventQueue();
+      // B's turn waits on the lock A holds.
+      final bText = turn(b).toList();
+      await pumpEventQueue();
+      expect(sends, hasLength(1));
+      client.recordTurnEndForTest(convs.single, NativeLastTurnEnd.contextFull);
+      sends.single.failed(Exception('Stream error: RESOURCE_EXHAUSTED'));
+      await expectLater(aText, throwsException);
+      await pumpEventQueue();
+      // B took the lock, deleted A's conversation and made its own.
+      expect(convs, hasLength(2));
+      expect(client.isConversationLiveForTest(convs.first), isFalse);
+      expect(client.virtualLastTurnEnd(a), NativeLastTurnEnd.contextFull);
+      sends.last.finished();
+      await bText;
+    });
   });
 }

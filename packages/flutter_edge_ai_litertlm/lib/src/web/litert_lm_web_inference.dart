@@ -939,7 +939,7 @@ class LiteRtLmWebSession extends InferenceModelSession
       getResponseAsync(),
       stopped: () => _stopAsked,
       closed: () => _isClosed,
-      completed: liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
+      completed: () => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
     );
   }
 

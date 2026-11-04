@@ -8,11 +8,13 @@ void main() {
   late StreamController<String> source;
   late bool stopped;
   late bool closed;
+  late TurnEnd completed;
 
   setUp(() {
     source = StreamController<String>();
     stopped = false;
     closed = false;
+    completed = TurnEnd.endOfSequence;
   });
 
   EngineTurn turn({bool Function(Object)? isCloseError}) => reportedEngineTurn(
@@ -20,7 +22,7 @@ void main() {
     stopped: () => stopped,
     closed: () => closed,
     isCloseError: isCloseError,
-    completed: TurnEnd.endOfSequence,
+    completed: () => completed,
   );
 
   test('a stop\'s own error ends the text cleanly although the source never '
@@ -71,6 +73,18 @@ void main() {
     await pumpEventQueue();
     await sub.cancel();
     expect(await t.end, TurnEnd.stopped);
+  });
+
+  test('what a completed turn reports is read when its text ends, not when '
+      'it starts', () async {
+    final t = turn();
+    final text = t.text.toList();
+    source.add('ok');
+    // The engine's record of how the turn ended exists only now.
+    completed = TurnEnd.outputLimit;
+    await source.close();
+    expect(await text, ['ok']);
+    expect(await t.end, TurnEnd.outputLimit);
   });
 
   test('end completes after the text has closed', () async {

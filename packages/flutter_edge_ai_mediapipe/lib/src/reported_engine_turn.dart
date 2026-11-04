@@ -15,14 +15,15 @@ import 'package:flutter_edge_ai/engine.dart';
 /// ever ends (iOS sends no end after a cancelled generation) — and `end`
 /// says why, so core's chat keeps the partial reply (and raises for a close,
 /// decision H). Any other error stays on the text; `end` is then not read. A
-/// turn that runs to its end reports [completed]. `end` completes after the
-/// text has closed.
+/// turn that runs to its end reports what [completed] returns, called once
+/// the text has ended, so it can read a record the engine writes at the end
+/// of the turn. `end` completes after the text has closed.
 EngineTurn reportedEngineTurn(
   Stream<String> text, {
   required bool Function() stopped,
   required bool Function() closed,
   bool Function(Object error)? isCloseError,
-  required TurnEnd completed,
+  required TurnEnd Function() completed,
 }) {
   final end = Completer<TurnEnd>();
 
@@ -35,7 +36,7 @@ EngineTurn reportedEngineTurn(
       ? TurnEnd.stopped
       : closeSeen || closedNow()
       ? TurnEnd.closed
-      : completed;
+      : completed();
 
   StreamSubscription<String>? source;
   late final StreamController<String> out;

@@ -212,6 +212,75 @@ void main() {
   }, skip: dylib == null ? 'no host libLiteRtLm on C API 1.0' : null);
 
   test(
+    '270m on the GPU (EG2_GPU=1, a liteRtLmEmbeddingGpuAbis host): the text '
+    'tower on the GPU, ML Drift caches required, vectors within cos 0.99 of '
+    'the CPU\'s on every golden text',
+    () async {
+      final golden = jsonDecode(File(_goldenPath).readAsStringSync()) as Map;
+      final items = (golden['items'] as List).cast<Map<String, dynamic>>();
+      final cpu = pass(bundle270m!);
+      final gpu = LiteRtLmEmbeddingPass(
+        LiteRtLmEmbeddingConfig(
+          modelPath: bundle270m,
+          cacheBase: cacheBase.path,
+          gpu: true,
+          requireWeightCache: true,
+        ),
+        openBindings: bindings,
+      );
+      final loadWatch = Stopwatch()..start();
+      final info = await gpu.load();
+      loadWatch.stop();
+      await cpu.load();
+      try {
+        expect(info.activeBackend, PreferredBackend.gpu);
+        expect(info.dimension, 768);
+        var minCos = 1.0;
+        final micros = <int>[];
+        for (final item in items) {
+          final taskType = item['role'] == 'query'
+              ? TaskType.retrievalQuery
+              : TaskType.retrievalDocument;
+          final input = EmbeddingInput.text(item['text'] as String);
+          final watch = Stopwatch()..start();
+          final onGpu = await gpu.embed(input, taskType);
+          micros.add(watch.elapsedMicroseconds);
+          minCos = math.min(
+            minCos,
+            _cos(onGpu, await cpu.embed(input, taskType)),
+          );
+        }
+        final caches = [
+          for (final f in Directory(gpu.cacheDir!).listSync().whereType<File>())
+            f.path.split('/').last,
+        ];
+        micros.sort();
+        // ignore: avoid_print
+        print(
+          'EG2 270m on the ${Platform.operatingSystem} GPU: load '
+          '${loadWatch.elapsedMilliseconds} ms; per text median '
+          '${micros[micros.length ~/ 2] / 1000} ms; min cos to CPU $minCos; '
+          'caches $caches',
+        );
+        expect(minCos, greaterThan(0.99));
+        expect(
+          caches.where((name) => name.contains('_mldrift_')),
+          hasLength(2),
+          reason: 'the weight and program caches',
+        );
+      } finally {
+        await gpu.close();
+        await cpu.close();
+      }
+    },
+    skip:
+        skip ??
+        (Platform.environment['EG2_GPU'] == '1'
+            ? null
+            : 'EG2_GPU=1 is not set'),
+  );
+
+  test(
     '270m reproduces the golden vectors (X1), ranks every query\'s '
     'document first, and leaves its weight cache in its own directory',
     () async {

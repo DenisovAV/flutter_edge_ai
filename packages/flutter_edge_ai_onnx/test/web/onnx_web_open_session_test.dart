@@ -22,7 +22,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// `window.transformers` as the model uses it. Every pipeline call is pushed
 /// to `__tf.calls` with its `resolve`; an interrupt resolves it, as the real
 /// pipeline settles once decoding stops. `pipeline()` waits for `__tf.gate`,
-/// then fails while `__tf.failures` is above zero (one per call).
+/// then fails while `__tf.failures` is above zero (one per call). With
+/// `__tf.rejectOnInterrupt` an interrupt fails the call instead.
 const _fakeTransformers = r'''
 (() => {
   const tf = { calls: [], gate: Promise.resolve(), pipelines: 0, failures: 0 };
@@ -39,9 +40,11 @@ const _fakeTransformers = r'''
   }
   const makePipe = () => {
     const pipe = function (messages, options) {
-      return new Promise((resolve) => {
-        options.stopping_criteria.onInterrupt = resolve;
-        tf.calls.push({ messages, options, resolve });
+      return new Promise((resolve, reject) => {
+        options.stopping_criteria.onInterrupt = () => tf.rejectOnInterrupt
+          ? reject(new Error('generate failed after the stop'))
+          : resolve();
+        tf.calls.push({ messages, options, resolve, reject });
       });
     };
     pipe.tokenizer = { encode: (text) => Array.from(text) };
@@ -93,6 +96,8 @@ void _emit(JSObject call, String text) =>
     (_options(call)['streamer']! as JSObject).callMethod('cb'.toJS, text.toJS);
 
 void _finish(JSObject call) => call.callMethod('resolve'.toJS);
+
+void _fail(JSObject call) => call.callMethod('reject'.toJS, 'boom'.toJS);
 
 bool _interrupted(JSObject call) =>
     ((_options(call)['stopping_criteria']! as JSObject)['interrupted']!
@@ -315,23 +320,139 @@ void main() {
     await model.close();
   });
 
-  test('cancelling a waiting turn never interrupts the running turn of the '
-      'same session', () async {
+  test('a second turn of the same session while one is under way is a '
+      'StateError; the session takes the next turn once it ends', () async {
     final model = _model();
     final a = await model.openSession();
     final a1 = await _ask(a, 'a1');
     final running = await _call(1);
-    await a.addQueryChunk(const Message(text: 'a2', isUser: true));
-    final waiting = _turn(a).text.listen((_) {});
-    await pumpEventQueue();
-    await waiting.cancel();
+    expect(() => _turn(a), throwsStateError);
+    expect(() => a.getResponseAsync(), throwsStateError);
     expect(_interrupted(running), isFalse);
     _emit(running, 'ra1');
     _finish(running);
     await a1.done;
-    expect(a1.text, ['ra1']);
     expect(await a1.turn.end, TurnEnd.endOfSequence);
+
+    // Two streams made before either is listened to: the second is refused
+    // when it is.
+    await a.addQueryChunk(const Message(text: 'a2', isUser: true));
+    final first = a.getResponseAsync();
+    final second = a.getResponseAsync();
+    final firstText = <String>[];
+    final firstDone = first.forEach(firstText.add);
+    await expectLater(second.toList(), throwsStateError);
+    final call = await _call(2);
+    expect(_contents(call), ['user:a1', 'assistant:ra1', 'user:a2']);
+    _emit(call, 'ra2');
+    _finish(call);
+    await firstDone;
+    expect(firstText, ['ra2']);
+
+    // Right after a turn ends, from its done, the next one starts.
+    await a.addQueryChunk(const Message(text: 'a3', isUser: true));
+    final next = Completer<String>();
+    a.getResponseAsync().listen(
+      (_) {},
+      onDone: () => next.complete(a.getResponse()),
+    );
+    final third = await _call(3);
+    _finish(third);
+    final fourth = await _call(4);
+    _emit(fourth, 'r');
+    _finish(fourth);
+    expect(await next.future, 'r');
+
+    // A stop of a waiting turn frees the session at once.
+    final b = await model.openSession();
+    final b1 = await _ask(b, 'b1');
+    final bRunning = await _call(5);
+    final a4 = await _ask(a, 'a4');
+    await pumpEventQueue();
+    await a.stopGeneration();
+    await a4.done;
+    final a5 = await _ask(a, 'a5');
+    _finish(bRunning);
+    await b1.done;
+    final aNext = await _call(6);
+    expect(_contents(aNext).last, 'user:a5');
+    _finish(aNext);
+    await a5.done;
     await model.close();
+  });
+
+  test('a turn stopped empty drops every user message of its input, also '
+      'those added while it waited', () async {
+    final model = _model();
+    final a = await model.openSession(systemInstruction: 'A');
+    final b = await model.openSession();
+    final b1 = await _ask(b, 'b1');
+    final bRunning = await _call(1);
+
+    await a.addQueryChunk(const Message(text: 'a1', isUser: true));
+    final a2 = await _ask(a, 'a2');
+    await pumpEventQueue();
+    // Added while the turn waits: it is in the turn's snapshot.
+    await a.addQueryChunk(const Message(text: 'a3', isUser: true));
+    _finish(bRunning);
+    await b1.done;
+    final aRunning = await _call(2);
+    expect(_contents(aRunning), ['system:A', 'user:a1', 'user:a2', 'user:a3']);
+    await a.stopGeneration();
+    await a2.done;
+    expect(await a2.turn.end, TurnEnd.stopped);
+
+    final a4 = await _ask(a, 'a4');
+    final next = await _call(3);
+    expect(_contents(next), ['system:A', 'user:a4']);
+    _finish(next);
+    await a4.done;
+    await model.close();
+  });
+
+  test(
+    'a failed turn leaves no trace in the history, even after a chunk',
+    () async {
+      final model = _model();
+      final a = await model.openSession(systemInstruction: 'A');
+      final a1 = await _ask(a, 'a1');
+      final call = await _call(1);
+      _emit(call, 'part');
+      await pumpEventQueue();
+      _fail(call);
+      await expectLater(a1.done, throwsA(anything));
+
+      final a2 = await _ask(a, 'a2');
+      final next = await _call(2);
+      expect(_contents(next), ['system:A', 'user:a2']);
+      _finish(next);
+      await a2.done;
+      await model.close();
+    },
+  );
+
+  test('a generation that fails after a stop is printed, not only reported '
+      'as the stop', () async {
+    final printed = <String>[];
+    await runZoned(
+      () async {
+        _tf['rejectOnInterrupt'] = true.toJS;
+        final model = _model();
+        final a = await model.openSession();
+        final a1 = await _ask(a, 'a1');
+        final call = await _call(1);
+        _emit(call, 'part');
+        await pumpEventQueue();
+        await a.stopGeneration();
+        await a1.done;
+        expect(await a1.turn.end, TurnEnd.stopped);
+        await model.close();
+      },
+      zoneSpecification: ZoneSpecification(
+        print: (self, parent, zone, line) => printed.add(line),
+      ),
+    );
+    expect(printed, contains(contains('stopped web generation then failed')));
   });
 
   test('a failed pipeline load or rejected sampling values free the cap '

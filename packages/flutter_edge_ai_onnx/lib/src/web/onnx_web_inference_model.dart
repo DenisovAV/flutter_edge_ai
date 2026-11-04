@@ -512,6 +512,18 @@ class OnnxWebSession extends InferenceModelSession {
   /// over yet: the one generating, and any still waiting for the mutex.
   final Set<void Function()> _turnStops = {};
 
+  /// The turn of this session that is listened to and not over yet, if any.
+  /// A session serves one turn at a time: a second one would snapshot the
+  /// history while the first still owes its reply, and a stop of either
+  /// would then drop the other's input.
+  Object? _turnInFlight;
+
+  StateError _turnUnderWay() => StateError(
+    'A turn of this OnnxWebSession is already under way. Read it to its '
+    'end, or stop it, before starting the next one; open another session for '
+    'a parallel conversation.',
+  );
+
   void _assertNotClosed() {
     if (_isClosed) throw StateError('Session is closed');
   }
@@ -547,6 +559,8 @@ class OnnxWebSession extends InferenceModelSession {
   /// subscription), never by another turn's.
   ({Stream<String> text, bool Function() stopped}) _turn() {
     _assertNotClosed();
+    if (_turnInFlight != null) throw _turnUnderWay();
+    final token = Object();
 
     final controller = StreamController<String>();
     final replyBuffer = StringBuffer();
@@ -604,9 +618,11 @@ class OnnxWebSession extends InferenceModelSession {
         return;
       }
       // Still waiting for the mutex: end it now rather than when the turn
-      // ahead finishes. Its onListen bails (and drops its input) right after
-      // it acquires, before any later turn of this session can read the
-      // history: the mutex serves turns in order.
+      // ahead finishes, and let the next turn of this session start. Its
+      // onListen bails (and drops its input) right after it acquires — before
+      // that next turn can read the history, because the mutex package
+      // (3.1.0) serves waiters first in, first out.
+      if (identical(_turnInFlight, token)) _turnInFlight = null;
       if (!controller.isClosed) unawaited(controller.close());
     }
 
@@ -661,7 +677,21 @@ class OnnxWebSession extends InferenceModelSession {
     }
 
     controller.onListen = () async {
+      // Two streams of this session made before either was listened to.
+      if (_turnInFlight != null) {
+        controller.addError(_turnUnderWay());
+        await controller.close();
+        return;
+      }
+      _turnInFlight = token;
       _turnStops.add(stop);
+      // Before the stream closes, so a consumer may start the next turn of
+      // this session from the done event.
+      void endTurn() {
+        _turnStops.remove(stop);
+        if (identical(_turnInFlight, token)) _turnInFlight = null;
+      }
+
       inputEnd = _history.length;
       try {
         await generationMutex.acquire();
@@ -671,12 +701,14 @@ class OnnxWebSession extends InferenceModelSession {
         if (cancelled || controller.isClosed || _isClosed) {
           if (cancelled) dropInput();
           releaseMutexIfHeld();
+          endTurn();
           if (!controller.isClosed) await controller.close();
           return;
         }
-        // Snapshot history AFTER acquiring the lock: a turn queued behind a
-        // still-running turn must see that turn's appended assistant reply,
-        // not a stale pre-reply snapshot.
+        // Snapshot history AFTER acquiring the lock: messages added while
+        // this turn waited are its input too. (The mutex package, 3.1.0,
+        // serves waiters first in, first out, so a turn stopped while waiting
+        // has dropped its input by now.)
         final messages = List<Map<String, String>>.from(_history);
         inputEnd = messages.length;
         await runGeneration(messages);
@@ -700,15 +732,30 @@ class OnnxWebSession extends InferenceModelSession {
           );
         }
         releaseMutexIfHeld();
+        endTurn();
         if (!controller.isClosed) await controller.close();
       } catch (e, st) {
+        // No reply is recorded for a failed turn, so its input goes too: the
+        // history keeps alternating.
+        dropInput();
         releaseMutexIfHeld();
+        if (cancelled) {
+          // Reported as the stop it followed (EngineTurn ends `stopped`), so
+          // say what really happened. `print`: edgeAiLog is silent in
+          // release.
+          // ignore: avoid_print
+          print(
+            '[flutter_edge_ai_onnx] WARNING: a stopped web generation then '
+            'failed: $e',
+          );
+        }
+        endTurn();
         if (!controller.isClosed) {
           controller.addError(e, st);
           await controller.close();
         }
       } finally {
-        _turnStops.remove(stop);
+        endTurn();
       }
     };
     // Also runs once the turn has closed the stream itself; only a cancel

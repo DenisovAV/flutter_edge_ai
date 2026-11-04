@@ -68,17 +68,17 @@ void applyThinkingTokenBudget(
     b.lastError,
   );
   try {
-    checkLiteRtLmStatus(
+    checkLiteRtLmSetter(
       'litert_lm_thinking_config_set_enable_thinking',
       b.litert_lm_thinking_config_set_enable_thinking(config, true),
       b.lastError,
     );
-    checkLiteRtLmStatus(
+    checkLiteRtLmSetter(
       'litert_lm_thinking_config_set_thinking_token_budget',
       b.litert_lm_thinking_config_set_thinking_token_budget(config, budget),
       b.lastError,
     );
-    checkLiteRtLmStatus(
+    checkLiteRtLmSetter(
       'litert_lm_conversation_optional_args_set_thinking_config',
       b.litert_lm_conversation_optional_args_set_thinking_config(
         optionalArgs,
@@ -1123,6 +1123,15 @@ class LiteRtLmFfiClient {
   /// 16); false on one built before it.
   bool _hasTurnRewind = false;
 
+  /// The loaded libLiteRtLm exports `litert_lm_conversation_get_last_turn_end`
+  /// (`patch_c_api.sh` section 23). The release gate requires it; a local
+  /// build without it leaves [_lastTurnEnds] empty instead of failing turns.
+  bool _hasTurnEndRecord = false;
+
+  /// Bumped by [shutdown], so a check that awaited across a shutdown and a
+  /// new engine does not take the new engine's conversation for its own.
+  int _engineGeneration = 0;
+
   /// How the last send on each live conversation ended (§23's record, read
   /// when the send's final or error chunk arrives), with the absl status it
   /// ended with.
@@ -1625,6 +1634,9 @@ class LiteRtLmFfiClient {
     _resolveChunkAccessors(proxyLib, lib);
     _hasTurnRewind = lib.providesSymbol(
       'litert_lm_conversation_rewind_cancelled_turn',
+    );
+    _hasTurnEndRecord = lib.providesSymbol(
+      'litert_lm_conversation_get_last_turn_end',
     );
     _proxyFreeString = proxyLib
         .lookupFunction<_ProxyFreeStringNative, _ProxyFreeStringDart>(
@@ -2873,9 +2885,9 @@ class LiteRtLmFfiClient {
     }
 
     if (result != 0) {
-      // A send refused before it started leaves no turn of its own: the
-      // record still holds the previous one.
-      _lastTurnEnds[conv] = (end: NativeLastTurnEnd.failed, code: result);
+      // A refused send ends its own turn natively (section 16's EndTurn with
+      // the status), as context_full when the input does not fit.
+      _recordTurnEnd(conv);
       send.failed(
         Exception(
           streamStartFailureMessage(
@@ -3058,6 +3070,8 @@ class LiteRtLmFfiClient {
             result.lastTurnEnd,
             result.message,
           );
+          // A rewind resets native's record to none.
+          _recordTurnEnd(conv);
           how = NativeTurnEnd.completed;
           return outcome;
         } finally {
@@ -3076,10 +3090,11 @@ class LiteRtLmFfiClient {
   /// returns: native settles the record before that callback runs. A record
   /// that cannot be read, or an end this client does not know, is kept as
   /// [NativeLastTurnEnd.failed] with the status, never taken for a completed
-  /// turn.
+  /// turn. Never throws: it runs inside a turn's end, which must not fail
+  /// because the record could not be read.
   void _recordTurnEnd(Pointer<LiteRtLmConversation> conv) {
     final b = _bindings;
-    if (b == null || !_liveConvs.contains(conv)) return;
+    if (b == null || !_hasTurnEndRecord || !_liveConvs.contains(conv)) return;
     final end = calloc<Int>()..value = -1;
     final code = calloc<Int>();
     try {
@@ -3092,6 +3107,9 @@ class LiteRtLmFfiClient {
       _lastTurnEnds[conv] = status == liteRtLmStatusOk && known != null
           ? (end: known, code: code.value)
           : (end: NativeLastTurnEnd.failed, code: status);
+    } on Object catch (e) {
+      _lastTurnEnds.remove(conv);
+      edgeAiLog('[LiteRtLmFfi] turn end not read: $e');
     } finally {
       calloc.free(end);
       calloc.free(code);
@@ -3108,6 +3126,7 @@ class LiteRtLmFfiClient {
   /// bundle, an unreadable file), or a count native did not give.
   Future<bool?> _prefillRoomOn(Pointer<LiteRtLmConversation> conv) async {
     final path = _modelPath;
+    final generation = _engineGeneration;
     if (path == null || !_liveConvs.contains(conv)) return null;
     final List<int> lengths;
     try {
@@ -3118,10 +3137,27 @@ class LiteRtLmFfiClient {
       edgeAiLog('[LiteRtLmFfi] prefill signatures of $path unread: $e');
       return null;
     }
-    final b = _bindings;
-    if (lengths.isEmpty || b == null || !_liveConvs.contains(conv)) {
-      return null;
-    }
+    if (lengths.isEmpty) return null;
+    // Under the lock, as every native call on this engine: the counts must not
+    // be read while a decode on another conversation moves them.
+    return _nativeMutex.protect(() async {
+      final b = _bindings;
+      // A shutdown (and maybe a new engine) during the awaits: the address
+      // may now name another engine's conversation.
+      if (b == null ||
+          generation != _engineGeneration ||
+          !_liveConvs.contains(conv)) {
+        return null;
+      }
+      return _prefillFits(b, conv, lengths);
+    });
+  }
+
+  bool? _prefillFits(
+    LiteRtLmBindings b,
+    Pointer<LiteRtLmConversation> conv,
+    List<int> lengths,
+  ) {
     final count = calloc<Size>();
     final infoOut = calloc<Pointer<LiteRtLmBenchmarkInfo>>();
     final window = calloc<Int>();
@@ -3264,6 +3300,8 @@ class LiteRtLmFfiClient {
     // no address can linger as a dangling "live" entry after a bulk free.
     _liveConvs.clear();
     _sentConvs.clear();
+    _lastTurnEnds.clear();
+    _engineGeneration++;
 
     _isInitialized = false;
     _backend = null;
@@ -3398,16 +3436,22 @@ class LiteRtLmFfiClient {
         );
       }
       final r = result;
-      final n = readLiteRtLmSize(
-        'litert_lm_tokenize_result_get_num_tokens',
-        (out) => b.litert_lm_tokenize_result_get_num_tokens(r, out),
-        b.lastError,
-      );
-      final ids = readLiteRtLmPointer<Int>(
-        'litert_lm_tokenize_result_get_tokens',
-        (out) => b.litert_lm_tokenize_result_get_tokens(r, out),
-        b.lastError,
-      );
+      final int n;
+      final Pointer<Int> ids;
+      try {
+        n = readLiteRtLmSize(
+          'litert_lm_tokenize_result_get_num_tokens',
+          (out) => b.litert_lm_tokenize_result_get_num_tokens(r, out),
+          b.lastError,
+        );
+        ids = readLiteRtLmPointer<Int>(
+          'litert_lm_tokenize_result_get_tokens',
+          (out) => b.litert_lm_tokenize_result_get_tokens(r, out),
+          b.lastError,
+        );
+      } on LiteRtLmCallException catch (e) {
+        throw StateError('$e');
+      }
       // Non-empty text cannot tokenise to nothing (see [tokenCount]).
       if (n < 0 || (n == 0 && text.isNotEmpty) || (n > 0 && ids == nullptr)) {
         throw StateError(
@@ -3448,11 +3492,16 @@ class LiteRtLmFfiClient {
         throw StateError('litert_lm_engine_detokenize failed for $ids: $e');
       }
       final r = result;
-      final text = readLiteRtLmPointer<Char>(
-        'litert_lm_detokenize_result_get_string',
-        (out) => b.litert_lm_detokenize_result_get_string(r, out),
-        b.lastError,
-      );
+      final Pointer<Char> text;
+      try {
+        text = readLiteRtLmPointer<Char>(
+          'litert_lm_detokenize_result_get_string',
+          (out) => b.litert_lm_detokenize_result_get_string(r, out),
+          b.lastError,
+        );
+      } on LiteRtLmCallException catch (e) {
+        throw StateError('$e');
+      }
       if (text == nullptr) {
         throw StateError('litert_lm_engine_detokenize returned no text');
       }

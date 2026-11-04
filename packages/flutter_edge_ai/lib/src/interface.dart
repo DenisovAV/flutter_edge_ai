@@ -390,6 +390,7 @@ abstract class InferenceModel {
   ///   their calls run one at a time: a turn waits for the other sessions'
   ///   turns, as long as they run, unless they are stopped. Each turn
   ///   resends the session's whole conversation.
+  /// - ONNX (web): only its history, resent in full on every turn.
   /// - `.litertlm` web and built-in AI: not measured.
   ///
   /// Cap the count with `maxConcurrentSessions` on
@@ -397,8 +398,7 @@ abstract class InferenceModel {
   /// no cap unless the engine applies a platform default: ONNX caps open
   /// sessions at 2 on Android and iOS.
   ///
-  /// Not available on the ONNX **web** path — throws [UnsupportedError]
-  /// there.
+  /// Throws [UnsupportedError] on an engine that does not implement it.
   ///
   /// Throws [StateError] when the model's `maxConcurrentSessions` (set on
   /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`) would be

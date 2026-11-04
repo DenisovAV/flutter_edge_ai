@@ -21,10 +21,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// `window.transformers` as the model uses it. Every pipeline call is pushed
 /// to `__tf.calls` with its `resolve`; an interrupt resolves it, as the real
-/// pipeline settles once decoding stops. `pipeline()` waits for `__tf.gate`.
+/// pipeline settles once decoding stops. `pipeline()` waits for `__tf.gate`,
+/// then fails while `__tf.failures` is above zero (one per call).
 const _fakeTransformers = r'''
 (() => {
-  const tf = { calls: [], gate: Promise.resolve(), pipelines: 0 };
+  const tf = { calls: [], gate: Promise.resolve(), pipelines: 0, failures: 0 };
   class TextStreamer {
     constructor(tokenizer, options) { this.cb = options.callback_function; }
   }
@@ -53,6 +54,10 @@ const _fakeTransformers = r'''
     pipeline: async () => {
       tf.pipelines++;
       await tf.gate;
+      if (tf.failures > 0) {
+        tf.failures--;
+        throw new Error('pipeline failed');
+      }
       return makePipe();
     },
   };
@@ -99,10 +104,13 @@ List<String> _contents(JSObject call) => [
     '${m['role']}:${m['content']}',
 ];
 
-OnnxWebInferenceModel _model({int? cap}) => OnnxWebInferenceModel(
+OnnxWebInferenceModel _model({
+  int? cap,
+  ModelType modelType = ModelType.general,
+}) => OnnxWebInferenceModel(
   resolver: _Resolver(),
   maxTokens: 1024,
-  modelType: ModelType.general,
+  modelType: modelType,
   maxConcurrentSessions: cap,
   onClose: () {},
 );
@@ -183,8 +191,8 @@ void main() {
     await model.close();
   });
 
-  test('a stop in one session never cuts another session\'s turn, and '
-      'drops its own turn still waiting for the pipeline', () async {
+  test('a stop on a turn waiting behind another session ends it at once, '
+      'and never cuts the running turn', () async {
     final model = _model();
     final a = await model.openSession();
     final b = await model.openSession();
@@ -194,15 +202,16 @@ void main() {
     final a1 = await _ask(a, 'a1');
     await pumpEventQueue();
     await a.stopGeneration();
+    // A ends while B is still generating.
+    await a1.done.timeout(const Duration(seconds: 5));
+    expect(a1.text, isEmpty);
+    expect(await a1.turn.end, TurnEnd.stopped);
     expect(_interrupted(running), isFalse);
     _emit(running, 'rb1');
     _finish(running);
     await b1.done;
     expect(b1.text, ['rb1']);
     expect(await b1.turn.end, TurnEnd.endOfSequence);
-    await a1.done;
-    expect(a1.text, isEmpty);
-    expect(await a1.turn.end, TurnEnd.stopped);
     await pumpEventQueue();
     expect(_calls, hasLength(1), reason: "a's stopped turn never generated");
 
@@ -222,6 +231,145 @@ void main() {
     _finish(bRunning);
     await b2.done;
     expect(await b2.turn.end, TurnEnd.endOfSequence);
+    await model.close();
+  });
+
+  test('a turn stopped before it produced anything leaves no trace in the '
+      'history, so it keeps alternating', () async {
+    final model = _model();
+    final a = await model.openSession(systemInstruction: 'A');
+    final b = await model.openSession();
+
+    // Stopped while waiting behind B.
+    final b1 = await _ask(b, 'b1');
+    final bRunning = await _call(1);
+    final a1 = await _ask(a, 'a1');
+    await pumpEventQueue();
+    await a.stopGeneration();
+    await a1.done;
+    _finish(bRunning);
+    await b1.done;
+
+    // Stopped while generating, before its first chunk.
+    final a2 = await _ask(a, 'a2');
+    final aRunning = await _call(2);
+    expect(_contents(aRunning), ['system:A', 'user:a2']);
+    await a.stopGeneration();
+    await a2.done;
+    expect(await a2.turn.end, TurnEnd.stopped);
+
+    final a3 = await _ask(a, 'a3');
+    final next = await _call(3);
+    expect(_contents(next), ['system:A', 'user:a3']);
+    _emit(next, 'ra3');
+    _finish(next);
+    await a3.done;
+
+    // A stop after a chunk keeps the exchange.
+    final a4 = await _ask(a, 'a4');
+    final partial = await _call(4);
+    _emit(partial, 'part');
+    await pumpEventQueue();
+    await a.stopGeneration();
+    await a4.done;
+    final a5 = await _ask(a, 'a5');
+    final last = await _call(5);
+    expect(_contents(last), [
+      'system:A',
+      'user:a3',
+      'assistant:ra3',
+      'user:a4',
+      'assistant:part',
+      'user:a5',
+    ]);
+    _finish(last);
+    await a5.done;
+    await model.close();
+  });
+
+  test('a stop belongs to the turn it stopped: a later turn, or one listened '
+      'to after the stop, ends as itself', () async {
+    final model = _model();
+    final a = await model.openSession();
+
+    final a1 = await _ask(a, 'a1');
+    final first = await _call(1);
+    _emit(first, 'part');
+    await pumpEventQueue();
+    await a.stopGeneration();
+    await a1.done;
+    expect(await a1.turn.end, TurnEnd.stopped);
+
+    // A stop before the turn is listened to does not stop it.
+    await a.addQueryChunk(const Message(text: 'a2', isUser: true));
+    final a2 = _turn(a);
+    await a.stopGeneration();
+    final text = <String>[];
+    final done = a2.text.forEach(text.add);
+    final second = await _call(2);
+    _emit(second, 'ra2');
+    _finish(second);
+    await done;
+    expect(text, ['ra2']);
+    expect(await a2.end, TurnEnd.endOfSequence);
+    await model.close();
+  });
+
+  test('cancelling a waiting turn never interrupts the running turn of the '
+      'same session', () async {
+    final model = _model();
+    final a = await model.openSession();
+    final a1 = await _ask(a, 'a1');
+    final running = await _call(1);
+    await a.addQueryChunk(const Message(text: 'a2', isUser: true));
+    final waiting = _turn(a).text.listen((_) {});
+    await pumpEventQueue();
+    await waiting.cancel();
+    expect(_interrupted(running), isFalse);
+    _emit(running, 'ra1');
+    _finish(running);
+    await a1.done;
+    expect(a1.text, ['ra1']);
+    expect(await a1.turn.end, TurnEnd.endOfSequence);
+    await model.close();
+  });
+
+  test('a failed pipeline load or rejected sampling values free the cap '
+      'slot', () async {
+    final model = _model(cap: 1);
+    await expectLater(
+      model.openSession(temperature: -1),
+      throwsA(isA<ArgumentError>()),
+    );
+    // webgpu, then the wasm retry.
+    _tf['failures'] = 2.toJS;
+    await expectLater(model.openSession(), throwsA(anything));
+    await model.openSession();
+    expect(model.sessions, hasLength(1));
+    await model.close();
+  });
+
+  test("openChat takes the model's own type (D8): a Qwen3 repo gets "
+      "/no_think and its thinking is not the answer", () async {
+    final model = _model(modelType: ModelType.qwen3);
+    final chat = await model.openChat();
+    expect(chat.modelType, ModelType.qwen3);
+    expect(chat.supportImage, isFalse);
+    await chat.addQuery(const Message(text: 'hi', isUser: true));
+    final responses = <ModelResponse>[];
+    final done = chat.generateChatResponseAsync().forEach(responses.add);
+    final call = await _call(1);
+    expect(_contents(call).last, 'user:hi /no_think');
+    _emit(call, '<think>');
+    _emit(call, 'hmm');
+    _emit(call, '</think>');
+    _emit(call, 'Hello');
+    _finish(call);
+    await done;
+    final answer = responses.whereType<TextResponse>().map((r) => r.token);
+    expect(answer.join(), isNot(contains('think')));
+    expect(answer.join(), contains('Hello'));
+    await chat.close();
     await model.close();
   });
 

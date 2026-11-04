@@ -16,14 +16,38 @@ class LlmInferenceBackend implements WebLlmBackend {
   /// The calls of every session of the model, one at a time.
   final WebLlmLane _lane = WebLlmLane();
 
-  /// A call of the lane too: MediaPipe refuses it while a generation runs,
-  /// and core's chat counts a reply right after its stream, when another
-  /// session's call may already run.
+  /// The token counts of the last replies, counted inside their own call.
+  final Map<String, int> _replySizes = <String, int>{};
+  static const int _replySizesKept = 16;
+
+  /// Counts [reply] while its call still holds the lane: core's chat counts
+  /// each reply right after its stream, when another session's call may
+  /// already run, and a count then would wait for that whole generation.
+  void _countReply(String reply) {
+    if (reply.isEmpty) return;
+    try {
+      _replySizes.remove(reply);
+      _replySizes[reply] = _llm.sizeInTokens(reply.toJS).toDartInt;
+      if (_replySizes.length > _replySizesKept) {
+        _replySizes.remove(_replySizes.keys.first);
+      }
+    } catch (_) {
+      // Not counted here; sizeInTokens counts it in the lane.
+    }
+  }
+
+  /// MediaPipe refuses a count while a generation runs, so it is a call of
+  /// the lane, except for an empty text and a reply just generated, whose
+  /// count its own call took.
   @override
-  Future<int> sizeInTokens(String text) async => (await _lane.run(
-    WebLlmCall(owner: 'sizeInTokens'),
-    () async => _llm.sizeInTokens(text.toJS).toDartInt,
-  ))!;
+  Future<int> sizeInTokens(String text) async {
+    if (text.isEmpty) return 0;
+    if (_replySizes[text] case final size?) return size;
+    return (await _lane.run(
+      WebLlmCall(owner: 'sizeInTokens'),
+      () async => _llm.sizeInTokens(text.toJS).toDartInt,
+    ))!;
+  }
 
   @override
   Future<String?> generate(List<PromptPart> prompt, WebLlmCall call) =>
@@ -32,18 +56,24 @@ class LlmInferenceBackend implements WebLlmBackend {
         final reply = jsPrompt.isA<JSString>()
             ? _llm.generateResponse(jsPrompt as JSString, null)
             : _llm.generateResponseMultimodal(jsPrompt, null);
-        return (await reply.toDart).toDart;
+        final text = (await reply.toDart).toDart;
+        _countReply(text);
+        return text;
       });
 
   @override
   Stream<String> generateStream(List<PromptPart> prompt, WebLlmCall call) {
     final controller = StreamController<String>();
+    // What the consumer was sent: the text core's chat counts.
+    final sent = StringBuffer();
     void onPiece(JSString partial, JSAny complete) {
       if (controller.isClosed) return;
       try {
         // The stream ends when the call settles, below: MediaPipe refuses a
         // new call until then, and `complete` comes first.
-        controller.add(partial.toDart);
+        final piece = partial.toDart;
+        sent.write(piece);
+        controller.add(piece);
       } catch (e, st) {
         controller
           ..addError(e, st)
@@ -62,6 +92,7 @@ class LlmInferenceBackend implements WebLlmBackend {
               ? _llm.generateResponse(jsPrompt as JSString, onPiece.toJS)
               : _llm.generateResponseMultimodal(jsPrompt, onPiece.toJS);
           await reply.toDart;
+          _countReply(sent.toString());
         });
         if (!controller.isClosed) await controller.close();
       } catch (e, st) {

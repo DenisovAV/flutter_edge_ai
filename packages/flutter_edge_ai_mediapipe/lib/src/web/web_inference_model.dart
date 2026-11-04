@@ -358,29 +358,34 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     required bool explicit,
   }) async {
     var pending = _llmFuture;
+    final first = pending == null;
     if (pending == null) {
       pending = _llmFuture = _createModel(sampling, loraPath);
-      _loadedWith = (
-        sampling: sampling,
-        explicit: explicit,
-        loraPath: loraPath,
-      );
-    } else {
-      _warnIfIgnored(sampling, loraPath, explicit: explicit);
+      _loadedWith = (sampling: sampling, explicit: explicit);
     }
+    final LlmInference llm;
     try {
-      return await pending;
+      llm = await pending;
     } catch (_) {
       if (identical(_llmFuture, pending)) {
         _llmFuture = null;
         _loadedWith = null;
+        _loadedLora = null;
       }
       rethrow;
     }
+    // After the load: the LoRA it applied is known only then.
+    if (!first) _warnIfIgnored(sampling, loraPath, explicit: explicit);
+    return llm;
   }
 
-  /// What the loaded model was created with.
-  ({ResolvedSampling sampling, bool explicit, String? loraPath})? _loadedWith;
+  /// The sampling the loaded model was created with, and whether its caller
+  /// set any of it.
+  ({ResolvedSampling sampling, bool explicit})? _loadedWith;
+
+  /// The LoRA the loaded model applied: the request's or the installed one,
+  /// and only with [loraRanks]; null for none.
+  String? _loadedLora;
   bool _ignoredWarned = false;
 
   /// Prints once per model when a later session asks for a sampling or a
@@ -406,9 +411,10 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
       asked.add(describe(sampling));
       kept.add(describe(other));
     }
-    if (loraPath != null && loraPath != loaded.loraPath) {
+    final applied = _loadedLora;
+    if (loraPath != null && loraPath != applied) {
       asked.add('LoRA $loraPath');
-      kept.add(loaded.loraPath == null ? 'no LoRA' : 'LoRA ${loaded.loraPath}');
+      kept.add(applied == null ? 'no LoRA' : 'LoRA $applied');
     }
     if (asked.isEmpty) return;
     _ignoredWarned = true;
@@ -444,6 +450,7 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     // LoRA path comes from the resolver alongside the model source.
     final loraPathToUse = loraPath ?? resolved.loraPath;
     final hasLoraParams = loraPathToUse != null && loraRanks != null;
+    _loadedLora = hasLoraParams ? loraPathToUse : null;
 
     // MediaPipe consumes either modelAssetPath (Blob URL string) or
     // modelAssetBuffer (ReadableStreamDefaultReader, for OPFS streaming).

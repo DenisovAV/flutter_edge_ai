@@ -58,6 +58,7 @@ WebInferenceModel testModel({
   bool supportAudio = false,
   WebModelSourceResolver? resolver,
   int? maxConcurrentSessions,
+  List<int>? loraRanks,
 }) => WebInferenceModel(
   modelType: ModelType.gemma4,
   onClose: () {},
@@ -67,6 +68,7 @@ WebInferenceModel testModel({
   supportAudio: supportAudio,
   maxNumImages: supportImage ? 4 : null,
   maxConcurrentSessions: maxConcurrentSessions,
+  loraRanks: loraRanks,
 );
 
 /// Stands in for the page's MediaPipe globals for the rest of the test.
@@ -119,18 +121,25 @@ fakeMediaPipe() {
   JSObject instance,
   List<void> cancels,
 })
-heldMediaPipe() {
+heldMediaPipe({bool streamReplies = false}) {
   final calls = <Completer<String>>[];
   final prompts = <JSAny>[];
   final cancels = <void>[];
   final instance = JSObject()
     ..setProperty(
       'generateResponse'.toJS,
-      ((JSAny prompt, JSAny? _) {
+      ((JSAny prompt, JSFunction? progress) {
         final call = Completer<String>();
         calls.add(call);
         prompts.add(prompt);
-        return call.future.then((text) => text.toJS).toJS;
+        return call.future.then((text) {
+          // With [streamReplies], the reply also reaches a stream, as one
+          // piece just before the call settles.
+          if (streamReplies) {
+            progress?.callAsFunction(null, text.toJS, true.toJS);
+          }
+          return text.toJS;
+        }).toJS;
       }).toJS,
     )
     ..setProperty(
@@ -220,6 +229,21 @@ heldMediaPipe() {
     ),
   );
   return (prompts: prompts, errors: errors);
+}
+
+/// Answers with a Blob URL and an installed LoRA.
+final class LoraResolver implements WebModelSourceResolver {
+  LoraResolver(this.loraPath);
+  final String loraPath;
+
+  @override
+  Future<InferenceModelSpec> activeInferenceSpec() =>
+      Completer<InferenceModelSpec>().future;
+
+  @override
+  Future<({WebModelSource model, String? loraPath})>
+  resolveActiveInferenceModel() async =>
+      (model: const BlobUrlModelSource('blob:fake-model'), loraPath: loraPath);
 }
 
 /// Answers with a Blob URL, after failing its first [failures] calls.

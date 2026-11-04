@@ -376,6 +376,79 @@ void main() {
     await model.close();
   });
 
+  test('a chat whose reply ended does not wait for the other chat\'s '
+      'generation to count it', () async {
+    final fake = heldMediaPipe(streamReplies: true);
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final a = await model.openChat();
+    final b = await model.openChat();
+    await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+    await b.addQueryChunk(const Message(text: 'QB', isUser: true));
+    final aTurn = a.generateChatResponseAsync().toList();
+    final bTurn = b.generateChatResponseAsync().toList();
+    await _settle();
+    expect(fake.calls, hasLength(1));
+
+    fake.calls.single.complete('Reply A');
+    await _settle();
+    expect(fake.calls, hasLength(2), reason: "b's generation runs now");
+    // a's stream has ended and the chat counts the reply; MediaPipe is busy
+    // with b's call, so the count comes from a's own call.
+    final aReplies = await aTurn.timeout(const Duration(seconds: 2));
+    expect(
+      aReplies.whereType<TextResponse>().map((r) => r.token).join(),
+      'Reply A',
+    );
+    // An empty text costs no call either: a stopped turn's reply.
+    expect(
+      await model.sessions.first
+          .sizeInTokens('')
+          .timeout(const Duration(seconds: 2)),
+      0,
+    );
+    expect(fake.calls.last.isCompleted, isFalse);
+
+    fake.calls.last.complete('Reply B');
+    await bTurn;
+    await a.close();
+    await b.close();
+    await model.close();
+  });
+
+  test('the LoRA warning compares with the LoRA the model applied', () async {
+    fakeMediaPipe();
+    final model = testModel(
+      supportImage: false,
+      resolver: LoraResolver('blob:installed'),
+      loraRanks: [4],
+    );
+    final lines = await _printed(() async {
+      await model.openSession();
+      // The installed LoRA is the one applied: asking for it again is fine.
+      await model.openSession(loraPath: 'blob:installed');
+      await model.openSession(loraPath: 'blob:other');
+    });
+    final warnings = _warnings(lines);
+    expect(warnings, hasLength(1), reason: lines.join('\n'));
+    expect(warnings.single, contains('LoRA blob:other'));
+    expect(warnings.single, contains('loaded with LoRA blob:installed'));
+    await model.close();
+  });
+
+  test('a LoRA without loraRanks is not applied, and the warning says '
+      'so', () async {
+    fakeMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final lines = await _printed(() async {
+      await model.openSession(loraPath: 'blob:lora');
+      await model.openSession(loraPath: 'blob:lora');
+    });
+    final warnings = _warnings(lines);
+    expect(warnings, hasLength(1), reason: lines.join('\n'));
+    expect(warnings.single, contains('loaded with no LoRA'));
+    await model.close();
+  });
+
   test('openChat runs a chat on its own session', () async {
     final fake = fakeMediaPipe();
     final model = testModel(supportImage: false, resolver: BlobResolver());

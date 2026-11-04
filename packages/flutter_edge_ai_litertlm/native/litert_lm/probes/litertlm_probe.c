@@ -1761,7 +1761,8 @@ int main(int argc, char** argv) {
   printf("INFO c_api %d.%d.%d missing_exports=%d\n", major, minor, patch,
          missing);
   if (missing) return 4;
-  litert_lm_set_min_log_level(3);
+  // PROBE_LOG_LEVEL=0 shows LiteRT-LM's INFO lines (which accelerator loaded).
+  litert_lm_set_min_log_level(getenv("PROBE_LOG_LEVEL") ? atoi(getenv("PROBE_LOG_LEVEL")) : 3);
   g_cache_dir = getenv("PROBE_CACHE_DIR");
   g_dispatch_dir = getenv("PROBE_DISPATCH_DIR");
   if (getenv("PROBE_MAX_TOKENS")) g_max_tokens = atoi(getenv("PROBE_MAX_TOKENS"));

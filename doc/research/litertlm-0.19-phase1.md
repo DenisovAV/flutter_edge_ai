@@ -449,3 +449,49 @@ LiteRT's external weight loader, which is why the Dart catalog does not honour
 `gpu` on macOS (`liteRtLmEmbeddingGpuAbis`). Lifting that is an L2 decision.
 
 Paid runs: `litertlm-0.19-l1-paid-runs.md`.
+
+## macOS without the `LiteRtLmMetalAccelerator` framework (2026-11-04)
+
+Gemma 4 E2B on Metal, `multiconv`, `determinism`, `chat`, from the official
+`build_macos.sh` build, run twice:
+- with no framework anywhere;
+- with the framework staged where §10b looks for it (`@executable_path/../Frameworks/LiteRtLmMetalAccelerator.framework/LiteRtLmMetalAccelerator`).
+
+Both pass with identical results. With `PROBE_LOG_LEVEL=0`, both log
+"Statically linked GPU accelerator registered", and neither logs an attempt to
+load the framework. So on 0.19 the static ML Drift Metal accelerator linked
+into libLiteRtLm registers first, and the framework is never opened on macOS.
+iOS links the same static accelerator (phase-1 builds) but was not run.
+
+What dropping the framework would change (not done; iPhone run first):
+- `build_macos.sh` / `build_ios.sh`: stop copying and renaming upstream's
+  `libLiteRtMetalAccelerator.dylib` (and its `vtool`/`codesign` steps); the
+  check that refuses a `libLiteRtLm` naming `libLiteRtGpuAccelerator` or the
+  bare `LiteRtMetalAccelerator` stays.
+- `verify_tarball_manifest.sh`: the three Apple `libLiteRtLmMetalAccelerator.dylib`
+  rows move from REQUIRED to FORBIDDEN, plus INTENTIONAL_DROPS entries against
+  native-v0.18.0-h.
+- `hook/build.dart`: `LiteRtLmMetalAccelerator` and `LiteRtTopKMetalSampler`
+  leave `companions` for `legacyFileNames`.
+- macOS SwiftPM:
+  - `macos/flutter_edge_ai_litertlm/Package.swift` keeps one binary target
+    (GemmaModelConstraintProvider), and the `companions` checksums lose the
+    Metal row;
+  - `package_macos_spm_companions.sh` and `checksums_spm_macos.txt` no longer
+    produce `LiteRtLmMetalAccelerator.xcframework.zip`;
+  - the release loses one asset.
+- `tool/stage_macos_companions.sh` (SwiftPM off): `COMPANIONS` loses the Metal
+  accelerator and the TopK Metal sampler; its load-command check and the
+  "removed an older framework" clean-up stay; `test/macos_companion_staging_test.dart`
+  changes with it.
+- iOS: `example/ios/Podfile` and the example `project.pbxproj` entries that
+  embed the framework.
+- §10b (`patches/litert_gpu_registry_apple.patch`): its framework path becomes
+  dead code once nothing ships at that path, but its other half should stay.
+  It removes the generic `libLiteRtGpuAccelerator` and the `RTLD_DEFAULT`
+  fallback on Apple. If the static registration ever failed, that fallback
+  would again bind flutter_litert's accelerator (the crash §10b fixed). So:
+  drop the framework path, keep "no dynamic GPU accelerator on Apple".
+- Docs: AGENTS.md (macOS companions, #689), `DESKTOP_SUPPORT.md`, website
+  `desktop.md` / `getting-started.md`, the inference skill's
+  `platform-setup.md`, CHANGELOGs at release.

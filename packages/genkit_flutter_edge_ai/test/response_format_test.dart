@@ -100,6 +100,55 @@ void main() {
 
       expect(chunks.map((c) => c.text), ['{"backend": ', '"gpu"}']);
       expect(response.message!.text, '{"backend": "gpu"}');
+      expect(fakeModel.createChatCallCount, 0);
+      expect(fakeModel.sessionRequests.single.responseFormat?.schema, schema);
+    });
+
+    test('keeps the schema with a configured systemInstruction', () async {
+      fakeModel.newSession = () =>
+          FakeStructuredSession(tokens: ['{"backend": "gpu"}']);
+
+      await buildModel()(request(config: {'systemInstruction': 'Be brief.'}));
+
+      // Without a system message the schema goes into the user message;
+      // the configured instruction is sent as it is.
+      expect(fakeModel.sessionRequests.single.systemInstruction, 'Be brief.');
+      expect(sessionPrompt(), contains('conform to the following schema'));
+    });
+
+    test('passes a multi-turn history to the structured session', () async {
+      fakeModel.newSession = () =>
+          FakeStructuredSession(tokens: ['{"backend": "gpu"}']);
+
+      await buildModel()(
+        ModelRequest(
+          messages: [
+            Message(
+              role: Role.user,
+              content: [TextPart(text: 'Which backends are there?')],
+            ),
+            Message(
+              role: Role.model,
+              content: [TextPart(text: 'cpu and gpu.')],
+            ),
+            Message(
+              role: Role.user,
+              content: [TextPart(text: 'Pick one.')],
+            ),
+          ],
+          output: OutputConfig(
+            format: 'json',
+            schema: schema,
+            constrained: true,
+          ),
+        ),
+      );
+
+      final received = fakeModel.openedSessions.single.received;
+      expect(received.map((m) => m.isUser), [true, false, true]);
+      expect(received.first.text, 'Which backends are there?');
+      expect(received[1].text, 'cpu and gpu.');
+      expect(received.last.text, startsWith('Pick one.'));
     });
 
     for (final (what, build) in <(String, ModelRequest Function())>[

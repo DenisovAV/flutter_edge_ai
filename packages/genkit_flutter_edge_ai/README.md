@@ -240,7 +240,7 @@ also sent to flutter_edge_ai as the chat's `responseFormat`: the engine
 constrains decoding to it and flutter_edge_ai checks every reply. Whether
 the loaded model enforces a format, and which schema keywords, is its
 `structuredOutputSupport`. A schema the model refuses, or one outside
-flutter_edge_ai's dialect (a type union, a `$ref`), is not an error: it
+flutter_edge_ai's dialect (a type union, a recursive type), is not an error: it
 stays a prompt instruction, as it was before any engine could enforce one.
 
 ```dart

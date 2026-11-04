@@ -264,7 +264,7 @@ accepts the schema (`InferenceModel.refusalFor` returns null), the schema is
 also sent as the chat's `responseFormat`: the engine constrains decoding to it
 and flutter_edge_ai checks every reply. Whether a model enforces a format, and
 which keywords, is its `structuredOutputSupport`. A schema the model refuses,
-or one outside flutter_edge_ai's dialect, is not an error: it stays a prompt
+or one outside flutter_edge_ai's dialect (a type union, a recursive type), is not an error: it stays a prompt
 instruction.
 
 ```dart

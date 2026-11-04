@@ -13,6 +13,7 @@ import 'flutter_edge_ai_runtime.dart';
 import 'model_options_parse.dart';
 import 'model_slot.dart';
 import 'runtime_errors.dart';
+import 'schema_inline.dart';
 import 'tool_choice_parse.dart';
 
 /// Capabilities a flutter_edge_ai model advertises to Genkit, for a model
@@ -136,17 +137,18 @@ Model createFlutterEdgeAiModel({
 }
 
 /// [output]'s schema as a flutter_edge_ai format, or null when it cannot be
-/// one: a format other than JSON, or a schema outside
+/// one: a format other than JSON, a schema whose references cannot be
+/// inlined (see [inlineSchemaRefs]), or one outside
 /// `gemma.ResponseFormat.dialect`'s rules (a type union, a boolean
-/// subschema), which then stays a prompt instruction only, as before.
+/// subschema). Such a schema stays a prompt instruction only, as before.
 gemma.JsonSchemaResponseFormat? _responseFormatOf(OutputConfig output) {
   final format = output.format;
   if (format != null && format != 'json') return null;
+  final schema = inlineSchemaRefs(output.schema!);
+  if (schema == null) return null;
   try {
-    return gemma.ResponseFormat.jsonSchema(output.schema!)
+    return gemma.ResponseFormat.jsonSchema(schema)
         as gemma.JsonSchemaResponseFormat;
-  } on RangeError {
-    rethrow;
   } on ArgumentError {
     return null;
   }

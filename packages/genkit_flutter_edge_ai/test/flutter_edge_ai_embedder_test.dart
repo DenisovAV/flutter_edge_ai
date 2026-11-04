@@ -359,5 +359,25 @@ void main() {
 
       expect(fakeEmbedder.lastCancelToken?.isCancelled, isFalse);
     });
+
+    test('the cancel is detached once the call ends', () async {
+      fakeEmbedder.embeddingsToReturn = [
+        [0.1],
+      ];
+      final controller = CancellationController();
+
+      await buildEmbedder()(
+        EmbedRequest(
+          input: [
+            DocumentData(content: [TextPart(text: 'Hi')]),
+          ],
+        ),
+        cancel: controller.token,
+      );
+      // A token reused for a later call must not reach this one's.
+      controller.cancel();
+
+      expect(fakeEmbedder.lastCancelToken?.isCancelled, isFalse);
+    });
   });
 }

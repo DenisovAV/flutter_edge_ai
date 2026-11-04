@@ -58,7 +58,7 @@ library loading sequence differs per platform.
 
 **Model format (LiteRT-LM engine):** the LiteRT-LM engine on desktop accepts only
 `.litertlm` files. MediaPipe `.bin` / `.task` models used on web won't load on
-desktop. A generic `.litertlm` build runs on every desktop. A build compiled for an NPU runs only on its vendor's platform: Intel on Windows x64, Qualcomm on Linux arm64 with `qualcomm_npu`. MediaTek builds are refused everywhere, and the `-web.litertlm` exports are for the web. The [Model Registry](/docs/registry) shows where each build runs. (The
+desktop. A generic `.litertlm` build runs on every desktop. A build compiled for an NPU runs only on its vendor's platform: Intel on Windows x64, Qualcomm on Linux arm64 with `qualcomm_npu`. MediaTek builds are refused on every desktop (they run on the Android NPU only), and the `-web.litertlm` exports are for the web. The [Model Registry](/docs/registry) shows where each build runs. (The
 [ONNX engine](/docs/onnx) uses its own `.onnx` model directories instead.)
 
 </Warning>
@@ -123,7 +123,7 @@ see [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2
 
 - **Flutter** ≥ 3.44.0
 - **macOS**: Apple Silicon (arm64); 12.0 with `flutter_edge_ai_builtin_ai`, 14.0 with `flutter_edge_ai_llama`
-- **Windows**: 10/11 64-bit. LiteRT-LM needs no Visual C++ Redistributable (see below); `flutter_edge_ai_llama` does — llamadart needs the matching Visual C++ runtime.
+- **Windows**: 10/11 64-bit. LiteRT-LM needs no Visual C++ Redistributable (see below); `flutter_edge_ai_llama` 0.0.6's llama.cpp Windows x64 archive carries the Visual C++ runtime DLLs app-local (Windows arm64 not checked).
 - **Linux**: glibc ≥ 2.34, libstdc++ ≥ 6.0.30 (Ubuntu 22.04+, Debian 12+, Fedora 36+, RHEL 10+ — RHEL 9 ships GCC 11's libstdc++, which is too old)
 - **GPU drivers**: any vendor driver with WebGPU/Vulkan/Metal/DX12 support; falls back to CPU if not available (`LiteRtLmEngine(backendFallback: false)` turns the fallback off)
 

@@ -6,6 +6,16 @@ meta:
     content: https://flutteredge.ai/images/og-image.png
 ---
 
+## flutter_edge_ai 2.5.x: engines that keep core below 2.6.0
+
+> These versions require `flutter_edge_ai` `<2.6.0`, so `flutter pub upgrade` keeps
+> core on 2.5.x until each engine moves to its next line:
+> `flutter_edge_ai_litertlm` 1.19.2 · `flutter_edge_ai_mediapipe` 1.2.6 ·
+> `flutter_edge_ai_builtin_ai` 0.3.8 · `flutter_edge_ai_onnx` 0.8.0 ·
+> `flutter_edge_ai_llama` 0.0.6 · `flutter_edge_ai_speech` 0.5.14 (also
+> `flutter_edge_ai_litertlm` `<1.20.0`) · `genkit_flutter_edge_ai` 0.11.0+.
+> App code does not change.
+
 ## flutter_edge_ai 2.5.0: several open models, removed and deprecated members, embedding providers
 
 ### Removed members

@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-onnx
-description: Use when running ONNX models with flutter_edge_ai_onnx (ModelFileType.onnx) — ORT-GenAI text generation (e.g. Phi-3.5-mini) or ONNX embeddings — on macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64, or in the browser through Transformers.js. Also use when an ONNX install is routed to the wrong engine, genai_config.json is missing, or getActiveModel throws "No inference engine can handle this model" on another platform. For .litertlm models use flutter-edge-ai-inference; for .task, flutter-edge-ai-mediapipe.
+description: Use when running ONNX models with flutter_edge_ai_onnx (ModelFileType.onnx) — ORT-GenAI text generation (e.g. Phi-3.5-mini) or ONNX embeddings — on macOS arm64, Linux x64, Windows x64 and ARM64, Android arm64, iOS arm64, or in the browser through Transformers.js. Also use when an ONNX install is routed to the wrong engine, genai_config.json is missing, or getActiveModel throws "No inference engine can handle this model" on another platform. For .litertlm models use flutter-edge-ai-inference; for .task, flutter-edge-ai-mediapipe.
 ---
 
 # The ONNX engine

@@ -377,12 +377,17 @@ abstract class InferenceModel {
   ///   which takes time on each switch.
   /// - GGUF (`flutter_edge_ai_llama`): the sessions share one runtime and
   ///   allocate no separate native KV caches.
+  /// - ONNX (native, `flutter_edge_ai_onnx` 0.8.0): its own ORT-GenAI
+  ///   generator, whose KV cache (`maxTokens` x the per-token cache size) is
+  ///   allocated at its first turn; capped at 2 on Android and iOS when
+  ///   `maxConcurrentSessions` is unset.
   /// - `.litertlm` web and built-in AI: not measured.
   ///
   /// Cap the count with `maxConcurrentSessions` on
   /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`.
   ///
-  /// Not available on ONNX or on the MediaPipe **web** `.task` path — throws
+  /// Not available on ONNX on the web or on the MediaPipe **web** `.task`
+  /// path — throws
   /// [UnsupportedError] there.
   ///
   /// Throws [StateError] when the model's `maxConcurrentSessions` (set on

@@ -7,7 +7,7 @@ A passing build does not qualify every device, model or accelerator.
 Version 0.0.6 pairs llamadart `>=0.17.5 <0.17.6` with exact Apple
 companion `llamadart_llama_cpp_flutter` 0.17.3; full platform qualification is
 pending. 0.0.3 to 0.0.5 paired SDK 0.15.1 with companion 0.15.0.
-Published 0.0.2 pairs SDK 0.15.0 with companion 0.15.0; 0.0.1 paired 0.13.1 with 0.13.0.
+0.0.2 paired SDK 0.15.0 with companion 0.15.0; 0.0.1 paired 0.13.1 with 0.13.0.
 
 | Feature | Native | Web |
 | --- | --- | --- |

@@ -133,11 +133,11 @@ replaced the model before it ran (`EmbedderClosedException`) is retried once.
 Queries over text documents use `TaskType.retrievalQuery`; pass `queryTask:`
 for another task, e.g. `TaskType.questionAnswering`.
 
-## GGUF embeddings (`flutter_edge_ai_llama` 0.0.3)
+## GGUF embeddings (`flutter_edge_ai_llama` 0.0.3+)
 
 `LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3 (core 2.5.0, llamadart
 0.15.1) runs EmbeddingGemma 2 GGUF text embeddings natively. 0.0.6 moves to
-llamadart 0.17.5: measured there on macOS CPU/Metal; Linux/Windows CPU were
+llamadart 0.17.5: measured there on macOS CPU/Metal (#764); Linux/Windows CPU were
 measured on 0.15.1 only; Android (CPU only) and iOS are not qualified, and only
 the Q8_0 file below is numerically qualified. An explicit GPU request on
 Android, iOS simulators and, from 0.0.6, macOS x64 loads on the CPU, or fails
@@ -171,8 +171,8 @@ final embedder = await FlutterEdgeAi.getActiveEmbedder();
 ```
 
 - Text only: `supportImage`, `supportAudio` and `PreferredBackend.npu` throw
-  `EmbeddingLoadException`. On Android (every device) and iOS simulators an
-  explicit `gpu` falls back to CPU with a warning, or throws with
+  `EmbeddingLoadException`. On Android (every device), iOS simulators and, from
+  0.0.6, macOS x64/Rosetta an explicit `gpu` falls back to CPU with a warning, or throws with
   `LlamaEmbeddingBackend(backendFallback: false)`; `activeBackend` reports what
   loaded.
 - Only a mean-pooled `gemma-embedding2` GGUF loads; any other architecture or

@@ -50,6 +50,9 @@
 //   sent FIRST, echoing what the worker received on [GenAiTurn.isFirstTurn]
 //   — lets a test assert the client-observable effect of `resetSession()`
 //   without reaching into worker-private state.
+// - `echoSession`: when true, a marker chunk `[session=<id> turn=<n>]` is sent
+//   first: the session the turn ran on and how many turns that session has had
+//   since its generator was last reset (the fake's per-session "KV cache").
 // - `gate`: blocks on the gate before the first chunk — a prompt's prefill,
 //   one native call nothing can interrupt.
 // - `gateAtTail`: once the chunks are done, logs `tail` and blocks on the
@@ -101,6 +104,10 @@ class _ScriptedEngine implements GenAiWorkerEngine {
 
   final Map<String, dynamic> _config;
 
+  /// Turns each session has had since its generator was last reset; the
+  /// stand-in for a per-session KV cache.
+  final Map<int?, int> _turns = {};
+
   String? get _logPath => _config['log'] as String?;
 
   void _log(String line) {
@@ -144,7 +151,10 @@ class _ScriptedEngine implements GenAiWorkerEngine {
     required void Function(String piece) emit,
     required bool Function() stopRequested,
   }) async {
-    _log('generate');
+    _log(turn.sessionId == null ? 'generate' : 'generate:${turn.sessionId}');
+    if (turn.isFirstTurn) _turns.remove(turn.sessionId);
+    final turnNumber = _turns[turn.sessionId] =
+        (_turns[turn.sessionId] ?? 0) + 1;
     final script = _objectOrNull(turn.userContent);
     if (script != null && script['kill'] == true) {
       // Simulate an unexpected native crash: the isolate dies while a
@@ -174,6 +184,12 @@ class _ScriptedEngine implements GenAiWorkerEngine {
     }
 
     var generated = 0;
+    if (script?['echoSession'] == true) {
+      // A generator per session: the count is how many turns this session has
+      // had since its last reset, so it shows whose context a turn ran on.
+      emit('[session=${turn.sessionId} turn=$turnNumber]');
+      generated++;
+    }
     if (script?['echoIsFirstTurn'] == true) {
       emit('[isFirstTurn=${turn.isFirstTurn}]');
       generated++;
@@ -221,8 +237,9 @@ class _ScriptedEngine implements GenAiWorkerEngine {
   }
 
   @override
-  void resetGenerator() {
-    _log('reset');
+  void resetGenerator({int? sessionId}) {
+    _turns.remove(sessionId);
+    _log(sessionId == null ? 'reset' : 'reset:$sessionId');
     if (_config['gateReset'] == true) _blockUntilReleased();
     if (_config['killOnReset'] == true) {
       Isolate.current.kill(priority: Isolate.immediate);

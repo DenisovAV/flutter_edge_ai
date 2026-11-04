@@ -32,6 +32,12 @@ export 'src/utils/file_names.dart' show isLiteRtLmFilename, sanitizeHfDirName;
 // engine_web.dart.
 export 'src/media/encoded_media_format.dart' show detectImageMimeType;
 
+// Session SPI: what an engine implements so that core's openSession, openChat
+// and chat turns run on it.
+export 'src/interface.dart'
+    show ChatRequest, EngineTurn, ResolvedChatRequest, SessionRequest;
+export 'src/chat.dart' show ChatTurnHooks;
+
 // Inference-engine helpers. (`supportedLoraRanks` and
 // `defaultMaxFunctionBufferLength` reach engines through the app library.)
 export 'src/extensions.dart' show MessageExtension;

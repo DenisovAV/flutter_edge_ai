@@ -1,7 +1,7 @@
 # llama.cpp adapter maintenance
 
-Version 0.0.5 adapts core 2.5.0+ through
-public engine libraries and published llamadart 0.15.1. Keep source qualification
+Current source / next release adapts core 2.5.0+ through public engine libraries
+and llamadart 0.17.5. Published 0.0.5 uses SDK 0.15.1 / companion 0.15.0. Keep source qualification
 separate from hosted consumer qualification. Inference routes by declared type.
 LlamaEmbeddingBackend registers self-contained GGUF through core's embedding SPI; see doc/embeddings.md.
 
@@ -18,20 +18,24 @@ LlamaEmbeddingBackend registers self-contained GGUF through core's embedding SPI
   enumeration with `GGML_METAL_DEVICES=0`; this is not GPU qualification.
 - Native source ownership stays in llamadart-native; Web assets in llama-web-bridge-assets.
   Do not patch downloaded SDKs, runtimes or models to pass tests.
-- Consumers retain `[llama_cpp]` in root hooks as defence in depth. SDK 0.15.1
+- Consumers retain `[llama_cpp]` in root hooks as defence in depth. SDK 0.17.5
   chooses it automatically for this graph and rejects explicit LiteRT-LM collisions.
   Settings do not propagate. Apple workspace apps declare the companion directly
   in the app and hooks in the root; inconsistent companion choices remain unqualified.
 - Keep [platforms.md](doc/platforms.md) current; qualification history belongs in the PR.
 - Publication, ownership, copyright and bundle IDs require maintainer decisions.
 
-- The SDK constraint targets one published patch (`>=0.15.1 <0.15.2`); the Apple
-  companion is exact (`0.15.0`). Every SDK upgrade requires a coordinated
+- The SDK constraint targets one published patch (`>=0.17.5 <0.17.6`); the Apple
+  companion is exact (`0.17.3`). Every SDK upgrade requires a coordinated
   connector release and qualification of the selected companion and Web bridge.
-  Companion patches are independent: both 0.15.0 and 0.15.1 accept SDK
-  `>=0.15.0 <0.16.0`; preserve the tested 0.15.1 / 0.15.0 pair.
-  Pub enforces the companion/core minor pairing, backed by Apple build guards; SDK 0.15.1 also constrains workspace
+  Companion patches are independent; 0.17.3 accepts SDK `>=0.17.1 <0.18.0`.
+  Full platform qualification of the new pair is pending; preserve historical
+  0.15.1 / 0.15.0 evidence without relabeling it.
+  Pub enforces the companion/core minor pairing, backed by Apple build guards; SDK 0.17.5 also constrains workspace
   hooks/code_assets below 3.0. Never silently widen these constraints.
   On an SDK upgrade, recheck that llamadart's automatic CPU targets
-  (`resolvePreferredBackendForLoad`) still equal `nativeEmbeddingGpuRefusal`:
+  (`resolvePreferredBackendForLoad`) still equal `nativeEmbeddingAutoUsesCpu`:
   the automatic-CPU warning is silenced on exactly that set.
+  Current source also refuses explicit GPU embeddings on Android, iOS simulators
+  and macOS x64/Rosetta; the latter is a conservative guard for upstream-reported
+  Intel/AMD Metal corruption, not measured EG2 corruption. macOS arm64 is unaffected.

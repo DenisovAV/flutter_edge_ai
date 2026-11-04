@@ -1,5 +1,9 @@
 ## 2.6.0
 - Engine SPI: `readDecisionSection`/`openOptionScorer` move onto `InferenceModel`; `OptionScoringModel` is removed (#769).
+- Engine SPI: `openEngineSession`, `resolveChatRequest`, `ChatTurnHooks`; `openSession`, `openChat` and chat turns are `@nonVirtual`.
+- `openChat` fills unset values with the model's own, as `createChat` does.
+- On LiteRT-LM and MediaPipe, a chat turn closed by the app keeps its partial reply, then throws `StateError`.
+- A chat's failed token count or session rebuild is the turn's error, not a log line.
 
 ## 2.5.5
 - `uninstallModel` removes a directory (ORT-GenAI) model by its name (#730).

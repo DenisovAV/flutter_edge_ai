@@ -15,6 +15,7 @@ import 'package:mutex/mutex.dart';
 import 'litert_lm_page_lock.dart';
 import 'litert_lm_web.dart';
 import '../ffi/engine_sampler_latch.dart';
+import '../reported_engine_turn.dart';
 import '../thinking_context.dart';
 import 'litert_lm_web_session_config.dart';
 
@@ -97,9 +98,16 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
   @override
   InferenceModelSession? get session => _session;
 
+  /// Open sessions still being built: they count against
+  /// [maxConcurrentSessions] from the check on, so two calls that overlap
+  /// cannot both pass it.
+  int _openingSessions = 0;
+
   @override
-  List<InferenceModelSession> get sessions =>
-      List.unmodifiable([if (_session != null) _session!, ..._openSessions]);
+  List<InferenceModelSession> get engineSessions => [
+    if (_session != null) _session!,
+    ..._openSessions,
+  ];
 
   Future<void> _ensureEngine() async {
     if (_engine != null) return;
@@ -251,6 +259,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
         generationMutex: generationMutex,
         onGeneration: () =>
             _noteGeneration(sampling, explicit: !explicit.isEmpty),
+        maxOutputTokens: maxOutputTokens,
         onClose: () {
           _session = null;
           _createCompleter = null;
@@ -272,19 +281,22 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
   }
 
   @override
-  Future<InferenceModelSession> openSession({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    String? loraPath,
-    bool? enableVisionModality,
-    bool? enableAudioModality,
-    String? systemInstruction,
-    bool enableThinking = false,
-    List<Tool> tools = const [],
-    int? maxOutputTokens,
-  }) async {
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    final SessionRequest(
+      :temperature,
+      :randomSeed,
+      :topK,
+      :topP,
+      :loraPath,
+      :enableVisionModality,
+      :enableAudioModality,
+      :systemInstruction,
+      :enableThinking,
+      :tools,
+      :maxOutputTokens,
+    ) = request;
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
@@ -297,7 +309,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       );
     }
     final cap = maxConcurrentSessions;
-    if (cap != null && _openSessions.length >= cap) {
+    if (cap != null && _openSessions.length + _openingSessions >= cap) {
       throw StateError(
         'Max concurrent sessions ($cap) reached. Close an existing session '
         'before opening a new one.',
@@ -315,15 +327,36 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       randomSeed: randomSeed,
     );
     final sampling = _resolveSampling(explicit, thinking: enableThinking);
-    await _ensureEngine();
-    final conversation = await _buildConversation(
-      sampling: sampling,
-      systemInstruction: systemInstruction,
-      enableThinking: enableThinking,
-      tools: tools,
-      maxOutputTokens: maxOutputTokens,
-      sw: Stopwatch()..start(),
-    );
+    // Counted from the cap check until the session is in [_openSessions]:
+    // the awaits below would otherwise let a second call pass the check.
+    _openingSessions++;
+    final LiteRtLmConversation conversation;
+    try {
+      await _ensureEngine();
+      conversation = await _buildConversation(
+        sampling: sampling,
+        systemInstruction: systemInstruction,
+        enableThinking: enableThinking,
+        tools: tools,
+        maxOutputTokens: maxOutputTokens,
+        sw: Stopwatch()..start(),
+      );
+    } finally {
+      _openingSessions--;
+    }
+    // Closed while the engine or the conversation was being created: the
+    // model has deleted (or is deleting) its engine.
+    if (_isClosed) {
+      try {
+        await conversation.delete().toDart;
+      } catch (e) {
+        edgeAiLog(
+          '[LiteRtLmWebInferenceModel] deleting a conversation built while '
+          'the model closed failed: $e',
+        );
+      }
+      throw StateError('Model was closed while opening a session');
+    }
 
     late final LiteRtLmWebSession session;
     session = LiteRtLmWebSession(
@@ -333,6 +366,7 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
       generationMutex: generationMutex,
       onGeneration: () =>
           _noteGeneration(sampling, explicit: !explicit.isEmpty),
+      maxOutputTokens: maxOutputTokens,
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);
@@ -536,6 +570,7 @@ class LiteRtLmWebSession extends InferenceModelSession
     required this.generationMutex,
     required this.onClose,
     this.onGeneration,
+    this.maxOutputTokens,
   });
 
   final LiteRtLmConversation conversation;
@@ -550,6 +585,12 @@ class LiteRtLmWebSession extends InferenceModelSession
 
   /// Called after each message is sent, for the owning model's sampler latch.
   final VoidCallback? onGeneration;
+
+  /// The cap on each reply, which decides what a completed turn reports.
+  final int? maxOutputTokens;
+
+  /// [stopGeneration] was called during the current turn.
+  bool _stopAsked = false;
 
   final StringBuffer _queryBuffer = StringBuffer();
   bool _isClosed = false;
@@ -887,12 +928,28 @@ class LiteRtLmWebSession extends InferenceModelSession
   @override
   Future<int> sizeInTokens(String text) async => (text.length / 2).ceil();
 
+  /// How the turn ended, for core's chat: a stop is [TurnEnd.stopped], a
+  /// close the consumer did not ask for [TurnEnd.closed] (the chat keeps the
+  /// partial reply, then raises: decision H). A completed turn reports
+  /// [liteRtLmPlaceholderCompletedEnd], a guess.
+  @override
+  EngineTurn startTurn() {
+    _stopAsked = false;
+    return reportedEngineTurn(
+      getResponseAsync(),
+      stopped: () => _stopAsked,
+      closed: () => _isClosed,
+      completed: () => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
+    );
+  }
+
   /// Stops the in-flight generation both locally (closes the Dart stream)
   /// and upstream (calls `conversation.cancel()` per the @litert-lm/core JS
   /// API). The cancel call is wrapped in try/catch because the early-preview
   /// API may throw if no generation is in flight.
   @override
   Future<void> stopGeneration() async {
+    _stopAsked = true;
     _isCancelled = true;
     try {
       conversation.cancel();

@@ -11,18 +11,22 @@ runtimes. See [advanced usage](doc/advanced_usage.md) and the
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
 Version 0.0.3 adds native text embeddings with llamadart 0.15.1.
-The consumer setup below targets version 0.0.5.
+The primary consumer setup below targets published version 0.0.5.
+Current source / next release uses the coordinated SDK update described below.
 
-The minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**,
-published llamadart **0.15.1** with typed overflow reporting and Apple
-companion **0.15.0**. Connector CI uses Flutter
+The minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**.
+Published version 0.0.5 uses llamadart **0.15.1** with typed overflow reporting
+and Apple companion **0.15.0**. Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. Native EmbeddingGemma 2 text embeddings are described in
 [the embedding guide](doc/embeddings.md). macOS CPU/Metal and Linux/Windows CPU
 have been measured; Android has a maintainer Pixel 8a diagnostic and iOS remains
 unqualified. See the [per-platform evidence](doc/platforms.md#embedding-qualification-by-platform).
 Explicit GPU embeddings on Android (every device) and on iOS simulators fall
 back to CPU by default; `backendFallback: false` refuses those requests before
-loading. Register it with
+loading.
+In current source / next release, explicit GPU embeddings are also refused on
+macOS x64/Rosetta, using the same CPU fallback policy; macOS arm64 Metal is unaffected.
+Register it with
 `FlutterEdgeAi.initialize(embeddingBackends: const [LlamaEmbeddingBackend()])`
 and install the `.gguf` alone with
 `FlutterEdgeAi.installEmbedder().modelFromFile(path).install()`; no tokenizer
@@ -67,7 +71,9 @@ API 28. Passing builds do not qualify every device or GPU.
 
 ### Run in a browser
 
-From the package directory, prepare the runtime files before launching:
+From the package directory, prepare the runtime files before launching. After
+updating the package or source checkout, rerun `tool/fetch_web_assets.py` to
+refresh the staged Web runtime files for that version:
 
 ```sh
 python3 tool/fetch_web_assets.py
@@ -97,8 +103,8 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-Version 0.0.5 requires core 2.5.0+ and llamadart 0.15.1.
-Add these hosted dependencies to your app:
+Published version 0.0.5 requires core 2.5.0+ and llamadart 0.15.1.
+Use these hosted dependencies for the published package:
 
 ```yaml
 dependencies:
@@ -121,10 +127,12 @@ only when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-The SDK constraint is bounded to published patch 0.15.1. Version 0.0.5
-retains the tested SDK 0.15.1 / companion 0.15.0 pair. Companion 0.15.0 and
-0.15.1 both accept SDK `>=0.15.0 <0.16.0`; companion patches are versioned
-independently, so an SDK patch does not require a companion upgrade.
+Current source / next release bounds llamadart to `>=0.17.5 <0.17.6` and selects exact
+Apple companion `0.17.3`, native artifacts `v0.8.0-1` and Web bridge `v0.1.79`.
+These source pins are not the published 0.0.5 recipe; use a checkout dependency
+to try them. Full platform qualification of this pair is pending. Historical 0.15.1/0.15.0
+evidence does not qualify it. Companion patches are versioned independently;
+validate SDK upgrades with the selected companion and Web bridge.
 Android apps must exclude `armeabi-v7a`: llama.cpp supplies arm64-v8a and x86_64.
 For fat APKs and app bundles, clear inherited `ndk.abiFilters` before setting
 those two ABIs. With `--split-per-abi`, let Flutter own the filters and pass
@@ -156,7 +164,10 @@ and uses its SwiftPM companion instead of bundling a second runtime.
 All apps using llamadart in the workspace must select the same companions.
 If the hook warns that it cannot choose a consistent setup, fix those declarations or use
 separate workspaces. See the [tested workspace scope](doc/platforms.md#apple-workspaces).
-Windows users need the Microsoft Visual C++ runtime for the app architecture.
+For current source / next release, the verified native `v0.8.0-1` Windows x64
+archive includes app-local Visual C++ runtime DLLs; this evidence does not cover
+published 0.0.5 or Windows arm64. Older/custom bundles follow the SDK's
+redistributable diagnostics. See the [archive evidence and combined-app limitation](doc/platforms.md#consumer-setup).
 See [platform setup](doc/platforms.md#consumer-setup) for backend selection.
 
 ### Stream a response
@@ -254,6 +265,8 @@ With Python 3 and curl installed, stage the checksum-verified bridge into your a
 ```sh
 python3 <package-root>/tool/fetch_web_assets.py --output <app-root>/web/webgpu_bridge
 ```
+
+Rerun this command after upgrading the package to refresh the staged assets.
 
 Copy `example/web/cache_api.js`, `cache_api.LICENSE` and `_headers` into your
 app's `web/` directory, and load `cache_api.js` inside the `<head>` of `web/index.html`. Hosts that ignore `_headers` need equivalent server configuration.

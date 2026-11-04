@@ -2,6 +2,8 @@
 - LiteRT-LM 0.19.0 (`native-v0.19.0-a`, C API 1.0); a library on another C API major is refused at load.
 - EmbeddingGemma 2 text on the GPU on Windows x64 (270m) and macOS (270m, 740m) too (#744).
 - MediaTek NPU refused: LiteRT-LM 0.19 cannot load Google's MediaTek dispatch (LiteRT-LM #4256).
+- Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and media.
+- Native: a turn cut short by closing its session or model ends with a `StateError`.
 
 ## 1.19.1
 - The native library loads and engine settings are made off the calling isolate (#756).

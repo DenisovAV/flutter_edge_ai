@@ -17,6 +17,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'support/noop_session.dart';
+
 /// A scriptable fake [InferenceChat]: yields the next queued turn's token/call
 /// stream per [generateChatResponseAsync] call and records every
 /// [addQueryChunk] message (so a test can assert what was fed back to the
@@ -28,13 +30,15 @@ class _FakeAgentChat extends InferenceChat {
   /// same way — `[a, b, c]` is still three separate turns.
   _FakeAgentChat(
     List<ModelResponse> responses, {
-    super.supportImage,
-    super.supportAudio,
-  }) : _turns = [
-         for (final r in responses) [r],
-       ],
-       _errorAfterTurns = const {},
-       super(sessionCreator: null, maxTokens: 1024);
+    bool supportImage = false,
+    bool supportAudio = false,
+  }) : this._(
+         _AgentScript([
+           for (final r in responses) [r],
+         ], const {}),
+         supportImage: supportImage,
+         supportAudio: supportAudio,
+       );
 
   /// Streaming form: each inner list is one turn's ORDERED token/call stream,
   /// so a turn can emit several [TextResponse] tokens (and/or a call). This is
@@ -43,20 +47,27 @@ class _FakeAgentChat extends InferenceChat {
   /// responses — models a native decode error mid-stream, AFTER a tool-call was
   /// already parsed + committed to history by generateChatResponseAsync.
   _FakeAgentChat.turns(
-    this._turns, {
-    this._errorAfterTurns = const {},
-    super.supportAudio,
-  }) : super(sessionCreator: null, maxTokens: 1024);
+    List<List<ModelResponse>> turns, {
+    Set<int> errorAfterTurns = const {},
+    bool supportAudio = false,
+  }) : this._(_AgentScript(turns, errorAfterTurns), supportAudio: supportAudio);
 
-  final List<List<ModelResponse>> _turns;
-  final Set<int> _errorAfterTurns;
-  int _turn = 0;
+  _FakeAgentChat._(this._script, {super.supportImage, super.supportAudio})
+    : super(
+        sessionCreator: null,
+        maxTokens: 1024,
+        turnHooks: ScriptedTurnHooks(_script.next),
+      ) {
+    session = NoopSession();
+  }
+
+  final _AgentScript _script;
 
   /// Every message fed back into the chat (user message + tool responses).
   final List<Message> received = [];
 
-  /// One increment per model generation (per [generateChatResponseAsync] call).
-  int generateCallCount = 0;
+  /// One increment per model generation (one per turn the loop runs).
+  int get generateCallCount => _script.generateCallCount;
 
   @override
   Future<void> initSession() async {}
@@ -70,11 +81,33 @@ class _FakeAgentChat extends InferenceChat {
     received.add(message);
   }
 
-  /// The loop drives the STREAMING API (parity with VoiceSession). Yields this
-  /// turn's scripted token/call stream; a default terminal text turn keeps an
-  /// over-eager loop from running past the script.
   @override
-  Stream<ModelResponse> generateChatResponseAsync() async* {
+  Future<void> close() async {}
+
+  /// The tool-response messages fed back (excludes the initial user message).
+  List<Message> get toolResponses =>
+      received.where((m) => m.type == MessageType.toolResponse).toList();
+
+  /// The plain user messages: the turn's own and any nudge the loop added.
+  /// (A tool response is a user-side message too, so `isUser` cannot tell.)
+  List<Message> get userMessages =>
+      received.where((m) => m.type == MessageType.text).toList();
+}
+
+/// The scripted turns of a [_FakeAgentChat]. Core's chat runs both of its
+/// generation paths through these hooks; the multi-token turns below are what
+/// show the loop streams token by token rather than taking the blocking path.
+class _AgentScript {
+  _AgentScript(this._turns, this._errorAfterTurns);
+
+  final List<List<ModelResponse>> _turns;
+  final Set<int> _errorAfterTurns;
+  int _turn = 0;
+  int generateCallCount = 0;
+
+  /// Yields this turn's scripted token/call stream; a default terminal text
+  /// turn keeps an over-eager loop from running past the script.
+  Stream<ModelResponse> next() async* {
     generateCallCount++;
     if (_turn >= _turns.length) {
       yield const TextResponse('done');
@@ -88,27 +121,6 @@ class _FakeAgentChat extends InferenceChat {
       throw StateError('native decode failed mid-stream');
     }
   }
-
-  /// The loop must NEVER fall back to the blocking API — streaming was the whole
-  /// point of the refactor. Fail loudly (and permanently guard the regression)
-  /// if it ever does.
-  @override
-  Future<ModelResponse> generateChatResponse() => throw UnimplementedError(
-    'AgentLoop must drive generateChatResponseAsync (streaming), not the '
-    'blocking generateChatResponse.',
-  );
-
-  @override
-  Future<void> close() async {}
-
-  /// The tool-response messages fed back (excludes the initial user message).
-  List<Message> get toolResponses =>
-      received.where((m) => m.type == MessageType.toolResponse).toList();
-
-  /// The plain user messages: the turn's own and any nudge the loop added.
-  /// (A tool response is a user-side message too, so `isUser` cannot tell.)
-  List<Message> get userMessages =>
-      received.where((m) => m.type == MessageType.text).toList();
 }
 
 /// A fake executor that handles a single [SkillType] and returns a preset

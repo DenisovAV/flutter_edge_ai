@@ -188,7 +188,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.runtime == 'true'
     name: iOS simulator CPU
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash

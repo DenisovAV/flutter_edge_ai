@@ -69,7 +69,7 @@ class FlutterEdgeAiWeb extends FlutterEdgeAiPlugin {
             recognizer.addCloseListener(listener),
       );
 
-  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 2.6.0.')
+  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 3.0.0.')
   @override
   Future<InferenceModel> createModel({
     required ModelType modelType,

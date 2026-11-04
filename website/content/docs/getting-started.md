@@ -455,8 +455,9 @@ On native `.litertlm` (except the NPU) a `maxTokens` below 1024 is clamped up to
 A single loaded model can serve several **independent** dialogues at once.
 `openSession()` returns a session with its own conversation history, detached
 from the legacy `model.session` singleton; `openChat()` is the same for the
-higher-level chat API. ONNX models and MediaPipe on web do not support it:
-`openSession()` throws `UnsupportedError` there.
+higher-level chat API. ONNX on the web and MediaPipe on web do not support it:
+`openSession()` throws `UnsupportedError` there. Native ONNX does (one
+ORT-GenAI generator per session, capped by `maxConcurrentSessions`).
 
 The model weights (the big, expensive part — hundreds of MB to several GB) are
 loaded **once** and shared across every session; each session only adds its own
@@ -492,10 +493,16 @@ parallel on-device inference would contend for the accelerator and risk OOM.
 
 </Warning>
 
-**Memory:** each open session holds its own context (~100–500 MB depending on
-model + `maxTokens`). On phones with large models (Gemma 4 E2B+), several
-concurrent sessions can OOM. Cap the count with `maxConcurrentSessions:` on
-`getActiveModel(...)` — `openSession()` throws `StateError` past the cap.
+**Memory:** what an open session costs depends on the engine. A MediaPipe
+`.task` session on Android or iOS holds its own KV cache (~100–500 MB depending
+on model + `maxTokens`), so on phones with large models (Gemma 4 E2B+) several
+concurrent sessions can OOM. A native `.litertlm` session keeps only its
+history; switching sessions replays it into the one native conversation, which
+takes time; GGUF sessions share one runtime with no separate native KV cache.
+`.litertlm` on the web and built-in AI are not measured. Cap the count with
+`maxConcurrentSessions:` on `getActiveModel(...)` — `openSession()` throws
+`StateError` past the cap. ONNX and MediaPipe on the web have no
+`openSession()`.
 
 If you only ever have one conversation at a time, stick with the simpler
 `createSession()` / `createChat()` singleton API — you don't need this.

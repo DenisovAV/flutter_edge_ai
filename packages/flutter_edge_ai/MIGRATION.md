@@ -10,6 +10,34 @@ A class that `implements InferenceModel` declares two new members,
 defaults that do. An engine that mixed in `OptionScoringModel`, which is
 removed, drops the mixin and keeps its two overrides.
 
+A class that `implements InferenceModel` declares four new members, all in
+`package:flutter_edge_ai/engine.dart`: `openEngineSession(SessionRequest)`
+(fail it with `UnsupportedError` if the class opens no sessions),
+`resolveChatRequest(ChatRequest)` (return a `ResolvedChatRequest`),
+`createChatTurnHooks(ResolvedChatRequest)` (return `ChatTurnHooks()`) and
+`engineSessions`. A class that `extends InferenceModel` inherits core's
+defaults. `openSession`, `openChat` and `sessions` are `@nonVirtual`: an
+engine that overrode them moves its `openSession` body to
+`openEngineSession`, its `openChat` defaults to `resolveChatRequest`, and its
+`sessions` to `engineSessions`.
+
+### `implements InferenceModelSession`
+
+A class that `implements InferenceModelSession` declares `startTurn()`,
+returning an `EngineTurn` (from `package:flutter_edge_ai/engine.dart`):
+`EngineTurn(text: getResponseAsync(), end: null)` when it cannot say how a
+turn ended. A class that `extends InferenceModelSession` inherits that.
+
+### Chat turns
+
+`InferenceChat.generateChatResponse` and `generateChatResponseAsync` are
+`@nonVirtual`: a subclass that overrides them, an app's test fake among
+them, gets an `invalid_override_of_non_virtual_member` warning. Script the
+turns through `InferenceChat(turnHooks:)` instead, with a `ChatTurnHooks`
+subclass whose `responses` returns the turn's stream, and give a chat built
+with `sessionCreator: null` a session (`chat.session = …`), which the hooks
+receive.
+
 ## flutter_edge_ai 2.5.0: several open models, removed and deprecated members, embedding providers
 
 ### Removed members
@@ -33,7 +61,7 @@ the `ModelSource` that matches the URL: `ModelSource.network(url)` for
 ### `FlutterEdgeAiPlugin.createModel` is deprecated
 
 `FlutterEdgeAiPlugin.instance.createModel(modelType:, fileType:, …)` is
-deprecated and removed in 2.6.0. On Android, iOS and desktop it ignored
+deprecated and removed in 3.0.0. On Android, iOS and desktop it ignored
 `modelType` and `fileType` and returned the active model, which is what
 `FlutterEdgeAi.getActiveModel()` returns. The two ways to get a model are on
 `FlutterEdgeAi`:

@@ -601,9 +601,10 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           final retainedHistory = List<llama.LlamaChatMessage>.of(_history);
           late List<llama.LlamaChatMessage> messages;
           late int promptTokens;
+          late llama.LlamaChatTemplateResult rendered;
           while (true) {
             messages = [...retainedHistory, ..._pending];
-            final rendered = await engine.chatTemplate(
+            rendered = await engine.chatTemplate(
               messages,
               enableThinking: enableThinking,
               includeTokenCount: true,
@@ -631,6 +632,17 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           if (_stopped || _closed) return;
           final stopwatch = Stopwatch()..start();
           double? firstTokenMs;
+          final contentFilter = _LeadingThoughtFilter(
+            enabled: !enableThinking && _hasClosedThinkingPrompt(rendered),
+          );
+          final visibleTextBuffer = StringBuffer();
+          void emitVisible(String text) {
+            if (text.isEmpty) return;
+            visibleTextBuffer.write(text);
+            firstTokenMs ??= stopwatch.elapsedMicroseconds / 1000;
+            controller.add(edge.TextResponse(text));
+          }
+
           final completion = await engine
               .create(
                 messages,
@@ -646,8 +658,10 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
                 final content = delta?.content;
                 final thinking = delta?.thinking;
                 if (content != null && content.isNotEmpty) {
-                  firstTokenMs ??= stopwatch.elapsedMicroseconds / 1000;
-                  controller.add(edge.TextResponse(content));
+                  final hiddenBefore = contentFilter.hiddenCharacters;
+                  emitVisible(contentFilter.add(content));
+                  hiddenThinkingCharacters +=
+                      contentFilter.hiddenCharacters - hiddenBefore;
                 }
                 if (!enableThinking && thinking != null) {
                   hiddenThinkingCharacters += thinking.length;
@@ -660,13 +674,18 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
               })
               .collect();
           if (_stopped || _closed) return;
+          final hiddenBefore = contentFilter.hiddenCharacters;
+          emitVisible(contentFilter.finish());
+          hiddenThinkingCharacters +=
+              contentFilter.hiddenCharacters - hiddenBefore;
+          final visibleText = visibleTextBuffer.toString();
           if (completion.finishReason?.wireValue == 'length' &&
-              (_tools.isNotEmpty || completion.text.trim().isEmpty)) {
+              (_tools.isNotEmpty || visibleText.trim().isEmpty)) {
             throw StateError(
               'Generation reached its token limit before completing a tool or visible answer. Increase maxOutputTokens/context size and retry.',
             );
           }
-          if (completion.text.trim().isEmpty && completion.toolCalls.isEmpty) {
+          if (visibleText.trim().isEmpty && completion.toolCalls.isEmpty) {
             throw StateError(
               'The model completed without a visible answer or tool call; retry with a larger output budget${enableThinking ? " or disable thinking" : ""}.',
             );
@@ -741,8 +760,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             content: [
               if (completion.thinking.isNotEmpty)
                 llama.LlamaThinkingContent(completion.thinking),
-              if (completion.text.isNotEmpty)
-                llama.LlamaTextContent(completion.text),
+              if (visibleText.isNotEmpty) llama.LlamaTextContent(visibleText),
               ...calls,
             ],
           );
@@ -762,8 +780,8 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           if (enableThinking && completion.thinking.isNotEmpty) {
             _transcript.add(edge.Message.thinking(text: completion.thinking));
           }
-          if (completion.text.isNotEmpty) {
-            _transcript.add(edge.Message.text(text: completion.text));
+          if (visibleText.isNotEmpty) {
+            _transcript.add(edge.Message.text(text: visibleText));
           }
           if (calls.isNotEmpty) {
             _transcript.add(_toolCallMessage(calls));
@@ -914,6 +932,71 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
       _replayAliases.clear();
       onClose();
     }
+  }
+}
+
+// In llamadart 0.17.5 these formats classify tags after a closed thought as text.
+// Restrict compatibility handling to an empty thought at the rendered prompt end.
+bool _hasClosedThinkingPrompt(llama.LlamaChatTemplateResult rendered) =>
+    !rendered.thinkingForcedOpen &&
+    {
+      llama.ChatFormat.hermes.index,
+      llama.ChatFormat.deepseekV3.index,
+      llama.ChatFormat.qwen3CoderXml.index,
+    }.contains(rendered.format) &&
+    RegExp(r'<think>\s*</think>\s*$').hasMatch(rendered.prompt);
+
+/// Hides only leading thought envelopes; after answer text starts, tags are text.
+/// Holds partial delimiters across chunks without buffering the thought body.
+class _LeadingThoughtFilter {
+  _LeadingThoughtFilter({required bool enabled}) : _passthrough = !enabled;
+
+  static const _start = '<think>';
+  static const _end = '</think>';
+  bool _passthrough;
+  bool _insideThought = false;
+  String _pending = '';
+  int hiddenCharacters = 0;
+
+  String add(String text) {
+    if (_passthrough) return text;
+    _pending += text;
+    while (true) {
+      if (_insideThought) {
+        final end = _pending.indexOf(_end);
+        if (end != -1) {
+          hiddenCharacters += end;
+          _pending = _pending.substring(end + _end.length);
+          _insideThought = false;
+          continue;
+        }
+        var kept = 0;
+        for (var length = 1; length < _end.length; length++) {
+          if (_pending.endsWith(_end.substring(0, length))) kept = length;
+        }
+        hiddenCharacters += _pending.length - kept;
+        _pending = _pending.substring(_pending.length - kept);
+        return '';
+      }
+      final opening = _pending.trimLeft();
+      if (opening.startsWith(_start)) {
+        _pending = opening.substring(_start.length);
+        _insideThought = true;
+        continue;
+      }
+      if (_start.startsWith(opening)) return '';
+      _passthrough = true;
+      final visible = _pending;
+      _pending = '';
+      return visible;
+    }
+  }
+
+  String finish() {
+    if (_insideThought) hiddenCharacters += _pending.length;
+    final visible = !_insideThought && _pending.trim().isEmpty ? _pending : '';
+    _pending = '';
+    return visible;
   }
 }
 

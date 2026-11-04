@@ -16,6 +16,11 @@ class FakeGenAiClient implements GenAiClient {
   int resetSessionCalls = 0;
   int shutdownCalls = 0;
   int stopGenerationCalls = 0;
+
+  /// The session id of each [stopGeneration] / [resetSession] call, in order.
+  final List<int?> stoppedSessions = [];
+  final List<int?> resetSessions = [];
+  final Map<int?, GenAiGenerationStats> _statsBySession = {};
   int loadCalls = 0;
 
   bool loaded = false;
@@ -37,7 +42,19 @@ class FakeGenAiClient implements GenAiClient {
   bool _stopRequested = false;
 
   @override
-  GenAiGenerationStats? lastGenerationStats;
+  GenAiGenerationStats? get lastGenerationStats => _statsBySession[null];
+
+  set lastGenerationStats(GenAiGenerationStats? value) {
+    if (value == null) {
+      _statsBySession.remove(null);
+    } else {
+      _statsBySession[null] = value;
+    }
+  }
+
+  @override
+  GenAiGenerationStats? generationStatsOf(int? sessionId) =>
+      _statsBySession[sessionId];
 
   @override
   Future<void> load(String modelDir, {int contextWindow = 1024}) async {
@@ -69,7 +86,7 @@ class FakeGenAiClient implements GenAiClient {
         // Yield so a test-driven stopGeneration() between chunks can land.
         await Future<void>.delayed(Duration.zero);
       }
-      lastGenerationStats = GenAiGenerationStats(
+      _statsBySession[turn.sessionId] = GenAiGenerationStats(
         promptTokens: (turn.userContent.length / 4).ceil(),
         generatedTokens: emitted,
         decodeMs: emitted,
@@ -86,14 +103,16 @@ class FakeGenAiClient implements GenAiClient {
   }
 
   @override
-  Future<void> stopGeneration() async {
+  Future<void> stopGeneration({int? sessionId}) async {
     stopGenerationCalls++;
+    stoppedSessions.add(sessionId);
     _stopRequested = true;
   }
 
   @override
-  Future<void> resetSession() async {
+  Future<void> resetSession({int? sessionId}) async {
     resetSessionCalls++;
+    resetSessions.add(sessionId);
   }
 
   @override

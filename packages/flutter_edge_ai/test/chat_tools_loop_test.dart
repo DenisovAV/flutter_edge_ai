@@ -5,16 +5,23 @@ import 'package:flutter_edge_ai/engine.dart' show edgeAiLogLevel;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-class _ScriptChat extends InferenceChat {
-  _ScriptChat(this._turns, {this._errorAfterTurns = const {}})
-    : super(sessionCreator: null, maxTokens: 1024);
-  final List<List<ModelResponse>> _turns;
+import 'support/noop_session.dart';
 
-  /// Turn indices whose stream THROWS after yielding its responses — models a
-  /// native decode error mid-stream, AFTER a tool-call was parsed + committed to
-  /// history by generateChatResponseAsync.
-  final Set<int> _errorAfterTurns;
-  int _i = 0;
+class _ScriptChat extends InferenceChat {
+  _ScriptChat(
+    List<List<ModelResponse>> turns, {
+    Set<int> errorAfterTurns = const {},
+  }) : this._(_Script(turns, errorAfterTurns));
+
+  _ScriptChat._(_Script script)
+    : super(
+        sessionCreator: null,
+        maxTokens: 1024,
+        turnHooks: ScriptedTurnHooks(script.next),
+      ) {
+    session = NoopSession();
+  }
+
   final List<Message> fedBack = [];
 
   /// When true, feeding a tool-RESPONSE throws — models an already-errored
@@ -42,7 +49,24 @@ class _ScriptChat extends InferenceChat {
   }
 
   @override
-  Stream<ModelResponse> generateChatResponseAsync() async* {
+  Future<void> stopGeneration() async {}
+  @override
+  Future<void> close() async {}
+}
+
+/// The scripted turns of a [_ScriptChat].
+class _Script {
+  _Script(this._turns, this._errorAfterTurns);
+
+  final List<List<ModelResponse>> _turns;
+
+  /// Turn indices whose stream THROWS after yielding its responses — models a
+  /// native decode error mid-stream, AFTER a tool-call was parsed + committed to
+  /// history by generateChatResponseAsync.
+  final Set<int> _errorAfterTurns;
+  int _i = 0;
+
+  Stream<ModelResponse> next() async* {
     final turnIndex = _i;
     final turn = _i < _turns.length
         ? _turns[_i++]
@@ -54,11 +78,6 @@ class _ScriptChat extends InferenceChat {
       throw StateError('native decode failed mid-stream');
     }
   }
-
-  @override
-  Future<void> stopGeneration() async {}
-  @override
-  Future<void> close() async {}
 }
 
 /// Runs [body] with edgeAiLog silenced, as in a release build, and returns

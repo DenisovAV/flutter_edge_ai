@@ -12,7 +12,9 @@ import 'package:flutter/foundation.dart';
 import '../litertlm_decision_section.dart';
 import '../option_scoring_self_check.dart';
 import 'litert_lm_client.dart';
-import 'native_turns.dart' show LiteRtLmTurnCancelledException;
+import '../reported_engine_turn.dart';
+import 'native_turns.dart'
+    show LiteRtLmTurnCancelledException, LiteRtLmTurnClosedException;
 
 /// Whether the scoring self-check is skipped as in a release build:
 /// [kReleaseMode] (`dart.vm.product`, a compile-time constant), set by tests,
@@ -210,8 +212,10 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   }
 
   @override
-  List<InferenceModelSession> get sessions =>
-      List.unmodifiable([if (_session != null) _session!, ..._openSessions]);
+  List<InferenceModelSession> get engineSessions => [
+    if (_session != null) _session!,
+    ..._openSessions,
+  ];
 
   /// [explicit], completed from the bundle's own sampler, then the family's
   /// defaults, then the fallback.
@@ -330,6 +334,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         supportImage: enableVisionModality ?? supportImage,
         supportAudio: enableAudioModality ?? supportAudio,
         enableThinking: enableThinking,
+        maxOutputTokens: maxOutputTokens,
         // Identity-guarded so a late close of a superseded session can't
         // null a newer `_session`. Does NOT touch `_createCompleter` —
         // that is owned by the `finally` below, not by session teardown.
@@ -359,19 +364,22 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   }
 
   @override
-  Future<InferenceModelSession> openSession({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    String? loraPath,
-    bool? enableVisionModality,
-    bool? enableAudioModality,
-    String? systemInstruction,
-    bool enableThinking = false,
-    List<Tool> tools = const [],
-    int? maxOutputTokens,
-  }) async {
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    final SessionRequest(
+      :temperature,
+      :randomSeed,
+      :topK,
+      :topP,
+      :loraPath,
+      :enableVisionModality,
+      :enableAudioModality,
+      :systemInstruction,
+      :enableThinking,
+      :tools,
+      :maxOutputTokens,
+    ) = request;
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
@@ -424,11 +432,36 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       supportImage: enableVisionModality ?? supportImage,
       supportAudio: enableAudioModality ?? supportAudio,
       enableThinking: enableThinking,
+      maxOutputTokens: maxOutputTokens,
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);
     return session;
   }
+
+  /// [openChat]'s unset values are this model's own, as [createChat] fills
+  /// them.
+  @override
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) =>
+      ResolvedChatRequest(
+        modelType: request.modelType ?? modelType,
+        supportImage: request.supportImage ?? supportImage,
+        supportAudio: request.supportAudio ?? supportAudio,
+        supportsFunctionCalls: request.supportsFunctionCalls ?? false,
+        tools: request.tools,
+        maxFunctionBufferLength:
+            request.maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
+        temperature: request.temperature,
+        randomSeed: request.randomSeed,
+        topK: request.topK,
+        topP: request.topP,
+        tokenBuffer: request.tokenBuffer,
+        loraPath: request.loraPath,
+        enableThinking: request.enableThinking,
+        toolChoice: request.toolChoice,
+        systemInstruction: request.systemInstruction,
+        maxOutputTokens: request.maxOutputTokens,
+      );
 
   @override
   Future<InferenceChat> createChat({
@@ -549,6 +582,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     required this.supportImage,
     required this.supportAudio,
     this.enableThinking = false,
+    this.maxOutputTokens,
     required this.onClose,
   });
 
@@ -558,7 +592,13 @@ class FfiInferenceModelSession extends InferenceModelSession
   final bool supportImage;
   final bool supportAudio;
   final bool enableThinking;
+
+  /// The cap on each reply, which decides what a completed turn reports.
+  final int? maxOutputTokens;
   final VoidCallback onClose;
+
+  /// [stopGeneration] was called during the current turn.
+  bool _stopAsked = false;
 
   final StringBuffer _queryBuffer = StringBuffer();
   final List<Uint8List> _pendingImages = [];
@@ -881,7 +921,28 @@ class FfiInferenceModelSession extends InferenceModelSession
 
   @override
   Future<void> stopGeneration() async {
+    _stopAsked = true;
     handle.cancelGeneration();
+  }
+
+  /// How the turn ended, for core's chat: a close the consumer did not ask
+  /// for ends [getResponseAsync] with a [LiteRtLmTurnClosedException]; here
+  /// the text ends cleanly and `end` is [TurnEnd.closed], so the chat keeps
+  /// the partial reply before it raises (decision H).
+  ///
+  /// A completed turn reports [liteRtLmPlaceholderCompletedEnd]: a guess on
+  /// LiteRT-LM 0.18, so structured output stays refused here until the
+  /// native turn-end record (L1, read in L2) says which end it was.
+  @override
+  EngineTurn startTurn() {
+    _stopAsked = false;
+    return reportedEngineTurn(
+      getResponseAsync(),
+      stopped: () => _stopAsked,
+      closed: () => _isClosed,
+      isCloseError: (error) => error is LiteRtLmTurnClosedException,
+      completed: () => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
+    );
   }
 
   @override

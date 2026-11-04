@@ -32,6 +32,7 @@
 // opens a single library on iOS and returns it as both halves of its tuple —
 // see that function's iOS branch.
 import 'dart:async';
+import 'dart:collection' show Queue;
 import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:io';
@@ -67,7 +68,14 @@ class GenAiTurn {
     this.isFirstTurn = false,
     this.maxOutputTokens,
     this.searchOptions = const {},
+    this.sessionId,
   });
+
+  /// Which session's generator this turn runs on: null is the legacy
+  /// singleton session (`createSession`), any other value an `openSession`
+  /// session, each with its own generator (and KV cache). Turns of different
+  /// sessions never run at the same time.
+  final int? sessionId;
 
   /// Raw user-turn content (tool responses are already folded into plain
   /// text by `Message._formatToolResponseContent` upstream, via the
@@ -138,18 +146,21 @@ abstract class GenAiClient {
   /// template applied) — used for [InferenceModelSession.sizeInTokens].
   Future<int> countTokens(String text);
 
-  /// Stops the currently in-flight [generate] stream (no-op if none is
-  /// active). Deliberately NOT covered by the `generate`/`countTokens`
-  /// mutex — it must be able to interrupt a call that's holding it.
-  Future<void> stopGeneration();
+  /// Stops [sessionId]'s [generate] stream if it is the one in flight (no-op
+  /// otherwise; a null [sessionId] is the legacy session). A stop for one
+  /// session never cuts off another's turn. Deliberately NOT covered by the
+  /// `generate`/`countTokens` mutex — it must be able to interrupt a call
+  /// that's holding it.
+  Future<void> stopGeneration({int? sessionId});
 
-  /// Destroys the current generator so the NEXT [generate] call starts a
-  /// fresh conversation (fresh KV cache) instead of continuing the live one.
-  /// [OnnxSession.close] calls this so a superseded session never bleeds
-  /// its history into whatever session is created next — the ORT-GenAI
-  /// sibling of the `.litertlm` FFI engine's "close previous conversation
-  /// before creating a new one" rule.
-  Future<void> resetSession();
+  /// Destroys [sessionId]'s generator (null = the legacy session) so its NEXT
+  /// [generate] call starts a fresh conversation (fresh KV cache) instead of
+  /// continuing the live one, and so an opened session gives back its
+  /// 0.75 MiB × `max_length` of cache. [OnnxSession.close] calls this so a
+  /// superseded session never bleeds its history into whatever session is
+  /// created next — the ORT-GenAI sibling of the `.litertlm` FFI engine's
+  /// "close previous conversation before creating a new one" rule.
+  Future<void> resetSession({int? sessionId});
 
   /// Frees every native handle (generator, tokenizer, model) and stops the
   /// worker isolate — after the call in flight, however long it takes; the
@@ -157,9 +168,14 @@ abstract class GenAiClient {
   /// Idempotent.
   Future<void> shutdown();
 
-  /// Stats from the most recently completed [generate] call, or `null`
-  /// before the first one finishes.
+  /// Stats from the most recently completed [generate] call of the legacy
+  /// session, or `null` before the first one finishes.
   GenAiGenerationStats? get lastGenerationStats;
+
+  /// Stats from the most recently completed [generate] call of [sessionId]
+  /// (null = the legacy session), or `null` before its first one finishes or
+  /// after its [resetSession].
+  GenAiGenerationStats? generationStatsOf(int? sessionId);
 }
 
 /// Main-isolate handle to the ORT-GenAI worker. Spawns the isolate, performs
@@ -250,11 +266,20 @@ class GenAiFfiClient implements GenAiClient {
   final Map<int, StreamController<String>> _activeStreams = {};
   final Map<int, Completer<void>> _streamDone = {};
   final Map<int, Completer<int>> _countPending = {};
-  Completer<void>? _resetAck;
 
-  GenAiGenerationStats? _lastStats;
+  /// The session of each turn in flight, by request id.
+  final Map<int, int?> _streamSession = {};
+
+  /// One completer per reset sent and not yet acknowledged; the worker serves
+  /// requests in order, so its acks come back in the same order.
+  final Queue<Completer<void>> _resetAcks = Queue();
+
+  final Map<int?, GenAiGenerationStats> _stats = {};
   @override
-  GenAiGenerationStats? get lastGenerationStats => _lastStats;
+  GenAiGenerationStats? get lastGenerationStats => _stats[null];
+
+  @override
+  GenAiGenerationStats? generationStatsOf(int? sessionId) => _stats[sessionId];
 
   @override
   Future<void> load(String modelDir, {int contextWindow = 1024}) async {
@@ -357,15 +382,19 @@ class GenAiFfiClient implements GenAiClient {
     if (msg is Chunk) {
       _activeStreams[msg.id]?.add(msg.text);
     } else if (msg is GenerateDone) {
-      _lastStats = GenAiGenerationStats(
-        promptTokens: msg.promptTokens,
-        generatedTokens: msg.generatedTokens,
-        decodeMs: msg.decodeMs,
-      );
+      if (_streamSession.containsKey(msg.id)) {
+        _stats[_streamSession[msg.id]] = GenAiGenerationStats(
+          promptTokens: msg.promptTokens,
+          generatedTokens: msg.generatedTokens,
+          decodeMs: msg.decodeMs,
+        );
+      }
+      _streamSession.remove(msg.id);
       final controller = _activeStreams.remove(msg.id);
       unawaited(controller?.close());
       _streamDone.remove(msg.id)?.complete();
     } else if (msg is GenerateError) {
+      _streamSession.remove(msg.id);
       final controller = _activeStreams.remove(msg.id);
       controller?.addError(StateError(msg.error));
       unawaited(controller?.close());
@@ -398,7 +427,7 @@ class GenAiFfiClient implements GenAiClient {
         );
       }
       if (!_gone.isCompleted) _gone.complete();
-      _completeResetAck();
+      _completeAllResetAcks();
     } else if (msg is LoopFailed) {
       _closedBeforeDeath = true;
       _closeErrorBeforeDeath = msg.error;
@@ -440,7 +469,7 @@ class GenAiFfiClient implements GenAiClient {
               '$closeError';
     _warn('$reason (model $_modelDir); $model');
     if (!_gone.isCompleted) _gone.complete();
-    _completeResetAck();
+    _completeAllResetAcks();
   }
 
   /// Handles what a worker whose load failed sends after the error: the
@@ -483,8 +512,23 @@ class GenAiFfiClient implements GenAiClient {
     return stack == null ? '$error' : '$error\n$stack';
   }
 
+  /// Completes the oldest reset still waiting for its ack.
   void _completeResetAck() {
-    if (_resetAck case final ack? when !ack.isCompleted) ack.complete();
+    while (_resetAcks.isNotEmpty) {
+      final ack = _resetAcks.removeFirst();
+      if (!ack.isCompleted) {
+        ack.complete();
+        return;
+      }
+    }
+  }
+
+  /// Completes every reset still waiting: the worker is gone, no ack follows.
+  void _completeAllResetAcks() {
+    while (_resetAcks.isNotEmpty) {
+      final ack = _resetAcks.removeFirst();
+      if (!ack.isCompleted) ack.complete();
+    }
   }
 
   void _failAllPending(StateError error) {
@@ -494,6 +538,7 @@ class GenAiFfiClient implements GenAiClient {
       unawaited(controller?.close());
       _streamDone.remove(id)?.complete();
     }
+    _streamSession.clear();
     for (final c in _countPending.values) {
       if (!c.isCompleted) c.completeError(error);
     }
@@ -519,23 +564,79 @@ class GenAiFfiClient implements GenAiClient {
     // whole abandoned decode. Mirrors the litertlm engine's "StreamController
     // onCancel -> native cancel" fix (commit 93a5298). `stopGeneration` is
     // idempotent/cheap when the turn already finished normally.
+    var cancelled = false;
     final controller = StreamController<String>(
-      onCancel: () => unawaited(stopGeneration()),
+      onCancel: () {
+        // Also runs when the stream ends normally, so this only tells the
+        // worker (which ignores a stop for a turn that is not live) and marks
+        // this turn: another waiting turn of the session is not its business.
+        cancelled = true;
+        _commandPort?.send(StopSignal(turn.sessionId));
+      },
     );
-    unawaited(_runGenerateGuarded(controller, turn));
+    unawaited(_runGenerateGuarded(controller, turn, () => cancelled));
     return controller.stream;
   }
+
+  /// Sessions released by [resetSession]. Ids are never reused, so a turn of a
+  /// released session that was still waiting on [_mutex] must not run: it
+  /// would build a generator (a whole KV cache) nothing would ever free.
+  final Set<int> _released = {};
+
+  /// How many turns of each session are waiting on [_mutex], and the sessions
+  /// that had a stop filed meanwhile. The worker only knows turns that were
+  /// sent, so a stop for a waiting turn is kept here.
+  final Map<int?, int> _waiting = {};
+  final Set<int?> _stoppedWhileWaiting = {};
 
   Future<void> _runGenerateGuarded(
     StreamController<String> controller,
     GenAiTurn turn,
+    bool Function() cancelled,
   ) async {
     if (_closed || !_loaded) {
       controller.addError(_unusable('GenAiFfiClient is not loaded'));
       await controller.close();
       return;
     }
+    final session = turn.sessionId;
+    _waiting[session] = (_waiting[session] ?? 0) + 1;
     await _mutex.acquire();
+    final waiting = (_waiting[session] ?? 1) - 1;
+    if (waiting == 0) {
+      _waiting.remove(session);
+    } else {
+      _waiting[session] = waiting;
+    }
+    final stopped = _stoppedWhileWaiting.remove(session);
+    if (cancelled()) {
+      // The consumer is gone: nobody is left to tell.
+      _mutex.release();
+      await controller.close();
+      return;
+    }
+    // A client that shut down or died, and a released session, come before a
+    // stop: closing a session files its stop first, and the caller waiting on
+    // this turn must get the reason, not an empty reply that looks like
+    // success.
+    if (_closed) {
+      _mutex.release();
+      controller.addError(_unusable('GenAiFfiClient shut down'));
+      await controller.close();
+      return;
+    }
+    if (session != null && _released.contains(session)) {
+      _mutex.release();
+      controller.addError(StateError('ONNX session $session was closed'));
+      await controller.close();
+      return;
+    }
+    if (stopped) {
+      // A stop was filed while this turn waited behind another session's.
+      _mutex.release();
+      await controller.close();
+      return;
+    }
     // Recheck AFTER acquiring: a caller that passed the check above can park
     // on the mutex behind an in-flight generate() while shutdown() runs to
     // completion (the worker stops the holder, frees its handles and exits,
@@ -554,6 +655,7 @@ class GenAiFfiClient implements GenAiClient {
     final id = _nextId++;
     final done = _streamDone[id] = Completer<void>();
     _activeStreams[id] = controller;
+    _streamSession[id] = turn.sessionId;
     try {
       commandPort.send(GenerateRequest(id, turn));
       await done.future;
@@ -564,6 +666,7 @@ class GenAiFfiClient implements GenAiClient {
         await controller.close();
       }
     } finally {
+      _streamSession.remove(id);
       _streamDone.remove(id);
       _mutex.release();
     }
@@ -596,16 +699,24 @@ class GenAiFfiClient implements GenAiClient {
   }
 
   @override
-  Future<void> stopGeneration() async {
-    _commandPort?.send(const StopSignal());
+  Future<void> stopGeneration({int? sessionId}) async {
+    if (_waiting.containsKey(sessionId)) _stoppedWhileWaiting.add(sessionId);
+    _commandPort?.send(StopSignal(sessionId));
   }
 
   @override
-  Future<void> resetSession() async {
+  Future<void> resetSession({int? sessionId}) async {
     final commandPort = _commandPort;
     if (_closed || commandPort == null) return;
-    final ack = _resetAck = Completer<void>();
-    commandPort.send(const ResetSessionRequest());
+    if (sessionId != null) _released.add(sessionId);
+    _stats.remove(sessionId);
+    // A turn of this session still running must not write its stats back when
+    // it ends: they would outlive the reset (and a new legacy session would
+    // report them).
+    _streamSession.removeWhere((_, session) => session == sessionId);
+    final ack = Completer<void>();
+    _resetAcks.add(ack);
+    commandPort.send(ResetSessionRequest(sessionId));
     try {
       await ack.future.timeout(const Duration(seconds: 5));
     } on TimeoutException {
@@ -949,7 +1060,10 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
   OrtGenAiBindings? _oga;
   ffi.Pointer<OgaModel>? _model;
   ffi.Pointer<OgaTokenizer>? _tokenizer;
-  ffi.Pointer<OgaGenerator>? _generator;
+
+  /// One generator — one KV cache, 0.75 MiB × `max_length` — per session
+  /// that has had a turn and not been reset; null keys the legacy session.
+  final Map<int?, ffi.Pointer<OgaGenerator>> _generators = {};
 
   OrtGenAiBindings get _bindings =>
       _oga ?? (throw StateError('ORT-GenAI engine used before it was loaded'));
@@ -1026,11 +1140,13 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
     final tokenizer = _loadedTokenizer;
     ffi.Pointer<OgaTokenizerStream>? tokenizerStream;
     try {
-      if (turn.isFirstTurn) resetGenerator();
+      if (turn.isFirstTurn) resetGenerator(sessionId: turn.sessionId);
 
-      final generator =
-          _generator ?? _createGenerator(oga, model, turn.searchOptions);
-      _generator = generator;
+      final generator = _generators[turn.sessionId] ??= _createGenerator(
+        oga,
+        model,
+        turn.searchOptions,
+      );
 
       // --- Chat template (SDK-owns-templates, Task 3) ----------------------
       final messages = <Map<String, String>>[
@@ -1274,12 +1390,11 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
   }
 
   @override
-  void resetGenerator() {
-    final generator = _generator;
-    if (generator == null) return;
+  void resetGenerator({int? sessionId}) {
     // Forgotten first, so a throw below cannot hand the next turn a
     // generator that is half destroyed.
-    _generator = null;
+    final generator = _generators.remove(sessionId);
+    if (generator == null) return;
     _bindings.OgaDestroyGenerator(generator);
   }
 
@@ -1289,13 +1404,15 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
   void close() {
     final oga = _oga;
     if (oga == null) return; // the libraries never opened: nothing to free.
-    final generator = _generator;
+    final generators = _generators.values.toList();
     final tokenizer = _tokenizer;
     final model = _model;
-    _generator = null;
+    _generators.clear();
     _tokenizer = null;
     _model = null;
-    if (generator != null) oga.OgaDestroyGenerator(generator);
+    for (final generator in generators) {
+      oga.OgaDestroyGenerator(generator);
+    }
     if (tokenizer != null) oga.OgaDestroyTokenizer(tokenizer);
     if (model != null) oga.OgaDestroyModel(model);
   }

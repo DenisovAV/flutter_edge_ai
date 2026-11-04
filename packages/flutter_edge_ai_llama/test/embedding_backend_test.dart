@@ -5,6 +5,7 @@ import 'package:flutter_edge_ai/engine.dart';
 // ignore: implementation_imports — verifies actual embedding registry selection without changing the public SPI.
 import 'package:flutter_edge_ai/src/registry/embedding_registry.dart';
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
+import 'package:flutter_edge_ai_llama/src/embedding_platform.dart';
 import 'package:flutter_edge_ai_llama/src/llama_embedding_backend.dart'
     show createLlamaEmbeddingBackendForTest;
 import 'package:flutter_test/flutter_test.dart';
@@ -87,6 +88,8 @@ void main() {
 
   test('refuses unsupported configuration without loading a runtime', () async {
     final backend = createLlamaEmbeddingBackendForTest(
+      gpuRefusal: () => null,
+      autoUsesCpu: () => false,
       loader: (_, _) async => fail('must not load'),
     );
     for (final config in [
@@ -125,6 +128,8 @@ void main() {
       engine = _Engine();
       loadAttempts = 0;
       backend = createLlamaEmbeddingBackendForTest(
+        gpuRefusal: () => null,
+        autoUsesCpu: () => false,
         loader: (path, params) async {
           loadAttempts++;
           expect(path, '/models/eg2.gguf');
@@ -222,6 +227,8 @@ void main() {
       'strict GPU mismatch fails as a load exception and closes once',
       () async {
         final strict = createLlamaEmbeddingBackendForTest(
+          gpuRefusal: () => null,
+          autoUsesCpu: () => false,
           loader: (_, _) async => engine,
           backendFallback: false,
         );
@@ -255,6 +262,8 @@ void main() {
           engine.backendName = placement.loaded;
           var attempts = 0;
           final strict = createLlamaEmbeddingBackendForTest(
+            gpuRefusal: () => null,
+            autoUsesCpu: () => false,
             backendFallback: false,
             loader: (path, _) async {
               expect(path, '/models/strict embedding.gguf');
@@ -300,6 +309,8 @@ void main() {
                   request == PreferredBackend.gpu &&
                   cause is llama.LlamaUnsupportedException;
               final candidate = createLlamaEmbeddingBackendForTest(
+                gpuRefusal: () => null,
+                autoUsesCpu: () => false,
                 backendFallback: fallback,
                 loader: (path, params) async {
                   expect(path, '/models/installed embedding.gguf');
@@ -388,53 +399,67 @@ void main() {
     }
 
     for (final fallback in [false, true]) {
-      test('guard refuses GPU before loader; fallback=$fallback', () async {
-        final paramsSeen = <llama.ModelParams>[];
-        var guards = 0;
-        final candidate = createLlamaEmbeddingBackendForTest(
-          backendFallback: fallback,
-          gpuRefusal: () {
-            guards++;
-            return 'guarded platform';
-          },
-          loader: (path, params) async {
-            expect(path, '/models/eg2.gguf');
-            paramsSeen.add(params);
-            expect(params.device, llama.ComputeDevice.cpu);
-            expect(params.gpuLayers, 0);
-            expect(params.contextSize, 1024);
-            expect(params.batchSize, 1024);
-            expect(params.microBatchSize, 1024);
-            expect(params.maxParallelSequences, 1);
-            return engine;
-          },
-        );
-        final p = (await candidate.describe(
-          _spec('eg2.gguf'),
-          _config(backend: PreferredBackend.gpu),
-        )).build();
-        addTearDown(p.close);
-        if (fallback) {
-          expect((await p.load()).activeBackend, PreferredBackend.cpu);
-        } else {
-          await expectLater(
-            p.load(),
-            throwsA(
-              isA<EmbeddingLoadException>().having(
-                (e) => e.cause,
-                'guard error',
-                isA<llama.LlamaUnsupportedException>(),
-              ),
-            ),
+      test(
+        'macOS x64 guard refuses GPU before loader; fallback=$fallback',
+        () async {
+          final paramsSeen = <llama.ModelParams>[];
+          var guards = 0;
+          final candidate = createLlamaEmbeddingBackendForTest(
+            autoUsesCpu: () => false,
+            backendFallback: fallback,
+            gpuRefusal: () {
+              guards++;
+              return nativeEmbeddingGpuRefusal(
+                isAndroid: false,
+                isIOS: false,
+                isMacosX64: true,
+                readVariable: (_) => fail('macOS must not query simulator'),
+              );
+            },
+            loader: (path, params) async {
+              expect(path, '/models/eg2.gguf');
+              paramsSeen.add(params);
+              expect(params.device, llama.ComputeDevice.cpu);
+              expect(params.gpuLayers, 0);
+              expect(params.contextSize, 1024);
+              expect(params.batchSize, 1024);
+              expect(params.microBatchSize, 1024);
+              expect(params.maxParallelSequences, 1);
+              return engine;
+            },
           );
-        }
-        expect(guards, 1);
-        expect(paramsSeen, hasLength(fallback ? 1 : 0));
-      });
+          final p = (await candidate.describe(
+            _spec('eg2.gguf'),
+            _config(backend: PreferredBackend.gpu),
+          )).build();
+          addTearDown(p.close);
+          if (fallback) {
+            expect((await p.load()).activeBackend, PreferredBackend.cpu);
+          } else {
+            await expectLater(
+              p.load(),
+              throwsA(
+                isA<EmbeddingLoadException>().having(
+                  (e) => e.cause,
+                  'guard error',
+                  isA<llama.LlamaUnsupportedException>().having(
+                    (e) => e.message,
+                    'reason',
+                    contains('macOS x64/Rosetta'),
+                  ),
+                ),
+              ),
+            );
+          }
+          expect(guards, 1);
+          expect(paramsSeen, hasLength(fallback ? 1 : 0));
+        },
+      );
     }
 
     Future<List<String>> autoLoadMessages(
       String? refusal, {
+      required bool autoUsesCpu,
       String backendName = 'CPU',
       PreferredBackend expected = PreferredBackend.cpu,
     }) async {
@@ -442,6 +467,7 @@ void main() {
       final messages = <String>[];
       final candidate = createLlamaEmbeddingBackendForTest(
         gpuRefusal: () => refusal,
+        autoUsesCpu: () => autoUsesCpu,
         loader: (path, params) async {
           expect(params.device, llama.ComputeDevice.auto);
           expect(params.gpuLayers, greaterThan(0));
@@ -463,7 +489,7 @@ void main() {
     }
 
     test('successful automatic CPU selection warns once', () async {
-      final messages = await autoLoadMessages(null);
+      final messages = await autoLoadMessages(null, autoUsesCpu: false);
       expect(messages, hasLength(1));
       expect(
         messages.single,
@@ -474,14 +500,22 @@ void main() {
     test(
       'automatic CPU selection is silent where llamadart picks CPU',
       () async {
-        expect(await autoLoadMessages('guarded platform'), isEmpty);
+        expect(await autoLoadMessages(null, autoUsesCpu: true), isEmpty);
       },
     );
+
+    test('automatic CPU warning ignores explicit GPU refusal', () async {
+      expect(
+        await autoLoadMessages('guarded platform', autoUsesCpu: false),
+        hasLength(1),
+      );
+    });
 
     test('automatic GPU selection does not warn', () async {
       expect(
         await autoLoadMessages(
           null,
+          autoUsesCpu: false,
           backendName: 'Metal',
           expected: PreferredBackend.gpu,
         ),
@@ -621,6 +655,8 @@ void main() {
       var attempts = 0;
       final cause = llama.LlamaModelException('invalid GGUF');
       final candidate = createLlamaEmbeddingBackendForTest(
+        gpuRefusal: () => null,
+        autoUsesCpu: () => false,
         loader: (_, _) async {
           attempts++;
           throw cause;
@@ -653,6 +689,8 @@ void main() {
         );
         final secondStack = StackTrace.fromString('cpu-retry-original-stack');
         final candidate = createLlamaEmbeddingBackendForTest(
+          gpuRefusal: () => null,
+          autoUsesCpu: () => false,
           loader: (_, _) async {
             if (++attempts == 1) {
               throw llama.LlamaUnsupportedException('GPU unavailable');

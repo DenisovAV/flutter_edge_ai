@@ -29,7 +29,7 @@ the `ModelSource` that matches the URL: `ModelSource.network(url)` for
 ### `FlutterEdgeAiPlugin.createModel` is deprecated
 
 `FlutterEdgeAiPlugin.instance.createModel(modelType:, fileType:, …)` is
-deprecated and removed in 2.6.0. On Android, iOS and desktop it ignored
+deprecated and removed in 3.0.0. On Android, iOS and desktop it ignored
 `modelType` and `fileType` and returned the active model, which is what
 `FlutterEdgeAi.getActiveModel()` returns. The two ways to get a model are on
 `FlutterEdgeAi`:

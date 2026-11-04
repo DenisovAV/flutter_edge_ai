@@ -256,6 +256,10 @@ class PlatformServiceImpl : NSObject, PlatformService, FlutterStreamHandler {
                         print("[PLUGIN LOG] Error in stream iteration: \(error)")
                         DispatchQueue.main.async {
                             eventSink(FlutterError(code: "ERROR", message: error.localizedDescription, details: nil))
+                            // The turn is over either way (a cancelled
+                            // generation ends here too): without the end, the
+                            // Dart stream waits for it forever.
+                            eventSink(FlutterEndOfEventStream)
                         }
                     }
                 }

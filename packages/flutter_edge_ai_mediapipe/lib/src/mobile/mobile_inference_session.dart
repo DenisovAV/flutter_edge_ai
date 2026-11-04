@@ -7,6 +7,8 @@ import 'package:mutex/mutex.dart';
 
 import 'package:flutter_edge_ai_mediapipe/pigeon.g.dart';
 
+import '../reported_engine_turn.dart';
+
 /// Shared MediaPipe pigeon client. Library-level (non-private) so the engine
 /// (`mediapipe_engine.dart`) and both session classes use the SAME channel
 /// instance — its own `flutter_edge_ai`-domain pigeon channel, distinct from
@@ -23,6 +25,9 @@ class MobileInferenceModelSession extends InferenceModelSession {
   final bool supportImage;
   final bool supportAudio; // Enabling audio support (Gemma 3n E4B)
   bool _isClosed = false;
+
+  /// [stopGeneration] was called during the current turn.
+  bool _stopAsked = false;
 
   Completer<void>? _responseCompleter;
   StreamController<String>? _asyncResponseController;
@@ -160,6 +165,8 @@ class MobileInferenceModelSession extends InferenceModelSession {
               controller.addError(
                 Exception(event['message'] ?? 'Unknown async error occurred'),
               );
+              // A failed generation is over: no end follows it.
+              controller.close();
             } else if (event is Map && event.containsKey('partialResult')) {
               final partial = event['partialResult'] as String;
               controller.add(partial);
@@ -171,6 +178,9 @@ class MobileInferenceModelSession extends InferenceModelSession {
         onError: (error, st) {
           if (!controller.isClosed) {
             controller.addError(error, st);
+            // A failed or cancelled generation is over: neither Android's
+            // error path nor an older iOS plugin sends an end after it.
+            controller.close();
           }
         },
         onDone: () {
@@ -183,7 +193,19 @@ class MobileInferenceModelSession extends InferenceModelSession {
       if (message != null) {
         await addQueryChunk(message);
       }
-      unawaited(platformService.generateResponseAsync());
+      // A start the native side refuses (a previous generation still
+      // running, no session) fails this turn; unheard, the turn would wait
+      // forever for events that never come.
+      unawaited(
+        platformService.generateResponseAsync().then<void>(
+          (_) {},
+          onError: (Object e, StackTrace st) {
+            if (controller.isClosed) return;
+            controller.addError(e, st);
+            controller.close();
+          },
+        ),
+      );
 
       yield* controller.stream;
     } finally {
@@ -192,8 +214,24 @@ class MobileInferenceModelSession extends InferenceModelSession {
     }
   }
 
+  /// How the turn ended, for core's chat: a stop is [TurnEnd.stopped] (the
+  /// cancel's own error, iOS's among them, is not the turn's), a close the
+  /// consumer did not ask for [TurnEnd.closed], so the chat keeps the
+  /// partial reply (decision H). MediaPipe has no output cap here.
+  @override
+  EngineTurn startTurn() {
+    _stopAsked = false;
+    return reportedEngineTurn(
+      getResponseAsync(),
+      stopped: () => _stopAsked,
+      closed: () => _isClosed,
+      completed: () => TurnEnd.endOfSequence,
+    );
+  }
+
   @override
   Future<void> stopGeneration() async {
+    _stopAsked = true;
     try {
       await platformService.stopGeneration();
     } catch (e) {
@@ -285,6 +323,12 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
   bool _isClosed = false;
   bool _systemInstructionSent = false;
 
+  /// [stopGeneration] was called during the current turn.
+  bool _stopAsked = false;
+
+  /// Ends the turn that is running, if any; [close] calls it.
+  void Function()? _endRunningTurn;
+
   MultiSessionMobileInferenceModelSession({
     required this.sessionId,
     required this.modelType,
@@ -374,10 +418,23 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
       }
     }
 
+    // A close ends this turn: the native session it ran on is gone, and no
+    // tagged done will come.
+    _endRunningTurn = () {
+      cleanup();
+      if (!controller.isClosed) controller.close();
+    };
+
     controller.onListen = () async {
       try {
         if (message != null) await addQueryChunk(message);
         await generationMutex.acquire();
+        // Closed or cancelled while it waited: cleanup has already run and
+        // would not release a lock taken after it.
+        if (finished) {
+          generationMutex.release();
+          return;
+        }
         mutexHeld = true;
         subscription = eventChannel.receiveBroadcastStream().listen(
           (event) {
@@ -438,8 +495,24 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
     return controller.stream;
   }
 
+  /// How the turn ended, for core's chat: a stop is [TurnEnd.stopped] (the
+  /// cancel's own error, iOS's among them, is not the turn's), a close the
+  /// consumer did not ask for [TurnEnd.closed], so the chat keeps the
+  /// partial reply (decision H). MediaPipe has no output cap here.
+  @override
+  EngineTurn startTurn() {
+    _stopAsked = false;
+    return reportedEngineTurn(
+      getResponseAsync(),
+      stopped: () => _stopAsked,
+      closed: () => _isClosed,
+      completed: () => TurnEnd.endOfSequence,
+    );
+  }
+
   @override
   Future<void> stopGeneration() async {
+    _stopAsked = true;
     await platformService.stopGenerationForSession(sessionId);
   }
 
@@ -450,6 +523,8 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
   Future<void> close() async {
     if (_isClosed) return;
     _isClosed = true;
+    _endRunningTurn?.call();
+    _endRunningTurn = null;
     onClose();
     await platformService.closeSessionId(sessionId);
   }

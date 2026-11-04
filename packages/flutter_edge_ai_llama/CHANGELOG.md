@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Update llamadart to 0.17.5 with matching Apple and Web runtimes.
+
 ## 0.0.5
 
 - Docs: on the web, load `cache_api.js` inside the `<head>` of `web/index.html` (#728).

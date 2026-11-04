@@ -93,7 +93,7 @@ Other sources on the same builder: `.fromAsset(path)` for a model bundled in the
 
 **After upgrading to 2.5**
 - Symptom: `The method 'fromLegacyUrl' isn't defined for the type 'InferenceModelSpec'`, `generateEmbedding`/`generateEmbeddings`/`getDimension` undefined, or a deprecation warning on `FlutterEdgeAiPlugin.instance.createModel`.
-- Fix: build the spec as `InferenceModelSpec(name:, modelSource: ModelSource.network(url) /.asset/.bundled/.file, modelType:)`; `fromLegacyUrl` defaulted to `ModelType.general`, so pass a model type explicitly. Replace `createModel(...)` (removed in 2.6.0) with `FlutterEdgeAi.getActiveModel(...)` — on Android, iOS and desktop it ignored `modelType` and `fileType` and returned the active model anyway — or with `FlutterEdgeAi.openModel` for several models. Embeddings: `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)`, `embedAll`, `dimension` (see the flutter-edge-ai-rag skill and core's MIGRATION.md).
+- Fix: build the spec as `InferenceModelSpec(name:, modelSource: ModelSource.network(url) /.asset/.bundled/.file, modelType:)`; `fromLegacyUrl` defaulted to `ModelType.general`, so pass a model type explicitly. Replace `createModel(...)` (deprecated, removed in 3.0.0) with `FlutterEdgeAi.getActiveModel(...)` — on Android, iOS and desktop it ignored `modelType` and `fileType` and returned the active model anyway — or with `FlutterEdgeAi.openModel` for several models. Embeddings: `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)`, `embedAll`, `dimension` (see the flutter-edge-ai-rag skill and core's MIGRATION.md).
 
 **No engine registered**
 - Symptom: `StateError: No inference engine can handle this model (ModelFileType.litertlm). Add the engine package to pubspec.yaml and pass it in inferenceEngines: of FlutterEdgeAi.initialize(...)`
@@ -188,7 +188,7 @@ The chat keeps the history: add the next user message and generate again. `gener
 
 `createSession` and `createChat` fill a single slot on the model, so a second one closes the first. For concurrent conversations use `openSession` / `openChat`, and close each one.
 
-They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` / `supportAudio:` if the chat sends images or audio) explicitly, or the chat runs as `ModelType.gemmaIt` with images and audio off. They work on `.litertlm` (native and web), on MediaPipe Android and iOS, on built-in AI, and on `flutter_edge_ai_llama`, whose `openChat` does take the installed model's type and image/audio support, as its `createChat` does; everywhere else — ONNX and MediaPipe web — they throw `UnsupportedError`.
+They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` / `supportAudio:` if the chat sends images or audio) explicitly, or the chat runs as `ModelType.gemmaIt` with images and audio off. They work on `.litertlm` (native and web), on MediaPipe Android and iOS, on native ONNX (`flutter_edge_ai_onnx` 0.8.0; one generator per session, capped by `maxConcurrentSessions`), on built-in AI, and on `flutter_edge_ai_llama`, whose `openChat` does take the installed model's type and image/audio support, as its `createChat` does; everywhere else — ONNX and MediaPipe on web — they throw `UnsupportedError`.
 
 ```dart
 final summariser = await model.openChat(modelType: ModelType.gemma4);

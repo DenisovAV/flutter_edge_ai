@@ -1,12 +1,13 @@
 # Platform support
 
 The connector provides GGUF inference through llamadart on Android, iOS, macOS,
-Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.5.0+ and published llamadart 0.15.1 with typed overflow reporting.
+Windows, Linux and Web. It requires Flutter 3.44+, Dart 3.12+ and core 2.5.0+ and, for current source / next release, llamadart 0.17.5 with typed overflow reporting.
 A passing build does not qualify every device, model or accelerator.
 
-Version 0.0.5 pairs llamadart 0.15.1 with Apple
-companion `llamadart_llama_cpp_flutter` 0.15.0. Published 0.0.2 pairs SDK
-0.15.0 with companion 0.15.0; 0.0.1 paired 0.13.1 with 0.13.0.
+Current source / next release pairs llamadart `>=0.17.5 <0.17.6` with exact Apple
+companion `llamadart_llama_cpp_flutter` 0.17.3; full platform qualification is
+pending. Published 0.0.5 pairs SDK 0.15.1 with companion 0.15.0.
+Published 0.0.2 pairs SDK 0.15.0 with companion 0.15.0; 0.0.1 paired 0.13.1 with 0.13.0.
 
 | Feature | Native | Web |
 | --- | --- | --- |
@@ -30,6 +31,9 @@ memory. Other SDK failures map to `StateError`; wrappers retain the cause and st
 
 ## Consumer setup
 
+This section describes current source / next release. For published 0.0.5,
+use the hosted [README recipe](../README.md#add-it-to-your-app).
+
 Declare `ModelFileType.gguf` and register `LlamaEngineProvider`. Put this selection
 in the **application/workspace root** pubspec; dependency settings do not propagate:
 
@@ -40,15 +44,15 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Keep this explicit selection as defence in depth. llamadart 0.15.1 automatically
+Keep this explicit selection as defence in depth. llamadart 0.17.5 automatically
 omits its LiteRT-LM when this connector or `flutter_edge_ai_litertlm` is present;
 explicitly selecting both LiteRT-LM owners fails the native build. Core itself includes no inference
-runtime. With llamadart 0.15.1, Vulkan is included by default on supported Android,
+runtime. With llamadart 0.17.5, Vulkan is included by default on supported Android,
 Linux and Windows targets. Android auto selection uses CPU; Linux/Windows use
 Vulkan where available. The demo explicitly selects CPU-only bundles on those
 platforms; apps choose backend packaging in their own hook settings.
 
-Apple applications add `llamadart_llama_cpp_flutter: 0.15.0` directly and enable
+Apple applications add `llamadart_llama_cpp_flutter: 0.17.3` directly and enable
 Flutter SwiftPM. Use iOS 16.4+ and macOS 14+. iOS applications enable the
 extended-virtual-addressing and increased-memory-limit entitlements; the example
 includes both. Do not apply those kernel entitlements on macOS. From
@@ -56,7 +60,16 @@ includes both. Do not apply those kernel entitlements on macOS. From
 companions come from its own Swift package): an app with this connector, its
 companion and `flutter_edge_ai_litertlm` builds and loads both native libraries
 (macOS, 2026-10-24). Running both engines' models in one app is not qualified.
-Windows needs the matching Visual C++ runtime. Android's example uses
+For current source / next release, the verified
+[native v0.8.0-1 Windows x64 archive](https://github.com/leehack/llamadart-native/releases/download/v0.8.0-1/llamadart-native-windows-x64-v0.8.0-1.tar.gz)
+contains `msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll` and `vcomp140.dll`;
+it does not contain `vcruntime140_threads.dll`. Its SHA-256 matches the SDK pin:
+`e7bbc544cfc65780569b62823157f91e1bff45b79332b61fa1da87ff8fd62121`.
+This archive evidence does not establish CRT packaging for published 0.0.5 or
+Windows arm64. Older/custom bundles follow the SDK's redistributable diagnostics.
+The app-local CRT DLLs can also be used by ONNX or LiteRT-LM DLLs in a combined
+app; that coexistence remains unqualified here.
+Android's example uses
 API 28+ and includes arm64-v8a / x86_64 only; 32-bit armeabi-v7a is unsupported.
 The emulator lane runs x86_64. A maintainer-run Galaxy S24 ARM64 CPU smoke passed
 on the earlier 0.12.2/0.0.23 pair (see the dated PR record). This is not a recurring
@@ -64,21 +77,21 @@ CI lane or qualification of the new SDK pair on phones.
 Oldest-device compatibility still requires device testing.
 
 The Apple metadata fix in [native #110](https://github.com/leehack/llamadart-native/issues/110)
-is included in companion 0.15.0 (native v0.7.0-1). App Store submission remains
+is included in companion 0.17.3 (native v0.8.0-1). App Store submission remains
 unvalidated. Apple workspace setup is covered below.
 
-Windows x64's first CPU-only build still downloads the full approximately 737 MB
-archive, including CUDA DLLs (about 675 MB for cuBLASLt). The SDK download has a
-ten-minute total timeout and no resume; allow bandwidth/time for a fresh cache.
-Splitting that download belongs to [llamadart #812](https://github.com/leehack/llamadart/issues/812).
+llamadart 0.17.5 reads native hook contract 2 and downloads the Windows x64
+CUDA sidecar only when `cuda` is selected. A CPU-only SDK download is about
+15 MiB; it no longer includes the large CUDA DLL payload
+([#812](https://github.com/leehack/llamadart/issues/812)).
 
 ## Apple workspaces
 
-With llamadart 0.15.1, the hook discovers the Flutter app member and validates its
+With llamadart 0.17.5, the hook discovers the Flutter app member and validates its
 Apple companion. The old workspace-root discovery problem is fixed; the hook
 uses the SwiftPM runtime rather than embedding another llama.cpp framework.
 
-1. Add `llamadart_llama_cpp_flutter: 0.15.0` directly to the app member's
+1. Add `llamadart_llama_cpp_flutter: 0.17.3` directly to the app member's
    `dependencies`, alongside this connector.
 2. Set `llamadart_native_runtimes: [llama_cpp]` under `hooks.user_defines.llamadart`
    in the workspace root. Enable Flutter SwiftPM and keep the deployment targets
@@ -93,10 +106,9 @@ configuration consistent or split the workspaces.
 
 Qualification uses a workspace containing core, this connector and one app
 member, with root hook settings and a companion declared only in the app.
-The selected SDK/companion pair is **0.15.1 / 0.15.0**. Both companion 0.15.0
-and 0.15.1 are published and accept SDK `>=0.15.0 <0.16.0`; this adapter retains
-the tested 0.15.0 companion rather than upgrading it incidentally. Source
-qualification and hosted consumer qualification remain independent gates.
+The historically tested SDK/companion pair is **0.15.1 / 0.15.0**.
+The current **0.17.5 / 0.17.3** pair awaits qualification of this workspace-member
+setup. Source qualification and hosted consumer qualification remain independent gates.
 This does not qualify App Store submission, physical iOS devices, oldest OS
 versions or mixed LiteRT-LM/CocoaPods packaging.
 
@@ -126,12 +138,11 @@ qualify every device, model or accelerator.
 | Web | Wasm build and real worker/Wasm generation | Hardware WebGPU, advanced model/browser combinations |
 
 CI uses pinned Flutter 3.47.1 for reproducible checks; that is a test SDK, not the
-package minimum. The selected inference pair is llamadart 0.15.1 / Apple
-companion 0.15.0, with native artifacts v0.7.0-1 and connector-pinned Web assets
-v0.1.65. SDK 0.15.1 adds typed native embedding overflow reporting; its native
-inference artifacts are unchanged from 0.15.0. The SDK changelog also includes
-Web alignment context; the connector's Web bridge stays at v0.1.65. The
-inference baselines above cover the selected fixtures. Validate each
+package minimum. Current source selects llamadart `>=0.17.5 <0.17.6` / Apple
+companion 0.17.3, with native artifacts v0.8.0-1 and connector-pinned Web assets
+v0.1.79. Full platform qualification of these pins is pending. Historical
+0.15.1/0.15.0 evidence and the inference baselines above cover selected fixtures;
+they do not qualify the updated pair. Validate each
 SDK upgrade with the selected companion; its patch version may differ. Web
 assets are checksum-verified. llamadart verifies llama.cpp archive SHA-256
 digests before extraction
@@ -150,7 +161,8 @@ or absent model execution fails. Optional capability fixtures have their own
 
 ### Embedding qualification by platform
 
-The following results use the pinned EmbeddingGemma 2 Q8_0 fixture. Inference
+The following historical results use the pinned EmbeddingGemma 2 Q8_0 fixture
+and predate the current SDK update; they do not qualify SDK 0.17.5. Inference
 qualification does not qualify embeddings or other EG2 quantizations. Source
 checks and standalone hosted-consumer checks remain separate gates.
 
@@ -191,7 +203,11 @@ this phone do not qualify other GPUs: the ggml-vulkan small-matmul-tile defect
 can produce incorrect unit-norm embeddings on affected devices
 ([llama.cpp #28637](https://github.com/ggml-org/llama.cpp/issues/28637)).
 The adapter therefore refuses explicit GPU embeddings on Android and iOS
-simulators before loading. With `backendFallback: true`, an explicit GPU
+simulators before loading. Current source / next release also conservatively
+refuses them on macOS x64/Rosetta because upstream reports Intel/AMD Metal
+corruption ([llamadart #1597](https://github.com/leehack/llamadart/issues/1597));
+EG2 corruption on that host has not been measured here. macOS arm64 Metal is
+unaffected. With `backendFallback: true`, an explicit GPU
 request can load CPU instead; with `false`, the request fails. The diagnostic
 GPU timings above describe the measured unguarded path.
 See the [embedding guide](embeddings.md) for the supported model profile and

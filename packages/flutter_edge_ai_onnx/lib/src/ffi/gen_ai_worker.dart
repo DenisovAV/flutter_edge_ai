@@ -44,8 +44,9 @@ abstract interface class GenAiWorkerEngine {
   /// Token count for [text] via the tokenizer's own encoder (no template).
   int countTokens(String text);
 
-  /// Destroys the live generator, so the next turn starts a fresh one.
-  void resetGenerator();
+  /// Destroys [sessionId]'s live generator (null = the legacy session), so its
+  /// next turn starts a fresh one. A session with no generator is a no-op.
+  void resetGenerator({int? sessionId});
 
   /// Frees every native handle. Called exactly once, also after a failed
   /// [load], so it must cope with a partial one.
@@ -96,33 +97,42 @@ Future<void> serveGenAiWorker(WorkerInit init, GenAiWorkerEngine engine) async {
   final commandPort = ReceivePort();
   final queued = Queue<QueuedRequest>();
   var closeRequested = false;
-  var stopRequested = false;
+  // Sessions (null = the legacy one) whose running or queued turn has had a
+  // stop filed. A stop names its session, so one session's stop never cuts
+  // off the turn of another.
+  final stopped = <int?>{};
+  var hasRunning = false;
+  int? runningSession;
   Completer<void>? wake;
+
+  bool isLive(int? sessionId) =>
+      (hasRunning && runningSession == sessionId) ||
+      queued.any((r) => r is GenerateRequest && r.turn.sessionId == sessionId);
 
   commandPort.listen((msg) {
     switch (msg) {
       case GenerateRequest():
-        // A turn starts un-stopped, and any StopSignal filed from here on —
-        // even before the turn has started — stops it. A stop names no turn,
-        // so the worker cannot tell a late stop for the previous turn from
-        // one meant for this one: one filed before this request is dropped,
-        // one filed after it applies — as when a turn started the moment its
-        // request was processed. The client sends a turn only after the
-        // previous one finished, so this never un-stops a running generation.
-        stopRequested = false;
+        // A turn starts un-stopped, and any StopSignal for its session filed
+        // from here on — even before the turn has started — stops it. A stop
+        // names a session, not a turn, so the worker cannot tell a late stop
+        // for the session's previous turn from one meant for this one: one
+        // filed before this request is dropped, one filed after it applies.
+        // The client sends a turn only after the previous one finished, so
+        // this never un-stops a running generation.
+        stopped.remove(msg.turn.sessionId);
         queued.add(msg);
       case CountTokensRequest():
         queued.add(msg);
       case ResetSessionRequest():
-        // Unwind the generation in flight, if any — bounded to one more
-        // token — so the reset runs right after it, not after a full decode.
-        stopRequested = true;
+        // Unwind the session's generation in flight, if any — bounded to one
+        // more token — so the reset runs right after it, not after a full
+        // decode. Another session's turn is left alone.
+        if (isLive(msg.sessionId)) stopped.add(msg.sessionId);
         queued.add(msg);
-      case StopSignal():
-        stopRequested = true;
+      case StopSignal(:final sessionId):
+        if (isLive(sessionId)) stopped.add(sessionId);
       case Close():
         closeRequested = true;
-        stopRequested = true;
         commandPort.close();
         // Only what has not started. The request in flight, if any, was taken
         // off the queue when it started, and it finishes on its own terms.
@@ -149,12 +159,27 @@ Future<void> serveGenAiWorker(WorkerInit init, GenAiWorkerEngine engine) async {
       // microtasks, never the message queue a Close waits in.
       await Future<void>.delayed(Duration.zero);
       if (closeRequested || queued.isEmpty) continue;
-      await _serve(
-        queued.removeFirst(),
-        engine,
-        init.replyTo,
-        () => stopRequested,
-      );
+      final request = queued.removeFirst();
+      final sessionId = request is GenerateRequest
+          ? request.turn.sessionId
+          : null;
+      if (request is GenerateRequest) {
+        hasRunning = true;
+        runningSession = sessionId;
+      }
+      try {
+        await _serve(
+          request,
+          engine,
+          init.replyTo,
+          () => closeRequested || stopped.contains(sessionId),
+        );
+      } finally {
+        if (request is GenerateRequest) {
+          hasRunning = false;
+          stopped.remove(sessionId);
+        }
+      }
     }
   } catch (_) {
     // Serving a request never throws, so this is a bug in the loop itself.
@@ -204,9 +229,9 @@ Future<void> _serve(
       } catch (e) {
         replyTo.send(CountTokensReply(id, null, '$e'));
       }
-    case ResetSessionRequest():
+    case ResetSessionRequest(:final sessionId):
       try {
-        engine.resetGenerator();
+        engine.resetGenerator(sessionId: sessionId);
         replyTo.send(const ResetSessionAck());
       } catch (e, st) {
         // Carried in the ack, not swallowed: the next turn may continue the

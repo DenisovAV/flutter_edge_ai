@@ -16,9 +16,6 @@ import 'package:ffi/ffi.dart';
 /// `kLiteRtLmStatusOk`.
 const liteRtLmStatusOk = 0;
 
-/// `kLiteRtLmStatusResourceExhausted`: §23's `context_full` carries it.
-const liteRtLmStatusResourceExhausted = 8;
-
 const _statusNames = [
   'OK',
   'CANCELLED',

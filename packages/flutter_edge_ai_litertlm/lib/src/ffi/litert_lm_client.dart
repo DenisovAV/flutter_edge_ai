@@ -249,7 +249,11 @@ enum NativeLastTurnEnd {
   contextLimit,
 
   /// The input did not fit what the context window has left, or the window
-  /// has no room for any prefill signature (status RESOURCE_EXHAUSTED). The
+  /// has no room for any prefill signature (status RESOURCE_EXHAUSTED). Only
+  /// these context-window checks end a turn here (native 37d1ec59): any other
+  /// RESOURCE_EXHAUSTED, a failed allocation for one, ends [failed] with
+  /// status 8, which a rewind refuses. So status 8 alone is not a full
+  /// context: read this end. The
   /// input is not in the history, and the conversation fails every later send
   /// until it is rewound to the turn's checkpoint.
   contextFull,

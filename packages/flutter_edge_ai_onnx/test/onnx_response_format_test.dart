@@ -15,6 +15,7 @@ import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_client.dart';
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_worker.dart'
     show AfterTurn, afterTurn;
 import 'package:flutter_edge_ai_onnx/src/onnx_inference_model.dart';
+import 'package:flutter_edge_ai_onnx/src/onnx_session.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fakes/fake_gen_ai_client.dart';
@@ -346,17 +347,19 @@ void main() {
       skip: _hostHasGuidance ? false : 'this host has no guidance',
     );
 
-    test('a prompt that does not fit ends the turn contextLimit, not with an '
-        'error, and leaves the conversation as it was', () async {
+    test('a prompt that does not fit is refused with the text\'s error, and '
+        'leaves the conversation as it was', () async {
       final (model, log) = await loaded('guided_context');
       final session = await model.openSession(responseFormat: _schema);
       expect(await _ask(session, _script(['{"a": 1}'])), '{"a": 1}');
       await expectLater(
         _ask(session, _script([], contextFull: true)),
         throwsA(
-          isA<IncompleteStructuredOutputException>()
-              .having((e) => e.end, 'end', TurnEnd.contextLimit)
-              .having((e) => e.partialText, 'partialText', ''),
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('does not fit'),
+          ),
         ),
       );
       expect(await _ask(session, _script(['{"a": 2}'])), '{"a": 2}');
@@ -475,6 +478,50 @@ void main() {
         '[session=1 turn=2]y',
       );
     });
+  });
+
+  // Design 2.6.0 §3: a refused too-long input is an error on the text with
+  // end == contextLimit, on plain and structured sessions, and the engine
+  // keeps nothing of the turn.
+  test('a refused prompt is an error on the text with end contextLimit, on '
+      'a plain and a guided session, and nothing of it is kept', () async {
+    final (model, _) = await loaded('refused');
+    for (final guided in [false, true]) {
+      final session = guided
+          ? openGuidedOnnxSession(
+              client: model.client,
+              modelType: ModelType.general,
+              fileType: ModelFileType.onnx,
+              sessionId: 50,
+              onClose: () {},
+              jsonSchema: '{"type":"object"}',
+            )
+          : OnnxSession(
+              client: model.client,
+              modelType: ModelType.general,
+              fileType: ModelFileType.onnx,
+              sessionId: 51,
+              onClose: () {},
+            );
+      expect(
+        await _ask(session, _script(['x'], echoSession: true)),
+        startsWith('[session=${guided ? 50 : 51} turn=1]'),
+      );
+      await session.addQueryChunk(
+        Message(text: _script([], contextFull: true), isUser: true),
+      );
+      // ignore: invalid_use_of_protected_member
+      final turn = session.startTurn();
+      await expectLater(turn.text.join(), throwsStateError, reason: '$guided');
+      expect(await turn.end, TurnEnd.contextLimit, reason: '$guided');
+      // Nothing of the refused turn: the next turn is the session's second.
+      expect(
+        await _ask(session, _script(['y'], echoSession: true)),
+        startsWith('[session=${guided ? 50 : 51} turn=2]'),
+        reason: '$guided',
+      );
+      await session.close();
+    }
   });
 
   test('a prompt fits only when it leaves room for one token', () {

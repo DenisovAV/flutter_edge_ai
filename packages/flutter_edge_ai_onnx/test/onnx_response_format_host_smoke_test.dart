@@ -5,8 +5,9 @@
 // conversation with the partial reply written in — and a turn cut at its cap
 // is rewound exactly, as if it never ran; a context window filled during decode
 // ends `contextLimit` and the session goes on with its history; the whole
-// dialect compiles; and a prompt longer than the window ends a structured
-// turn `contextLimit` and fails a plain one, leaving both conversations.
+// dialect compiles; and a prompt longer than the window is refused — an
+// error on the reply, the turn ending `contextLimit` — on a structured and a
+// plain session, leaving both conversations.
 //
 // Skips cleanly unless the libraries and a model are available locally:
 //   FLUTTER_GEMMA_ORT_GENAI_LIBS=/dir/with/libonnxruntime+libonnxruntime-genai
@@ -434,8 +435,8 @@ void main() {
   );
 
   test(
-    'a prompt longer than the context window: a structured session ends it '
-    'contextLimit, a plain one fails it; both keep the conversation',
+    'a prompt longer than the context window is refused, with an error, on a '
+    'structured and a plain session; both keep the conversation',
     () async {
       final long = List.filled(400, 'ocean wave').join(' ');
       final guided = await model.openSession(
@@ -446,10 +447,10 @@ void main() {
       await expectLater(
         _reply(guided, long),
         throwsA(
-          isA<IncompleteStructuredOutputException>().having(
-            (e) => e.end,
-            'end',
-            TurnEnd.contextLimit,
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('does not fit the context window'),
           ),
         ),
       );

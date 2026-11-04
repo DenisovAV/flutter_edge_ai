@@ -186,10 +186,11 @@ class OnnxSession extends InferenceModelSession {
   /// other client the session itself starts the next turn fresh after a stop
   /// or a failure.
   ///
-  /// On a guided session, a prompt that does not fit ends the turn
-  /// [TurnEnd.contextLimit] with no error (core then raises
-  /// `IncompleteStructuredOutputException`), as on LiteRT-LM; on an unguided
-  /// one it is the text's [StateError].
+  /// A prompt that does not fit is refused: the text ends with a
+  /// [StateError] and the turn ends [TurnEnd.contextLimit], on a plain and a
+  /// guided session alike, and nothing of the turn is kept — the prompt never
+  /// reaches the generator (design 2.6.0 §3: an error with `contextLimit` is
+  /// a refused input, whose messages core's chat takes back).
   ///
   /// The turn is sent when this is called, as core's chat and structured
   /// session expect; listen to [EngineTurn.text] right away. A text never
@@ -212,17 +213,10 @@ class OnnxSession extends InferenceModelSession {
     var chunkCount = 0;
     var completedNormally = false;
     try {
-      try {
-        await for (final chunk in text) {
-          firstChunkMs ??= genSw.elapsedMilliseconds;
-          chunkCount++;
-          yield chunk;
-        }
-      } on StateError {
-        // The client completes the end before it adds the error, so this
-        // does not wait.
-        if (_guidance == null || end == null) rethrow;
-        if (await end != TurnEnd.contextLimit) rethrow;
+      await for (final chunk in text) {
+        firstChunkMs ??= genSw.elapsedMilliseconds;
+        chunkCount++;
+        yield chunk;
       }
       completedNormally = true;
       _logGenerationStats(genSw, firstChunkMs, chunkCount);

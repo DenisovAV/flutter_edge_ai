@@ -171,9 +171,9 @@ its history. The worker settles the turn before it serves the next one:
 - An unguided turn at its cap is kept and continued, as before.
 
 A guided session's grammar starts again after each of these. A prompt that
-does not fit leaves the conversation as it was: a structured session ends that
-turn `TurnEnd.contextLimit` (`IncompleteStructuredOutputException`), a plain
-one fails it with a `StateError`.
+does not fit is refused and leaves the conversation as it was: on a plain and a
+structured session alike the reply fails with a `StateError` and the turn ends
+`TurnEnd.contextLimit`, the signal for an input that was refused.
 
 Measured on Phi-3.5-mini (macOS, greedy):
 - After a turn cut at its cap and rewound, the next reply is the same, byte

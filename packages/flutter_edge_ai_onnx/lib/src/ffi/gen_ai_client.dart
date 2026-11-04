@@ -404,7 +404,14 @@ class GenAiFfiClient implements GenAiClient {
       _streamSession.remove(msg.id);
       _turnEnds.remove(msg.id)?.complete(msg.end ?? TurnEnd.closed);
       final controller = _activeStreams.remove(msg.id);
-      controller?.addError(StateError(msg.error));
+      // A refused input — a prompt that did not fit, nothing of it kept — is
+      // core's ContextLimitException, with end contextLimit; any other
+      // failure is a StateError.
+      controller?.addError(
+        msg.end == TurnEnd.contextLimit
+            ? ContextLimitException(msg.error)
+            : StateError(msg.error),
+      );
       unawaited(controller?.close());
       _streamDone.remove(msg.id)?.complete();
     } else if (msg is CountTokensReply) {
@@ -572,8 +579,9 @@ class GenAiFfiClient implements GenAiClient {
   /// [generate], guided by [guidance] (a JSON schema) when it is set, with
   /// how the turn ended. The end completes once the worker has answered —
   /// after a cancelled subscription too — and never with an error: a failed
-  /// turn puts its error on the text and ends [TurnEnd.contextLimit] when the
-  /// prompt did not fit, [TurnEnd.closed] otherwise.
+  /// turn puts its error on the text — [ContextLimitException] with end
+  /// [TurnEnd.contextLimit] when the prompt did not fit, a [StateError] with
+  /// end [TurnEnd.closed] otherwise.
   ({Stream<String> text, Future<TurnEnd> end}) _startTurn(
     GenAiTurn turn, {
     String? guidance,

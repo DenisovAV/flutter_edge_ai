@@ -187,7 +187,7 @@ class OnnxSession extends InferenceModelSession {
   /// or a failure.
   ///
   /// A prompt that does not fit is refused: the text ends with a
-  /// [StateError] and the turn ends [TurnEnd.contextLimit], on a plain and a
+  /// [ContextLimitException] and the turn ends [TurnEnd.contextLimit], on a plain and a
   /// guided session alike, and nothing of the turn is kept — the prompt never
   /// reaches the generator (design 2.6.0 §3: an error with `contextLimit` is
   /// a refused input, whose messages core's chat takes back).

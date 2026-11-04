@@ -375,7 +375,10 @@ void main() {
         ),
         seedHistory: history,
       );
-      await expectLater(started.text.join(), throwsStateError);
+      await expectLater(
+        started.text.join(),
+        throwsA(isA<ContextLimitException>()),
+      );
       expect(await started.end, TurnEnd.contextLimit);
       final (answer, _) = await turn(
         120,
@@ -447,7 +450,7 @@ void main() {
       await expectLater(
         _reply(guided, long),
         throwsA(
-          isA<StateError>().having(
+          isA<ContextLimitException>().having(
             (e) => e.message,
             'message',
             contains('does not fit the context window'),
@@ -462,7 +465,7 @@ void main() {
       await expectLater(
         _reply(plain, long),
         throwsA(
-          isA<StateError>().having(
+          isA<ContextLimitException>().having(
             (e) => e.message,
             'message',
             contains('does not fit the context window'),

@@ -355,7 +355,7 @@ void main() {
       await expectLater(
         _ask(session, _script([], contextFull: true)),
         throwsA(
-          isA<StateError>().having(
+          isA<ContextLimitException>().having(
             (e) => e.message,
             'message',
             contains('does not fit'),
@@ -471,7 +471,7 @@ void main() {
       await _ask(session, _script(['x']));
       await expectLater(
         _ask(session, _script([], contextFull: true)),
-        throwsStateError,
+        throwsA(isA<ContextLimitException>()),
       );
       expect(
         await _ask(session, _script(['y'], echoSession: true)),
@@ -512,7 +512,11 @@ void main() {
       );
       // ignore: invalid_use_of_protected_member
       final turn = session.startTurn();
-      await expectLater(turn.text.join(), throwsStateError, reason: '$guided');
+      await expectLater(
+        turn.text.join(),
+        throwsA(isA<ContextLimitException>()),
+        reason: '$guided',
+      );
       expect(await turn.end, TurnEnd.contextLimit, reason: '$guided');
       // Nothing of the refused turn: the next turn is the session's second.
       expect(
@@ -584,7 +588,10 @@ void main() {
           client,
           turn(_script([], contextFull: true)),
         );
-        await expectLater(started.text.join(), throwsStateError);
+        await expectLater(
+          started.text.join(),
+          throwsA(isA<ContextLimitException>()),
+        );
         expect(await started.end, TurnEnd.contextLimit);
       },
     );

@@ -10,10 +10,10 @@
 /// (integration_test/tools/generate_eg2_audio_clips.py):
 /// - {text, audio}, GPU, 768 dimensions, 1024 tokens; the text tower against
 ///   the native text golden (WebGPU bound, as web_eg2_test.dart);
-/// - each clip against goldens/eg2_audio_golden.json: cos >= [_minAudio]
-///   against `vector_native` (our native build, CPU) and against Google's
-///   litert-lm wheel (`vector`), both LiteRT-LM 0.19 since 2026-11-04 while
-///   the page runs @litert-lm/core 0.18.0. The audio encoder quantizes
+/// - each clip against goldens/eg2_audio_golden_web.dart (the 0.18 audio
+///   golden, frozen for the web, which runs @litert-lm/core 0.18.0): cos >=
+///   [_minAudio] against `vector_native` (our native-v0.18.0-e build, CPU)
+///   and against Google's litert-lm 0.18.0 wheel (`vector`). The audio encoder quantizes
 ///   its activations to int8, so the last bits of another kernel move a clip
 ///   by up to cos 0.05 natively already (see the native suite); WebGPU adds
 ///   its own rounding. Retrieval is the real bar;
@@ -67,8 +67,8 @@ import 'package:flutter_edge_ai_example/models/embedding_model.dart' as catalog;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'goldens/eg2_audio_golden.dart';
-import 'goldens/eg2_text_golden.dart';
+import 'goldens/eg2_audio_golden_web.dart';
+import 'goldens/eg2_text_golden_web.dart';
 import 'web_embeddings_support.dart';
 
 /// Every test in this file, in order; the last one checks they all started.
@@ -184,7 +184,7 @@ void _log(String line) {
 // ── Goldens ────────────────────────────────────────────────────────────────
 
 final Map<String, dynamic> _golden =
-    jsonDecode(eg2AudioGoldenJson) as Map<String, dynamic>;
+    jsonDecode(eg2AudioGoldenWebJson) as Map<String, dynamic>;
 
 Map<String, dynamic> _group(String name) =>
     (_golden[name] as Map).cast<String, dynamic>();
@@ -199,7 +199,7 @@ List<double> _f32(String encoded) {
 
 /// The bound for a vector with audio in it, against our native build and
 /// against the wheel. Measured on a Tesla T4 (Chrome 155, WebGPU audio
-/// tower) against the 0.18 golden, not yet against 0.19's: clips 0.974-0.991 against our native build and 0.975-0.995
+/// tower): clips 0.974-0.991 against our native build and 0.975-0.995
 /// against the wheel; combined inputs with audio 0.983-0.997. Natively the
 /// same int8 activations already move a clip by up to cos 0.05 between CPU
 /// kernels, so this catches a broken tower, not drift; retrieval below is the
@@ -327,7 +327,8 @@ void main() {
     expect(model.activeBackend, PreferredBackend.gpu);
 
     final textGolden =
-        ((jsonDecode(eg2TextGoldenJson) as Map)['items'] as List).first as Map;
+        ((jsonDecode(eg2TextGoldenWebJson) as Map)['items'] as List).first
+            as Map;
     final text = await model.embed(
       EmbeddingInput.text(textGolden['text'] as String),
       taskType: textGolden['role'] == 'query'

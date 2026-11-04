@@ -406,14 +406,12 @@ abstract class ConversationHandle {
 /// routes every per-conversation native call through the client's private
 /// `_…On(conv, …)` methods.
 ///
-/// What the handle does NOT give you is simultaneity. The engine allows
-/// only ONE live conversation at a time today (upstream LiteRT-LM #966),
-/// so any prior conversation must be deleted before
-/// [LiteRtLmFfiClient.createConversationHandle] is called again.
-/// Concurrent sessions come from the virtual-session multiplexer, which
-/// tears the native conversation down and rebuilds it seeded with the
-/// active session's history — not from several `LiteRtLmConversation*`
-/// coexisting on one engine.
+/// Several handles can be live on one engine (LiteRT-LM 0.19 lifts
+/// upstream #966; §22 on the NPU), and native generation is serialized by
+/// the client's lock. Where several live conversations were not verified,
+/// `openSession` sessions use the virtual-session multiplexer instead, which
+/// rebuilds one shared conversation seeded with the active session's
+/// history.
 ///
 /// Lifetime contract: the caller must call [close] when done. The owning
 /// client closes any remaining handles on [LiteRtLmFfiClient.shutdown].
@@ -2643,6 +2641,9 @@ class LiteRtLmFfiClient {
     }
 
     controller.onListen = () async {
+      // A turn that fails before its send has no end of its own: never read
+      // the session's previous one for it.
+      _virtualTurnEnds.remove(conversationToken);
       try {
         await _nativeMutex.acquire();
         mutexHeld = true;
@@ -2702,6 +2703,17 @@ class LiteRtLmFfiClient {
         );
         // The lock goes when native has ended the turn, not when the consumer
         // stops listening: until then the conversation is still in use.
+        // How this turn ended, kept for its session: registered before the
+        // release below, so it runs first, while the shared conversation and
+        // its record still exist. A session queued on the lock may delete
+        // that conversation as soon as the lock goes, before this session
+        // reads the end of its own turn.
+        unawaited(
+          send.turn.ended.then((_) {
+            final end = _lastTurnEnds[conv]?.end;
+            if (end != null) _virtualTurnEnds[conversationToken] = end;
+          }),
+        );
         unawaited(send.turn.ended.whenComplete(releaseAndCleanup));
         inner = send.stream.listen(
           controller.add,
@@ -2712,7 +2724,8 @@ class LiteRtLmFfiClient {
             // rebuilds it from the session's history, which this turn's
             // refused input is not in.
             if (e is LiteRtLmTurnCancelledException ||
-                _lastTurnEnds[conv]?.end == NativeLastTurnEnd.contextFull) {
+                _virtualTurnEnds[conversationToken] ==
+                    NativeLastTurnEnd.contextFull) {
               _virtualConvStopped = true;
             }
             controller.addError(e, st);
@@ -2799,6 +2812,7 @@ class LiteRtLmFfiClient {
   }
 
   void releaseVirtualConversation(Object conversationToken) {
+    _virtualTurnEnds.remove(conversationToken);
     if (_virtualActiveToken != conversationToken) return;
     if (_virtualTurnInFlight) {
       _pendingReleaseToken = conversationToken;
@@ -3360,13 +3374,21 @@ class LiteRtLmFfiClient {
 
   bool _turnEndUnreadWarned = false;
 
-  /// How the last send on the virtual sessions' shared conversation ended,
-  /// when the session holding [token] made it; null otherwise.
-  NativeLastTurnEnd? virtualLastTurnEnd(Object token) {
-    final conv = _virtualConv;
-    if (conv == null || _virtualActiveToken != token) return null;
-    return _lastTurnEnds[conv]?.end;
-  }
+  /// How the last turn of the virtual session holding [token] ended, as
+  /// native recorded it when the turn ended; null before one has ended, or
+  /// when the turn never reached native.
+  NativeLastTurnEnd? virtualLastTurnEnd(Object token) =>
+      _virtualTurnEnds[token];
+
+  /// The end of each virtual session's last turn, snapshot when native ended
+  /// it ([startVirtualTurn]): the shared conversation's own record goes with
+  /// it when another session takes it over.
+  final Map<Object, NativeLastTurnEnd> _virtualTurnEnds = {};
+
+  /// Test seam: what [startVirtualTurn] snapshots when native ends a turn.
+  @visibleForTesting
+  void recordVirtualTurnEndForTest(Object token, NativeLastTurnEnd end) =>
+      _virtualTurnEnds[token] = end;
 
   /// Legacy: cancel on the implicit [_legacyHandle] conversation.
   void cancelGeneration() {
@@ -3479,6 +3501,7 @@ class LiteRtLmFfiClient {
     _liveConvs.clear();
     _sentConvs.clear();
     _lastTurnEnds.clear();
+    _virtualTurnEnds.clear();
     _engineGeneration++;
 
     _isInitialized = false;

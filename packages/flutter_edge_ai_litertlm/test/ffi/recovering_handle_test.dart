@@ -867,5 +867,15 @@ void main() {
       expect(notes, hasLength(1));
       expect(notes.single, contains('rolls back one token'));
     });
+
+    test('a turn whose recovery fails before its send reports no turn end, '
+        'not the previous turn\'s context_full', () async {
+      expect(await handle.chat('one').join(), 'Hello there.');
+      await contextFullTurn('too long', first);
+      expect(handle.lastTurnEnd, NativeLastTurnEnd.contextFull);
+      first.rewindOutcome = StateError('client closed');
+      await expectLater(handle.chat('two').join(), throwsStateError);
+      expect(handle.lastTurnEnd, isNull);
+    });
   });
 }

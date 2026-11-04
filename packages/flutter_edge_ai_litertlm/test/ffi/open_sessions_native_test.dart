@@ -295,7 +295,8 @@ void main() {
     }
   }, skip: _skip);
 
-  test('memory one idle open session adds, and drift over switches', () async {
+  test('measures the memory one idle open session adds, and drift over '
+      'switches (RESULT lines, no assertion)', () async {
     final first = await open();
     await _ask(first, 'Reply with OK only.');
     final base = ProcessInfo.currentRss;

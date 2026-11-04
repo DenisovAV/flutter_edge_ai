@@ -349,9 +349,8 @@ void main() {
     }
   });
 
-  testWidgets('memory one idle open session adds, and drift over switches', (
-    tester,
-  ) async {
+  testWidgets('measures the memory one idle open session adds, and drift over '
+      'switches (RESULT lines, no assertion)', (tester) async {
     if (!FlutterEdgeAiDiagnostics.isSupported) {
       _result('memory=not supported here');
       return;

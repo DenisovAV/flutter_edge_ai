@@ -1354,6 +1354,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       _current = done;
       _inFlight = true;
       _stopRequested = false;
+      _latestSent = false;
       if (_stopped) {
         final recovery = _recovery = _recover();
         try {
@@ -1367,6 +1368,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       // there is nothing to generate and nothing to record.
       if (_stopEpoch != epoch) return;
       sent = true;
+      _latestSent = true;
       await for (final chunk in send(_live)) {
         final text = raw
             ? LiteRtLmFfiClient.extractTextFromResponse(chunk)
@@ -1519,8 +1521,12 @@ class RecoveringConversationHandle implements ConversationHandle {
   @override
   SessionMetrics getSessionMetrics() => _live.getSessionMetrics();
 
+  /// The latest turn reached its send, so native's record is that turn's
+  /// end; a turn that failed before it (a recovery that threw) has none.
+  bool _latestSent = false;
+
   @override
-  NativeLastTurnEnd? get lastTurnEnd => _live.lastTurnEnd;
+  NativeLastTurnEnd? get lastTurnEnd => _latestSent ? _live.lastTurnEnd : null;
 
   @override
   void close() {

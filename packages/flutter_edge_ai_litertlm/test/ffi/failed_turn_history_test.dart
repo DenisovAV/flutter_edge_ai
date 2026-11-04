@@ -46,9 +46,25 @@ void main() {
       source,
       contains(
         'if (e is LiteRtLmTurnCancelledException ||\n'
-        '                _lastTurnEnds[conv]?.end == NativeLastTurnEnd.contextFull) {\n'
+        '                _virtualTurnEnds[conversationToken] ==\n'
+        '                    NativeLastTurnEnd.contextFull) {\n'
         '              _virtualConvStopped = true;',
       ),
     );
+  });
+
+  test('a virtual session reads its own turn end, kept per session: another '
+      'session taking the shared conversation does not erase it', () {
+    final client = LiteRtLmFfiClient();
+    final a = Object();
+    final b = Object();
+    client
+      ..recordVirtualTurnEndForTest(a, NativeLastTurnEnd.contextFull)
+      ..recordVirtualTurnEndForTest(b, NativeLastTurnEnd.completed);
+    expect(client.virtualLastTurnEnd(a), NativeLastTurnEnd.contextFull);
+    expect(client.virtualLastTurnEnd(b), NativeLastTurnEnd.completed);
+    client.releaseVirtualConversation(a);
+    expect(client.virtualLastTurnEnd(a), isNull, reason: 'closed session');
+    expect(client.virtualLastTurnEnd(b), NativeLastTurnEnd.completed);
   });
 }

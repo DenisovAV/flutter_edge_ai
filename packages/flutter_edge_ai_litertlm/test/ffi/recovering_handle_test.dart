@@ -32,6 +32,9 @@ class _Conversation implements ConversationHandle {
   /// When set, the next held turn produces nothing before its gate opens.
   bool silent = false;
 
+  /// When set, a stopped turn ends with this error instead of cleanly.
+  Object? errorAfterStop;
+
   /// When set, the next turn yields these chunks before its first one.
   List<String>? lead;
 
@@ -53,6 +56,9 @@ class _Conversation implements ConversationHandle {
       if (gate != null) await gate.future;
       // Like native: a cancelled generation ends without another chunk.
       if (cancels > cancelsBefore) {
+        final late = errorAfterStop;
+        errorAfterStop = null;
+        if (late != null) controller.addError(late);
         await controller.close();
         return;
       }
@@ -947,6 +953,49 @@ void main() {
       await expectLater(handle.chat('one').join(), throwsException);
       await handle.chat('two').join();
       expect(seededUsers(reopened.single), isEmpty);
+    });
+
+    test('an error after the consumer asked to stop is the stop\'s: the turn '
+        'ends cleanly with what it produced, which is put back', () async {
+      first
+        ..rewindOutcome = StoppedTurnRewind.rewound
+        ..errorAfterStop = Exception('Stream error: INTERNAL');
+      expect(await stopMidTurn('one', first), 'Hello');
+      await handle.chat('two').join();
+      expect(first.rewinds.single?['role'], 'assistant', reason: 'put back');
+      expect(reopened, isEmpty);
+    });
+
+    test('an error after a stop that came before any text: the turn is taken '
+        'out, as a stop before any text is', () async {
+      first
+        ..rewindOutcome = StoppedTurnRewind.rewound
+        ..errorAfterStop = Exception('Stream error: INTERNAL');
+      final gate = first.hold = Completer<void>();
+      first.silent = true;
+      final pending = handle.chat('one').join();
+      await pumpEventQueue();
+      handle.cancelGeneration();
+      gate.complete();
+      expect(await pending, isEmpty);
+      await handle.chat('two').join();
+      expect(first.rewinds, [null]);
+    });
+
+    test('an empty chunk is not text: a turn stopped after only that is '
+        'taken out', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      final gate = first.hold = Completer<void>();
+      first
+        ..silent = true
+        ..lead = [''];
+      final pending = handle.chat('one').join();
+      await pumpEventQueue();
+      handle.cancelGeneration();
+      gate.complete();
+      expect(await pending, isEmpty);
+      await handle.chat('two').join();
+      expect(first.rewinds, [null]);
     });
   });
 }

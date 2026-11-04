@@ -1440,8 +1440,11 @@ class RecoveringConversationHandle implements ConversationHandle {
       poisoned = true;
       rethrow;
     } catch (_) {
-      // A failed turn is not a stopped one: rebuilding would replay the same
-      // context into the same failure.
+      // An error after the consumer asked to stop is the stop's: the turn
+      // ends cleanly as stopped, as core's reportedEngineTurn ends it (a stop
+      // wins over a failure).
+      if (_stopRequested) return;
+      // Any other failure is taken back (decision W): see the `finally`.
       failed = true;
       rethrow;
     } finally {

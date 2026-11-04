@@ -107,4 +107,22 @@ void main() {
     await completeTurn('five');
     expect(users(seeds.last), ['one', 'three', 'four']);
   });
+
+  test(
+    'a turn that fails after streaming text is not replayed either',
+    () async {
+      await completeTurn('one');
+      final failing = turn('two');
+      await pumpEventQueue();
+      sends.last.chunk(
+        '{"role":"assistant","content":[{"type":"text","text":"partial"}]}',
+      );
+      await pumpEventQueue();
+      client.recordTurnEndForTest(sentOn.last, NativeLastTurnEnd.failed);
+      sends.last.failed(Exception('Stream error: INTERNAL'));
+      await expectLater(failing, throwsException);
+      await completeTurn('three');
+      expect(users(seeds.last), ['one']);
+    },
+  );
 }

@@ -50,22 +50,41 @@ Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
       // while it is open and nothing changed, and builds a new one when the
       // active embedder or the backend did — a handle cached here would miss
       // both.
+      //
+      // A Genkit cancel stops the call between inputs, through a token of
+      // this request's own.
+      final token = gemma.CancelToken();
       Future<List<List<double>>> attempt() async {
         final embedder = await withRuntimeErrors(
           'Could not load the on-device embedder',
           () => runtime.getActiveEmbedder(preferredBackend: backend),
         );
         context.cancel?.throwIfCancelled();
-        return embedder.embedAll(inputs, taskType: taskType);
+        return embedder.embedAll(
+          inputs,
+          taskType: taskType,
+          cancelToken: token,
+        );
       }
 
       // EmbedderClosedException means the request never ran: the model was
       // closed between the lookup and the request. Resolve it again, once.
+      final detach = context.cancel?.onCancel(
+        () => token.cancel('Genkit cancelled'),
+      );
       List<List<double>> vectors;
       try {
-        vectors = await attempt();
-      } on gemma.EmbedderClosedException {
-        vectors = await attempt();
+        try {
+          vectors = await attempt();
+        } on gemma.EmbedderClosedException {
+          vectors = await attempt();
+        }
+      } on gemma.EmbeddingCancelledException {
+        // Reported as Genkit's cancel, which callers catch by type.
+        context.cancel?.throwIfCancelled();
+        rethrow;
+      } finally {
+        detach?.call();
       }
       context.cancel?.throwIfCancelled();
       if (vectors.length != texts.length) {

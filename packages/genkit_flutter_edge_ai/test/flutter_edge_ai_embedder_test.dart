@@ -314,4 +314,50 @@ void main() {
       );
     });
   });
+
+  group('cancellation', () {
+    test('a cancel mid-call stops embedAll between inputs', () async {
+      final controller = CancellationController();
+      final embedded = <String>[];
+      runtime.embedderToReturn = FakeEmbeddingModel(
+        vectorFor: (text, _) {
+          embedded.add(text);
+          // The cancel lands while the first input is embedded.
+          controller.cancel();
+          return [1.0];
+        },
+      );
+
+      await expectLater(
+        buildEmbedder()(
+          EmbedRequest(
+            input: [
+              DocumentData(content: [TextPart(text: 'First')]),
+              DocumentData(content: [TextPart(text: 'Second')]),
+            ],
+          ),
+          cancel: controller.token,
+        ),
+        throwsA(isA<CancelledException>()),
+      );
+      expect(embedded, ['First']);
+      expect(runtime.embedderToReturn.lastCancelToken?.isCancelled, isTrue);
+    });
+
+    test('a call without a cancel still passes a token', () async {
+      fakeEmbedder.embeddingsToReturn = [
+        [0.1],
+      ];
+
+      await buildEmbedder()(
+        EmbedRequest(
+          input: [
+            DocumentData(content: [TextPart(text: 'Hi')]),
+          ],
+        ),
+      );
+
+      expect(fakeEmbedder.lastCancelToken?.isCancelled, isFalse);
+    });
+  });
 }

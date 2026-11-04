@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter_edge_ai/engine.dart' show ChatTurnHooks;
+import 'package:flutter_edge_ai/engine.dart'
+    show ChatTurnHooks, EngineTurn, SessionRequest;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_runtime.dart';
 
@@ -143,6 +144,40 @@ class FakeInferenceModel extends gemma.InferenceModel {
     chats.add(chat);
     return chat;
   }
+
+  /// What the model enforces; null = core's default, which refuses every
+  /// format.
+  gemma.StructuredOutputSupport? structuredSupport;
+
+  @override
+  gemma.StructuredOutputSupport get engineStructuredOutputSupport =>
+      structuredSupport ?? super.engineStructuredOutputSupport;
+
+  /// What core's `openChat` asked the engine for, one per session it opened.
+  final List<SessionRequest> sessionRequests = [];
+
+  /// The sessions core's `openChat` opened, in order.
+  final List<FakeStructuredSession> openedSessions = [];
+
+  /// Each session core's `openChat` opens comes from this (a session that
+  /// answers `{}` when unset).
+  FakeStructuredSession Function()? newSession;
+
+  @override
+  Future<gemma.InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    sessionRequests.add(request);
+    final session = newSession?.call() ?? FakeStructuredSession();
+    openedSessions.add(session);
+    return session;
+  }
+
+  @override
+  List<gemma.InferenceModelSession> get engineSessions => [
+    for (final session in openedSessions)
+      if (!session.closed) session,
+  ];
 
   @override
   Future<gemma.InferenceModelSession> createSession({
@@ -320,6 +355,83 @@ class FakeInferenceChat extends gemma.InferenceChat {
   }
 }
 
+/// An engine session for core's `openChat`: each turn streams [tokens] and
+/// ends with [end], as an engine that reports how its turns end does.
+final class FakeStructuredSession extends gemma.InferenceModelSession {
+  FakeStructuredSession({
+    this.tokens = const ['{}'],
+    this.end = gemma.TurnEnd.endOfSequence,
+  });
+
+  List<String> tokens;
+  gemma.TurnEnd end;
+
+  /// When set, a turn pauses after its first token until it completes;
+  /// [stopGeneration] completes it and ends the turn as stopped.
+  Completer<void>? gate;
+
+  final List<gemma.Message> received = [];
+  int turns = 0;
+  int stops = 0;
+  bool closed = false;
+
+  /// When set, the next turn fails with it before any text.
+  Object? startError;
+
+  @override
+  EngineTurn startTurn() {
+    if (startError case final error?) {
+      startError = null;
+      throw error;
+    }
+    turns++;
+    final ended = Completer<gemma.TurnEnd>();
+    Stream<String> text() async* {
+      try {
+        for (final (index, token) in tokens.indexed) {
+          yield token;
+          if (index == 0) await gate?.future;
+          if (stops > 0) break;
+        }
+      } finally {
+        // At the end of the text, also when the consumer cancels it.
+        if (!ended.isCompleted) {
+          ended.complete(stops > 0 ? gemma.TurnEnd.stopped : end);
+        }
+      }
+    }
+
+    return EngineTurn(text: text(), end: ended.future);
+  }
+
+  @override
+  Stream<String> getResponseAsync() => startTurn().text;
+
+  @override
+  Future<String> getResponse() => getResponseAsync().join();
+
+  @override
+  Future<int> sizeInTokens(String text) async => text.length;
+
+  @override
+  Future<void> addQueryChunk(gemma.Message message) async =>
+      received.add(message);
+
+  @override
+  Future<void> stopGeneration() async {
+    stops++;
+    final gate = this.gate;
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
+
+  @override
+  gemma.SessionMetrics getSessionMetrics() =>
+      gemma.SessionMetrics(outputTokens: tokens.length);
+
+  @override
+  Future<void> close() async => closed = true;
+}
+
 /// The turns of a [FakeInferenceChat], as core's chat asks for them.
 final class _FakeTurns extends ChatTurnHooks {
   late final FakeInferenceChat chat;
@@ -349,6 +461,7 @@ final class FakeEmbeddingModel extends gemma.EmbeddingModel {
   Object? failWith;
 
   int embedAllCallCount = 0;
+  gemma.CancelToken? lastCancelToken;
   List<String> lastTexts = [];
   gemma.TaskType? lastTaskType;
   bool closed = false;
@@ -382,6 +495,7 @@ final class FakeEmbeddingModel extends gemma.EmbeddingModel {
     gemma.CancelToken? cancelToken,
   }) async {
     embedAllCallCount++;
+    lastCancelToken = cancelToken;
     lastTexts = [for (final input in inputs) input.text ?? ''];
     lastTaskType = taskType;
     _refuseIfUnusable();

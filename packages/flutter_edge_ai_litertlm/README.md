@@ -120,6 +120,7 @@ read from the files (LiteRT-LM 0.19):
 | Gemma 4 E2B, E4B | generic | 128 | 896 | 3968 |
 | Gemma 3 1B | q4-ekv4096 | 32 | 992 | 4064 |
 | Gemma 3 270M | q8 | 32 | 992 | 4064 |
+| Gemma 3n E2B, E4B | generic | 16 | 1008 | 4080 |
 | FunctionGemma 270M | generic, flutter-demo | 256 | 768 | 3840 |
 | TranslateGemma 4B | int4, int8 | 1024 | 0 | 3072 |
 | TranslateGemma 4B | int4-multimodal | 128 | 896 | 3968 |
@@ -134,9 +135,11 @@ read from the files (LiteRT-LM 0.19):
 TranslateGemma's int4 and int8 bundles prefill 1024 positions at a time: in a
 1024 window only the first message fits, so give them a larger `maxTokens`.
 Not in the table: the Gemma 4 `-gpu` and `-web` bundles, whose decoder carries
-no prefill signatures to read; the Gemma 3n bundles, gated on Hugging Face;
-and NPU bundles, which prefill in their own context groups and have one
-compiled window.
+no prefill signatures to read; the Gemma 3n `-Web` files, plain TFLite files
+for the web rather than `.litertlm` containers; and NPU bundles, which prefill
+in their own context groups and have one compiled window (Gemma 3 1B: 1280,
+Gemma 3 270M: 4096, Gemma 3n E2B: 2048, Gemma 4 E2B: 4096, FastVLM: 1280,
+Qwen3 0.6B: 4096).
 
 When an input does not fit, the turn ends with `TurnEnd.contextLimit` in
 core's chat (`getResponseAsync` called directly fails with the native error),

@@ -1600,7 +1600,7 @@ static int CmdTools(P engine) {
 }
 
 // EmbeddingGemma 2: one query, its dimension, length and norm.
-static char* ReadFile(const char* path, size_t* size) {
+static char* ReadWholeFile(const char* path, size_t* size) {
   FILE* f = fopen(path, "rb");
   if (!f) return NULL;
   fseek(f, 0, SEEK_END);
@@ -1695,12 +1695,12 @@ static int CmdEg2(const char* model, const char* backend) {
   fail += Eg2Embed(engine, opts, "text", &text_part, 1);
   size_t size = 0;
   char* bytes;
-  if (image_path && (bytes = ReadFile(image_path, &size))) {
+  if (image_path && (bytes = ReadWholeFile(image_path, &size))) {
     CHECK(litert_lm_input_data_create(1, bytes, size, &image_part));
     free(bytes);
     fail += Eg2Embed(engine, opts, "image", &image_part, 1);
   }
-  if (audio_path && (bytes = ReadFile(audio_path, &size))) {
+  if (audio_path && (bytes = ReadWholeFile(audio_path, &size))) {
     CHECK(litert_lm_input_data_create(3, bytes, size, &audio_part));
     free(bytes);
     fail += Eg2Embed(engine, opts, "audio", &audio_part, 1);

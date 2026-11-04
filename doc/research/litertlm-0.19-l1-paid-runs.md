@@ -185,3 +185,14 @@ access violation in `webgpu_dawn.dll` at the first GPU load on Intel PTL
 (#744, hence `liteRtLmEmbeddingGpuRefusedAbis`). It now creates in 5.2 s and
 embeds on the GPU (its first values differ from the CPU's). Lifting the
 refusal is an L2 decision; LNL and the 440m/740m GPU towers are not measured.
+
+## Results: intel-lnl (Windows x64, Lunar Lake, Arc 140V, Intel NPU), 2026-11-04
+
+Probes built on intel-ptl (LNL has no Visual Studio), same Windows archive.
+
+| Check | Result |
+|---|---|
+| Arc 140V GPU, Gemma 4 E2B: all 13 commands, + LFM2.5 xsession | PASS (14/14) — the first Arc 140V run since §20 |
+| EG2 270m on the Arc 140V GPU | PASS (so #744 does not reproduce on Lunar Lake either) |
+| Intel NPU, Gemma 4 E2B `_intel_LNL`: multiconv, longprompt, chat, deleteduring | PASS |
+| NPU ctxgroup (window 4096, 1104 tokens) | PASS |

@@ -1803,7 +1803,7 @@ void main() {
                 allOf(
                   contains('libLiteRtLm.so'),
                   contains('litert_lm_embedding_engine_create'),
-                  contains('native-v0.18.0-e'),
+                  contains('native-v0.19.0-a'),
                 ),
               ),
         ),
@@ -3089,6 +3089,13 @@ Pointer<T> _noLookup<T extends NativeType>(String symbol) =>
 
 typedef _Failure = ({int code, String message});
 
+/// `kLiteRtLmStatusInvalidArgument`.
+const _invalidArgument = 3;
+
+/// `kLiteRtLmStatusNotFound`: ModelInfo's answer to a value the file does not
+/// define (C API 1.0; -1 before it).
+const _notFound = 5;
+
 /// LiteRT-LM's EmbeddingEngine C API, in Dart. Counts every create and delete
 /// per kind of object, records what the pass handed it, and fails on demand.
 ///
@@ -3101,8 +3108,8 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
 
   LiteRtLmModelType modelType = LiteRtLmModelType.kLiteRtLmModelTypeEmbedding;
   int dimension = 4;
-  List<int>? textSignatures = _allSignatures; // null = -1
-  List<int>? visionSignatures; // null = -1, as on the 270m
+  List<int>? textSignatures = _allSignatures; // null = NOT_FOUND
+  List<int>? visionSignatures; // null = NOT_FOUND, as on the 270m
 
   _Failure? failLoadedFile;
   _Failure? failSettings;
@@ -3225,9 +3232,16 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     _deleted[kind] = deleted(kind) + 1;
   }
 
-  Pointer<T> _fail<T extends NativeType>(_Failure failure) {
+  /// C API 1.0: a failed call sets the last error and returns its status.
+  int _fail(_Failure failure) {
     _setError(failure.code, failure.message);
-    return nullptr;
+    return failure.code;
+  }
+
+  /// A create's success: [handle] written through [out], status OK.
+  int _made<T extends NativeType>(Pointer<Pointer<T>> out, Pointer<T> handle) {
+    out.value = handle;
+    return 0;
   }
 
   static String _string(Pointer<Char> p) => p.cast<Utf8>().toDartString();
@@ -3243,13 +3257,6 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
-  int litert_lm_get_last_error_code() {
-    order.add('get_last_error_code');
-    symbolsCalled.add('litert_lm_get_last_error_code');
-    return _errorCode;
-  }
-
-  @override
   Pointer<Char> litert_lm_get_last_error_message() {
     order.add('get_last_error_message');
     symbolsCalled.add('litert_lm_get_last_error_message');
@@ -3258,13 +3265,16 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
 
   // ── ModelInfo ──
   @override
-  Pointer<LiteRtLmLoadedFile> litert_lm_loaded_file_create(
+  int litert_lm_loaded_file_create(
     Pointer<Char> litertlm_path,
+    Pointer<Pointer<LiteRtLmLoadedFile>> out_loaded_file,
   ) {
     _call('loaded_file_create', 'litert_lm_loaded_file_create');
     loadedPath = _string(litertlm_path);
     final failure = failLoadedFile;
-    return failure != null ? _fail(failure) : _create('loaded_file');
+    return failure != null
+        ? _fail(failure)
+        : _made(out_loaded_file, _create('loaded_file'));
   }
 
   @override
@@ -3274,32 +3284,43 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
-  LiteRtLmModelType litert_lm_loaded_file_model_type(
+  int litert_lm_loaded_file_model_type(
     Pointer<LiteRtLmLoadedFile> loaded_file,
+    Pointer<UnsignedInt> out_model_type,
   ) {
     _call('loaded_file_model_type', 'litert_lm_loaded_file_model_type');
-    return modelType;
+    out_model_type.value = modelType.value;
+    return 0;
   }
 
   @override
   int litert_lm_loaded_file_embedding_dimension(
     Pointer<LiteRtLmLoadedFile> loaded_file,
+    Pointer<Int32> out_dimension,
   ) {
     _call(
       'loaded_file_embedding_dimension',
       'litert_lm_loaded_file_embedding_dimension',
     );
-    return dimension;
+    if (dimension < 0) return _notFound;
+    out_dimension.value = dimension;
+    return 0;
   }
 
-  int _list(List<int>? values, Pointer<Int32> lengths, int maxSize) {
-    if (values == null) return -1;
+  int _list(
+    List<int>? values,
+    Pointer<Int32> lengths,
+    int maxSize,
+    Pointer<Size> outCount,
+  ) {
+    if (values == null) return _notFound;
     if (lengths != nullptr) {
       for (var i = 0; i < values.length && i < maxSize; i++) {
         lengths[i] = values[i];
       }
     }
-    return values.length;
+    outCount.value = values.length;
+    return 0;
   }
 
   @override
@@ -3307,12 +3328,13 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     Pointer<LiteRtLmLoadedFile> loaded_file,
     Pointer<Int32> lengths,
     int max_size,
+    Pointer<Size> out_count,
   ) {
     _call(
       'loaded_file_embedding_signature_selection',
       'litert_lm_loaded_file_embedding_signature_selection',
     );
-    return _list(textSignatures, lengths, max_size);
+    return _list(textSignatures, lengths, max_size, out_count);
   }
 
   @override
@@ -3320,22 +3342,23 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     Pointer<LiteRtLmLoadedFile> loaded_file,
     Pointer<Int32> lengths,
     int max_size,
+    Pointer<Size> out_count,
   ) {
     _call(
       'loaded_file_vision_signature_selection',
       'litert_lm_loaded_file_vision_signature_selection',
     );
-    return _list(visionSignatures, lengths, max_size);
+    return _list(visionSignatures, lengths, max_size, out_count);
   }
 
   // ── settings ──
   @override
-  Pointer<LiteRtLmEmbeddingEngineSettings>
-  litert_lm_embedding_engine_settings_create(
+  int litert_lm_embedding_engine_settings_create(
     Pointer<Char> model_path,
     Pointer<Char> backend_str,
     Pointer<Char> vision_backend_str,
     Pointer<Char> audio_backend_str,
+    Pointer<Pointer<LiteRtLmEmbeddingEngineSettings>> out_settings,
   ) {
     _call('settings_create', 'litert_lm_embedding_engine_settings_create');
     settingsModelPath = _string(model_path);
@@ -3349,7 +3372,9 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
         ? null
         : _string(audio_backend_str);
     final failure = failSettings;
-    return failure != null ? _fail(failure) : _create('settings');
+    return failure != null
+        ? _fail(failure)
+        : _made(out_settings, _create('settings'));
   }
 
   @override
@@ -3361,7 +3386,7 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_cache_dir(
+  int litert_lm_embedding_engine_settings_set_cache_dir(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     Pointer<Char> cache_dir,
   ) {
@@ -3370,10 +3395,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_cache_dir',
     );
     cacheDir = _string(cache_dir);
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_max_input_length(
+  int litert_lm_embedding_engine_settings_set_max_input_length(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     int max_input_length,
   ) {
@@ -3384,10 +3410,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     maxInputLength = max_input_length;
     final error = errorFromSetter;
     if (error != null) _setError(error.code, error.message);
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
+  int litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     int vision_tokens_per_image,
   ) {
@@ -3396,10 +3423,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_vision_tokens_per_image',
     );
     visionTokensPerImage = vision_tokens_per_image;
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_num_threads(
+  int litert_lm_embedding_engine_settings_set_num_threads(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     int num_threads,
   ) {
@@ -3408,10 +3436,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_num_threads',
     );
     numThreads = num_threads;
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir(
+  int litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     Pointer<Char> lib_dir,
   ) {
@@ -3420,10 +3449,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir',
     );
     dispatchDirs['main'] = _string(lib_dir);
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir(
+  int litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     Pointer<Char> lib_dir,
   ) {
@@ -3432,10 +3462,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir',
     );
     dispatchDirs['vision'] = _string(lib_dir);
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir(
+  int litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     Pointer<Char> lib_dir,
   ) {
@@ -3444,17 +3475,20 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir',
     );
     dispatchDirs['audio'] = _string(lib_dir);
+    return 0;
   }
 
   // ── engine ──
   @override
-  Pointer<LiteRtLmEmbeddingEngine> litert_lm_embedding_engine_create(
+  int litert_lm_embedding_engine_create(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
+    Pointer<Pointer<LiteRtLmEmbeddingEngine>> out_engine,
   ) {
     _call('engine_create', 'litert_lm_embedding_engine_create');
     final failure = failEngine;
     if (failure != null) return _fail(failure);
-    if (silentNullEngine) return nullptr;
+    // OK with no engine: a failure that reports nothing.
+    if (silentNullEngine) return _made(out_engine, nullptr);
     final dir = cacheDir;
     if (writeCacheOnCreate && dir != null) {
       for (final tower in _cachedTowers()) {
@@ -3478,7 +3512,7 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     if (deleteCacheDirOnCreate && dir != null) {
       Directory(dir).deleteSync(recursive: true);
     }
-    return _create('engine');
+    return _made(out_engine, _create('engine'));
   }
 
   /// ML Drift's [kind] cache of the 37-byte test model, as LiteRT's WebGPU
@@ -3527,9 +3561,14 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
 
   // ── options ──
   @override
-  Pointer<LiteRtLmEmbeddingOptions> litert_lm_embedding_options_create() {
+  int litert_lm_embedding_options_create(
+    Pointer<Pointer<LiteRtLmEmbeddingOptions>> out_options,
+  ) {
     _call('options_create', 'litert_lm_embedding_options_create');
-    return failOptions ? nullptr : _create('options');
+    // `new` in C++: it fails only on a NULL out-parameter, setting no error.
+    return failOptions
+        ? _invalidArgument
+        : _made(out_options, _create('options'));
   }
 
   @override
@@ -3541,16 +3580,17 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
-  void litert_lm_embedding_options_set_normalize(
+  int litert_lm_embedding_options_set_normalize(
     Pointer<LiteRtLmEmbeddingOptions> options,
     bool normalize,
   ) {
     _call('options_set_normalize', 'litert_lm_embedding_options_set_normalize');
     this.normalize = normalize;
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_options_set_insert_special_tokens(
+  int litert_lm_embedding_options_set_insert_special_tokens(
     Pointer<LiteRtLmEmbeddingOptions> options,
     bool insert_special_tokens,
   ) {
@@ -3559,10 +3599,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_options_set_insert_special_tokens',
     );
     insertSpecialTokens = insert_special_tokens;
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_options_set_input_overflow_strategy(
+  int litert_lm_embedding_options_set_input_overflow_strategy(
     Pointer<LiteRtLmEmbeddingOptions> options,
     LiteRtLmInputOverflowStrategy strategy,
   ) {
@@ -3571,23 +3612,25 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_options_set_input_overflow_strategy',
     );
     overflowStrategy = strategy;
+    return 0;
   }
 
   // ── inputs, compute, response ──
   @override
-  Pointer<LiteRtLmInputData> litert_lm_input_data_create(
+  int litert_lm_input_data_create(
     LiteRtLmInputDataType type,
     Pointer<Void> data,
     int size,
+    Pointer<Pointer<LiteRtLmInputData>> out_input_data,
   ) {
     _call('input_data_create', 'litert_lm_input_data_create');
-    if (failInputData) return nullptr; // sets no error, as upstream
-    if (_inputDataCalls++ == failInputDataAt) return nullptr;
+    if (failInputData) return _invalidArgument; // sets no error, as upstream
+    if (_inputDataCalls++ == failInputDataAt) return _invalidArgument;
     // Copied, as upstream does: the pass frees its buffer right after.
     final bytes = Uint8List.fromList(data.cast<Uint8>().asTypedList(size));
     final handle = _create<LiteRtLmInputData>('input_data');
     _inputs[handle.address] = (type, bytes);
-    return handle;
+    return _made(out_input_data, handle);
   }
 
   @override
@@ -3598,12 +3641,12 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
-  Pointer<LiteRtLmEmbeddingResponse>
-  litert_lm_embedding_engine_compute_embedding(
+  int litert_lm_embedding_engine_compute_embedding(
     Pointer<LiteRtLmEmbeddingEngine> engine,
     Pointer<Pointer<LiteRtLmInputData>> inputs,
     int num_inputs,
     Pointer<LiteRtLmEmbeddingOptions> options,
+    Pointer<Pointer<LiteRtLmEmbeddingResponse>> out_response,
   ) {
     _call('compute_embedding', 'litert_lm_embedding_engine_compute_embedding');
     if (!(live['engine']?.contains(engine.address) ?? false)) {
@@ -3635,7 +3678,8 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     }
     final failure = failCompute;
     if (failure != null) return _fail(failure);
-    if (silentNullCompute) return nullptr;
+    // OK with no response: a failure that reports nothing.
+    if (silentNullCompute) return _made(out_response, nullptr);
     final response = _create<LiteRtLmEmbeddingResponse>('response');
     final n = responseSize ?? dimension;
     final values = calloc<Float>(n);
@@ -3646,45 +3690,56 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     }
     lastVector = vector;
     _vectors[response.address] = values;
-    return response;
+    return _made(out_response, response);
   }
 
   @override
   int litert_lm_embedding_response_get_size(
     Pointer<LiteRtLmEmbeddingResponse> response,
+    Pointer<Size> out_size,
   ) {
     _call('response_get_size', 'litert_lm_embedding_response_get_size');
-    return responseSize ?? dimension;
+    out_size.value = responseSize ?? dimension;
+    return 0;
   }
 
   @override
   int litert_lm_embedding_response_get_input_length(
     Pointer<LiteRtLmEmbeddingResponse> response,
+    Pointer<Int> out_input_length,
   ) {
     _call(
       'response_get_input_length',
       'litert_lm_embedding_response_get_input_length',
     );
-    return responseInputLength;
+    // A negative count is what a getter that fails leaves the pass with.
+    if (responseInputLength < 0) return _invalidArgument;
+    out_input_length.value = responseInputLength;
+    return 0;
   }
 
   @override
   int litert_lm_embedding_response_get_truncated_length(
     Pointer<LiteRtLmEmbeddingResponse> response,
+    Pointer<Int> out_truncated_length,
   ) {
     _call(
       'response_get_truncated_length',
       'litert_lm_embedding_response_get_truncated_length',
     );
-    return responseTruncatedLength;
+    if (responseTruncatedLength < 0) return _invalidArgument;
+    out_truncated_length.value = responseTruncatedLength;
+    return 0;
   }
 
   @override
-  Pointer<Float> litert_lm_embedding_response_get_values(
+  int litert_lm_embedding_response_get_values(
     Pointer<LiteRtLmEmbeddingResponse> response,
+    Pointer<Pointer<Float>> out_values,
   ) {
     _call('response_get_values', 'litert_lm_embedding_response_get_values');
-    return _vectors[response.address]!;
+    out_values.value = _vectors[response.address]!;
+    return 0;
   }
 
   @override

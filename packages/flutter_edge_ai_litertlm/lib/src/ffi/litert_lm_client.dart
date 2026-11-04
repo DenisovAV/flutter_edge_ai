@@ -829,18 +829,16 @@ EngineCreateResult createEngineWith(
     ).asFunction<void Function()>()();
   }
 
+  // The message alone: LiteRT-LM C API 1.0 removed
+  // `litert_lm_get_last_error_code` (a call reports its status as its return
+  // value instead), so no code is read here; an empty message is no message.
   ({int code, String? message}) readLastError() {
     if (!lastError) return (code: 0, message: null);
-    final code = lookup<NativeFunction<Int32 Function()>>(
-      'litert_lm_get_last_error_code',
-    ).asFunction<int Function()>()();
     final message = lookup<NativeFunction<Pointer<Utf8> Function()>>(
       'litert_lm_get_last_error_message',
     ).asFunction<Pointer<Utf8> Function()>()();
-    return (
-      code: code,
-      message: code == 0 || message == nullptr ? null : message.toDartString(),
-    );
+    final text = message == nullptr ? '' : message.toDartString();
+    return (code: 0, message: text.isEmpty ? null : text);
   }
 
   final modelPathPtr = r.modelPath.toNativeUtf8();

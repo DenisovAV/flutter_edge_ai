@@ -27,7 +27,6 @@ typedef _SettingsStringN = Void Function(Pointer<Void>, Pointer<Utf8>);
 typedef _CreateEngineN = Pointer<Void> Function(Pointer<Void>);
 typedef _IntN = Void Function(Int);
 typedef _VoidN = Void Function();
-typedef _CodeN = Int32 Function();
 typedef _MessageN = Pointer<Utf8> Function();
 
 class _FakeLiteRtLm {
@@ -35,7 +34,6 @@ class _FakeLiteRtLm {
     this.settingsNull = false,
     this.engineNull = false,
     this.lastError = true,
-    this.errorCode = 0,
     String? errorMessage,
     this.missing = const {},
   }) : _message = errorMessage == null ? nullptr : errorMessage.toNativeUtf8();
@@ -45,7 +43,6 @@ class _FakeLiteRtLm {
 
   /// Whether the library exports the last-error functions.
   final bool lastError;
-  final int errorCode;
   final Pointer<Utf8> _message;
 
   /// Symbols whose lookup throws, as a library without the export does.
@@ -142,11 +139,6 @@ class _FakeLiteRtLm {
         callable = NativeCallable<_VoidN>.isolateLocal(() {
           calls.add('clear_last_error');
         });
-      case 'get_last_error_code':
-        callable = NativeCallable<_CodeN>.isolateLocal(() {
-          calls.add('get_last_error_code');
-          return errorCode;
-        }, exceptionalReturn: 0);
       case 'get_last_error_message':
         callable = NativeCallable<_MessageN>.isolateLocal(() {
           calls.add('get_last_error_message');
@@ -264,11 +256,11 @@ void main() {
     ]);
   });
 
-  test('a NULL engine reads the last error right after the create, then '
-      'deletes the settings', () {
+  test('a NULL engine reads the last error message right after the create, '
+      'then deletes the settings; no code (C API 1.0 has no '
+      'litert_lm_get_last_error_code)', () {
     fake = _FakeLiteRtLm(
       engineNull: true,
-      errorCode: 13,
       errorMessage: 'Main backend constraint mismatch',
     );
 
@@ -277,12 +269,11 @@ void main() {
     final create = fake.calls.indexOf('engine_create');
     expect(fake.calls.sublist(create), [
       'engine_create',
-      'get_last_error_code',
       'get_last_error_message',
       'delete',
     ]);
     expect(result.address, 0);
-    expect(result.code, 13);
+    expect(result.code, 0);
     expect(result.message, 'Main backend constraint mismatch');
     expect(result.banks, isNull);
   });
@@ -302,7 +293,6 @@ void main() {
       'nothing to delete', () {
     fake = _FakeLiteRtLm(
       settingsNull: true,
-      errorCode: 3,
       errorMessage: 'Unsupported backend: gpu2',
     );
 
@@ -310,7 +300,7 @@ void main() {
       () => fake.create(_empty),
       throwsA(
         isA<LiteRtLmEngineCreateException>()
-            .having((e) => e.nativeCode, 'nativeCode', 3)
+            .having((e) => e.nativeCode, 'nativeCode', isNull)
             .having(
               (e) => e.nativeMessage,
               'nativeMessage',
@@ -329,14 +319,13 @@ void main() {
     expect(fake.calls, [
       'clear_last_error',
       'settings_create /models/gemma.litertlm cpu vision=null audio=null',
-      'get_last_error_code',
       'get_last_error_message',
     ]);
   });
 
   for (final lastError in [true, false]) {
     test('a NULL settings create with no reason (last error '
-        '${lastError ? 'code 0' : 'not exported'}) throws without one', () {
+        '${lastError ? 'empty' : 'not exported'}) throws without one', () {
       fake = _FakeLiteRtLm(settingsNull: true, lastError: lastError);
 
       expect(

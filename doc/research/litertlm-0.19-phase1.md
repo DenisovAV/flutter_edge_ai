@@ -303,3 +303,22 @@ matches.
 > continuation is prefilled from the step the rewind set. The branch below it
 > calls `llm_executor_->SetCurrentStep(current_step)` first. Calling it in
 > this branch too fixes it.
+
+## Pre-tag probe 3: deleting a conversation while another generates (macOS, 2026-11-04)
+
+Probe command `deleteduring` (`PROBE_REPEAT=4`). Conversation A streams a
+reply. After four chunks, B is deleted, in two variants:
+- B idle, with a history;
+- B with its own stream just cancelled (cancel, then delete at once).
+
+A's reply must end with a final chunk and no failure, equal a run where
+nothing is deleted (greedy), and A must answer a follow-up.
+
+| Model | CPU | Metal |
+|---|---|---|
+| Gemma 4 E2B | 8/8 PASS, deleted at A's chunk 4 of a running reply | 8/8 PASS, same |
+| FunctionGemma 270M | 8/8 PASS, **no overlap**: its reply had already ended at chunk 2 | same |
+
+The delete returned in under 1 ms in every run. For the Dart client this means
+`_deleteConversation` can overlap a turn on another conversation; the overlap
+was measured on Gemma 4 E2B only. Adreno and the NPUs were not run.

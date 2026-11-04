@@ -873,6 +873,106 @@ static int CmdConvRewind(P engine, const char* image) {
   return fail ? 1 : 0;
 }
 
+// Pre-tag probe 3: deleting one conversation while another generates. A
+// streams a reply; after a few chunks B is deleted: (0) B idle with a
+// history, (1) B with its own stream just cancelled and still winding down.
+// A's reply must end with a final chunk and no error, equal (greedy) a run in
+// which nothing is deleted, and A must answer a follow-up. Repeated
+// PROBE_REPEAT times (default 3) per variant, for a crash or a hang.
+static char* StreamAll(P conv, const char* text, P b_to_delete, bool b_busy,
+                       int* fail) {
+  char msg[512];
+  snprintf(msg, sizeof msg,
+           "{\"role\":\"user\",\"content\":[{\"type\":\"text\","
+           "\"text\":\"%s\"}]}",
+           text);
+  Stream* st = calloc(1, sizeof(Stream));
+  Stream* bst = NULL;
+  if (b_to_delete && b_busy) {
+    bst = calloc(1, sizeof(Stream));
+    CHECK(litert_lm_conversation_send_message_stream(
+        b_to_delete, msg, NULL, NULL, OnChunk, bst));
+    double t0 = Now();
+    while (bst->chunks < 2 && !bst->final && Now() - t0 < 60) SleepMs(2);
+  }
+  Status s = litert_lm_conversation_send_message_stream(conv, msg, NULL, NULL,
+                                                        OnChunk, st);
+  if (s != 0) {
+    printf("RESULT deleteduring_stream FAIL status=%d\n", s);
+    (*fail)++;
+    free(st);
+    free(bst);
+    return NULL;
+  }
+  if (b_to_delete) {
+    double t0 = Now();
+    while (st->chunks < 4 && !st->final && Now() - t0 < 60) SleepMs(2);
+    if (b_busy) litert_lm_conversation_cancel_process(b_to_delete);
+    double t1 = Now();
+    litert_lm_conversation_delete(b_to_delete);
+    printf("INFO deleteduring delete took %.3fs, a at chunk %d final=%d\n",
+           Now() - t1, st->chunks, st->final);
+  }
+  double t2 = Now();
+  while (!st->final && Now() - t2 < 120) SleepMs(5);
+  int end = -1, code = -1;
+  litert_lm_conversation_get_last_turn_end(conv, &end, &code);
+  bool ok = st->final && end != 3;
+  if (!ok) {
+    printf("RESULT deleteduring_a_ended FAIL final=%d end=%s code=%d\n",
+           st->final, TurnEndName(end), code);
+    (*fail)++;
+  }
+  char* text_out = strdup(st->text);
+  free(st);
+  free(bst);  // B's callbacks have ended: delete waits for them
+  return text_out;
+}
+static int CmdDeleteDuring(P engine) {
+  if (!litert_lm_conversation_get_last_turn_end) {
+    printf("RESULT deleteduring FAIL library has no get_last_turn_end\n");
+    return 1;
+  }
+  const char* prompt = "Count from 1 to 40, separated by commas.";
+  int repeat = getenv("PROBE_REPEAT") ? atoi(getenv("PROBE_REPEAT")) : 3;
+  int fail = 0;
+  P c = NewConversation(engine, NULL, false, false, 64);
+  char* control = StreamAll(c, prompt, NULL, false, &fail);
+  litert_lm_conversation_delete(c);
+  for (int variant = 0; variant < 2; variant++) {
+    for (int i = 0; i < repeat; i++) {
+      P a = NewConversation(engine, NULL, false, false, 64);
+      P b = NewConversation(engine, NULL, false, false, 64);
+      Status s;
+      if (variant == 0) {
+        char* r = Send(b, "My name is Bruno. Reply with the single word OK.",
+                       NULL, &s);
+        free(r);
+      }
+      char* got = StreamAll(a, prompt, b, variant == 1, &fail);
+      bool same = got && control && !strcmp(got, control);
+      char* r = Send(a, "Reply with the single word OK.", NULL, &s);
+      printf("RESULT deleteduring_%s_%d %s same_as_control=%d follow_up=%d\n",
+             variant == 0 ? "idle_b" : "busy_b", i,
+             same && r ? "PASS" : "FAIL", same, r != NULL);
+      if (!same || !r) {
+        fail++;
+        if (!same) {
+          printf("INFO deleteduring got=\"%.200s\" control=\"%.200s\"\n",
+                 got ? got : "", control ? control : "");
+        }
+      }
+      free(r);
+      free(got);
+      litert_lm_conversation_delete(a);
+    }
+  }
+  free(control);
+  printf("RESULT deleteduring %s %d check(s) failed\n", fail ? "FAIL" : "PASS",
+         fail);
+  return fail ? 1 : 0;
+}
+
 // Sends one user message; returns a malloc'd copy of the response JSON.
 static char* Send(P conv, const char* text, P optional_args, Status* status) {
   size_t cap = strlen(text) + 64;
@@ -1384,7 +1484,7 @@ int main(int argc, char** argv) {
     fprintf(stderr,
             "usage: %s <libLiteRtLm> <multiconv|constrained|rewind|scoring|"
             "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|longprompt|determinism|"
-            "turnend|prefillroom|convrewind [image]|eg2> "
+            "turnend|prefillroom|convrewind [image]|deleteduring|eg2> "
             "<model> <cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS, "
             "PROBE_DISPATCH_DIR\n",
             argv[0]);
@@ -1443,6 +1543,7 @@ int main(int argc, char** argv) {
   else if (!strcmp(cmd, "determinism")) rc = CmdDeterminism(engine);
   else if (!strcmp(cmd, "turnend")) rc = CmdTurnEnd(engine);
   else if (!strcmp(cmd, "prefillroom")) rc = CmdPrefillRoom(engine);
+  else if (!strcmp(cmd, "deleteduring")) rc = CmdDeleteDuring(engine);
   else if (!strcmp(cmd, "convrewind"))
     rc = CmdConvRewind(engine, argc > 5 ? argv[5] : NULL);
   else {

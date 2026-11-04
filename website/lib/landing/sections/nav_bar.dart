@@ -20,6 +20,7 @@ class NavBar extends StatelessComponent {
     // would 301 to `/codelabs` on every click.
     (text: 'Codelabs', href: '/codelabs', external: false, cta: false),
     (text: 'Models', href: '/docs/models', external: false, cta: false),
+    (text: 'Showcase', href: '/showcase', external: false, cta: false),
     (text: 'Contributors', href: '/contributors', external: false, cta: false),
     (
       text: 'GitHub',
@@ -108,12 +109,15 @@ class NavBar extends StatelessComponent {
       margin: Margin.symmetric(horizontal: Unit.auto),
       padding: Padding.symmetric(horizontal: 2.rem, vertical: 1.rem),
     ),
+    // Never wraps or shrinks: squeezed by the links, the wordmark broke onto
+    // two or three lines and the sticky bar grew.
     css('.navbar-brand').styles(
       display: Display.flex,
       flexDirection: FlexDirection.row,
       alignItems: AlignItems.center,
       gap: Gap.all(0.6.rem),
       textDecoration: TextDecoration.none,
+      raw: {'white-space': 'nowrap', 'flex-shrink': '0'},
     ),
     // Scoped under `.landing-root` ON PURPOSE: the landing reset
     // `.landing-root img { height: auto; max-width: 100% }` (landing_page.dart)
@@ -199,9 +203,12 @@ class NavBar extends StatelessComponent {
       padding: Padding.symmetric(vertical: 0.85.rem, horizontal: 2.rem),
       fontSize: 1.rem,
     ),
-    // ---- DESKTOP OVERRIDE (>= 769px) ----
+    // ---- DESKTOP OVERRIDE (>= 960px) ----
+    // The brand and the seven links need about 880px in one line (measured
+    // with the system-ui fallback), so narrower screens, iPads in portrait
+    // among them, keep the burger.
     StyleRule.media(
-      query: MediaQuery.screen(minWidth: 769.px),
+      query: MediaQuery.screen(minWidth: 960.px),
       styles: [
         css('.navbar-burger').styles(display: Display.none),
         // On desktop the links are always inline regardless of checkbox state.

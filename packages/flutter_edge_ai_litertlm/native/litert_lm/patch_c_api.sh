@@ -1012,7 +1012,15 @@ fi
 # tasks.cc's own check lets through; upstream says FAILED_PRECONDITION, so the
 # window reads as an error. Both such refusals in
 # GetOptimizedPrefillWorkGroups say RESOURCE_EXHAUSTED: the turn ends
-# context_full and is rewound like the others. A prefill or decode that fails
+# context_full and is rewound like the others. Only these window checks (the
+# two in tasks.cc, the two in GetOptimizedPrefillWorkGroups, and the
+# conversation's own error for a prefill into a window a decode filled) mark
+# their RESOURCE_EXHAUSTED with the payload kContextWindowFullPayload; a
+# RESOURCE_EXHAUSTED without it (a failed allocation) ends the turn failed and
+# is not rewound, and the C wrapper strips the payload from the error text the
+# caller sees (probe commands turnend and exhausted, the latter on a build with
+# a probe-only fault hook; mutations of each marking caught, 2026-11-04). A
+# prefill or decode that fails
 # after its benchmark turn started never ended that turn, so every later turn
 # of the session failed with "Prefill turn prefill:N already started" (the
 # Dart client always enables benchmark); tasks.cc forgets an unended turn's

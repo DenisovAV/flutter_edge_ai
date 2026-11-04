@@ -2,10 +2,18 @@ import 'dart:async';
 
 import 'package:flutter_edge_ai/src/interface.dart';
 import 'package:flutter_edge_ai/src/message.dart';
-import 'package:meta/meta.dart' show internal;
+import 'package:meta/meta.dart' show internal, visibleForTesting;
 
 import 'reply_validation.dart';
 import 'response_format.dart';
+
+/// How long a structured turn whose engine text failed waits for that text
+/// to close before it ends the turn without it: the same 5 s an
+/// `InferenceChat` waits (`chatTurnErrorEndTimeout`), for an app that holds
+/// the session from `openSession(responseFormat:)` with no chat around it. An
+/// engine that keeps the SPI contract ends its text right after an error.
+@visibleForTesting
+Duration structuredTurnErrorEndTimeout = const Duration(seconds: 5);
 
 /// Core's session around an engine session opened with a [format]: every
 /// reply is checked before the caller sees it end.
@@ -22,7 +30,10 @@ import 'response_format.dart';
 /// keeps decoding). The next turn starts only once this one has ended and
 /// that stop has returned, so a stop never lands on the next turn. A turn
 /// cancelled while it still waits for the previous one never reaches the
-/// engine.
+/// engine. After an error on the engine's text, the turn waits at most
+/// [structuredTurnErrorEndTimeout] for that text to close; then it ends
+/// anyway and lets the engine's text go as a cancel does (a stop, and the
+/// next turn waits for its end).
 @internal
 final class StructuredSession extends InferenceModelSession {
   StructuredSession(this.engineSession, this.format, {required this.engine});
@@ -55,6 +66,8 @@ final class StructuredSession extends InferenceModelSession {
     var stopping = false;
     var textDone = false;
     var engineEnded = false;
+    var lettingGo = false;
+    Timer? bound;
 
     void report(TurnEnd end) {
       if (!reported.isCompleted) reported.complete(end);
@@ -69,6 +82,38 @@ final class StructuredSession extends InferenceModelSession {
       settle();
       controller.addError(error, stack);
       await controller.close();
+    }
+
+    /// Lets the engine's text go, once: on a cancel, or when a failed text
+    /// outlived [structuredTurnErrorEndTimeout]. A turn the engine has not
+    /// ended is stopped, and settles only when the stop has returned and the
+    /// end has come.
+    Future<void> letGo() async {
+      final active = subscription;
+      // Still waiting for the previous turn: onListen sees [cancelled].
+      if (active == null || lettingGo) return;
+      lettingGo = true;
+      stopping = !textDone && !engineEnded;
+      await active.cancel();
+      if (!stopping) return;
+      // A stop: on most engines cancelling the text only detaches Dart.
+      try {
+        await engineSession.stopGeneration();
+      } catch (error) {
+        // There is no listener left to take it; a release build is where a
+        // failed stop shows, and edgeAiLog is silent there.
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai] WARNING: stopping a structured turn that was '
+          'cancelled or whose failed text never closed failed ($error).',
+        );
+      }
+      try {
+        await engineEnd;
+      } catch (_) {
+        // Reported as closed above.
+      }
+      settle();
     }
 
     controller = StreamController<String>(
@@ -123,11 +168,18 @@ final class StructuredSession extends InferenceModelSession {
             controller.add(chunk);
           },
           onError: (Object error, StackTrace stack) {
-            failed = true;
             controller.addError(error, stack);
+            if (failed) return;
+            failed = true;
+            // An engine whose failed text never closes cannot hold the turn.
+            bound = Timer(structuredTurnErrorEndTimeout, () {
+              unawaited(controller.close());
+              unawaited(letGo());
+            });
           },
           onDone: () async {
             textDone = true;
+            bound?.cancel();
             final TurnEnd turnEnd;
             try {
               turnEnd = await end;
@@ -159,30 +211,8 @@ final class StructuredSession extends InferenceModelSession {
       onResume: () => subscription?.resume(),
       onCancel: () async {
         cancelled = true;
-        final active = subscription;
-        // Still waiting for the previous turn: onListen sees [cancelled].
-        if (active == null) return;
-        stopping = !textDone && !engineEnded;
-        await active.cancel();
-        if (!stopping) return;
-        // A stop: on most engines cancelling the text only detaches Dart.
-        try {
-          await engineSession.stopGeneration();
-        } catch (error) {
-          // There is no listener left to take it; a release build is where
-          // a failed stop shows, and edgeAiLog is silent there.
-          // ignore: avoid_print
-          print(
-            '[flutter_edge_ai] WARNING: stopping a cancelled structured turn '
-            'failed ($error).',
-          );
-        }
-        try {
-          await engineEnd;
-        } catch (_) {
-          // Reported as closed above.
-        }
-        settle();
+        bound?.cancel();
+        await letGo();
       },
     );
     return EngineTurn(text: controller.stream, end: reported.future);

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/src/chat.dart' show chatTurnErrorEndTimeout;
 import 'package:flutter_edge_ai/src/interface.dart' show startEngineTurn;
+import 'package:flutter_edge_ai/src/structured/structured_session.dart'
+    show structuredTurnErrorEndTimeout;
 import 'package:flutter_test/flutter_test.dart';
 
 /// A session whose next turn streams [tokens] and ends with [end]
@@ -780,6 +782,57 @@ void main() {
       expect(await session.getResponse(), '{"id": "B"}');
     });
 
+    test('a failed text that never closes ends the turn within '
+        'structuredTurnErrorEndTimeout; the engine is stopped', () async {
+      final previous = structuredTurnErrorEndTimeout;
+      structuredTurnErrorEndTimeout = const Duration(milliseconds: 50);
+      addTearDown(() => structuredTurnErrorEndTimeout = previous);
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id"'])..endless = true,
+      );
+      final turn = startEngineTurn(session);
+      final drained = _drain(turn.text);
+      await pumpEventQueue();
+      engine.live!.addError(StateError('stuck'));
+      final (chunks, errors) = await drained.timeout(
+        const Duration(seconds: 5),
+      );
+      expect(chunks, ['{"id"']);
+      expect(errors, [
+        isA<StateError>().having((e) => e.message, 'message', 'stuck'),
+      ]);
+      expect(await turn.end, TurnEnd.stopped);
+      expect(engine.stops, 1);
+
+      engine
+        ..endless = false
+        ..tokens = ['{"id": "B"}'];
+      expect(await session.getResponse(), '{"id": "B"}');
+      expect(engine.turns, 2);
+    });
+
+    test('the bound stops the engine even when the consumer paused after '
+        'the error', () async {
+      final previous = structuredTurnErrorEndTimeout;
+      structuredTurnErrorEndTimeout = const Duration(milliseconds: 50);
+      addTearDown(() => structuredTurnErrorEndTimeout = previous);
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id"'])..endless = true,
+      );
+      late final StreamSubscription<String> subscription;
+      subscription = session.getResponseAsync().listen(
+        (_) {},
+        // Paused with the error in hand: the done the bound sends waits, so
+        // only the bound itself can let the engine's text go.
+        onError: (Object _) => subscription.pause(),
+      );
+      await pumpEventQueue();
+      engine.live!.addError(StateError('stuck'));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(engine.stops, 1);
+      await subscription.cancel();
+    });
+
     test('a paused consumer pauses the engine\'s text', () async {
       final (engine, session) = await open(
         _Session(tokens: ['{"id"'])..endless = true,
@@ -912,6 +965,30 @@ void main() {
         // The turn let the engine's text go: core's session stopped it.
         await pumpEventQueue();
         expect(engine.stops, 1, reason: 'streamed: $streamed');
+      }
+    });
+
+    test('after a committed structured turn, an engine failure takes back '
+        'only its own turn', () async {
+      for (final streamed in [false, true]) {
+        final engine = _Session(tokens: ['{"id": "A"}']);
+        final model = _Model(support: _all)..nextSession = () => engine;
+        final chat = await model.openChat(responseFormat: _order);
+        await chat.addQueryChunk(const Message(text: 'q1', isUser: true));
+        await chat.generateChatResponse();
+        engine.error = StateError('engine failed');
+        await chat.addQueryChunk(const Message(text: 'q2', isUser: true));
+        await expectLater(
+          streamed
+              ? chat.generateChatResponseAsync().drain<void>()
+              : chat.generateChatResponse(),
+          throwsA(isA<StateError>()),
+        );
+        // Turn 1 cleared what it staged: turn 2 takes back q2 alone.
+        expect(chat.fullHistory.map((m) => m.text), [
+          'q1',
+          '{"id": "A"}',
+        ], reason: 'streamed: $streamed');
       }
     });
 

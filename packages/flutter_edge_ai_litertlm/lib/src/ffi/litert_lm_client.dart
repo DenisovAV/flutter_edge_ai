@@ -118,6 +118,19 @@ String? thinkingBudgetChannelWarning(
 bool keepLastSendAfter(NativeTurnEnd how, NativeLastTurnEnd? end) =>
     how == NativeTurnEnd.cancelled || end == NativeLastTurnEnd.contextFull;
 
+/// What an NPU engine says, once, when the context window its executor runs
+/// with ([window], read after the first turn) is not the `maxTokens` it was
+/// [asked] for; null when they agree. An NPU bundle has one compiled KV
+/// cache, and LiteRT-LM fits the window to the bundle.
+@visibleForTesting
+String? npuContextWindowNote({required int asked, required int window}) =>
+    window == asked
+    ? null
+    : '[flutter_edge_ai_litertlm] this NPU bundle runs with a context window '
+          'of $window tokens, not the maxTokens $asked asked for: the bundle '
+          'is compiled for one KV cache size. A conversation past $window '
+          'tokens ends with contextLimit. Shown once per engine.';
+
 /// The StreamProxy entries the client binds; a StreamProxy without one of
 /// them is refused by name. Kept equal to the release gate's
 /// `STREAM_PROXY_SYMBOLS` minus `stream_proxy_free_string` (a test compares).
@@ -2680,8 +2693,9 @@ class LiteRtLmFfiClient {
           if (!controller.isClosed) await controller.close();
           return;
         }
+        final conv = _virtualConv!;
         final send = _doSendMessageStreamRawOn(
-          _virtualConv!,
+          conv,
           messageJson,
           extraContext: extraContext,
           thinking: thinking,
@@ -2692,9 +2706,13 @@ class LiteRtLmFfiClient {
         inner = send.stream.listen(
           controller.add,
           onError: (Object e, StackTrace st) {
-            // Native cancelled a turn nobody stopped: the conversation is
-            // poisoned, so the next turn rebuilds it.
-            if (e is LiteRtLmTurnCancelledException) {
+            // Native cancelled a turn nobody stopped, or ended it
+            // context_full (section 23: every later send fails until a
+            // rewind): the conversation is poisoned, so the next turn
+            // rebuilds it from the session's history, which this turn's
+            // refused input is not in.
+            if (e is LiteRtLmTurnCancelledException ||
+                _lastTurnEnds[conv]?.end == NativeLastTurnEnd.contextFull) {
               _virtualConvStopped = true;
             }
             controller.addError(e, st);
@@ -2859,6 +2877,7 @@ class LiteRtLmFfiClient {
 
       if (isFinal != 0) {
         _recordTurnEnd(conv);
+        _noteNpuWindow(conv);
         send.finished();
         releaseNative();
       }
@@ -3259,27 +3278,12 @@ class LiteRtLmFfiClient {
     List<int> lengths,
   ) {
     final count = calloc<Size>();
-    final infoOut = calloc<Pointer<LiteRtLmBenchmarkInfo>>();
-    final window = calloc<Int>();
     try {
       if (b.litert_lm_conversation_get_token_count(conv, count) !=
           liteRtLmStatusOk) {
         return null;
       }
-      var maxNumTokens = _maxTokens;
-      if (b.litert_lm_conversation_get_benchmark_info(conv, infoOut) ==
-          liteRtLmStatusOk) {
-        final info = infoOut.value;
-        try {
-          if (b.litert_lm_benchmark_info_get_max_num_tokens(info, window) ==
-                  liteRtLmStatusOk &&
-              window.value > 0) {
-            maxNumTokens = window.value;
-          }
-        } finally {
-          b.litert_lm_benchmark_info_delete(info);
-        }
-      }
+      final maxNumTokens = _executorWindow(b, conv) ?? _maxTokens;
       if (maxNumTokens == null) return null;
       return liteRtLmPrefillFits(
         maxNumTokens: maxNumTokens,
@@ -3288,9 +3292,57 @@ class LiteRtLmFfiClient {
       );
     } finally {
       calloc.free(count);
+    }
+  }
+
+  /// The context window LiteRT-LM's executor runs [conv] with
+  /// (`benchmark_info_get_max_num_tokens`), or null before its first prefill
+  /// (native reports 0 then) or when it cannot be read.
+  int? _executorWindow(LiteRtLmBindings b, Pointer<LiteRtLmConversation> conv) {
+    final infoOut = calloc<Pointer<LiteRtLmBenchmarkInfo>>();
+    final window = calloc<Int>();
+    try {
+      if (b.litert_lm_conversation_get_benchmark_info(conv, infoOut) !=
+          liteRtLmStatusOk) {
+        return null;
+      }
+      final info = infoOut.value;
+      try {
+        return b.litert_lm_benchmark_info_get_max_num_tokens(info, window) ==
+                    liteRtLmStatusOk &&
+                window.value > 0
+            ? window.value
+            : null;
+      } finally {
+        b.litert_lm_benchmark_info_delete(info);
+      }
+    } finally {
       calloc.free(infoOut);
       calloc.free(window);
     }
+  }
+
+  /// The NPU executor's context window was read ([_noteNpuWindow]).
+  bool _npuWindowRead = false;
+
+  /// Reads, once per NPU engine, the context window LiteRT-LM's NPU executor
+  /// chose after the first turn on [conv], and prints
+  /// [npuContextWindowNote] when it is not the `maxTokens` asked for. An NPU
+  /// bundle has one compiled KV cache: the executor lowers a larger
+  /// `max_num_tokens` to the bundle's own (upstream #4184 when the bundle's
+  /// metadata is above its cache). A context past the window then ends
+  /// `context_full`, which §23 reports, rather than failing later.
+  void _noteNpuWindow(Pointer<LiteRtLmConversation> conv) {
+    if (_backend != 'npu' || _npuWindowRead) return;
+    final b = _bindings;
+    final asked = _maxTokens;
+    if (b == null || asked == null || !_liveConvs.contains(conv)) return;
+    final window = _executorWindow(b, conv);
+    if (window == null) return;
+    _npuWindowRead = true;
+    final note = npuContextWindowNote(asked: asked, window: window);
+    // ignore: avoid_print
+    if (note != null) print(note);
   }
 
   /// Says once per client, in release builds too, that a turn's end could
@@ -3323,6 +3375,17 @@ class LiteRtLmFfiClient {
 
   /// Delete a conversation pointer. Called by
   /// [LiteRtLmConversationHandle.close].
+  ///
+  /// Not under [_nativeMutex]: with several live conversations on one engine
+  /// (LiteRT-LM 0.19), a delete can run while another conversation decodes,
+  /// and that is safe. The `deleteduring` probe deleted an idle conversation,
+  /// and one whose stream was just cancelled, while a third streamed: its
+  /// reply ended with a final chunk, equal to a run without the delete, and
+  /// it answered a follow-up — on macOS CPU and Metal, Adreno 830, Mali-G715,
+  /// a Tesla T4, Arc B390 and Arc 140V, and the Qualcomm, Google Tensor and
+  /// Intel NPUs (native-v0.19.0-a; phase 1 "Pre-tag probe 3", L1 paid runs).
+  /// The conversation deleted here has no operation of its own running: the
+  /// delete waits for that ([NativeTurns.release]).
   void _deleteConversation(Pointer<LiteRtLmConversation> conv) {
     // Drop liveness first so any onCancel that races this teardown no-ops in
     // [_cancelOn] rather than dereferencing the pointer we are about to free.
@@ -3424,6 +3487,7 @@ class LiteRtLmFfiClient {
     _modelPath = null;
     _maxTokens = null;
     _prefillLengths = null;
+    _npuWindowRead = false;
     _samplerLatch.reset();
     _warnedNpuSampling = false;
     _conversationSampling.clear();

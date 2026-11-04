@@ -18,11 +18,17 @@ import 'package:flutter_edge_ai/engine.dart';
 /// turn that runs to its end reports what [completed] returns, called once
 /// the text has ended, so it can read a record the engine writes at the end
 /// of the turn. `end` completes after the text has closed.
+///
+/// An error for which [endForError] names an end (LiteRT-LM: a turn native
+/// ended `context_full`, [TurnEnd.contextLimit]) is not the turn's error
+/// either: the text ends cleanly and `end` is that end, unless the turn was
+/// stopped or closed meanwhile.
 EngineTurn reportedEngineTurn(
   Stream<String> text, {
   required bool Function() stopped,
   required bool Function() closed,
   bool Function(Object error)? isCloseError,
+  TurnEnd? Function(Object error)? endForError,
   required TurnEnd Function() completed,
 }) {
   final end = Completer<TurnEnd>();
@@ -58,15 +64,20 @@ EngineTurn reportedEngineTurn(
       source = text.listen(
         out.add,
         onError: (Object error, StackTrace stack) {
+          TurnEnd? known;
           if (isCloseError?.call(error) ?? false) {
             closeSeen = true;
           } else if (!stopped() && !closedNow()) {
-            out.addError(error, stack);
-            return;
+            known = endForError?.call(error);
+            if (known == null) {
+              out.addError(error, stack);
+              return;
+            }
           }
-          // The stop's or the close's own error ends the turn here.
+          // The stop's or the close's own error, or one with a known end,
+          // ends the turn here.
           unawaited(source?.cancel());
-          unawaited(endAs(how()));
+          unawaited(endAs(known ?? how()));
         },
         onDone: () => unawaited(endAs(how())),
       );
@@ -87,13 +98,13 @@ EngineTurn reportedEngineTurn(
   return EngineTurn(text: out.stream, end: end.future);
 }
 
-/// What a LiteRT-LM 0.18 turn that ran to its end reports: a placeholder.
-/// The runtime cannot tell a natural end from `maxOutputTokens`, nor a full
-/// context in decode from either, so a session with a cap reports
-/// [TurnEnd.outputLimit] (the safe side) and one without
-/// [TurnEnd.endOfSequence]. Nothing reads it in core 2.6.0's plain turns;
-/// an engine whose ends are guessed keeps `StructuredOutputSupport.none`.
-// TODO(L2): read the native turn-end record (L1's
-// litert_lm_conversation_get_last_turn_end) instead of guessing.
+/// What a LiteRT-LM turn that ran to its end reports when no turn-end record
+/// says how: a placeholder. The web runtime (`@litert-lm/core` 0.18) has no
+/// such record, and natively it is missing only on a libLiteRtLm without
+/// `patch_c_api.sh` section 23, which the release gate refuses. Without it a
+/// natural end cannot be told from `maxOutputTokens`, nor a full context in
+/// decode from either, so a session with a cap reports [TurnEnd.outputLimit]
+/// (the safe side) and one without [TurnEnd.endOfSequence]. An engine whose
+/// ends are guessed keeps `StructuredOutputSupport.none`.
 TurnEnd liteRtLmPlaceholderCompletedEnd(int? maxOutputTokens) =>
     maxOutputTokens == null ? TurnEnd.endOfSequence : TurnEnd.outputLimit;

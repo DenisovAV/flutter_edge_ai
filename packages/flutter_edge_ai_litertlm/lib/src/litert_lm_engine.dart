@@ -14,6 +14,7 @@ import 'ffi/ffi_inference_model.dart';
 import 'litertlm_decision_section.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_vendor_host.dart';
+import 'ffi/open_session_backing.dart';
 import 'litert_lm_engine_host.dart';
 import 'litert_lm_log_level.dart';
 import 'litertlm_bundle_activation.dart';
@@ -440,6 +441,26 @@ class LiteRtLmEngine
     // Read with the model, so that a decider reads the file the engine
     // loaded; a file without a decision costs one header read.
     final decisionRead = await LitetuneDecisionRead.read(config.modelPath);
+    final linearAttentionState = await _readLinearAttentionState(
+      config.modelPath,
+    );
+    final openSessionBacking = liteRtLmOpenSessionBacking(
+      abi: host.abi,
+      backend: ffiRuntime.activeBackend,
+      npuVendor: switch (npu) {
+        NpuChosen(:final vendor) => vendor,
+        _ => null,
+      },
+      androidGpu: ffiRuntime.activeBackend == PreferredBackend.gpu
+          ? host.androidGpuFamily()
+          : null,
+    );
+    edgeAiLog(
+      '[LiteRtLmEngine] open sessions: ${openSessionBacking.name} '
+      'conversations on ${ffiRuntime.activeBackend.name} (${host.abi})'
+      '${linearAttentionState ? '; linear attention state: rebuilt from '
+                'text, never rewound' : ''}',
+    );
     return FfiInferenceModel(
       ffiClient: ffiRuntime.client,
       decisionRead: decisionRead,
@@ -459,8 +480,26 @@ class LiteRtLmEngine
       supportAudio: config.supportAudio,
       multimodalOrder: config.multimodalOrder,
       maxConcurrentSessions: config.maxConcurrentSessions,
+      openSessionBacking: openSessionBacking,
+      linearAttentionState: linearAttentionState,
       onClose: () {}, // no-op: core resets its own state via addCloseListener
     );
+  }
+
+  /// Whether the model at [path] keeps linear attention state
+  /// ([readLiteRtLmHasLinearAttentionState]). A file whose inputs cannot be
+  /// read is taken to keep it: its conversations are then rebuilt from text
+  /// instead of rewound, which is slower but never wrong.
+  static Future<bool> _readLinearAttentionState(String path) async {
+    try {
+      return await readLiteRtLmHasLinearAttentionState(path);
+    } on LiteRtLmBundleException catch (e) {
+      edgeAiLog('[LiteRtLmEngine] $e; conversations will not be rewound');
+      return true;
+    } on FileSystemException catch (e) {
+      edgeAiLog('[LiteRtLmEngine] $e; conversations will not be rewound');
+      return true;
+    }
   }
 
   /// [path]'s bundle info, or null when the file is not one this package

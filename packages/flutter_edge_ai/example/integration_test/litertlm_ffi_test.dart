@@ -22,6 +22,12 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
 // ignore: implementation_imports — reads core's file-system service to check install paths
 import 'package:flutter_edge_ai/src/di/service_registry.dart'
     show ServiceRegistry;
+// ignore: implementation_imports — the open-session backing the load chose
+import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart'
+    show FfiInferenceModel;
+// ignore: implementation_imports — the open-session backing the load chose
+import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart'
+    show OpenSessionBacking;
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'registry_evidence.dart';
 
@@ -614,10 +620,10 @@ void main() {
 
   // ── Multi-session (#226): concurrent openSession() dialogues ──────
   //
-  // The LiteRT-LM engine allows only ONE live conversation at a time, so
-  // openSession() sessions multiplex — each keeps its history in Dart and
-  // replays it (messages_json preface) into the single shared conversation
-  // on switch. Logically concurrent contexts, serialized inference. These
+  // On a backend whose live conversations were verified (LiteRT-LM 0.19,
+  // L3) each openSession() session is its own native conversation; elsewhere
+  // sessions multiplex — each keeps its history in Dart and replays it
+  // (messages_json preface) into one shared conversation on switch. These
   // verify the property end-to-end on the native engine: two sessions keep
   // isolated history, and closing one leaves the other usable. Runs on the
   // shared GPU model — also exercises the GPU sampler path under multiplexing.
@@ -735,20 +741,33 @@ void main() {
       await b.close();
     });
 
-    // Media on a virtual (openSession) .litertlm session is rejected loudly,
-    // not silently dropped — history is replayed text-only on switch.
-    testWidgets('openSession rejects image/audio loudly', (t) async {
+    // Media on an openSession .litertlm session: taken where the session is
+    // its own native conversation (a backend whose live conversations were
+    // verified, L3), rejected loudly where it is virtual — its history is
+    // replayed text-only on switch.
+    testWidgets('openSession takes image/audio only on native backing', (
+      t,
+    ) async {
       final model = await _ensureModel(PreferredBackend.gpu, 1024);
+      final native =
+          (model as FfiInferenceModel).openSessionBacking ==
+          OpenSessionBacking.native;
       final a = await model.openSession(temperature: 0.0, topK: 1);
       try {
         await a.addQueryChunk(
-          Message(
-            text: 'describe',
+          Message.withImage(
+            text: 'What is in the picture? One word.',
             isUser: true,
-            imageBytes: Uint8List.fromList(List<int>.filled(16, 0)),
+            imageBytes: _testImage,
           ),
         );
-        await expectLater(a.getResponse(), throwsA(isA<UnsupportedError>()));
+        if (native) {
+          final reply = await a.getResponse();
+          print('[multi-session media] native: "$reply"');
+          expect(reply.trim(), isNotEmpty);
+        } else {
+          await expectLater(a.getResponse(), throwsA(isA<UnsupportedError>()));
+        }
       } finally {
         await a.close();
       }

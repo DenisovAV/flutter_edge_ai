@@ -7,7 +7,10 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../embedding/litertlm_npu_target.dart'
-    show readLiteRtLmPrefillLengths, readLiteRtLmSectionStamps;
+    show
+        readLiteRtLmLinearAttentionState,
+        readLiteRtLmPrefillLengths,
+        readLiteRtLmSectionStamps;
 import 'litertlm_bundle_info.dart';
 
 /// Larger than any header seen (a few KB); a bigger value is a corrupt file,
@@ -127,6 +130,40 @@ Future<List<int>> readLiteRtLmPrefillSignatureLengths(String path) async {
     throw LiteRtLmBundleException(
       LiteRtLmBundleProblem.malformed,
       '$path: the prefill signatures of its main model could not be read ($e)',
+      path: path,
+    );
+  } finally {
+    await file.close();
+  }
+}
+
+/// Whether the main model of the `.litertlm` LLM at [path] keeps linear
+/// attention state ([readLiteRtLmLinearAttentionState]): a hybrid model such
+/// as LFM2.5. A conversation on such a model is never rewound to an earlier
+/// step, which would restore its KV cache but not that state (core 2.6.0
+/// design §6.4b); it is rebuilt from text instead. False when the bundle has
+/// no main section.
+///
+/// Throws as [readLiteRtLmBundleInfo] for a file that is not a `.litertlm`
+/// container, and [LiteRtLmBundleException] ([LiteRtLmBundleProblem.malformed])
+/// for a main model it cannot walk.
+Future<bool> readLiteRtLmHasLinearAttentionState(String path) async {
+  final info = await readLiteRtLmBundleInfo(path);
+  final main = info.textModel;
+  if (main == null) return false;
+  final file = await File(path).open();
+  try {
+    return await readLiteRtLmLinearAttentionState(
+      file,
+      await file.length(),
+      main.begin,
+      main.end,
+    );
+  } on Object catch (e) {
+    if (e is! FormatException && e is! RangeError) rethrow;
+    throw LiteRtLmBundleException(
+      LiteRtLmBundleProblem.malformed,
+      '$path: the inputs of its main model could not be read ($e)',
       path: path,
     );
   } finally {

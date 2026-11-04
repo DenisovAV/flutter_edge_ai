@@ -17,7 +17,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_reader.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_npu_target.dart'
-    show readLiteRtLmPrefillLengths;
+    show readLiteRtLmLinearAttentionState, readLiteRtLmPrefillLengths;
 import 'package:flutter_test/flutter_test.dart';
 
 /// A minimal FlatBuffer writer: objects are appended in order, and a
@@ -260,6 +260,74 @@ void main() {
         ? 'GEMMA4_E2B_NPU_LITERTLM is not set'
         : null,
   );
+
+  group('readLiteRtLmLinearAttentionState', () {
+    Future<bool> stateOf(Uint8List model) async {
+      final dir = Directory.systemTemp.createTempSync('linear_attention');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final file = File('${dir.path}/model.tflite')..writeAsBytesSync(model);
+      final open = await file.open();
+      try {
+        return await readLiteRtLmLinearAttentionState(
+          open,
+          model.length,
+          0,
+          model.length,
+        );
+      } finally {
+        await open.close();
+      }
+    }
+
+    test('a convolution or recurrent state input, in any signature, is '
+        'linear attention state', () async {
+      for (final name in ['kv_cache_c_0', 'kv_cache_r_12']) {
+        expect(
+          await stateOf(
+            _tflite([
+              ('prefill_128', 'input_pos', [1, 128]),
+              ('decode', name, [1, 4, 1024]),
+            ]),
+          ),
+          isTrue,
+          reason: name,
+        );
+      }
+    });
+
+    test(
+      'a KV cache, positions and a model without signatures are not',
+      () async {
+        expect(
+          await stateOf(
+            _tflite([
+              ('prefill_128', 'kv_cache_k_0', [1, 128]),
+              ('decode', 'kv_cache_v_0', [1, 1]),
+              ('decode_alt', 'input_pos', [1, 1]),
+              ('prefill_c', 'k_cache_0', [1, 128]),
+            ]),
+          ),
+          isFalse,
+        );
+        expect(
+          await stateOf((_Fb()..table('model', [3])).finish('model')),
+          isFalse,
+        );
+      },
+    );
+
+    for (final (env, hybrid) in [
+      ('LFM25_LITERTLM', true),
+      ('GEMMA4_E2B_LITERTLM', false),
+      ('FUNCTIONGEMMA_LITERTLM', false),
+      ('GEMMA4_E2B_NPU_LITERTLM', false),
+    ]) {
+      final path = _env(env);
+      test('$env: linear attention state $hybrid', () async {
+        expect(await readLiteRtLmHasLinearAttentionState(path!), hybrid);
+      }, skip: path == null ? '$env is not set' : null);
+    }
+  });
 
   group('readLiteRtLmPrefillSignatureLengths on real bundles', () {
     for (final (env, smallest) in [

@@ -249,7 +249,11 @@ void main() {
           ..turnEnd = contextFull ? NativeLastTurnEnd.contextFull : null;
         await expectLater(handle.chat('one').join(), throwsStateError);
         first.turnEnd = NativeLastTurnEnd.completed;
+        // The context_full turn is recovered by a rewind at the next turn;
+        // the stop after it is then rebuilt, replaying the history.
+        first.rewindOutcome = StoppedTurnRewind.rewound;
         await stopMidTurn('two', first);
+        first.rewindOutcome = StoppedTurnRewind.unsupported;
         await handle.chat('three').join();
 
         final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
@@ -448,7 +452,7 @@ void main() {
           reopened.add(c);
           return c;
         },
-        canRewind: false,
+        noRewindReason: 'the NPU executor rolls back one token at most',
       );
       first.rewindOutcome = StoppedTurnRewind.rewound;
       await stopMidTurn('one', first);
@@ -766,6 +770,102 @@ void main() {
       expect(first.rewinds, [textReply('Hello')]);
       expect(first.sent, ['one', 'two']);
       expect(reopened, isEmpty);
+    });
+  });
+
+  group('after a turn native ended context_full (section 23)', () {
+    /// Runs a turn whose input native refused as not fitting the window.
+    Future<void> contextFullTurn(String text, _Conversation live) async {
+      live
+        ..failWith = Exception('Stream error: RESOURCE_EXHAUSTED')
+        ..turnEnd = NativeLastTurnEnd.contextFull;
+      await expectLater(handle.chat(text).join(), throwsException);
+    }
+
+    test('the next turn first rewinds the conversation to the checkpoint, '
+        'and runs on it', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      expect(await handle.chat('one').join(), 'Hello there.');
+      await contextFullTurn('too long', first);
+      first.turnEnd = NativeLastTurnEnd.completed;
+
+      expect(await handle.chat('two').join(), 'Hello there.');
+      expect(first.rewinds, hasLength(1));
+      expect(first.sent, ['one', 'too long', 'two']);
+      expect(reopened, isEmpty, reason: 'nothing of the history is dropped');
+    });
+
+    test('where it cannot rewind, it is rebuilt from the history, which the '
+        'refused input is not in', () async {
+      handle = RecoveringConversationHandle(
+        first,
+        reopen: (messagesJson) async {
+          final c = _Conversation('rebuilt', seed: messagesJson);
+          reopened.add(c);
+          return c;
+        },
+        noRewindReason: 'this model keeps linear attention state',
+      );
+      expect(await handle.chat('one').join(), 'Hello there.');
+      await contextFullTurn('too long', first);
+
+      expect(await handle.chat('two').join(), 'Hello there.');
+      expect(first.rewinds, isEmpty);
+      expect(first.closed, isTrue);
+      final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+      expect(
+        [for (final m in seed) ((m as Map)['content'] as List).single['text']],
+        ['one', 'Hello there.'],
+      );
+    });
+
+    test('a turn that failed otherwise is not recovered: it is no full '
+        'context', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      first
+        ..failWith = Exception('Stream error: INTERNAL')
+        ..turnEnd = NativeLastTurnEnd.failed;
+      await expectLater(handle.chat('one').join(), throwsException);
+      await handle.chat('two').join();
+      expect(first.rewinds, isEmpty);
+      expect(reopened, isEmpty);
+    });
+
+    test('a session that cannot rewind says once, in release builds too, '
+        'that a rebuild drops earlier images and audio', () async {
+      handle = RecoveringConversationHandle(
+        first,
+        reopen: (messagesJson) async {
+          final c = _Conversation('rebuilt ${reopened.length}');
+          reopened.add(c);
+          return c;
+        },
+        noRewindReason: 'the NPU executor rolls back one token at most',
+      );
+      final printed = <String>[];
+      await runZoned(
+        () async {
+          await handle
+              .chat(
+                'look',
+                imageBytes: [
+                  Uint8List.fromList([1, 2]),
+                ],
+              )
+              .join();
+          await stopMidTurn('one', first);
+          await handle.chat('two').join();
+          await stopMidTurn('three', reopened.single);
+          await handle.chat('four').join();
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+      expect(reopened, hasLength(2));
+      final notes = printed.where((l) => l.contains('without the images'));
+      expect(notes, hasLength(1));
+      expect(notes.single, contains('rolls back one token'));
     });
   });
 }

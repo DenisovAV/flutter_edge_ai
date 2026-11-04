@@ -4,6 +4,7 @@
 - MediaTek NPU refused: LiteRT-LM 0.19 cannot load Google's MediaTek dispatch (LiteRT-LM #4256).
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and media.
 - Native: a turn cut short by closing its session or model ends with a `StateError`.
+- `openSession` sessions are native conversations where verified: media, stop rewind, full-context recovery.
 
 ## 1.19.1
 - The native library loads and engine settings are made off the calling isolate (#756).

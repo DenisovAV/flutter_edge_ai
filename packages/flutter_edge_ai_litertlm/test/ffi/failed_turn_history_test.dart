@@ -38,4 +38,17 @@ void main() {
       reason: '_VirtualConversationHandle',
     );
   });
+
+  test('a virtual turn native ended context_full makes the next turn rebuild '
+      'the shared conversation (it fails every send until rewound)', () {
+    final source = File('lib/src/ffi/litert_lm_client.dart').readAsStringSync();
+    expect(
+      source,
+      contains(
+        'if (e is LiteRtLmTurnCancelledException ||\n'
+        '                _lastTurnEnds[conv]?.end == NativeLastTurnEnd.contextFull) {\n'
+        '              _virtualConvStopped = true;',
+      ),
+    );
+  });
 }

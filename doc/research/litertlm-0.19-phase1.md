@@ -232,9 +232,24 @@ smaller history), not a retry.
 | CPU | PASS: dim 768, norm 1.0, repeat bit-identical, the two inputs cos 0.223 | PASS, **vectors bit-identical to 0.19** |
 | Metal | `LiteRtCreateCompiledModel` 504 (589 of 633 ops on the GPU, then compile fails) | the same 504, with the Metal framework staged and registered |
 
-The Gecko Metal failure is therefore not new in 0.19. EmbeddingGemma 1 was not
-run: its repository is gated and this Mac has no Hugging Face token. Linux,
-Windows and Android are left for the CI artifacts.
+The Gecko Metal failure is therefore not new in 0.19.
+
+EmbeddingGemma 1 (`embeddinggemma-300M_seq256_mixed-precision.tflite`, registry
+sha256), run once the Hugging Face login was in place:
+
+| | 0.19 (§1-§25) | 0.18.0-h |
+|---|---|---|
+| CPU | PASS: dim 768, norm 1.0, repeat bit-identical, the inputs cos 0.256 | PASS, the inputs cos 0.254 |
+| Metal | all-zero vectors (FAIL) | the same all-zero vectors |
+
+Both versions repeat bit for bit across processes. Between them, one input's
+vector is identical and the other's is not: cos 0.99886, largest component
+difference 5.0e-3. Gecko, by contrast, is identical on both inputs. So EG1 vectors
+stored on 0.18 are queried with slightly different vectors on 0.19 (the
+profile id does not change). The cause is not isolated: a CPU kernel change in
+the LiteRT pin, or §21 routing around SME2. The Metal zeros are the known
+"EG1 on the GPU does not work" result, unchanged. Linux, Windows and Android
+are left for the CI artifacts.
 
 ## Pre-tag probe 1: §16 across conversations, and §24 (macOS, 2026-11-04)
 

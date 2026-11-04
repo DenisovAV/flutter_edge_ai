@@ -5,7 +5,7 @@ That release requires core 2.5.0 and llamadart
 0.15.1 with typed native overflow reporting. The core foundation is
 [flutter_edge_ai #685](https://github.com/DenisovAV/flutter_edge_ai/pull/685);
 the typed SDK error is [llamadart #1201](https://github.com/leehack/llamadart/pull/1201).
-The current source / next release manifest bounds the published SDK to `>=0.17.5 <0.17.6`.
+Version 0.0.6 bounds the SDK to `>=0.17.5 <0.17.6`.
 Full platform qualification of that update is pending.
 Source qualification does not replace standalone hosted qualification. Do not
 use a dependency override in production.
@@ -66,7 +66,7 @@ until a rebuild is needed or the model is closed. A CPU model loaded by an
 unrelated CPU/automatic request does not suppress the first explicit GPU attempt.
 Other explicit CPU/GPU switches replace the current model. The backend declares `{cpu, gpu}` through
 `honouredBackends(spec)` and reports actual loaded placement. Unknown placement
-is refused. Current source / next release refuses explicit GPU embeddings on
+is refused. From 0.0.6 the backend refuses explicit GPU embeddings on
 Android (every device), iOS simulators and macOS x64/Rosetta before SDK loading
 or the qualification probe. The macOS x64 guard is conservative: upstream
 reports Intel/AMD Metal corruption, but EG2 corruption has not been measured

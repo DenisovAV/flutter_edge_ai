@@ -64,8 +64,8 @@ calls must be answered before the next generation.
 Thinking deltas become `ThinkingResponse` only when `enableThinking` is true.
 String session methods omit typed reasoning with either flag value; use chat
 `generateChatResponseAsync()` for typed thinking and tools. With thinking off,
-the connector hides SDK reasoning-channel deltas. In current source / next
-release, llamadart 0.17.5 can classify new `<think>` blocks as content after a
+the connector hides SDK reasoning-channel deltas. From 0.0.6
+(llamadart 0.17.5), the SDK can classify new `<think>` blocks as content after a
 prompt-ending empty thought. For affected Hermes, DeepSeek V3 and Qwen3 Coder XML
 templates, the adapter also hides consecutive leading thought blocks across
 stream chunks, preserving the earlier thinking-off behavior. Templates without

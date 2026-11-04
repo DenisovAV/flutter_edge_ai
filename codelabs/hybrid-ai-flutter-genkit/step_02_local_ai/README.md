@@ -42,8 +42,8 @@ flutter run \
 ```yaml
 genkit: ^1.0.0
 genkit_google_genai: ^1.0.0
-genkit_flutter_edge_ai: ^0.10.0
-flutter_edge_ai: ^2.4.0
+genkit_flutter_edge_ai: ^0.11.0
+flutter_edge_ai: ^2.5.0
 flutter_edge_ai_litertlm: ^1.14.0   # LiteRT-LM engine (flutter_edge_ai ships none by default)
 genkit_hybrid: ^0.3.0
 ```

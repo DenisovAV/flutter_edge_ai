@@ -136,15 +136,18 @@ for another task, e.g. `TaskType.questionAnswering`.
 ## GGUF embeddings (`flutter_edge_ai_llama` 0.0.3)
 
 `LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3 (core 2.5.0, llamadart
-0.15.1) runs EmbeddingGemma 2 GGUF text embeddings natively: measured on macOS
-CPU/Metal and Linux/Windows CPU; Android (CPU only) and iOS are not qualified,
-and only the Q8_0 file below is numerically qualified. A `.gguf` carries its own
+0.15.1) runs EmbeddingGemma 2 GGUF text embeddings natively. 0.0.6 moves to
+llamadart 0.17.5: measured there on macOS CPU/Metal; Linux/Windows CPU were
+measured on 0.15.1 only; Android (CPU only) and iOS are not qualified, and only
+the Q8_0 file below is numerically qualified. An explicit GPU request on
+Android, iOS simulators and, from 0.0.6, macOS x64 loads on the CPU, or fails
+with `backendFallback: false`. A `.gguf` carries its own
 tokenizer: a `tokenizerFrom…()` makes `install()` throw `ArgumentError`.
 
 App setup (that package's README, *Add it to your app*, and `doc/platforms.md`):
 `hooks: user_defines: llamadart: llamadart_native_runtimes: [llama_cpp]` in the
 app's pubspec, or the workspace root's; on iOS/macOS also
-`llamadart_llama_cpp_flutter: 0.15.0` in the app's own dependencies,
+`llamadart_llama_cpp_flutter: 0.17.3` (0.15.0 before 0.0.6) in the app's own dependencies,
 `flutter config --enable-swift-package-manager`, and iOS 16.4 / macOS 14
 deployment targets; on Android arm64-v8a and x86_64 only. From
 `flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM keeps Swift Package Manager on too,

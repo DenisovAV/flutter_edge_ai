@@ -190,7 +190,7 @@ final List<_GoldenItem> _golden = [
     ),
 ];
 
-/// The golden's `vector` came from native-v0.18.0-d on macOS arm64.
+/// The golden's `vector` came from native-v0.19.0-a on macOS arm64.
 bool get _sameBuildAsGolden =>
     Platform.isMacOS && Abi.current() == Abi.macosArm64;
 
@@ -420,7 +420,7 @@ void main() {
       expect(
         cosGolden,
         greaterThanOrEqualTo(minGolden),
-        reason: '${item.id} against the native-v0.18.0-d macOS golden',
+        reason: '${item.id} against the native-v0.19.0-a macOS golden',
       );
       expect(
         cosSt,

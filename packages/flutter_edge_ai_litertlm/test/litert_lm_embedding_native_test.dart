@@ -1,7 +1,17 @@
-// The EmbeddingGemma 2 pass on the REAL libLiteRtLm (native-v0.18.0-e) and
+// The EmbeddingGemma 2 pass on the REAL libLiteRtLm (native-v0.19.0-a) and
 // the real bundles, in the VM — the X1 check of R5 §10.1 at the FFI level:
 // text through these Dart bindings reproduces the golden `vector`, which came
-// from the native-v0.18.0-d macOS arm64 dylib through Python ctypes.
+// from the native-v0.19.0-a macOS arm64 dylib through Python ctypes.
+//
+// Both goldens were re-recorded on LiteRT-LM 0.19 on 2026-11-04
+// (integration_test/tools/eg2_text_golden_vectors.py and eg2_audio_golden.py,
+// with Google's litert-lm 0.19.0 wheel): 0.19 moves the 740m's audio vectors
+// by up to cos 0.89 from 0.18's in Google's builds as in ours, and is as close
+// to google/embeddinggemma-2 as 0.18 on average and closer at the worst clip
+// (doc/research/litertlm-0.19-phase1.md on native/litertlm-0.19, "Audio A/B
+// against Google's builds and the reference model", 688600e8). The 270m text
+// golden moved by cos 0.0003: it was the Apple 0.18.0-d build, which alone
+// differed from the wheel. Retrieval is asserted as before.
 //
 // Opt-in, skipped unless both are present:
 // - the host libLiteRtLm on LiteRT-LM C API 1.0 (native-v0.19.0-a or newer):
@@ -16,7 +26,7 @@
 //   over images ranks better raw or with the retrieval-query prefix.
 //   EG2_740M_LITERTLM (revision 24d962e9, sha256 e7a8a220…7f4c) adds the
 //   audio cases (R5 §10.4): the example's clips (example/assets/eg2_audio)
-//   against Google's litert-lm 0.18.0 wheel (eg2_audio_golden.json),
+//   against Google's litert-lm 0.19.0 wheel (eg2_audio_golden.json),
 //   text→audio retrieval, WAV/MP3/FLAC and resampling, a corrupt WAV, the
 //   exact overflow of a 60-second clip, and combined inputs.
 //
@@ -389,10 +399,12 @@ void main() {
           expect(cosSt, greaterThanOrEqualTo(0.97), reason: '${item['id']}');
           vectors[item['id'] as String] = vector;
         }
-        for (var i = 0; i < 6; i++) {
+        // The golden's query/document pairs (5 since 2026-10-14).
+        final pairs = items.length ~/ 2;
+        for (var i = 0; i < pairs; i++) {
           final query = vectors['q$i']!;
           final scores = [
-            for (var j = 0; j < 6; j++) _cos(query, vectors['d$j']!),
+            for (var j = 0; j < pairs; j++) _cos(query, vectors['d$j']!),
           ];
           final best = scores.indexOf(scores.reduce(math.max));
           expect(best, i, reason: 'q$i ranks d$best first: $scores');
@@ -703,7 +715,7 @@ void main() {
   }, skip: skip);
 
   test(
-    '740m: audio and combined inputs against the litert-lm 0.18.0 wheel, '
+    '740m: audio and combined inputs against the litert-lm 0.19.0 wheel, '
     'text→audio retrieval, WAV/MP3/FLAC and resampling, a corrupt WAV, the '
     'exact overflow of a 60-second clip',
     () async {

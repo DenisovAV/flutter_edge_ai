@@ -9,7 +9,7 @@
 /// What it holds the browser to:
 /// - 768 dimensions, unit norm, finite; `maxInputTokens` 1024; `{text}`; GPU;
 /// - the native golden (integration_test/goldens/eg2_text_golden.dart, from
-///   native-v0.18.0-d on macOS arm64, CPU): every vector finite and non-zero,
+///   native-v0.19.0-a on macOS arm64, CPU): every vector finite and non-zero,
 ///   cos >= 0.99 against `vector` (WebGPU drifts from the native CPU, measured
 ///   about 0.995), >= 0.97 against Sentence Transformers fp32; every query
 ///   ranks its document first;

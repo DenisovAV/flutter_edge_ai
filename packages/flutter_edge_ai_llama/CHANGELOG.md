@@ -2,7 +2,7 @@
 
 ## 0.0.6
 
-- Update llamadart to 0.17.5 with matching Apple and Web runtimes.
+- Update llamadart to 0.17.5 with matching Apple and Web runtimes (#764).
 - Require `flutter_edge_ai` >=2.5.0 <2.6.0.
 
 ## 0.0.5

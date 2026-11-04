@@ -132,8 +132,9 @@ own tokenizer. Version 0.0.6 requires core 2.5.x and llamadart
 0.17.5 (0.0.3 introduced the backend on core 2.5.0's SPI). Use separate GGUF and LiteRT RAG profile IDs; matching dimensions do
 not make their vectors interchangeable.
 See the [embedding design and qualification](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/embeddings.md).
-Embedding execution has been measured on macOS CPU/Metal and Linux/Windows CPU.
-Android has a maintainer Pixel 8a CPU/Vulkan diagnostic; full Android qualification
+Embedding execution has been measured on macOS CPU/Metal (llamadart 0.15.1 and
+0.17.5, #764) and Linux/Windows CPU (0.15.1). Android has a maintainer Pixel 8a
+CPU/Vulkan diagnostic (0.15.1); full Android qualification
 and iOS embedding execution remain unqualified. See the
 [per-platform embedding evidence](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md#embedding-qualification-by-platform).
 Explicit GPU embeddings on Android (every device) and on iOS simulators fall back to CPU by

@@ -17,9 +17,9 @@ The minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**.
 Version 0.0.6 uses llamadart **0.17.5** with typed overflow reporting
 and Apple companion **0.17.3** (0.0.3 to 0.0.5 used 0.15.1 / 0.15.0). Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. Native EmbeddingGemma 2 text embeddings are described in
-[the embedding guide](doc/embeddings.md). macOS CPU/Metal and Linux/Windows CPU
-have been measured; Android has a maintainer Pixel 8a diagnostic and iOS remains
-unqualified. See the [per-platform evidence](doc/platforms.md#embedding-qualification-by-platform).
+[the embedding guide](doc/embeddings.md). macOS CPU/Metal (llamadart 0.15.1 and
+0.17.5, #764) and Linux/Windows CPU (0.15.1) have been measured; Android has a
+maintainer Pixel 8a diagnostic (0.15.1) and iOS remains unqualified. See the [per-platform evidence](doc/platforms.md#embedding-qualification-by-platform).
 Explicit GPU embeddings on Android (every device) and on iOS simulators fall
 back to CPU by default; `backendFallback: false` refuses those requests before
 loading.

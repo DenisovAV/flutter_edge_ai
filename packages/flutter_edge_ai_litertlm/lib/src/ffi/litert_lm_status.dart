@@ -71,8 +71,10 @@ final class LiteRtLmCallException implements Exception {
 /// Reads LiteRT-LM's thread-local last error on the calling thread.
 typedef LiteRtLmLastError = String? Function();
 
-/// Decodes a NUL-terminated native string without throwing on malformed bytes:
-/// a native failure must not surface as a complaint about its encoding.
+/// Decodes a NUL-terminated native error message without throwing on
+/// malformed bytes: a native failure must not surface as a complaint about its
+/// encoding. Bounded by [maxBytes], as an error message is short and a broken
+/// one might lack its NUL.
 String decodeLiteRtLmString(Pointer<Char> ptr, {int maxBytes = 64 * 1024}) {
   final bytes = ptr.cast<Uint8>();
   var length = 0;

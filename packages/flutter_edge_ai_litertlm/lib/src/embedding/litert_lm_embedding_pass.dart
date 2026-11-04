@@ -125,6 +125,9 @@ const _statusOk = 0;
 const _statusUnknown = 2;
 const _statusInvalidArgument = 3;
 
+/// `kLiteRtLmStatusNotFound`: ModelInfo's "the file does not define it".
+const _statusNotFound = 5;
+
 /// Throws [EmbeddingLoadException] unless the `.litertlm` bundle at
 /// [modelPath] has an audio encoder, read from its container header (D23:
 /// ModelInfo claims audio on the 270m and the 440m). A header this reader
@@ -951,9 +954,12 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       final LiteRtLmModelType type;
       final int dimensionValue;
       try {
-        if (b.litert_lm_loaded_file_model_type(file, rawType) != _statusOk) {
-          return _unknownModelInfo;
-        }
+        _modelInfoRead(
+          b,
+          'litert_lm_loaded_file_model_type',
+          b.litert_lm_loaded_file_model_type(file, rawType),
+          absentAllowed: false,
+        );
         try {
           type = LiteRtLmModelType.fromValue(rawType.value);
         } on ArgumentError {
@@ -962,8 +968,11 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         }
         // NOT_FOUND on a bundle that is not an embedder: -1, as before 1.0.
         dimensionValue =
-            b.litert_lm_loaded_file_embedding_dimension(file, dimension) ==
-                _statusOk
+            _modelInfoRead(
+              b,
+              'litert_lm_loaded_file_embedding_dimension',
+              b.litert_lm_loaded_file_embedding_dimension(file, dimension),
+            )
             ? dimension.value
             : -1;
       } finally {
@@ -974,6 +983,8 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         type: type,
         dimension: dimensionValue,
         textSignatures: _signatures(
+          b,
+          'litert_lm_loaded_file_embedding_signature_selection',
           (lengths, max, count) =>
               b.litert_lm_loaded_file_embedding_signature_selection(
                 file,
@@ -983,6 +994,8 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
               ),
         ),
         visionSignatures: _signatures(
+          b,
+          'litert_lm_loaded_file_vision_signature_selection',
           (lengths, max, count) =>
               b.litert_lm_loaded_file_vision_signature_selection(
                 file,
@@ -998,18 +1011,26 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   }
 
   /// A ModelInfo length list: the count first (a NULL array), then the
-  /// values. Null when the file defines none (NOT_FOUND, or any failure).
+  /// values. Null when the file defines none (NOT_FOUND); any other failure
+  /// refuses the load ([_modelInfoRead]).
   List<int>? _signatures(
+    LiteRtLmEmbeddingBindings b,
+    String call,
     int Function(Pointer<Int32> lengths, int max, Pointer<Size> count) read,
   ) {
     final countOut = _alloc<Size>();
     try {
-      if (read(nullptr, 0, countOut) != _statusOk) return null;
+      if (!_modelInfoRead(b, call, read(nullptr, 0, countOut))) return null;
       final count = countOut.value;
       if (count == 0) return const [];
       final lengths = _alloc<Int32>(count);
       try {
-        if (read(lengths, count, countOut) != _statusOk) return null;
+        _modelInfoRead(
+          b,
+          call,
+          read(lengths, count, countOut),
+          absentAllowed: false,
+        );
         final written = math.min(countOut.value, count);
         return [for (var i = 0; i < written; i++) lengths[i]];
       } finally {
@@ -1018,6 +1039,26 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     } finally {
       _alloc.free(countOut);
     }
+  }
+
+  /// Whether a ModelInfo read found its value: true for OK, false for
+  /// NOT_FOUND (the file does not define it) when [absentAllowed]. Any other
+  /// status is a read that failed, never taken for an absent value: an
+  /// [EmbeddingLoadException] naming [call].
+  bool _modelInfoRead(
+    LiteRtLmEmbeddingBindings b,
+    String call,
+    int code, {
+    bool absentAllowed = true,
+  }) {
+    if (code == _statusOk) return true;
+    if (code == _statusNotFound && absentAllowed) return false;
+    throw EmbeddingLoadException(
+      'LiteRT-LM could not read $_file ($call failed with '
+      '${liteRtLmStatusName(code)}): ${_lastError(b, code)}',
+      engine: liteRtLmEngineTag,
+      nativeCode: code,
+    );
   }
 
   /// Refuses what this pass cannot run, from ModelInfo alone; returns the

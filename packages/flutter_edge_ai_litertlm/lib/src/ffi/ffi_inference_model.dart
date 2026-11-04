@@ -46,8 +46,9 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// built without one (tests), which then cannot read its decision.
   final LitetuneDecisionRead? decisionRead;
 
-  /// Whether this engine's scoring has been checked (the self-check passed,
-  /// or a release build skipped it) before the first decision on this model.
+  /// Whether this engine's scoring self-check ran and passed before the first
+  /// decision on this model; false until then, and in a release build, which
+  /// skips it.
   bool get scoringChecked => _scoringChecked;
   bool _scoringChecked = false;
   Future<void>? _scoringCheck;
@@ -165,7 +166,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     );
     _scoringCheck = check;
     return check.then(
-      (_) => _scoringChecked = true,
+      (ran) => _scoringChecked = ran,
       onError: (Object e, StackTrace st) {
         if (identical(_scoringCheck, check)) _scoringCheck = null;
         Error.throwWithStackTrace(e, st);

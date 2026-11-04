@@ -672,6 +672,39 @@ void main() {
         await p.close();
       });
 
+      for (final getter in [
+        'model_type',
+        'embedding_dimension',
+        'embedding_signature_selection',
+      ]) {
+        test('a ModelInfo $getter that fails (not NOT_FOUND) refuses the load '
+            'naming it, never taken for a value the file lacks', () async {
+          native.failModelInfo = (getter: getter, code: 13);
+          final p = pass();
+          await expectLater(
+            p.load(),
+            throwsA(
+              isA<EmbeddingLoadException>()
+                  .having((e) => e.nativeCode, 'nativeCode', 13)
+                  .having(
+                    (e) => e.message,
+                    'message',
+                    allOf(
+                      contains(
+                        'litert_lm_loaded_file_$getter failed with '
+                        'INTERNAL',
+                      ),
+                      contains('$getter broke'),
+                    ),
+                  ),
+            ),
+          );
+          expect(native.created('engine'), 0);
+          expectNothingLeaked();
+          await p.close();
+        });
+      }
+
       test('options_create', () async {
         native.failOptions = true;
         final p = pass();
@@ -3156,6 +3189,17 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   LiteRtLmModelType modelType = LiteRtLmModelType.kLiteRtLmModelTypeEmbedding;
   int dimension = 4;
   List<int>? textSignatures = _allSignatures; // null = NOT_FOUND
+
+  /// A ModelInfo getter (`'model_type'`, `'embedding_dimension'`,
+  /// `'embedding_signature_selection'`) that fails with this status.
+  ({String getter, int code})? failModelInfo;
+
+  int? _modelInfoFailure(String getter) {
+    final failure = failModelInfo;
+    if (failure == null || failure.getter != getter) return null;
+    return _fail((code: failure.code, message: '$getter broke'));
+  }
+
   List<int>? visionSignatures; // null = NOT_FOUND, as on the 270m
 
   _Failure? failLoadedFile;
@@ -3348,6 +3392,8 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     Pointer<UnsignedInt> out_model_type,
   ) {
     _call('loaded_file_model_type', 'litert_lm_loaded_file_model_type');
+    final failed = _modelInfoFailure('model_type');
+    if (failed != null) return failed;
     out_model_type.value = modelType.value;
     return 0;
   }
@@ -3361,6 +3407,8 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'loaded_file_embedding_dimension',
       'litert_lm_loaded_file_embedding_dimension',
     );
+    final failed = _modelInfoFailure('embedding_dimension');
+    if (failed != null) return failed;
     if (dimension < 0) return _notFound;
     out_dimension.value = dimension;
     return 0;
@@ -3393,6 +3441,8 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'loaded_file_embedding_signature_selection',
       'litert_lm_loaded_file_embedding_signature_selection',
     );
+    final failed = _modelInfoFailure('embedding_signature_selection');
+    if (failed != null) return failed;
     return _list(textSignatures, lengths, max_size, out_count);
   }
 

@@ -246,6 +246,21 @@ void main() {
     });
   });
 
+  test(
+    'a bundle whose main model is compiled for an NPU has no prefill '
+    'signatures to report (GEMMA4_E2B_NPU_LITERTLM): its executor prefills '
+    'in context groups',
+    () async {
+      final npu = _env('GEMMA4_E2B_NPU_LITERTLM')!;
+      final info = await readLiteRtLmBundleInfo(npu);
+      expect(info.textModel?.npuTarget, isNotNull, reason: 'an NPU bundle');
+      expect(await readLiteRtLmPrefillSignatureLengths(npu), isEmpty);
+    },
+    skip: _env('GEMMA4_E2B_NPU_LITERTLM') == null
+        ? 'GEMMA4_E2B_NPU_LITERTLM is not set'
+        : null,
+  );
+
   group('readLiteRtLmPrefillSignatureLengths on real bundles', () {
     for (final (env, smallest) in [
       ('GEMMA4_E2B_LITERTLM', 128),

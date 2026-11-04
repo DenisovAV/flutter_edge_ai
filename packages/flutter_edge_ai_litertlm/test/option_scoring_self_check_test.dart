@@ -83,22 +83,27 @@ Matcher _refusing(String says) => throwsA(
 
 void main() {
   group('the self-check runs in debug and profile builds only', () {
-    test('a release build scores without running it', () async {
-      var checks = 0;
-      await liteRtLmScoringChecked(
-        releaseMode: true,
-        selfCheck: () async => checks++,
-      );
-      expect(checks, 0);
-    });
+    test(
+      'a release build scores without running it, and says it did not',
+      () async {
+        var checks = 0;
+        final ran = await liteRtLmScoringChecked(
+          releaseMode: true,
+          selfCheck: () async => checks++,
+        );
+        expect(checks, 0);
+        expect(ran, isFalse);
+      },
+    );
 
-    test('a debug or profile build runs it', () async {
+    test('a debug or profile build runs it, and says it passed', () async {
       var checks = 0;
-      await liteRtLmScoringChecked(
+      final ran = await liteRtLmScoringChecked(
         releaseMode: false,
         selfCheck: () async => checks++,
       );
       expect(checks, 1);
+      expect(ran, isTrue);
     });
 
     test('a debug build passes the check\'s refusal on', () async {

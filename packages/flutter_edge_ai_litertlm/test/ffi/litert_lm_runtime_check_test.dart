@@ -126,6 +126,79 @@ void main() {
     });
   });
 
+  group('checkLiteRtLmLibrary, what every open runs', () {
+    test('our build on C API 1.x passes', () {
+      expect(
+        () => checkLiteRtLmLibrary(
+          (_) => true,
+          () => (code: 0, major: 1, minor: 0, patch: 0),
+          path: _iosPath,
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('our build before C API 1.0 is refused: the version gate runs on '
+        'open, not only when called by itself', () {
+      expect(
+        () => checkLiteRtLmLibrary(
+          (symbol) => symbol == liteRtLmOwnBuildSymbol,
+          () => throw StateError('not exported, never called'),
+          path: _iosPath,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('predates its C API 1.0'),
+          ),
+        ),
+      );
+      expect(
+        () => checkLiteRtLmLibrary(
+          (_) => true,
+          () => (code: 0, major: 2, minor: 0, patch: 0),
+          path: _iosPath,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('reports C API 2.0.0'),
+          ),
+        ),
+      );
+    });
+
+    test('another package\'s build is refused first, as that, whatever its '
+        'C API', () {
+      expect(
+        () => checkLiteRtLmLibrary(
+          (symbol) => symbol != liteRtLmOwnBuildSymbol,
+          () => (code: 0, major: 1, minor: 0, patch: 0),
+          path: _iosPath,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('is not the one flutter_edge_ai_litertlm ships'),
+          ),
+        ),
+      );
+    });
+
+    test('requireOwnLiteRtLmBuild runs it', () {
+      final source = File(
+        'lib/src/ffi/litert_lm_runtime_check.dart',
+      ).readAsStringSync();
+      final body = source.substring(
+        source.indexOf('DynamicLibrary requireOwnLiteRtLmBuild('),
+      );
+      expect(body, contains('checkLiteRtLmLibrary('));
+    });
+  });
+
   group('checkOwnLiteRtLmBuild', () {
     test('passes a library that exports our sentinel', () {
       expect(

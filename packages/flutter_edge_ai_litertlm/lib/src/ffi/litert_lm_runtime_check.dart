@@ -116,11 +116,20 @@ void checkLiteRtLmCApiVersion(
   }
 }
 
-/// Returns [library] after [checkOwnLiteRtLmBuild] and
-/// [checkLiteRtLmCApiVersion] on it.
+/// Both checks every open of libLiteRtLm makes, in order:
+/// [checkOwnLiteRtLmBuild], then [checkLiteRtLmCApiVersion].
+void checkLiteRtLmLibrary(
+  bool Function(String symbol) provides,
+  ({int code, int major, int minor, int patch}) Function() readVersion, {
+  required String path,
+}) {
+  checkOwnLiteRtLmBuild(provides, path: path);
+  checkLiteRtLmCApiVersion(provides, readVersion, path: path);
+}
+
+/// Returns [library] after [checkLiteRtLmLibrary] on it.
 DynamicLibrary requireOwnLiteRtLmBuild(DynamicLibrary library, String path) {
-  checkOwnLiteRtLmBuild(library.providesSymbol, path: path);
-  checkLiteRtLmCApiVersion(
+  checkLiteRtLmLibrary(
     library.providesSymbol,
     () => _readApiVersion(library),
     path: path,

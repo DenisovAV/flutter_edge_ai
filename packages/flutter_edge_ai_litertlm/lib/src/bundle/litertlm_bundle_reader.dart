@@ -102,8 +102,8 @@ Future<LiteRtLmBundleInfo> readLiteRtLmBundleInfo(String path) async {
 /// short (`GetOptimizedPrefillWorkGroups`; §23 reports it as `context_full`),
 /// so a conversation that has filled up to there needs a new one, not a
 /// rewind (see [liteRtLmPrefillFits]). Empty when the bundle has no main
-/// section or it has no prefill signature (an NPU bundle's executor prefills
-/// differently).
+/// section, its main section is compiled for an NPU (that executor prefills
+/// in its own context groups), or it has no prefill signature.
 ///
 /// Throws as [readLiteRtLmBundleInfo] for a file that is not a `.litertlm`
 /// container, and [LiteRtLmBundleException] ([LiteRtLmBundleProblem.malformed])
@@ -111,7 +111,9 @@ Future<LiteRtLmBundleInfo> readLiteRtLmBundleInfo(String path) async {
 Future<List<int>> readLiteRtLmPrefillSignatureLengths(String path) async {
   final info = await readLiteRtLmBundleInfo(path);
   final main = info.textModel;
-  if (main == null) return const [];
+  // A main model compiled for an NPU runs LiteRT-LM's NPU executor, which
+  // prefills in its own context groups, not by these signatures.
+  if (main == null || main.npuTarget != null) return const [];
   final file = await File(path).open();
   try {
     return await readLiteRtLmPrefillLengths(

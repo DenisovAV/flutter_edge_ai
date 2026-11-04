@@ -27,11 +27,16 @@ import 'package:flutter_edge_ai/engine.dart';
 /// target hardware checks the engine; skips it in a release build
 /// ([releaseMode]), and its cost at the first decision with it. The pinned
 /// native build passed it on every engine measured (LiteRT-LM 0.19 on the
-/// CPU, Apple Metal, Adreno 830, Tesla T4 and Arc B390).
-Future<void> liteRtLmScoringChecked({
+/// CPU, Apple Metal, Adreno 830, Tesla T4 and Arc B390). True when the check
+/// ran and passed, false when it was skipped.
+Future<bool> liteRtLmScoringChecked({
   required bool releaseMode,
   required Future<void> Function() selfCheck,
-}) => releaseMode ? Future.value() : selfCheck();
+}) async {
+  if (releaseMode) return false;
+  await selfCheck();
+  return true;
+}
 
 /// The pair the check compares: the same text ending in the model turn's
 /// opening and in the user turn's (`decision_scripts.FIXED`).

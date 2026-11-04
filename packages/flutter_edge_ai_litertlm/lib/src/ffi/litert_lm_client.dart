@@ -110,6 +110,27 @@ String? thinkingBudgetChannelWarning(
       'still think until maxOutputTokens.';
 }
 
+/// The StreamProxy entries the client binds; a StreamProxy without one of
+/// them is refused by name. Kept equal to the release gate's
+/// `STREAM_PROXY_SYMBOLS` minus `stream_proxy_free_string` (a test compares).
+const streamProxyV1Entries = [
+  'stream_proxy_create_v1',
+  'stream_proxy_destroy_v1',
+];
+
+/// Frees the proxy of a send `litert_lm_conversation_send_message_stream`
+/// refused ([sendStatus] not OK): LiteRT-LM never calls it back, so the
+/// shim's final chunk, which frees it otherwise, never comes. An accepted
+/// send's proxy is left alone.
+@visibleForTesting
+void releaseRefusedStreamProxy(
+  int sendStatus,
+  Pointer<Void> proxy,
+  void Function(Pointer<Void> proxy) destroy,
+) {
+  if (sendStatus != liteRtLmStatusOk && proxy != nullptr) destroy(proxy);
+}
+
 /// What the Windows client loads into the process, in order, before it opens
 /// LiteRtLm.dll: every one a file of the Windows native archive.
 @visibleForTesting
@@ -159,14 +180,21 @@ typedef _ProxyFreeStringDart = void Function(Pointer<Char> str);
 /// changed the stream-callback ABI and this path started receiving register
 /// garbage. Decoding leniently keeps whatever the native layer did send
 /// readable, with U+FFFD standing in for the unreadable bytes.
-String _decodeNativeString(Pointer<Char> ptr, {int maxBytes = 64 * 1024}) {
+///
+/// [maxBytes] bounds an error message only (a broken one might lack its NUL).
+/// Generated text and a `send_message` reply are read to their NUL: a cap
+/// there would cut a long reply silently.
+String _decodeNativeString(Pointer<Char> ptr, {int? maxBytes}) {
   final bytes = ptr.cast<Uint8>();
   var length = 0;
-  while (length < maxBytes && bytes[length] != 0) {
+  while ((maxBytes == null || length < maxBytes) && bytes[length] != 0) {
     length++;
   }
   return utf8.decode(bytes.asTypedList(length), allowMalformed: true);
 }
+
+/// The bound [_decodeNativeString] puts on an error message.
+const _maxErrorBytes = 64 * 1024;
 
 /// What [ConversationHandle.rewindStoppedTurn] did.
 enum StoppedTurnRewind {
@@ -576,6 +604,9 @@ _createConversationOffMainIsolate({
     final b = LiteRtLmBindings(openLiteRtLmLibrary());
     final out = calloc<Pointer<LiteRtLmConversation>>();
     try {
+      // Success never resets the thread-local last error: clear it, so a
+      // failure is never reported with an older one's message.
+      b.litert_lm_clear_last_error();
       final code = b.litert_lm_conversation_create(
         Pointer.fromAddress(engineAddr),
         Pointer.fromAddress(configAddr),
@@ -616,6 +647,7 @@ _rewindCancelledTurnOffMainIsolate({
     // one that reported "nothing was sent".
     final lastTurnEnd = malloc<Int>()..value = -1;
     try {
+      b.litert_lm_clear_last_error();
       final code = b.litert_lm_conversation_rewind_cancelled_turn(
         Pointer.fromAddress(conversationAddr),
         exchange.cast(),
@@ -1156,6 +1188,10 @@ class LiteRtLmFfiClient {
   /// say whether it was the first.
   final Set<Pointer<LiteRtLmConversation>> _sentConvs = {};
   _ProxyFreeStringDart? _proxyFreeString;
+
+  /// `stream_proxy_destroy_v1`: frees the proxy of a send LiteRT-LM refused
+  /// (no callback ever comes for it).
+  void Function(Pointer<Void> proxy)? _proxyDestroy;
   Pointer<LiteRtLmEngine>? _engine;
 
   /// The Intel NPU weight banks this engine's load wrote, held until
@@ -1381,9 +1417,12 @@ class LiteRtLmFfiClient {
   /// its older entries typed the accessors the pre-1.0 way, and through them
   /// a C API 1.0 status would read as a NULL text and `is_final` as false.
   void _resolveChunkAccessors(DynamicLibrary proxyLib, DynamicLibrary lib) {
-    if (!proxyLib.providesSymbol('stream_proxy_create_v1')) {
+    final missingEntry = streamProxyV1Entries.where(
+      (name) => !proxyLib.providesSymbol(name),
+    );
+    if (missingEntry.isNotEmpty) {
       throw StateError(
-        'StreamProxy does not export stream_proxy_create_v1: this native '
+        'StreamProxy does not export ${missingEntry.join(', ')}: this native '
         'bundle predates LiteRT-LM C API 1.0, which this '
         'flutter_edge_ai_litertlm release needs. A stale local prebuilt under '
         'native/litert_lm/prebuilt/ or in the native cache is the usual cause.',
@@ -1649,6 +1688,11 @@ class LiteRtLmFfiClient {
     _hasTurnEndRecord = lib.providesSymbol(
       'litert_lm_conversation_get_last_turn_end',
     );
+    _proxyDestroy = proxyLib
+        .lookupFunction<
+          Void Function(Pointer<Void>),
+          void Function(Pointer<Void>)
+        >('stream_proxy_destroy_v1');
     _proxyFreeString = proxyLib
         .lookupFunction<_ProxyFreeStringNative, _ProxyFreeStringDart>(
           'stream_proxy_free_string',
@@ -2755,7 +2799,7 @@ class LiteRtLmFfiClient {
 
     void onChunk(Pointer<Char> chunk, int isFinal, Pointer<Char> errorMsg) {
       if (errorMsg != nullptr && errorMsg.address != 0) {
-        final error = _decodeNativeString(errorMsg);
+        final error = _decodeNativeString(errorMsg, maxBytes: _maxErrorBytes);
         _proxyFreeString!(errorMsg); // free strdup'd string
         _recordTurnEnd(conv);
         // stopGeneration() (and any other caller-initiated cancel) surfaces
@@ -2877,6 +2921,7 @@ class LiteRtLmFfiClient {
       );
     }
 
+    b.litert_lm_clear_last_error();
     final result = b.litert_lm_conversation_send_message_stream(
       conv,
       messagePtr.cast(),
@@ -2896,6 +2941,8 @@ class LiteRtLmFfiClient {
     }
 
     if (result != 0) {
+      // No callback comes for a refused send: its proxy is freed here.
+      releaseRefusedStreamProxy(result, proxyData, _proxyDestroy!);
       // A refused send ends its own turn natively (section 16's EndTurn with
       // the status), as context_full when the input does not fit.
       _recordTurnEnd(conv);
@@ -2966,6 +3013,7 @@ class LiteRtLmFfiClient {
       try {
         final Pointer<LiteRtLmJsonResponse> response;
         try {
+          b.litert_lm_clear_last_error();
           response = createLiteRtLm(
             'litert_lm_conversation_send_message',
             (out) => b.litert_lm_conversation_send_message(

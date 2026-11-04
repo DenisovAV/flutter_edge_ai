@@ -322,3 +322,42 @@ nothing is deleted (greedy), and A must answer a follow-up.
 The delete returned in under 1 ms in every run. For the Dart client this means
 `_deleteConversation` can overlap a turn on another conversation; the overlap
 was measured on Gemma 4 E2B only. Adreno and the NPUs were not run.
+
+## Pre-tag probe 2: state carried between conversations, and §25 (macOS, 2026-11-04)
+
+Probe command `xsession` checks two things:
+- four conversations in a row with one prompt on one engine, against the same
+  prompt on four fresh engines;
+- two live conversations interleaved (X, Y, X), against X alone.
+
+**Phase-1 finding 5 explained.** On LFM2.5-230M int8, every conversation
+after the first on one engine answered differently, and the difference
+accumulated. A fresh engine always gave the first answer. FunctionGemma was
+identical in all eight runs. §24 changed nothing.
+
+Cause: LFM2 keeps a convolution state (`kv_cache_c_`) beside its attention KV
+cache. `Reset()` and a new session only move the step to 0. That is enough for
+a KV cache, which is masked by position, but the convolution state is cleared
+only when its buffers are created. **§25** (`patches/linear_attention_state_clear.patch`)
+clears the `TYPE_LINEAR_ATTENTION` buffers when a prefill starts an empty
+context.
+
+| LFM2.5-230M int8 | before §25 | with §25 |
+|---|---|---|
+| CPU: same engine ×4 / interleaved | 3 of 4 differ / FAIL | PASS / PASS |
+| Metal: same engine ×4 / interleaved | 3 of 4 differ / FAIL | PASS / PASS |
+
+Regression with §25: every probe command (multiconv, determinism, constrained,
+rewind, scoring, longprompt, tools, prefillroom, convrewind, deleteduring,
+xsession, turnend) passes on Gemma 4 E2B, CPU and Metal. FunctionGemma 270M
+fails `multiconv` (CPU, Metal), `tools` (CPU, Metal) and `longprompt` (CPU)
+identically without §24 and §25: those are the model's own answers, not
+regressions.
+
+Still open for hybrid models: a rewind to a step above 0 (§16, and the
+matched-token reuse of §24) restores the KV cache but not the convolution
+state at that step. A stopped LFM2 reply should be rebuilt from text, not
+rewound. That was not measured here and is a question for L3.
+
+Not run on macOS: "a conversation longer than the first context group". Context
+groups exist only in the NPU executor, so it needs an NPU device (paid).

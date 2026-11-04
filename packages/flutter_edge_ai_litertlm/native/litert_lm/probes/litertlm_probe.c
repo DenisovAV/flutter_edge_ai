@@ -1368,6 +1368,76 @@ static int CmdLongPrompt(P engine) {
 // Greedy determinism inside one process: the same prompt in two fresh
 // conversations on one engine must give the same text (the 0.18 smoke check
 // "greedy run1 == run2").
+// Pre-tag probe 2a: state carried between conversations of one engine. Four
+// conversations in a row get the same prompt; then each on its own new
+// engine. With no carried state all eight replies are equal (greedy).
+static uint64_t OneReply(P engine, const char* prompt, char* out, size_t cap) {
+  Status s;
+  P conv = NewConversation(engine, NULL, false, false, 96);
+  char* r = Send(conv, prompt, NULL, &s);
+  out[0] = 0;
+  if (r) TextOf(r, out, cap);
+  free(r);
+  litert_lm_conversation_delete(conv);
+  return Fnv(out);
+}
+static int CmdXSession(P engine, const char* model, const char* backend) {
+  const char* prompt =
+      "Write one short paragraph about the ocean, about 80 words.";
+  char text[8192];
+  uint64_t same_engine[4], fresh[4];
+  for (int i = 0; i < 4; i++) {
+    same_engine[i] = OneReply(engine, prompt, text, sizeof text);
+    printf("INFO xsession same_engine run=%d fnv=%016llx text=\"%.60s\"\n", i,
+           (unsigned long long)same_engine[i], text);
+  }
+  for (int i = 0; i < 4; i++) {
+    P e = NewEngine(model, backend, -1);
+    fresh[i] = OneReply(e, prompt, text, sizeof text);
+    litert_lm_engine_delete(e);
+    printf("INFO xsession fresh_engine run=%d fnv=%016llx text=\"%.60s\"\n", i,
+           (unsigned long long)fresh[i], text);
+  }
+  int fail = 0;
+  for (int i = 1; i < 4; i++) fail += fresh[i] != fresh[0];
+  printf("RESULT xsession_fresh_engines %s\n", fail ? "FAIL" : "PASS");
+  int carried = 0;
+  for (int i = 0; i < 4; i++) carried += same_engine[i] != fresh[0];
+  printf("RESULT xsession_same_engine %s %d of 4 differ from a fresh engine\n",
+         carried ? "FAIL" : "PASS", carried);
+  // Two live conversations interleaved: X's second turn must not see Y's.
+  const char* p1 = "Name three colors of the rainbow.";
+  const char* p2 = "Now name two more.";
+  char control[8192] = "", inter[8192] = "";
+  Status s;
+  {
+    P x = NewConversation(engine, NULL, false, false, 48);
+    char* r = Send(x, p1, NULL, &s);
+    free(r);
+    r = Send(x, p2, NULL, &s);
+    if (r) TextOf(r, control, sizeof control);
+    free(r);
+    litert_lm_conversation_delete(x);
+  }
+  {
+    P x = NewConversation(engine, NULL, false, false, 48);
+    P y = NewConversation(engine, NULL, false, false, 48);
+    char* r = Send(x, p1, NULL, &s);
+    free(r);
+    r = Send(y, "Write two sentences about mountains in winter.", NULL, &s);
+    free(r);
+    r = Send(x, p2, NULL, &s);
+    if (r) TextOf(r, inter, sizeof inter);
+    free(r);
+    litert_lm_conversation_delete(y);
+    litert_lm_conversation_delete(x);
+  }
+  bool same = control[0] && !strcmp(control, inter);
+  printf("RESULT xsession_interleaved %s alone=\"%.80s\" interleaved=\"%.80s\"\n",
+         same ? "PASS" : "FAIL", control, inter);
+  return fail || carried || !same ? 1 : 0;
+}
+
 static int CmdDeterminism(P engine) {
   const char* prompt =
       "Write one short paragraph about the ocean, about 80 words.";
@@ -1484,7 +1554,7 @@ int main(int argc, char** argv) {
     fprintf(stderr,
             "usage: %s <libLiteRtLm> <multiconv|constrained|rewind|scoring|"
             "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|longprompt|determinism|"
-            "turnend|prefillroom|convrewind [image]|deleteduring|eg2> "
+            "turnend|prefillroom|convrewind [image]|deleteduring|xsession|eg2> "
             "<model> <cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS, "
             "PROBE_DISPATCH_DIR\n",
             argv[0]);
@@ -1544,6 +1614,7 @@ int main(int argc, char** argv) {
   else if (!strcmp(cmd, "turnend")) rc = CmdTurnEnd(engine);
   else if (!strcmp(cmd, "prefillroom")) rc = CmdPrefillRoom(engine);
   else if (!strcmp(cmd, "deleteduring")) rc = CmdDeleteDuring(engine);
+  else if (!strcmp(cmd, "xsession")) rc = CmdXSession(engine, model, backend);
   else if (!strcmp(cmd, "convrewind"))
     rc = CmdConvRewind(engine, argc > 5 ? argv[5] : NULL);
   else {

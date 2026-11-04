@@ -1052,4 +1052,25 @@ else
   exit 1
 fi
 
+# ── 25. A new context starts a hybrid model's linear attention state at zero ──
+# LFM2 keeps a convolution state (kv_cache_c_) beside its attention KV cache.
+# Reset() and a new session only move the step to 0: enough for a KV cache,
+# which is masked by position, but the convolution state of the previous
+# conversation stayed, so every conversation after the first on one engine
+# answered differently (LFM2.5-230M int8, macOS CPU and Metal, 2026-11-04,
+# probe command xsession; a fresh engine always gave the first answer). The
+# state was only cleared when its buffers were created. A prefill into an
+# empty context (step 0, no processed tokens) now clears the buffers of type
+# TYPE_LINEAR_ATTENTION in both states; attention-only models have none.
+LINEAR_STATE_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/linear_attention_state_clear.patch"
+if git -C "$DIR" apply --check "$LINEAR_STATE_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$LINEAR_STATE_PATCH"
+  echo "  OK: a new context clears the linear attention state"
+elif git -C "$DIR" apply --reverse --check "$LINEAR_STATE_PATCH" 2>/dev/null; then
+  echo "  SKIP: linear attention state clear already applied"
+else
+  echo "  ERROR: $LINEAR_STATE_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
 echo "Patch complete."

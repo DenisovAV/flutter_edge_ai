@@ -79,6 +79,11 @@ const showcaseApps = <ShowcaseApp>[
     icon: '/images/showcase/rw.flipper.png',
     googlePlay: GooglePlayListing('rw.flipper', installs: 500),
   ),
+  ShowcaseApp(
+    name: 'Live Captions XR',
+    icon: '/images/showcase/com.livecaptionsxr.app.png',
+    googlePlay: GooglePlayListing('com.livecaptionsxr.app', installs: 100),
+  ),
 ];
 
 /// By name, ignoring case.

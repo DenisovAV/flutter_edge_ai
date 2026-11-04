@@ -1020,7 +1020,9 @@ static int CmdExhausted(P engine) {
 // streams a reply; after a few chunks B is deleted: (0) B idle with a
 // history, (1) B with its own stream just cancelled and still winding down.
 // A's reply must end with a final chunk and no error, equal (greedy) a run in
-// which nothing is deleted, and A must answer a follow-up. Repeated
+// which nothing is deleted, and A must answer a follow-up.
+// (2) outgoing_b: B ran the last turn and is deleted while A's send switches
+// the engine away from it (B's state copied out), at 0-20 ms after the send. Repeated
 // PROBE_REPEAT times (default 3) per variant, for a crash or a hang.
 static char* StreamAll(P conv, const char* text, P b_to_delete, bool b_busy,
                        int* fail) {
@@ -1071,6 +1073,45 @@ static char* StreamAll(P conv, const char* text, P b_to_delete, bool b_busy,
   free(bst);  // B's callbacks have ended: delete waits for them
   return text_out;
 }
+// Variant outgoing_b: B ran the last turn, so its state is the one the engine
+// holds; A's send switches sessions and copies B's state out (SaveCheckpoint,
+// ContextHandler). B is deleted `delay_ms` after A's send_message_stream
+// returns, to land inside that copy.
+static char* StreamDeleteOutgoing(P a, const char* text, P b, int delay_ms,
+                                  int* fail) {
+  char msg[512];
+  snprintf(msg, sizeof msg,
+           "{\"role\":\"user\",\"content\":[{\"type\":\"text\","
+           "\"text\":\"%s\"}]}",
+           text);
+  Stream* st = calloc(1, sizeof(Stream));
+  Status s = litert_lm_conversation_send_message_stream(a, msg, NULL, NULL,
+                                                        OnChunk, st);
+  if (s != 0) {
+    printf("RESULT deleteduring_outgoing_stream FAIL status=%d\n", s);
+    (*fail)++;
+    free(st);
+    return NULL;
+  }
+  if (delay_ms > 0) SleepMs(delay_ms);
+  int chunks_at_delete = st->chunks;
+  double t1 = Now();
+  litert_lm_conversation_delete(b);
+  printf("INFO deleteduring outgoing delay=%dms delete took %.3fs, a at chunk "
+         "%d\n", delay_ms, Now() - t1, chunks_at_delete);
+  double t2 = Now();
+  while (!st->final && Now() - t2 < 120) SleepMs(5);
+  int end = -1, code = -1;
+  litert_lm_conversation_get_last_turn_end(a, &end, &code);
+  if (!st->final || end == 3) {
+    printf("RESULT deleteduring_outgoing_a_ended FAIL final=%d end=%s code=%d "
+           "err=%s\n", st->final, TurnEndName(end), code, st->err);
+    (*fail)++;
+  }
+  char* text_out = strdup(st->text);
+  free(st);
+  return text_out;
+}
 static int CmdDeleteDuring(P engine) {
   if (!litert_lm_conversation_get_last_turn_end) {
     printf("RESULT deleteduring FAIL library has no get_last_turn_end\n");
@@ -1098,6 +1139,34 @@ static int CmdDeleteDuring(P engine) {
       printf("RESULT deleteduring_%s_%d %s same_as_control=%d follow_up=%d\n",
              variant == 0 ? "idle_b" : "busy_b", i,
              same && r ? "PASS" : "FAIL", same, r != NULL);
+      if (!same || !r) {
+        fail++;
+        if (!same) {
+          printf("INFO deleteduring got=\"%.200s\" control=\"%.200s\"\n",
+                 got ? got : "", control ? control : "");
+        }
+      }
+      free(r);
+      free(got);
+      litert_lm_conversation_delete(a);
+    }
+  }
+  // outgoing_b: delete the conversation A's send is switching away from.
+  const int delays[] = {0, 1, 2, 5, 10, 20};
+  for (size_t k = 0; k < sizeof delays / sizeof delays[0]; k++) {
+    for (int i = 0; i < repeat; i++) {
+      P a = NewConversation(engine, NULL, false, false, 64);
+      P b = NewConversation(engine, NULL, false, false, 64);
+      Status s;
+      char* r = Send(b, "My name is Bruno. Reply with the single word OK.",
+                     NULL, &s);
+      free(r);
+      char* got = StreamDeleteOutgoing(a, prompt, b, delays[k], &fail);
+      bool same = got && control && !strcmp(got, control);
+      r = Send(a, "Reply with the single word OK.", NULL, &s);
+      printf("RESULT deleteduring_outgoing_b_%dms_%d %s same_as_control=%d "
+             "follow_up=%d\n", delays[k], i, same && r ? "PASS" : "FAIL", same,
+             r != NULL);
       if (!same || !r) {
         fail++;
         if (!same) {

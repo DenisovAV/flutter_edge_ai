@@ -337,6 +337,19 @@ The delete returned in under 1 ms in every run. For the Dart client this means
 `_deleteConversation` can overlap a turn on another conversation; the overlap
 was measured on Gemma 4 E2B only. Adreno and the NPUs were not run.
 
+Variant `outgoing_b` (#781 review, 2026-11-04, the native-v0.19.0-a macOS
+archive): B runs a turn, so its state is the one the engine holds; A then
+starts a stream, which switches sessions and copies B's state out
+(`ResourceManager::AcquireExecutorWithContextHandler`), and B is deleted 0, 1,
+2, 5, 10 or 20 ms after A's `send_message_stream` returns, 3 runs each. Gemma 4
+E2B, CPU and Metal: 36/36 PASS. A's reply ends with a final chunk, equals the
+control byte for byte, and A answers a follow-up; every delete returned before
+A's first chunk, in under 1 ms. That the delete fell inside the copy is not
+traced, only swept. By the code it cannot free what is copied: the switch runs
+under `executor_mutex_` into `current_handler_`, a `shared_ptr` to B's context
+handler, and releasing a session resets that handler only when no session is
+left (`ThreadedExecutionManager`).
+
 ## Pre-tag probe 2: state carried between conversations, and §25 (macOS, 2026-11-04)
 
 Probe command `xsession` checks two things:

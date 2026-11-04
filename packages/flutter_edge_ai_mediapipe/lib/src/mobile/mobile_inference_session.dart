@@ -225,7 +225,7 @@ class MobileInferenceModelSession extends InferenceModelSession {
       getResponseAsync(),
       stopped: () => _stopAsked,
       closed: () => _isClosed,
-      completed: TurnEnd.endOfSequence,
+      completed: () => TurnEnd.endOfSequence,
     );
   }
 
@@ -506,7 +506,7 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
       getResponseAsync(),
       stopped: () => _stopAsked,
       closed: () => _isClosed,
-      completed: TurnEnd.endOfSequence,
+      completed: () => TurnEnd.endOfSequence,
     );
   }
 

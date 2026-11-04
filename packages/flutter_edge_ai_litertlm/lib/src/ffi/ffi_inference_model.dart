@@ -949,7 +949,7 @@ class FfiInferenceModelSession extends InferenceModelSession
       stopped: () => _stopAsked,
       closed: () => _isClosed,
       isCloseError: (error) => error is LiteRtLmTurnClosedException,
-      completed: liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
+      completed: () => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
     );
   }
 

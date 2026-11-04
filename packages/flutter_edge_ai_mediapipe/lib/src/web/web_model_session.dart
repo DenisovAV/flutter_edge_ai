@@ -468,7 +468,7 @@ class WebModelSession extends InferenceModelSession {
       getResponseAsync(),
       stopped: () => _stopAsked,
       closed: () => _closed,
-      completed: TurnEnd.endOfSequence,
+      completed: () => TurnEnd.endOfSequence,
     );
   }
 

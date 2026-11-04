@@ -156,7 +156,6 @@ class MobileInferenceModelSession extends InferenceModelSession {
     if (recreate == null) return;
     _rebuildFailure = await rebuildNativeSession(
       before: before.before,
-      mediaDropped: before.mediaDropped,
       recreate: recreate,
       closeRebuilt: platformService.closeSession,
       isClosed: () => _isClosed,
@@ -512,7 +511,6 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
     if (recreate == null) return;
     _rebuildFailure = await rebuildNativeSession(
       before: before.before,
-      mediaDropped: before.mediaDropped,
       recreate: recreate,
       closeRebuilt: () => platformService.closeSessionId(sessionId),
       isClosed: () => _isClosed,

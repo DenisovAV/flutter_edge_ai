@@ -222,7 +222,7 @@ void main() {
     });
 
     test(
-      'images of a kept turn are not replayed after a later take-back',
+      'images of a kept turn are replayed after a later take-back',
       () async {
         final events = _Events();
         final s = session(supportImage: true);
@@ -242,10 +242,37 @@ void main() {
         await expectLater(text, throwsA(anything));
         final after = [for (final (name, _) in _calls.skip(before)) name];
         expect(recreated, 1);
-        expect(after, isNot(contains('addImage')));
+        expect(after.where((name) => name == 'addImage'), hasLength(1));
         expect(_chunks('addQueryChunk', from: before).first, contains('look'));
       },
     );
+
+    test('a close that lands during the replay stops it', () async {
+      final events = _Events();
+      final s = session();
+      await s.addQueryChunk(_q1);
+      await completedTurn(s);
+      await s.addQueryChunk(_q2);
+      // From here on, the first chunk the replay sends closes the session.
+      var replayed = 0;
+      var replaying = false;
+      const codec = PlatformService.pigeonChannelCodec;
+      _messenger.setMockMessageHandler('${_prefix}addQueryChunk', (
+        message,
+      ) async {
+        if (replaying && replayed++ == 0) unawaited(s.close());
+        return codec.encodeMessage(<Object?>[null]);
+      });
+      final text = s.getResponseAsync().toList();
+      await pumpEventQueue();
+      replaying = true;
+      events.current.error(code: 'ERROR', message: 'decode failed');
+      await expectLater(text, throwsA(anything));
+      await pumpEventQueue();
+      expect(recreated, 1);
+      // Q1 and A1 were held: the close after the first stops the second.
+      expect(replayed, 1);
+    });
   });
 
   group('openSession session', () {
@@ -455,4 +482,42 @@ void main() {
       expect(created, 3);
     },
   );
+
+  test('a rebuild for a session that a createSession replaced meanwhile, or of '
+      'a closed model, builds nothing', () async {
+    const codec = PlatformService.pigeonChannelCodec;
+    var created = 0;
+    final gate = Completer<void>();
+    _messenger.setMockMessageHandler('${_prefix}createSession', (
+      message,
+    ) async {
+      created++;
+      // The replacing createSession waits until the test lets it go.
+      if (created == 2) await gate.future;
+      return codec.encodeMessage(<Object?>[null]);
+    });
+    addTearDown(
+      () => _messenger.setMockMessageHandler('${_prefix}createSession', null),
+    );
+    _record(['stopGeneration', 'closeSession', 'closeModel']);
+    final model = MobileInferenceModel(
+      maxTokens: 1024,
+      onClose: () {},
+      modelType: ModelType.gemmaIt,
+    );
+    final first = await model.createSession() as MobileInferenceModelSession;
+    final next = model.createSession();
+    await pumpEventQueue();
+    final rebuild = expectLater(first.recreateNative!(), throwsStateError);
+    await pumpEventQueue();
+    expect(created, 2, reason: 'the rebuild waits for the createSession');
+    gate.complete();
+    final second = await next as MobileInferenceModelSession;
+    await rebuild;
+    expect(created, 2, reason: 'the replaced session is not rebuilt');
+
+    await model.close();
+    await expectLater(second.recreateNative!(), throwsStateError);
+    expect(created, 2);
+  });
 }

@@ -38,9 +38,6 @@ final class NativeTurnLog {
   /// The current turn carried the session's system instruction.
   bool _turnCarriesSystemInstruction = false;
 
-  /// Images or audio of a kept turn were let go (see [kept]).
-  bool _mediaDropped = false;
-
   /// Records [input], sent for the current turn.
   void stage(NativeInput input) {
     _turnStart ??= _inputs.length;
@@ -53,15 +50,11 @@ final class NativeTurnLog {
   /// The turn is kept: the native session holds its inputs and [reply] (the
   /// model's text as a prompt chunk, or null for none).
   ///
-  /// The images and audio of kept turns are let go: holding every one for
-  /// the session's life would cost their bytes again in Dart, for a replay
-  /// that happens only after a take-back. A replay then carries their
-  /// turns' text alone, as a rebuilt LiteRT-LM open session does.
+  /// Images and audio stay referenced: they are the caller's own byte
+  /// lists (a chat holds the same ones in its history), so a replay is
+  /// faithful at no copy.
   void kept(String? reply) {
     if (reply != null) _inputs.add(NativeText(reply));
-    final before = _inputs.length;
-    _inputs.removeWhere((input) => input is! NativeText);
-    if (_inputs.length != before) _mediaDropped = true;
     _turnStart = null;
     _turnCarriesSystemInstruction = false;
   }
@@ -69,8 +62,7 @@ final class NativeTurnLog {
   /// Takes the current turn back: what the native session held before it,
   /// to replay, and whether the turn carried the system instruction (which
   /// the next turn must then send again). Null when the turn staged nothing.
-  ({List<NativeInput> before, bool systemInstruction, bool mediaDropped})?
-  takeBack() {
+  ({List<NativeInput> before, bool systemInstruction})? takeBack() {
     final start = _turnStart;
     final systemInstruction = _turnCarriesSystemInstruction;
     _turnStart = null;
@@ -80,7 +72,6 @@ final class NativeTurnLog {
     return (
       before: List.unmodifiable(_inputs),
       systemInstruction: systemInstruction,
-      mediaDropped: _mediaDropped,
     );
   }
 }
@@ -92,7 +83,6 @@ final class NativeTurnLog {
 /// and what was built for it is closed again.
 Future<Object?> rebuildNativeSession({
   required List<NativeInput> before,
-  required bool mediaDropped,
   required Future<void> Function() recreate,
   required Future<void> Function() closeRebuilt,
   required bool Function() isClosed,
@@ -103,15 +93,6 @@ Future<Object?> rebuildNativeSession({
     if (isClosed()) {
       await closeRebuilt();
       return null;
-    }
-    if (mediaDropped) {
-      // Release builds too: the model sees the earlier turns' text only.
-      // ignore: avoid_print
-      print(
-        '[flutter_edge_ai_mediapipe] a turn was taken back: the session was '
-        "rebuilt from the earlier turns' text; their images and audio are "
-        'not replayed.',
-      );
     }
     for (final input in before) {
       if (isClosed()) return null;

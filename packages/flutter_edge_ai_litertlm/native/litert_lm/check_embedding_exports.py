@@ -191,7 +191,8 @@ LLM_SYMBOLS = [
 # build.
 STREAM_PROXY_LIBRARY = ("libStreamProxy.dylib", "libStreamProxy.so",
                         "StreamProxy.dll")
-STREAM_PROXY_SYMBOLS = ["stream_proxy_create_v1", "stream_proxy_free_string"]
+STREAM_PROXY_SYMBOLS = ["stream_proxy_create_v1", "stream_proxy_destroy_v1",
+                        "stream_proxy_free_string"]
 STREAM_PROXY_RETIRED = ["stream_proxy_create", "stream_proxy_create2"]
 
 MAIN_LIBRARY = ("libLiteRtLm.dylib", "libLiteRtLm.so", "LiteRtLm.dll")

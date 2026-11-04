@@ -214,12 +214,15 @@ Where it is enabled:
 - On Apple a format cannot be combined with `maxOutputTokens`: Apple caps the reply
   (`maximumResponseTokens`) without saying it did, and a capped reply may come back malformed, so
   such a turn could not be reported as cut short. Chrome and Windows apply no output cap.
+  `refusalFor(format)` does not see `maxOutputTokens`: it can return null on Apple while
+  `openSession(responseFormat: format, maxOutputTokens: …)` (or `openChat`) refuses the pair.
 - Apple Foundation Models adds the schema to the prompt itself (`includeSchemaInPrompt` defaults to
   true); flutter_edge_ai adds nothing to the prompt.
 - A stop and a close end the turn with an `IncompleteStructuredOutputException`
-  (`TurnEnd.stopped`, `closed`) once the platform call has settled. A full context window does too
-  (`TurnEnd.contextLimit`) on Apple and Windows. On Chrome it arrives as the Prompt API's own error,
-  unclassified.
+  (`TurnEnd.stopped`, `closed`) once the platform call has settled. A full context window does too:
+  `TurnEnd.contextLimit` on Apple. On Windows it is `TurnEnd.closed`, because Windows keeps the
+  prompt that overflowed in its native transcript and every later turn of that session would fail;
+  open a new session. On Chrome it arrives as the Prompt API's own error, unclassified.
 - On Windows a reply the platform reports as off-schema (`STRUCTURED_OUTPUT_INVALID`) reaches core's
   check, which raises `NonConformingStructuredOutputException` with its text.
 

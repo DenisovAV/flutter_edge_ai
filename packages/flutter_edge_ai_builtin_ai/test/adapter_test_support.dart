@@ -21,6 +21,7 @@ import 'package:flutter_edge_ai/engine.dart'
 import 'package:flutter_local_ai/flutter_local_ai.dart'
     show LocalAiAvailability, LocalAiGenerationOverrides;
 import 'package:flutter_local_ai/testing.dart' show FakeLocalAiHost;
+import 'package:flutter_test/flutter_test.dart' show pumpEventQueue;
 
 /// The spec the engine is meant to claim. [fileType] is a parameter so a
 /// suite can hand the engine a spec that belongs to another engine.
@@ -134,6 +135,21 @@ class PendingStructuredHost extends FakeLocalAiHost {
 
   /// When set, [stopGeneration] throws it (after recording the call).
   Object? stopError;
+
+  /// When set, closing a session fails the call in flight first, as an OS
+  /// does with a request on a session it is tearing down.
+  bool failCallOnClose = false;
+
+  @override
+  Future<void> closeSession(int sessionId) async {
+    final call = pending;
+    if (failCallOnClose && call != null && !call.isCompleted) {
+      call.completeError(StateError('session $sessionId was released'));
+      // The failure reaches the adapter before the close returns.
+      await pumpEventQueue();
+    }
+    return super.closeSession(sessionId);
+  }
 
   @override
   Future<String> generateStructuredResponse({

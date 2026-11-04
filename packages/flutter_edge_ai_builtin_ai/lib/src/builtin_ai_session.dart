@@ -178,6 +178,14 @@ final class StructuredBuiltInAiSession extends BuiltInAiSession {
           } else if (_isContextLimit(error)) {
             turn.finish(TurnEnd.contextLimit);
           } else if (error is PlatformException &&
+              error.code == 'PROMPT_TOO_LONG') {
+            // Windows keeps the prompt that overflowed in its native
+            // transcript (one string it only appends to), and
+            // flutter_local_ai can neither trim it nor rebuild the session
+            // without it. Every later turn would overflow again, so the
+            // session is not usable as contextLimit promises: closed.
+            turn.finish(TurnEnd.closed);
+          } else if (error is PlatformException &&
               error.code == 'STRUCTURED_OUTPUT_INVALID' &&
               error.details is String) {
             // Windows finished a reply that strayed from the schema and sends
@@ -208,13 +216,12 @@ final class StructuredBuiltInAiSession extends BuiltInAiSession {
     return EngineTurn(text: turn.text.stream, end: turn.end.future);
   }
 
-  /// A full context window: Apple's FoundationModels codes, Windows's own
-  /// status (`PROMPT_TOO_LONG`). Chrome's overflow is a JS error the
-  /// platform passes through unclassified, so it is not recognised here.
+  /// A full context window on Apple (the FoundationModels codes). Windows's
+  /// overflow ends the turn as closed (see [startTurn]); Chrome's is a JS
+  /// error the platform passes through unclassified.
   static bool _isContextLimit(Object error) =>
-      (error is LocalAiGenerationException &&
-          _contextLimitCodes.contains(error.errorCode)) ||
-      (error is PlatformException && error.code == 'PROMPT_TOO_LONG');
+      error is LocalAiGenerationException &&
+      _contextLimitCodes.contains(error.errorCode);
 
   @override
   Stream<String> getResponseAsync() => startTurn().text;

@@ -574,6 +574,25 @@ void main() {
         expect(await reply, _codeReply);
       });
 
+      for (final closer in ['session', 'model']) {
+        test(
+          'the OS fails the call while the $closer closes: closed',
+          () async {
+            final (model, session) = await running();
+            pending.failCallOnClose = true;
+            final check = expectLater(
+              session.getResponse(),
+              endedAs(TurnEnd.closed),
+            );
+            await untilSent();
+
+            await (closer == 'model' ? model.close() : session.close());
+
+            await check;
+          },
+        );
+      }
+
       test('the model closed: closed', () async {
         final (model, session) = await running();
         final check = expectLater(
@@ -590,7 +609,10 @@ void main() {
   });
 
   group('platform errors', () {
-    test('Windows PROMPT_TOO_LONG ends the turn as contextLimit', () async {
+    // Windows cannot drop the overflowing prompt from its transcript, so the
+    // session would fail every later turn: not the usable session
+    // contextLimit promises.
+    test('Windows PROMPT_TOO_LONG ends the turn as closed', () async {
       final model = await macModel();
       host.generateResponseError = PlatformException(
         code: 'PROMPT_TOO_LONG',
@@ -603,7 +625,7 @@ void main() {
           isA<IncompleteStructuredOutputException>().having(
             (e) => e.end,
             'end',
-            TurnEnd.contextLimit,
+            TurnEnd.closed,
           ),
         ),
       );
@@ -647,6 +669,22 @@ void main() {
   });
 
   group('maxOutputTokens with a format', () {
+    test('refused on iOS too', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      debugVerifiedBuiltInPlatforms = {BuiltInPlatform.appleIos};
+      final model = await const BuiltInAiEngine().createModel(
+        builtInSpec(),
+        builtInConfig,
+      );
+      addTearDown(model.close);
+      expect(model.refusalFor(_codeFormat), isNull);
+      await expectLater(
+        model.openSession(responseFormat: _codeFormat, maxOutputTokens: 64),
+        throwsA(isA<ResponseFormatUnsupportedException>()),
+      );
+      expect(model.sessions, isEmpty);
+    });
+
     test('refused on Apple before a session opens', () async {
       final model = await macModel();
       host.calls.clear();

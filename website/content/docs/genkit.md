@@ -262,10 +262,13 @@ alone.
 When the request has no tools and no `enableThinking`, and the loaded model
 accepts the schema (`InferenceModel.refusalFor` returns null), the schema is
 also sent as the chat's `responseFormat`: the engine constrains decoding to it
-and flutter_edge_ai checks every reply. Whether a model enforces a format, and
-which keywords, is its `structuredOutputSupport`. A schema the model refuses,
-or one outside flutter_edge_ai's dialect (a type union, a recursive type), is not an error: it stays a prompt
-instruction.
+and flutter_edge_ai checks the model's reply text. Whether a model enforces a
+format, and which keywords, is its `structuredOutputSupport`. A schema the
+model refuses, one outside flutter_edge_ai's dialect (a type union, a
+recursive type, `format`, `oneOf`/`anyOf`), or one the engine rejects at the
+first send, is not an error: the request runs prompt-only. Genkit's `$ref`s to
+a type's definitions are inlined first. A structured request opens a session
+of its own, which counts against `maxConcurrentSessions`.
 
 ```dart
 final response = await ai.generate(
@@ -278,14 +281,19 @@ final Recipe? recipe = response.output;
 ```
 
 A structured turn that ends without a value of the schema fails with a
-`GenkitException` whose `cause` is flutter_edge_ai's exception. Its status
-decides whether `genkit_hybrid` tries the next branch: `OUT_OF_RANGE` (the
-reply hit `maxOutputTokens`) and `ABORTED` (stopped) stay; `RESOURCE_EXHAUSTED`
-(context full), `UNAVAILABLE` (model closed mid-turn) and `UNIMPLEMENTED` (a
-schema the engine rejects at the first send) go to the next branch, a router's
-cloud target included; `INTERNAL` (a non-conforming reply, an engine bug) goes
-to a fallback's or cascade's next branch, never to a router's cloud target. A
-cancel is Genkit's `CancelledException`.
+`GenkitException` whose `cause` is flutter_edge_ai's exception: `OUT_OF_RANGE`
+when `maxOutputTokens` or the context window cut the value, `ABORTED` when it
+was stopped or the model was closed mid-turn, `FAILED_PRECONDITION` for a
+non-conforming reply (an engine bug). None of them sends the request to another
+model, through `genkit_hybrid`'s router or its deprecated `hybridModel`,
+`hybridModelOnDeviceCloud` and `cascadeModel`. A cancel is Genkit's
+`CancelledException`.
+
+Core checks the model's text, not `response.output`: Genkit's `json` format
+reads the value with `extractJson`, which prefers a fenced block inside the
+text: a checked object whose string field holds a Markdown code block
+printing 42 comes back as the number `42`. Validate `response.output` on this
+path too, or decode `response.text` yourself.
 
 On the prompt-only path Genkit does not check the reply against the schema, so
 validate `response.output` yourself. What you get depends on the reply:

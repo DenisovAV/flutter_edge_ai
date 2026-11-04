@@ -153,6 +153,16 @@ class FakeInferenceModel extends gemma.InferenceModel {
   gemma.StructuredOutputSupport get engineStructuredOutputSupport =>
       structuredSupport ?? super.engineStructuredOutputSupport;
 
+  /// The engine's own refusal, by call (1 for the first): core asks once in
+  /// `refusalFor` and again in `openChat`.
+  gemma.ResponseFormatUnsupportedException? Function(int call)? refusal;
+  int refusalCalls = 0;
+
+  @override
+  gemma.ResponseFormatUnsupportedException? engineRefusalFor(
+    gemma.JsonSchemaResponseFormat format,
+  ) => refusal?.call(++refusalCalls);
+
   /// What core's `openChat` asked the engine for, one per session it opened.
   final List<SessionRequest> sessionRequests = [];
 
@@ -378,6 +388,13 @@ final class FakeStructuredSession extends gemma.InferenceModelSession {
   /// When set, the next turn fails with it before any text.
   Object? startError;
 
+  /// When set, a turn fails with it after its first token.
+  Object? errorAfterFirst;
+
+  /// When true, a stopped turn still ends with [end], as an engine whose
+  /// stop raced another end reports it.
+  bool endIgnoresStop = false;
+
   @override
   EngineTurn startTurn() {
     if (startError case final error?) {
@@ -390,13 +407,18 @@ final class FakeStructuredSession extends gemma.InferenceModelSession {
       try {
         for (final (index, token) in tokens.indexed) {
           yield token;
-          if (index == 0) await gate?.future;
+          if (index == 0) {
+            await gate?.future;
+            if (errorAfterFirst case final error?) throw error;
+          }
           if (stops > 0) break;
         }
       } finally {
         // At the end of the text, also when the consumer cancels it.
         if (!ended.isCompleted) {
-          ended.complete(stops > 0 ? gemma.TurnEnd.stopped : end);
+          ended.complete(
+            stops > 0 && !endIgnoresStop ? gemma.TurnEnd.stopped : end,
+          );
         }
       }
     }
@@ -462,6 +484,9 @@ final class FakeEmbeddingModel extends gemma.EmbeddingModel {
 
   int embedAllCallCount = 0;
   gemma.CancelToken? lastCancelToken;
+
+  /// Called as [embedAll] starts, before anything else.
+  void Function()? onEmbedAll;
   List<String> lastTexts = [];
   gemma.TaskType? lastTaskType;
   bool closed = false;
@@ -495,6 +520,7 @@ final class FakeEmbeddingModel extends gemma.EmbeddingModel {
     gemma.CancelToken? cancelToken,
   }) async {
     embedAllCallCount++;
+    onEmbedAll?.call();
     lastCancelToken = cancelToken;
     lastTexts = [for (final input in inputs) input.text ?? ''];
     lastTaskType = taskType;

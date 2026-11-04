@@ -237,11 +237,17 @@ alone.
 When the request has no tools and no `enableThinking`, and the loaded model
 accepts the schema (`InferenceModel.refusalFor` returns null), the schema is
 also sent to flutter_edge_ai as the chat's `responseFormat`: the engine
-constrains decoding to it and flutter_edge_ai checks every reply. Whether
-the loaded model enforces a format, and which schema keywords, is its
-`structuredOutputSupport`. A schema the model refuses, or one outside
-flutter_edge_ai's dialect (a type union, a recursive type), is not an error: it
-stays a prompt instruction, as it was before any engine could enforce one.
+constrains decoding to it and flutter_edge_ai checks the model's reply text.
+Whether the loaded model enforces a format, and which schema keywords, is its
+`structuredOutputSupport`. A schema the model refuses, one outside
+flutter_edge_ai's dialect (a type union, a recursive type, `format`,
+`oneOf`/`anyOf`, an `additionalProperties` schema), or one the engine rejects at
+the first send, is not an error: the request runs prompt-only, as it did
+before any engine could enforce a schema. Genkit's references to a type's
+definitions (`$ref`, `$defs`, and the single `allOf` schemantic writes for a
+field with a description) are inlined first. A structured request opens a
+session of its own, so it counts against the model's `maxConcurrentSessions`;
+a prompt-only one does not.
 
 ```dart
 final response = await ai.generate(
@@ -256,18 +262,25 @@ final Recipe? recipe = response.output;
 A structured turn that does not end in a value of the schema fails with a
 `GenkitException` (inside `ai.generate`, a result with
 `FinishReason.failed`) whose `cause` is flutter_edge_ai's exception, carrying
-the partial or non-conforming text. The status decides whether a
-`genkit_hybrid` fallback, cascade or router tries its next branch:
+the partial or non-conforming text. None of these statuses sends the request
+to another model: not `genkit_hybrid`'s router, and not its deprecated
+`hybridModel`, `hybridModelOnDeviceCloud` and `cascadeModel`. A reply that
+failed its schema would fail the same way again, and whether the prompt may go
+to the cloud is the app's decision.
 
-| flutter_edge_ai | Status | genkit_hybrid |
-|---|---|---|
-| `IncompleteStructuredOutputException`, `end: outputLimit` | `OUT_OF_RANGE` | stays: raise `maxOutputTokens` |
-| `… end: contextLimit` | `RESOURCE_EXHAUSTED` | next branch, and a router may move it to the cloud |
-| `… end: closed` (model closed or replaced mid-turn) | `UNAVAILABLE` | next branch, cloud too |
-| `… end: stopped`, not by your cancel | `ABORTED` | stays |
-| your cancel | `CancelledException` | stays |
-| `NonConformingStructuredOutputException` (an engine bug) | `INTERNAL` | a fallback or cascade tries the next branch; a router does not go to the cloud |
-| `ResponseFormatUnsupportedException` found at the first send (LiteRT-LM's schema compiler) | `UNIMPLEMENTED` | next branch, cloud too, as for tools a model lacks |
+| flutter_edge_ai | Status |
+|---|---|
+| `IncompleteStructuredOutputException`, `end: outputLimit` (raise `maxOutputTokens`) or `end: contextLimit` (the context window) | `OUT_OF_RANGE` |
+| `… end: closed` (model closed or replaced mid-turn) or `end: stopped`, not by your cancel | `ABORTED` |
+| your cancel | `CancelledException` |
+| `NonConformingStructuredOutputException` (an engine bug), or an engine whose `structuredOutputSupport` lists keywords outside the dialect | `FAILED_PRECONDITION` |
+
+Core's check covers the model's text, not `response.output`: Genkit's `json`
+format reads the value with `extractJson`, which prefers a fenced block inside
+the text and never parses the whole text first. A checked object whose string
+field holds a Markdown code block printing 42 comes back as the number `42`.
+So validate `response.output` on this path too, or decode the checked text in
+`response.text` yourself.
 
 On the prompt-only path Genkit does not check the reply against the schema,
 so validate `response.output` yourself. What you get depends on the reply:

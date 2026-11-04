@@ -149,6 +149,9 @@ gemma.JsonSchemaResponseFormat? _responseFormatOf(OutputConfig output) {
   try {
     return gemma.ResponseFormat.jsonSchema(schema)
         as gemma.JsonSchemaResponseFormat;
+  } on RangeError {
+    // A bug, not a schema outside the dialect.
+    rethrow;
   } on ArgumentError {
     return null;
   }
@@ -305,58 +308,99 @@ Future<ModelResponse> _generate(
   // (most engines enforce none yet) is not an error: the schema is already
   // in the prompt, as it was before any engine could enforce one.
   final format = prepared.responseFormat;
-  final enforced =
-      format != null &&
+  if (format != null &&
       await withRuntimeErrors(
         'Could not check the output schema against the on-device model',
         () async => model.refusalFor(format) == null,
+      )) {
+    gemma.InferenceChat? structured;
+    try {
+      structured = await withRuntimeErrors(
+        'Could not open a chat on the on-device model',
+        // A format is taken by openChat only. Tools and thinking are off:
+        // _prepare dropped the format for a request with either.
+        () => model.openChat(
+          temperature: config?.temperature,
+          randomSeed: config?.randomSeed,
+          topK: config?.topK,
+          topP: config?.topP,
+          supportImage: prepared.load.supportImage,
+          supportAudio: prepared.load.supportAudio,
+          supportsFunctionCalls: false,
+          modelType: prepared.modelType,
+          // No tools to choose among; a `required` would be refused.
+          toolChoice: gemma.ToolChoice.auto,
+          systemInstruction: prepared.systemInstruction,
+          maxFunctionBufferLength: config?.maxFunctionBufferLength,
+          maxOutputTokens: config?.maxOutputTokens,
+          responseFormat: format,
+        ),
       );
+    } on gemma.ResponseFormatUnsupportedException {
+      // Refused after all: prompt-only, as a format refusalFor refuses.
+      structured = null;
+    }
+    if (structured != null) {
+      final tracker = _ChunkTracker();
+      try {
+        return await _runChat(structured, prepared, context, tracker);
+      } on GenkitException catch (e) {
+        // The engine refused the schema at the first send (LiteRT-LM's
+        // constraint compiler): the same capability gap as a refusal
+        // known up front, so the request runs again prompt-only, once,
+        // with the chat already closed. Not after a chunk reached the
+        // caller, nor after a failed close (its cause is then the wrapped
+        // error, not the refusal).
+        if (e.cause is! gemma.ResponseFormatUnsupportedException ||
+            tracker.sent) {
+          rethrow;
+        }
+        cancel?.throwIfCancelled();
+      }
+    }
+  }
 
   final chat = await withRuntimeErrors(
     'Could not open a chat on the on-device model',
     // Unset sampling stays unset: flutter_edge_ai fills it from the model's
     // own sampler or its family's defaults.
-    () => enforced
-        // A format is taken by openChat only. Tools and thinking are off:
-        // _prepare dropped the format for a request with either.
-        ? model.openChat(
-            temperature: config?.temperature,
-            randomSeed: config?.randomSeed,
-            topK: config?.topK,
-            topP: config?.topP,
-            supportImage: prepared.load.supportImage,
-            supportAudio: prepared.load.supportAudio,
-            supportsFunctionCalls: false,
-            modelType: prepared.modelType,
-            toolChoice: prepared.toolChoice,
-            systemInstruction: prepared.systemInstruction,
-            maxFunctionBufferLength: config?.maxFunctionBufferLength,
-            maxOutputTokens: config?.maxOutputTokens,
-            responseFormat: format,
-          )
-        : model.createChat(
-            temperature: config?.temperature,
-            randomSeed: config?.randomSeed,
-            topK: config?.topK,
-            topP: config?.topP,
-            supportImage: prepared.load.supportImage,
-            supportAudio: prepared.load.supportAudio,
-            tools: prepared.tools,
-            supportsFunctionCalls: prepared.tools.isNotEmpty,
-            enableThinking: config?.enableThinking ?? false,
-            modelType: prepared.modelType,
-            toolChoice: prepared.toolChoice,
-            systemInstruction: prepared.systemInstruction,
-            maxFunctionBufferLength: config?.maxFunctionBufferLength,
-            maxOutputTokens: config?.maxOutputTokens,
-          ),
+    () => model.createChat(
+      temperature: config?.temperature,
+      randomSeed: config?.randomSeed,
+      topK: config?.topK,
+      topP: config?.topP,
+      supportImage: prepared.load.supportImage,
+      supportAudio: prepared.load.supportAudio,
+      tools: prepared.tools,
+      supportsFunctionCalls: prepared.tools.isNotEmpty,
+      enableThinking: config?.enableThinking ?? false,
+      modelType: prepared.modelType,
+      toolChoice: prepared.toolChoice,
+      systemInstruction: prepared.systemInstruction,
+      maxFunctionBufferLength: config?.maxFunctionBufferLength,
+      maxOutputTokens: config?.maxOutputTokens,
+    ),
   );
+  return _runChat(chat, prepared, context, _ChunkTracker());
+}
 
-  // The chat is this request's alone. It is closed before the request's turn
-  // ends, whatever happened, so its session never outlives the request.
+/// Whether a chunk of the request's answer reached the caller.
+final class _ChunkTracker {
+  bool sent = false;
+}
+
+/// Runs [prepared] on [chat] and closes it. The chat is this request's
+/// alone: it is closed before the request's turn ends, whatever happened, so
+/// its session never outlives the request.
+Future<ModelResponse> _runChat(
+  gemma.InferenceChat chat,
+  _PreparedRequest prepared,
+  ActionFnArg<ModelResponseChunk, ModelRequest, void> context,
+  _ChunkTracker tracker,
+) async {
   final ModelResponse response;
   try {
-    response = await _respond(chat, prepared, context);
+    response = await _respond(chat, prepared, context, tracker);
   } catch (failure, failureStack) {
     try {
       await chat.close();
@@ -406,6 +450,7 @@ Future<ModelResponse> _respond(
   gemma.InferenceChat chat,
   _PreparedRequest prepared,
   ActionFnArg<ModelResponseChunk, ModelRequest, void> context,
+  _ChunkTracker tracker,
 ) async {
   final cancel = context.cancel;
 
@@ -440,7 +485,10 @@ Future<ModelResponse> _respond(
     response = context.streamingRequested
         ? await _generateStreaming(
             chat,
-            context.sendChunk,
+            (chunk) {
+              tracker.sent = true;
+              context.sendChunk(chunk);
+            },
             stopwatch,
             cancel: cancel,
             onSendChunkFailure: stop,
@@ -455,10 +503,10 @@ Future<ModelResponse> _respond(
   // the lock, or it reaches the shared native model during the next request.
   detach?.call();
   final stopFailure = await stopped;
-  // A structured turn the caller's cancel stopped ends as an incomplete
-  // value; it is reported as the cancel, as a plain turn's stop is.
+  // A structured turn the caller cancelled ends as an incomplete value,
+  // stopped or, when the stop raced another end, cut by that one; either way
+  // it is reported as the cancel, as a plain turn's stop is.
   if (failure is gemma.IncompleteStructuredOutputException &&
-      failure.end == gemma.TurnEnd.stopped &&
       (cancel?.isCancelled ?? false)) {
     failure = null;
     failureStack = null;

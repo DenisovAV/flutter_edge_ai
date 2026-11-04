@@ -77,6 +77,8 @@ Embedder<FlutterEdgeAiEmbedConfig> createFlutterEdgeAiEmbedder({
         try {
           vectors = await attempt();
         } on gemma.EmbedderClosedException {
+          // A request cancelled meanwhile loads nothing more.
+          context.cancel?.throwIfCancelled();
           vectors = await attempt();
         }
       } on gemma.EmbeddingCancelledException {

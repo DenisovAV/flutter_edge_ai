@@ -104,6 +104,35 @@ void main() {
       expect(fakeModel.sessionRequests.single.responseFormat?.schema, schema);
     });
 
+    test('sends the request\'s sampling and limits to openChat', () async {
+      fakeModel.newSession = () =>
+          FakeStructuredSession(tokens: ['{"backend": "gpu"}']);
+      await buildModel()(
+        request(
+          config: {
+            'temperature': 0.3,
+            'topK': 7,
+            'topP': 0.8,
+            'randomSeed': 42,
+            'maxOutputTokens': 64,
+            'toolChoice': 'required',
+          },
+        ),
+      );
+
+      final sent = fakeModel.sessionRequests.single;
+      expect(sent.temperature, 0.3);
+      expect(sent.topK, 7);
+      expect(sent.topP, 0.8);
+      expect(sent.randomSeed, 42);
+      expect(sent.maxOutputTokens, 64);
+      expect(sent.modelType, gemma.ModelType.gemmaIt);
+      // No tools to choose among on the structured path.
+      expect(sent.toolChoice, gemma.ToolChoice.auto);
+      expect(sent.tools, isEmpty);
+      expect(sent.enableThinking, isFalse);
+    });
+
     test('keeps the schema with a configured systemInstruction', () async {
       fakeModel.newSession = () =>
           FakeStructuredSession(tokens: ['{"backend": "gpu"}']);
@@ -215,26 +244,98 @@ void main() {
       },
     );
 
-    test('a refusal found at the first send is UNIMPLEMENTED', () async {
-      fakeModel
-        ..structuredSupport = enforcesAll
-        ..newSession = () => FakeStructuredSession()
+    for (final streaming in [false, true]) {
+      test('a refusal at the first send${streaming ? ', streamed,' : ''} '
+          'runs the request again prompt-only', () async {
+        final rejected = FakeStructuredSession()
           ..startError = const gemma.ResponseFormatUnsupportedException(
             'The constraint compiler rejected the schema.',
           );
+        fakeModel
+          ..structuredSupport = enforcesAll
+          ..newSession = () => rejected;
+        final chunks = <ModelResponseChunk>[];
+
+        final response = await buildModel()(
+          request(),
+          onChunk: streaming ? chunks.add : null,
+        );
+
+        // The prompt-only chat's answer, the failed session closed.
+        expect(response.message!.text, '{"backend": "cpu"}');
+        expect(rejected.closed, isTrue);
+        expect(fakeModel.openedSessions, [rejected]);
+        expect(fakeModel.createChatCallCount, 1);
+        expect(fakeChat.closeCallCount, 1);
+        expect(
+          fakeChat.receivedMessages.map((m) => m.text).join('\n'),
+          contains('conform to the following schema'),
+        );
+        if (streaming) {
+          expect(chunks.map((c) => c.text).join(), '{"backend": "cpu"}');
+        }
+      });
+    }
+
+    test('a refusal after a chunk reached the caller is not retried', () async {
+      fakeModel
+        ..structuredSupport = enforcesAll
+        ..newSession = () =>
+            FakeStructuredSession(tokens: ['{"backend": ', '"gpu"}'])
+              ..errorAfterFirst =
+                  const gemma.ResponseFormatUnsupportedException(
+                    'Rejected mid-turn.',
+                  );
+      final chunks = <ModelResponseChunk>[];
+
+      await expectLater(
+        buildModel()(request(), onChunk: chunks.add),
+        throwsA(
+          isA<GenkitException>().having(
+            (e) => e.status,
+            'status',
+            StatusCode.failedPrecondition,
+          ),
+        ),
+      );
+      expect(chunks, hasLength(1));
+      expect(fakeModel.createChatCallCount, 0);
+      expect(fakeModel.openedSessions.single.closed, isTrue);
+    });
+
+    test('a refusal thrown by openChat itself runs prompt-only', () async {
+      fakeModel
+        ..structuredSupport = enforcesAll
+        // refusalFor accepts; openChat's own check refuses.
+        ..refusal = (call) => call == 1
+            ? null
+            : const gemma.ResponseFormatUnsupportedException('Not now.');
+
+      final response = await buildModel()(request());
+
+      expect(response.message!.text, '{"backend": "cpu"}');
+      expect(fakeModel.refusalCalls, 2);
+      expect(fakeModel.sessionRequests, isEmpty);
+      expect(fakeModel.createChatCallCount, 1);
+    });
+
+    test('an engine that claims keywords outside the dialect fails the '
+        'request with FAILED_PRECONDITION', () async {
+      fakeModel.structuredSupport = const gemma.StructuredOutputSupport(
+        keywords: {'type', 'pattern'},
+      );
 
       await expectLater(
         buildModel()(request()),
         throwsA(
-          isA<GenkitException>()
-              .having((e) => e.status, 'status', StatusCode.unimplemented)
-              .having(
-                (e) => e.cause,
-                'cause',
-                isA<gemma.ResponseFormatUnsupportedException>(),
-              ),
+          isA<GenkitException>().having(
+            (e) => e.status,
+            'status',
+            StatusCode.failedPrecondition,
+          ),
         ),
       );
+      expect(fakeModel.createChatCallCount, 0);
     });
   });
 
@@ -243,18 +344,14 @@ void main() {
 
     for (final (tokens, end, status) in [
       (['{"backend": '], gemma.TurnEnd.outputLimit, StatusCode.outOfRange),
-      (
-        ['{"backend": '],
-        gemma.TurnEnd.contextLimit,
-        StatusCode.resourceExhausted,
-      ),
-      (['{"backend": "gpu"}'], gemma.TurnEnd.closed, StatusCode.unavailable),
+      (['{"backend": '], gemma.TurnEnd.contextLimit, StatusCode.outOfRange),
+      (['{"backend": "gpu"}'], gemma.TurnEnd.closed, StatusCode.aborted),
       (['{"backend": '], gemma.TurnEnd.stopped, StatusCode.aborted),
       // Not a value of the enum: the engine did not enforce what it accepted.
       (
         ['{"backend": "tpu"}'],
         gemma.TurnEnd.endOfSequence,
-        StatusCode.internal,
+        StatusCode.failedPrecondition,
       ),
     ]) {
       for (final streaming in [false, true]) {
@@ -306,5 +403,51 @@ void main() {
         expect(session.closed, isTrue);
       });
     }
+
+    Future<Object?> cancelMidTurn(FakeStructuredSession session) async {
+      fakeModel.newSession = () => session;
+      final controller = CancellationController();
+      final call = buildModel()(request(), cancel: controller.token);
+      while (session.turns == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      controller.cancel();
+      try {
+        await call;
+        return null;
+      } catch (e) {
+        return e;
+      }
+    }
+
+    test('a cancel that raced another end is still the cancel', () async {
+      final session =
+          FakeStructuredSession(
+              tokens: ['{"backend": ', '"gpu"}'],
+              end: gemma.TurnEnd.outputLimit,
+            )
+            ..gate = Completer<void>()
+            ..endIgnoresStop = true;
+
+      expect(await cancelMidTurn(session), isA<CancelledException>());
+      expect(session.stops, 1);
+    });
+
+    test('a non-conforming reply under a cancel is still reported', () async {
+      // The engine ended normally on a cut value: its bug, which a cancel
+      // must not hide.
+      final session = FakeStructuredSession(tokens: ['{"backend": ', '"gpu"}'])
+        ..gate = Completer<void>()
+        ..endIgnoresStop = true;
+
+      expect(
+        await cancelMidTurn(session),
+        isA<GenkitException>().having(
+          (e) => e.status,
+          'status',
+          StatusCode.failedPrecondition,
+        ),
+      );
+    });
   });
 }

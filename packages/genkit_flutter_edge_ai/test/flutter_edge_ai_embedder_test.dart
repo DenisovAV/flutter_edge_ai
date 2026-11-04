@@ -344,6 +344,28 @@ void main() {
       expect(runtime.embedderToReturn.lastCancelToken?.isCancelled, isTrue);
     });
 
+    test('a cancel during a closed embedder\'s call loads no other', () async {
+      final controller = CancellationController();
+      runtime.embedderQueue.add(
+        FakeEmbeddingModel()
+          ..closed = true
+          ..onEmbedAll = controller.cancel,
+      );
+
+      await expectLater(
+        buildEmbedder()(
+          EmbedRequest(
+            input: [
+              DocumentData(content: [TextPart(text: 'Hi')]),
+            ],
+          ),
+          cancel: controller.token,
+        ),
+        throwsA(isA<CancelledException>()),
+      );
+      expect(runtime.getActiveEmbedderCallCount, 1);
+    });
+
     test('a call without a cancel still passes a token', () async {
       fakeEmbedder.embeddingsToReturn = [
         [0.1],

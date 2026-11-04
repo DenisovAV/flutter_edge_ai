@@ -53,32 +53,32 @@ Future<T> withRuntimeErrors<T>(String what, Future<T> Function() call) async {
   }
 }
 
-/// [error], a typed-response failure, as a Genkit error. The status says
-/// whether genkit_hybrid hands the request to its next branch (its
-/// `isTransient`: UNAVAILABLE, DEADLINE_EXCEEDED, RESOURCE_EXHAUSTED,
-/// INTERNAL and UNIMPLEMENTED; a router moves a call to a cloud target on
-/// all of them but INTERNAL):
+/// [error], a typed-response failure, as a Genkit error.
 ///
-/// - [gemma.ResponseFormatUnsupportedException] → UNIMPLEMENTED. Only a
-///   refusal the engine finds once the turn runs gets here (LiteRT-LM's
-///   compiler rejecting a schema at the first send): one known when the chat
-///   opens sends the schema in the prompt instead. A model that cannot
-///   enforce the schema is a capability gap, as a request with tools on a
-///   model configured without them is;
+/// None of these statuses moves the request off the device: genkit_hybrid's
+/// router moves a call to a cloud target on UNAVAILABLE, DEADLINE_EXCEEDED,
+/// RESOURCE_EXHAUSTED and UNIMPLEMENTED, and its deprecated `hybridModel`,
+/// `hybridModelOnDeviceCloud` and `cascadeModel` (`isTransient`) on those and
+/// INTERNAL. A reply that failed its schema here is this model's, and would
+/// fail the same way again; sending the prompt to the cloud instead is the
+/// app's decision, not a side effect of a status.
+///
 /// - [gemma.IncompleteStructuredOutputException] by its end:
-///   - [gemma.TurnEnd.outputLimit] → OUT_OF_RANGE, not transient: the
-///     request's own `maxOutputTokens` cut the value, and only a larger one
-///     fixes it;
-///   - [gemma.TurnEnd.contextLimit] → RESOURCE_EXHAUSTED: this model's
-///     context window is full, and a model with a larger one may take it;
-///   - [gemma.TurnEnd.closed] → UNAVAILABLE: the model was closed or
-///     replaced under the turn, as when none is loaded;
-///   - [gemma.TurnEnd.stopped] → ABORTED, not transient. A stop the caller
-///     asked for is reported as Genkit's cancel before it gets here;
-/// - [gemma.NonConformingStructuredOutputException] → INTERNAL: the engine
-///   accepted a format it did not enforce, an engine bug. A fallback or
-///   cascade model tries its next branch; a router does not move the call
-///   to the cloud.
+///   - [gemma.TurnEnd.outputLimit] and [gemma.TurnEnd.contextLimit] →
+///     OUT_OF_RANGE: the request's `maxOutputTokens` or the model's context
+///     window cut the value. A plain turn that fills either ends normally
+///     and stays local too;
+///   - [gemma.TurnEnd.closed] → ABORTED: the model was closed or replaced
+///     under the turn, which fails a plain turn locally as well;
+///   - [gemma.TurnEnd.stopped] → ABORTED. A turn the caller's cancel ended
+///     is reported as Genkit's cancel before it gets here;
+/// - [gemma.NonConformingStructuredOutputException] → FAILED_PRECONDITION:
+///   the engine accepted a format it did not enforce, an engine bug, as a
+///   `refusalFor` that throws is;
+/// - [gemma.ResponseFormatUnsupportedException] → FAILED_PRECONDITION. A
+///   refusal at the first send runs the request again prompt-only, so this
+///   is reported only when that cannot happen: a chunk already reached the
+///   caller.
 ///
 /// The core exception is the [GenkitException.cause], with the partial or
 /// non-conforming text on it.
@@ -88,16 +88,16 @@ GenkitException structuredOutputError(
   StackTrace stack,
 ) {
   final status = switch (error) {
-    gemma.ResponseFormatUnsupportedException() => StatusCode.unimplemented,
+    gemma.ResponseFormatUnsupportedException() => StatusCode.failedPrecondition,
     gemma.IncompleteStructuredOutputException(:final end) => switch (end) {
-      gemma.TurnEnd.outputLimit => StatusCode.outOfRange,
-      gemma.TurnEnd.contextLimit => StatusCode.resourceExhausted,
-      gemma.TurnEnd.closed => StatusCode.unavailable,
-      gemma.TurnEnd.stopped => StatusCode.aborted,
+      gemma.TurnEnd.outputLimit ||
+      gemma.TurnEnd.contextLimit => StatusCode.outOfRange,
+      gemma.TurnEnd.closed || gemma.TurnEnd.stopped => StatusCode.aborted,
       // Core never ends an incomplete value this way.
       gemma.TurnEnd.endOfSequence => StatusCode.internal,
     },
-    gemma.NonConformingStructuredOutputException() => StatusCode.internal,
+    gemma.NonConformingStructuredOutputException() =>
+      StatusCode.failedPrecondition,
   };
   return GenkitException(
     '$what: $error',

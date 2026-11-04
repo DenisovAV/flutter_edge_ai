@@ -837,6 +837,20 @@ final class _ThrowingFinishHooks extends ChatTurnHooks {
   ) async => failed = true;
 }
 
+/// Core's turn first, then the hooks' (as an engine may switch).
+final class _CoreThenScriptedHooks extends ChatTurnHooks {
+  _CoreThenScriptedHooks(this.second);
+
+  final Stream<ModelResponse> Function() second;
+  var _calls = 0;
+
+  @override
+  Stream<ModelResponse>? responses(
+    InferenceModelSession session, {
+    required int tokenBuffer,
+  }) => _calls++ == 0 ? null : second();
+}
+
 /// A turn the engine fails commits nothing (approved 2026-11-04).
 void _failedTurnTests() {
   group('a turn the engine fails', () {
@@ -1025,6 +1039,125 @@ void _failedTurnTests() {
       );
       expect(toolRan, isFalse);
       expect(chat.fullHistory, isEmpty, reason: 'no call, no tool response');
+    });
+
+    for (final blocking in [false, true]) {
+      test('${blocking ? 'blocking' : 'streaming'}: a turn the chat stops '
+          'before any text commits nothing', () async {
+        final text = StreamController<String>();
+        final session = _TurnSession()..nextText = text.stream;
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        final turn = blocking
+            ? chat.generateChatResponse()
+            : chat.generateChatResponseAsync().toList();
+        await pumpEventQueue();
+        await chat.stopGeneration();
+        await text.close();
+        await turn;
+        expect(chat.fullHistory, isEmpty);
+        expect(chat.currentTokens, 0);
+      });
+    }
+
+    test('a stop in one turn does not take back the next one', () async {
+      final session = _TurnSession(tokens: ['Par']);
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'one', isUser: true));
+      await chat.stopGeneration();
+      await chat.generateChatResponseAsync().toList();
+      session.tokens = const [];
+      await chat.addQueryChunk(const Message(text: 'two', isUser: true));
+      await chat.generateChatResponseAsync().toList();
+      expect(chat.fullHistory.last.text, 'two');
+    });
+
+    test(
+      'a turn the engine reports stopped before any text commits nothing',
+      () async {
+        final session = _TurnSession(tokens: const [], end: TurnEnd.stopped);
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        expect(chat.fullHistory, isEmpty);
+      },
+    );
+
+    test('a turn that completes with no text keeps its message: only a stop '
+        'takes it back', () async {
+      for (final end in [null, TurnEnd.endOfSequence]) {
+        final session = _TurnSession(tokens: const [], end: end);
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        expect(chat.fullHistory.single.text, 'q', reason: '$end');
+      }
+    });
+
+    test('a consumer that cancels after an error it has not seen yet stops '
+        'the turn: the bound does not fire later and take it back', () async {
+      final previous = chatTurnErrorEndTimeout;
+      chatTurnErrorEndTimeout = const Duration(milliseconds: 50);
+      addTearDown(() => chatTurnErrorEndTimeout = previous);
+      final text = StreamController<String>();
+      final session = _TurnSession()..nextText = text.stream;
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+      final errors = <Object>[];
+      late final StreamSubscription<ModelResponse> sub;
+      final cancelled = Completer<void>();
+      sub = chat.generateChatResponseAsync().listen((_) {
+        if (!cancelled.isCompleted) cancelled.complete(sub.cancel());
+      }, onError: errors.add);
+      // The error is held for the bound; the chunk after it reaches the
+      // consumer, who cancels.
+      text
+        ..addError(StateError('decode failed'))
+        ..add('Par');
+      await cancelled.future;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(errors, isEmpty);
+      expect(chat.fullHistory.first.text, 'q', reason: 'a stop keeps it');
+    });
+
+    test('a hooked turn after a taken-back core turn still answers the '
+        'calls it committed', () async {
+      final session = _TurnSession(tokens: ['x'])
+        ..failWith = StateError('core turn failed');
+      final chat = InferenceChat(
+        sessionCreator: () async => session,
+        maxTokens: 1024,
+        supportsFunctionCalls: true,
+        tools: const [_tool],
+        turnHooks: _CoreThenScriptedHooks(() async* {
+          yield const FunctionCallResponse(name: 'get_time', args: {});
+          throw StateError('hooked turn failed after its call');
+        }),
+      );
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+      await expectLater(
+        chat.generateChatResponseAsync().toList(),
+        throwsStateError,
+      );
+      final fed = <Message>[];
+      await expectLater(
+        chat
+            .generateChatResponseWithTools(onToolCall: (_) => const {})
+            .toList(),
+        throwsStateError,
+      );
+      fed.addAll(
+        session.staged.where((m) => m.type == MessageType.toolResponse),
+      );
+      // The hooked turn's call was answered: the core turn's take-back did
+      // not carry over into it.
+      expect(fed, hasLength(1));
     });
 
     test(

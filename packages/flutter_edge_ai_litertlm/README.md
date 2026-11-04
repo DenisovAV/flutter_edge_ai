@@ -144,9 +144,9 @@ in their own context groups and have one compiled window (Gemma 3 1B: 1280,
 Gemma 3 270M: 4096, Gemma 3n E2B: 2048, Gemma 4 E2B: 4096, FastVLM: 1280,
 Qwen3 0.6B: 4096).
 
-When an input does not fit what the window has left, the turn fails with an
-exception that names `TurnEnd.contextLimit` (`LiteRtLmContextFullException`),
-before the model has seen the input. LiteRT-LM restores the conversation to
+When an input does not fit what the window has left, the turn fails with
+core's `ContextLimitException` (its end is `TurnEnd.contextLimit`), before the
+model has seen the input. LiteRT-LM restores the conversation to
 before that turn, and an `InferenceChat` takes the refused message back out
 of its history, so a shorter message can follow. When even a short message is
 refused, the window has no room for any input left: close the session and

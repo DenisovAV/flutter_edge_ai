@@ -12,6 +12,7 @@ library;
 
 export 'src/interface.dart'
     show
+        ContextLimitException,
         FlutterEdgeAiPlugin,
         InferenceModel,
         InferenceModelSession,

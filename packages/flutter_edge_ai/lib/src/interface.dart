@@ -911,6 +911,20 @@ enum TurnEnd {
   closed,
 }
 
+/// The error an engine puts on a turn's text when it refused an input too
+/// long for what the context window had left, together with `end`
+/// [TurnEnd.contextLimit]. The engine's context is as it was before the
+/// turn, and [InferenceChat] takes the turn's messages back out of its
+/// history.
+final class ContextLimitException implements Exception {
+  const ContextLimitException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'ContextLimitException: $message';
+}
+
 /// One turn, as the engine produces it.
 ///
 /// Contract: [end] never completes with an error (a failed turn puts its

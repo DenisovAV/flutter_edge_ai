@@ -194,7 +194,7 @@ void main() {
   }
 
   test('a turn native ended context_full fails its text with a '
-      'LiteRtLmContextFullException that names contextLimit, and its end is '
+      'ContextLimitException that names contextLimit, and its end is '
       'contextLimit; getResponseAsync fails the same way', () async {
     final handle = _Handle()..turnEnd = NativeLastTurnEnd.contextFull;
     final turn = startEngineTurnForTest(_session(handle));
@@ -204,10 +204,10 @@ void main() {
     await expectLater(
       text,
       throwsA(
-        isA<LiteRtLmContextFullException>().having(
+        isA<ContextLimitException>().having(
           (e) => '$e',
           'message',
-          allOf(contains('contextLimit'), contains('RESOURCE_EXHAUSTED')),
+          allOf(contains('context window'), contains('RESOURCE_EXHAUSTED')),
         ),
       ),
     );
@@ -217,7 +217,7 @@ void main() {
     final failing = _session(plain).getResponseAsync().toList();
     await plain.sent.future;
     plain.send.failed(Exception('Stream error: RESOURCE_EXHAUSTED'));
-    await expectLater(failing, throwsA(isA<LiteRtLmContextFullException>()));
+    await expectLater(failing, throwsA(isA<ContextLimitException>()));
   });
 
   test('any other failed turn keeps its error on the text', () async {

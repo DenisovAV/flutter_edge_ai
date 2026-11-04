@@ -943,6 +943,14 @@ static int ExhaustedCheck(const char* label, P conv, const char* err) {
          ok ? "PASS" : "FAIL", TurnEndName(end), code, err ? err : "(none)");
   return ok ? 0 : 1;
 }
+static void SetProbeEnv(const char* name, const char* value) {
+#if defined(_WIN32)
+  _putenv_s(name, value ? value : "");
+#else
+  if (value) setenv(name, value, 1);
+  else unsetenv(name);
+#endif
+}
 static int CmdExhausted(P engine) {
   if (!litert_lm_conversation_get_last_turn_end) {
     printf("RESULT exhausted FAIL library has no get_last_turn_end\n");
@@ -951,13 +959,13 @@ static int CmdExhausted(P engine) {
   int fail = 0;
   Status s;
   P a = NewConversation(engine, NULL, false, false, 16);
-  setenv("FLUTTER_EDGE_AI_PROBE_EXHAUSTED", "1", 1);
+  SetProbeEnv("FLUTTER_EDGE_AI_PROBE_EXHAUSTED", "1");
   char* r = Send(a, "Reply with the single word OK.", NULL, &s);
   const char* last = litert_lm_get_last_error_message();
   char err[1024];
   snprintf(err, sizeof err, "%s", last ? last : "");
+  fail += r != NULL;  // the send must fail
   free(r);
-  fail += r != NULL;
   fail += ExhaustedCheck("send", a, err);
   if (litert_lm_conversation_rewind_cancelled_turn) {
     int end = -1;
@@ -984,7 +992,7 @@ static int CmdExhausted(P engine) {
   fail += ExhaustedCheck("stream", b, st->err);
   free(st);
   litert_lm_conversation_delete(b);
-  unsetenv("FLUTTER_EDGE_AI_PROBE_EXHAUSTED");
+  SetProbeEnv("FLUTTER_EDGE_AI_PROBE_EXHAUSTED", NULL);
   // Control, hook off: a real full window still ends context_full, and its
   // error text carries no marker either.
   P c = NewConversation(engine, NULL, false, false, 32);

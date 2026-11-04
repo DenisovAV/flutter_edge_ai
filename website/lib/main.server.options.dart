@@ -34,6 +34,8 @@ import 'package:fluttergemma_website/landing/sections/why_on_device.dart'
     as _why_on_device;
 import 'package:fluttergemma_website/landing/landing_page.dart'
     as _landing_page;
+import 'package:fluttergemma_website/showcase/showcase_page.dart'
+    as _showcase_page;
 import 'package:fluttergemma_website/theme/docs_fixes.dart' as _docs_fixes;
 import 'package:jaspr_content/components/_internal/code_block_copy_button.dart'
     as _code_block_copy_button;
@@ -105,6 +107,7 @@ ServerOptions get defaultServerOptions => ServerOptions(
     ..._site_footer.SiteFooter.styles,
     ..._trust_bar.TrustBar.styles,
     ..._why_on_device.WhyOnDevice.styles,
+    ..._showcase_page.ShowcasePage.styles,
     ..._callout.Callout.styles,
     ..._code_block.CodeBlock.styles,
     ..._github_button.GitHubButton.styles,

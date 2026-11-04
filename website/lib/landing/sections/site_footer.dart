@@ -195,6 +195,9 @@ class SiteFooter extends StatelessComponent {
                   ),
                 ]),
                 li([
+                  a(href: '/showcase', classes: 'footer-link', [Component.text('Showcase')]),
+                ]),
+                li([
                   a(href: '/contributors', classes: 'footer-link', [Component.text('Contributors')]),
                 ]),
                 li([

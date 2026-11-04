@@ -24,6 +24,7 @@ import 'components/clicker.dart';
 import 'contributors/contributors_page.dart';
 import 'landing/landing_page.dart';
 import 'seo.dart';
+import 'showcase/showcase_page.dart';
 import 'theme/brand.dart';
 
 // This file is generated automatically by Jaspr, do not remove or edit.
@@ -69,6 +70,20 @@ const Map<String, Object?> _contributorsPageSchema = {
   'name': 'Flutter Edge AI Contributors',
   'description': _contributorsDescription,
   'url': '$kSiteOrigin/contributors',
+};
+
+const String _showcaseDescription =
+    'Apps on Google Play and the App Store that run AI on-device with '
+    'flutter_edge_ai or flutter_gemma.';
+
+/// JSON-LD for `/showcase`, for the same reason as
+/// [_codelabsCollectionSchema].
+const Map<String, Object?> _showcaseCollectionSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  'name': 'Built with Flutter Edge AI',
+  'description': _showcaseDescription,
+  'url': '$kSiteOrigin/showcase',
 };
 
 void main() {
@@ -285,6 +300,21 @@ void main() {
                 structuredData: _contributorsPageSchema,
               ),
               body: const ContributorsPage(),
+            ),
+          ),
+          Route(
+            path: '/showcase',
+            builder: (context, state) => Document(
+              title: 'Showcase — Flutter Edge AI',
+              lang: 'en',
+              meta: const {'description': _showcaseDescription},
+              head: seoHead(
+                title: 'Showcase — Flutter Edge AI',
+                description: _showcaseDescription,
+                path: '/showcase',
+                structuredData: _showcaseCollectionSchema,
+              ),
+              body: const ShowcasePage(),
             ),
           ),
           for (final group in routes) ...group,

@@ -80,7 +80,7 @@
 // `logSettle: true` in the engine configuration the engine logs
 // `settle:<session>:<keep|keepStopped|rewind>`. A rewind takes the turn back
 // off the session's turn count (`echoSession`), while keepStopped, like keep,
-// leaves it on; a turn that threw before its "prefill" (`contextFull`) counts
+// leaves it on unless the turn emitted no chunk; a turn that threw before its "prefill" (`contextFull`) counts
 // as not run.
 // A guided turn whose session has no "generator" yet (its first turn, or the
 // first after a reset) logs `guidance:<session>:<schema>`: the schema the
@@ -219,6 +219,7 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       throw const GenAiContextFullException('fake prompt does not fit');
     }
     _ran[turn.sessionId] = true;
+    _emitted[turn.sessionId] = 0;
     if (script?['crash'] == true) {
       scheduleMicrotask(() => throw StateError('fake native crash'));
     }
@@ -249,6 +250,7 @@ class _ScriptedEngine implements GenAiWorkerEngine {
         break;
       }
       emit(chunk);
+      _emitted[turn.sessionId] = (_emitted[turn.sessionId] ?? 0) + 1;
       generated++;
     }
 
@@ -285,8 +287,13 @@ class _ScriptedEngine implements GenAiWorkerEngine {
   bool endTurn({int? sessionId, required AfterTurn how}) {
     if (_config['logSettle'] == true) _log('settle:$sessionId:${how.name}');
     final ran = _ran.remove(sessionId) ?? false;
+    final emitted = _emitted.remove(sessionId) ?? 0;
     final turns = _turns[sessionId];
-    if (how == AfterTurn.rewind && ran && turns != null) {
+    // As the real engine: a cut turn that streamed no text is rewound.
+    final rewound =
+        how == AfterTurn.rewind ||
+        (how == AfterTurn.keepStopped && emitted == 0);
+    if (rewound && ran && turns != null) {
       if (turns <= 1) {
         _turns.remove(sessionId);
       } else {
@@ -295,6 +302,9 @@ class _ScriptedEngine implements GenAiWorkerEngine {
     }
     return true;
   }
+
+  /// Chunks the last turn of each session emitted.
+  final Map<int?, int> _emitted = {};
 
   /// Sessions with a "generator": created by a turn, gone at a reset.
   final Set<int?> _generators = {};

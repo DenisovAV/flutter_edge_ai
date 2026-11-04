@@ -199,6 +199,22 @@ void main() {
     expect(turns.history(1), isEmpty);
   });
 
+  test('a stopped turn that streamed no text keeps nothing, its prompt '
+      'included', () {
+    for (final reply in [
+      <int>[],
+      [20],
+    ]) {
+      generator = _Generator([1, 2, 3]);
+      // Prefilled; stopped before any text (a token whose piece is empty,
+      // or none at all).
+      runTurn('story', [10, 11], reply, '');
+      expect(settle(AfterTurn.keepStopped), isTrue, reason: '$reply');
+      expect(generator.tokens, [1, 2, 3], reason: '$reply');
+      expect(turns.history(1), hasLength(1), reason: '$reply');
+    }
+  });
+
   test('a turn that never reached its prefill leaves nothing to settle', () {
     turns.started(1, generator.length);
     expect(settle(AfterTurn.keepStopped), isTrue);

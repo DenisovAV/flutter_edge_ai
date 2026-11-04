@@ -163,8 +163,9 @@ final class SessionTurns {
   /// A generator holding the whole window — a window filled during decode —
   /// has no room for the end token: it keeps the turn as it is, and the
   /// grammar was already reset when the generator became done at
-  /// max_length. Where nothing was generated or prefilled, or no end token
-  /// is known, the turn is rewound to [start] instead, gone from the context
+  /// max_length. Where the turn streamed no text (core's chat takes such a
+  /// turn back), nothing was prefilled, or no end token is known, the turn
+  /// is rewound to [start] instead — its prompt too — gone from the context
   /// and so not recorded. Where a rewind throws, the generator is dropped
   /// and the exchange recorded, so the rebuild from the history holds it.
   bool _closeStopped(
@@ -177,7 +178,12 @@ final class SessionTurns {
     if (generator == null || start == null) return true;
     final length = generator.length;
     final end = endOfTurnToken;
-    if (exchange == null || end == null || length <= start) {
+    // A turn that streamed no text is one core's chat takes back: nothing of
+    // it stays, its prompt included.
+    if (exchange == null ||
+        exchange.$2.isEmpty ||
+        end == null ||
+        length <= start) {
       return _rewind(generator, start, drop);
     }
     // Rewinding one token and appending two needs one free place; an

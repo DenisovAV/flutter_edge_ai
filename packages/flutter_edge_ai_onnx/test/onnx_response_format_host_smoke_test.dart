@@ -412,6 +412,39 @@ void main() {
   );
 
   test(
+    'a turn stopped before any text keeps nothing, its prompt included: the '
+    'next reply is the same as without it',
+    () async {
+      const fact = 'My secret word is PINEAPPLE. Reply with OK only.';
+      const question = 'What did I ask you just before this? Be brief.';
+      await turn(130, fact, fresh: true, cap: 8);
+      // Stopped at once: the stop lands at the first yield after the
+      // prefill, before any token.
+      final started = startGenAiTurn(
+        client,
+        const GenAiTurn(
+          userContent: 'Write a long story about the sea.',
+          sessionId: 130,
+          searchOptions: {'do_sample': false},
+        ),
+      );
+      await client.stopGeneration(sessionId: 130);
+      expect(await started.text.join(), '');
+      expect(await started.end, TurnEnd.stopped);
+      final (after, _) = await turn(130, question, cap: 24);
+      await turn(131, fact, fresh: true, cap: 8);
+      final (without, _) = await turn(131, question, cap: 24);
+      expect(after, without, reason: 'a zero-text stop left something');
+      expect(after.toLowerCase(), isNot(contains('story')));
+      for (final id in [130, 131]) {
+        await client.resetSession(sessionId: id);
+      }
+    },
+    skip: available ? false : 'needs ORT-GenAI libs and a model',
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+
+  test(
     'a generator rebuilt from history whose prompt does not fit is not kept: '
     'the next turn replays the history',
     () async {

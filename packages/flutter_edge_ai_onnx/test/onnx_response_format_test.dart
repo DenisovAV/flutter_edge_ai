@@ -464,6 +464,28 @@ void main() {
       );
     });
 
+    test('a stop before any text keeps nothing of the turn, as core\'s chat '
+        'takes it back', () async {
+      final (model, log) = await loaded('stop_no_text');
+      final session = await model.openSession();
+      await _ask(session, _script(['x']));
+      await session.addQueryChunk(
+        Message(text: _script([], untilStopped: true), isUser: true),
+      );
+      final stopped = session.getResponse();
+      await _until(
+        () => _linesOf(log).where((l) => l == 'generate:1').length == 2,
+        'the second turn to start',
+      );
+      await session.stopGeneration();
+      expect(await stopped, '');
+      expect(_linesOf(log), contains('settle:1:keepStopped'));
+      expect(
+        await _ask(session, _script(['y'], echoSession: true)),
+        '[session=1 turn=2]y',
+      );
+    });
+
     test('a prompt that does not fit is the text\'s StateError, and the '
         'conversation is left as it was', () async {
       final (model, _) = await loaded('plain_context');

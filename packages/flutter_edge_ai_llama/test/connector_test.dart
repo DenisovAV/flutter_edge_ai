@@ -3636,41 +3636,44 @@ void main() {
       expect(engineSession().messages.map((m) => m.text), ['q', '{"a":"x"}']);
     });
 
+    // The prompt is 10 tokens of 2048, so 2038 remain: a cap up to that is
+    // the budget that ran out, a larger one or none means the context did.
     for (final (cap, end) in [
       (8, edge.TurnEnd.outputLimit),
+      (2038, edge.TurnEnd.outputLimit),
+      (2039, edge.TurnEnd.contextLimit),
       (null, edge.TurnEnd.contextLimit),
     ]) {
-      test(
-        'a length finish is incomplete with ${end.name}, and recorded',
-        () async {
-          final session = await structured.openSession(
-            responseFormat: object,
-            maxOutputTokens: cap,
-          );
-          engine.script = [
-            _chunk('{"a":'),
-            _chunk(null, finishReason: 'length'),
-          ];
-          await session.addQueryChunk(user('cut'));
-          await expectLater(
-            session.getResponse(),
-            throwsA(
-              isA<edge.IncompleteStructuredOutputException>()
-                  .having((e) => e.end, 'end', end)
-                  .having((e) => e.partialText, 'partialText', '{"a":'),
-            ),
-          );
-          expect(engineSession().messages.map((m) => m.text), ['cut', '{"a":']);
-          engine.script = [_chunk('{}'), stop];
-          await session.addQueryChunk(user('again'));
-          expect(await session.getResponse(), '{}');
-          expect(engine.requests.last.map((m) => m.content), [
-            'cut',
-            '{"a":',
-            'again',
-          ]);
-        },
-      );
+      test('a length finish under cap $cap is incomplete with ${end.name}, '
+          'and recorded', () async {
+        final session = await structured.openSession(
+          responseFormat: object,
+          maxOutputTokens: cap,
+        );
+        engine.script = [_chunk('{"a":'), _chunk(null, finishReason: 'length')];
+        await session.addQueryChunk(user('cut'));
+        await expectLater(
+          session.getResponse(),
+          throwsA(
+            isA<edge.IncompleteStructuredOutputException>()
+                .having((e) => e.end, 'end', end)
+                .having((e) => e.partialText, 'partialText', '{"a":'),
+          ),
+        );
+        expect(
+          engine.lastParams!.maxTokens,
+          cap == null || cap > 2038 ? 2038 : cap,
+        );
+        expect(engineSession().messages.map((m) => m.text), ['cut', '{"a":']);
+        engine.script = [_chunk('{}'), stop];
+        await session.addQueryChunk(user('again'));
+        expect(await session.getResponse(), '{}');
+        expect(engine.requests.last.map((m) => m.content), [
+          'cut',
+          '{"a":',
+          'again',
+        ]);
+      });
     }
 
     test('an input the context cannot hold is rolled back', () async {
@@ -3982,6 +3985,97 @@ void main() {
         expect(llamaSession.messages.map((m) => m.text), ['q', '{"a":']);
       });
     }
+
+    test('a cancel error after a stop is printed once per session', () async {
+      final logs = <String>[];
+      await runZoned(
+        () async {
+          final session = await structured.openSession(responseFormat: object);
+          engine
+            ..blockGeneration = true
+            ..firstText = '{"a":'
+            ..cancelError = llama.LlamaInferenceException('bridge cancelled');
+          for (final turn in ['one', 'two']) {
+            await session.addQueryChunk(user(turn));
+            final firstToken = Completer<void>();
+            final failure = Completer<Object>();
+            final subscription = session.getResponseAsync().listen((_) {
+              if (!firstToken.isCompleted) firstToken.complete();
+            }, onError: failure.complete);
+            await firstToken.future;
+            await session.stopGeneration();
+            expect(
+              await failure.future,
+              isA<edge.IncompleteStructuredOutputException>(),
+            );
+            await subscription.cancel();
+          }
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, String line) => logs.add(line),
+        ),
+      );
+      // Printed once; the second time only reaches edgeAiLog.
+      final warnings = logs.where(
+        (line) => line.startsWith('[flutter_edge_ai] WARNING:'),
+      );
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('bridge cancelled'));
+    });
+
+    test(
+      'a failed adapter restore after a stop is printed, nothing recorded',
+      () async {
+        final logs = <String>[];
+        late LlamaInferenceSession llamaSession;
+        await runZoned(
+          () async {
+            final session = await structured.openSession(
+              responseFormat: object,
+              loraPath: adapterPath,
+            );
+            llamaSession = engineSession();
+            engine
+              ..blockGeneration = true
+              ..firstText = '{"a":'
+              // The restore after the stop fails; its retry succeeds, so
+              // the runtime stays usable and the stop keeps the turn.
+              ..failLoraCleanupCount = 1;
+            await session.addQueryChunk(user('q'));
+            final firstToken = Completer<void>();
+            final failure = Completer<Object>();
+            final subscription = session.getResponseAsync().listen((_) {
+              if (!firstToken.isCompleted) firstToken.complete();
+            }, onError: failure.complete);
+            await firstToken.future;
+            await session.stopGeneration();
+            expect(
+              await failure.future,
+              isA<edge.IncompleteStructuredOutputException>().having(
+                (e) => e.end,
+                'end',
+                edge.TurnEnd.stopped,
+              ),
+            );
+            await subscription.cancel();
+          },
+          zoneSpecification: ZoneSpecification(
+            print: (_, _, _, String line) => logs.add(line),
+          ),
+        );
+        expect(structured.isClosed, isFalse);
+        expect(llamaSession.messages, isEmpty);
+        expect(
+          logs.where(
+            (line) =>
+                line.startsWith('[flutter_edge_ai] WARNING:') &&
+                line.contains('failed after its stop'),
+          ),
+          hasLength(1),
+        );
+      },
+      skip: kIsWeb,
+    );
 
     test('llama.cpp poisoning after a stop is still an error', () async {
       final session = await structured.openSession(responseFormat: object);

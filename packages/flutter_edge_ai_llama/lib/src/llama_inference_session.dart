@@ -794,9 +794,10 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
                     error.message.startsWith('llama.cpp raised an exception')) {
               rethrow;
             }
-            edgeAiLog(
-              'GGUF structured turn: the generation ended with $error after '
-              'a ${_closed ? 'close' : 'stop'}; the turn is cut there.',
+            _warnOnce(
+              'cut',
+              'a structured GGUF generation ended with $error after a '
+                  '${_closed ? 'close' : 'stop'}; the turn was cut there.',
             );
           }
           if (_stopped || _closed || completion == null) {
@@ -1001,8 +1002,13 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         reportedError = true;
         controller.addError(error, stack);
       } else {
-        // The consumer stopped the turn and is not listening for its error.
-        edgeAiLog('GGUF turn error after a stop, not delivered: $error');
+        // The consumer stopped the turn and is not listening for its error:
+        // a failed adapter restore or history count after the stop.
+        _warnOnce(
+          'stopped',
+          'a GGUF turn failed after its stop ($error); the error was not '
+              'delivered, because the turn had been stopped.',
+        );
       }
     } finally {
       // A waiter can be stopped before acquiring the runtime queue.
@@ -1033,6 +1039,20 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
                         : edge.TurnEnd.stopped),
         );
       }
+    }
+  }
+
+  final Set<String> _warned = {};
+
+  /// Prints [message] the first time [kind] happens in this session, and
+  /// logs it after that. A release build is where these show, and
+  /// edgeAiLog is silent there.
+  void _warnOnce(String kind, String message) {
+    if (_warned.add(kind)) {
+      // ignore: avoid_print
+      print('[flutter_edge_ai] WARNING: $message');
+    } else {
+      edgeAiLog(message);
     }
   }
 

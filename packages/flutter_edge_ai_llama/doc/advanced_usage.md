@@ -84,9 +84,9 @@ llamadart as a strict `json_schema` (with the format's `name`, if any), whose
 grammar constrains decoding, with thinking off; core then checks each reply and
 throws `IncompleteStructuredOutputException` or
 `NonConformingStructuredOutputException`. A format is enforced only where a
-discriminating run passed: macOS arm64 on CPU and Metal, and Chrome running a
-dart2wasm build on WebGPU (not llama.cpp's WebAssembly CPU runtime, a dart2js
-build or another browser).
+discriminating run passed: macOS arm64 on CPU and Metal, and Chrome on macOS
+running a dart2wasm build on WebGPU (not llama.cpp's WebAssembly CPU runtime, a
+dart2js build, another browser or another operating system).
 Elsewhere, and on a model whose device the runtime does not report,
 `structuredOutputSupport` is `none` and `openSession` throws
 `ResponseFormatUnsupportedException`.

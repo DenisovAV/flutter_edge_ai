@@ -129,3 +129,38 @@ Note for L2: the EG2 740m NPU bundle fails engine create unless an audio
 backend is named (`embedding_engine_impl.cc:409`), because its audio encoder is
 compiled for CPU/GPU only. The Dart pass names `cpu` when audio is declared; a
 740m NPU load without declared audio should be checked.
+
+## Results: DDP Pixel 11 (cubs-37, Tensor G6, PowerVR GPU), 2026-11-04
+
+Session `session-ftxstpjglk19a`, 04:12–04:32 UTC (about 21 billed minutes).
+Timings are left out for Tensor.
+
+| Check | Result |
+|---|---|
+| Tensor NPU, Gemma 4 E2B G6 bundle: multiconv, longprompt, deleteduring, chat | PASS |
+| NPU turnend | every end kind right; the rewind after context_full refused (status 3), as on Qualcomm |
+| NPU convrewind | rewind refused (one-token rollback), as on Qualcomm |
+| **NPU ctxgroup** (window 4096) | **PASS** at 1104 tokens |
+| EG2 on the NPU: 270m text; 440m text, image, combined | PASS |
+| PowerVR GPU, FunctionGemma: chat | PASS |
+| PowerVR GPU, FunctionGemma: multiconv | FAIL: the model's own answers, as on macOS |
+| PowerVR GPU, FunctionGemma: determinism | **FAIL**: two greedy conversations diverge at character 245 (Metal and CPU are deterministic for this model). Open question for the PowerVR GPU path; not chased on billed time |
+
+## Results: DDP Pixel 8a (akita-34, Tensor G3, Mali-G715), 2026-11-04
+
+Session `session-1pii5wtsudyyj`, 04:34–05:05 UTC (about 31 billed minutes).
+
+| Check | Result |
+|---|---|
+| Mali-G715 GPU, Gemma 4 E2B: all 13 commands | PASS |
+| Mali without `libLiteRtOpenClAccelerator.so` and `libLiteRtTopKOpenClSampler.so`: multiconv, chat, determinism | PASS, identical results (determinism hash `642e1f7c…` both ways) |
+| LFM2.5 xsession on Mali (§25) | PASS |
+| FastVLM with an image on Mali | PASS |
+
+**Packaging (verify_tarball_manifest.sh):** Adreno 830 and Mali-G715 now both
+run the GPU with the two separate OpenCL libraries removed, with the same
+results. That is the evidence the manifest comment asked for to drop them
+from the Android archive. The drop itself is left for a decision (it changes
+the archive).
+
+DDP total for L1: S25 77 + Pixel 11 21 + Pixel 8a 31 = about 129 billed minutes.

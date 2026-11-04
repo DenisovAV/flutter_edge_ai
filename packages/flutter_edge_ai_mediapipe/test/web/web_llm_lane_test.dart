@@ -195,4 +195,64 @@ void main() {
       throwsA(isA<AssertionError>()),
     );
   });
+
+  test('a count runs right after the call in MediaPipe, ahead of the '
+      'generations that wait, which keep their order', () async {
+    final lane = WebLlmLane();
+    final first = Completer<String>();
+    final order = <String>[];
+    final a = lane.run(WebLlmCall(), () {
+      order.add('a');
+      return first.future;
+    });
+    final b = lane.run(WebLlmCall(), () async {
+      order.add('b');
+      return 'b';
+    });
+    final c = lane.run(WebLlmCall(), () async {
+      order.add('c');
+      return 'c';
+    });
+    final count = lane.run(WebLlmCall(), () async {
+      order.add('count');
+      return 1;
+    }, priority: true);
+    await _settle();
+    expect(order, ['a'], reason: 'a count never runs next to a call');
+
+    first.complete('a');
+    await Future.wait([a, b, c, count]);
+    expect(order, ['a', 'count', 'b', 'c']);
+  });
+
+  test('a count cancelled while it waits passes its turn on', () async {
+    final lane = WebLlmLane();
+    final first = Completer<String>();
+    final order = <String>[];
+    unawaited(
+      lane.run(WebLlmCall(), () {
+        order.add('a');
+        return first.future;
+      }),
+    );
+    final countCall = WebLlmCall();
+    final count = lane.run(countCall, () async {
+      order.add('count');
+      return 1;
+    }, priority: true);
+    final b = lane.run(WebLlmCall(), () async {
+      order.add('b');
+      return 'b';
+    });
+    lane.cancel(countCall);
+    expect(await count, isNull);
+    first.complete('a');
+    await b;
+    expect(order, ['a', 'b']);
+  });
+
+  test('a count with nothing in MediaPipe runs at once', () async {
+    final lane = WebLlmLane();
+    expect(await lane.run(WebLlmCall(), () async => 7, priority: true), 7);
+  });
 }

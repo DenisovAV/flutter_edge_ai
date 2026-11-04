@@ -113,16 +113,19 @@ fakeMediaPipe() {
 }
 
 /// Like [fakeMediaPipe], but generateResponse answers only when the test says
-/// so: `calls` holds one completer per call made, in order, and `prompts` the
-/// prompt of each. `cancels` counts the cancelProcessing calls.
+/// so: `calls` holds one completer per call made, in order, `prompts` the
+/// prompt of each and `progress` its progress callback, through which a test
+/// streams a piece. `cancels` counts the cancelProcessing calls.
 ({
   List<Completer<String>> calls,
   List<JSAny> prompts,
   JSObject instance,
   List<void> cancels,
+  List<JSFunction?> progress,
 })
 heldMediaPipe({bool streamReplies = false}) {
   final calls = <Completer<String>>[];
+  final progresses = <JSFunction?>[];
   final prompts = <JSAny>[];
   final cancels = <void>[];
   final instance = JSObject()
@@ -132,6 +135,7 @@ heldMediaPipe({bool streamReplies = false}) {
         final call = Completer<String>();
         calls.add(call);
         prompts.add(prompt);
+        progresses.add(progress);
         return call.future.then((text) {
           // With [streamReplies], the reply also reaches a stream, as one
           // piece just before the call settles.
@@ -169,7 +173,13 @@ heldMediaPipe({bool streamReplies = false}) {
       ).toJS).toJS,
     ),
   );
-  return (calls: calls, prompts: prompts, instance: instance, cancels: cancels);
+  return (
+    calls: calls,
+    prompts: prompts,
+    instance: instance,
+    cancels: cancels,
+    progress: progresses,
+  );
 }
 
 /// Like [fakeMediaPipe], but as busy as the real one: generateResponse answers

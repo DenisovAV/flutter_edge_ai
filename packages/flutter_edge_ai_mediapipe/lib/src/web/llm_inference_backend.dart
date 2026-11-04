@@ -37,15 +37,19 @@ class LlmInferenceBackend implements WebLlmBackend {
   }
 
   /// MediaPipe refuses a count while a generation runs, so it is a call of
-  /// the lane, except for an empty text and a reply just generated, whose
-  /// count its own call took.
+  /// the lane (a priority one), except for an empty text and a reply just
+  /// generated, whose count its own call took.
   @override
   Future<int> sizeInTokens(String text) async {
     if (text.isEmpty) return 0;
     if (_replySizes[text] case final size?) return size;
+    // Right after the call in MediaPipe, ahead of the generations that wait:
+    // a reply cut by a stop, or one the chat changed (thinking stripped),
+    // is counted when that call ends, not after every other session's turn.
     return (await _lane.run(
       WebLlmCall(owner: 'sizeInTokens'),
       () async => _llm.sizeInTokens(text.toJS).toDartInt,
+      priority: true,
     ))!;
   }
 

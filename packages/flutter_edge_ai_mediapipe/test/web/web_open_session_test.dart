@@ -415,6 +415,43 @@ void main() {
     await model.close();
   });
 
+  test('a chat stopped while its call runs counts its partial reply when '
+      'that call ends, not after the other chat\'s generation', () async {
+    final fake = heldMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final a = await model.openChat();
+    final b = await model.openChat();
+    await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+    await b.addQueryChunk(const Message(text: 'QB', isUser: true));
+    final aTurn = a.generateChatResponseAsync().toList();
+    final bTurn = b.generateChatResponseAsync().toList();
+    await _settle();
+    expect(fake.calls, hasLength(1));
+    fake.progress.single!.callAsFunction(null, 'par'.toJS, false.toJS);
+    await _settle();
+
+    // a's stream ends at the stop; its call settles a moment later.
+    await a.stopGeneration();
+    expect(fake.cancels, hasLength(1));
+    await _settle();
+    fake.calls.single.complete('partial');
+    await _settle();
+    expect(fake.calls, hasLength(2), reason: "b's generation runs now");
+
+    final aReplies = await aTurn.timeout(const Duration(seconds: 2));
+    expect(
+      aReplies.whereType<TextResponse>().map((r) => r.token).join(),
+      'par',
+    );
+    expect(fake.calls.last.isCompleted, isFalse);
+
+    fake.calls.last.complete('Reply B');
+    await bTurn;
+    await a.close();
+    await b.close();
+    await model.close();
+  });
+
   test('the LoRA warning compares with the LoRA the model applied', () async {
     fakeMediaPipe();
     final model = testModel(

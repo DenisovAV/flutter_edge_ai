@@ -510,6 +510,8 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     // Note: MediaPipe's close() will also release any OPFS stream readers internally
     final loading = _llmFuture;
     _llmFuture = null;
+    // Before the LlmInference closes: a call still queued must not reach it.
+    _backend?.close();
     _backend = null;
     if (loading != null) {
       try {

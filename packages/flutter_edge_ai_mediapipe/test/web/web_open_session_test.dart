@@ -452,6 +452,25 @@ void main() {
     await model.close();
   });
 
+  test('a token count still queued when the model closes fails and never '
+      'reaches the closed LlmInference', () async {
+    final fake = heldMediaPipe();
+    final model = testModel(supportImage: false, resolver: BlobResolver());
+    final a = await model.openSession();
+    await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+    unawaited(a.getResponse().then<void>((_) {}, onError: (_) {}));
+    await _settle();
+    final count = expectLater(a.sizeInTokens('not cached'), throwsStateError);
+    await _settle();
+
+    await model.close();
+    await count.timeout(const Duration(seconds: 2));
+    fake.calls.single.complete('late');
+    await _settle();
+    expect(fake.sizes, isEmpty);
+    await expectLater(a.sizeInTokens('later'), throwsStateError);
+  });
+
   test('the LoRA warning compares with the LoRA the model applied', () async {
     fakeMediaPipe();
     final model = testModel(

@@ -255,4 +255,30 @@ void main() {
     final lane = WebLlmLane();
     expect(await lane.run(WebLlmCall(), () async => 7, priority: true), 7);
   });
+
+  test('a call cancelled as its turn comes passes the turn on', () async {
+    // The cancel lands at each microtask after the running call ends; at one
+    // of them the lane has handed b its turn and b has not resumed yet.
+    for (var step = 0; step < 12; step++) {
+      final lane = WebLlmLane();
+      final first = Completer<String>();
+      final b = WebLlmCall();
+      final a = lane.run(WebLlmCall(), () => first.future);
+      final bRun = lane.run(b, () async => 'b');
+      final c = lane.run(WebLlmCall(), () async => 'c');
+      await _settle();
+      first.complete('a');
+      for (var i = 0; i < step; i++) {
+        await Future<void>.microtask(() {});
+      }
+      lane.cancel(b);
+      await a;
+      await bRun;
+      expect(
+        await c.timeout(const Duration(seconds: 1)),
+        'c',
+        reason: 'step $step: the lane hangs',
+      );
+    }
+  });
 }

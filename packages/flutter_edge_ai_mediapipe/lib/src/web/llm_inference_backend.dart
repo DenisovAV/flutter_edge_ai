@@ -16,6 +16,27 @@ class LlmInferenceBackend implements WebLlmBackend {
   /// The calls of every session of the model, one at a time.
   final WebLlmLane _lane = WebLlmLane();
 
+  /// Set by [close]: no call reaches the `LlmInference` after it.
+  bool _closed = false;
+
+  /// The token counts that wait in the lane: they belong to no session, so
+  /// no session close cancels them.
+  final Set<WebLlmCall> _counts = {};
+
+  void _requireOpen() {
+    if (_closed) throw StateError('The model is closed.');
+  }
+
+  /// Refuses every later call, and cancels the token counts that wait: the
+  /// model is about to close its `LlmInference`. The sessions' own calls are
+  /// cancelled by their sessions, which the model closes first.
+  void close() {
+    _closed = true;
+    for (final count in [..._counts]) {
+      _lane.cancel(count);
+    }
+  }
+
   /// The token counts of the last replies, counted inside their own call.
   final Map<String, int> _replySizes = <String, int>{};
   static const int _replySizesKept = 16;
@@ -24,7 +45,7 @@ class LlmInferenceBackend implements WebLlmBackend {
   /// each reply right after its stream, when another session's call may
   /// already run, and a count then would wait for that whole generation.
   void _countReply(String reply) {
-    if (reply.isEmpty) return;
+    if (reply.isEmpty || _closed) return;
     try {
       _replySizes.remove(reply);
       _replySizes[reply] = _llm.sizeInTokens(reply.toJS).toDartInt;
@@ -43,19 +64,29 @@ class LlmInferenceBackend implements WebLlmBackend {
   Future<int> sizeInTokens(String text) async {
     if (text.isEmpty) return 0;
     if (_replySizes[text] case final size?) return size;
+    _requireOpen();
     // Right after the call in MediaPipe, ahead of the generations that wait:
     // a reply cut by a stop, or one the chat changed (thinking stripped),
     // is counted when that call ends, not after every other session's turn.
-    return (await _lane.run(
-      WebLlmCall(owner: 'sizeInTokens'),
-      () async => _llm.sizeInTokens(text.toJS).toDartInt,
-      priority: true,
-    ))!;
+    final call = WebLlmCall(owner: 'sizeInTokens');
+    _counts.add(call);
+    try {
+      final size = await _lane.run(call, () async {
+        _requireOpen();
+        return _llm.sizeInTokens(text.toJS).toDartInt;
+      }, priority: true);
+      // Cancelled only by [close].
+      if (size == null) throw StateError('The model was closed.');
+      return size;
+    } finally {
+      _counts.remove(call);
+    }
   }
 
   @override
   Future<String?> generate(List<PromptPart> prompt, WebLlmCall call) =>
       _lane.run(call, () async {
+        _requireOpen();
         final jsPrompt = _jsPrompt(prompt);
         final reply = jsPrompt.isA<JSString>()
             ? _llm.generateResponse(jsPrompt as JSString, null)
@@ -91,6 +122,7 @@ class LlmInferenceBackend implements WebLlmBackend {
         // here. Stopped while it waited, it never starts, and its stream
         // ends.
         await _lane.run(call, () async {
+          _requireOpen();
           final jsPrompt = _jsPrompt(prompt);
           final reply = jsPrompt.isA<JSString>()
               ? _llm.generateResponse(jsPrompt as JSString, onPiece.toJS)
@@ -113,7 +145,7 @@ class LlmInferenceBackend implements WebLlmBackend {
   /// running call may be another session's.
   @override
   void cancel(WebLlmCall call) {
-    if (_lane.cancel(call)) _llm.cancelProcessing();
+    if (_lane.cancel(call) && !_closed) _llm.cancelProcessing();
   }
 
   /// A text-only prompt is one string; one with an image or audio is the array

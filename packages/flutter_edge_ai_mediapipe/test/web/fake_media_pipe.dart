@@ -115,17 +115,20 @@ fakeMediaPipe() {
 /// Like [fakeMediaPipe], but generateResponse answers only when the test says
 /// so: `calls` holds one completer per call made, in order, `prompts` the
 /// prompt of each and `progress` its progress callback, through which a test
-/// streams a piece. `cancels` counts the cancelProcessing calls.
+/// streams a piece. `cancels` counts the cancelProcessing calls, and `sizes`
+/// holds the text of each sizeInTokens call.
 ({
   List<Completer<String>> calls,
   List<JSAny> prompts,
   JSObject instance,
   List<void> cancels,
   List<JSFunction?> progress,
+  List<String> sizes,
 })
 heldMediaPipe({bool streamReplies = false}) {
   final calls = <Completer<String>>[];
   final progresses = <JSFunction?>[];
+  final sizes = <String>[];
   final prompts = <JSAny>[];
   final cancels = <void>[];
   final instance = JSObject()
@@ -149,6 +152,7 @@ heldMediaPipe({bool streamReplies = false}) {
     ..setProperty(
       'sizeInTokens'.toJS,
       ((JSString text) {
+        sizes.add(text.toDart);
         if (calls.any((call) => !call.isCompleted)) {
           throw StateError('engine is currently loading or processing');
         }
@@ -179,6 +183,7 @@ heldMediaPipe({bool streamReplies = false}) {
     instance: instance,
     cancels: cancels,
     progress: progresses,
+    sizes: sizes,
   );
 }
 

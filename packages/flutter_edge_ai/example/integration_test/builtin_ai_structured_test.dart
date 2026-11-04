@@ -17,9 +17,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
-// The run that enables a platform drives the path while it is still refused:
-// it marks the running platform as verified, in this process only.
-// ignore: implementation_imports
+// The run that enables a platform drives the path while it is still refused.
+// ignore: implementation_imports — marks the running platform as verified, in this process only
 import 'package:flutter_edge_ai_builtin_ai/src/structured_output.dart'
     show currentBuiltInPlatform, debugVerifiedBuiltInPlatforms;
 import 'package:flutter_test/flutter_test.dart';

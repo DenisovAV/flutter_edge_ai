@@ -234,15 +234,11 @@ final _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
-  // 0.19.0-a is LiteRT-LM v0.19.0 (`771b06e1`) with LiteRT `dcb657e8`: C API
-  // 1.0 (every call returns a status and writes through an out-parameter;
-  // the Dart bindings refuse a library that is not 1.x), the StreamProxy entry
-  // stream_proxy_create_v1, and patch_c_api.sh sections 1-25
-  // (doc/research/litertlm-0.19-phase1.md). The tag is not published yet:
-  // these sums are those of the L1 build the PR was tested on, and until the
-  // tag exists a build needs the archive's files under
-  // native/litert_lm/prebuilt/<platform>/.
-  //
+  // 0.19.0-a: LiteRT-LM v0.19.0 (771b06e1, LiteRT dcb657e8), C API 1.0 and
+  // patch_c_api.sh sections 17-25; StreamProxy exports stream_proxy_create_v1
+  // only. Android no longer ships the separate OpenCL accelerator and sampler,
+  // Linux and Windows no TopK WebGPU sampler (both linked or dropped, see
+  // verify_tarball_manifest.sh).
   // 0.18.0-h changes the Windows archive and nothing else: both copies of
   // libLiteRtWebGpuAccelerator.dll are Google's prebuilt from LiteRT-LM
   // 5f973f57, which contains LiteRT #11120 — on an Intel GPU it turns off the
@@ -357,7 +353,7 @@ final _litertlmBundle = _NativeBundle(
     'litertlm-ios_sim_arm64.tar.gz':
         'c830a7be8bf742f63da658fd519dfa0fa380cfa60fef4263a16537ed3b163c2e',
     'litertlm-android_arm64.tar.gz':
-        '3d92ff1177e3887c8e3798be0b30a486225b93bb3e22eca7d13c641d099c640e',
+        '12b0faffb3230f7f0903345826f7566283a6a507df9cf244e7431b97cdc5a860',
   },
   companions: [
     'GemmaModelConstraintProvider',

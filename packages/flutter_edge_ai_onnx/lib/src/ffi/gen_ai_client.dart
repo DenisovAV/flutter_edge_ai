@@ -925,9 +925,24 @@ bool genAiArchiveHasGuidance(ffi.Abi abi) => const {
   ffi.Abi.windowsArm64,
 }.contains(abi);
 
+/// The hosts whose response-format run has passed: real ORT-GenAI guidance
+/// through this engine (`onnx_response_format_host_smoke_test.dart`). A host
+/// whose archive has guidance stays refused, naming the missing run, until it
+/// is here (design 2.6.0 §5.1: a backend is enabled after its run).
+/// - macOS arm64: Mac mini, Phi-3.5-mini cpu-int4, 2026-11-04, 4/4.
+/// Still to run: Linux x64 (CI or the T4 VM), Windows x64 (`intel-ptl`),
+/// Windows ARM64 (the GitHub-hosted Windows 11 ARM64 runner).
+const _verifiedGuidanceAbis = {ffi.Abi.macosArm64};
+
+/// Replaces [_verifiedGuidanceAbis] in tests: the fake-worker tests drive the
+/// guided path on any host, and the host smoke is the run that verifies one.
+@visibleForTesting
+Set<ffi.Abi>? debugVerifiedGuidanceAbis;
+
 /// Why a model on [client] cannot take a response format, or null when it
 /// can: the client must be a loaded [GenAiFfiClient], the host's archive must
-/// have guidance ([genAiArchiveHasGuidance]), and the model directory must
+/// have guidance ([genAiArchiveHasGuidance]) and its run must have passed
+/// ([_verifiedGuidanceAbis]), and the model directory must
 /// hold `tokenizer.json`, which ORT-GenAI's guidance reads (without it every
 /// guided generator fails to create). Not exported.
 String? guidanceRefusalOf(GenAiClient client, {ffi.Abi? abi}) {
@@ -939,7 +954,12 @@ String? guidanceRefusalOf(GenAiClient client, {ffi.Abi? abi}) {
   if (!genAiArchiveHasGuidance(host)) {
     return 'The ORT-GenAI 0.17.0 runtime bundled for $host is built without '
         'guidance (llguidance), so a format cannot be enforced there. It is '
-        'enforced on macOS arm64, Linux x64, Windows x64 and Windows ARM64.';
+        'enforced on macOS arm64.';
+  }
+  if (!(debugVerifiedGuidanceAbis ?? _verifiedGuidanceAbis).contains(host)) {
+    return 'ORT-GenAI guidance on $host has not been run through this engine '
+        'yet: its archive includes guidance, and a format is enabled there '
+        'after that run passes. It is enforced on macOS arm64.';
   }
   final modelDir = client._modelDir;
   if (modelDir == null) return 'The ONNX model is not loaded.';

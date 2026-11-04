@@ -64,6 +64,11 @@ final _hostHasGuidance = genAiArchiveHasGuidance(Abi.current());
 void main() {
   late Directory tmp;
   setUpAll(() async => tmp = await Directory.systemTemp.createTemp('onnx_rf'));
+  // The scripted engine stands in for ORT-GenAI, so the guided path runs on
+  // any host with guidance in its archive; which hosts are enabled for apps
+  // is the run gate, tested below with the real list.
+  setUp(() => debugVerifiedGuidanceAbis = {Abi.current()});
+  tearDown(() => debugVerifiedGuidanceAbis = null);
   tearDownAll(() => tmp.delete(recursive: true));
 
   /// A model on the real client over the scripted engine, loaded from a model
@@ -111,6 +116,20 @@ void main() {
         Abi.macosX64,
       ]) {
         expect(genAiArchiveHasGuidance(abi), isFalse, reason: '$abi');
+      }
+    });
+
+    test('a host whose archive has guidance is refused until its run has '
+        'passed: only macOS arm64 so far', () async {
+      debugVerifiedGuidanceAbis = null;
+      final (model, _) = await loaded('run_gate');
+      expect(guidanceRefusalOf(model.client, abi: Abi.macosArm64), isNull);
+      for (final abi in [Abi.linuxX64, Abi.windowsX64, Abi.windowsArm64]) {
+        expect(
+          guidanceRefusalOf(model.client, abi: abi),
+          allOf(contains('$abi'), contains('has not been run')),
+          reason: '$abi',
+        );
       }
     });
 

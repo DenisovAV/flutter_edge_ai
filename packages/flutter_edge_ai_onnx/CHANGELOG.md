@@ -1,5 +1,5 @@
 ## Unreleased
-- `openSession`/`openChat(responseFormat:)` enforced by ORT-GenAI guidance on macOS, Linux and Windows (#195).
+- `openSession`/`openChat(responseFormat:)` enforced by ORT-GenAI guidance on macOS arm64 (#195).
 - Cancelling a paused stream no longer stops the session's next turn (#703).
 
 ## 0.8.0

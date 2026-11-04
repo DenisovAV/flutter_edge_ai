@@ -111,6 +111,9 @@ void main() {
 
   setUpAll(() async {
     if (!available) return;
+    // This test is the run that enables a host (`_verifiedGuidanceAbis`), so
+    // it treats the host it runs on as enabled.
+    debugVerifiedGuidanceAbis = {Abi.current()};
     client = GenAiFfiClient();
     await client.load(modelDir, contextWindow: _context);
     model = OnnxInferenceModel(

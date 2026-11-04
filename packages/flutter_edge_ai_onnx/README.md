@@ -137,11 +137,13 @@ count of open sessions. Opening more than `maxConcurrentSessions` throws a
 **Response formats.** `openSession` / `openChat(responseFormat:)` are enforced
 by ORT-GenAI's guidance (llguidance): the session's JSON schema is set on its
 own generator, so every reply is a value of the format, and core checks each
-one. The whole `ResponseFormat.dialect` is enforced on macOS arm64, Linux x64,
-Windows x64 and Windows ARM64, the hosts whose ORT-GenAI 0.17.0 build includes
-guidance, for a model directory with a `tokenizer.json` (guidance reads it).
-Android (this repository's ORT-GenAI build), iOS (Microsoft's) and the web
-refuse a format with `ResponseFormatUnsupportedException`; read
+one. The whole `ResponseFormat.dialect` is enforced on macOS arm64, for a
+model directory with a `tokenizer.json` (guidance reads it). Linux x64,
+Windows x64 and Windows ARM64 also ship an ORT-GenAI 0.17.0 build with
+guidance, and each is enabled once its run has passed; until then they refuse
+a format, saying so. Android (this repository's ORT-GenAI build), iOS
+(Microsoft's) and the web have no guidance and refuse it with
+`ResponseFormatUnsupportedException`; read
 `model.structuredOutputSupport` first. A guided turn that does not end on its
 own (`maxOutputTokens`, a stop, a full context) leaves the grammar mid-value,
 so the session's next turn starts on a fresh generator, without the earlier

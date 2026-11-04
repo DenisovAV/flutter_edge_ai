@@ -110,6 +110,14 @@ String? thinkingBudgetChannelWarning(
       'still think until maxOutputTokens.';
 }
 
+/// Whether a conversation keeps the last message it sent once that send has
+/// ended as [how], with native's turn-end record [end]: after a cancelled
+/// send, the one a rewind puts back, and after one native ended context_full
+/// (section 23), which L3 rewinds to before (core 2.6.0 design §6.4b).
+@visibleForTesting
+bool keepLastSendAfter(NativeTurnEnd how, NativeLastTurnEnd? end) =>
+    how == NativeTurnEnd.cancelled || end == NativeLastTurnEnd.contextFull;
+
 /// The StreamProxy entries the client binds; a StreamProxy without one of
 /// them is refused by name. Kept equal to the release gate's
 /// `STREAM_PROXY_SYMBOLS` minus `stream_proxy_free_string` (a test compares).
@@ -184,7 +192,8 @@ typedef _ProxyFreeStringDart = void Function(Pointer<Char> str);
 /// [maxBytes] bounds an error message only (a broken one might lack its NUL).
 /// Generated text and a `send_message` reply are read to their NUL: a cap
 /// there would cut a long reply silently.
-String _decodeNativeString(Pointer<Char> ptr, {int? maxBytes}) {
+@visibleForTesting
+String decodeNativeString(Pointer<Char> ptr, {int? maxBytes}) {
   final bytes = ptr.cast<Uint8>();
   var length = 0;
   while ((maxBytes == null || length < maxBytes) && bytes[length] != 0) {
@@ -193,7 +202,7 @@ String _decodeNativeString(Pointer<Char> ptr, {int? maxBytes}) {
   return utf8.decode(bytes.asTypedList(length), allowMalformed: true);
 }
 
-/// The bound [_decodeNativeString] puts on an error message.
+/// The bound [decodeNativeString] puts on an error message.
 const _maxErrorBytes = 64 * 1024;
 
 /// What [ConversationHandle.rewindStoppedTurn] did.
@@ -437,10 +446,10 @@ class LiteRtLmConversationHandle implements ConversationHandle {
         // after one native ended context_full (section 23): its input never
         // reached the history, and L3 rewinds to before it (core 2.6.0 design
         // §6.4b). This change keeps it; it does not recover yet.
-        final keep =
-            how == NativeTurnEnd.cancelled ||
-            lastTurnEnd == NativeLastTurnEnd.contextFull;
-        if (!keep && identical(_lastSend, record)) _lastSend = null;
+        if (!keepLastSendAfter(how, lastTurnEnd) &&
+            identical(_lastSend, record)) {
+          _lastSend = null;
+        }
       },
     );
   }
@@ -2799,8 +2808,10 @@ class LiteRtLmFfiClient {
 
     void onChunk(Pointer<Char> chunk, int isFinal, Pointer<Char> errorMsg) {
       if (errorMsg != nullptr && errorMsg.address != 0) {
-        final error = _decodeNativeString(errorMsg, maxBytes: _maxErrorBytes);
+        final error = decodeNativeString(errorMsg, maxBytes: _maxErrorBytes);
         _proxyFreeString!(errorMsg); // free strdup'd string
+        // The proxy copies the chunk's text too, error or not.
+        if (chunk != nullptr) _proxyFreeString!(chunk);
         _recordTurnEnd(conv);
         // stopGeneration() (and any other caller-initiated cancel) surfaces
         // here as a CANCELLED error from native. That's not an error from
@@ -2817,7 +2828,7 @@ class LiteRtLmFfiClient {
       }
 
       if (chunk != nullptr && chunk.address != 0) {
-        final text = _decodeNativeString(chunk);
+        final text = decodeNativeString(chunk);
         _proxyFreeString!(chunk); // free strdup'd string
         send.chunk(text);
       }
@@ -3036,7 +3047,7 @@ class LiteRtLmFfiClient {
             (out) => b.litert_lm_json_response_get_string(response, out),
             b.lastError,
           );
-          return strPtr == nullptr ? '' : _decodeNativeString(strPtr);
+          return strPtr == nullptr ? '' : decodeNativeString(strPtr);
         } finally {
           b.litert_lm_json_response_delete(response);
         }
@@ -3163,12 +3174,18 @@ class LiteRtLmFfiClient {
         code,
       );
       final known = NativeLastTurnEnd.fromCode(end.value);
-      _lastTurnEnds[conv] = status == liteRtLmStatusOk && known != null
-          ? (end: known, code: code.value)
-          : (end: NativeLastTurnEnd.failed, code: status);
+      if (status == liteRtLmStatusOk && known != null) {
+        _lastTurnEnds[conv] = (end: known, code: code.value);
+      } else {
+        _lastTurnEnds[conv] = (end: NativeLastTurnEnd.failed, code: status);
+        _warnTurnEndUnread(
+          'litert_lm_conversation_get_last_turn_end returned '
+          '${liteRtLmStatusName(status)} with end ${end.value}',
+        );
+      }
     } on Object catch (e) {
       _lastTurnEnds.remove(conv);
-      edgeAiLog('[LiteRtLmFfi] turn end not read: $e');
+      _warnTurnEndUnread('$e');
     } finally {
       calloc.free(end);
       calloc.free(code);
@@ -3251,6 +3268,21 @@ class LiteRtLmFfiClient {
       calloc.free(window);
     }
   }
+
+  /// Says once per client, in release builds too, that a turn's end could
+  /// not be read: the turn itself is not failed for it, so nothing else
+  /// would show it.
+  void _warnTurnEndUnread(String why) {
+    if (_turnEndUnreadWarned) return;
+    _turnEndUnreadWarned = true;
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] WARNING: a turn end could not be read '
+      '($why); turns are not affected. Shown once.',
+    );
+  }
+
+  bool _turnEndUnreadWarned = false;
 
   /// How the last send on the virtual sessions' shared conversation ended,
   /// when the session holding [token] made it; null otherwise.

@@ -1005,8 +1005,7 @@
         "cpu"
       ],
       "windows_x64": [
-        "cpu",
-        "gpu"
+        "cpu"
       ],
       "web": [
         "gpu"
@@ -1278,8 +1277,7 @@
         "cpu"
       ],
       "macos_arm64": [
-        "cpu",
-        "gpu"
+        "cpu"
       ],
       "linux_x64": [
         "cpu",
@@ -1289,8 +1287,7 @@
         "cpu"
       ],
       "windows_x64": [
-        "cpu",
-        "gpu"
+        "cpu"
       ],
       "web": [
         "gpu"

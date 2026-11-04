@@ -14,6 +14,12 @@ import '../option_scoring_self_check.dart';
 import 'litert_lm_client.dart';
 import 'native_turns.dart' show LiteRtLmTurnCancelledException;
 
+/// Whether the scoring self-check is skipped as in a release build:
+/// [kReleaseMode] (`dart.vm.product`, a compile-time constant), set by tests,
+/// which never run in release.
+@visibleForTesting
+bool liteRtLmScoringReleaseMode = kReleaseMode;
+
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
 ///
@@ -142,7 +148,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     // release build only (profile builds keep the check), and the check's
     // code is tree-shaken out of a release build.
     final check = liteRtLmScoringChecked(
-      releaseMode: kReleaseMode,
+      releaseMode: liteRtLmScoringReleaseMode,
       selfCheck: () => liteRtLmScoringSelfCheck(
         backend: activeBackend,
         targets: targets,
@@ -1209,9 +1215,7 @@ class RecoveringConversationHandle implements ConversationHandle {
         // before it reached the model, and recording it would replay into a
         // rebuild a message the model never saw (core 2.6.0 design §6.4b; L3
         // recovers such a turn).
-        final refused =
-            failed && _live.lastTurnEnd == NativeLastTurnEnd.contextFull;
-        if (!refused) {
+        if (!failed || failedTurnReachedModel(_live.lastTurnEnd)) {
           _history
             ..add(message)
             ..add(reply);
@@ -1332,6 +1336,15 @@ class RecoveringConversationHandle implements ConversationHandle {
 ///
 /// Same-session follow-up turns reuse the live conversation (no rebuild);
 /// only switching to a different session pays the teardown+replay cost.
+/// Whether a turn that failed still reached the model, so a session's
+/// history keeps it for the replay a rebuild does: every failed turn but one
+/// native ended context_full (section 23), whose input was refused before
+/// the model saw it. Both [RecoveringConversationHandle] and the virtual
+/// sessions follow it; L3 recovers such a turn (core 2.6.0 design §6.4b).
+@visibleForTesting
+bool failedTurnReachedModel(NativeLastTurnEnd? end) =>
+    end != NativeLastTurnEnd.contextFull;
+
 class _VirtualConversationHandle implements ConversationHandle {
   _VirtualConversationHandle({
     required this.client,
@@ -1437,6 +1450,11 @@ class _VirtualConversationHandle implements ConversationHandle {
         yield raw ? rawChunk : chunkText;
       }
       record();
+    } catch (_) {
+      // A turn native ended context_full never reached the model (section
+      // 23): replaying it would feed a rebuild a message the model never saw.
+      if (!failedTurnReachedModel(lastTurnEnd)) recorded = true;
+      rethrow;
     } finally {
       // Also record on error/cancel so the user turn isn't lost.
       record();

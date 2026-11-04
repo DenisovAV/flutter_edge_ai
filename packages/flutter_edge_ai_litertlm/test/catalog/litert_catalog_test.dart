@@ -173,6 +173,25 @@ void main() {
           PreferredBackend.gpu,
         }, reason: abi);
       }
+      // Per bundle, as describe() refuses: the catalog offers the GPU only
+      // where that bundle has run (liteRtLmEmbeddingGpuMeasured).
+      final eg2v = LiteRtEmbedders.embeddinggemma2TextVision440m.generic;
+      final eg2a = LiteRtEmbedders.embeddinggemma2_740m.generic;
+      expect(_here(eg2v, 'linux_x64'), {
+        PreferredBackend.cpu,
+        PreferredBackend.gpu,
+      });
+      expect(_here(eg2v, 'windows_x64'), _cpu);
+      expect(_here(eg2v, 'macos_arm64'), _cpu);
+      expect(_here(eg2a, 'linux_x64'), {
+        PreferredBackend.cpu,
+        PreferredBackend.gpu,
+      });
+      expect(_here(eg2a, 'windows_x64'), _cpu);
+      expect(_here(eg2a, 'macos_arm64'), {
+        PreferredBackend.cpu,
+        PreferredBackend.gpu,
+      });
       expect(_here(eg2.generic, null), _gpu);
       expect(_here(eg2.npuSm8850, 'android_arm64'), _npu);
       expect(_here(eg2.npuSm8850, null), _none);

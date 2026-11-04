@@ -15,9 +15,14 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show intelNpuLibs;
 import 'package:flutter_test/flutter_test.dart';
 
-/// `tar -tzf litertlm-windows_x86_64.tar.gz` of native-v0.19.0-a (the L1
-/// build the hook's checksum pins). A native bump that changes the Windows
-/// archive changes this list with it.
+/// The sha256 of the Windows archive [_windowsArchive] lists. The hook's pin
+/// must equal it: a native bump that changes the Windows archive fails here
+/// until this list is taken again from the new archive.
+const _windowsArchiveSha256 =
+    '96f39468c91db4ceca0e761f1f5b1957aea6e8fb4669b18767c4f13cf0560d44';
+
+/// `tar -tzf litertlm-windows_x86_64.tar.gz` of native-v0.19.0-a, the archive
+/// of [_windowsArchiveSha256].
 const _windowsArchive = {
   'GemmaModelConstraintProvider.dll',
   'LiteRt.dll',
@@ -71,6 +76,13 @@ Set<String> _forbiddenOnWindows() {
 
 void main() {
   final hook = File('hook/build.dart').readAsStringSync();
+
+  test('the listing is of the Windows archive the hook pins', () {
+    final pinned = RegExp(
+      r"'litertlm-windows_x86_64\.tar\.gz':\s*'([0-9a-f]{64})'",
+    ).firstMatch(hook)?.group(1);
+    expect(pinned, _windowsArchiveSha256);
+  });
 
   test('every Windows preload is a file of the Windows archive', () {
     expect(windowsPreloadLibraries, isNotEmpty);

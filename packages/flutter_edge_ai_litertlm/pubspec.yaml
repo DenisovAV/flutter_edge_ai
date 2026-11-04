@@ -25,6 +25,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Not yet the floor this source needs: it builds against the unreleased
+  # core 2.6.0 in this workspace (the decider SPI on `InferenceModel`, #769),
+  # and the 2.6.0 release PR raises this to ^2.6.0 with the version bump.
   # 2.5.5 brought the model catalog (`ModelCatalogSource`, `CatalogModel`,
   # `NpuTarget`) this version offers its models through.
   # 2.5.0 brought the option-scoring SPI it implements (`OptionScorer`; the

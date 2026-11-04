@@ -95,8 +95,9 @@ bool liteRtLmEmbeddingGpuRefusedHost() =>
 /// stack, the device, then the dispatch directory (Android extracts the
 /// libraries out of the APK there). Where EmbeddingGemma 2 runs on an NPU is
 /// [NpuStack.abis]: Qualcomm on Android arm64 and Linux arm64, Google Tensor
-/// and MediaTek on Android arm64, Intel on Windows x64; which builds have run
-/// where is [liteRtLmRegistryUrl].
+/// on Android arm64, Intel on Windows x64; a MediaTek bundle is refused in
+/// this release ([mediatekNpuRefused]). Which builds have run where is
+/// [liteRtLmRegistryUrl].
 Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
   required String file,
   required LiteRtLmNpuTarget? target,

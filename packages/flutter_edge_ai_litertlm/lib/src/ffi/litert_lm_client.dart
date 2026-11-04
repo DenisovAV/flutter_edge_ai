@@ -92,6 +92,61 @@ String? thinkingBudgetChannelWarning(
       'still think until maxOutputTokens.';
 }
 
+/// Whether this device's GPU is an Adreno: `/dev/kgsl-3d0` is the node of
+/// Qualcomm's kernel GPU driver (KGSL), and an app can see it
+/// (`existsSync` is true from an app on a vivo 1933 and a Galaxy S26+). A
+/// failed check reads as false, so such a device gets the engine's default.
+bool _deviceHasAdrenoGpu() => File('/dev/kgsl-3d0').existsSync();
+
+/// The `hint_kernel_batch_size` a load on [backend] hands LiteRT-LM, or null
+/// to leave the engine's own default (the setter is not called). That default
+/// depends on the model: upstream applies 4 to "generic" models, but
+/// recognized Gemma types aren't generic (engine_settings.cc gates it on
+/// has_generic_model), so gemma4/3/3n get no flush at all.
+///
+/// #364: with no flush LiteRT-LM's OpenCL backend dispatches the ENTIRE graph
+/// as one uninterruptible batch (gpu_backend_opencl_litert.cc: "dispatch all
+/// kernels in one batch" when kernel_batch_size<=0). On Adreno that starves
+/// the Flutter raster/compositor thread for a whole prefill (S23 Ultra: raster
+/// p95 6.8ms->123ms; Adreno 616: 149-1424 frames drawn in a request instead
+/// of ~2300). A positive value inserts a clFlush every N ops, giving the
+/// display work interleave points. Measured on dm3q: 4 still janks (p95
+/// 63ms), 2 is flat (p95 7.3ms ~= baseline), so 2 — not 4. It costs the
+/// Adreno 616 about 8% decode. NOT gpu_context_low_priority: it only reorders
+/// cross-context submission (no Adreno preemption of a running dispatch) and
+/// measured strictly worse.
+///
+/// #763: only on Adreno ([isAdreno]). Measured on one Mali, a Mali-G615: the
+/// UI stays smooth without the flush (111-115 fps during prefill either way),
+/// and decode is 1.6-1.8x faster without it with an animation on screen,
+/// 2.3-2.8x without one. Every GPU that is not an Adreno — older Mali,
+/// PowerVR, Xclipse — gets the engine's default; only the Mali-G615 is
+/// measured.
+///
+/// Off Android ([isAndroid] false) or off the GPU, null: Metal (iOS/macOS)
+/// doesn't starve the compositor, and the setter symbol only ships in the
+/// Android native rebuild. [isAdreno] is asked only for an Android GPU load.
+@visibleForTesting
+int? kernelBatchSizeFor(
+  String backend, {
+  required bool isAndroid,
+  bool Function() isAdreno = _deviceHasAdrenoGpu,
+}) {
+  if (!isAndroid || backend != 'gpu') return null;
+  if (isAdreno()) {
+    edgeAiLog(
+      '[LiteRtLmFfi] Android GPU (Adreno): hint_kernel_batch_size=2 '
+      '(#364 smooth UI)',
+    );
+    return 2;
+  }
+  edgeAiLog(
+    '[LiteRtLmFfi] Android GPU (not Adreno: no /dev/kgsl-3d0): '
+    "hint_kernel_batch_size not set, the engine's default (#763)",
+  );
+  return null;
+}
+
 /// Callback typedef with Uint8 for bool (C _Bool = 1 byte)
 typedef _StreamCallbackNative =
     Void Function(
@@ -1731,29 +1786,11 @@ class LiteRtLmFfiClient {
       );
     }
 
-    // #364: on Android, flush the OpenCL command queue every N ops during a
-    // GPU prefill so it doesn't starve the Flutter raster/compositor thread.
-    // By default LiteRT-LM's OpenCL backend dispatches the ENTIRE graph as one
-    // uninterruptible batch (gpu_backend_opencl_litert.cc: "dispatch all
-    // kernels in one batch" when kernel_batch_size<=0), so a ~2s prefill
-    // freezes the compositor (repro'd on Adreno S23 Ultra: raster p95
-    // 6.8ms->123ms). A positive hint_kernel_batch_size inserts a clFlush every
-    // N ops, giving the display work interleave points. Upstream auto-applies
-    // 4 for "generic" models to ensure smooth UI, but recognized Gemma types
-    // aren't generic (engine_settings.cc gates the default on has_generic_model)
-    // so gemma4/3/3n get NO flush unless we set it. Measured on dm3q: kb=4
-    // (upstream value) still janks (p95 63ms), kb=2 is flat (p95 7.3ms ~=
-    // baseline) with no TTFT cost, so 2 — not 4. NOT gpu_context_low_priority:
-    // it only reorders cross-context submission (no Adreno preemption of a
-    // running dispatch) and measured strictly worse (jank + TTFT both up).
-    // Gated to Android: Metal (iOS/macOS) doesn't starve the compositor, and
-    // the setter symbol only ships in the Android native rebuild.
-    final kernelBatchSize = Platform.isAndroid && backend == 'gpu' ? 2 : null;
-    if (kernelBatchSize != null) {
-      edgeAiLog(
-        '[LiteRtLmFfi] Android GPU: hint_kernel_batch_size=$kernelBatchSize (#364 smooth UI)',
-      );
-    }
+    // #364, #763: a clFlush every 2 ops on Adreno only; see kernelBatchSizeFor.
+    final kernelBatchSize = kernelBatchSizeFor(
+      backend,
+      isAndroid: Platform.isAndroid,
+    );
 
     // The engine settings and the engine are both made on a spawned isolate:
     // a frame started 98 ms late around the settings create on the calling

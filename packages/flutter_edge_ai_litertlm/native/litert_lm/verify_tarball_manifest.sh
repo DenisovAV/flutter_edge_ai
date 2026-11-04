@@ -45,6 +45,14 @@ INTENTIONAL_DROPS=(
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
   "android_arm64:libLiteRtTopKWebGpuSampler.so"
+  # native-v0.19.0-a: patch_c_api.sh section 20 builds no GPU sampler on Linux
+  # and Windows (the fused WebGPU sampler crashed GPU engine create there);
+  # LiteRT-LM samples on the CPU and the logits stay on the GPU. The sampler
+  # library would never be loaded.
+  "linux_x86_64:libLiteRtTopKWebGpuSampler.so"
+  "linux_arm64:libLiteRtTopKWebGpuSampler.so"
+  "windows_x86_64:LiteRtTopKWebGpuSampler.dll"
+  "windows_x86_64:libLiteRtTopKWebGpuSampler.dll"
   # native-v0.18.0: the QNN runtime left the bundle. Qualcomm licenses it for
   # redistribution only inside an application, so an app opts in with
   # `qualcomm_npu: true` and its build hook fetches com.qualcomm.qti:qnn-runtime

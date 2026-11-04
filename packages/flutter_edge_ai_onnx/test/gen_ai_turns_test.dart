@@ -118,7 +118,7 @@ void main() {
       onRewindFailure: failures.add,
     )..begin(1, system: 'be brief');
     runTurn('story', [10, 11], [20, 21], 'Once upon'); // 7 of 7
-    expect(settle(AfterTurn.keepStopped), isTrue);
+    expect(settle(AfterTurn.keepCut), isTrue);
     expect(generator.calls, isEmpty);
     expect(generator.tokens, [1, 2, 3, 10, 11, 20, 21]);
     expect(turns.history(1).last, {
@@ -213,6 +213,14 @@ void main() {
       expect(generator.tokens, [1, 2, 3], reason: '$reply');
       expect(turns.history(1), hasLength(1), reason: '$reply');
     }
+  });
+
+  test('a turn cut by the model\'s limits with no text keeps its prompt, '
+      'closed with the end token, as core\'s chat keeps its message', () {
+    runTurn('story', [10, 11], [20], '');
+    expect(settle(AfterTurn.keepCut), isTrue);
+    expect(generator.tokens, [1, 2, 3, 10, 11, 20, _end]);
+    expect(turns.history(1).last, {'role': 'assistant', 'content': ''});
   });
 
   test('a turn that never reached its prefill leaves nothing to settle', () {

@@ -275,7 +275,7 @@ void main() {
               .having((e) => e.partialText, 'partialText', '{"a"'),
         ),
       );
-      expect(_linesOf(log).last, 'settle:1:keepStopped');
+      expect(_linesOf(log).last, 'settle:1:keepCut');
       expect(await _ask(session, _script(['{"a": 3}'])), '{"a": 3}');
       // One generator throughout: never created again.
       expect(_linesOf(log).where((l) => l == guided), hasLength(1));
@@ -304,7 +304,7 @@ void main() {
       expect(await b, '{"a": 2}');
       expect(
         _from(log, 'generate:1', 1).where((l) => !l.startsWith('guidance')),
-        ['generate:1', 'settle:1:keepStopped', 'generate:1', 'settle:1:keep'],
+        ['generate:1', 'settle:1:keepCut', 'generate:1', 'settle:1:keep'],
       );
     }, skip: _hostHasGuidance ? false : 'this host has no guidance');
 
@@ -322,14 +322,14 @@ void main() {
         (_) {},
         onError: (Object _) {},
       )..pause();
-      await _waitForLine(log, 'settle:1:keepStopped');
+      await _waitForLine(log, 'settle:1:keepCut');
       expect(await _ask(session, _script(['{"a": 2}'])), '{"a": 2}');
       final settled = _linesOf(log);
       await paused.cancel();
       await Future<void>.delayed(const Duration(milliseconds: 200));
       expect(_linesOf(log), settled);
       expect(settled.where((l) => l.startsWith('settle')), [
-        'settle:1:keepStopped',
+        'settle:1:keepCut',
         'settle:1:keep',
       ]);
     }, skip: _hostHasGuidance ? false : 'this host has no guidance');
@@ -434,7 +434,7 @@ void main() {
       final session = await model.openSession();
       await _ask(session, _script(['x']));
       await _ask(session, _script(['x'], end: 'contextLimit'));
-      expect(_linesOf(log), contains('settle:1:keepStopped'));
+      expect(_linesOf(log), contains('settle:1:keepCut'));
       expect(
         await _ask(session, _script(['y'], echoSession: true)),
         '[session=1 turn=3]y',
@@ -458,6 +458,19 @@ void main() {
       await session.stopGeneration();
       await stopped;
       expect(_linesOf(log), contains('settle:1:keepStopped'));
+      expect(
+        await _ask(session, _script(['y'], echoSession: true)),
+        '[session=1 turn=3]y',
+      );
+    });
+
+    test('a window filled during decode with no text keeps its turn (only '
+        'a stop is taken back)', () async {
+      final (model, log) = await loaded('context_no_text');
+      final session = await model.openSession();
+      await _ask(session, _script(['x']));
+      expect(await _ask(session, _script([], end: 'contextLimit')), '');
+      expect(_linesOf(log), contains('settle:1:keepCut'));
       expect(
         await _ask(session, _script(['y'], echoSession: true)),
         '[session=1 turn=3]y',
@@ -564,7 +577,7 @@ void main() {
       expect(afterTurn(TurnEnd.stopped, guided: guided), AfterTurn.keepStopped);
       expect(
         afterTurn(TurnEnd.contextLimit, guided: guided),
-        AfterTurn.keepStopped,
+        AfterTurn.keepCut,
         reason: 'a window filled during decode',
       );
       expect(
@@ -577,7 +590,7 @@ void main() {
       }
     }
     expect(afterTurn(TurnEnd.outputLimit, guided: false), AfterTurn.keep);
-    expect(afterTurn(TurnEnd.outputLimit, guided: true), AfterTurn.keepStopped);
+    expect(afterTurn(TurnEnd.outputLimit, guided: true), AfterTurn.keepCut);
   });
 
   group('how a turn ends', () {

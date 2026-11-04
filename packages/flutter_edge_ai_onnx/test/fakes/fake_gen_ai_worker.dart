@@ -78,9 +78,9 @@
 //   first chunk — a prompt that does not fit.
 // After every turn the worker settles it (unless it is closing): with
 // `logSettle: true` in the engine configuration the engine logs
-// `settle:<session>:<keep|keepStopped|rewind>`. A rewind takes the turn back
-// off the session's turn count (`echoSession`), while keepStopped, like keep,
-// leaves it on unless the turn emitted no chunk; a turn that threw before its "prefill" (`contextFull`) counts
+// `settle:<session>:<keep|keepStopped|keepCut|rewind>`. A rewind takes the
+// turn back off the session's turn count (`echoSession`), while keepCut, like
+// keep, leaves it on, and keepStopped does unless the turn emitted no chunk; a turn that threw before its "prefill" (`contextFull`) counts
 // as not run.
 // A guided turn whose session has no "generator" yet (its first turn, or the
 // first after a reset) logs `guidance:<session>:<schema>`: the schema the
@@ -289,7 +289,7 @@ class _ScriptedEngine implements GenAiWorkerEngine {
     final ran = _ran.remove(sessionId) ?? false;
     final emitted = _emitted.remove(sessionId) ?? 0;
     final turns = _turns[sessionId];
-    // As the real engine: a cut turn that streamed no text is rewound.
+    // As the real engine: a stop that streamed no text is rewound.
     final rewound =
         how == AfterTurn.rewind ||
         (how == AfterTurn.keepStopped && emitted == 0);

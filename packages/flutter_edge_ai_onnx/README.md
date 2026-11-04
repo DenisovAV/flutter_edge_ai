@@ -162,12 +162,15 @@ a format, saying so. Android (this repository's ORT-GenAI build), iOS
 its history, and a turn that streamed text stays in the model's context
 exactly as core's `InferenceChat` keeps it in the chat. The worker settles the
 turn before it serves the next one:
-- **A stop, a guided turn at `maxOutputTokens`, and a window filled during
-  decode** keep the exchange: the prompt and the reply as far as the user saw
-  it stay in the context, closed with the model's end-of-turn token, as if the
-  reply had ended there (LiteRT-LM does the same). A window filled during
-  decode has no room for that token and keeps the turn as it is; the next
-  prompt then does not fit.
+- **A stop and a guided turn at `maxOutputTokens`** keep the exchange: the
+  prompt and the reply as far as the user saw it stay in the context, closed
+  with the model's end-of-turn token, as if the reply had ended there
+  (LiteRT-LM does the same). A stop before any text keeps nothing, as core's
+  chat takes it back; a guided turn at its cap keeps its prompt even then.
+- **A window filled during decode** has no room for that token and keeps the
+  turn as it is. The window is then full, so **a session used directly refuses
+  every later prompt** with `ContextLimitException`: close it and open a new
+  one, or use `InferenceChat`, which rebuilds its session from its history.
 - **A failure** and **a close** are rewound to where the generator was before
   the turn (`OgaGenerator_RewindTo`): the earlier turns stay, this one goes.
 - An unguided turn at its cap is kept and continued, as before.

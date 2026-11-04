@@ -80,15 +80,21 @@ enum AfterTurn {
   /// keeps its history without the turn.
   rewind,
 
-  /// A turn cut short that streamed text — stopped, a guided turn at its
-  /// cap, a window filled during decode: its exchange — the prompt and the
-  /// reply as far as it got, the tokens the user saw — stays in the
-  /// generator, closed with the model's end-of-turn token, as if the reply
-  /// had ended there. Core's chat keeps the partial reply in its history, so
-  /// the model's context must hold it too (LiteRT-LM keeps a stopped
-  /// exchange the same way, §16). The grammar of a guided session is reset,
-  /// so the next turn is guided from its start.
+  /// A stopped turn: its exchange — the prompt and the reply as far as it
+  /// got, the tokens the user saw — stays in the generator, closed with the
+  /// model's end-of-turn token, as if the reply had ended there. Core's chat
+  /// keeps the partial reply in its history, so the model's context must
+  /// hold it too (LiteRT-LM keeps a stopped exchange the same way, §16). A
+  /// stop before any text is taken back by core's chat, so it keeps nothing.
+  /// The grammar of a guided session is reset, so the next turn is guided
+  /// from its start.
   keepStopped,
+
+  /// A turn cut by the model's limits — a guided turn at its cap, a window
+  /// filled during decode: kept closed as [keepStopped] keeps a stop, but
+  /// also when it streamed no text, since core's chat keeps that turn's
+  /// message too.
+  keepCut,
 }
 
 /// The rule for what a turn that ended [end] (null: it failed) leaves
@@ -97,7 +103,8 @@ enum AfterTurn {
 /// - an end of sequence is kept;
 /// - a stop, a guided turn at `maxOutputTokens` and a window filled during
 ///   decode keep their exchange, closed as a finished turn
-///   ([AfterTurn.keepStopped]); a guided session's grammar starts again;
+///   ([AfterTurn.keepStopped], [AfterTurn.keepCut]); a guided session's
+///   grammar starts again;
 /// - an unguided turn at its cap is kept and continued, as before;
 /// - a [refused] prompt (it did not fit: nothing reached the generator, and
 ///   core's chat takes the turn back), a failure and a close are rewound:
@@ -110,8 +117,9 @@ AfterTurn afterTurn(
     ? AfterTurn.rewind
     : switch (end) {
         TurnEnd.endOfSequence => AfterTurn.keep,
-        TurnEnd.outputLimit => guided ? AfterTurn.keepStopped : AfterTurn.keep,
-        TurnEnd.stopped || TurnEnd.contextLimit => AfterTurn.keepStopped,
+        TurnEnd.outputLimit => guided ? AfterTurn.keepCut : AfterTurn.keep,
+        TurnEnd.stopped => AfterTurn.keepStopped,
+        TurnEnd.contextLimit => AfterTurn.keepCut,
         TurnEnd.closed || null => AfterTurn.rewind,
       };
 

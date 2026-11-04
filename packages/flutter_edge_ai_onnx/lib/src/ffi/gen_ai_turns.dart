@@ -133,7 +133,23 @@ final class SessionTurns {
       case AfterTurn.rewind:
         return _rewind(generator, start, drop);
       case AfterTurn.keepStopped:
-        return _closeStopped(generator, start, exchange, drop, remember);
+        return _closeStopped(
+          generator,
+          start,
+          exchange,
+          drop,
+          remember,
+          takeBackWithoutText: true,
+        );
+      case AfterTurn.keepCut:
+        return _closeStopped(
+          generator,
+          start,
+          exchange,
+          drop,
+          remember,
+          takeBackWithoutText: false,
+        );
     }
   }
 
@@ -153,7 +169,8 @@ final class SessionTurns {
     }
   }
 
-  /// A turn cut short ([AfterTurn.keepStopped]): its tokens stay — the
+  /// A turn cut short ([AfterTurn.keepStopped], [AfterTurn.keepCut]): its
+  /// tokens stay — the
   /// prompt and the reply as far as the user saw it — closed with
   /// [endOfTurnToken], so the context is that of a turn whose reply ended
   /// there. The last token is rewound and appended again with the end token:
@@ -163,25 +180,28 @@ final class SessionTurns {
   /// A generator holding the whole window — a window filled during decode —
   /// has no room for the end token: it keeps the turn as it is, and the
   /// grammar was already reset when the generator became done at
-  /// max_length. Where the turn streamed no text (core's chat takes such a
-  /// turn back), nothing was prefilled, or no end token is known, the turn
-  /// is rewound to [start] instead — its prompt too — gone from the context
-  /// and so not recorded. Where a rewind throws, the generator is dropped
+  /// max_length. Where a stop streamed no text ([takeBackWithoutText]: core's
+  /// chat takes such a turn back), nothing was prefilled, or no end token is
+  /// known, the turn is rewound to [start] instead — its prompt too — gone
+  /// from the context and so not recorded. A turn cut by the model's limits
+  /// with no text keeps its prompt, closed with the end token, as core's
+  /// chat keeps its message. Where a rewind throws, the generator is dropped
   /// and the exchange recorded, so the rebuild from the history holds it.
   bool _closeStopped(
     GeneratorOps? generator,
     int? start,
     (String, StringBuffer)? exchange,
     void Function() drop,
-    void Function() remember,
-  ) {
+    void Function() remember, {
+    required bool takeBackWithoutText,
+  }) {
     if (generator == null || start == null) return true;
     final length = generator.length;
     final end = endOfTurnToken;
-    // A turn that streamed no text is one core's chat takes back: nothing of
+    // A stop that streamed no text is one core's chat takes back: nothing of
     // it stays, its prompt included.
     if (exchange == null ||
-        exchange.$2.isEmpty ||
+        (takeBackWithoutText && exchange.$2.isEmpty) ||
         end == null ||
         length <= start) {
       return _rewind(generator, start, drop);

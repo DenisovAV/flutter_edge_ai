@@ -244,12 +244,8 @@ sha256), run once the Hugging Face login was in place:
 
 Both versions repeat bit for bit across processes. Between them, one input's
 vector is identical and the other's is not: cos 0.99886, largest component
-difference 5.0e-3. Gecko, by contrast, is identical on both inputs. So EG1 vectors
-stored on 0.18 are queried with slightly different vectors on 0.19 (the
-profile id does not change). The cause is not isolated: a CPU kernel change in
-the LiteRT pin, or §21 routing around SME2. The Metal zeros are the known
-"EG1 on the GPU does not work" result, unchanged. Linux, Windows and Android
-are left for the CI artifacts.
+difference 5.0e-3. Gecko, by contrast, is identical on both inputs. The Metal zeros are the known "EG1 on the GPU does not work" result,
+unchanged. The drift is isolated in the next section.
 
 ## Pre-tag probe 1: §16 across conversations, and §24 (macOS, 2026-11-04)
 
@@ -376,3 +372,46 @@ rewound. That was not measured here and is a question for L3.
 
 Not run on macOS: "a conversation longer than the first context group". Context
 groups exist only in the NPU executor, so it needs an NPU device (paid).
+
+## Embedding and speech drift, 0.18 → 0.19: where it comes from (2026-11-04)
+
+The question: is the difference introduced by 0.19, or by §21?
+
+Tools:
+- `probes/litert_probe.c` batch mode (one id sequence per line);
+- `probes/eg2_text.c` (EG2 through either C API shape: `-DC_API_018` for native-v0.18.x);
+- `probes/litert_drift.c` with `litert_drift_compare.py`: any `.tflite`, every static-shape signature, fixed pseudo-random inputs, outputs compared file by file.
+
+Runs:
+- macOS M-series CPU: 0.18.0-h, 0.19 with §21, and 0.19 built **without §21**;
+- Linux arm64 in Docker on the same Mac: native-v0.18.0-h, and the CI artifact of run 41749984146 (0.19, §1-§25).
+
+The retrieval set is 50 documents and 10 queries, tokenized like the Dart
+client (`[2] + encode(prefix + text) + [1]`, core's `TaskType` prefixes).
+
+| Comparison | EG1 `.tflite` | EG2 270m `.litertlm` | Qwen3-TTS talker int4 (169 outputs) | Gecko, Moonshine, Whisper (f32, i8), Matcha |
+|---|---|---|---|---|
+| Linux 0.18 vs Linux 0.19 | identical | identical | 169/169 identical | identical |
+| macOS 0.19 vs Linux 0.19 | identical | identical | 169/169 identical | identical |
+| macOS 0.19 without §21 vs with §21 | identical | — | — | — |
+| macOS 0.18 vs everything above | docs cos min 0.99867 (46/50 differ) | docs cos min 0.99923 (45/50 differ) | 22/169 identical, worst cos 0.9971 | Matcha decoder 2.4e-6 relative; the rest identical |
+
+So 0.19 computes the same numbers on macOS and Linux, with or without §21,
+and the same numbers Linux 0.18 did. The outlier is **0.18 on Apple CPUs**:
+its LiteRT/XNNPACK pin took a different CPU kernel path there, and the 0.19
+pin no longer does. This is not attributed further; Linux in Docker exposes
+no SME, so the Linux side always takes the portable path.
+
+Effect on retrieval, macOS (0.18 documents queried by 0.19, and both sides on
+0.19): for EG1 and EG2, all 10 queries keep their top-1 and the full top-5
+order, and gold is first on every side. The largest change in a query-document
+score is 0.0056, larger than the smallest gap between neighbours in a top 6
+(0.0033), so a denser corpus could swap neighbours.
+
+Affected data: only vectors produced by 0.18 on Apple CPUs, i.e. macOS and
+probably iOS (not measured), which take the same build path. Not run:
+- Linux x86_64 (Docker's emulated CPU has no AVX, which LiteRT requires);
+- Windows, Android.
+
+The talker's random-input difference is large, but it is the 0.18 Apple
+outlier too, not 0.19; whether it was audible was not measured.

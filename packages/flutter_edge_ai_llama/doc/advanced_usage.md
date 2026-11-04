@@ -76,6 +76,45 @@ budget. Thinking off therefore does not guarantee reasoning-free content.
 The synchronous chat response follows Edge AI's
 single-response API: it returns a call group when present, otherwise joined text.
 
+## Response formats
+
+`openSession(responseFormat:)` and `openChat(responseFormat:)` make every reply
+a JSON value of a core `ResponseFormat`. The connector sends the schema to
+llamadart as a strict `json_schema` (with the format's `name`, if any), whose
+grammar constrains decoding, with thinking off; core then checks each reply and
+throws `IncompleteStructuredOutputException` or
+`NonConformingStructuredOutputException`. A format is enforced only where a
+discriminating run passed: macOS arm64 on CPU and Metal, and WebGPU in Chrome.
+Elsewhere, and on a model whose device the runtime does not report,
+`structuredOutputSupport` is `none` and `openSession` throws
+`ResponseFormatUnsupportedException`.
+
+Within core's dialect, llamadart 0.17.5's converter refuses `minimum`/`maximum`
+on a `number`, a one-sided integer bound it cannot build (`minimum: 105`), a
+length or item bound above 2000, an `enum` or `const` beside another assertion,
+and an `enum`/`const` value of another type than `type`. `refusalFor` returns
+these with the keyword's JSON Pointer before a session opens.
+
+```dart
+final chat = await model.openChat(
+  responseFormat: ResponseFormat.jsonSchema({
+    'type': 'object',
+    'properties': {
+      'city': {'type': 'string'},
+      'days': {'type': 'integer', 'minimum': 1, 'maximum': 7},
+    },
+    'required': ['city', 'days'],
+    'additionalProperties': false,
+  }, name: 'forecast_request'),
+);
+```
+
+A structured turn is recorded in the session's history whatever its end, as
+core records the reply before it checks it, and a chat's structured turns drop
+the oldest turns for `tokenBuffer` as plain ones do. A turn cut by
+`maxOutputTokens`, the context, a stop or a close ends with that reply in the
+history. An input that does not fit the context is not recorded.
+
 ## Images, audio and LoRA
 
 Configure a model-specific projector resolver on `LlamaEngineProvider`:

@@ -12,10 +12,13 @@ import 'llama_inference_session.dart';
 /// the chat's session, empty.
 final class LlamaChatTurnHooks extends ChatTurnHooks {
   /// Creates the hooks of one chat.
-  LlamaChatTurnHooks({required this.enableThinking});
+  LlamaChatTurnHooks({required this.enableThinking, required this.tokenBuffer});
 
   /// Whether the app asked to see the model's reasoning.
   final bool enableThinking;
+
+  /// Tokens the chat keeps free: the oldest turns are dropped to keep them.
+  final int tokenBuffer;
 
   bool _reportedHiddenThinking = false;
 
@@ -51,11 +54,16 @@ final class LlamaChatTurnHooks extends ChatTurnHooks {
   int tokenCount(edge.InferenceModelSession session) =>
       session.getSessionMetrics().totalTokens;
 
+  /// Also hands the session the chat's [tokenBuffer] for its structured
+  /// turns, which core runs through the session's own turn.
   @override
   Future<void> addQueryChunk(
     edge.InferenceModelSession session,
     edge.Message message,
-  ) => session.addQueryChunk(message);
+  ) {
+    (session as LlamaInferenceSession).chatTokenBuffer = tokenBuffer;
+    return session.addQueryChunk(message);
+  }
 
   @override
   Future<void> replayFinished(edge.InferenceModelSession session) async =>

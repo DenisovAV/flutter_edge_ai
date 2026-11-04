@@ -9,6 +9,7 @@ import 'engine_queue.dart';
 import 'llama_chat_turn_hooks.dart';
 import 'llama_inference_session.dart';
 import 'runtime_error.dart';
+import 'structured_output_schema.dart';
 
 /// Loaded GGUF weights shared by independently owned logical dialogues.
 ///
@@ -28,6 +29,9 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
     this.maxNumImages,
     this.maxConcurrentSessions,
     this.defaultLoraPath,
+    this.structuredOutput = const edge.StructuredOutputSupport.none(
+      'This GGUF model was not loaded through LlamaEngineProvider.',
+    ),
   }) {
     _queue = EngineQueue(
       onInvalidated: (_, _) {
@@ -72,6 +76,11 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
 
   /// Installed model-level LoRA, used unless a session supplies another adapter.
   final String? defaultLoraPath;
+
+  /// What a response format may ask of this model as loaded: llamadart's
+  /// grammar constraint, enabled per host and backend after its run
+  /// (`LlamaEngineProvider` decides).
+  final edge.StructuredOutputSupport structuredOutput;
   @override
   edge.ModelFileType get fileType => edge.ModelFileType.gguf;
 
@@ -133,8 +142,21 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
   }
 
   @override
+  edge.StructuredOutputSupport get engineStructuredOutputSupport =>
+      structuredOutput;
+
+  /// The schemas within the dialect that llamadart's GBNF converter refuses.
+  @override
+  edge.ResponseFormatUnsupportedException? engineRefusalFor(
+    edge.JsonSchemaResponseFormat format,
+  ) => llamaSchemaRefusal(format);
+
+  @override
   ChatTurnHooks createChatTurnHooks(ResolvedChatRequest request) =>
-      LlamaChatTurnHooks(enableThinking: request.enableThinking);
+      LlamaChatTurnHooks(
+        enableThinking: request.enableThinking,
+        tokenBuffer: request.tokenBuffer,
+      );
 
   @override
   Future<edge.InferenceChat> createChat({
@@ -256,6 +278,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
         tools: request.tools,
         maxOutputTokens: request.maxOutputTokens,
         toolChoice: _llamaToolChoice(request.toolChoice),
+        responseFormat: request.responseFormat,
       );
 
   static llama.ToolChoice _llamaToolChoice(edge.ToolChoice choice) =>
@@ -280,6 +303,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
     List<edge.Tool> tools = const [],
     int? maxOutputTokens,
     llama.ToolChoice toolChoice = llama.ToolChoice.auto,
+    edge.JsonSchemaResponseFormat? responseFormat,
   }) async {
     _queue.ensureValid();
     if (_closed) throw StateError('The model is closed.');
@@ -337,6 +361,7 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
         defaultLoraPath: defaultLoraPath,
         tools: tools,
         toolChoice: toolChoice,
+        responseFormat: responseFormat,
         onClose: () {
           _detached.remove(next);
           if (identical(_session, next)) _session = null;

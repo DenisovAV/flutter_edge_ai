@@ -2,18 +2,31 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:flutter_edge_ai/engine.dart' show edgeAiLog, toolCallsOf;
+import 'package:flutter_edge_ai/engine.dart'
+    show EngineTurn, edgeAiLog, toolCallsOf;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
 
 import 'engine_queue.dart';
 import 'llama_tool.dart';
 import 'lora_path.dart' if (dart.library.io) 'lora_path_native.dart';
+import 'structured_output_schema.dart';
 
 /// An independent dialogue replayed through a model-owned runtime context.
 ///
 /// Successful turns commit atomically. Interrupted turns are rolled back in
 /// both the low-level session and the high-level chat transcript.
+///
+/// A session with a [responseFormat] differs in three ways. Its turns are
+/// generated under llamadart's grammar for the format, with thinking off.
+/// Every turn that streamed a reply is recorded, whatever its end — the
+/// input and the reply streamed so far, as core's chat records a structured
+/// reply before its check throws — because the chat's history is this
+/// session's [messages]. And a turn cut by the output cap, the context, a
+/// stop or a close ends its text cleanly: [startTurn]'s end says which, and
+/// core turns it into the format's error. A turn with no reply (stopped
+/// while queued or before its first token, or an input the context cannot
+/// hold) is rolled back as a plain one is.
 class LlamaInferenceSession extends edge.InferenceModelSession {
   /// Creates a session; the model retains ownership of [engine].
   LlamaInferenceSession({
@@ -31,6 +44,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
     this.defaultLoraPath,
     this.outputLimit,
     this.toolChoice = llama.ToolChoice.auto,
+    this.responseFormat,
     List<edge.Tool> tools = const [],
   }) : _queue = queue ?? EngineQueue(),
        _tools = SchemaToolDefinition.fromTools(tools) {
@@ -86,9 +100,19 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   /// Tool policy forwarded to the GGUF template and request planner.
   final llama.ToolChoice toolChoice;
 
+  /// What every reply must be, enforced by llamadart's grammar; core checks
+  /// each reply too. Null for a plain session.
+  final edge.JsonSchemaResponseFormat? responseFormat;
+
   final EngineQueue _queue;
   final List<SchemaToolDefinition> _tools;
   final Map<String, String> _replayAliases = {};
+
+  /// The token buffer of the chat this session serves, set by its turn
+  /// hooks. A structured turn runs through [startTurn], not the chat's
+  /// [getResponses], so it reads the buffer here and drops the oldest turns
+  /// to keep it free, as a plain chat turn does.
+  int? chatTokenBuffer;
 
   /// Number of hidden reasoning characters in the current or last turn.
   int hiddenThinkingCharacters = 0;
@@ -353,27 +377,54 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
       (await getResponseAsync().toList()).join();
 
   @override
-  Stream<String> getResponseAsync() => getResponses().map(
-    (response) => switch (response) {
-      edge.TextResponse(:final token) => token,
-      edge.ThinkingResponse() => '',
-      edge.FunctionCallResponse(:final name, :final args) => jsonEncode({
-        'name': name,
-        'arguments': args,
-      }),
-      edge.ParallelFunctionCallResponse(:final calls) => jsonEncode({
-        'tool_calls': [
-          for (final call in calls) {'name': call.name, 'arguments': call.args},
-        ],
-      }),
-    },
-  );
+  Stream<String> getResponseAsync() => startTurn().text;
+
+  /// One turn, with how it ended: [edge.TurnEnd.stopped] for this session's
+  /// stop or a cancelled subscription, [edge.TurnEnd.closed] for a close
+  /// during the turn, [edge.TurnEnd.outputLimit] or
+  /// [edge.TurnEnd.contextLimit] for llamadart's `length` finish (whichever
+  /// budget the request ran out of), else [edge.TurnEnd.endOfSequence]. An
+  /// error ends the text, and then the end is [edge.TurnEnd.closed], unread.
+  @override
+  EngineTurn startTurn() {
+    final turn = _startTurn(responseFormat == null ? null : chatTokenBuffer);
+    return EngineTurn(text: turn.responses.map(_responseText), end: turn.end);
+  }
+
+  static String _responseText(edge.ModelResponse response) =>
+      switch (response) {
+        edge.TextResponse(:final token) => token,
+        edge.ThinkingResponse() => '',
+        edge.FunctionCallResponse(:final name, :final args) => jsonEncode({
+          'name': name,
+          'arguments': args,
+        }),
+        edge.ParallelFunctionCallResponse(:final calls) => jsonEncode({
+          'tool_calls': [
+            for (final call in calls)
+              {'name': call.name, 'arguments': call.args},
+          ],
+        }),
+      };
 
   /// Typed output used by the connector chat, without model-family text parsing.
-  Stream<edge.ModelResponse> getResponses({int? tokenBuffer}) {
+  Stream<edge.ModelResponse> getResponses({int? tokenBuffer}) =>
+      _startTurn(tokenBuffer).responses;
+
+  ({Stream<edge.ModelResponse> responses, Future<edge.TurnEnd> end}) _startTurn(
+    int? tokenBuffer,
+  ) {
     _ensureOpen();
     late final StreamController<edge.ModelResponse> controller;
     Completer<void>? ownedGeneration;
+    final end = Completer<edge.TurnEnd>();
+    // The end follows the text: it completes once the text's done event is
+    // delivered, or once the consumer has cancelled.
+    void finish(edge.TurnEnd how) => unawaited(
+      controller.close().whenComplete(() {
+        if (!end.isCompleted) end.complete(how);
+      }),
+    );
     controller = StreamController<edge.ModelResponse>(
       onListen: () {
         if (_closed ||
@@ -386,7 +437,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
               'The session must be open, idle, and have staged input.',
             ),
           );
-          unawaited(controller.close());
+          finish(edge.TurnEnd.closed);
           return;
         }
         _done = ownedGeneration = Completer<void>();
@@ -396,7 +447,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         hiddenThinkingCharacters = 0;
         _metrics = edge.SessionMetrics();
 
-        unawaited(_generate(controller, tokenBuffer));
+        unawaited(_generate(controller, tokenBuffer, finish));
       },
       onCancel: () async {
         if (ownedGeneration != null && identical(_done, ownedGeneration)) {
@@ -404,7 +455,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         }
       },
     );
-    return controller.stream;
+    return (responses: controller.stream, end: end.future);
   }
 
   /// Commits completed replay turns; a trailing user input remains staged.
@@ -564,9 +615,15 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   Future<void> _generate(
     StreamController<edge.ModelResponse> controller,
     int? tokenBuffer,
+    void Function(edge.TurnEnd) finish,
   ) async {
     final done = _done!;
+    final format = responseFormat;
+    final structured = format != null;
     var reportedError = false;
+    // How the turn ended, once the generation has decided it; a stop or a
+    // close that cut it short leaves it null.
+    edge.TurnEnd? reached;
     try {
       await _queue.run<void>(() async {
         if (_stopped || _closed) return;
@@ -578,6 +635,19 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             : llama.ModelSource.path(defaultLoraPath!);
         var adapterApplied = false;
         var baselineRemoved = false;
+        // Before a commit: a restore that fails then fails the turn instead
+        // of following a recorded reply.
+        Future<void> restoreAdapters() async {
+          if (adapterApplied) {
+            await engine.removeLoraSource(adapter!);
+            adapterApplied = false;
+          }
+          if (baselineRemoved) {
+            await engine.setLoraSource(baseline!);
+            baselineRemoved = false;
+          }
+        }
+
         Object? primaryError;
         try {
           if (_unansweredCalls().isNotEmpty) {
@@ -599,6 +669,10 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           }
           if (_stopped || _closed) return;
           final retainedHistory = List<llama.LlamaChatMessage>.of(_history);
+          // Sent explicitly with a format: core refuses thinking with one,
+          // and llamadart's `create` defaults to thinking on.
+          final thinking = structured ? false : enableThinking;
+          final llamaFormat = structured ? llamaResponseFormat(format) : null;
           late List<llama.LlamaChatMessage> messages;
           late int promptTokens;
           late llama.LlamaChatTemplateResult rendered;
@@ -606,11 +680,12 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             messages = [...retainedHistory, ..._pending];
             rendered = await engine.chatTemplate(
               messages,
-              enableThinking: enableThinking,
+              enableThinking: thinking,
               includeTokenCount: true,
               tools: _tools,
               toolChoice: toolChoice,
               parallelToolCalls: true,
+              responseFormat: llamaFormat,
             );
             promptTokens =
                 rendered.tokenCount ??
@@ -624,16 +699,25 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           }
           final remaining = contextSize - promptTokens;
           if (remaining <= 0) {
+            reached = edge.TurnEnd.contextLimit;
+            // Nothing was generated: the turn is rolled back below, and a
+            // structured one ends cleanly for core to report.
+            if (structured) return;
             throw StateError(
               'The rendered prompt ($promptTokens tokens) fills the $contextSize-token context. Shorten the latest input or increase the context.',
             );
           }
           final generationLimit = math.min(outputLimit ?? remaining, remaining);
+          // A `length` finish ran out of the app's cap when that was the
+          // smaller budget, else out of the context.
+          final lengthEnd = outputLimit != null && outputLimit! <= remaining
+              ? edge.TurnEnd.outputLimit
+              : edge.TurnEnd.contextLimit;
           if (_stopped || _closed) return;
           final stopwatch = Stopwatch()..start();
           double? firstTokenMs;
           final contentFilter = _LeadingThoughtFilter(
-            enabled: !enableThinking && _hasClosedThinkingPrompt(rendered),
+            enabled: !thinking && _hasClosedThinkingPrompt(rendered),
           );
           final visibleTextBuffer = StringBuffer();
           void emitVisible(String text) {
@@ -647,40 +731,64 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
               .create(
                 messages,
                 params: params.copyWith(maxTokens: generationLimit),
-                enableThinking: enableThinking,
+                enableThinking: thinking,
                 tools: _tools,
                 toolChoice: toolChoice,
                 parallelToolCalls: true,
+                responseFormat: llamaFormat,
               )
               .takeWhile((_) => !_stopped && !_closed)
               .map((chunk) {
                 final delta = chunk.choices.firstOrNull?.delta;
                 final content = delta?.content;
-                final thinking = delta?.thinking;
+                final reasoning = delta?.thinking;
                 if (content != null && content.isNotEmpty) {
                   final hiddenBefore = contentFilter.hiddenCharacters;
                   emitVisible(contentFilter.add(content));
                   hiddenThinkingCharacters +=
                       contentFilter.hiddenCharacters - hiddenBefore;
                 }
-                if (!enableThinking && thinking != null) {
-                  hiddenThinkingCharacters += thinking.length;
+                if (!enableThinking && reasoning != null) {
+                  hiddenThinkingCharacters += reasoning.length;
                 }
-                if (enableThinking && thinking != null && thinking.isNotEmpty) {
+                if (enableThinking &&
+                    reasoning != null &&
+                    reasoning.isNotEmpty) {
                   firstTokenMs ??= stopwatch.elapsedMicroseconds / 1000;
-                  controller.add(edge.ThinkingResponse(thinking));
+                  controller.add(edge.ThinkingResponse(reasoning));
                 }
                 return chunk;
               })
               .collect();
-          if (_stopped || _closed) return;
+          if (_stopped || _closed) {
+            // What streamed before the stop or close is the structured
+            // reply core reports as incomplete, and records.
+            // Recorded before the adapters are restored: a failed restore
+            // after a stop is not the turn's error, and the reply streamed.
+            if (structured) {
+              _commitStructuredTurn(
+                retainedHistory,
+                visibleTextBuffer.toString(),
+              );
+            }
+            return;
+          }
           final hiddenBefore = contentFilter.hiddenCharacters;
           emitVisible(contentFilter.finish());
           hiddenThinkingCharacters +=
               contentFilter.hiddenCharacters - hiddenBefore;
           final visibleText = visibleTextBuffer.toString();
-          if (completion.finishReason?.wireValue == 'length' &&
-              (_tools.isNotEmpty || visibleText.trim().isEmpty)) {
+          final atLimit = completion.finishReason?.wireValue == 'length';
+          if (structured) {
+            // Core checks the reply against the format and reports a cut
+            // one; there are no tools to run.
+            await restoreAdapters();
+            reached = atLimit ? lengthEnd : edge.TurnEnd.endOfSequence;
+            _commitStructuredTurn(retainedHistory, visibleText);
+            _metrics = _metricsOf(completion, promptTokens, firstTokenMs);
+            return;
+          }
+          if (atLimit && (_tools.isNotEmpty || visibleText.trim().isEmpty)) {
             throw StateError(
               'Generation reached its token limit before completing a tool or visible answer. Increase maxOutputTokens/context size and retry.',
             );
@@ -746,14 +854,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
               'ToolChoice.required completed without a tool call.',
             );
           }
-          if (adapterApplied) {
-            await engine.removeLoraSource(adapter!);
-            adapterApplied = false;
-          }
-          if (baselineRemoved) {
-            await engine.setLoraSource(baseline!);
-            baselineRemoved = false;
-          }
+          await restoreAdapters();
           if (_stopped || _closed) return;
           final assistant = llama.LlamaChatMessage.withContent(
             role: llama.LlamaChatRole.assistant,
@@ -786,19 +887,8 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
           if (calls.isNotEmpty) {
             _transcript.add(_toolCallMessage(calls));
           }
-          final usage = completion.usage;
-          final duration = usage?.duration;
-          _metrics = edge.SessionMetrics(
-            inputTokens: usage?.promptTokens ?? promptTokens,
-            outputTokens: usage?.completionTokens ?? 0,
-            totalTokens: usage?.totalTokens ?? promptTokens,
-            timeToFirstTokenMs: usage?.timeToFirstToken == null
-                ? firstTokenMs
-                : usage!.timeToFirstToken!.inMicroseconds / 1000,
-            tokensPerSecond: duration == null || duration.inMicroseconds == 0
-                ? null
-                : usage!.completionTokens * 1000000 / duration.inMicroseconds,
-          );
+          _metrics = _metricsOf(completion, promptTokens, firstTokenMs);
+          reached = atLimit ? lengthEnd : edge.TurnEnd.endOfSequence;
           final responses = <edge.FunctionCallResponse>[
             for (final call in calls)
               edge.FunctionCallResponse(
@@ -856,7 +946,9 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
       }, cancelled: _abort!.future);
       // Model teardown aborts queued work too; it must not look like user stop.
       _queue.ensureValid();
-      if (_closed && !_userStopped) {
+      // A structured turn cut by a close ends cleanly: core reports it as
+      // incomplete, with what streamed.
+      if (_closed && !_userStopped && !structured) {
         throw StateError('The model/session closed during generation.');
       }
     } catch (error, stack) {
@@ -870,6 +962,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         _commitAnsweredResults();
       } catch (error, stack) {
         if (!reportedError) {
+          reportedError = true;
           controller.addError(error, stack);
         } else {
           edgeAiLog('GGUF history cleanup failed: $error\n$stack');
@@ -881,9 +974,66 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
         _done = null;
         _abort = null;
         done.complete();
-        unawaited(controller.close());
+        // A turn that finished its commit keeps its own end, even if a stop
+        // or a close arrived after it.
+        finish(
+          reportedError
+              ? edge.TurnEnd.closed
+              : reached ??
+                    (!_userStopped && _closed
+                        ? edge.TurnEnd.closed
+                        : edge.TurnEnd.stopped),
+        );
       }
     }
+  }
+
+  /// Records a structured turn that reached generation: the staged input
+  /// and [visibleText]. Core records the same reply in its chat before it
+  /// checks it, and the chat's history is [messages]. An empty reply is not
+  /// recorded, as core records none: the input is rolled back, so the
+  /// history never ends on an unanswered user turn (templates that require
+  /// alternating roles refuse two in a row).
+  void _commitStructuredTurn(
+    List<llama.LlamaChatMessage> retainedHistory,
+    String visibleText,
+  ) {
+    if (visibleText.isEmpty) return;
+    _history
+      ..clear()
+      ..addAll(retainedHistory)
+      ..addAll(_pending)
+      ..add(
+        llama.LlamaChatMessage.fromText(
+          role: llama.LlamaChatRole.assistant,
+          text: visibleText,
+        ),
+      );
+    _transcript
+      ..addAll(_pendingTranscript)
+      ..add(edge.Message.text(text: visibleText));
+    _pending.clear();
+    _pendingTranscript.clear();
+  }
+
+  static edge.SessionMetrics _metricsOf(
+    llama.LlamaCompletion completion,
+    int promptTokens,
+    double? firstTokenMs,
+  ) {
+    final usage = completion.usage;
+    final duration = usage?.duration;
+    return edge.SessionMetrics(
+      inputTokens: usage?.promptTokens ?? promptTokens,
+      outputTokens: usage?.completionTokens ?? 0,
+      totalTokens: usage?.totalTokens ?? promptTokens,
+      timeToFirstTokenMs: usage?.timeToFirstToken == null
+          ? firstTokenMs
+          : usage!.timeToFirstToken!.inMicroseconds / 1000,
+      tokensPerSecond: duration == null || duration.inMicroseconds == 0
+          ? null
+          : usage!.completionTokens * 1000000 / duration.inMicroseconds,
+    );
   }
 
   @override

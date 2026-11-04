@@ -6,6 +6,7 @@ import 'package:llamadart/llamadart.dart' as llama;
 import 'backend_config.dart';
 import 'llama_inference_model.dart';
 import 'runtime_error.dart';
+import 'structured_output_platform.dart';
 import 'model_location.dart'
     if (dart.library.js_interop) 'model_location_web.dart';
 
@@ -193,11 +194,16 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
           'Requested ${config.maxTokens} context tokens, but the runtime loaded $contextSize. Request a smaller context explicitly.',
         );
       }
+      final activeBackend = resolveBackend(
+        backendName,
+        config.preferredBackend,
+      );
       return LlamaInferenceModel(
         engine: engine,
         modelType: spec.modelType,
         maxTokens: contextSize,
-        activeBackend: resolveBackend(backendName, config.preferredBackend),
+        activeBackend: activeBackend,
+        structuredOutput: await _structuredOutputSupport(engine, activeBackend),
         supportImage: config.supportImage,
         supportAudio: config.supportAudio,
         maxNumImages: config.maxNumImages,
@@ -215,6 +221,36 @@ final class LlamaEngineProvider implements InferenceEngineProvider {
       Error.throwWithStackTrace(runtimeError(error), stack);
     }
   }
+}
+
+/// What a response format may ask of [engine] loaded on [backend]: the
+/// whole dialect where llamadart applies its grammar constraint and the
+/// host and backend have run, nothing elsewhere. The schemas inside the
+/// dialect that llamadart's converter refuses are refused per format
+/// (`LlamaInferenceModel.engineRefusalFor`).
+Future<edge.StructuredOutputSupport> _structuredOutputSupport(
+  llama.LlamaEngine engine,
+  edge.PreferredBackend? backend,
+) async {
+  final llama.LlamaEngineCapabilities capabilities;
+  try {
+    capabilities = await engine.capabilities;
+  } catch (error) {
+    return edge.StructuredOutputSupport.none(
+      'Reading the GGUF runtime capabilities failed ($error), so no response '
+      'format is enforced on this model.',
+    );
+  }
+  if (!capabilities.supportsStructuredOutput || !capabilities.supportsGrammar) {
+    return const edge.StructuredOutputSupport.none(
+      'This GGUF runtime does not report grammar-constrained decoding.',
+    );
+  }
+  final refusal = structuredOutputHostRefusal(backend);
+  if (refusal != null) return edge.StructuredOutputSupport.none(refusal);
+  return const edge.StructuredOutputSupport(
+    keywords: edge.ResponseFormat.dialect,
+  );
 }
 
 /// Loads GGUF with an explicit format, including installed extensionless blob URLs.

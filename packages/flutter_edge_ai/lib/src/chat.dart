@@ -17,7 +17,6 @@ import 'package:flutter_edge_ai/src/structured/structured_session.dart';
 import 'package:mutex/mutex.dart';
 
 import 'model.dart';
-
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 
 /// Default maximum length for function call buffer before flushing as text.
@@ -685,8 +684,16 @@ class InferenceChat {
 
   /// One turn of a chat with a [responseFormat], over core's structured
   /// session: text only, no thinking filter and no tool parsing (both are
-  /// refused with a format). The reply is committed before its check's
-  /// failure is thrown, as a plain turn's is before a close's.
+  /// refused with a format).
+  ///
+  /// A reply that failed the format's check (incomplete or non-conforming)
+  /// is committed and counted before that failure is thrown, as a plain
+  /// turn's reply is before a close's; a reply cut by a close is not counted
+  /// (the session is gone). A failed count or rebuild after such a reply is
+  /// printed, never thrown over the format's failure. Any other error — the
+  /// engine's own, a `ResponseFormatUnsupportedException` from an engine that
+  /// refuses the schema at the first send among them — reaches the caller
+  /// unchanged, and nothing is committed, as for a plain turn.
   Stream<ModelResponse> _streamStructuredResponse() async* {
     final buffer = StringBuffer();
     StructuredOutputException? failure;
@@ -696,17 +703,35 @@ class InferenceChat {
         buffer.write(chunk);
         yield TextResponse(chunk);
       }
-    } on StructuredOutputException catch (error, stack) {
+    } on IncompleteStructuredOutputException catch (error, stack) {
+      failure = error;
+      failureStack = stack;
+    } on NonConformingStructuredOutputException catch (error, stack) {
       failure = error;
       failureStack = stack;
     }
     final response = buffer.toString();
     _commitText(response);
+    if (failure == null) {
+      await _accountReply(response, emittedFunctionCall: false);
+      return;
+    }
     if (failure case IncompleteStructuredOutputException(end: TurnEnd.closed)) {
       Error.throwWithStackTrace(failure, failureStack!);
     }
-    await _accountReply(response, emittedFunctionCall: false);
-    if (failure != null) Error.throwWithStackTrace(failure, failureStack!);
+    try {
+      await _accountReply(response, emittedFunctionCall: false);
+    } catch (accountingError) {
+      // The format's failure is what the caller acts on; a release build is
+      // where this shows, and edgeAiLog is silent there.
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai] WARNING: after a structured reply that failed its '
+        'check, counting its tokens or rebuilding the session failed too '
+        '($accountingError).',
+      );
+    }
+    Error.throwWithStackTrace(failure, failureStack!);
   }
 
   Stream<ModelResponse> _streamCoreResponse() async* {

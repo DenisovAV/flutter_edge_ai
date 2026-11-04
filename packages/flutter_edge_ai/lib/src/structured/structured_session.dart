@@ -19,7 +19,10 @@ import 'response_format.dart';
 ///
 /// A cancelled subscription is a stop: the engine's [stopGeneration] is
 /// called (on most engines a cancel alone only detaches Dart while native
-/// keeps decoding), and the next turn starts only once this one has ended.
+/// keeps decoding). The next turn starts only once this one has ended and
+/// that stop has returned, so a stop never lands on the next turn. A turn
+/// cancelled while it still waits for the previous one never reaches the
+/// engine.
 @internal
 final class StructuredSession extends InferenceModelSession {
   StructuredSession(this.engineSession, this.format, {required this.engine});
@@ -33,55 +36,85 @@ final class StructuredSession extends InferenceModelSession {
   /// The model's type, named when the engine breaks its contract.
   final Type engine;
 
-  /// Completes when the last turn started here has ended.
+  /// Completes when the last turn started here has settled: ended, and its
+  /// stop (if it was cancelled) returned.
   Future<void> _lastTurn = Future<void>.value();
 
+  /// A turn whose [EngineTurn.end] is the engine's end. A turn that ends
+  /// without one — cancelled before it reached the engine: [TurnEnd.stopped];
+  /// the engine failed to start it, gave no end, or its end failed:
+  /// [TurnEnd.closed], with the error on the text.
   @override
-  Stream<String> getResponseAsync() {
+  EngineTurn startTurn() {
+    final reported = Completer<TurnEnd>();
+    final settled = Completer<void>();
     late final StreamController<String> controller;
     StreamSubscription<String>? subscription;
-    Future<TurnEnd>? end;
+    Future<TurnEnd>? engineEnd;
     var cancelled = false;
+    var stopping = false;
     var textDone = false;
-    final ended = Completer<void>();
+    var engineEnded = false;
 
-    void finish() {
-      if (!ended.isCompleted) ended.complete();
+    void report(TurnEnd end) {
+      if (!reported.isCompleted) reported.complete(end);
+    }
+
+    void settle() {
+      if (!settled.isCompleted) settled.complete();
+    }
+
+    Future<void> fail(Object error, [StackTrace? stack]) async {
+      report(TurnEnd.closed);
+      settle();
+      controller.addError(error, stack);
+      await controller.close();
     }
 
     controller = StreamController<String>(
       onListen: () async {
         final previous = _lastTurn;
-        _lastTurn = ended.future;
+        _lastTurn = settled.future;
         await previous;
         if (cancelled) {
-          finish();
+          report(TurnEnd.stopped);
+          settle();
           return;
         }
         final EngineTurn turn;
         try {
           turn = startEngineTurn(engineSession);
         } catch (error, stack) {
-          finish();
-          controller.addError(error, stack);
-          await controller.close();
+          await fail(error, stack);
           return;
         }
-        end = turn.end;
+        final end = engineEnd = turn.end;
         if (end == null) {
-          finish();
-          controller.addError(
+          await fail(
             StateError(
               '$engine accepted a response format but cannot say how its '
               'turns end (EngineTurn.end is null): it must keep '
               'StructuredOutputSupport.none.',
             ),
           );
-          await controller.close();
           return;
         }
-        // The turn has ended once [end] completes, whatever the consumer does.
-        unawaited(end!.then((_) => finish(), onError: (_) => finish()));
+        // The turn has ended once [end] completes; it has settled once a
+        // stop asked for on cancel has returned too.
+        unawaited(
+          end.then(
+            (value) {
+              engineEnded = true;
+              report(value);
+              if (!stopping) settle();
+            },
+            onError: (Object _) {
+              engineEnded = true;
+              report(TurnEnd.closed);
+              if (!stopping) settle();
+            },
+          ),
+        );
         final text = StringBuffer();
         var failed = false;
         subscription = turn.text.listen(
@@ -95,7 +128,20 @@ final class StructuredSession extends InferenceModelSession {
           },
           onDone: () async {
             textDone = true;
-            final turnEnd = await end!;
+            final TurnEnd turnEnd;
+            try {
+              turnEnd = await end;
+            } catch (error, stack) {
+              controller.addError(
+                StateError(
+                  '$engine broke the EngineTurn contract: its end completed '
+                  'with an error ($error).',
+                ),
+                stack,
+              );
+              await controller.close();
+              return;
+            }
             if (!failed) {
               final failure = structuredReplyFailure(
                 format,
@@ -114,19 +160,36 @@ final class StructuredSession extends InferenceModelSession {
       onCancel: () async {
         cancelled = true;
         final active = subscription;
+        // Still waiting for the previous turn: onListen sees [cancelled].
         if (active == null) return;
+        stopping = !textDone && !engineEnded;
         await active.cancel();
-        if (textDone) return;
+        if (!stopping) return;
         // A stop: on most engines cancelling the text only detaches Dart.
         try {
           await engineSession.stopGeneration();
-        } finally {
-          await end;
+        } catch (error) {
+          // There is no listener left to take it; a release build is where
+          // a failed stop shows, and edgeAiLog is silent there.
+          // ignore: avoid_print
+          print(
+            '[flutter_edge_ai] WARNING: stopping a cancelled structured turn '
+            'failed ($error).',
+          );
         }
+        try {
+          await engineEnd;
+        } catch (_) {
+          // Reported as closed above.
+        }
+        settle();
       },
     );
-    return controller.stream;
+    return EngineTurn(text: controller.stream, end: reported.future);
   }
+
+  @override
+  Stream<String> getResponseAsync() => startTurn().text;
 
   @override
   Future<String> getResponse() => getResponseAsync().join();

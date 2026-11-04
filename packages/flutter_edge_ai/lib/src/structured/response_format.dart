@@ -126,38 +126,59 @@ const _types = {
 
 const _maxDepth = 32;
 
-/// JSON-encodes [schema] and decodes it again: a deep copy that holds only
-/// JSON values, in the caller's key order, then made unmodifiable.
-Map<String, Object?> _copySchema(Map<String, Object?> schema) {
-  final String encoded;
-  try {
-    encoded = jsonEncode(schema);
-  } on JsonUnsupportedObjectError catch (e) {
-    throw ArgumentError.value(
-      schema,
-      'schema',
-      'is not JSON-encodable (${e.unsupportedObject.runtimeType}'
-          '${e.cause == null ? '' : ': ${e.cause}'})',
-    );
+/// A deep copy of [schema] that holds only JSON values (null, booleans,
+/// finite numbers, strings, lists, maps with string keys), in the caller's
+/// key order, made unmodifiable. Copied by hand, not through `jsonDecode`: on
+/// the web that returns maps that put integer-like keys first.
+Map<String, Object?> _copySchema(Map<String, Object?> schema) =>
+    _copyJson(schema, '', <Object>{}) as Map<String, Object?>;
+
+Object? _copyJson(Object? value, String path, Set<Object> open) {
+  Never refuse(String problem) => throw ArgumentError.value(
+    value,
+    'schema',
+    'is not JSON-encodable at ${path.isEmpty ? '/' : path}: $problem',
+  );
+  switch (value) {
+    case null || bool() || String():
+      return value;
+    case num():
+      if (!value.isFinite) refuse('$value is not a JSON number');
+      return value;
+    case List():
+      if (!open.add(value)) refuse('the list contains itself');
+      final copy = List<Object?>.unmodifiable([
+        for (var i = 0; i < value.length; i++)
+          _copyJson(value[i], '$path/$i', open),
+      ]);
+      open.remove(value);
+      return copy;
+    case Map():
+      if (!open.add(value)) refuse('the map contains itself');
+      final copy = <String, Object?>{};
+      for (final MapEntry(:key, value: item) in value.entries) {
+        if (key is! String) refuse('the key $key is not a string');
+        copy[key] = _copyJson(item, '$path/${jsonPointerToken(key)}', open);
+      }
+      open.remove(value);
+      return Map<String, Object?>.unmodifiable(copy);
+    default:
+      refuse('a ${value.runtimeType}');
   }
-  return _frozen(jsonDecode(encoded)) as Map<String, Object?>;
 }
 
-Object? _frozen(Object? value) => switch (value) {
-  Map() => Map<String, Object?>.unmodifiable({
-    for (final entry in value.entries)
-      entry.key as String: _frozen(entry.value),
-  }),
-  List() => List<Object?>.unmodifiable(value.map(_frozen)),
-  _ => value,
-};
-
+/// [value] with its keys sorted and its integral numbers written as
+/// integers, so `1` and `1.0` compare equal on the VM as on the web.
 Object? _sortedKeys(Object? value) => switch (value) {
   Map() => {
     for (final key in (value.keys.cast<String>().toList()..sort()))
       key: _sortedKeys(value[key]),
   },
   List() => [for (final item in value) _sortedKeys(item)],
+  double()
+      when value == value.truncateToDouble() &&
+          value.abs() < 9007199254740992 =>
+    value.toInt(),
   _ => value,
 };
 
@@ -183,7 +204,7 @@ void _checkSubschema(
     _malformed(path, 'a subschema must be a map, not ${jsonKindOf(node)}');
   }
   final type = node['type'];
-  if (type == null) {
+  if (!node.containsKey('type')) {
     if (isRoot) _malformed(path, 'the root must declare a "type"');
   } else if (type is! String || !_types.contains(type)) {
     _malformed(
@@ -194,7 +215,7 @@ void _checkSubschema(
   }
 
   final properties = node['properties'];
-  if (properties != null) {
+  if (node.containsKey('properties')) {
     if (properties is! Map<String, Object?>) {
       _malformed('$path/properties', '"properties" must be a map');
     }

@@ -168,6 +168,24 @@ void main() {
         'type': 'number',
         'enum': [1, 1.0],
       },
+      'a fractional minItems': {'type': 'array', 'minItems': 2.5},
+      'an explicit type: null in a subschema': {
+        'type': 'object',
+        'properties': {
+          'a': {'type': null},
+        },
+      },
+      'properties: null': {'type': 'object', 'properties': null},
+      'items: null': {'type': 'array', 'items': null},
+      'an infinite number': {'type': 'number', 'maximum': double.infinity},
+      'NaN anywhere': {
+        'type': 'string',
+        'examples': [double.nan],
+      },
+      'a map key that is not a string': {
+        'type': 'object',
+        'properties': {1: <String, Object?>{}},
+      },
       'an enum with equal objects in another key order': {
         'type': 'object',
         'enum': [
@@ -378,6 +396,187 @@ void main() {
           },
         }, '{"v": 7}'),
         isNull,
+      );
+    });
+  });
+
+  group('review follow-ups: construction', () {
+    test('a map that contains itself is refused, not a stack overflow', () {
+      final schema = <String, Object?>{'type': 'object'};
+      schema['examples'] = [schema];
+      expect(
+        () => ResponseFormat.jsonSchema(schema),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('nesting through properties counts too', () {
+      var schema = <String, Object?>{'type': 'string'};
+      for (var i = 1; i < 33; i++) {
+        schema = {
+          'type': 'object',
+          'properties': {'p': schema},
+        };
+      }
+      expect(() => ResponseFormat.jsonSchema(schema), throwsArgumentError);
+    });
+
+    test('equal bounds are well formed', () {
+      expect(
+        () => ResponseFormat.jsonSchema({
+          'type': 'array',
+          'minItems': 2,
+          'maxItems': 2,
+        }),
+        returnsNormally,
+      );
+    });
+
+    test('lists in the schema are unmodifiable too', () {
+      final format = _schema({
+        'type': 'object',
+        'properties': {
+          'a': {'type': 'string'},
+        },
+        'required': ['a'],
+      });
+      expect(
+        () => (format.schema['required']! as List).add('b'),
+        throwsUnsupportedError,
+      );
+    });
+
+    test('== takes 1 and 1.0 as one value, as JSON does', () {
+      final a = ResponseFormat.jsonSchema({'type': 'number', 'maximum': 1});
+      final b = ResponseFormat.jsonSchema({'type': 'number', 'maximum': 1.0});
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+      expect(
+        a,
+        isNot(ResponseFormat.jsonSchema({'type': 'number', 'maximum': 1.5})),
+      );
+    });
+
+    test('schemaJson keeps an integer-like key where the caller put it', () {
+      // On the web a jsonDecode round trip moves "1" first.
+      expect(
+        _schema({
+          'type': 'object',
+          'properties': {
+            'b': {'type': 'string'},
+            '1': {'type': 'string'},
+          },
+        }).schemaJson,
+        '{"type":"object","properties":{"b":{"type":"string"},'
+        '"1":{"type":"string"}}}',
+      );
+    });
+  });
+
+  group('review follow-ups: the reply check', () {
+    StructuredOutputException? check(
+      Map<String, Object?> schema,
+      String text,
+    ) => structuredReplyFailure(_schema(schema), text, TurnEnd.endOfSequence);
+
+    test('only JSON whitespace may surround the value', () {
+      expect(check({'type': 'object'}, ' \t\r\n{}\n '), isNull);
+      for (final space in [' ', '﻿', ' ']) {
+        expect(
+          check({'type': 'object'}, '$space{}'),
+          isA<NonConformingStructuredOutputException>()
+              .having((e) => e.schemaPath, 'schemaPath', isNull)
+              .having((e) => e.text, 'text', '$space{}'),
+          reason: space.codeUnitAt(0).toRadixString(16),
+        );
+      }
+    });
+
+    test('a number that decodes to infinity is non-conforming', () {
+      for (final (schema, text) in [
+        (<String, Object?>{'type': 'number'}, '1e400'),
+        (<String, Object?>{'type': 'object'}, '{"v": -1e400}'),
+      ]) {
+        expect(
+          check(schema, text),
+          isA<NonConformingStructuredOutputException>().having(
+            (e) => e.text,
+            'text',
+            text,
+          ),
+          reason: text,
+        );
+      }
+    });
+
+    test('object and array are told apart', () {
+      expect(
+        check({'type': 'object'}, '[]'),
+        isA<NonConformingStructuredOutputException>().having(
+          (e) => e.schemaPath,
+          'schemaPath',
+          '/type',
+        ),
+      );
+      expect(
+        check({'type': 'array'}, '{}'),
+        isA<NonConformingStructuredOutputException>().having(
+          (e) => e.schemaPath,
+          'schemaPath',
+          '/type',
+        ),
+      );
+      expect(check({'type': 'array'}, '[]'), isNull);
+    });
+
+    test('the bounds are inclusive', () {
+      expect(check({'type': 'array', 'maxItems': 2}, '[1, 2]'), isNull);
+      expect(check({'type': 'array', 'minItems': 2}, '[1, 2]'), isNull);
+      expect(check({'type': 'number', 'minimum': 1}, '1'), isNull);
+      expect(check({'type': 'number', 'maximum': 1}, '1'), isNull);
+      expect(check({'type': 'string', 'maxLength': 2}, '"ab"'), isNull);
+    });
+
+    test('a property name with ~ is escaped in the path', () {
+      expect(
+        check({
+          'type': 'object',
+          'properties': {
+            'a~b': {'type': 'string'},
+          },
+        }, '{"a~b": 1}'),
+        isA<NonConformingStructuredOutputException>().having(
+          (e) => e.schemaPath,
+          'schemaPath',
+          '/properties/a~0b/type',
+        ),
+      );
+    });
+
+    test('enum and const compare sizes too', () {
+      expect(
+        check({
+          'type': 'object',
+          'enum': [
+            {'a': 1},
+          ],
+        }, '{"a": 1, "b": 2}'),
+        isA<NonConformingStructuredOutputException>().having(
+          (e) => e.schemaPath,
+          'schemaPath',
+          '/enum',
+        ),
+      );
+      expect(
+        check({
+          'type': 'array',
+          'const': [1],
+        }, '[1, 2]'),
+        isA<NonConformingStructuredOutputException>().having(
+          (e) => e.schemaPath,
+          'schemaPath',
+          '/const',
+        ),
       );
     });
   });

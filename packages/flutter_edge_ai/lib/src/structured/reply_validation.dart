@@ -9,9 +9,12 @@ import 'structured_output.dart';
 /// with, or null when [text] is a value of [format].
 ///
 /// Any end but [TurnEnd.endOfSequence] is incomplete, even when [text]
-/// parses. A complete turn is trimmed, decoded with `jsonDecode` (which must
-/// consume the whole text) and checked against the dialect's keywords; no
-/// fence or prose is unwrapped.
+/// parses. A complete turn is decoded with `jsonDecode`, which must consume
+/// the whole text and allows only JSON's own whitespace (space, tab, line
+/// feed, carriage return) around the value — not a non-breaking space, a BOM
+/// or U+2028, which an app's own `jsonDecode` would refuse too. Its numbers
+/// must be finite (`1e400` decodes to infinity). It is then checked against
+/// the dialect's keywords; no fence or prose is unwrapped.
 StructuredOutputException? structuredReplyFailure(
   JsonSchemaResponseFormat format,
   String text,
@@ -26,11 +29,18 @@ StructuredOutputException? structuredReplyFailure(
   }
   final Object? value;
   try {
-    value = jsonDecode(text.trim());
+    value = jsonDecode(text);
   } on FormatException catch (e) {
     return NonConformingStructuredOutputException(
       'The reply is not one JSON value: ${e.message}. The engine accepted a '
       'format it did not enforce.',
+      text: text,
+    );
+  }
+  if (_hasNonFiniteNumber(value)) {
+    return NonConformingStructuredOutputException(
+      'The reply holds a number outside the range of a double. The engine '
+      'accepted a format it did not enforce.',
       text: text,
     );
   }
@@ -147,5 +157,12 @@ bool _hasType(Object? value, String type) => switch (type) {
   'number' => value is num,
   'boolean' => value is bool,
   'null' => value == null,
+  _ => false,
+};
+
+bool _hasNonFiniteNumber(Object? value) => switch (value) {
+  num() => !value.isFinite,
+  List() => value.any(_hasNonFiniteNumber),
+  Map() => value.values.any(_hasNonFiniteNumber),
   _ => false,
 };

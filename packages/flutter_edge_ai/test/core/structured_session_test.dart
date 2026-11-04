@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/src/interface.dart' show startEngineTurn;
 import 'package:flutter_test/flutter_test.dart';
 
 /// A session whose next turn streams [tokens] and ends with [end]
@@ -19,18 +20,47 @@ final class _Session extends InferenceModelSession {
   bool closed = false;
   StreamController<String>? live;
 
-  void finish(TurnEnd end) => _open?.complete(end);
+  /// Thrown by the next startTurn.
+  Object? startError;
+
+  /// The end future fails instead of completing (a contract breach).
+  bool endFails = false;
+
+  /// Thrown by sizeInTokens; [sizeCalls] counts the calls.
+  Object? sizeError;
+  int sizeCalls = 0;
+
+  /// When set, stopGeneration returns only once it completes; [stopLandedOn]
+  /// is the turn count when it did.
+  Completer<void>? stopGate;
+  int? stopLandedOn;
+  Object? stopError;
+
+  void finish(TurnEnd end) {
+    if (!(_open?.isCompleted ?? true)) _open!.complete(end);
+  }
 
   @override
   EngineTurn startTurn() {
+    if (startError case final error?) throw error;
     turns++;
+    if (endFails) {
+      return EngineTurn(
+        text: Stream.fromIterable(tokens),
+        end: Future.error(StateError('end failed')),
+      );
+    }
     if (endless) {
       final open = _open = Completer<TurnEnd>();
       final controller = live = StreamController<String>();
       for (final token in tokens) {
         controller.add(token);
       }
-      controller.onCancel = () {};
+      // The contract: the end completes when the consumer cancels the text.
+      controller.onCancel = () {
+        // Also called once a closed controller's done is delivered.
+        if (!controller.isClosed) finish(TurnEnd.stopped);
+      };
       return EngineTurn(text: controller.stream, end: open.future);
     }
     final failure = error;
@@ -54,7 +84,11 @@ final class _Session extends InferenceModelSession {
   Future<String> getResponse() => getResponseAsync().join();
 
   @override
-  Future<int> sizeInTokens(String text) async => text.length;
+  Future<int> sizeInTokens(String text) async {
+    sizeCalls++;
+    if (sizeError case final error?) throw error;
+    return text.length;
+  }
 
   @override
   Future<void> addQueryChunk(Message message) async => staged.add(message);
@@ -62,8 +96,13 @@ final class _Session extends InferenceModelSession {
   @override
   Future<void> stopGeneration() async {
     stops++;
+    if (stopError case final error?) throw error;
     await live?.close();
     finish(TurnEnd.stopped);
+    if (stopGate case final gate?) {
+      await gate.future;
+      stopLandedOn = turns;
+    }
   }
 
   @override
@@ -561,17 +600,23 @@ void main() {
         (
           ['{"id": '],
           TurnEnd.outputLimit,
-          isA<IncompleteStructuredOutputException>(),
+          isA<IncompleteStructuredOutputException>()
+              .having((e) => e.end, 'end', TurnEnd.outputLimit)
+              .having((e) => e.partialText, 'partialText', '{"id": '),
         ),
         (
           ['{"id": 1}'],
           TurnEnd.endOfSequence,
-          isA<NonConformingStructuredOutputException>(),
+          isA<NonConformingStructuredOutputException>()
+              .having((e) => e.schemaPath, 'schemaPath', '/properties/id/type')
+              .having((e) => e.text, 'text', '{"id": 1}'),
         ),
         (
           ['{"id": "A"}'],
           TurnEnd.closed,
-          isA<IncompleteStructuredOutputException>(),
+          isA<IncompleteStructuredOutputException>()
+              .having((e) => e.end, 'end', TurnEnd.closed)
+              .having((e) => e.partialText, 'partialText', '{"id": "A"}'),
         ),
       ]) {
         final model = _Model(support: _all)
@@ -605,29 +650,462 @@ void main() {
       expect(model.opened.last.staged.single.text, 'Hi');
     });
   });
+
+  group('a structured turn\'s lifecycle', () {
+    Future<(_Session, InferenceModelSession)> open(_Session engine) async {
+      final model = _Model(support: _all)..nextSession = () => engine;
+      return (engine, await model.openSession(responseFormat: _order));
+    }
+
+    test('a startTurn that throws fails the turn; the next one runs', () async {
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id": "A"}'])..startError = StateError('boom'),
+      );
+      await expectLater(
+        session.getResponse(),
+        throwsA(isA<StateError>().having((e) => e.message, 'message', 'boom')),
+      );
+      engine.startError = null;
+      expect(await session.getResponse(), '{"id": "A"}');
+    });
+
+    test('after a turn with no end, the next turn runs', () async {
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id": "A"}'], end: null),
+      );
+      await expectLater(session.getResponse(), throwsStateError);
+      engine.end = TurnEnd.endOfSequence;
+      expect(await session.getResponse(), '{"id": "A"}');
+      expect(engine.turns, 2);
+    });
+
+    test('an end that fails is the turn\'s error, not a hang', () async {
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id": "A"}'])..endFails = true,
+      );
+      await expectLater(
+        session.getResponse().timeout(const Duration(seconds: 5)),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('_Model'), contains('end completed with an error')),
+          ),
+        ),
+      );
+      engine.endFails = false;
+      expect(await session.getResponse(), '{"id": "A"}');
+    });
+
+    test('a turn cancelled while queued never reaches the engine', () async {
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id": "A"}'])..endless = true,
+      );
+      final first = session.getResponse();
+      await pumpEventQueue();
+      final queued = session.getResponseAsync().listen((_) {});
+      await pumpEventQueue();
+      await queued.cancel();
+      engine.endless = false;
+      await engine.live!.close();
+      engine.finish(TurnEnd.endOfSequence);
+      expect(await first, '{"id": "A"}');
+      await pumpEventQueue();
+      expect(engine.turns, 1);
+      expect(await session.getResponse(), '{"id": "A"}');
+      expect(engine.turns, 2);
+    });
+
+    test(
+      'the next turn waits for a cancelled turn\'s stop to return',
+      () async {
+        final gate = Completer<void>();
+        final (engine, session) = await open(
+          _Session(tokens: ['{"id"'])
+            ..endless = true
+            ..stopGate = gate,
+        );
+        final first = Completer<void>();
+        final subscription = session.getResponseAsync().listen(
+          (_) => first.isCompleted ? null : first.complete(),
+        );
+        await first.future;
+        // The end completes at the cancel; the stop returns only later.
+        final cancelled = subscription.cancel();
+        engine
+          ..endless = false
+          ..tokens = ['{"id": "B"}'];
+        final next = session.getResponse();
+        await pumpEventQueue();
+        expect(engine.turns, 1);
+        gate.complete();
+        await cancelled;
+        expect(await next, '{"id": "B"}');
+        expect(engine.stopLandedOn, 1);
+        expect(engine.turns, 2);
+      },
+    );
+
+    test('a stop that throws on cancel neither escapes nor blocks the next '
+        'turn', () async {
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id"'])
+          ..endless = true
+          ..stopError = StateError('stop failed'),
+      );
+      final first = Completer<void>();
+      final subscription = session.getResponseAsync().listen(
+        (_) => first.isCompleted ? null : first.complete(),
+      );
+      await first.future;
+      await subscription.cancel();
+      expect(engine.stops, 1);
+      engine
+        ..endless = false
+        ..stopError = null
+        ..tokens = ['{"id": "B"}'];
+      expect(await session.getResponse(), '{"id": "B"}');
+    });
+
+    test('a paused consumer pauses the engine\'s text', () async {
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id"'])..endless = true,
+      );
+      final subscription = session.getResponseAsync().listen((_) {});
+      subscription.pause();
+      await pumpEventQueue();
+      expect(engine.live!.isPaused, isTrue);
+      subscription.resume();
+      await pumpEventQueue();
+      expect(engine.live!.isPaused, isFalse);
+      await subscription.cancel();
+    });
+
+    test('stopGeneration reaches the engine', () async {
+      final (engine, session) = await open(_Session());
+      await session.stopGeneration();
+      expect(engine.stops, 1);
+    });
+
+    test('startTurn on core\'s session reports the engine\'s end', () async {
+      final (engine, session) = await open(
+        _Session(tokens: ['{"id"'], end: TurnEnd.outputLimit),
+      );
+      final turn = startEngineTurn(session);
+      final (_, errors) = await _drain(turn.text);
+      expect(errors.single, isA<IncompleteStructuredOutputException>());
+      expect(await turn.end, TurnEnd.outputLimit);
+
+      engine.endless = true;
+      final first = startEngineTurn(session);
+      final queued = startEngineTurn(session);
+      final firstSub = first.text.listen((_) {});
+      await pumpEventQueue();
+      final queuedSub = queued.text.listen((_) {});
+      await queuedSub.cancel();
+      await firstSub.cancel();
+      expect(await first.end, TurnEnd.stopped);
+      expect(await queued.end, TurnEnd.stopped);
+    });
+  });
+
+  group('a structured chat turn\'s failures', () {
+    Future<(_Model, InferenceChat)> chatOver(_Session engine) async {
+      final model = _Model(support: _all)..nextSession = () => engine;
+      final chat = await model.openChat(responseFormat: _order);
+      await chat.addQueryChunk(const Message(text: 'Hi', isUser: true));
+      return (model, chat);
+    }
+
+    test(
+      'an engine\'s refusal at the first send reaches the app unchanged',
+      () async {
+        const refusal = ResponseFormatUnsupportedException(
+          'Failed to create LLGuidance constraint',
+        );
+        final engine = _Session(tokens: const [])
+          ..error = refusal
+          ..sizeError = StateError('session closed');
+        final (_, chat) = await chatOver(engine);
+        await expectLater(chat.generateChatResponse(), throwsA(same(refusal)));
+        expect(engine.sizeCalls, 0);
+        expect(chat.fullHistory.map((m) => m.text), ['Hi']);
+      },
+    );
+
+    test(
+      'a failed token count does not replace the format\'s failure',
+      () async {
+        for (final (tokens, end, matcher) in [
+          (
+            ['{"id": 1}'],
+            TurnEnd.endOfSequence,
+            isA<NonConformingStructuredOutputException>()
+                .having(
+                  (e) => e.schemaPath,
+                  'schemaPath',
+                  '/properties/id/type',
+                )
+                .having((e) => e.text, 'text', '{"id": 1}'),
+          ),
+          (
+            ['{"id"'],
+            TurnEnd.outputLimit,
+            isA<IncompleteStructuredOutputException>()
+                .having((e) => e.end, 'end', TurnEnd.outputLimit)
+                .having((e) => e.partialText, 'partialText', '{"id"'),
+          ),
+        ]) {
+          final engine = _Session(tokens: tokens, end: end)
+            ..sizeError = StateError('count failed');
+          final (_, chat) = await chatOver(engine);
+          await expectLater(chat.generateChatResponse(), throwsA(matcher));
+          expect(engine.sizeCalls, 1, reason: end.name);
+          expect(chat.fullHistory.last.text, tokens.join());
+        }
+      },
+    );
+
+    test('a reply cut by a close is committed but not counted', () async {
+      final engine = _Session(tokens: ['{"id"'], end: TurnEnd.closed);
+      final (_, chat) = await chatOver(engine);
+      await expectLater(
+        chat.generateChatResponse(),
+        throwsA(
+          isA<IncompleteStructuredOutputException>().having(
+            (e) => e.end,
+            'end',
+            TurnEnd.closed,
+          ),
+        ),
+      );
+      expect(engine.sizeCalls, 0);
+      expect(chat.fullHistory.last.text, '{"id"');
+    });
+
+    test('structured replies are counted, conforming or not', () async {
+      final engine = _Session(tokens: ['{"id": "A"}']);
+      final (_, chat) = await chatOver(engine);
+      final before = chat.currentTokens;
+      await chat.generateChatResponse();
+      expect(chat.currentTokens, before + '{"id": "A"}'.length);
+      engine
+        ..tokens = ['{"id"']
+        ..end = TurnEnd.outputLimit;
+      await chat.addQueryChunk(const Message(text: 'Again', isUser: true));
+      final middle = chat.currentTokens;
+      await expectLater(
+        chat.generateChatResponse(),
+        throwsA(isA<IncompleteStructuredOutputException>()),
+      );
+      expect(chat.currentTokens, greaterThanOrEqualTo(middle + 5));
+    });
+  });
+
+  group('the hooks of a structured chat', () {
+    test('every hook gets the engine\'s own session', () async {
+      final hooks = _SessionRecordingHooks();
+      final model = _Model(support: _all, hooks: hooks)
+        ..nextSession = () => _Session(tokens: ['{"id": "A"}']);
+      final chat = await model.openChat(responseFormat: _order);
+      await chat.addQueryChunk(const Message(text: 'Hi', isUser: true));
+      await chat.generateChatResponse();
+      await chat.clearHistory(
+        replayHistory: const [Message(text: 'Hi', isUser: true)],
+      );
+      await expectLater(
+        chat.clearHistory(
+          replayHistory: const [Message(text: 'boom', isUser: true)],
+        ),
+        throwsStateError,
+      );
+      expect(hooks.calls.keys, {
+        'addQueryChunk',
+        'tokenCount',
+        'replayFinished',
+        'replayFailed',
+      });
+      for (final MapEntry(key: hook, value: sessions) in hooks.calls.entries) {
+        expect(sessions, everyElement(isA<_Session>()), reason: hook);
+      }
+    });
+  });
+
+  group('openChat\'s order', () {
+    test('a refused format never reaches resolveChatRequest', () async {
+      var resolved = 0;
+      ResolvedChatRequest resolver(ChatRequest r) {
+        resolved++;
+        return _carry(r, tools: r.tools);
+      }
+
+      for (final model in [
+        _Model(resolver: resolver),
+        _Model(
+          support: _all,
+          resolver: resolver,
+          refusal: (_) => const ResponseFormatUnsupportedException('budget'),
+        ),
+      ]) {
+        await expectLater(
+          model.openChat(responseFormat: _order),
+          throwsA(isA<ResponseFormatUnsupportedException>()),
+        );
+        expect(model.requests, isEmpty);
+      }
+      expect(resolved, 0);
+    });
+
+    test(
+      'an engine that changes the format is a StateError naming it',
+      () async {
+        final dropping = _Model(
+          support: _all,
+          resolver: (r) => _carry(r, tools: r.tools, responseFormat: null),
+        );
+        await expectLater(
+          dropping.openChat(responseFormat: _order),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('_Model'), contains('responseFormat')),
+            ),
+          ),
+        );
+        expect(dropping.requests, isEmpty);
+
+        final adding = _Model(
+          support: _all,
+          resolver: (r) => _carry(r, tools: r.tools, responseFormat: _order),
+        );
+        await expectLater(adding.openChat(), throwsStateError);
+
+        // An equal copy is the same format.
+        final copying = _Model(
+          support: _all,
+          resolver: (r) => _carry(
+            r,
+            tools: r.tools,
+            responseFormat:
+                ResponseFormat.jsonSchema(
+                      (_order as JsonSchemaResponseFormat).schema,
+                    )
+                    as JsonSchemaResponseFormat,
+          ),
+        );
+        final chat = await copying.openChat(responseFormat: _order);
+        expect(
+          identical(copying.requests.single.responseFormat, _order),
+          isTrue,
+        );
+        expect(chat.responseFormat, _order);
+      },
+    );
+  });
+
+  group('refusal paths', () {
+    test('JSON Pointer tokens escape ~ and / in refusals', () {
+      final model = _Model(
+        support: const StructuredOutputSupport(
+          keywords: {'type', 'properties'},
+        ),
+      );
+      expect(
+        model
+            .refusalFor(
+              ResponseFormat.jsonSchema({
+                'type': 'object',
+                'properties': {
+                  'a/b~c': {'type': 'string', 'pattern': 'x'},
+                },
+              }),
+            )!
+            .schemaPath,
+        '/properties/a~1b~0c/pattern',
+      );
+      expect(
+        model
+            .refusalFor(
+              ResponseFormat.jsonSchema({'type': 'object', 'x/y~': 1}),
+            )!
+            .schemaPath,
+        '/x~1y~0',
+      );
+    });
+
+    test('the reported keyword set cannot be changed', () {
+      final model = _Model(
+        support: StructuredOutputSupport(keywords: {'type'}),
+      );
+      expect(
+        () => model.structuredOutputSupport.keywords.add('pattern'),
+        throwsUnsupportedError,
+      );
+    });
+  });
 }
 
-/// Every value of [request], with [tools] in place of its own.
-ResolvedChatRequest _carry(ChatRequest request, {required List<Tool> tools}) =>
-    ResolvedChatRequest(
-      modelType: request.modelType ?? ModelType.gemmaIt,
-      supportImage: false,
-      supportAudio: false,
-      supportsFunctionCalls: false,
-      tools: tools,
-      maxFunctionBufferLength: 64,
-      temperature: request.temperature,
-      randomSeed: request.randomSeed,
-      topK: request.topK,
-      topP: request.topP,
-      tokenBuffer: request.tokenBuffer,
-      loraPath: request.loraPath,
-      enableThinking: false,
-      toolChoice: request.toolChoice,
-      systemInstruction: request.systemInstruction,
-      maxOutputTokens: request.maxOutputTokens,
-      responseFormat: request.responseFormat,
-    );
+/// Every value of [request], with [tools] in place of its own, and
+/// [responseFormat] in place of its own when given.
+ResolvedChatRequest _carry(
+  ChatRequest request, {
+  required List<Tool> tools,
+  Object? responseFormat = _keep,
+}) => ResolvedChatRequest(
+  modelType: request.modelType ?? ModelType.gemmaIt,
+  supportImage: false,
+  supportAudio: false,
+  supportsFunctionCalls: false,
+  tools: tools,
+  maxFunctionBufferLength: 64,
+  temperature: request.temperature,
+  randomSeed: request.randomSeed,
+  topK: request.topK,
+  topP: request.topP,
+  tokenBuffer: request.tokenBuffer,
+  loraPath: request.loraPath,
+  enableThinking: false,
+  toolChoice: request.toolChoice,
+  systemInstruction: request.systemInstruction,
+  maxOutputTokens: request.maxOutputTokens,
+  responseFormat: identical(responseFormat, _keep)
+      ? request.responseFormat
+      : responseFormat as JsonSchemaResponseFormat?,
+);
+
+const _keep = Object();
+
+/// Records the session each hook receives; a queued message `boom` throws.
+final class _SessionRecordingHooks extends ChatTurnHooks {
+  final calls = <String, List<InferenceModelSession>>{};
+
+  void _record(String hook, InferenceModelSession session) =>
+      (calls[hook] ??= []).add(session);
+
+  @override
+  Future<void>? addQueryChunk(InferenceModelSession session, Message message) {
+    _record('addQueryChunk', session);
+    if (message.text == 'boom') return Future.error(StateError('boom'));
+    return null;
+  }
+
+  @override
+  int? tokenCount(InferenceModelSession session) {
+    _record('tokenCount', session);
+    return null;
+  }
+
+  @override
+  Future<void> replayFinished(InferenceModelSession session) async =>
+      _record('replayFinished', session);
+
+  @override
+  Future<void> replayFailed(
+    InferenceModelSession session,
+    Object error,
+  ) async => _record('replayFailed', session);
+}
 
 /// Every chunk and every error of [stream], once it is done.
 Future<(List<String>, List<Object>)> _drain(Stream<String> stream) async {

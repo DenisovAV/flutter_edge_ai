@@ -632,8 +632,11 @@ abstract class InferenceModel {
   /// [responseFormat] — what every reply must be, as on [openSession]: every
   /// session of the chat, its rebuilt ones too, is opened with it. A reply
   /// that fails the check is kept in the chat's history, then thrown
-  /// ([InferenceChat.generateChatResponse]). Refused with [ArgumentError]
-  /// together with [tools] or `enableThinking: true`.
+  /// ([InferenceChat.generateChatResponse]). Checked before the engine is
+  /// asked anything: [ArgumentError] together with [tools] or
+  /// `enableThinking: true` (as the caller passed them), then
+  /// [ResponseFormatUnsupportedException] when [refusalFor] refuses it; only
+  /// then does the engine resolve the request.
   ///
   /// Core implements this once for every engine (`@nonVirtual`); an engine
   /// supplies its defaults in [resolveChatRequest] and its per-turn
@@ -661,6 +664,8 @@ abstract class InferenceModel {
     final format = _jsonSchemaFormat(responseFormat);
     if (format != null) {
       _checkFormatArguments(tools: tools, enableThinking: enableThinking);
+      final refusal = refusalFor(format);
+      if (refusal != null) throw refusal;
     }
     final resolved = resolveChatRequest(
       ChatRequest(
@@ -683,6 +688,15 @@ abstract class InferenceModel {
         responseFormat: format,
       ),
     );
+    // Core owns the format: an engine that dropped or changed it would turn
+    // the chat into one whose replies nobody checks.
+    if (resolved.responseFormat != format) {
+      throw StateError(
+        '$runtimeType.resolveChatRequest changed the responseFormat '
+        '(${resolved.responseFormat} instead of $format): it must carry '
+        'ChatRequest.responseFormat over unchanged.',
+      );
+    }
     final independentChat = InferenceChat(
       sessionCreator: () => _openSession(
         SessionRequest(
@@ -699,7 +713,7 @@ abstract class InferenceModel {
           maxOutputTokens: resolved.maxOutputTokens,
           modelType: resolved.modelType,
           toolChoice: resolved.toolChoice,
-          responseFormat: resolved.responseFormat,
+          responseFormat: format,
         ),
       ),
       maxTokens: maxTokens,
@@ -1195,8 +1209,9 @@ final class ResolvedChatRequest {
   final String? systemInstruction;
   final int? maxOutputTokens;
 
-  /// [ChatRequest.responseFormat], carried over unchanged: the chat's
-  /// sessions are opened with it.
+  /// [ChatRequest.responseFormat], carried over unchanged: core opens the
+  /// chat's sessions with its own, and [InferenceModel.openChat] throws
+  /// [StateError] naming the engine when this differs from it.
   final JsonSchemaResponseFormat? responseFormat;
 }
 
@@ -1253,7 +1268,11 @@ StructuredOutputSupport checkedSupport(
       'ResponseFormat.dialect: ${outside.join(', ')}.',
     );
   }
-  return support;
+  // A copy the caller cannot change, whatever set the engine handed over.
+  return StructuredOutputSupport(
+    keywords: Set.unmodifiable(support.keywords),
+    delivery: support.delivery,
+  );
 }
 
 /// [InferenceModel.refusalFor].

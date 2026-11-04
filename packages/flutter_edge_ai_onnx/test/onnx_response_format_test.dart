@@ -256,7 +256,7 @@ void main() {
 
   group('a guided session', () {
     test('sets the schema once, on its generator; a turn cut at its cap is '
-        'rewound, so the session keeps that generator and its history', () async {
+        'kept, closed as a finished turn, on that same generator', () async {
       final (model, log) = await loaded('guided');
       final session = await model.openSession(responseFormat: _schema);
       final guided =
@@ -265,8 +265,8 @@ void main() {
       expect(await _ask(session, _script(['{"a": 1}'])), '{"a": 1}');
       expect(_linesOf(log), contains('settle:1:keep'));
 
-      // Cut at the cap: incomplete, and the generator goes back to before
-      // the turn (which also resets ORT-GenAI's grammar).
+      // Cut at the cap: incomplete; its exchange stays in the context, as in
+      // core's chat, and the grammar starts again.
       await expectLater(
         _ask(session, _script(['{"a"'], end: 'outputLimit')),
         throwsA(
@@ -275,13 +275,13 @@ void main() {
               .having((e) => e.partialText, 'partialText', '{"a"'),
         ),
       );
-      expect(_linesOf(log).last, 'settle:1:rewind');
+      expect(_linesOf(log).last, 'settle:1:keepStopped');
       expect(await _ask(session, _script(['{"a": 3}'])), '{"a": 3}');
       // One generator throughout: never created again.
       expect(_linesOf(log).where((l) => l == guided), hasLength(1));
     }, skip: _hostHasGuidance ? false : 'this host has no guidance');
 
-    test('a cut turn is rewound before a turn queued behind it runs', () async {
+    test('a cut turn is settled before a turn queued behind it runs', () async {
       final (model, log) = await loaded('race');
       final session = await model.openSession(responseFormat: _schema);
       await session.addQueryChunk(
@@ -304,11 +304,11 @@ void main() {
       expect(await b, '{"a": 2}');
       expect(
         _from(log, 'generate:1', 1).where((l) => !l.startsWith('guidance')),
-        ['generate:1', 'settle:1:rewind', 'generate:1', 'settle:1:keep'],
+        ['generate:1', 'settle:1:keepStopped', 'generate:1', 'settle:1:keep'],
       );
     }, skip: _hostHasGuidance ? false : 'this host has no guidance');
 
-    test('a paused cut turn is rewound before the next turn, and cancelling '
+    test('a paused cut turn is settled before the next turn, and cancelling '
         'it late settles nothing again', () async {
       final (model, log) = await loaded('race_paused');
       final session = await model.openSession(responseFormat: _schema);
@@ -322,14 +322,14 @@ void main() {
         (_) {},
         onError: (Object _) {},
       )..pause();
-      await _waitForLine(log, 'settle:1:rewind');
+      await _waitForLine(log, 'settle:1:keepStopped');
       expect(await _ask(session, _script(['{"a": 2}'])), '{"a": 2}');
       final settled = _linesOf(log);
       await paused.cancel();
       await Future<void>.delayed(const Duration(milliseconds: 200));
       expect(_linesOf(log), settled);
       expect(settled.where((l) => l.startsWith('settle')), [
-        'settle:1:rewind',
+        'settle:1:keepStopped',
         'settle:1:keep',
       ]);
     }, skip: _hostHasGuidance ? false : 'this host has no guidance');
@@ -428,17 +428,17 @@ void main() {
       expect(_linesOf(log).where((l) => l.startsWith('guidance')), isEmpty);
     });
 
-    test('a full context window is rewound: the next turn has the history '
-        'without that turn', () async {
+    test('a window filled during decode keeps its turn, as core\'s chat '
+        'does', () async {
       final (model, log) = await loaded('context');
       final session = await model.openSession();
       await _ask(session, _script(['x']));
       await _ask(session, _script(['x'], end: 'contextLimit'));
+      expect(_linesOf(log), contains('settle:1:keepStopped'));
       expect(
         await _ask(session, _script(['y'], echoSession: true)),
-        '[session=1 turn=2]y',
+        '[session=1 turn=3]y',
       );
-      expect(_linesOf(log), contains('settle:1:rewind'));
     });
 
     test('a stop keeps its exchange: the next turn has the history with the '
@@ -534,17 +534,28 @@ void main() {
     expect(promptFits(10, 3, 12), isFalse);
   });
 
-  test('what a turn leaves behind: kept at its end of sequence and at an '
-      'unguided cap, kept closed after a stop, rewound otherwise', () {
+  test('what a turn leaves behind (rule A): kept at its end of sequence and '
+      'an unguided cap; kept closed after a stop, a guided cap and a full '
+      'window; rewound when refused, failed or closed', () {
     for (final guided in [false, true]) {
       expect(afterTurn(TurnEnd.endOfSequence, guided: guided), AfterTurn.keep);
       expect(afterTurn(TurnEnd.stopped, guided: guided), AfterTurn.keepStopped);
-      for (final end in [TurnEnd.contextLimit, TurnEnd.closed, null]) {
+      expect(
+        afterTurn(TurnEnd.contextLimit, guided: guided),
+        AfterTurn.keepStopped,
+        reason: 'a window filled during decode',
+      );
+      expect(
+        afterTurn(TurnEnd.contextLimit, guided: guided, refused: true),
+        AfterTurn.rewind,
+        reason: 'a refused prompt',
+      );
+      for (final end in [TurnEnd.closed, null]) {
         expect(afterTurn(end, guided: guided), AfterTurn.rewind);
       }
     }
     expect(afterTurn(TurnEnd.outputLimit, guided: false), AfterTurn.keep);
-    expect(afterTurn(TurnEnd.outputLimit, guided: true), AfterTurn.rewind);
+    expect(afterTurn(TurnEnd.outputLimit, guided: true), AfterTurn.keepStopped);
   });
 
   group('how a turn ends', () {

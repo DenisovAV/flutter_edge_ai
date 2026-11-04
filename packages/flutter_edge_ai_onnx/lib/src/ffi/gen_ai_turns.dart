@@ -153,18 +153,20 @@ final class SessionTurns {
     }
   }
 
-  /// A stopped turn: its tokens stay — the prompt and the reply as far as
-  /// the user saw it — closed with [endOfTurnToken], so the context is that
-  /// of a turn whose reply ended there. The last token is rewound and
-  /// appended again with the end token: the rewind resets a guided session's
-  /// grammar, and tokens appended after a rewind are never committed into
-  /// it.
+  /// A turn cut short ([AfterTurn.keepStopped]): its tokens stay — the
+  /// prompt and the reply as far as the user saw it — closed with
+  /// [endOfTurnToken], so the context is that of a turn whose reply ended
+  /// there. The last token is rewound and appended again with the end token:
+  /// the rewind resets a guided session's grammar, and tokens appended after
+  /// a rewind are never committed into it.
   ///
-  /// Where that cannot be done — no end token known, nothing generated or
-  /// prefilled, no room for the end token — the turn is rewound to [start]
-  /// instead, gone from the context and so not recorded. Where a rewind
-  /// throws, the generator is dropped and the exchange recorded, so the
-  /// rebuild from the history holds it.
+  /// A generator holding the whole window — a window filled during decode —
+  /// has no room for the end token: it keeps the turn as it is, and the
+  /// grammar was already reset when the generator became done at
+  /// max_length. Where nothing was generated or prefilled, or no end token
+  /// is known, the turn is rewound to [start] instead, gone from the context
+  /// and so not recorded. Where a rewind throws, the generator is dropped
+  /// and the exchange recorded, so the rebuild from the history holds it.
   bool _closeStopped(
     GeneratorOps? generator,
     int? start,
@@ -175,11 +177,14 @@ final class SessionTurns {
     if (generator == null || start == null) return true;
     final length = generator.length;
     final end = endOfTurnToken;
-    if (exchange == null ||
-        end == null ||
-        length <= start ||
-        length + 1 >= contextWindow) {
+    if (exchange == null || end == null || length <= start) {
       return _rewind(generator, start, drop);
+    }
+    // Rewinding one token and appending two needs one free place; an
+    // AppendTokens may fill the window exactly.
+    if (length >= contextWindow) {
+      remember();
+      return true;
     }
     try {
       final last = generator.tokenAt(length - 1);

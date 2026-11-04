@@ -159,15 +159,17 @@ a format, saying so. Android (this repository's ORT-GenAI build), iOS
 `model.structuredOutputSupport` first.
 
 **After a turn that does not end on its own**, the session stays usable with
-its history. The worker settles the turn before it serves the next one:
-- **A stop** keeps the exchange: the prompt and the reply as far as the user
-  saw it stay in the context, closed with the model's end-of-turn token, as if
-  the reply had ended there. Core's `InferenceChat` keeps the partial reply in
-  its history, so the model sees what the user saw (LiteRT-LM does the same).
-- **A full context window** (in the prompt or during decode), **a failure**,
-  and **a guided turn at `maxOutputTokens`** are rewound to where the
-  generator was before the turn (`OgaGenerator_RewindTo`): the earlier turns
-  stay, this one goes.
+its history, and a turn that streamed text stays in the model's context
+exactly as core's `InferenceChat` keeps it in the chat. The worker settles the
+turn before it serves the next one:
+- **A stop, a guided turn at `maxOutputTokens`, and a window filled during
+  decode** keep the exchange: the prompt and the reply as far as the user saw
+  it stay in the context, closed with the model's end-of-turn token, as if the
+  reply had ended there (LiteRT-LM does the same). A window filled during
+  decode has no room for that token and keeps the turn as it is; the next
+  prompt then does not fit.
+- **A failure** and **a close** are rewound to where the generator was before
+  the turn (`OgaGenerator_RewindTo`): the earlier turns stay, this one goes.
 - An unguided turn at its cap is kept and continued, as before.
 
 A guided session's grammar starts again after each of these. A prompt that
@@ -177,8 +179,13 @@ and the turn ends `TurnEnd.contextLimit`, the signal for an input that was
 refused.
 
 Measured on Phi-3.5-mini (macOS, greedy):
-- After a turn cut at its cap and rewound, the next reply is the same, byte
-  for byte, as with no cut turn.
+- After a guided turn cut at its cap (a title, `{"answer": "Whispersings`),
+  asked which title it had started, the model answers from a context that
+  holds that turn — "Tempest's Symphony: Ode to the Storm's Fury and Grace",
+  where the same conversation written in as text gives "…Odes to…", and the
+  turn dropped gives an unrelated title.
+- A story that fills the window ends `contextLimit`; the next question is
+  refused with `ContextLimitException`, and again when asked twice.
 - After a stop, asked for the story's first words, the model quotes the
   partial reply (`"Once upon"`), the same as from the conversation written as
   text with the partial reply in it; with the turn dropped it has no story to

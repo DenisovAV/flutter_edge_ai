@@ -110,8 +110,25 @@ void main() {
     });
   });
 
-  test('a stopped turn with no room for the end token is rewound to its '
-      'start, and is not recorded', () {
+  test('a turn that filled the window is kept as it is: no room for the end '
+      'token, and the generator is done at max_length', () {
+    turns = SessionTurns(
+      contextWindow: 7,
+      endOfTurnToken: _end,
+      onRewindFailure: failures.add,
+    )..begin(1, system: 'be brief');
+    runTurn('story', [10, 11], [20, 21], 'Once upon'); // 7 of 7
+    expect(settle(AfterTurn.keepStopped), isTrue);
+    expect(generator.calls, isEmpty);
+    expect(generator.tokens, [1, 2, 3, 10, 11, 20, 21]);
+    expect(turns.history(1).last, {
+      'role': 'assistant',
+      'content': 'Once upon',
+    });
+  });
+
+  test('a cut turn one short of the window is closed: the end token fills '
+      'it exactly', () {
     turns = SessionTurns(
       contextWindow: 8,
       endOfTurnToken: _end,
@@ -119,9 +136,7 @@ void main() {
     )..begin(1, system: 'be brief');
     runTurn('story', [10, 11], [20, 21], 'Once upon'); // 7 of 8
     expect(settle(AfterTurn.keepStopped), isTrue);
-    expect(generator.calls, ['rewindTo(3)']);
-    expect(generator.tokens, [1, 2, 3]);
-    expect(turns.history(1), hasLength(1));
+    expect(generator.tokens, [1, 2, 3, 10, 11, 20, 21, _end]);
   });
 
   test('a stopped turn with no end token known is rewound to its start', () {
@@ -157,7 +172,7 @@ void main() {
 
   test('the fallback of a stopped turn rewinds to the turn start, which the '
       'settle was given', () {
-    turns = SessionTurns(contextWindow: 8, onRewindFailure: failures.add)
+    turns = SessionTurns(contextWindow: 20, onRewindFailure: failures.add)
       ..begin(1);
     generator = _Generator([1, 2, 3]);
     runTurn('story', [10, 11], [20], 'Once');

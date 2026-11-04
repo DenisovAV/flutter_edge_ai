@@ -80,34 +80,40 @@ enum AfterTurn {
   /// keeps its history without the turn.
   rewind,
 
-  /// A stopped turn: its exchange — the prompt and the reply as far as it
-  /// got, the tokens the user saw — stays in the generator, closed with the
-  /// model's end-of-turn token, as if the reply had ended there. Core's chat
-  /// keeps the partial reply in its history, so the model's context must
-  /// hold it too (LiteRT-LM keeps a stopped exchange the same way, §16). The
-  /// grammar of a guided session is reset, so the next turn is guided from
-  /// its start.
+  /// A turn cut short that streamed text — stopped, a guided turn at its
+  /// cap, a window filled during decode: its exchange — the prompt and the
+  /// reply as far as it got, the tokens the user saw — stays in the
+  /// generator, closed with the model's end-of-turn token, as if the reply
+  /// had ended there. Core's chat keeps the partial reply in its history, so
+  /// the model's context must hold it too (LiteRT-LM keeps a stopped
+  /// exchange the same way, §16). The grammar of a guided session is reset,
+  /// so the next turn is guided from its start.
   keepStopped,
 }
 
 /// The rule for what a turn that ended [end] (null: it failed) leaves
-/// behind, so the session stays usable with its history — design 2.6.0 §3,
-/// "the engine restores the context to before this turn":
+/// behind — rule (A): a turn that streamed text stays in the model's context
+/// exactly as core keeps it in the chat:
 /// - an end of sequence is kept;
-/// - a stop keeps its exchange, closed as a finished turn
-///   ([AfterTurn.keepStopped]), guided or not;
-/// - a full context window, a prompt that did not fit and a failure are
-///   rewound: the session keeps its earlier turns, without this one;
-/// - a turn at `maxOutputTokens` is rewound when guided — ORT-GenAI resets
-///   the grammar only when the generator is done or rewound, and the next
-///   prompt would otherwise be committed into the half-parsed value — and
-///   kept when not (the session continues it, as before).
-AfterTurn afterTurn(TurnEnd? end, {required bool guided}) => switch (end) {
-  TurnEnd.endOfSequence => AfterTurn.keep,
-  TurnEnd.outputLimit => guided ? AfterTurn.rewind : AfterTurn.keep,
-  TurnEnd.stopped => AfterTurn.keepStopped,
-  TurnEnd.contextLimit || TurnEnd.closed || null => AfterTurn.rewind,
-};
+/// - a stop, a guided turn at `maxOutputTokens` and a window filled during
+///   decode keep their exchange, closed as a finished turn
+///   ([AfterTurn.keepStopped]); a guided session's grammar starts again;
+/// - an unguided turn at its cap is kept and continued, as before;
+/// - a [refused] prompt (it did not fit: nothing reached the generator, and
+///   core's chat takes the turn back), a failure and a close are rewound:
+///   the session keeps its earlier turns, without this one.
+AfterTurn afterTurn(
+  TurnEnd? end, {
+  required bool guided,
+  bool refused = false,
+}) => refused
+    ? AfterTurn.rewind
+    : switch (end) {
+        TurnEnd.endOfSequence => AfterTurn.keep,
+        TurnEnd.outputLimit => guided ? AfterTurn.keepStopped : AfterTurn.keep,
+        TurnEnd.stopped || TurnEnd.contextLimit => AfterTurn.keepStopped,
+        TurnEnd.closed || null => AfterTurn.rewind,
+      };
 
 /// What [GenAiWorkerEngine.generate] returns: the turn's counters and how it
 /// ended — [TurnEnd.endOfSequence], [TurnEnd.outputLimit],
@@ -308,17 +314,17 @@ Future<void> _serve(
       :final guidance,
       :final seedHistory,
     ):
-      // The turn is settled (kept, rewound or reset) before its reply is
+      // The turn is settled (kept, kept closed, or rewound) before its reply is
       // sent and before the next request is served, so no later turn — of
       // this session or another — ever meets a generator the turn left
       // half done, however the consumer reads the reply.
-      void settle(TurnEnd? end) {
+      void settle(TurnEnd? end, {bool refused = false}) {
         // A close frees every generator anyway.
         if (closeRequested()) return;
         try {
           engine.endTurn(
             sessionId: turn.sessionId,
-            how: afterTurn(end, guided: guidance != null),
+            how: afterTurn(end, guided: guidance != null, refused: refused),
           );
         } catch (e, st) {
           // endTurn handles its own failures; this is a bug in it.
@@ -349,7 +355,7 @@ Future<void> _serve(
           ),
         );
       } on GenAiContextFullException catch (e) {
-        settle(TurnEnd.contextLimit);
+        settle(TurnEnd.contextLimit, refused: true);
         replyTo.send(GenerateError(id, '$e', end: TurnEnd.contextLimit));
       } catch (e, st) {
         edgeAiLog('[GenAiFfiClient/worker] generate failed: $e\n$st');

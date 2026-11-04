@@ -1,10 +1,10 @@
 // Host smoke test for response formats (PR 9c) — REAL ORT-GenAI guidance
 // through the real `dart:ffi` worker: a guided session's replies are values
 // of its schema where the same prompt unguided is not one, on every turn; a
-// stopped turn keeps its exchange — the next reply is the same as from the
-// conversation with the partial reply written in — and a turn cut at its cap
-// is rewound exactly, as if it never ran; a context window filled during decode
-// ends `contextLimit` and the session goes on with its history; the whole
+// stopped turn, and a guided turn cut at its cap, keep their exchange (rule
+// A) — the model can say what it had started, as from the conversation with
+// the partial reply written in; a context window filled during decode ends
+// `contextLimit` and keeps the turn, so the next prompt is refused; the whole
 // dialect compiles; and a prompt longer than the window is refused — an
 // error on the reply, the turn ending `contextLimit` — on a structured and a
 // plain session, leaving both conversations.
@@ -294,23 +294,70 @@ void main() {
       expect(afterCutEnd, TurnEnd.endOfSequence);
       expect(jsonDecode(afterCut), isA<Map>());
 
-      // Cut at its cap instead: rewound, nothing kept — the same as no cut
-      // turn at all.
-      await turn(104, _ask, fresh: true, cap: 120, guidance: guidance);
-      expect(
-        (await turn(
-          104,
-          'Now one about a storm.',
-          cap: 6,
-          guidance: guidance,
-        )).$2,
-        TurnEnd.outputLimit,
+      // Cut at its cap instead (rule A): kept, closed as a finished turn, so
+      // the next reply comes from a context holding the cut value — as from
+      // the conversation with it written in; with the turn dropped it does
+      // not.
+      final answerOnly = genAiGuidanceSchema(
+        ResponseFormat.jsonSchema({
+              'type': 'object',
+              'properties': {
+                'answer': {'type': 'string', 'maxLength': 60},
+              },
+              'required': ['answer'],
+            })
+            as JsonSchemaResponseFormat,
       );
-      final (afterCap, _) = await turn(104, moon, cap: 120, guidance: guidance);
-      await turn(105, _ask, fresh: true, cap: 120, guidance: guidance);
-      final (noCut, _) = await turn(105, moon, cap: 120, guidance: guidance);
-      expect(afterCap, noCut, reason: 'rewind after a cap is not exact');
-      for (final id in [100, 101, 102, 103, 104, 105, 106]) {
+      const titleAsk =
+          'Suggest a title for a poem about a storm. Put it in answer.';
+      const titleQuestion =
+          'What exact title had you started to write? Put it in answer.';
+      final (cutValue, cutValueEnd) = await turn(
+        104,
+        titleAsk,
+        fresh: true,
+        cap: 8,
+        guidance: answerOnly,
+      );
+      expect(cutValueEnd, TurnEnd.outputLimit);
+      final (recalled, recalledEnd) = await turn(
+        104,
+        titleQuestion,
+        cap: 40,
+        guidance: answerOnly,
+      );
+      final (writtenIn, _) = await turn(
+        105,
+        titleQuestion,
+        fresh: true,
+        cap: 40,
+        guidance: answerOnly,
+        seedHistory: seed([titleAsk, cutValue]),
+      );
+      final (droppedRecall, _) = await turn(
+        107,
+        titleQuestion,
+        fresh: true,
+        cap: 40,
+        guidance: answerOnly,
+      );
+      expect(recalledEnd, TurnEnd.endOfSequence);
+      expect(jsonDecode(recalled), isA<Map>());
+      // Measured 2026-11-04: the cut value was "Whispersings", which Phi
+      // does not quote back; kept and written in, it answers with a storm
+      // title ("Tempest's Symphony: Ode(s) to the Storm's Fury and Grace"),
+      // with the turn dropped with an unrelated one. The cut turn's subject
+      // is what tells them apart.
+      expect(recalled.toLowerCase(), contains('storm'));
+      expect(writtenIn.toLowerCase(), contains('storm'));
+      expect(droppedRecall.toLowerCase(), isNot(contains('storm')));
+      // ignore: avoid_print
+      print(
+        '[format smoke] cut value ${jsonEncode(cutValue)}: recalled '
+        '${jsonEncode(recalled)}, written in ${jsonEncode(writtenIn)}, '
+        'dropped ${jsonEncode(droppedRecall)}',
+      );
+      for (final id in [100, 101, 102, 103, 104, 105, 106, 107]) {
         await client.resetSession(sessionId: id);
       }
     },
@@ -319,8 +366,8 @@ void main() {
   );
 
   test(
-    'a context window filled during decode ends contextLimit; the session '
-    'keeps its history and goes on',
+    'a context window filled during decode ends contextLimit and keeps the '
+    'turn; the next prompt does not fit and is refused, keeping nothing',
     () async {
       // The first turn takes most of the window, so the second cannot end
       // before max_length.
@@ -340,13 +387,24 @@ void main() {
         'Write a story about the sea, at least three hundred words long.',
       );
       expect(end, TurnEnd.contextLimit);
-      final (answer, answerEnd) = await turn(
-        110,
-        'What is my secret word? Answer with that word only.',
-        cap: 12,
-      );
-      expect(answerEnd, isNot(TurnEnd.contextLimit));
-      expect(answer.toLowerCase(), contains('cactus'));
+      // The window is full with the kept story: a recall question is
+      // refused, twice — a refused turn keeps nothing.
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final started = startGenAiTurn(
+          client,
+          const GenAiTurn(
+            userContent: 'What is my secret word? Answer with that word only.',
+            sessionId: 110,
+            maxOutputTokens: 12,
+            searchOptions: {'do_sample': false},
+          ),
+        );
+        await expectLater(
+          started.text.join(),
+          throwsA(isA<ContextLimitException>()),
+        );
+        expect(await started.end, TurnEnd.contextLimit);
+      }
       await client.resetSession(sessionId: 110);
     },
     skip: available ? false : 'needs ORT-GenAI libs and a model',

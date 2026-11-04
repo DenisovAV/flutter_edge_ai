@@ -164,3 +164,24 @@ from the Android archive. The drop itself is left for a decision (it changes
 the archive).
 
 DDP total for L1: S25 77 + Pixel 11 21 + Pixel 8a 31 = about 129 billed minutes.
+
+## Results: intel-ptl (Windows x64, Panther Lake, Arc B390, Intel NPU), 2026-11-04
+
+Windows build: CI run 41749984146 (§1-§25). The probes were built on the box
+with MSVC (VS 2026). Everything ran in `C:\dev\l1`, our own folder.
+
+| Check | Result |
+|---|---|
+| CPU, Gemma 4 E2B: all 13 commands, + LFM2.5 xsession (§25) | PASS (14/14) |
+| Arc B390 GPU, Gemma 4 E2B: all 13 commands, + LFM2.5 xsession | PASS (14/14) |
+| EG2 270m: CPU / Arc B390 GPU / Intel NPU (`_Intel_PTL`) | PASS / **PASS** / PASS |
+| Intel NPU, Gemma 4 E2B `_intel_PTL`: multiconv, longprompt, deleteduring, chat | PASS |
+| NPU ctxgroup (window 4096, 1104 tokens) | PASS |
+| NPU turnend, convrewind | every end kind right; the rewind refused (one-token rollback), as on Qualcomm and Tensor |
+| EG1 drift, Windows CPU | 0.19 bit-identical to native-v0.18.0-h (50/50 docs, 10/10 queries). Windows differs from macOS/Linux by cos 0.9985 on both versions (x86 kernels vs ARM), so this is not drift between versions |
+
+**EG2 on the Windows GPU passes on 0.19.** On native-v0.18.0-h it was an
+access violation in `webgpu_dawn.dll` at the first GPU load on Intel PTL
+(#744, hence `liteRtLmEmbeddingGpuRefusedAbis`). It now creates in 5.2 s and
+embeds on the GPU (its first values differ from the CPU's). Lifting the
+refusal is an L2 decision; LNL and the 440m/740m GPU towers are not measured.

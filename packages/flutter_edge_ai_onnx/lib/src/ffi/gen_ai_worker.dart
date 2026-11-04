@@ -46,6 +46,16 @@ abstract interface class GenAiWorkerEngine {
     required bool Function() stopRequested,
   });
 
+  /// Settles [sessionId]'s last turn before anything else is served: keeps
+  /// it in the generator and the session's history ([AfterTurn.keep]), or
+  /// restores the generator to its length before the turn
+  /// ([AfterTurn.rewind]; where a rewind fails, the generator is dropped and
+  /// the session's next turn rebuilds it from the session's history text,
+  /// said once). Called after every turn, including one that threw; a turn
+  /// that never reached its prefill has nothing to undo. Returns false when
+  /// a rewind fell back to the rebuild.
+  bool endTurn({int? sessionId, required AfterTurn how});
+
   /// Token count for [text] via the tokenizer's own encoder (no template).
   int countTokens(String text);
 
@@ -57,6 +67,37 @@ abstract interface class GenAiWorkerEngine {
   /// [load], so it must cope with a partial one.
   void close();
 }
+
+/// What happens to a session's generator after a turn ([afterTurn]).
+enum AfterTurn {
+  /// The turn stays in the generator and the history.
+  keep,
+
+  /// The generator goes back to its length before the turn, so the session
+  /// keeps its history without the turn.
+  rewind,
+}
+
+/// The rule for what a turn that ended [end] (null: it failed) leaves
+/// behind, so the session stays usable with its history — design 2.6.0 §3,
+/// "the engine restores the context to before this turn":
+/// - an end of sequence is kept;
+/// - a full context window, a prompt that did not fit, a stop and a failure
+///   are rewound: the session keeps its earlier turns, without this one
+///   (and without the dangling reply the next turn would otherwise
+///   continue);
+/// - a turn at `maxOutputTokens` is rewound when guided — ORT-GenAI resets
+///   the grammar only when the generator is done or rewound, and the next
+///   prompt would otherwise be committed into the half-parsed value — and
+///   kept when not (the session continues it, as before).
+AfterTurn afterTurn(TurnEnd? end, {required bool guided}) => switch (end) {
+  TurnEnd.endOfSequence => AfterTurn.keep,
+  TurnEnd.outputLimit => guided ? AfterTurn.rewind : AfterTurn.keep,
+  TurnEnd.contextLimit ||
+  TurnEnd.stopped ||
+  TurnEnd.closed ||
+  null => AfterTurn.rewind,
+};
 
 /// What [GenAiWorkerEngine.generate] returns: the turn's counters and how it
 /// ended — [TurnEnd.endOfSequence], [TurnEnd.outputLimit],
@@ -252,6 +293,28 @@ Future<void> _serve(
 ) async {
   switch (request) {
     case GenerateRequest(:final id, :final turn, :final guidance):
+      // The turn is settled (kept, rewound or reset) before its reply is
+      // sent and before the next request is served, so no later turn — of
+      // this session or another — ever meets a generator the turn left
+      // half done, however the consumer reads the reply.
+      void settle(TurnEnd? end) {
+        // A close frees every generator anyway.
+        if (closeRequested()) return;
+        try {
+          engine.endTurn(
+            sessionId: turn.sessionId,
+            how: afterTurn(end, guided: guidance != null),
+          );
+        } catch (e, st) {
+          // endTurn handles its own failures; this is a bug in it.
+          // ignore: avoid_print
+          print(
+            '[flutter_edge_ai_onnx] WARNING: settling an ONNX GenAI turn '
+            'failed: $e\n$st',
+          );
+        }
+      }
+
       try {
         final GenAiTurnResult(:stats, :end) = await engine.generate(
           turn,
@@ -259,6 +322,7 @@ Future<void> _serve(
           emit: (piece) => replyTo.send(Chunk(id, piece)),
           stopRequested: stopRequested,
         );
+        settle(end);
         replyTo.send(
           GenerateDone(
             id,
@@ -269,9 +333,11 @@ Future<void> _serve(
           ),
         );
       } on GenAiContextFullException catch (e) {
+        settle(TurnEnd.contextLimit);
         replyTo.send(GenerateError(id, '$e', end: TurnEnd.contextLimit));
       } catch (e, st) {
         edgeAiLog('[GenAiFfiClient/worker] generate failed: $e\n$st');
+        settle(null);
         replyTo.send(GenerateError(id, '$e'));
       }
     case CountTokensRequest(:final id, :final text):

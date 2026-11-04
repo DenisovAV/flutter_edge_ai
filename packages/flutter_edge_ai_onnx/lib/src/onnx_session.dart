@@ -155,19 +155,6 @@ class OnnxSession extends InferenceModelSession {
     if (_stoppedThisTurn) _forceResetOnNextTurn = true;
   }
 
-  /// Applies how a turn that completed ended to the next turn: a full context
-  /// window cannot take another prompt, so the next turn starts a fresh
-  /// generator; and a guided generator whose turn did not end on its own end
-  /// of sequence holds a grammar left mid-value, which the next prompt's
-  /// tokens would be committed into (ORT-GenAI resets the grammar only when
-  /// the generator is done), so it starts a fresh one too.
-  void _noteTurnEnd(TurnEnd end) {
-    if (end == TurnEnd.contextLimit ||
-        (_guidance != null && end != TurnEnd.endOfSequence)) {
-      _forceResetOnNextTurn = true;
-    }
-  }
-
   @override
   Future<String> getResponse() async => getResponseAsync().join();
 
@@ -183,7 +170,22 @@ class OnnxSession extends InferenceModelSession {
   /// session closed while it ran ends [TurnEnd.closed]; one that
   /// [stopGeneration] or a cancelled subscription stopped,
   /// [TurnEnd.stopped]; otherwise the worker's end-of-sequence, output or
-  /// context limit. A failed turn's error is on the text.
+  /// context limit. A failed turn's error is on the text, and its end is
+  /// [TurnEnd.closed], as core's own structured session reports a turn that
+  /// failed to start (never read after an error).
+  ///
+  /// What a turn leaves behind is settled by the worker of a
+  /// [GenAiFfiClient] before it serves anything else (`afterTurn`): an end
+  /// of sequence is kept, and so is an unguided turn at `maxOutputTokens`;
+  /// any other end — a full context window, a prompt that did not fit, a
+  /// stop, a failure, a guided turn at its cap — is rewound, so the session
+  /// keeps its earlier turns without this one. With any other client the
+  /// session itself starts the next turn fresh after a stop or a failure.
+  ///
+  /// On a guided session, a prompt that does not fit ends the turn
+  /// [TurnEnd.contextLimit] with no error (core then raises
+  /// `IncompleteStructuredOutputException`), as on LiteRT-LM; on an unguided
+  /// one it is the text's [StateError].
   ///
   /// The turn is sent when this is called, as core's chat and structured
   /// session expect; listen to [EngineTurn.text] right away. A text never
@@ -206,27 +208,33 @@ class OnnxSession extends InferenceModelSession {
     var chunkCount = 0;
     var completedNormally = false;
     try {
-      await for (final chunk in text) {
-        firstChunkMs ??= genSw.elapsedMilliseconds;
-        chunkCount++;
-        yield chunk;
+      try {
+        await for (final chunk in text) {
+          firstChunkMs ??= genSw.elapsedMilliseconds;
+          chunkCount++;
+          yield chunk;
+        }
+      } on StateError {
+        // The client completes the end before it adds the error, so this
+        // does not wait.
+        if (_guidance == null || end == null) rethrow;
+        if (await end != TurnEnd.contextLimit) rethrow;
       }
       completedNormally = true;
-      // The client completes the end before it closes the text, so this
-      // does not wait, and the rule is in place before the consumer sees
-      // the text end.
-      if (end != null) _noteTurnEnd(await end);
       _logGenerationStats(genSw, firstChunkMs, chunkCount);
     } finally {
-      // A turn that did not complete normally — a mid-stream native error,
-      // or the consumer cancelling the subscription (barge-in, breaking out
-      // of `await for`, which Dart unwinds through this finally block) —
-      // leaves the generator's KV cache holding the same kind of dangling,
-      // incomplete assistant turn an explicit stopGeneration() does. Force
-      // the next turn to start a fresh generator either way, not only on an
-      // explicit stop (see `_forceResetOnNextTurn`'s doc).
-      if (!completedNormally) _forceResetOnNextTurn = true;
-      _noteGenerationFinished();
+      // Only for a client whose worker does not settle its turns (end ==
+      // null): a turn that did not complete normally — a mid-stream native
+      // error, or the consumer cancelling the subscription (barge-in,
+      // breaking out of `await for`, which Dart unwinds through this
+      // finally block) — leaves the generator's KV cache holding the same
+      // kind of dangling, incomplete assistant turn an explicit
+      // stopGeneration() does. Force the next turn to start a fresh
+      // generator either way (see `_forceResetOnNextTurn`'s doc).
+      if (end == null) {
+        if (!completedNormally) _forceResetOnNextTurn = true;
+        _noteGenerationFinished();
+      }
     }
   }
 

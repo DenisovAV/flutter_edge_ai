@@ -224,10 +224,6 @@ class GenAiFfiClient implements GenAiClient {
   /// The model directory [load] was given; names the model in warnings.
   String? _modelDir;
 
-  /// Whether [_modelDir] holds `tokenizer.json`, read once at [load]: what
-  /// ORT-GenAI's guidance reads ([guidanceRefusalOf]).
-  bool _tokenizerJsonPresent = false;
-
   /// Serializes `generate`/`countTokens` calls. [stopGeneration] is
   /// deliberately NOT gated by this — see its doc.
   final Mutex _mutex = Mutex();
@@ -381,7 +377,6 @@ class GenAiFfiClient implements GenAiClient {
     _fromWorker = fromWorker;
     _commandPort = ready.commandPort;
     _modelDir = modelDir;
-    _tokenizerJsonPresent = File('$modelDir/tokenizer.json').existsSync();
     _loaded = true;
     sub.onData(_dispatch);
     _sub = sub;
@@ -890,6 +885,14 @@ Future<String>? unexpectedExitOf(GenAiClient client) => switch (client) {
   return (text: client.generate(turn), end: null);
 }
 
+/// Whether a prompt of [promptTokens] fits a generator that holds [used] of
+/// [contextWindow] tokens: it must leave room for one generated token, since
+/// AppendTokenSequences takes a prompt that fills the window exactly and the
+/// first GenerateNextToken then throws at max_length.
+@visibleForTesting
+bool promptFits(int used, int promptTokens, int contextWindow) =>
+    used + promptTokens < contextWindow;
+
 /// What a guided session sends ORT-GenAI for [format]: its schema, in the
 /// caller's key order, plus llguidance's own `x-guidance` options, which
 /// llguidance reads and removes before it compiles the schema.
@@ -963,7 +966,9 @@ String? guidanceRefusalOf(GenAiClient client, {ffi.Abi? abi}) {
   }
   final modelDir = client._modelDir;
   if (modelDir == null) return 'The ONNX model is not loaded.';
-  if (!client._tokenizerJsonPresent) {
+  // Read each time a format is asked for, not once at load: the file is
+  // what every guided generator opens when it is created.
+  if (!FileSystemEntity.isFileSync('$modelDir/tokenizer.json')) {
     return 'The ONNX model directory $modelDir has no tokenizer.json, which '
         'ORT-GenAI reads to enforce a format.';
   }
@@ -1228,6 +1233,22 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
   /// that has had a turn and not been reset; null keys the legacy session.
   final Map<int?, ffi.Pointer<OgaGenerator>> _generators = {};
 
+  /// Each session's conversation as text — its system message and every
+  /// exchange its generator holds — so a generator that could not be
+  /// rewound is rebuilt from it ([endTurn]). Null keys the legacy session.
+  final Map<int?, List<Map<String, String>>> _history = {};
+
+  /// Each session's generator length before its last turn: where
+  /// [endTurn] rewinds it to.
+  final Map<int?, int> _turnStart = {};
+
+  /// The last turn's exchange, once its prompt was prefilled; [endTurn]
+  /// adds it to [_history] or drops it.
+  final Map<int?, (String user, StringBuffer reply)> _lastExchange = {};
+
+  /// Whether a failed rewind has been reported; once per model.
+  bool _rewindFailureReported = false;
+
   OrtGenAiBindings get _bindings =>
       _oga ?? (throw StateError('ORT-GenAI engine used before it was loaded'));
 
@@ -1303,20 +1324,32 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
     final model = _loadedModel;
     final tokenizer = _loadedTokenizer;
     ffi.Pointer<OgaTokenizerStream>? tokenizerStream;
+    final session = turn.sessionId;
+    _lastExchange.remove(session);
     try {
-      if (turn.isFirstTurn) resetGenerator(sessionId: turn.sessionId);
+      if (turn.isFirstTurn) {
+        resetGenerator(sessionId: session);
+        _history[session] = [
+          if (turn.systemInstruction?.isNotEmpty ?? false)
+            {'role': 'system', 'content': turn.systemInstruction!},
+        ];
+      }
+      final history = _history[session] ??= [];
 
-      final generator = _generators[turn.sessionId] ??= _createGenerator(
+      // A generator created now for a session with history — dropped by a
+      // failed rewind or a reset — gets that history first, as text.
+      final created = !_generators.containsKey(session);
+      final generator = _generators[session] ??= _createGenerator(
         oga,
         model,
         turn.searchOptions,
         guidance,
       );
+      _turnStart[session] = oga.OgaGenerator_GetSequenceCount(generator, 0);
 
       // --- Chat template (SDK-owns-templates, Task 3) ----------------------
       final messages = <Map<String, String>>[
-        if (turn.isFirstTurn && (turn.systemInstruction?.isNotEmpty ?? false))
-          {'role': 'system', 'content': turn.systemInstruction!},
+        if (created) ...history,
         {'role': 'user', 'content': turn.userContent},
       ];
       final messagesJsonC = jsonEncode(messages).toNativeUtf8();
@@ -1363,11 +1396,10 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
         );
         promptTokens = oga.OgaSequencesGetSequenceCount(sequences, 0);
         // Checked here, not left to ORT-GenAI's own throws, so the turn can
-        // say it ended on the context window. A prompt that fills it exactly
-        // is full too: AppendTokenSequences takes it, then the first
-        // GenerateNextToken throws at max_length.
+        // say it ended on the context window, and the conversation is left
+        // as it was.
         final used = oga.OgaGenerator_GetSequenceCount(generator, 0);
-        if (used + promptTokens >= _init.contextWindow) {
+        if (!promptFits(used, promptTokens, _init.contextWindow)) {
           throw GenAiContextFullException(
             'ORT-GenAI prompt of $promptTokens tokens does not fit the '
             'context window: $used of ${_init.contextWindow} tokens '
@@ -1378,6 +1410,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
           oga.OgaGenerator_AppendTokenSequences(generator, sequences),
           'OgaGenerator_AppendTokenSequences (prefill)',
         );
+        _lastExchange[session] = (turn.userContent, StringBuffer());
       } finally {
         pkg_ffi.calloc.free(promptC);
         oga.OgaDestroySequences(sequences);
@@ -1423,7 +1456,10 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
           final piece = decodedOut.value == ffi.nullptr
               ? ''
               : decodedOut.value.cast<pkg_ffi.Utf8>().toDartString();
-          if (piece.isNotEmpty) emit(piece);
+          if (piece.isNotEmpty) {
+            _lastExchange[session]?.$2.write(piece);
+            emit(piece);
+          }
         } finally {
           pkg_ffi.calloc.free(decodedOut);
         }
@@ -1615,11 +1651,66 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
 
   @override
   void resetGenerator({int? sessionId}) {
+    _history.remove(sessionId);
+    _turnStart.remove(sessionId);
+    _lastExchange.remove(sessionId);
+    _dropGenerator(sessionId);
+  }
+
+  void _dropGenerator(int? sessionId) {
     // Forgotten first, so a throw below cannot hand the next turn a
     // generator that is half destroyed.
     final generator = _generators.remove(sessionId);
     if (generator == null) return;
     _bindings.OgaDestroyGenerator(generator);
+  }
+
+  @override
+  bool endTurn({int? sessionId, required AfterTurn how}) {
+    final exchange = _lastExchange.remove(sessionId);
+    final start = _turnStart.remove(sessionId);
+    final history = _history[sessionId];
+    switch (how) {
+      case AfterTurn.keep:
+        if (exchange != null && history != null) {
+          history
+            ..add({'role': 'user', 'content': exchange.$1})
+            ..add({'role': 'assistant', 'content': exchange.$2.toString()});
+        }
+        return true;
+      case AfterTurn.rewind:
+        final generator = _generators[sessionId];
+        if (generator == null || start == null) return true;
+        final oga = _bindings;
+        if (oga.OgaGenerator_GetSequenceCount(generator, 0) == start) {
+          return true;
+        }
+        try {
+          _check(
+            oga.OgaGenerator_RewindTo(generator, start),
+            'OgaGenerator_RewindTo',
+          );
+          return true;
+        } catch (e) {
+          // This model cannot rewind (ORT-GenAI 0.17.0 refuses phi3v,
+          // whisper, LFM2 and decoder pipelines): its next turn rebuilds the
+          // generator from the session's history, as text.
+          _dropGenerator(sessionId);
+          if (!_rewindFailureReported) {
+            _rewindFailureReported = true;
+            // `print`: edgeAiLog is silent in release.
+            // ignore: avoid_print
+            print(
+              '[flutter_edge_ai_onnx] WARNING: ORT-GenAI could not rewind '
+              'this model ($e). After a turn that does not end on its own, '
+              "a session's next turn rebuilds its context from the "
+              "conversation's text instead, which costs a full prefill. "
+              'Said once per model.',
+            );
+          }
+          return false;
+        }
+    }
   }
 
   /// Destroys generator, tokenizer and model — whichever exist, so a load

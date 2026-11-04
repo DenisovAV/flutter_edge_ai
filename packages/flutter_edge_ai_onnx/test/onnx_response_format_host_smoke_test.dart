@@ -1,9 +1,11 @@
 // Host smoke test for response formats (PR 9c) — REAL ORT-GenAI guidance
 // through the real `dart:ffi` worker: a guided session's replies are values
 // of its schema where the same prompt unguided is not one, on every turn; a
-// turn cut at its cap is incomplete and the next one is a value again; the
-// whole dialect compiles; and a prompt longer than the context window ends
-// `contextLimit`.
+// cut turn (stopped, or at its cap) is rewound exactly — the next turn is
+// the same as with no cut turn at all; a context window filled during decode
+// ends `contextLimit` and the session goes on with its history; the whole
+// dialect compiles; and a prompt longer than the window ends a structured
+// turn `contextLimit` and fails a plain one, leaving both conversations.
 //
 // Skips cleanly unless the libraries and a model are available locally:
 //   FLUTTER_GEMMA_ORT_GENAI_LIBS=/dir/with/libonnxruntime+libonnxruntime-genai
@@ -165,8 +167,141 @@ void main() {
     timeout: const Timeout(Duration(minutes: 10)),
   );
 
+  /// One turn on [session]'s generator, through the client: per-turn caps,
+  /// greedy. [stopAfterFirstChunk] stops it at its first chunk.
+  Future<(String, TurnEnd)> turn(
+    int session,
+    String text, {
+    bool fresh = false,
+    int? cap,
+    String? guidance,
+    bool stopAfterFirstChunk = false,
+  }) async {
+    final started = startGenAiTurn(
+      client,
+      GenAiTurn(
+        userContent: text,
+        sessionId: session,
+        isFirstTurn: fresh,
+        maxOutputTokens: cap,
+        searchOptions: const {'do_sample': false},
+      ),
+      guidance: guidance,
+    );
+    final out = StringBuffer();
+    var stopping = false;
+    await for (final piece in started.text) {
+      out.write(piece);
+      if (stopAfterFirstChunk && !stopping) {
+        stopping = true;
+        await client.stopGeneration(sessionId: session);
+      }
+    }
+    final end = await started.end!;
+    // ignore: avoid_print
+    print('[format smoke] session $session -> $end ${jsonEncode('$out')}');
+    return ('$out', end);
+  }
+
   test(
-    'a turn cut at its cap is incomplete; the next turn is a value again',
+    'a cut turn is rewound: the same generator keeps its history, and the '
+    'next turn is the same as with no cut turn at all',
+    () async {
+      final guidance = genAiGuidanceSchema(_poem as JsonSchemaResponseFormat);
+      const fact = 'My secret word is PINEAPPLE. Reply with OK only.';
+      const question = 'What is my secret word? Answer with that word only.';
+
+      // Unguided, stopped at its first chunk, against the same history
+      // without that turn.
+      await turn(100, fact, fresh: true, cap: 8);
+      expect(
+        (await turn(
+          100,
+          'Write a long story about the sea.',
+          stopAfterFirstChunk: true,
+        )).$2,
+        TurnEnd.stopped,
+      );
+      final (afterStop, _) = await turn(100, question, cap: 12);
+      await turn(101, fact, fresh: true, cap: 8);
+      final (control, _) = await turn(101, question, cap: 12);
+      expect(afterStop, control, reason: 'rewind after a stop is not exact');
+      expect(afterStop.toLowerCase(), contains('pineapple'));
+
+      // Guided, cut at its cap, against the same history without that turn:
+      // also proves the grammar is reset (a reused, unrewound generator
+      // fails the next prefill: "Error committing tokens").
+      await turn(102, _ask, fresh: true, cap: 120, guidance: guidance);
+      expect(
+        (await turn(
+          102,
+          'Now one about a storm.',
+          cap: 6,
+          guidance: guidance,
+        )).$2,
+        TurnEnd.outputLimit,
+      );
+      final (afterCut, cutEnd) = await turn(
+        102,
+        'Now one about the moon.',
+        cap: 120,
+        guidance: guidance,
+      );
+      await turn(103, _ask, fresh: true, cap: 120, guidance: guidance);
+      final (guidedControl, _) = await turn(
+        103,
+        'Now one about the moon.',
+        cap: 120,
+        guidance: guidance,
+      );
+      expect(cutEnd, TurnEnd.endOfSequence);
+      expect(jsonDecode(afterCut), isA<Map>());
+      expect(afterCut, guidedControl, reason: 'rewind after a cut not exact');
+      for (final id in [100, 101, 102, 103]) {
+        await client.resetSession(sessionId: id);
+      }
+    },
+    skip: available ? false : 'needs ORT-GenAI libs and a model',
+    timeout: const Timeout(Duration(minutes: 10)),
+  );
+
+  test(
+    'a context window filled during decode ends contextLimit; the session '
+    'keeps its history and goes on',
+    () async {
+      // The first turn takes most of the window, so the second cannot end
+      // before max_length.
+      var filler = 'ocean wave';
+      while (await client.countTokens(filler) < _context - 140) {
+        filler = '$filler ocean wave';
+      }
+      await turn(
+        110,
+        'My secret word is CACTUS. Ignore this text: $filler. Reply with OK '
+        'only.',
+        fresh: true,
+        cap: 8,
+      );
+      final (_, end) = await turn(
+        110,
+        'Write a story about the sea, at least three hundred words long.',
+      );
+      expect(end, TurnEnd.contextLimit);
+      final (answer, answerEnd) = await turn(
+        110,
+        'What is my secret word? Answer with that word only.',
+        cap: 12,
+      );
+      expect(answerEnd, isNot(TurnEnd.contextLimit));
+      expect(answer.toLowerCase(), contains('cactus'));
+      await client.resetSession(sessionId: 110);
+    },
+    skip: available ? false : 'needs ORT-GenAI libs and a model',
+    timeout: const Timeout(Duration(minutes: 10)),
+  );
+
+  test(
+    'a guided session cut at its cap is incomplete; its next turn is a value',
     () async {
       final session = await model.openSession(
         topK: 1,
@@ -184,69 +319,6 @@ void main() {
         ),
       );
       await session.close();
-
-      // One generator, turn by turn, with per-turn caps: why the session
-      // starts a fresh generator after a cut turn. ORT-GenAI resets the
-      // grammar only when the generator is done, so the next prompt is
-      // committed into the half-parsed value.
-      final guidance = genAiGuidanceSchema(_poem as JsonSchemaResponseFormat);
-      Future<(String, TurnEnd, Object?)> turn({
-        required bool fresh,
-        required int cap,
-      }) async {
-        final started = startGenAiTurn(
-          client,
-          GenAiTurn(
-            userContent: _ask,
-            sessionId: 998,
-            isFirstTurn: fresh,
-            maxOutputTokens: cap,
-            searchOptions: const {'do_sample': false},
-          ),
-          guidance: guidance,
-        );
-        final text = StringBuffer();
-        Object? error;
-        try {
-          await started.text.forEach(text.write);
-        } catch (e) {
-          error = e;
-        }
-        final end = await started.end!;
-        // ignore: avoid_print
-        print(
-          '[format smoke] fresh=$fresh cap=$cap -> $end '
-          '${jsonEncode(text.toString())}${error == null ? '' : ' error: $error'}',
-        );
-        return (text.toString(), end, error);
-      }
-
-      expect((await turn(fresh: true, cap: 6)).$2, TurnEnd.outputLimit);
-      // The premise: the same generator again does not give a value.
-      final (reused, reusedEnd, reusedError) = await turn(
-        fresh: false,
-        cap: 120,
-      );
-      Object? decoded;
-      try {
-        decoded = jsonDecode(reused.trim());
-      } on FormatException {
-        decoded = null;
-      }
-      expect(
-        reusedError != null ||
-            decoded is! Map ||
-            reusedEnd != TurnEnd.endOfSequence,
-        isTrue,
-        reason:
-            'a reused generator after a cut gave a whole value: '
-            'the fresh-generator rule may no longer be needed',
-      );
-      // What the session does instead: a fresh generator, guided again.
-      final (again, againEnd, _) = await turn(fresh: true, cap: 120);
-      expect(againEnd, TurnEnd.endOfSequence);
-      expect(jsonDecode(again), isA<Map>());
-      await client.resetSession(sessionId: 998);
     },
     skip: available ? false : 'needs ORT-GenAI libs and a model',
     timeout: const Timeout(Duration(minutes: 10)),
@@ -274,19 +346,32 @@ void main() {
   );
 
   test(
-    'a prompt longer than the context window ends contextLimit',
+    'a prompt longer than the context window: a structured session ends it '
+    'contextLimit, a plain one fails it; both keep the conversation',
     () async {
-      final started = startGenAiTurn(
-        client,
-        GenAiTurn(
-          userContent: List.filled(400, 'ocean wave').join(' '),
-          sessionId: 999,
-          isFirstTurn: true,
-        ),
-        guidance: genAiGuidanceSchema(_poem as JsonSchemaResponseFormat),
+      final long = List.filled(400, 'ocean wave').join(' ');
+      final guided = await model.openSession(
+        topK: 1,
+        maxOutputTokens: 120,
+        responseFormat: _poem,
       );
       await expectLater(
-        started.text.join(),
+        _reply(guided, long),
+        throwsA(
+          isA<IncompleteStructuredOutputException>().having(
+            (e) => e.end,
+            'end',
+            TurnEnd.contextLimit,
+          ),
+        ),
+      );
+      expect(jsonDecode(await _reply(guided, _ask)), isA<Map>());
+      await guided.close();
+
+      final plain = await model.openSession(topK: 1, maxOutputTokens: 12);
+      await _reply(plain, 'My secret word is CACTUS. Reply with OK only.');
+      await expectLater(
+        _reply(plain, long),
         throwsA(
           isA<StateError>().having(
             (e) => e.message,
@@ -295,8 +380,12 @@ void main() {
           ),
         ),
       );
-      expect(await started.end, TurnEnd.contextLimit);
-      await client.resetSession(sessionId: 999);
+      final answer = await _reply(
+        plain,
+        'What is my secret word? Answer with that word only.',
+      );
+      expect(answer.toLowerCase(), contains('cactus'));
+      await plain.close();
     },
     skip: available ? false : 'needs ORT-GenAI libs and a model',
     timeout: const Timeout(Duration(minutes: 5)),

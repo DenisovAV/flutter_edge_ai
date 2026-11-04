@@ -76,6 +76,11 @@
 //   (default `endOfSequence`); a turn a stop cut short reports `stopped`.
 // - `contextFull`: the turn throws [GenAiContextFullException] before its
 //   first chunk — a prompt that does not fit.
+// After every turn the worker settles it (unless it is closing): with
+// `logSettle: true` in the engine configuration the engine logs
+// `settle:<session>:<keep|rewind>`. A rewind takes the turn back off the
+// session's turn count (`echoSession`); a turn that threw before its
+// "prefill" (`contextFull`) counts as not run.
 // A guided turn whose session has no "generator" yet (its first turn, or the
 // first after a reset) logs `guidance:<session>:<schema>`: the schema the
 // generator would be created with.
@@ -169,8 +174,11 @@ class _ScriptedEngine implements GenAiWorkerEngine {
     required bool Function() stopRequested,
   }) async {
     _log(turn.sessionId == null ? 'generate' : 'generate:${turn.sessionId}');
-    if (turn.isFirstTurn) _turns.remove(turn.sessionId);
-    if (guidance != null && !_turns.containsKey(turn.sessionId)) {
+    if (turn.isFirstTurn) {
+      _turns.remove(turn.sessionId);
+      _generators.remove(turn.sessionId);
+    }
+    if (_generators.add(turn.sessionId) && guidance != null) {
       _log('guidance:${turn.sessionId}:$guidance');
     }
     final turnNumber = _turns[turn.sessionId] =
@@ -199,8 +207,16 @@ class _ScriptedEngine implements GenAiWorkerEngine {
     }
     if (script?['throwUnprintable'] == true) throw _UnprintableError();
     if (script?['contextFull'] == true) {
+      // Nothing reached the "generator": undo the count this turn took.
+      final turns = _turns[turn.sessionId]! - 1;
+      if (turns == 0) {
+        _turns.remove(turn.sessionId);
+      } else {
+        _turns[turn.sessionId] = turns;
+      }
       throw const GenAiContextFullException('fake prompt does not fit');
     }
+    _ran[turn.sessionId] = true;
     if (script?['crash'] == true) {
       scheduleMicrotask(() => throw StateError('fake native crash'));
     }
@@ -264,6 +280,27 @@ class _ScriptedEngine implements GenAiWorkerEngine {
   }
 
   @override
+  bool endTurn({int? sessionId, required AfterTurn how}) {
+    if (_config['logSettle'] == true) _log('settle:$sessionId:${how.name}');
+    final ran = _ran.remove(sessionId) ?? false;
+    final turns = _turns[sessionId];
+    if (how == AfterTurn.rewind && ran && turns != null) {
+      if (turns <= 1) {
+        _turns.remove(sessionId);
+      } else {
+        _turns[sessionId] = turns - 1;
+      }
+    }
+    return true;
+  }
+
+  /// Sessions with a "generator": created by a turn, gone at a reset.
+  final Set<int?> _generators = {};
+
+  /// Sessions whose last turn got past its "prefill".
+  final Map<int?, bool> _ran = {};
+
+  @override
   int countTokens(String text) {
     _log('count');
     // Deterministic zero-native token count — good enough for lifecycle
@@ -274,6 +311,7 @@ class _ScriptedEngine implements GenAiWorkerEngine {
   @override
   void resetGenerator({int? sessionId}) {
     _turns.remove(sessionId);
+    _generators.remove(sessionId);
     _log(sessionId == null ? 'reset' : 'reset:$sessionId');
     if (_config['gateReset'] == true) _blockUntilReleased();
     if (_config['killOnReset'] == true) {

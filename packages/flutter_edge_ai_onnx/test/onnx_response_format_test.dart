@@ -12,6 +12,8 @@ import 'dart:io';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_client.dart';
+import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_worker.dart'
+    show AfterTurn, afterTurn;
 import 'package:flutter_edge_ai_onnx/src/onnx_inference_model.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -31,6 +33,14 @@ Future<void> _waitForLine(File log, String line) async {
   }
 }
 
+Future<void> _until(bool Function() condition, String what) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 10));
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) fail('timed out waiting: $what');
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+  }
+}
+
 /// A turn script for the scripted engine (see its header).
 String _script(
   List<String> chunks, {
@@ -38,13 +48,25 @@ String _script(
   bool untilStopped = false,
   bool contextFull = false,
   bool echoIsFirstTurn = false,
+  bool echoSession = false,
 }) => jsonEncode({
   'chunks': chunks,
   'end': ?end,
   'untilStopped': untilStopped,
   'contextFull': contextFull,
   'echoIsFirstTurn': echoIsFirstTurn,
+  'echoSession': echoSession,
 });
+
+/// The log lines from the [n]th (1-based) `generate:<session>` on.
+List<String> _from(File log, String line, int n) {
+  final lines = _linesOf(log);
+  var seen = 0;
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i] == line && ++seen == n) return lines.sublist(i);
+  }
+  return const [];
+}
 
 Future<String> _ask(InferenceModelSession session, String script) async {
   await session.addQueryChunk(Message(text: script, isUser: true));
@@ -76,13 +98,16 @@ void main() {
   Future<(OnnxInferenceModel, File)> loaded(
     String name, {
     bool tokenizerJson = true,
+    bool tokenizerJsonIsDirectory = false,
   }) async {
     final dir = Directory('${tmp.path}/$name')..createSync();
     final log = File('${dir.path}/worker.log');
     File(
       '${dir.path}/fake_config.json',
-    ).writeAsStringSync(jsonEncode({'log': log.path}));
-    if (tokenizerJson) {
+    ).writeAsStringSync(jsonEncode({'log': log.path, 'logSettle': true}));
+    if (tokenizerJsonIsDirectory) {
+      Directory('${dir.path}/tokenizer.json').createSync();
+    } else if (tokenizerJson) {
       File('${dir.path}/tokenizer.json').writeAsStringSync('{}');
     }
     final client = GenAiFfiClient(workerEntry: fakeGenAiWorkerEntry);
@@ -173,6 +198,19 @@ void main() {
       expect(_linesOf(log).where((l) => l.startsWith('generate')), isEmpty);
     });
 
+    test('tokenizer.json is read when a format is asked for, and must be a '
+        'file', () async {
+      final (model, _) = await loaded(
+        'tokenizer_dir',
+        tokenizerJsonIsDirectory: true,
+      );
+      expect(guidanceRefusalOf(model.client), contains('tokenizer.json'));
+      final path = '${tmp.path}/tokenizer_dir/tokenizer.json';
+      Directory(path).deleteSync();
+      File(path).writeAsStringSync('{}');
+      expect(guidanceRefusalOf(model.client), isNull);
+    }, skip: _hostHasGuidance ? false : 'this host has no guidance');
+
     test('a GenAiClient other than GenAiFfiClient takes no format', () async {
       final model = OnnxInferenceModel(
         client: FakeGenAiClient(),
@@ -216,23 +254,18 @@ void main() {
   });
 
   group('a guided session', () {
-    test('sets the schema on its generator, and again on each one it creates '
-        'after a turn that did not end on its own', () async {
+    test('sets the schema once, on its generator; a turn cut at its cap is '
+        'rewound, so the session keeps that generator and its history', () async {
       final (model, log) = await loaded('guided');
       final session = await model.openSession(responseFormat: _schema);
       final guided =
           'guidance:1:${genAiGuidanceSchema(_schema as JsonSchemaResponseFormat)}';
 
       expect(await _ask(session, _script(['{"a": 1}'])), '{"a": 1}');
-      expect(_linesOf(log).where((l) => l == guided), hasLength(1));
+      expect(_linesOf(log), contains('settle:1:keep'));
 
-      // An end of sequence keeps the generator (ORT-GenAI resets its
-      // grammar), so the next turn continues it.
-      expect(await _ask(session, _script(['{"a": 2}'])), '{"a": 2}');
-      expect(_linesOf(log).where((l) => l == guided), hasLength(1));
-
-      // Cut at the cap: the value is incomplete, and its generator's
-      // grammar is left mid-value.
+      // Cut at the cap: incomplete, and the generator goes back to before
+      // the turn (which also resets ORT-GenAI's grammar).
       await expectLater(
         _ask(session, _script(['{"a"'], end: 'outputLimit')),
         throwsA(
@@ -241,9 +274,63 @@ void main() {
               .having((e) => e.partialText, 'partialText', '{"a"'),
         ),
       );
-      // The fresh generator is guided again.
+      expect(_linesOf(log).last, 'settle:1:rewind');
       expect(await _ask(session, _script(['{"a": 3}'])), '{"a": 3}');
-      expect(_linesOf(log).where((l) => l == guided), hasLength(2));
+      // One generator throughout: never created again.
+      expect(_linesOf(log).where((l) => l == guided), hasLength(1));
+    }, skip: _hostHasGuidance ? false : 'this host has no guidance');
+
+    test('a cut turn is rewound before a turn queued behind it runs', () async {
+      final (model, log) = await loaded('race');
+      final session = await model.openSession(responseFormat: _schema);
+      await session.addQueryChunk(
+        Message(
+          text: _script(['{"a"', ': 1'], end: 'outputLimit'),
+          isUser: true,
+        ),
+      );
+      final a = expectLater(
+        session.getResponse(),
+        throwsA(isA<IncompleteStructuredOutputException>()),
+      );
+      await _waitForLine(log, 'generate:1');
+      // Queued while A runs.
+      await session.addQueryChunk(
+        Message(text: _script(['{"a": 2}']), isUser: true),
+      );
+      final b = session.getResponse();
+      await a;
+      expect(await b, '{"a": 2}');
+      expect(
+        _from(log, 'generate:1', 1).where((l) => !l.startsWith('guidance')),
+        ['generate:1', 'settle:1:rewind', 'generate:1', 'settle:1:keep'],
+      );
+    }, skip: _hostHasGuidance ? false : 'this host has no guidance');
+
+    test('a paused cut turn is rewound before the next turn, and cancelling '
+        'it late settles nothing again', () async {
+      final (model, log) = await loaded('race_paused');
+      final session = await model.openSession(responseFormat: _schema);
+      await session.addQueryChunk(
+        Message(
+          text: _script(['{"a"', ': 1'], end: 'outputLimit'),
+          isUser: true,
+        ),
+      );
+      final paused = session.getResponseAsync().listen(
+        (_) {},
+        onError: (Object _) {},
+      )..pause();
+      await _waitForLine(log, 'settle:1:rewind');
+      expect(await _ask(session, _script(['{"a": 2}'])), '{"a": 2}');
+      final settled = _linesOf(log);
+      await paused.cancel();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(_linesOf(log), settled);
+      expect(settled.where((l) => l.startsWith('settle')), [
+        'settle:1:rewind',
+        'settle:1:keep',
+      ]);
     }, skip: _hostHasGuidance ? false : 'this host has no guidance');
 
     test(
@@ -258,6 +345,27 @@ void main() {
       },
       skip: _hostHasGuidance ? false : 'this host has no guidance',
     );
+
+    test('a prompt that does not fit ends the turn contextLimit, not with an '
+        'error, and leaves the conversation as it was', () async {
+      final (model, log) = await loaded('guided_context');
+      final session = await model.openSession(responseFormat: _schema);
+      expect(await _ask(session, _script(['{"a": 1}'])), '{"a": 1}');
+      await expectLater(
+        _ask(session, _script([], contextFull: true)),
+        throwsA(
+          isA<IncompleteStructuredOutputException>()
+              .having((e) => e.end, 'end', TurnEnd.contextLimit)
+              .having((e) => e.partialText, 'partialText', ''),
+        ),
+      );
+      expect(await _ask(session, _script(['{"a": 2}'])), '{"a": 2}');
+      expect(_linesOf(log).where((l) => l.startsWith('settle')), [
+        'settle:1:keep',
+        'settle:1:rewind',
+        'settle:1:keep',
+      ]);
+    }, skip: _hostHasGuidance ? false : 'this host has no guidance');
 
     test('a session closed during its turn ends it closed', () async {
       final (model, log) = await loaded('closed');
@@ -280,29 +388,93 @@ void main() {
       await session.close();
       await reply;
     }, skip: _hostHasGuidance ? false : 'this host has no guidance');
+  });
 
-    test('a plain session sends no schema, and keeps its generator after a '
-        'cap', () async {
+  group('an unguided session', () {
+    test('sends no schema, and keeps a turn at its cap', () async {
       final (model, log) = await loaded('plain');
       final session = await model.openSession();
+      await _ask(session, _script(['x'], echoSession: true));
       await _ask(session, _script(['x'], end: 'outputLimit'));
       expect(
-        await _ask(session, _script(['y'], echoIsFirstTurn: true)),
-        '[isFirstTurn=false]y',
+        await _ask(session, _script(['y'], echoSession: true)),
+        '[session=1 turn=3]y',
       );
       expect(_linesOf(log).where((l) => l.startsWith('guidance')), isEmpty);
     });
 
-    test('a full context window gives every session a fresh generator for '
-        'its next turn', () async {
-      final (model, _) = await loaded('context');
+    test('a full context window is rewound: the next turn has the history '
+        'without that turn', () async {
+      final (model, log) = await loaded('context');
       final session = await model.openSession();
+      await _ask(session, _script(['x']));
       await _ask(session, _script(['x'], end: 'contextLimit'));
       expect(
-        await _ask(session, _script(['y'], echoIsFirstTurn: true)),
-        '[isFirstTurn=true]y',
+        await _ask(session, _script(['y'], echoSession: true)),
+        '[session=1 turn=2]y',
+      );
+      expect(_linesOf(log), contains('settle:1:rewind'));
+    });
+
+    test('a stop is rewound too: the history stays, without the stopped '
+        'turn', () async {
+      final (model, log) = await loaded('stop');
+      final session = await model.openSession();
+      await _ask(session, _script(['x']));
+      await session.addQueryChunk(
+        Message(text: _script(['s'], untilStopped: true), isUser: true),
+      );
+      final stopped = session.getResponse();
+      await _waitForLine(log, 'generate:1');
+      await _until(
+        () => _linesOf(log).where((l) => l == 'generate:1').length == 2,
+        'the second turn to start',
+      );
+      await session.stopGeneration();
+      await stopped;
+      expect(
+        await _ask(session, _script(['y'], echoSession: true)),
+        '[session=1 turn=2]y',
       );
     });
+
+    test('a prompt that does not fit is the text\'s StateError, and the '
+        'conversation is left as it was', () async {
+      final (model, _) = await loaded('plain_context');
+      final session = await model.openSession();
+      await _ask(session, _script(['x']));
+      await expectLater(
+        _ask(session, _script([], contextFull: true)),
+        throwsStateError,
+      );
+      expect(
+        await _ask(session, _script(['y'], echoSession: true)),
+        '[session=1 turn=2]y',
+      );
+    });
+  });
+
+  test('a prompt fits only when it leaves room for one token', () {
+    expect(promptFits(10, 1, 12), isTrue);
+    expect(promptFits(10, 2, 12), isFalse);
+    expect(promptFits(10, 3, 12), isFalse);
+  });
+
+  test('what a turn leaves behind: kept at its end of sequence, and at an '
+      'unguided cap; rewound otherwise', () {
+    for (final guided in [false, true]) {
+      expect(afterTurn(TurnEnd.endOfSequence, guided: guided), AfterTurn.keep);
+      for (final end in [
+        TurnEnd.contextLimit,
+        TurnEnd.stopped,
+        TurnEnd.closed,
+        null,
+      ]) {
+        expect(afterTurn(end, guided: guided), AfterTurn.rewind);
+      }
+    }
+    expect(afterTurn(TurnEnd.outputLimit, guided: false), AfterTurn.keep);
+    expect(afterTurn(TurnEnd.outputLimit, guided: true), AfterTurn.rewind);
   });
 
   group('how a turn ends', () {

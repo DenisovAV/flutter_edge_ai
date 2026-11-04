@@ -136,18 +136,32 @@ count of open sessions. Opening more than `maxConcurrentSessions` throws a
 
 **Response formats.** `openSession` / `openChat(responseFormat:)` are enforced
 by ORT-GenAI's guidance (llguidance): the session's JSON schema is set on its
-own generator, so every reply is a value of the format, and core checks each
-one. The whole `ResponseFormat.dialect` is enforced on macOS arm64, for a
+own generator, so every complete reply is a value of the format, and core
+checks each one. The whole `ResponseFormat.dialect` is enforced on macOS arm64, for a
 model directory with a `tokenizer.json` (guidance reads it). Linux x64,
 Windows x64 and Windows ARM64 also ship an ORT-GenAI 0.17.0 build with
 guidance, and each is enabled once its run has passed; until then they refuse
 a format, saying so. Android (this repository's ORT-GenAI build), iOS
 (Microsoft's) and the web have no guidance and refuse it with
 `ResponseFormatUnsupportedException`; read
-`model.structuredOutputSupport` first. A guided turn that does not end on its
-own (`maxOutputTokens`, a stop, a full context) leaves the grammar mid-value,
-so the session's next turn starts on a fresh generator, without the earlier
-turns, as after any stop.
+`model.structuredOutputSupport` first.
+
+**After a turn that does not end on its own**, the session stays usable with
+its history: the worker rewinds the generator to where it was before that turn
+(`OgaGenerator_RewindTo`, which also resets the grammar) before it serves the
+next one. That covers a full context window (in the prompt or during decode),
+a stop, a failure, and a guided turn at `maxOutputTokens`; an unguided turn at
+its cap is kept and continued, as before. A prompt that does not fit leaves
+the conversation as it was: a structured session ends that turn
+`TurnEnd.contextLimit` (`IncompleteStructuredOutputException`), a plain one
+fails it with a `StateError`. Measured on Phi-3.5-mini (macOS, greedy): after a
+stopped turn, and after a guided turn cut at its cap, the next reply is the
+same, byte for byte, as with the same history and no cut turn. A model
+ORT-GenAI cannot rewind (phi3v, whisper, LFM2, decoder pipelines) gets its
+context rebuilt from the session's own conversation text instead, at the cost
+of a full prefill, with one printed warning per model. The rewound turn is not
+in the engine's context: `InferenceChat` still keeps a partial reply in its
+own history.
 An unset cap cannot mean "unlimited" on a phone: pass a larger
 `maxConcurrentSessions` to allow more. The cap does not count the
 `createSession` session. Sampling

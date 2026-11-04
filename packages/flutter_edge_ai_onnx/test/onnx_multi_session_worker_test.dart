@@ -134,12 +134,18 @@ void main() {
       'generator, and A\'s generator is gone afterwards', () async {
     final (client, log) = await loaded('release');
     await _run(client, _turn(1, first: true));
+    await _run(client, _turn(2, first: true));
     final b = <String>[];
     var bDone = false;
+    // B's second turn; its stop below is rewound, so its context stays its
+    // first turn.
     client
-        .generate(_turn(2, first: true, untilStopped: true))
+        .generate(_turn(2, untilStopped: true))
         .listen(b.add, onDone: () => bDone = true);
-    await _waitForLine(log, 'generate:2');
+    await _until(
+      () => _linesOf(log).where((l) => l == 'generate:2').length == 2,
+      "B's second turn to start",
+    );
 
     final released = client.resetSession(sessionId: 1);
     await Future<void>.delayed(const Duration(milliseconds: 200));

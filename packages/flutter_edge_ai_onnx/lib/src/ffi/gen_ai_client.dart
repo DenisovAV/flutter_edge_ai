@@ -45,6 +45,7 @@ import 'package:mutex/mutex.dart';
 
 import '../onnx_sampling.dart';
 import 'gen_ai_protocol.dart';
+import 'gen_ai_turns.dart';
 import 'gen_ai_worker.dart';
 import 'ort_genai_bindings.g.dart';
 
@@ -1247,26 +1248,11 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
   /// that has had a turn and not been reset; null keys the legacy session.
   final Map<int?, ffi.Pointer<OgaGenerator>> _generators = {};
 
-  /// Each session's conversation as text — its system message and every
-  /// exchange its generator holds — so a generator that could not be
-  /// rewound is rebuilt from it ([endTurn]). Null keys the legacy session.
-  final Map<int?, List<Map<String, String>>> _history = {};
-
-  /// Each session's generator length before its last turn: where
-  /// [endTurn] rewinds it to.
-  final Map<int?, int> _turnStart = {};
-
-  /// The last turn's exchange, once its prompt was prefilled; [endTurn]
-  /// adds it to [_history] or drops it.
-  final Map<int?, (String user, StringBuffer reply)> _lastExchange = {};
+  /// What each session's generator holds, turn by turn; set up by [load].
+  late final SessionTurns _turns;
 
   /// Whether a failed rewind has been reported; once per model.
   bool _rewindFailureReported = false;
-
-  /// The token that closes a finished turn, as the model last ended one —
-  /// what a stopped turn is closed with ([AfterTurn.keepStopped]). Until the
-  /// model has ended a turn, the first `eos_token_id` in genai_config.json.
-  int? _endOfTurnToken;
 
   OrtGenAiBindings get _bindings =>
       _oga ?? (throw StateError('ORT-GenAI engine used before it was loaded'));
@@ -1316,7 +1302,11 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
       pkg_ffi.calloc.free(modelOut);
     }
 
-    _endOfTurnToken = _configEosToken(_init.modelDir);
+    _turns = SessionTurns(
+      contextWindow: _init.contextWindow,
+      endOfTurnToken: _configEosToken(_init.modelDir),
+      onRewindFailure: _reportRewindFailure,
+    );
 
     final tokenizerOut = pkg_ffi.calloc<ffi.Pointer<OgaTokenizer>>();
     try {
@@ -1347,32 +1337,35 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
     final tokenizer = _loadedTokenizer;
     ffi.Pointer<OgaTokenizerStream>? tokenizerStream;
     final session = turn.sessionId;
-    _lastExchange.remove(session);
+    // A generator created for this turn joins the session only once its
+    // prompt is in: until then a failure (a prompt that does not fit, a
+    // failed prefill) destroys it, and the history stays to be replayed.
+    ffi.Pointer<OgaGenerator>? created;
     try {
       if (turn.isFirstTurn) {
-        resetGenerator(sessionId: session);
-        _history[session] = [
-          if (turn.systemInstruction?.isNotEmpty ?? false)
-            {'role': 'system', 'content': turn.systemInstruction!},
-          ...?seedHistory,
-        ];
+        _dropGenerator(session);
+        _turns.begin(
+          session,
+          system: turn.systemInstruction,
+          seed: seedHistory,
+        );
       }
-      final history = _history[session] ??= [];
-
-      // A generator created now for a session with history — dropped by a
-      // failed rewind or a reset — gets that history first, as text.
-      final created = !_generators.containsKey(session);
-      final generator = _generators[session] ??= _createGenerator(
-        oga,
-        model,
-        turn.searchOptions,
-        guidance,
-      );
-      _turnStart[session] = oga.OgaGenerator_GetSequenceCount(generator, 0);
+      final existing = _generators[session];
+      final generator =
+          existing ??
+          (created = _createGenerator(
+            oga,
+            model,
+            turn.searchOptions,
+            guidance,
+          ));
+      _turns.started(session, oga.OgaGenerator_GetSequenceCount(generator, 0));
 
       // --- Chat template (SDK-owns-templates, Task 3) ----------------------
+      // A generator created now for a session with history — dropped by a
+      // failed rewind — gets that history first, as text.
       final messages = <Map<String, String>>[
-        if (created) ...history,
+        if (created != null) ..._turns.history(session),
         {'role': 'user', 'content': turn.userContent},
       ];
       final messagesJsonC = jsonEncode(messages).toNativeUtf8();
@@ -1433,7 +1426,11 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
           oga.OgaGenerator_AppendTokenSequences(generator, sequences),
           'OgaGenerator_AppendTokenSequences (prefill)',
         );
-        _lastExchange[session] = (turn.userContent, StringBuffer());
+        if (created != null) {
+          _generators[session] = created;
+          created = null;
+        }
+        _turns.prefilled(session, turn.userContent);
       } finally {
         pkg_ffi.calloc.free(promptC);
         oga.OgaDestroySequences(sequences);
@@ -1482,7 +1479,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
               ? ''
               : decodedOut.value.cast<pkg_ffi.Utf8>().toDartString();
           if (piece.isNotEmpty) {
-            _lastExchange[session]?.$2.write(piece);
+            _turns.emitted(session, piece);
             emit(piece);
           }
         } finally {
@@ -1535,18 +1532,15 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
       // leaves it false. (With guidance, IsDone also resets the grammar for
       // the generator's next turn; any other end leaves it mid-value, and
       // the session starts a fresh generator.)
-      final TurnEnd end;
-      if (stopped) {
-        end = TurnEnd.stopped;
-      } else if (oga.OgaGenerator_IsDone(generator)) {
-        end =
-            oga.OgaGenerator_GetSequenceCount(generator, 0) >=
-                _init.contextWindow
-            ? TurnEnd.contextLimit
-            : TurnEnd.endOfSequence;
-        if (end == TurnEnd.endOfSequence) _endOfTurnToken = lastToken;
-      } else {
-        end = TurnEnd.outputLimit;
+      final end = classifyTurnEnd(
+        stopped: stopped,
+        done: !stopped && oga.OgaGenerator_IsDone(generator),
+        length: oga.OgaGenerator_GetSequenceCount(generator, 0),
+        contextWindow: _init.contextWindow,
+      );
+      final endToken = lastToken;
+      if (end == TurnEnd.endOfSequence && endToken != null) {
+        _turns.finished(endToken);
       }
       return GenAiTurnResult(
         GenAiGenerationStats(
@@ -1560,6 +1554,8 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
       if (tokenizerStream != null) {
         oga.OgaDestroyTokenizerStream(tokenizerStream);
       }
+      final unused = created;
+      if (unused != null) oga.OgaDestroyGenerator(unused);
     }
   }
 
@@ -1677,64 +1673,8 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
 
   @override
   void resetGenerator({int? sessionId}) {
-    _history.remove(sessionId);
-    _turnStart.remove(sessionId);
-    _lastExchange.remove(sessionId);
+    _turns.forget(sessionId);
     _dropGenerator(sessionId);
-  }
-
-  /// [AfterTurn.keepStopped]: the stopped turn's tokens stay — the prompt
-  /// and the reply as far as the user saw it — and the model's end-of-turn
-  /// token closes them, so the context is that of a turn whose reply ended
-  /// there. The last token is rewound and appended again with the
-  /// end-of-turn token: the rewind resets a guided session's grammar, and
-  /// tokens appended after a rewind are never committed into it. Without
-  /// room for the end-of-turn token, or where the model cannot rewind, the
-  /// turn is rewound instead (see [endTurn]); the exchange then stays in the
-  /// history a rebuild reads.
-  bool _closeStoppedTurn(
-    int? sessionId,
-    (String, StringBuffer)? exchange,
-    int? start,
-    List<Map<String, String>>? history,
-  ) {
-    final generator = _generators[sessionId];
-    if (generator == null || start == null || exchange == null) return true;
-    void remember() => history?.addAll([
-      {'role': 'user', 'content': exchange.$1},
-      {'role': 'assistant', 'content': exchange.$2.toString()},
-    ]);
-    final oga = _bindings;
-    final length = oga.OgaGenerator_GetSequenceCount(generator, 0);
-    final end = _endOfTurnToken;
-    if (end == null || length <= start || length + 1 >= _init.contextWindow) {
-      return endTurn(sessionId: sessionId, how: AfterTurn.rewind);
-    }
-    final last = oga.OgaGenerator_GetSequenceData(generator, 0)[length - 1];
-    final tokens = pkg_ffi.calloc<ffi.Int32>(2);
-    try {
-      tokens[0] = last;
-      tokens[1] = end;
-      _check(
-        oga.OgaGenerator_RewindTo(generator, length - 1),
-        'OgaGenerator_RewindTo',
-      );
-      _check(
-        oga.OgaGenerator_AppendTokens(generator, tokens, 2),
-        'OgaGenerator_AppendTokens (stopped turn)',
-      );
-      remember();
-      return true;
-    } catch (e) {
-      // The generator may now be anywhere between the two calls: rebuild it
-      // from the history, which keeps the exchange.
-      _dropGenerator(sessionId);
-      remember();
-      _reportRewindFailure(e);
-      return false;
-    } finally {
-      pkg_ffi.calloc.free(tokens);
-    }
   }
 
   void _reportRewindFailure(Object error) {
@@ -1780,41 +1720,15 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
 
   @override
   bool endTurn({int? sessionId, required AfterTurn how}) {
-    final exchange = _lastExchange.remove(sessionId);
-    final start = _turnStart.remove(sessionId);
-    final history = _history[sessionId];
-    switch (how) {
-      case AfterTurn.keep:
-        if (exchange != null && history != null) {
-          history
-            ..add({'role': 'user', 'content': exchange.$1})
-            ..add({'role': 'assistant', 'content': exchange.$2.toString()});
-        }
-        return true;
-      case AfterTurn.keepStopped:
-        return _closeStoppedTurn(sessionId, exchange, start, history);
-      case AfterTurn.rewind:
-        final generator = _generators[sessionId];
-        if (generator == null || start == null) return true;
-        final oga = _bindings;
-        if (oga.OgaGenerator_GetSequenceCount(generator, 0) == start) {
-          return true;
-        }
-        try {
-          _check(
-            oga.OgaGenerator_RewindTo(generator, start),
-            'OgaGenerator_RewindTo',
-          );
-          return true;
-        } catch (e) {
-          // This model cannot rewind (ORT-GenAI 0.17.0 refuses phi3v,
-          // whisper, LFM2 and decoder pipelines): its next turn rebuilds the
-          // generator from the session's history, as text.
-          _dropGenerator(sessionId);
-          _reportRewindFailure(e);
-          return false;
-        }
-    }
+    final generator = _generators[sessionId];
+    return _turns.settle(
+      sessionId,
+      how,
+      generator: generator == null
+          ? null
+          : _FfiGeneratorOps(_bindings, generator),
+      drop: () => _dropGenerator(sessionId),
+    );
   }
 
   /// Destroys generator, tokenizer and model — whichever exist, so a load
@@ -1834,5 +1748,55 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
     }
     if (tokenizer != null) oga.OgaDestroyTokenizer(tokenizer);
     if (model != null) oga.OgaDestroyModel(model);
+  }
+}
+
+/// [GeneratorOps] over one ORT-GenAI generator.
+final class _FfiGeneratorOps implements GeneratorOps {
+  _FfiGeneratorOps(this._oga, this._generator);
+
+  final OrtGenAiBindings _oga;
+  final ffi.Pointer<OgaGenerator> _generator;
+
+  void _check(ffi.Pointer<OgaResult> result, String step) {
+    if (result == ffi.nullptr) return;
+    try {
+      final errPtr = _oga.OgaResultGetError(result);
+      final message = errPtr == ffi.nullptr
+          ? '<no message>'
+          : errPtr.cast<pkg_ffi.Utf8>().toDartString();
+      throw StateError('ORT-GenAI $step failed: $message');
+    } finally {
+      _oga.OgaDestroyResult(result);
+    }
+  }
+
+  @override
+  int get length => _oga.OgaGenerator_GetSequenceCount(_generator, 0);
+
+  @override
+  int tokenAt(int index) =>
+      _oga.OgaGenerator_GetSequenceData(_generator, 0)[index];
+
+  @override
+  void rewindTo(int length) => _check(
+    _oga.OgaGenerator_RewindTo(_generator, length),
+    'OgaGenerator_RewindTo',
+  );
+
+  @override
+  void append(List<int> tokens) {
+    final buffer = pkg_ffi.calloc<ffi.Int32>(tokens.length);
+    try {
+      for (var k = 0; k < tokens.length; k++) {
+        buffer[k] = tokens[k];
+      }
+      _check(
+        _oga.OgaGenerator_AppendTokens(_generator, buffer, tokens.length),
+        'OgaGenerator_AppendTokens',
+      );
+    } finally {
+      pkg_ffi.calloc.free(buffer);
+    }
   }
 }

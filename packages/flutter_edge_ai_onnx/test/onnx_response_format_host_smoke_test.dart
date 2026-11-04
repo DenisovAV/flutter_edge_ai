@@ -353,6 +353,42 @@ void main() {
   );
 
   test(
+    'a generator rebuilt from history whose prompt does not fit is not kept: '
+    'the next turn replays the history',
+    () async {
+      final long = List.filled(400, 'ocean wave').join(' ');
+      final history = [
+        {
+          'role': 'user',
+          'content': 'My secret word is CACTUS. Reply with OK only.',
+        },
+        {'role': 'assistant', 'content': 'OK'},
+      ];
+      final started = startGenAiTurn(
+        client,
+        GenAiTurn(
+          userContent: long,
+          sessionId: 120,
+          isFirstTurn: true,
+          searchOptions: const {'do_sample': false},
+        ),
+        seedHistory: history,
+      );
+      await expectLater(started.text.join(), throwsStateError);
+      expect(await started.end, TurnEnd.contextLimit);
+      final (answer, _) = await turn(
+        120,
+        'What is my secret word? Answer with that word only.',
+        cap: 12,
+      );
+      expect(answer.toLowerCase(), contains('cactus'));
+      await client.resetSession(sessionId: 120);
+    },
+    skip: available ? false : 'needs ORT-GenAI libs and a model',
+    timeout: const Timeout(Duration(minutes: 5)),
+  );
+
+  test(
     'a guided session cut at its cap is incomplete; its next turn is a value',
     () async {
       final session = await model.openSession(

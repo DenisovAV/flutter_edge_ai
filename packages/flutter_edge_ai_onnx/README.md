@@ -177,6 +177,7 @@ Measured on Phi-3.5-mini (macOS, greedy):
 A model ORT-GenAI cannot rewind (phi3v, whisper, LFM2, decoder pipelines) gets
 its context rebuilt from the session's own conversation text instead, at the
 cost of a full prefill, with one printed warning per model.
+
 An unset cap cannot mean "unlimited" on a phone: pass a larger
 `maxConcurrentSessions` to allow more. The cap does not count the
 `createSession` session. Sampling

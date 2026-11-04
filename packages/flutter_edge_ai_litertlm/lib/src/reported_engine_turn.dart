@@ -14,12 +14,16 @@ import 'package:flutter_edge_ai/engine.dart';
 /// ends there, cleanly, with what was generated — whether or not the source
 /// ever ends (iOS sends no end after a cancelled generation) — and `end`
 /// says why, so core's chat keeps the partial reply (and raises for a close,
-/// decision H). Any other error stays on the text; `end` is then not read. A
-/// turn that runs to its end reports what [completed] returns, called once
-/// the text has ended, so it can read a record the engine writes at the end
-/// of the turn, also after an error that stays on the text (LiteRT-LM: a turn
-/// native ended `context_full` reports [TurnEnd.contextLimit] there). `end`
-/// completes after the text has closed.
+/// decision H). Any other error stays on the text.
+///
+/// As the session SPI requires (core 2.6.0 design §3), `end` never completes
+/// with an error and completes after the text is done, whether the text
+/// ended normally or with an error, and also when the consumer cancels it.
+/// When neither a stop nor a close ended the turn, `end` is what [completed]
+/// returns, called once the text has ended, so it can read a record the
+/// engine writes at the end of the turn: after an error too (LiteRT-LM: a
+/// turn native ended `context_full` fails with `ContextLimitException`, and
+/// its end is [TurnEnd.contextLimit]).
 EngineTurn reportedEngineTurn(
   Stream<String> text, {
   required bool Function() stopped,

@@ -483,5 +483,6 @@ void main() {
       }
     },
     skip: _skip,
+    timeout: const Timeout(Duration(minutes: 30)),
   );
 }

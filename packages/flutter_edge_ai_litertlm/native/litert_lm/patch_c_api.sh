@@ -1016,7 +1016,10 @@ fi
 # after its benchmark turn started never ended that turn, so every later turn
 # of the session failed with "Prefill turn prefill:N already started" (the
 # Dart client always enables benchmark); tasks.cc forgets an unended turn's
-# start on every exit. Needs sections 16 and 18.
+# start on every exit. A send refused before it starts (a NULL argument, a
+# message that is not JSON) is reported as kLiteRtLmTurnEndRefused with its
+# status code instead of the end of the send before it; rewind_cancelled_turn
+# still decides by the last send that started. Needs sections 16 and 18.
 TURN_END_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/conversation_turn_end_record.patch"
 if git -C "$DIR" apply --check "$TURN_END_PATCH" 2>/dev/null; then
   git -C "$DIR" apply "$TURN_END_PATCH"

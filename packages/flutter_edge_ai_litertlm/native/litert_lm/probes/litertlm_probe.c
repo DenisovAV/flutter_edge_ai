@@ -382,6 +382,7 @@ static const char* TurnEndName(int e) {
     case 5: return "output_limit";
     case 6: return "context_limit";
     case 7: return "context_full";
+    case 8: return "refused";
     default: return "?";
   }
 }
@@ -417,6 +418,31 @@ static int CmdTurnEnd(P engine) {
   r = Send(a, "Reply with the single word OK.", NULL, &s);
   free(r);
   fail += CheckTurnEnd("stop_token", a, 1);
+  // 1b. A send refused before it starts (not JSON; a stream with no
+  // callback) is reported as refused with InvalidArgument (3), never as the
+  // end of the send before it; the next send clears it.
+  {
+    P resp = NULL;
+    Status rs = litert_lm_conversation_send_message(a, "not json", NULL, NULL,
+                                                    &resp);
+    int end = -1, code = -1;
+    litert_lm_conversation_get_last_turn_end(a, &end, &code);
+    bool ok = rs != 0 && end == 8 && code == 3;
+    printf("RESULT turnend_refused_send %s status=%d end=%s code=%d\n",
+           ok ? "PASS" : "FAIL", rs, TurnEndName(end), code);
+    fail += !ok;
+    rs = litert_lm_conversation_send_message_stream(
+        a, "{\"role\":\"user\",\"content\":\"hi\"}", NULL, NULL, NULL,
+        NULL);
+    litert_lm_conversation_get_last_turn_end(a, &end, &code);
+    ok = rs != 0 && end == 8 && code == 3;
+    printf("RESULT turnend_refused_stream %s status=%d end=%s code=%d\n",
+           ok ? "PASS" : "FAIL", rs, TurnEndName(end), code);
+    fail += !ok;
+    r = Send(a, "Reply with the single word OK.", NULL, &s);
+    free(r);
+    fail += CheckTurnEnd("after_refused", a, 1);
+  }
   litert_lm_conversation_delete(a);
   // 2. max_output_tokens (8).
   P b = NewConversation(engine, NULL, false, false, 8);

@@ -364,4 +364,76 @@ void main() {
     expect(fake.calls.where((c) => c == 'delete'), hasLength(1));
     expect(fake.calls, isNot(contains('engine_create')));
   });
+
+  group('kernelBatchSizeFor (#364, #763)', () {
+    EngineCreateRequest gpuRequest(int? kernelBatchSize) => EngineCreateRequest(
+      modelPath: '/models/gemma.litertlm',
+      backend: 'gpu',
+      maxTokens: 1024,
+      logLevel: EdgeAiLogLevel.none,
+      kernelBatchSize: kernelBatchSize,
+    );
+
+    test('Android GPU on Adreno: 2, and the setter gets it', () {
+      final batch = kernelBatchSizeFor(
+        'gpu',
+        isAndroid: true,
+        isAdreno: () => true,
+      );
+      expect(batch, 2);
+
+      fake = _FakeLiteRtLm();
+      fake.create(gpuRequest(batch));
+      expect(fake.calls, contains('kernel_batch_size 2'));
+    });
+
+    test('Android GPU on another GPU (Mali): the setter is not called, the '
+        "engine keeps its default", () {
+      final batch = kernelBatchSizeFor(
+        'gpu',
+        isAndroid: true,
+        isAdreno: () => false,
+      );
+      expect(batch, isNull);
+
+      fake = _FakeLiteRtLm();
+      fake.create(gpuRequest(batch));
+      expect(fake.calls, contains('engine_create'));
+      expect(
+        fake.calls.where((c) => c.startsWith('kernel_batch_size')),
+        isEmpty,
+      );
+    });
+
+    test('a backend other than the GPU on Android: null, the GPU is not '
+        'probed', () {
+      fake = _FakeLiteRtLm();
+      for (final backend in ['cpu', 'npu']) {
+        expect(
+          kernelBatchSizeFor(
+            backend,
+            isAndroid: true,
+            isAdreno: () => fail('probed for $backend'),
+          ),
+          isNull,
+          reason: backend,
+        );
+      }
+    });
+
+    test('off Android: null, the GPU is not probed', () {
+      fake = _FakeLiteRtLm();
+      for (final backend in ['gpu', 'cpu', 'npu']) {
+        expect(
+          kernelBatchSizeFor(
+            backend,
+            isAndroid: false,
+            isAdreno: () => fail('probed off Android for $backend'),
+          ),
+          isNull,
+          reason: backend,
+        );
+      }
+    });
+  });
 }

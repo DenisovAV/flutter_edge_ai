@@ -1,3 +1,6 @@
+## 1.19.2
+- Android GPU: the #364 prefill flush is set on Adreno only; Mali decodes faster (#763).
+
 ## 1.19.1
 - The native library loads and engine settings are made off the calling isolate (#756).
 - Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every LiteRT build pinned to its commit (#734).

@@ -271,6 +271,7 @@ to the cloud is the app's decision.
 | flutter_edge_ai | Status |
 |---|---|
 | `IncompleteStructuredOutputException`, `end: outputLimit` (raise `maxOutputTokens`) or `end: contextLimit` (the context window) | `OUT_OF_RANGE` |
+| `ContextLimitException`: the input did not fit what the context window had left (on any request, structured or not; the chat is as before the turn) | `OUT_OF_RANGE` |
 | `… end: closed` (model closed or replaced mid-turn) or `end: stopped`, not by your cancel | `ABORTED` |
 | your cancel | `CancelledException` |
 | `NonConformingStructuredOutputException` (an engine bug), or an engine whose `structuredOutputSupport` lists keywords outside the dialect | `FAILED_PRECONDITION` |

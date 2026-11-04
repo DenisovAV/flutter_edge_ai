@@ -277,6 +277,50 @@ void main() {
       });
     }
 
+    test('a refusal on the first send\'s text, after core took the turn '
+        'back, still runs prompt-only with the whole history', () async {
+      final rejected = FakeStructuredSession()
+        ..errorBeforeText = const gemma.ResponseFormatUnsupportedException(
+          'The constraint compiler rejected the schema.',
+        );
+      fakeModel
+        ..structuredSupport = enforcesAll
+        ..newSession = () => rejected;
+
+      final response = await buildModel()(
+        ModelRequest(
+          messages: [
+            Message(
+              role: Role.user,
+              content: [TextPart(text: 'Which backends are there?')],
+            ),
+            Message(
+              role: Role.model,
+              content: [TextPart(text: 'cpu and gpu.')],
+            ),
+            Message(
+              role: Role.user,
+              content: [TextPart(text: 'Pick one.')],
+            ),
+          ],
+          output: OutputConfig(
+            format: 'json',
+            schema: schema,
+            constrained: true,
+          ),
+        ),
+      );
+
+      expect(response.message!.text, '{"backend": "cpu"}');
+      expect(rejected.closed, isTrue);
+      expect(fakeModel.createChatCallCount, 1);
+      final sent = fakeChat.receivedMessages;
+      expect(sent.map((m) => m.isUser), [true, false, true]);
+      expect(sent.first.text, 'Which backends are there?');
+      expect(sent.last.text, startsWith('Pick one.'));
+      expect(sent.last.text, contains('conform to the following schema'));
+    });
+
     test('a refusal after a chunk reached the caller is not retried', () async {
       fakeModel
         ..structuredSupport = enforcesAll
@@ -449,5 +493,64 @@ void main() {
         ),
       );
     });
+
+    for (final streaming in [false, true]) {
+      test(
+        'an input too long for the context window'
+        '${streaming ? ', streamed,' : ''} is OUT_OF_RANGE, not retried',
+        () async {
+          final session = FakeStructuredSession(end: gemma.TurnEnd.contextLimit)
+            ..errorBeforeText = const gemma.ContextLimitException(
+              'The input needs 1500 tokens; 900 are left.',
+            );
+          fakeModel.newSession = () => session;
+
+          await expectLater(
+            buildModel()(request(), onChunk: streaming ? (_) {} : null),
+            throwsA(
+              isA<GenkitException>()
+                  .having((e) => e.status, 'status', StatusCode.outOfRange)
+                  .having(
+                    (e) => e.cause,
+                    'cause',
+                    isA<gemma.ContextLimitException>(),
+                  ),
+            ),
+          );
+          expect(session.closed, isTrue);
+          expect(fakeModel.createChatCallCount, 0);
+        },
+      );
+    }
+  });
+
+  test('a plain turn\'s input too long for the context window is '
+      'OUT_OF_RANGE', () async {
+    fakeChat.generationError = const gemma.ContextLimitException(
+      'The input needs 1500 tokens; 900 are left.',
+    );
+
+    await expectLater(
+      buildModel()(
+        ModelRequest(
+          messages: [
+            Message(
+              role: Role.user,
+              content: [TextPart(text: 'A long question.')],
+            ),
+          ],
+        ),
+      ),
+      throwsA(
+        isA<GenkitException>()
+            .having((e) => e.status, 'status', StatusCode.outOfRange)
+            .having(
+              (e) => e.cause,
+              'cause',
+              isA<gemma.ContextLimitException>(),
+            ),
+      ),
+    );
+    expect(fakeChat.closeCallCount, 1);
   });
 }

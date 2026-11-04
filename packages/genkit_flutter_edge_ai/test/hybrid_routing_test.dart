@@ -37,6 +37,23 @@ void main() {
           ..newSession = () => FakeStructuredSession(tokens: tokens, end: end),
       ),
     (
+      'a structured input too long for the context window',
+      (model) => model
+        ..structuredSupport = enforcesAll
+        ..newSession = () =>
+            FakeStructuredSession(end: gemma.TurnEnd.contextLimit)
+              ..errorBeforeText = const gemma.ContextLimitException(
+                'The input needs 1500 tokens; 900 are left.',
+              ),
+    ),
+    (
+      'a prompt-only input too long for the context window',
+      (model) => model.chatToReturn = FakeInferenceChat()
+        ..generationError = const gemma.ContextLimitException(
+          'The input needs 1500 tokens; 900 are left.',
+        ),
+    ),
+    (
       'an engine that claims a keyword outside the dialect',
       (model) => model.structuredSupport = const gemma.StructuredOutputSupport(
         keywords: {'type', 'pattern'},

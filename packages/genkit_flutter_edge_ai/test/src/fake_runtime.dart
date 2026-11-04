@@ -388,6 +388,10 @@ final class FakeStructuredSession extends gemma.InferenceModelSession {
   /// When set, the next turn fails with it before any text.
   Object? startError;
 
+  /// When set, a turn's text fails with it before any token, as an engine
+  /// that refused the input does.
+  Object? errorBeforeText;
+
   /// When set, a turn fails with it after its first token.
   Object? errorAfterFirst;
 
@@ -405,6 +409,7 @@ final class FakeStructuredSession extends gemma.InferenceModelSession {
     final ended = Completer<gemma.TurnEnd>();
     Stream<String> text() async* {
       try {
+        if (errorBeforeText case final error?) throw error;
         for (final (index, token) in tokens.indexed) {
           yield token;
           if (index == 0) {

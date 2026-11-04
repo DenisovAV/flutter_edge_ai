@@ -53,6 +53,21 @@ Future<T> withRuntimeErrors<T>(String what, Future<T> Function() call) async {
   }
 }
 
+/// [error], an input the model refused as too long for what its context
+/// window had left, as OUT_OF_RANGE: not transient for genkit_hybrid, so no
+/// router or deprecated fallback moves the prompt off the device for it, as
+/// for a structured reply cut by the window ([structuredOutputError]).
+GenkitException contextLimitError(
+  gemma.ContextLimitException error,
+  StackTrace stack,
+) => GenkitException(
+  'The input does not fit the on-device model\'s context window: '
+  '${error.message}',
+  status: StatusCode.outOfRange,
+  cause: error,
+  stackTrace: stack,
+);
+
 /// [error], a typed-response failure, as a Genkit error.
 ///
 /// None of these statuses moves the request off the device: genkit_hybrid's

@@ -282,7 +282,8 @@ final Recipe? recipe = response.output;
 
 A structured turn that ends without a value of the schema fails with a
 `GenkitException` whose `cause` is flutter_edge_ai's exception: `OUT_OF_RANGE`
-when `maxOutputTokens` or the context window cut the value, `ABORTED` when it
+when `maxOutputTokens` or the context window cut the value, or the input did
+not fit the window (`ContextLimitException`, on any request), `ABORTED` when it
 was stopped or the model was closed mid-turn, `FAILED_PRECONDITION` for a
 non-conforming reply (an engine bug). None of them sends the request to another
 model, through `genkit_hybrid`'s router or its deprecated `hybridModel`,

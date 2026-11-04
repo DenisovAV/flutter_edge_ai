@@ -516,6 +516,11 @@ Future<ModelResponse> _respond(
       error,
       failureStack!,
     );
+  } else if (failure case final gemma.ContextLimitException error) {
+    // Plain and structured turns alike: the input did not fit what the
+    // context window had left. The engine and the chat are as before the
+    // turn, and the same input fails the same way again, so it stays local.
+    failure = contextLimitError(error, failureStack!);
   }
   if (failure != null) {
     // The generation's own error is the one reported. A stop that failed as

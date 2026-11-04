@@ -120,6 +120,9 @@ class _Conversation implements ConversationHandle {
   @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
+  @override
+  NativeLastTurnEnd? get lastTurnEnd => null;
+
   /// Like the native handle: closing cancels a turn that still runs.
   @override
   void close() {

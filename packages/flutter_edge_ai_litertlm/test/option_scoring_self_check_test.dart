@@ -1,6 +1,6 @@
 // LiteRT-LM's scoring self-check with the engine scripted. On a real engine
 // it runs in example/integration_test/litertlm_inference_decider_test.dart,
-// where LiteRT-LM 0.18.0 must pick `once`.
+// where LiteRT-LM 0.19 must pass it (#3561 fixed upstream).
 // ignore_for_file: experimental_member_use
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/option_scoring_self_check.dart';
@@ -39,40 +39,38 @@ final class _Engine {
   final Map<int, String> pieces = {37918: 'sad', 3672: 'joy', 21867: 'love'};
 
   /// The score of one token after one prompt; the call count is passed so a
-  /// script can vary between repeats. The control prompt, which differs
-  /// early, scores differently, as on every engine.
+  /// script can vary between repeats. By default an engine with the #3561
+  /// fix: the pair's two prompts, which differ in their second-to-last
+  /// token, score differently, and so does the control prompt, which
+  /// differs early, as on every engine.
   double Function(String prompt, String token, int call) score =
       (prompt, token, call) =>
           (_base[token] ?? -1.5) -
-          (prompt == liteRtLmSelfCheckControlPrompt ? 0.2 : 0);
+          (prompt == liteRtLmSelfCheckControlPrompt ? 0.2 : 0) -
+          (prompt == _user ? 0.3 : 0);
   int calls = 0;
 
-  /// The scores of one run of [tokens] after [prompt] in [mode]: by default
-  /// each as it scores alone, which is what an exact rewind gives.
-  List<double> Function(
-    LiteRtLmScoringMode mode,
-    String prompt,
-    List<String> tokens,
-  )
-  inMode = (mode, prompt, tokens) => [for (final t in tokens) _base[t] ?? -1.5];
+  /// The scores of one run of [tokens] after [prompt]: by default each as it
+  /// scores alone, which is what an exact rewind gives.
+  List<double> Function(String prompt, List<String> tokens) inRun =
+      (prompt, tokens) => [for (final t in tokens) _base[t] ?? -1.5];
   PreferredBackend? backend = PreferredBackend.cpu;
   final runs = <List<String>>[];
-  final modes = <(LiteRtLmScoringMode, String)>[];
+  final runPrompts = <String>[];
 
-  Future<LiteRtLmScoringMode> check([
-    List<String> targets = const ['sad', 'joy', 'love'],
-  ]) => liteRtLmScoringSelfCheck(
-    backend: backend,
-    targets: targets,
-    tokenize: (text) async => tokens[text] ?? const [],
-    detokenize: (ids) async => ids.map((id) => pieces[id] ?? '?').join(),
-    scoreOneToken: (prompt, token) async => score(prompt, token, calls++),
-    scoreInMode: (mode, prompt, tokens) async {
-      runs.add(tokens);
-      modes.add((mode, prompt));
-      return inMode(mode, prompt, tokens);
-    },
-  );
+  Future<void> check([List<String> targets = const ['sad', 'joy', 'love']]) =>
+      liteRtLmScoringSelfCheck(
+        backend: backend,
+        targets: targets,
+        tokenize: (text) async => tokens[text] ?? const [],
+        detokenize: (ids) async => ids.map((id) => pieces[id] ?? '?').join(),
+        scoreOneToken: (prompt, token) async => score(prompt, token, calls++),
+        scoreInRun: (prompt, tokens) async {
+          runs.add(tokens);
+          runPrompts.add(prompt);
+          return inRun(prompt, tokens);
+        },
+      );
 }
 
 Matcher _refusing(String says) => throwsA(
@@ -85,30 +83,21 @@ Matcher _refusing(String says) => throwsA(
 
 void main() {
   group('the self-check runs in debug and profile builds only', () {
-    test('a release build scores in once without running it', () async {
+    test('a release build scores without running it', () async {
       var checks = 0;
-      final mode = await liteRtLmScoringMode(
+      await liteRtLmScoringChecked(
         releaseMode: true,
-        selfCheck: () async {
-          checks++;
-          return LiteRtLmScoringMode.plain;
-        },
+        selfCheck: () async => checks++,
       );
-      expect(mode, LiteRtLmScoringMode.once);
-      expect(liteRtLmReleaseScoringMode, LiteRtLmScoringMode.once);
       expect(checks, 0);
     });
 
-    test('a debug or profile build runs it and takes its mode', () async {
+    test('a debug or profile build runs it', () async {
       var checks = 0;
-      final mode = await liteRtLmScoringMode(
+      await liteRtLmScoringChecked(
         releaseMode: false,
-        selfCheck: () async {
-          checks++;
-          return LiteRtLmScoringMode.plain;
-        },
+        selfCheck: () async => checks++,
       );
-      expect(mode, LiteRtLmScoringMode.plain);
       expect(checks, 1);
     });
 
@@ -116,7 +105,7 @@ void main() {
       final engine = _Engine()
         ..score = (prompt, token, call) => -1.5 - call * 1e-6;
       await expectLater(
-        liteRtLmScoringMode(releaseMode: false, selfCheck: engine.check),
+        liteRtLmScoringChecked(releaseMode: false, selfCheck: engine.check),
         _refusing('not repeatable'),
       );
     });
@@ -136,9 +125,13 @@ void main() {
         ..score = (prompt, token, _) =>
             prompt == liteRtLmSelfCheckPrompt || token == 'sad' ? -1.5 : -2.0,
       'rewinding': () => _Engine()
-        ..inMode = (mode, prompt, tokens) => [
+        ..inRun = (prompt, tokens) => [
           for (var i = 0; i < tokens.length; i++) i == 0 ? -1.5 : -1.6,
         ],
+      '#3561': () =>
+          _Engine()
+            ..score = (prompt, token, _) =>
+                prompt == liteRtLmSelfCheckControlPrompt ? -1.7 : -1.5,
     };
     for (final MapEntry(key: says, value: make) in cases.entries) {
       test('$says, on the GPU: points to the CPU', () async {
@@ -177,36 +170,40 @@ void main() {
     }
   });
 
-  test(
-    'identical scores on both prompts pick once (LiteRT-LM 0.18.0)',
-    () async {
-      final engine = _Engine();
-      expect(await engine.check(), LiteRtLmScoringMode.once);
-      // Three probes, two repeats, two prompts, and the control prompt.
-      expect(engine.calls, 15);
-      // Then the mode as a decision uses it: each probe alone, all three in
-      // one run, and in the other order.
-      expect(engine.runs, [
-        ['sad'],
-        ['joy'],
-        ['love'],
-        ['sad', 'joy', 'love'],
-        ['love', 'joy', 'sad'],
-      ]);
-    },
-  );
-
-  test('different scores pick plain (an engine with the #3561 fix), and the '
-      'runs that check it are plain, after the pair\'s prompt', () async {
+  test('identical scores on both prompts are refused: the 0.18 scoring '
+      '(LiteRT-LM #3561), no workaround any more', () async {
     final engine = _Engine()
       ..score = (prompt, token, _) =>
-          prompt == liteRtLmSelfCheckPrompt ? -1.5 : -2.0;
-    expect(await engine.check(), LiteRtLmScoringMode.plain);
-    expect(engine.modes, isNotEmpty);
-    for (final (mode, prompt) in engine.modes) {
-      expect(mode, LiteRtLmScoringMode.plain);
-      expect(prompt, liteRtLmSelfCheckPrompt);
-    }
+          prompt == liteRtLmSelfCheckControlPrompt ? -1.7 : -1.5;
+    await expectLater(
+      engine.check(),
+      throwsA(
+        isA<DeciderUnsupportedException>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('#3561'), contains('older than this package')),
+        ),
+      ),
+    );
+    expect(engine.runs, isEmpty);
+  });
+
+  test('different scores pass (an engine with the #3561 fix), and the runs '
+      'that check the rewinds are after the pair\'s prompt', () async {
+    final engine = _Engine();
+    await engine.check();
+    // Three probes, two repeats, two prompts, and the control prompt.
+    expect(engine.calls, 15);
+    // Then as a decision scores: each probe alone, all three in one run, and
+    // in the other order.
+    expect(engine.runs, [
+      ['sad'],
+      ['joy'],
+      ['love'],
+      ['sad', 'joy', 'love'],
+      ['love', 'joy', 'sad'],
+    ]);
+    expect(engine.runPrompts.toSet(), {liteRtLmSelfCheckPrompt});
   });
 
   test('a control score that is not a log-probability is refused', () async {
@@ -236,7 +233,7 @@ void main() {
   });
 
   test(
-    'no probe that tokenises back to itself: refused, not taken for once',
+    'no probe that tokenises back to itself: refused, not taken for a pass',
     () async {
       final engine = _Engine();
       for (final id in [37918, 3672, 21867]) {
@@ -282,24 +279,20 @@ void main() {
     expect(engine.runs, isEmpty);
   });
 
-  test('a target scored after a rewind that differs from alone is refused, '
-      'whichever mode was picked', () async {
-    for (final plain in [false, true]) {
+  test(
+    'a target scored after a rewind that differs from alone is refused',
+    () async {
       final engine = _Engine()
-        ..inMode = (mode, prompt, tokens) => [
+        ..inRun = (prompt, tokens) => [
           for (var i = 0; i < tokens.length; i++) i == 0 ? -1.5 : -1.6,
         ];
-      if (plain) {
-        engine.score = (prompt, token, _) =>
-            prompt == liteRtLmSelfCheckPrompt ? -1.5 : -2.0;
-      }
       await expectLater(engine.check(), _refusing('rewinding'));
-    }
-  });
+    },
+  );
 
   test('the other order alone differing is refused too', () async {
     final engine = _Engine()
-      ..inMode = (mode, prompt, tokens) => [
+      ..inRun = (prompt, tokens) => [
         for (final t in tokens)
           tokens.first == 'love' && t == 'sad' ? -1.9 : -1.5,
       ];
@@ -310,7 +303,7 @@ void main() {
     'one probe is run twice in one run, so a rewind is still checked',
     () async {
       final engine = _Engine();
-      expect(await engine.check(['sad']), LiteRtLmScoringMode.once);
+      await engine.check(['sad']);
       expect(engine.runs, [
         ['sad'],
         ['sad'],

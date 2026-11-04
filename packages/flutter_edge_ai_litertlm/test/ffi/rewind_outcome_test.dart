@@ -1,10 +1,52 @@
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// `LiteRtLmTurnEnd` in the patched `c/conversation.h`.
+/// `LiteRtLmTurnEnd` in the patched `c/conversation.h` (sections 16 and 23).
 const _none = 0, _completed = 1, _cancelled = 2, _failed = 3, _running = 4;
+const _outputLimit = 5, _contextLimit = 6, _contextFull = 7;
 
 void main() {
+  test('NativeLastTurnEnd is in the C enum\'s order, and a code it does not '
+      'know is none of them', () {
+    expect(NativeLastTurnEnd.fromCode(_none), NativeLastTurnEnd.none);
+    expect(NativeLastTurnEnd.fromCode(_completed), NativeLastTurnEnd.completed);
+    expect(NativeLastTurnEnd.fromCode(_cancelled), NativeLastTurnEnd.cancelled);
+    expect(NativeLastTurnEnd.fromCode(_failed), NativeLastTurnEnd.failed);
+    expect(NativeLastTurnEnd.fromCode(_running), NativeLastTurnEnd.running);
+    expect(
+      NativeLastTurnEnd.fromCode(_outputLimit),
+      NativeLastTurnEnd.outputLimit,
+    );
+    expect(
+      NativeLastTurnEnd.fromCode(_contextLimit),
+      NativeLastTurnEnd.contextLimit,
+    );
+    expect(
+      NativeLastTurnEnd.fromCode(_contextFull),
+      NativeLastTurnEnd.contextFull,
+    );
+    expect(NativeLastTurnEnd.fromCode(8), isNull);
+    expect(NativeLastTurnEnd.fromCode(-1), isNull);
+  });
+
+  test('0 after a context_full send is a rewind: the failed prefill is '
+      'undone and the conversation answers again (section 23)', () {
+    expect(
+      stoppedTurnRewindOutcome(0, _contextFull, null),
+      StoppedTurnRewind.rewound,
+    );
+  });
+
+  test('0 after a send that hit the output or the context limit changes '
+      'nothing: the reply is in the history, cut', () {
+    for (final end in [_outputLimit, _contextLimit]) {
+      expect(
+        stoppedTurnRewindOutcome(0, end, null),
+        StoppedTurnRewind.notCancelled,
+      );
+    }
+  });
+
   test('0 after a cancelled send is a rewind', () {
     expect(
       stoppedTurnRewindOutcome(0, _cancelled, null),

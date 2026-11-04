@@ -33,7 +33,6 @@ import sys
 
 REQUIRED = [
     "litert_lm_clear_last_error",
-    "litert_lm_get_last_error_code",
     "litert_lm_get_last_error_message",
     "litert_lm_loaded_file_create",
     "litert_lm_loaded_file_delete",

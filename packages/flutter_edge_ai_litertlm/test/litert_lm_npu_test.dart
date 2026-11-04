@@ -63,43 +63,26 @@ void main() {
       },
     );
 
-    test('the GPU host is Linux x64 alone; Windows x64 is refused on '
-        'native-v0.18.0-h', () {
-      expect(liteRtLmEmbeddingGpuAbis, {'linux_x64'});
-      expect(liteRtLmEmbeddingGpuRefusedAbis, {'windows_x64'});
+    test('the GPU hosts are Linux x64, Windows x64 and macOS arm64 on '
+        'native-v0.19.0-a, and none is refused', () {
+      expect(liteRtLmEmbeddingGpuAbis, {
+        'linux_x64',
+        'windows_x64',
+        'macos_arm64',
+      });
+      expect(liteRtLmEmbeddingGpuRefusedAbis, isEmpty);
     });
 
-    test('with gpu on windows_x64 the generic bundle is refused, naming the '
-        'native tag, the issue and preferredBackend: cpu; null and cpu stay '
-        'on CPU', () async {
-      host
-        ..abi = 'windows_x64'
-        ..operatingSystem = 'windows';
-      await expectLater(
-        place(target: null, requested: PreferredBackend.gpu),
-        throwsA(
-          isA<EmbeddingLoadException>()
-              .having((e) => e.engine, 'engine', 'LiteRT-LM')
-              .having(
-                (e) => e.message,
-                'message',
-                allOf(
-                  contains('not supported on Windows x64'),
-                  contains('native-v0.18.0-h'),
-                  contains(liteRtLmEmbeddingGpuWindowsIssue),
-                  contains('preferredBackend: cpu'),
-                ),
-              ),
+    test('the refusal for a host whose GPU path ends the process names the '
+        'file, preferredBackend: cpu and the registry', () {
+      expect(
+        liteRtLmEmbeddingGpuRefusal('eg2.litertlm'),
+        allOf(
+          contains('eg2.litertlm'),
+          contains('preferredBackend: cpu'),
+          contains(liteRtLmRegistryUrl),
         ),
       );
-      for (final requested in [null, PreferredBackend.cpu]) {
-        expect(
-          (await place(target: null, requested: requested)).backend,
-          PreferredBackend.cpu,
-          reason: '$requested',
-        );
-      }
-      expect(host.asked, isEmpty);
     });
 
     for (final abi in liteRtLmEmbeddingGpuAbis) {
@@ -129,21 +112,22 @@ void main() {
     }
 
     for (final abi in [
-      'macos_arm64',
       'ios_arm64',
       'android_arm64',
       'linux_arm64',
       'windows_arm64',
     ]) {
-      test('with gpu on $abi stays on CPU: the GPU is not measured there '
-          '(Metal ends the process at create on Apple)', () async {
-        host.abi = abi;
-        final placement = await place(
-          target: null,
-          requested: PreferredBackend.gpu,
-        );
-        expect(placement.backend, PreferredBackend.cpu);
-      });
+      test(
+        'with gpu on $abi stays on CPU: the GPU is not measured there',
+        () async {
+          host.abi = abi;
+          final placement = await place(
+            target: null,
+            requested: PreferredBackend.gpu,
+          );
+          expect(placement.backend, PreferredBackend.cpu);
+        },
+      );
     }
 
     test(

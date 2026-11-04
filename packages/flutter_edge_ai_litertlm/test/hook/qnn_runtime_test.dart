@@ -283,6 +283,9 @@ void main() {
         '0.18.0-g': '2.50.0',
         // Android archive byte-identical to 0.18.0-g.
         '0.18.0-h': '2.50.0',
+        // Built at LiteRT dcb657e8, whose third_party/qairt pins 2.50.0.260828
+        // (the Qualcomm NPU runs of 2026-11-04 on a Galaxy S25 Ultra).
+        '0.19.0-a': '2.50.0',
       };
       final hook = File('hook/build.dart').readAsStringSync();
       final bundle = RegExp(

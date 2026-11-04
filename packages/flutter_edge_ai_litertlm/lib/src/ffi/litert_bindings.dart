@@ -229,7 +229,7 @@ DynamicLibrary _openLiteRt() {
     return requireOwnLiteRtLmBuild(
       openMacOSLiteRtLmForTflite(
         devCandidates: _devLiteRtLmCandidates,
-        isOwnBuild: (library) => library.providesSymbol(liteRtLmOwnBuildSymbol),
+        isOwnBuild: isUsableLiteRtLmBuild,
       ),
       macOSLiteRtLmFramework,
     );

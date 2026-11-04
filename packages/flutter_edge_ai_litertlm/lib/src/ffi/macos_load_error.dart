@@ -190,7 +190,10 @@ DynamicLibrary openMacOSLiteRtLmForTflite({
       continue;
     }
     if (isOwnBuild != null && !isOwnBuild(library)) {
-      failed.add('$path: loads, but is not a flutter_edge_ai_litertlm build');
+      failed.add(
+        '$path: loads, but is not a flutter_edge_ai_litertlm build on '
+        'LiteRT-LM C API 1.x',
+      );
       continue;
     }
     return library;

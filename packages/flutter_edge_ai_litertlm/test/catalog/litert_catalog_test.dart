@@ -15,6 +15,8 @@ import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_load_plan.dart'
     show textBackendsAllowedForTesting;
 import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
     show debugLiteRtCatalogHost;
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart'
+    show mediatekNpuRefused;
 import 'package:flutter_test/flutter_test.dart';
 
 /// Every host the website shows, `Abi.current()` spelling; null is the web.
@@ -86,11 +88,13 @@ void main() {
       expect(_here(gemma.npuPtl, 'android_arm64'), _none);
     });
 
-    test('a MediaTek build runs on Android arm64 only', () {
+    test('a MediaTek build runs nowhere: the MediaTek NPU is refused in this '
+        'release (decision K)', () {
+      expect(mediatekNpuRefused, isTrue);
       for (final MapEntry(key: host, value: abi) in _hosts.entries) {
         expect(
           _here(LiteRtLmModels.qwen3_0_6b.npuMt6993, abi),
-          abi == 'android_arm64' ? _npu : _none,
+          _none,
           reason: host,
         );
       }
@@ -162,17 +166,18 @@ void main() {
 
     test('an EmbeddingGemma 2 bundle: CPU natively, WebGPU on the web', () {
       expect(_here(eg2.generic, 'android_arm64'), _cpu);
-      expect(_here(eg2.generic, 'windows_x64'), _cpu);
-      expect(_here(eg2.generic, 'macos_arm64'), _cpu);
-      // Where the loader honours the GPU for it.
-      expect(_here(eg2.generic, 'linux_x64'), {
-        PreferredBackend.cpu,
-        PreferredBackend.gpu,
-      });
+      // Where the loader honours the GPU for it (native-v0.19.0-a).
+      for (final abi in ['linux_x64', 'windows_x64', 'macos_arm64']) {
+        expect(_here(eg2.generic, abi), {
+          PreferredBackend.cpu,
+          PreferredBackend.gpu,
+        }, reason: abi);
+      }
       expect(_here(eg2.generic, null), _gpu);
       expect(_here(eg2.npuSm8850, 'android_arm64'), _npu);
       expect(_here(eg2.npuSm8850, null), _none);
-      expect(_here(eg2.npuMt6991, 'android_arm64'), _npu);
+      // MediaTek is refused in this release (mediatekNpuRefused).
+      expect(_here(eg2.npuMt6991, 'android_arm64'), _none);
       expect(_here(eg2.npuMt6991, 'linux_arm64'), _none);
     });
 

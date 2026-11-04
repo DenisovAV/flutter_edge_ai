@@ -9,7 +9,7 @@ import 'package:flutter_edge_ai/engine.dart';
 
 import '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
 import '../native_hosts.dart';
-import '../npu_stacks.dart' show NpuStack;
+import '../npu_stacks.dart' show NpuStack, mediatekNpuRefused;
 import 'catalog_host_web.dart'
     if (dart.library.ffi) 'catalog_host_io.dart'
     as host;
@@ -305,6 +305,9 @@ final class LiteRtEmbedderVariant extends EmbedderVariant {
 Set<PreferredBackend>? _npuRuns(LiteRtLmNpuTarget? target, String abi) {
   if (target == null) return null;
   final stack = NpuStack.forStamp(target.vendor);
+  // MediaTek is refused in this release ([mediatekNpuRefused]): its bundles
+  // run nowhere.
+  if (stack == NpuStack.mediatek && mediatekNpuRefused) return const {};
   return stack != null && stack.abis.contains(abi)
       ? const {PreferredBackend.npu}
       : const {};

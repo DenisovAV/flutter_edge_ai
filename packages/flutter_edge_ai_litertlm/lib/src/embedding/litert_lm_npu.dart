@@ -59,17 +59,14 @@ LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 /// stale with the next run; the page does not.
 const liteRtLmRegistryUrl = 'https://flutteredge.ai/docs/registry';
 
-/// The issue tracking [liteRtLmEmbeddingGpuRefusedAbis].
-const liteRtLmEmbeddingGpuWindowsIssue = '#744';
-
 /// Why `preferredBackend: gpu` is refused for [file] on a
 /// [liteRtLmEmbeddingGpuRefusedAbis] host, and what to do instead.
 String liteRtLmEmbeddingGpuRefusal(String file) =>
-    'EmbeddingGemma 2 on the GPU is not supported on Windows x64 with '
-    'native-v0.18.0-h: its LiteRT-LM WebGPU accelerator ends the process at '
-    'the first GPU load of $file (tracked in $liteRtLmEmbeddingGpuWindowsIssue). '
-    'Load it with preferredBackend: cpu (or leave preferredBackend unset) on '
-    'Windows; the GPU stays available on Linux x64.';
+    'EmbeddingGemma 2 on the GPU is not supported on this platform with this '
+    "release's native libraries: LiteRT-LM's GPU accelerator ends the process "
+    'at the first GPU load of $file. Load it with preferredBackend: cpu (or '
+    'leave preferredBackend unset) here. Where each build runs: '
+    '$liteRtLmRegistryUrl';
 
 /// Whether this host is one of [liteRtLmEmbeddingGpuAbis], asked of the same
 /// host [placeLiteRtLmEmbedder] places on, so the two never disagree.

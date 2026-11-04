@@ -223,7 +223,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 final _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0-h',
+  version: '0.19.0-a',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -234,6 +234,15 @@ final _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.19.0-a is LiteRT-LM v0.19.0 (`771b06e1`) with LiteRT `dcb657e8`: C API
+  // 1.0 (every call returns a status and writes through an out-parameter;
+  // the Dart bindings refuse a library that is not 1.x), the StreamProxy entry
+  // stream_proxy_create_v1, and patch_c_api.sh sections 1-25
+  // (doc/research/litertlm-0.19-phase1.md). The tag is not published yet:
+  // these sums are those of the L1 build the PR was tested on, and until the
+  // tag exists a build needs the archive's files under
+  // native/litert_lm/prebuilt/<platform>/.
+  //
   // 0.18.0-h changes the Windows archive and nothing else: both copies of
   // libLiteRtWebGpuAccelerator.dll are Google's prebuilt from LiteRT-LM
   // 5f973f57, which contains LiteRT #11120 — on an Intel GPU it turns off the
@@ -336,19 +345,19 @@ final _litertlmBundle = _NativeBundle(
   // while debugging a mismatch (#316).
   checksums: {
     'litertlm-linux_x86_64.tar.gz':
-        '3b6dbdbd8b9aaace4769c686b4f63a7d43cf65fb28fec891d24291e105627e84',
+        '26da79a2a34ee80549cce1cf2b49c46bafe54807483a14891ca3e8c0a3d4c836',
     'litertlm-linux_arm64.tar.gz':
-        'd437293a4a83a6502e393c99b17f8962eb66d4579361d3bab9c863d4a4724698',
+        'c24cb7a1af1349b3fdf9e3a948d79e6776b3a7aa7d4c51719c1a4b00439f7844',
     'litertlm-windows_x86_64.tar.gz':
-        '9b550ad40c5ef33346596d21df9498217eb96662a7bd457272b6c5e6742d5d59',
+        '96f39468c91db4ceca0e761f1f5b1957aea6e8fb4669b18767c4f13cf0560d44',
     'litertlm-macos_arm64.tar.gz':
-        'f95b27723324217f41a5b0b7aa04a24755e237f75b64ed37d852da8c249bfb67',
+        '450c1a37e67973e3b0853f13cfec23f800367423e80114f60eb74a00b09a81d9',
     'litertlm-ios_arm64.tar.gz':
-        '5d673601ef4691da74adee13e09230969399f41f7983aab9e305014663faaed1',
+        'ce865078dcaea592274022c38e100264afc5b42bd0a97afac3bedc0b960a5849',
     'litertlm-ios_sim_arm64.tar.gz':
-        '739ca01a86b369b6542dba29c7003d6a51374c356032cce8aa2633001365e3f5',
+        'c830a7be8bf742f63da658fd519dfa0fa380cfa60fef4263a16537ed3b163c2e',
     'litertlm-android_arm64.tar.gz':
-        'd7ed14f761905cfe50bc06e3693e9abf934a96584c869410a78dfaef26080e62',
+        '3d92ff1177e3887c8e3798be0b30a486225b93bb3e22eca7d13c641d099c640e',
   },
   companions: [
     'GemmaModelConstraintProvider',
@@ -1188,6 +1197,11 @@ Future<void> _registerMediatekNpu({
   required BuildOutputBuilder output,
   required Uri Function(Uri) stage,
 }) async {
+  if (mediatekNpuRefused) {
+    throw StateError(
+      '[$_packageName] $mediatekNpuUserDefine is set, but $mediatekNpuRefusedReason.',
+    );
+  }
   if (npuDispatchInNativeTarball(NpuStack.mediatek)) {
     throw StateError(
       'MediaTek: its dispatch is in the native bundle, not fetched',

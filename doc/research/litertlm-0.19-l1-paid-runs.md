@@ -196,3 +196,24 @@ Probes built on intel-ptl (LNL has no Visual Studio), same Windows archive.
 | EG2 270m on the Arc 140V GPU | PASS (so #744 does not reproduce on Lunar Lake either) |
 | Intel NPU, Gemma 4 E2B `_intel_LNL`: multiconv, longprompt, chat, deleteduring | PASS |
 | NPU ctxgroup (window 4096, 1104 tokens) | PASS |
+
+## Results: GCE T4 VM (flutter-gemma-linux, Linux x86_64, Tesla T4), 2026-11-04
+
+Booted into 6.8.0-1069-gcp (the default 6.16 kernel has no NVIDIA driver);
+`vulkaninfo` lists the Tesla T4. Linux x86_64 archive from CI run 41749984146.
+The VM disk was 99% full with older folders, so the package was slimmed
+(Gemma 4, FunctionGemma and EG1 already on the VM; no LFM2.5, EG2 740m or
+speech models) and every cache went to `/dev/shm`. Our `~/l1` and
+`/dev/shm/l1cache` were deleted by path, and the VM was stopped.
+
+| Check | Result |
+|---|---|
+| CPU, Gemma 4 E2B: all 13 commands | PASS (13/13) |
+| T4 GPU (Vulkan), Gemma 4 E2B: all 13 commands | PASS (13/13; constrained regex 66.8 tok/s) |
+| EG2 270m CPU / GPU | PASS / PASS; GPU caches `…text_encoder_<mtime>_<size>_mldrift_{program,weight}_cache.bin`, as the Dart pass checks |
+| Drift, Linux x86_64 CPU, 0.19 vs native-v0.18.0-h | EG1, EG2 270m, Gecko: bit-identical; EG1 also bit-identical to Windows x86_64 0.19 |
+
+**The drift question is closed on every platform measured.** 0.19 equals
+0.18 bit for bit on Linux x86_64, Linux arm64 and Windows x86_64. 0.19 is the
+same on macOS, Linux arm64 and Android arm64, and x86 differs from ARM on
+both versions alike. The only version change is macOS 0.18 (Apple CPU kernel path).

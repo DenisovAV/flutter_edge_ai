@@ -9,7 +9,8 @@
 //
 // Needs Apple Intelligence on and its model downloaded; otherwise every test
 // is skipped. Passing here is what lets the platform be added to
-// `_verifiedPlatforms` in flutter_edge_ai_builtin_ai's structured_output.dart. Nothing is in setUp (Rule 6b): each test calls _ensureModel().
+// `_verifiedPlatforms` in flutter_edge_ai_builtin_ai's structured_output.dart.
+// Nothing is in setUp (Rule 6b): each test calls ensureModel() first.
 
 import 'dart:convert';
 
@@ -235,30 +236,18 @@ void main() {
     }
   });
 
-  test('maxOutputTokens below the value', () async {
+  // Apple caps a reply with maximumResponseTokens and does not say when it
+  // did, so a format with a cap is refused there before a session opens.
+  test('maxOutputTokens with a format is refused on Apple', () async {
     final m = await ensureModel();
     if (m == null) return markTestSkipped(unavailable!);
-    try {
-      final reply = await ask(
-        m,
-        'Write a long story about a dragon.',
-        format: ResponseFormat.jsonSchema({
-          'type': 'object',
-          'properties': {
-            'story': {'type': 'string'},
-          },
-          'required': ['story'],
-        }),
+    await expectLater(
+      m.openSession(
+        responseFormat: ResponseFormat.jsonSchema(_codeSchema),
         maxOutputTokens: 5,
-      );
-      debugPrint('[structured] cap 5 returned: ${jsonEncode(reply)}');
-      fail('a 5-token cap returned a whole value');
-    } on IncompleteStructuredOutputException catch (e) {
-      debugPrint('[structured] cap 5: $e');
-    } catch (e) {
-      debugPrint('[structured] cap 5 FAILED: ${e.runtimeType} $e');
-      rethrow;
-    }
+      ),
+      throwsA(isA<ResponseFormatUnsupportedException>()),
+    );
   });
 
   test('a stop mid-reply ends the turn as stopped', () async {

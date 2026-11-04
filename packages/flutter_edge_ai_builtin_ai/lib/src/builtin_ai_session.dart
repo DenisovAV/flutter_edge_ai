@@ -12,9 +12,12 @@ import 'package:flutter_edge_ai/engine.dart'
         ModelType,
         SessionMetrics,
         TurnEnd;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_local_ai/flutter_local_ai.dart'
     show LocalAiGenerationException, LocalAiSession;
 import 'package:meta/meta.dart' show experimental, internal;
+
+import 'structured_output.dart' show builtInWireSchema;
 
 /// A generation session on an OS built-in model, adapting flutter_local_ai's
 /// [LocalAiSession] to flutter_edge_ai's [InferenceModelSession].
@@ -147,7 +150,7 @@ final class StructuredBuiltInAiSession extends BuiltInAiSession {
   _StructuredTurn? _turn;
 
   /// The OS's codes for a full context window: the FoundationModels names on
-  /// OS 27 and OS 26.
+  /// OS 27 and OS 26 (a `GENERATION_ERROR` detail).
   static const _contextLimitCodes = {
     'contextSizeExceeded',
     'exceededContextWindowSize',
@@ -157,36 +160,61 @@ final class StructuredBuiltInAiSession extends BuiltInAiSession {
   EngineTurn startTurn() {
     final turn = _turn = _StructuredTurn();
     turn.text.onListen = () {
+      // Ended before anyone listened (a close, a stop): nothing to send.
+      if (turn.ended) return;
       Future<String> reply;
       try {
-        reply = _session.getStructuredResponse(format.schema);
+        reply = _session.getStructuredResponse(builtInWireSchema(format));
       } catch (error, stack) {
         // A closed session throws synchronously (B82).
         reply = Future.error(error, stack);
       }
       reply.then(
-        (text) => turn.finish(
-          turn.stopRequested ? TurnEnd.stopped : TurnEnd.endOfSequence,
-          text,
-        ),
+        (text) => turn.finish(turn.askedEnd ?? TurnEnd.endOfSequence, text),
         onError: (Object error, StackTrace stack) {
-          if (turn.stopRequested) {
-            turn.finish(TurnEnd.stopped);
-          } else if (error is LocalAiGenerationException &&
-              _contextLimitCodes.contains(error.errorCode)) {
+          final asked = turn.askedEnd;
+          if (asked != null) {
+            turn.finish(asked);
+          } else if (_isContextLimit(error)) {
             turn.finish(TurnEnd.contextLimit);
+          } else if (error is PlatformException &&
+              error.code == 'STRUCTURED_OUTPUT_INVALID' &&
+              error.details is String) {
+            // Windows finished a reply that strayed from the schema and sends
+            // it in the details: handed to core as the reply, so core's check
+            // reports it (NonConformingStructuredOutputException).
+            turn.finish(TurnEnd.endOfSequence, error.details as String);
           } else {
             turn.fail(error, stack);
           }
         },
       );
     };
-    // A cancelled subscription is a stop, at the model too.
+    // A cancelled subscription is a stop, at the model too. A stop that fails
+    // here has no listener left to take it; the turn still ends when the
+    // platform call settles.
     turn.text.onCancel = () async {
-      if (!turn.ended) await stopGeneration();
+      if (turn.ended) return;
+      try {
+        await stopGeneration();
+      } catch (error) {
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai_builtin_ai] WARNING: stopping a cancelled '
+          'structured turn failed ($error).',
+        );
+      }
     };
     return EngineTurn(text: turn.text.stream, end: turn.end.future);
   }
+
+  /// A full context window: Apple's FoundationModels codes, Windows's own
+  /// status (`PROMPT_TOO_LONG`). Chrome's overflow is a JS error the
+  /// platform passes through unclassified, so it is not recognised here.
+  static bool _isContextLimit(Object error) =>
+      (error is LocalAiGenerationException &&
+          _contextLimitCodes.contains(error.errorCode)) ||
+      (error is PlatformException && error.code == 'PROMPT_TOO_LONG');
 
   @override
   Stream<String> getResponseAsync() => startTurn().text;
@@ -194,25 +222,42 @@ final class StructuredBuiltInAiSession extends BuiltInAiSession {
   @override
   Future<String> getResponse() => getResponseAsync().join();
 
-  /// Stops the turn at the model and ends it as [TurnEnd.stopped], whatever
-  /// the platform then answers (Apple fails a cancelled request, Chrome
-  /// returns '').
+  /// Stops the turn at the model. The turn stays open until the platform
+  /// call has settled, so the next turn never meets a busy session; it then
+  /// ends as [TurnEnd.stopped], whatever the platform answered (Apple fails a
+  /// cancelled request, Chrome returns '', Windows fails it as cancelled). A
+  /// second stop of the same turn does not reach the model again.
   @override
   Future<void> stopGeneration() async {
     final turn = _turn;
-    if (turn != null && !turn.ended) turn.stopRequested = true;
+    if (turn != null && !turn.ended) {
+      if (turn.stopRequested) return;
+      turn.stopRequested = true;
+    }
     await super.stopGeneration();
-    turn?.finish(TurnEnd.stopped);
   }
 
+  /// Closes the native session first: a close that fails can be retried, and
+  /// the turn keeps running until one succeeds. Then a turn still running
+  /// ends as [TurnEnd.closed].
   @override
   Future<void> close() async {
-    _turn?.finish(TurnEnd.closed);
-    await super.close();
+    final turn = _turn;
+    turn?.closing = true;
+    try {
+      await super.close();
+    } catch (_) {
+      turn?.closing = false;
+      rethrow;
+    }
+    turn?.finish(TurnEnd.closed);
   }
 
-  /// The model closed under this session: a turn still running ends as
-  /// [TurnEnd.closed].
+  /// The model is closing under this session: a turn whose platform call
+  /// fails from now on ends as [TurnEnd.closed].
+  void modelClosing() => _turn?.closing = true;
+
+  /// The model has closed: a turn still running ends as [TurnEnd.closed].
   void modelClosed() => _turn?.finish(TurnEnd.closed);
 }
 
@@ -221,8 +266,16 @@ final class _StructuredTurn {
   final text = StreamController<String>();
   final end = Completer<TurnEnd>();
   bool stopRequested = false;
+  bool closing = false;
 
   bool get ended => end.isCompleted;
+
+  /// The end the consumer caused (a close before a stop), or null.
+  TurnEnd? get askedEnd => closing
+      ? TurnEnd.closed
+      : stopRequested
+      ? TurnEnd.stopped
+      : null;
 
   /// Delivers [reply] (if any), closes the text, then reports [how].
   void finish(TurnEnd how, [String reply = '']) {

@@ -206,13 +206,22 @@ Where it is enabled:
 - The schema keywords enforced are `type`, `properties`, `required`, `items`, `minItems`,
   `maxItems` and `enum` (plus the annotations `description`, `title`, `examples`).
   `additionalProperties`, `const` and the numeric and length bounds are refused with their path.
-- Also refused: an `enum` that is not all strings or that comes with a non-`string` type, a `null`
-  type, and an array without `items`. On Apple, an object with no properties is refused too
-  (`ResponseFormat.jsonObject()` included), because its `GenerationSchema` can only produce `{}`.
+- Also refused: an `enum` that is not all strings, a `null` type and an array without `items`
+  (`flutter_local_ai` rejects them), and an `enum` with a non-`string` type (the model answers an
+  enum with a string, which that type would reject). On Apple, an object with no properties is
+  refused too (`ResponseFormat.jsonObject()` included), because its `GenerationSchema` can only
+  produce `{}`.
+- On Apple a format cannot be combined with `maxOutputTokens`: Apple caps the reply
+  (`maximumResponseTokens`) without saying it did, and a capped reply may come back malformed, so
+  such a turn could not be reported as cut short. Chrome and Windows apply no output cap.
 - Apple Foundation Models adds the schema to the prompt itself (`includeSchemaInPrompt` defaults to
   true); flutter_edge_ai adds nothing to the prompt.
-- A stop, a close and a full context window end the turn with an
-  `IncompleteStructuredOutputException` (`TurnEnd.stopped`, `closed`, `contextLimit`).
+- A stop and a close end the turn with an `IncompleteStructuredOutputException`
+  (`TurnEnd.stopped`, `closed`) once the platform call has settled. A full context window does too
+  (`TurnEnd.contextLimit`) on Apple and Windows. On Chrome it arrives as the Prompt API's own error,
+  unclassified.
+- On Windows a reply the platform reports as off-schema (`STRUCTURED_OUTPUT_INVALID`) reaches core's
+  check, which raises `NonConformingStructuredOutputException` with its text.
 
 ### Reaching what flutter_edge_ai's interface has no slot for
 

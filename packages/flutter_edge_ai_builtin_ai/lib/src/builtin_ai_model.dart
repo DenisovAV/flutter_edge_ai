@@ -357,6 +357,10 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
     if (loraPath != null) {
       throw UnsupportedError('LoRA is not exposed by this engine.');
     }
+    if (responseFormat != null && maxOutputTokens != null) {
+      final refusal = builtInOutputCapRefusal(currentBuiltInPlatform());
+      if (refusal != null) throw refusal;
+    }
     _checkSampling(
       temperature: temperature,
       topK: topK,
@@ -484,6 +488,7 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
 
   Future<void> _close() async {
     _isClosed = true;
+    var structured = const <StructuredBuiltInAiSession>[];
     // Release the model and reset core's singleton bookkeeping even if its
     // close throws — otherwise a phantom model lingers in the registry. The
     // OS model goes first: core builds the next model once the listeners
@@ -491,13 +496,20 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
     try {
       // A structured turn still running ends as closed, not with whatever
       // the OS answers a request on a released model.
-      for (final open in _openSessions) {
-        if (open is StructuredBuiltInAiSession) open.modelClosed();
+      structured = [
+        for (final open in _openSessions)
+          if (open is StructuredBuiltInAiSession) open,
+      ];
+      for (final open in structured) {
+        open.modelClosing();
       }
       _session = null;
       _openSessions.clear();
       await _model.close();
     } finally {
+      for (final open in structured) {
+        open.modelClosed();
+      }
       fireCloseListeners();
     }
   }

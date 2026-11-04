@@ -121,14 +121,19 @@ class TurnOrderHost extends FakeLocalAiHost {
   ];
 }
 
-/// A host whose structured calls wait until the test answers them, or until
-/// a stop fails them as Apple fails a cancelled request.
+/// A host whose structured calls wait until the test answers them.
 ///
 /// [FakeLocalAiHost.generateStructuredResponse] answers at once, so a stop, a
-/// cancel or a close can never land while its turn is running.
+/// cancel or a close can never land while its turn is running. Like the real
+/// hosts, a stop here only asks: the call settles later, when the test calls
+/// [settleStopped] (Apple fails a cancelled request, Windows fails it as
+/// cancelled, Chrome answers '').
 class PendingStructuredHost extends FakeLocalAiHost {
-  /// The call in flight, completed by the test or by [stopGeneration].
+  /// The call in flight, completed by the test.
   Completer<String>? pending;
+
+  /// When set, [stopGeneration] throws it (after recording the call).
+  Object? stopError;
 
   @override
   Future<String> generateStructuredResponse({
@@ -147,17 +152,18 @@ class PendingStructuredHost extends FakeLocalAiHost {
     return (pending = Completer<String>()).future;
   }
 
-  /// When set, [stopGeneration] waits for it before it fails the call in
-  /// flight, so a value can arrive while a stop is still under way.
-  Completer<void>? stopGate;
-
   @override
   Future<void> stopGeneration(int sessionId) async {
     await super.stopGeneration(sessionId);
-    await stopGate?.future;
-    final call = pending;
-    if (call != null && !call.isCompleted) {
-      call.completeError(StateError('cancelled at the model'));
-    }
+    final error = stopError;
+    if (error != null) throw error;
   }
+
+  /// Fails the call in flight as a cancelled request, as Apple does once its
+  /// task has unwound.
+  void settleStopped() =>
+      pending!.completeError(StateError('cancelled at the model'));
+
+  /// How many stops reached the host.
+  int get stops => calls.where((call) => call == 'stopGeneration').length;
 }

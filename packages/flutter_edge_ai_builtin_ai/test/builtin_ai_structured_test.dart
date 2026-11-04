@@ -8,6 +8,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_edge_ai/engine.dart'
     show
         IncompleteStructuredOutputException,
@@ -416,69 +417,89 @@ void main() {
         }
       }
 
-      test('stopGeneration: stopped, at the model', () async {
+      Matcher endedAs(TurnEnd end) => throwsA(
+        isA<IncompleteStructuredOutputException>().having(
+          (e) => e.end,
+          'end',
+          end,
+        ),
+      );
+
+      test('stopGeneration: stopped once the call has settled', () async {
         final (_, session) = await running();
         addTearDown(session.close);
-        final reply = session.getResponse();
+        var settled = false;
+        final reply = session.getResponse().whenComplete(() => settled = true);
+        final check = expectLater(reply, endedAs(TurnEnd.stopped));
         await untilSent();
 
         await session.stopGeneration();
+        await pumpEventQueue();
 
-        await expectLater(
-          reply,
-          throwsA(
-            isA<IncompleteStructuredOutputException>().having(
-              (e) => e.end,
-              'end',
-              TurnEnd.stopped,
-            ),
-          ),
-        );
-        expect(pending.calls, contains('stopGeneration'));
+        // The platform call is still running: the turn has not ended, so no
+        // next turn can meet a busy session.
+        expect(settled, isFalse);
+        expect(pending.stops, 1);
+        pending.settleStopped();
+        await check;
       });
 
       test('a value that arrives after the stop is still stopped', () async {
         final (_, session) = await running();
         addTearDown(session.close);
-        final reply = expectLater(
+        final check = expectLater(
           session.getResponse(),
-          throwsA(
-            isA<IncompleteStructuredOutputException>().having(
-              (e) => e.end,
-              'end',
-              TurnEnd.stopped,
-            ),
-          ),
+          endedAs(TurnEnd.stopped),
         );
         await untilSent();
-        // The OS answers while the stop is still under way.
-        pending.stopGate = Completer<void>();
-        final stopped = session.stopGeneration();
-        pending.pending!.complete(_codeReply);
-        await pumpEventQueue();
-        pending.stopGate!.complete();
-        await stopped;
 
-        await reply;
+        await session.stopGeneration();
+        pending.pending!.complete(_codeReply);
+
+        await check;
       });
 
-      test('a cancelled subscription stops the model', () async {
+      test(
+        'the next turn starts only after the stopped call settled',
+        () async {
+          final (_, session) = await running();
+          addTearDown(session.close);
+          final first = expectLater(
+            session.getResponse(),
+            endedAs(TurnEnd.stopped),
+          );
+          await untilSent();
+          final stoppedCall = pending.pending!;
+          await session.stopGeneration();
+          await session.addQueryChunk(
+            const Message(text: 'Again', isUser: true),
+          );
+          final next = session.getResponse();
+          await pumpEventQueue();
+          expect(identical(pending.pending, stoppedCall), isTrue);
+
+          pending.settleStopped();
+          await first;
+          while (identical(pending.pending, stoppedCall)) {
+            await Future<void>.delayed(Duration.zero);
+          }
+          pending.pending!.complete(_codeReply);
+          expect(await next, _codeReply);
+        },
+      );
+
+      test('a cancelled subscription stops the model once', () async {
         final (_, session) = await running();
         addTearDown(session.close);
         final subscription = session.getResponseAsync().listen((_) {});
         await untilSent();
+        final cancelled = subscription.cancel();
+        await pumpEventQueue();
+        pending.settleStopped();
+        await cancelled;
 
-        await subscription.cancel();
-
-        expect(pending.calls, contains('stopGeneration'));
-        // The next turn runs.
-        await session.addQueryChunk(const Message(text: 'Again', isUser: true));
-        final next = session.getResponse();
-        while (pending.pending!.isCompleted) {
-          await Future<void>.delayed(Duration.zero);
-        }
-        pending.pending!.complete(_codeReply);
-        expect(await next, _codeReply);
+        // The engine's cancel and core's stop: one reaches the model.
+        expect(pending.stops, 1);
       });
 
       // Core's wrapper stops on a cancel too; the engine's own turn must,
@@ -493,47 +514,201 @@ void main() {
 
         await subscription.cancel();
 
-        expect(pending.calls, contains('stopGeneration'));
+        expect(pending.stops, 1);
       });
 
-      test('the session closed: closed', () async {
+      test(
+        'a stop that fails during a cancel does not hang the session',
+        () async {
+          final (_, session) = await running();
+          addTearDown(session.close);
+          pending.stopError = PlatformException(code: 'channel-error');
+          final subscription = session.getResponseAsync().listen((_) {});
+          await untilSent();
+          final stoppedCall = pending.pending!;
+
+          final cancelled = subscription.cancel();
+          await pumpEventQueue();
+          stoppedCall.complete('');
+          await cancelled;
+
+          pending.stopError = null;
+          await session.addQueryChunk(
+            const Message(text: 'Again', isUser: true),
+          );
+          final next = session.getResponse();
+          while (identical(pending.pending, stoppedCall)) {
+            await Future<void>.delayed(Duration.zero);
+          }
+          pending.pending!.complete(_codeReply);
+          expect(await next, _codeReply);
+        },
+      );
+
+      test('the session closed: closed, after the native close', () async {
         final (_, session) = await running();
-        final reply = session.getResponse();
+        final check = expectLater(
+          session.getResponse(),
+          endedAs(TurnEnd.closed),
+        );
         await untilSent();
 
         await session.close();
 
-        await expectLater(
-          reply,
-          throwsA(
-            isA<IncompleteStructuredOutputException>().having(
-              (e) => e.end,
-              'end',
-              TurnEnd.closed,
-            ),
-          ),
-        );
+        await check;
+        expect(pending.closedIds, isNotEmpty);
+      });
+
+      test('a failed close leaves the turn running', () async {
+        final (_, session) = await running();
+        addTearDown(session.close);
+        final reply = session.getResponse();
+        await untilSent();
+        pending.closeSessionError = StateError('teardown failed');
+
+        await expectLater(session.close(), throwsStateError);
+        pending.closeSessionError = null;
+        // The session is still open, so its answer is the turn's.
+        pending.pending!.complete(_codeReply);
+
+        expect(await reply, _codeReply);
       });
 
       test('the model closed: closed', () async {
         final (model, session) = await running();
-        final reply = session.getResponse();
+        final check = expectLater(
+          session.getResponse(),
+          endedAs(TurnEnd.closed),
+        );
         await untilSent();
 
         await model.close();
 
+        await check;
+      });
+    });
+  });
+
+  group('platform errors', () {
+    test('Windows PROMPT_TOO_LONG ends the turn as contextLimit', () async {
+      final model = await macModel();
+      host.generateResponseError = PlatformException(
+        code: 'PROMPT_TOO_LONG',
+        message:
+            'The conversation no longer fits the Windows AI context window.',
+      );
+      await expectLater(
+        askStructured(model),
+        throwsA(
+          isA<IncompleteStructuredOutputException>().having(
+            (e) => e.end,
+            'end',
+            TurnEnd.contextLimit,
+          ),
+        ),
+      );
+    });
+
+    test(
+      'Windows STRUCTURED_OUTPUT_INVALID is core\'s non-conforming reply',
+      () async {
+        final model = await macModel();
+        host.generateResponseError = PlatformException(
+          code: 'STRUCTURED_OUTPUT_INVALID',
+          message:
+              'Windows AI produced output that does not conform to the schema.',
+          details: '{"code":"nope"}',
+        );
         await expectLater(
-          reply,
+          askStructured(model),
           throwsA(
-            isA<IncompleteStructuredOutputException>().having(
-              (e) => e.end,
-              'end',
-              TurnEnd.closed,
+            isA<NonConformingStructuredOutputException>().having(
+              (e) => e.text,
+              'text',
+              '{"code":"nope"}',
             ),
           ),
         );
-      });
+      },
+    );
+
+    // Chrome rethrows the Prompt API's own JS error (QuotaExceededError on an
+    // overflow); this package does not read JS errors, so it stays the error
+    // it is rather than a guessed contextLimit.
+    test(
+      'an error the engine cannot classify is passed on unchanged',
+      () async {
+        final model = await macModel();
+        final failure = PlatformException(code: 'GENERATION_BLOCKED');
+        host.generateResponseError = failure;
+        await expectLater(askStructured(model), throwsA(same(failure)));
+      },
+    );
+  });
+
+  group('maxOutputTokens with a format', () {
+    test('refused on Apple before a session opens', () async {
+      final model = await macModel();
+      host.calls.clear();
+      await expectLater(
+        model.openSession(responseFormat: _codeFormat, maxOutputTokens: 64),
+        throwsA(
+          isA<ResponseFormatUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            contains('maxOutputTokens'),
+          ),
+        ),
+      );
+      expect(host.calls, isNot(contains('createSession')));
+      expect(model.sessions, isEmpty);
     });
+
+    test('accepted where no cap applies (Windows)', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      debugVerifiedBuiltInPlatforms = {BuiltInPlatform.windows};
+      final model = await const BuiltInAiEngine().createModel(
+        builtInSpec(),
+        builtInConfig,
+      );
+      addTearDown(model.close);
+      final session = await model.openSession(
+        responseFormat: _codeFormat,
+        maxOutputTokens: 64,
+      );
+      await session.close();
+    });
+
+    test('a plain Apple session keeps its cap', () async {
+      final model = await macModel();
+      final session = await model.openSession(maxOutputTokens: 64);
+      await session.close();
+    });
+  });
+
+  test('a whole-number minItems/maxItems is sent as an int', () async {
+    final model = await macModel();
+    host.response = '{"tags":["a","b"]}';
+    final format = ResponseFormat.jsonSchema({
+      'type': 'object',
+      'properties': {
+        'tags': {
+          'type': 'array',
+          'items': {'type': 'string'},
+          'minItems': 2.0,
+          'maxItems': 3.0,
+        },
+      },
+      'required': ['tags'],
+    });
+    final session = await model.openSession(responseFormat: format);
+    addTearDown(session.close);
+    await session.addQueryChunk(const Message(text: 'Tags', isUser: true));
+
+    expect(await session.getResponse(), '{"tags":["a","b"]}');
+    final sent = host.sessions.single.lastSchemaJson!;
+    expect(sent, contains('"minItems":2,'));
+    expect(sent, contains('"maxItems":3}'));
   });
 
   test('a structured chat answers with the value', () async {

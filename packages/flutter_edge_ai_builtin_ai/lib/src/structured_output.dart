@@ -1,5 +1,10 @@
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb, visibleForTesting;
+    show
+        TargetPlatform,
+        defaultTargetPlatform,
+        kIsWeb,
+        kReleaseMode,
+        visibleForTesting;
 import 'package:flutter_edge_ai/engine.dart'
     show
         JsonSchemaResponseFormat,
@@ -44,7 +49,8 @@ BuiltInPlatform currentBuiltInPlatform() {
 const _verifiedPlatforms = <BuiltInPlatform>{};
 
 /// Replaces [_verifiedPlatforms] in tests, so the structured path can be
-/// driven on a fake host before any platform is enabled.
+/// driven on a fake host before any platform is enabled. Ignored in a
+/// release build: no app can open the device-run gate.
 @visibleForTesting
 Set<BuiltInPlatform>? debugVerifiedBuiltInPlatforms;
 
@@ -68,7 +74,9 @@ const _structuredSupport = StructuredOutputSupport(
 StructuredOutputSupport builtInStructuredOutputSupport(
   BuiltInPlatform platform,
 ) {
-  final verified = debugVerifiedBuiltInPlatforms ?? _verifiedPlatforms;
+  final verified = kReleaseMode
+      ? _verifiedPlatforms
+      : debugVerifiedBuiltInPlatforms ?? _verifiedPlatforms;
   return switch (platform) {
     BuiltInPlatform.android => const StructuredOutputSupport.none(
       'Gemini Nano through ML Kit GenAI takes a response schema only as a '
@@ -101,12 +109,13 @@ StructuredOutputSupport builtInStructuredOutputSupport(
 /// Why [format] is refused on [platform] beyond its keywords, or null.
 ///
 /// Called by core after the keyword check, so [format] uses only
-/// [builtInSchemaKeywords] and annotations. Refused everywhere, because
-/// flutter_local_ai rejects them before the platform sees the schema: an
-/// `enum` that is not all strings, or that comes with a `type` other than
-/// `string` (only string choices exist there); a `null` type; an array with
-/// no `items`. On Apple also an object with no properties: its
-/// `GenerationSchema` can only produce `{}`.
+/// [builtInSchemaKeywords] and annotations. Refused everywhere: what
+/// flutter_local_ai rejects before the platform sees the schema (an `enum`
+/// that is not all strings, a `null` type, an array with no `items`), and an
+/// `enum` with a `type` other than `string`, which flutter_local_ai and Apple
+/// let through as string choices, so the reply would be a string core's
+/// check rejects against that type. On Apple also an object with no
+/// properties: its `GenerationSchema` can only produce `{}`.
 ResponseFormatUnsupportedException? builtInSchemaRefusal(
   JsonSchemaResponseFormat format,
   BuiltInPlatform platform,
@@ -133,8 +142,8 @@ ResponseFormatUnsupportedException? _refusal(
     }
     if (type != null && type != 'string') {
       return ResponseFormatUnsupportedException(
-        'Built-in OS models take an enum only as string choices, not with '
-        'type "$type".',
+        'Built-in OS models answer an enum with a string, which type "$type" '
+        'would reject.',
         schemaPath: '$path/type',
       );
     }
@@ -189,3 +198,45 @@ String? _typePath(Map<String, Object?> schema, String path) =>
 /// [token] escaped for a JSON Pointer (RFC 6901).
 String _pointerToken(String token) =>
     token.replaceAll('~', '~0').replaceAll('/', '~1');
+
+/// Why a format cannot be combined with `maxOutputTokens` on [platform], or
+/// null.
+///
+/// Apple forwards the cap as `maximumResponseTokens`, and nothing tells a
+/// capped guided reply from another failure: FoundationModels has no error
+/// for it (`LanguageModelError` on OS 27 has none) and documents that a
+/// strict limit "can lead to the model producing malformed results". Such a
+/// turn could not be reported as `TurnEnd.outputLimit`. Chrome and Windows
+/// apply no cap (flutter_local_ai drops it), so they are not refused.
+ResponseFormatUnsupportedException? builtInOutputCapRefusal(
+  BuiltInPlatform platform,
+) => platform == BuiltInPlatform.apple || platform == BuiltInPlatform.appleIos
+    ? const ResponseFormatUnsupportedException(
+        'Apple Foundation Models cannot report a structured reply cut short '
+        'by maxOutputTokens (it may come back malformed, with no sign of the '
+        'cap). Open the session without maxOutputTokens.',
+      )
+    : null;
+
+/// [format]'s schema as flutter_local_ai takes it: a whole-number
+/// `minItems`/`maxItems` sent as an int (core accepts `2.0`;
+/// flutter_local_ai's validator wants an `int`).
+Map<String, Object?> builtInWireSchema(JsonSchemaResponseFormat format) =>
+    _wire(format.schema) as Map<String, Object?>;
+
+Object? _wire(Object? node) => switch (node) {
+  Map<String, Object?>() => {
+    for (final MapEntry(:key, :value) in node.entries)
+      key: (key == 'minItems' || key == 'maxItems') && value is double
+          ? value.toInt()
+          : key == 'properties' && value is Map<String, Object?>
+          ? {
+              for (final property in value.entries)
+                property.key: _wire(property.value),
+            }
+          : key == 'items'
+          ? _wire(value)
+          : value,
+  },
+  _ => node,
+};

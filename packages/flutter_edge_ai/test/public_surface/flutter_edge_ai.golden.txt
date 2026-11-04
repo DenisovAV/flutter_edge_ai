@@ -10,6 +10,7 @@ CancelToken class
 CanceledError class final
 CatalogModel class abstract base
 CatalogVariant class sealed
+ContextLimitException class final
 CorruptionAction enum
 CorruptionDetectionResult class
 Decider class abstract base experimental

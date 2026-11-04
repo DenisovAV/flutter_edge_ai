@@ -13,6 +13,7 @@ CatalogVariant class sealed
 ChatRequest class final
 ChatTurnHooks class base
 CloseNotifier mixin
+ContextLimitException class final
 CorruptionAction enum
 CorruptionDetectionResult class
 Decider class abstract base experimental

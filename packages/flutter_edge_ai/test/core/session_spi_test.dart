@@ -14,6 +14,9 @@ final class _TurnSession extends InferenceModelSession {
   List<String> tokens;
   TurnEnd? end;
   Object? sizeError;
+
+  /// When set, the next turn's text streams [tokens], then fails with it.
+  Object? failWith;
   final staged = <Message>[];
   int turns = 0;
   bool closed = false;
@@ -22,8 +25,15 @@ final class _TurnSession extends InferenceModelSession {
   EngineTurn startTurn() {
     turns++;
     final end = this.end;
+    final failure = failWith;
+    failWith = null;
     return EngineTurn(
-      text: Stream.fromIterable(tokens),
+      text: failure == null
+          ? Stream.fromIterable(tokens)
+          : (() async* {
+              yield* Stream.fromIterable(tokens);
+              throw failure;
+            })(),
       end: end == null ? null : Future.value(end),
     );
   }
@@ -177,6 +187,8 @@ final class _RecordingHooks extends ChatTurnHooks {
 const _tool = Tool(name: 'get_time', description: 'Time.');
 
 void main() {
+  _failedTurnTests();
+
   group('openSession', () {
     test('reaches openEngineSession with every argument', () async {
       final model = _Model();
@@ -815,4 +827,187 @@ final class _ThrowingFinishHooks extends ChatTurnHooks {
     InferenceModelSession session,
     Object error,
   ) async => failed = true;
+}
+
+/// A turn the engine fails commits nothing (approved 2026-11-04).
+void _failedTurnTests() {
+  group('a turn the engine fails', () {
+    InferenceChat toolChat(_TurnSession session) => InferenceChat(
+      sessionCreator: () async => session,
+      maxTokens: 1024,
+      supportsFunctionCalls: true,
+      tools: const [_tool],
+    );
+
+    for (final blocking in [false, true]) {
+      final path = blocking ? 'blocking' : 'streaming';
+      test('$path: takes the staged messages, the token count and the tools '
+          'prompt back, and the error reaches the caller', () async {
+        final session = _TurnSession(tokens: ['Par']);
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'first', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        final before = chat.fullHistory.map((m) => m.text).toList();
+        final tokensBefore = chat.currentTokens;
+        final stagedBefore = session.staged.length;
+
+        session.failWith = const ContextLimitException('too long');
+        await chat.addQueryChunk(
+          Message(
+            text: 'second',
+            isUser: true,
+            imageBytes: Uint8List.fromList([1]),
+          ),
+        );
+        expect(chat.currentTokens, greaterThan(tokensBefore));
+        final turn = blocking
+            ? chat.generateChatResponse()
+            : chat.generateChatResponseAsync().toList();
+        await expectLater(turn, throwsA(isA<ContextLimitException>()));
+        expect(chat.fullHistory.map((m) => m.text), before);
+        expect(chat.currentTokens, tokensBefore);
+
+        // The next turn is staged as if the failed one never happened.
+        await chat.addQueryChunk(const Message(text: 'third', isUser: true));
+        expect(chat.fullHistory.map((m) => m.text), [...before, 'third']);
+        expect(session.staged.length, greaterThan(stagedBefore));
+      });
+    }
+
+    test('every message staged for the turn goes, not only the last', () async {
+      final session = _TurnSession(tokens: ['Par'])
+        ..failWith = StateError('decode failed');
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'one', isUser: true));
+      await chat.addQueryChunk(const Message(text: 'two', isUser: true));
+      await expectLater(chat.generateChatResponse(), throwsStateError);
+      expect(chat.fullHistory, isEmpty);
+    });
+
+    test(
+      'the model history and the prefixes are taken back too: the next '
+      'rebuild replays neither the failed message nor a second tools prompt',
+      () async {
+        final sessions = <_TurnSession>[];
+        final chat = InferenceChat(
+          sessionCreator: () async {
+            final s = _TurnSession(tokens: ['ok']);
+            sessions.add(s);
+            return s;
+          },
+          maxTokens: 1024,
+          tokenBuffer: 0,
+          supportsFunctionCalls: true,
+          tools: const [_tool],
+          // The engine's count says the window is full after every turn, so
+          // the chat rebuilds and replays all it keeps, trimming nothing.
+          turnHooks: _RecordingHooks()..tokens = 5000,
+        );
+        await chat.initSession();
+        sessions.single.failWith = StateError('decode failed');
+        await chat.addQueryChunk(const Message(text: 'failed', isUser: true));
+        await expectLater(chat.generateChatResponse(), throwsStateError);
+
+        await chat.addQueryChunk(const Message(text: 'next', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        expect(sessions, hasLength(2), reason: 'rebuilt after the turn');
+        final replayed = sessions.last.staged.map((m) => m.text).toList();
+        expect(replayed, isNot(contains('failed')));
+        expect(replayed.where((t) => t.contains('get_time')), hasLength(1));
+        expect(replayed.last, 'ok');
+      },
+    );
+
+    test('clearHistory forgets what was staged before it', () async {
+      final session = _TurnSession(tokens: ['ok']);
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'a', isUser: true));
+      await chat.generateChatResponseAsync().toList();
+      await chat.addQueryChunk(const Message(text: 'staged', isUser: true));
+      await chat.clearHistory();
+      (chat.session as _TurnSession).failWith = StateError('decode failed');
+      await chat.addQueryChunk(const Message(text: 'after', isUser: true));
+      await expectLater(chat.generateChatResponse(), throwsStateError);
+      expect(chat.fullHistory, isEmpty);
+    });
+
+    test('any engine error, not only a context limit', () async {
+      final session = _TurnSession(tokens: ['Par'])
+        ..failWith = StateError('decode failed');
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+      await expectLater(
+        chat.generateChatResponseAsync().toList(),
+        throwsStateError,
+      );
+      expect(chat.fullHistory, isEmpty);
+    });
+
+    test(
+      'the tools prompt is sent again on the turn after a failed one',
+      () async {
+        final session = _TurnSession(tokens: ['Par'])
+          ..failWith = StateError('decode failed');
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        await expectLater(chat.generateChatResponse(), throwsStateError);
+        final staged = session.staged.length;
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        // The tools prompt and the message again.
+        expect(session.staged.length - staged, 2);
+      },
+    );
+
+    test('a tool call committed before the error goes with the turn, and the '
+        'tool loop answers nothing', () async {
+      final session = _TurnSession(
+        // Two chunks: the call completes, and is committed, mid-stream.
+        tokens: ['{"name": "get_time", ', '"parameters": {}}'],
+      )..failWith = StateError('decode failed after the call');
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'time?', isUser: true));
+      var toolRan = false;
+      await expectLater(
+        chat
+            .generateChatResponseWithTools(
+              onToolCall: (_) {
+                toolRan = true;
+                return const {};
+              },
+            )
+            .toList(),
+        throwsStateError,
+      );
+      expect(toolRan, isFalse);
+      expect(chat.fullHistory, isEmpty, reason: 'no call, no tool response');
+    });
+
+    test(
+      'a stop is not a failure: the message and the partial reply stay',
+      () async {
+        final session = _TurnSession(tokens: ['Par'], end: TurnEnd.stopped);
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        expect(chat.fullHistory.map((m) => m.text), ['q', 'Par']);
+      },
+    );
+
+    test('a cancelled subscription keeps the staged message', () async {
+      final session = _TurnSession(tokens: ['Par', 'tial']);
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+      final sub = chat.generateChatResponseAsync().listen(null);
+      await sub.cancel();
+      expect(chat.fullHistory.first.text, 'q');
+    });
+  });
 }

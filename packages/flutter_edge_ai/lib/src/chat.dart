@@ -105,6 +105,17 @@ class InferenceChat {
   bool _toolsInstructionSent =
       false; // Flag to track if tools instruction was sent
 
+  /// Where the histories stood before the messages staged for the next turn,
+  /// so that a turn the engine fails can take them back. Null once a turn has
+  /// started.
+  ({int full, int model, int prefixes, int tokens, bool toolsInstructionSent})?
+  _stagedFrom;
+
+  /// The turn that just failed was taken back (see [_takingBackOnError]):
+  /// the tool calls it had committed are gone with it, so the tool loop must
+  /// not answer them.
+  bool _lastTurnTakenBack = false;
+
   /// Determines if model history should be cleared after each turn
   /// FunctionGemma requires single-turn mode (no multi-turn context)
   bool get _isSingleTurnModel => modelType == ModelType.functionGemma;
@@ -199,6 +210,13 @@ class InferenceChat {
   ]) async {
     final hooked = _hooks.addQueryChunk(session, message);
     if (hooked != null) return hooked;
+    _stagedFrom ??= (
+      full: _fullHistory.length,
+      model: _modelHistory.length,
+      prefixes: _prefixes.length,
+      tokens: _currentTokens,
+      toolsInstructionSent: _toolsInstructionSent,
+    );
     var messageToSend = message;
 
     // Only add tools prompt for the first user text message (not a tool response)
@@ -287,10 +305,18 @@ class InferenceChat {
   /// reports it (LiteRT-LM and MediaPipe; built-in AI, llama and ONNX do
   /// not yet); the text generated until then is in [fullHistory].
   ///
+  /// A turn the engine fails commits nothing: the messages staged for it, and
+  /// any tool call it had committed, are taken back out of [fullHistory]
+  /// before the error reaches the caller (for an input too long for the
+  /// context window the error is a [ContextLimitException]). A stop is not a
+  /// failure. Turns an engine runs through [ChatTurnHooks.responses] keep
+  /// their own history.
+  ///
   /// Core implements this once for every engine (`@nonVirtual`); an engine
   /// changes a chat's turns through [ChatTurnHooks].
   @nonVirtual
   Future<ModelResponse> generateChatResponse() async {
+    _lastTurnTakenBack = false;
     final hooked = _hooks.responses(session, tokenBuffer: tokenBuffer);
     if (hooked != null) return _collectResponses(hooked);
     return _generateCoreResponse();
@@ -321,6 +347,52 @@ class InferenceChat {
     return TextResponse(text.toString());
   }
 
+  /// [turn]'s text. A turn whose text fails, for any reason, commits nothing:
+  /// the messages staged for it, and whatever the turn committed before the
+  /// error (a tool call), are taken back out of the history, with the token
+  /// count and the tools-prompt flag, before the error reaches the caller.
+  /// An engine that refused the input for the context window
+  /// ([ContextLimitException], end [TurnEnd.contextLimit]) never added it to
+  /// its context; for any other failure the chat's history is the one to
+  /// replay. A stop or a cancelled subscription is not a failure: what was
+  /// generated is kept, as before.
+  Stream<String> _takingBackOnError(EngineTurn turn) {
+    final staged = _stagedFrom;
+    _stagedFrom = null;
+    _lastTurnTakenBack = false;
+    late final StreamController<String> out;
+    StreamSubscription<String>? source;
+    (Object, StackTrace)? failure;
+    out = StreamController<String>(
+      onListen: () {
+        source = turn.text.listen(
+          out.add,
+          onError: (Object error, StackTrace stack) =>
+              failure ??= (error, stack),
+          onDone: () async {
+            final failed = failure;
+            if (failed != null) {
+              if (staged != null) {
+                _fullHistory.length = staged.full;
+                _modelHistory.length = staged.model;
+                _prefixes.length = staged.prefixes;
+                _currentTokens = staged.tokens;
+                _toolsInstructionSent = staged.toolsInstructionSent;
+                _lastTurnTakenBack = true;
+              }
+              out.addError(failed.$1, failed.$2);
+            }
+            await out.close();
+          },
+        );
+      },
+      onPause: () => source?.pause(),
+      onResume: () => source?.resume(),
+      onCancel: () => source?.cancel(),
+    );
+    return out.stream;
+  }
+
   /// Records the model's text reply in the history; an empty one is not a
   /// turn worth recording (#325).
   void _commitText(String text) {
@@ -344,7 +416,7 @@ class InferenceChat {
   Future<ModelResponse> _generateCoreResponse() async {
     edgeAiLog('InferenceChat: Getting response from native model...');
     final turn = startEngineTurn(session);
-    final response = await turn.text.join();
+    final response = await _takingBackOnError(turn).join();
     final end = await turn.end;
     final cleanedResponse = ModelThinkingFilter.cleanResponse(
       response,
@@ -477,14 +549,23 @@ class InferenceChat {
   /// Ends with [StateError] when the session or its model is closed during
   /// the turn by anything but the consumer's own stop, on an engine that
   /// reports it (LiteRT-LM and MediaPipe; built-in AI, llama and ONNX do
-  /// not yet); the text streamed until then is in [fullHistory]. A failure to count the reply's tokens or
-  /// to rebuild the session after a full context is the stream's error too,
-  /// after the reply has been committed to [fullHistory].
+  /// not yet); the text streamed until then is in [fullHistory]. A failure
+  /// to count the reply's tokens or to rebuild the session after a full
+  /// context is the stream's error too, after the reply has been committed
+  /// to [fullHistory].
+  ///
+  /// A turn the engine fails commits nothing: the messages staged for it, and
+  /// any tool call it had committed, are taken back out of [fullHistory]
+  /// before the error reaches the caller (for an input too long for the
+  /// context window the error is a [ContextLimitException]). A stop is not a
+  /// failure. Turns an engine runs through [ChatTurnHooks.responses] keep
+  /// their own history.
   ///
   /// Core implements this once for every engine (`@nonVirtual`); an engine
   /// changes a chat's turns through [ChatTurnHooks].
   @nonVirtual
   Stream<ModelResponse> generateChatResponseAsync() {
+    _lastTurnTakenBack = false;
     // Without a session yet, core's stream fails when it is listened to, as
     // it always has.
     final current = _sessionIfAny;
@@ -547,7 +628,7 @@ class InferenceChat {
     // a prose chunk and join it to the next one. It is kept in sdkSwallowed, so
     // a call that cannot be read at end-of-stream still reaches the caller.
     final turn = startEngineTurn(session);
-    final originalStream = turn.text
+    final originalStream = _takingBackOnError(turn)
         .where((token) {
           if (!sdkPassthrough || !isSdkToolCallChunk(token)) return true;
           sdkSwallowed.write(token);
@@ -1007,6 +1088,9 @@ class InferenceChat {
         // this reused chat. Answer the collected calls first, then rethrow the
         // ORIGINAL error (the failure still surfaces to the caller — never
         // hidden).
+        // A turn the engine failed was taken back, its calls with it: there
+        // is nothing committed to answer.
+        if (_lastTurnTakenBack) rethrow;
         if (pending.isNotEmpty) {
           edgeAiLog(
             'InferenceChat.generateChatResponseWithTools: generation stream '
@@ -1216,6 +1300,7 @@ class InferenceChat {
   }
 
   void _resetHistory() {
+    _stagedFrom = null;
     _fullHistory.clear();
     _prefixes.clear();
     _modelHistory.clear();

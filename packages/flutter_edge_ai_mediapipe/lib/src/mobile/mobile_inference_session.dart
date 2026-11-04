@@ -68,6 +68,16 @@ class MobileInferenceModelSession extends InferenceModelSession {
         'Model is closed. Create a new instance to use it again',
       );
     }
+    _assertRebuilt();
+  }
+
+  void _assertRebuilt() {
+    if (_rebuildFailure case final failure?) {
+      throw StateError(
+        'This session could not be rebuilt after a turn was taken back '
+        '($failure); create a new session.',
+      );
+    }
   }
 
   Future<void> _awaitLastResponse() async {
@@ -81,6 +91,7 @@ class MobileInferenceModelSession extends InferenceModelSession {
 
   @override
   Future<void> addQueryChunk(Message message) async {
+    _assertRebuilt();
     var messageToSend = message;
     if (message.isUser &&
         !_systemInstructionSent &&
@@ -143,18 +154,23 @@ class MobileInferenceModelSession extends InferenceModelSession {
     if (before.systemInstruction) _systemInstructionSent = false;
     final recreate = recreateNative;
     if (recreate == null) return;
-    await recreate();
-    for (final input in before.before) {
-      switch (input) {
-        case NativeText(:final prompt):
-          await platformService.addQueryChunk(prompt);
-        case NativeImage(:final bytes):
-          await platformService.addImage(bytes);
-        case NativeAudio(:final bytes):
-          await platformService.addAudio(bytes);
-      }
-    }
+    _rebuildFailure = await rebuildNativeSession(
+      before: before.before,
+      mediaDropped: before.mediaDropped,
+      recreate: recreate,
+      closeRebuilt: platformService.closeSession,
+      isClosed: () => _isClosed,
+      send: (input) => switch (input) {
+        NativeText(:final prompt) => platformService.addQueryChunk(prompt),
+        NativeImage(:final bytes) => platformService.addImage(bytes),
+        NativeAudio(:final bytes) => platformService.addAudio(bytes),
+      },
+    );
   }
+
+  /// Why the native session could not be rebuilt after a take-back; the
+  /// session refuses every call from then on.
+  Object? _rebuildFailure;
 
   Future<void> _addImage(Uint8List imageBytes) async {
     _assertNotClosed();
@@ -426,6 +442,12 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
     if (_isClosed) {
       throw StateError('Session is closed');
     }
+    if (_rebuildFailure case final failure?) {
+      throw StateError(
+        'This session could not be rebuilt after a turn was taken back '
+        '($failure); open a new session.',
+      );
+    }
   }
 
   @override
@@ -488,18 +510,31 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
     if (before.systemInstruction) _systemInstructionSent = false;
     final recreate = recreateNative;
     if (recreate == null) return;
-    await recreate();
-    for (final input in before.before) {
-      switch (input) {
-        case NativeText(:final prompt):
-          await platformService.addQueryChunkToSession(sessionId, prompt);
-        case NativeImage(:final bytes):
-          await platformService.addImageToSession(sessionId, bytes);
-        case NativeAudio(:final bytes):
-          await platformService.addAudioToSession(sessionId, bytes);
-      }
-    }
+    _rebuildFailure = await rebuildNativeSession(
+      before: before.before,
+      mediaDropped: before.mediaDropped,
+      recreate: recreate,
+      closeRebuilt: () => platformService.closeSessionId(sessionId),
+      isClosed: () => _isClosed,
+      send: (input) => switch (input) {
+        NativeText(:final prompt) => platformService.addQueryChunkToSession(
+          sessionId,
+          prompt,
+        ),
+        NativeImage(:final bytes) => platformService.addImageToSession(
+          sessionId,
+          bytes,
+        ),
+        NativeAudio(:final bytes) => platformService.addAudioToSession(
+          sessionId,
+          bytes,
+        ),
+      },
+    );
   }
+
+  /// See [MobileInferenceModelSession._rebuildFailure].
+  Object? _rebuildFailure;
 
   @override
   Future<String> getResponse({Message? message}) async {
@@ -549,17 +584,19 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
       await subscription?.cancel();
       if (cancelled) _stopAsked = true;
       try {
+        // Never throws: a failed rebuild is kept by the session, and the turn
+        // keeps the engine's own error.
         await _endTurn(text.toString(), failed: error != null);
       } finally {
         if (mutexHeld) {
           mutexHeld = false;
           generationMutex.release();
         }
+        if (error != null && !controller.isClosed) {
+          controller.addError(error.$1, error.$2);
+        }
+        if (!controller.isClosed) await controller.close();
       }
-      if (error != null && !controller.isClosed) {
-        controller.addError(error.$1, error.$2);
-      }
-      if (!controller.isClosed) await controller.close();
     }
 
     // A close ends this turn: the native session it ran on is gone, and no

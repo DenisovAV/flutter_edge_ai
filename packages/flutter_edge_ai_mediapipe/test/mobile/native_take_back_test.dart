@@ -3,9 +3,12 @@
 // either. MediaPipe cannot take queued input back, so the session builds the
 // native session again and replays what it held before the turn.
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_mediapipe/pigeon.g.dart';
+import 'package:flutter_edge_ai_mediapipe/src/mobile/mobile_inference_model.dart';
 import 'package:flutter_edge_ai_mediapipe/src/mobile/mobile_inference_session.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mutex/mutex.dart';
@@ -80,12 +83,16 @@ void main() {
 
   group('createSession session', () {
     late int recreated;
-    MobileInferenceModelSession session() => MobileInferenceModelSession(
+    MobileInferenceModelSession session({
+      Future<void> Function()? recreate,
+      bool supportImage = false,
+    }) => MobileInferenceModelSession(
       modelType: ModelType.gemmaIt,
       fileType: ModelFileType.task,
       onClose: () {},
       systemInstruction: 'Be brief',
-      recreateNative: () async => recreated++,
+      supportImage: supportImage,
+      recreateNative: recreate ?? () async => recreated++,
     );
 
     setUp(() {
@@ -93,6 +100,7 @@ void main() {
       _record(
         [
           'addQueryChunk',
+          'addImage',
           'generateResponse',
           'generateResponseAsync',
           'stopGeneration',
@@ -177,21 +185,85 @@ void main() {
       expect(await text, ['Par']);
       expect(recreated, 0);
     });
+
+    test('a rebuild that fails leaves the turn the engine\'s own error, and '
+        'the session refuses every call after', () async {
+      final events = _Events();
+      final s = session(recreate: () async => throw StateError('rebuild'));
+      await s.addQueryChunk(_q1);
+      final text = s.getResponseAsync().toList();
+      await pumpEventQueue();
+      events.current.error(code: 'ERROR', message: 'decode failed');
+      await expectLater(
+        text.timeout(const Duration(seconds: 5)),
+        throwsA(isA<PlatformException>()),
+      );
+      expect(() => s.addQueryChunk(_q2), throwsStateError);
+      await expectLater(s.getResponse(), throwsStateError);
+    });
+
+    test('a session closed while its native session is rebuilt gets nothing '
+        'replayed, and what was built is closed again', () async {
+      final events = _Events();
+      late MobileInferenceModelSession s;
+      s = session(recreate: () async => s.close());
+      await s.addQueryChunk(_q1);
+      await completedTurn(s);
+      await s.addQueryChunk(_q2);
+      final text = s.getResponseAsync().toList();
+      await pumpEventQueue();
+      final before = _calls.length;
+      events.current.error(code: 'ERROR', message: 'decode failed');
+      await expectLater(text, throwsA(anything));
+      await pumpEventQueue();
+      final after = [for (final (name, _) in _calls.skip(before)) name];
+      expect(after, isNot(contains('addQueryChunk')));
+      expect(after.where((name) => name == 'closeSession'), hasLength(2));
+    });
+
+    test(
+      'images of a kept turn are not replayed after a later take-back',
+      () async {
+        final events = _Events();
+        final s = session(supportImage: true);
+        await s.addQueryChunk(
+          Message(
+            text: 'look',
+            isUser: true,
+            imageBytes: Uint8List.fromList([1]),
+          ),
+        );
+        await completedTurn(s);
+        await s.addQueryChunk(_q2);
+        final text = s.getResponseAsync().toList();
+        await pumpEventQueue();
+        final before = _calls.length;
+        events.current.error(code: 'ERROR', message: 'decode failed');
+        await expectLater(text, throwsA(anything));
+        final after = [for (final (name, _) in _calls.skip(before)) name];
+        expect(recreated, 1);
+        expect(after, isNot(contains('addImage')));
+        expect(_chunks('addQueryChunk', from: before).first, contains('look'));
+      },
+    );
   });
 
   group('openSession session', () {
     late int recreated;
-    MultiSessionMobileInferenceModelSession session() =>
-        MultiSessionMobileInferenceModelSession(
-          sessionId: 3,
-          modelType: ModelType.gemmaIt,
-          fileType: ModelFileType.task,
-          supportImage: false,
-          supportAudio: false,
-          generationMutex: Mutex(),
-          onClose: () {},
-          recreateNative: () async => recreated++,
-        );
+    MultiSessionMobileInferenceModelSession session({
+      Future<void> Function()? recreate,
+      String? systemInstruction,
+    }) => MultiSessionMobileInferenceModelSession(
+      sessionId: 3,
+      modelType: ModelType.gemmaIt,
+      fileType: ModelFileType.task,
+      supportImage: false,
+      supportAudio: false,
+      generationMutex: Mutex(),
+      onClose: () {},
+      systemInstruction: systemInstruction,
+      recreateNative: recreate ?? () async => recreated++,
+    );
 
     setUp(() {
       recreated = 0;
@@ -269,5 +341,118 @@ void main() {
         expect(mutex.isLocked, isFalse);
       },
     );
+
+    test('a rebuild that fails still ends the turn, with the engine\'s own '
+        'error, and the session refuses every call after', () async {
+      final events = _Events();
+      final zoneErrors = <Object>[];
+      await runZonedGuarded(() async {
+        final s = session(recreate: () async => throw StateError('rebuild'));
+        await s.addQueryChunk(_q1);
+        final text = s.getResponseAsync().toList();
+        await pumpEventQueue();
+        events.current.success({
+          'sessionId': 3,
+          'code': 'ERROR',
+          'message': 'decode failed',
+        });
+        await expectLater(
+          text.timeout(const Duration(seconds: 5)),
+          throwsA(predicate((e) => '$e'.contains('decode failed'))),
+        );
+        expect(() => s.addQueryChunk(_q2), throwsStateError);
+      }, (error, _) => zoneErrors.add(error));
+      expect(zoneErrors, isEmpty);
+    });
+
+    test(
+      'a zero-text stop whose rebuild fails ends the turn cleanly',
+      () async {
+        final events = _Events();
+        final s = session(recreate: () async => throw StateError('rebuild'));
+        await s.addQueryChunk(_q1);
+        // ignore: invalid_use_of_protected_member
+        final turn = s.startTurn();
+        final text = turn.text.toList();
+        await pumpEventQueue();
+        await s.stopGeneration();
+        events.current.success({
+          'sessionId': 3,
+          'partialResult': '',
+          'done': true,
+        });
+        expect(await text.timeout(const Duration(seconds: 5)), isEmpty);
+        expect(() => s.addQueryChunk(_q2), throwsStateError);
+      },
+    );
+
+    test('a failed turn that carried the system instruction: the next message '
+        'carries it again', () async {
+      final events = _Events();
+      final s = session(systemInstruction: 'Be brief');
+      await s.addQueryChunk(_q1);
+      final text = s.getResponseAsync().toList();
+      await pumpEventQueue();
+      events.current.success({
+        'sessionId': 3,
+        'code': 'ERROR',
+        'message': 'decode failed',
+      });
+      await expectLater(text, throwsA(anything));
+      final before = _calls.length;
+      await s.addQueryChunk(_q2);
+      expect(
+        _chunks('addQueryChunkToSession', from: before).single,
+        contains('[System: Be brief]'),
+      );
+    });
   });
+
+  test(
+    'a take-back rebuilds the createSession session in the model\'s '
+    'createSession lane, and a createSession started meanwhile waits for it',
+    () async {
+      final events = _Events();
+      const codec = PlatformService.pigeonChannelCodec;
+      var created = 0;
+      final gate = Completer<void>();
+      _messenger.setMockMessageHandler('${_prefix}createSession', (
+        message,
+      ) async {
+        created++;
+        // The rebuild (the second call) waits until the test lets it go.
+        if (created == 2) await gate.future;
+        return codec.encodeMessage(<Object?>[null]);
+      });
+      addTearDown(
+        () => _messenger.setMockMessageHandler('${_prefix}createSession', null),
+      );
+      _record([
+        'addQueryChunk',
+        'generateResponseAsync',
+        'stopGeneration',
+        'closeSession',
+      ]);
+      final model = MobileInferenceModel(
+        maxTokens: 1024,
+        onClose: () {},
+        modelType: ModelType.gemmaIt,
+      );
+      final s = await model.createSession();
+      await s.addQueryChunk(_q1);
+      final text = s.getResponseAsync().toList();
+      await pumpEventQueue();
+      events.current.error(code: 'ERROR', message: 'decode failed');
+      await pumpEventQueue();
+      expect(created, 2, reason: 'the rebuild went through createSession');
+
+      final next = model.createSession();
+      await pumpEventQueue();
+      expect(created, 2, reason: 'it waits for the rebuild in flight');
+      gate.complete();
+      await expectLater(text, throwsA(anything));
+      await next;
+      expect(created, 3);
+    },
+  );
 }

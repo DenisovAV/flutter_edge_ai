@@ -222,6 +222,9 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     }
     final completer = _createCompleter = Completer<InferenceModelSession>();
     try {
+      // A take-back rebuilding the live session finishes first: one native
+      // createSession at a time.
+      if (_rebuilding case final rebuilding?) await rebuilding;
       // Resolved first: values it rejects must not cost the live session. A
       // `.task` file carries no sampler, so an unset field comes from the
       // family defaults rather than MediaPipe's own (topK 40, temperature 0.8).
@@ -270,8 +273,9 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
         supportAudio: enableAudioModality ?? supportAudio,
         systemInstruction: systemInstruction,
         // The native createSession replaces the one native session: a
-        // take-back rebuilds it and replays what it held.
-        recreateNative: createNative,
+        // take-back rebuilds it, in this model's createSession lane, and
+        // replays what it held.
+        recreateNative: () => _rebuildSession(session, createNative),
         // Identity-guarded so a late close of a superseded session can't
         // null a newer `_session`. Does NOT touch `_createCompleter` —
         // that is owned by the `finally` below, not by session teardown.
@@ -299,6 +303,37 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     // shares this exact future, so success and failure both fan out to
     // every in-flight caller.
     return completer.future;
+  }
+
+  /// The rebuild of the live session after a take-back, while it runs.
+  Future<void>? _rebuilding;
+
+  /// Builds [session]'s native session again ([createNative]) in the
+  /// createSession lane: after a createSession in flight, which replaces
+  /// [session] (it is closed then, and nothing is rebuilt), and before any
+  /// that starts meanwhile.
+  Future<void> _rebuildSession(
+    MobileInferenceModelSession session,
+    Future<void> Function() createNative,
+  ) async {
+    for (
+      var pending = _createCompleter;
+      pending != null;
+      pending = _createCompleter
+    ) {
+      await pending.future.then<void>((_) {}, onError: (Object _) {});
+    }
+    if (_isClosed || !identical(_session, session)) {
+      throw StateError('The session was replaced while it was rebuilt');
+    }
+    final done = Completer<void>();
+    _rebuilding = done.future;
+    try {
+      await createNative();
+    } finally {
+      _rebuilding = null;
+      done.complete();
+    }
   }
 
   @override

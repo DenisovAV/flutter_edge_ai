@@ -49,27 +49,9 @@ void main() {
     );
   });
 
-  test('only the dispatch is taken from the AAR, under the name our adapter '
-      'opens', () {
-    expect(mediatekLibFileNames, ['libmtk_litert_dispatch_legacy.so']);
-    expect(mediatekNpuLibs, [mediatekDispatchLib, mediatekLegacyDispatchLib]);
-  });
-
-  test('LiteRT\'s dispatch scan never finds Google\'s dispatch, and the '
-      'adapter looks for it under the name the hook stores', () {
-    // litert/core/dynamic_loading.cc: any file whose name holds
-    // "libLiteRtDispatch" in the dispatch dir or below. Two matches and the
-    // runtime may load the legacy one, which it refuses.
-    final legacy = androidLibFileName(mediatekLegacyDispatchLib);
-    expect(legacy, isNot(contains('libLiteRtDispatch')));
-    expect(
-      androidLibFileName(mediatekDispatchLib),
-      startsWith('libLiteRtDispatch'),
-    );
-    final adapter = File(
-      'native/litert_lm/mediatek_dispatch_compat.c',
-    ).readAsStringSync();
-    expect(adapter, contains('#define LEGACY_NAME "$legacy"'));
+  test('only the dispatch is taken from the AAR', () {
+    expect(mediatekLibFileNames, ['libLiteRtDispatch_MediaTek.so']);
+    expect(mediatekNpuLibs, [mediatekDispatchLib]);
   });
 
   group('cache', () {
@@ -77,8 +59,8 @@ void main() {
     setUp(() => root = Directory.systemTemp.createTempSync('mtk_cache_'));
     tearDown(() => root.deleteSync(recursive: true));
 
-    test('promotes the dispatch, renamed, with Google\'s notices, never the '
-        'compiler plugin', () {
+    test('promotes the dispatch with Google\'s notices, never the compiler '
+        'plugin', () {
       final aar = File('${root.path}/in.aar')..writeAsBytesSync(_fakeAar());
       final cacheRoot = Directory('${root.path}/cache');
       final entry = promoteMediatekCache(cacheRoot, aar);
@@ -89,12 +71,8 @@ void main() {
         isTrue,
       );
       expect(
-        File('${entry.path}/libmtk_litert_dispatch_legacy.so').existsSync(),
-        isTrue,
-      );
-      expect(
         File('${entry.path}/libLiteRtDispatch_MediaTek.so').existsSync(),
-        isFalse,
+        isTrue,
       );
       expect(
         File('${entry.path}/libLiteRtCompilerPlugin_MediaTek.so').existsSync(),

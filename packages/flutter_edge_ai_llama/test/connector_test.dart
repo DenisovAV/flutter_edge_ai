@@ -440,7 +440,10 @@ void main() {
     await session.addQueryChunk(
       edge.Message.text(text: 'short raw text', isUser: true),
     );
-    await expectLater(session.getResponse(), throwsA(isA<StateError>()));
+    await expectLater(
+      session.getResponse(),
+      throwsA(isA<edge.ContextLimitException>()),
+    );
     expect(engine.requests, isEmpty);
   });
 
@@ -1247,6 +1250,8 @@ void main() {
                     'SDK cause',
                     isA<llama.LlamaInferenceException>(),
                   )
+                : failure == 'context'
+                ? isA<edge.ContextLimitException>()
                 : isA<StateError>(),
           ),
         );
@@ -3692,7 +3697,7 @@ void main() {
         await expectLater(
           turn.text.join(),
           throwsA(
-            isA<StateError>().having(
+            isA<edge.ContextLimitException>().having(
               (e) => e.message,
               'message',
               contains('fills the 2048-token context'),
@@ -3704,7 +3709,10 @@ void main() {
         expect(llamaSession.messages, isEmpty);
         // Through core's own session the error reaches the caller as is.
         await session.addQueryChunk(user('too long again'));
-        await expectLater(session.getResponse(), throwsA(isA<StateError>()));
+        await expectLater(
+          session.getResponse(),
+          throwsA(isA<edge.ContextLimitException>()),
+        );
         expect(llamaSession.messages, isEmpty);
         engine.promptTokens = 10;
         engine.script = [_chunk('{}'), stop];
@@ -3834,7 +3842,10 @@ void main() {
       engine.promptTokens = 2048;
       await session.addQueryChunk(user('q'));
       turn = engineSession().startTurn();
-      await expectLater(turn.text.join(), throwsA(isA<StateError>()));
+      await expectLater(
+        turn.text.join(),
+        throwsA(isA<edge.ContextLimitException>()),
+      );
       expect(await turn.end, edge.TurnEnd.contextLimit);
       // Any other error ends the turn closed.
       engine

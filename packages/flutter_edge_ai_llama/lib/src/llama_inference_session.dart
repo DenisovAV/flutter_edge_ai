@@ -401,8 +401,9 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
   /// [edge.TurnEnd.contextLimit] for llamadart's `length` finish (whichever
   /// budget the request ran out of), else [edge.TurnEnd.endOfSequence]. An
   /// error ends the text, and then the end is [edge.TurnEnd.closed], except
-  /// for an input the context cannot hold: a [StateError] on the text, end
-  /// [edge.TurnEnd.contextLimit], and nothing of the turn kept.
+  /// for an input the context cannot hold: an [edge.ContextLimitException]
+  /// on the text, end [edge.TurnEnd.contextLimit], and nothing of the turn
+  /// kept.
   @override
   EngineTurn startTurn() {
     final turn = _startTurn(responseFormat == null ? null : chatTokenBuffer);
@@ -724,7 +725,7 @@ class LlamaInferenceSession extends edge.InferenceModelSession {
             // is rolled back below, and the error with end contextLimit is
             // how every engine says so (plain and structured alike).
             inputRefused = true;
-            throw StateError(
+            throw edge.ContextLimitException(
               'The rendered prompt ($promptTokens tokens) fills the $contextSize-token context. Shorten the latest input or increase the context.',
             );
           }

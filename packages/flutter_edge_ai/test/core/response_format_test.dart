@@ -408,6 +408,12 @@ void main() {
         () => ResponseFormat.jsonSchema(schema),
         throwsA(isA<ArgumentError>()),
       );
+      final direct = <String, Object?>{'type': 'object'};
+      direct['properties'] = {'self': direct};
+      expect(
+        () => ResponseFormat.jsonSchema(direct),
+        throwsA(isA<ArgumentError>()),
+      );
     });
 
     test('nesting through properties counts too', () {

@@ -25,6 +25,7 @@ import 'litert_embedding_pass.dart';
 import 'litert_lm_embedding_pass.dart';
 import 'litert_lm_npu.dart';
 import 'litertlm_npu_target.dart';
+import '../native_hosts.dart' show LiteRtLmEg2Bundle;
 import 'vision_budget.dart';
 import 'weight_cache_notice.dart';
 
@@ -223,9 +224,31 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   final onGpu = placement.backend == PreferredBackend.gpu;
   // On the GPU only the text tower runs there: the pass names every tower the
   // container has cpu, and must not name one it lacks (create fails).
-  final towers = onGpu
+  // On the NPU the 740m's audio tower, compiled for cpu/gpu only, must be
+  // named cpu whether or not audio is declared: with its backend NULL it runs
+  // on the NPU and engine create fails (L1, Galaxy S25 Ultra, 2026-11-04).
+  final onNpu = placement.target != null;
+  final towers = onGpu || onNpu
       ? readLiteRtLmMediaTowers(config.modelPath)
       : (vision: false, audio: false);
+  if (onGpu) {
+    final bundle = LiteRtLmEg2Bundle.of(
+      vision: towers.vision,
+      audio: towers.audio,
+    );
+    final (:abi, bundles: measured) = liteRtLmEmbeddingGpuBundlesHere();
+    if (!measured.contains(bundle)) {
+      // Lifted per bundle, for what ran: the others are not known to run.
+      throw EmbeddingLoadException(
+        'EmbeddingGemma 2 on the GPU on $abi has run with '
+        '${measured.map((b) => b.label).join(' and ')} only; $file is '
+        '${bundle.label}, not run on this GPU yet. Load it with '
+        'preferredBackend: cpu (or unset), or use '
+        '${measured.first.label} on the GPU.',
+        engine: _liteRtLm,
+      );
+    }
+  }
   if (onGpu && config.supportImage && !towers.vision) {
     // The 270m. The pass would refuse it from ModelInfo after core closed the
     // embedder it holds; the header is already read here, so refuse before,
@@ -235,10 +258,11 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
       engine: _liteRtLm,
     );
   }
-  if (requireWeightCache && placement.target != null && !config.supportAudio) {
+  if (requireWeightCache && onNpu && !towers.audio) {
     noticeRequireWeightCacheNotApplied(
       '$file runs on the ${placement.target} NPU, whose text and vision '
-      'towers write no weight cache, and no audio was declared',
+      'towers write no weight cache, and it has no audio tower (which runs '
+      'on CPU)',
     );
   }
   // The platform CACHE directory, not application support: iOS backs that up
@@ -267,7 +291,7 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
       npuTarget: placement.target,
       npuDispatchDir: placement.dispatchDir,
       gpu: onGpu,
-      visionTowerOnCpu: towers.vision,
+      visionTowerOnCpu: onGpu && towers.vision,
       audioTowerOnCpu: towers.audio,
     ),
     // `settings_create(path, "cpu" | "gpu" | "npu", vision, audio)`: the text

@@ -120,8 +120,11 @@ class _Conversation implements ConversationHandle {
   @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
+  /// How native's last send ended, as the handle would read it.
+  NativeLastTurnEnd? turnEnd;
+
   @override
-  NativeLastTurnEnd? get lastTurnEnd => null;
+  NativeLastTurnEnd? get lastTurnEnd => turnEnd;
 
   /// Like the native handle: closing cancels a turn that still runs.
   @override
@@ -235,6 +238,30 @@ void main() {
     expect(reopened, isEmpty);
     expect(first.sent, ['one', 'two']);
   });
+
+  for (final contextFull in [true, false]) {
+    test(
+      'a failed turn native ended ${contextFull ? 'context_full is not' : 'otherwise is'} '
+      'in the history a later rebuild replays',
+      () async {
+        first
+          ..failWith = StateError('RESOURCE_EXHAUSTED')
+          ..turnEnd = contextFull ? NativeLastTurnEnd.contextFull : null;
+        await expectLater(handle.chat('one').join(), throwsStateError);
+        first.turnEnd = NativeLastTurnEnd.completed;
+        await stopMidTurn('two', first);
+        await handle.chat('three').join();
+
+        final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+        final users = [
+          for (final m in seed)
+            if (m['role'] == 'user')
+              ((m['content'] as List).single as Map)['text'],
+        ];
+        expect(users, contextFull ? ['two'] : ['one', 'two']);
+      },
+    );
+  }
 
   test(
     'tool results sent after a stop go to the rebuilt conversation',

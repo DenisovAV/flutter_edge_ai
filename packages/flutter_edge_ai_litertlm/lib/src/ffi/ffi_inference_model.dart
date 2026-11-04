@@ -1202,11 +1202,19 @@ class RecoveringConversationHandle implements ConversationHandle {
           rawReply.toString(),
         );
         if (stopped && latest) _stoppedReply = reply;
-        // The message reached the model either way, so it belongs in the
-        // history a rebuild replays — with whatever of the reply was produced.
-        _history
-          ..add(message)
-          ..add(reply);
+        // The message reached the model, so it belongs in the history a
+        // rebuild replays — with whatever of the reply was produced. Except a
+        // turn native ended context_full (section 23): its input was refused
+        // before it reached the model, and recording it would replay into a
+        // rebuild a message the model never saw (core 2.6.0 design §6.4b; L3
+        // recovers such a turn).
+        final refused =
+            failed && _live.lastTurnEnd == NativeLastTurnEnd.contextFull;
+        if (!refused) {
+          _history
+            ..add(message)
+            ..add(reply);
+        }
       }
       done.complete();
     }

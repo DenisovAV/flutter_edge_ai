@@ -202,8 +202,12 @@ final class LiteRtLmEmbeddingConfig {
          'an NPU bundle runs with a dispatch directory, a CPU one without',
        ),
        assert(
-         gpu || !(visionTowerOnCpu || audioTowerOnCpu),
-         'a tower is named cpu only beside a text tower on the GPU',
+         gpu || !visionTowerOnCpu,
+         'the vision tower is named cpu only beside a text tower on the GPU',
+       ),
+       assert(
+         gpu || npuTarget != null || !audioTowerOnCpu,
+         'the audio tower is named cpu only beside a GPU or an NPU text tower',
        );
 
   /// The `.litertlm` bundle core resolved for the active spec.
@@ -263,8 +267,10 @@ final class LiteRtLmEmbeddingConfig {
   /// fails create.
   final bool visionTowerOnCpu;
 
-  /// With [gpu]: the bundle carries an audio tower (the 740m), named `cpu`
-  /// like [visionTowerOnCpu].
+  /// With [gpu] or on the NPU: the bundle carries an audio tower (the 740m),
+  /// named `cpu` like [visionTowerOnCpu], declared audio or not. On the NPU
+  /// the per-SoC 740m compiles it for cpu/gpu only, and with its backend NULL
+  /// engine create fails ("Audio backend constraint mismatch").
   final bool audioTowerOnCpu;
 
   /// The backend the engine is created on.
@@ -489,7 +495,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       final vision = onCpu ? _hasVision(info) : _config.visionTowerOnCpu;
       final audioOnCpu = audio || _config.audioTowerOnCpu;
       if (onCpu ||
-          (_onNpu && audio) ||
+          (_onNpu && audioOnCpu) ||
           (_config.gpu && (vision || audioOnCpu))) {
         _checkWeightCache(
           cacheDir,

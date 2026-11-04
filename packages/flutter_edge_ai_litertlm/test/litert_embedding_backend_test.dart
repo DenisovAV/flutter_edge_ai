@@ -13,6 +13,7 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_npu.dart';
+import 'package:flutter_edge_ai_litertlm/src/native_hosts.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/weight_cache_notice.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
@@ -301,6 +302,33 @@ void main() {
         preferredBackend: PreferredBackend.npu,
         supportAudio: supportAudio,
       ),
+    );
+
+    test(
+      'on the NPU the 740m\'s audio tower is named cpu whether or not audio '
+      'is declared; a bundle without one names none, and vision never',
+      () async {
+        liteRtLmNpuHost = _QualcommAndroid();
+        addTearDown(() => liteRtLmNpuHost = const LiteRtLmPlatformNpuHost());
+        for (final (model, audio, tower) in [
+          ('eg2_npu_audio.litertlm', false, true),
+          ('eg2_npu_audio.litertlm', true, true),
+          ('eg2_npu.litertlm', false, false),
+        ]) {
+          final d = await backend.describe(
+            _bundle(model: model),
+            _config(
+              '$bundles/$model',
+              preferredBackend: PreferredBackend.npu,
+              supportAudio: audio,
+            ),
+          );
+          final config = d.config as LiteRtLmEmbeddingConfig;
+          expect(config.npuTarget, isNotNull, reason: model);
+          expect(config.audioTowerOnCpu, tower, reason: '$model audio=$audio');
+          expect(config.visionTowerOnCpu, isFalse, reason: model);
+        }
+      },
     );
 
     test('a .tflite embedder: said once, however many loads', () async {
@@ -740,24 +768,46 @@ void main() {
       }
 
       for (final host in [_LinuxX64(), _IntelWindows(), _AppleMac()]) {
-        test('${host.abi}: gpu hands the pass the GPU and declares it, for '
-            'every generic bundle; cpu and unset still load on CPU', () async {
+        test('${host.abi}: gpu runs each bundle measured there on the GPU and '
+            'refuses the others naming the missing run; cpu and unset still '
+            'load on CPU', () async {
           hostIs(host);
-          for (final (model, image, audio) in [
-            ('eg2_text.litertlm', false, false),
-            ('eg2.litertlm', true, false),
-            ('eg2_audio.litertlm', true, true),
+          final measured = liteRtLmEmbeddingGpuMeasured[host.abi]!;
+          for (final (model, image, audio, bundle) in [
+            ('eg2_text.litertlm', false, false, LiteRtLmEg2Bundle.text270m),
+            ('eg2.litertlm', true, false, LiteRtLmEg2Bundle.textVision440m),
+            (
+              'eg2_audio.litertlm',
+              true,
+              true,
+              LiteRtLmEg2Bundle.textVisionAudio740m,
+            ),
           ]) {
-            final d = await describeGpu(
+            final asked = describeGpu(
               model: model,
               supportImage: image,
               supportAudio: audio,
             );
-            final config = d.config as LiteRtLmEmbeddingConfig;
-            expect(d.activeBackend, PreferredBackend.gpu, reason: model);
-            expect(config.gpu, isTrue, reason: model);
-            expect(config.backend, PreferredBackend.gpu, reason: model);
-            expect(config.npuTarget, isNull, reason: model);
+            if (measured.contains(bundle)) {
+              final d = await asked;
+              final config = d.config as LiteRtLmEmbeddingConfig;
+              expect(d.activeBackend, PreferredBackend.gpu, reason: model);
+              expect(config.gpu, isTrue, reason: model);
+              expect(config.npuTarget, isNull, reason: model);
+            } else {
+              await expectLater(
+                asked,
+                _loadRefusal(
+                  'LiteRT-LM',
+                  allOf(
+                    contains('on ${host.abi} has run with'),
+                    contains('$model is ${bundle.label}, not run on this GPU'),
+                    contains('preferredBackend: cpu'),
+                  ),
+                ),
+                reason: model,
+              );
+            }
           }
           for (final requested in [null, PreferredBackend.cpu]) {
             final d = await backend.describe(
@@ -769,6 +819,25 @@ void main() {
           }
         });
       }
+
+      test('what each host has run on the GPU: Linux all three, Windows the '
+          '270m, macOS the 270m and the 740m', () {
+        expect(
+          liteRtLmEmbeddingGpuMeasured.keys.toSet(),
+          liteRtLmEmbeddingGpuAbis,
+        );
+        expect(liteRtLmEmbeddingGpuMeasured['windows_x64'], {
+          LiteRtLmEg2Bundle.text270m,
+        });
+        expect(liteRtLmEmbeddingGpuMeasured['macos_arm64'], {
+          LiteRtLmEg2Bundle.text270m,
+          LiteRtLmEg2Bundle.textVisionAudio740m,
+        });
+        expect(
+          liteRtLmEmbeddingGpuMeasured['linux_x64'],
+          LiteRtLmEg2Bundle.values.toSet(),
+        );
+      });
 
       test(
         'elsewhere a bundle keeps the default and gpu runs on CPU',

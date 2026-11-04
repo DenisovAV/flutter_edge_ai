@@ -388,7 +388,8 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   /// handed to native, so [rewindStoppedTurn] can put a stopped turn back. It
   /// can hold megabytes of base64 media, so it is kept only while it may be
   /// needed: dropped when native ends the send by itself, and by a rewind.
-  /// Null after a send that ended by itself, which needs no rewind.
+  /// Null after a send that ended by itself, which needs no rewind; kept after
+  /// a context_full one.
   ({String messageJson, String? extraContext})? _lastSend;
 
   Stream<String> _send(
@@ -404,10 +405,14 @@ class LiteRtLmConversationHandle implements ConversationHandle {
       extraContext: extraContext,
       thinking: thinking,
       onEnded: (how) {
-        // Kept only after a cancelled send, the one a rewind puts back.
-        if (how != NativeTurnEnd.cancelled && identical(_lastSend, record)) {
-          _lastSend = null;
-        }
+        // Kept only after a cancelled send, the one a rewind puts back, and
+        // after one native ended context_full (section 23): its input never
+        // reached the history, and L3 rewinds to before it (core 2.6.0 design
+        // §6.4b). This change keeps it; it does not recover yet.
+        final keep =
+            how == NativeTurnEnd.cancelled ||
+            lastTurnEnd == NativeLastTurnEnd.contextFull;
+        if (!keep && identical(_lastSend, record)) _lastSend = null;
       },
     );
   }

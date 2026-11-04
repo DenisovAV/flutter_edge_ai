@@ -73,6 +73,15 @@ String liteRtLmEmbeddingGpuRefusal(String file) =>
 bool liteRtLmEmbeddingGpuHost() =>
     liteRtLmEmbeddingGpuAbis.contains(liteRtLmNpuHost.abi);
 
+/// This host's ABI and the EmbeddingGemma 2 bundles measured on its GPU
+/// ([liteRtLmEmbeddingGpuMeasured]), asked of the same host
+/// [placeLiteRtLmEmbedder] places on.
+({String abi, Set<LiteRtLmEg2Bundle> bundles})
+liteRtLmEmbeddingGpuBundlesHere() {
+  final abi = liteRtLmNpuHost.abi;
+  return (abi: abi, bundles: liteRtLmEmbeddingGpuMeasured[abi] ?? const {});
+}
+
 /// Whether this host is one of [liteRtLmEmbeddingGpuRefusedAbis].
 bool liteRtLmEmbeddingGpuRefusedHost() =>
     liteRtLmEmbeddingGpuRefusedAbis.contains(liteRtLmNpuHost.abi);

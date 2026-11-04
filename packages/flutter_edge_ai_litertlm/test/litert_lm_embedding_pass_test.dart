@@ -2739,15 +2739,33 @@ void main() {
       },
     );
 
-    test('no audio declared on the 740m: both towers stay NULL', () async {
+    test('no audio declared on the 740m: the audio tower is still named '
+        '"cpu" (describe() sets audioTowerOnCpu from the container: with its '
+        'backend NULL the create fails), vision stays NULL', () async {
       File(_header740m).copySync(modelPath);
       native.visionSignatures = const [70, 140];
       await pass(
         npuTarget: _sm8850,
         declaredMedia: {EmbeddingModality.image},
+        audioTowerOnCpu: true,
       ).load();
-      expect(native.towerBackendsNull, isTrue);
+      expect(native.settingsBackend, 'npu');
+      expect(native.settingsAudioBackend, 'cpu');
+      expect(native.settingsVisionBackend, isNull);
     });
+
+    test(
+      'a per-SoC bundle without an audio tower: both towers stay NULL',
+      () async {
+        File(_header440m).copySync(modelPath);
+        native.visionSignatures = const [70, 140];
+        await pass(
+          npuTarget: _sm8850,
+          declaredMedia: {EmbeddingModality.image},
+        ).load();
+        expect(native.towerBackendsNull, isTrue);
+      },
+    );
 
     test('without declared audio the cache is not checked: the text and '
         'vision towers on the NPU write none, so an empty directory is '

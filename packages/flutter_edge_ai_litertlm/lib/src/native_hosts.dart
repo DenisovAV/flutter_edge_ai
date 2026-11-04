@@ -52,6 +52,47 @@ const liteRtLmNativeAbis = {
 /// not-applied notice, as before.
 const liteRtLmEmbeddingGpuAbis = {'linux_x64', 'windows_x64', 'macos_arm64'};
 
+/// The generic EmbeddingGemma 2 bundles, told apart by the towers their
+/// container carries (`readLiteRtLmMediaTowers`).
+enum LiteRtLmEg2Bundle {
+  /// embeddinggemma-2-text-270m: text only.
+  text270m('the 270m'),
+
+  /// embeddinggemma-2-text-vision-440m: text and vision.
+  textVision440m('the 440m'),
+
+  /// embeddinggemma-2-740m: text, vision and audio.
+  textVisionAudio740m('the 740m');
+
+  const LiteRtLmEg2Bundle(this.label);
+
+  final String label;
+
+  /// The bundle with [vision] and [audio] towers.
+  static LiteRtLmEg2Bundle of({required bool vision, required bool audio}) =>
+      audio ? textVisionAudio740m : (vision ? textVision440m : text270m);
+}
+
+/// Which generic EmbeddingGemma 2 bundles have run with their text tower on
+/// the GPU of each [liteRtLmEmbeddingGpuAbis] host; a `gpu` request for any
+/// other is refused there, naming the missing run. Linux x64: all three since
+/// litertlm 1.19.0 (measured on the 270m; the others run the same text tower
+/// with their media towers on CPU). Windows x64: the 270m on Panther Lake and
+/// Lunar Lake (L1, 2026-11-04). macOS: the 270m and the 740m text towers on
+/// Metal (L1 C probe; the 270m and 740m through this pass, L2).
+const liteRtLmEmbeddingGpuMeasured = <String, Set<LiteRtLmEg2Bundle>>{
+  'linux_x64': {
+    LiteRtLmEg2Bundle.text270m,
+    LiteRtLmEg2Bundle.textVision440m,
+    LiteRtLmEg2Bundle.textVisionAudio740m,
+  },
+  'windows_x64': {LiteRtLmEg2Bundle.text270m},
+  'macos_arm64': {
+    LiteRtLmEg2Bundle.text270m,
+    LiteRtLmEg2Bundle.textVisionAudio740m,
+  },
+};
+
 /// The hosts where `preferredBackend: gpu` for a generic EmbeddingGemma 2
 /// bundle is refused with an `EmbeddingLoadException`
 /// (`liteRtLmEmbeddingGpuRefusal`) instead of running anywhere: a host whose

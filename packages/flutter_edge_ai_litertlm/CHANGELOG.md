@@ -1,6 +1,6 @@
 ## Unreleased
 - LiteRT-LM 0.19.0 (`native-v0.19.0-a`, C API 1.0); a library on another C API major is refused at load.
-- EmbeddingGemma 2 text on the GPU on macOS and Windows x64 too (#744).
+- EmbeddingGemma 2 text on the GPU on Windows x64 (270m) and macOS (270m, 740m) too (#744).
 - MediaTek NPU refused: LiteRT-LM 0.19 cannot load Google's MediaTek dispatch (LiteRT-LM #4256).
 
 ## 1.19.1

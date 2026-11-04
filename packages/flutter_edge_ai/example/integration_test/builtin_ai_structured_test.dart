@@ -250,6 +250,39 @@ void main() {
     );
   });
 
+  // Whether FoundationModels keeps a prompt it refused as too long: if it
+  // did, every later turn of the session would overflow too. Decides whether
+  // built-in AI may report an overflow as a refused input (an error with
+  // TurnEnd.contextLimit, design §3) on this platform.
+  test('after an overflow, a short prompt on the same session', () async {
+    final m = await ensureModel();
+    if (m == null) return markTestSkipped(unavailable!);
+    final session = await m.openSession(
+      responseFormat: ResponseFormat.jsonSchema(_codeSchema),
+    );
+    addTearDown(session.close);
+    await session.addQueryChunk(
+      Message(
+        text: 'Summarise: ${'the sea is wide and deep. ' * 4000}',
+        isUser: true,
+      ),
+    );
+    try {
+      await session.getResponse();
+      debugPrint('[structured] overflow: the long prompt was answered');
+    } catch (e) {
+      debugPrint('[structured] overflow: ${e.runtimeType} $e');
+    }
+    await session.addQueryChunk(const Message(text: _poemPrompt, isUser: true));
+    try {
+      final next = await session.getResponse();
+      debugPrint('[structured] after overflow, answered: $next');
+    } catch (e) {
+      debugPrint('[structured] after overflow, FAILED: ${e.runtimeType} $e');
+      rethrow;
+    }
+  });
+
   test('a stop mid-reply ends the turn as stopped', () async {
     final m = await ensureModel();
     if (m == null) return markTestSkipped(unavailable!);

@@ -369,24 +369,6 @@ void main() {
       },
     );
 
-    test('a full context window ends the turn as contextLimit', () async {
-      final model = await macModel();
-      for (final code in ['contextSizeExceeded', 'exceededContextWindowSize']) {
-        host.generateResponseError = LocalAiGenerationException(
-          'too long',
-          errorCode: code,
-        );
-        await expectLater(
-          askStructured(model),
-          throwsA(
-            isA<IncompleteStructuredOutputException>()
-                .having((e) => e.end, 'end', TurnEnd.contextLimit)
-                .having((e) => e.partialText, 'partialText', ''),
-          ),
-        );
-      }
-    });
-
     test('any other failure is passed on as it is', () async {
       final model = await macModel();
       final failure = LocalAiGenerationException(
@@ -609,26 +591,60 @@ void main() {
   });
 
   group('platform errors', () {
-    // Windows cannot drop the overflowing prompt from its transcript, so the
-    // session would fail every later turn: not the usable session
-    // contextLimit promises.
-    test('Windows PROMPT_TOO_LONG ends the turn as closed', () async {
-      final model = await macModel();
-      host.generateResponseError = PlatformException(
+    // An error with end contextLimit tells core the input was refused and
+    // nothing of the turn was kept (design §3, "A refused input"). No
+    // platform guarantees that: Windows keeps the prompt in its native
+    // transcript, and FoundationModels' handling of a failed prompt is not
+    // documented. So an overflow is the platform's error with end closed.
+    final overflows = <String, Object>{
+      'Apple contextSizeExceeded': LocalAiGenerationException(
+        'too long',
+        errorCode: 'contextSizeExceeded',
+      ),
+      'Apple exceededContextWindowSize': LocalAiGenerationException(
+        'too long',
+        errorCode: 'exceededContextWindowSize',
+      ),
+      'Windows PROMPT_TOO_LONG': PlatformException(
         code: 'PROMPT_TOO_LONG',
         message:
             'The conversation no longer fits the Windows AI context window.',
-      );
-      await expectLater(
-        askStructured(model),
-        throwsA(
-          isA<IncompleteStructuredOutputException>().having(
-            (e) => e.end,
-            'end',
-            TurnEnd.closed,
-          ),
-        ),
-      );
+      ),
+    };
+
+    for (final MapEntry(key: name, value: overflow) in overflows.entries) {
+      test('$name: the error, end closed, not a refused input', () async {
+        final model = await macModel();
+        await model.openSession(responseFormat: _codeFormat);
+        final engine =
+            (model.sessions.single as dynamic).engineSession
+                as InferenceModelSession;
+        await engine.addQueryChunk(const Message(text: 'A poem', isUser: true));
+        host.generateResponseError = overflow;
+
+        // ignore: invalid_use_of_protected_member
+        final turn = engine.startTurn();
+
+        await expectLater(turn.text, emitsError(same(overflow)));
+        expect(await turn.end, TurnEnd.closed);
+      });
+    }
+
+    test('through core the overflow is the platform error itself', () async {
+      final model = await macModel();
+      final overflow = overflows['Windows PROMPT_TOO_LONG']!;
+      host.generateResponseError = overflow;
+      await expectLater(askStructured(model), throwsA(same(overflow)));
+    });
+
+    // A plain session reports no turn end (EngineTurn.end null), so it can
+    // never signal a refused input either.
+    test('a plain session reports no end', () async {
+      final model = await macModel();
+      final plain = await model.openSession();
+      addTearDown(plain.close);
+      // ignore: invalid_use_of_protected_member
+      expect(plain.startTurn().end, isNull);
     });
 
     test(

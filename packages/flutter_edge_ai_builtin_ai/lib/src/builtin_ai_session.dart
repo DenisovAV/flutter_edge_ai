@@ -13,8 +13,7 @@ import 'package:flutter_edge_ai/engine.dart'
         SessionMetrics,
         TurnEnd;
 import 'package:flutter/services.dart' show PlatformException;
-import 'package:flutter_local_ai/flutter_local_ai.dart'
-    show LocalAiGenerationException, LocalAiSession;
+import 'package:flutter_local_ai/flutter_local_ai.dart' show LocalAiSession;
 import 'package:meta/meta.dart' show experimental, internal;
 
 import 'structured_output.dart' show builtInWireSchema;
@@ -149,13 +148,6 @@ final class StructuredBuiltInAiSession extends BuiltInAiSession {
 
   _StructuredTurn? _turn;
 
-  /// The OS's codes for a full context window: the FoundationModels names on
-  /// OS 27 and OS 26 (a `GENERATION_ERROR` detail).
-  static const _contextLimitCodes = {
-    'contextSizeExceeded',
-    'exceededContextWindowSize',
-  };
-
   @override
   EngineTurn startTurn() {
     final turn = _turn = _StructuredTurn();
@@ -175,16 +167,6 @@ final class StructuredBuiltInAiSession extends BuiltInAiSession {
           final asked = turn.askedEnd;
           if (asked != null) {
             turn.finish(asked);
-          } else if (_isContextLimit(error)) {
-            turn.finish(TurnEnd.contextLimit);
-          } else if (error is PlatformException &&
-              error.code == 'PROMPT_TOO_LONG') {
-            // Windows keeps the prompt that overflowed in its native
-            // transcript (one string it only appends to), and
-            // flutter_local_ai can neither trim it nor rebuild the session
-            // without it. Every later turn would overflow again, so the
-            // session is not usable as contextLimit promises: closed.
-            turn.finish(TurnEnd.closed);
           } else if (error is PlatformException &&
               error.code == 'STRUCTURED_OUTPUT_INVALID' &&
               error.details is String) {
@@ -193,6 +175,19 @@ final class StructuredBuiltInAiSession extends BuiltInAiSession {
             // reports it (NonConformingStructuredOutputException).
             turn.finish(TurnEnd.endOfSequence, error.details as String);
           } else {
+            // Every other failure, a full context window included, is the
+            // platform's error with end closed. An error with end
+            // contextLimit tells core the input was refused and nothing of
+            // the turn was kept, which no platform here guarantees: Windows
+            // keeps the overflowing prompt in its native transcript (one
+            // string it only appends to; flutter_local_ai can neither trim
+            // it nor reopen the session without it), and on Apple whether
+            // FoundationModels drops it is not documented (its
+            // transcriptErrorHandlingPolicy, OS 27 only, is left unset by
+            // flutter_local_ai, and its default is unstated). The overflow
+            // codes are Apple's `contextSizeExceeded` /
+            // `exceededContextWindowSize` and Windows `PROMPT_TOO_LONG`;
+            // Chrome's is the Prompt API's own JS error.
             turn.fail(error, stack);
           }
         },
@@ -215,13 +210,6 @@ final class StructuredBuiltInAiSession extends BuiltInAiSession {
     };
     return EngineTurn(text: turn.text.stream, end: turn.end.future);
   }
-
-  /// A full context window on Apple (the FoundationModels codes). Windows's
-  /// overflow ends the turn as closed (see [startTurn]); Chrome's is a JS
-  /// error the platform passes through unclassified.
-  static bool _isContextLimit(Object error) =>
-      error is LocalAiGenerationException &&
-      _contextLimitCodes.contains(error.errorCode);
 
   @override
   Stream<String> getResponseAsync() => startTurn().text;

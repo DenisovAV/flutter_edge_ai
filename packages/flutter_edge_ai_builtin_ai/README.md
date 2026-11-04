@@ -219,10 +219,12 @@ Where it is enabled:
 - Apple Foundation Models adds the schema to the prompt itself (`includeSchemaInPrompt` defaults to
   true); flutter_edge_ai adds nothing to the prompt.
 - A stop and a close end the turn with an `IncompleteStructuredOutputException`
-  (`TurnEnd.stopped`, `closed`) once the platform call has settled. A full context window does too:
-  `TurnEnd.contextLimit` on Apple. On Windows it is `TurnEnd.closed`, because Windows keeps the
-  prompt that overflowed in its native transcript and every later turn of that session would fail;
-  open a new session. On Chrome it arrives as the Prompt API's own error, unclassified.
+  (`TurnEnd.stopped`, `closed`) once the platform call has settled. A full context window fails the
+  turn with the platform's own error (Apple `LocalAiGenerationException` with `contextSizeExceeded`
+  or `exceededContextWindowSize`, Windows `PlatformException` `PROMPT_TOO_LONG`, Chrome the Prompt
+  API's error); it is not reported as a refused input that left the session untouched, because
+  Windows keeps the overflowing prompt in its transcript and FoundationModels does not document
+  whether it does. Open a new session after one.
 - On Windows a reply the platform reports as off-schema (`STRUCTURED_OUTPUT_INVALID`) reaches core's
   check, which raises `NonConformingStructuredOutputException` with its text.
 

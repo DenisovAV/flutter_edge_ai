@@ -476,6 +476,15 @@ static int CmdTurnEnd(P engine) {
              "tokens of a %d-token window: not a check\n", tokens, max_nt);
     } else {
       fail += CheckTurnEnd("max_num_tokens", c, 6);
+      // 3b. A send into the window the decode filled: its prefill inherits the
+      // decode's kMaxNumTokensReached, which the conversation reports as a
+      // full window (ContextWindowFullError, tagged by section 23).
+      r = Send(c, "Reply with the single word OK.", NULL, &s);
+      const char* m = r ? "" : litert_lm_get_last_error_message();
+      printf("INFO turnend_after_full_decode status=%d err=%s\n", s,
+             m ? m : "");
+      free(r);
+      fail += CheckTurnEnd("send_after_full_decode", c, 7);
     }
   }
   litert_lm_conversation_delete(c);
@@ -655,6 +664,7 @@ typedef struct {
   volatile int final;
   char text[16384];
   size_t len;
+  char err[1024];  // the error of the final chunk, if any
 } Stream;
 static void TextOf(const char* json, char* out, size_t cap);
 static void OnChunk(void* data, const void* chunk) {
@@ -670,6 +680,9 @@ static void OnChunk(void* data, const void* chunk) {
       st->len += n;
     }
   }
+  const char* e = NULL;
+  if (litert_lm_stream_chunk_get_error(chunk, &e) == 0 && e)
+    snprintf(st->err, sizeof st->err, "%s", e);
   st->chunks++;
   if (litert_lm_stream_chunk_is_final(chunk, &fin) == 0 && fin) st->final = 1;
 }
@@ -910,6 +923,96 @@ static int CmdConvRewind(P engine, const char* image) {
   free(blob);
   printf("RESULT convrewind%s %s %d check(s) failed\n", image ? "_image" : "",
          fail ? "FAIL" : "PASS", fail);
+  return fail ? 1 : 0;
+}
+
+// A RESOURCE_EXHAUSTED that is not the context window (section 23). Only the
+// context-window checks tag their error; any other one (a failed allocation)
+// must end the turn failed, not context_full, and must not be rewound as one.
+// Needs a library built with the probe-only hook that makes every prefill
+// return an untagged RESOURCE_EXHAUSTED while FLUTTER_EDGE_AI_PROBE_EXHAUSTED
+// is set (not in any shipped build). The probe also checks the error text the
+// caller sees carries no section 23 marker, on the context-full path as well.
+static int ExhaustedCheck(const char* label, P conv, const char* err) {
+  int end = -1, code = -1;
+  litert_lm_conversation_get_last_turn_end(conv, &end, &code);
+  bool fake = err && strstr(err, "probe allocation failure");
+  bool clean = !err || !strstr(err, "context_window_full");
+  bool ok = end == 3 && code == 8 && fake && clean;
+  printf("RESULT exhausted_%s %s end=%s code=%d want=failed/8 err=%s\n", label,
+         ok ? "PASS" : "FAIL", TurnEndName(end), code, err ? err : "(none)");
+  return ok ? 0 : 1;
+}
+static void SetProbeEnv(const char* name, const char* value) {
+#if defined(_WIN32)
+  _putenv_s(name, value ? value : "");
+#else
+  if (value) setenv(name, value, 1);
+  else unsetenv(name);
+#endif
+}
+static int CmdExhausted(P engine) {
+  if (!litert_lm_conversation_get_last_turn_end) {
+    printf("RESULT exhausted FAIL library has no get_last_turn_end\n");
+    return 1;
+  }
+  int fail = 0;
+  Status s;
+  P a = NewConversation(engine, NULL, false, false, 16);
+  SetProbeEnv("FLUTTER_EDGE_AI_PROBE_EXHAUSTED", "1");
+  char* r = Send(a, "Reply with the single word OK.", NULL, &s);
+  const char* last = litert_lm_get_last_error_message();
+  char err[1024];
+  snprintf(err, sizeof err, "%s", last ? last : "");
+  fail += r != NULL;  // the send must fail
+  free(r);
+  fail += ExhaustedCheck("send", a, err);
+  if (litert_lm_conversation_rewind_cancelled_turn) {
+    int end = -1;
+    Status rs =
+        litert_lm_conversation_rewind_cancelled_turn(a, NULL, NULL, NULL, &end);
+    bool ok = rs != 0;  // not a cancel, not a full window: nothing to rewind
+    printf("RESULT exhausted_no_rewind %s status=%d end=%s\n",
+           ok ? "PASS" : "FAIL", rs, TurnEndName(end));
+    fail += !ok;
+  }
+  litert_lm_conversation_delete(a);
+  // The same through a stream: the final chunk carries the error.
+  P b = NewConversation(engine, NULL, false, false, 16);
+  Stream* st = calloc(1, sizeof(Stream));
+  s = litert_lm_conversation_send_message_stream(
+      b, "{\"role\":\"user\",\"content\":\"Reply with OK.\"}", NULL, NULL,
+      OnChunk, st);
+  double t0 = Now();
+  while (s == 0 && !st->final && Now() - t0 < 60) SleepMs(5);
+  if (s != 0) {
+    const char* m = litert_lm_get_last_error_message();
+    snprintf(st->err, sizeof st->err, "%s", m ? m : "");
+  }
+  fail += ExhaustedCheck("stream", b, st->err);
+  free(st);
+  litert_lm_conversation_delete(b);
+  SetProbeEnv("FLUTTER_EDGE_AI_PROBE_EXHAUSTED", NULL);
+  // Control, hook off: a real full window still ends context_full, and its
+  // error text carries no marker either.
+  P c = NewConversation(engine, NULL, false, false, 32);
+  char* big = Filler((size_t)g_max_tokens * 6);
+  r = Send(c, big, NULL, &s);
+  free(big);
+  last = litert_lm_get_last_error_message();
+  snprintf(err, sizeof err, "%s", last ? last : "");
+  free(r);
+  {
+    int end = -1, code = -1;
+    litert_lm_conversation_get_last_turn_end(c, &end, &code);
+    bool ok = end == 7 && code == 8 && !strstr(err, "context_window_full");
+    printf("RESULT exhausted_control_context_full %s end=%s code=%d err=%s\n",
+           ok ? "PASS" : "FAIL", TurnEndName(end), code, err);
+    fail += !ok;
+  }
+  litert_lm_conversation_delete(c);
+  printf("RESULT exhausted %s %d check(s) failed\n", fail ? "FAIL" : "PASS",
+         fail);
   return fail ? 1 : 0;
 }
 
@@ -1764,7 +1867,7 @@ int main(int argc, char** argv) {
     fprintf(stderr,
             "usage: %s <libLiteRtLm> <multiconv|constrained|rewind|scoring|"
             "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|longprompt|determinism|"
-            "turnend|prefillroom|convrewind [image]|deleteduring|xsession|chat [image]|ctxgroup|eg2> "
+            "turnend|exhausted|prefillroom|convrewind [image]|deleteduring|xsession|chat [image]|ctxgroup|eg2> "
             "<model> <cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS, "
             "PROBE_DISPATCH_DIR\n",
             argv[0]);
@@ -1823,6 +1926,7 @@ int main(int argc, char** argv) {
   else if (!strcmp(cmd, "longprompt")) rc = CmdLongPrompt(engine);
   else if (!strcmp(cmd, "determinism")) rc = CmdDeterminism(engine);
   else if (!strcmp(cmd, "turnend")) rc = CmdTurnEnd(engine);
+  else if (!strcmp(cmd, "exhausted")) rc = CmdExhausted(engine);
   else if (!strcmp(cmd, "prefillroom")) rc = CmdPrefillRoom(engine);
   else if (!strcmp(cmd, "deleteduring")) rc = CmdDeleteDuring(engine);
   else if (!strcmp(cmd, "xsession")) rc = CmdXSession(engine, model, backend);

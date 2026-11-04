@@ -20,6 +20,12 @@ import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 /// Must accommodate verbose formats (DeepSeek tags, parallel calls).
 const int defaultMaxFunctionBufferLength = 1024;
 
+/// How long a chat turn whose text failed waits for that text to close
+/// before it delivers the error without it; see `_takingBackOnError`. An
+/// engine that keeps the SPI contract ends its text right after an error.
+@visibleForTesting
+Duration chatTurnErrorEndTimeout = const Duration(seconds: 5);
+
 class InferenceChat {
   final Future<InferenceModelSession> Function()? sessionCreator;
   final int maxTokens;
@@ -363,32 +369,52 @@ class InferenceChat {
     late final StreamController<String> out;
     StreamSubscription<String>? source;
     (Object, StackTrace)? failure;
+    var finished = false;
+    Timer? bound;
+
+    /// Ends the turn once: when the text closes, or, after an error, at the
+    /// latest [chatTurnErrorEndTimeout] later, so an engine whose failed text
+    /// never closes cannot hold the turn. A failed turn is taken back either
+    /// way.
+    void finish() {
+      if (finished) return;
+      finished = true;
+      bound?.cancel();
+      final failed = failure;
+      if (failed != null) {
+        if (staged != null) {
+          _fullHistory.length = staged.full;
+          _modelHistory.length = staged.model;
+          _prefixes.length = staged.prefixes;
+          _currentTokens = staged.tokens;
+          _toolsInstructionSent = staged.toolsInstructionSent;
+          _lastTurnTakenBack = true;
+        }
+        out.addError(failed.$1, failed.$2);
+      }
+      // Its done ends the consumer's subscription, and onCancel lets the
+      // source go: a failed text that never closes is not held.
+      unawaited(out.close());
+    }
+
     out = StreamController<String>(
       onListen: () {
         source = turn.text.listen(
           out.add,
-          onError: (Object error, StackTrace stack) =>
-              failure ??= (error, stack),
-          onDone: () async {
-            final failed = failure;
-            if (failed != null) {
-              if (staged != null) {
-                _fullHistory.length = staged.full;
-                _modelHistory.length = staged.model;
-                _prefixes.length = staged.prefixes;
-                _currentTokens = staged.tokens;
-                _toolsInstructionSent = staged.toolsInstructionSent;
-                _lastTurnTakenBack = true;
-              }
-              out.addError(failed.$1, failed.$2);
-            }
-            await out.close();
+          onError: (Object error, StackTrace stack) {
+            if (failure != null) return;
+            failure = (error, stack);
+            bound = Timer(chatTurnErrorEndTimeout, finish);
           },
+          onDone: finish,
         );
       },
       onPause: () => source?.pause(),
       onResume: () => source?.resume(),
-      onCancel: () => source?.cancel(),
+      onCancel: () {
+        bound?.cancel();
+        return source?.cancel();
+      },
     );
     return out.stream;
   }

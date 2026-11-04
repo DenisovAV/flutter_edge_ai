@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/src/chat.dart' show chatTurnErrorEndTimeout;
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/noop_session.dart';
@@ -17,6 +18,9 @@ final class _TurnSession extends InferenceModelSession {
 
   /// When set, the next turn's text streams [tokens], then fails with it.
   Object? failWith;
+
+  /// When set, the next turn's text is this stream, as the engine gives it.
+  Stream<String>? nextText;
   final staged = <Message>[];
   int turns = 0;
   bool closed = false;
@@ -27,8 +31,12 @@ final class _TurnSession extends InferenceModelSession {
     final end = this.end;
     final failure = failWith;
     failWith = null;
+    final given = nextText;
+    nextText = null;
     return EngineTurn(
-      text: failure == null
+      text: given != null
+          ? given
+          : failure == null
           ? Stream.fromIterable(tokens)
           : (() async* {
               yield* Stream.fromIterable(tokens);
@@ -933,6 +941,37 @@ void _failedTurnTests() {
       await expectLater(chat.generateChatResponse(), throwsStateError);
       expect(chat.fullHistory, isEmpty);
     });
+
+    for (final blocking in [false, true]) {
+      test(
+        '${blocking ? 'blocking' : 'streaming'}: a failed text that never '
+        'closes does not hold the turn past chatTurnErrorEndTimeout',
+        () async {
+          final previous = chatTurnErrorEndTimeout;
+          chatTurnErrorEndTimeout = const Duration(milliseconds: 50);
+          addTearDown(() => chatTurnErrorEndTimeout = previous);
+          // Fails, and is never closed: an engine breaking the SPI contract.
+          final text = StreamController<String>();
+          final session = _TurnSession()..nextText = text.stream;
+          final chat = toolChat(session);
+          await chat.initSession();
+          await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+          final turn = blocking
+              ? chat.generateChatResponse()
+              : chat.generateChatResponseAsync().toList();
+          text
+            ..add('Par')
+            ..addError(StateError('decode failed'));
+          await expectLater(
+            turn.timeout(const Duration(seconds: 2)),
+            throwsStateError,
+          );
+          expect(chat.fullHistory, isEmpty, reason: 'taken back all the same');
+          await pumpEventQueue();
+          expect(text.hasListener, isFalse, reason: 'the source is let go');
+        },
+      );
+    }
 
     test('any engine error, not only a context limit', () async {
       final session = _TurnSession(tokens: ['Par'])

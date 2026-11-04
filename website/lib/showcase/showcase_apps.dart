@@ -1,6 +1,6 @@
 /// The apps on the `/showcase` page and the two orders it shows them in.
 ///
-/// Plain Dart, no Jaspr, like `maintainers.dart`. The page ranks the apps
+/// Plain Dart, no Jaspr, like `maintainers.dart`. The page sorts the apps
 /// while it is pre-rendered, so sorting on the deployed page needs no script.
 library;
 
@@ -14,9 +14,11 @@ class ShowcaseApp {
 
   final String name;
 
-  /// An icon served from `web/`, `/images/showcase/<applicationId>.png`.
-  /// Images are cached for a year (firebase.json), so a new icon needs a new
-  /// file name, not the same one overwritten.
+  /// An icon served from `web/`: `/images/showcase/<id>-<n>.png`, where
+  /// `<id>` is the Google Play application id, or `id<trackId>` from the App
+  /// Store link for an app only there. Images are cached for a year
+  /// (firebase.json), so a new icon takes the next `<n>` instead of
+  /// overwriting the file.
   final String icon;
 
   final GooglePlayListing? googlePlay;
@@ -51,8 +53,7 @@ class AppStoreListing {
 
   /// `userRatingCount` from the iTunes Lookup API. Apple publishes no download
   /// count, so this orders the apps that are not on Google Play, and such an
-  /// app needs it: [compareByDownloads] throws without it, which fails the
-  /// build.
+  /// app needs it: [byDownloads] throws without it, which fails the build.
   final int? ratings;
 }
 
@@ -60,7 +61,7 @@ class AppStoreListing {
 const showcaseApps = <ShowcaseApp>[
   ShowcaseApp(
     name: 'LocalMind: Ollama & LM Studio',
-    icon: '/images/showcase/pro.momin.localmind.png',
+    icon: '/images/showcase/pro.momin.localmind-1.png',
     googlePlay: GooglePlayListing('pro.momin.localmind', installs: 10000),
     appStore: AppStoreListing(
       'https://apps.apple.com/us/app/localmind-ollama-lm-studio/id6777025480',
@@ -68,7 +69,7 @@ const showcaseApps = <ShowcaseApp>[
   ),
   ShowcaseApp(
     name: 'Homiletics',
-    icon: '/images/showcase/com.thirteenone.homiletics.png',
+    icon: '/images/showcase/com.thirteenone.homiletics-1.png',
     googlePlay: GooglePlayListing('com.thirteenone.homiletics', installs: 5000),
     appStore: AppStoreListing(
       'https://apps.apple.com/us/app/homiletics/id1591978405',
@@ -76,12 +77,12 @@ const showcaseApps = <ShowcaseApp>[
   ),
   ShowcaseApp(
     name: 'flipper',
-    icon: '/images/showcase/rw.flipper.png',
+    icon: '/images/showcase/rw.flipper-1.png',
     googlePlay: GooglePlayListing('rw.flipper', installs: 500),
   ),
   ShowcaseApp(
     name: 'Live Captions XR',
-    icon: '/images/showcase/com.livecaptionsxr.app.png',
+    icon: '/images/showcase/com.livecaptionsxr.app-1.png',
     googlePlay: GooglePlayListing('com.livecaptionsxr.app', installs: 100),
   ),
 ];
@@ -104,9 +105,17 @@ int compareByDownloads(ShowcaseApp a, ShowcaseApp b) {
 int _ratings(ShowcaseApp app) =>
     app.appStore?.ratings ?? (throw StateError('${app.name} is only on the App Store and needs its ratings'));
 
-/// Where each of [apps] stands, from 1, when sorted by [compare]. The result
-/// is indexed like [apps].
-List<int> rankBy(List<ShowcaseApp> apps, Comparator<ShowcaseApp> compare) {
-  final sorted = [...apps]..sort(compare);
-  return [for (final app in apps) sorted.indexOf(app) + 1];
+/// [apps] in the order of [compareByDownloads].
+///
+/// Every app that is only on the App Store is checked for its ratings first:
+/// the comparison reads them only when two such apps meet, so a single one
+/// without ratings would otherwise pass.
+List<ShowcaseApp> byDownloads(List<ShowcaseApp> apps) {
+  for (final app in apps) {
+    if (app.googlePlay == null) _ratings(app);
+  }
+  return [...apps]..sort(compareByDownloads);
 }
+
+/// [apps] in the order of [compareByName].
+List<ShowcaseApp> byName(List<ShowcaseApp> apps) => [...apps]..sort(compareByName);

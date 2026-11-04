@@ -11,9 +11,10 @@ import 'showcase_apps.dart';
 ///
 /// Filter and sort are pure CSS, like the NavBar's menu: this site is Jaspr
 /// static mode and a `@client` component does not hydrate on the deployed
-/// build. Hidden radio buttons precede the controls and the grid; each card
-/// carries its rank in both orders as CSS variables, and `:checked ~` picks
-/// the `order` and hides the cards without the chosen store.
+/// build. Hidden radio buttons precede the controls and the grids; there is
+/// one grid per order, already sorted at prerender, and `:checked ~` shows the
+/// grid of the chosen order and hides the cards without the chosen store. The
+/// order on screen is then also the order of Tab and of a screen reader.
 ///
 /// The store badges are the stores' own artwork, unmodified, under their
 /// guidelines: 40px high (Apple's onscreen minimum; Google's badge is the
@@ -37,10 +38,6 @@ class ShowcasePage extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    final byDownloads = rankBy(showcaseApps, compareByDownloads);
-    final byName = rankBy(showcaseApps, compareByName);
-    final last = showcaseApps.length + 1;
-
     // `.landing-root` supplies the navy canvas, `min-height: 100vh` and the
     // element resets the NavBar/SiteFooter styles are scoped to.
     return main_(classes: 'landing-root', [
@@ -61,7 +58,7 @@ class ShowcasePage extends StatelessComponent {
       section(classes: 'sc-section', [
         div(classes: 'sc-section-inner', [
           // The radios carry the state and must come before `.sc-controls`
-          // and `.sc-grid` for `~` to reach them. Visually hidden but not
+          // and the grids for `~` to reach them. Visually hidden but not
           // `display: none`, so Tab and the arrow keys still reach them.
           for (final o in _stores) _radio(o.id, 'sc-store', 'sc-store-caption', checked: o == _stores.first),
           for (final o in _sorts) _radio(o.id, 'sc-sort', 'sc-sort-caption', checked: o == _sorts.first),
@@ -69,11 +66,14 @@ class ShowcasePage extends StatelessComponent {
             _control('sc-store-caption', 'Store', _stores),
             _control('sc-sort-caption', 'Sort by', _sorts),
           ]),
-          div(classes: 'sc-grid', [
-            for (var i = 0; i < showcaseApps.length; i++)
-              _appCard(showcaseApps[i], 'sc-app-$i', byDownloads[i], byName[i]),
-            _yourAppCard(last),
-          ]),
+          for (final (:order, :apps) in [
+            (order: 'downloads', apps: byDownloads(showcaseApps)),
+            (order: 'name', apps: byName(showcaseApps)),
+          ])
+            div(classes: 'sc-grid sc-grid--$order', [
+              for (var i = 0; i < apps.length; i++) _appCard(apps[i], 'sc-$order-app-$i'),
+              _yourAppCard(),
+            ]),
           p(classes: 'sc-legal', [
             Component.text(
               'Apple and the Apple logo are trademarks of Apple Inc., registered in the U.S. and other '
@@ -105,15 +105,11 @@ class ShowcasePage extends StatelessComponent {
     ]);
   }
 
-  static Styles _ranks(int byDownloads, int byName) => Styles(
-    raw: {'--sc-rank-downloads': '$byDownloads', '--sc-rank-name': '$byName'},
-  );
-
-  /// The icon's alt is empty because the name below it already names it. The
+  /// The icon's alt is empty because the name beside it already names it. The
   /// glow behind it is the same icon, blurred, so it takes the icon's colours.
   /// Every badge link describes itself with the app's name: their own names
   /// repeat from card to card.
-  static Component _appCard(ShowcaseApp app, String nameId, int byDownloads, int byName) {
+  static Component _appCard(ShowcaseApp app, String nameId) {
     final describedByName = {..._external, 'aria-describedby': nameId};
     return article(
       classes: [
@@ -122,7 +118,6 @@ class ShowcasePage extends StatelessComponent {
         if (app.googlePlay != null) 'sc-on-play',
         if (app.appStore != null) 'sc-on-apple',
       ].join(' '),
-      styles: _ranks(byDownloads, byName),
       [
         div(
           classes: 'sc-icon-wrap',
@@ -165,9 +160,9 @@ class ShowcasePage extends StatelessComponent {
     );
   }
 
-  /// Last in both orders and under every filter. Not a link yet.
-  static Component _yourAppCard(int rank) {
-    return div(classes: 'sc-card sc-yours', styles: _ranks(rank, rank), [
+  /// Last in both grids and under every filter. Not a link yet.
+  static Component _yourAppCard() {
+    return div(classes: 'sc-card sc-yours', [
       div(classes: 'sc-yours-plus', [
         svg(
           viewBox: '0 0 24 24',
@@ -313,12 +308,13 @@ class ShowcasePage extends StatelessComponent {
 
     // ---- cards ----
     // A row per app, as in a store's list: the icon on the left, the name
-    // and the badges beside it. Two 540px columns in the 1100px section, one
+    // and the badges beside it. Two columns from a 1080px viewport, where a
+    // card has room for both badges and the download count on one line, one
     // below; `min(…, 100%)` keeps a 320px screen from scrolling sideways.
     css('.sc-grid').styles(
       display: Display.grid,
       gap: Gap.all(1.rem),
-      raw: {'grid-template-columns': 'repeat(auto-fill, minmax(min(480px, 100%), 1fr))'},
+      raw: {'grid-template-columns': 'repeat(auto-fill, minmax(min(500px, 100%), 1fr))'},
     ),
     css('.sc-card').styles(
       display: Display.grid,
@@ -332,12 +328,13 @@ class ShowcasePage extends StatelessComponent {
         'column-gap': '1rem',
         'row-gap': '0.75rem',
         'align-content': 'center',
-        'order': 'var(--sc-rank-downloads)',
       },
     ),
-    css('#sc-sort-name:checked ~ .sc-grid .sc-card').styles(
-      raw: {'order': 'var(--sc-rank-name)'},
-    ),
+    // Only the grid of the checked order shows; a hidden grid is out of the
+    // tab order and the accessibility tree.
+    css('.sc-grid--name').styles(display: Display.none),
+    css('#sc-sort-name:checked ~ .sc-grid--downloads').styles(display: Display.none),
+    css('#sc-sort-name:checked ~ .sc-grid--name').styles(display: Display.grid),
     css('#sc-store-play:checked ~ .sc-grid .sc-app:not(.sc-on-play)').styles(display: Display.none),
     css('#sc-store-apple:checked ~ .sc-grid .sc-app:not(.sc-on-apple)').styles(display: Display.none),
     css('.sc-icon-wrap').styles(

@@ -53,11 +53,14 @@ class NavBar extends StatelessComponent {
         // no JS. The <label> below is the visible hamburger; clicking it toggles
         // the checkbox, and `.navbar-toggle:checked ~ .navbar-links` reveals the
         // dropdown. Hidden on wide screens via the desktop media query.
+        // Not aria-hidden: on narrow screens this checkbox is the only way to
+        // the links for keyboard and screen-reader users, so it has a name
+        // and shows its focus on the burger.
         input(
           type: InputType.checkbox,
           id: 'navbar-toggle',
           classes: 'navbar-toggle',
-          attributes: const {'aria-hidden': 'true'},
+          attributes: const {'aria-label': 'Navigation menu'},
         ),
         // Hamburger label (shown only on narrow screens via CSS).
         label(
@@ -199,6 +202,9 @@ class NavBar extends StatelessComponent {
     ),
     // Checkbox checked → reveal the dropdown (pure-CSS toggle, no JS).
     css('.navbar-toggle:checked ~ .navbar-links').styles(display: Display.flex),
+    css('.navbar-toggle:focus-visible ~ .navbar-burger').styles(
+      raw: {'outline': '2px solid ${Brand.blueLight.value}', 'outline-offset': '2px'},
+    ),
     css('.navbar-links .navbar-link').styles(
       padding: Padding.symmetric(vertical: 0.85.rem, horizontal: 2.rem),
       fontSize: 1.rem,
@@ -211,6 +217,8 @@ class NavBar extends StatelessComponent {
       query: MediaQuery.screen(minWidth: 960.px),
       styles: [
         css('.navbar-burger').styles(display: Display.none),
+        // The links are inline here, so the checkbox leaves the tab order.
+        css('.navbar-toggle').styles(display: Display.none),
         // On desktop the links are always inline regardless of checkbox state.
         css('.navbar-toggle:checked ~ .navbar-links').styles(
           flexDirection: FlexDirection.row,

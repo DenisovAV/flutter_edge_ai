@@ -180,8 +180,11 @@ so no other vendor is given native conversations on that evidence. MediaTek
 NPU is refused at load.
 
 After a stopped turn, or a turn whose input did not fit, the next turn
-rewinds the conversation to before it (a stopped turn is put back, partial
-reply included). On the NPU, which rolls back one token at most, and on a
+rewinds the conversation to before it: a stopped turn is put back, partial
+reply included, and one stopped before it produced anything, or refused for
+the window, is left out, as `InferenceChat` leaves it out of its history. A
+turn that failed otherwise is left out too: the conversation is rebuilt
+without it. On the NPU, which rolls back one token at most, and on a
 model with linear attention state (LFM2.5), which a rewind cannot restore,
 the conversation is rebuilt from the text of its history instead: images and
 audio of earlier turns are lost then, and a line in the log says so once per

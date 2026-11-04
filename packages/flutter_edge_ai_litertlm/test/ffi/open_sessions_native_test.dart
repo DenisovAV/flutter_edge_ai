@@ -303,6 +303,49 @@ void main() {
     }
   }, skip: _skip);
 
+  test('a turn stopped before it produced anything is taken out of the '
+      'conversation (Rule A): its message is not in the model\'s context, '
+      'earlier turns are', () async {
+    _log.clear();
+    final a = await open();
+    try {
+      await _ask(a, 'My name is Zorblax. Reply with OK only.');
+      // A long input, so the stop lands while native still prefills it.
+      final filler = List.filled(1500, 'sea').join(' ');
+      await a.addQueryChunk(
+        Message(
+          text:
+              'My favourite colour is purple. Here are some words: $filler. '
+              'Write a long story about the sea.',
+          isUser: true,
+        ),
+      );
+      final quiet = a.getResponseAsync().join();
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      await a.stopGeneration();
+      final heard = await quiet;
+      final colour = (await _ask(
+        a,
+        'What is my favourite colour? If I have not said, answer "unknown".',
+      )).toLowerCase();
+      final name = (await _ask(
+        a,
+        'What is my name? Answer with the name only.',
+      )).toLowerCase();
+      final rewound = _log.where((l) => l.contains('rewound the conversation'));
+      _result(
+        'stopnothing streamed=${heard.length} purple=${colour.contains('purple')} '
+        'name=${name.contains('zorblax')} rewound=${rewound.length}',
+      );
+      expect(name, contains('zorblax'));
+      expect(heard, isEmpty, reason: 'the stop must land before any text');
+      expect(rewound, hasLength(1));
+      expect(colour, isNot(contains('purple')), reason: 'taken out');
+    } finally {
+      await a.close();
+    }
+  }, skip: _skip);
+
   test('an input that does not fit fails its turn with '
       'ContextLimitException (end contextLimit), the session answers '
       'again, and nothing of its history is dropped', () async {

@@ -121,14 +121,6 @@ bool keepLastSendAfter(NativeTurnEnd how, NativeLastTurnEnd? end) =>
 /// The absl status code `RESOURCE_EXHAUSTED`.
 const absResourceExhausted = 8;
 
-/// Whether native ended a turn [NativeLastTurnEnd.failed] with
-/// `RESOURCE_EXHAUSTED` ([code]): a resource other than the context window
-/// ran out (a failed allocation; section 23 ends the context-window cases
-/// [NativeLastTurnEnd.contextFull]). The prefill failed, the conversation
-/// fails every later send, and native does not rewind it.
-bool turnRanOutOfResources(NativeLastTurnEnd? end, int? code) =>
-    end == NativeLastTurnEnd.failed && code == absResourceExhausted;
-
 /// What an NPU engine says, once, when the context window its executor runs
 /// with ([window], read after the first turn) is not the `maxTokens` it was
 /// [asked] for; null when they agree. An NPU bundle has one compiled KV cache,
@@ -396,11 +388,14 @@ abstract class ConversationHandle {
   /// last turn: rewinds to before that turn, then puts the turn back — the
   /// message exactly as it was sent, media included, followed by
   /// [partialReply] — without generating, so the model keeps the exchange.
+  /// With [partialReply] null the turn is taken out instead: rewound to
+  /// before its message, with nothing put back (a turn stopped before it
+  /// produced anything, or one whose input did not fit).
   ///
   /// [StoppedTurnRewind.unsupported] when this conversation cannot rewind;
   /// throws [StoppedTurnRewindException] when the native rewind failed.
   Future<StoppedTurnRewind> rewindStoppedTurn(
-    Map<String, Object?> partialReply,
+    Map<String, Object?>? partialReply,
   );
 
   SessionMetrics getSessionMetrics();
@@ -575,7 +570,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
 
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
-    Map<String, Object?> partialReply,
+    Map<String, Object?>? partialReply,
   ) async {
     _assertOpen();
     if (!_client._hasTurnRewind) return StoppedTurnRewind.unsupported;
@@ -584,7 +579,9 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     if (last == null) return StoppedTurnRewind.notCancelled;
     // The sent message is spliced in as text: it can carry megabytes of base64
     // media, and decoding it only to encode it again buys nothing.
-    final exchangeJson = '[${last.messageJson},${jsonEncode(partialReply)}]';
+    final exchangeJson = partialReply == null
+        ? null
+        : '[${last.messageJson},${jsonEncode(partialReply)}]';
     _lastSend = null;
     return _client._rewindStoppedTurnOn(
       _conversation!,
@@ -692,7 +689,7 @@ _createConversationOffMainIsolate({
 Future<({int code, int lastTurnEnd, String? message})>
 _rewindCancelledTurnOffMainIsolate({
   required int conversationAddr,
-  required String exchangeJson,
+  required String? exchangeJson,
   String? extraContext,
 }) {
   final isolateLogLevel = edgeAiLogLevel;
@@ -700,7 +697,8 @@ _rewindCancelledTurnOffMainIsolate({
     edgeAiLogLevel = isolateLogLevel;
     // Plain open, as above: only called on a client with a loaded engine.
     final b = LiteRtLmBindings(openLiteRtLmLibrary());
-    final exchange = exchangeJson.toNativeUtf8();
+    // NULL: the stopped send is taken out, nothing is put back.
+    final exchange = exchangeJson?.toNativeUtf8() ?? nullptr;
     final extra = extraContext?.toNativeUtf8() ?? nullptr;
     // -1 until native writes it: a library that never does is not taken for
     // one that reported "nothing was sent".
@@ -719,7 +717,7 @@ _rewindCancelledTurnOffMainIsolate({
       final message = code == liteRtLmStatusOk ? null : b.lastError();
       return (code: code, lastTurnEnd: lastTurnEnd.value, message: message);
     } finally {
-      malloc.free(exchange);
+      if (exchange != nullptr) malloc.free(exchange);
       if (extra != nullptr) malloc.free(extra);
       malloc.free(lastTurnEnd);
     }
@@ -873,7 +871,7 @@ sendOffMainIsolate = Isolate.run;
 @visibleForTesting
 Future<({int code, int lastTurnEnd, String? message})> Function({
   required int conversationAddr,
-  required String exchangeJson,
+  required String? exchangeJson,
   String? extraContext,
 })
 rewindOffMainIsolate = _rewindCancelledTurnOffMainIsolate;
@@ -1391,6 +1389,11 @@ class LiteRtLmFfiClient {
     Pointer<LiteRtLmConversation> conv,
     String messageJson,
   ) => _sendMessageStreamRawOn(conv, messageJson, thinking: false);
+
+  /// Test seam: whether a send on [conv] has started (`_sentConvs`).
+  @visibleForTesting
+  bool hasSentForTest(Pointer<LiteRtLmConversation> conv) =>
+      _sentConvs.contains(conv);
 
   /// Test seam: what a handle's `close` does to its conversation.
   @visibleForTesting
@@ -2924,7 +2927,7 @@ class LiteRtLmFfiClient {
           await _guardCreate(() async {
             final create = virtualCreateForTest;
             final conv = create != null
-                ? await create()
+                ? await create(historyJson)
                 : await _createRawConversation(
                     systemMessage: systemMessage,
                     toolsJson: toolsJson,
@@ -3018,7 +3021,8 @@ class LiteRtLmFfiClient {
   /// virtual turn creates (registered live), and its send (a turn from
   /// [newTurnForTest]).
   @visibleForTesting
-  Future<Pointer<LiteRtLmConversation>> Function()? virtualCreateForTest;
+  Future<Pointer<LiteRtLmConversation>> Function(String? historyJson)?
+  virtualCreateForTest;
   @visibleForTesting
   NativeTurnStream<Pointer<LiteRtLmConversation>> Function(
     Pointer<LiteRtLmConversation> conv,
@@ -3481,7 +3485,7 @@ class LiteRtLmFfiClient {
   /// Throws [StoppedTurnRewindException] when the conversation must be rebuilt.
   Future<StoppedTurnRewind> _rewindStoppedTurnOn(
     Pointer<LiteRtLmConversation> conv, {
-    required String exchangeJson,
+    required String? exchangeJson,
     String? extraContext,
   }) async {
     if (!_hasTurnRewind) return StoppedTurnRewind.unsupported;
@@ -3729,13 +3733,13 @@ class LiteRtLmFfiClient {
       ended.then((_) {
         final record = _lastTurnEnds[conv];
         _virtualTurnEnds[token] = record;
-        // A turn native ended context_full, or failed for want of resources
-        // (RESOURCE_EXHAUSTED without section 23's context-window mark):
-        // every later send on the conversation fails until it is rewound,
-        // and the second is never rewound.
+        // A turn native ended context_full or failed (a decode error, a
+        // resource other than the window): it is taken out of the session
+        // (decision W), and the shared conversation, which still holds it or
+        // fails every later send, is rebuilt from the session's history.
         if (record != null &&
             (record.end == NativeLastTurnEnd.contextFull ||
-                turnRanOutOfResources(record.end, record.code))) {
+                record.end == NativeLastTurnEnd.failed)) {
           _virtualConvStopped = true;
         }
       }),

@@ -131,7 +131,7 @@ void main() {
       rewindOffMainIsolate =
           ({
             required int conversationAddr,
-            required String exchangeJson,
+            required String? exchangeJson,
             String? extraContext,
           }) async => (
             code: 0,
@@ -251,6 +251,9 @@ void main() {
       expect(await text, ['Hi']);
       await pumpEventQueue();
       expect(deletes, [conv.address]);
+      // The call's result came before the turn's end, so it could not mark a
+      // conversation already deleted as sent.
+      expect(client.hasSentForTest(conv), isFalse);
     });
   });
 }

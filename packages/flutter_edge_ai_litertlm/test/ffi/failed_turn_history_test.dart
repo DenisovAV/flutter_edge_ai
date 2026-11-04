@@ -3,55 +3,14 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'dart:ffi';
 import 'dart:async';
-// A failed turn stays in a session's history (a rebuild replays it) unless
-// native ended it context_full (section 23): that input was refused before
-// the model saw it. Both conversation handles follow one rule.
-import 'dart:io';
+// Virtual sessions' turn ends, read when native ends each turn, and the
+// rebuild of the shared conversation after a failed turn (decision W: a
+// failed turn is taken back on both sides).
 
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test(
-    'only a context_full turn and a refused send did not reach the model',
-    () {
-      for (final end in NativeLastTurnEnd.values) {
-        expect(
-          failedTurnReachedModel(end),
-          end != NativeLastTurnEnd.contextFull &&
-              end != NativeLastTurnEnd.refused,
-          reason: '$end',
-        );
-      }
-      expect(failedTurnReachedModel(null), isTrue);
-      expect(
-        failedTurnReachedModel(NativeLastTurnEnd.failed, absResourceExhausted),
-        isFalse,
-        reason: 'a resource ran out: the prefill failed',
-      );
-      expect(failedTurnReachedModel(NativeLastTurnEnd.failed, 13), isTrue);
-    },
-  );
-
-  test('the recovering handle and the virtual sessions both follow it', () {
-    final source = File(
-      'lib/src/ffi/ffi_inference_model.dart',
-    ).readAsStringSync();
-    expect(
-      source,
-      contains('failedTurnReachedModel(_live.lastTurnEnd, _live.lastTurnCode)'),
-      reason: 'RecoveringConversationHandle',
-    );
-    expect(
-      source,
-      contains(
-        'if (!failedTurnReachedModel(lastTurnEnd, lastTurnCode)) recorded = true;',
-      ),
-      reason: '_VirtualConversationHandle',
-    );
-  });
-
   group('virtual turn ends', () {
     final conv = Pointer<LiteRtLmConversation>.fromAddress(0x1000);
 
@@ -138,8 +97,8 @@ void main() {
       expect(client.virtualLastTurnEnd(a), isNull);
     });
 
-    test('a turn that ran out of resources also marks the shared conversation '
-        'for a rebuild', () async {
+    test('any failed turn (here one that ran out of resources) marks the '
+        'shared conversation for a rebuild', () async {
       final client = LiteRtLmFfiClient()..registerLiveForTest(conv);
       final turns = NativeTurns<Pointer<LiteRtLmConversation>>(
         cancelNative: (_) {},
@@ -148,17 +107,14 @@ void main() {
       final send = NativeTurnStream(turns, conv);
       final a = Object();
       client
-        ..recordTurnEndForTest(
-          conv,
-          NativeLastTurnEnd.failed,
-          code: absResourceExhausted,
-        )
+        ..recordTurnEndForTest(conv, NativeLastTurnEnd.failed, code: 8)
         ..watchVirtualTurnEnd(a, conv, send.turn.ended);
       final text = send.stream.toList();
       send.failed(Exception('Stream error: RESOURCE_EXHAUSTED'));
       await expectLater(text, throwsException);
       await pumpEventQueue();
-      expect(client.virtualLastTurnCode(a), absResourceExhausted);
+      expect(client.virtualLastTurnCode(a), 8);
+      expect(client.virtualLastTurnEnd(a), NativeLastTurnEnd.failed);
       expect(client.virtualConversationNeedsRebuildForTest, isTrue);
     });
 
@@ -169,7 +125,7 @@ void main() {
       final convs = <Pointer<LiteRtLmConversation>>[];
       final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
       client
-        ..virtualCreateForTest = () async {
+        ..virtualCreateForTest = (_) async {
           final c = Pointer<LiteRtLmConversation>.fromAddress(
             0x3000 + 16 * convs.length,
           );

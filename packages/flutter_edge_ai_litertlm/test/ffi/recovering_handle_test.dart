@@ -29,6 +29,9 @@ class _Conversation implements ConversationHandle {
   /// When set, the next turn fails with it after its first chunk.
   Object? failWith;
 
+  /// When set, the next held turn produces nothing before its gate opens.
+  bool silent = false;
+
   /// When set, the next turn yields these chunks before its first one.
   List<String>? lead;
 
@@ -42,7 +45,9 @@ class _Conversation implements ConversationHandle {
       for (final chunk in leading ?? const <String>[]) {
         controller.add(chunk);
       }
-      controller.add('Hello');
+      final quiet = silent;
+      silent = false;
+      if (!quiet) controller.add('Hello');
       final gate = hold;
       hold = null;
       if (gate != null) await gate.future;
@@ -101,14 +106,14 @@ class _Conversation implements ConversationHandle {
   Object rewindOutcome = StoppedTurnRewind.unsupported;
 
   /// The partial replies [rewindStoppedTurn] was given.
-  final rewinds = <Map<String, Object?>>[];
+  final rewinds = <Map<String, Object?>?>[];
 
   /// When set, a rewind waits on it — a native prefill in flight.
   Completer<void>? rewindGate;
 
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
-    Map<String, Object?> partialReply,
+    Map<String, Object?>? partialReply,
   ) async {
     rewinds.add(partialReply);
     await rewindGate?.future;
@@ -236,42 +241,58 @@ void main() {
     expect(reopened, hasLength(1));
   });
 
-  test('a failed turn is not a stop: no rebuild replays it into the same '
-      'failure', () async {
+  /// The user messages a rebuild of [c] replayed.
+  List<Object?> seededUsers(_Conversation c) => [
+    for (final m in jsonDecode(c.seed ?? '[]') as List<dynamic>)
+      if ((m as Map)['role'] == 'user')
+        ((m['content'] as List).single as Map)['text'],
+  ];
+
+  test('a failed turn is taken back (decision W): the next turn runs on a '
+      'conversation rebuilt without it', () async {
+    expect(await handle.chat('zero').join(), 'Hello there.');
     first.failWith = StateError('native error');
     await expectLater(handle.chat('one').join(), throwsStateError);
     await handle.chat('two').join();
-    expect(reopened, isEmpty);
-    expect(first.sent, ['one', 'two']);
+    expect(first.closed, isTrue);
+    expect(seededUsers(reopened.single), ['zero']);
+    expect(reopened.single.sent, ['two']);
   });
 
-  for (final contextFull in [true, false]) {
-    test(
-      'a failed turn native ended ${contextFull ? 'context_full is not' : 'otherwise is'} '
-      'in the history a later rebuild replays',
-      () async {
-        first
-          ..failWith = StateError('RESOURCE_EXHAUSTED')
-          ..turnEnd = contextFull ? NativeLastTurnEnd.contextFull : null;
-        await expectLater(handle.chat('one').join(), throwsStateError);
-        first.turnEnd = NativeLastTurnEnd.completed;
-        // The context_full turn is recovered by a rewind at the next turn;
-        // the stop after it is then rebuilt, replaying the history.
-        first.rewindOutcome = StoppedTurnRewind.rewound;
-        await stopMidTurn('two', first);
-        first.rewindOutcome = StoppedTurnRewind.unsupported;
-        await handle.chat('three').join();
+  test('a turn stopped before it produced anything is rewound out, nothing '
+      'put back, and is not in the history (Rule A)', () async {
+    first.rewindOutcome = StoppedTurnRewind.rewound;
+    expect(await handle.chat('zero').join(), 'Hello there.');
+    final gate = first.hold = Completer<void>();
+    first.silent = true;
+    final pending = handle.chat('one').join();
+    await pumpEventQueue();
+    handle.cancelGeneration();
+    gate.complete();
+    expect(await pending, isEmpty);
+    await handle.chat('two').join();
+    expect(first.rewinds, [null], reason: 'taken out, nothing put back');
+    expect(reopened, isEmpty);
+    // A later rebuild replays the history: the stopped turn is not in it.
+    first.rewindOutcome = StoppedTurnRewind.unsupported;
+    await stopMidTurn('three', first);
+    await handle.chat('four').join();
+    expect(seededUsers(reopened.single), ['zero', 'two', 'three']);
+  });
 
-        final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
-        final users = [
-          for (final m in seed)
-            if (m['role'] == 'user')
-              ((m['content'] as List).single as Map)['text'],
-        ];
-        expect(users, contextFull ? ['two'] : ['one', 'two']);
-      },
-    );
-  }
+  test('a turn stopped before anything that native had ended by itself is '
+      'rebuilt without it', () async {
+    first.rewindOutcome = StoppedTurnRewind.notCancelled;
+    final gate = first.hold = Completer<void>();
+    first.silent = true;
+    final pending = handle.chat('one').join();
+    await pumpEventQueue();
+    handle.cancelGeneration();
+    gate.complete();
+    await pending;
+    await handle.chat('two').join();
+    expect(seededUsers(reopened.single), isEmpty);
+  });
 
   test(
     'tool results sent after a stop go to the rebuilt conversation',
@@ -825,12 +846,22 @@ void main() {
       );
     });
 
-    test('a turn that failed otherwise is not recovered: it is no full '
-        'context', () async {
+    test('a turn that failed otherwise is rebuilt without it, not rewound '
+        '(native does not rewind a failed send)', () async {
       first.rewindOutcome = StoppedTurnRewind.rewound;
       first
         ..failWith = Exception('Stream error: INTERNAL')
         ..turnEnd = NativeLastTurnEnd.failed;
+      await expectLater(handle.chat('one').join(), throwsException);
+      await handle.chat('two').join();
+      expect(first.rewinds, isEmpty);
+      expect(reopened, hasLength(1));
+    });
+
+    test('a send refused before it started leaves nothing to undo', () async {
+      first
+        ..failWith = Exception('refused')
+        ..turnEnd = NativeLastTurnEnd.refused;
       await expectLater(handle.chat('one').join(), throwsException);
       await handle.chat('two').join();
       expect(first.rewinds, isEmpty);
@@ -908,14 +939,14 @@ void main() {
       expect(reopened.single.sent, ['two']);
     });
 
-    test('another failure is neither recovered nor taken out', () async {
+    test('another failure is taken out the same way', () async {
       first
         ..failWith = Exception('Stream error: INTERNAL')
         ..turnEnd = NativeLastTurnEnd.failed
         ..turnCode = 13;
       await expectLater(handle.chat('one').join(), throwsException);
       await handle.chat('two').join();
-      expect(reopened, isEmpty);
+      expect(seededUsers(reopened.single), isEmpty);
     });
   });
 }

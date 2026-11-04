@@ -1197,8 +1197,15 @@ class RecoveringConversationHandle implements ConversationHandle {
   bool _stopped = false;
 
   /// The reply the stopped turn had produced, which a rewind puts back after
-  /// its message. Null when the next recovery must rebuild instead.
+  /// its message. Null when the next recovery must rebuild instead, unless
+  /// [_takeBack] is set.
   Map<String, Object?>? _stoppedReply;
+
+  /// The next recovery rewinds the last turn out, with nothing put back: a
+  /// turn stopped before it produced anything (Rule A), or one whose input
+  /// did not fit the window (§23). Where it cannot rewind, it rebuilds from
+  /// the history, which the turn is not in.
+  bool _takeBack = false;
 
   /// Why a conversation that can rewind is rebuilt instead, for the warning
   /// release builds print when that loses earlier images and audio.
@@ -1266,22 +1273,25 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// it can, and rebuilds it when it cannot or the rewind fails.
   Future<void> _recover() async {
     final reply = _stoppedReply;
+    final takeBack = _takeBack;
     final rebuildBecause = _rebuildBecause;
     _stoppedReply = null;
+    _takeBack = false;
     _rebuildBecause = null;
     _recovering = true;
     try {
-      if (canRewind && reply != null) {
+      if (canRewind && (reply != null || takeBack)) {
         StoppedTurnRewind? result;
         StoppedTurnRewindException? failure;
         try {
-          result = await _live.rewindStoppedTurn(reply);
+          result = await _live.rewindStoppedTurn(takeBack ? null : reply);
         } on StoppedTurnRewindException catch (e) {
           failure = e;
         } catch (_) {
           // Not a rewind failure (a closed client, a bug): the conversation is
           // as the stop left it, so the next turn tries again from the start.
           _stoppedReply = reply;
+          _takeBack = takeBack;
           _rebuildBecause = rebuildBecause;
           rethrow;
         }
@@ -1294,13 +1304,17 @@ class RecoveringConversationHandle implements ConversationHandle {
               'turn or a full context',
             );
             return;
-          case StoppedTurnRewind.notCancelled:
+          case StoppedTurnRewind.notCancelled when !takeBack:
             _stopped = false;
             edgeAiLog(
               '[FfiInferenceModel] the stopped turn had ended natively before '
               'the stop; the conversation is kept as it is',
             );
             return;
+          case StoppedTurnRewind.notCancelled:
+            // The turn to take out had ended natively, so native keeps it:
+            // only a rebuild leaves it out.
+            break;
           case StoppedTurnRewind.unsupported:
           case null:
             break;
@@ -1348,6 +1362,8 @@ class RecoveringConversationHandle implements ConversationHandle {
     // finished turn's thoughts out of the context.
     final visible = StringBuffer();
     final rawReply = StringBuffer();
+    // Any non-empty chunk, thoughts included, as core's chat counts text.
+    var streamed = false;
     var sent = false;
     var finished = false;
     var failed = false;
@@ -1412,6 +1428,7 @@ class RecoveringConversationHandle implements ConversationHandle {
         final text = raw
             ? LiteRtLmFfiClient.extractTextFromResponse(chunk)
             : chunk;
+        if (text.isNotEmpty) streamed = true;
         if (!text.startsWith(thoughtChunkPrefix)) visible.write(text);
         if (raw) rawReply.write(chunk);
         yield chunk;
@@ -1442,49 +1459,46 @@ class RecoveringConversationHandle implements ConversationHandle {
         // Stopped by cancelGeneration, or abandoned mid-turn — which cancels
         // native the same way — leaves the conversation answering nothing.
         final stopped = _stopRequested || (!finished && !failed);
-        if (stopped && latest) _stopped = true;
         final reply = _VirtualConversationHandle._assistantTurn(
           visible.toString(),
           rawReply.toString(),
         );
-        if (stopped && latest) _stoppedReply = reply;
-        // The message reached the model, so it belongs in the history a
-        // rebuild replays — with whatever of the reply was produced. Except a
-        // turn native ended context_full (section 23): its input was refused
-        // before it reached the model, and recording it would replay into a
-        // rebuild a message the model never saw (core 2.6.0 design §6.4b; L3
-        // recovers such a turn).
-        if (!failed ||
-            failedTurnReachedModel(_live.lastTurnEnd, _live.lastTurnCode)) {
+        final end = _live.lastTurnEnd;
+        if (failed) {
+          // Decision W: a failed turn is taken back on both sides, never
+          // replayed. One native ended context_full (section 23) is rewound
+          // out (native drops its input; it fails every later send until
+          // then); one native refused before it started left nothing to undo;
+          // any other (a decode error, a resource other than the window) is
+          // rebuilt without it, as native does not rewind a failed send.
+          if (latest && end != NativeLastTurnEnd.refused) {
+            _stopped = true;
+            _stoppedReply = null;
+            if (end == NativeLastTurnEnd.contextFull) {
+              _takeBack = true;
+              _rebuildBecause = 'the context window was full';
+            } else {
+              _rebuildBecause = 'the last turn failed';
+            }
+          }
+        } else if (stopped && !streamed) {
+          // Rule A: a turn stopped before it produced anything is taken back
+          // on both sides, rewound out of the conversation.
+          if (latest) {
+            _stopped = true;
+            _stoppedReply = null;
+            _takeBack = true;
+          }
+        } else {
+          if (stopped && latest) {
+            _stopped = true;
+            _stoppedReply = reply;
+          }
+          // The message reached the model, so it belongs in the history a
+          // rebuild replays — with whatever of the reply was produced.
           _history
             ..add(message)
             ..add(reply);
-        }
-        // Section 23: a send whose input did not fit what the window has left
-        // leaves the conversation failing every later send. The next turn
-        // rewinds it to this turn's checkpoint (native drops the input and
-        // ignores the reply put back) or, where it cannot rewind, rebuilds it
-        // from the history above, which this turn is not in.
-        if (failed &&
-            !stopped &&
-            latest &&
-            _live.lastTurnEnd == NativeLastTurnEnd.contextFull) {
-          _stopped = true;
-          _stoppedReply = reply;
-          _rebuildBecause = 'the context window was full';
-        }
-        // A send that failed for want of another resource (a failed
-        // allocation: RESOURCE_EXHAUSTED without section 23's context-window
-        // mark) leaves the conversation failing every later send, and native
-        // does not rewind it: the next turn rebuilds it from the history
-        // above, which this turn is not in.
-        if (failed &&
-            !stopped &&
-            latest &&
-            turnRanOutOfResources(_live.lastTurnEnd, _live.lastTurnCode)) {
-          _stopped = true;
-          _stoppedReply = null;
-          _rebuildBecause = 'the engine ran out of resources for the last turn';
         }
       }
       done.complete();
@@ -1568,7 +1582,7 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// Recovery after a stop is this handle's own job, done at the next turn.
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
-    Map<String, Object?> partialReply,
+    Map<String, Object?>? partialReply,
   ) async => StoppedTurnRewind.unsupported;
 
   @override
@@ -1610,19 +1624,6 @@ class RecoveringConversationHandle implements ConversationHandle {
 ///
 /// Same-session follow-up turns reuse the live conversation (no rebuild);
 /// only switching to a different session pays the teardown+replay cost.
-/// Whether a turn that failed still reached the model, so a session's
-/// history keeps it for the replay a rebuild does: every failed turn but one
-/// native ended context_full or refused before it started (section 23),
-/// whose input the model never saw, and one that failed for want of
-/// resources ([turnRanOutOfResources], [code]), whose prefill failed and
-/// whose conversation is rebuilt without it. Both [RecoveringConversationHandle] and the virtual
-/// sessions follow it; L3 recovers such a turn (core 2.6.0 design §6.4b).
-@visibleForTesting
-bool failedTurnReachedModel(NativeLastTurnEnd? end, [int? code]) =>
-    end != NativeLastTurnEnd.contextFull &&
-    end != NativeLastTurnEnd.refused &&
-    !turnRanOutOfResources(end, code);
-
 class _VirtualConversationHandle implements ConversationHandle {
   _VirtualConversationHandle({
     required this.client,
@@ -1695,14 +1696,11 @@ class _VirtualConversationHandle implements ConversationHandle {
     final assistantText = StringBuffer();
     final assistantRaw = StringBuffer();
     var recorded = false;
+    var failed = false;
     void record() {
       if (recorded) return;
       recorded = true;
       // Record both turns so the next switch back replays the full context.
-      // The message was already fed live into the native conversation, so it
-      // must land in history even if generation errored partway — otherwise a
-      // session switch+rebuild would replay a context that omits a turn the
-      // model actually saw, silently diverging native and Dart state.
       _history.add(message);
       _history.add(
         _assistantTurn(assistantText.toString(), assistantRaw.toString()),
@@ -1728,15 +1726,18 @@ class _VirtualConversationHandle implements ConversationHandle {
         assistantRaw.write(rawChunk);
         yield raw ? rawChunk : chunkText;
       }
-      record();
+      // A stop ends the stream cleanly: a stopped turn that produced nothing
+      // is not recorded (Rule A).
+      if (!_stopRequested || assistantText.isNotEmpty) record();
     } catch (_) {
-      // A turn native ended context_full never reached the model (section
-      // 23): replaying it would feed a rebuild a message the model never saw.
-      if (!failedTurnReachedModel(lastTurnEnd, lastTurnCode)) recorded = true;
+      // Decision W: a failed turn is taken back on both sides; the shared
+      // conversation is rebuilt from this history, which it is not in.
+      failed = true;
       rethrow;
     } finally {
-      // Also record on error/cancel so the user turn isn't lost.
-      record();
+      // A stopped or abandoned turn keeps what it produced, as core's chat
+      // does; one that produced nothing is taken back (Rule A).
+      if (!failed && assistantText.isNotEmpty) record();
       _inFlight = false;
       done.complete();
     }
@@ -1833,7 +1834,7 @@ class _VirtualConversationHandle implements ConversationHandle {
   /// history at its next turn; there is no media to keep.
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
-    Map<String, Object?> partialReply,
+    Map<String, Object?>? partialReply,
   ) async => StoppedTurnRewind.unsupported;
 
   @override

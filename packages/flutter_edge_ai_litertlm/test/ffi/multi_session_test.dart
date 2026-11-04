@@ -76,7 +76,7 @@ class _FakeConversationHandle implements ConversationHandle {
 
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
-    Map<String, Object?> partialReply,
+    Map<String, Object?>? partialReply,
   ) async => StoppedTurnRewind.unsupported;
 
   @override

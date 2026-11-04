@@ -163,6 +163,29 @@ void main() {
     expect(request.maxNumImages, 0);
   });
 
+  test('a GPU load off Android sends no kernel batch size, even where '
+      '/dev/kgsl-3d0 exists (#763)', () async {
+    // The host is not Android; the node is made to exist, so only the
+    // platform check in initialize keeps the flush off.
+    expect(Platform.isAndroid, isFalse);
+    final fs = _AdrenoNodeOverrides();
+
+    await IOOverrides.runWithIOOverrides(
+      () => quietly(
+        () => clientWithoutNativeLibrary().initialize(
+          modelPath: '/models/gemma.litertlm',
+          backend: 'gpu',
+        ),
+      ),
+      fs,
+    );
+
+    final request = requests.single;
+    expect(request.backend, 'gpu');
+    expect(request.kernelBatchSize, isNull);
+    expect(fs.probed, isFalse, reason: 'the GPU is probed on Android only');
+  });
+
   test('the NPU vendor\'s dispatch reaches the request', () async {
     await quietly(
       () => clientWithoutNativeLibrary().initialize(
@@ -252,4 +275,30 @@ void main() {
     expect(copy.blockSigprof, request.blockSigprof);
     expect(copy.listWeightBanks, request.listWeightBanks);
   });
+}
+
+/// A file system on which `/dev/kgsl-3d0`, Adreno's KGSL node, exists.
+final class _AdrenoNodeOverrides extends IOOverrides {
+  bool probed = false;
+
+  @override
+  File createFile(String path) {
+    if (path != '/dev/kgsl-3d0') return super.createFile(path);
+    probed = true;
+    return _ExistingNode(path);
+  }
+}
+
+class _ExistingNode implements File {
+  _ExistingNode(this.path);
+
+  @override
+  final String path;
+
+  @override
+  bool existsSync() => true;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('$path: ${invocation.memberName}');
 }

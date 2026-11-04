@@ -99,25 +99,29 @@ String? thinkingBudgetChannelWarning(
 bool _deviceHasAdrenoGpu() => File('/dev/kgsl-3d0').existsSync();
 
 /// The `hint_kernel_batch_size` a load on [backend] hands LiteRT-LM, or null
-/// to leave the engine's own default (the setter is not called).
+/// to leave the engine's own default (the setter is not called). That default
+/// depends on the model: upstream applies 4 to "generic" models, but
+/// recognized Gemma types aren't generic (engine_settings.cc gates it on
+/// has_generic_model), so gemma4/3/3n get no flush at all.
 ///
-/// #364: by default LiteRT-LM's OpenCL backend dispatches the ENTIRE graph as
-/// one uninterruptible batch (gpu_backend_opencl_litert.cc: "dispatch all
+/// #364: with no flush LiteRT-LM's OpenCL backend dispatches the ENTIRE graph
+/// as one uninterruptible batch (gpu_backend_opencl_litert.cc: "dispatch all
 /// kernels in one batch" when kernel_batch_size<=0). On Adreno that starves
 /// the Flutter raster/compositor thread for a whole prefill (S23 Ultra: raster
 /// p95 6.8ms->123ms; Adreno 616: 149-1424 frames drawn in a request instead
 /// of ~2300). A positive value inserts a clFlush every N ops, giving the
-/// display work interleave points. Upstream auto-applies 4 for "generic"
-/// models, but recognized Gemma types aren't generic (engine_settings.cc gates
-/// the default on has_generic_model), so gemma4/3/3n get NO flush unless we
-/// set it. Measured on dm3q: 4 still janks (p95 63ms), 2 is flat (p95 7.3ms ~=
-/// baseline), so 2 — not 4. It costs Adreno about 8% decode (Adreno 616). NOT
-/// gpu_context_low_priority: it only reorders cross-context submission (no
-/// Adreno preemption of a running dispatch) and measured strictly worse.
+/// display work interleave points. Measured on dm3q: 4 still janks (p95
+/// 63ms), 2 is flat (p95 7.3ms ~= baseline), so 2 — not 4. It costs the
+/// Adreno 616 about 8% decode. NOT gpu_context_low_priority: it only reorders
+/// cross-context submission (no Adreno preemption of a running dispatch) and
+/// measured strictly worse.
 ///
-/// #763: only on Adreno ([isAdreno]). On Mali the flush cut decode 1.7-2.5x
-/// and the UI stays smooth without it (Mali-G615: 111-115 fps during prefill
-/// either way), so every other Android GPU keeps the engine's default.
+/// #763: only on Adreno ([isAdreno]). Measured on one Mali, a Mali-G615: the
+/// UI stays smooth without the flush (111-115 fps during prefill either way),
+/// and decode is 1.6-1.8x faster without it with an animation on screen,
+/// 2.3-2.8x without one. Every GPU that is not an Adreno — older Mali,
+/// PowerVR, Xclipse — gets the engine's default; only the Mali-G615 is
+/// measured.
 ///
 /// Off Android ([isAndroid] false) or off the GPU, null: Metal (iOS/macOS)
 /// doesn't starve the compositor, and the setter symbol only ships in the

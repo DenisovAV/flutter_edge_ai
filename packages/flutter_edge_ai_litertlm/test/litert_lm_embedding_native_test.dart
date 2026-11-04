@@ -4,10 +4,9 @@
 // from the native-v0.18.0-d macOS arm64 dylib through Python ctypes.
 //
 // Opt-in, skipped unless both are present:
-// - the host libLiteRtLm: LITERTLM_DYLIB=<path>, else the hook's download
-//   cache (a macOS dev box has it after any example build). It must be
-//   native-v0.18.0-e or newer — the pass reads the section 14 response
-//   getters, and the first test refuses an older library by name;
+// - the host libLiteRtLm on LiteRT-LM C API 1.0 (native-v0.19.0-a or newer):
+//   LITERTLM_DYLIB=<path>, else the hook's download cache (a macOS dev box
+//   has it after any example build); an older library is not used;
 // - EG2_270M_LITERTLM=<path to embeddinggemma-2-text-270m.litertlm> (the
 //   pinned revision, sha256 2d079ee2…86fb). EG2_440M_LITERTLM (revision
 //   e301f74d, sha256 92dcbea1…2eb0) adds the vision-bundle cases: images
@@ -131,12 +130,28 @@ Uint8List _toneWav(int seconds) {
   return (top1: top1, meanMargin: margins / queries.length, misses: misses);
 }
 
-String? _dylib() => firstExistingPath(
-  hostNativeLibraryCandidates(
+/// The first host libLiteRtLm on C API 1.0 (it exports
+/// `litert_lm_get_api_version`): the pass binds the 1.0 shapes, and an older
+/// library — the download cache of a checkout pinned before 0.19 — would be
+/// read as garbage, not refused.
+String? _dylib() {
+  for (final path in hostNativeLibraryCandidates(
     libFileName: hostNativeLibraryFileName('LiteRtLm'),
     envOverride: Platform.environment['LITERTLM_DYLIB'],
-  ),
-);
+  )) {
+    if (!File(path).existsSync()) continue;
+    try {
+      if (DynamicLibrary.open(
+        path,
+      ).providesSymbol('litert_lm_get_api_version')) {
+        return path;
+      }
+    } on ArgumentError {
+      continue;
+    }
+  }
+  return null;
+}
 
 String? _env(String name) {
   final value = Platform.environment[name];
@@ -161,7 +176,7 @@ void main() {
   final bundle440m = _env('EG2_440M_LITERTLM');
   final bundle740m = _env('EG2_740M_LITERTLM');
   final skip = dylib == null
-      ? 'no host libLiteRtLm in the download cache'
+      ? 'no host libLiteRtLm on C API 1.0'
       : bundle270m == null
       ? 'EG2_270M_LITERTLM is not set'
       : null;
@@ -194,7 +209,7 @@ void main() {
       DynamicLibrary.open(dylib!).providesSymbol,
       library: dylib,
     );
-  }, skip: dylib == null ? 'no host libLiteRtLm in the download cache' : null);
+  }, skip: dylib == null ? 'no host libLiteRtLm on C API 1.0' : null);
 
   test(
     '270m reproduces the golden vectors (X1), ranks every query\'s '
@@ -339,7 +354,7 @@ void main() {
       ),
     );
     await p.close();
-  }, skip: dylib == null ? 'no host libLiteRtLm in the download cache' : null);
+  }, skip: dylib == null ? 'no host libLiteRtLm on C API 1.0' : null);
 
   test(
     '440m: images at 140 tokens — text→image and near-duplicate top-1 on the '

@@ -19,21 +19,28 @@ const _gate = 'native/litert_lm/check_embedding_exports.py';
 /// Imports the gate, gives each fixture library the export table named in
 /// argv[3] (a JSON map of file name to a table: `main` is every symbol the
 /// gate wants from the main library, `litert` adds the LiteRT C functions,
-/// and a `:SYMBOL` suffix removes that one), runs its main on argv[1] with
-/// label argv[2] and prints the exit code last.
+/// `proxy` is the StreamProxy's, `proxy+SYMBOL` adds one, and a `:SYMBOL`
+/// suffix removes one), runs its main on argv[1] with label argv[2] and prints
+/// the exit code last.
 const _driver = r'''
 import importlib.util, json, os, sys
 spec = importlib.util.spec_from_file_location("gate", sys.argv[4])
 gate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate)
 main_symbols = set(gate.REQUIRED + gate.SCORING_SYMBOLS
-                   + gate.THINKING_BUDGET_SYMBOLS + gate.OWN_BUILD_SYMBOLS)
+                   + gate.THINKING_BUDGET_SYMBOLS + gate.OWN_BUILD_SYMBOLS
+                   + gate.LLM_SYMBOLS)
 tables = json.loads(sys.argv[3])
 def exports(path):
     spec = tables[os.path.basename(path)]
-    names = set(main_symbols)
-    if spec.startswith("litert"):
-        names |= set(gate.LITERT_BINDINGS_SYMBOLS)
+    if spec.startswith("proxy"):
+        names = set(gate.STREAM_PROXY_SYMBOLS)
+        if spec.startswith("proxy+"):
+            names.add(spec.split("+", 1)[1])
+    else:
+        names = set(main_symbols)
+        if spec.startswith("litert"):
+            names |= set(gate.LITERT_BINDINGS_SYMBOLS)
     if ":" in spec:
         names.discard(spec.split(":", 1)[1])
     return names
@@ -41,10 +48,26 @@ gate.exports = exports
 print("rc=%d" % gate.main(["gate", sys.argv[1], sys.argv[2]]))
 ''';
 
+/// The StreamProxy file name of the platform in [label].
+String _proxyName(String label) => label.contains('windows')
+    ? 'StreamProxy.dll'
+    : label.contains('android') || label.contains('linux')
+    ? 'libStreamProxy.so'
+    : 'libStreamProxy.dylib';
+
+/// Runs the gate on a fixture bundle of [libraries]; a StreamProxy exporting
+/// its C API 1.0 entry is added unless [withProxy] is false or [libraries]
+/// names one.
 Future<(int, String)> _runGate(
   String label,
-  Map<String, String> libraries,
-) async {
+  Map<String, String> libraries, {
+  bool withProxy = true,
+}) async {
+  libraries = {
+    if (withProxy && !libraries.keys.any((n) => n.contains('StreamProxy')))
+      _proxyName(label): 'proxy',
+    ...libraries,
+  };
   final bundle = await Directory.systemTemp.createTemp('gate-');
   try {
     for (final name in libraries.keys) {
@@ -190,6 +213,44 @@ void main() {
       });
       expect(rc, 1, reason: out);
       expect(out, contains('LiteRtCreateOpaqueOptions'));
+    });
+  }, skip: skip);
+
+  group('the C API 1.0 client', () {
+    test('the main library missing an LLM function it binds fails', () async {
+      final (rc, out) = await _runGate('litertlm-linux_x86_64', {
+        'libLiteRtLm.so': 'main:litert_lm_conversation_get_last_turn_end',
+        'libLiteRt.so': 'litert',
+      });
+      expect(rc, 1, reason: out);
+      expect(out, contains('litert_lm_conversation_get_last_turn_end'));
+    });
+
+    test('no StreamProxy fails', () async {
+      final (rc, out) = await _runGate('litertlm-macos_arm64', {
+        'libLiteRtLm.dylib': 'litert',
+      }, withProxy: false);
+      expect(rc, 1, reason: out);
+      expect(out, contains('libStreamProxy'));
+    });
+
+    test('a StreamProxy without the 1.0 entry fails', () async {
+      final (rc, out) = await _runGate('litertlm-android_arm64', {
+        'libLiteRtLm.so': 'litert',
+        'libStreamProxy.so': 'proxy:stream_proxy_create_v1',
+      });
+      expect(rc, 1, reason: out);
+      expect(out, contains('missing stream_proxy_create_v1'));
+    });
+
+    test('a StreamProxy still exporting a pre-1.0 entry fails', () async {
+      final (rc, out) = await _runGate('litertlm-windows_x86_64', {
+        'LiteRtLm.dll': 'main',
+        'LiteRt.dll': 'litert',
+        'StreamProxy.dll': 'proxy+stream_proxy_create2',
+      });
+      expect(rc, 1, reason: out);
+      expect(out, contains('still exports stream_proxy_create2'));
     });
   }, skip: skip);
 }

@@ -155,7 +155,8 @@ void main() {
       final patch = File('native/litert_lm/patch_c_api.sh').readAsStringSync();
       expect(
         patch,
-        contains('void $liteRtLmOwnBuildSymbol(\\'),
+        // C API 1.0 (LiteRT-LM v0.19.0): every setter returns a status.
+        contains('LiteRtLmStatusCode $liteRtLmOwnBuildSymbol(\\'),
         reason: 'section 4c declares and defines it',
       );
       expect(

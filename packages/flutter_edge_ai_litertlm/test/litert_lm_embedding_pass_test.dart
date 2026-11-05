@@ -3019,9 +3019,10 @@ void main() {
     });
   });
 
-  test('the release gate checks exactly the symbols the pass needs', () {
-    // native/litert_lm/check_embedding_exports.py refuses to publish a
-    // tarball whose libLiteRtLm lacks one; it must ask for the same list.
+  test('the release gate checks the C API 1.0 symbols the pass needs', () {
+    // PR A gates the 0.19 archive before PR B moves the Dart client to C API
+    // 1.0. The current 0.18 pass still reads the retired last-error code, so
+    // that one transitional symbol is deliberately absent from the gate.
     final script = File(
       'native/litert_lm/check_embedding_exports.py',
     ).readAsStringSync();
@@ -3032,7 +3033,12 @@ void main() {
     final required = [
       for (final m in RegExp(r'"([a-z_]+)"').allMatches(list)) m.group(1)!,
     ];
-    expect(required, liteRtLmEmbeddingSymbols);
+    expect(
+      required,
+      liteRtLmEmbeddingSymbols
+          .where((symbol) => symbol != 'litert_lm_get_last_error_code')
+          .toList(),
+    );
   });
 
   test('the bindings do not bind what D23 rules out', () {

@@ -488,7 +488,8 @@ class LiteRtLmEngine
   /// Whether the model at [path] keeps linear attention state
   /// ([readLiteRtLmHasLinearAttentionState]), or null when the file cannot be
   /// read to tell. Then `createSession` rewinds as before and `openSession`
-  /// sessions are rebuilt from text, and the cause is printed once per load:
+  /// sessions are rebuilt from full messages, and the cause is printed once
+  /// per load:
   /// it changes how a stopped turn is recovered.
   static Future<bool?> _readLinearAttentionState(String path) async {
     Object cause;
@@ -503,7 +504,7 @@ class LiteRtLmEngine
     print(
       '[flutter_edge_ai_litertlm] could not read whether this model keeps '
       'linear attention state ($cause): its openSession sessions are rebuilt '
-      'from text after a stop or a full context, never rewound.',
+      'from full messages after a stop or a full context, never rewound.',
     );
     return null;
   }

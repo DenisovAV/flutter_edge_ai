@@ -4,6 +4,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
@@ -17,6 +18,7 @@ void main() {
   late List<String?> seeds;
   late List<NativeTurnStream<Pointer<LiteRtLmConversation>>> sends;
   late List<Pointer<LiteRtLmConversation>> sentOn;
+  late FfiInferenceModel model;
   late InferenceModelSession session;
 
   setUp(() async {
@@ -39,11 +41,13 @@ void main() {
         sentOn.add(c);
         return send;
       };
-    final model = FfiInferenceModel(
+    model = FfiInferenceModel(
       ffiClient: client,
       maxTokens: 1024,
       modelType: ModelType.gemmaIt,
       activeBackend: PreferredBackend.cpu,
+      supportImage: true,
+      supportAudio: true,
       onClose: () {},
     );
     session = await model.openSession();
@@ -71,6 +75,45 @@ void main() {
       ..finished();
     await reply;
   }
+
+  test('a virtual session replays images and audio after another session '
+      'takes the shared conversation', () async {
+    await session.addQueryChunk(
+      Message(
+        text: 'remember this',
+        isUser: true,
+        imageBytes: Uint8List.fromList([1, 2]),
+        audioBytes: Uint8List.fromList([3, 4]),
+      ),
+    );
+    final firstReply = session.getResponseAsync().join();
+    await pumpEventQueue();
+    sends.last
+      ..chunk('{"role":"assistant","content":[{"type":"text","text":"ok"}]}')
+      ..finished();
+    await firstReply;
+
+    final other = await model.openSession();
+    await other.addQueryChunk(const Message(text: 'switch', isUser: true));
+    final otherReply = other.getResponseAsync().join();
+    await pumpEventQueue();
+    sends.last.finished();
+    await otherReply;
+
+    await session.addQueryChunk(const Message(text: 'recall it', isUser: true));
+    final recalled = session.getResponseAsync().join();
+    await pumpEventQueue();
+    sends.last.finished();
+    await recalled;
+
+    final replay = jsonDecode(seeds.last!) as List<dynamic>;
+    expect((replay.first as Map)['content'], [
+      {'type': 'image', 'blob': 'AQI='},
+      {'type': 'audio', 'blob': 'AwQ='},
+      {'type': 'text', 'text': 'remember this'},
+    ]);
+    await other.close();
+  });
 
   test('a failed turn is not replayed: the next turn rebuilds the shared '
       'conversation without it', () async {

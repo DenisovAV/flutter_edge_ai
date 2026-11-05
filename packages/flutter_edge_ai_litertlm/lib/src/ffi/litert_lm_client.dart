@@ -150,6 +150,19 @@ int? kernelBatchSizeFor(
 bool keepLastSendAfter(NativeTurnEnd how, NativeLastTurnEnd? end) =>
     how == NativeTurnEnd.cancelled || end == NativeLastTurnEnd.contextFull;
 
+/// The turn end to expose when `send_message_stream` itself returned an
+/// error. No stream task was started in that case, so the conversation is as
+/// the preceding turn left it. Native 0.19 records failures discovered inside
+/// `SendMessageAsync` (for example, a corrupt image rejected while converting
+/// the input) as `failed`; for recovery purposes they are refusals. Preserve
+/// `context_full`, whose failed prefill does poison the native session and
+/// must be rewound before another send.
+@visibleForTesting
+NativeLastTurnEnd streamStartFailureTurnEnd(NativeLastTurnEnd? recorded) =>
+    recorded == NativeLastTurnEnd.contextFull
+    ? NativeLastTurnEnd.contextFull
+    : NativeLastTurnEnd.refused;
+
 /// The absl status code `RESOURCE_EXHAUSTED`.
 const absResourceExhausted = 8;
 
@@ -3379,6 +3392,11 @@ class LiteRtLmFfiClient {
       // A refused send ends its own turn natively (section 16's EndTurn with
       // the status), as context_full when the input does not fit.
       _recordTurnEnd(conv);
+      final recorded = _lastTurnEnds[conv];
+      _lastTurnEnds[conv] = (
+        end: streamStartFailureTurnEnd(recorded?.end),
+        code: recorded?.code ?? result,
+      );
       send.failed(
         Exception(
           streamStartFailureMessage(

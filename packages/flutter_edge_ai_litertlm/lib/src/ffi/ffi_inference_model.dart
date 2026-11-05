@@ -77,8 +77,8 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   final bool supportAudio;
 
   /// Where a message's images and audio go around its text, in
-  /// [createSession] sessions and in [openSession] sessions backed by a
-  /// native conversation ([OpenSessionBacking.native]).
+  /// [createSession] sessions and all [openSession] sessions, including the
+  /// full-message replay used by [OpenSessionBacking.virtual].
   final MultimodalOrder multimodalOrder;
 
   /// Cap on concurrent [openSession] sessions; null = unlimited.
@@ -87,17 +87,17 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// How each [openSession] session holds its context, decided at load from
   /// the backend and the host ([liteRtLmOpenSessionBacking]): its own native
   /// conversation where that backend ran several live conversations
-  /// correctly, a virtual one (text replay, no media) elsewhere.
+  /// correctly, a virtual one (full-message replay) elsewhere.
   final OpenSessionBacking openSessionBacking;
 
   /// The model keeps linear attention state (a hybrid model such as LFM2.5,
   /// `readLiteRtLmHasLinearAttentionState`): no conversation of it is ever
   /// rewound, since a rewind restores the KV cache but not that state. Null
   /// when the file could not be read to tell: `createSession` then rewinds
-  /// as before, and `openSession` sessions are rebuilt from text.
+  /// as before, and `openSession` sessions are rebuilt from full messages.
   final bool? linearAttentionState;
 
-  /// Why a [createSession] conversation of this model is rebuilt from text
+  /// Why a [createSession] conversation of this model is rebuilt from history
   /// instead of being rewound after a stopped turn or a full context, or null
   /// when it rewinds.
   @visibleForTesting
@@ -358,7 +358,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         await open(),
         reopen: (messagesJson) => open(messagesJson: messagesJson),
         noRewindReason: _noRewindReason,
-      );
+      ).._multimodalOrder = multimodalOrder;
       edgeAiLog(
         '[FfiInferenceModel/perf] createConversation (FFI): ${sessionSw.elapsedMilliseconds - beforeConv}ms',
       );
@@ -490,7 +490,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           first,
           reopen: (messagesJson) => open(messagesJson: messagesJson),
           noRewindReason: openSessionNoRewindReason,
-        );
+        ).._multimodalOrder = multimodalOrder;
       case OpenSessionBacking.virtual:
         // Where several live conversations were not verified on this backend,
         // each session keeps its history in Dart and replays it into one
@@ -504,6 +504,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           sampling: sampling,
           samplingExplicit: !explicit.isEmpty,
           maxOutputTokens: maxOutputTokens,
+          multimodalOrder: multimodalOrder,
         );
     }
 
@@ -1124,8 +1125,8 @@ const thoughtChunkPrefix = '<|channel>thought\n';
 /// NPU, whose executor rolls back one token at most, on a model with linear
 /// attention state, which a rewind cannot restore, or on a libLiteRtLm without
 /// the rewind — it replaces the conversation with a new one seeded with the
-/// history this handle records, as a `messages_json` preface, which keeps the
-/// text of earlier turns only.
+/// history this handle records, as a `messages_json` preface, including image
+/// and audio parts.
 ///
 /// A turn native ended `context_full` (§23: its input did not fit what the
 /// window has left) leaves the conversation failing every later send. The
@@ -1150,7 +1151,7 @@ class RecoveringConversationHandle implements ConversationHandle {
     this.windDownTimeout = _windDownTimeout,
   });
 
-  /// Why this conversation is never rewound and is rebuilt from text instead
+  /// Why this conversation is never rewound and is rebuilt from history instead
   /// (the NPU, a model with linear attention state), or null when a stopped
   /// turn and a full context are rewound before falling back to a rebuild.
   final String? noRewindReason;
@@ -1167,6 +1168,10 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// Opens a conversation with this session's config, seeded with
   /// [messagesJson] when given.
   final Future<ConversationHandle> Function(String? messagesJson) reopen;
+
+  /// Kept private so full-message recovery does not enlarge this test-facing
+  /// class's public constructor. The owning model sets its configured order.
+  MultimodalOrder _multimodalOrder = MultimodalOrder.imagesAudioText;
 
   /// Every turn so far, as the messages a rebuild replays.
   final List<Map<String, Object?>> _history = [];
@@ -1207,17 +1212,12 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// the history, which the turn is not in.
   bool _takeBack = false;
 
-  /// Why a conversation that can rewind is rebuilt instead, for the warning
-  /// release builds print when that loses earlier images and audio.
+  /// Why a conversation that can rewind is rebuilt instead.
   String? _rebuildBecause;
 
   /// True while the conversation is being rewound or rebuilt. Nothing is
   /// generating then, and a native cancel would abort the rewind's prefill.
   bool _recovering = false;
-
-  /// Images and audio are not replayed — the preface is text — so a rebuild
-  /// after a multimodal turn says so once instead of silently forgetting.
-  bool _historyHasMedia = false;
 
   bool _closed = false;
 
@@ -1240,29 +1240,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       '[FfiInferenceModel] rebuilt the conversation after a stopped turn or '
       'a full context (${_history.length} messages replayed)',
     );
-    if (_historyHasMedia) {
-      edgeAiLog(
-        '[FfiInferenceModel] images and audio from earlier turns are not '
-        'replayed after a stop — the rebuilt conversation has their text only',
-        level: EdgeAiLogLevel.info,
-      );
-    }
   }
-
-  /// Says once, in release builds too, that a conversation that cannot rewind
-  /// was rebuilt without the images and audio of earlier turns.
-  void _noteMediaLostWithoutRewind() {
-    if (!_historyHasMedia || _mediaLossNoted) return;
-    _mediaLossNoted = true;
-    // ignore: avoid_print
-    print(
-      '[flutter_edge_ai_litertlm] rebuilding the conversation from text, '
-      'without the images and audio of earlier turns: $noRewindReason. Shown '
-      'once per session.',
-    );
-  }
-
-  bool _mediaLossNoted = false;
 
   /// The recovery in progress. A turn that starts meanwhile waits for it, and
   /// its wind-down bound does not run out while a long rewind (an audio clip
@@ -1325,19 +1303,15 @@ class RecoveringConversationHandle implements ConversationHandle {
           // ignore: avoid_print
           print(
             '[flutter_edge_ai_litertlm] could not rewind the conversation '
-            'after a stopped turn or a full context ($failure); rebuilding it'
-            '${_historyHasMedia ? ', without the images and audio of earlier '
-                      'turns' : ''}',
+            'after a stopped turn or a full context ($failure); rebuilding it',
           );
         }
-      } else if (canRewind && rebuildBecause != null && _historyHasMedia) {
+      } else if (canRewind && rebuildBecause != null) {
         // ignore: avoid_print
         print(
-          '[flutter_edge_ai_litertlm] rebuilding the conversation, without '
-          'the images and audio of earlier turns: $rebuildBecause',
+          '[flutter_edge_ai_litertlm] rebuilding the conversation: '
+          '$rebuildBecause',
         );
-      } else if (!canRewind) {
-        _noteMediaLostWithoutRewind();
       }
       await _rebuild();
     } finally {
@@ -1352,6 +1326,7 @@ class RecoveringConversationHandle implements ConversationHandle {
     Map<String, Object?> message,
     Stream<String> Function(ConversationHandle live) send, {
     required bool raw,
+    bool rebuildStoppedAudio = false,
   }) async* {
     if (_closed) throw StateError('Conversation handle is closed');
     final epoch = _stopEpoch;
@@ -1495,7 +1470,16 @@ class RecoveringConversationHandle implements ConversationHandle {
         } else {
           if (stopped && latest) {
             _stopped = true;
-            _stoppedReply = reply;
+            if (rebuildStoppedAudio) {
+              // Native 0.19's cancelled-turn rewind loses a stopped turn's
+              // audio on some CPU and desktop GPU executors. Rebuild from the
+              // full multimodal history instead; the partial assistant reply
+              // below is retained exactly as Rule A requires.
+              _stoppedReply = null;
+              _rebuildBecause = 'the stopped turn carried audio';
+            } else {
+              _stoppedReply = reply;
+            }
           }
           // The message reached the model, so it belongs in the history a
           // rebuild replays — with whatever of the reply was produced.
@@ -1508,19 +1492,21 @@ class RecoveringConversationHandle implements ConversationHandle {
     }
   }
 
-  /// The user message as a rebuild replays it: its text. Media is noted, not
-  /// kept — see [_historyHasMedia].
-  Map<String, Object?> _textOnly(
+  /// The complete user message a rebuild replays, including media.
+  Map<String, Object?> _message(
     String text,
     List<Uint8List>? imageBytes,
     Uint8List? audioBytes,
-  ) {
-    if ((imageBytes?.isNotEmpty ?? false) || audioBytes != null) {
-      _historyHasMedia = true;
-    }
-    return jsonDecode(LiteRtLmFfiClient.buildMessageJson(text))
-        as Map<String, Object?>;
-  }
+  ) =>
+      jsonDecode(
+            LiteRtLmFfiClient.buildMessageJson(
+              text,
+              imagesBytes: imageBytes,
+              audioBytes: audioBytes,
+              order: _multimodalOrder,
+            ),
+          )
+          as Map<String, Object?>;
 
   @override
   Future<int?> tokenCount(String text) => _live.tokenCount(text);
@@ -1532,7 +1518,7 @@ class RecoveringConversationHandle implements ConversationHandle {
     Uint8List? audioBytes,
     bool enableThinking = false,
   }) => _turn(
-    _textOnly(text, imageBytes, audioBytes),
+    _message(text, imageBytes, audioBytes),
     (live) => live.chat(
       text,
       imageBytes: imageBytes,
@@ -1540,6 +1526,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       enableThinking: enableThinking,
     ),
     raw: false,
+    rebuildStoppedAudio: audioBytes != null,
   );
 
   @override
@@ -1549,7 +1536,7 @@ class RecoveringConversationHandle implements ConversationHandle {
     Uint8List? audioBytes,
     bool enableThinking = false,
   }) => _turn(
-    _textOnly(text, imageBytes, audioBytes),
+    _message(text, imageBytes, audioBytes),
     (live) => live.chatRaw(
       text,
       imageBytes: imageBytes,
@@ -1557,6 +1544,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       enableThinking: enableThinking,
     ),
     raw: true,
+    rebuildStoppedAudio: audioBytes != null,
   );
 
   @override
@@ -1617,12 +1605,12 @@ class RecoveringConversationHandle implements ConversationHandle {
 /// On LiteRT-LM 0.18 the engine allowed only ONE live conversation at a time
 /// (upstream #966); 0.19 lifts it, but only where several live conversations
 /// were verified does an [openSession] session get its own
-/// ([OpenSessionBacking.native]). Everywhere else each virtual handle keeps its full turn
-/// history in Dart and, on every generate, asks the client to (re)materialize
-/// the single shared conversation seeded with THIS session's history via a
-/// `messages_json` preface. The client serializes turns with a mutex, so the
-/// sessions are logically concurrent (independent contexts) but inference is
-/// serialized (one generation at a time) — verified by the
+/// ([OpenSessionBacking.native]). Everywhere else each virtual handle keeps
+/// its full multimodal turn history in Dart and, on every generate, asks the
+/// client to (re)materialize the single shared conversation seeded with THIS
+/// session's history via a `messages_json` preface. The client serializes turns
+/// with a mutex, so the sessions are logically concurrent (independent
+/// contexts) but inference is serialized (one generation at a time) — verified by the
 /// session_switch / messages_preface smoke tests.
 ///
 /// Same-session follow-up turns reuse the live conversation (no rebuild);
@@ -1634,6 +1622,7 @@ class _VirtualConversationHandle implements ConversationHandle {
     required this.toolsJson,
     required this.sampling,
     required this.samplingExplicit,
+    required this.multimodalOrder,
     this.maxOutputTokens,
   });
 
@@ -1642,6 +1631,7 @@ class _VirtualConversationHandle implements ConversationHandle {
   final String? toolsJson;
   final ResolvedSampling sampling;
   final bool samplingExplicit;
+  final MultimodalOrder multimodalOrder;
   final int? maxOutputTokens;
 
   /// The tokenizer belongs to the engine, not to a conversation, so a virtual
@@ -1771,24 +1761,6 @@ class _VirtualConversationHandle implements ConversationHandle {
     };
   }
 
-  // Virtual sessions replay history as a text-only `messages_json` preface, so
-  // image/audio turns can't be reconstructed on a session switch. Reject media
-  // loudly rather than silently dropping it (parity with openSession rejecting
-  // loraPath). Only open sessions on a backend whose live conversations were
-  // not verified are virtual (OpenSessionBacking).
-  void _rejectMedia(List<Uint8List>? imageBytes, Uint8List? audioBytes) {
-    if ((imageBytes != null && imageBytes.isNotEmpty) || audioBytes != null) {
-      throw UnsupportedError(
-        'Image/audio input is not supported on openSession() .litertlm '
-        'sessions on this platform and backend: several live conversations '
-        'on one engine were not verified here, so these sessions replay their '
-        'history as text at each switch. Use createSession() for images and '
-        'audio, or a backend listed in the flutter_edge_ai_litertlm README '
-        '("Open sessions").',
-      );
-    }
-  }
-
   @override
   Stream<String> chat(
     String text, {
@@ -1797,8 +1769,11 @@ class _VirtualConversationHandle implements ConversationHandle {
     bool enableThinking = false,
   }) {
     _latestStarted = false;
-    _rejectMedia(imageBytes, audioBytes);
-    return _run(_userMessage(text), raw: false, enableThinking: enableThinking);
+    return _run(
+      _userMessage(text, imageBytes, audioBytes),
+      raw: false,
+      enableThinking: enableThinking,
+    );
   }
 
   @override
@@ -1809,8 +1784,11 @@ class _VirtualConversationHandle implements ConversationHandle {
     bool enableThinking = false,
   }) {
     _latestStarted = false;
-    _rejectMedia(imageBytes, audioBytes);
-    return _run(_userMessage(text), raw: true, enableThinking: enableThinking);
+    return _run(
+      _userMessage(text, imageBytes, audioBytes),
+      raw: true,
+      enableThinking: enableThinking,
+    );
   }
 
   @override
@@ -1823,8 +1801,19 @@ class _VirtualConversationHandle implements ConversationHandle {
     enableThinking: enableThinking,
   );
 
-  static Map<String, Object?> _userMessage(String text) =>
-      jsonDecode(LiteRtLmFfiClient.buildMessageJson(text))
+  Map<String, Object?> _userMessage(
+    String text,
+    List<Uint8List>? imageBytes,
+    Uint8List? audioBytes,
+  ) =>
+      jsonDecode(
+            LiteRtLmFfiClient.buildMessageJson(
+              text,
+              imagesBytes: imageBytes,
+              audioBytes: audioBytes,
+              order: multimodalOrder,
+            ),
+          )
           as Map<String, Object?>;
 
   @override
@@ -1833,8 +1822,8 @@ class _VirtualConversationHandle implements ConversationHandle {
     client.cancelVirtualTurn(token);
   }
 
-  /// The multiplexer rebuilds a stopped conversation from this session's
-  /// history at its next turn; there is no media to keep.
+  /// The multiplexer rebuilds a stopped conversation from this session's full
+  /// multimodal history at its next turn.
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
     Map<String, Object?>? partialReply,
@@ -1843,8 +1832,8 @@ class _VirtualConversationHandle implements ConversationHandle {
   @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
-  /// The latest turn reached native; a turn refused before (images or audio
-  /// on a virtual session) has no end of its own to report.
+  /// The latest turn reached native; a turn refused before it has no end of
+  /// its own to report.
   bool _latestStarted = false;
 
   @override

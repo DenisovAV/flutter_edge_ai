@@ -160,11 +160,10 @@ was compiled for; when it differs from `maxTokens`, the first turn prints it.
 
 `openSession()` sessions share the model's engine. Where several live
 conversations on one engine were verified, each session is a LiteRT-LM
-conversation of its own: it takes images and audio like `createSession()`,
-and a stopped turn is rewound in place. Elsewhere each session keeps its
-history in Dart and replays it as text into one shared conversation when the
-sessions take turns, as before 2.6.0: images and audio are refused there.
-The model decides this when it loads; there is no setting.
+conversation of its own, and a stopped turn is normally rewound in place.
+Elsewhere each session keeps its history in Dart and replays the full messages,
+including images and audio, into one shared conversation when the sessions
+take turns. The model decides this when it loads; there is no setting.
 
 | Backend | Own conversation per session | Measured on (LiteRT-LM 0.19) |
 |---|---|---|
@@ -172,7 +171,7 @@ The model decides this when it loads; there is no setting.
 | GPU | macOS (Metal), Android Adreno and Mali | the same, on M5 Pro, Adreno 830, Mali-G715 |
 | NPU | Qualcomm and Google Tensor on Android, Intel on Windows | the same, past the first context group |
 
-Replayed as text: iOS, Android CPU, Android GPUs other than Adreno and Mali
+Replayed as full messages: iOS, Android CPU, Android GPUs other than Adreno and Mali
 (two greedy conversations diverged on a PowerVR GPU), Linux arm64 GPU and
 NPU, and the Linux and Windows GPUs: they ran correctly on a Tesla T4
 (Vulkan) and on Intel Arc (D3D12), but the load cannot tell which GPU it got,
@@ -186,10 +185,11 @@ the window, is left out, as `InferenceChat` leaves it out of its history. A
 turn that failed otherwise is left out too: the conversation is rebuilt
 without it. On the NPU, which rolls back one token at most, and on a
 model with linear attention state (LFM2.5), which a rewind cannot restore,
-the conversation is rebuilt from the text of its history instead: images and
-audio of earlier turns are lost then, and a line in the log says so once per
-session. The same holds for an `openSession` session when the model file
-could not be read to tell; that is printed when the model loads.
+the conversation is rebuilt from its full message history instead. A stopped
+audio turn is also rebuilt this way on CPU/GPU because LiteRT-LM 0.19 can lose
+its audio while reporting that the rewind succeeded. The same rebuild holds
+for an `openSession` session when the model file could not be read to tell;
+that is printed when the model loads.
 
 Every idle session keeps a copy of its KV cache, so an open session costs
 memory while it is open, and the cost grows with `maxTokens`. Measured on

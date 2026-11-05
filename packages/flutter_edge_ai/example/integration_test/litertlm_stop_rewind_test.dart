@@ -1,8 +1,8 @@
 // A stopped turn is rewound in place (flutter_edge_ai_litertlm
 // `patch_c_api.sh` section 16): the next turn runs on the same conversation,
 // which keeps every earlier turn — images and audio included — and the
-// stopped exchange itself. Before it, the conversation was rebuilt from a
-// text-only history and forgot earlier media.
+// stopped exchange itself. A stopped audio turn is rebuilt from full messages
+// because some executors lose its audio despite reporting rewind success.
 //
 // Covers both ways to stop: stopGeneration(), and cancelling the response
 // subscription (awaited or not) with the next message sent right away — the
@@ -399,10 +399,24 @@ void main() {
       );
 
       expect(city.error, isNull);
-      if (backend == PreferredBackend.cpu || Platform.isAndroid) {
-        expect(city.reply.trim(), isNotEmpty);
-      } else {
-        expect(city.reply.toLowerCase(), contains('paris'));
+      if (!city.reply.toLowerCase().contains('paris')) {
+        // Some backends condition the next answer on the stopped assistant
+        // text (for example, "The recording is a question") and deny that a
+        // city was mentioned even though the rewound audio is still present.
+        // Ask for the recording itself to distinguish that model answer from
+        // media loss. This reproduced on 0.18 and 0.19 on PTL D3D12.
+        final repeated = await _send(
+          chat,
+          const Message(
+            text:
+                'Repeat the sentence from the audio recording as exactly as '
+                'you can.',
+            isUser: true,
+          ),
+          'T3 repeat audio',
+        );
+        expect(repeated.error, isNull);
+        expect(repeated.reply.toLowerCase(), contains('paris'));
       }
       expectRewoundOnly(1);
     } finally {

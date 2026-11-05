@@ -3,8 +3,8 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'dart:ffi';
 import 'dart:async';
 // Which open sessions are native conversations (core 2.6.0 design §1.1): only
-// where several live conversations on one engine were verified, virtual (text
-// replay, no media) everywhere else; and what the model does with each.
+// where several live conversations on one engine were verified, virtual (full
+// multimodal replay) everywhere else; and what the model does with each.
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
@@ -137,28 +137,30 @@ void main() {
           onClose: () {},
         );
 
-    test('virtual: opens without a native call and refuses an image at the '
-        'send', () async {
-      final m = model(OpenSessionBacking.virtual);
-      final session = await m.openSession();
-      await session.addQueryChunk(
-        Message(
-          text: 'What is this?',
-          isUser: true,
-          imageBytes: Uint8List.fromList([1, 2, 3]),
-        ),
-      );
-      await expectLater(session.getResponse(), throwsUnsupportedError);
-      await session.close();
-    });
-
-    /// The uninitialized client's refusal: the open reached the engine.
+    /// The uninitialized client's refusal: the open/send reached the engine.
     final reachedEngine = throwsA(
       isA<StateError>().having(
         (e) => e.message,
         'message',
         contains('Engine not initialized'),
       ),
+    );
+
+    test(
+      'virtual: opens without a native call and sends media when used',
+      () async {
+        final m = model(OpenSessionBacking.virtual);
+        final session = await m.openSession();
+        await session.addQueryChunk(
+          Message(
+            text: 'What is this?',
+            isUser: true,
+            imageBytes: Uint8List.fromList([1, 2, 3]),
+          ),
+        );
+        await expectLater(session.getResponse(), reachedEngine);
+        await session.close();
+      },
     );
 
     test('native: each session asks the engine for its own conversation at '
@@ -253,8 +255,8 @@ void main() {
     expect(m.sessions, isEmpty);
     expect(client.created.single.isClosed, isTrue);
   });
-  test('a virtual session reports no turn end for a turn of its own that '
-      'never reached native, not the end another turn left', () async {
+  test('a virtual session reports no turn end before its first turn, not the '
+      'end another turn left', () async {
     final conv = Pointer<LiteRtLmConversation>.fromAddress(0x2000);
     final client = LiteRtLmFfiClient()
       ..registerLiveForTest(conv)
@@ -277,15 +279,7 @@ void main() {
     );
     await pumpEventQueue();
     expect(handle.lastTurnEnd, isNull, reason: 'no turn of its own yet');
-    await session.addQueryChunk(
-      Message(
-        text: 'What is this?',
-        isUser: true,
-        imageBytes: Uint8List.fromList([1, 2, 3]),
-      ),
-    );
-    await expectLater(session.getResponse(), throwsUnsupportedError);
-    expect(handle.lastTurnEnd, isNull, reason: 'refused before native');
+    await session.close();
   });
   test('a native open session on a model whose file could not be read is '
       'rebuilt, never rewound; createSession keeps rewinding', () async {

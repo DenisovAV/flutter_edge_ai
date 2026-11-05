@@ -39,6 +39,21 @@ void main() {
     }
   });
 
+  test('a synchronous stream-start failure is a refusal even when native '
+      '0.19 records failed', () {
+    expect(
+      streamStartFailureTurnEnd(NativeLastTurnEnd.failed),
+      NativeLastTurnEnd.refused,
+    );
+  });
+
+  test('a synchronous context_full keeps its recovery classification', () {
+    expect(
+      streamStartFailureTurnEnd(NativeLastTurnEnd.contextFull),
+      NativeLastTurnEnd.contextFull,
+    );
+  });
+
   test(
     'a turn that failed with RESOURCE_EXHAUSTED (native 37d1ec59: a failed '
     'allocation, not a full window) is handled as failed, never as '

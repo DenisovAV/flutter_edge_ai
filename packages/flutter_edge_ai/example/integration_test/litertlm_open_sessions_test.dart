@@ -5,18 +5,19 @@
 //
 // What it checks, through the Dart engine:
 // - the backing the load chose (native where verified; set
-//   OPEN_EXPECT_BACKING=virtual on a backend that is not: images and audio
-//   are then expected to be refused);
+//   OPEN_EXPECT_BACKING=virtual on a backend that is not: its full multimodal
+//   history is replayed when sessions switch);
 // - three sessions interleaved, each recalling only its own code word;
 // - an image in one session, a turn on another, the image recalled;
 // - a stop in one session, a turn on another, the stopped session recalls
-//   its earlier turns (rewound on CPU/GPU, rebuilt from text on the NPU or a
-//   model with linear attention state);
+//   its earlier turns (rewound on CPU/GPU, rebuilt from full messages on the
+//   NPU or a model with linear attention state);
 // - an audio clip in one session, a turn on another, the clip recalled;
-// - a full context: an input longer than the window and one longer than the
-//   room left both fail their turn with ContextLimitException (end
-//   TurnEnd.contextLimit), the session then answers again with its history
-//   intact; once no prefill fits, every turn ends that way and nothing is
+// - a full context: an input longer than the window is refused with
+//   ContextLimitException; a short input near the boundary may instead fit
+//   and produce partial text before decode fills the window (both end
+//   TurnEnd.contextLimit); the session then answers again with its history
+//   intact; once no prefill fits, every turn is refused and nothing is
 //   dropped; in openChat and createChat the refused message is taken back
 //   out of the history;
 // - measured, printed as RESULT lines: the memory one idle open session adds
@@ -218,24 +219,19 @@ void main() {
     }
   });
 
-  /// Images and audio: kept across a turn on another session where open
-  /// sessions are native; refused where they are virtual.
+  /// Images and audio are kept across a turn on another session, by native
+  /// conversation state or by a virtual session's full-message replay.
   Future<void> mediaCheck({
     required String label,
     required Message Function() message,
     required String question,
     required List<String> expected,
   }) async {
-    final m = await ensureModel();
+    await ensureModel();
     final a = await open();
     final b = await open();
     try {
       await a.addQueryChunk(message());
-      if (m.openSessionBacking == OpenSessionBacking.virtual) {
-        await expectLater(a.getResponse(), throwsA(isA<UnsupportedError>()));
-        _result('$label=refused (virtual)');
-        return;
-      }
       await a.getResponse();
       await _ask(b, 'Name a fruit. One word.');
       final reply = (await _ask(a, question)).toLowerCase();
@@ -248,8 +244,9 @@ void main() {
     }
   }
 
-  testWidgets('an image stays in its session across a turn on another '
-      '(refused on virtual sessions)', (tester) async {
+  testWidgets('an image stays in its session across a turn on another', (
+    tester,
+  ) async {
     if (!_media) {
       _result('image=not run (OPEN_MEDIA=false)');
       return;
@@ -270,8 +267,9 @@ void main() {
     );
   });
 
-  testWidgets('an audio clip stays in its session across a turn on another '
-      '(refused on virtual sessions)', (tester) async {
+  testWidgets('an audio clip stays in its session across a turn on another', (
+    tester,
+  ) async {
     if (!_audio) {
       _result('audio=not run (OPEN_AUDIO=false)');
       return;
@@ -352,9 +350,8 @@ void main() {
     }
   });
 
-  testWidgets('an input that does not fit fails its turn with '
-      'ContextLimitException (end contextLimit), the session answers '
-      'again, and nothing of its history is dropped', (tester) async {
+  testWidgets('refused input fails with ContextLimitException, decode-full '
+      'keeps partial text, and the session history is intact', (tester) async {
     final m = await ensureModel();
     final s = await open();
     try {
@@ -404,7 +401,13 @@ void main() {
         'filledAfter=$turns short=$shortEnd again=$again',
       );
       if (shortEnd == TurnEnd.contextLimit) {
-        expect(shortError, isA<ContextLimitException>());
+        if (shortReply.isEmpty) {
+          expect(shortError, isA<ContextLimitException>());
+        } else {
+          // The input fit, then decode consumed the remaining context. A
+          // decode-full turn keeps its partial text and does not fail it.
+          expect(shortError, isNull);
+        }
         expect(again, TurnEnd.contextLimit);
         expect(againError, isA<ContextLimitException>());
       } else {

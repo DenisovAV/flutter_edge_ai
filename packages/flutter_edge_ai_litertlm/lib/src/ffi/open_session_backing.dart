@@ -1,6 +1,6 @@
 // How an FFI `openSession` session holds its context (core 2.6.0 design §1.1):
-// a native conversation of its own, or a virtual one replayed as text into a
-// shared conversation. Internal to this package; the switch is no API.
+// a native conversation of its own, or a virtual one replayed as full messages
+// into a shared conversation. Internal to this package; the switch is no API.
 
 import 'package:flutter_edge_ai/engine.dart' show PreferredBackend;
 
@@ -13,9 +13,8 @@ enum OpenSessionBacking {
   /// stopped turn is rewound (§16) where the backend can.
   native,
 
-  /// History kept in Dart and replayed as text into one shared conversation
-  /// at every switch between sessions, as on LiteRT-LM 0.18. Images and audio
-  /// are refused: a text replay cannot carry them.
+  /// History kept in Dart and replayed as full messages, including media, into
+  /// one shared conversation at every switch between sessions.
   virtual,
 }
 

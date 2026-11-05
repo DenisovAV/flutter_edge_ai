@@ -420,6 +420,35 @@ void main() {
       expect(first.rewinds, hasLength(1));
     });
 
+    test('a stopped audio turn rebuilds from the full media history instead '
+        'of trusting native rewind', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      final gate = first.hold = Completer<void>();
+      final stopped = handle
+          .chat('listen', audioBytes: Uint8List.fromList([1, 2]))
+          .join();
+      await pumpEventQueue();
+      handle.cancelGeneration();
+      gate.complete();
+      expect(await stopped, 'Hello');
+
+      expect(await handle.chat('what did it say?').join(), 'Hello there.');
+      expect(first.rewinds, isEmpty);
+      expect(reopened, hasLength(1));
+      final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+      final user = seed[0] as Map<String, dynamic>;
+      expect(user['content'], [
+        {'type': 'audio', 'blob': 'AQI='},
+        {'type': 'text', 'text': 'listen'},
+      ]);
+      expect(seed[1], {
+        'role': 'assistant',
+        'content': [
+          {'type': 'text', 'text': 'Hello'},
+        ],
+      });
+    });
+
     test('a stop that reached native after the turn had finished keeps the '
         'conversation as it is, quietly', () async {
       first.rewindOutcome = StoppedTurnRewind.notCancelled;
@@ -604,8 +633,8 @@ void main() {
       expect(seed, isNull, reason: 'the poisoned turn is not replayed');
     });
 
-    test('a rebuild that loses earlier media on a conversation that could '
-        'rewind says why in release builds', () async {
+    test('a forced rebuild preserves earlier media and says why in release '
+        'builds', () async {
       first.rewindOutcome = StoppedTurnRewind.rewound;
       final printed = <String>[];
       await runZoned(
@@ -624,6 +653,11 @@ void main() {
         releaseLines(printed).single,
         contains('native cancelled a turn that was not stopped'),
       );
+      final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+      expect((seed.first as Map)['content'], [
+        {'type': 'image', 'blob': 'AAAA'},
+        {'type': 'text', 'text': 'look'},
+      ]);
     });
 
     test('the thought marker matches what core extracts from a thought '
@@ -754,7 +788,7 @@ void main() {
       expect(first.sent, ['one', 'two', 'three']);
     });
 
-    test('a failed rewind says whether earlier media is lost', () async {
+    test('a failed rewind rebuilds with earlier media intact', () async {
       first.rewindOutcome = const StoppedTurnRewindException(13, 'boom');
       final printed = <String>[];
       await runZoned(
@@ -767,7 +801,12 @@ void main() {
           print: (self, parent, zone, line) => printed.add(line),
         ),
       );
-      expect(releaseLines(printed).single, contains('without the images'));
+      expect(releaseLines(printed).single, contains('could not rewind'));
+      final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+      expect((seed.first as Map)['content'], [
+        {'type': 'image', 'blob': 'AAAA'},
+        {'type': 'text', 'text': 'a'},
+      ]);
     });
 
     test(
@@ -778,7 +817,7 @@ void main() {
         await expectLater(handle.chat('two').join(), throwsStateError);
         expect(reopened, isEmpty, reason: 'no rebuild hides the error');
         // The stop is still pending, its reply kept: the next turn tries the
-        // rewind again rather than rebuilding without the media.
+        // rewind again rather than hiding the error with a rebuild.
         first.rewindOutcome = StoppedTurnRewind.rewound;
         expect(await handle.chat('three').join(), 'Hello there.');
         expect(first.rewinds, [textReply('Hello'), textReply('Hello')]);
@@ -874,42 +913,43 @@ void main() {
       expect(reopened, isEmpty);
     });
 
-    test('a session that cannot rewind says once, in release builds too, '
-        'that a rebuild drops earlier images and audio', () async {
-      handle = RecoveringConversationHandle(
-        first,
-        reopen: (messagesJson) async {
-          final c = _Conversation('rebuilt ${reopened.length}');
-          reopened.add(c);
-          return c;
-        },
-        noRewindReason: 'the NPU executor rolls back one token at most',
-      );
-      final printed = <String>[];
-      await runZoned(
-        () async {
-          await handle
-              .chat(
-                'look',
-                imageBytes: [
-                  Uint8List.fromList([1, 2]),
-                ],
-              )
-              .join();
-          await stopMidTurn('one', first);
-          await handle.chat('two').join();
-          await stopMidTurn('three', reopened.single);
-          await handle.chat('four').join();
-        },
-        zoneSpecification: ZoneSpecification(
-          print: (self, parent, zone, line) => printed.add(line),
-        ),
-      );
-      expect(reopened, hasLength(2));
-      final notes = printed.where((l) => l.contains('without the images'));
-      expect(notes, hasLength(1));
-      expect(notes.single, contains('rolls back one token'));
-    });
+    test(
+      'a session that cannot rewind keeps earlier images in every rebuild',
+      () async {
+        handle = RecoveringConversationHandle(
+          first,
+          reopen: (messagesJson) async {
+            final c = _Conversation(
+              'rebuilt ${reopened.length}',
+              seed: messagesJson,
+            );
+            reopened.add(c);
+            return c;
+          },
+          noRewindReason: 'the NPU executor rolls back one token at most',
+        );
+        await handle
+            .chat(
+              'look',
+              imageBytes: [
+                Uint8List.fromList([1, 2]),
+              ],
+            )
+            .join();
+        await stopMidTurn('one', first);
+        await handle.chat('two').join();
+        await stopMidTurn('three', reopened.single);
+        await handle.chat('four').join();
+        expect(reopened, hasLength(2));
+        for (final rebuilt in reopened) {
+          final seed = jsonDecode(rebuilt.seed!) as List<dynamic>;
+          expect((seed.first as Map)['content'], [
+            {'type': 'image', 'blob': 'AQI='},
+            {'type': 'text', 'text': 'look'},
+          ]);
+        }
+      },
+    );
 
     test('a turn whose recovery fails before its send reports no turn end, '
         'not the previous turn\'s context_full', () async {

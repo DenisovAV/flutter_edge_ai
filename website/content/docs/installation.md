@@ -144,7 +144,7 @@ void main() async {
 | `inferenceEngines: [LlamaEngineProvider()]` | `flutter_edge_ai_llama` | `.gguf` models via llama.cpp, `ModelFileType.gguf` (mobile + desktop + web) — [llama.cpp](/docs/llama) |
 | `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | embeddings: EmbeddingGemma 2 `.litertlm` (text, images, audio; native and WebGPU) and `.tflite` models |
 | `embeddingBackends: [OnnxEmbeddingBackend()]` | `flutter_edge_ai_onnx` | text embeddings from ONNX/ORT models |
-| `embeddingBackends: [LlamaEmbeddingBackend()]` | `flutter_edge_ai_llama` | EmbeddingGemma 2 `.gguf` text embeddings, native only (GPU on Apple, CPU on Android); the GGUF carries its own tokenizer — see [llama.cpp](/docs/llama) |
+| `embeddingBackends: [LlamaEmbeddingBackend()]` | `flutter_edge_ai_llama` | EmbeddingGemma 2 `.gguf` text embeddings, native only (automatic placement: GPU on Apple silicon and iOS devices; CPU on Android, iOS simulators and macOS x64; Linux and Windows the SDK's own choice, Vulkan where available); the GGUF carries its own tokenizer — see [llama.cpp](/docs/llama) |
 | `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by `LiteRtEmbeddingBackend` and `OnnxEmbeddingBackend` for `.tflite` and `.onnx` models — on the web for `.onnx` only, since LiteRT.js tokenizes `.tflite` in the browser; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |
 | `sttBackends: [LiteRtSttBackend()]` | `flutter_edge_ai_speech` | speech-to-text (native only) |
 | `ttsBackends: [LiteRtTtsBackend()]` | `flutter_edge_ai_speech` | text-to-speech (native only) |

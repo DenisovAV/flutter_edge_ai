@@ -1,3 +1,7 @@
+## 2.5.6
+- `createModel` stays deprecated until 3.0.0, not 2.6.0 (#768).
+- Skills: native ONNX `openSession`/`openChat` (onnx 0.8.0) and memory diagnostics on Windows.
+
 ## 2.5.5
 - `uninstallModel` removes a directory (ORT-GenAI) model by its name (#730).
 - `uninstallEmbedder`, `uninstallStt` and `uninstallTts` close the model loaded from those files (#735).

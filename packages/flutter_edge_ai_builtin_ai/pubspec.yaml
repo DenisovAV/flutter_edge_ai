@@ -1,6 +1,6 @@
 name: flutter_edge_ai_builtin_ai
 description: "Opt-in flutter_edge_ai engine for the OS built-in model: Gemini Nano (Android), Apple Foundation Models (iOS/macOS), Windows AI Foundry, Chrome's Prompt API on Web."
-version: 0.3.7
+version: 0.3.8
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_builtin_ai
 topics: [gemma, llm, gemini-nano, on-device, prompt-api]
@@ -30,7 +30,9 @@ dependencies:
   # 2.2.0 made the sampling values nullable. Every RuntimeConfig field this
   # engine reads (supportAudio, loraRanks, maxNumImages, maxConcurrentSessions)
   # is older than either.
-  flutter_edge_ai: ^2.3.0
+  # <2.6.0: core 2.6.0 changes the engine SPI this version overrides, so pub
+  # keeps an app on core 2.5.x until it moves this package to its 2.6.0 line.
+  flutter_edge_ai: '>=2.3.0 <2.6.0'
   # Supplies the whole native/web layer this package used to ship itself.
   flutter_local_ai: ^0.3.0
   meta: ^1.15.0

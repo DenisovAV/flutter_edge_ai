@@ -1,3 +1,6 @@
+## 0.5.14
+- Require `flutter_edge_ai` >=2.5.5 <2.6.0 and `flutter_edge_ai_litertlm` >=1.19.1 <1.20.0.
+
 ## 0.5.13
 - Model catalog: `LiteRtSpeechModels`, every STT and TTS build pinned to its commit (#734).
 - Speech-to-text requests fp32 on the GPU: moonshine no longer returns NaN on Adreno 740 (#747).

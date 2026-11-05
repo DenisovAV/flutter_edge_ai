@@ -65,6 +65,14 @@ only the engines, stores and features your app uses — see
 - **GGUF embeddings** (`flutter_edge_ai_llama` 0.0.3): `LlamaEmbeddingBackend`
   runs EmbeddingGemma 2 `.gguf` text embeddings natively. See
   [llama.cpp](/docs/llama).
+- **Several ONNX sessions** (`flutter_edge_ai_onnx` 0.8.0): native
+  `openSession`/`openChat` open independent sessions, each with its own
+  generator; at most 2 on Android and iOS unless `maxConcurrentSessions` says
+  otherwise. ORT-GenAI 0.17.0. See [ONNX](/docs/onnx).
+- **Windows memory diagnostics** (`flutter_edge_ai_diagnostics` 0.6.0):
+  `memorySnapshot()` on Windows. See [Diagnostics](/docs/diagnostics).
+- **llama.cpp on llamadart 0.17.5** (`flutter_edge_ai_llama` 0.0.6), with
+  Apple companion 0.17.3. See [llama.cpp](/docs/llama).
 
 ## What's new in 2.4
 

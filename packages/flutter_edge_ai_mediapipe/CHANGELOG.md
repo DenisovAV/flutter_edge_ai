@@ -1,3 +1,6 @@
+## 1.2.6
+- Require `flutter_edge_ai` >=2.3.0 <2.6.0.
+
 ## 1.2.5
 - MediaPipe GenAI 0.10.35 on Android and iOS, 0.10.30 on the web.
 - Web: a multi-turn chat keeps the model's replies; each turn resends the conversation (#705).

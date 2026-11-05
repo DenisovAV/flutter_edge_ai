@@ -1,5 +1,5 @@
 ## 0.11.1
-- Each request closes its chat before the next one starts.
+- Each request closes its chat before the next one starts (#767).
 
 ## 0.11.0
 - `deciderRouteClassifier` routes genkit_hybrid calls with a Decider; require `flutter_edge_ai` 2.5.x.

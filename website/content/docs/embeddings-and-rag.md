@@ -23,9 +23,8 @@ inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 Core accepts self-contained `.gguf` files without a separate tokenizer. When
 backends are registered, installation checks that one can serve the file; with
 none registered, installation can still proceed. The opt-in
-`LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3
-runs native EmbeddingGemma 2 GGUF text embeddings with core 2.5.0 and llamadart
-0.15.1. Register it in `FlutterEdgeAi.initialize(embeddingBackends:)`; GGUF needs
+`LlamaEmbeddingBackend` in `flutter_edge_ai_llama` (since 0.0.3; llamadart 0.17.5
+since 0.0.6) runs native EmbeddingGemma 2 GGUF text embeddings with core 2.5.x. Register it in `FlutterEdgeAi.initialize(embeddingBackends:)`; GGUF needs
 no external tokenizer. Use separate GGUF and LiteRT RAG vector profile IDs,
 even when dimensions match. See [llama.cpp](/docs/llama).
 `flutter_edge_ai_embeddings` supplies tokenizer implementations only; engine
@@ -52,7 +51,7 @@ larger chunk just because the model file declares a larger context.
 ```
 dependencies:
   flutter_edge_ai: ^2.5.5
-  flutter_edge_ai_litertlm: ^1.19.1
+  flutter_edge_ai_litertlm: ^1.19.2
   flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.1.2
   flutter_edge_ai_sqlite: ^2.1.1 # all six platforms, including Web

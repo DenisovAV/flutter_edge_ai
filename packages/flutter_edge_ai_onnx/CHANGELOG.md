@@ -1,8 +1,7 @@
 ## 0.8.0
-- **Breaking:** `GenAiClient` gains `sessionId` on `stopGeneration` / `resetSession`; native `openSession` / `openChat` open independent sessions, capped at 2 on phones (#703).
-
-## 0.7.0
+- Native `openSession` / `openChat` open independent sessions, capped at 2 on phones; **breaking** for `GenAiClient` implementers (#703).
 - Bundle ORT-GenAI 0.17.0 (was 0.14.0) on every host, with its telemetry switched off (#704).
+- Require `flutter_edge_ai` >=2.3.0 <2.6.0.
 
 ## 0.6.0
 - Windows ARM64: bundle ORT and ORT-GenAI archives for both engines (#326).

@@ -1,7 +1,7 @@
 # llama.cpp adapter maintenance
 
-Current source / next release adapts core 2.5.0+ through public engine libraries
-and llamadart 0.17.5. Published 0.0.5 uses SDK 0.15.1 / companion 0.15.0. Keep source qualification
+Version 0.0.6 adapts core 2.5.x (`<2.6.0`) through public engine libraries
+and llamadart 0.17.5. 0.0.3 to 0.0.5 used SDK 0.15.1 / companion 0.15.0. Keep source qualification
 separate from hosted consumer qualification. Inference routes by declared type.
 LlamaEmbeddingBackend registers self-contained GGUF through core's embedding SPI; see doc/embeddings.md.
 
@@ -36,6 +36,6 @@ LlamaEmbeddingBackend registers self-contained GGUF through core's embedding SPI
   On an SDK upgrade, recheck that llamadart's automatic CPU targets
   (`resolvePreferredBackendForLoad`) still equal `nativeEmbeddingAutoUsesCpu`:
   the automatic-CPU warning is silenced on exactly that set.
-  Current source also refuses explicit GPU embeddings on Android, iOS simulators
+  0.0.6 also refuses explicit GPU embeddings on Android, iOS simulators
   and macOS x64/Rosetta; the latter is a conservative guard for upstream-reported
   Intel/AMD Metal corruption, not measured EG2 corruption. macOS arm64 is unaffected.

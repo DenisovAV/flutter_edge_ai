@@ -25,6 +25,7 @@ import 'contributors/contributors_page.dart';
 import 'landing/landing_page.dart';
 import 'seo.dart';
 import 'showcase/showcase_page.dart';
+import 'showcase/submit/submit_page.dart';
 import 'theme/brand.dart';
 
 // This file is generated automatically by Jaspr, do not remove or edit.
@@ -85,6 +86,10 @@ const Map<String, Object?> _showcaseCollectionSchema = {
   'description': _showcaseDescription,
   'url': '$kSiteOrigin/showcase',
 };
+
+const String _showcaseSubmitDescription =
+    'Add an app that runs AI on-device with flutter_edge_ai or flutter_gemma '
+    'to the Flutter Edge AI showcase.';
 
 void main() {
   // Initializes the server environment with the generated default options.
@@ -315,6 +320,20 @@ void main() {
                 structuredData: _showcaseCollectionSchema,
               ),
               body: const ShowcasePage(),
+            ),
+          ),
+          Route(
+            path: '/showcase/submit',
+            builder: (context, state) => Document(
+              title: 'Add your app — Flutter Edge AI',
+              lang: 'en',
+              meta: const {'description': _showcaseSubmitDescription},
+              head: seoHead(
+                title: 'Add your app — Flutter Edge AI',
+                description: _showcaseSubmitDescription,
+                path: '/showcase/submit',
+              ),
+              body: const ShowcaseSubmitPage(),
             ),
           ),
           for (final group in routes) ...group,

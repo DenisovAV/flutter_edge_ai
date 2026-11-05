@@ -155,9 +155,9 @@ class ShowcaseBrowserState extends State<ShowcaseBrowser> {
     ]);
   }
 
-  /// Last under every filter and order. Not a link yet.
+  /// Last under every filter and order; it leads to the submission form.
   static Component _yourAppCard() {
-    return div(classes: 'sc-card sc-yours', [
+    return a(href: '/showcase/submit', classes: 'sc-card sc-yours', [
       div(classes: 'sc-yours-plus', [
         svg(
           viewBox: '0 0 24 24',
@@ -323,7 +323,15 @@ class ShowcaseBrowserState extends State<ShowcaseBrowser> {
     // ---- "Your app here" ----
     css('.sc-yours').styles(
       border: Border.all(color: Color('rgba(147,197,253,0.4)'), width: 1.5.px, style: BorderStyle.dashed),
+      textDecoration: TextDecoration.none,
       backgroundColor: Color('transparent'),
+    ),
+    css('.sc-yours:hover').styles(
+      border: Border.all(color: Brand.blueLight, width: 1.5.px, style: BorderStyle.dashed),
+      backgroundColor: Color('rgba(147,197,253,0.06)'),
+    ),
+    css('.sc-yours:focus-visible').styles(
+      raw: {'outline': '2px solid ${Brand.blueLight.value}', 'outline-offset': '2px'},
     ),
     css('.sc-yours-plus').styles(
       display: Display.flex,

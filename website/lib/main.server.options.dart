@@ -36,6 +36,10 @@ import 'package:fluttergemma_website/landing/sections/why_on_device.dart'
     as _why_on_device;
 import 'package:fluttergemma_website/landing/landing_page.dart'
     as _landing_page;
+import 'package:fluttergemma_website/showcase/submit/submit_form.dart'
+    as _submit_form;
+import 'package:fluttergemma_website/showcase/submit/submit_page.dart'
+    as _submit_page;
 import 'package:fluttergemma_website/showcase/showcase_browser.dart'
     as _showcase_browser;
 import 'package:fluttergemma_website/showcase/showcase_page.dart'
@@ -78,6 +82,8 @@ ServerOptions get defaultServerOptions => ServerOptions(
     _nav_bar.NavBar: ClientTarget<_nav_bar.NavBar>('nav_bar'),
     _showcase_browser.ShowcaseBrowser:
         ClientTarget<_showcase_browser.ShowcaseBrowser>('showcase_browser'),
+    _submit_form.ShowcaseSubmitForm:
+        ClientTarget<_submit_form.ShowcaseSubmitForm>('submit_form'),
     _code_block_copy_button.CodeBlockCopyButton:
         ClientTarget<_code_block_copy_button.CodeBlockCopyButton>(
           'jaspr_content:code_block_copy_button',
@@ -118,6 +124,8 @@ ServerOptions get defaultServerOptions => ServerOptions(
     ..._why_on_device.WhyOnDevice.styles,
     ..._showcase_browser.ShowcaseBrowserState.styles,
     ..._showcase_page.ShowcasePage.styles,
+    ..._submit_form.ShowcaseSubmitFormState.styles,
+    ..._submit_page.ShowcaseSubmitPage.styles,
     ..._callout.Callout.styles,
     ..._code_block.CodeBlock.styles,
     ..._github_button.GitHubButton.styles,

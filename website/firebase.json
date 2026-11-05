@@ -13,6 +13,13 @@
     "trailingSlash": false,
     "rewrites": [
       {
+        "source": "/api/submit-showcase-app",
+        "run": {
+          "serviceId": "submitshowcaseapp",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "/try/**",
         "destination": "/try/index.html"
       }
@@ -48,5 +55,15 @@
         ]
       }
     ]
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "showcase",
+      "runtime": "dart3"
+    }
+  ],
+  "firestore": {
+    "rules": "firestore.rules"
   }
 }

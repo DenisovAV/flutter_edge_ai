@@ -12,6 +12,8 @@ import 'package:fluttergemma_website/components/play_when_visible.dart'
     deferred as _play_when_visible;
 import 'package:fluttergemma_website/landing/sections/nav_bar.dart'
     deferred as _nav_bar;
+import 'package:fluttergemma_website/showcase/submit/submit_form.dart'
+    deferred as _submit_form;
 import 'package:fluttergemma_website/showcase/showcase_browser.dart'
     deferred as _showcase_browser;
 import 'package:jaspr_content/components/_internal/code_block_copy_button.dart'
@@ -58,6 +60,10 @@ ClientOptions get defaultClientOptions => ClientOptions(
     'showcase_browser': ClientLoader(
       (p) => _showcase_browser.ShowcaseBrowser(),
       loader: _showcase_browser.loadLibrary,
+    ),
+    'submit_form': ClientLoader(
+      (p) => _submit_form.ShowcaseSubmitForm(),
+      loader: _submit_form.loadLibrary,
     ),
     'jaspr_content:code_block_copy_button': ClientLoader(
       (p) => _code_block_copy_button.CodeBlockCopyButton(),

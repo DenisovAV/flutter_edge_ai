@@ -1,11 +1,3 @@
-// _GNU_SOURCE must precede every include: on glibc, RTLD_DEFAULT (used by the
-// ABI probe below) is a GNU extension that <dlfcn.h> only exposes under it.
-// Apple's libc declares RTLD_DEFAULT unconditionally, so a macOS build compiles
-// happily without this and Linux fails with "RTLD_DEFAULT undeclared".
-#if defined(__linux__) && !defined(_GNU_SOURCE)
-#define _GNU_SOURCE
-#endif
-
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -23,206 +15,206 @@
 #define STREAM_PROXY_EXPORT __attribute__((visibility("default")))
 #endif
 
-// Callback type matching LiteRtLmStreamCallback up to and including v0.14.0.
-// This is also the shape our Dart NativeCallable expects, in both ABI modes —
-// adapting the newer upstream shape to it is exactly this file's job.
+// The callback shape our Dart NativeCallable expects. LiteRT-LM hands its
+// callback an opaque chunk read through accessors; adapting that to this shape
+// is this file's job.
 typedef void (*LiteRtLmStreamCallback)(void* callback_data, const char* chunk,
                                        _Bool is_final, const char* error_msg);
 
-// ── v0.15.0 streaming ABI ────────────────────────────────────────────────
-// LiteRT-LM v0.15.0 replaced the 4-arg stream callback with a 2-arg one that
-// hands over an opaque chunk object read through accessors:
-//
-//   v0.13.1 / v0.14.0: void(void*, const char* chunk, bool final, const char* err)
-//   v0.15.0:           void(void*, const LiteRtLmStreamChunk* chunk)
-//
-// Upstream kept no compatibility overload, and the C API carries no version
-// symbol, so a build-time switch would pin us to one native release. Probe the
-// loaded libLiteRtLm at runtime instead and hand LiteRT-LM whichever callback
-// it actually calls — that keeps one binary working against both.
-//
-// Registering the wrong shape is not a graceful failure: args 3 and 4 come from
-// whatever the registers happen to hold, and strdup() on that garbage pointer
-// faults outright on Windows and yields malformed text on macOS.
-typedef void (*StreamCallbackV15)(void* callback_data, const void* chunk);
-typedef const char* (*ChunkGetTextFn)(const void* chunk);
-typedef const char* (*ChunkGetErrorFn)(const void* chunk);
-typedef _Bool (*ChunkIsFinalFn)(const void* chunk);
+// LiteRT-LM C API 1.0 (v0.19.0 on): the stream callback LiteRT-LM calls, and
+// the chunk accessors. Each accessor returns a LiteRtLmStatusCode (0 = OK) and
+// writes its value through an out-parameter.
+typedef void (*LiteRtLmChunkCallback)(void* callback_data, const void* chunk);
+typedef int (*ChunkGetTextFn)(const void* chunk, const char** out_text);
+typedef int (*ChunkGetErrorFn)(const void* chunk, const char** out_error);
+typedef int (*ChunkIsFinalFn)(const void* chunk, _Bool* out_is_final);
 
-static ChunkGetTextFn stream_chunk_get_text = NULL;
-static ChunkGetErrorFn stream_chunk_get_error = NULL;
-static ChunkIsFinalFn stream_chunk_is_final = NULL;
-static int stream_abi_probed = 0;
+// ── stream_proxy_create_v1 ───────────────────────────────────────────────
+// One proxy per stream. The caller (Dart) resolves the three accessors with
+// `lookup` on the libLiteRtLm it drives and passes them in, so the shim keeps
+// nothing process-global and cannot hold another library's symbols. The Dart
+// client refuses a library whose C API is not 1.x before it gets here, so
+// there is no other accessor shape to choose from.
+//
+// Dart treats a chunk with an error, and a final chunk, as the end of the
+// turn: it ends the turn (which releases the engine for the next one) and
+// closes the callback. So the proxy hands Dart exactly one terminal chunk,
+// and only on the chunk LiteRT-LM marks final, when native has stopped:
+// - an accessor that fails, or a copy that runs out of memory, is recorded,
+//   later text is dropped, and the recorded error is delivered with the final
+//   chunk;
+// - an error LiteRT-LM reports on a chunk that is not final is held the same
+//   way.
+// Nothing on a failure path allocates: the error message buffer is allocated
+// when the proxy is created. When is_final itself cannot be read, the end of
+// the stream cannot be seen: the chunk is dropped, and if that was the final
+// chunk the proxy (a few words) is never freed and Dart never gets its end;
+// freeing it then would hand LiteRT-LM's next callback freed memory.
+//
+// A send that LiteRT-LM refuses (send_message_stream returns non-OK) never
+// calls back; the caller frees that proxy with stream_proxy_destroy_v1.
 
-static void* stream_proxy_resolve(const char* name) {
-#ifdef _WIN32
-  // The bundle ships the lib under both names depending on platform packaging.
-  static const char* modules[] = {"LiteRtLm.dll", "libLiteRtLm.dll", NULL};
-  for (int i = 0; modules[i] != NULL; i++) {
-    HMODULE mod = GetModuleHandleA(modules[i]);
-    if (mod != NULL) {
-      FARPROC sym = GetProcAddress(mod, name);
-      if (sym != NULL) return (void*)sym;
-    }
-  }
-  return NULL;
+#ifdef STREAM_PROXY_TEST_HOOKS
+// The host test counts and fails allocations (stream_proxy_test.c).
+void* stream_proxy_test_malloc(size_t size);
+void stream_proxy_test_free(void* ptr);
+#define PROXY_MALLOC stream_proxy_test_malloc
+#define PROXY_FREE stream_proxy_test_free
 #else
-  // Dart preloads libLiteRtLm with RTLD_GLOBAL (stream_proxy_load_global), so
-  // its exports are reachable from the default search scope.
-  return dlsym(RTLD_DEFAULT, name);
+#define PROXY_MALLOC malloc
+#define PROXY_FREE free
 #endif
-}
 
-// Resolve the v0.15.0 chunk accessors once. Their presence *is* the version
-// probe: they simply do not exist in v0.14.0 and earlier.
-static void stream_proxy_probe_abi(void) {
-  if (stream_abi_probed) return;
-  stream_abi_probed = 1;
-  stream_chunk_get_text =
-      (ChunkGetTextFn)stream_proxy_resolve("litert_lm_stream_chunk_get_text");
-  stream_chunk_get_error =
-      (ChunkGetErrorFn)stream_proxy_resolve("litert_lm_stream_chunk_get_error");
-  stream_chunk_is_final =
-      (ChunkIsFinalFn)stream_proxy_resolve("litert_lm_stream_chunk_is_final");
-}
+enum { kProxyMessageSize = 192 };
 
-// Proxy callback data: holds the Dart callback and memory to free
-typedef struct {
-  LiteRtLmStreamCallback dart_callback;
-  void* dart_data;
-} ProxyData;
-
-// This is the C callback given to LiteRT-LM.
-// It copies chunk/error strings to heap (strdup) so they survive
-// until Dart's NativeCallable.listener processes them.
-static void stream_proxy_callback(void* callback_data, const char* chunk,
-                                  _Bool is_final, const char* error_msg) {
-  ProxyData* proxy = (ProxyData*)callback_data;
-
-  // Copy strings to heap — Dart callback will free them
-  char* chunk_copy = chunk ? strdup(chunk) : NULL;
-  char* error_copy = error_msg ? strdup(error_msg) : NULL;
-
-  proxy->dart_callback(proxy->dart_data, chunk_copy, is_final, error_copy);
-
-  // If final, free the proxy struct itself
-  if (is_final) {
-    free(proxy);
-  }
-}
-
-// v0.15.0 callback: unpack the chunk object and forward in the 4-arg shape
-// Dart already understands.
-static void stream_proxy_callback_v15(void* callback_data, const void* chunk) {
-  ProxyData* proxy = (ProxyData*)callback_data;
-
-  const char* text =
-      stream_chunk_get_text ? stream_chunk_get_text(chunk) : NULL;
-  const char* error_msg =
-      stream_chunk_get_error ? stream_chunk_get_error(chunk) : NULL;
-  _Bool is_final = stream_chunk_is_final ? stream_chunk_is_final(chunk) : 0;
-
-  char* chunk_copy = text ? strdup(text) : NULL;
-  // v0.15.0 signals "no error" with an EMPTY string rather than NULL. Dart
-  // treats any non-NULL error pointer as a failed stream, so forwarding "" here
-  // would abort the stream on every ordinary token.
-  char* error_copy = (error_msg && error_msg[0]) ? strdup(error_msg) : NULL;
-
-  proxy->dart_callback(proxy->dart_data, chunk_copy, is_final, error_copy);
-
-  if (is_final) {
-    free(proxy);
-  }
-}
-
-// Create a proxy that wraps a Dart callback.
-// Returns: proxy callback function pointer (to pass to LiteRT-LM)
-// Out: proxy_data (to pass as callback_data to LiteRT-LM)
-STREAM_PROXY_EXPORT
-void* stream_proxy_create(LiteRtLmStreamCallback dart_callback,
-                          void* dart_data,
-                          LiteRtLmStreamCallback* out_proxy_fn) {
-  ProxyData* proxy = (ProxyData*)malloc(sizeof(ProxyData));
-  proxy->dart_callback = dart_callback;
-  proxy->dart_data = dart_data;
-
-  stream_proxy_probe_abi();
-  // The out-param is typed as the 4-arg callback because that is what the Dart
-  // binding declares; LiteRT-LM only ever consumes the address, so handing back
-  // the 2-arg entry point through the same slot is safe.
-  *out_proxy_fn = stream_chunk_get_text
-                      ? (LiteRtLmStreamCallback)(void*)stream_proxy_callback_v15
-                      : stream_proxy_callback;
-  return proxy;
-}
-
-// ── stream_proxy_create2: the accessors come from the caller ─────────────
-// The shim above probes for the accessors itself, and has to guess which library
-// to ask. The caller does not: Dart resolves the three accessors with
-// `lookup` on the libLiteRtLm it actually drives and passes them in, so the shim
-// keeps nothing process-global, learns nothing from load order and cannot hold
-// the wrong library. Dart also knows exactly which lookup failed. The old
-// stream_proxy_create above stays as it is, for a Dart client that predates this.
-//
-// Returns NULL, with *out_proxy_fn set to NULL too, for a missing argument or an
-// allocation failure; it never falls back to the 4-arg shape.
 typedef struct {
   LiteRtLmStreamCallback dart_callback;
   void* dart_data;
   ChunkGetTextFn get_text;
   ChunkGetErrorFn get_error;
   ChunkIsFinalFn is_final;
-} ProxyDataV2;
+  // The first failure, delivered with the final chunk: `message` (the
+  // preallocated buffer) or a copy of LiteRT-LM's own error. NULL while the
+  // stream is fine.
+  char* pending_error;
+  // Preallocated, kProxyMessageSize bytes; handed to Dart as the error, or
+  // freed with the proxy.
+  char* message;
+} ProxyDataV1;
 
-static void stream_proxy_callback_v2(void* callback_data, const void* chunk) {
-  ProxyDataV2* proxy = (ProxyDataV2*)callback_data;
-
-  const char* text = proxy->get_text(chunk);
-  const char* error_msg = proxy->get_error(chunk);
-  _Bool is_final = proxy->is_final(chunk);
-
-  char* chunk_copy = text ? strdup(text) : NULL;
-  // "No error" is an EMPTY string in v0.15+, and Dart treats any non-NULL error
-  // pointer as a failed stream.
-  char* error_copy = (error_msg && error_msg[0]) ? strdup(error_msg) : NULL;
-
-  proxy->dart_callback(proxy->dart_data, chunk_copy, is_final, error_copy);
-
-  if (is_final) {
-    free(proxy);
-  }
+static char* proxy_dup(const char* s) {
+  size_t n = strlen(s) + 1;
+  char* copy = (char*)PROXY_MALLOC(n);
+  if (copy != NULL) memcpy(copy, s, n);
+  return copy;
 }
 
+static void proxy_free(ProxyDataV1* proxy) {
+  if (proxy->pending_error != NULL && proxy->pending_error != proxy->message) {
+    PROXY_FREE(proxy->pending_error);
+  }
+  PROXY_FREE(proxy->message);
+  PROXY_FREE(proxy);
+}
+
+// Records the first failure; `status` 0 means an allocation failure.
+static void proxy_note_failure(ProxyDataV1* proxy, const char* what,
+                               int status) {
+  if (proxy->pending_error != NULL) return;
+  if (status != 0) {
+    snprintf(proxy->message, kProxyMessageSize,
+             "stream_proxy: %s failed with LiteRtLmStatusCode %d", what,
+             status);
+  } else {
+    snprintf(proxy->message, kProxyMessageSize, "stream_proxy: %s", what);
+  }
+  proxy->pending_error = proxy->message;
+}
+
+// The final chunk of a stream that failed: the recorded error, ownership to
+// Dart, then the proxy is freed.
+static void proxy_end_failed(ProxyDataV1* proxy) {
+  char* error = proxy->pending_error;
+  if (error == proxy->message) proxy->message = NULL;
+  proxy->pending_error = NULL;
+  proxy->dart_callback(proxy->dart_data, NULL, 1, error);
+  proxy_free(proxy);
+}
+
+static void stream_proxy_callback_v1(void* callback_data, const void* chunk) {
+  ProxyDataV1* proxy = (ProxyDataV1*)callback_data;
+
+  _Bool is_final = 0;
+  int status = proxy->is_final(chunk, &is_final);
+  if (status != 0) {
+    // The end of the stream cannot be seen: see above.
+    proxy_note_failure(proxy, "litert_lm_stream_chunk_is_final", status);
+    return;
+  }
+  if (proxy->pending_error == NULL) {
+    const char* text = NULL;
+    status = proxy->get_text(chunk, &text);
+    if (status != 0) {
+      proxy_note_failure(proxy, "litert_lm_stream_chunk_get_text", status);
+    }
+    const char* error_msg = NULL;
+    if (status == 0) {
+      status = proxy->get_error(chunk, &error_msg);
+      if (status != 0) {
+        proxy_note_failure(proxy, "litert_lm_stream_chunk_get_error", status);
+      }
+    }
+    if (status == 0) {
+      // "No error" is an EMPTY string, and Dart treats any non-NULL error
+      // pointer as a failed stream.
+      int has_error = error_msg != NULL && error_msg[0] != 0;
+      char* text_copy = text != NULL ? proxy_dup(text) : NULL;
+      char* error_copy = has_error ? proxy_dup(error_msg) : NULL;
+      if ((text != NULL && text_copy == NULL) ||
+          (has_error && error_copy == NULL)) {
+        PROXY_FREE(text_copy);
+        PROXY_FREE(error_copy);
+        proxy_note_failure(proxy, "out of memory copying a stream chunk", 0);
+      } else if (has_error && !is_final) {
+        // LiteRT-LM reported an error but has not ended the stream: hold it
+        // until it does.
+        PROXY_FREE(text_copy);
+        proxy->pending_error = error_copy;
+      } else {
+        proxy->dart_callback(proxy->dart_data, text_copy, is_final, error_copy);
+        if (is_final) proxy_free(proxy);
+        return;
+      }
+    }
+  }
+  // The stream has failed: drop the chunk, end it for Dart at the final one.
+  if (is_final) proxy_end_failed(proxy);
+}
+
+// Returns the proxy to pass as LiteRT-LM's callback_data and, through
+// out_proxy_fn, the callback to pass with it. Returns NULL, with
+// *out_proxy_fn NULL too, for a missing argument or an allocation failure.
 STREAM_PROXY_EXPORT
-void* stream_proxy_create2(LiteRtLmStreamCallback dart_callback,
-                           void* dart_data,
-                           ChunkGetTextFn get_text,
-                           ChunkGetErrorFn get_error,
-                           ChunkIsFinalFn is_final,
-                           LiteRtLmStreamCallback* out_proxy_fn) {
+void* stream_proxy_create_v1(LiteRtLmStreamCallback dart_callback,
+                             void* dart_data, ChunkGetTextFn get_text,
+                             ChunkGetErrorFn get_error,
+                             ChunkIsFinalFn is_final,
+                             LiteRtLmChunkCallback* out_proxy_fn) {
   if (out_proxy_fn == NULL) return NULL;
   *out_proxy_fn = NULL;
   if (dart_callback == NULL || get_text == NULL || get_error == NULL ||
       is_final == NULL) {
     return NULL;
   }
-  ProxyDataV2* proxy = (ProxyDataV2*)malloc(sizeof(ProxyDataV2));
+  ProxyDataV1* proxy = (ProxyDataV1*)PROXY_MALLOC(sizeof(ProxyDataV1));
   if (proxy == NULL) return NULL;
+  memset(proxy, 0, sizeof *proxy);
+  proxy->message = (char*)PROXY_MALLOC(kProxyMessageSize);
+  if (proxy->message == NULL) {
+    PROXY_FREE(proxy);
+    return NULL;
+  }
   proxy->dart_callback = dart_callback;
   proxy->dart_data = dart_data;
   proxy->get_text = get_text;
   proxy->get_error = get_error;
   proxy->is_final = is_final;
-  // Typed as the 4-arg callback because that is what the Dart binding declares;
-  // LiteRT-LM only consumes the address (see stream_proxy_create).
-  *out_proxy_fn = (LiteRtLmStreamCallback)(void*)stream_proxy_callback_v2;
+  *out_proxy_fn = stream_proxy_callback_v1;
   return proxy;
 }
 
-// Free a chunk or error string that was strdup'd by the proxy.
+// Frees a proxy LiteRT-LM never called back: the send it was made for was
+// refused (send_message_stream returned non-OK). Never call it for a started
+// send; that proxy is freed with its final chunk.
+STREAM_PROXY_EXPORT
+void stream_proxy_destroy_v1(void* proxy) {
+  if (proxy != NULL) proxy_free((ProxyDataV1*)proxy);
+}
+
+// Free a chunk or error string that was copied by the proxy.
 STREAM_PROXY_EXPORT
 void stream_proxy_free_string(char* str) {
-  free(str);
+  PROXY_FREE(str);
 }
 
 // Redirect stderr (and stdout) to a file at `path`. Used to capture native

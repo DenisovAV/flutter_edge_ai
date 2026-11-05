@@ -45,6 +45,19 @@ INTENTIONAL_DROPS=(
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
   "android_arm64:libLiteRtTopKWebGpuSampler.so"
+  # native-v0.19.0-a: patch_c_api.sh section 20 builds no GPU sampler on Linux
+  # and Windows (the fused WebGPU sampler crashed GPU engine create there);
+  # LiteRT-LM samples on the CPU and the logits stay on the GPU. The sampler
+  # library would never be loaded.
+  "linux_x86_64:libLiteRtTopKWebGpuSampler.so"
+  "linux_arm64:libLiteRtTopKWebGpuSampler.so"
+  "windows_x86_64:LiteRtTopKWebGpuSampler.dll"
+  "windows_x86_64:libLiteRtTopKWebGpuSampler.dll"
+  # native-v0.19.0-a: libLiteRtLm.so links the OpenCL accelerator and sampler
+  # in (section 19); Adreno 830 and Mali-G715 run the GPU without the separate
+  # libraries with the same results (DDP, 2026-11-04).
+  "android_arm64:libLiteRtOpenClAccelerator.so"
+  "android_arm64:libLiteRtTopKOpenClSampler.so"
   # native-v0.18.0: the QNN runtime left the bundle. Qualcomm licenses it for
   # redistribution only inside an application, so an app opts in with
   # `qualcomm_npu: true` and its build hook fetches com.qualcomm.qti:qnn-runtime
@@ -256,12 +269,25 @@ FORBIDDEN=(
   "linux_arm64:libQnn*"
   # Built against MediaTek's NeuroPilot SDK, whose licence allows it only
   # inside an application: apps fetch Google's build through `mediatek_npu`.
+  # Our adapter for LiteRT-LM v0.19.0's versioned dispatch ABI
+  # (mediatek_dispatch_compat.c) has the same name and does not ship either:
+  # the MediaTek NPU is refused in core 2.6.0 (design decision K, 2026-11-03);
+  # build_android.sh builds it only with BUILD_MEDIATEK_ADAPTER=1.
   "android_arm64:libLiteRtDispatch_MediaTek.so"
   "android_arm64:libLiteRtCompilerPlugin_MediaTek*"
+  # Linked into libLiteRtLm.so since native-v0.19.0-a (section 19): a separate
+  # copy would be a second OpenCL accelerator in the process.
+  "android_arm64:libLiteRtOpenClAccelerator.so"
+  "android_arm64:libLiteRtTopKOpenClSampler.so"
   # Need libwebgpu_dawn.so, which no Android bundle carries (native-v0.18.0).
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
   "android_arm64:libLiteRtTopKWebGpuSampler.so"
+  # Our build of ML Drift's TopK WebGPU sampler crashed the first GPU decode
+  # on Linux and Windows (patch_c_api.sh section 20): CPU sampling there.
+  "linux_x86_64:libLiteRtTopKWebGpuSampler.so"
+  "linux_arm64:libLiteRtTopKWebGpuSampler.so"
+  "windows_x86_64:libLiteRtTopKWebGpuSampler.dll"
   # Upstream's name, which flutter_litert's framework also uses (native-v0.18.0).
   "ios_arm64:libLiteRtMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtMetalAccelerator.dylib"
@@ -287,6 +313,10 @@ REQUIRED=(
   "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
   "macos_arm64:libLiteRtLmMetalAccelerator.dylib"
+  # From LiteRT-LM v0.19.0 libLiteRtLm links a static GPU accelerator (section
+  # 19: Metal on Apple). The Apple framework above stays until an iPhone and a
+  # macOS run without it: shipping one by mistake costs a few MB, dropping one
+  # by mistake costs a native cut.
 )
 echo
 echo "==> Checking files that must, and must not, ship"

@@ -747,6 +747,49 @@ void main() {
     },
   );
 
+  test(
+    'an error while paused drops queued text before the session moves on',
+    () async {
+      final model = _model();
+      final session = await model.openSession(systemInstruction: 'A');
+      await session.addQueryChunk(const Message(text: 'a1', isUser: true));
+      final first = _turn(session);
+      final delivered = <String>[];
+      final errors = <Object>[];
+      final visible = Completer<void>();
+      final firstDone = Completer<void>();
+      late final StreamSubscription<String> subscription;
+      subscription = first.text.listen(
+        (text) {
+          delivered.add(text);
+          if (text == 'visible') visible.complete();
+        },
+        onError: (Object error) => errors.add(error),
+        onDone: firstDone.complete,
+      );
+      final firstCall = await _call(1);
+      _emit(firstCall, 'visible');
+      await visible.future;
+      subscription.pause();
+      _emit(firstCall, 'queued-before-error');
+      await pumpEventQueue();
+      _fail(firstCall);
+      await pumpEventQueue();
+
+      final second = await _ask(session, 'a2');
+      final secondCall = await _call(2);
+      expect(_contents(secondCall), ['system:A', 'user:a2']);
+      _finish(secondCall);
+      await second.done;
+
+      subscription.resume();
+      await firstDone.future;
+      expect(delivered, ['visible']);
+      expect(errors, hasLength(1));
+      await model.close();
+    },
+  );
+
   test('a generation that fails after a stop is printed, not only reported '
       'as the stop', () async {
     final printed = <String>[];

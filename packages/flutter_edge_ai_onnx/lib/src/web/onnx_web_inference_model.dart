@@ -835,7 +835,12 @@ class OnnxWebSession extends InferenceModelSession {
         closeController();
       } catch (e, st) {
         // No reply is recorded for a failed turn, so its input goes too: the
-        // history keeps alternating.
+        // history keeps alternating. Text still queued behind a paused
+        // consumer was never delivered before the failure, so filter it just
+        // as stop/close do; otherwise it could arrive after the session has
+        // already moved on without that text in its history.
+        terminated = true;
+        dropPendingDeliveries();
         dropInput();
         releaseMutexIfHeld();
         if (stoppedByConsumer) {

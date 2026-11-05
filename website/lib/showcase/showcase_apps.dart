@@ -57,7 +57,8 @@ class AppStoreListing {
   final int? ratings;
 }
 
-/// Store figures as of 2026-11-04; GiGi's as of 2026-11-05.
+/// Store figures as of 2026-11-04; GiGi's, Aura's and Clean Expense's as of
+/// 2026-11-05.
 const showcaseApps = <ShowcaseApp>[
   ShowcaseApp(
     name: 'LocalMind: Ollama & LM Studio',
@@ -89,6 +90,17 @@ const showcaseApps = <ShowcaseApp>[
     name: 'GiGi by IntelliGeeks',
     icon: '/images/showcase/com.intelligeeks.gigi-1.png',
     googlePlay: GooglePlayListing('com.intelligeeks.gigi', installs: 10),
+  ),
+  ShowcaseApp(
+    name: 'Aura - AI 관상·손금',
+    icon: '/images/showcase/kr.co.taoist.gwansang-1.png',
+    googlePlay: GooglePlayListing('kr.co.taoist.gwansang', installs: 100),
+  ),
+  ShowcaseApp(
+    name: 'Clean Expense: Budget Tracker',
+    icon: '/images/showcase/com.sutechs.expense-1.png',
+    googlePlay: GooglePlayListing('com.sutechs.expense', installs: 100),
+    appStore: AppStoreListing('https://apps.apple.com/us/app/clean-expense-budget-tracker/id6757723320'),
   ),
 ];
 

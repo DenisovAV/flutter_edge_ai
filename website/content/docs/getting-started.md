@@ -509,12 +509,12 @@ on model + `maxTokens`), so on phones with large models (Gemma 4 E2B+) several
 concurrent sessions can OOM. A native `.litertlm` session keeps only its
 history; switching sessions replays it into the one native conversation, which
 takes time; GGUF sessions share one runtime with no separate native KV cache.
+An ONNX session on the web keeps only its history, resent on every turn.
 `.litertlm` on the web and built-in AI are not measured. Cap the count with
 `maxConcurrentSessions:` on `getActiveModel(...)` — `openSession()` throws
-`StateError` past the cap. ONNX on the web has no `openSession()`. A
-MediaPipe web session keeps only its history, in Dart, and resends it every
-turn; one session's turn waits for the other sessions' turns, however long
-they run, unless they are stopped.
+`StateError` past the cap. A MediaPipe web session keeps only its history, in
+Dart, and resends it every turn; one session's turn waits for the other
+sessions' turns, however long they run, unless they are stopped.
 
 If you only ever have one conversation at a time, stick with the simpler
 `createSession()` / `createChat()` singleton API — you don't need this.

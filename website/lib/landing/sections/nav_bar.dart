@@ -5,14 +5,19 @@ import '../../theme/brand.dart';
 
 /// Sticky top navigation bar.
 ///
-/// Pure CSS — NOT a `@client` component. The mobile menu toggles via a hidden
-/// checkbox + `:checked` sibling selector, so it works with **no JavaScript and
-/// no hydration**. This site is Jaspr static mode; the earlier `@client`
-/// version's `onClick` never hydrated on the deployed static build (the burger
-/// was dead, and the links only worked because they fell back to `href`
-/// navigation). The checkbox hack removes that dependency entirely.
-class NavBar extends StatelessComponent {
+/// A `@client` component: on narrow screens the burger opens and closes the
+/// links. The links themselves are plain `href`s with no `onClick`, since a
+/// handler on an `<a>` here would replace the page navigation.
+@client
+class NavBar extends StatefulComponent {
   const NavBar({super.key});
+
+  @override
+  State<NavBar> createState() => NavBarState();
+}
+
+class NavBarState extends State<NavBar> {
+  bool _open = false;
 
   static const _links = <({String text, String href, bool external, bool cta})>[
     (text: 'Docs', href: '/docs/getting-started', external: false, cta: false),
@@ -49,33 +54,23 @@ class NavBar extends StatelessComponent {
           ),
           span(classes: 'navbar-wordmark', [Component.text('Flutter Edge AI')]),
         ]),
-        // Hidden checkbox drives the mobile menu open/closed state — pure CSS,
-        // no JS. The <label> below is the visible hamburger; clicking it toggles
-        // the checkbox, and `.navbar-toggle:checked ~ .navbar-links` reveals the
-        // dropdown. Hidden on wide screens via the desktop media query.
-        // Not aria-hidden: on narrow screens this checkbox is the only way to
-        // the links for keyboard and screen-reader users, so it has a name
-        // and shows its focus on the burger.
-        input(
-          type: InputType.checkbox,
-          id: 'navbar-toggle',
-          classes: 'navbar-toggle',
-          attributes: const {'aria-label': 'Navigation menu'},
-        ),
-        // Hamburger label (shown only on narrow screens via CSS).
-        label(
+        // Shown only on narrow screens (see the desktop media query).
+        button(
+          type: ButtonType.button,
           classes: 'navbar-burger',
           attributes: {
-            'for': 'navbar-toggle',
-            'aria-label': 'Toggle navigation menu',
+            'aria-label': 'Navigation menu',
+            'aria-controls': 'navbar-links',
+            'aria-expanded': '$_open',
           },
+          onClick: () => setState(() => _open = !_open),
           [
             span(classes: 'navbar-burger-bar', []),
             span(classes: 'navbar-burger-bar', []),
             span(classes: 'navbar-burger-bar', []),
           ],
         ),
-        div(classes: 'navbar-links', [
+        div(id: 'navbar-links', classes: _open ? 'navbar-links is-open' : 'navbar-links', [
           for (final l in _links)
             // Full-page navigation via `href` (static multi-page site). The
             // menu closes on its own because navigation reloads the page.
@@ -162,19 +157,9 @@ class NavBar extends StatelessComponent {
     ),
     // ---- MOBILE-FIRST BASE (narrow screens) ----
     // Burger visible, links collapse into an absolutely-positioned dropdown that
-    // is hidden until the hidden checkbox is `:checked` (toggled by the burger
-    // <label>). Desktop overrides below via a min-width media query, so source
-    // order can't accidentally re-hide the burger (the earlier ordering bug).
-    // The checkbox itself is always visually hidden — it only carries state.
-    css('.navbar-toggle').styles(
-      position: Position.absolute(),
-      raw: {
-        'opacity': '0',
-        'width': '1px',
-        'height': '1px',
-        'pointer-events': 'none',
-      },
-    ),
+    // is hidden until the burger adds `.is-open`. Desktop overrides below via a
+    // min-width media query, so source order can't accidentally re-hide the
+    // burger (the earlier ordering bug).
     css('.navbar-burger').styles(
       display: Display.flex,
       flexDirection: FlexDirection.column,
@@ -200,9 +185,8 @@ class NavBar extends StatelessComponent {
         bottom: BorderSide(color: Color('rgba(255,255,255,0.08)'), width: 1.px),
       ),
     ),
-    // Checkbox checked → reveal the dropdown (pure-CSS toggle, no JS).
-    css('.navbar-toggle:checked ~ .navbar-links').styles(display: Display.flex),
-    css('.navbar-toggle:focus-visible ~ .navbar-burger').styles(
+    css('.navbar-links.is-open').styles(display: Display.flex),
+    css('.navbar-burger:focus-visible').styles(
       raw: {'outline': '2px solid ${Brand.blueLight.value}', 'outline-offset': '2px'},
     ),
     css('.navbar-links .navbar-link').styles(
@@ -217,12 +201,7 @@ class NavBar extends StatelessComponent {
       query: MediaQuery.screen(minWidth: 960.px),
       styles: [
         css('.navbar-burger').styles(display: Display.none),
-        // The links are inline here, so the checkbox leaves the tab order.
-        css('.navbar-toggle').styles(display: Display.none),
-        // On desktop the links are always inline regardless of checkbox state.
-        css('.navbar-toggle:checked ~ .navbar-links').styles(
-          flexDirection: FlexDirection.row,
-        ),
+        // Inline whether or not the menu was left open.
         css('.navbar-links').styles(
           position: Position.static,
           display: Display.flex,

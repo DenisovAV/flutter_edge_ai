@@ -189,10 +189,50 @@ competing tool loops for one turn. Pass `supportsFunctionCalls: true` to `create
 the `tools`: it defaults to `false` here. Gemini Nano handles single-turn calls; multi-turn agent
 chaining is not supported on Web (see `flutter_edge_ai_agent`).
 
+### Typed responses (`responseFormat`)
+
+`openSession(responseFormat:)` and `openChat(responseFormat:)` are wired to `flutter_local_ai`'s
+schema call on Apple Foundation Models (`GenerationSchema`), Chrome's Prompt API
+(`responseConstraint`) and Windows AI Foundry (`GenerateStructuredJsonResponseAsync`). Each
+platform is enabled only after a device run of
+`example/integration_test/builtin_ai_structured_test.dart`. **None has had one yet**, so today
+every platform refuses a format with a `ResponseFormatUnsupportedException` that says so; read
+`model.structuredOutputSupport` or `model.refusalFor(format)` before opening. Android always
+refuses one: ML Kit GenAI takes a schema only as a compile-time type.
+
+Where it is enabled:
+- The reply arrives as **one chunk** once it is complete (`StructuredDelivery.buffered`): there is
+  no streamed structured call.
+- The schema keywords enforced are `type`, `properties`, `required`, `items`, `minItems`,
+  `maxItems` and `enum` (plus the annotations `description`, `title`, `examples`).
+  `additionalProperties`, `const` and the numeric and length bounds are refused with their path.
+- Also refused: an `enum` that is not all strings, a `null` type and an array without `items`
+  (`flutter_local_ai` rejects them), and an `enum` with a non-`string` type (the model answers an
+  enum with a string, which that type would reject). On Apple, an object with no properties is
+  refused too (`ResponseFormat.jsonObject()` included), because its `GenerationSchema` can only
+  produce `{}`.
+- On Apple a format cannot be combined with `maxOutputTokens`: Apple caps the reply
+  (`maximumResponseTokens`) without saying it did, and a capped reply may come back malformed, so
+  such a turn could not be reported as cut short. Chrome and Windows apply no output cap.
+  `refusalFor(format)` does not see `maxOutputTokens`: it can return null on Apple while
+  `openSession(responseFormat: format, maxOutputTokens: …)` (or `openChat`) refuses the pair.
+- Apple Foundation Models adds the schema to the prompt itself (`includeSchemaInPrompt` defaults to
+  true); flutter_edge_ai adds nothing to the prompt.
+- A stop and a close end the turn with an `IncompleteStructuredOutputException`
+  (`TurnEnd.stopped`, `closed`) once the platform call has settled. A full context window fails the
+  turn with the platform's own error (Apple `LocalAiGenerationException` with `contextSizeExceeded`
+  or `exceededContextWindowSize`, Windows `PlatformException` `PROMPT_TOO_LONG`, Chrome the Prompt
+  API's error); it is not reported as a refused input that left the session untouched, because
+  Windows keeps the overflowing prompt in its transcript and FoundationModels does not document
+  whether it does. Open a new session after one.
+- On Windows a reply the platform reports as off-schema (`STRUCTURED_OUTPUT_INVALID`) reaches core's
+  check, which raises `NonConformingStructuredOutputException` with its text.
+
 ### Reaching what flutter_edge_ai's interface has no slot for
 
-Native tool calling (Apple, OS 26+) and schema-constrained JSON output are `flutter_local_ai`
-features with no equivalent in flutter_edge_ai's `InferenceModelSession`. They stay available through
+Native tool calling (Apple, OS 26+) is a `flutter_local_ai` feature with no equivalent in
+flutter_edge_ai's `InferenceModelSession`, and so is schema-constrained output on a platform that
+does not take a `responseFormat` yet. They stay available through
 `flutter_local_ai`'s own API — `LocalAi`, `LocalAiModel.create()`, `LocalAiSession` — which you can
 use alongside this engine, since it is the same package driving the same native host:
 

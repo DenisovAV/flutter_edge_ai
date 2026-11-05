@@ -9,12 +9,15 @@ import 'package:flutter_edge_ai/engine.dart'
         InferenceChat,
         InferenceModel,
         InferenceModelSession,
+        JsonSchemaResponseFormat,
         ModelFileType,
         ModelType,
         PreferredBackend,
         ResolvedChatRequest,
+        ResponseFormatUnsupportedException,
         SamplingParams,
         SessionRequest,
+        StructuredOutputSupport,
         Tool,
         ToolChoice,
         defaultMaxFunctionBufferLength,
@@ -24,6 +27,7 @@ import 'package:flutter_local_ai/flutter_local_ai.dart'
 import 'package:meta/meta.dart' show experimental;
 
 import 'builtin_ai_session.dart';
+import 'structured_output.dart';
 
 /// One-time guard so requesting thinking mode logs a single warning rather
 /// than spamming one per session/chat. Built-in OS models expose no thinking
@@ -149,11 +153,24 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
   @override
   PreferredBackend? get activeBackend => null;
 
+  /// A response format is delivered as one chunk when the reply is complete,
+  /// on the platforms whose run has passed; every other platform refuses it
+  /// with a reason (Android always: ML Kit GenAI takes schemas at compile
+  /// time only).
+  @override
+  StructuredOutputSupport get engineStructuredOutputSupport =>
+      builtInStructuredOutputSupport(currentBuiltInPlatform());
+
+  @override
+  ResponseFormatUnsupportedException? engineRefusalFor(
+    JsonSchemaResponseFormat format,
+  ) => builtInSchemaRefusal(format, currentBuiltInPlatform());
+
   /// The underlying flutter_local_ai model.
   ///
   /// This is the supported escape hatch for the capabilities flutter_edge_ai's
-  /// [InferenceModel] has no slot for — native tool calling and
-  /// schema-constrained output. Open a `LocalAiSession` from it (or reach one
+  /// [InferenceModel] has no slot for — native tool calling, and
+  /// schema-constrained output where `responseFormat` is not enabled yet. Open a `LocalAiSession` from it (or reach one
   /// through [BuiltInAiSession.localAiSession]) and drive flutter_local_ai's
   /// own API directly; the two APIs share one host, so sessions opened either
   /// way coexist.
@@ -189,6 +206,7 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
     required bool enableThinking,
     required int? maxOutputTokens,
     required void Function(BuiltInAiSession session) onClose,
+    JsonSchemaResponseFormat? responseFormat,
   }) async {
     if (_isClosed) {
       throw StateError(
@@ -240,14 +258,24 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
         throw StateError('Model closed while the session was opening.');
       }
       late final BuiltInAiSession created;
-      created = BuiltInAiSession(
-        session: inner,
-        modelType: modelType,
-        fileType: fileType,
-        supportImage: vision,
-        maxNumImages: maxNumImages,
-        onClose: () => onClose(created),
-      );
+      created = responseFormat == null
+          ? BuiltInAiSession(
+              session: inner,
+              modelType: modelType,
+              fileType: fileType,
+              supportImage: vision,
+              maxNumImages: maxNumImages,
+              onClose: () => onClose(created),
+            )
+          : StructuredBuiltInAiSession(
+              session: inner,
+              modelType: modelType,
+              fileType: fileType,
+              supportImage: vision,
+              maxNumImages: maxNumImages,
+              onClose: () => onClose(created),
+              format: responseFormat,
+            );
       return created;
     } finally {
       _openingSessions--;
@@ -324,9 +352,14 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       :systemInstruction,
       :enableThinking,
       :maxOutputTokens,
+      :responseFormat,
     ) = request;
     if (loraPath != null) {
       throw UnsupportedError('LoRA is not exposed by this engine.');
+    }
+    if (responseFormat != null && maxOutputTokens != null) {
+      final refusal = builtInOutputCapRefusal(currentBuiltInPlatform());
+      if (refusal != null) throw refusal;
     }
     _checkSampling(
       temperature: temperature,
@@ -344,6 +377,7 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       enableThinking: enableThinking,
       maxOutputTokens: maxOutputTokens,
       onClose: _openSessions.remove,
+      responseFormat: responseFormat,
     );
     _openSessions.add(created);
     return created;
@@ -454,15 +488,28 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
 
   Future<void> _close() async {
     _isClosed = true;
+    var structured = const <StructuredBuiltInAiSession>[];
     // Release the model and reset core's singleton bookkeeping even if its
     // close throws — otherwise a phantom model lingers in the registry. The
     // OS model goes first: core builds the next model once the listeners
     // fire.
     try {
+      // A structured turn still running ends as closed, not with whatever
+      // the OS answers a request on a released model.
+      structured = [
+        for (final open in _openSessions)
+          if (open is StructuredBuiltInAiSession) open,
+      ];
+      for (final open in structured) {
+        open.modelClosing();
+      }
       _session = null;
       _openSessions.clear();
       await _model.close();
     } finally {
+      for (final open in structured) {
+        open.modelClosed();
+      }
       fireCloseListeners();
     }
   }

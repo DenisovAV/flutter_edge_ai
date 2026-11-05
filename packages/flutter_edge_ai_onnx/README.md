@@ -146,6 +146,61 @@ when set. Models install as `ModelFileType.onnx` and use ORT-GenAI's own chat
 template (`OgaTokenizerApplyChatTemplate`) — the engine never builds turn
 markers itself.
 
+**Response formats.** `openSession` / `openChat(responseFormat:)` are enforced
+by ORT-GenAI's guidance (llguidance): the session's JSON schema is set on its
+own generator, so every complete reply is a value of the format, and core
+checks each one. The whole `ResponseFormat.dialect` is enforced on macOS arm64, for a
+model directory with a `tokenizer.json` (guidance reads it). Linux x64,
+Windows x64 and Windows ARM64 also ship an ORT-GenAI 0.17.0 build with
+guidance, and each is enabled once its run has passed; until then they refuse
+a format, saying so. Android (this repository's ORT-GenAI build), iOS
+(Microsoft's) and the web have no guidance and refuse it with
+`ResponseFormatUnsupportedException`; read
+`model.structuredOutputSupport` first.
+
+**After a turn that does not end on its own**, the session stays usable with
+its history, and a turn that streamed text stays in the model's context
+exactly as core's `InferenceChat` keeps it in the chat. The worker settles the
+turn before it serves the next one:
+- **A stop and a guided turn at `maxOutputTokens`** keep the exchange: the
+  prompt and the reply as far as the user saw it stay in the context, closed
+  with the model's end-of-turn token, as if the reply had ended there
+  (LiteRT-LM does the same). A stop before any text keeps nothing, as core's
+  chat takes it back; a guided turn at its cap keeps its prompt even then.
+- **A window filled during decode** has no room for that token and keeps the
+  turn as it is. The window is then full, so **a session used directly refuses
+  every later prompt** with `ContextLimitException`: close it and open a new
+  one, or use `InferenceChat`, which rebuilds its session from its history.
+- **A failure** and **a close** are rewound to where the generator was before
+  the turn (`OgaGenerator_RewindTo`): the earlier turns stay, this one goes.
+- An unguided turn at its cap is kept and continued, as before.
+
+A guided session's grammar starts again after each of these. A prompt that
+does not fit is refused and leaves the conversation as it was: on a plain and a
+structured session alike the reply fails with core's `ContextLimitException`
+and the turn ends `TurnEnd.contextLimit`, the signal for an input that was
+refused.
+
+Measured on Phi-3.5-mini (macOS, greedy):
+- After a guided turn cut at its cap (a title, `{"answer": "Whispersings`),
+  asked which title it had started, the model answers from a context that
+  holds that turn — "Tempest's Symphony: Ode to the Storm's Fury and Grace",
+  where the same conversation written in as text gives "…Odes to…", and the
+  turn dropped gives an unrelated title.
+- A story that fills the window ends `contextLimit`; the next question is
+  refused with `ContextLimitException`, and again when asked twice.
+- After a stop, asked for the story's first words, the model quotes the
+  partial reply (`"Once upon"`), the same as from the conversation written as
+  text with the partial reply in it; with the turn dropped it has no story to
+  quote.
+- Longer continuations of those two contexts can drift apart: ORT-GenAI never
+  computes a finished turn's end token, and the chat template writes a newline
+  after it, so they are not token-identical.
+
+A model ORT-GenAI cannot rewind (phi3v, whisper, LFM2, decoder pipelines) gets
+its context rebuilt from the session's own conversation text instead, at the
+cost of a full prefill, with one printed warning per model.
+
 Natively `activeBackend` is `null`: ORT-GenAI picks the execution provider from the
 model's `genai_config.json`, whose execution-provider section the plugin does
 not read, so there is no honest answer to report. On web it is `null` until the

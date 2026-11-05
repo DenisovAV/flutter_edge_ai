@@ -20,6 +20,28 @@ import 'onnx_sampling.dart';
 /// slice (device-gated, see the hardened plan's D2 tail).
 class OnnxSession extends InferenceModelSession {
   OnnxSession({
+    required GenAiClient client,
+    required ModelType modelType,
+    required ModelFileType fileType,
+    String? systemInstruction,
+    int? maxOutputTokens,
+    SamplingParams sampling = const SamplingParams(),
+    int? sessionId,
+    required VoidCallback onClose,
+  }) : this._(
+         null,
+         client: client,
+         modelType: modelType,
+         fileType: fileType,
+         systemInstruction: systemInstruction,
+         maxOutputTokens: maxOutputTokens,
+         sampling: sampling,
+         sessionId: sessionId,
+         onClose: onClose,
+       );
+
+  OnnxSession._(
+    this._guidance, {
     required this.client,
     required this.modelType,
     required this.fileType,
@@ -29,6 +51,11 @@ class OnnxSession extends InferenceModelSession {
     this.sessionId,
     required this.onClose,
   });
+
+  /// The JSON schema ORT-GenAI's guidance enforces on every reply of this
+  /// session, set on its generator; null = unguided. Only
+  /// [openGuidedOnnxSession] sets it.
+  final String? _guidance;
 
   /// Which generator this session drives: null is the legacy singleton
   /// session (`createSession`), any other value an `openSession` session with
@@ -129,45 +156,65 @@ class OnnxSession extends InferenceModelSession {
   }
 
   @override
-  Future<String> getResponse() async {
-    _assertNotClosed();
-    final turn = _drainTurn();
-    final genSw = Stopwatch()..start();
-    int? firstChunkMs;
-    var chunkCount = 0;
-    final buffer = StringBuffer();
-    var completedNormally = false;
-    try {
-      await for (final chunk in client.generate(turn)) {
-        firstChunkMs ??= genSw.elapsedMilliseconds;
-        chunkCount++;
-        buffer.write(chunk);
-      }
-      completedNormally = true;
-      _logGenerationStats(genSw, firstChunkMs, chunkCount);
-    } finally {
-      // A turn that did not complete normally — a mid-stream native error,
-      // or the consumer cancelling the subscription (barge-in) — leaves the
-      // generator's KV cache holding the same kind of dangling, incomplete
-      // assistant turn an explicit stopGeneration() does. Force the next
-      // turn to start a fresh generator either way, not only on an explicit
-      // stop (see `_forceResetOnNextTurn`'s doc).
-      if (!completedNormally) _forceResetOnNextTurn = true;
-      _noteGenerationFinished();
-    }
-    return buffer.toString();
-  }
+  Future<String> getResponse() async => getResponseAsync().join();
 
+  // Lazy, as before: the query is drained, and a closed session fails, when
+  // the stream is listened to.
   @override
   Stream<String> getResponseAsync() async* {
+    yield* startTurn().text;
+  }
+
+  /// One turn, with how it ended when the client can say (a
+  /// [GenAiFfiClient]; any other client gives `end: null`). A turn of a
+  /// session closed while it ran ends [TurnEnd.closed]; one that
+  /// [stopGeneration] or a cancelled subscription stopped,
+  /// [TurnEnd.stopped]; otherwise the worker's end-of-sequence, output or
+  /// context limit. A failed turn's error is on the text, and its end is
+  /// [TurnEnd.closed], as core's own structured session reports a turn that
+  /// failed to start (never read after an error).
+  ///
+  /// What a turn leaves behind is settled by the worker of a
+  /// [GenAiFfiClient] before it serves anything else (`afterTurn`), so that a
+  /// turn that streamed text stays in the model's context exactly as core's
+  /// chat keeps it: an end of sequence is kept, and so is an unguided turn at
+  /// `maxOutputTokens`; a stop, a guided turn at its cap and a window filled
+  /// during decode keep their exchange — the prompt and the reply as far as
+  /// the user saw it, closed with the model's end-of-turn token where there
+  /// is room for it; a refused prompt, a failure and a close are rewound, so
+  /// the session keeps its earlier turns without this one. A guided
+  /// session's grammar starts again either way. With any
+  /// other client the session itself starts the next turn fresh after a stop
+  /// or a failure.
+  ///
+  /// A prompt that does not fit is refused: the text ends with a
+  /// [ContextLimitException] and the turn ends [TurnEnd.contextLimit], on a plain and a
+  /// guided session alike, and nothing of the turn is kept — the prompt never
+  /// reaches the generator (design 2.6.0 §3: an error with `contextLimit` is
+  /// a refused input, whose messages core's chat takes back).
+  ///
+  /// The turn is sent when this is called, as core's chat and structured
+  /// session expect; listen to [EngineTurn.text] right away. A text never
+  /// listened to cannot stop the turn, which then decodes to its end.
+  @override
+  EngineTurn startTurn() {
     _assertNotClosed();
     final turn = _drainTurn();
+    final started = startGenAiTurn(client, turn, guidance: _guidance);
+    final workerEnd = started.end;
+    return EngineTurn(
+      text: _streamTurn(started.text, workerEnd),
+      end: workerEnd?.then((end) => _isClosed ? TurnEnd.closed : end),
+    );
+  }
+
+  Stream<String> _streamTurn(Stream<String> text, Future<TurnEnd>? end) async* {
     final genSw = Stopwatch()..start();
     int? firstChunkMs;
     var chunkCount = 0;
     var completedNormally = false;
     try {
-      await for (final chunk in client.generate(turn)) {
+      await for (final chunk in text) {
         firstChunkMs ??= genSw.elapsedMilliseconds;
         chunkCount++;
         yield chunk;
@@ -175,12 +222,18 @@ class OnnxSession extends InferenceModelSession {
       completedNormally = true;
       _logGenerationStats(genSw, firstChunkMs, chunkCount);
     } finally {
-      // Same reset-on-abnormal-termination rule as getResponse() above —
-      // this also covers the consumer breaking out of `await for`
-      // (subscription cancellation), which Dart unwinds through this
-      // finally block without completing the try normally.
-      if (!completedNormally) _forceResetOnNextTurn = true;
-      _noteGenerationFinished();
+      // Only for a client whose worker does not settle its turns (end ==
+      // null): a turn that did not complete normally — a mid-stream native
+      // error, or the consumer cancelling the subscription (barge-in,
+      // breaking out of `await for`, which Dart unwinds through this
+      // finally block) — leaves the generator's KV cache holding the same
+      // kind of dangling, incomplete assistant turn an explicit
+      // stopGeneration() does. Force the next turn to start a fresh
+      // generator either way (see `_forceResetOnNextTurn`'s doc).
+      if (end == null) {
+        if (!completedNormally) _forceResetOnNextTurn = true;
+        _noteGenerationFinished();
+      }
     }
   }
 
@@ -249,3 +302,29 @@ class OnnxSession extends InferenceModelSession {
     }
   }
 }
+
+/// An [OnnxSession] whose every reply ORT-GenAI's guidance holds to
+/// [jsonSchema]: set on the session's own generator, each time one is created.
+/// Only for a [GenAiFfiClient] whose host has guidance (`guidanceRefusalOf`);
+/// `OnnxInferenceModel.openEngineSession` checks that first. Not exported.
+OnnxSession openGuidedOnnxSession({
+  required GenAiClient client,
+  required ModelType modelType,
+  required ModelFileType fileType,
+  String? systemInstruction,
+  int? maxOutputTokens,
+  SamplingParams sampling = const SamplingParams(),
+  required int sessionId,
+  required VoidCallback onClose,
+  required String jsonSchema,
+}) => OnnxSession._(
+  jsonSchema,
+  client: client,
+  modelType: modelType,
+  fileType: fileType,
+  systemInstruction: systemInstruction,
+  maxOutputTokens: maxOutputTokens,
+  sampling: sampling,
+  sessionId: sessionId,
+  onClose: onClose,
+);

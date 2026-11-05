@@ -45,6 +45,7 @@ import 'package:mutex/mutex.dart';
 
 import '../onnx_sampling.dart';
 import 'gen_ai_protocol.dart';
+import 'gen_ai_turns.dart';
 import 'gen_ai_worker.dart';
 import 'ort_genai_bindings.g.dart';
 
@@ -270,6 +271,10 @@ class GenAiFfiClient implements GenAiClient {
   /// The session of each turn in flight, by request id.
   final Map<int, int?> _streamSession = {};
 
+  /// How each turn in flight ended, by request id; completed before its text
+  /// closes.
+  final Map<int, Completer<TurnEnd>> _turnEnds = {};
+
   /// One completer per reset sent and not yet acknowledged; the worker serves
   /// requests in order, so its acks come back in the same order.
   final Queue<Completer<void>> _resetAcks = Queue();
@@ -390,13 +395,23 @@ class GenAiFfiClient implements GenAiClient {
         );
       }
       _streamSession.remove(msg.id);
+      // The end first: a consumer reading it after the text's done finds it.
+      _turnEnds.remove(msg.id)?.complete(msg.end);
       final controller = _activeStreams.remove(msg.id);
       unawaited(controller?.close());
       _streamDone.remove(msg.id)?.complete();
     } else if (msg is GenerateError) {
       _streamSession.remove(msg.id);
+      _turnEnds.remove(msg.id)?.complete(msg.end ?? TurnEnd.closed);
       final controller = _activeStreams.remove(msg.id);
-      controller?.addError(StateError(msg.error));
+      // A refused input — a prompt that did not fit, nothing of it kept — is
+      // core's ContextLimitException, with end contextLimit; any other
+      // failure is a StateError.
+      controller?.addError(
+        msg.end == TurnEnd.contextLimit
+            ? ContextLimitException(msg.error)
+            : StateError(msg.error),
+      );
       unawaited(controller?.close());
       _streamDone.remove(msg.id)?.complete();
     } else if (msg is CountTokensReply) {
@@ -532,6 +547,10 @@ class GenAiFfiClient implements GenAiClient {
   }
 
   void _failAllPending(StateError error) {
+    for (final end in _turnEnds.values) {
+      end.complete(TurnEnd.closed);
+    }
+    _turnEnds.clear();
     for (final id in _activeStreams.keys.toList()) {
       final controller = _activeStreams.remove(id);
       controller?.addError(error);
@@ -555,7 +574,20 @@ class GenAiFfiClient implements GenAiClient {
   }
 
   @override
-  Stream<String> generate(GenAiTurn turn) {
+  Stream<String> generate(GenAiTurn turn) => _startTurn(turn).text;
+
+  /// [generate], guided by [guidance] (a JSON schema) when it is set, with
+  /// how the turn ended. The end completes once the worker has answered —
+  /// after a cancelled subscription too — and never with an error: a failed
+  /// turn puts its error on the text — [ContextLimitException] with end
+  /// [TurnEnd.contextLimit] when the prompt did not fit, a [StateError] with
+  /// end [TurnEnd.closed] otherwise.
+  ({Stream<String> text, Future<TurnEnd> end}) _startTurn(
+    GenAiTurn turn, {
+    String? guidance,
+    List<Map<String, String>>? seedHistory,
+  }) {
+    final end = Completer<TurnEnd>();
     // If the consumer cancels its subscription (a plain `break` out of
     // `await for`, or a voice-loop barge-in) WITHOUT calling
     // [stopGeneration] itself, nothing would otherwise tell the worker to
@@ -565,17 +597,34 @@ class GenAiFfiClient implements GenAiClient {
     // onCancel -> native cancel" fix (commit 93a5298). `stopGeneration` is
     // idempotent/cheap when the turn already finished normally.
     var cancelled = false;
+    int? requestId;
     final controller = StreamController<String>(
       onCancel: () {
         // Also runs when the stream ends normally, so this only tells the
         // worker (which ignores a stop for a turn that is not live) and marks
         // this turn: another waiting turn of the session is not its business.
+        // The stop names this turn's request, not its session: a consumer
+        // that paused the stream and cancels it once the turn has ended —
+        // and the session's next turn has started — must not stop that one.
+        // A turn not sent yet sees `cancelled` and is never sent.
         cancelled = true;
-        _commandPort?.send(StopSignal(turn.sessionId));
+        if (requestId case final id?) {
+          _commandPort?.send(StopSignal.request(id));
+        }
       },
     );
-    unawaited(_runGenerateGuarded(controller, turn, () => cancelled));
-    return controller.stream;
+    unawaited(
+      _runGenerateGuarded(
+        controller,
+        turn,
+        () => cancelled,
+        end,
+        guidance: guidance,
+        seedHistory: seedHistory,
+        onSent: (id) => requestId = id,
+      ),
+    );
+    return (text: controller.stream, end: end.future);
   }
 
   /// Sessions released by [resetSession]. Ids are never reused, so a turn of a
@@ -593,8 +642,17 @@ class GenAiFfiClient implements GenAiClient {
     StreamController<String> controller,
     GenAiTurn turn,
     bool Function() cancelled,
-  ) async {
+    Completer<TurnEnd> end, {
+    String? guidance,
+    List<Map<String, String>>? seedHistory,
+    required void Function(int id) onSent,
+  }) async {
+    void endAs(TurnEnd how) {
+      if (!end.isCompleted) end.complete(how);
+    }
+
     if (_closed || !_loaded) {
+      endAs(TurnEnd.closed);
       controller.addError(_unusable('GenAiFfiClient is not loaded'));
       await controller.close();
       return;
@@ -612,6 +670,7 @@ class GenAiFfiClient implements GenAiClient {
     if (cancelled()) {
       // The consumer is gone: nobody is left to tell.
       _mutex.release();
+      endAs(TurnEnd.stopped);
       await controller.close();
       return;
     }
@@ -621,12 +680,14 @@ class GenAiFfiClient implements GenAiClient {
     // success.
     if (_closed) {
       _mutex.release();
+      endAs(TurnEnd.closed);
       controller.addError(_unusable('GenAiFfiClient shut down'));
       await controller.close();
       return;
     }
     if (session != null && _released.contains(session)) {
       _mutex.release();
+      endAs(TurnEnd.closed);
       controller.addError(StateError('ONNX session $session was closed'));
       await controller.close();
       return;
@@ -634,6 +695,7 @@ class GenAiFfiClient implements GenAiClient {
     if (stopped) {
       // A stop was filed while this turn waited behind another session's.
       _mutex.release();
+      endAs(TurnEnd.stopped);
       await controller.close();
       return;
     }
@@ -648,6 +710,7 @@ class GenAiFfiClient implements GenAiClient {
     final commandPort = _commandPort;
     if (_closed || commandPort == null) {
       _mutex.release();
+      endAs(TurnEnd.closed);
       controller.addError(_unusable('GenAiFfiClient shut down'));
       await controller.close();
       return;
@@ -656,8 +719,12 @@ class GenAiFfiClient implements GenAiClient {
     final done = _streamDone[id] = Completer<void>();
     _activeStreams[id] = controller;
     _streamSession[id] = turn.sessionId;
+    _turnEnds[id] = end;
     try {
-      commandPort.send(GenerateRequest(id, turn));
+      commandPort.send(
+        GenerateRequest(id, turn, guidance: guidance, seedHistory: seedHistory),
+      );
+      onSent(id);
       await done.future;
     } catch (e) {
       if (_activeStreams.containsKey(id)) {
@@ -668,6 +735,8 @@ class GenAiFfiClient implements GenAiClient {
     } finally {
       _streamSession.remove(id);
       _streamDone.remove(id);
+      _turnEnds.remove(id);
+      endAs(TurnEnd.closed);
       _mutex.release();
     }
   }
@@ -806,6 +875,128 @@ Future<String>? unexpectedExitOf(GenAiClient client) => switch (client) {
   GenAiFfiClient() => client._unexpectedExit.future,
   _ => null,
 };
+
+/// One turn on [client], guided by [guidance] (a JSON schema) when it is set,
+/// with how it ended. A [GenAiFfiClient] reports the end; any other client
+/// gives `end: null` and cannot take [guidance] ([StateError]): only the
+/// worker of a [GenAiFfiClient] sets it on a generator. Not exported, like
+/// [unexpectedExitOf].
+///
+/// [seedHistory] starts a first turn's new generator from a conversation
+/// given as text — what a session rebuilt from its history holds; for tests
+/// that compare against that.
+({Stream<String> text, Future<TurnEnd>? end}) startGenAiTurn(
+  GenAiClient client,
+  GenAiTurn turn, {
+  String? guidance,
+  @visibleForTesting List<Map<String, String>>? seedHistory,
+}) {
+  if (client is GenAiFfiClient) {
+    final started = client._startTurn(
+      turn,
+      guidance: guidance,
+      seedHistory: seedHistory,
+    );
+    return (text: started.text, end: started.end);
+  }
+  if (guidance != null) {
+    throw StateError(
+      '${client.runtimeType} cannot take a response format: only '
+      'GenAiFfiClient sets ORT-GenAI guidance.',
+    );
+  }
+  return (text: client.generate(turn), end: null);
+}
+
+/// Whether a prompt of [promptTokens] fits a generator that holds [used] of
+/// [contextWindow] tokens: it must leave room for one generated token, since
+/// AppendTokenSequences takes a prompt that fills the window exactly and the
+/// first GenerateNextToken then throws at max_length.
+@visibleForTesting
+bool promptFits(int used, int promptTokens, int contextWindow) =>
+    used + promptTokens < contextWindow;
+
+/// What a guided session sends ORT-GenAI for [format]: its schema, in the
+/// caller's key order, plus llguidance's own `x-guidance` options, which
+/// llguidance reads and removes before it compiles the schema.
+///
+/// llguidance's JSON grammar allows any run of whitespace between tokens by
+/// default, and a model may never leave it: measured on Phi-3.5-mini int4,
+/// every value of the reply was right and then newlines ran to
+/// `maxOutputTokens` where the closing `}` belonged. With whitespace fixed,
+/// the separators are the ones models write unguided (`", "`, `": "`), and
+/// the only way on is the value's next token. Core validates the reply
+/// against the caller's own schema; this changes nothing it checks.
+String genAiGuidanceSchema(JsonSchemaResponseFormat format) => jsonEncode({
+  ...format.schema,
+  'x-guidance': const {
+    'whitespace_flexible': false,
+    'item_separator': ', ',
+    'key_separator': ': ',
+  },
+});
+
+/// Whether ORT-GenAI 0.17.0's archive for [abi], as `hook/build.dart` bundles
+/// it, was built with guidance (llguidance). Read from the archives
+/// themselves: Microsoft's macOS arm64, Linux x64, Windows x64 and Windows
+/// ARM64 builds link llguidance in (its symbols and `GuidanceLogitsProcessor`
+/// are there); Microsoft's iOS xcframework and this repository's Android build
+/// (`build_genai_android.sh`) do not, and say "guidance is unavailable" when
+/// asked for it. Keep in step with the hook's pins.
+@visibleForTesting
+bool genAiArchiveHasGuidance(ffi.Abi abi) => const {
+  ffi.Abi.macosArm64,
+  ffi.Abi.linuxX64,
+  ffi.Abi.windowsX64,
+  ffi.Abi.windowsArm64,
+}.contains(abi);
+
+/// The hosts whose response-format run has passed: real ORT-GenAI guidance
+/// through this engine (`onnx_response_format_host_smoke_test.dart`). A host
+/// whose archive has guidance stays refused, naming the missing run, until it
+/// is here (design 2.6.0 §5.1: a backend is enabled after its run).
+/// - macOS arm64: Mac mini, Phi-3.5-mini cpu-int4, 2026-11-04, 4/4.
+/// Still to run: Linux x64 (CI or the T4 VM), Windows x64 (`intel-ptl`),
+/// Windows ARM64 (the GitHub-hosted Windows 11 ARM64 runner).
+const _verifiedGuidanceAbis = {ffi.Abi.macosArm64};
+
+/// Replaces [_verifiedGuidanceAbis] in tests: the fake-worker tests drive the
+/// guided path on any host, and the host smoke is the run that verifies one.
+@visibleForTesting
+Set<ffi.Abi>? debugVerifiedGuidanceAbis;
+
+/// Why a model on [client] cannot take a response format, or null when it
+/// can: the client must be a loaded [GenAiFfiClient], the host's archive must
+/// have guidance ([genAiArchiveHasGuidance]) and its run must have passed
+/// ([_verifiedGuidanceAbis]), and the model directory must
+/// hold `tokenizer.json`, which ORT-GenAI's guidance reads (without it every
+/// guided generator fails to create). Not exported.
+String? guidanceRefusalOf(GenAiClient client, {ffi.Abi? abi}) {
+  if (client is! GenAiFfiClient) {
+    return 'This ONNX model runs on ${client.runtimeType}, which does not '
+        'enforce a format: only GenAiFfiClient sets ORT-GenAI guidance.';
+  }
+  final host = abi ?? ffi.Abi.current();
+  if (!genAiArchiveHasGuidance(host)) {
+    return 'The ORT-GenAI 0.17.0 runtime bundled for $host is built without '
+        'guidance (llguidance), so a format cannot be enforced there. It is '
+        'enforced on macOS arm64.';
+  }
+  if (!(debugVerifiedGuidanceAbis ?? _verifiedGuidanceAbis).contains(host)) {
+    return 'ORT-GenAI guidance on $host has not been run through this engine '
+        'yet: its archive includes guidance, and a format is enabled there '
+        'after that run passes. It is enforced on macOS arm64.';
+  }
+  final modelDir = client._modelDir;
+  if (modelDir == null) return 'The ONNX model is not loaded.';
+  // Read each time a format is asked for, not once at load: the file is
+  // what every guided generator opens when it is created.
+  if (!FileSystemEntity.isFileSync('$modelDir/tokenizer.json')) {
+    return 'The ONNX model directory $modelDir has no tokenizer.json, which '
+        'ORT-GenAI reads to enforce a format.';
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Worker isolate: library loading and the dart:ffi engine.
@@ -1065,6 +1256,12 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
   /// that has had a turn and not been reset; null keys the legacy session.
   final Map<int?, ffi.Pointer<OgaGenerator>> _generators = {};
 
+  /// What each session's generator holds, turn by turn; set up by [load].
+  late final SessionTurns _turns;
+
+  /// Whether a failed rewind has been reported; once per model.
+  bool _rewindFailureReported = false;
+
   OrtGenAiBindings get _bindings =>
       _oga ?? (throw StateError('ORT-GenAI engine used before it was loaded'));
 
@@ -1113,6 +1310,12 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
       pkg_ffi.calloc.free(modelOut);
     }
 
+    _turns = SessionTurns(
+      contextWindow: _init.contextWindow,
+      endOfTurnToken: _configEosToken(_init.modelDir),
+      onRewindFailure: _reportRewindFailure,
+    );
+
     final tokenizerOut = pkg_ffi.calloc<ffi.Pointer<OgaTokenizer>>();
     try {
       _check(
@@ -1130,8 +1333,10 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
   /// [emit] as they arrive. The `await Future(() {})` yields are what let a
   /// queued `StopSignal`/`ResetSessionRequest`/`Close` flip [stopRequested].
   @override
-  Future<GenAiGenerationStats> generate(
+  Future<GenAiTurnResult> generate(
     GenAiTurn turn, {
+    String? guidance,
+    List<Map<String, String>>? seedHistory,
     required void Function(String piece) emit,
     required bool Function() stopRequested,
   }) async {
@@ -1139,19 +1344,36 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
     final model = _loadedModel;
     final tokenizer = _loadedTokenizer;
     ffi.Pointer<OgaTokenizerStream>? tokenizerStream;
+    final session = turn.sessionId;
+    // A generator created for this turn joins the session only once its
+    // prompt is in: until then a failure (a prompt that does not fit, a
+    // failed prefill) destroys it, and the history stays to be replayed.
+    ffi.Pointer<OgaGenerator>? created;
     try {
-      if (turn.isFirstTurn) resetGenerator(sessionId: turn.sessionId);
-
-      final generator = _generators[turn.sessionId] ??= _createGenerator(
-        oga,
-        model,
-        turn.searchOptions,
-      );
+      if (turn.isFirstTurn) {
+        _dropGenerator(session);
+        _turns.begin(
+          session,
+          system: turn.systemInstruction,
+          seed: seedHistory,
+        );
+      }
+      final existing = _generators[session];
+      final generator =
+          existing ??
+          (created = _createGenerator(
+            oga,
+            model,
+            turn.searchOptions,
+            guidance,
+          ));
+      _turns.started(session, oga.OgaGenerator_GetSequenceCount(generator, 0));
 
       // --- Chat template (SDK-owns-templates, Task 3) ----------------------
+      // A generator created now for a session with history — dropped by a
+      // failed rewind — gets that history first, as text.
       final messages = <Map<String, String>>[
-        if (turn.isFirstTurn && (turn.systemInstruction?.isNotEmpty ?? false))
-          {'role': 'system', 'content': turn.systemInstruction!},
+        if (created != null) ..._turns.history(session),
         {'role': 'user', 'content': turn.userContent},
       ];
       final messagesJsonC = jsonEncode(messages).toNativeUtf8();
@@ -1197,10 +1419,26 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
           'OgaTokenizerEncode',
         );
         promptTokens = oga.OgaSequencesGetSequenceCount(sequences, 0);
+        // Checked here, not left to ORT-GenAI's own throws, so the turn can
+        // say it ended on the context window, and the conversation is left
+        // as it was.
+        final used = oga.OgaGenerator_GetSequenceCount(generator, 0);
+        if (!promptFits(used, promptTokens, _init.contextWindow)) {
+          throw GenAiContextFullException(
+            'ORT-GenAI prompt of $promptTokens tokens does not fit the '
+            'context window: $used of ${_init.contextWindow} tokens '
+            '(maxTokens) are already used.',
+          );
+        }
         _check(
           oga.OgaGenerator_AppendTokenSequences(generator, sequences),
           'OgaGenerator_AppendTokenSequences (prefill)',
         );
+        if (created != null) {
+          _generators[session] = created;
+          created = null;
+        }
+        _turns.prefilled(session, turn.userContent);
       } finally {
         pkg_ffi.calloc.free(promptC);
         oga.OgaDestroySequences(sequences);
@@ -1219,6 +1457,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
       final stream = tokenizerStream;
 
       var generatedCount = 0;
+      int? lastToken;
       final cap = turn.maxOutputTokens;
 
       void decodeAndEmit() {
@@ -1231,6 +1470,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
             'OgaGenerator_GetNextTokens',
           );
           token = outPtr.value[outCount.value - 1];
+          lastToken = token;
         } finally {
           pkg_ffi.calloc.free(outPtr);
           pkg_ffi.calloc.free(outCount);
@@ -1246,7 +1486,10 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
           final piece = decodedOut.value == ffi.nullptr
               ? ''
               : decodedOut.value.cast<pkg_ffi.Utf8>().toDartString();
-          if (piece.isNotEmpty) emit(piece);
+          if (piece.isNotEmpty) {
+            _turns.emitted(session, piece);
+            emit(piece);
+          }
         } finally {
           pkg_ffi.calloc.free(decodedOut);
         }
@@ -1262,7 +1505,8 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
       // own per-token yield below, so that already-queued stop lands before
       // (not after) the first token is spent.
       await Future<void>(() {});
-      if (!stopRequested()) {
+      var stopped = stopRequested();
+      if (!stopped) {
         _check(
           oga.OgaGenerator_GenerateNextToken(generator),
           'OgaGenerator_GenerateNextToken (first token)',
@@ -1273,12 +1517,16 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
       // Timed separately from prefill+first-token, matching the spike: the
       // first token's forward pass rides along with AppendTokenSequences.
       final swDecode = Stopwatch()..start();
-      while (!oga.OgaGenerator_IsDone(generator) &&
+      while (!stopped &&
+          !oga.OgaGenerator_IsDone(generator) &&
           (cap == null || generatedCount < cap)) {
         // Yield one event-loop turn per token so a queued StopSignal can
         // flip `stopRequested` before the next token is generated.
         await Future<void>(() {});
-        if (stopRequested()) break;
+        if (stopRequested()) {
+          stopped = true;
+          break;
+        }
         _check(
           oga.OgaGenerator_GenerateNextToken(generator),
           'OgaGenerator_GenerateNextToken (decode)',
@@ -1287,15 +1535,35 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
       }
       swDecode.stop();
 
-      return GenAiGenerationStats(
-        promptTokens: promptTokens,
-        generatedTokens: generatedCount,
-        decodeMs: swDecode.elapsedMilliseconds,
+      // IsDone is true at an end-of-sequence token and at max_length (the
+      // context window); the length tells them apart. A cap reached first
+      // leaves it false. (With guidance, IsDone also resets the grammar for
+      // the generator's next turn; any other end leaves it mid-value, and
+      // the session starts a fresh generator.)
+      final end = classifyTurnEnd(
+        stopped: stopped,
+        done: !stopped && oga.OgaGenerator_IsDone(generator),
+        length: oga.OgaGenerator_GetSequenceCount(generator, 0),
+        contextWindow: _init.contextWindow,
+      );
+      final endToken = lastToken;
+      if (end == TurnEnd.endOfSequence && endToken != null) {
+        _turns.finished(endToken);
+      }
+      return GenAiTurnResult(
+        GenAiGenerationStats(
+          promptTokens: promptTokens,
+          generatedTokens: generatedCount,
+          decodeMs: swDecode.elapsedMilliseconds,
+        ),
+        end,
       );
     } finally {
       if (tokenizerStream != null) {
         oga.OgaDestroyTokenizerStream(tokenizerStream);
       }
+      final unused = created;
+      if (unused != null) oga.OgaDestroyGenerator(unused);
     }
   }
 
@@ -1303,6 +1571,7 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
     OrtGenAiBindings oga,
     ffi.Pointer<OgaModel> model,
     Map<String, Object> searchOptions,
+    String? guidance,
   ) {
     final paramsOut = pkg_ffi.calloc<ffi.Pointer<OgaGeneratorParams>>();
     final ffi.Pointer<OgaGeneratorParams> params;
@@ -1349,6 +1618,27 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
               oga.OgaGeneratorParamsSetSearchNumber(params, nameC, value),
         ),
       );
+      if (guidance != null) {
+        // The grammar is compiled in OgaCreateGenerator below. Fast-forward
+        // tokens stay off: they append tokens the model never scored, which
+        // the per-token decode and its counts here do not expect.
+        final typeC = 'json_schema'.toNativeUtf8();
+        final dataC = guidance.toNativeUtf8();
+        try {
+          _check(
+            oga.OgaGeneratorParamsSetGuidance(
+              params,
+              typeC.cast(),
+              dataC.cast(),
+              false,
+            ),
+            'OgaGeneratorParamsSetGuidance(json_schema)',
+          );
+        } finally {
+          pkg_ffi.calloc.free(typeC);
+          pkg_ffi.calloc.free(dataC);
+        }
+      }
       final genOut = pkg_ffi.calloc<ffi.Pointer<OgaGenerator>>();
       try {
         _check(
@@ -1391,11 +1681,62 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
 
   @override
   void resetGenerator({int? sessionId}) {
+    _turns.forget(sessionId);
+    _dropGenerator(sessionId);
+  }
+
+  void _reportRewindFailure(Object error) {
+    if (_rewindFailureReported) return;
+    _rewindFailureReported = true;
+    // `print`: edgeAiLog is silent in release.
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_onnx] WARNING: ORT-GenAI could not rewind this model '
+      '($error). After a turn that does not end on its own, a session\'s '
+      "next turn rebuilds its context from the conversation's text instead, "
+      'which costs a full prefill. Said once per model.',
+    );
+  }
+
+  /// The first `model.eos_token_id` in [modelDir]'s genai_config.json, or
+  /// null when it has none or does not parse.
+  static int? _configEosToken(String modelDir) {
+    try {
+      final config = jsonDecode(
+        File('$modelDir/genai_config.json').readAsStringSync(),
+      );
+      final eos = config is Map && config['model'] is Map
+          ? (config['model'] as Map)['eos_token_id']
+          : null;
+      return switch (eos) {
+        final int id => id,
+        [final int id, ...] => id,
+        _ => null,
+      };
+    } on Object {
+      return null;
+    }
+  }
+
+  void _dropGenerator(int? sessionId) {
     // Forgotten first, so a throw below cannot hand the next turn a
     // generator that is half destroyed.
     final generator = _generators.remove(sessionId);
     if (generator == null) return;
     _bindings.OgaDestroyGenerator(generator);
+  }
+
+  @override
+  bool endTurn({int? sessionId, required AfterTurn how}) {
+    final generator = _generators[sessionId];
+    return _turns.settle(
+      sessionId,
+      how,
+      generator: generator == null
+          ? null
+          : _FfiGeneratorOps(_bindings, generator),
+      drop: () => _dropGenerator(sessionId),
+    );
   }
 
   /// Destroys generator, tokenizer and model — whichever exist, so a load
@@ -1415,5 +1756,55 @@ final class _FfiGenAiEngine implements GenAiWorkerEngine {
     }
     if (tokenizer != null) oga.OgaDestroyTokenizer(tokenizer);
     if (model != null) oga.OgaDestroyModel(model);
+  }
+}
+
+/// [GeneratorOps] over one ORT-GenAI generator.
+final class _FfiGeneratorOps implements GeneratorOps {
+  _FfiGeneratorOps(this._oga, this._generator);
+
+  final OrtGenAiBindings _oga;
+  final ffi.Pointer<OgaGenerator> _generator;
+
+  void _check(ffi.Pointer<OgaResult> result, String step) {
+    if (result == ffi.nullptr) return;
+    try {
+      final errPtr = _oga.OgaResultGetError(result);
+      final message = errPtr == ffi.nullptr
+          ? '<no message>'
+          : errPtr.cast<pkg_ffi.Utf8>().toDartString();
+      throw StateError('ORT-GenAI $step failed: $message');
+    } finally {
+      _oga.OgaDestroyResult(result);
+    }
+  }
+
+  @override
+  int get length => _oga.OgaGenerator_GetSequenceCount(_generator, 0);
+
+  @override
+  int tokenAt(int index) =>
+      _oga.OgaGenerator_GetSequenceData(_generator, 0)[index];
+
+  @override
+  void rewindTo(int length) => _check(
+    _oga.OgaGenerator_RewindTo(_generator, length),
+    'OgaGenerator_RewindTo',
+  );
+
+  @override
+  void append(List<int> tokens) {
+    final buffer = pkg_ffi.calloc<ffi.Int32>(tokens.length);
+    try {
+      for (var k = 0; k < tokens.length; k++) {
+        buffer[k] = tokens[k];
+      }
+      _check(
+        _oga.OgaGenerator_AppendTokens(_generator, buffer, tokens.length),
+        'OgaGenerator_AppendTokens',
+      );
+    } finally {
+      pkg_ffi.calloc.free(buffer);
+    }
   }
 }

@@ -15,7 +15,7 @@
 // `onnx_generation_host_smoke_test.dart` for that).
 import 'dart:isolate';
 
-import 'package:flutter_edge_ai/engine.dart' show EdgeAiLogLevel;
+import 'package:flutter_edge_ai/engine.dart' show EdgeAiLogLevel, TurnEnd;
 
 import 'gen_ai_client.dart' show GenAiTurn;
 
@@ -51,9 +51,21 @@ sealed class QueuedRequest {
 
 /// Main → worker: start streaming a turn.
 class GenerateRequest extends QueuedRequest {
-  GenerateRequest(this.id, this.turn);
+  GenerateRequest(this.id, this.turn, {this.guidance, this.seedHistory});
   final int id;
   final GenAiTurn turn;
+
+  /// The JSON schema every reply of the turn's session must match, set on
+  /// the generator's params when its generator is created
+  /// (`OgaGeneratorParamsSetGuidance`, `json_schema`). Null = unguided. A
+  /// session sends the same value on every turn, so a generator it creates
+  /// again is guided again.
+  final String? guidance;
+
+  /// On a first turn, the conversation (`role`/`content` messages after the
+  /// system message) the new generator starts from, as text — what a session
+  /// rebuilt from its history would hold. Null = none.
+  final List<Map<String, String>>? seedHistory;
 }
 
 /// Worker → main: one decoded text piece for [id].
@@ -67,13 +79,18 @@ class Chunk {
 class GenerateDone {
   GenerateDone(
     this.id,
-    this.stopped,
+    this.end,
     this.promptTokens,
     this.generatedTokens,
     this.decodeMs,
   );
   final int id;
-  final bool stopped;
+
+  /// How the turn ended: [TurnEnd.endOfSequence], [TurnEnd.outputLimit] or
+  /// [TurnEnd.contextLimit] from the engine, [TurnEnd.stopped] after a
+  /// [StopSignal] or a [ResetSessionRequest], [TurnEnd.closed] after a
+  /// [Close].
+  final TurnEnd end;
   final int promptTokens;
   final int generatedTokens;
   final int decodeMs;
@@ -81,18 +98,31 @@ class GenerateDone {
 
 /// Worker → main: [id]'s generation failed.
 class GenerateError {
-  GenerateError(this.id, this.error);
+  GenerateError(this.id, this.error, {this.end});
   final int id;
   final String error;
+
+  /// [TurnEnd.contextLimit] when the prompt did not fit the context window;
+  /// null for any other failure.
+  final TurnEnd? end;
 }
 
 /// Main → worker: stop [sessionId]'s generation, if it is the one in flight
-/// (or queued). A stop for one session never cuts off another's turn. NOT
-/// gated by the client's `_mutex` — it must be able to interrupt a call
-/// holding it. A null [sessionId] is the legacy session.
+/// (or queued) — or, from [StopSignal.request], only the turn [requestId]. A
+/// stop for one session never cuts off another's turn. NOT gated by the
+/// client's `_mutex` — it must be able to interrupt a call holding it. A null
+/// [sessionId] is the legacy session.
 class StopSignal {
-  const StopSignal([this.sessionId]);
+  const StopSignal([this.sessionId]) : requestId = null;
+
+  /// Stops the turn [requestId] and nothing else: what a cancelled
+  /// subscription sends. A consumer that paused its stream and cancels it
+  /// after the turn ended — and the session's next turn started — must not
+  /// stop that next turn, which a stop naming the session would.
+  const StopSignal.request(int this.requestId) : sessionId = null;
+
   final int? sessionId;
+  final int? requestId;
 }
 
 /// Main → worker: destroy [sessionId]'s live generator so its next turn starts

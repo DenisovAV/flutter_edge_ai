@@ -632,7 +632,8 @@ abstract class InferenceModel {
   /// [responseFormat] — what every reply must be, as on [openSession]: every
   /// session of the chat, its rebuilt ones too, is opened with it. A reply
   /// that fails the check is kept in the chat's history, then thrown
-  /// ([InferenceChat.generateChatResponse]). Checked before the engine is
+  /// ([InferenceChat.generateChatResponse]); a turn stopped before any text
+  /// is taken back instead, its user message included. Checked before the engine is
   /// asked anything: [ArgumentError] together with [tools] or
   /// `enableThinking: true` (as the caller passed them), then
   /// [ResponseFormatUnsupportedException] when [refusalFor] refuses it; only

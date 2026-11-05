@@ -32,8 +32,9 @@ final class ResponseFormatUnsupportedException
 /// The turn ended before the value was complete: [end] is
 /// [TurnEnd.outputLimit], [TurnEnd.contextLimit], [TurnEnd.stopped] or
 /// [TurnEnd.closed]. [partialText] is what was generated; in an
-/// `InferenceChat` it is also in the chat's history. A stop is incomplete
-/// even when [partialText] parses.
+/// `InferenceChat` it is also in the chat's history, except for a turn
+/// stopped before any text, which the chat takes back, its user message
+/// included. A stop is incomplete even when [partialText] parses.
 final class IncompleteStructuredOutputException
     extends StructuredOutputException {
   const IncompleteStructuredOutputException(

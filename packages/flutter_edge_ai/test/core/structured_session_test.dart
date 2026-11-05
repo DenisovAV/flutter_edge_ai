@@ -995,9 +995,8 @@ void main() {
     test('a structured turn stopped before any text is taken back, as a '
         'plain one is', () async {
       for (final streamed in [false, true]) {
-        final (_, chat) = await chatOver(
-          _Session(tokens: const [], end: TurnEnd.stopped),
-        );
+        final engine = _Session(tokens: const [], end: TurnEnd.stopped);
+        final (_, chat) = await chatOver(engine);
         await expectLater(
           streamed
               ? chat.generateChatResponseAsync().drain<void>()
@@ -1009,7 +1008,39 @@ void main() {
           ),
         );
         expect(chat.fullHistory, isEmpty, reason: 'streamed: $streamed');
+        // Taken back: nothing is counted, and no rebuild can follow.
+        expect(engine.sizeCalls, 0, reason: 'streamed: $streamed');
       }
+    });
+
+    test(
+      'an empty structured turn that was not stopped keeps its message',
+      () async {
+        for (final end in [TurnEnd.closed, TurnEnd.contextLimit]) {
+          final (_, chat) = await chatOver(
+            _Session(tokens: const [], end: end),
+          );
+          await expectLater(
+            chat.generateChatResponse(),
+            throwsA(
+              isA<IncompleteStructuredOutputException>()
+                  .having((e) => e.end, 'end', end)
+                  .having((e) => e.partialText, 'partialText', ''),
+            ),
+          );
+          expect(chat.fullHistory.map((m) => m.text), ['Hi'], reason: end.name);
+        }
+      },
+    );
+
+    test('a plain turn stopped with only empty chunks is taken back', () async {
+      final model = _Model()
+        ..nextSession = () =>
+            _Session(tokens: const ['', ''], end: TurnEnd.stopped);
+      final chat = await model.openChat();
+      await chat.addQueryChunk(const Message(text: 'Hi', isUser: true));
+      await chat.generateChatResponse();
+      expect(chat.fullHistory, isEmpty);
     });
 
     test('a stopped structured turn keeps its message (a stop is not the '

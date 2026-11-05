@@ -476,7 +476,7 @@ Future<({T client, PreferredBackend activeBackend})> initializeFfiRuntime<T>({
     print(
       '[flutter_edge_ai] WARNING: $logTag npu was requested, but $reason — '
       'trying ${backends.map(ffiBackendWireName).join(" -> ")} instead. NPU '
-      'runs on ${npuSentenceList(NpuStack.values.map(_whereNpuRuns))}. '
+      'runs on ${npuSentenceList(offeredNpuStacks.map(_whereNpuRuns))}. '
       'InferenceModel.activeBackend names what actually ran.',
     );
   }

@@ -12,20 +12,28 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_status.dart';
 import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_sampler.dart';
 import 'package:flutter_edge_ai_litertlm/src/thinking_token_budget.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-typedef _CreateN = Pointer<Void> Function();
+// C API 1.0: a create writes through an out-parameter and every call that
+// can fail returns a LiteRtLmStatusCode.
+typedef _CreateN = Int Function(Pointer<Pointer<Void>>);
 typedef _DeleteN = Void Function(Pointer<Void>);
-typedef _SetBoolN = Void Function(Pointer<Void>, Bool);
-typedef _SetIntN = Void Function(Pointer<Void>, Int);
-typedef _SetPtrN = Void Function(Pointer<Void>, Pointer<Void>);
+typedef _SetBoolN = Int Function(Pointer<Void>, Bool);
+typedef _SetIntN = Int Function(Pointer<Void>, Int);
+typedef _SetPtrN = Int Function(Pointer<Void>, Pointer<Void>);
+typedef _LastErrorN = Pointer<Char> Function();
+
+/// `kLiteRtLmStatusResourceExhausted`, what a create that cannot allocate
+/// returns.
+const _resourceExhausted = 8;
 
 class _FakeNative {
-  _FakeNative({this.createReturnsNull = false});
+  _FakeNative({this.createFails = false});
 
-  final bool createReturnsNull;
+  final bool createFails;
 
   /// The optional args the send hands over; the config must reach these.
   static final sendArgs = Pointer<LiteRtLmConversationOptionalArgs>.fromAddress(
@@ -41,10 +49,14 @@ class _FakeNative {
     NativeCallable<Function> callable;
     switch (name) {
       case 'litert_lm_thinking_config_create':
-        callable = NativeCallable<_CreateN>.isolateLocal(() {
+        callable = NativeCallable<_CreateN>.isolateLocal((
+          Pointer<Pointer<Void>> out,
+        ) {
           calls.add('create');
-          return createReturnsNull ? nullptr : config;
-        });
+          if (createFails) return _resourceExhausted;
+          out.value = config;
+          return 0;
+        }, exceptionalReturn: -1);
       case 'litert_lm_thinking_config_delete':
         callable = NativeCallable<_DeleteN>.isolateLocal((Pointer<Void> c) {
           calls.add('delete ${c == config}');
@@ -55,21 +67,26 @@ class _FakeNative {
           bool on,
         ) {
           calls.add('enable $on');
-        });
+          return 0;
+        }, exceptionalReturn: -1);
       case 'litert_lm_thinking_config_set_thinking_token_budget':
         callable = NativeCallable<_SetIntN>.isolateLocal((
           Pointer<Void> c,
           int budget,
         ) {
           calls.add('budget $budget');
-        });
+          return 0;
+        }, exceptionalReturn: -1);
       case 'litert_lm_conversation_optional_args_set_thinking_config':
         callable = NativeCallable<_SetPtrN>.isolateLocal((
           Pointer<Void> args,
           Pointer<Void> c,
         ) {
           calls.add('args ${args == sendArgs.cast<Void>()} ${c == config}');
-        });
+          return 0;
+        }, exceptionalReturn: -1);
+      case 'litert_lm_get_last_error_message':
+        callable = NativeCallable<_LastErrorN>.isolateLocal(() => nullptr);
       default:
         throw ArgumentError('unexpected native call $name');
     }
@@ -126,7 +143,7 @@ void main() {
   });
 
   test('a config native could not create fails the send', () {
-    final native = _FakeNative(createReturnsNull: true);
+    final native = _FakeNative(createFails: true);
     addTearDown(native.close);
     expect(
       () => applyThinkingTokenBudget(
@@ -135,7 +152,11 @@ void main() {
         thinking: true,
         budget: 2048,
       ),
-      throwsStateError,
+      throwsA(
+        isA<LiteRtLmCallException>()
+            .having((e) => e.call, 'call', 'litert_lm_thinking_config_create')
+            .having((e) => e.code, 'code', _resourceExhausted),
+      ),
     );
     expect(native.calls, ['create']);
   });
@@ -271,12 +292,11 @@ void main() {
       client.indexOf('/// Callback typedef'),
     );
     final called = {
-      for (final m in RegExp(r'b\.(litert_lm_[a-z_]+)\(').allMatches(apply))
+      for (final m in RegExp(r'b\.(litert_lm_[a-z_]+)\b').allMatches(apply))
         m.group(1)!,
     };
-    final gate = File(
-      'native/litert_lm/check_embedding_exports.py',
-    ).readAsStringSync();
+    final gate = File('native/litert_lm/check_embedding_exports.py')
+        .readAsStringSync();
     final listed = RegExp(
       r'THINKING_BUDGET_SYMBOLS = \[(.*?)\]',
       dotAll: true,

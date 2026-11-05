@@ -367,9 +367,8 @@ void main() {
       test('images on a bundle with vision: text and images, the formats '
           'stb decodes, and the budget handed to the settings', () async {
         native.visionSignatures = const [70, 140];
-        final info = await pass(
-          declaredMedia: {EmbeddingModality.image},
-        ).load();
+        final info = await pass(declaredMedia: {EmbeddingModality.image})
+            .load();
         expect(info.modalities, {
           EmbeddingModality.text,
           EmbeddingModality.image,
@@ -442,9 +441,8 @@ void main() {
 
         native.dispose();
         native = _FakeLiteRtLm()..visionSignatures = const [70, 140];
-        final audioOnly = await pass(
-          declaredMedia: {EmbeddingModality.audio},
-        ).load();
+        final audioOnly = await pass(declaredMedia: {EmbeddingModality.audio})
+            .load();
         expect(audioOnly.modalities, {
           EmbeddingModality.text,
           EmbeddingModality.image,
@@ -474,9 +472,8 @@ void main() {
           'image load never depends on it', () async {
         // The same unreadable container as above.
         native.visionSignatures = const [70, 140];
-        final info = await pass(
-          declaredMedia: {EmbeddingModality.image},
-        ).load();
+        final info = await pass(declaredMedia: {EmbeddingModality.image})
+            .load();
         expect(info.modalities, {
           EmbeddingModality.text,
           EmbeddingModality.image,
@@ -642,6 +639,68 @@ void main() {
         expectNothingLeaked();
         await p.close();
       });
+
+      test('a setting setter that returns a status other than OK: an '
+          'EmbeddingLoadException naming the call, nothing created after '
+          'it, the settings deleted', () async {
+        native.failSetter = (code: 3, message: 'max_input_length too large');
+        final p = pass();
+        await expectLater(
+          p.load(),
+          throwsA(
+            isA<EmbeddingLoadException>()
+                .having((e) => e.nativeCode, 'nativeCode', 3)
+                .having(
+                  (e) => e.message,
+                  'message',
+                  allOf(
+                    contains(
+                      'litert_lm_embedding_engine_settings_set_max_input_length',
+                    ),
+                    contains('INVALID_ARGUMENT'),
+                    contains('max_input_length too large'),
+                  ),
+                ),
+          ),
+        );
+        expect(native.created('engine'), 0);
+        expect(native.deleted('settings'), 1);
+        expectNothingLeaked();
+        await p.close();
+      });
+
+      for (final getter in [
+        'model_type',
+        'embedding_dimension',
+        'embedding_signature_selection',
+      ]) {
+        test('a ModelInfo $getter that fails (not NOT_FOUND) refuses the load '
+            'naming it, never taken for a value the file lacks', () async {
+          native.failModelInfo = (getter: getter, code: 13);
+          final p = pass();
+          await expectLater(
+            p.load(),
+            throwsA(
+              isA<EmbeddingLoadException>()
+                  .having((e) => e.nativeCode, 'nativeCode', 13)
+                  .having(
+                    (e) => e.message,
+                    'message',
+                    allOf(
+                      contains(
+                        'litert_lm_loaded_file_$getter failed with '
+                        'INTERNAL',
+                      ),
+                      contains('$getter broke'),
+                    ),
+                  ),
+            ),
+          );
+          expect(native.created('engine'), 0);
+          expectNothingLeaked();
+          await p.close();
+        });
+      }
 
       test('options_create', () async {
         native.failOptions = true;
@@ -1045,9 +1104,8 @@ void main() {
           'is no cache', () async {
         native.writeCacheOnCreate = false;
         final dir = Directory(expectedCacheDir())..createSync(recursive: true);
-        File(
-            '${dir.path}/eg2.litertlm.mldrift_program_cache.bin',
-          ).openSync(mode: FileMode.write)
+        File('${dir.path}/eg2.litertlm.mldrift_program_cache.bin')
+            .openSync(mode: FileMode.write)
           ..truncateSync(4 << 20)
           ..closeSync();
         final p = pass(requireWeightCache: true);
@@ -1803,7 +1861,7 @@ void main() {
                 allOf(
                   contains('libLiteRtLm.so'),
                   contains('litert_lm_embedding_engine_create'),
-                  contains('native-v0.18.0-e'),
+                  contains('native-v0.19.0-a'),
                 ),
               ),
         ),
@@ -2571,45 +2629,42 @@ void main() {
         }
       });
 
-      test(
-        'the 440m without its vision cache: a warning naming the vision '
-        'tower, and with the flag a load failure; the engine is deleted',
-        () async {
-          expect(await load(header: _header440m, omit: {'vision_encoder'}), [
-            allOf(
-              contains('WARNING'),
-              contains(
-                'wrote no weight cache to ${expectedCacheDir()} for the vision '
-                'tower, which runs on CPU,',
-              ),
-              contains('requireWeightCache: true'),
-              isNot(contains('290 MB')),
+      test('the 440m without its vision cache: a warning naming the vision '
+          'tower, and with the flag a load failure; the engine is deleted', () async {
+        expect(await load(header: _header440m, omit: {'vision_encoder'}), [
+          allOf(
+            contains('WARNING'),
+            contains(
+              'wrote no weight cache to ${expectedCacheDir()} for the vision '
+              'tower, which runs on CPU,',
             ),
-          ]);
-          await expectLater(
-            load(
-              header: _header440m,
-              omit: {'vision_encoder'},
-              requireWeightCache: true,
-            ),
-            throwsA(
-              isA<EmbeddingLoadException>().having(
-                (e) => e.message,
-                'message',
-                allOf(
-                  contains('for the vision tower, which runs on CPU,'),
-                  contains('requireWeightCache: true'),
-                  contains(
-                    'about ${liteRtLmCacheFilePathLength(expectedCacheDir(), _file, File(_header440m).lengthSync(), tower: '.vision_encoder')} '
-                    'characters',
-                  ),
+            contains('requireWeightCache: true'),
+            isNot(contains('290 MB')),
+          ),
+        ]);
+        await expectLater(
+          load(
+            header: _header440m,
+            omit: {'vision_encoder'},
+            requireWeightCache: true,
+          ),
+          throwsA(
+            isA<EmbeddingLoadException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('for the vision tower, which runs on CPU,'),
+                contains('requireWeightCache: true'),
+                contains(
+                  'about ${liteRtLmCacheFilePathLength(expectedCacheDir(), _file, File(_header440m).lengthSync(), tower: '.vision_encoder')} '
+                  'characters',
                 ),
               ),
             ),
-          );
-          expect(native.deleted('engine'), 1);
-        },
-      );
+          ),
+        );
+        expect(native.deleted('engine'), 1);
+      });
 
       test('the 740m: one tower missing beside the other is a warning, never a '
           'refusal; both missing is a refusal under the flag', () async {
@@ -2710,15 +2765,33 @@ void main() {
       },
     );
 
-    test('no audio declared on the 740m: both towers stay NULL', () async {
+    test('no audio declared on the 740m: the audio tower is still named '
+        '"cpu" (describe() sets audioTowerOnCpu from the container: with its '
+        'backend NULL the create fails), vision stays NULL', () async {
       File(_header740m).copySync(modelPath);
       native.visionSignatures = const [70, 140];
       await pass(
         npuTarget: _sm8850,
         declaredMedia: {EmbeddingModality.image},
+        audioTowerOnCpu: true,
       ).load();
-      expect(native.towerBackendsNull, isTrue);
+      expect(native.settingsBackend, 'npu');
+      expect(native.settingsAudioBackend, 'cpu');
+      expect(native.settingsVisionBackend, isNull);
     });
+
+    test(
+      'a per-SoC bundle without an audio tower: both towers stay NULL',
+      () async {
+        File(_header440m).copySync(modelPath);
+        native.visionSignatures = const [70, 140];
+        await pass(
+          npuTarget: _sm8850,
+          declaredMedia: {EmbeddingModality.image},
+        ).load();
+        expect(native.towerBackendsNull, isTrue);
+      },
+    );
 
     test('without declared audio the cache is not checked: the text and '
         'vision towers on the NPU write none, so an empty directory is '
@@ -3019,13 +3092,11 @@ void main() {
     });
   });
 
-  test('the release gate checks the C API 1.0 symbols the pass needs', () {
-    // PR A gates the 0.19 archive before PR B moves the Dart client to C API
-    // 1.0. The current 0.18 pass still reads the retired last-error code, so
-    // that one transitional symbol is deliberately absent from the gate.
-    final script = File(
-      'native/litert_lm/check_embedding_exports.py',
-    ).readAsStringSync();
+  test('the release gate checks exactly the symbols the pass needs', () {
+    // native/litert_lm/check_embedding_exports.py refuses to publish a
+    // tarball whose libLiteRtLm lacks one; it must ask for the same list.
+    final script = File('native/litert_lm/check_embedding_exports.py')
+        .readAsStringSync();
     final list = RegExp(
       r'REQUIRED = \[(.*?)\]',
       dotAll: true,
@@ -3033,18 +3104,12 @@ void main() {
     final required = [
       for (final m in RegExp(r'"([a-z_]+)"').allMatches(list)) m.group(1)!,
     ];
-    expect(
-      required,
-      liteRtLmEmbeddingSymbols
-          .where((symbol) => symbol != 'litert_lm_get_last_error_code')
-          .toList(),
-    );
+    expect(required, liteRtLmEmbeddingSymbols);
   });
 
   test('the bindings do not bind what D23 rules out', () {
-    final source = File(
-      'lib/src/ffi/litert_lm_embedding_bindings.dart',
-    ).readAsStringSync();
+    final source = File('lib/src/ffi/litert_lm_embedding_bindings.dart')
+        .readAsStringSync();
     for (final symbol in [
       'litert_lm_loaded_file_supports_input_modality',
       'litert_lm_loaded_file_max_vision_token_budget',
@@ -3095,6 +3160,13 @@ Pointer<T> _noLookup<T extends NativeType>(String symbol) =>
 
 typedef _Failure = ({int code, String message});
 
+/// `kLiteRtLmStatusInvalidArgument`.
+const _invalidArgument = 3;
+
+/// `kLiteRtLmStatusNotFound`: ModelInfo's answer to a value the file does not
+/// define (C API 1.0; -1 before it).
+const _notFound = 5;
+
 /// LiteRT-LM's EmbeddingEngine C API, in Dart. Counts every create and delete
 /// per kind of object, records what the pass handed it, and fails on demand.
 ///
@@ -3107,8 +3179,19 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
 
   LiteRtLmModelType modelType = LiteRtLmModelType.kLiteRtLmModelTypeEmbedding;
   int dimension = 4;
-  List<int>? textSignatures = _allSignatures; // null = -1
-  List<int>? visionSignatures; // null = -1, as on the 270m
+  List<int>? textSignatures = _allSignatures; // null = NOT_FOUND
+
+  /// A ModelInfo getter (`'model_type'`, `'embedding_dimension'`,
+  /// `'embedding_signature_selection'`) that fails with this status.
+  ({String getter, int code})? failModelInfo;
+
+  int? _modelInfoFailure(String getter) {
+    final failure = failModelInfo;
+    if (failure == null || failure.getter != getter) return null;
+    return _fail((code: failure.code, message: '$getter broke'));
+  }
+
+  List<int>? visionSignatures; // null = NOT_FOUND, as on the 270m
 
   _Failure? failLoadedFile;
   _Failure? failSettings;
@@ -3231,9 +3314,28 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     _deleted[kind] = deleted(kind) + 1;
   }
 
-  Pointer<T> _fail<T extends NativeType>(_Failure failure) {
+  /// C API 1.0: a failed call sets the last error and returns its status.
+  /// Its out-parameter is not written then, so this fake leaves [out] holding
+  /// garbage: the pass must take the status, not the pointer, for the answer.
+  int _fail(_Failure failure, [Pointer<Pointer<NativeType>>? out]) {
     _setError(failure.code, failure.message);
-    return nullptr;
+    if (out != null) out.value = Pointer.fromAddress(0xBAD0);
+    return failure.code;
+  }
+
+  /// The status every embedding-engine setting setter returns, and the
+  /// message it leaves.
+  _Failure? failSetter;
+
+  int _setter() {
+    final failure = failSetter;
+    return failure == null ? 0 : _fail(failure);
+  }
+
+  /// A create's success: [handle] written through [out], status OK.
+  int _made<T extends NativeType>(Pointer<Pointer<T>> out, Pointer<T> handle) {
+    out.value = handle;
+    return 0;
   }
 
   static String _string(Pointer<Char> p) => p.cast<Utf8>().toDartString();
@@ -3249,13 +3351,6 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
-  int litert_lm_get_last_error_code() {
-    order.add('get_last_error_code');
-    symbolsCalled.add('litert_lm_get_last_error_code');
-    return _errorCode;
-  }
-
-  @override
   Pointer<Char> litert_lm_get_last_error_message() {
     order.add('get_last_error_message');
     symbolsCalled.add('litert_lm_get_last_error_message');
@@ -3264,13 +3359,16 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
 
   // ── ModelInfo ──
   @override
-  Pointer<LiteRtLmLoadedFile> litert_lm_loaded_file_create(
+  int litert_lm_loaded_file_create(
     Pointer<Char> litertlm_path,
+    Pointer<Pointer<LiteRtLmLoadedFile>> out_loaded_file,
   ) {
     _call('loaded_file_create', 'litert_lm_loaded_file_create');
     loadedPath = _string(litertlm_path);
     final failure = failLoadedFile;
-    return failure != null ? _fail(failure) : _create('loaded_file');
+    return failure != null
+        ? _fail(failure, out_loaded_file)
+        : _made(out_loaded_file, _create('loaded_file'));
   }
 
   @override
@@ -3280,32 +3378,47 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
-  LiteRtLmModelType litert_lm_loaded_file_model_type(
+  int litert_lm_loaded_file_model_type(
     Pointer<LiteRtLmLoadedFile> loaded_file,
+    Pointer<UnsignedInt> out_model_type,
   ) {
     _call('loaded_file_model_type', 'litert_lm_loaded_file_model_type');
-    return modelType;
+    final failed = _modelInfoFailure('model_type');
+    if (failed != null) return failed;
+    out_model_type.value = modelType.value;
+    return 0;
   }
 
   @override
   int litert_lm_loaded_file_embedding_dimension(
     Pointer<LiteRtLmLoadedFile> loaded_file,
+    Pointer<Int32> out_dimension,
   ) {
     _call(
       'loaded_file_embedding_dimension',
       'litert_lm_loaded_file_embedding_dimension',
     );
-    return dimension;
+    final failed = _modelInfoFailure('embedding_dimension');
+    if (failed != null) return failed;
+    if (dimension < 0) return _notFound;
+    out_dimension.value = dimension;
+    return 0;
   }
 
-  int _list(List<int>? values, Pointer<Int32> lengths, int maxSize) {
-    if (values == null) return -1;
+  int _list(
+    List<int>? values,
+    Pointer<Int32> lengths,
+    int maxSize,
+    Pointer<Size> outCount,
+  ) {
+    if (values == null) return _notFound;
     if (lengths != nullptr) {
       for (var i = 0; i < values.length && i < maxSize; i++) {
         lengths[i] = values[i];
       }
     }
-    return values.length;
+    outCount.value = values.length;
+    return 0;
   }
 
   @override
@@ -3313,12 +3426,15 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     Pointer<LiteRtLmLoadedFile> loaded_file,
     Pointer<Int32> lengths,
     int max_size,
+    Pointer<Size> out_count,
   ) {
     _call(
       'loaded_file_embedding_signature_selection',
       'litert_lm_loaded_file_embedding_signature_selection',
     );
-    return _list(textSignatures, lengths, max_size);
+    final failed = _modelInfoFailure('embedding_signature_selection');
+    if (failed != null) return failed;
+    return _list(textSignatures, lengths, max_size, out_count);
   }
 
   @override
@@ -3326,22 +3442,23 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     Pointer<LiteRtLmLoadedFile> loaded_file,
     Pointer<Int32> lengths,
     int max_size,
+    Pointer<Size> out_count,
   ) {
     _call(
       'loaded_file_vision_signature_selection',
       'litert_lm_loaded_file_vision_signature_selection',
     );
-    return _list(visionSignatures, lengths, max_size);
+    return _list(visionSignatures, lengths, max_size, out_count);
   }
 
   // ── settings ──
   @override
-  Pointer<LiteRtLmEmbeddingEngineSettings>
-  litert_lm_embedding_engine_settings_create(
+  int litert_lm_embedding_engine_settings_create(
     Pointer<Char> model_path,
     Pointer<Char> backend_str,
     Pointer<Char> vision_backend_str,
     Pointer<Char> audio_backend_str,
+    Pointer<Pointer<LiteRtLmEmbeddingEngineSettings>> out_settings,
   ) {
     _call('settings_create', 'litert_lm_embedding_engine_settings_create');
     settingsModelPath = _string(model_path);
@@ -3355,7 +3472,9 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
         ? null
         : _string(audio_backend_str);
     final failure = failSettings;
-    return failure != null ? _fail(failure) : _create('settings');
+    return failure != null
+        ? _fail(failure, out_settings)
+        : _made(out_settings, _create('settings'));
   }
 
   @override
@@ -3367,7 +3486,7 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_cache_dir(
+  int litert_lm_embedding_engine_settings_set_cache_dir(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     Pointer<Char> cache_dir,
   ) {
@@ -3376,10 +3495,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_cache_dir',
     );
     cacheDir = _string(cache_dir);
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_max_input_length(
+  int litert_lm_embedding_engine_settings_set_max_input_length(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     int max_input_length,
   ) {
@@ -3390,10 +3510,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     maxInputLength = max_input_length;
     final error = errorFromSetter;
     if (error != null) _setError(error.code, error.message);
+    return _setter();
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
+  int litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     int vision_tokens_per_image,
   ) {
@@ -3402,10 +3523,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_vision_tokens_per_image',
     );
     visionTokensPerImage = vision_tokens_per_image;
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_num_threads(
+  int litert_lm_embedding_engine_settings_set_num_threads(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     int num_threads,
   ) {
@@ -3414,10 +3536,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_num_threads',
     );
     numThreads = num_threads;
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir(
+  int litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     Pointer<Char> lib_dir,
   ) {
@@ -3426,10 +3549,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir',
     );
     dispatchDirs['main'] = _string(lib_dir);
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir(
+  int litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     Pointer<Char> lib_dir,
   ) {
@@ -3438,10 +3562,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir',
     );
     dispatchDirs['vision'] = _string(lib_dir);
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir(
+  int litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
     Pointer<Char> lib_dir,
   ) {
@@ -3450,25 +3575,27 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir',
     );
     dispatchDirs['audio'] = _string(lib_dir);
+    return 0;
   }
 
   // ── engine ──
   @override
-  Pointer<LiteRtLmEmbeddingEngine> litert_lm_embedding_engine_create(
+  int litert_lm_embedding_engine_create(
     Pointer<LiteRtLmEmbeddingEngineSettings> settings,
+    Pointer<Pointer<LiteRtLmEmbeddingEngine>> out_engine,
   ) {
     _call('engine_create', 'litert_lm_embedding_engine_create');
     final failure = failEngine;
-    if (failure != null) return _fail(failure);
-    if (silentNullEngine) return nullptr;
+    if (failure != null) return _fail(failure, out_engine);
+    // OK with no engine: a failure that reports nothing.
+    if (silentNullEngine) return _made(out_engine, nullptr);
     final dir = cacheDir;
     if (writeCacheOnCreate && dir != null) {
       for (final tower in _cachedTowers()) {
         if (omitTowerCaches.contains(tower)) continue;
         // Sparse: the size is what the pass reads, not the bytes.
-        File(
-            '$dir/eg2.litertlm_1791758581_37.$tower.xnnpack_cache',
-          ).openSync(mode: FileMode.write)
+        File('$dir/eg2.litertlm_1791758581_37.$tower.xnnpack_cache')
+            .openSync(mode: FileMode.write)
           ..truncateSync(cacheFileBytes)
           ..closeSync();
       }
@@ -3484,7 +3611,7 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     if (deleteCacheDirOnCreate && dir != null) {
       Directory(dir).deleteSync(recursive: true);
     }
-    return _create('engine');
+    return _made(out_engine, _create('engine'));
   }
 
   /// ML Drift's [kind] cache of the 37-byte test model, as LiteRT's WebGPU
@@ -3533,9 +3660,14 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
 
   // ── options ──
   @override
-  Pointer<LiteRtLmEmbeddingOptions> litert_lm_embedding_options_create() {
+  int litert_lm_embedding_options_create(
+    Pointer<Pointer<LiteRtLmEmbeddingOptions>> out_options,
+  ) {
     _call('options_create', 'litert_lm_embedding_options_create');
-    return failOptions ? nullptr : _create('options');
+    // `new` in C++: it fails only on a NULL out-parameter, setting no error.
+    return failOptions
+        ? _invalidArgument
+        : _made(out_options, _create('options'));
   }
 
   @override
@@ -3547,16 +3679,17 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
-  void litert_lm_embedding_options_set_normalize(
+  int litert_lm_embedding_options_set_normalize(
     Pointer<LiteRtLmEmbeddingOptions> options,
     bool normalize,
   ) {
     _call('options_set_normalize', 'litert_lm_embedding_options_set_normalize');
     this.normalize = normalize;
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_options_set_insert_special_tokens(
+  int litert_lm_embedding_options_set_insert_special_tokens(
     Pointer<LiteRtLmEmbeddingOptions> options,
     bool insert_special_tokens,
   ) {
@@ -3565,10 +3698,11 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_options_set_insert_special_tokens',
     );
     insertSpecialTokens = insert_special_tokens;
+    return 0;
   }
 
   @override
-  void litert_lm_embedding_options_set_input_overflow_strategy(
+  int litert_lm_embedding_options_set_input_overflow_strategy(
     Pointer<LiteRtLmEmbeddingOptions> options,
     LiteRtLmInputOverflowStrategy strategy,
   ) {
@@ -3577,23 +3711,25 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       'litert_lm_embedding_options_set_input_overflow_strategy',
     );
     overflowStrategy = strategy;
+    return 0;
   }
 
   // ── inputs, compute, response ──
   @override
-  Pointer<LiteRtLmInputData> litert_lm_input_data_create(
+  int litert_lm_input_data_create(
     LiteRtLmInputDataType type,
     Pointer<Void> data,
     int size,
+    Pointer<Pointer<LiteRtLmInputData>> out_input_data,
   ) {
     _call('input_data_create', 'litert_lm_input_data_create');
-    if (failInputData) return nullptr; // sets no error, as upstream
-    if (_inputDataCalls++ == failInputDataAt) return nullptr;
+    if (failInputData) return _invalidArgument; // sets no error, as upstream
+    if (_inputDataCalls++ == failInputDataAt) return _invalidArgument;
     // Copied, as upstream does: the pass frees its buffer right after.
     final bytes = Uint8List.fromList(data.cast<Uint8>().asTypedList(size));
     final handle = _create<LiteRtLmInputData>('input_data');
     _inputs[handle.address] = (type, bytes);
-    return handle;
+    return _made(out_input_data, handle);
   }
 
   @override
@@ -3604,12 +3740,12 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
   }
 
   @override
-  Pointer<LiteRtLmEmbeddingResponse>
-  litert_lm_embedding_engine_compute_embedding(
+  int litert_lm_embedding_engine_compute_embedding(
     Pointer<LiteRtLmEmbeddingEngine> engine,
     Pointer<Pointer<LiteRtLmInputData>> inputs,
     int num_inputs,
     Pointer<LiteRtLmEmbeddingOptions> options,
+    Pointer<Pointer<LiteRtLmEmbeddingResponse>> out_response,
   ) {
     _call('compute_embedding', 'litert_lm_embedding_engine_compute_embedding');
     if (!(live['engine']?.contains(engine.address) ?? false)) {
@@ -3640,8 +3776,9 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       _writeGpuCache(dir, 'program');
     }
     final failure = failCompute;
-    if (failure != null) return _fail(failure);
-    if (silentNullCompute) return nullptr;
+    if (failure != null) return _fail(failure, out_response);
+    // OK with no response: a failure that reports nothing.
+    if (silentNullCompute) return _made(out_response, nullptr);
     final response = _create<LiteRtLmEmbeddingResponse>('response');
     final n = responseSize ?? dimension;
     final values = calloc<Float>(n);
@@ -3652,45 +3789,56 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
     }
     lastVector = vector;
     _vectors[response.address] = values;
-    return response;
+    return _made(out_response, response);
   }
 
   @override
   int litert_lm_embedding_response_get_size(
     Pointer<LiteRtLmEmbeddingResponse> response,
+    Pointer<Size> out_size,
   ) {
     _call('response_get_size', 'litert_lm_embedding_response_get_size');
-    return responseSize ?? dimension;
+    out_size.value = responseSize ?? dimension;
+    return 0;
   }
 
   @override
   int litert_lm_embedding_response_get_input_length(
     Pointer<LiteRtLmEmbeddingResponse> response,
+    Pointer<Int> out_input_length,
   ) {
     _call(
       'response_get_input_length',
       'litert_lm_embedding_response_get_input_length',
     );
-    return responseInputLength;
+    // A negative count is what a getter that fails leaves the pass with.
+    if (responseInputLength < 0) return _invalidArgument;
+    out_input_length.value = responseInputLength;
+    return 0;
   }
 
   @override
   int litert_lm_embedding_response_get_truncated_length(
     Pointer<LiteRtLmEmbeddingResponse> response,
+    Pointer<Int> out_truncated_length,
   ) {
     _call(
       'response_get_truncated_length',
       'litert_lm_embedding_response_get_truncated_length',
     );
-    return responseTruncatedLength;
+    if (responseTruncatedLength < 0) return _invalidArgument;
+    out_truncated_length.value = responseTruncatedLength;
+    return 0;
   }
 
   @override
-  Pointer<Float> litert_lm_embedding_response_get_values(
+  int litert_lm_embedding_response_get_values(
     Pointer<LiteRtLmEmbeddingResponse> response,
+    Pointer<Pointer<Float>> out_values,
   ) {
     _call('response_get_values', 'litert_lm_embedding_response_get_values');
-    return _vectors[response.address]!;
+    out_values.value = _vectors[response.address]!;
+    return 0;
   }
 
   @override

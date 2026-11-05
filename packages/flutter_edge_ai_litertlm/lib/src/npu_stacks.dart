@@ -318,6 +318,33 @@ const intelNpuLibs = [
   'tbbmalloc_proxy',
 ];
 
+/// The MediaTek NPU is refused in this release, at build time
+/// ([mediatekNpuUserDefine] fails the hook) and at load (a build never carries
+/// the stack): LiteRT `dcb657e8`, the 0.19 pin, loads a dispatch only through
+/// `LiteRtDispatchQueryInterface`, which Google's `litert-npu-runtime-mediatek`
+/// AAR (2.3.0, 2.3.2) does not export, and on MT6989 even one live
+/// conversation answers its second message empty (LiteRT-LM #4256).
+const mediatekNpuRefused = true;
+
+/// The vendors whose NPU this release runs, in [NpuStack] order: every one
+/// but MediaTek while [mediatekNpuRefused]. Messages that tell an app where
+/// the NPU runs name these, so none sends it to a load that is refused.
+Iterable<NpuStack> get offeredNpuStacks => NpuStack.values.where(
+  (vendor) => !(vendor == NpuStack.mediatek && mediatekNpuRefused),
+);
+
+/// Why the MediaTek NPU is refused ([mediatekNpuRefused]).
+const mediatekNpuRefusedReason =
+    'the MediaTek NPU is not supported by this flutter_edge_ai_litertlm '
+    'release. Its LiteRT loads an NPU dispatch only through '
+    "LiteRtDispatchQueryInterface, which Google's litert-npu-runtime-mediatek "
+    'dispatch does not export, and on the one MediaTek NPU measured (MT6989) a '
+    "conversation's second message comes back empty (LiteRT-LM #4256). "
+    'flutter_edge_ai_litertlm 1.19.x runs the MediaTek NPU; otherwise use '
+    'PreferredBackend.cpu or .gpu, and remove '
+    '`$mediatekNpuUserDefine: true` from the hooks.user_defines of the '
+    "app's pubspec.yaml";
+
 /// Our Intel OpenVINO dispatch (built from the LiteRT pin), `LiteRtDispatch.dll`.
 const intelDispatchLib = 'LiteRtDispatch';
 

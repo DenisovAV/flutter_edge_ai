@@ -63,43 +63,26 @@ void main() {
       },
     );
 
-    test('the GPU host is Linux x64 alone; Windows x64 is refused on '
-        'native-v0.18.0-h', () {
-      expect(liteRtLmEmbeddingGpuAbis, {'linux_x64'});
-      expect(liteRtLmEmbeddingGpuRefusedAbis, {'windows_x64'});
+    test('the GPU hosts are Linux x64, Windows x64 and macOS arm64 on '
+        'native-v0.19.0-a, and none is refused', () {
+      expect(liteRtLmEmbeddingGpuAbis, {
+        'linux_x64',
+        'windows_x64',
+        'macos_arm64',
+      });
+      expect(liteRtLmEmbeddingGpuRefusedAbis, isEmpty);
     });
 
-    test('with gpu on windows_x64 the generic bundle is refused, naming the '
-        'native tag, the issue and preferredBackend: cpu; null and cpu stay '
-        'on CPU', () async {
-      host
-        ..abi = 'windows_x64'
-        ..operatingSystem = 'windows';
-      await expectLater(
-        place(target: null, requested: PreferredBackend.gpu),
-        throwsA(
-          isA<EmbeddingLoadException>()
-              .having((e) => e.engine, 'engine', 'LiteRT-LM')
-              .having(
-                (e) => e.message,
-                'message',
-                allOf(
-                  contains('not supported on Windows x64'),
-                  contains('native-v0.18.0-h'),
-                  contains(liteRtLmEmbeddingGpuWindowsIssue),
-                  contains('preferredBackend: cpu'),
-                ),
-              ),
+    test('the refusal for a host whose GPU path ends the process names the '
+        'file, preferredBackend: cpu and the registry', () {
+      expect(
+        liteRtLmEmbeddingGpuRefusal('eg2.litertlm'),
+        allOf(
+          contains('eg2.litertlm'),
+          contains('preferredBackend: cpu'),
+          contains(liteRtLmRegistryUrl),
         ),
       );
-      for (final requested in [null, PreferredBackend.cpu]) {
-        expect(
-          (await place(target: null, requested: requested)).backend,
-          PreferredBackend.cpu,
-          reason: '$requested',
-        );
-      }
-      expect(host.asked, isEmpty);
     });
 
     for (final abi in liteRtLmEmbeddingGpuAbis) {
@@ -129,21 +112,22 @@ void main() {
     }
 
     for (final abi in [
-      'macos_arm64',
       'ios_arm64',
       'android_arm64',
       'linux_arm64',
       'windows_arm64',
     ]) {
-      test('with gpu on $abi stays on CPU: the GPU is not measured there '
-          '(Metal ends the process at create on Apple)', () async {
-        host.abi = abi;
-        final placement = await place(
-          target: null,
-          requested: PreferredBackend.gpu,
-        );
-        expect(placement.backend, PreferredBackend.cpu);
-      });
+      test(
+        'with gpu on $abi stays on CPU: the GPU is not measured there',
+        () async {
+          host.abi = abi;
+          final placement = await place(
+            target: null,
+            requested: PreferredBackend.gpu,
+          );
+          expect(placement.backend, PreferredBackend.cpu);
+        },
+      );
     }
 
     test(
@@ -226,7 +210,7 @@ void main() {
               allOf(
                 contains(
                   'Qualcomm Android and Qualcomm Linux arm64, and on Google '
-                  'Tensor G5/G6 Android devices, and on MediaTek Dimensity Android devices, and on Intel NPUs with '
+                  'Tensor G5/G6 Android devices, and on Intel NPUs with '
                   'Windows x64, only',
                 ),
                 contains('this is $os ($abi)'),
@@ -259,9 +243,7 @@ void main() {
             _refusal(
               allOf(
                 contains('compiled for a ${target.vendor} NPU (${target.soc})'),
-                contains(
-                  'Qualcomm, Google Tensor, MediaTek and Intel NPUs only',
-                ),
+                contains('Qualcomm, Google Tensor and Intel NPUs only'),
               ),
             ),
             reason: '$abi $target',
@@ -280,13 +262,22 @@ void main() {
       expect(host.vendors, {NpuStack.googleTensor});
     });
 
-    test('a MediaTek bundle selects only the MediaTek dispatch', () async {
+    test('a MediaTek bundle is refused before anything is asked, naming why '
+        'and the release that runs it (decision K)', () async {
       const mediatek = LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6991');
-      final placement = await place(target: mediatek);
-      expect(placement.backend, PreferredBackend.npu);
-      expect(placement.target, mediatek);
-      expect(host.asked, ['stack:mediatek', 'reaches', 'dispatchDir']);
-      expect(host.vendors, {NpuStack.mediatek});
+      await expectLater(
+        place(target: mediatek),
+        _refusal(
+          allOf(
+            contains('compiled for the MediaTek mt6991 NPU'),
+            contains(mediatekNpuRefusedReason),
+            contains('1.19.x'),
+            contains('#4256'),
+            contains('generic EmbeddingGemma 2 bundle'),
+          ),
+        ),
+      );
+      expect(host.asked, isEmpty);
     });
 
     test('compiled for Qualcomm is refused on Windows x64, which runs Intel '
@@ -426,7 +417,7 @@ void main() {
               contains('compiled for the IntelOpenVINO PTL NPU'),
               contains(
                 'on $os ($abi) flutter_edge_ai_litertlm runs '
-                '${os == 'android' ? 'Qualcomm, Google Tensor and MediaTek' : 'Qualcomm'} '
+                '${os == 'android' ? 'Qualcomm and Google Tensor' : 'Qualcomm'} '
                 'NPU bundles only; Intel ones run on windows_x64',
               ),
             ),
@@ -467,8 +458,8 @@ void main() {
     expect(
       liteRtLmWebNpuRefusal,
       'EmbeddingGemma 2 runs on the NPU on Qualcomm Android and Qualcomm Linux '
-      'arm64, and on Google Tensor G5/G6 Android devices, and on MediaTek '
-      'Dimensity Android devices, and on Intel NPUs with Windows x64, only, '
+      'arm64, and on Google Tensor G5/G6 Android devices, and on Intel NPUs '
+      'with Windows x64, only, '
       'not on the web. Omit preferredBackend here.',
     );
   });
@@ -492,9 +483,8 @@ void main() {
     tearDown(() => dir.deleteSync(recursive: true));
 
     test('finds LiteRtDispatch.dll in the directory it is given', () {
-      File(
-        '${dir.path}${Platform.pathSeparator}LiteRtDispatch.dll',
-      ).writeAsBytesSync(const [0]);
+      File('${dir.path}${Platform.pathSeparator}LiteRtDispatch.dll')
+          .writeAsBytesSync(const [0]);
       final check = checkIntelNpuStack(dir.path);
       expect(check.bundled, isTrue);
       expect(check.known, isTrue);
@@ -502,9 +492,8 @@ void main() {
 
     test('says where it looked when the dispatch is not there — other Intel '
         'libraries do not count', () {
-      File(
-        '${dir.path}${Platform.pathSeparator}openvino.dll',
-      ).writeAsBytesSync(const [0]);
+      File('${dir.path}${Platform.pathSeparator}openvino.dll')
+          .writeAsBytesSync(const [0]);
       final check = checkIntelNpuStack(dir.path);
       expect(check.bundled, isFalse);
       expect(check.known, isTrue, reason: 'a missing file is an answer');

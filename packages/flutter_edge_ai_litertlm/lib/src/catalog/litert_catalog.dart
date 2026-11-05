@@ -9,7 +9,7 @@ import 'package:flutter_edge_ai/engine.dart';
 
 import '../bundle/litertlm_bundle_info.dart' show LiteRtLmNpuTarget;
 import '../native_hosts.dart';
-import '../npu_stacks.dart' show NpuStack;
+import '../npu_stacks.dart' show NpuStack, mediatekNpuRefused;
 import 'catalog_host_web.dart'
     if (dart.library.ffi) 'catalog_host_io.dart'
     as host;
@@ -271,7 +271,8 @@ final class LiteRtEmbedderVariant extends EmbedderVariant {
   bool get isBundle => tokenizer == null;
 
   /// A `.litertlm` bundle runs on the CPU natively — and on the GPU where
-  /// that is measured, Linux x64 — and on the GPU (WebGPU) on the web; none
+  /// that bundle is measured ([liteRtLmEmbeddingGpuMeasured]) — and on the
+  /// GPU (WebGPU) on the web; none
   /// natively on a host this package's archive is not published for; one compiled for an NPU runs on that NPU where this package has
   /// its vendor's dispatch (the rule [LiteRtLmVariant.backendsHere] states),
   /// never on the web. A `.tflite` model runs on the CPU natively (the GPU
@@ -293,8 +294,14 @@ final class LiteRtEmbedderVariant extends EmbedderVariant {
     }
     if (!liteRtLmNativeAbis.contains(abi)) return const {};
     if (!isBundle) return compiled ? const {} : const {PreferredBackend.cpu};
+    // The GPU where this bundle has run with its text tower there
+    // (liteRtLmEmbeddingGpuMeasured): the rule describe() refuses by.
+    final bundle = LiteRtLmEg2Bundle.of(
+      vision: modalities.contains(EmbeddingModality.image),
+      audio: modalities.contains(EmbeddingModality.audio),
+    );
     return _npuRuns(npuTarget, abi) ??
-        (liteRtLmEmbeddingGpuAbis.contains(abi)
+        ((liteRtLmEmbeddingGpuMeasured[abi] ?? const {}).contains(bundle)
             ? const {PreferredBackend.cpu, PreferredBackend.gpu}
             : const {PreferredBackend.cpu});
   }
@@ -305,6 +312,9 @@ final class LiteRtEmbedderVariant extends EmbedderVariant {
 Set<PreferredBackend>? _npuRuns(LiteRtLmNpuTarget? target, String abi) {
   if (target == null) return null;
   final stack = NpuStack.forStamp(target.vendor);
+  // MediaTek is refused in this release ([mediatekNpuRefused]): its bundles
+  // run nowhere.
+  if (stack == NpuStack.mediatek && mediatekNpuRefused) return const {};
   return stack != null && stack.abis.contains(abi)
       ? const {PreferredBackend.npu}
       : const {};

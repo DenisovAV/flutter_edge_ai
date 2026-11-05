@@ -25,6 +25,7 @@ import 'litert_embedding_pass.dart';
 import 'litert_lm_embedding_pass.dart';
 import 'litert_lm_npu.dart';
 import 'litertlm_npu_target.dart';
+import '../native_hosts.dart' show LiteRtLmEg2Bundle;
 import 'vision_budget.dart';
 import 'weight_cache_notice.dart';
 
@@ -64,9 +65,9 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
   /// EmbeddingGemma 2: with `true`, a load that would be cold on every start
   /// is refused. Its engine writes weight caches into the app's cache
   /// directory when it loads: on CPU XNNPack's `.xnnpack_cache`, one file per
-  /// tower (71 MB for the 270m, 385 MB for the 740m); on the GPU (Linux x64,
-  /// 1.19.0; Windows x64 is refused on native-v0.18.0-h, LiteRT-LM accelerator
-  /// crash, tracked in #744) ML Drift's `…_mldrift_weight_cache.bin` and
+  /// tower (71 MB for the 270m, 385 MB for the 740m); on the GPU (Linux x64
+  /// since 1.19.0; Windows x64 and macOS arm64 on native-v0.19.0-a) ML
+  /// Drift's `…_mldrift_weight_cache.bin` and
   /// `…_mldrift_program_cache.bin` for the text tower (68 MB and 9 MB for the
   /// 270m), and XNNPack's for the 440m/740m vision and audio towers, which
   /// run on CPU beside it. A cache the engine cannot create — a path too long
@@ -122,10 +123,11 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
       isLiteRtLmFilename(spec.files.first.filename);
 
   /// GPU joins CPU and NPU for a `.litertlm` bundle on the hosts where
-  /// EmbeddingGemma 2 is measured on the GPU ([liteRtLmEmbeddingGpuAbis],
-  /// Linux x64): core then keys the cache by the backend each load reports.
-  /// On Windows x64 ([liteRtLmEmbeddingGpuRefusedAbis]) it is declared too,
-  /// so that a `gpu` request reaches [describe] and is refused there with an
+  /// EmbeddingGemma 2 is measured on the GPU ([liteRtLmEmbeddingGpuAbis]):
+  /// core then keys the cache by the backend each load reports. On a
+  /// [liteRtLmEmbeddingGpuRefusedAbis] host (none on native-v0.19.0-a) it is
+  /// declared too, so that a `gpu` request reaches [describe] and is refused
+  /// there with an
   /// [EmbeddingLoadException] rather than run on CPU. A `.tflite` embedder and
   /// every other host keep the default, so a `gpu` request there still runs
   /// on CPU with core's not-applied notice.
@@ -222,9 +224,31 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   final onGpu = placement.backend == PreferredBackend.gpu;
   // On the GPU only the text tower runs there: the pass names every tower the
   // container has cpu, and must not name one it lacks (create fails).
-  final towers = onGpu
+  // On the NPU the 740m's audio tower, compiled for cpu/gpu only, must be
+  // named cpu whether or not audio is declared: with its backend NULL it runs
+  // on the NPU and engine create fails (L1, Galaxy S25 Ultra, 2026-11-04).
+  final onNpu = placement.target != null;
+  final towers = onGpu || onNpu
       ? readLiteRtLmMediaTowers(config.modelPath)
       : (vision: false, audio: false);
+  if (onGpu) {
+    final bundle = LiteRtLmEg2Bundle.of(
+      vision: towers.vision,
+      audio: towers.audio,
+    );
+    final (:abi, bundles: measured) = liteRtLmEmbeddingGpuBundlesHere();
+    if (!measured.contains(bundle)) {
+      // Lifted per bundle, for what ran: the others are not known to run.
+      throw EmbeddingLoadException(
+        'EmbeddingGemma 2 on the GPU on $abi has run with '
+        '${measured.map((b) => b.label).join(' and ')} only; $file is '
+        '${bundle.label}, not run on this GPU yet. Load it with '
+        'preferredBackend: cpu (or unset), or use '
+        '${measured.first.label} on the GPU.',
+        engine: _liteRtLm,
+      );
+    }
+  }
   if (onGpu && config.supportImage && !towers.vision) {
     // The 270m. The pass would refuse it from ModelInfo after core closed the
     // embedder it holds; the header is already read here, so refuse before,
@@ -234,10 +258,11 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
       engine: _liteRtLm,
     );
   }
-  if (requireWeightCache && placement.target != null && !config.supportAudio) {
+  if (requireWeightCache && onNpu && !towers.audio) {
     noticeRequireWeightCacheNotApplied(
       '$file runs on the ${placement.target} NPU, whose text and vision '
-      'towers write no weight cache, and no audio was declared',
+      'towers write no weight cache, and it has no audio tower (which runs '
+      'on CPU)',
     );
   }
   // The platform CACHE directory, not application support: iOS backs that up
@@ -266,7 +291,7 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
       npuTarget: placement.target,
       npuDispatchDir: placement.dispatchDir,
       gpu: onGpu,
-      visionTowerOnCpu: towers.vision,
+      visionTowerOnCpu: onGpu && towers.vision,
       audioTowerOnCpu: towers.audio,
     ),
     // `settings_create(path, "cpu" | "gpu" | "npu", vision, audio)`: the text

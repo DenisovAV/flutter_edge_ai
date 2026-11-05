@@ -83,6 +83,9 @@ class _FakeConversationHandle implements ConversationHandle {
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
   @override
+  NativeLastTurnEnd? get lastTurnEnd => null;
+
+  @override
   void close() => isClosed = true;
 }
 

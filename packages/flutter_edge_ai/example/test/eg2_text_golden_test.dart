@@ -4,9 +4,12 @@
 // eg2_text_golden_final.json with one of its six query/document pairs taken
 // out on 2026-10-14 (the rest renumbered, and the `measured_spread` minima
 // recomputed from the remaining items' own cosines): 10 strings (5 pairs),
-// each with `vector` from the shipped native-v0.18.0-d macOS arm64
-// libLiteRtLm.dylib (CPU), `vector_python_wheel` and `vector_st_fp32`
-// (Sentence Transformers, fp32). A JSON file next to a test is not readable
+// each with `vector` from our macOS arm64 libLiteRtLm (CPU),
+// `vector_python_wheel` from Google's litert-lm wheel and `vector_st_fp32`
+// (Sentence Transformers, fp32). `vector` and `vector_python_wheel` were
+// re-recorded on LiteRT-LM 0.19 (native-v0.19.0-a, wheel 0.19.0) on
+// 2026-11-04 by integration_test/tools/eg2_text_golden_vectors.py; until then
+// they were native-v0.18.0-d's and wheel 0.18.0's. A JSON file next to a test is not readable
 // on a phone, so integration_test/goldens/eg2_text_golden.dart carries what
 // embeddinggemma2_test.dart needs — the strings, their prefixes, `vector` and
 // `vector_st_fp32` as base64 little-endian float32 (every value in the JSON is
@@ -49,7 +52,7 @@ String _generate(Map<String, dynamic> source) {
   final payload = {
     'description':
         'Generated from eg2_text_golden.json by test/eg2_text_golden_test.dart. '
-        'vector: native-v0.18.0-d macOS arm64 libLiteRtLm.dylib (CPU); '
+        'vector: ${source['native_library']['build']} libLiteRtLm (CPU); '
         'vector_st_fp32: Sentence Transformers fp32. Both base64 '
         'little-endian float32.',
     'model': source['model'],

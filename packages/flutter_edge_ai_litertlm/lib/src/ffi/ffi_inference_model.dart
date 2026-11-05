@@ -16,6 +16,12 @@ import '../reported_engine_turn.dart';
 import 'native_turns.dart'
     show LiteRtLmTurnCancelledException, LiteRtLmTurnClosedException;
 
+/// Whether the scoring self-check is skipped as in a release build:
+/// [kReleaseMode] (`dart.vm.product`, a compile-time constant), set by tests,
+/// which never run in release.
+@visibleForTesting
+bool liteRtLmScoringReleaseMode = kReleaseMode;
+
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
 ///
@@ -48,11 +54,12 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// built without one (tests), which then cannot read its decision.
   final LitetuneDecisionRead? decisionRead;
 
-  /// How this engine scores right after a prefill, found by the self-check
-  /// before the first decision on this model; null until then.
-  LiteRtLmScoringMode? get scoringMode => _scoringMode;
-  LiteRtLmScoringMode? _scoringMode;
-  Future<LiteRtLmScoringMode>? _scoringCheck;
+  /// Whether this engine's scoring self-check ran and passed before the first
+  /// decision on this model; false until then, and in a release build, which
+  /// skips it.
+  bool get scoringChecked => _scoringChecked;
+  bool _scoringChecked = false;
+  Future<void>? _scoringCheck;
   @override
   final ModelFileType fileType;
   @override
@@ -102,12 +109,12 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   }
 
   /// The self-check, once per model in a debug or profile build (a release
-  /// build scores in [liteRtLmReleaseScoringMode] without it); a check that
+  /// build scores without it); a check that
   /// failed runs again next time (it may have failed on a model that was
   /// closing). Its runs belong to [scorer]: closing that scorer stops them,
   /// and another scorer waiting on the same check then runs it again for
   /// itself.
-  Future<LiteRtLmScoringMode> _scoringModeFor(
+  Future<void> _scoringCheckFor(
     _LiteRtLmOptionScorer scorer,
     List<String> targets,
   ) async {
@@ -125,7 +132,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     }
   }
 
-  Future<LiteRtLmScoringMode> _runScoringCheck(
+  Future<void> _runScoringCheck(
     _LiteRtLmOptionScorer scorer,
     List<String> targets,
   ) {
@@ -142,8 +149,8 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     // kReleaseMode is `dart.vm.product`, a compile-time constant: true in a
     // release build only (profile builds keep the check), and the check's
     // code is tree-shaken out of a release build.
-    final check = liteRtLmScoringMode(
-      releaseMode: kReleaseMode,
+    final check = liteRtLmScoringChecked(
+      releaseMode: liteRtLmScoringReleaseMode,
       selfCheck: () => liteRtLmScoringSelfCheck(
         backend: activeBackend,
         targets: targets,
@@ -155,33 +162,19 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           ], stops: scorer._stops),
           [token],
         ).single,
-        scoreInMode: (mode, prompt, tokens) async {
-          final client = scorer._client;
-          String? reprefill;
-          if (mode == LiteRtLmScoringMode.once) {
-            try {
-              reprefill = await scorer._reprefillFor(prompt);
-            } on DeciderUnsupportedException catch (e) {
-              throw DeciderUnsupportedException(
-                'The scoring self-check\'s own prompt: ${e.message}',
-              );
-            }
-          }
-          return single(
-            await client.scoreTargets(
-              prompt,
-              tokens,
-              reprefill: reprefill,
-              stops: scorer._stops,
-            ),
+        scoreInRun: (prompt, tokens) async => single(
+          await scorer._client.scoreTargets(
+            prompt,
             tokens,
-          );
-        },
+            stops: scorer._stops,
+          ),
+          tokens,
+        ),
       ),
     );
     _scoringCheck = check;
     return check.then(
-      (mode) => _scoringMode = mode,
+      (ran) => _scoringChecked = ran,
       onError: (Object e, StackTrace st) {
         if (identical(_scoringCheck, check)) _scoringCheck = null;
         Error.throwWithStackTrace(e, st);
@@ -1278,11 +1271,17 @@ class RecoveringConversationHandle implements ConversationHandle {
           rawReply.toString(),
         );
         if (stopped && latest) _stoppedReply = reply;
-        // The message reached the model either way, so it belongs in the
-        // history a rebuild replays — with whatever of the reply was produced.
-        _history
-          ..add(message)
-          ..add(reply);
+        // The message reached the model, so it belongs in the history a
+        // rebuild replays — with whatever of the reply was produced. Except a
+        // turn native ended context_full (section 23): its input was refused
+        // before it reached the model, and recording it would replay into a
+        // rebuild a message the model never saw (core 2.6.0 design §6.4b; L3
+        // recovers such a turn).
+        if (!failed || failedTurnReachedModel(_live.lastTurnEnd)) {
+          _history
+            ..add(message)
+            ..add(reply);
+        }
       }
       done.complete();
     }
@@ -1372,6 +1371,9 @@ class RecoveringConversationHandle implements ConversationHandle {
   SessionMetrics getSessionMetrics() => _live.getSessionMetrics();
 
   @override
+  NativeLastTurnEnd? get lastTurnEnd => _live.lastTurnEnd;
+
+  @override
   void close() {
     if (_closed) return;
     _closed = true;
@@ -1396,6 +1398,15 @@ class RecoveringConversationHandle implements ConversationHandle {
 ///
 /// Same-session follow-up turns reuse the live conversation (no rebuild);
 /// only switching to a different session pays the teardown+replay cost.
+/// Whether a turn that failed still reached the model, so a session's
+/// history keeps it for the replay a rebuild does: every failed turn but one
+/// native ended context_full or refused before it started (section 23),
+/// whose input the model never saw. Both [RecoveringConversationHandle] and the virtual
+/// sessions follow it; L3 recovers such a turn (core 2.6.0 design §6.4b).
+@visibleForTesting
+bool failedTurnReachedModel(NativeLastTurnEnd? end) =>
+    end != NativeLastTurnEnd.contextFull && end != NativeLastTurnEnd.refused;
+
 class _VirtualConversationHandle implements ConversationHandle {
   _VirtualConversationHandle({
     required this.client,
@@ -1501,6 +1512,11 @@ class _VirtualConversationHandle implements ConversationHandle {
         yield raw ? rawChunk : chunkText;
       }
       record();
+    } catch (_) {
+      // A turn native ended context_full never reached the model (section
+      // 23): replaying it would feed a rebuild a message the model never saw.
+      if (!failedTurnReachedModel(lastTurnEnd)) recorded = true;
+      rethrow;
     } finally {
       // Also record on error/cancel so the user turn isn't lost.
       record();
@@ -1601,6 +1617,9 @@ class _VirtualConversationHandle implements ConversationHandle {
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
   @override
+  NativeLastTurnEnd? get lastTurnEnd => client.virtualLastTurnEnd(token);
+
+  @override
   void close() {
     if (_closed) return;
     _closed = true;
@@ -1624,7 +1643,7 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
 
   /// Every call goes through here, so a scorer or model closed between calls
   /// is a stop, not a failure: a scorer waiting on this one's self-check runs
-  /// it again for itself (see `_scoringModeFor`).
+  /// it again for itself (see `_scoringCheckFor`).
   LiteRtLmFfiClient get _client {
     if (_closed) throw ScoringStoppedError('The option scorer is closed.');
     if (_model.isClosed) throw ScoringStoppedError('The model is closed.');
@@ -1643,7 +1662,7 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
 
   @override
   Future<void> prepare(List<String> targets) =>
-      _model._scoringModeFor(this, targets);
+      _model._scoringCheckFor(this, targets);
 
   @override
   Future<OptionScoringRun> score(
@@ -1651,9 +1670,9 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
     List<String> targets, {
     CancelToken? cancelToken,
   }) async {
-    final mode = await _model._scoringModeFor(this, targets);
-    // The session adds BOS itself, in either mode, so a prompt that starts
-    // with its text would carry two.
+    await _model._scoringCheckFor(this, targets);
+    // The session adds BOS itself, so a prompt that starts with its text
+    // would carry two.
     if (prompt.startsWith('<bos>')) {
       throw const DeciderUnsupportedException(
         'The rendered prompt starts with <bos>, which the scoring session '
@@ -1663,26 +1682,9 @@ final class _LiteRtLmOptionScorer extends OptionScorer {
     return _client.scoreTargets(
       prompt,
       targets,
-      reprefill: mode == LiteRtLmScoringMode.once
-          ? await _reprefillFor(prompt)
-          : null,
       cancelToken: cancelToken,
       stops: _stops,
     );
-  }
-
-  /// The text of [prompt]'s last token, which mode `once` prefills again.
-  Future<String> _reprefillFor(String prompt) async {
-    final ids = await tokenize(prompt);
-    final last = await detokenize([ids.last]);
-    final back = await tokenize(last);
-    if (!prompt.endsWith(last) || back.length != 1 || back.single != ids.last) {
-      throw DeciderUnsupportedException(
-        'The prompt\'s last token ${ids.last} does not round-trip as '
-        '"$last", so it cannot be prefilled again on its own.',
-      );
-    }
-    return last;
   }
 
   /// Also stops this scorer's native runs in flight — a decision's, or the

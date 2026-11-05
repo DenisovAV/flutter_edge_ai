@@ -1,13 +1,22 @@
-// The EmbeddingGemma 2 pass on the REAL libLiteRtLm (native-v0.18.0-e) and
+// The EmbeddingGemma 2 pass on the REAL libLiteRtLm (native-v0.19.0-a) and
 // the real bundles, in the VM — the X1 check of R5 §10.1 at the FFI level:
 // text through these Dart bindings reproduces the golden `vector`, which came
-// from the native-v0.18.0-d macOS arm64 dylib through Python ctypes.
+// from the native-v0.19.0-a macOS arm64 dylib through Python ctypes.
+//
+// Both goldens were re-recorded on LiteRT-LM 0.19 on 2026-11-04
+// (integration_test/tools/eg2_text_golden_vectors.py and eg2_audio_golden.py,
+// with Google's litert-lm 0.19.0 wheel): 0.19 moves the 740m's audio vectors
+// by up to cos 0.89 from 0.18's in Google's builds as in ours, and is as close
+// to google/embeddinggemma-2 as 0.18 on average and closer at the worst clip
+// (doc/research/litertlm-0.19-phase1.md on native/litertlm-0.19, "Audio A/B
+// against Google's builds and the reference model", 688600e8). The 270m text
+// golden moved by cos 0.0003: it was the Apple 0.18.0-d build, which alone
+// differed from the wheel. Retrieval is asserted as before.
 //
 // Opt-in, skipped unless both are present:
-// - the host libLiteRtLm: LITERTLM_DYLIB=<path>, else the hook's download
-//   cache (a macOS dev box has it after any example build). It must be
-//   native-v0.18.0-e or newer — the pass reads the section 14 response
-//   getters, and the first test refuses an older library by name;
+// - the host libLiteRtLm on LiteRT-LM C API 1.0 (native-v0.19.0-a or newer):
+//   LITERTLM_DYLIB=<path>, else the hook's download cache (a macOS dev box
+//   has it after any example build); an older library is not used;
 // - EG2_270M_LITERTLM=<path to embeddinggemma-2-text-270m.litertlm> (the
 //   pinned revision, sha256 2d079ee2…86fb). EG2_440M_LITERTLM (revision
 //   e301f74d, sha256 92dcbea1…2eb0) adds the vision-bundle cases: images
@@ -17,7 +26,7 @@
 //   over images ranks better raw or with the retrieval-query prefix.
 //   EG2_740M_LITERTLM (revision 24d962e9, sha256 e7a8a220…7f4c) adds the
 //   audio cases (R5 §10.4): the example's clips (example/assets/eg2_audio)
-//   against Google's litert-lm 0.18.0 wheel (eg2_audio_golden.json),
+//   against Google's litert-lm 0.19.0 wheel (eg2_audio_golden.json),
 //   text→audio retrieval, WAV/MP3/FLAC and resampling, a corrupt WAV, the
 //   exact overflow of a 60-second clip, and combined inputs.
 //
@@ -131,12 +140,27 @@ Uint8List _toneWav(int seconds) {
   return (top1: top1, meanMargin: margins / queries.length, misses: misses);
 }
 
-String? _dylib() => firstExistingPath(
-  hostNativeLibraryCandidates(
+/// The first host libLiteRtLm on C API 1.0 (it exports
+/// `litert_lm_get_api_version`): the pass binds the 1.0 shapes, and an older
+/// library — the download cache of a checkout pinned before 0.19 — would be
+/// read as garbage, not refused.
+String? _dylib() {
+  for (final path in hostNativeLibraryCandidates(
     libFileName: hostNativeLibraryFileName('LiteRtLm'),
     envOverride: Platform.environment['LITERTLM_DYLIB'],
-  ),
-);
+  )) {
+    if (!File(path).existsSync()) continue;
+    try {
+      if (DynamicLibrary.open(path)
+          .providesSymbol('litert_lm_get_api_version')) {
+        return path;
+      }
+    } on ArgumentError {
+      continue;
+    }
+  }
+  return null;
+}
 
 String? _env(String name) {
   final value = Platform.environment[name];
@@ -161,7 +185,7 @@ void main() {
   final bundle440m = _env('EG2_440M_LITERTLM');
   final bundle740m = _env('EG2_740M_LITERTLM');
   final skip = dylib == null
-      ? 'no host libLiteRtLm in the download cache'
+      ? 'no host libLiteRtLm on C API 1.0'
       : bundle270m == null
       ? 'EG2_270M_LITERTLM is not set'
       : null;
@@ -194,7 +218,136 @@ void main() {
       DynamicLibrary.open(dylib!).providesSymbol,
       library: dylib,
     );
-  }, skip: dylib == null ? 'no host libLiteRtLm in the download cache' : null);
+  }, skip: dylib == null ? 'no host libLiteRtLm on C API 1.0' : null);
+
+  test(
+    '270m on the GPU (EG2_GPU=1, a liteRtLmEmbeddingGpuAbis host): the text '
+    'tower on the GPU, ML Drift caches required, vectors within cos 0.99 of '
+    'the CPU\'s on every golden text',
+    () async {
+      final golden = jsonDecode(File(_goldenPath).readAsStringSync()) as Map;
+      final items = (golden['items'] as List).cast<Map<String, dynamic>>();
+      final cpu = pass(bundle270m!);
+      final gpu = LiteRtLmEmbeddingPass(
+        LiteRtLmEmbeddingConfig(
+          modelPath: bundle270m,
+          cacheBase: cacheBase.path,
+          gpu: true,
+          requireWeightCache: true,
+        ),
+        openBindings: bindings,
+      );
+      final loadWatch = Stopwatch()..start();
+      final info = await gpu.load();
+      loadWatch.stop();
+      await cpu.load();
+      try {
+        expect(info.activeBackend, PreferredBackend.gpu);
+        expect(info.dimension, 768);
+        var minCos = 1.0;
+        final micros = <int>[];
+        for (final item in items) {
+          final taskType = item['role'] == 'query'
+              ? TaskType.retrievalQuery
+              : TaskType.retrievalDocument;
+          final input = EmbeddingInput.text(item['text'] as String);
+          final watch = Stopwatch()..start();
+          final onGpu = await gpu.embed(input, taskType);
+          micros.add(watch.elapsedMicroseconds);
+          minCos = math.min(
+            minCos,
+            _cos(onGpu, await cpu.embed(input, taskType)),
+          );
+        }
+        final caches = [
+          for (final f in Directory(gpu.cacheDir!).listSync().whereType<File>())
+            f.path.split('/').last,
+        ];
+        micros.sort();
+        // ignore: avoid_print
+        print(
+          'EG2 270m on the ${Platform.operatingSystem} GPU: load '
+          '${loadWatch.elapsedMilliseconds} ms; per text median '
+          '${micros[micros.length ~/ 2] / 1000} ms; min cos to CPU $minCos; '
+          'caches $caches',
+        );
+        expect(minCos, greaterThan(0.99));
+        expect(
+          caches.where((name) => name.contains('_mldrift_')),
+          hasLength(2),
+          reason: 'the weight and program caches',
+        );
+      } finally {
+        await gpu.close();
+        await cpu.close();
+      }
+    },
+    skip:
+        skip ??
+        (Platform.environment['EG2_GPU'] == '1'
+            ? null
+            : 'EG2_GPU=1 is not set'),
+  );
+
+  test(
+    '740m text tower on the GPU (EG2_GPU=1): vision and audio towers on CPU, '
+    'text vectors within cos 0.99 of the CPU\'s',
+    () async {
+      final golden = jsonDecode(File(_goldenPath).readAsStringSync()) as Map;
+      final items = (golden['items'] as List).cast<Map<String, dynamic>>();
+      final cpu = pass(bundle740m!);
+      final gpu = LiteRtLmEmbeddingPass(
+        LiteRtLmEmbeddingConfig(
+          modelPath: bundle740m,
+          cacheBase: cacheBase.path,
+          gpu: true,
+          visionTowerOnCpu: true,
+          audioTowerOnCpu: true,
+        ),
+        openBindings: bindings,
+      );
+      final loadWatch = Stopwatch()..start();
+      final info = await gpu.load();
+      loadWatch.stop();
+      await cpu.load();
+      try {
+        expect(info.activeBackend, PreferredBackend.gpu);
+        var minCos = 1.0;
+        final micros = <int>[];
+        for (final item in items) {
+          final taskType = item['role'] == 'query'
+              ? TaskType.retrievalQuery
+              : TaskType.retrievalDocument;
+          final input = EmbeddingInput.text(item['text'] as String);
+          final watch = Stopwatch()..start();
+          final onGpu = await gpu.embed(input, taskType);
+          micros.add(watch.elapsedMicroseconds);
+          minCos = math.min(
+            minCos,
+            _cos(onGpu, await cpu.embed(input, taskType)),
+          );
+        }
+        micros.sort();
+        // ignore: avoid_print
+        print(
+          'EG2 740m text on the ${Platform.operatingSystem} GPU: load '
+          '${loadWatch.elapsedMilliseconds} ms; per text median '
+          '${micros[micros.length ~/ 2] / 1000} ms; min cos to CPU $minCos',
+        );
+        expect(minCos, greaterThan(0.99));
+      } finally {
+        await gpu.close();
+        await cpu.close();
+      }
+    },
+    skip: dylib == null
+        ? 'no host libLiteRtLm on C API 1.0'
+        : bundle740m == null
+        ? 'EG2_740M_LITERTLM is not set'
+        : Platform.environment['EG2_GPU'] == '1'
+        ? null
+        : 'EG2_GPU=1 is not set',
+  );
 
   test(
     '270m reproduces the golden vectors (X1), ranks every query\'s '
@@ -245,10 +398,12 @@ void main() {
           expect(cosSt, greaterThanOrEqualTo(0.97), reason: '${item['id']}');
           vectors[item['id'] as String] = vector;
         }
-        for (var i = 0; i < 6; i++) {
+        // The golden's query/document pairs (5 since 2026-10-14).
+        final pairs = items.length ~/ 2;
+        for (var i = 0; i < pairs; i++) {
           final query = vectors['q$i']!;
           final scores = [
-            for (var j = 0; j < 6; j++) _cos(query, vectors['d$j']!),
+            for (var j = 0; j < pairs; j++) _cos(query, vectors['d$j']!),
           ];
           final best = scores.indexOf(scores.reduce(math.max));
           expect(best, i, reason: 'q$i ranks d$best first: $scores');
@@ -339,7 +494,7 @@ void main() {
       ),
     );
     await p.close();
-  }, skip: dylib == null ? 'no host libLiteRtLm in the download cache' : null);
+  }, skip: dylib == null ? 'no host libLiteRtLm on C API 1.0' : null);
 
   test(
     '440m: images at 140 tokens — text→image and near-duplicate top-1 on the '
@@ -559,13 +714,13 @@ void main() {
   }, skip: skip);
 
   test(
-    '740m: audio and combined inputs against the litert-lm 0.18.0 wheel, '
+    '740m: audio and combined inputs against the litert-lm 0.19.0 wheel, '
     'text→audio retrieval, WAV/MP3/FLAC and resampling, a corrupt WAV, the '
     'exact overflow of a 60-second clip',
     () async {
-      final golden =
-          jsonDecode(File(_audioGoldenPath).readAsStringSync())
-              as Map<String, dynamic>;
+      final golden = jsonDecode(
+        File(_audioGoldenPath).readAsStringSync(),
+      ) as Map<String, dynamic>;
       final clips = (golden['clips'] as Map).cast<String, dynamic>();
       final p = pass(
         bundle740m!,

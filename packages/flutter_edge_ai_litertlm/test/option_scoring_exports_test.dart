@@ -9,9 +9,16 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-Set<String> _quotedSymbols(String source) => {
+/// The C functions [source] calls through the generated bindings
+/// (`b.litert_lm_…`, a call or a tear-off) and names in its failures, plus
+/// `litert_lm_get_last_error_message` when it reads the last error
+/// (`b.lastError`).
+Set<String> _calledSymbols(String source) => {
   for (final m in RegExp(r"'(litert_lm_[a-z_]+)'").allMatches(source))
     m.group(1)!,
+  for (final m in RegExp(r'\bb\.(litert_lm_[a-z_]+)\b').allMatches(source))
+    m.group(1)!,
+  if (source.contains('b.lastError')) 'litert_lm_get_last_error_message',
 };
 
 void main() {
@@ -22,14 +29,9 @@ void main() {
       client.indexOf('Future<List<int>> tokenIds('),
       client.indexOf('Future<String> renderUserMessage('),
     );
-    final called = {
-      ..._quotedSymbols(ffi),
-      for (final m in RegExp(r'b\.(litert_lm_[a-z_]+)\(').allMatches(tokenizer))
-        m.group(1)!,
-    };
-    final gate = File(
-      'native/litert_lm/check_embedding_exports.py',
-    ).readAsStringSync();
+    final called = {..._calledSymbols(ffi), ..._calledSymbols(tokenizer)};
+    final gate = File('native/litert_lm/check_embedding_exports.py')
+        .readAsStringSync();
     final listed = RegExp(
       r'SCORING_SYMBOLS = \[(.*?)\]',
       dotAll: true,

@@ -190,7 +190,7 @@ final List<_GoldenItem> _golden = [
     ),
 ];
 
-/// The golden's `vector` came from native-v0.18.0-d on macOS arm64.
+/// The golden's `vector` came from native-v0.19.0-a on macOS arm64.
 bool get _sameBuildAsGolden =>
     Platform.isMacOS && Abi.current() == Abi.macosArm64;
 
@@ -420,7 +420,7 @@ void main() {
       expect(
         cosGolden,
         greaterThanOrEqualTo(minGolden),
-        reason: '${item.id} against the native-v0.18.0-d macOS golden',
+        reason: '${item.id} against the native-v0.19.0-a macOS golden',
       );
       expect(
         cosSt,
@@ -999,9 +999,8 @@ void main() {
         supportImage: true,
       );
       await expectLater(
-        const LiteRtEmbeddingBackend(
-          visionTokensPerImage: 280,
-        ).describe(spec, config),
+        const LiteRtEmbeddingBackend(visionTokensPerImage: 280)
+            .describe(spec, config),
         throwsA(
           isA<EmbeddingLoadException>()
               .having((e) => e.engine, 'engine', 'LiteRT-LM')
@@ -1014,9 +1013,8 @@ void main() {
       );
       // The default and the opt-in are accepted.
       for (final budget in [140, 70]) {
-        await LiteRtEmbeddingBackend(
-          visionTokensPerImage: budget,
-        ).describe(spec, config);
+        await LiteRtEmbeddingBackend(visionTokensPerImage: budget)
+            .describe(spec, config);
       }
     }, timeout: const Timeout(Duration(minutes: 20)));
 

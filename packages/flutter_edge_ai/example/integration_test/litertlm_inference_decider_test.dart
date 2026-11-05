@@ -137,10 +137,12 @@ Future<InferenceModel> _load(
   );
 }
 
-/// The scoring mode the model's self-check picked (`LiteRtLmScoringMode`,
-/// internal to flutter_edge_ai_litertlm).
-String? _modeOf(InferenceModel model) =>
-    ((model as dynamic).scoringMode as Enum?)?.name;
+/// Whether the model's scoring self-check passed (`scoringChecked`, internal
+/// to flutter_edge_ai_litertlm). LiteRT-LM 0.19 scores right after the
+/// prefill (#3561 fixed); a pack's `provenance.mode` is how litetune scored it
+/// (`once`, on 0.18), which gives the same scores.
+bool _checked(InferenceModel model) =>
+    (model as dynamic).scoringChecked as bool;
 
 List<Directory> _packs() {
   final dir = _packsDir;
@@ -253,14 +255,14 @@ void main() {
         calibration: const InferenceDeciderCalibration.fromModel(),
       );
       created.stop();
-      final mode = _modeOf(model);
       // ignore: avoid_print
       print(
         '[decider] ${_name(pack)}: $type, ${listed.length} options, '
-        'created in ${created.elapsedMilliseconds} ms, mode $mode '
-        '(golden ${provenance['mode']})',
+        'created in ${created.elapsedMilliseconds} ms, self-check '
+        '${_checked(model) ? 'passed' : 'not run'} (golden scored in mode '
+        '${provenance['mode']})',
       );
-      expect(mode, provenance['mode']);
+      expect(_checked(model), isTrue);
       expect(decider.capabilities.questionType.name, type);
       expect(decider.options.map((o) => o.id), listed);
 
@@ -535,12 +537,11 @@ void main() {
   // The GPU computes in other arithmetic than the CPU litetune measured, so
   // its scores are not the golden ones: printed, not asserted. What is
   // asserted is that the self-check passes there (its repeats bit-identical,
-  // its rewinds exact) and picks the golden mode, and that a decision
-  // repeated gives the same probabilities, bit for bit.
+  // its rewinds exact), and that a decision repeated gives the same
+  // probabilities, bit for bit.
   for (final pack in packs) {
     test('${_name(pack)}: on the GPU', () async {
       final golden = _goldenOf(pack);
-      final provenance = golden['provenance'] as Map<String, Object?>;
       final payload = _payloadOf(golden);
       final model = await _load(
         '${pack.path}/model.litertlm',
@@ -552,7 +553,7 @@ void main() {
         options: _trainedOptions(payload),
         calibration: const InferenceDeciderCalibration.fromModel(),
       );
-      expect(_modeOf(model), provenance['mode']);
+      expect(_checked(model), isTrue);
       final rows = (golden['rows'] as List).cast<Map<String, Object?>>();
       var engineAgree = 0;
       var referenceAgree = 0;
@@ -571,7 +572,7 @@ void main() {
       }
       // ignore: avoid_print
       print(
-        '[decider] ${_name(pack)} on the GPU: mode ${_modeOf(model)}; top '
+        '[decider] ${_name(pack)} on the GPU: self-check passed; top '
         'option = golden CPU engine on $engineAgree/${rows.length} rows, '
         '= reference on $referenceAgree/${rows.length}',
       );
@@ -905,9 +906,9 @@ void main() {
         // ignore: avoid_print
         print(
           '[decider] scorer closed at ${delay.inMilliseconds} ms during the '
-          'self-check: the other one got mode ${_modeOf(m)}',
+          'self-check: the other one passed it: ${_checked(m)}',
         );
-        expect(_modeOf(m), 'once');
+        expect(_checked(m), isTrue);
         await b.close();
       }
     }, skip: skip);
@@ -936,28 +937,24 @@ void main() {
       );
     }, skip: skip);
 
-    test(
-      'the self-check also tells the mode on another chat template',
-      () async {
-        final path = '$_documents/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm';
-        if (!File(path).existsSync()) {
-          markTestSkipped('Qwen3 0.6B is not staged at $path');
-          return;
-        }
-        final m = await _load(path, modelType: ModelType.qwen3);
-        final scorer = await m.openOptionScorer();
-        await scorer.prepare([
-          'yes<|im_end|>',
-          'no<|im_end|>',
-          'maybe<|im_end|>',
-        ]);
-        // ignore: avoid_print
-        print('[decider] Qwen3 0.6B self-check: ${_modeOf(m)}');
-        expect(_modeOf(m), 'once');
-        await scorer.close();
-      },
-      skip: skip,
-    );
+    test('the self-check also passes on another chat template', () async {
+      final path = '$_documents/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm';
+      if (!File(path).existsSync()) {
+        markTestSkipped('Qwen3 0.6B is not staged at $path');
+        return;
+      }
+      final m = await _load(path, modelType: ModelType.qwen3);
+      final scorer = await m.openOptionScorer();
+      await scorer.prepare([
+        'yes<|im_end|>',
+        'no<|im_end|>',
+        'maybe<|im_end|>',
+      ]);
+      // ignore: avoid_print
+      print('[decider] Qwen3 0.6B self-check passed: ${_checked(m)}');
+      expect(_checked(m), isTrue);
+      await scorer.close();
+    }, skip: skip);
 
     test('closing the model stops a long scoring run', () async {
       final m = await model();

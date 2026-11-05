@@ -43,6 +43,15 @@ const _repoUrl = 'https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct';
 InferenceModel? _model;
 bool _initialized = false;
 
+/// Tests that ran to their end, in the response data the driver writes
+/// (`build/integration_response_data.json`): under `flutter drive` a test
+/// that never ran is not reported as failed (AGENTS.md Rule 6b).
+void _completed(String test) {
+  final data = IntegrationTestWidgetsFlutterBinding.instance.reportData ??=
+      <String, dynamic>{};
+  ((data['completed'] ??= <String>[]) as List).add(test);
+}
+
 Future<InferenceModel> _ensureModel() async {
   // Setup lives in the test body, not a setUpAll: under `flutter drive` a
   // throwing setUp is reported as "All tests passed" (AGENTS.md Rule 6b).
@@ -81,6 +90,7 @@ void main() {
         final reply = chunks.join();
         expect(chunks, isNotEmpty);
         expect(reply.toLowerCase(), contains('paris'));
+        _completed('streams a non-empty answer');
       } finally {
         await session.close();
       }
@@ -143,6 +153,7 @@ void main() {
           const Duration(minutes: 2),
         );
         expect(reply.toLowerCase(), contains('paris'));
+        _completed('stopGeneration and a cancelled subscription');
       } finally {
         await session.close();
       }
@@ -159,27 +170,44 @@ void main() {
           return s.getResponse().timeout(const Duration(minutes: 2));
         }
 
-        final a0 = await ask(alice, 'My name is Alice. Reply with OK.');
-        final b0 = await ask(bob, 'My name is Bob. Reply with OK.');
+        // Not "… Reply with OK.": after it Qwen2.5-0.5B answers "Meow." to
+        // the name question on createSession and openSession alike; and it
+        // answers "Your name is Qwen." for Bob even in a session of its own
+        // (both measured 2026-11-05, greedy). So Bob is checked against Bob
+        // alone: with greedy decoding the same history gives the same reply,
+        // and the other session's turns must change nothing.
+        final a0 = await ask(alice, 'My name is Alice.');
+        final b0 = await ask(bob, 'My name is Bob.');
         expect(model.sessions, containsAll([alice, bob]));
-        final a = await ask(alice, 'What is my name? One word.');
-        final b = await ask(bob, 'What is my name? One word.');
-        final replies = 'alice: "$a0" / "$a"; bob: "$b0" / "$b"';
+        final a = await ask(alice, 'What is my name?');
+        final b = await ask(bob, 'What is my name?');
+
+        final bobAlone = await model.openSession(topK: 1);
+        final String b0Alone;
+        final String bAlone;
+        try {
+          b0Alone = await ask(bobAlone, 'My name is Bob.');
+          bAlone = await ask(bobAlone, 'What is my name?');
+        } finally {
+          await bobAlone.close();
+        }
+
+        final replies =
+            'alice: "$a0" / "$a"; bob: "$b0" / "$b"; '
+            'bob alone: "$b0Alone" / "$bAlone"';
         expect(
           a.toLowerCase(),
           allOf(contains('alice'), isNot(contains('bob'))),
           reason: replies,
         );
-        expect(
-          b.toLowerCase(),
-          allOf(contains('bob'), isNot(contains('alice'))),
-          reason: replies,
-        );
+        expect(b.toLowerCase(), isNot(contains('alice')), reason: replies);
+        expect([b0, b], [b0Alone, bAlone], reason: replies);
       } finally {
         await alice.close();
         await bob.close();
       }
       expect(model.sessions, isNot(contains(alice)));
+      _completed('openSession sessions keep their own context');
     });
   });
 }

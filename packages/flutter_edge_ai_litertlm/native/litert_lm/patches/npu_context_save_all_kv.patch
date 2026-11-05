@@ -1,0 +1,20 @@
+diff --git a/runtime/executor/llm_litert_npu_compiled_model_executor.cc b/runtime/executor/llm_litert_npu_compiled_model_executor.cc
+index 8520f2d..bc0329c 100644
+--- a/runtime/executor/llm_litert_npu_compiled_model_executor.cc
++++ b/runtime/executor/llm_litert_npu_compiled_model_executor.cc
+@@ -2555,9 +2555,13 @@ LlmLiteRtNpuCompiledModelExecutor::CreateNewContext(
+ absl::StatusOr<std::unique_ptr<LlmContext>>
+ LlmLiteRtNpuCompiledModelExecutor::CloneContext() const {
+   absl::flat_hash_map<std::string, ::litert::TensorBuffer> kv_cache_buffers;
++  // flutter_edge_ai (patch_c_api.sh section 22): save every persistent KV
++  // cache buffer of the group, not only those the prefill signature takes.
++  // A layer the prefill graph does not read (Gemma 4 E2B's kv_cache_{k,v}_14
++  // on the Qualcomm SM8750 bundle) was never saved, so RestoreContext left
++  // the previous conversation's values in it.
+   for (const auto& [name, buffer] :
+-       ActiveContextGroup()
+-           .text_decoder_inference_context.prefill_input_buffers) {
++       ActiveContextGroup().input_kv_cache_buffers) {
+     if (absl::StartsWith(name, kv_cache_k_root_name) ||
+         absl::StartsWith(name, kv_cache_v_root_name) ||
+         absl::StartsWith(name, kv_cache_c_root_name)) {

@@ -12,7 +12,9 @@
 // so that works. On Linux the provider is built by Google's toolchain (libc++
 // with inline namespace std::__u) and our runtime by clang + libstdc++, and
 // the two disagree on exactly the things that cross this boundary — measured
-// in the prebuilt binaries (x86_64 sha256 f5970d28…, PREBUILT_REF 4453b286):
+// in the prebuilt binaries (x86_64 sha256 f5970d28…, PREBUILT_REF 4453b286),
+// and unchanged in the v0.19.0 ones (x86_64 fc4e17a9…, arm64 4685001b…;
+// Start, ComputeNext and the BitmapLogitMask constructor disassembled):
 //
 //   * Start() returns std::unique_ptr<State> in a register (rax / x0): the
 //     provider's unique_ptr is trivial_abi. Our caller passes a hidden return

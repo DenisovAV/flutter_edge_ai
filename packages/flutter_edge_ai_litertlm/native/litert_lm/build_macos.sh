@@ -8,7 +8,7 @@
 #
 # Usage:
 #   ./build_macos.sh [ref]
-#   ./build_macos.sh b2f686e2       # v0.18.0 (the default)
+#   ./build_macos.sh 771b06e1       # v0.19.0 (the default)
 #   ./build_macos.sh v0.11.0        # WARNING: v0.11.0 prebuilt accelerators
 #                                   # are ABI-incompatible with libLiteRtLm
 #                                   # rebuilt from v0.11.0 source — crashes
@@ -21,8 +21,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/macos_arm64"
-LITERT_LM_DIR="/tmp/LiteRT-LM"
-DEFAULT_REF="b2f686e2ed4718fb84ec398a61dd59ca0f0aff27"   # v0.18.0
+LITERT_LM_DIR="${LITERT_LM_DIR:-/tmp/LiteRT-LM}"
+DEFAULT_REF="771b06e1a2c7f70a399a718599109facf37e38fd"   # v0.19.0
 VERSION="${1:-}"
 
 # Since v0.18.0 the WORKSPACE registers the Android NDK toolchain whenever
@@ -82,7 +82,7 @@ echo "Pulling LFS files..."
 # segfaults in CompositeLogitMask::Apply. Upstream refreshed the prebuilts on
 # main in 4453b286, and that provider carries the LogitMask types. Upstream's
 # own release lane never hits this: its wheel compiles the provider in.
-PREBUILT_REF="${PREBUILT_REF:-b2f686e2ed4718fb84ec398a61dd59ca0f0aff27}"
+PREBUILT_REF="${PREBUILT_REF:-771b06e1a2c7f70a399a718599109facf37e38fd}"
 echo "Taking prebuilt companions from $PREBUILT_REF"
 git lfs pull --include="prebuilt/macos_arm64/*"
 # One file, from a different commit than the source: fetch it straight from the
@@ -118,7 +118,15 @@ echo "provider ABI: source and provider agree (ComputeMask=$want)"
 
 # 5. Build
 echo "Building with Bazel..."
-bazelisk build -c opt --strip=always --config=macos_arm64 '//c:libLiteRtLm.dylib'
+# From LiteRT-LM v0.19.0 the GPU accelerator and the TopK samplers are linked
+# into libLiteRtLm on Apple. macOS defaults to ML Drift WebGPU, which makes
+# libLiteRtLm NEED libwebgpu_dawn.dylib; Metal keeps it to Metal, the backend
+# we ship on macOS. Older trees have no such flag.
+GPU_FLAG=()
+if grep -q 'name = "gpu_accelerator"' runtime/executor/BUILD 2>/dev/null; then
+  GPU_FLAG=(--//runtime/executor:gpu_accelerator="${MACOS_GPU_ACCELERATOR:-metal}")
+fi
+bazelisk build -c opt --strip=always --config=macos_arm64 "${GPU_FLAG[@]}" '//c:libLiteRtLm.dylib'
 
 # 6. Copy to prebuilt
 BUILT_LIB="bazel-bin/c/libLiteRtLm.dylib"

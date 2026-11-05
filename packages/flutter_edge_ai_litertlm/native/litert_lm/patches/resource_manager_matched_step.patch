@@ -1,0 +1,17 @@
+diff --git a/runtime/framework/resource_management/resource_manager.cc b/runtime/framework/resource_management/resource_manager.cc
+index 18f864f..889b624 100644
+--- a/runtime/framework/resource_management/resource_manager.cc
++++ b/runtime/framework/resource_management/resource_manager.cc
+@@ -336,6 +336,12 @@ class LockedLlmExecutor : public LlmExecutor {
+     // processed token after removing the matching tokens, call executor
+     // directly.
+     if (processed_tokens->TokenCount() == current_step) {
++      // flutter_edge_ai (patch_c_api.sh section 24): move the executor to the
++      // step after the matched tokens first. The executor takes its step from
++      // SetCurrentStep, not from the prefill params, so without this the rest
++      // of the input is prefilled from the step a rewind left (0 after a
++      // rewind to an empty conversation) and the matched tokens are lost.
++      ABSL_RETURN_IF_ERROR(llm_executor_->SetCurrentStep(current_step));
+       return llm_executor_->Prefill(new_inputs, new_prefill_query_params);
+     }
+     // If the updated current_steps_ is still less than the processed tokens

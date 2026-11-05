@@ -185,22 +185,16 @@ void main() {
   });
 
   test('the OpenVINO release the Windows workflows require is the one the '
-      'LiteRT patch pins', () {
-    final patch = File(
-      'native/litert_lm/patches/litert_openvino_2026_4_1.patch',
-    ).readAsStringSync().replaceAll('\r\n', '\n');
-    final version = RegExp(
-      r'^\+OPENVINO_PEP440_VERSION = "([^"]+)"',
-      multiLine: true,
-    ).firstMatch(patch)!.group(1)!;
-    final build = RegExp(
-      '^\\+.*"windows": ".*_${RegExp.escape(version)}\\.(\\d+)\\.',
-      multiLine: true,
-    ).firstMatch(patch)!.group(1)!;
+      'LiteRT pin builds against', () {
+    // From LiteRT-LM v0.19.0 the LiteRT pin (dcb657e8) carries OpenVINO
+    // 2026.4.1 itself (third_party/intel_openvino/openvino_version.bzl:
+    // OPENVINO_PEP440_VERSION and the windows archive's build number), so our
+    // backport patch is gone. Re-read that file when the pin moves.
+    const pinRelease = '2026.4.1-22982';
     for (final workflow in _windowsWorkflows) {
       expect(
         _workflow(workflow),
-        contains("\$ovRelease = '$version-$build'"),
+        contains("\$ovRelease = '$pinRelease'"),
         reason: workflow,
       );
     }

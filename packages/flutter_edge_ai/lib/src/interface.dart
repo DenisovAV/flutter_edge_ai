@@ -29,6 +29,9 @@ import 'model_management/cancel_token.dart' show CancelToken;
 import 'model_management/model_specs.dart' show InferenceModelSpec;
 import 'registry/runtime_config.dart' show ActiveModelParams;
 import 'embedding/embedding_model.dart';
+import 'structured/response_format.dart';
+import 'structured/structured_output.dart';
+import 'structured/structured_session.dart';
 
 // Embedding types that used to be declared here; re-exported so the rest of
 // core keeps importing them from the platform interface.
@@ -401,6 +404,18 @@ abstract class InferenceModel {
   /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`) would be
   /// exceeded — close an existing session before opening a new one.
   ///
+  /// [responseFormat] — what every reply of the session must be. Core checks
+  /// each reply: a turn that ends before the value is complete (the output
+  /// cap, a full context, a stop, a close) fails the response with
+  /// [IncompleteStructuredOutputException], and a complete reply that is not
+  /// a value of the format with [NonConformingStructuredOutputException],
+  /// after the text has been delivered. The format is refused with
+  /// [ResponseFormatUnsupportedException] before the engine is called when
+  /// this model cannot enforce it (see [refusalFor]), and with
+  /// [ArgumentError] together with [tools] or `enableThinking: true`. The
+  /// returned session is then core's, around the engine's, and that is the
+  /// one [sessions] lists.
+  ///
   /// Core implements this once for every engine (`@nonVirtual`); an engine
   /// opens its sessions in [openEngineSession].
   @nonVirtual
@@ -416,6 +431,7 @@ abstract class InferenceModel {
     bool enableThinking = false,
     List<Tool> tools = const [],
     int? maxOutputTokens,
+    ResponseFormat? responseFormat,
   }) => _openSession(
     SessionRequest(
       temperature: temperature,
@@ -429,13 +445,88 @@ abstract class InferenceModel {
       enableThinking: enableThinking,
       tools: tools,
       maxOutputTokens: maxOutputTokens,
+      responseFormat: _jsonSchemaFormat(responseFormat),
     ),
   );
 
   /// Core's [openSession], also the session creator of every [openChat]
   /// chat, so a chat's rebuilt sessions pass the same checks as its first.
-  Future<InferenceModelSession> _openSession(SessionRequest request) =>
-      openEngineSession(request);
+  Future<InferenceModelSession> _openSession(SessionRequest request) async {
+    final format = request.responseFormat;
+    if (format == null) return openEngineSession(request);
+    _checkFormatArguments(
+      tools: request.tools,
+      enableThinking: request.enableThinking,
+    );
+    final refusal = refusalFor(format);
+    if (refusal != null) throw refusal;
+    final engineSession = await openEngineSession(request);
+    final structured = StructuredSession(
+      engineSession,
+      format,
+      engine: runtimeType,
+    );
+    _structuredSessions[engineSession] = structured;
+    return structured;
+  }
+
+  /// [openSession] and [openChat] refuse a format together with tools or
+  /// thinking: a tool call or a thought is not a value of the format.
+  static void _checkFormatArguments({
+    required List<Tool> tools,
+    required bool enableThinking,
+  }) {
+    if (tools.isNotEmpty) {
+      throw ArgumentError.value(
+        tools.length,
+        'tools',
+        'A responseFormat cannot be combined with tools',
+      );
+    }
+    if (enableThinking) {
+      throw ArgumentError.value(
+        enableThinking,
+        'enableThinking',
+        'A responseFormat cannot be combined with thinking',
+      );
+    }
+  }
+
+  /// What formats this model can enforce, as loaded: engine, platform and the
+  /// backend it was loaded on. [StructuredOutputSupport.none] (with its
+  /// reason) when it enforces none, which in this release is every engine.
+  ///
+  /// Core implements this once (`@nonVirtual`); an engine reports its own in
+  /// [engineStructuredOutputSupport], and core throws [StateError] naming the
+  /// engine when that names a keyword outside [ResponseFormat.dialect].
+  @nonVirtual
+  StructuredOutputSupport get structuredOutputSupport =>
+      checkedSupport(engineStructuredOutputSupport, runtimeType);
+
+  /// Why [format] would be refused here, or null if [openSession] would
+  /// accept it. Composes, in order: the engine's support (none → refused
+  /// with its reason), each schema keyword against the engine's keywords
+  /// (the first one missing, with its path; annotations always pass), then
+  /// [engineRefusalFor].
+  @nonVirtual
+  ResponseFormatUnsupportedException? refusalFor(ResponseFormat format) =>
+      composeRefusal(this, format);
+
+  /// What this engine enforces on this model as loaded. Default: nothing.
+  @protected
+  StructuredOutputSupport get engineStructuredOutputSupport =>
+      const StructuredOutputSupport.none(
+        'This engine does not enforce a format.',
+      );
+
+  /// A refusal a keyword set cannot express (built-in AI on Apple: a
+  /// property-less object can only produce `{}`; LiteRT-LM: a model loaded
+  /// with a `thinkingTokenBudget`). Called by [refusalFor] only after the
+  /// support and keyword checks passed. Default: none.
+  @protected
+  ResponseFormatUnsupportedException? engineRefusalFor(
+    JsonSchemaResponseFormat format,
+  ) => null;
 
   /// An independent session for [request]. Called only by core's
   /// [openSession], after its checks. Default: [UnsupportedError], as the
@@ -451,7 +542,8 @@ abstract class InferenceModel {
   /// via [openSession], `session.close()`, or [close]. Engines report theirs
   /// through [engineSessions].
   @nonVirtual
-  List<InferenceModelSession> get sessions => List.unmodifiable(engineSessions);
+  List<InferenceModelSession> get sessions =>
+      List.unmodifiable(engineSessions.map((s) => _structuredSessions[s] ?? s));
 
   /// The sessions this engine holds open: the legacy [session] and each
   /// session [openEngineSession] returned that is not closed yet.
@@ -537,6 +629,16 @@ abstract class InferenceModel {
   /// resolves the request ([resolveChatRequest]), so a model whose type is
   /// not Gemma gets its own parsers here too.
   ///
+  /// [responseFormat] — what every reply must be, as on [openSession]: every
+  /// session of the chat, its rebuilt ones too, is opened with it. A reply
+  /// that fails the check is kept in the chat's history, then thrown
+  /// ([InferenceChat.generateChatResponse]); a turn stopped before any text
+  /// is taken back instead, its user message included. Checked before the engine is
+  /// asked anything: [ArgumentError] together with [tools] or
+  /// `enableThinking: true` (as the caller passed them), then
+  /// [ResponseFormatUnsupportedException] when [refusalFor] refuses it; only
+  /// then does the engine resolve the request.
+  ///
   /// Core implements this once for every engine (`@nonVirtual`); an engine
   /// supplies its defaults in [resolveChatRequest] and its per-turn
   /// behaviour in [createChatTurnHooks].
@@ -558,7 +660,14 @@ abstract class InferenceModel {
     int? maxFunctionBufferLength,
     String? systemInstruction,
     int? maxOutputTokens, // Cap GENERATED tokens (see createSession)
+    ResponseFormat? responseFormat,
   }) async {
+    final format = _jsonSchemaFormat(responseFormat);
+    if (format != null) {
+      _checkFormatArguments(tools: tools, enableThinking: enableThinking);
+      final refusal = refusalFor(format);
+      if (refusal != null) throw refusal;
+    }
     final resolved = resolveChatRequest(
       ChatRequest(
         temperature: temperature,
@@ -577,8 +686,18 @@ abstract class InferenceModel {
         maxFunctionBufferLength: maxFunctionBufferLength,
         systemInstruction: systemInstruction,
         maxOutputTokens: maxOutputTokens,
+        responseFormat: format,
       ),
     );
+    // Core owns the format: an engine that dropped or changed it would turn
+    // the chat into one whose replies nobody checks.
+    if (resolved.responseFormat != format) {
+      throw StateError(
+        '$runtimeType.resolveChatRequest changed the responseFormat '
+        '(${resolved.responseFormat} instead of $format): it must carry '
+        'ChatRequest.responseFormat over unchanged.',
+      );
+    }
     final independentChat = InferenceChat(
       sessionCreator: () => _openSession(
         SessionRequest(
@@ -595,6 +714,7 @@ abstract class InferenceModel {
           maxOutputTokens: resolved.maxOutputTokens,
           modelType: resolved.modelType,
           toolChoice: resolved.toolChoice,
+          responseFormat: format,
         ),
       ),
       maxTokens: maxTokens,
@@ -961,6 +1081,7 @@ final class SessionRequest {
     this.maxOutputTokens,
     this.modelType,
     this.toolChoice = ToolChoice.auto,
+    this.responseFormat,
   }) : tools = List.unmodifiable(tools);
 
   final double? temperature;
@@ -987,6 +1108,11 @@ final class SessionRequest {
   /// From [InferenceModel.openChat]; [ToolChoice.auto] from
   /// [InferenceModel.openSession].
   final ToolChoice toolChoice;
+
+  /// What every reply must be. Non-null only when core accepted it
+  /// ([InferenceModel.refusalFor] returned null); core checks each reply
+  /// itself.
+  final JsonSchemaResponseFormat? responseFormat;
 }
 
 /// [InferenceModel.openChat]'s arguments as the caller passed them (nulls
@@ -1009,6 +1135,7 @@ final class ChatRequest {
     this.maxFunctionBufferLength,
     this.systemInstruction,
     this.maxOutputTokens,
+    this.responseFormat,
   }) : tools = List.unmodifiable(tools);
 
   final double? temperature;
@@ -1029,6 +1156,9 @@ final class ChatRequest {
   final int? maxFunctionBufferLength;
   final String? systemInstruction;
   final int? maxOutputTokens;
+
+  /// The caller's format; core checks it on every session it opens.
+  final JsonSchemaResponseFormat? responseFormat;
 }
 
 /// A [ChatRequest] with every value set, as the engine resolved it in
@@ -1054,6 +1184,7 @@ final class ResolvedChatRequest {
     required this.toolChoice,
     required this.systemInstruction,
     required this.maxOutputTokens,
+    required this.responseFormat,
   });
 
   final ModelType modelType;
@@ -1078,6 +1209,11 @@ final class ResolvedChatRequest {
   final ToolChoice toolChoice;
   final String? systemInstruction;
   final int? maxOutputTokens;
+
+  /// [ChatRequest.responseFormat], carried over unchanged: core opens the
+  /// chat's sessions with its own, and [InferenceModel.openChat] throws
+  /// [StateError] naming the engine when this differs from it.
+  final JsonSchemaResponseFormat? responseFormat;
 }
 
 /// Core's rules for [InferenceModel.resolveChatRequest]: modelType
@@ -1103,7 +1239,94 @@ ResolvedChatRequest resolveChatRequestDefaults(ChatRequest request) =>
       toolChoice: request.toolChoice,
       systemInstruction: request.systemInstruction,
       maxOutputTokens: request.maxOutputTokens,
+      responseFormat: request.responseFormat,
     );
+
+/// Core's structured session for each engine session it wrapped, so that
+/// [InferenceModel.sessions] lists what the caller holds.
+final _structuredSessions = Expando<StructuredSession>('structured session');
+
+/// The one [ResponseFormat] kind of this release.
+JsonSchemaResponseFormat? _jsonSchemaFormat(ResponseFormat? format) =>
+    switch (format) {
+      null => null,
+      JsonSchemaResponseFormat() => format,
+      _ => throw StateError('Unknown ResponseFormat ${format.runtimeType}.'),
+    };
+
+/// [InferenceModel.structuredOutputSupport]: the engine's [support], checked
+/// against the dialect.
+@internal
+StructuredOutputSupport checkedSupport(
+  StructuredOutputSupport support,
+  Type engine,
+) {
+  if (!support.isSupported) return support;
+  final outside = support.keywords.difference(ResponseFormat.dialect);
+  if (outside.isNotEmpty) {
+    throw StateError(
+      '$engine reports structured-output keywords outside '
+      'ResponseFormat.dialect: ${outside.join(', ')}.',
+    );
+  }
+  // A copy the caller cannot change, whatever set the engine handed over.
+  return StructuredOutputSupport(
+    keywords: Set.unmodifiable(support.keywords),
+    delivery: support.delivery,
+  );
+}
+
+/// [InferenceModel.refusalFor].
+@internal
+ResponseFormatUnsupportedException? composeRefusal(
+  InferenceModel model,
+  ResponseFormat format,
+) {
+  final support = model.structuredOutputSupport;
+  if (!support.isSupported) {
+    return ResponseFormatUnsupportedException(
+      '${model.runtimeType} refuses every response format: ${support.reason}',
+    );
+  }
+  final schema = _jsonSchemaFormat(format)!;
+  final missing = _firstUnenforcedKeyword(schema.schema, support.keywords, '');
+  if (missing != null) {
+    return ResponseFormatUnsupportedException(
+      '${model.runtimeType} does not enforce the schema keyword '
+      '"${missing.keyword}".',
+      schemaPath: missing.path,
+    );
+  }
+  return model.engineRefusalFor(schema);
+}
+
+/// The first keyword of [schema], depth first in the caller's key order,
+/// that is neither an annotation nor in [keywords].
+({String keyword, String path})? _firstUnenforcedKeyword(
+  Map<String, Object?> schema,
+  Set<String> keywords,
+  String path,
+) {
+  for (final MapEntry(:key, :value) in schema.entries) {
+    if (responseFormatAnnotations.contains(key)) continue;
+    final keyPath = '$path/${jsonPointerToken(key)}';
+    if (!keywords.contains(key)) return (keyword: key, path: keyPath);
+    if (key == 'properties' && value is Map<String, Object?>) {
+      for (final property in value.entries) {
+        final found = _firstUnenforcedKeyword(
+          property.value as Map<String, Object?>,
+          keywords,
+          '$keyPath/${jsonPointerToken(property.key)}',
+        );
+        if (found != null) return found;
+      }
+    } else if (key == 'items' && value is Map<String, Object?>) {
+      final found = _firstUnenforcedKeyword(value, keywords, keyPath);
+      if (found != null) return found;
+    }
+  }
+  return null;
+}
 
 /// Mixin for sessions that surface the SDK's structured raw JSON response
 /// (LiteRT-LM Gemma 4 path with `tool_calls`). Allows [InferenceChat] to read

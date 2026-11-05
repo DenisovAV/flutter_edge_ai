@@ -199,6 +199,7 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
         toolChoice: request.toolChoice,
         systemInstruction: request.systemInstruction,
         maxOutputTokens: request.maxOutputTokens,
+        responseFormat: request.responseFormat,
       );
 
   void _rejectUnsupported(

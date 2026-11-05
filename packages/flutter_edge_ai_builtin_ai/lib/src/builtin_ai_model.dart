@@ -379,6 +379,7 @@ class BuiltInAiModel extends InferenceModel with CloseNotifier {
       toolChoice: request.toolChoice,
       systemInstruction: request.systemInstruction ?? systemInstruction,
       maxOutputTokens: request.maxOutputTokens,
+      responseFormat: request.responseFormat,
     );
   }
 

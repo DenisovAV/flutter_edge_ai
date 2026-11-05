@@ -71,6 +71,7 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
         toolChoice: request.toolChoice,
         systemInstruction: request.systemInstruction,
         maxOutputTokens: request.maxOutputTokens,
+        responseFormat: request.responseFormat,
       );
 
   @override

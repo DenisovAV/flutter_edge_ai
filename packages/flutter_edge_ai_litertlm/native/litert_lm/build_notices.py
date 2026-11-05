@@ -28,7 +28,7 @@ import urllib.request
 import zipfile
 
 # LiteRT-LM tag the native bundles are built from (build_*.sh DEFAULT_REF).
-LITERTLM_REF = "b2f686e2ed4718fb84ec398a61dd59ca0f0aff27"  # v0.18.0
+LITERTLM_REF = "771b06e1a2c7f70a399a718599109facf37e38fd"  # v0.19.0
 # Google's Android library for the same LiteRT-LM release: its
 # THIRD_PARTY_NOTICE.txt is Google's own list for the code the runtime links.
 LITERTLM_AAR = (

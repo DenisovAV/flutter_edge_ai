@@ -27,6 +27,8 @@
 // and checked against the real header by run_mediatek_dispatch_compat_test.sh
 // (LITERT_DIR). Remove this library once Google publishes a MediaTek dispatch
 // built against the versioned ABI.
+#define _GNU_SOURCE
+
 #include <dlfcn.h>
 #include <limits.h>
 #include <pthread.h>
@@ -36,6 +38,10 @@
 
 #ifndef LEGACY_NAME
 #define LEGACY_NAME "libmtk_litert_dispatch_legacy.so"
+#endif
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
 #endif
 
 // LiteRtStatus values (litert/c/litert_common.h).

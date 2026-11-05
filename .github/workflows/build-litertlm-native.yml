@@ -12,7 +12,7 @@ on:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
       prebuilt_ref:
-        description: 'Upstream ref to take prebuilt companion libs from (default: b2f686e2, the v0.18.0 tag itself — its provider already has the new Constraint ABI)'
+        description: 'Upstream ref to take prebuilt companion libs from (default: the exact v0.19.0 source SHA)'
         required: false
       publish_release:
         description: 'Publish to GitHub Release'
@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 60
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '771b06e1a2c7f70a399a718599109facf37e38fd' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -182,7 +182,7 @@ jobs:
     timeout-minutes: 60
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '771b06e1a2c7f70a399a718599109facf37e38fd' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -349,7 +349,7 @@ jobs:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '771b06e1a2c7f70a399a718599109facf37e38fd' }}
       # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: the
       # v0.19.0 tag's own prebuilt is newer and its LiteRT pin contains #11120.
       ANDROID_NDK_HOME: ''
@@ -859,8 +859,39 @@ jobs:
       contents: write
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '771b06e1a2c7f70a399a718599109facf37e38fd' }}
     steps:
+      - name: Refuse to overwrite published native assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag != '' && inputs.release_tag || format('native-{0}', inputs.litertlm_version) }}
+        run: |
+          set -euo pipefail
+          encoded_tag="$(jq -rn --arg value "$RELEASE_TAG" '$value | @uri')"
+          response="$(mktemp)"
+          status="$(curl -sS -o "$response" -w '%{http_code}' \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/releases/tags/$encoded_tag")"
+          case "$status" in
+            200)
+              assets="$(jq '.assets | length' "$response")"
+              if [ "$assets" -ne 0 ]; then
+                echo "::error::Published native tags are immutable; a new suffix tag is required. $RELEASE_TAG already has $assets asset(s)."
+                exit 1
+              fi
+              ;;
+            404)
+              echo "No existing release for $RELEASE_TAG; publish may proceed."
+              ;;
+            *)
+              echo "::error::Could not inspect release $RELEASE_TAG (GitHub API HTTP $status)."
+              cat "$response"
+              exit 1
+              ;;
+          esac
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts/
@@ -876,13 +907,9 @@ jobs:
           done
           cp "$d"/libLiteRtDispatch_Qualcomm.so "$d"/libcdsprpc.so artifacts/litertlm-linux_arm64/
           rm -rf "$d"
-          # A missing artifact dir used to be skipped silently. Combined with the
-          # delete-old-assets step below and fail_on_unmatched_files, that means:
-          # the previous asset is deleted, the replacement is never built, and
-          # checksums_litertlm.txt is regenerated over whatever survived — so the
-          # published checksums file is internally consistent and quietly short a
-          # platform. That is the #316 shape: a self-consistent lie is harder to
-          # debug than an obvious gap.
+          # A missing artifact dir used to be skipped silently. That can produce
+          # an internally consistent checksum file that is quietly short a
+          # platform. Refuse that #316 shape before the release action runs.
           missing=()
           for dir_name in linux_x86_64 linux_arm64 windows_x86_64; do
             dir="artifacts/litertlm-${dir_name}"
@@ -900,15 +927,6 @@ jobs:
           fi
           cd release && sha256sum *.tar.gz > checksums_litertlm.txt
           cat checksums_litertlm.txt
-
-      - name: Delete old CI assets from release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release_tag != '' && inputs.release_tag || format('native-{0}', inputs.litertlm_version) }}
-        run: |
-          for asset in litertlm-linux_x86_64.tar.gz litertlm-linux_arm64.tar.gz litertlm-windows_x86_64.tar.gz checksums_litertlm.txt; do
-            gh release delete-asset "$RELEASE_TAG" "$asset" -y 2>/dev/null || true
-          done
 
       - name: Create/update GitHub Release
         uses: softprops/action-gh-release@v2

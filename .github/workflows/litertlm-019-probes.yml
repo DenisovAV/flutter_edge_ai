@@ -104,11 +104,15 @@ jobs:
           EG2=models/embeddinggemma-2-text-270m.litertlm
           mkdir -p cache
           export PROBE_CACHE_DIR="$PWD/cache"
+          failed=0
           run() {
             echo "::group::$*"
             "$P" "$LIB" "$@" 2>stderr.txt | tee -a probes.log
             rc=${PIPESTATUS[0]}
-            if [ "$rc" != 0 ]; then grep -vE "npu_registry|^$" stderr.txt | tail -25; fi
+            if [ "$rc" != 0 ]; then
+              failed=1
+              grep -vE "npu_registry|^$" stderr.txt | tail -25
+            fi
             echo "EXIT $rc $*" | tee -a probes.log
             echo "::endgroup::"
           }
@@ -136,6 +140,7 @@ jobs:
             grep -E '^(RESULT|EXIT|INFO c_api)' probes.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
 
       - uses: actions/upload-artifact@v4
         if: always()

@@ -15,9 +15,9 @@ on:
       litertlm_version:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
-        default: 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27'
+        default: '771b06e1a2c7f70a399a718599109facf37e38fd'
       prebuilt_ref:
-        description: 'Upstream ref to take prebuilt companion libs from (blank = b2f686e2, the v0.18.0 tag itself — its provider already has the new Constraint ABI)'
+        description: 'Upstream ref to take prebuilt companion libs from (blank = the exact v0.19.0 source SHA)'
         required: false
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || 'b2f686e2ed4718fb84ec398a61dd59ca0f0aff27' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '771b06e1a2c7f70a399a718599109facf37e38fd' }}
       # libLiteRtWebGpuAccelerator.dll alone comes from a later upstream commit:
       # 5f973f57 carries LiteRT #11120 (dp4a int8 FC/conv off on Intel GPUs;
       # Gemma 4 12B returned no text under 512 prompt tokens on Intel D3D12,

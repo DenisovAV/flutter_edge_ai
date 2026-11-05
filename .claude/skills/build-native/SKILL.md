@@ -33,6 +33,11 @@ they run under bash, which does not inherit zsh functions.
 
 ### Required upstream commit
 
+The current build-script defaults target LiteRT-LM 0.19. To reproduce the
+immutable `native-v0.18.0-h` archives, use the repository state from that tag;
+the current Dart client still calls `stream_proxy_create2` and therefore
+matches only the 0.18 archives until PR B lands.
+
 **Pin the exact tag commit SHA on every platform, and pass it explicitly.** Upstream has retagged releases in place before, so a tag *name* is not a stable reference. Get the SHA with:
 
 ```bash

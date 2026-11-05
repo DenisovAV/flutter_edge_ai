@@ -69,7 +69,7 @@ LDSEOF
   # that lost section 14 fails the Windows link instead of shipping without.
   # The three stream-chunk accessors are named for the same reason: the Dart
   # client resolves them with GetProcAddress on this DLL and hands them to
-  # stream_proxy_create2, which refuses to build a proxy without all three, so a
+  # stream_proxy_create_v1, which refuses to build a proxy without all three, so a
   # tree that stopped exporting them should fail the link, not ship a client that
   # throws on the first send. Section 16's rewind is named for the same reason.
   cat > "$DIR/c/windows_exports.def" << 'DEFEOF'

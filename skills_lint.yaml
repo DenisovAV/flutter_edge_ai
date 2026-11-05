@@ -6,7 +6,7 @@
 # a description inside the 1024-character budget, and every relative link
 # resolving to a file that exists.
 #
-# Three rules are disabled upstream by default and are errors here:
+# Five rules are disabled upstream by default and are errors here:
 #   check-relative-paths      the skills link to references/platform-setup.md
 #                             and to each other; a moved file has to fail the
 #                             build rather than hand an agent a dead pointer.
@@ -15,6 +15,11 @@
 #                             skills install into eight different agents.
 #   check-trailing-whitespace two trailing spaces are a markdown line break,
 #                             which changes how an agent reads the line.
+#   pub-archive-includes-skill `dart pub publish` must ship each skill and
+#                             every file it links to; a .pubignore entry
+#                             can drop them silently.
+#   published-skill-name      skill names must start with the package name
+#                             (flutter-edge-ai), as package:skills expects.
 skills_lint:
   directories:
     - path: "packages/flutter_edge_ai/skills"
@@ -23,3 +28,5 @@ skills_lint:
         check-absolute-paths: error
         disallowed-field: error
         check-trailing-whitespace: error
+        pub-archive-includes-skill: error
+        published-skill-name: error

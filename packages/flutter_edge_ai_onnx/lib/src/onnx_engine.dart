@@ -15,7 +15,7 @@ import 'onnx_inference_model.dart';
 /// design §11 D2).** [createModel] productionizes the ORT-GenAI FFI path
 /// (`GenAiFfiClient` → `OnnxInferenceModel`/`OnnxSession`) — text-only,
 /// independent `openSession` sessions (one generator each, capped by
-/// `maxConcurrentSessions`; on web `openSession` throws [UnsupportedError]), sampling as the caller sets it, else as the model's
+/// `maxConcurrentSessions`), sampling as the caller sets it, else as the model's
 /// `genai_config.json` does. macOS/Linux/Windows x64/Android arm64
 /// are device-verified — Android on FTL (Pixel 8 Pro, 2026-08-19: ~10.4
 /// tok/s, ~3.74 GB peak RSS, flat-APK co-location with no ORT_LIB_PATH fix

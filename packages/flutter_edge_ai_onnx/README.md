@@ -120,8 +120,8 @@ profile, not of the output's name, and should move there.
 
 Text-only (v1): no vision, no audio, no LoRA. `createSession` is the one
 legacy session; `openSession` / `openChat` open further independent sessions
-on the same loaded model (native only; on web they still throw
-`UnsupportedError`). Each holds its own ORT-GenAI generator, so its context
+on the same loaded model (on web, see below). Each holds its own ORT-GenAI
+generator, so its context
 is its own and closing it frees it; turns of different sessions run one at a
 time, and nothing is replayed. **Cost:** a generator allocates its whole KV
 cache at its first turn, `maxTokens` × the cache size per token (2 × layers ×
@@ -302,7 +302,10 @@ itself the first time you run inference. Each call runs a stateless
 persistent session), formatted with the model's own `chat_template`.
 `PreferredBackend.cpu` pins WASM; anything else tries WebGPU first and falls
 back to WASM. Same constraints as native — text-only, no vision, no audio, no
-LoRA. See [Web setup](#web-setup) for the required `web/index.html` shim.
+LoRA. `openSession` / `openChat` sessions each keep their own history on the
+one pipeline, and their turns run one at a time. An open session holds no KV
+cache, only its history, so `maxConcurrentSessions` is unlimited unless you
+set it. See [Web setup](#web-setup) for the required `web/index.html` shim.
 
 ## Embeddings — `OnnxEmbeddingBackend`
 
@@ -358,9 +361,8 @@ are native-only. See [Web setup](#web-setup).
 - No vision, no audio, no multimodal input on the inference arm — text only.
 - No LoRA.
 - `createSession` keeps one session (it closes any live one before opening a
-  new one, as every engine here does). Native `openSession` / `openChat`
-  sessions are independent and capped (see Inference above); on web they
-  still throw `UnsupportedError`.
+  new one, as every engine here does). `openSession` / `openChat` sessions
+  are independent (see Inference above).
 
 ## Web setup
 

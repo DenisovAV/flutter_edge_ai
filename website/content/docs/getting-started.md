@@ -463,10 +463,10 @@ On native `.litertlm` (except the NPU) a `maxTokens` below 1024 is clamped up to
 A single loaded model can serve several **independent** dialogues at once.
 `openSession()` returns a session with its own conversation history, detached
 from the legacy `model.session` singleton; `openChat()` is the same for the
-higher-level chat API. ONNX on the web does not support it: `openSession()`
-throws `UnsupportedError` there. Native ONNX does, with one ORT-GenAI generator
-per session, capped by `maxConcurrentSessions`. MediaPipe on the web does too:
-its sessions share the one loaded model, take turns on it, and share the
+higher-level chat API. Native ONNX has one ORT-GenAI generator per session,
+capped by `maxConcurrentSessions`; on the web each ONNX session keeps its own
+history on the one Transformers.js pipeline. MediaPipe on the web supports it
+too: its sessions share the one loaded model, take turns on it, and share the
 sampling and LoRA of the session that loaded it.
 
 The model weights (the big, expensive part — hundreds of MB to several GB) are
@@ -509,12 +509,12 @@ on model + `maxTokens`), so on phones with large models (Gemma 4 E2B+) several
 concurrent sessions can OOM. A native `.litertlm` session keeps only its
 history; switching sessions replays it into the one native conversation, which
 takes time; GGUF sessions share one runtime with no separate native KV cache.
+An ONNX session on the web keeps only its history, resent on every turn.
 `.litertlm` on the web and built-in AI are not measured. Cap the count with
 `maxConcurrentSessions:` on `getActiveModel(...)` — `openSession()` throws
-`StateError` past the cap. ONNX on the web has no `openSession()`. A
-MediaPipe web session keeps only its history, in Dart, and resends it every
-turn; one session's turn waits for the other sessions' turns, however long
-they run, unless they are stopped.
+`StateError` past the cap. A MediaPipe web session keeps only its history, in
+Dart, and resends it every turn; one session's turn waits for the other
+sessions' turns, however long they run, unless they are stopped.
 
 If you only ever have one conversation at a time, stick with the simpler
 `createSession()` / `createChat()` singleton API — you don't need this.

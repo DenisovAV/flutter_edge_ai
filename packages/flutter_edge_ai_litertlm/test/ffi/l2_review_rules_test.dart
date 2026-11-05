@@ -39,22 +39,23 @@ void main() {
     }
   });
 
-  test('a turn that failed with RESOURCE_EXHAUSTED (native 37d1ec59: a failed '
-      'allocation, not a full window) is handled as failed, never as '
-      'context_full: it reached the model, keeps no last send, and a rewind '
-      'reporting it rebuilds', () {
-    expect(failedTurnReachedModel(NativeLastTurnEnd.failed), isTrue);
-    for (final how in NativeTurnEnd.values) {
+  test(
+    'a turn that failed with RESOURCE_EXHAUSTED (native 37d1ec59: a failed '
+    'allocation, not a full window) is handled as failed, never as '
+    'context_full: it keeps no last send and a rewind reporting it rebuilds',
+    () {
+      for (final how in NativeTurnEnd.values) {
+        expect(
+          keepLastSendAfter(how, NativeLastTurnEnd.failed),
+          how == NativeTurnEnd.cancelled,
+        );
+      }
       expect(
-        keepLastSendAfter(how, NativeLastTurnEnd.failed),
-        how == NativeTurnEnd.cancelled,
+        () => stoppedTurnRewindOutcome(13, NativeLastTurnEnd.failed.index, 'x'),
+        throwsA(isA<StoppedTurnRewindException>()),
       );
-    }
-    expect(
-      () => stoppedTurnRewindOutcome(13, NativeLastTurnEnd.failed.index, 'x'),
-      throwsA(isA<StoppedTurnRewindException>()),
-    );
-  });
+    },
+  );
 
   test('a release build skips the scoring self-check, and the model does not '
       'report it as passed', () async {

@@ -38,7 +38,8 @@ void main() {
     expect(
       client,
       contains(
-        '    if (result != 0) {\n'
+        '        return;\n'
+        '      }\n'
         '      // No callback comes for a refused send: its proxy is freed here.\n'
         '      releaseRefusedStreamProxy(result, proxyData, _proxyDestroy!);\n',
       ),
@@ -46,8 +47,9 @@ void main() {
   });
 
   test('the entries the client requires are the release gate\'s', () {
-    final gate = File('native/litert_lm/check_embedding_exports.py')
-        .readAsStringSync();
+    final gate = File(
+      'native/litert_lm/check_embedding_exports.py',
+    ).readAsStringSync();
     final listed = RegExp(
       r'STREAM_PROXY_SYMBOLS = \[(.*?)\]',
       dotAll: true,

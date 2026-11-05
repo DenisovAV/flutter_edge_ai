@@ -76,7 +76,7 @@ class _FakeConversationHandle implements ConversationHandle {
 
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
-    Map<String, Object?> partialReply,
+    Map<String, Object?>? partialReply,
   ) async => StoppedTurnRewind.unsupported;
 
   @override
@@ -84,6 +84,9 @@ class _FakeConversationHandle implements ConversationHandle {
 
   @override
   NativeLastTurnEnd? get lastTurnEnd => null;
+
+  @override
+  int? get lastTurnCode => null;
 
   @override
   void close() => isClosed = true;

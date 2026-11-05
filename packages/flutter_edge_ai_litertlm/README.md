@@ -105,6 +105,112 @@ to 1024, because the published bundles fail to allocate below it; on the NPU it
 is passed through, so use the context size the bundle was compiled for. Cap the
 reply with `createSession(maxOutputTokens:)`.
 
+### The usable window
+
+On CPU and GPU, LiteRT-LM prefills an input with the bundle's prefill
+signatures, and drops every signature longer than the room the window has
+left. Once none fits, any input is refused, however short. So the last
+*smallest prefill signature* positions of the window never take a new message:
+the usable window is `maxTokens` minus that length. A reply can still be
+decoded into them. The smallest prefill signature of each catalog bundle, as
+read from the files (LiteRT-LM 0.19):
+
+| Model | Bundle | Smallest prefill | Usable at 1024 | Usable at 4096 |
+|---|---|---|---|---|
+| Gemma 4 E2B, E4B | generic | 128 | 896 | 3968 |
+| Gemma 3 1B | q4-ekv4096 | 32 | 992 | 4064 |
+| Gemma 3 270M | q8 | 32 | 992 | 4064 |
+| Gemma 3n E2B, E4B | generic | 16 | 1008 | 4080 |
+| FunctionGemma 270M | generic, flutter-demo | 256 | 768 | 3840 |
+| TranslateGemma 4B | int4, int8 | 1024 | 0 | 3072 |
+| TranslateGemma 4B | int4-multimodal | 128 | 896 | 3968 |
+| Qwen3 0.6B | standard, dynamic-int4 | 128 | 896 | 3968 |
+| Qwen3 0.6B | mixed-int4 | 256 | 768 | 3840 |
+| Qwen2.5 1.5B, DeepSeek R1 Distill 1.5B, Phi-4 mini | ekv4096 builds | 32 | 992 | 4064 |
+| Phi-4 mini reasoning | generic | 128 | 896 | 3968 |
+| SmolLM3 3B | both | 16 | 1008 | 4080 |
+| LFM2.5 230M | int4, int8 | 1 | 1023 | 4095 |
+| FastVLM 0.5B, SmolVLM2 500M, LLaVA-OneVision 0.5B, Qwen2-VL 2B | generic | 128 | 896 | 3968 |
+
+The usable columns assume the bundle's KV cache is at least that large (the
+`ekv` in a file name is its size). TranslateGemma's int4 and int8 bundles
+prefill 1024 positions at a time: in a 1024 window only the first message of
+a conversation fits, and `InferenceChat`'s `tokenBuffer` rotation never
+triggers before that, so give them a larger `maxTokens`.
+Not in the table: the Gemma 4 `-gpu` and `-web` bundles, whose decoder carries
+no prefill signatures to read; the Gemma 3n `-Web` files, plain TFLite files
+for the web rather than `.litertlm` containers; and NPU bundles, which prefill
+in their own context groups and have one compiled window (Gemma 3 1B: 1280,
+Gemma 3 270M: 4096, Gemma 3n E2B: 2048, Gemma 4 E2B: 4096, FastVLM: 1280,
+Qwen3 0.6B: 4096).
+
+When an input does not fit what the window has left, the turn fails with an
+exception that names `TurnEnd.contextLimit` (`LiteRtLmContextFullException`),
+before the model has seen the input. LiteRT-LM restores the conversation to
+before that turn, and an `InferenceChat` takes the refused message back out
+of its history, so a shorter message can follow. When even a short message is
+refused, the window has no room for any input left: close the session and
+open a new one (`InferenceChat.clearHistory()` for a chat). Nothing of the
+history is dropped behind your back. `InferenceChat`'s `tokenBuffer` rotation
+counts replies and images, not your own messages, so it does not prevent a
+long message from being refused. On the NPU the window is the one the bundle
+was compiled for; when it differs from `maxTokens`, the first turn prints it.
+
+## Open sessions
+
+`openSession()` sessions share the model's engine. Where several live
+conversations on one engine were verified, each session is a LiteRT-LM
+conversation of its own: it takes images and audio like `createSession()`,
+and a stopped turn is rewound in place. Elsewhere each session keeps its
+history in Dart and replays it as text into one shared conversation when the
+sessions take turns, as before 2.6.0: images and audio are refused there.
+The model decides this when it loads; there is no setting.
+
+| Backend | Own conversation per session | Measured on (LiteRT-LM 0.19) |
+|---|---|---|
+| CPU | macOS arm64, Linux x86_64, Linux arm64, Windows x86_64 | three interleaved conversations, each recalling its own fact |
+| GPU | macOS (Metal), Android Adreno and Mali | the same, on M5 Pro, Adreno 830, Mali-G715 |
+| NPU | Qualcomm and Google Tensor on Android, Intel on Windows | the same, past the first context group |
+
+Replayed as text: iOS, Android CPU, Android GPUs other than Adreno and Mali
+(two greedy conversations diverged on a PowerVR GPU), Linux arm64 GPU and
+NPU, and the Linux and Windows GPUs: they ran correctly on a Tesla T4
+(Vulkan) and on Intel Arc (D3D12), but the load cannot tell which GPU it got,
+so no other vendor is given native conversations on that evidence. MediaTek
+NPU is refused at load.
+
+After a stopped turn, or a turn whose input did not fit, the next turn
+rewinds the conversation to before it: a stopped turn is put back, partial
+reply included, and one stopped before it produced anything, or refused for
+the window, is left out, as `InferenceChat` leaves it out of its history. A
+turn that failed otherwise is left out too: the conversation is rebuilt
+without it. On the NPU, which rolls back one token at most, and on a
+model with linear attention state (LFM2.5), which a rewind cannot restore,
+the conversation is rebuilt from the text of its history instead: images and
+audio of earlier turns are lost then, and a line in the log says so once per
+session. The same holds for an `openSession` session when the model file
+could not be read to tell; that is printed when the model loads.
+
+Every idle session keeps a copy of its KV cache, so an open session costs
+memory while it is open, and the cost grows with `maxTokens`. Measured on
+macOS (M5 Pro) with Gemma 4 E2B, as resident memory: 36.8 MiB more per idle
+session at `maxTokens: 4096` and about 9.6 MiB at 1024, on the CPU and on
+Metal (from the third session on; the first two reuse freed memory). Over
+turns alternating between two sessions, resident memory moved by 1-4 MiB on
+Metal and by 2-72 MiB on the CPU across runs of 20 to 300 turns, with no
+steady growth. On Linux, Windows and Android GPUs the copies may be kept in
+GPU memory, and phones and the other backends are not measured yet. There is
+no default cap on the number of sessions; `maxConcurrentSessions` on
+`getActiveModel` sets one.
+
+A send to another session than the one the engine ran last first saves the
+previous session's KV cache and restores this one, inside the native send
+call. That call then runs on a spawned isolate, so the isolate that sends
+(the UI isolate in an app) is not held by the copy: measured on macOS with
+Gemma 4 E2B at `maxTokens: 4096`, it held the calling isolate under 1 ms
+while the copy took about 147 ms on Metal and 1.4 ms on the CPU. The copy
+still delays that turn's first token.
+
 ## Multimodal order
 
 A user message with an image or audio reaches the model as parts, and the

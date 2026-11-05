@@ -14,10 +14,16 @@ import 'package:flutter_edge_ai/engine.dart';
 /// ends there, cleanly, with what was generated — whether or not the source
 /// ever ends (iOS sends no end after a cancelled generation) — and `end`
 /// says why, so core's chat keeps the partial reply (and raises for a close,
-/// decision H). Any other error stays on the text; `end` is then not read. A
-/// turn that runs to its end reports what [completed] returns, called once
-/// the text has ended, so it can read a record the engine writes at the end
-/// of the turn. `end` completes after the text has closed.
+/// decision H). Any other error stays on the text.
+///
+/// As the session SPI requires (core 2.6.0 design §3), `end` never completes
+/// with an error and completes after the text is done, whether the text
+/// ended normally or with an error, and also when the consumer cancels it.
+/// When neither a stop nor a close ended the turn, `end` is what [completed]
+/// returns, called once the text has ended, so it can read a record the
+/// engine writes at the end of the turn: after an error too (LiteRT-LM: a
+/// turn native ended `context_full` fails with `ContextLimitException`, and
+/// its end is [TurnEnd.contextLimit]).
 EngineTurn reportedEngineTurn(
   Stream<String> text, {
   required bool Function() stopped,
@@ -87,13 +93,13 @@ EngineTurn reportedEngineTurn(
   return EngineTurn(text: out.stream, end: end.future);
 }
 
-/// What a LiteRT-LM 0.18 turn that ran to its end reports: a placeholder.
-/// The runtime cannot tell a natural end from `maxOutputTokens`, nor a full
-/// context in decode from either, so a session with a cap reports
-/// [TurnEnd.outputLimit] (the safe side) and one without
-/// [TurnEnd.endOfSequence]. Nothing reads it in core 2.6.0's plain turns;
-/// an engine whose ends are guessed keeps `StructuredOutputSupport.none`.
-// TODO(L2): read the native turn-end record (L1's
-// litert_lm_conversation_get_last_turn_end) instead of guessing.
+/// What a LiteRT-LM turn that ran to its end reports when no turn-end record
+/// says how: a placeholder. The web runtime (`@litert-lm/core` 0.18) has no
+/// such record, and natively it is missing only on a libLiteRtLm without
+/// `patch_c_api.sh` section 23, which the release gate refuses. Without it a
+/// natural end cannot be told from `maxOutputTokens`, nor a full context in
+/// decode from either, so a session with a cap reports [TurnEnd.outputLimit]
+/// (the safe side) and one without [TurnEnd.endOfSequence]. An engine whose
+/// ends are guessed keeps `StructuredOutputSupport.none`.
 TurnEnd liteRtLmPlaceholderCompletedEnd(int? maxOutputTokens) =>
     maxOutputTokens == null ? TurnEnd.endOfSequence : TurnEnd.outputLimit;

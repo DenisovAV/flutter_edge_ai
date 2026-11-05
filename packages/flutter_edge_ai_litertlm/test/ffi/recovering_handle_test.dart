@@ -29,6 +29,12 @@ class _Conversation implements ConversationHandle {
   /// When set, the next turn fails with it after its first chunk.
   Object? failWith;
 
+  /// When set, the next held turn produces nothing before its gate opens.
+  bool silent = false;
+
+  /// When set, a stopped turn ends with this error instead of cleanly.
+  Object? errorAfterStop;
+
   /// When set, the next turn yields these chunks before its first one.
   List<String>? lead;
 
@@ -42,12 +48,17 @@ class _Conversation implements ConversationHandle {
       for (final chunk in leading ?? const <String>[]) {
         controller.add(chunk);
       }
-      controller.add('Hello');
+      final quiet = silent;
+      silent = false;
+      if (!quiet) controller.add('Hello');
       final gate = hold;
       hold = null;
       if (gate != null) await gate.future;
       // Like native: a cancelled generation ends without another chunk.
       if (cancels > cancelsBefore) {
+        final late = errorAfterStop;
+        errorAfterStop = null;
+        if (late != null) controller.addError(late);
         await controller.close();
         return;
       }
@@ -101,14 +112,14 @@ class _Conversation implements ConversationHandle {
   Object rewindOutcome = StoppedTurnRewind.unsupported;
 
   /// The partial replies [rewindStoppedTurn] was given.
-  final rewinds = <Map<String, Object?>>[];
+  final rewinds = <Map<String, Object?>?>[];
 
   /// When set, a rewind waits on it — a native prefill in flight.
   Completer<void>? rewindGate;
 
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
-    Map<String, Object?> partialReply,
+    Map<String, Object?>? partialReply,
   ) async {
     rewinds.add(partialReply);
     await rewindGate?.future;
@@ -125,6 +136,12 @@ class _Conversation implements ConversationHandle {
 
   @override
   NativeLastTurnEnd? get lastTurnEnd => turnEnd;
+
+  /// The status code native's last send ended with.
+  int? turnCode;
+
+  @override
+  int? get lastTurnCode => turnCode;
 
   /// Like the native handle: closing cancels a turn that still runs.
   @override
@@ -230,38 +247,58 @@ void main() {
     expect(reopened, hasLength(1));
   });
 
-  test('a failed turn is not a stop: no rebuild replays it into the same '
-      'failure', () async {
+  /// The user messages a rebuild of [c] replayed.
+  List<Object?> seededUsers(_Conversation c) => [
+    for (final m in jsonDecode(c.seed ?? '[]') as List<dynamic>)
+      if ((m as Map)['role'] == 'user')
+        ((m['content'] as List).single as Map)['text'],
+  ];
+
+  test('a failed turn is taken back (decision W): the next turn runs on a '
+      'conversation rebuilt without it', () async {
+    expect(await handle.chat('zero').join(), 'Hello there.');
     first.failWith = StateError('native error');
     await expectLater(handle.chat('one').join(), throwsStateError);
     await handle.chat('two').join();
-    expect(reopened, isEmpty);
-    expect(first.sent, ['one', 'two']);
+    expect(first.closed, isTrue);
+    expect(seededUsers(reopened.single), ['zero']);
+    expect(reopened.single.sent, ['two']);
   });
 
-  for (final contextFull in [true, false]) {
-    test(
-      'a failed turn native ended ${contextFull ? 'context_full is not' : 'otherwise is'} '
-      'in the history a later rebuild replays',
-      () async {
-        first
-          ..failWith = StateError('RESOURCE_EXHAUSTED')
-          ..turnEnd = contextFull ? NativeLastTurnEnd.contextFull : null;
-        await expectLater(handle.chat('one').join(), throwsStateError);
-        first.turnEnd = NativeLastTurnEnd.completed;
-        await stopMidTurn('two', first);
-        await handle.chat('three').join();
+  test('a turn stopped before it produced anything is rewound out, nothing '
+      'put back, and is not in the history (Rule A)', () async {
+    first.rewindOutcome = StoppedTurnRewind.rewound;
+    expect(await handle.chat('zero').join(), 'Hello there.');
+    final gate = first.hold = Completer<void>();
+    first.silent = true;
+    final pending = handle.chat('one').join();
+    await pumpEventQueue();
+    handle.cancelGeneration();
+    gate.complete();
+    expect(await pending, isEmpty);
+    await handle.chat('two').join();
+    expect(first.rewinds, [null], reason: 'taken out, nothing put back');
+    expect(reopened, isEmpty);
+    // A later rebuild replays the history: the stopped turn is not in it.
+    first.rewindOutcome = StoppedTurnRewind.unsupported;
+    await stopMidTurn('three', first);
+    await handle.chat('four').join();
+    expect(seededUsers(reopened.single), ['zero', 'two', 'three']);
+  });
 
-        final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
-        final users = [
-          for (final m in seed)
-            if (m['role'] == 'user')
-              ((m['content'] as List).single as Map)['text'],
-        ];
-        expect(users, contextFull ? ['two'] : ['one', 'two']);
-      },
-    );
-  }
+  test('a turn stopped before anything that native had ended by itself is '
+      'rebuilt without it', () async {
+    first.rewindOutcome = StoppedTurnRewind.notCancelled;
+    final gate = first.hold = Completer<void>();
+    first.silent = true;
+    final pending = handle.chat('one').join();
+    await pumpEventQueue();
+    handle.cancelGeneration();
+    gate.complete();
+    await pending;
+    await handle.chat('two').join();
+    expect(seededUsers(reopened.single), isEmpty);
+  });
 
   test(
     'tool results sent after a stop go to the rebuilt conversation',
@@ -448,7 +485,7 @@ void main() {
           reopened.add(c);
           return c;
         },
-        canRewind: false,
+        noRewindReason: 'the NPU executor rolls back one token at most',
       );
       first.rewindOutcome = StoppedTurnRewind.rewound;
       await stopMidTurn('one', first);
@@ -766,6 +803,199 @@ void main() {
       expect(first.rewinds, [textReply('Hello')]);
       expect(first.sent, ['one', 'two']);
       expect(reopened, isEmpty);
+    });
+  });
+
+  group('after a turn native ended context_full (section 23)', () {
+    /// Runs a turn whose input native refused as not fitting the window.
+    Future<void> contextFullTurn(String text, _Conversation live) async {
+      live
+        ..failWith = Exception('Stream error: RESOURCE_EXHAUSTED')
+        ..turnEnd = NativeLastTurnEnd.contextFull;
+      await expectLater(handle.chat(text).join(), throwsException);
+    }
+
+    test('the next turn first rewinds the conversation to the checkpoint, '
+        'and runs on it', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      expect(await handle.chat('one').join(), 'Hello there.');
+      await contextFullTurn('too long', first);
+      first.turnEnd = NativeLastTurnEnd.completed;
+
+      expect(await handle.chat('two').join(), 'Hello there.');
+      expect(first.rewinds, hasLength(1));
+      expect(first.sent, ['one', 'too long', 'two']);
+      expect(reopened, isEmpty, reason: 'nothing of the history is dropped');
+    });
+
+    test('where it cannot rewind, it is rebuilt from the history, which the '
+        'refused input is not in', () async {
+      handle = RecoveringConversationHandle(
+        first,
+        reopen: (messagesJson) async {
+          final c = _Conversation('rebuilt', seed: messagesJson);
+          reopened.add(c);
+          return c;
+        },
+        noRewindReason: 'this model keeps linear attention state',
+      );
+      expect(await handle.chat('one').join(), 'Hello there.');
+      await contextFullTurn('too long', first);
+
+      expect(await handle.chat('two').join(), 'Hello there.');
+      expect(first.rewinds, isEmpty);
+      expect(first.closed, isTrue);
+      final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+      expect(
+        [for (final m in seed) ((m as Map)['content'] as List).single['text']],
+        ['one', 'Hello there.'],
+      );
+    });
+
+    test('a turn that failed otherwise is rebuilt without it, not rewound '
+        '(native does not rewind a failed send)', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      first
+        ..failWith = Exception('Stream error: INTERNAL')
+        ..turnEnd = NativeLastTurnEnd.failed;
+      await expectLater(handle.chat('one').join(), throwsException);
+      await handle.chat('two').join();
+      expect(first.rewinds, isEmpty);
+      expect(reopened, hasLength(1));
+    });
+
+    test('a send refused before it started leaves nothing to undo', () async {
+      first
+        ..failWith = Exception('refused')
+        ..turnEnd = NativeLastTurnEnd.refused;
+      await expectLater(handle.chat('one').join(), throwsException);
+      await handle.chat('two').join();
+      expect(first.rewinds, isEmpty);
+      expect(reopened, isEmpty);
+    });
+
+    test('a session that cannot rewind says once, in release builds too, '
+        'that a rebuild drops earlier images and audio', () async {
+      handle = RecoveringConversationHandle(
+        first,
+        reopen: (messagesJson) async {
+          final c = _Conversation('rebuilt ${reopened.length}');
+          reopened.add(c);
+          return c;
+        },
+        noRewindReason: 'the NPU executor rolls back one token at most',
+      );
+      final printed = <String>[];
+      await runZoned(
+        () async {
+          await handle
+              .chat(
+                'look',
+                imageBytes: [
+                  Uint8List.fromList([1, 2]),
+                ],
+              )
+              .join();
+          await stopMidTurn('one', first);
+          await handle.chat('two').join();
+          await stopMidTurn('three', reopened.single);
+          await handle.chat('four').join();
+        },
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+      expect(reopened, hasLength(2));
+      final notes = printed.where((l) => l.contains('without the images'));
+      expect(notes, hasLength(1));
+      expect(notes.single, contains('rolls back one token'));
+    });
+
+    test('a turn whose recovery fails before its send reports no turn end, '
+        'not the previous turn\'s context_full', () async {
+      expect(await handle.chat('one').join(), 'Hello there.');
+      await contextFullTurn('too long', first);
+      expect(handle.lastTurnEnd, NativeLastTurnEnd.contextFull);
+      first.rewindOutcome = StateError('client closed');
+      await expectLater(handle.chat('two').join(), throwsStateError);
+      expect(handle.lastTurnEnd, isNull);
+    });
+
+    test('a turn that failed for want of resources (RESOURCE_EXHAUSTED '
+        'without the context-window mark) fails, is not in the history, and '
+        'the next turn rebuilds the conversation without it', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      expect(await handle.chat('one').join(), 'Hello there.');
+      first
+        ..failWith = Exception('Stream error: RESOURCE_EXHAUSTED: allocation')
+        ..turnEnd = NativeLastTurnEnd.failed
+        ..turnCode = absResourceExhausted;
+      await expectLater(handle.chat('big').join(), throwsException);
+      expect(await handle.chat('two').join(), 'Hello there.');
+      expect(first.rewinds, isEmpty, reason: 'native does not rewind it');
+      final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
+      expect(
+        [
+          for (final m in seed)
+            if ((m as Map)['role'] == 'user')
+              ((m['content'] as List).single as Map)['text'],
+        ],
+        ['one'],
+      );
+      expect(reopened.single.sent, ['two']);
+    });
+
+    test('another failure is taken out the same way', () async {
+      first
+        ..failWith = Exception('Stream error: INTERNAL')
+        ..turnEnd = NativeLastTurnEnd.failed
+        ..turnCode = 13;
+      await expectLater(handle.chat('one').join(), throwsException);
+      await handle.chat('two').join();
+      expect(seededUsers(reopened.single), isEmpty);
+    });
+
+    test('an error after the consumer asked to stop is the stop\'s: the turn '
+        'ends cleanly with what it produced, which is put back', () async {
+      first
+        ..rewindOutcome = StoppedTurnRewind.rewound
+        ..errorAfterStop = Exception('Stream error: INTERNAL');
+      expect(await stopMidTurn('one', first), 'Hello');
+      await handle.chat('two').join();
+      expect(first.rewinds.single?['role'], 'assistant', reason: 'put back');
+      expect(reopened, isEmpty);
+    });
+
+    test('an error after a stop that came before any text: the turn is taken '
+        'out, as a stop before any text is', () async {
+      first
+        ..rewindOutcome = StoppedTurnRewind.rewound
+        ..errorAfterStop = Exception('Stream error: INTERNAL');
+      final gate = first.hold = Completer<void>();
+      first.silent = true;
+      final pending = handle.chat('one').join();
+      await pumpEventQueue();
+      handle.cancelGeneration();
+      gate.complete();
+      expect(await pending, isEmpty);
+      await handle.chat('two').join();
+      expect(first.rewinds, [null]);
+    });
+
+    test('an empty chunk is not text: a turn stopped after only that is '
+        'taken out', () async {
+      first.rewindOutcome = StoppedTurnRewind.rewound;
+      final gate = first.hold = Completer<void>();
+      first
+        ..silent = true
+        ..lead = [''];
+      final pending = handle.chat('one').join();
+      await pumpEventQueue();
+      handle.cancelGeneration();
+      gate.complete();
+      expect(await pending, isEmpty);
+      await handle.chat('two').join();
+      expect(first.rewinds, [null]);
     });
   });
 }

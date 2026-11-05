@@ -39,6 +39,15 @@ class _Handle implements ConversationHandle {
   @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
+  /// Native's turn-end record, as the test sets it.
+  NativeLastTurnEnd? turnEnd;
+
+  @override
+  NativeLastTurnEnd? get lastTurnEnd => turnEnd;
+
+  @override
+  int? get lastTurnCode => null;
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -160,6 +169,88 @@ void main() {
       },
     );
   }
+
+  for (final (record, expected) in [
+    (NativeLastTurnEnd.completed, TurnEnd.endOfSequence),
+    (NativeLastTurnEnd.outputLimit, TurnEnd.outputLimit),
+    (NativeLastTurnEnd.contextLimit, TurnEnd.contextLimit),
+  ]) {
+    test('a completed turn reports $expected when native\'s record is '
+        '$record, whatever the cap', () async {
+      for (final cap in [null, 64]) {
+        final handle = _Handle()..turnEnd = record;
+        final turn = startEngineTurnForTest(
+          _session(handle, maxOutputTokens: cap),
+        );
+        final text = turn.text.toList();
+        await handle.sent.future;
+        handle.send
+          ..chunk('ok')
+          ..finished();
+        expect(await text, ['ok']);
+        expect(await turn.end, expected, reason: 'cap $cap');
+      }
+    });
+  }
+
+  test('a turn native ended context_full fails its text with a '
+      'LiteRtLmContextFullException that names contextLimit, and its end is '
+      'contextLimit; getResponseAsync fails the same way', () async {
+    final handle = _Handle()..turnEnd = NativeLastTurnEnd.contextFull;
+    final turn = startEngineTurnForTest(_session(handle));
+    final text = turn.text.toList();
+    await handle.sent.future;
+    handle.send.failed(Exception('Stream error: RESOURCE_EXHAUSTED'));
+    await expectLater(
+      text,
+      throwsA(
+        isA<LiteRtLmContextFullException>().having(
+          (e) => '$e',
+          'message',
+          allOf(contains('contextLimit'), contains('RESOURCE_EXHAUSTED')),
+        ),
+      ),
+    );
+    expect(await turn.end, TurnEnd.contextLimit);
+
+    final plain = _Handle()..turnEnd = NativeLastTurnEnd.contextFull;
+    final failing = _session(plain).getResponseAsync().toList();
+    await plain.sent.future;
+    plain.send.failed(Exception('Stream error: RESOURCE_EXHAUSTED'));
+    await expectLater(failing, throwsA(isA<LiteRtLmContextFullException>()));
+  });
+
+  test('any other failed turn keeps its error on the text', () async {
+    final handle = _Handle()..turnEnd = NativeLastTurnEnd.failed;
+    final turn = startEngineTurnForTest(_session(handle));
+    final text = turn.text.toList();
+    await handle.sent.future;
+    handle.send.failed(Exception('Stream error: INTERNAL'));
+    await expectLater(text, throwsException);
+  });
+
+  test('liteRtLmCompletedTurnEnd: each record, and the guess without one', () {
+    for (final end in [...NativeLastTurnEnd.values, null]) {
+      for (final cap in [null, 64]) {
+        final guess = cap == null ? TurnEnd.endOfSequence : TurnEnd.outputLimit;
+        expect(liteRtLmCompletedTurnEnd(end, cap), switch (end) {
+          NativeLastTurnEnd.completed => TurnEnd.endOfSequence,
+          NativeLastTurnEnd.outputLimit => TurnEnd.outputLimit,
+          NativeLastTurnEnd.contextLimit ||
+          NativeLastTurnEnd.contextFull => TurnEnd.contextLimit,
+          _ => guess,
+        }, reason: '$end, cap $cap');
+      }
+    }
+  });
+
+  test('npuContextWindowNote: silent when the window is the one asked for', () {
+    expect(npuContextWindowNote(asked: 4096, window: 4096), isNull);
+    final note = npuContextWindowNote(asked: 4096, window: 1280)!;
+    expect(note, contains('1280'));
+    expect(note, contains('4096'));
+    expect(note, contains('one KV cache'));
+  });
 }
 
 /// The session's `startTurn`, which is protected: a test may call it.

@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import '../litertlm_decision_section.dart';
 import '../option_scoring_self_check.dart';
 import 'litert_lm_client.dart';
+import 'open_session_backing.dart';
 import '../reported_engine_turn.dart';
 import 'native_turns.dart'
     show LiteRtLmTurnCancelledException, LiteRtLmTurnClosedException;
@@ -42,6 +43,8 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     this.supportAudio = false,
     MultimodalOrder? multimodalOrder,
     this.maxConcurrentSessions,
+    this.openSessionBacking = OpenSessionBacking.virtual,
+    this.linearAttentionState = false,
     required this.onClose,
   }) : multimodalOrder =
            multimodalOrder ?? MultimodalOrder.forModelType(modelType);
@@ -73,12 +76,49 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   final bool supportImage;
   final bool supportAudio;
 
-  /// Where a message's images and audio go around its text. Concurrent
-  /// [openSession] sessions take no media, so only [createSession] reads it.
+  /// Where a message's images and audio go around its text, in
+  /// [createSession] sessions and in [openSession] sessions backed by a
+  /// native conversation ([OpenSessionBacking.native]).
   final MultimodalOrder multimodalOrder;
 
   /// Cap on concurrent [openSession] sessions; null = unlimited.
   final int? maxConcurrentSessions;
+
+  /// How each [openSession] session holds its context, decided at load from
+  /// the backend and the host ([liteRtLmOpenSessionBacking]): its own native
+  /// conversation where that backend ran several live conversations
+  /// correctly, a virtual one (text replay, no media) elsewhere.
+  final OpenSessionBacking openSessionBacking;
+
+  /// The model keeps linear attention state (a hybrid model such as LFM2.5,
+  /// `readLiteRtLmHasLinearAttentionState`): no conversation of it is ever
+  /// rewound, since a rewind restores the KV cache but not that state. Null
+  /// when the file could not be read to tell: `createSession` then rewinds
+  /// as before, and `openSession` sessions are rebuilt from text.
+  final bool? linearAttentionState;
+
+  /// Why a [createSession] conversation of this model is rebuilt from text
+  /// instead of being rewound after a stopped turn or a full context, or null
+  /// when it rewinds.
+  @visibleForTesting
+  String? get noRewindReason => _noRewindReason;
+
+  String? get _noRewindReason => activeBackend == PreferredBackend.npu
+      ? 'the NPU executor rolls back one token at most'
+      : linearAttentionState == true
+      ? 'this model keeps linear attention state, which a rewind cannot '
+            'restore'
+      : null;
+
+  /// The same for an [openSession] conversation: also rebuilt when whether
+  /// the model keeps linear attention state could not be read.
+  @visibleForTesting
+  String? get openSessionNoRewindReason =>
+      _noRewindReason ??
+      (linearAttentionState == null
+          ? 'whether this model keeps linear attention state could not be '
+                'read from its file'
+          : null);
   final VoidCallback onClose;
 
   FfiInferenceModelSession? _session;
@@ -91,6 +131,11 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// Sessions opened via [openSession] — detached from the legacy [_session]
   /// singleton. Each owns its own conversation handle.
   final Set<FfiInferenceModelSession> _openSessions = {};
+
+  /// [openSession] calls past the cap check whose native conversation is
+  /// still being created, so that concurrent calls cannot pass the cap
+  /// together.
+  int _openSessionsPending = 0;
 
   @override
   InferenceModelSession? get session => _session;
@@ -213,7 +258,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
 
   @override
   List<InferenceModelSession> get engineSessions => [
-    if (_session != null) _session!,
+    ?_session,
     ..._openSessions,
   ];
 
@@ -283,10 +328,11 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       final sampling = _resolveSampling(explicit, thinking: enableThinking);
 
       // Legacy singleton lane: close the previous conversation BEFORE
-      // opening a fresh one. The engine holds at most one live
-      // conversation (upstream litert-lm #966), so closing first never
-      // leaves two alive — matching the delete-before-create order the
-      // virtual-session multiplexer already uses. It also means a
+      // opening a fresh one. createSession replaces the session it gave
+      // before, and on LiteRT-LM 0.18 the engine held at most one live
+      // conversation (upstream litert-lm #966); closing first also frees the
+      // old conversation's KV cache before the new one is allocated. It also
+      // means a
       // teardown error can't leak a handle that was created first and
       // then left unwrapped: each session owns its own conversation
       // pointer, so closing the old one can't touch the not-yet-created
@@ -311,8 +357,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       final handle = RecoveringConversationHandle(
         await open(),
         reopen: (messagesJson) => open(messagesJson: messagesJson),
-        // The NPU executor rolls back one token at most.
-        canRewind: activeBackend != PreferredBackend.npu,
+        noRewindReason: _noRewindReason,
       );
       edgeAiLog(
         '[FfiInferenceModel/perf] createConversation (FFI): ${sessionSw.elapsedMilliseconds - beforeConv}ms',
@@ -393,7 +438,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       );
     }
     final cap = maxConcurrentSessions;
-    if (cap != null && _openSessions.length >= cap) {
+    if (cap != null && _openSessions.length + _openSessionsPending >= cap) {
       throw StateError(
         'Max concurrent sessions ($cap) reached. Close an existing session '
         'before opening a new one.',
@@ -401,28 +446,66 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     }
 
     final toolsJson = _nativeToolsJson(tools);
-
-    // The LiteRT-LM engine allows only ONE live conversation at a time
-    // (upstream #966), so concurrent sessions can't each hold a real native
-    // conversation. Each session instead gets a virtual handle that keeps its
-    // history in Dart and replays it into the single shared conversation on
-    // demand (serialized by the client mutex). Logically concurrent contexts,
-    // serialized inference. openSession() itself makes no native call, so it
-    // never fails on the one-conversation limit.
     final explicit = SamplingParams(
       temperature: temperature,
       topK: topK,
       topP: topP,
       randomSeed: randomSeed,
     );
-    final handle = _VirtualConversationHandle(
-      client: ffiClient,
-      systemMessage: systemInstruction,
-      toolsJson: toolsJson,
-      sampling: _resolveSampling(explicit, thinking: enableThinking),
-      samplingExplicit: !explicit.isEmpty,
-      maxOutputTokens: maxOutputTokens,
-    );
+    final sampling = _resolveSampling(explicit, thinking: enableThinking);
+
+    final ConversationHandle handle;
+    switch (openSessionBacking) {
+      case OpenSessionBacking.native:
+        // LiteRT-LM 0.19 keeps several live conversations on one engine
+        // (upstream #966 lifted; §22 on the NPU), so each session gets its
+        // own, as createSession's: images and audio stay in it, and a stopped
+        // turn or a full context is rewound where the backend can. Every idle
+        // conversation keeps a snapshot of its KV cache, so a session costs
+        // memory while open (litertlm README, "Open sessions").
+        Future<LiteRtLmConversationHandle> open({String? messagesJson}) =>
+            ffiClient.createConversationHandle(
+              systemMessage: systemInstruction,
+              toolsJson: toolsJson,
+              messagesJson: messagesJson,
+              sampling: sampling,
+              samplingExplicit: !explicit.isEmpty,
+              maxOutputTokens: maxOutputTokens,
+              multimodalOrder: multimodalOrder,
+            );
+        _openSessionsPending++;
+        final LiteRtLmConversationHandle first;
+        try {
+          first = await open();
+        } finally {
+          _openSessionsPending--;
+        }
+        // The create suspends across an isolate round trip, so close() can
+        // have run meanwhile.
+        if (_isClosed) {
+          first.close();
+          throw StateError('Model was closed while opening a session');
+        }
+        handle = RecoveringConversationHandle(
+          first,
+          reopen: (messagesJson) => open(messagesJson: messagesJson),
+          noRewindReason: openSessionNoRewindReason,
+        );
+      case OpenSessionBacking.virtual:
+        // Where several live conversations were not verified on this backend,
+        // each session keeps its history in Dart and replays it into one
+        // shared conversation on demand (serialized by the client mutex), as
+        // on LiteRT-LM 0.18. Logically concurrent contexts, serialized
+        // inference; openSession() itself makes no native call.
+        handle = _VirtualConversationHandle(
+          client: ffiClient,
+          systemMessage: systemInstruction,
+          toolsJson: toolsJson,
+          sampling: sampling,
+          samplingExplicit: !explicit.isEmpty,
+          maxOutputTokens: maxOutputTokens,
+        );
+    }
 
     late final FfiInferenceModelSession session;
     session = FfiInferenceModelSession(
@@ -601,6 +684,20 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// [stopGeneration] was called during the current turn.
   bool _stopAsked = false;
 
+  /// [turn] with a failure native ended `context_full` replaced by a
+  /// [LiteRtLmContextFullException], which says what happened and what the
+  /// caller can do; any other failure is passed on as it is.
+  Stream<String> _namingContextFull(Stream<String> turn) => turn.transform(
+    StreamTransformer.fromHandlers(
+      handleError: (error, stack, sink) => sink.addError(
+        handle.lastTurnEnd == NativeLastTurnEnd.contextFull
+            ? LiteRtLmContextFullException(error)
+            : error,
+        stack,
+      ),
+    ),
+  );
+
   final StringBuffer _queryBuffer = StringBuffer();
   final List<Uint8List> _pendingImages = [];
   Uint8List? _pendingAudio;
@@ -735,7 +832,9 @@ class FfiInferenceModelSession extends InferenceModelSession
     if (_nativeTools) {
       final rawBuffer = StringBuffer();
       final textBuffer = StringBuffer();
-      await for (final rawChunk in _rawTurn(text, images, audio, toolMessage)) {
+      await for (final rawChunk in _namingContextFull(
+        _rawTurn(text, images, audio, toolMessage),
+      )) {
         if (firstChunkMs == null) {
           firstChunkMs = genSw.elapsedMilliseconds;
           edgeAiLog(
@@ -753,11 +852,13 @@ class FfiInferenceModelSession extends InferenceModelSession
 
     _lastRawResponse = null;
     final buffer = StringBuffer();
-    await for (final chunk in handle.chat(
-      text,
-      imageBytes: images,
-      audioBytes: audio,
-      enableThinking: enableThinking,
+    await for (final chunk in _namingContextFull(
+      handle.chat(
+        text,
+        imageBytes: images,
+        audioBytes: audio,
+        enableThinking: enableThinking,
+      ),
     )) {
       if (firstChunkMs == null) {
         firstChunkMs = genSw.elapsedMilliseconds;
@@ -810,7 +911,9 @@ class FfiInferenceModelSession extends InferenceModelSession
 
     if (_nativeTools) {
       final rawBuffer = StringBuffer();
-      await for (final rawChunk in _rawTurn(text, images, audio, toolMessage)) {
+      await for (final rawChunk in _namingContextFull(
+        _rawTurn(text, images, audio, toolMessage),
+      )) {
         if (firstChunkMs == null) {
           firstChunkMs = genSw.elapsedMilliseconds;
           edgeAiLog(
@@ -827,11 +930,13 @@ class FfiInferenceModelSession extends InferenceModelSession
     }
 
     _lastRawResponse = null;
-    await for (final chunk in handle.chat(
-      text,
-      imageBytes: images,
-      audioBytes: audio,
-      enableThinking: enableThinking,
+    await for (final chunk in _namingContextFull(
+      handle.chat(
+        text,
+        imageBytes: images,
+        audioBytes: audio,
+        enableThinking: enableThinking,
+      ),
     )) {
       if (firstChunkMs == null) {
         firstChunkMs = genSw.elapsedMilliseconds;
@@ -931,9 +1036,13 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// the text ends cleanly and `end` is [TurnEnd.closed], so the chat keeps
   /// the partial reply before it raises (decision H).
   ///
-  /// A completed turn reports [liteRtLmPlaceholderCompletedEnd]: a guess on
-  /// LiteRT-LM 0.18, so structured output stays refused here until the
-  /// native turn-end record (L1, read in L2) says which end it was.
+  /// A turn's end is what native's turn-end record says
+  /// ([liteRtLmCompletedTurnEnd]). A turn native ended `context_full` (the
+  /// input did not fit what the window has left) fails its text with a
+  /// [LiteRtLmContextFullException], and its end is [TurnEnd.contextLimit];
+  /// core's chat then takes the refused message back out of its history. The
+  /// handle restores the conversation before the next turn (core 2.6.0
+  /// design §6.4b).
   @override
   EngineTurn startTurn() {
     _stopAsked = false;
@@ -942,7 +1051,8 @@ class FfiInferenceModelSession extends InferenceModelSession
       stopped: () => _stopAsked,
       closed: () => _isClosed,
       isCloseError: (error) => error is LiteRtLmTurnClosedException,
-      completed: () => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
+      completed: () =>
+          liteRtLmCompletedTurnEnd(handle.lastTurnEnd, maxOutputTokens),
     );
   }
 
@@ -963,6 +1073,50 @@ class FfiInferenceModelSession extends InferenceModelSession
   }
 }
 
+/// A turn whose input did not fit what the context window had left (native's
+/// turn-end record `context_full`): the turn ended as [TurnEnd.contextLimit]
+/// before the model saw the input. The session was restored to before it and
+/// answers a shorter message; when even a short one is refused, the window
+/// has no room for any input left, and the session must be closed and a new
+/// one opened (nothing of its history is dropped behind the caller's back).
+final class LiteRtLmContextFullException implements Exception {
+  const LiteRtLmContextFullException(this.nativeError);
+
+  /// The error native ended the turn with.
+  final Object nativeError;
+
+  @override
+  String toString() =>
+      'LiteRtLmContextFullException: the input does not fit what the '
+      'context window has left (TurnEnd.contextLimit); the session is '
+      'restored to before this turn. Send a shorter message, or close the '
+      'session and open a new one. Native: $nativeError';
+}
+
+/// How a native turn whose text ran to its end ended, from native's turn-end
+/// record ([NativeLastTurnEnd], §23): the end of the reply is
+/// [TurnEnd.endOfSequence], `max_output_tokens` [TurnEnd.outputLimit], a
+/// decode that filled the context window (and an input that did not fit,
+/// should one ever end without an error) [TurnEnd.contextLimit]. Without a
+/// record, or with one no completed send leaves, it is
+/// [liteRtLmPlaceholderCompletedEnd]'s guess.
+@visibleForTesting
+TurnEnd liteRtLmCompletedTurnEnd(
+  NativeLastTurnEnd? end,
+  int? maxOutputTokens,
+) => switch (end) {
+  NativeLastTurnEnd.completed => TurnEnd.endOfSequence,
+  NativeLastTurnEnd.outputLimit => TurnEnd.outputLimit,
+  NativeLastTurnEnd.contextLimit ||
+  NativeLastTurnEnd.contextFull => TurnEnd.contextLimit,
+  NativeLastTurnEnd.none ||
+  NativeLastTurnEnd.cancelled ||
+  NativeLastTurnEnd.failed ||
+  NativeLastTurnEnd.running ||
+  NativeLastTurnEnd.refused ||
+  null => liteRtLmPlaceholderCompletedEnd(maxOutputTokens),
+};
+
 /// How long a turn waits for a stopped one to wind down before going ahead —
 /// the same bound VoiceSession gives a stopped reply to drain.
 const _windDownTimeout = Duration(seconds: 5);
@@ -971,8 +1125,10 @@ const _windDownTimeout = Duration(seconds: 5);
 @visibleForTesting
 const thoughtChunkPrefix = '<|channel>thought\n';
 
-/// The single-session lane's handle: one real native conversation, made to
-/// answer again after a turn is stopped.
+/// The handle of a session's own native conversation — [createSession]'s, and
+/// each [openSession] session's where they are native
+/// ([OpenSessionBacking.native]) — made to answer again after a turn is
+/// stopped or its input did not fit.
 ///
 /// A conversation whose generation was cancelled mid-turn answers every later
 /// message with nothing — zero chunks in about a millisecond, on every turn
@@ -980,10 +1136,20 @@ const thoughtChunkPrefix = '<|channel>thought\n';
 /// stop first rewinds the conversation to before the stopped turn and puts that
 /// turn back, partial reply included ([ConversationHandle.rewindStoppedTurn]):
 /// the model keeps everything, images and audio too. Where it cannot — on the
-/// NPU, whose executor rolls back one token at most, or on a libLiteRtLm
-/// without the rewind — it replaces the conversation with a new one seeded
-/// with the history this handle records, as a `messages_json` preface, which
-/// keeps the text of earlier turns only.
+/// NPU, whose executor rolls back one token at most, on a model with linear
+/// attention state, which a rewind cannot restore, or on a libLiteRtLm without
+/// the rewind — it replaces the conversation with a new one seeded with the
+/// history this handle records, as a `messages_json` preface, which keeps the
+/// text of earlier turns only.
+///
+/// A turn native ended `context_full` (§23: its input did not fit what the
+/// window has left) leaves the conversation failing every later send. The
+/// next turn first rewinds it to that turn's checkpoint, without the input
+/// that did not fit, or rebuilds it where it cannot rewind. Nothing of the
+/// history is dropped (core 2.6.0 design §6.4b, as decided for a raw
+/// session): when the window has no room for any input left, every later
+/// turn ends the same way, and the app decides — `InferenceChat` rotates its
+/// session by its own token budget.
 ///
 /// A cancel that arrives after a turn has finished does not count: Dart
 /// delivers a stream's `done` by cancelling its subscription, which cancels
@@ -995,13 +1161,18 @@ class RecoveringConversationHandle implements ConversationHandle {
   RecoveringConversationHandle(
     this._live, {
     required this.reopen,
-    this.canRewind = true,
+    this.noRewindReason,
     this.windDownTimeout = _windDownTimeout,
   });
 
-  /// Whether a stopped turn is rewound before falling back to a rebuild. False
-  /// on the NPU, where the rewind cannot succeed.
-  final bool canRewind;
+  /// Why this conversation is never rewound and is rebuilt from text instead
+  /// (the NPU, a model with linear attention state), or null when a stopped
+  /// turn and a full context are rewound before falling back to a rebuild.
+  final String? noRewindReason;
+
+  /// Whether a stopped turn or a full context is rewound before falling back
+  /// to a rebuild.
+  bool get canRewind => noRewindReason == null;
 
   /// How long a turn waits for a stopped one to record itself. See [_turn].
   final Duration windDownTimeout;
@@ -1041,8 +1212,15 @@ class RecoveringConversationHandle implements ConversationHandle {
   bool _stopped = false;
 
   /// The reply the stopped turn had produced, which a rewind puts back after
-  /// its message. Null when the next recovery must rebuild instead.
+  /// its message. Null when the next recovery must rebuild instead, unless
+  /// [_takeBack] is set.
   Map<String, Object?>? _stoppedReply;
+
+  /// The next recovery rewinds the last turn out, with nothing put back: a
+  /// turn stopped before it produced anything (Rule A), or one whose input
+  /// did not fit the window (§23). Where it cannot rewind, it rebuilds from
+  /// the history, which the turn is not in.
+  bool _takeBack = false;
 
   /// Why a conversation that can rewind is rebuilt instead, for the warning
   /// release builds print when that loses earlier images and audio.
@@ -1059,7 +1237,9 @@ class RecoveringConversationHandle implements ConversationHandle {
   bool _closed = false;
 
   Future<void> _rebuild() async {
-    // One live conversation per engine (upstream #966): delete first.
+    // Deleted first: the old conversation's KV cache is freed before the new
+    // one is allocated (and on LiteRT-LM 0.18, upstream #966, the engine held
+    // one live conversation).
     _live.close();
     _live = await reopen(
       _history.isEmpty ? null : LiteRtLmFfiClient.buildHistoryJson(_history),
@@ -1072,8 +1252,8 @@ class RecoveringConversationHandle implements ConversationHandle {
       throw StateError('Conversation handle is closed');
     }
     edgeAiLog(
-      '[FfiInferenceModel] rebuilt the conversation after a stopped turn '
-      '(${_history.length} messages replayed)',
+      '[FfiInferenceModel] rebuilt the conversation after a stopped turn or '
+      'a full context (${_history.length} messages replayed)',
     );
     if (_historyHasMedia) {
       edgeAiLog(
@@ -1084,6 +1264,21 @@ class RecoveringConversationHandle implements ConversationHandle {
     }
   }
 
+  /// Says once, in release builds too, that a conversation that cannot rewind
+  /// was rebuilt without the images and audio of earlier turns.
+  void _noteMediaLostWithoutRewind() {
+    if (!_historyHasMedia || _mediaLossNoted) return;
+    _mediaLossNoted = true;
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] rebuilding the conversation from text, '
+      'without the images and audio of earlier turns: $noRewindReason. Shown '
+      'once per session.',
+    );
+  }
+
+  bool _mediaLossNoted = false;
+
   /// The recovery in progress. A turn that starts meanwhile waits for it, and
   /// its wind-down bound does not run out while a long rewind (an audio clip
   /// re-encoded on a phone CPU) still uses the conversation.
@@ -1093,22 +1288,25 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// it can, and rebuilds it when it cannot or the rewind fails.
   Future<void> _recover() async {
     final reply = _stoppedReply;
+    final takeBack = _takeBack;
     final rebuildBecause = _rebuildBecause;
     _stoppedReply = null;
+    _takeBack = false;
     _rebuildBecause = null;
     _recovering = true;
     try {
-      if (canRewind && reply != null) {
+      if (canRewind && (reply != null || takeBack)) {
         StoppedTurnRewind? result;
         StoppedTurnRewindException? failure;
         try {
-          result = await _live.rewindStoppedTurn(reply);
+          result = await _live.rewindStoppedTurn(takeBack ? null : reply);
         } on StoppedTurnRewindException catch (e) {
           failure = e;
         } catch (_) {
           // Not a rewind failure (a closed client, a bug): the conversation is
           // as the stop left it, so the next turn tries again from the start.
           _stoppedReply = reply;
+          _takeBack = takeBack;
           _rebuildBecause = rebuildBecause;
           rethrow;
         }
@@ -1118,16 +1316,20 @@ class RecoveringConversationHandle implements ConversationHandle {
             _stopped = false;
             edgeAiLog(
               '[FfiInferenceModel] rewound the conversation after a stopped '
-              'turn',
+              'turn or a full context',
             );
             return;
-          case StoppedTurnRewind.notCancelled:
+          case StoppedTurnRewind.notCancelled when !takeBack:
             _stopped = false;
             edgeAiLog(
               '[FfiInferenceModel] the stopped turn had ended natively before '
               'the stop; the conversation is kept as it is',
             );
             return;
+          case StoppedTurnRewind.notCancelled:
+            // The turn to take out had ended natively, so native keeps it:
+            // only a rebuild leaves it out.
+            break;
           case StoppedTurnRewind.unsupported:
           case null:
             break;
@@ -1138,7 +1340,7 @@ class RecoveringConversationHandle implements ConversationHandle {
           // ignore: avoid_print
           print(
             '[flutter_edge_ai_litertlm] could not rewind the conversation '
-            'after a stopped turn ($failure); rebuilding it'
+            'after a stopped turn or a full context ($failure); rebuilding it'
             '${_historyHasMedia ? ', without the images and audio of earlier '
                       'turns' : ''}',
           );
@@ -1149,6 +1351,8 @@ class RecoveringConversationHandle implements ConversationHandle {
           '[flutter_edge_ai_litertlm] rebuilding the conversation, without '
           'the images and audio of earlier turns: $rebuildBecause',
         );
+      } else if (!canRewind) {
+        _noteMediaLostWithoutRewind();
       }
       await _rebuild();
     } finally {
@@ -1173,6 +1377,8 @@ class RecoveringConversationHandle implements ConversationHandle {
     // finished turn's thoughts out of the context.
     final visible = StringBuffer();
     final rawReply = StringBuffer();
+    // Any non-empty chunk, thoughts included, as core's chat counts text.
+    var streamed = false;
     var sent = false;
     var finished = false;
     var failed = false;
@@ -1218,6 +1424,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       _current = done;
       _inFlight = true;
       _stopRequested = false;
+      _latestSent = false;
       if (_stopped) {
         final recovery = _recovery = _recover();
         try {
@@ -1231,10 +1438,12 @@ class RecoveringConversationHandle implements ConversationHandle {
       // there is nothing to generate and nothing to record.
       if (_stopEpoch != epoch) return;
       sent = true;
+      _latestSent = true;
       await for (final chunk in send(_live)) {
         final text = raw
             ? LiteRtLmFfiClient.extractTextFromResponse(chunk)
             : chunk;
+        if (text.isNotEmpty) streamed = true;
         if (!text.startsWith(thoughtChunkPrefix)) visible.write(text);
         if (raw) rawReply.write(chunk);
         yield chunk;
@@ -1246,8 +1455,11 @@ class RecoveringConversationHandle implements ConversationHandle {
       poisoned = true;
       rethrow;
     } catch (_) {
-      // A failed turn is not a stopped one: rebuilding would replay the same
-      // context into the same failure.
+      // An error after the consumer asked to stop is the stop's: the turn
+      // ends cleanly as stopped, as core's reportedEngineTurn ends it (a stop
+      // wins over a failure).
+      if (_stopRequested) return;
+      // Any other failure is taken back (decision W): see the `finally`.
       failed = true;
       rethrow;
     } finally {
@@ -1265,19 +1477,43 @@ class RecoveringConversationHandle implements ConversationHandle {
         // Stopped by cancelGeneration, or abandoned mid-turn — which cancels
         // native the same way — leaves the conversation answering nothing.
         final stopped = _stopRequested || (!finished && !failed);
-        if (stopped && latest) _stopped = true;
         final reply = _VirtualConversationHandle._assistantTurn(
           visible.toString(),
           rawReply.toString(),
         );
-        if (stopped && latest) _stoppedReply = reply;
-        // The message reached the model, so it belongs in the history a
-        // rebuild replays — with whatever of the reply was produced. Except a
-        // turn native ended context_full (section 23): its input was refused
-        // before it reached the model, and recording it would replay into a
-        // rebuild a message the model never saw (core 2.6.0 design §6.4b; L3
-        // recovers such a turn).
-        if (!failed || failedTurnReachedModel(_live.lastTurnEnd)) {
+        final end = _live.lastTurnEnd;
+        if (failed) {
+          // Decision W: a failed turn is taken back on both sides, never
+          // replayed. One native ended context_full (section 23) is rewound
+          // out (native drops its input; it fails every later send until
+          // then); one native refused before it started left nothing to undo;
+          // any other (a decode error, a resource other than the window) is
+          // rebuilt without it, as native does not rewind a failed send.
+          if (latest && end != NativeLastTurnEnd.refused) {
+            _stopped = true;
+            _stoppedReply = null;
+            if (end == NativeLastTurnEnd.contextFull) {
+              _takeBack = true;
+              _rebuildBecause = 'the context window was full';
+            } else {
+              _rebuildBecause = 'the last turn failed';
+            }
+          }
+        } else if (stopped && !streamed) {
+          // Rule A: a turn stopped before it produced anything is taken back
+          // on both sides, rewound out of the conversation.
+          if (latest) {
+            _stopped = true;
+            _stoppedReply = null;
+            _takeBack = true;
+          }
+        } else {
+          if (stopped && latest) {
+            _stopped = true;
+            _stoppedReply = reply;
+          }
+          // The message reached the model, so it belongs in the history a
+          // rebuild replays — with whatever of the reply was produced.
           _history
             ..add(message)
             ..add(reply);
@@ -1364,14 +1600,21 @@ class RecoveringConversationHandle implements ConversationHandle {
   /// Recovery after a stop is this handle's own job, done at the next turn.
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
-    Map<String, Object?> partialReply,
+    Map<String, Object?>? partialReply,
   ) async => StoppedTurnRewind.unsupported;
 
   @override
   SessionMetrics getSessionMetrics() => _live.getSessionMetrics();
 
+  /// The latest turn reached its send, so native's record is that turn's
+  /// end; a turn that failed before it (a recovery that threw) has none.
+  bool _latestSent = false;
+
   @override
-  NativeLastTurnEnd? get lastTurnEnd => _live.lastTurnEnd;
+  NativeLastTurnEnd? get lastTurnEnd => _latestSent ? _live.lastTurnEnd : null;
+
+  @override
+  int? get lastTurnCode => _latestSent ? _live.lastTurnCode : null;
 
   @override
   void close() {
@@ -1386,9 +1629,10 @@ class RecoveringConversationHandle implements ConversationHandle {
 
 /// A [ConversationHandle] backed by the virtual-session multiplexer.
 ///
-/// The LiteRT-LM engine allows only ONE live conversation at a time
-/// (upstream #966), so concurrent [openSession] sessions can't each hold a
-/// real native conversation. Instead each virtual handle keeps its full turn
+/// On LiteRT-LM 0.18 the engine allowed only ONE live conversation at a time
+/// (upstream #966); 0.19 lifts it, but only where several live conversations
+/// were verified does an [openSession] session get its own
+/// ([OpenSessionBacking.native]). Everywhere else each virtual handle keeps its full turn
 /// history in Dart and, on every generate, asks the client to (re)materialize
 /// the single shared conversation seeded with THIS session's history via a
 /// `messages_json` preface. The client serializes turns with a mutex, so the
@@ -1398,15 +1642,6 @@ class RecoveringConversationHandle implements ConversationHandle {
 ///
 /// Same-session follow-up turns reuse the live conversation (no rebuild);
 /// only switching to a different session pays the teardown+replay cost.
-/// Whether a turn that failed still reached the model, so a session's
-/// history keeps it for the replay a rebuild does: every failed turn but one
-/// native ended context_full or refused before it started (section 23),
-/// whose input the model never saw. Both [RecoveringConversationHandle] and the virtual
-/// sessions follow it; L3 recovers such a turn (core 2.6.0 design §6.4b).
-@visibleForTesting
-bool failedTurnReachedModel(NativeLastTurnEnd? end) =>
-    end != NativeLastTurnEnd.contextFull && end != NativeLastTurnEnd.refused;
-
 class _VirtualConversationHandle implements ConversationHandle {
   _VirtualConversationHandle({
     required this.client,
@@ -1479,20 +1714,18 @@ class _VirtualConversationHandle implements ConversationHandle {
     final assistantText = StringBuffer();
     final assistantRaw = StringBuffer();
     var recorded = false;
+    var failed = false;
     void record() {
       if (recorded) return;
       recorded = true;
       // Record both turns so the next switch back replays the full context.
-      // The message was already fed live into the native conversation, so it
-      // must land in history even if generation errored partway — otherwise a
-      // session switch+rebuild would replay a context that omits a turn the
-      // model actually saw, silently diverging native and Dart state.
       _history.add(message);
       _history.add(
         _assistantTurn(assistantText.toString(), assistantRaw.toString()),
       );
     }
 
+    _latestStarted = true;
     try {
       await for (final rawChunk in client.startVirtualTurn(
         conversationToken: token,
@@ -1511,15 +1744,18 @@ class _VirtualConversationHandle implements ConversationHandle {
         assistantRaw.write(rawChunk);
         yield raw ? rawChunk : chunkText;
       }
-      record();
+      // A stop ends the stream cleanly: a stopped turn that produced nothing
+      // is not recorded (Rule A).
+      if (!_stopRequested || assistantText.isNotEmpty) record();
     } catch (_) {
-      // A turn native ended context_full never reached the model (section
-      // 23): replaying it would feed a rebuild a message the model never saw.
-      if (!failedTurnReachedModel(lastTurnEnd)) recorded = true;
+      // Decision W: a failed turn is taken back on both sides; the shared
+      // conversation is rebuilt from this history, which it is not in.
+      failed = true;
       rethrow;
     } finally {
-      // Also record on error/cancel so the user turn isn't lost.
-      record();
+      // A stopped or abandoned turn keeps what it produced, as core's chat
+      // does; one that produced nothing is taken back (Rule A).
+      if (!failed && assistantText.isNotEmpty) record();
       _inFlight = false;
       done.complete();
     }
@@ -1553,13 +1789,17 @@ class _VirtualConversationHandle implements ConversationHandle {
   // Virtual sessions replay history as a text-only `messages_json` preface, so
   // image/audio turns can't be reconstructed on a session switch. Reject media
   // loudly rather than silently dropping it (parity with openSession rejecting
-  // loraPath). Multimodal needs the single-session createSession path.
+  // loraPath). Only open sessions on a backend whose live conversations were
+  // not verified are virtual (OpenSessionBacking).
   void _rejectMedia(List<Uint8List>? imageBytes, Uint8List? audioBytes) {
     if ((imageBytes != null && imageBytes.isNotEmpty) || audioBytes != null) {
       throw UnsupportedError(
-        'Image/audio input is not supported on concurrent (openSession) '
-        '.litertlm sessions — their history is replayed text-only on switch. '
-        'Use createSession() for multimodal, or a MediaPipe .task model.',
+        'Image/audio input is not supported on openSession() .litertlm '
+        'sessions on this platform and backend: several live conversations '
+        'on one engine were not verified here, so these sessions replay their '
+        'history as text at each switch. Use createSession() for images and '
+        'audio, or a backend listed in the flutter_edge_ai_litertlm README '
+        '("Open sessions").',
       );
     }
   }
@@ -1571,6 +1811,7 @@ class _VirtualConversationHandle implements ConversationHandle {
     Uint8List? audioBytes,
     bool enableThinking = false,
   }) {
+    _latestStarted = false;
     _rejectMedia(imageBytes, audioBytes);
     return _run(_userMessage(text), raw: false, enableThinking: enableThinking);
   }
@@ -1582,6 +1823,7 @@ class _VirtualConversationHandle implements ConversationHandle {
     Uint8List? audioBytes,
     bool enableThinking = false,
   }) {
+    _latestStarted = false;
     _rejectMedia(imageBytes, audioBytes);
     return _run(_userMessage(text), raw: true, enableThinking: enableThinking);
   }
@@ -1610,14 +1852,23 @@ class _VirtualConversationHandle implements ConversationHandle {
   /// history at its next turn; there is no media to keep.
   @override
   Future<StoppedTurnRewind> rewindStoppedTurn(
-    Map<String, Object?> partialReply,
+    Map<String, Object?>? partialReply,
   ) async => StoppedTurnRewind.unsupported;
 
   @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
+  /// The latest turn reached native; a turn refused before (images or audio
+  /// on a virtual session) has no end of its own to report.
+  bool _latestStarted = false;
+
   @override
-  NativeLastTurnEnd? get lastTurnEnd => client.virtualLastTurnEnd(token);
+  NativeLastTurnEnd? get lastTurnEnd =>
+      _latestStarted ? client.virtualLastTurnEnd(token) : null;
+
+  @override
+  int? get lastTurnCode =>
+      _latestStarted ? client.virtualLastTurnCode(token) : null;
 
   @override
   void close() {

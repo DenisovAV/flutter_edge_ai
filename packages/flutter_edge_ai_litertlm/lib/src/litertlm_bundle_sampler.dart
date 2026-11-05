@@ -130,6 +130,27 @@ const _llmMetadataProto = 5;
   }
 }
 
+/// Whether a serialized `ExecutorMetadata` (an `ExecutorMetadataProto`
+/// section) declares a linear attention state buffer: a `StateBuffer` in
+/// `llm_executor_metadata.state_buffers` of type `TYPE_LINEAR_ATTENTION` (5).
+/// LiteRT-LM builds a bundle's state from this section when it has one
+/// (`LitertState::MetadataBasedCreate`), under whatever tensor names it
+/// gives. Throws [FormatException] or [RangeError] for bytes it cannot walk.
+bool executorMetadataHasLinearAttention(Uint8List executorMetadata) {
+  const llmExecutorMetadata = 1, stateBuffers = 2, type = 6;
+  const linearAttention = 5;
+  for (final field in _ProtoReader(executorMetadata).fields()) {
+    if (field.number != llmExecutorMetadata || field.bytes == null) continue;
+    for (final buffer in _ProtoReader(field.bytes!).fields()) {
+      if (buffer.number != stateBuffers || buffer.bytes == null) continue;
+      for (final f in _ProtoReader(buffer.bytes!).fields()) {
+        if (f.number == type && f.varint == linearAttention) return true;
+      }
+    }
+  }
+  return false;
+}
+
 /// The sampler in a serialized `LlmMetadata`; empty when it has none.
 SamplingParams samplerFromLlmMetadata(Uint8List llmMetadata) {
   try {

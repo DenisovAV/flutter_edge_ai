@@ -39,13 +39,20 @@ void main() {
     }
   });
 
-  test('a synchronous stream-start failure is a refusal even when native '
-      '0.19 records failed', () {
+  test('a synchronous stream-start failure preserves native failed so the '
+      'conversation is rebuilt', () {
     expect(
       streamStartFailureTurnEnd(NativeLastTurnEnd.failed),
-      NativeLastTurnEnd.refused,
+      NativeLastTurnEnd.failed,
     );
   });
+
+  test(
+    'a synchronous stream-start failure with no native record is refused',
+    () {
+      expect(streamStartFailureTurnEnd(null), NativeLastTurnEnd.refused);
+    },
+  );
 
   test('a synchronous context_full keeps its recovery classification', () {
     expect(

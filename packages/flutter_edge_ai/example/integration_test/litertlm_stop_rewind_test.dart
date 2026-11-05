@@ -172,15 +172,35 @@ void main() {
   // Greedy: Gemma 4's own sampler makes a reply vary from run to run (a turn
   // that sometimes does not hear its own audio), and a probe must test the
   // rewind, not the sampler.
-  Future<InferenceChat> newChat({bool thinking = false}) async =>
-      (await ensureModel()).createChat(
-        topK: 1,
-        supportImage: true,
-        supportAudio: true,
-        enableThinking: thinking,
-        // A thinking turn spends most of its tokens on thoughts.
-        maxOutputTokens: thinking ? 1024 : 160,
-      );
+  Future<InferenceChat> newChat({
+    bool thinking = false,
+    bool open = false,
+  }) async {
+    final m = await ensureModel();
+    final options = (
+      topK: 1,
+      supportImage: true,
+      supportAudio: true,
+      enableThinking: thinking,
+      maxOutputTokens: thinking ? 1024 : 160,
+    );
+    return open
+        ? m.openChat(
+            topK: options.topK,
+            supportImage: options.supportImage,
+            supportAudio: options.supportAudio,
+            enableThinking: options.enableThinking,
+            maxOutputTokens: options.maxOutputTokens,
+          )
+        : m.createChat(
+            topK: options.topK,
+            supportImage: options.supportImage,
+            supportAudio: options.supportAudio,
+            enableThinking: options.enableThinking,
+            // A thinking turn spends most of its tokens on thoughts.
+            maxOutputTokens: options.maxOutputTokens,
+          );
+  }
 
   final printer = debugPrint;
   setUpAll(() {
@@ -204,17 +224,6 @@ void main() {
     expect(rebuilt, isEmpty, reason: 'a stop fell back to a rebuild');
     expect(kept, isEmpty, reason: 'a stop was taken for a finished turn');
     expect(rewound, hasLength(stops));
-    _log.clear();
-  }
-
-  /// Every one of [stops] stopped media turns was rebuilt from full messages.
-  void expectRebuiltOnly(int stops) {
-    final rewound = _log.where((l) => l.contains('rewound the conversation'));
-    final rebuilt = _log.where((l) => l.contains('rebuilt the conversation'));
-    final kept = _log.where((l) => l.contains('ended natively before'));
-    expect(rewound, isEmpty, reason: 'stopped audio trusted native rewind');
-    expect(kept, isEmpty, reason: 'a stop was taken for a finished turn');
-    expect(rebuilt, hasLength(stops));
     _log.clear();
   }
 
@@ -379,11 +388,9 @@ void main() {
   // recording, the model wrote "What will it be like in Paris tomorrow?", and
   // a cut at "OK." or no stop at all gave "Paris". So Android's GPU is checked
   // as the CPU is.
-  testWidgets('a stopped turn that carried audio keeps it (a barge-in)', (
-    tester,
-  ) async {
+  Future<void> stoppedAudioBargeIn({required bool open}) async {
     _log.clear();
-    final chat = await newChat();
+    final chat = await newChat(open: open);
     try {
       final stopped = await _send(
         chat,
@@ -442,7 +449,19 @@ void main() {
     } finally {
       await chat.close();
     }
-  });
+  }
+
+  for (final open in [false, true]) {
+    testWidgets('a stopped turn that carried audio keeps it (a barge-in, '
+        '${open ? 'openChat' : 'createChat'})', (tester) async {
+      if (open &&
+          (backend != PreferredBackend.gpu ||
+              !(Platform.isLinux || Platform.isWindows))) {
+        return;
+      }
+      await stoppedAudioBargeIn(open: open);
+    });
+  }
 
   testWidgets('thinking: after a stop the conversation keeps answering '
       '(#681 review, critical 2)', (tester) async {
@@ -498,23 +517,46 @@ void main() {
       final bad = await _send(
         chat,
         Message.withImage(
-          text: 'What is this?',
+          text: 'Remember the secret code QUUXIMAGE. What is this?',
           imageBytes: Uint8List.fromList([0, 1, 2, 3]),
           isUser: true,
         ),
         'T1 bad image',
       );
-      await _send(chat, name, 'T2 name');
-      await _send(chat, story, 'T3 stopped', stop: true);
-      final first = await _send(chat, askName, 'T4 name');
-      final second = await _send(chat, askName, 'T5 name');
+      final rejectedHistory = await _send(
+        chat,
+        const Message(
+          text:
+              'What secret code did I give before this question? If there was '
+              'no earlier accepted user message, answer exactly NONE.',
+          isUser: true,
+        ),
+        'T2 rejected message absent',
+      );
+      await _send(chat, name, 'T3 name');
+      await _send(chat, story, 'T4 stopped', stop: true);
+      final first = await _send(chat, askName, 'T5 name');
+      final second = await _send(chat, askName, 'T6 name');
 
       expect(bad.error, isNotNull, reason: 'four bytes are not an image');
+      expect(rejectedHistory.error, isNull);
+      expect(rejectedHistory.reply.toUpperCase(), contains('NONE'));
+      expect(rejectedHistory.reply.toUpperCase(), isNot(contains('QUUXIMAGE')));
       for (final turn in [first, second]) {
         expect(turn.error, isNull);
         expect(turn.reply.toLowerCase(), contains('zorblax'));
       }
-      expectRewoundOnly(1);
+      expect(
+        _log.where((l) => l.contains('rebuilt the conversation')),
+        hasLength(1),
+        reason: 'the failed media message requires a history rebuild',
+      );
+      expect(
+        _log.where((l) => l.contains('rewound the conversation')),
+        hasLength(1),
+        reason: 'the later stopped turn still rewinds exactly',
+      );
+      _log.clear();
     } finally {
       await chat.close();
     }

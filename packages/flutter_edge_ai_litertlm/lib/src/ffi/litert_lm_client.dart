@@ -153,17 +153,13 @@ bool keepLastSendAfter(NativeTurnEnd how, NativeLastTurnEnd? end) =>
     how == NativeTurnEnd.cancelled || end == NativeLastTurnEnd.contextFull;
 
 /// The turn end to expose when `send_message_stream` itself returned an
-/// error. No stream task was started in that case, so the conversation is as
-/// the preceding turn left it. Native 0.19 records failures discovered inside
-/// `SendMessageAsync` (for example, a corrupt image rejected while converting
-/// the input) as `failed`; for recovery purposes they are refusals. Preserve
-/// `context_full`, whose failed prefill does poison the native session and
-/// must be rewound before another send.
+/// error. Preserve native's record: LiteRT-LM 0.19 can append a message to its
+/// history before media conversion fails, so a `failed` start must rebuild the
+/// conversation even though no stream task was started. A failure with no
+/// record is a refusal before native accepted a turn.
 @visibleForTesting
 NativeLastTurnEnd streamStartFailureTurnEnd(NativeLastTurnEnd? recorded) =>
-    recorded == NativeLastTurnEnd.contextFull
-    ? NativeLastTurnEnd.contextFull
-    : NativeLastTurnEnd.refused;
+    recorded ?? NativeLastTurnEnd.refused;
 
 /// The absl status code `RESOURCE_EXHAUSTED`.
 const absResourceExhausted = 8;
@@ -2957,6 +2953,8 @@ class LiteRtLmFfiClient {
     Future<void> releaseAndCleanup() async {
       if (cleanedUp) return;
       cleanedUp = true;
+      // Generation has ended. A rewind below registers its own operation in
+      // [_turns], which releaseVirtualConversation also checks before delete.
       _virtualTurnInFlight = false;
       if (_virtualConvStopped &&
           _virtualActiveToken == conversationToken &&
@@ -2974,17 +2972,11 @@ class LiteRtLmFfiClient {
             conversationToken,
           );
           try {
-            final rewind = virtualRewindForTest == null
-                ? await _rewindStoppedTurnLocked(
-                    _virtualConv!,
-                    exchangeJson: exchange,
-                    extraContext: stoppedExtra,
-                  )
-                : await virtualRewindForTest!(
-                    _virtualConv!,
-                    exchange,
-                    stoppedExtra,
-                  );
+            final rewind = await _rewindStoppedTurnLocked(
+              _virtualConv!,
+              exchangeJson: exchange,
+              extraContext: stoppedExtra,
+            );
             if (rewind == StoppedTurnRewind.rewound ||
                 (rewind == StoppedTurnRewind.notCancelled &&
                     exchange != null)) {
@@ -3137,11 +3129,10 @@ class LiteRtLmFfiClient {
         inner = send.stream.listen(
           controller.add,
           onError: (Object e, StackTrace st) {
-            // Native cancelled a turn nobody stopped: the conversation is
-            // poisoned, so the next turn rebuilds it.
-            if (e is LiteRtLmTurnCancelledException) {
-              _virtualConvStopped = true;
-            }
+            // Decision W: after any native error the rejected/partial message
+            // may already be in native history. Rebuild from Dart's history,
+            // which deliberately does not contain this failed turn.
+            _virtualConvStopped = true;
             controller.addError(e, st);
           },
           onDone: () {
@@ -3241,13 +3232,16 @@ class LiteRtLmFfiClient {
     required Map<String, Object?>? partialReply,
     String? extraContext,
   }) {
-    if (_virtualActiveToken != conversationToken || !_virtualConvStopped) {
-      return;
+    if (_virtualActiveToken == conversationToken && _virtualConvStopped) {
+      _virtualStoppedExchanges[conversationToken] = partialReply == null
+          ? null
+          : '[$messageJson,${jsonEncode(partialReply)}]';
+      _virtualStoppedExtraContexts[conversationToken] = extraContext;
     }
-    _virtualStoppedExchanges[conversationToken] = partialReply == null
-        ? null
-        : '[$messageJson,${jsonEncode(partialReply)}]';
-    _virtualStoppedExtraContexts[conversationToken] = extraContext;
+    // A consumer-cancel, error or close can end the Dart turn without
+    // stopGeneration setting the handle's stop flag. Always release cleanup's
+    // readiness wait; the state check above decides whether there is an
+    // exchange to rewind.
     final ready = _virtualStoppedExchangeReady[conversationToken];
     if (ready != null && !ready.isCompleted) ready.complete();
   }
@@ -3282,15 +3276,15 @@ class LiteRtLmFfiClient {
       _releasedVirtualTokens.add(conversationToken);
     }
     if (_virtualActiveToken != conversationToken) return;
-    if (_virtualTurnInFlight) {
+    final conv = _virtualConv;
+    if (_virtualTurnInFlight ||
+        (conv != null && _turns.runningOn(conv) != null)) {
       _pendingReleaseToken = conversationToken;
-      final conv = _virtualConv;
       // A close, not a stop: a turn nobody stopped ends with the distinct
       // closed error expected by the session contract.
       if (conv != null) _turns.cancelForClose(conv);
       return;
     }
-    final conv = _virtualConv;
     if (conv != null) {
       _deleteConversation(conv);
       _virtualConv = null;
@@ -3725,13 +3719,21 @@ class LiteRtLmFfiClient {
     required String? exchangeJson,
     String? extraContext,
   }) async {
-    if (!_hasTurnRewind) return StoppedTurnRewind.unsupported;
+    if (!_hasTurnRewind && virtualRewindForTest == null) {
+      return StoppedTurnRewind.unsupported;
+    }
     if (_isShuttingDown || !_liveConvs.contains(conv)) {
       throw StateError('Conversation was closed before it was rewound');
     }
     final turn = _turns.begin(conv);
     var how = NativeTurnEnd.failed;
     try {
+      final testRewind = virtualRewindForTest;
+      if (testRewind != null) {
+        final outcome = await testRewind(conv, exchangeJson, extraContext);
+        how = NativeTurnEnd.completed;
+        return outcome;
+      }
       final ({int code, int lastTurnEnd, String? message}) result;
       try {
         result = await rewindOffMainIsolate(

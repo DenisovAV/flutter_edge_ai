@@ -139,6 +139,12 @@ void main() {
     await session.stopGeneration();
     sends.last.cancelled();
     expect(await stopped, 'half');
+    await (() async {
+      while (rewinds.isEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+    })().timeout(const Duration(seconds: 1));
+    expect(rewinds, hasLength(1), reason: 'the stopped turn rewinds once');
 
     await completeTurn('recall');
     expect(seeds, hasLength(1), reason: 'rewind reuses the live conversation');
@@ -154,6 +160,71 @@ void main() {
         {'type': 'text', 'text': 'half'},
       ],
     });
+  });
+
+  test('closing during a stopped-turn rewind defers deletion until the rewind '
+      'ends', () async {
+    final rewindStarted = Completer<void>();
+    final finishRewind = Completer<void>();
+    client.virtualRewindForTest = (conv, exchange, extraContext) async {
+      rewindStarted.complete();
+      await finishRewind.future;
+      return StoppedTurnRewind.rewound;
+    };
+
+    final stopped = turn('one');
+    await pumpEventQueue();
+    final conv = sentOn.single;
+    sends.single.chunk(
+      '{"role":"assistant","content":[{"type":"text","text":"half"}]}',
+    );
+    await pumpEventQueue();
+    await session.stopGeneration();
+    sends.single.cancelled();
+    await rewindStarted.future;
+
+    final closing = session.close();
+    await pumpEventQueue();
+    expect(
+      client.isConversationLiveForTest(conv),
+      isTrue,
+      reason: 'the rewind still owns the native pointer',
+    );
+    finishRewind.complete();
+    await closing;
+    expect(await stopped, 'half');
+    await pumpEventQueue();
+    expect(client.isConversationLiveForTest(conv), isFalse);
+  });
+
+  test('cancelling the response subscription releases the next virtual send '
+      'without the stopped-exchange timeout', () async {
+    client.virtualRewindForTest = (conv, exchange, extraContext) async =>
+        StoppedTurnRewind.rewound;
+
+    final handle = (session as FfiInferenceModelSession).handle;
+    final subscription = handle.chat('one').listen((_) {});
+    await pumpEventQueue();
+    sends.single.chunk(
+      '{"role":"assistant","content":[{"type":"text","text":"half"}]}',
+    );
+    await pumpEventQueue();
+    final cancelled = subscription.cancel();
+    client.cancelVirtualTurn(virtualConversationTokenForTest(handle));
+    sends.single.cancelled();
+    await cancelled;
+
+    final next = handle.chat('two').join();
+    await (() async {
+      while (sends.length < 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+    })().timeout(
+      const Duration(seconds: 1),
+      onTimeout: () => fail('the next virtual send waited for readiness'),
+    );
+    sends.last.finished();
+    await next;
   });
 
   test('a failed turn is not replayed: the next turn rebuilds the shared '

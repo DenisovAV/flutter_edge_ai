@@ -1719,19 +1719,15 @@ class _VirtualConversationHandle implements ConversationHandle {
       // A stopped or abandoned turn keeps what it produced, as core's chat
       // does; one that produced nothing is taken back (Rule A).
       if (!failed && assistantText.isNotEmpty) record();
-      if (!failed && _stopRequested) {
-        client.finishVirtualStoppedTurn(
-          token,
-          messageJson: messageJson,
-          partialReply: assistantText.isEmpty
-              ? null
-              : _assistantTurn(
-                  assistantText.toString(),
-                  assistantRaw.toString(),
-                ),
-          extraContext: extraContext,
-        );
-      }
+      client.finishVirtualStoppedTurn(
+        token,
+        messageJson: messageJson,
+        // Decision W takes a failed turn back even if it streamed text.
+        partialReply: failed || assistantText.isEmpty
+            ? null
+            : _assistantTurn(assistantText.toString(), assistantRaw.toString()),
+        extraContext: extraContext,
+      );
       _inFlight = false;
       done.complete();
     }
@@ -1863,6 +1859,17 @@ List<Map<String, Object?>> virtualConversationHistoryForTest(
     throw ArgumentError.value(handle, 'handle', 'is not a virtual session');
   }
   return List.unmodifiable(handle._history);
+}
+
+/// Test seam for driving the client's side of a consumer cancellation without
+/// calling [_VirtualConversationHandle.cancelGeneration], which deliberately
+/// marks the turn as an explicit stop instead.
+@visibleForTesting
+Object virtualConversationTokenForTest(ConversationHandle handle) {
+  if (handle is! _VirtualConversationHandle) {
+    throw ArgumentError.value(handle, 'handle', 'is not a virtual session');
+  }
+  return handle.token;
 }
 
 /// [OptionScorer] over the engine an [FfiInferenceModel] loaded. Holds no

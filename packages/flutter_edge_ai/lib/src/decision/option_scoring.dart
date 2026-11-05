@@ -1,47 +1,18 @@
 // The engine side of InferenceModel.createDecider: what an engine supplies so
-// that core can score options with it. Core owns the decider itself — reading
-// the decision, the prompt, the targets, the call's checks and the answer —
-// once for every engine; an engine implements these calls and whatever its
-// runtime needs to return exact scores.
+// that core can score options with it, through the scorer its
+// InferenceModel.openOptionScorer returns. Core owns the decider itself —
+// reading the decision, the prompt, the targets, the call's checks and the
+// answer — once for every engine; an engine implements these calls and
+// whatever its runtime needs to return exact scores.
 
 import 'package:meta/meta.dart' show experimental, immutable;
 
-import '../interface.dart' show InferenceModel;
 import '../model_management/cancel_token.dart' show CancelToken;
 
-/// Mixed into an `InferenceModel` whose engine can score options, which is
-/// what `InferenceModel.createDecider` needs. Exported for engines
-/// (`package:flutter_edge_ai/engine.dart`); an app never calls it.
-///
-/// A `base mixin`, so that a member added in a later release can arrive with
-/// a default body instead of breaking every engine.
-///
-/// Experimental: may change in a minor release while the API settles.
-@experimental
-base mixin OptionScoringModel on InferenceModel {
-  /// The decision the model file was trained for: the UTF-8 JSON payload
-  /// litetune writes into it (decision contract version 1), however the
-  /// engine's container carries it — a `litetune.decision` section in a
-  /// `.litertlm`. Null when the file carries none: it is an ordinary chat
-  /// model, and `createDecider` refuses it.
-  ///
-  /// Throws [FormatException] when the file's decision cannot be read: a
-  /// container the engine does not understand, a decision stored twice or
-  /// in another form; core turns it into `DeciderUnsupportedException`. An
-  /// engine that cannot read its file at all may throw that directly.
-  Future<String?> readDecisionSection();
-
-  /// The engine's scoring calls, for one decider. Fails with
-  /// `DeciderUnsupportedException` when this model cannot score here — a
-  /// backend the engine does not score on, for one — and with
-  /// [StateError] when the model is closed.
-  Future<OptionScorer> openOptionScorer();
-}
-
-/// An engine's calls for scoring options, on one loaded model. Core makes
-/// one call at a time on a scorer (a decider runs its decisions one after
-/// another); every call runs on the model's own engine, ordered with its
-/// other native work.
+/// An engine's calls for scoring options, on one loaded model: what its
+/// `InferenceModel.openOptionScorer` returns. Core makes one call at a time
+/// on a scorer (a decider runs its decisions one after another); every call
+/// runs on the model's own engine, ordered with its other native work.
 ///
 /// An `abstract base class`, so that a member added in a later release
 /// reaches every engine with its default body. Extend it.

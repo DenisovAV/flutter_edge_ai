@@ -1,10 +1,18 @@
-// The decider SPI (OptionScorer, DeciderUnsupportedException) is @experimental.
-// ignore_for_file: experimental_member_use
+// The decider SPI (OptionScorer, DeciderUnsupportedException) is @experimental;
+// openOptionScorer is @protected (core's decider calls it), and these tests
+// call it directly.
+// ignore_for_file: experimental_member_use, invalid_use_of_protected_member
+
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
+import 'package:flutter_edge_ai_litertlm/src/litertlm_decision_section.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../litertlm_container_fixture.dart';
 
 void main() {
   test('FfiInferenceModel exposes the backend initialized by the runtime', () {
@@ -17,6 +25,60 @@ void main() {
     );
 
     expect(model.activeBackend, PreferredBackend.gpu);
+  });
+
+  group('readDecisionSection', () {
+    FfiInferenceModel modelWith(LitetuneDecisionRead? read) =>
+        FfiInferenceModel(
+          ffiClient: LiteRtLmFfiClient(),
+          maxTokens: 2048,
+          modelType: ModelType.gemmaIt,
+          activeBackend: PreferredBackend.cpu,
+          decisionRead: read,
+          onClose: () {},
+        );
+
+    late Directory dir;
+    setUp(() => dir = Directory.systemTemp.createTempSync('ffi_decision'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    test('returns the payload read when the model was loaded', () async {
+      const payload = '{"contract_version":1}';
+      final file = File('${dir.path}/model.litertlm')
+        ..writeAsBytesSync(
+          litertlmContainer(
+            [(type: 1, modelType: null, bytes: utf8.encode(payload))],
+            items: {
+              0: {'name': litetuneDecisionSectionName},
+            },
+          ),
+        );
+      final read = await LitetuneDecisionRead.read(file.path);
+      expect(await modelWith(read).readDecisionSection(), payload);
+    });
+
+    test('rethrows the error the load-time read captured', () async {
+      final read = await LitetuneDecisionRead.read(
+        '${dir.path}/missing.litertlm',
+      );
+      await expectLater(
+        modelWith(read).readDecisionSection(),
+        throwsA(same(read.error)),
+      );
+    });
+
+    test('a model built without reading its file refuses by name', () async {
+      await expectLater(
+        modelWith(null).readDecisionSection(),
+        throwsA(
+          isA<DeciderUnsupportedException>().having(
+            (e) => e.message,
+            'message',
+            startsWith('This model was built without reading its file'),
+          ),
+        ),
+      );
+    });
   });
 
   group('openOptionScorer', () {

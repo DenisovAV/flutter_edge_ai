@@ -35,7 +35,10 @@
 //
 // Run (one model at a time):
 //   flutter test integration_test/litertlm_inference_decider_test.dart -d macos
-// ignore_for_file: experimental_member_use
+//
+// readDecisionSection and openOptionScorer are @protected (core's decider
+// calls them); these tests call them directly.
+// ignore_for_file: experimental_member_use, invalid_use_of_protected_member
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -225,10 +228,9 @@ void main() {
       final payload = section['payload'] as Map<String, Object?>;
       final type = payload['type'] as String;
       final model = await _load('${pack.path}/model.litertlm');
-      final engine = model as OptionScoringModel;
 
       // The section, exactly as the file carries it.
-      final read = await engine.readDecisionSection();
+      final read = await model.readDecisionSection();
       expect(read, section['payload_text']);
       expect(jsonDecode(read!), payload);
 
@@ -262,7 +264,7 @@ void main() {
       expect(decider.capabilities.questionType.name, type);
       expect(decider.options.map((o) => o.id), listed);
 
-      final scorer = await engine.openOptionScorer();
+      final scorer = await model.openOptionScorer();
       final fullTargets = [for (final id in listed) '$id$terminator'];
       var maxToReference = 0.0;
       var maxToGoldenEngine = 0.0;
@@ -499,7 +501,7 @@ void main() {
           if (payload['none_option'] case final String none) none,
         ];
         final model = await _load(twin.path);
-        final scorer = await (model as OptionScoringModel).openOptionScorer();
+        final scorer = await model.openOptionScorer();
         var worst = 0.0;
         for (final row in (golden['rows'] as List).cast<Map>()) {
           final rendered = await scorer.renderUserMessage(
@@ -815,7 +817,7 @@ void main() {
 
     test('a cancel stops a long scoring run between targets', () async {
       final m = await model();
-      final scorer = await (m as OptionScoringModel).openOptionScorer();
+      final scorer = await m.openOptionScorer();
       final targets = [
         for (final o in _listedOptions(trained))
           '${o.id}${trained['terminator']}',
@@ -845,7 +847,7 @@ void main() {
       'closing the scorer stops its long run and frees the engine',
       () async {
         final m = await model();
-        final scorer = await (m as OptionScoringModel).openOptionScorer();
+        final scorer = await m.openOptionScorer();
         final targets = [
           for (final o in _listedOptions(trained))
             '${o.id}${trained['terminator']}',
@@ -888,7 +890,7 @@ void main() {
       for (final delay in const [Duration.zero, Duration(milliseconds: 30)]) {
         // A fresh model, so that its self-check has not run yet.
         await (await model()).close();
-        final m = await model() as OptionScoringModel;
+        final m = await model();
         final a = await m.openOptionScorer();
         final b = await m.openOptionScorer();
         final aPrepared = expectLater(
@@ -903,9 +905,9 @@ void main() {
         // ignore: avoid_print
         print(
           '[decider] scorer closed at ${delay.inMilliseconds} ms during the '
-          'self-check: the other one got mode ${_modeOf(m as InferenceModel)}',
+          'self-check: the other one got mode ${_modeOf(m)}',
         );
-        expect(_modeOf(m as InferenceModel), 'once');
+        expect(_modeOf(m), 'once');
         await b.close();
       }
     }, skip: skip);
@@ -917,7 +919,7 @@ void main() {
         return;
       }
       final m = await _load(path, modelType: ModelType.functionGemma);
-      expect(await (m as OptionScoringModel).readDecisionSection(), isNull);
+      expect(await m.readDecisionSection(), isNull);
       await expectLater(
         m.createDecider(
           question: question,
@@ -943,7 +945,7 @@ void main() {
           return;
         }
         final m = await _load(path, modelType: ModelType.qwen3);
-        final scorer = await (m as OptionScoringModel).openOptionScorer();
+        final scorer = await m.openOptionScorer();
         await scorer.prepare([
           'yes<|im_end|>',
           'no<|im_end|>',
@@ -959,7 +961,7 @@ void main() {
 
     test('closing the model stops a long scoring run', () async {
       final m = await model();
-      final scorer = await (m as OptionScoringModel).openOptionScorer();
+      final scorer = await m.openOptionScorer();
       final targets = [
         for (final o in _listedOptions(trained))
           '${o.id}${trained['terminator']}',

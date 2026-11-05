@@ -207,6 +207,17 @@ void main() {
     _log.clear();
   }
 
+  /// Every one of [stops] stopped media turns was rebuilt from full messages.
+  void expectRebuiltOnly(int stops) {
+    final rewound = _log.where((l) => l.contains('rewound the conversation'));
+    final rebuilt = _log.where((l) => l.contains('rebuilt the conversation'));
+    final kept = _log.where((l) => l.contains('ended natively before'));
+    expect(rewound, isEmpty, reason: 'stopped audio trusted native rewind');
+    expect(kept, isEmpty, reason: 'a stop was taken for a finished turn');
+    expect(rebuilt, hasLength(stops));
+    _log.clear();
+  }
+
   const name = Message(
     text: 'My name is Zorblax. Greet me in five words.',
     isUser: true,
@@ -355,9 +366,9 @@ void main() {
   });
 
   // Stopped a few words in, before the reply names the city, so the answer has
-  // to come from the audio. On Metal the model names it. On CPU, Gemma 4 E2B
-  // (greedy) answers from its own cut reply instead and says it has no audio:
-  // measured with the same rewind and the same audio, the reply put back
+  // to come from the replayed audio. Before full-message recovery, Gemma 4 E2B
+  // could answer from its own cut reply instead and say it had no audio:
+  // measured with the same native rewind and the same audio, the reply put back
   // decided it — "OK" gave "Paris", "The recording asks what the" (with or
   // without "…" or "(interrupted)") gave "please provide the audio". So on CPU
   // this checks the rewind and that the chat answers, not the city. Android's
@@ -418,7 +429,7 @@ void main() {
         expect(repeated.error, isNull);
         expect(repeated.reply.toLowerCase(), contains('paris'));
       }
-      expectRewoundOnly(1);
+      expectRebuiltOnly(1);
     } finally {
       await chat.close();
     }

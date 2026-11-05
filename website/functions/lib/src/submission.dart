@@ -25,6 +25,7 @@ class Submission {
     required this.packages,
     required this.onDevice,
     required this.email,
+    required this.source,
   });
 
   /// Checks [data], the callable's payload, and throws [SubmissionException]
@@ -37,6 +38,7 @@ class Submission {
       throw SubmissionException('Give a Google Play or an App Store link.');
     }
     final appStore = appStoreUrl == null ? null : parseAppStoreUrl(appStoreUrl);
+    final sourceUrl = _optionalString(data, 'sourceUrl', maxLength: 300);
     final packages = data['packages'];
     if (packages is! List || packages.isEmpty || !packages.every(showcasePackages.contains)) {
       throw SubmissionException('Choose flutter_edge_ai, flutter_gemma or both.');
@@ -55,6 +57,7 @@ class Submission {
       packages: {for (final p in packages) p as String},
       onDevice: onDevice,
       email: email,
+      source: sourceUrl == null ? null : parseGitHubUrl(sourceUrl),
     );
   }
 
@@ -76,6 +79,9 @@ class Submission {
   final String onDevice;
 
   final String email;
+
+  /// The app's public repository, when it is open source.
+  final GitHubSource? source;
 
   /// One document per app, so a second submission of the same app is
   /// refused instead of stored twice. The Google Play id wins when both
@@ -118,11 +124,40 @@ String parseGooglePlayUrl(String url) {
   return (id: int.parse(match.group(1)!), country: country);
 }
 
+/// A public GitHub repository from the form, and the folder of the app in
+/// it when the link names one (`…/tree/<ref>/<path>`).
+typedef GitHubSource = ({String owner, String repo, String? ref, String? path});
+
+/// The link's repository, or [SubmissionException].
+GitHubSource parseGitHubUrl(String url) {
+  final uri = Uri.tryParse(url);
+  final segments = [...?uri?.pathSegments.where((s) => s.isNotEmpty)];
+  if (uri == null ||
+      uri.scheme != 'https' ||
+      uri.host != 'github.com' ||
+      segments.length < 2 ||
+      !_owner.hasMatch(segments[0]) ||
+      !_repo.hasMatch(segments[1]) ||
+      (segments.length > 2 && (segments[2] != 'tree' || segments.length < 4))) {
+    throw SubmissionException('The GitHub link should look like https://github.com/<owner>/<repo>');
+  }
+  final repo = segments[1].endsWith('.git') ? segments[1].substring(0, segments[1].length - 4) : segments[1];
+  return (
+    owner: segments[0],
+    repo: repo,
+    ref: segments.length > 3 ? segments[3] : null,
+    path: segments.length > 4 ? segments.sublist(4).join('/') : null,
+  );
+}
+
 /// Android's rules for an application id: two or more segments, each
 /// starting with a letter.
 final _applicationId = RegExp(r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$');
 
 final _appStoreId = RegExp(r'^id(\d{1,12})$');
+
+final _owner = RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$');
+final _repo = RegExp(r'^[A-Za-z0-9._-]{1,100}$');
 
 String? _optionalString(Map<Object?, Object?> data, String field, {required int maxLength}) {
   final value = data[field];

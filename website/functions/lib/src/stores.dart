@@ -4,14 +4,17 @@ import 'package:http/http.dart' as http;
 
 import 'submission.dart';
 
-/// A store that did not answer as expected, so the app could not be checked.
+/// A store or GitHub did not answer as expected, so the submission could not
+/// be checked. [service] is named to the person; [detail] only in the log.
 class StoreUnavailableException implements Exception {
-  StoreUnavailableException(this.message);
+  StoreUnavailableException(this.service, this.detail);
 
-  final String message;
+  final String service;
+
+  final String detail;
 
   @override
-  String toString() => 'StoreUnavailableException: $message';
+  String toString() => 'StoreUnavailableException: $service: $detail';
 }
 
 /// What the App Store says about an app, from the iTunes Lookup API.
@@ -33,7 +36,7 @@ class StoreCheck {
     final response = await _client.get(uri).timeout(_timeout);
     if (response.statusCode == 404) throw SubmissionException('Google Play has no app $applicationId.');
     if (response.statusCode != 200) {
-      throw StoreUnavailableException('Google Play answered ${response.statusCode} for $applicationId');
+      throw StoreUnavailableException('Google Play', 'answered ${response.statusCode} for $applicationId');
     }
   }
 
@@ -43,7 +46,7 @@ class StoreCheck {
     final uri = Uri.https('itunes.apple.com', '/lookup', {'id': '$id', 'country': ?country});
     final response = await _client.get(uri).timeout(_timeout);
     if (response.statusCode != 200) {
-      throw StoreUnavailableException('The iTunes Lookup API answered ${response.statusCode} for $id');
+      throw StoreUnavailableException('The App Store', 'the iTunes Lookup API answered ${response.statusCode} for $id');
     }
     final body = jsonDecode(response.body);
     if (body case {'results': [final Map<String, Object?> app, ...]}) {

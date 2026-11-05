@@ -65,6 +65,8 @@ String _describe(String id, Map<String, Object?> data, DateTime createdAt) {
       '  app store:  https://apps.apple.com/app/id${appStore['id']} (${appStore['ratings']} ratings)',
     if (appStore?['artworkUrl'] case final String url) '  icon:       $url',
     '  packages:   ${(data['packages'] as List?)?.join(', ')}',
+    if (data['source'] case {'repository': final repository, 'pubspecPath': final path, 'packages': final List found})
+      '  source:     $repository ($path: ${found.join(', ')})',
     '  on device:  ${data['onDevice']}',
     '  contact:    ${data['email']}',
     '',

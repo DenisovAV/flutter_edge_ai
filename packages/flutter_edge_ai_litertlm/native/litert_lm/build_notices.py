@@ -31,9 +31,10 @@ import zipfile
 LITERTLM_REF = "771b06e1a2c7f70a399a718599109facf37e38fd"  # v0.19.0
 # Google's Android library for the same LiteRT-LM release: its
 # THIRD_PARTY_NOTICE.txt is Google's own list for the code the runtime links.
+# Keep committed NOTICES on 0.18 until PR B moves the consumer pin; do not regenerate it in PR A.
 LITERTLM_AAR = (
     "https://dl.google.com/android/maven2/com/google/ai/edge/litertlm/"
-    "litertlm-android/0.18.0/litertlm-android-0.18.0.aar"
+    "litertlm-android/0.19.0/litertlm-android-0.19.0.aar"
 )
 # Windows bundle: DXC runtime (build-litertlm-native*.yml $dxcVer).
 DXC_ZIP = (
@@ -169,8 +170,8 @@ def main():
             "The native LiteRT-LM runtime this package bundles statically "
             "links third-party code. The notices below are the ones Google "
             "publishes for the same release (THIRD_PARTY_NOTICE.txt in "
-            "com.google.ai.edge.litertlm:litertlm-android:0.18.0, built from "
-            "LiteRT-LM v0.18.0). They may name components that a given "
+            "com.google.ai.edge.litertlm:litertlm-android:0.19.0, built from "
+            "LiteRT-LM v0.19.0). They may name components that a given "
             "platform's build does not contain.",
             _text(google["THIRD_PARTY_NOTICE.txt"]),
         ),

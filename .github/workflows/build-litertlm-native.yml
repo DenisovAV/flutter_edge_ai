@@ -854,6 +854,9 @@ jobs:
     name: Publish to GitHub Release
     needs: [build-linux-x86_64, build-linux-arm64, build-windows-x86_64, build-linux-arm64-qualcomm-dispatch]
     if: inputs.publish_release && !inputs.qualcomm_dispatch_linux_only
+    concurrency:
+      group: litertlm-native-release-${{ inputs.release_tag != '' && inputs.release_tag || format('native-{0}', inputs.litertlm_version) }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -944,3 +947,4 @@ jobs:
             macOS/iOS/Android archives are uploaded separately after local builds.
           files: release/*
           fail_on_unmatched_files: true
+          overwrite_files: false

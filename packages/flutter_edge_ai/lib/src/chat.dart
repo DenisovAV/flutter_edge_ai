@@ -393,7 +393,13 @@ class InferenceChat {
   /// its context; for any other failure the chat's history is the one to
   /// replay. A stop or a cancelled subscription is not a failure: what was
   /// generated is kept, as before.
-  Stream<String> _takingBackOnError(EngineTurn turn) {
+  ///
+  /// [takesBack] narrows which errors take the turn back (a structured turn's
+  /// own format failures do not); every error ends the turn the same way.
+  Stream<String> _takingBackOnError(
+    EngineTurn turn, {
+    bool Function(Object error)? takesBack,
+  }) {
     final staged = _stagedFrom;
     _stagedFrom = null;
     _lastTurnTakenBack = false;
@@ -439,7 +445,7 @@ class InferenceChat {
       bound?.cancel();
       final failed = failure;
       if (failed != null) {
-        takeBack();
+        if (takesBack?.call(failed.$1) ?? true) takeBack();
         out.addError(failed.$1, failed.$2);
       } else if (!sawText && await wasStopped()) {
         takeBack();
@@ -697,14 +703,32 @@ class InferenceChat {
   /// [clearHistory] gets the chat a new session. Any other error — the
   /// engine's own, a `ResponseFormatUnsupportedException` from an engine that
   /// refuses the schema at the first send among them — reaches the caller
-  /// unchanged, and nothing is committed, as for a plain turn.
+  /// unchanged, and the turn is taken back as a plain turn the engine fails
+  /// is: the messages staged for it leave the history. So is a turn stopped
+  /// before any text (its failure is still the incomplete reply), as a plain
+  /// turn stopped before any text is.
   Stream<ModelResponse> _streamStructuredResponse() async* {
     _throwIfRebuildFailed();
+    // The same take-back and the same bounded wait after an error as a
+    // plain turn; the format's own failures are not the engine failing.
+    final text = _takingBackOnError(
+      EngineTurn(text: session.getResponseAsync(), end: null),
+      takesBack: (error) => switch (error) {
+        IncompleteStructuredOutputException(
+          end: TurnEnd.stopped,
+          partialText: '',
+        ) =>
+          true,
+        IncompleteStructuredOutputException() ||
+        NonConformingStructuredOutputException() => false,
+        _ => true,
+      },
+    );
     final buffer = StringBuffer();
     StructuredOutputException? failure;
     StackTrace? failureStack;
     try {
-      await for (final chunk in session.getResponseAsync()) {
+      await for (final chunk in text) {
         buffer.write(chunk);
         yield TextResponse(chunk);
       }
@@ -716,6 +740,10 @@ class InferenceChat {
       failureStack = stack;
     }
     final response = buffer.toString();
+    // A turn stopped before any text was taken back: nothing to keep.
+    if (failure != null && _lastTurnTakenBack) {
+      Error.throwWithStackTrace(failure, failureStack!);
+    }
     _commitText(response);
     if (failure == null) {
       await _accountReply(response, emittedFunctionCall: false);

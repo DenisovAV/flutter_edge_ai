@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/src/chat.dart' show chatTurnErrorEndTimeout;
 import 'package:flutter_edge_ai/src/interface.dart' show startEngineTurn;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -841,9 +842,116 @@ void main() {
         final (_, chat) = await chatOver(engine);
         await expectLater(chat.generateChatResponse(), throwsA(same(refusal)));
         expect(engine.sizeCalls, 0);
-        expect(chat.fullHistory.map((m) => m.text), ['Hi']);
+        // The engine failed the turn: its staged message is taken back.
+        expect(chat.fullHistory, isEmpty);
       },
     );
+
+    test('an engine error takes the turn back on both paths; a format '
+        'failure keeps it', () async {
+      for (final streamed in [false, true]) {
+        Future<void> turn(InferenceChat chat, Matcher matcher) => expectLater(
+          streamed
+              ? chat.generateChatResponseAsync().drain<void>()
+              : chat.generateChatResponse(),
+          throwsA(matcher),
+        );
+
+        // The context window refused the input: taken back.
+        const tooLong = ContextLimitException('too long');
+        final refused = _Session(tokens: const [], end: TurnEnd.contextLimit)
+          ..error = tooLong;
+        final (_, first) = await chatOver(refused);
+        final tokensBefore = first.currentTokens;
+        await turn(first, same(tooLong));
+        expect(first.fullHistory, isEmpty, reason: 'streamed: $streamed');
+        expect(first.currentTokens, lessThanOrEqualTo(tokensBefore));
+
+        // Another engine error, after some text: taken back too.
+        final failing = _Session(tokens: ['{"id"'])
+          ..error = StateError('engine failed');
+        final (_, second) = await chatOver(failing);
+        await turn(second, isA<StateError>());
+        expect(second.fullHistory, isEmpty, reason: 'streamed: $streamed');
+
+        // The format's failures: the message and the reply stay.
+        for (final (tokens, end) in [
+          (['{"id"'], TurnEnd.outputLimit),
+          (['{"id": 1}'], TurnEnd.endOfSequence),
+        ]) {
+          final (_, chat) = await chatOver(_Session(tokens: tokens, end: end));
+          await turn(chat, isA<StructuredOutputException>());
+          expect(chat.fullHistory.map((m) => m.text), [
+            'Hi',
+            tokens.join(),
+          ], reason: '${end.name}, streamed: $streamed');
+        }
+      }
+    });
+
+    test('a failed text that never closes ends the structured turn within '
+        'chatTurnErrorEndTimeout, taken back', () async {
+      final previous = chatTurnErrorEndTimeout;
+      chatTurnErrorEndTimeout = const Duration(milliseconds: 50);
+      addTearDown(() => chatTurnErrorEndTimeout = previous);
+      for (final streamed in [false, true]) {
+        final engine = _Session(tokens: ['{"id"'])..endless = true;
+        final (_, chat) = await chatOver(engine);
+        final reply = streamed
+            ? chat.generateChatResponseAsync().drain<void>()
+            : chat.generateChatResponse();
+        await pumpEventQueue();
+        engine.live!.addError(StateError('stuck'));
+        await expectLater(
+          reply.timeout(const Duration(seconds: 5)),
+          throwsA(
+            isA<StateError>().having((e) => e.message, 'message', 'stuck'),
+          ),
+        );
+        expect(chat.fullHistory, isEmpty, reason: 'streamed: $streamed');
+        // The turn let the engine's text go: core's session stopped it.
+        await pumpEventQueue();
+        expect(engine.stops, 1, reason: 'streamed: $streamed');
+      }
+    });
+
+    test('a structured turn stopped before any text is taken back, as a '
+        'plain one is', () async {
+      for (final streamed in [false, true]) {
+        final (_, chat) = await chatOver(
+          _Session(tokens: const [], end: TurnEnd.stopped),
+        );
+        await expectLater(
+          streamed
+              ? chat.generateChatResponseAsync().drain<void>()
+              : chat.generateChatResponse(),
+          throwsA(
+            isA<IncompleteStructuredOutputException>()
+                .having((e) => e.end, 'end', TurnEnd.stopped)
+                .having((e) => e.partialText, 'partialText', ''),
+          ),
+        );
+        expect(chat.fullHistory, isEmpty, reason: 'streamed: $streamed');
+      }
+    });
+
+    test('a stopped structured turn keeps its message (a stop is not the '
+        'engine failing)', () async {
+      final (_, chat) = await chatOver(
+        _Session(tokens: ['{"id"'], end: TurnEnd.stopped),
+      );
+      await expectLater(
+        chat.generateChatResponse(),
+        throwsA(
+          isA<IncompleteStructuredOutputException>().having(
+            (e) => e.end,
+            'end',
+            TurnEnd.stopped,
+          ),
+        ),
+      );
+      expect(chat.fullHistory.map((m) => m.text), ['Hi', '{"id"']);
+    });
 
     test(
       'a failed token count does not replace the format\'s failure',

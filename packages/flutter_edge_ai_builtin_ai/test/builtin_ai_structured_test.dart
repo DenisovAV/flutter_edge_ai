@@ -341,6 +341,97 @@ void main() {
       expect(await askStructured(model), _codeReply);
     });
 
+    test(
+      'a paused first turn keeps its end and the next turn pending',
+      () async {
+        final model = await macModel();
+        host.response = _codeReply;
+        final session = await model.openSession(responseFormat: _codeFormat);
+        addTearDown(session.close);
+        await session.addQueryChunk(
+          const Message(text: 'A poem', isUser: true),
+        );
+
+        // ignore: invalid_use_of_protected_member
+        final first = session.startTurn();
+        final firstChunks = <String>[];
+        final firstDone = Completer<void>();
+        final firstSubscription = first.text.listen(
+          firstChunks.add,
+          onError: firstDone.completeError,
+          onDone: firstDone.complete,
+        );
+        addTearDown(() {
+          if (firstSubscription.isPaused) firstSubscription.resume();
+        });
+        firstSubscription.pause();
+        var firstEnded = false;
+        unawaited(first.end!.then((_) => firstEnded = true));
+        await pumpEventQueue();
+
+        await session.addQueryChunk(const Message(text: 'Again', isUser: true));
+        // ignore: invalid_use_of_protected_member
+        final second = session.startTurn();
+        var secondDone = false;
+        final secondReply = second.text.join().whenComplete(
+          () => secondDone = true,
+        );
+        await pumpEventQueue();
+
+        expect(firstEnded, isFalse);
+        expect(secondDone, isFalse);
+        expect(
+          host.calls.where((call) => call == 'generateStructuredResponse'),
+          hasLength(1),
+        );
+
+        firstSubscription.resume();
+        await firstDone.future;
+        expect(firstChunks, [_codeReply]);
+        expect(await first.end, TurnEnd.endOfSequence);
+        expect(await secondReply, _codeReply);
+        expect(
+          host.calls.where((call) => call == 'generateStructuredResponse'),
+          hasLength(2),
+        );
+      },
+    );
+
+    test('a failed turn end waits for its paused text to finish', () async {
+      final model = await macModel();
+      final failure = LocalAiGenerationException('guardrail');
+      host.generateResponseError = failure;
+      await model.openSession(responseFormat: _codeFormat);
+      final engine =
+          (model.sessions.single as dynamic).engineSession
+              as InferenceModelSession;
+      await engine.addQueryChunk(const Message(text: 'A poem', isUser: true));
+
+      // ignore: invalid_use_of_protected_member
+      final turn = engine.startTurn();
+      final textDone = Completer<void>();
+      final errors = <Object>[];
+      final subscription = turn.text.listen(
+        (_) {},
+        onError: errors.add,
+        onDone: textDone.complete,
+      );
+      addTearDown(() {
+        if (subscription.isPaused) subscription.resume();
+      });
+      subscription.pause();
+      var ended = false;
+      unawaited(turn.end!.then((_) => ended = true));
+      await pumpEventQueue();
+
+      expect(ended, isFalse);
+
+      subscription.resume();
+      await textDone.future;
+      expect(errors, [same(failure)]);
+      expect(await turn.end, TurnEnd.closed);
+    });
+
     test('a plain session on the same model sends no schema', () async {
       final model = await macModel();
       host.response = _codeReply;

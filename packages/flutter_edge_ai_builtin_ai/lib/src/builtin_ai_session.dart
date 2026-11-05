@@ -262,8 +262,9 @@ final class _StructuredTurn {
   final end = Completer<TurnEnd>();
   bool stopRequested = false;
   bool closing = false;
+  bool _ending = false;
 
-  bool get ended => end.isCompleted;
+  bool get ended => _ending || end.isCompleted;
 
   /// The end the consumer caused (a close before a stop), or null.
   TurnEnd? get askedEnd => closing
@@ -275,9 +276,9 @@ final class _StructuredTurn {
   /// Delivers [reply] (if any), closes the text, then reports [how].
   void finish(TurnEnd how, [String reply = '']) {
     if (ended) return;
+    _ending = true;
     if (reply.isNotEmpty) text.add(reply);
-    unawaited(text.close());
-    end.complete(how);
+    unawaited(_closeThenEnd(how));
   }
 
   /// Puts [error] on the text. A failed turn has no end of its own, and
@@ -285,8 +286,16 @@ final class _StructuredTurn {
   /// [TurnEnd.closed], as core reports a turn that failed to start.
   void fail(Object error, StackTrace stack) {
     if (ended) return;
+    _ending = true;
     text.addError(error, stack);
-    unawaited(text.close());
-    end.complete(TurnEnd.closed);
+    unawaited(_closeThenEnd(TurnEnd.closed));
+  }
+
+  Future<void> _closeThenEnd(TurnEnd how) async {
+    try {
+      await text.close();
+    } finally {
+      end.complete(how);
+    }
   }
 }

@@ -14,7 +14,7 @@
 //   model with linear attention state);
 // - an audio clip in one session, a turn on another, the clip recalled;
 // - a full context: an input longer than the window and one longer than the
-//   room left both fail their turn with LiteRtLmContextFullException (end
+//   room left both fail their turn with ContextLimitException (end
 //   TurnEnd.contextLimit), the session then answers again with its history
 //   intact; once no prefill fits, every turn ends that way and nothing is
 //   dropped; in openChat and createChat the refused message is taken back
@@ -353,7 +353,7 @@ void main() {
   });
 
   testWidgets('an input that does not fit fails its turn with '
-      'LiteRtLmContextFullException (end contextLimit), the session answers '
+      'ContextLimitException (end contextLimit), the session answers '
       'again, and nothing of its history is dropped', (tester) async {
     final m = await ensureModel();
     final s = await open();
@@ -366,7 +366,7 @@ void main() {
         'Summarise: $tooLong',
       );
       expect(endTooLong, TurnEnd.contextLimit);
-      expect(errorTooLong, isA<LiteRtLmContextFullException>());
+      expect(errorTooLong, isA<ContextLimitException>());
       final name1 = (await _ask(
         s,
         'What is my name? Answer with the name only.',
@@ -404,9 +404,9 @@ void main() {
         'filledAfter=$turns short=$shortEnd again=$again',
       );
       if (shortEnd == TurnEnd.contextLimit) {
-        expect(shortError, isA<LiteRtLmContextFullException>());
+        expect(shortError, isA<ContextLimitException>());
         expect(again, TurnEnd.contextLimit);
-        expect(againError, isA<LiteRtLmContextFullException>());
+        expect(againError, isA<ContextLimitException>());
       } else {
         expect(shortReply.toLowerCase(), contains('zorblax'));
       }
@@ -453,7 +453,7 @@ void main() {
           'chat/$kind refused=${error.runtimeType} '
           'historyKept=${after.length == before.length}',
         );
-        expect(error, isA<LiteRtLmContextFullException>());
+        expect(error, isA<ContextLimitException>());
         expect(after, before, reason: 'the refused message is taken back');
         expect((name as TextResponse).token.toLowerCase(), contains('zorblax'));
       } finally {

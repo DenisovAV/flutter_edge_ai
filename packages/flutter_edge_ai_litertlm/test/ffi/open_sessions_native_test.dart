@@ -348,7 +348,7 @@ void main() {
   }, skip: _skip);
 
   test('an input that does not fit fails its turn with '
-      'LiteRtLmContextFullException (end contextLimit), the session answers '
+      'ContextLimitException (end contextLimit), the session answers '
       'again, and nothing of its history is dropped', () async {
     final s = await open();
     try {
@@ -359,7 +359,7 @@ void main() {
         'Summarise: $tooLong',
       );
       expect(endTooLong, TurnEnd.contextLimit);
-      expect(errorTooLong, isA<LiteRtLmContextFullException>());
+      expect(errorTooLong, isA<ContextLimitException>());
       final name1 = (await _ask(
         s,
         'What is my name? Answer with the name only.',
@@ -397,9 +397,9 @@ void main() {
         'filledAfter=$turns short=$shortEnd again=$again',
       );
       if (shortEnd == TurnEnd.contextLimit) {
-        expect(shortError, isA<LiteRtLmContextFullException>());
+        expect(shortError, isA<ContextLimitException>());
         expect(again, TurnEnd.contextLimit);
-        expect(againError, isA<LiteRtLmContextFullException>());
+        expect(againError, isA<ContextLimitException>());
       } else {
         expect(shortReply.toLowerCase(), contains('zorblax'));
       }
@@ -446,7 +446,7 @@ void main() {
           'historyKept=${after.length == before.length} '
           'recalled=${'$name'.toLowerCase().contains('zorblax')}',
         );
-        expect(error, isA<LiteRtLmContextFullException>());
+        expect(error, isA<ContextLimitException>());
         expect(after, before, reason: 'the refused message is taken back');
         expect((name as TextResponse).token.toLowerCase(), contains('zorblax'));
       } finally {

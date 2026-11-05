@@ -684,14 +684,19 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// [stopGeneration] was called during the current turn.
   bool _stopAsked = false;
 
-  /// [turn] with a failure native ended `context_full` replaced by a
-  /// [LiteRtLmContextFullException], which says what happened and what the
-  /// caller can do; any other failure is passed on as it is.
+  /// [turn] with a failure native ended `context_full` replaced by core's
+  /// public [ContextLimitException], which says what happened and preserves
+  /// native's token-count details; any other failure is passed on as it is.
   Stream<String> _namingContextFull(Stream<String> turn) => turn.transform(
     StreamTransformer.fromHandlers(
       handleError: (error, stack, sink) => sink.addError(
         handle.lastTurnEnd == NativeLastTurnEnd.contextFull
-            ? LiteRtLmContextFullException(error)
+            ? ContextLimitException(
+                'The input token count does not fit the context window space '
+                'left; the session was restored to before this turn. Send a '
+                'shorter message, or close the session and open a new one. '
+                'Native token counts: $error',
+              )
             : error,
         stack,
       ),
@@ -1039,7 +1044,7 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// A turn's end is what native's turn-end record says
   /// ([liteRtLmCompletedTurnEnd]). A turn native ended `context_full` (the
   /// input did not fit what the window has left) fails its text with a
-  /// [LiteRtLmContextFullException], and its end is [TurnEnd.contextLimit];
+  /// [ContextLimitException], and its end is [TurnEnd.contextLimit];
   /// core's chat then takes the refused message back out of its history. The
   /// handle restores the conversation before the next turn (core 2.6.0
   /// design §6.4b).
@@ -1071,26 +1076,6 @@ class FfiInferenceModelSession extends InferenceModelSession
     handle.close();
     onClose();
   }
-}
-
-/// A turn whose input did not fit what the context window had left (native's
-/// turn-end record `context_full`): the turn ended as [TurnEnd.contextLimit]
-/// before the model saw the input. The session was restored to before it and
-/// answers a shorter message; when even a short one is refused, the window
-/// has no room for any input left, and the session must be closed and a new
-/// one opened (nothing of its history is dropped behind the caller's back).
-final class LiteRtLmContextFullException implements Exception {
-  const LiteRtLmContextFullException(this.nativeError);
-
-  /// The error native ended the turn with.
-  final Object nativeError;
-
-  @override
-  String toString() =>
-      'LiteRtLmContextFullException: the input does not fit what the '
-      'context window has left (TurnEnd.contextLimit); the session is '
-      'restored to before this turn. Send a shorter message, or close the '
-      'session and open a new one. Native: $nativeError';
 }
 
 /// How a native turn whose text ran to its end ended, from native's turn-end
@@ -1877,6 +1862,17 @@ class _VirtualConversationHandle implements ConversationHandle {
     _history.clear();
     client.releaseVirtualConversation(token);
   }
+}
+
+/// Test seam for the history a virtual session would replay on its next turn.
+@visibleForTesting
+List<Map<String, Object?>> virtualConversationHistoryForTest(
+  ConversationHandle handle,
+) {
+  if (handle is! _VirtualConversationHandle) {
+    throw ArgumentError.value(handle, 'handle', 'is not a virtual session');
+  }
+  return List.unmodifiable(handle._history);
 }
 
 /// [OptionScorer] over the engine an [FfiInferenceModel] loaded. Holds no

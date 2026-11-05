@@ -2887,6 +2887,18 @@ class LiteRtLmFfiClient {
   /// turn was in flight. The teardown is deferred to the turn's cleanup.
   Object? _pendingReleaseToken;
 
+  /// Virtual sessions that have closed. A close can land while the session's
+  /// turn is queued on [_nativeMutex], before that token owns [_virtualConv],
+  /// so [releaseVirtualConversation] cannot identify a native pointer to
+  /// cancel or delete yet. The queued turn checks this tombstone immediately
+  /// after it acquires the mutex and again after an asynchronous create.
+  final Set<Object> _releasedVirtualTokens = {};
+
+  /// Turns waiting for, or holding, the virtual-session mutex per token. This
+  /// bounds [_releasedVirtualTokens]: the close tombstone is forgotten after
+  /// every already-started turn of that closed handle has drained.
+  final Map<Object, int> _virtualTurnCounts = {};
+
   Stream<String> startVirtualTurn({
     required Object conversationToken,
     required String messageJson,
@@ -2907,6 +2919,7 @@ class LiteRtLmFfiClient {
     // cancel instead lets the next turn start under a task still running.
     final controller = StreamController<String>();
     var mutexHeld = false;
+    var cleanedUp = false;
     StreamSubscription<String>? inner;
     // Set by onCancel. If the consumer cancels while onListen is still awaiting
     // the mutex or the conversation create, `inner` is null so the cancel can't
@@ -2915,7 +2928,21 @@ class LiteRtLmFfiClient {
     var cancelledByConsumer = false;
 
     Future<void> releaseAndCleanup() async {
+      if (cleanedUp) return;
+      cleanedUp = true;
       _virtualTurnInFlight = false;
+      // A close can land while this turn creates its conversation. At that
+      // point releaseVirtualConversation saw another token as active; delete
+      // the newly-created conversation here before handing the mutex on.
+      if (_releasedVirtualTokens.contains(conversationToken) &&
+          _virtualActiveToken == conversationToken) {
+        final conv = _virtualConv;
+        if (conv != null) {
+          _deleteConversation(conv);
+          _virtualConv = null;
+          _virtualActiveToken = null;
+        }
+      }
       // Honor a teardown that a closing session deferred while we held the lock.
       if (_pendingReleaseToken != null) {
         final pending = _pendingReleaseToken;
@@ -2933,9 +2960,21 @@ class LiteRtLmFfiClient {
         mutexHeld = false;
         _nativeMutex.release();
       }
+      final turnsLeft = (_virtualTurnCounts[conversationToken] ?? 1) - 1;
+      if (turnsLeft == 0) {
+        _virtualTurnCounts.remove(conversationToken);
+        _releasedVirtualTokens.remove(conversationToken);
+      } else {
+        _virtualTurnCounts[conversationToken] = turnsLeft;
+      }
     }
 
     controller.onListen = () async {
+      _virtualTurnCounts.update(
+        conversationToken,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
       // A turn that fails before its send has no end of its own: never read
       // the session's previous one for it.
       _virtualTurnEnds[conversationToken] = null;
@@ -2943,6 +2982,9 @@ class LiteRtLmFfiClient {
         await _nativeMutex.acquire();
         mutexHeld = true;
         _virtualTurnInFlight = true;
+        if (_releasedVirtualTokens.contains(conversationToken)) {
+          throw LiteRtLmTurnClosedException();
+        }
         if (_virtualActiveToken != conversationToken ||
             _virtualConv == null ||
             _virtualConvStopped) {
@@ -2977,6 +3019,11 @@ class LiteRtLmFfiClient {
             _virtualConv = conv;
             _virtualActiveToken = conversationToken;
           });
+        }
+        // Conversation creation yields to the event loop. A close during that
+        // await must still prevent the send and tear down what was just made.
+        if (_releasedVirtualTokens.contains(conversationToken)) {
+          throw LiteRtLmTurnClosedException();
         }
         // _guardCreate above yields the event loop, so a shutdown() queued
         // behind us can delete _virtualConv before we get here. Surface it as a
@@ -3118,6 +3165,11 @@ class LiteRtLmFfiClient {
   }
 
   void releaseVirtualConversation(Object conversationToken) {
+    // Remember the close even when another virtual session owns the shared
+    // conversation: this token may already have a turn queued on the mutex.
+    if ((_virtualTurnCounts[conversationToken] ?? 0) > 0) {
+      _releasedVirtualTokens.add(conversationToken);
+    }
     if (_virtualActiveToken != conversationToken) return;
     if (_virtualTurnInFlight) {
       _pendingReleaseToken = conversationToken;
@@ -3890,6 +3942,8 @@ class LiteRtLmFfiClient {
       _virtualConv = null;
       _virtualActiveToken = null;
     }
+    _releasedVirtualTokens.clear();
+    _virtualTurnCounts.clear();
     // A conversation released while an operation ran on it is deleted when
     // that operation ends; the engine must outlive both. Said out loud when it
     // takes long: nothing else would show why shutdown does not return.

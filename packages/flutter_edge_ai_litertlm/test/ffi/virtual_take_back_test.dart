@@ -1,6 +1,7 @@
 // Virtual open sessions take a failed turn (decision W) and a turn stopped
 // before it produced anything (Rule A) back out of their history: the next
 // turn rebuilds the shared conversation from a history without it.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 
@@ -125,4 +126,116 @@ void main() {
       expect(users(seeds.last), ['one']);
     },
   );
+
+  test(
+    'closing a virtual session queued behind another turn prevents its '
+    'send, ends it closed, and leaves no history or native conversation',
+    () async {
+      final queuedClient = LiteRtLmFfiClient();
+      final convs = <Pointer<LiteRtLmConversation>>[];
+      final queuedSends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
+      queuedClient
+        ..virtualCreateForTest = (_) async {
+          final conv = Pointer<LiteRtLmConversation>.fromAddress(
+            0x7000 + convs.length * 16,
+          );
+          queuedClient.registerLiveForTest(conv);
+          convs.add(conv);
+          return conv;
+        }
+        ..virtualSendForTest = (conv) {
+          final send = queuedClient.newTurnForTest(conv);
+          queuedSends.add(send);
+          return send;
+        };
+      final queuedModel = FfiInferenceModel(
+        ffiClient: queuedClient,
+        maxTokens: 1024,
+        modelType: ModelType.gemmaIt,
+        activeBackend: PreferredBackend.cpu,
+        onClose: () {},
+      );
+      final a = await queuedModel.openSession() as FfiInferenceModelSession;
+      final b = await queuedModel.openSession() as FfiInferenceModelSession;
+
+      await a.addQueryChunk(const Message(text: 'A', isUser: true));
+      final aTurn = _startTurn(a);
+      final aText = aTurn.text.toList();
+      await pumpEventQueue();
+      expect(queuedSends, hasLength(1));
+
+      await b.addQueryChunk(const Message(text: 'B', isUser: true));
+      final bTurn = _startTurn(b);
+      final bText = bTurn.text.toList();
+      await pumpEventQueue();
+      expect(queuedSends, hasLength(1), reason: 'B is queued behind A');
+
+      await b.close();
+      queuedSends.single.finished();
+      expect(await aText, isEmpty);
+      await pumpEventQueue();
+      expect(queuedSends, hasLength(1), reason: 'closed B never sends');
+      expect(await bText, isEmpty);
+      expect(await bTurn.end, TurnEnd.closed);
+      expect(virtualConversationHistoryForTest(b.handle), isEmpty);
+      expect(
+        convs,
+        hasLength(1),
+        reason: 'closed B never creates a conversation',
+      );
+
+      await a.close();
+      expect(
+        convs.where(queuedClient.isConversationLiveForTest),
+        isEmpty,
+        reason: 'the only native conversation belonged to A and was released',
+      );
+    },
+  );
+
+  test('closing a virtual session while its conversation is being created '
+      'deletes that conversation and never sends', () async {
+    final creatingClient = LiteRtLmFfiClient();
+    final conv = Pointer<LiteRtLmConversation>.fromAddress(0x8000);
+    final createStarted = Completer<void>();
+    final finishCreate = Completer<void>();
+    var sends = 0;
+    creatingClient
+      ..virtualCreateForTest = (_) async {
+        createStarted.complete();
+        await finishCreate.future;
+        creatingClient.registerLiveForTest(conv);
+        return conv;
+      }
+      ..virtualSendForTest = (conversation) {
+        sends++;
+        return creatingClient.newTurnForTest(conversation);
+      };
+    final creatingModel = FfiInferenceModel(
+      ffiClient: creatingClient,
+      maxTokens: 1024,
+      modelType: ModelType.gemmaIt,
+      activeBackend: PreferredBackend.cpu,
+      onClose: () {},
+    );
+    final session =
+        await creatingModel.openSession() as FfiInferenceModelSession;
+    await session.addQueryChunk(const Message(text: 'queued', isUser: true));
+    final turn = _startTurn(session);
+    final text = turn.text.toList();
+    await createStarted.future;
+
+    await session.close();
+    finishCreate.complete();
+
+    expect(await text, isEmpty);
+    expect(await turn.end, TurnEnd.closed);
+    expect(sends, 0);
+    expect(virtualConversationHistoryForTest(session.handle), isEmpty);
+    expect(creatingClient.isConversationLiveForTest(conv), isFalse);
+  });
 }
+
+/// The session's `startTurn`, which is protected: a test may call it.
+// ignore: invalid_use_of_protected_member
+EngineTurn _startTurn(FfiInferenceModelSession session) => session.startTurn();

@@ -1,0 +1,4 @@
+# Written on every deploy: the SDK's spec builder (build_runner) writes
+# functions.yaml, and the CLI compiles bin/server.dart to bin/server.
+functions.yaml
+bin/server

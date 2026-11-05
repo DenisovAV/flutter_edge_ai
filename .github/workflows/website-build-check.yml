@@ -39,6 +39,15 @@ jobs:
           dart pub get
           jaspr build --sitemap-domain "https://flutteredge.ai"
 
+      - name: Analyze and test the showcase submission function
+        # Its own package (website/functions), which the site build never
+        # compiles: it is deployed with `firebase deploy --only functions:showcase`.
+        working-directory: website/functions
+        run: |
+          dart pub get
+          dart analyze --fatal-infos
+          dart test
+
       - name: Export codelabs (claat static export → /codelabs)
         # The SAME script the merge workflow runs — that is the point of this
         # step. It used to be a hand-copied twin, which meant the PR gate could

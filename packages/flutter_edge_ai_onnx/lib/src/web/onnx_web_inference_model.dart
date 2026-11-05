@@ -463,6 +463,9 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
       // even though the running Transformers.js Promise still has to settle.
       final sessions = Set<OnnxWebSession>.identity()..addAll(_openSessions);
       if (_session case final session?) sessions.add(session);
+      // No timeout: releasing the pipeline while Transformers.js may still
+      // use it is unsafe. Core's ModelCloseGate bounds a closing model wait
+      // at 60 seconds and surfaces its TimeoutException to the next build.
       await Future.wait([for (final session in sessions) session.close()]);
     } finally {
       _pipeline = null;
@@ -585,6 +588,8 @@ class OnnxWebSession extends InferenceModelSession {
 
     final controller = StreamController<String>();
     final replyBuffer = StringBuffer();
+    var pendingDeliveries = 0;
+    Completer<void>? deliveriesDrained;
     final genSw = Stopwatch()..start();
     int? firstChunkMs;
     var chunkCount = 0;
@@ -686,8 +691,27 @@ class OnnxWebSession extends InferenceModelSession {
       if (terminated) return;
       firstChunkMs ??= genSw.elapsedMilliseconds;
       chunkCount++;
+      if (!controller.isClosed) {
+        pendingDeliveries++;
+        deliveriesDrained ??= Completer<void>();
+        controller.add(text);
+      }
+    }
+
+    String deliverToken(String text) {
       replyBuffer.write(text);
-      if (!controller.isClosed) controller.add(text);
+      pendingDeliveries--;
+      if (pendingDeliveries == 0) {
+        deliveriesDrained?.complete();
+        deliveriesDrained = null;
+      }
+      return text;
+    }
+
+    void dropPendingDeliveries() {
+      pendingDeliveries = 0;
+      deliveriesDrained?.complete();
+      deliveriesDrained = null;
     }
 
     Future<void> runGeneration(List<Map<String, String>> messages) async {
@@ -772,6 +796,7 @@ class OnnxWebSession extends InferenceModelSession {
         claimInput();
         final messages = List<Map<String, String>>.from(_history);
         await runGeneration(messages);
+        await (deliveriesDrained?.future ?? Future<void>.value());
         // Record exactly the assistant text streamed before a stop. An empty
         // stopped turn is taken back, while a natural empty completion keeps
         // its input and no assistant message, matching InferenceChat.
@@ -821,9 +846,15 @@ class OnnxWebSession extends InferenceModelSession {
     // Also runs once the turn has closed the stream itself; only a cancel
     // before that is the consumer's stop.
     controller.onCancel = () {
-      if (!controller.isClosed) stop(false);
+      if (!controller.isClosed) {
+        dropPendingDeliveries();
+        stop(false);
+      }
     };
-    return (text: controller.stream, stopped: () => stoppedByConsumer);
+    return (
+      text: controller.stream.map(deliverToken),
+      stopped: () => stoppedByConsumer,
+    );
   }
 
   /// Exact token count via the pipeline's own tokenizer — NOT an estimate
@@ -887,6 +918,10 @@ class OnnxWebSession extends InferenceModelSession {
     for (final stop in _turnStops.toList()) {
       stop(true);
     }
+    // No timeout: returning would let the model release a pipeline that
+    // Transformers.js may still use. Core's ModelCloseGate bounds a closing
+    // model wait at 60 seconds and surfaces its TimeoutException to the next
+    // build.
     await Future.wait([
       for (final settlement in _turnSettlements.toList()) settlement.future,
     ]);

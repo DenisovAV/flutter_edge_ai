@@ -530,6 +530,50 @@ void main() {
     },
   );
 
+  test(
+    'a cancelled queued token is not committed to session history',
+    () async {
+      _tf['holdOnInterrupt'] = true.toJS;
+      final model = _model();
+      final session = await model.openSession(systemInstruction: 'A');
+
+      await session.addQueryChunk(const Message(text: 'a1', isUser: true));
+      final first = _turn(session);
+      final delivered = <String>[];
+      final firstDelivered = Completer<void>();
+      late final StreamSubscription<String> subscription;
+      late Future<void> cancellation;
+      late final JSObject firstCall;
+      subscription = first.text.listen((text) {
+        delivered.add(text);
+        if (text == 'visible') {
+          _emit(firstCall, 'queued-but-cancelled');
+          cancellation = subscription.cancel();
+          firstDelivered.complete();
+        }
+      });
+      firstCall = await _call(1);
+      _emit(firstCall, 'visible');
+      await firstDelivered.future;
+      await cancellation;
+      expect(delivered, ['visible']);
+      expect(await first.end, TurnEnd.stopped);
+      _finish(firstCall);
+
+      final second = await _ask(session, 'a2');
+      final secondCall = await _call(2);
+      expect(_contents(secondCall), [
+        'system:A',
+        'user:a1',
+        'assistant:visible',
+        'user:a2',
+      ]);
+      _finish(secondCall);
+      await second.done;
+      await model.close();
+    },
+  );
+
   test('openChat keeps input after a natural empty completion', () async {
     _tf['holdOnInterrupt'] = true.toJS;
     final model = _model();

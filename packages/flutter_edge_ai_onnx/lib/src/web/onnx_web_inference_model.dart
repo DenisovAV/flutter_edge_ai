@@ -512,11 +512,17 @@ class OnnxWebSession extends InferenceModelSession {
   /// over yet: the one generating, and any still waiting for the mutex.
   final Set<void Function()> _turnStops = {};
 
-  /// The turn of this session that is listened to and not over yet, if any.
-  /// A session serves one turn at a time: a second one would snapshot the
-  /// history while the first still owes its reply, and a stop of either
-  /// would then drop the other's input.
+  /// The turn of this session that is listened to, not over and not
+  /// stopped, if any. A session serves one live turn at a time. A stopped
+  /// turn frees the session at once: the next turn waits on the mutex for the
+  /// stopped generation to settle, then reads the history it left.
   Object? _turnInFlight;
+
+  /// User messages in [_history] that an unfinished turn has taken as its
+  /// input, by identity. A turn takes the user messages after the last reply
+  /// that no other turn has taken, so a message added for the next turn while
+  /// a stopped turn settles stays the next turn's.
+  final Set<Map<String, String>> _claimedInput = Set.identity();
 
   StateError _turnUnderWay() => StateError(
     'A turn of this OnnxWebSession is already under way. Read it to its '
@@ -576,23 +582,47 @@ class OnnxWebSession extends InferenceModelSession {
     var mutexHeld = false;
     var cancelled = false;
 
-    // Where this turn's input ends in [_history]: the entries up to here
-    // that follow the last reply are its user messages. Set when it is
-    // listened to, then when it snapshots the history.
-    var inputEnd = 0;
-
-    // A turn stopped before it produced anything leaves no trace: its user
-    // messages leave the history, so the history keeps alternating (Gemma
-    // 3's template raises on two user turns in a row). There is no rewind on
-    // web to replay the stopped exchange. Messages added after this turn's
-    // input are kept.
-    void dropInput() {
-      final end = inputEnd < _history.length ? inputEnd : _history.length;
-      var start = end;
-      while (start > 0 && _history[start - 1]['role'] == 'user') {
-        start--;
+    // This turn's user messages, by identity: taken when it is listened to,
+    // and again (for messages added while it waited) when it is stopped while
+    // waiting or when it snapshots the history.
+    final input = <Map<String, String>>[];
+    void claimInput() {
+      final more = <Map<String, String>>[];
+      for (var i = _history.length - 1; i >= 0; i--) {
+        final entry = _history[i];
+        if (entry['role'] != 'user' || _claimedInput.contains(entry)) break;
+        more.add(entry);
       }
-      _history.removeRange(start, end);
+      for (final entry in more.reversed) {
+        input.add(entry);
+        _claimedInput.add(entry);
+      }
+    }
+
+    // A turn that produced nothing — stopped before its first chunk, or
+    // empty — or that failed leaves no trace: its user messages leave the history, so the history keeps
+    // alternating (Gemma 3's template raises on two user turns in a row).
+    // There is no rewind on web to replay the stopped exchange. Messages
+    // another turn took are kept.
+    void dropInput() {
+      final mine = Set<Map<String, String>>.identity()..addAll(input);
+      _history.removeWhere(mine.contains);
+      _claimedInput.removeAll(input);
+    }
+
+    // The reply goes right after this turn's input, not at the end: a message
+    // for the next turn may have been added while this one settled.
+    void recordReply(String reply) {
+      final entry = {'role': 'assistant', 'content': reply};
+      final last = input.isEmpty
+          ? -1
+          : _history.lastIndexWhere((e) => identical(e, input.last));
+      if (last < 0) {
+        _history.add(entry);
+      } else {
+        _history.insert(last + 1, entry);
+      }
+      _claimedInput.removeAll(input);
     }
 
     void releaseMutexIfHeld() {
@@ -610,19 +640,22 @@ class OnnxWebSession extends InferenceModelSession {
     // race a pre-acquire cancel into a deadlock or let a next turn overlap.
     void stop() {
       cancelled = true;
+      // A stopped turn frees the session: the next turn of it may start now
+      // and waits on the mutex for this one to settle. The mutex package
+      // (3.1.0) serves waiters first in, first out, so this turn records its
+      // reply or drops its input before that next turn reads the history.
+      if (identical(_turnInFlight, token)) _turnInFlight = null;
       // Interrupt ONLY when THIS stream owns the running generation: the
       // mutex is model-wide, and this session's criteria may belong to an
-      // earlier turn of it that is running while this one waits.
+      // earlier, stopped turn of it that is still settling.
       if (mutexHeld) {
         _activeStoppingCriteria?.interrupt();
         return;
       }
       // Still waiting for the mutex: end it now rather than when the turn
-      // ahead finishes, and let the next turn of this session start. Its
-      // onListen bails (and drops its input) right after it acquires — before
-      // that next turn can read the history, because the mutex package
-      // (3.1.0) serves waiters first in, first out.
-      if (identical(_turnInFlight, token)) _turnInFlight = null;
+      // ahead finishes. Messages added up to now are its input; its onListen
+      // drops them right after it acquires.
+      claimInput();
       if (!controller.isClosed) unawaited(controller.close());
     }
 
@@ -692,7 +725,7 @@ class OnnxWebSession extends InferenceModelSession {
         if (identical(_turnInFlight, token)) _turnInFlight = null;
       }
 
-      inputEnd = _history.length;
+      claimInput();
       try {
         await generationMutex.acquire();
         mutexHeld = true;
@@ -707,21 +740,21 @@ class OnnxWebSession extends InferenceModelSession {
         }
         // Snapshot history AFTER acquiring the lock: messages added while
         // this turn waited are its input too. (The mutex package, 3.1.0,
-        // serves waiters first in, first out, so a turn stopped while waiting
-        // has dropped its input by now.)
+        // serves waiters first in, first out, so a turn of this session
+        // stopped ahead of this one has recorded its reply or dropped its
+        // input by now.)
+        claimInput();
         final messages = List<Map<String, String>>.from(_history);
-        inputEnd = messages.length;
         await runGeneration(messages);
         // Record the (possibly interrupted) assistant reply that was streamed
         // to the consumer, so the next turn's history reflects it. Skip an
         // empty reply (interrupted before the first token) to avoid a blank
         // assistant turn polluting the context.
+        // An empty reply (stopped before the first chunk, or none at all)
+        // is not recorded, so its input goes too.
         if (replyBuffer.isNotEmpty) {
-          _history.add({
-            'role': 'assistant',
-            'content': replyBuffer.toString(),
-          });
-        } else if (cancelled) {
+          recordReply(replyBuffer.toString());
+        } else {
           dropInput();
         }
         if (kDebugMode) {
@@ -823,6 +856,7 @@ class OnnxWebSession extends InferenceModelSession {
     // ordering (use-after-free guard).
     _activeStoppingCriteria?.interrupt();
     _history.clear();
+    _claimedInput.clear();
     onClose();
   }
 }

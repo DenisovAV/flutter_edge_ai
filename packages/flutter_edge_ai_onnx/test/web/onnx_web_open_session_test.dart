@@ -23,7 +23,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// to `__tf.calls` with its `resolve`; an interrupt resolves it, as the real
 /// pipeline settles once decoding stops. `pipeline()` waits for `__tf.gate`,
 /// then fails while `__tf.failures` is above zero (one per call). With
-/// `__tf.rejectOnInterrupt` an interrupt fails the call instead.
+/// `__tf.rejectOnInterrupt` an interrupt fails the call instead; with
+/// `__tf.holdOnInterrupt` it only marks the call, which then settles when the
+/// test resolves it, as a real generation does a moment after the interrupt.
 const _fakeTransformers = r'''
 (() => {
   const tf = { calls: [], gate: Promise.resolve(), pipelines: 0, failures: 0 };
@@ -41,7 +43,9 @@ const _fakeTransformers = r'''
   const makePipe = () => {
     const pipe = function (messages, options) {
       return new Promise((resolve, reject) => {
-        options.stopping_criteria.onInterrupt = () => tf.rejectOnInterrupt
+        options.stopping_criteria.onInterrupt = () => tf.holdOnInterrupt
+          ? undefined
+          : tf.rejectOnInterrupt
           ? reject(new Error('generate failed after the stop'))
           : resolve();
         tf.calls.push({ messages, options, resolve, reject });
@@ -245,11 +249,12 @@ void main() {
     final a = await model.openSession(systemInstruction: 'A');
     final b = await model.openSession();
 
-    // Stopped while waiting behind B.
+    // Stopped while waiting behind B, with a message added while it waited.
     final b1 = await _ask(b, 'b1');
     final bRunning = await _call(1);
     final a1 = await _ask(a, 'a1');
     await pumpEventQueue();
+    await a.addQueryChunk(const Message(text: 'a1b', isUser: true));
     await a.stopGeneration();
     await a1.done;
     _finish(bRunning);
@@ -378,6 +383,89 @@ void main() {
     expect(_contents(aNext).last, 'user:a5');
     _finish(aNext);
     await a5.done;
+    await model.close();
+  });
+
+  test('after a stop or a cancel the next turn starts at once and waits for '
+      'the stopped generation to settle', () async {
+    _tf['holdOnInterrupt'] = true.toJS;
+    final model = _model();
+    final a = await model.openSession(systemInstruction: 'A');
+
+    // A cancelled subscription, after a chunk.
+    await a.addQueryChunk(const Message(text: 'a1', isUser: true));
+    final t1 = _turn(a);
+    final sub = t1.text.listen((_) {});
+    final c1 = await _call(1);
+    _emit(c1, 'part');
+    await pumpEventQueue();
+    await sub.cancel();
+    expect(await t1.end, TurnEnd.stopped);
+    expect(_interrupted(c1), isTrue);
+    // Not refused, though the generation has not settled yet.
+    final a2 = await _ask(a, 'a2');
+    await pumpEventQueue();
+    expect(_calls, hasLength(1), reason: 'a2 waits for a1 to settle');
+    _finish(c1);
+    final c2 = await _call(2);
+    expect(_contents(c2), ['system:A', 'user:a1', 'assistant:part', 'user:a2']);
+    _emit(c2, 'ra2');
+    _finish(c2);
+    await a2.done;
+
+    // stopGeneration before the first chunk: the stopped turn leaves no
+    // trace, and the next turn's message, added while it settled, stays.
+    final a3 = await _ask(a, 'a3');
+    final c3 = await _call(3);
+    await a.stopGeneration();
+    // The stopped turn's text ends when its generation settles; the next turn
+    // does not wait for that to start.
+    final a4 = await _ask(a, 'a4');
+    await pumpEventQueue();
+    expect(_calls, hasLength(3));
+    _finish(c3);
+    await a3.done;
+    expect(await a3.turn.end, TurnEnd.stopped);
+    final c4 = await _call(4);
+    expect(_contents(c4), [
+      'system:A',
+      'user:a1',
+      'assistant:part',
+      'user:a2',
+      'assistant:ra2',
+      'user:a4',
+    ]);
+    _emit(c4, 'ra4');
+    _finish(c4);
+    await a4.done;
+
+    // A stopped turn with a partial reply, then the next one stopped empty
+    // while the first settles: each keeps to its own message.
+    final a5 = await _ask(a, 'a5');
+    final c5 = await _call(5);
+    _emit(c5, 'p5');
+    await pumpEventQueue();
+    await a.stopGeneration();
+    final a6 = await _ask(a, 'a6');
+    await pumpEventQueue();
+    _finish(c5);
+    await a5.done;
+    final c6 = await _call(6);
+    await a.stopGeneration();
+    _finish(c6);
+    await a6.done;
+    expect(await a6.turn.end, TurnEnd.stopped);
+
+    // A turn that completes with nothing leaves no trace either.
+    final a7 = await _ask(a, 'a7');
+    _finish(await _call(7));
+    await a7.done;
+
+    final a8 = await _ask(a, 'a8');
+    final c8 = await _call(8);
+    expect(_contents(c8).sublist(7), ['user:a5', 'assistant:p5', 'user:a8']);
+    _finish(c8);
+    await a8.done;
     await model.close();
   });
 

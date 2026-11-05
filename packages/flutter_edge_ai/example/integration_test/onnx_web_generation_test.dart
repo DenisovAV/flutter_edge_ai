@@ -159,18 +159,21 @@ void main() {
           return s.getResponse().timeout(const Duration(minutes: 2));
         }
 
-        await ask(alice, 'My name is Alice. Reply with OK.');
-        await ask(bob, 'My name is Bob. Reply with OK.');
+        final a0 = await ask(alice, 'My name is Alice. Reply with OK.');
+        final b0 = await ask(bob, 'My name is Bob. Reply with OK.');
         expect(model.sessions, containsAll([alice, bob]));
         final a = await ask(alice, 'What is my name? One word.');
         final b = await ask(bob, 'What is my name? One word.');
+        final replies = 'alice: "$a0" / "$a"; bob: "$b0" / "$b"';
         expect(
           a.toLowerCase(),
           allOf(contains('alice'), isNot(contains('bob'))),
+          reason: replies,
         );
         expect(
           b.toLowerCase(),
           allOf(contains('bob'), isNot(contains('alice'))),
+          reason: replies,
         );
       } finally {
         await alice.close();

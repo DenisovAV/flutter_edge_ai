@@ -62,8 +62,8 @@ class Hero extends StatelessComponent {
                 width: 600,
                 height: 1344,
                 // `autoplay` starts it without JavaScript; the marker lets
-                // the landing page's script pause it once it is scrolled
-                // out of view and under reduced motion.
+                // `PlayWhenVisible` pause it once it is scrolled out of view
+                // and under reduced motion.
                 autoplay: true,
                 loop: true,
                 muted: true,

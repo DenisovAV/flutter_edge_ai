@@ -8,6 +8,12 @@ import 'package:jaspr/client.dart';
 
 import 'package:fluttergemma_website/components/clicker.dart'
     deferred as _clicker;
+import 'package:fluttergemma_website/components/play_when_visible.dart'
+    deferred as _play_when_visible;
+import 'package:fluttergemma_website/landing/sections/nav_bar.dart'
+    deferred as _nav_bar;
+import 'package:fluttergemma_website/showcase/showcase_browser.dart'
+    deferred as _showcase_browser;
 import 'package:jaspr_content/components/_internal/code_block_copy_button.dart'
     deferred as _code_block_copy_button;
 import 'package:jaspr_content/components/_internal/zoomable_image.dart'
@@ -40,6 +46,18 @@ ClientOptions get defaultClientOptions => ClientOptions(
     'clicker': ClientLoader(
       (p) => _clicker.Clicker(),
       loader: _clicker.loadLibrary,
+    ),
+    'play_when_visible': ClientLoader(
+      (p) => _play_when_visible.PlayWhenVisible(),
+      loader: _play_when_visible.loadLibrary,
+    ),
+    'nav_bar': ClientLoader(
+      (p) => _nav_bar.NavBar(),
+      loader: _nav_bar.loadLibrary,
+    ),
+    'showcase_browser': ClientLoader(
+      (p) => _showcase_browser.ShowcaseBrowser(),
+      loader: _showcase_browser.loadLibrary,
     ),
     'jaspr_content:code_block_copy_button': ClientLoader(
       (p) => _code_block_copy_button.CodeBlockCopyButton(),

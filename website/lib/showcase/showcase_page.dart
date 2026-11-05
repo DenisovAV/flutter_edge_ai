@@ -4,37 +4,12 @@ import 'package:jaspr/jaspr.dart';
 import '../landing/sections/nav_bar.dart';
 import '../landing/sections/site_footer.dart';
 import '../theme/brand.dart';
-import 'showcase_apps.dart';
+import 'showcase_browser.dart';
 
 /// `/showcase` — apps in the stores that use flutter_edge_ai or flutter_gemma,
-/// with a store filter and two sort orders.
-///
-/// Filter and sort are pure CSS, like the NavBar's menu: this site is Jaspr
-/// static mode and a `@client` component does not hydrate on the deployed
-/// build. Hidden radio buttons precede the controls and the grids; there is
-/// one grid per order, already sorted at prerender, and `:checked ~` shows the
-/// grid of the chosen order and hides the cards without the chosen store. The
-/// order on screen is then also the order of Tab and of a screen reader.
-///
-/// The store badges are the stores' own artwork, unmodified, under their
-/// guidelines: 40px high (Apple's onscreen minimum; Google's badge is the
-/// same height, as its guidelines ask), a quarter of that as clear space,
-/// Apple's black badge first, and the trademark lines below the grid.
+/// with a store filter and two sort orders ([ShowcaseBrowser]).
 class ShowcasePage extends StatelessComponent {
   const ShowcasePage({super.key});
-
-  static const _stores = <({String id, String text})>[
-    (id: 'sc-store-all', text: 'All'),
-    (id: 'sc-store-play', text: 'Google Play'),
-    (id: 'sc-store-apple', text: 'App Store'),
-  ];
-
-  static const _sorts = <({String id, String text})>[
-    (id: 'sc-sort-downloads', text: 'Downloads'),
-    (id: 'sc-sort-name', text: 'Name'),
-  ];
-
-  static const _external = {'target': '_blank', 'rel': 'noopener'};
 
   @override
   Component build(BuildContext context) {
@@ -57,23 +32,7 @@ class ShowcasePage extends StatelessComponent {
       ]),
       section(classes: 'sc-section', [
         div(classes: 'sc-section-inner', [
-          // The radios carry the state and must come before `.sc-controls`
-          // and the grids for `~` to reach them. Visually hidden but not
-          // `display: none`, so Tab and the arrow keys still reach them.
-          for (final o in _stores) _radio(o.id, 'sc-store', 'sc-store-caption', checked: o == _stores.first),
-          for (final o in _sorts) _radio(o.id, 'sc-sort', 'sc-sort-caption', checked: o == _sorts.first),
-          div(classes: 'sc-controls', [
-            _control('sc-store-caption', 'Store', _stores),
-            _control('sc-sort-caption', 'Sort by', _sorts),
-          ]),
-          for (final (:order, :apps) in [
-            (order: 'downloads', apps: byDownloads(showcaseApps)),
-            (order: 'name', apps: byName(showcaseApps)),
-          ])
-            div(classes: 'sc-grid sc-grid--$order', [
-              for (var i = 0; i < apps.length; i++) _appCard(apps[i], 'sc-$order-app-$i'),
-              _yourAppCard(),
-            ]),
+          const ShowcaseBrowser(),
           p(classes: 'sc-legal', [
             Component.text(
               'Apple and the Apple logo are trademarks of Apple Inc., registered in the U.S. and other '
@@ -86,120 +45,6 @@ class ShowcasePage extends StatelessComponent {
       const SiteFooter(),
     ]);
   }
-
-  static Component _radio(String id, String name, String captionId, {required bool checked}) {
-    return input(
-      type: InputType.radio,
-      id: id,
-      name: name,
-      checked: checked,
-      classes: 'sc-radio',
-      attributes: {'aria-describedby': captionId},
-    );
-  }
-
-  static Component _control(String captionId, String caption, List<({String id, String text})> options) {
-    return div(classes: 'sc-control', [
-      span(id: captionId, classes: 'sc-control-caption', [Component.text(caption)]),
-      for (final o in options) label(htmlFor: o.id, classes: 'sc-option', [Component.text(o.text)]),
-    ]);
-  }
-
-  /// The icon's alt is empty because the name beside it already names it. The
-  /// glow behind it is the same icon, blurred, so it takes the icon's colours.
-  /// Every badge link describes itself with the app's name: their own names
-  /// repeat from card to card.
-  static Component _appCard(ShowcaseApp app, String nameId) {
-    final describedByName = {..._external, 'aria-describedby': nameId};
-    return article(
-      classes: [
-        'sc-card',
-        'sc-app',
-        if (app.googlePlay != null) 'sc-on-play',
-        if (app.appStore != null) 'sc-on-apple',
-      ].join(' '),
-      [
-        div(
-          classes: 'sc-icon-wrap',
-          styles: Styles(raw: {'--sc-icon': 'url("${app.icon}")'}),
-          [
-            img(
-              src: app.icon,
-              alt: '',
-              classes: 'sc-icon',
-              attributes: const {'width': '64', 'height': '64', 'loading': 'lazy'},
-            ),
-          ],
-        ),
-        h2(id: nameId, classes: 'sc-name', [Component.text(app.name)]),
-        div(classes: 'sc-badges', [
-          // Apple's guidelines put the App Store badge first in a lineup.
-          if (app.appStore case final store?)
-            a(href: store.url, classes: 'sc-badge', attributes: describedByName, [
-              img(
-                src: '/images/showcase/badges/app-store-black.svg',
-                alt: 'Download on the App Store',
-                classes: 'sc-badge-apple',
-                attributes: const {'width': '120', 'height': '40'},
-              ),
-            ]),
-          if (app.googlePlay case final play?)
-            div(classes: 'sc-badge-play-group', [
-              a(href: play.url, classes: 'sc-badge', attributes: describedByName, [
-                img(
-                  src: '/images/showcase/badges/google-play.png',
-                  alt: 'Get it on Google Play',
-                  classes: 'sc-badge-play',
-                  attributes: const {'width': '134', 'height': '40'},
-                ),
-              ]),
-              span(classes: 'sc-downloads', [Component.text('${play.installsLabel} downloads')]),
-            ]),
-        ]),
-      ],
-    );
-  }
-
-  /// Last in both grids and under every filter. Not a link yet.
-  static Component _yourAppCard() {
-    return div(classes: 'sc-card sc-yours', [
-      div(classes: 'sc-yours-plus', [
-        svg(
-          viewBox: '0 0 24 24',
-          width: 24.px,
-          height: 24.px,
-          attributes: const {'aria-hidden': 'true'},
-          [
-            path(
-              d: 'M12 5v14M5 12h14',
-              stroke: Brand.blueLight,
-              strokeWidth: '2.2',
-              attributes: const {'stroke-linecap': 'round'},
-              [],
-            ),
-          ],
-        ),
-      ]),
-      p(classes: 'sc-yours-text', [Component.text('Your app here')]),
-    ]);
-  }
-
-  /// Per-option rules: the checked option is highlighted, and a focused radio
-  /// shows its ring on the label that stands in for it.
-  static List<StyleRule> _optionRules(String id) => [
-    css('#$id:checked ~ .sc-controls .sc-option[for="$id"]').styles(
-      border: Border.all(color: Brand.blue, width: 1.px),
-      color: Brand.white,
-      fontWeight: FontWeight.w700,
-      backgroundColor: Color('rgba(59,130,246,0.22)'),
-    ),
-    css('#$id:focus-visible ~ .sc-controls .sc-option[for="$id"]').styles(
-      raw: {
-        'outline': '2px solid ${Brand.blueLight.value}',
-        'outline-offset': '2px',
-      },
-    ),
-  ];
 
   @css
   static List<StyleRule> get styles => [
@@ -248,181 +93,16 @@ class ShowcasePage extends StatelessComponent {
     ),
 
     // ---- section ----
-    // `position: relative` keeps the absolutely placed radios inside the
-    // section, so focusing one does not scroll the page to its top.
     css('.sc-section').styles(
       padding: Padding.only(left: 2.rem, right: 2.rem, bottom: 4.rem),
     ),
     css('.sc-section-inner').styles(
       display: Display.flex,
-      position: Position.relative(),
       maxWidth: 1100.px,
       margin: Margin.symmetric(horizontal: Unit.auto),
       flexDirection: FlexDirection.column,
       gap: Gap.all(1.25.rem),
     ),
-
-    // ---- filter and sort ----
-    css('.sc-radio').styles(
-      position: Position.absolute(top: 0.px, left: 0.px),
-      margin: Margin.zero,
-      raw: {
-        'opacity': '0',
-        'width': '1px',
-        'height': '1px',
-        'pointer-events': 'none',
-      },
-    ),
-    css('.sc-controls').styles(
-      display: Display.flex,
-      flexDirection: FlexDirection.row,
-      flexWrap: FlexWrap.wrap,
-      gap: Gap(row: 0.75.rem, column: 2.rem),
-    ),
-    css('.sc-control').styles(
-      display: Display.flex,
-      flexDirection: FlexDirection.row,
-      flexWrap: FlexWrap.wrap,
-      alignItems: AlignItems.center,
-      gap: Gap.all(0.45.rem),
-    ),
-    css('.sc-control-caption').styles(
-      margin: Margin.only(right: 0.25.rem),
-      color: Brand.white50,
-      fontFamily: Brand.fontSans,
-      fontSize: 0.85.rem,
-    ),
-    css('.sc-option').styles(
-      padding: Padding.symmetric(horizontal: 0.85.rem, vertical: 0.4.rem),
-      border: Border.all(color: Color('rgba(255,255,255,0.15)'), width: 1.px),
-      radius: BorderRadius.circular(999.px),
-      cursor: Cursor.pointer,
-      color: Brand.white70,
-      fontFamily: Brand.fontSans,
-      fontSize: 0.9.rem,
-      fontWeight: FontWeight.w500,
-      raw: {'user-select': 'none'},
-    ),
-    css('.sc-option:hover').styles(color: Brand.white),
-    for (final o in [..._stores, ..._sorts]) ..._optionRules(o.id),
-
-    // ---- cards ----
-    // A row per app, as in a store's list: the icon on the left, the name
-    // and the badges beside it. Two columns from a 1080px viewport, where a
-    // card has room for both badges and the download count on one line, one
-    // below; `min(…, 100%)` keeps a 320px screen from scrolling sideways.
-    css('.sc-grid').styles(
-      display: Display.grid,
-      gap: Gap.all(1.rem),
-      raw: {'grid-template-columns': 'repeat(auto-fill, minmax(min(500px, 100%), 1fr))'},
-    ),
-    css('.sc-card').styles(
-      display: Display.grid,
-      padding: Padding.symmetric(horizontal: 1.25.rem, vertical: 1.1.rem),
-      border: Border.all(color: Color('rgba(255,255,255,0.08)'), width: 1.px),
-      radius: BorderRadius.circular(14.px),
-      alignItems: AlignItems.center,
-      backgroundColor: Color('rgba(255,255,255,0.035)'),
-      raw: {
-        'grid-template-columns': '64px minmax(0, 1fr)',
-        'column-gap': '1rem',
-        'row-gap': '0.75rem',
-        'align-content': 'center',
-      },
-    ),
-    // Only the grid of the checked order shows; a hidden grid is out of the
-    // tab order and the accessibility tree.
-    css('.sc-grid--name').styles(display: Display.none),
-    css('#sc-sort-name:checked ~ .sc-grid--downloads').styles(display: Display.none),
-    css('#sc-sort-name:checked ~ .sc-grid--name').styles(display: Display.grid),
-    css('#sc-store-play:checked ~ .sc-grid .sc-app:not(.sc-on-play)').styles(display: Display.none),
-    css('#sc-store-apple:checked ~ .sc-grid .sc-app:not(.sc-on-apple)').styles(display: Display.none),
-    css('.sc-icon-wrap').styles(
-      position: Position.relative(),
-      width: 64.px,
-      height: 64.px,
-      raw: {'grid-row': 'span 2'},
-    ),
-    css('.sc-icon-wrap::before').styles(
-      content: '',
-      position: Position.absolute(top: 6.px, left: 6.px, right: 6.px, bottom: 6.px),
-      radius: BorderRadius.circular(16.px),
-      opacity: 0.5,
-      raw: {
-        'background': 'var(--sc-icon) center / cover',
-        'filter': 'blur(18px)',
-      },
-    ),
-    // Scoped under `.landing-root`: its `img { height: auto }` reset is
-    // (0,1,1) and would beat a bare `.sc-icon` (0,1,0) — see
-    // `.landing-root .navbar-logo` in nav_bar.dart.
-    css('.landing-root .sc-icon').styles(
-      display: Display.block,
-      position: Position.relative(),
-      width: 100.percent,
-      height: 100.percent,
-      radius: BorderRadius.circular(14.px),
-      raw: {'object-fit': 'cover'},
-    ),
-    // Scoped for the same reason: `.landing-root h2 { margin: 0 }` is
-    // (0,1,1).
-    css('.landing-root .sc-name').styles(
-      margin: Margin.zero,
-      color: Brand.white,
-      fontFamily: Brand.fontSans,
-      fontSize: 1.rem,
-      fontWeight: FontWeight.w600,
-      lineHeight: 1.35.em,
-      raw: {'align-self': 'end'},
-    ),
-    // The gaps are the badges' clear space: a quarter of their 40px height.
-    css('.sc-badges').styles(
-      display: Display.flex,
-      flexDirection: FlexDirection.row,
-      flexWrap: FlexWrap.wrap,
-      alignItems: AlignItems.center,
-      gap: Gap.all(10.px),
-      raw: {'align-self': 'start'},
-    ),
-    css('.sc-badge').styles(display: Display.block, raw: {'line-height': '0'}),
-    css('.landing-root .sc-badge-apple').styles(display: Display.block, width: 120.px, height: 40.px),
-    css('.landing-root .sc-badge-play').styles(display: Display.block, width: 134.px, height: 40.px),
-    css('.sc-badge-play-group').styles(
-      display: Display.flex,
-      flexDirection: FlexDirection.row,
-      alignItems: AlignItems.center,
-      gap: Gap.all(10.px),
-    ),
-    css('.sc-downloads').styles(
-      color: Brand.white50,
-      fontFamily: Brand.fontSans,
-      fontSize: 0.78.rem,
-      lineHeight: 1.em,
-      raw: {'white-space': 'nowrap'},
-    ),
-
-    // ---- "Your app here" ----
-    css('.sc-yours').styles(
-      border: Border.all(color: Color('rgba(147,197,253,0.4)'), width: 1.5.px, style: BorderStyle.dashed),
-      backgroundColor: Color('transparent'),
-    ),
-    css('.sc-yours-plus').styles(
-      display: Display.flex,
-      width: 64.px,
-      height: 64.px,
-      border: Border.all(color: Color('rgba(147,197,253,0.4)'), width: 1.5.px, style: BorderStyle.dashed),
-      radius: BorderRadius.circular(14.px),
-      justifyContent: JustifyContent.center,
-      alignItems: AlignItems.center,
-    ),
-    css('.landing-root .sc-yours-text').styles(
-      margin: Margin.zero,
-      color: Brand.white70,
-      fontFamily: Brand.fontSans,
-      fontSize: 1.rem,
-      fontWeight: FontWeight.w600,
-    ),
-
     css('.sc-legal').styles(
       margin: Margin.only(top: 0.75.rem),
       color: Brand.white50,
@@ -439,18 +119,6 @@ class ShowcasePage extends StatelessComponent {
           padding: Padding.only(left: 1.25.rem, right: 1.25.rem, top: 2.5.rem, bottom: 1.75.rem),
         ),
         css('.sc-title').styles(fontSize: 1.9.rem),
-        // A narrow card: the icon beside the name only, the badges below
-        // both, and the download count under the Google Play badge.
-        css('.sc-card').styles(
-          padding: Padding.all(1.rem),
-          raw: {'grid-template-columns': '48px minmax(0, 1fr)', 'column-gap': '0.85rem'},
-        ),
-        css('.sc-icon-wrap').styles(width: 48.px, height: 48.px, raw: {'grid-row': 'auto'}),
-        css('.landing-root .sc-icon').styles(radius: BorderRadius.circular(11.px)),
-        css('.landing-root .sc-name').styles(raw: {'align-self': 'center'}),
-        css('.sc-badges').styles(alignItems: AlignItems.start, raw: {'grid-column': '1 / -1'}),
-        css('.sc-badge-play-group').styles(flexDirection: FlexDirection.column),
-        css('.sc-yours-plus').styles(width: 48.px, height: 48.px),
         css('.sc-section').styles(
           padding: Padding.only(left: 1.25.rem, right: 1.25.rem, bottom: 3.rem),
         ),

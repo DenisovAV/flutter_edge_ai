@@ -28,6 +28,7 @@ class ShowcaseSubmitFormState extends State<ShowcaseSubmitForm> {
   String _googlePlayUrl = '';
   String _appStoreUrl = '';
   String _appName = '';
+  String _sourceUrl = '';
   String _onDevice = '';
   String _email = '';
   final _packages = <String>{};
@@ -56,6 +57,7 @@ class ShowcaseSubmitFormState extends State<ShowcaseSubmitForm> {
         'googlePlayUrl': _googlePlayUrl,
         'appStoreUrl': _appStoreUrl,
         'appName': _appName,
+        'sourceUrl': _sourceUrl,
         'packages': _packages.toList(),
         'onDevice': _onDevice,
         'email': _email,
@@ -127,6 +129,15 @@ class ShowcaseSubmitFormState extends State<ShowcaseSubmitForm> {
           maxLength: 100,
           hint: 'Leave it empty to use the name in the store.',
           onInput: (v) => _appName = v,
+        ),
+        _text(
+          id: 'ss-source',
+          caption: 'Source code on GitHub (optional)',
+          type: InputType.url,
+          value: _sourceUrl,
+          placeholder: 'https://github.com/…/…',
+          hint: 'If the app is open source: its pubspec.yaml is checked for flutter_edge_ai or flutter_gemma.',
+          onInput: (v) => _sourceUrl = v,
         ),
         fieldset(classes: 'ss-fieldset', [
           legend(classes: 'ss-label', [Component.text('Built with')]),

@@ -39,6 +39,14 @@ void main() {
     expect(s.documentId, 'play:rw.flipper');
   });
 
+  test('an optional GitHub link', () {
+    expect(Submission.parse(_valid()).source, isNull);
+    final s = Submission.parse(_valid({'sourceUrl': 'https://github.com/yegobox/flipper'}));
+    expect(s.source?.owner, 'yegobox');
+    expect(s.source?.repo, 'flipper');
+    expect(() => Submission.parse(_valid({'sourceUrl': 'https://example.com/x'})), _refused('GitHub link'));
+  });
+
   test('blank text counts as missing and is trimmed', () {
     final s = Submission.parse(_valid({'appName': '   ', 'email': '  dev@example.com '}));
     expect(s.appName, isNull);

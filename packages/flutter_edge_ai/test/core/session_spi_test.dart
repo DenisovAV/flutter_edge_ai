@@ -1,0 +1,1205 @@
+import 'dart:async';
+import 'dart:typed_data';
+
+import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/src/chat.dart' show chatTurnErrorEndTimeout;
+import 'package:flutter_test/flutter_test.dart';
+
+import '../support/noop_session.dart';
+
+/// A session whose turns the test scripts: each turn streams [tokens] and
+/// reports [end] through `startTurn`.
+final class _TurnSession extends InferenceModelSession {
+  _TurnSession({this.tokens = const ['Hi'], this.end});
+
+  List<String> tokens;
+  TurnEnd? end;
+  Object? sizeError;
+
+  /// When set, the next turn's text streams [tokens], then fails with it.
+  Object? failWith;
+
+  /// When set, the next turn's text is this stream, as the engine gives it.
+  Stream<String>? nextText;
+
+  /// When set, the turns' end is this future (one that never completes, say).
+  Future<TurnEnd>? endFuture;
+  final staged = <Message>[];
+  int turns = 0;
+  bool closed = false;
+
+  @override
+  EngineTurn startTurn() {
+    turns++;
+    final end = this.end;
+    final failure = failWith;
+    failWith = null;
+    final given = nextText;
+    nextText = null;
+    return EngineTurn(
+      text: given != null
+          ? given
+          : failure == null
+          ? Stream.fromIterable(tokens)
+          : (() async* {
+              yield* Stream.fromIterable(tokens);
+              throw failure;
+            })(),
+      end: endFuture ?? (end == null ? null : Future.value(end)),
+    );
+  }
+
+  /// Not through [startTurn], so a chat that skips it is seen: no turn is
+  /// counted and no end is reported.
+  @override
+  Stream<String> getResponseAsync() => Stream.fromIterable(tokens);
+
+  @override
+  Future<String> getResponse() => getResponseAsync().join();
+
+  @override
+  Future<int> sizeInTokens(String text) async {
+    if (sizeError case final error?) throw error;
+    return text.length;
+  }
+
+  @override
+  Future<void> addQueryChunk(Message message) async => staged.add(message);
+
+  @override
+  Future<void> stopGeneration() async {}
+
+  @override
+  SessionMetrics getSessionMetrics() => SessionMetrics();
+
+  @override
+  Future<void> close() async => closed = true;
+}
+
+/// A model that extends [InferenceModel], so it gets core's openSession,
+/// openChat and sessions, and records what reaches its engine SPI.
+final class _Model extends InferenceModel {
+  _Model({this.resolver, this.hooks});
+
+  final ResolvedChatRequest Function(ChatRequest request)? resolver;
+  final ChatTurnHooks? hooks;
+  final requests = <SessionRequest>[];
+  final opened = <_TurnSession>[];
+  _TurnSession Function()? nextSession;
+
+  @override
+  InferenceModelSession? get session => null;
+
+  @override
+  int get maxTokens => 1024;
+
+  @override
+  ModelFileType get fileType => ModelFileType.task;
+
+  @override
+  PreferredBackend? get activeBackend => null;
+
+  @override
+  Future<InferenceModelSession> createSession({
+    double? temperature,
+    int? randomSeed,
+    int? topK,
+    double? topP,
+    String? loraPath,
+    bool? enableVisionModality,
+    bool? enableAudioModality,
+    String? systemInstruction,
+    bool enableThinking = false,
+    List<Tool> tools = const [],
+    int? maxOutputTokens,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    requests.add(request);
+    final session = nextSession?.call() ?? _TurnSession();
+    opened.add(session);
+    return session;
+  }
+
+  @override
+  List<InferenceModelSession> get engineSessions => [
+    for (final s in opened)
+      if (!s.closed) s,
+  ];
+
+  @override
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) =>
+      resolver?.call(request) ?? super.resolveChatRequest(request);
+
+  @override
+  ChatTurnHooks createChatTurnHooks(ResolvedChatRequest request) =>
+      hooks ?? super.createChatTurnHooks(request);
+
+  @override
+  void addCloseListener(void Function() listener) {}
+
+  @override
+  Future<void> close() async {}
+}
+
+/// Every value of [request], with this model's own type and image support.
+ResolvedChatRequest _ownDefaults(ChatRequest request) => ResolvedChatRequest(
+  modelType: request.modelType ?? ModelType.qwen3,
+  supportImage: request.supportImage ?? true,
+  supportAudio: request.supportAudio ?? false,
+  supportsFunctionCalls: request.supportsFunctionCalls ?? false,
+  tools: request.tools,
+  maxFunctionBufferLength: request.maxFunctionBufferLength ?? 64,
+  temperature: request.temperature,
+  randomSeed: request.randomSeed,
+  topK: request.topK,
+  topP: request.topP,
+  tokenBuffer: request.tokenBuffer,
+  loraPath: request.loraPath,
+  enableThinking: request.enableThinking,
+  toolChoice: request.toolChoice,
+  systemInstruction: request.systemInstruction,
+  maxOutputTokens: request.maxOutputTokens,
+);
+
+final class _RecordingHooks extends ChatTurnHooks {
+  final calls = <String>[];
+  List<Message>? transcript;
+  int? tokens;
+  bool takeQueryChunks = false;
+
+  @override
+  List<Message>? history(InferenceModelSession session) => transcript;
+
+  @override
+  int? tokenCount(InferenceModelSession session) => tokens;
+
+  @override
+  Future<void>? addQueryChunk(InferenceModelSession session, Message message) {
+    if (!takeQueryChunks) return null;
+    calls.add('add ${message.text}');
+    return session.addQueryChunk(message);
+  }
+
+  @override
+  Future<void> replayFinished(InferenceModelSession session) async =>
+      calls.add('finished');
+
+  @override
+  Future<void> replayFailed(
+    InferenceModelSession session,
+    Object error,
+  ) async => calls.add('failed $error');
+}
+
+const _tool = Tool(name: 'get_time', description: 'Time.');
+
+void main() {
+  _failedTurnTests();
+
+  group('openSession', () {
+    test('reaches openEngineSession with every argument', () async {
+      final model = _Model();
+      await model.openSession(
+        temperature: 0.5,
+        randomSeed: 7,
+        topK: 3,
+        topP: 0.9,
+        loraPath: 'l',
+        enableVisionModality: true,
+        enableAudioModality: false,
+        systemInstruction: 's',
+        enableThinking: true,
+        tools: const [_tool],
+        maxOutputTokens: 12,
+      );
+      final r = model.requests.single;
+      expect(
+        [
+          r.temperature,
+          r.randomSeed,
+          r.topK,
+          r.topP,
+          r.loraPath,
+          r.enableVisionModality,
+          r.enableAudioModality,
+          r.systemInstruction,
+          r.enableThinking,
+          r.tools.single.name,
+          r.maxOutputTokens,
+          r.modelType,
+          r.toolChoice,
+        ],
+        [
+          0.5,
+          7,
+          3,
+          0.9,
+          'l',
+          true,
+          false,
+          's',
+          true,
+          'get_time',
+          12,
+          null,
+          ToolChoice.auto,
+        ],
+      );
+      expect(() => r.tools.add(_tool), throwsUnsupportedError);
+    });
+
+    test('an engine without openEngineSession refuses it', () async {
+      final model = _BareModel();
+      await expectLater(model.openSession(), throwsUnsupportedError);
+    });
+
+    test('sessions is the engine\'s, unmodifiable', () async {
+      final model = _Model();
+      final a = await model.openSession();
+      await model.openSession();
+      expect(model.sessions, hasLength(2));
+      await a.close();
+      expect(model.sessions, hasLength(1));
+      expect(() => model.sessions.add(a), throwsUnsupportedError);
+    });
+  });
+
+  group('openChat (D8)', () {
+    test('core\'s defaults when the engine resolves nothing itself', () async {
+      final model = _Model();
+      final chat = await model.openChat();
+      expect(chat.modelType, ModelType.gemmaIt);
+      expect(chat.supportImage, isFalse);
+      expect(chat.supportsFunctionCalls, isFalse);
+      expect(chat.maxFunctionBufferLength, defaultMaxFunctionBufferLength);
+      expect(model.requests.single.enableVisionModality, isFalse);
+    });
+
+    test('the engine\'s own values fill what the caller left unset, and '
+        'reach the chat and every session it opens', () async {
+      final model = _Model(resolver: _ownDefaults);
+      final chat = await model.openChat(
+        tools: const [_tool],
+        toolChoice: ToolChoice.required,
+        systemInstruction: 'sys',
+        maxOutputTokens: 9,
+      );
+      expect(chat.modelType, ModelType.qwen3);
+      expect(chat.supportImage, isTrue);
+      expect(chat.maxFunctionBufferLength, 64);
+      final r = model.requests.single;
+      expect(r.modelType, ModelType.qwen3);
+      expect(r.toolChoice, ToolChoice.required);
+      expect(r.enableVisionModality, isTrue);
+      expect(r.systemInstruction, 'sys');
+      expect(r.maxOutputTokens, 9);
+      expect(r.tools.single.name, 'get_time');
+
+      // A rebuild opens its session through the same request.
+      await chat.clearHistory();
+      expect(model.requests, hasLength(2));
+      expect(model.requests.last.modelType, ModelType.qwen3);
+    });
+
+    test('openChat passes sampling, LoRA, thinking and audio to every '
+        'session it opens', () async {
+      final model = _Model(resolver: _ownDefaults);
+      await model.openChat(
+        temperature: 0.3,
+        randomSeed: 5,
+        topK: 2,
+        topP: 0.7,
+        loraPath: 'adapter',
+        enableThinking: true,
+        supportAudio: true,
+      );
+      final r = model.requests.single;
+      expect(
+        [r.temperature, r.randomSeed, r.topK, r.topP, r.loraPath],
+        [0.3, 5, 2, 0.7, 'adapter'],
+      );
+      expect(r.enableThinking, isTrue);
+      expect(r.enableAudioModality, isTrue);
+    });
+
+    test('a caller value wins over the engine\'s', () async {
+      final model = _Model(resolver: _ownDefaults);
+      final chat = await model.openChat(
+        modelType: ModelType.gemmaIt,
+        supportImage: false,
+      );
+      expect(chat.modelType, ModelType.gemmaIt);
+      expect(chat.supportImage, isFalse);
+    });
+
+    test('an engine that refuses the request fails openChat before any '
+        'session opens', () async {
+      final model = _Model(resolver: (_) => throw ArgumentError('tokenBuffer'));
+      await expectLater(model.openChat(), throwsArgumentError);
+      expect(model.requests, isEmpty);
+    });
+
+    test('runtimeInjectsToolDeclarations: true reaches the chat; false '
+        'leaves it to the model\'s format', () async {
+      final forced = _Model(
+        resolver: (r) => ResolvedChatRequest(
+          modelType: ModelType.gemmaIt,
+          supportImage: false,
+          supportAudio: false,
+          supportsFunctionCalls: true,
+          tools: r.tools,
+          maxFunctionBufferLength: 1024,
+          runtimeInjectsToolDeclarations: true,
+          temperature: null,
+          randomSeed: null,
+          topK: null,
+          topP: null,
+          tokenBuffer: r.tokenBuffer,
+          loraPath: null,
+          enableThinking: false,
+          toolChoice: r.toolChoice,
+          systemInstruction: null,
+          maxOutputTokens: null,
+        ),
+      );
+      expect((await forced.openChat()).runtimeInjectsToolDeclarations, isTrue);
+      final gemma4 = _Model(
+        resolver: (r) => _ownDefaults(
+          ChatRequest(modelType: ModelType.gemma4, tools: r.tools),
+        ),
+      );
+      final chat = await gemma4.openChat();
+      expect(chat.runtimeInjectsToolDeclarations, isTrue);
+      final qwen = await _Model(resolver: _ownDefaults).openChat();
+      expect(qwen.runtimeInjectsToolDeclarations, isFalse);
+    });
+
+    test('the engine\'s hooks drive the chat it opens', () async {
+      final hooks = ScriptedTurnHooks(
+        () => Stream.value(const TextResponse('scripted')),
+      );
+      final model = _Model(hooks: hooks);
+      final chat = await model.openChat();
+      final reply = await chat.generateChatResponse();
+      expect((reply as TextResponse).token, 'scripted');
+      expect(model.opened.single.turns, 0);
+    });
+  });
+
+  group('InferenceChat turns', () {
+    InferenceChat chatOver(_TurnSession session, {ChatTurnHooks? hooks}) =>
+        InferenceChat(
+          sessionCreator: () async => session,
+          maxTokens: 1024,
+          tokenBuffer: 0,
+          turnHooks: hooks,
+        );
+
+    test('both paths generate through startTurn', () async {
+      final session = _TurnSession(tokens: ['Hel', 'lo']);
+      final chat = chatOver(session);
+      await chat.initSession();
+      expect(
+        ((await chat.generateChatResponse()) as TextResponse).token,
+        'Hello',
+      );
+      final streamed = await chat.generateChatResponseAsync().toList();
+      expect(
+        streamed.whereType<TextResponse>().map((r) => r.token).join(),
+        'Hello',
+      );
+      expect(session.turns, 2);
+    });
+
+    test('a turn the close ended under the consumer is a StateError on the '
+        'stream, after the partial reply is in the history (B90)', () async {
+      final session = _TurnSession(tokens: ['Par'], end: TurnEnd.closed);
+      final chat = chatOver(session);
+      await chat.initSession();
+      final seen = <ModelResponse>[];
+      await expectLater(
+        chat.generateChatResponseAsync().forEach(seen.add),
+        throwsStateError,
+      );
+      expect(seen.single, isA<TextResponse>());
+      expect(chat.fullHistory.single.text, 'Par');
+    });
+
+    test('the blocking path fails the same way (B90)', () async {
+      final session = _TurnSession(tokens: ['Par'], end: TurnEnd.closed);
+      final chat = chatOver(session);
+      await chat.initSession();
+      await expectLater(chat.generateChatResponse(), throwsStateError);
+      expect(chat.fullHistory.single.text, 'Par');
+    });
+
+    test('a {"message": …} reply is the message, in the stream and in the '
+        'history', () async {
+      final chat = InferenceChat(
+        sessionCreator: () async =>
+            _TurnSession(tokens: ['{"message": ', '"hello"}']),
+        maxTokens: 1024,
+        supportsFunctionCalls: true,
+        tools: const [_tool],
+      );
+      await chat.initSession();
+      final streamed = await chat.generateChatResponseAsync().toList();
+      expect(streamed.whereType<TextResponse>().single.token, 'hello');
+      expect(chat.fullHistory.single.text, 'hello');
+    });
+
+    test('a {"message": …} reply that arrives in one chunk is committed as '
+        'the message', () async {
+      final chat = InferenceChat(
+        sessionCreator: () async => _TurnSession(tokens: ['{"message": "hi"}']),
+        maxTokens: 1024,
+        supportsFunctionCalls: true,
+        tools: const [_tool],
+      );
+      await chat.initSession();
+      final streamed = await chat.generateChatResponseAsync().toList();
+      expect(streamed.whereType<TextResponse>().single.token, 'hi');
+      expect(chat.fullHistory.single.text, 'hi');
+    });
+
+    test(
+      'reasoning stays out of a blocking reply when thinking is off',
+      () async {
+        final chat = InferenceChat(
+          sessionCreator: () async =>
+              _TurnSession(tokens: ['<think>why</think>', 'answer']),
+          maxTokens: 1024,
+          modelType: ModelType.qwen3,
+        );
+        await chat.initSession();
+        final reply = await chat.generateChatResponse();
+        expect((reply as TextResponse).token, 'answer');
+        expect(chat.fullHistory.single.text, 'answer');
+      },
+    );
+
+    test('a stop and the other ends are replies', () async {
+      for (final end in TurnEnd.values.where((e) => e != TurnEnd.closed)) {
+        final chat = chatOver(_TurnSession(tokens: ['ok'], end: end));
+        await chat.initSession();
+        final reply = await chat.generateChatResponse();
+        expect((reply as TextResponse).token, 'ok', reason: '$end');
+      }
+    });
+
+    test('a failed token count is the stream\'s error, after the reply is '
+        'committed (B80)', () async {
+      final session = _TurnSession(tokens: ['ok'])
+        ..sizeError = StateError('tokenizer gone');
+      final chat = chatOver(session);
+      await chat.initSession();
+      await expectLater(
+        chat.generateChatResponseAsync().toList(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'tokenizer gone',
+          ),
+        ),
+      );
+      expect(chat.fullHistory.single.text, 'ok');
+    });
+
+    test('a failed rebuild after a full context is the stream\'s error '
+        '(B80)', () async {
+      var opened = 0;
+      final chat = InferenceChat(
+        sessionCreator: () async {
+          if (opened++ > 0) throw StateError('model closed');
+          return _TurnSession(tokens: ['x' * 40]);
+        },
+        maxTokens: 32,
+        tokenBuffer: 0,
+      );
+      await chat.initSession();
+      await expectLater(
+        chat.generateChatResponseAsync().toList(),
+        throwsA(
+          isA<StateError>().having((e) => e.message, 'message', 'model closed'),
+        ),
+      );
+    });
+
+    test(
+      'the rebuild after a full context replays the latest reply too',
+      () async {
+        final sessions = <_TurnSession>[];
+        final chat = InferenceChat(
+          sessionCreator: () async {
+            final s = _TurnSession(tokens: ['answer']);
+            sessions.add(s);
+            return s;
+          },
+          // 'answer' (6) fills it; dropping the question (1) is enough.
+          maxTokens: 6,
+          tokenBuffer: 0,
+        );
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        expect(sessions, hasLength(2));
+        expect(sessions.last.staged.map((m) => m.text), contains('answer'));
+      },
+    );
+  });
+
+  group('ChatTurnHooks', () {
+    test(
+      'a blocking turn through the hooks leaves reasoning out of its text',
+      () async {
+        final chat = InferenceChat(
+          sessionCreator: () async => _TurnSession(),
+          maxTokens: 1024,
+          turnHooks: ScriptedTurnHooks(
+            () => Stream.fromIterable(const [
+              ThinkingResponse('why'),
+              TextResponse('answer'),
+            ]),
+          ),
+        );
+        await chat.initSession();
+        final reply = await chat.generateChatResponse();
+        expect((reply as TextResponse).token, 'answer');
+      },
+    );
+
+    test('the engine\'s token count decides when the chat rebuilds', () async {
+      final sessions = <_TurnSession>[];
+      final hooks = _RecordingHooks()..tokens = 5000;
+      final chat = InferenceChat(
+        sessionCreator: () async {
+          final s = _TurnSession(tokens: ['a']);
+          sessions.add(s);
+          return s;
+        },
+        maxTokens: 1024,
+        tokenBuffer: 0,
+        turnHooks: hooks,
+      );
+      await chat.initSession();
+      await chat.generateChatResponseAsync().toList();
+      expect(sessions, hasLength(2), reason: 'rebuilt on the hook count');
+    });
+
+    test('a rebuild replays the engine\'s transcript into the new session '
+        'and reports it finished', () async {
+      final sessions = <_TurnSession>[];
+      const kept = [Message(text: 'q', isUser: true), Message(text: 'a')];
+      final hooks = _RecordingHooks()
+        ..transcript = kept
+        ..tokens = 5000;
+      final chat = InferenceChat(
+        sessionCreator: () async {
+          final s = _TurnSession(tokens: ['a']);
+          sessions.add(s);
+          return s;
+        },
+        maxTokens: 1024,
+        tokenBuffer: 0,
+        turnHooks: hooks,
+      );
+      await chat.initSession();
+      await chat.generateChatResponseAsync().toList();
+      expect(sessions.last.staged.map((m) => m.text), ['q', 'a']);
+      expect(hooks.calls, ['finished']);
+    });
+
+    test('imageMessageCount counts the engine\'s transcript', () async {
+      final hooks = _RecordingHooks()
+        ..transcript = [
+          Message(
+            text: 'look',
+            isUser: true,
+            imageBytes: Uint8List.fromList([1, 2, 3]),
+          ),
+        ];
+      final chat = InferenceChat(
+        sessionCreator: () async => _TurnSession(),
+        maxTokens: 1024,
+        turnHooks: hooks,
+      );
+      await chat.initSession();
+      expect(chat.imageMessageCount, 1);
+    });
+
+    test('responses replaces the whole turn on both paths', () async {
+      final session = _TurnSession();
+      final chat = InferenceChat(
+        sessionCreator: () async => session,
+        maxTokens: 1024,
+        turnHooks: ScriptedTurnHooks(
+          () => Stream.fromIterable(const [
+            TextResponse('a'),
+            FunctionCallResponse(name: 'f', args: {}),
+          ]),
+        ),
+      );
+      await chat.initSession();
+      expect(await chat.generateChatResponse(), isA<FunctionCallResponse>());
+      expect(await chat.generateChatResponseAsync().toList(), hasLength(2));
+      expect(session.turns, 0);
+      expect(chat.fullHistory, isEmpty);
+    });
+
+    test('history, tokenCount and addQueryChunk are the engine\'s when it '
+        'gives them', () async {
+      final hooks = _RecordingHooks()
+        ..transcript = const [Message(text: 'kept', isUser: true)]
+        ..tokens = 77
+        ..takeQueryChunks = true;
+      final session = _TurnSession();
+      final chat = InferenceChat(
+        sessionCreator: () async => session,
+        maxTokens: 1024,
+        turnHooks: hooks,
+      );
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'hi', isUser: true));
+      expect(hooks.calls, ['add hi']);
+      expect(chat.fullHistory.single.text, 'kept');
+      expect(chat.currentTokens, 77);
+    });
+
+    test(
+      'a replay that finishes calls replayFinished on the new session',
+      () async {
+        final hooks = _RecordingHooks();
+        final chat = InferenceChat(
+          sessionCreator: () async => _TurnSession(),
+          maxTokens: 1024,
+          turnHooks: hooks,
+        );
+        await chat.initSession();
+        await chat.clearHistory(
+          replayHistory: const [Message(text: 'a', isUser: true)],
+        );
+        expect(hooks.calls, ['finished']);
+        expect(chat.fullHistory.single.text, 'a');
+      },
+    );
+
+    test('a replayFinished that throws is a failed replay: the chat starts '
+        'over and the error is rethrown', () async {
+      final hooks = _ThrowingFinishHooks();
+      var opened = 0;
+      final chat = InferenceChat(
+        sessionCreator: () async {
+          opened++;
+          return _TurnSession();
+        },
+        maxTokens: 1024,
+        turnHooks: hooks,
+      );
+      await chat.initSession();
+      await expectLater(
+        chat.clearHistory(
+          replayHistory: const [Message(text: 'a', isUser: true)],
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(opened, 3);
+      expect(chat.fullHistory, isEmpty);
+      expect(hooks.failed, isTrue);
+    });
+
+    test('a replay that throws leaves the chat empty on a new session, calls '
+        'replayFailed, and rethrows', () async {
+      final hooks = _RecordingHooks();
+      final sessions = <_FailingStageSession>[];
+      final chat = InferenceChat(
+        sessionCreator: () async {
+          final s = _FailingStageSession(
+            failOn: sessions.length == 1 ? 'b' : null,
+          );
+          sessions.add(s);
+          return s;
+        },
+        maxTokens: 1024,
+        turnHooks: hooks,
+      );
+      await chat.initSession();
+      await expectLater(
+        chat.clearHistory(
+          replayHistory: const [
+            Message(text: 'a', isUser: true),
+            Message(text: 'b', isUser: true),
+          ],
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(sessions, hasLength(3));
+      expect(sessions[1].closed, isTrue);
+      expect(identical(chat.session, sessions[2]), isTrue);
+      expect(chat.fullHistory, isEmpty);
+      expect(hooks.calls.single, startsWith('failed'));
+    });
+
+    test('a test chat with sessionCreator: null and a noop session runs its '
+        'scripted turns', () async {
+      final chat = InferenceChat(
+        sessionCreator: null,
+        maxTokens: 1024,
+        turnHooks: ScriptedTurnHooks(
+          () => Stream.value(const TextResponse('x')),
+        ),
+      )..session = NoopSession();
+      expect(((await chat.generateChatResponse()) as TextResponse).token, 'x');
+    });
+  });
+}
+
+/// A session whose [addQueryChunk] throws for the message [failOn].
+final class _FailingStageSession extends InferenceModelSession {
+  _FailingStageSession({this.failOn});
+
+  final String? failOn;
+  bool closed = false;
+
+  @override
+  Future<void> addQueryChunk(Message message) async {
+    if (message.text == failOn) throw StateError('cannot stage $failOn');
+  }
+
+  @override
+  Future<String> getResponse() async => '';
+
+  @override
+  Stream<String> getResponseAsync() => const Stream.empty();
+
+  @override
+  Future<int> sizeInTokens(String text) async => 0;
+
+  @override
+  Future<void> stopGeneration() async {}
+
+  @override
+  SessionMetrics getSessionMetrics() => SessionMetrics();
+
+  @override
+  Future<void> close() async => closed = true;
+}
+
+/// A model with none of the session SPI: core's defaults apply.
+final class _BareModel extends InferenceModel {
+  @override
+  InferenceModelSession? get session => null;
+
+  @override
+  int get maxTokens => 1024;
+
+  @override
+  ModelFileType get fileType => ModelFileType.task;
+
+  @override
+  PreferredBackend? get activeBackend => null;
+
+  @override
+  Future<InferenceModelSession> createSession({
+    double? temperature,
+    int? randomSeed,
+    int? topK,
+    double? topP,
+    String? loraPath,
+    bool? enableVisionModality,
+    bool? enableAudioModality,
+    String? systemInstruction,
+    bool enableThinking = false,
+    List<Tool> tools = const [],
+    int? maxOutputTokens,
+  }) => throw UnimplementedError();
+
+  @override
+  void addCloseListener(void Function() listener) {}
+
+  @override
+  Future<void> close() async {}
+}
+
+/// Hooks whose [replayFinished] fails, as llama's `commitReplay` can.
+final class _ThrowingFinishHooks extends ChatTurnHooks {
+  bool failed = false;
+
+  @override
+  Future<void> replayFinished(InferenceModelSession session) async =>
+      throw StateError('commit failed');
+
+  @override
+  Future<void> replayFailed(
+    InferenceModelSession session,
+    Object error,
+  ) async => failed = true;
+}
+
+/// Core's turn first, then the hooks' (as an engine may switch).
+final class _CoreThenScriptedHooks extends ChatTurnHooks {
+  _CoreThenScriptedHooks(this.second);
+
+  final Stream<ModelResponse> Function() second;
+  var _calls = 0;
+
+  @override
+  Stream<ModelResponse>? responses(
+    InferenceModelSession session, {
+    required int tokenBuffer,
+  }) => _calls++ == 0 ? null : second();
+}
+
+/// A turn the engine fails commits nothing (approved 2026-11-04).
+void _failedTurnTests() {
+  group('a turn the engine fails', () {
+    InferenceChat toolChat(_TurnSession session) => InferenceChat(
+      sessionCreator: () async => session,
+      maxTokens: 1024,
+      supportsFunctionCalls: true,
+      tools: const [_tool],
+    );
+
+    for (final blocking in [false, true]) {
+      final path = blocking ? 'blocking' : 'streaming';
+      test('$path: takes the staged messages, the token count and the tools '
+          'prompt back, and the error reaches the caller', () async {
+        final session = _TurnSession(tokens: ['Par']);
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'first', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        final before = chat.fullHistory.map((m) => m.text).toList();
+        final tokensBefore = chat.currentTokens;
+        final stagedBefore = session.staged.length;
+
+        session.failWith = const ContextLimitException('too long');
+        await chat.addQueryChunk(
+          Message(
+            text: 'second',
+            isUser: true,
+            imageBytes: Uint8List.fromList([1]),
+          ),
+        );
+        expect(chat.currentTokens, greaterThan(tokensBefore));
+        final turn = blocking
+            ? chat.generateChatResponse()
+            : chat.generateChatResponseAsync().toList();
+        await expectLater(turn, throwsA(isA<ContextLimitException>()));
+        expect(chat.fullHistory.map((m) => m.text), before);
+        expect(chat.currentTokens, tokensBefore);
+
+        // The next turn is staged as if the failed one never happened.
+        await chat.addQueryChunk(const Message(text: 'third', isUser: true));
+        expect(chat.fullHistory.map((m) => m.text), [...before, 'third']);
+        expect(session.staged.length, greaterThan(stagedBefore));
+      });
+    }
+
+    test('every message staged for the turn goes, not only the last', () async {
+      final session = _TurnSession(tokens: ['Par'])
+        ..failWith = StateError('decode failed');
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'one', isUser: true));
+      await chat.addQueryChunk(const Message(text: 'two', isUser: true));
+      await expectLater(chat.generateChatResponse(), throwsStateError);
+      expect(chat.fullHistory, isEmpty);
+    });
+
+    test(
+      'the model history and the prefixes are taken back too: the next '
+      'rebuild replays neither the failed message nor a second tools prompt',
+      () async {
+        final sessions = <_TurnSession>[];
+        final chat = InferenceChat(
+          sessionCreator: () async {
+            final s = _TurnSession(tokens: ['ok']);
+            sessions.add(s);
+            return s;
+          },
+          maxTokens: 1024,
+          tokenBuffer: 0,
+          supportsFunctionCalls: true,
+          tools: const [_tool],
+          // The engine's count says the window is full after every turn, so
+          // the chat rebuilds and replays all it keeps, trimming nothing.
+          turnHooks: _RecordingHooks()..tokens = 5000,
+        );
+        await chat.initSession();
+        sessions.single.failWith = StateError('decode failed');
+        await chat.addQueryChunk(const Message(text: 'failed', isUser: true));
+        await expectLater(chat.generateChatResponse(), throwsStateError);
+
+        await chat.addQueryChunk(const Message(text: 'next', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        expect(sessions, hasLength(2), reason: 'rebuilt after the turn');
+        final replayed = sessions.last.staged.map((m) => m.text).toList();
+        expect(replayed, isNot(contains('failed')));
+        expect(replayed.where((t) => t.contains('get_time')), hasLength(1));
+        expect(replayed.last, 'ok');
+      },
+    );
+
+    test('clearHistory forgets what was staged before it', () async {
+      final session = _TurnSession(tokens: ['ok']);
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'a', isUser: true));
+      await chat.generateChatResponseAsync().toList();
+      await chat.addQueryChunk(const Message(text: 'staged', isUser: true));
+      await chat.clearHistory();
+      (chat.session as _TurnSession).failWith = StateError('decode failed');
+      await chat.addQueryChunk(const Message(text: 'after', isUser: true));
+      await expectLater(chat.generateChatResponse(), throwsStateError);
+      expect(chat.fullHistory, isEmpty);
+    });
+
+    for (final blocking in [false, true]) {
+      test(
+        '${blocking ? 'blocking' : 'streaming'}: a failed text that never '
+        'closes does not hold the turn past chatTurnErrorEndTimeout',
+        () async {
+          final previous = chatTurnErrorEndTimeout;
+          chatTurnErrorEndTimeout = const Duration(milliseconds: 50);
+          addTearDown(() => chatTurnErrorEndTimeout = previous);
+          // Fails, and is never closed: an engine breaking the SPI contract.
+          final text = StreamController<String>();
+          final session = _TurnSession()..nextText = text.stream;
+          final chat = toolChat(session);
+          await chat.initSession();
+          await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+          final turn = blocking
+              ? chat.generateChatResponse()
+              : chat.generateChatResponseAsync().toList();
+          text
+            ..add('Par')
+            ..addError(StateError('decode failed'));
+          await expectLater(
+            turn.timeout(const Duration(seconds: 2)),
+            throwsStateError,
+          );
+          expect(chat.fullHistory, isEmpty, reason: 'taken back all the same');
+          await pumpEventQueue();
+          expect(text.hasListener, isFalse, reason: 'the source is let go');
+        },
+      );
+    }
+
+    test('any engine error, not only a context limit', () async {
+      final session = _TurnSession(tokens: ['Par'])
+        ..failWith = StateError('decode failed');
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+      await expectLater(
+        chat.generateChatResponseAsync().toList(),
+        throwsStateError,
+      );
+      expect(chat.fullHistory, isEmpty);
+    });
+
+    test(
+      'the tools prompt is sent again on the turn after a failed one',
+      () async {
+        final session = _TurnSession(tokens: ['Par'])
+          ..failWith = StateError('decode failed');
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        await expectLater(chat.generateChatResponse(), throwsStateError);
+        final staged = session.staged.length;
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        // The tools prompt and the message again.
+        expect(session.staged.length - staged, 2);
+      },
+    );
+
+    test('a tool call committed before the error goes with the turn, and the '
+        'tool loop answers nothing', () async {
+      final session = _TurnSession(
+        // Two chunks: the call completes, and is committed, mid-stream.
+        tokens: ['{"name": "get_time", ', '"parameters": {}}'],
+      )..failWith = StateError('decode failed after the call');
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'time?', isUser: true));
+      var toolRan = false;
+      await expectLater(
+        chat
+            .generateChatResponseWithTools(
+              onToolCall: (_) {
+                toolRan = true;
+                return const {};
+              },
+            )
+            .toList(),
+        throwsStateError,
+      );
+      expect(toolRan, isFalse);
+      expect(chat.fullHistory, isEmpty, reason: 'no call, no tool response');
+    });
+
+    for (final blocking in [false, true]) {
+      test('${blocking ? 'blocking' : 'streaming'}: a turn the chat stops '
+          'before any text commits nothing', () async {
+        final text = StreamController<String>();
+        final session = _TurnSession()..nextText = text.stream;
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        final turn = blocking
+            ? chat.generateChatResponse()
+            : chat.generateChatResponseAsync().toList();
+        await pumpEventQueue();
+        await chat.stopGeneration();
+        await text.close();
+        await turn;
+        expect(chat.fullHistory, isEmpty);
+        expect(chat.currentTokens, 0);
+      });
+    }
+
+    test('a zero-text turn whose end never completes ends within '
+        'chatTurnErrorEndTimeout and keeps its message: an end it never '
+        'learns is not a stop', () async {
+      final previous = chatTurnErrorEndTimeout;
+      chatTurnErrorEndTimeout = const Duration(milliseconds: 50);
+      addTearDown(() => chatTurnErrorEndTimeout = previous);
+      final session = _TurnSession(tokens: const [])
+        ..endFuture = Completer<TurnEnd>().future;
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+      await chat.generateChatResponseAsync().toList().timeout(
+        const Duration(seconds: 2),
+      );
+      expect(chat.fullHistory.single.text, 'q');
+    });
+
+    test('a stop in one turn does not take back the next one', () async {
+      final session = _TurnSession(tokens: ['Par']);
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'one', isUser: true));
+      await chat.stopGeneration();
+      await chat.generateChatResponseAsync().toList();
+      session.tokens = const [];
+      await chat.addQueryChunk(const Message(text: 'two', isUser: true));
+      await chat.generateChatResponseAsync().toList();
+      expect(chat.fullHistory.last.text, 'two');
+    });
+
+    test(
+      'a turn the engine reports stopped before any text commits nothing',
+      () async {
+        final session = _TurnSession(tokens: const [], end: TurnEnd.stopped);
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        expect(chat.fullHistory, isEmpty);
+      },
+    );
+
+    test('a turn that completes with no text keeps its message: only a stop '
+        'takes it back', () async {
+      for (final end in [null, TurnEnd.endOfSequence]) {
+        final session = _TurnSession(tokens: const [], end: end);
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        expect(chat.fullHistory.single.text, 'q', reason: '$end');
+      }
+    });
+
+    test('a consumer that cancels after an error it has not seen yet stops '
+        'the turn: the bound does not fire later and take it back', () async {
+      final previous = chatTurnErrorEndTimeout;
+      chatTurnErrorEndTimeout = const Duration(milliseconds: 50);
+      addTearDown(() => chatTurnErrorEndTimeout = previous);
+      final text = StreamController<String>();
+      final session = _TurnSession()..nextText = text.stream;
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+      final errors = <Object>[];
+      late final StreamSubscription<ModelResponse> sub;
+      final cancelled = Completer<void>();
+      sub = chat.generateChatResponseAsync().listen((_) {
+        if (!cancelled.isCompleted) cancelled.complete(sub.cancel());
+      }, onError: errors.add);
+      // The error is held for the bound; the chunk after it reaches the
+      // consumer, who cancels.
+      text
+        ..addError(StateError('decode failed'))
+        ..add('Par');
+      await cancelled.future;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(errors, isEmpty);
+      expect(chat.fullHistory.first.text, 'q', reason: 'a stop keeps it');
+    });
+
+    test('a hooked turn after a taken-back core turn still answers the '
+        'calls it committed', () async {
+      final session = _TurnSession(tokens: ['x'])
+        ..failWith = StateError('core turn failed');
+      final chat = InferenceChat(
+        sessionCreator: () async => session,
+        maxTokens: 1024,
+        supportsFunctionCalls: true,
+        tools: const [_tool],
+        turnHooks: _CoreThenScriptedHooks(() async* {
+          yield const FunctionCallResponse(name: 'get_time', args: {});
+          throw StateError('hooked turn failed after its call');
+        }),
+      );
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+      await expectLater(
+        chat.generateChatResponseAsync().toList(),
+        throwsStateError,
+      );
+      final fed = <Message>[];
+      await expectLater(
+        chat
+            .generateChatResponseWithTools(onToolCall: (_) => const {})
+            .toList(),
+        throwsStateError,
+      );
+      fed.addAll(
+        session.staged.where((m) => m.type == MessageType.toolResponse),
+      );
+      // The hooked turn's call was answered: the core turn's take-back did
+      // not carry over into it.
+      expect(fed, hasLength(1));
+    });
+
+    test(
+      'a stop is not a failure: the message and the partial reply stay',
+      () async {
+        final session = _TurnSession(tokens: ['Par'], end: TurnEnd.stopped);
+        final chat = toolChat(session);
+        await chat.initSession();
+        await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+        await chat.generateChatResponseAsync().toList();
+        expect(chat.fullHistory.map((m) => m.text), ['q', 'Par']);
+      },
+    );
+
+    test('a cancelled subscription keeps the staged message', () async {
+      final session = _TurnSession(tokens: ['Par', 'tial']);
+      final chat = toolChat(session);
+      await chat.initSession();
+      await chat.addQueryChunk(const Message(text: 'q', isUser: true));
+      final sub = chat.generateChatResponseAsync().listen(null);
+      await sub.cancel();
+      expect(chat.fullHistory.first.text, 'q');
+    });
+  });
+}

@@ -1,3 +1,7 @@
+## Unreleased
+- Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and media.
+- Native: a turn cut short by closing its session or model ends with a `StateError`.
+
 ## 1.19.2
 - Android GPU: the #364 prefill flush is set on Adreno only; other GPUs use the engine default (#763).
 - Require `flutter_edge_ai` >=2.5.5 <2.6.0.

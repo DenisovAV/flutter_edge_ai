@@ -12,6 +12,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// This session's getResponseAsync() yields an EMPTY stream, simulating a
 /// stopGeneration() that fires before any text token is produced.
 class _EmptyResponseSession implements InferenceModelSession {
+  @override
+  EngineTurn startTurn() => EngineTurn(text: getResponseAsync(), end: null);
+
   final List<Message> addedMessages = [];
 
   @override

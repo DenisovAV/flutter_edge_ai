@@ -6,7 +6,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:llamadart/llamadart.dart' as llama;
 
 import 'engine_queue.dart';
-import 'llama_inference_chat.dart';
+import 'llama_chat_turn_hooks.dart';
 import 'llama_inference_session.dart';
 import 'runtime_error.dart';
 
@@ -88,74 +88,55 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
   @override
   LlamaInferenceSession? get session => _session;
   @override
-  List<edge.InferenceModelSession> get sessions =>
-      List.unmodifiable([?_session, ..._detached]);
+  List<edge.InferenceModelSession> get engineSessions => [
+    ?_session,
+    ..._detached,
+  ];
 
+  /// Tools are off when [ChatRequest.supportsFunctionCalls] is false and on
+  /// whenever there are any otherwise; [edge.ToolChoice.required] needs one.
+  /// The GGUF template renders the declarations itself.
   @override
-  Future<LlamaInferenceChat> createChat({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    int tokenBuffer = 256,
-    String? loraPath,
-    bool? supportImage,
-    bool? supportAudio,
-    List<edge.Tool> tools = const [],
-    bool? supportsFunctionCalls,
-    bool enableThinking = false,
-    edge.ModelType? modelType,
-    edge.ToolChoice toolChoice = edge.ToolChoice.auto,
-    int? maxFunctionBufferLength,
-    String? systemInstruction,
-    int? maxOutputTokens,
-  }) async {
-    final effectiveTools = supportsFunctionCalls == false
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) {
+    if (request.tokenBuffer < 0 || request.tokenBuffer >= maxTokens) {
+      throw ArgumentError(
+        'tokenBuffer must be nonnegative and below context size.',
+      );
+    }
+    final effectiveTools = request.supportsFunctionCalls == false
         ? const <edge.Tool>[]
-        : List<edge.Tool>.of(tools);
-    if (toolChoice == edge.ToolChoice.required && effectiveTools.isEmpty) {
+        : request.tools;
+    if (request.toolChoice == edge.ToolChoice.required &&
+        effectiveTools.isEmpty) {
       throw ArgumentError('ToolChoice.required needs enabled tools.');
     }
-    final result = LlamaInferenceChat(
-      sessionCreator: () => _makeSession(
-        detached: false,
-        temperature: temperature,
-        randomSeed: randomSeed,
-        topK: topK,
-        topP: topP,
-        loraPath: loraPath,
-        enableVisionModality: supportImage,
-        enableAudioModality: supportAudio,
-        systemInstruction: systemInstruction,
-        enableThinking: enableThinking,
-        modelType: modelType ?? this.modelType,
-        tools: effectiveTools,
-        maxOutputTokens: maxOutputTokens,
-        toolChoice: switch (toolChoice) {
-          edge.ToolChoice.auto => llama.ToolChoice.auto,
-          edge.ToolChoice.required => llama.ToolChoice.required,
-          edge.ToolChoice.none => llama.ToolChoice.none,
-        },
-      ),
-      maxTokens: maxTokens,
-      tokenBuffer: tokenBuffer,
-      supportImage: supportImage ?? this.supportImage,
-      supportAudio: supportAudio ?? this.supportAudio,
-      tools: effectiveTools,
+    return ResolvedChatRequest(
+      modelType: request.modelType ?? modelType,
+      supportImage: request.supportImage ?? supportImage,
+      supportAudio: request.supportAudio ?? supportAudio,
       supportsFunctionCalls: effectiveTools.isNotEmpty,
-      enableThinking: enableThinking,
-      modelType: modelType ?? this.modelType,
-      fileType: fileType,
-      toolChoice: toolChoice,
-      maxFunctionBufferLength: maxFunctionBufferLength ?? 1024,
+      tools: effectiveTools,
+      maxFunctionBufferLength: request.maxFunctionBufferLength ?? 1024,
+      runtimeInjectsToolDeclarations: true,
+      temperature: request.temperature,
+      randomSeed: request.randomSeed,
+      topK: request.topK,
+      topP: request.topP,
+      tokenBuffer: request.tokenBuffer,
+      loraPath: request.loraPath,
+      enableThinking: request.enableThinking,
+      toolChoice: request.toolChoice,
+      systemInstruction: request.systemInstruction,
+      maxOutputTokens: request.maxOutputTokens,
     );
-    await result.initSession();
-    chat = result;
-    return result;
   }
 
   @override
-  Future<LlamaInferenceChat> openChat({
+  ChatTurnHooks createChatTurnHooks(ResolvedChatRequest request) =>
+      LlamaChatTurnHooks(enableThinking: request.enableThinking);
+
+  @override
+  Future<edge.InferenceChat> createChat({
     double? temperature,
     int? randomSeed,
     int? topK,
@@ -173,46 +154,59 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
     String? systemInstruction,
     int? maxOutputTokens,
   }) async {
-    final effectiveTools = supportsFunctionCalls == false
-        ? const <edge.Tool>[]
-        : List<edge.Tool>.of(tools);
-    if (toolChoice == edge.ToolChoice.required && effectiveTools.isEmpty) {
-      throw ArgumentError('ToolChoice.required needs enabled tools.');
-    }
-    final result = LlamaInferenceChat(
-      sessionCreator: () => _makeSession(
-        detached: true,
+    final resolved = resolveChatRequest(
+      ChatRequest(
         temperature: temperature,
         randomSeed: randomSeed,
         topK: topK,
         topP: topP,
+        tokenBuffer: tokenBuffer,
         loraPath: loraPath,
-        enableVisionModality: supportImage,
-        enableAudioModality: supportAudio,
-        systemInstruction: systemInstruction,
+        supportImage: supportImage,
+        supportAudio: supportAudio,
+        tools: tools,
+        supportsFunctionCalls: supportsFunctionCalls,
         enableThinking: enableThinking,
-        modelType: modelType ?? this.modelType,
-        tools: effectiveTools,
+        modelType: modelType,
+        toolChoice: toolChoice,
+        maxFunctionBufferLength: maxFunctionBufferLength,
+        systemInstruction: systemInstruction,
         maxOutputTokens: maxOutputTokens,
-        toolChoice: switch (toolChoice) {
-          edge.ToolChoice.auto => llama.ToolChoice.auto,
-          edge.ToolChoice.required => llama.ToolChoice.required,
-          edge.ToolChoice.none => llama.ToolChoice.none,
-        },
+      ),
+    );
+    final result = edge.InferenceChat(
+      sessionCreator: () => _makeSession(
+        detached: false,
+        temperature: resolved.temperature,
+        randomSeed: resolved.randomSeed,
+        topK: resolved.topK,
+        topP: resolved.topP,
+        loraPath: resolved.loraPath,
+        enableVisionModality: resolved.supportImage,
+        enableAudioModality: resolved.supportAudio,
+        systemInstruction: resolved.systemInstruction,
+        enableThinking: resolved.enableThinking,
+        modelType: resolved.modelType,
+        tools: resolved.tools,
+        maxOutputTokens: resolved.maxOutputTokens,
+        toolChoice: _llamaToolChoice(resolved.toolChoice),
       ),
       maxTokens: maxTokens,
-      tokenBuffer: tokenBuffer,
-      supportImage: supportImage ?? this.supportImage,
-      supportAudio: supportAudio ?? this.supportAudio,
-      tools: effectiveTools,
-      supportsFunctionCalls: effectiveTools.isNotEmpty,
-      enableThinking: enableThinking,
-      modelType: modelType ?? this.modelType,
+      tokenBuffer: resolved.tokenBuffer,
+      supportImage: resolved.supportImage,
+      supportAudio: resolved.supportAudio,
+      tools: resolved.tools,
+      supportsFunctionCalls: resolved.supportsFunctionCalls,
+      enableThinking: resolved.enableThinking,
+      modelType: resolved.modelType,
       fileType: fileType,
-      toolChoice: toolChoice,
-      maxFunctionBufferLength: maxFunctionBufferLength ?? 1024,
+      toolChoice: resolved.toolChoice,
+      maxFunctionBufferLength: resolved.maxFunctionBufferLength,
+      runtimeInjectsToolDeclarations: resolved.runtimeInjectsToolDeclarations,
+      turnHooks: createChatTurnHooks(resolved),
     );
     await result.initSession();
+    chat = result;
     return result;
   }
 
@@ -245,32 +239,30 @@ class LlamaInferenceModel extends edge.InferenceModel with CloseNotifier {
   );
 
   @override
-  Future<LlamaInferenceSession> openSession({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    String? loraPath,
-    bool? enableVisionModality,
-    bool? enableAudioModality,
-    String? systemInstruction,
-    bool enableThinking = false,
-    List<edge.Tool> tools = const [],
-    int? maxOutputTokens,
-  }) => _makeSession(
-    detached: true,
-    temperature: temperature,
-    randomSeed: randomSeed,
-    topK: topK,
-    topP: topP,
-    loraPath: loraPath,
-    enableVisionModality: enableVisionModality,
-    enableAudioModality: enableAudioModality,
-    systemInstruction: systemInstruction,
-    enableThinking: enableThinking,
-    tools: tools,
-    maxOutputTokens: maxOutputTokens,
-  );
+  Future<LlamaInferenceSession> openEngineSession(SessionRequest request) =>
+      _makeSession(
+        detached: true,
+        temperature: request.temperature,
+        randomSeed: request.randomSeed,
+        topK: request.topK,
+        topP: request.topP,
+        loraPath: request.loraPath,
+        enableVisionModality: request.enableVisionModality,
+        enableAudioModality: request.enableAudioModality,
+        systemInstruction: request.systemInstruction,
+        enableThinking: request.enableThinking,
+        modelType: request.modelType,
+        tools: request.tools,
+        maxOutputTokens: request.maxOutputTokens,
+        toolChoice: _llamaToolChoice(request.toolChoice),
+      );
+
+  static llama.ToolChoice _llamaToolChoice(edge.ToolChoice choice) =>
+      switch (choice) {
+        edge.ToolChoice.auto => llama.ToolChoice.auto,
+        edge.ToolChoice.required => llama.ToolChoice.required,
+        edge.ToolChoice.none => llama.ToolChoice.none,
+      };
 
   Future<LlamaInferenceSession> _makeSession({
     required bool detached,

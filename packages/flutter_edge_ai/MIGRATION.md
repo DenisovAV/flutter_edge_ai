@@ -1,5 +1,52 @@
 # Migration guide
 
+## flutter_edge_ai 2.6.0
+
+### `implements InferenceModel`
+
+A class that `implements InferenceModel` declares four new members, all in
+`package:flutter_edge_ai/engine.dart`: `openEngineSession(SessionRequest)`
+(fail it with `UnsupportedError` if the class opens no sessions),
+`resolveChatRequest(ChatRequest)` (return a `ResolvedChatRequest`),
+`createChatTurnHooks(ResolvedChatRequest)` (return `ChatTurnHooks()`) and
+`engineSessions`. A class that `extends InferenceModel` inherits core's
+defaults. `openSession`, `openChat` and `sessions` are `@nonVirtual`: an
+engine that overrode them moves its `openSession` body to
+`openEngineSession`, its `openChat` defaults to `resolveChatRequest`, and its
+`sessions` to `engineSessions`.
+
+### `implements InferenceModelSession`
+
+A class that `implements InferenceModelSession` declares `startTurn()`,
+returning an `EngineTurn` (from `package:flutter_edge_ai/engine.dart`):
+`EngineTurn(text: getResponseAsync(), end: null)` when it cannot say how a
+turn ended. A class that `extends InferenceModelSession` inherits that.
+
+### Chat turns
+
+`InferenceChat.generateChatResponse` and `generateChatResponseAsync` are
+`@nonVirtual`: a subclass that overrides them, an app's test fake among
+them, gets an `invalid_override_of_non_virtual_member` warning. Script the
+turns through `InferenceChat(turnHooks:)` instead, with a `ChatTurnHooks`
+subclass whose `responses` returns the turn's stream, and give a chat built
+with `sessionCreator: null` a session (`chat.session = …`), which the hooks
+receive.
+
+### A failed chat turn commits nothing
+
+When the engine fails a turn of an `InferenceChat` (its text ends with an
+error), the messages staged for that turn, and any tool call the turn had
+committed, are taken back out of `fullHistory` before the error reaches the
+caller; up to 2.5.x they stayed. `generateChatResponseWithTools` then answers
+no tool call of that turn. Both hold for core's turns; an engine that runs
+its turns through `ChatTurnHooks.responses` (llama) keeps its own history
+and its committed calls are answered as before. A stop or a cancelled
+subscription is not a failure and keeps what was generated, except a stop
+before any text: such a turn is taken back as well. An engine that refuses
+an input too long for what the context window has left fails the turn with
+the new `ContextLimitException` (and `TurnEnd.contextLimit`): resend a
+shorter input, or start the chat over.
+
 ## flutter_edge_ai 2.5.x: engines that keep core below 2.6.0
 
 > These versions require `flutter_edge_ai` `<2.6.0`, so `flutter pub upgrade` keeps

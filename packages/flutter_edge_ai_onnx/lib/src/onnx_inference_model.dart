@@ -1,8 +1,9 @@
 // ORT-GenAI `InferenceModel` — text-only v1 (hardened plan Phase 3, Task 2).
 // Shape mirrors `FfiInferenceModel`
 // (`flutter_edge_ai_litertlm/lib/src/ffi/ffi_inference_model.dart`)'s
-// createSession singleton lane (issue #308 pattern) plus its `openSession`
-// cap; the base `InferenceModel.createChat`/`openChat`, which route through
+// createSession singleton lane (issue #308 pattern) plus its open-session
+// cap (`openEngineSession`, behind core's `openSession`); the base
+// `InferenceModel.createChat` and core's `openChat`, which route through
 // `createSession`/`openSession`, are inherited unchanged.
 import 'dart:async';
 
@@ -101,8 +102,10 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
   InferenceModelSession? get session => _session;
 
   @override
-  List<InferenceModelSession> get sessions =>
-      List.unmodifiable([?_session, ..._openSessions]);
+  List<InferenceModelSession> get engineSessions => [
+    ?_session,
+    ..._openSessions,
+  ];
 
   StateError _closedError() {
     final death = _deathReason;
@@ -122,19 +125,20 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
   /// Throws [StateError] when [maxConcurrentSessions] sessions are already
   /// open. See the class doc for what an open session costs.
   @override
-  Future<InferenceModelSession> openSession({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    String? loraPath,
-    bool? enableVisionModality,
-    bool? enableAudioModality,
-    String? systemInstruction,
-    bool enableThinking = false,
-    List<Tool> tools = const [],
-    int? maxOutputTokens,
-  }) async {
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    final SessionRequest(
+      :temperature,
+      :randomSeed,
+      :topK,
+      :topP,
+      :loraPath,
+      :enableVisionModality,
+      :enableAudioModality,
+      :systemInstruction,
+      :maxOutputTokens,
+    ) = request;
     if (_isClosed) throw _closedError();
     _rejectUnsupported(loraPath, enableVisionModality, enableAudioModality);
     final cap = maxConcurrentSessions;
@@ -172,6 +176,30 @@ class OnnxInferenceModel extends InferenceModel with CloseNotifier {
     _openSessions.add(opened);
     return opened;
   }
+
+  /// [openChat]'s unset model type is this model's own (D8); the rest are
+  /// core's defaults: ONNX GenAI sessions are text-only.
+  @override
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) =>
+      ResolvedChatRequest(
+        modelType: request.modelType ?? modelType,
+        supportImage: request.supportImage ?? false,
+        supportAudio: request.supportAudio ?? false,
+        supportsFunctionCalls: request.supportsFunctionCalls ?? false,
+        tools: request.tools,
+        maxFunctionBufferLength:
+            request.maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
+        temperature: request.temperature,
+        randomSeed: request.randomSeed,
+        topK: request.topK,
+        topP: request.topP,
+        tokenBuffer: request.tokenBuffer,
+        loraPath: request.loraPath,
+        enableThinking: request.enableThinking,
+        toolChoice: request.toolChoice,
+        systemInstruction: request.systemInstruction,
+        maxOutputTokens: request.maxOutputTokens,
+      );
 
   void _rejectUnsupported(
     String? loraPath,

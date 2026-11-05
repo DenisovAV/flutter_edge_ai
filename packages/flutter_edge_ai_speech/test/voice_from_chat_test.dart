@@ -18,6 +18,8 @@ import 'package:flutter_edge_ai_speech/src/voice/voice_event.dart'
 import 'package:flutter_edge_ai_speech/src/voice/voice_session.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/noop_session.dart';
+
 class _NoopRecognizer implements SpeechRecognizer {
   @override
   String? language;
@@ -47,15 +49,21 @@ class _FixedRecognizer implements SpeechRecognizer {
 /// 'done' text turn), so the real `generateChatResponseWithTools` loop can be
 /// driven through `VoiceSession.fromChat` without a native session.
 class _ScriptChat extends InferenceChat {
-  _ScriptChat(this._turns, {super.supportAudio})
+  _ScriptChat(List<List<ModelResponse>> turns, {bool supportAudio = false})
+    : this._(_Turns(turns), supportAudio: supportAudio);
+
+  _ScriptChat._(this._script, {super.supportAudio})
     : super(
         sessionCreator: null,
         maxTokens: 1024,
         tools: const [Tool(name: 'get_time', description: 't')],
-      );
-  final List<List<ModelResponse>> _turns;
-  int _i = 0;
-  int generations = 0;
+        turnHooks: ScriptedTurnHooks(_script.next),
+      ) {
+    session = NoopSession();
+  }
+
+  final _Turns _script;
+  int get generations => _script.generations;
   final List<Message> received = [];
 
   @override
@@ -64,17 +72,6 @@ class _ScriptChat extends InferenceChat {
     bool noTool = false,
     bool prefix = false,
   ]) async => received.add(m);
-
-  @override
-  Stream<ModelResponse> generateChatResponseAsync() async* {
-    generations++;
-    final turn = _i < _turns.length
-        ? _turns[_i++]
-        : const <ModelResponse>[TextResponse('done')];
-    for (final r in turn) {
-      yield r;
-    }
-  }
 
   @override
   Future<void> stopGeneration() async {}
@@ -348,10 +345,37 @@ void _expectWav16kMono(Uint8List wav, Uint8List pcm) {
   expect(wav.sublist(44), pcm);
 }
 
+/// One scripted turn per generation; a 'done' text turn past the script.
+class _Turns {
+  _Turns(this._turns);
+
+  final List<List<ModelResponse>> _turns;
+  int _i = 0;
+  int generations = 0;
+
+  Stream<ModelResponse> next() async* {
+    generations++;
+    final turn = _i < _turns.length
+        ? _turns[_i++]
+        : const <ModelResponse>[TextResponse('done')];
+    for (final r in turn) {
+      yield r;
+    }
+  }
+}
+
 /// A tools-free chat that records what it is fed and answers 'Paris'.
 class _AudioChat extends InferenceChat {
   _AudioChat({required super.supportAudio})
-    : super(sessionCreator: null, maxTokens: 1024);
+    : super(
+        sessionCreator: null,
+        maxTokens: 1024,
+        turnHooks: ScriptedTurnHooks(
+          () => Stream.value(const TextResponse('Paris')),
+        ),
+      ) {
+    session = NoopSession();
+  }
 
   final List<Message> received = [];
 
@@ -361,11 +385,6 @@ class _AudioChat extends InferenceChat {
     bool noTool = false,
     bool prefix = false,
   ]) async => received.add(m);
-
-  @override
-  Stream<ModelResponse> generateChatResponseAsync() async* {
-    yield const TextResponse('Paris');
-  }
 
   @override
   Future<void> stopGeneration() async {}

@@ -12,6 +12,7 @@ library;
 
 export 'src/interface.dart'
     show
+        ContextLimitException,
         FlutterEdgeAiPlugin,
         InferenceModel,
         InferenceModelSession,
@@ -19,6 +20,7 @@ export 'src/interface.dart'
         SessionMetrics,
         SpeechRecognizer,
         SpeechSynthesizer,
+        TurnEnd,
         supportedLoraRanks;
 export 'src/model_file_manager_interface.dart'
     show ModelFileManager, ModelReplacePolicy;

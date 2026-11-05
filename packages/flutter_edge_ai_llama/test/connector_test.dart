@@ -362,6 +362,46 @@ void main() {
     },
   );
 
+  test(
+    'openChat and createChat apply the GGUF chat rules the same way',
+    () async {
+      const tool = edge.Tool(name: 'get_time', description: 'Time.');
+      for (final create in [model.createChat, model.openChat]) {
+        for (final tokenBuffer in [-1, 2048]) {
+          await expectLater(
+            create(tokenBuffer: tokenBuffer),
+            throwsA(isA<ArgumentError>()),
+            reason: 'tokenBuffer $tokenBuffer',
+          );
+        }
+        await expectLater(
+          create(
+            tools: const [tool],
+            supportsFunctionCalls: false,
+            toolChoice: edge.ToolChoice.required,
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+        final off = await create(
+          tools: const [tool],
+          supportsFunctionCalls: false,
+        );
+        expect(off.tools, isEmpty);
+        expect(off.supportsFunctionCalls, isFalse);
+        await off.close();
+        // 0 is a valid buffer: the whole context is the chat's.
+        await (await create(tokenBuffer: 0)).close();
+        final on = await create(tools: const [tool]);
+        expect(on.tools.single.name, 'get_time');
+        expect(on.supportsFunctionCalls, isTrue);
+        // The GGUF template renders the declarations; the chat must not.
+        expect(on.runtimeInjectsToolDeclarations, isTrue);
+        expect(on.maxFunctionBufferLength, 1024);
+        await on.close();
+      }
+    },
+  );
+
   test('disabled modalities and orphan tool results fail loudly', () async {
     await expectLater(
       model.createChat(toolChoice: edge.ToolChoice.required),
@@ -1006,7 +1046,7 @@ void main() {
       engine.templatePrompt = '<think></think>';
       engine.firstText = '<think>secret';
       engine.blockGeneration = true;
-      final session = await model.openSession();
+      final session = await model.openSession() as LlamaInferenceSession;
       await session.addQueryChunk(
         edge.Message.text(text: 'abandoned', isUser: true),
       );
@@ -1805,7 +1845,7 @@ void main() {
   });
 
   test('empty inputs fail before entering history', () async {
-    final session = await model.openSession();
+    final session = await model.openSession() as LlamaInferenceSession;
     await expectLater(
       session.addQueryChunk(edge.Message.text(text: '', isUser: true)),
       throwsA(isA<ArgumentError>()),

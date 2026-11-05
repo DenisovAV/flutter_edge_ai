@@ -57,7 +57,7 @@ class AppStoreListing {
   final int? ratings;
 }
 
-/// Store figures as of 2026-11-04.
+/// Store figures as of 2026-11-04; GiGi's as of 2026-11-05.
 const showcaseApps = <ShowcaseApp>[
   ShowcaseApp(
     name: 'LocalMind: Ollama & LM Studio',
@@ -84,6 +84,11 @@ const showcaseApps = <ShowcaseApp>[
     name: 'Live Captions XR',
     icon: '/images/showcase/com.livecaptionsxr.app-1.png',
     googlePlay: GooglePlayListing('com.livecaptionsxr.app', installs: 100),
+  ),
+  ShowcaseApp(
+    name: 'GiGi by IntelliGeeks',
+    icon: '/images/showcase/com.intelligeeks.gigi-1.png',
+    googlePlay: GooglePlayListing('com.intelligeeks.gigi', installs: 10),
   ),
 ];
 

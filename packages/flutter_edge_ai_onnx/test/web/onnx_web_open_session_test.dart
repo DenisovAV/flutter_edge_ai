@@ -620,6 +620,32 @@ void main() {
     expect(model.sessions, isEmpty);
   });
 
+  test('a response format is refused on the web, saying why, before any '
+      'session opens', () async {
+    final model = _model();
+    expect(model.structuredOutputSupport.isSupported, isFalse);
+    expect(model.structuredOutputSupport.reason, contains('Transformers.js'));
+    final format = ResponseFormat.jsonObject();
+    for (final open in [
+      () => model.openSession(responseFormat: format),
+      () => model.openChat(responseFormat: format),
+    ]) {
+      await expectLater(
+        open(),
+        throwsA(
+          isA<ResponseFormatUnsupportedException>().having(
+            (e) => e.toString(),
+            'message',
+            contains('Transformers.js'),
+          ),
+        ),
+      );
+    }
+    expect(model.sessions, isEmpty);
+    expect((_tf['pipelines']! as JSNumber).toDartInt, 0);
+    await model.close();
+  });
+
   test(
     'the engine hands RuntimeConfig.maxConcurrentSessions to the model',
     () async {

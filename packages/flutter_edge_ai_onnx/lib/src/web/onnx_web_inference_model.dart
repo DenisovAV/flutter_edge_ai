@@ -317,6 +317,16 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
         toolChoice: request.toolChoice,
         systemInstruction: request.systemInstruction,
         maxOutputTokens: request.maxOutputTokens,
+        responseFormat: request.responseFormat,
+      );
+
+  /// None: Transformers.js generation here has no constrained decoding, and a
+  /// turn's end is a placeholder (see [OnnxWebSession.startTurn]).
+  @override
+  StructuredOutputSupport get engineStructuredOutputSupport =>
+      const StructuredOutputSupport.none(
+        'ONNX on the web (Transformers.js) does not enforce a format: it has '
+        'no constrained decoding.',
       );
 
   /// What [createSession] and [openEngineSession] refuse, and what they

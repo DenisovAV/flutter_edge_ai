@@ -252,12 +252,23 @@ the plugin sends back, a request's `ref` becomes its call's id
 ### Structured (JSON) output
 
 The plugin advertises `output: ['text', 'json']`. Genkit asks for constrained
-output whenever you pass an `outputSchema`. No on-device engine can constrain
-decoding to a schema, so the plugin writes the schema into the prompt as
-instructions, the way Genkit's `simulateConstrainedGeneration()` middleware
-does (adding the middleware as well is harmless: the schema is written once).
-It returns the raw model text and Genkit's `extractJson` populates
-`response.output`. Pass `outputConstrained: false` to leave the prompt alone.
+output whenever you pass an `outputSchema`. The plugin always writes the schema
+into the prompt as instructions, the way Genkit's
+`simulateConstrainedGeneration()` middleware does (adding the middleware as
+well is harmless: the schema is written once, and the middleware turns the
+native path below off). Pass `outputConstrained: false` to leave the prompt
+alone.
+
+When the request has no tools and no `enableThinking`, and the loaded model
+accepts the schema (`InferenceModel.refusalFor` returns null), the schema is
+also sent as the chat's `responseFormat`: the engine constrains decoding to it
+and flutter_edge_ai checks the model's reply text. Whether a model enforces a
+format, and which keywords, is its `structuredOutputSupport`. A schema the
+model refuses, one outside flutter_edge_ai's dialect (a type union, a
+recursive type, `format`, `oneOf`/`anyOf`), or one the engine rejects at the
+first send, is not an error: the request runs prompt-only. Genkit's `$ref`s to
+a type's definitions are inlined first. A structured request opens a session
+of its own, which counts against `maxConcurrentSessions`.
 
 ```dart
 final response = await ai.generate(
@@ -269,8 +280,24 @@ final response = await ai.generate(
 final Recipe? recipe = response.output;
 ```
 
-Genkit does not check the reply against the schema, so validate
-`response.output` yourself. What you get depends on the reply:
+A structured turn that ends without a value of the schema fails with a
+`GenkitException` whose `cause` is flutter_edge_ai's exception: `OUT_OF_RANGE`
+when `maxOutputTokens` or the context window cut the value, or the input did
+not fit the window (`ContextLimitException`, on any request), `ABORTED` when it
+was stopped or the model was closed mid-turn, `FAILED_PRECONDITION` for a
+non-conforming reply (an engine bug). None of them sends the request to another
+model, through `genkit_hybrid`'s router or its deprecated `hybridModel`,
+`hybridModelOnDeviceCloud` and `cascadeModel`. A cancel is Genkit's
+`CancelledException`.
+
+Core checks the model's text, not `response.output`: Genkit's `json` format
+reads the value with `extractJson`, which prefers a fenced block inside the
+text: a checked object whose string field holds a Markdown code block
+printing 42 comes back as the number `42`. Validate `response.output` on this
+path too, or decode `response.text` yourself.
+
+On the prompt-only path Genkit does not check the reply against the schema, so
+validate `response.output` yourself. What you get depends on the reply:
 
 - **No JSON at all** (or an object cut off mid-way): the result still finishes
   with `FinishReason.stop`, `response.output` is null and `response.error` says

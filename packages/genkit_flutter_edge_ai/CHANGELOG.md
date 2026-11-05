@@ -1,3 +1,7 @@
+## Unreleased
+- An output schema goes to the model as `responseFormat` when it enforces one (#195).
+- The embedder passes Genkit's cancel to `embedAll`.
+
 ## 0.11.1
 - Each request closes its chat before the next one starts (#767).
 

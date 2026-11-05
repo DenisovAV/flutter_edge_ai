@@ -20,7 +20,7 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Multimodal input — several images and one audio clip per user message, from `data:` URIs, `file://` paths, absolute paths or `http(s)://` URLs (each download at most 20 MiB, 30 s for all of a request's downloads; a cancel aborts them). A part without a `contentType` is typed from its URI, the served Content-Type, its extension or its bytes; a part the model cannot take, media outside a user message included, is refused with `INVALID_ARGUMENT`, never dropped
 - Function calling / tool use with `toolChoice` control (`auto`, `required`, `none`) — honors Genkit's native top-level `toolChoice`
 - Parallel tool calls — several calls in one response, each with a `ref` that no other call of the turn has, so Genkit pairs every tool response with its request; the refs stay in the history as call ids
-- Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt and Genkit parses `response.output`
+- Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt, sends it as flutter_edge_ai's `responseFormat` when the loaded model enforces it, and Genkit parses `response.output`
 - Context-window trimmer middleware (`trimContext`) — drops oldest turns to fit the on-device KV budget
 - On-device routing decisions — `DeciderRouteClassifier.load` (or `deciderRouteClassifier` over a decider you keep) turns a flutter_edge_ai `Decider` into a `genkit_hybrid` router classifier, and `flutterEdgeAi.warmUp` loads the model before the first request
 - Thinking mode on models that support it
@@ -227,13 +227,27 @@ Write it as `toolChoice: .none`: genkit 1.0 and `flutter_edge_ai` both export a
 ## Structured Output
 
 The plugin advertises `output: ['text', 'json']`. Genkit asks for constrained
-output whenever you pass an `outputSchema` (a `schemantic` type). No on-device
-engine can constrain decoding to a schema, so the plugin writes the schema into
-the prompt as instructions, the way Genkit's `simulateConstrainedGeneration()`
-middleware does (adding the middleware as well is harmless: the schema is
-written once). It returns the raw model text and Genkit's `extractJson`
-populates `response.output`. Pass `outputConstrained: false` to leave the
-prompt alone.
+output whenever you pass an `outputSchema` (a `schemantic` type). The plugin
+always writes the schema into the prompt as instructions, the way Genkit's
+`simulateConstrainedGeneration()` middleware does (adding the middleware as
+well is harmless: the schema is written once, and the middleware turns the
+native path below off). Pass `outputConstrained: false` to leave the prompt
+alone.
+
+When the request has no tools and no `enableThinking`, and the loaded model
+accepts the schema (`InferenceModel.refusalFor` returns null), the schema is
+also sent to flutter_edge_ai as the chat's `responseFormat`: the engine
+constrains decoding to it and flutter_edge_ai checks the model's reply text.
+Whether the loaded model enforces a format, and which schema keywords, is its
+`structuredOutputSupport`. A schema the model refuses, one outside
+flutter_edge_ai's dialect (a type union, a recursive type, `format`,
+`oneOf`/`anyOf`, an `additionalProperties` schema), or one the engine rejects at
+the first send, is not an error: the request runs prompt-only, as it did
+before any engine could enforce a schema. Genkit's references to a type's
+definitions (`$ref`, `$defs`, and the single `allOf` schemantic writes for a
+field with a description) are inlined first. A structured request opens a
+session of its own, so it counts against the model's `maxConcurrentSessions`;
+a prompt-only one does not.
 
 ```dart
 final response = await ai.generate(
@@ -245,8 +259,32 @@ final response = await ai.generate(
 final Recipe? recipe = response.output;
 ```
 
-Genkit does not check the reply against the schema, so validate
-`response.output` yourself. What you get depends on the reply:
+A structured turn that does not end in a value of the schema fails with a
+`GenkitException` (inside `ai.generate`, a result with
+`FinishReason.failed`) whose `cause` is flutter_edge_ai's exception, carrying
+the partial or non-conforming text. None of these statuses sends the request
+to another model: not `genkit_hybrid`'s router, and not its deprecated
+`hybridModel`, `hybridModelOnDeviceCloud` and `cascadeModel`. A reply that
+failed its schema would fail the same way again, and whether the prompt may go
+to the cloud is the app's decision.
+
+| flutter_edge_ai | Status |
+|---|---|
+| `IncompleteStructuredOutputException`, `end: outputLimit` (raise `maxOutputTokens`) or `end: contextLimit` (the context window) | `OUT_OF_RANGE` |
+| `ContextLimitException`: the input did not fit what the context window had left (on any request, structured or not; the chat is as before the turn) | `OUT_OF_RANGE` |
+| `… end: closed` (model closed or replaced mid-turn) or `end: stopped`, not by your cancel | `ABORTED` |
+| your cancel | `CancelledException` |
+| `NonConformingStructuredOutputException` (an engine bug), or an engine whose `structuredOutputSupport` lists keywords outside the dialect | `FAILED_PRECONDITION` |
+
+Core's check covers the model's text, not `response.output`: Genkit's `json`
+format reads the value with `extractJson`, which prefers a fenced block inside
+the text and never parses the whole text first. A checked object whose string
+field holds a Markdown code block printing 42 comes back as the number `42`.
+So validate `response.output` on this path too, or decode the checked text in
+`response.text` yourself.
+
+On the prompt-only path Genkit does not check the reply against the schema,
+so validate `response.output` yourself. What you get depends on the reply:
 
 - **No JSON at all** (or an object cut off mid-way): the result still finishes
   with `FinishReason.stop`, `response.output` is null and `response.error` says

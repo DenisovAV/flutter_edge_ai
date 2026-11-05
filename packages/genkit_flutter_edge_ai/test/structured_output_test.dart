@@ -12,6 +12,7 @@ import 'src/fake_runtime.dart';
 /// schema is written once, by the middleware.
 void main() {
   late FakeInferenceChat fakeChat;
+  late FakeInferenceModel fakeModel;
   late Genkit ai;
 
   setUp(() {
@@ -19,7 +20,7 @@ void main() {
       ..blockingResponse = const gemma.TextResponse(
         '{"preferredBackend": "gpu"}',
       );
-    final fakeModel = FakeInferenceModel()..chatToReturn = fakeChat;
+    fakeModel = FakeInferenceModel()..chatToReturn = fakeChat;
     ai = Genkit(
       plugins: [
         GenkitFlutterEdgeAiPlugin(
@@ -88,5 +89,30 @@ void main() {
 
     expect(response.finishReason, FinishReason.stop);
     expect(prompt(), isNot(contains('conform to the following schema')));
+  });
+
+  test('a model that enforces the schema gets a schemantic type\'s '
+      'schema as the chat\'s responseFormat', () async {
+    fakeModel
+      ..structuredSupport = const gemma.StructuredOutputSupport(
+        keywords: gemma.ResponseFormat.dialect,
+      )
+      ..newSession = () =>
+          FakeStructuredSession(tokens: ['{"preferredBackend": "npu"}']);
+
+    final response = await ai.generate(
+      model: flutterEdgeAi.model('m'),
+      prompt: 'Pick a backend.',
+      outputSchema: FlutterEdgeAiEmbedConfig.$schema,
+    );
+
+    expect(response.finishReason, FinishReason.stop);
+    expect(response.output?.preferredBackend, 'npu');
+    expect(fakeModel.createChatCallCount, 0);
+    final schema = fakeModel.sessionRequests.single.responseFormat?.schema;
+    expect(
+      (schema?['properties'] as Map?)?.keys,
+      containsAll(['preferredBackend', 'taskType']),
+    );
   });
 }

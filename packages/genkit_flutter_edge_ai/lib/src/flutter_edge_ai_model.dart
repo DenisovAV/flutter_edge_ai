@@ -13,6 +13,7 @@ import 'flutter_edge_ai_runtime.dart';
 import 'model_options_parse.dart';
 import 'model_slot.dart';
 import 'runtime_errors.dart';
+import 'schema_inline.dart';
 import 'tool_choice_parse.dart';
 
 /// Capabilities a flutter_edge_ai model advertises to Genkit, for a model
@@ -33,11 +34,15 @@ const Map<String, dynamic> kFlutterEdgeAiModelSupports = {
 /// never drift. [tools] and [media] come from the model's configuration; a
 /// request that needs one the model was configured without is rejected.
 ///
-/// `constrained: false`: no engine has a schema-constrained decoder. A request
-/// that asks for `constrained: true` output gets the schema written into the
-/// prompt, as Genkit's `simulateConstrainedGeneration()` middleware does, and
-/// Genkit extracts the JSON from the reply. The reply is not validated against
-/// the schema.
+/// `constrained: false`: whether a schema is enforced depends on the model
+/// loaded at the time, so it is not promised. A request that asks for
+/// `constrained: true` output gets the schema written into the prompt, as
+/// Genkit's `simulateConstrainedGeneration()` middleware does. When the
+/// request has no tools and no thinking, and the loaded model accepts the
+/// schema (`InferenceModel.refusalFor`), it is also sent as the chat's
+/// `responseFormat`: the engine enforces it and flutter_edge_ai checks the
+/// reply. Otherwise Genkit extracts the JSON from the reply, which nothing
+/// validates against the schema.
 Map<String, dynamic> flutterEdgeAiModelSupports({
   bool tools = true,
   bool media = true,
@@ -75,8 +80,9 @@ Model createFlutterEdgeAiModel({
 
   Future<ModelResponse> run(
     ModelRequest request,
-    ActionFnArg<ModelResponseChunk, ModelRequest, void> context,
-  ) async {
+    ActionFnArg<ModelResponseChunk, ModelRequest, void> context, {
+    gemma.JsonSchemaResponseFormat? responseFormat,
+  }) async {
     // The place in the queue is taken on arrival, so requests reach the model
     // in the order they came.
     final turn = modelSlot.enqueue();
@@ -87,6 +93,7 @@ Model createFlutterEdgeAiModel({
         modelType: modelType,
         supportsTools: supportsTools,
         supportsMedia: supportsMedia,
+        responseFormat: responseFormat,
       );
       await turn.start(context.cancel);
       return await _generate(prepared, modelSlot, context);
@@ -108,21 +115,46 @@ Model createFlutterEdgeAiModel({
     },
     fn: (request, context) {
       final output = request.output;
-      // No engine can constrain decoding to a schema, so a request that asks
-      // for it gets the schema in the prompt, the way Genkit's
-      // simulateConstrainedGeneration() middleware writes it. When the caller
+      // A request that asks for constrained output gets the schema in the
+      // prompt, the way Genkit's simulateConstrainedGeneration() middleware
+      // writes it, since whether the model can enforce it is known only once
+      // it is loaded. The schema also goes on as a responseFormat, which
+      // _generate sends when the loaded model accepts it. When the caller
       // already added that middleware, it has set `constrained` to false and
       // this does nothing.
       if (output?.constrained == true && output?.schema != null) {
+        final responseFormat = _responseFormatOf(output!);
         return SimulateConstrainedGenerationMiddleware().model(
           request,
           context,
-          run,
+          (request, context) =>
+              run(request, context, responseFormat: responseFormat),
         );
       }
       return run(request, context);
     },
   );
+}
+
+/// [output]'s schema as a flutter_edge_ai format, or null when it cannot be
+/// one: a format other than JSON, a schema whose references cannot be
+/// inlined (see [inlineSchemaRefs]), or one outside
+/// `gemma.ResponseFormat.dialect`'s rules (a type union, a boolean
+/// subschema). Such a schema stays a prompt instruction only, as before.
+gemma.JsonSchemaResponseFormat? _responseFormatOf(OutputConfig output) {
+  final format = output.format;
+  if (format != null && format != 'json') return null;
+  final schema = inlineSchemaRefs(output.schema!);
+  if (schema == null) return null;
+  try {
+    return gemma.ResponseFormat.jsonSchema(schema)
+        as gemma.JsonSchemaResponseFormat;
+  } on RangeError {
+    // A bug, not a schema outside the dialect.
+    rethrow;
+  } on ArgumentError {
+    return null;
+  }
 }
 
 /// A request converted and checked, ready for the model.
@@ -137,6 +169,7 @@ class _PreparedRequest {
     required this.messages,
     required this.inputImages,
     required this.inputAudioFiles,
+    required this.responseFormat,
   });
 
   final ModelLoadParams load;
@@ -148,6 +181,11 @@ class _PreparedRequest {
   final List<gemma.Message> messages;
   final int inputImages;
   final int inputAudioFiles;
+
+  /// The format to send when the loaded model accepts it; null when the
+  /// request asks for none, or has tools or thinking, which flutter_edge_ai
+  /// refuses beside a format.
+  final gemma.JsonSchemaResponseFormat? responseFormat;
 }
 
 /// Validates and converts [request] without touching the model: a request
@@ -159,6 +197,7 @@ Future<_PreparedRequest> _prepare(
   required gemma.ModelType modelType,
   required bool supportsTools,
   required bool supportsMedia,
+  required gemma.JsonSchemaResponseFormat? responseFormat,
 }) async {
   cancel?.throwIfCancelled();
 
@@ -244,6 +283,9 @@ Future<_PreparedRequest> _prepare(
     messages: messages,
     inputImages: inputImages,
     inputAudioFiles: inputAudioFiles,
+    responseFormat: tools.isEmpty && !(config?.enableThinking ?? false)
+        ? responseFormat
+        : null,
   );
 }
 
@@ -262,11 +304,67 @@ Future<ModelResponse> _generate(
   // for opening a chat as well.
   cancel?.throwIfCancelled();
 
+  // The format goes to the model only when it can enforce it. A refusal
+  // (most engines enforce none yet) is not an error: the schema is already
+  // in the prompt, as it was before any engine could enforce one.
+  final format = prepared.responseFormat;
+  if (format != null &&
+      await withRuntimeErrors(
+        'Could not check the output schema against the on-device model',
+        () async => model.refusalFor(format) == null,
+      )) {
+    gemma.InferenceChat? structured;
+    try {
+      structured = await withRuntimeErrors(
+        'Could not open a chat on the on-device model',
+        // A format is taken by openChat only. Tools and thinking are off:
+        // _prepare dropped the format for a request with either.
+        () => model.openChat(
+          temperature: config?.temperature,
+          randomSeed: config?.randomSeed,
+          topK: config?.topK,
+          topP: config?.topP,
+          supportImage: prepared.load.supportImage,
+          supportAudio: prepared.load.supportAudio,
+          supportsFunctionCalls: false,
+          modelType: prepared.modelType,
+          // No tools to choose among; a `required` would be refused.
+          toolChoice: gemma.ToolChoice.auto,
+          systemInstruction: prepared.systemInstruction,
+          maxFunctionBufferLength: config?.maxFunctionBufferLength,
+          maxOutputTokens: config?.maxOutputTokens,
+          responseFormat: format,
+        ),
+      );
+    } on gemma.ResponseFormatUnsupportedException {
+      // Refused after all: prompt-only, as a format refusalFor refuses.
+      structured = null;
+    }
+    if (structured != null) {
+      final tracker = _ChunkTracker();
+      try {
+        return await _runChat(structured, prepared, context, tracker);
+      } on GenkitException catch (e) {
+        // The engine refused the schema at the first send (LiteRT-LM's
+        // constraint compiler): the same capability gap as a refusal
+        // known up front, so the request runs again prompt-only, once,
+        // with the chat already closed. Not after a chunk reached the
+        // caller, nor after a failed close (its cause is then the wrapped
+        // error, not the refusal).
+        if (e.cause is! gemma.ResponseFormatUnsupportedException ||
+            tracker.sent) {
+          rethrow;
+        }
+        cancel?.throwIfCancelled();
+      }
+    }
+  }
+
   final chat = await withRuntimeErrors(
     'Could not open a chat on the on-device model',
+    // Unset sampling stays unset: flutter_edge_ai fills it from the model's
+    // own sampler or its family's defaults.
     () => model.createChat(
-      // Unset sampling stays unset: flutter_edge_ai fills it from the model's
-      // own sampler or its family's defaults.
       temperature: config?.temperature,
       randomSeed: config?.randomSeed,
       topK: config?.topK,
@@ -283,12 +381,26 @@ Future<ModelResponse> _generate(
       maxOutputTokens: config?.maxOutputTokens,
     ),
   );
+  return _runChat(chat, prepared, context, _ChunkTracker());
+}
 
-  // The chat is this request's alone. It is closed before the request's turn
-  // ends, whatever happened, so its session never outlives the request.
+/// Whether a chunk of the request's answer reached the caller.
+final class _ChunkTracker {
+  bool sent = false;
+}
+
+/// Runs [prepared] on [chat] and closes it. The chat is this request's
+/// alone: it is closed before the request's turn ends, whatever happened, so
+/// its session never outlives the request.
+Future<ModelResponse> _runChat(
+  gemma.InferenceChat chat,
+  _PreparedRequest prepared,
+  ActionFnArg<ModelResponseChunk, ModelRequest, void> context,
+  _ChunkTracker tracker,
+) async {
   final ModelResponse response;
   try {
-    response = await _respond(chat, prepared, context);
+    response = await _respond(chat, prepared, context, tracker);
   } catch (failure, failureStack) {
     try {
       await chat.close();
@@ -338,6 +450,7 @@ Future<ModelResponse> _respond(
   gemma.InferenceChat chat,
   _PreparedRequest prepared,
   ActionFnArg<ModelResponseChunk, ModelRequest, void> context,
+  _ChunkTracker tracker,
 ) async {
   final cancel = context.cancel;
 
@@ -372,7 +485,10 @@ Future<ModelResponse> _respond(
     response = context.streamingRequested
         ? await _generateStreaming(
             chat,
-            context.sendChunk,
+            (chunk) {
+              tracker.sent = true;
+              context.sendChunk(chunk);
+            },
             stopwatch,
             cancel: cancel,
             onSendChunkFailure: stop,
@@ -387,6 +503,25 @@ Future<ModelResponse> _respond(
   // the lock, or it reaches the shared native model during the next request.
   detach?.call();
   final stopFailure = await stopped;
+  // A structured turn the caller cancelled ends as an incomplete value,
+  // stopped or, when the stop raced another end, cut by that one; either way
+  // it is reported as the cancel, as a plain turn's stop is.
+  if (failure is gemma.IncompleteStructuredOutputException &&
+      (cancel?.isCancelled ?? false)) {
+    failure = null;
+    failureStack = null;
+  } else if (failure case final gemma.StructuredOutputException error) {
+    failure = structuredOutputError(
+      'The on-device model gave no value of the output schema',
+      error,
+      failureStack!,
+    );
+  } else if (failure case final gemma.ContextLimitException error) {
+    // Plain and structured turns alike: the input did not fit what the
+    // context window had left. The engine and the chat are as before the
+    // turn, and the same input fails the same way again, so it stays local.
+    failure = contextLimitError(error, failureStack!);
+  }
   if (failure != null) {
     // The generation's own error is the one reported. A stop that failed as
     // well goes into it: the engine may still be decoding, which the caller

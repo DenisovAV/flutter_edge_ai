@@ -2894,8 +2894,8 @@ class LiteRtLmFfiClient {
   bool _virtualTurnInFlight = false;
 
   /// Set when a virtual turn is cancelled mid-generation. A cancelled
-  /// conversation answers every later message with nothing, so the next turn
-  /// must rebuild it even when it belongs to the same session.
+  /// conversation answers every later message with nothing, so cleanup must
+  /// rewind it before releasing the mutex, or leave it for a rebuild.
   bool _virtualConvStopped = false;
 
   /// The exact exchange a stopped virtual turn asks native rewind to put back.
@@ -3231,9 +3231,10 @@ class LiteRtLmFfiClient {
     _cancelOn(conv);
   }
 
-  /// Records the stopped exchange after its Dart stream has drained. The next
-  /// turn rewinds it on the still-live shared conversation where possible;
-  /// this preserves media exactly instead of re-encoding it through a preface.
+  /// Records the stopped exchange after its Dart stream has drained. Cleanup
+  /// rewinds it on the still-live shared conversation before releasing the
+  /// mutex; this preserves media exactly instead of re-encoding it through a
+  /// preface.
   void finishVirtualStoppedTurn(
     Object conversationToken, {
     required String messageJson,

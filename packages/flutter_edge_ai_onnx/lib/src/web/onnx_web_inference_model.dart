@@ -458,11 +458,12 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
   Future<void> _close() async {
     _isClosed = true;
     try {
-      await _session?.close();
-      // Copied: close() takes a session out of the set.
-      for (final s in _openSessions.toList()) {
-        await s.close();
-      }
+      // Start every close before awaiting any of them. A session queued on
+      // another one's generation must observe the model close immediately,
+      // even though the running Transformers.js Promise still has to settle.
+      final sessions = Set<OnnxWebSession>.identity()..addAll(_openSessions);
+      if (_session case final session?) sessions.add(session);
+      await Future.wait([for (final session in sessions) session.close()]);
     } finally {
       _pipeline = null;
       _tokenizer = null;
@@ -520,7 +521,11 @@ class OnnxWebSession extends InferenceModelSession {
 
   /// How to stop each of this session's turns that is listened to and not
   /// over yet: the one generating, and any still waiting for the mutex.
-  final Set<void Function()> _turnStops = {};
+  final Set<void Function(bool)> _turnStops = {};
+
+  /// Listened turns whose onListen coroutine still owns, or is queued for,
+  /// the shared generation mutex. Session close waits for all of them.
+  final Set<Completer<void>> _turnSettlements = {};
 
   /// The turn of this session that is listened to, not over and not
   /// stopped, if any. A session serves one live turn at a time. A stopped
@@ -590,7 +595,8 @@ class OnnxWebSession extends InferenceModelSession {
     // the lock forever: the flag went true before ownership, so the real
     // post-acquire release then no-op'd — see review.)
     var mutexHeld = false;
-    var cancelled = false;
+    var terminated = false;
+    var stoppedByConsumer = false;
 
     // This turn's user messages, by identity: taken when it is listened to,
     // and again (for messages added while it waited) when it is stopped while
@@ -609,11 +615,10 @@ class OnnxWebSession extends InferenceModelSession {
       }
     }
 
-    // A turn that produced nothing — stopped before its first chunk, or
-    // empty — or that failed leaves no trace: its user messages leave the history, so the history keeps
-    // alternating (Gemma 3's template raises on two user turns in a row).
-    // There is no rewind on web to replay the stopped exchange. Messages
-    // another turn took are kept.
+    // A turn stopped before its first chunk, or one that failed, leaves no
+    // trace: its user messages leave the history. A natural empty completion
+    // is different: core keeps its input and records no assistant message.
+    // Messages another turn took are kept.
     void dropInput() {
       final mine = Set<Map<String, String>>.identity()..addAll(input);
       _history.removeWhere(mine.contains);
@@ -635,6 +640,10 @@ class OnnxWebSession extends InferenceModelSession {
       _claimedInput.removeAll(input);
     }
 
+    void keepInputWithoutReply() {
+      _claimedInput.removeAll(input);
+    }
+
     void releaseMutexIfHeld() {
       if (mutexHeld) {
         mutexHeld = false;
@@ -646,10 +655,11 @@ class OnnxWebSession extends InferenceModelSession {
     // release in every terminal path; for an in-flight generation the lock
     // must stay held until the Transformers.js Promise SETTLES (via
     // runGeneration), and for a still-queued turn onListen releases right
-    // after it acquires and sees `cancelled`. Releasing here would either
+    // after it acquires and sees `terminated`. Releasing here would either
     // race a pre-acquire cancel into a deadlock or let a next turn overlap.
-    void stop() {
-      cancelled = true;
+    void stop(bool byClose) {
+      terminated = true;
+      if (!byClose) stoppedByConsumer = true;
       // A stopped turn frees the session: the next turn of it may start now
       // and waits on the mutex for this one to settle. The mutex package
       // (3.1.0) serves waiters first in, first out, so this turn records its
@@ -670,6 +680,10 @@ class OnnxWebSession extends InferenceModelSession {
     }
 
     void onToken(String text) {
+      // Transformers.js may invoke the streamer once more after interrupt()
+      // and before its Promise settles. That token was not delivered to the
+      // stopped consumer, so it must not enter this session's history.
+      if (terminated) return;
       firstChunkMs ??= genSw.elapsedMilliseconds;
       chunkCount++;
       replyBuffer.write(text);
@@ -727,6 +741,8 @@ class OnnxWebSession extends InferenceModelSession {
         return;
       }
       _turnInFlight = token;
+      final settlement = Completer<void>();
+      _turnSettlements.add(settlement);
       _turnStops.add(stop);
       // Before the stream closes, so a consumer may start the next turn of
       // this session from the done event.
@@ -739,10 +755,10 @@ class OnnxWebSession extends InferenceModelSession {
       try {
         await generationMutex.acquire();
         mutexHeld = true;
-        // Cancelled/closed while we were queued behind another turn's lock —
+        // Stopped/closed while we were queued behind another turn's lock —
         // release and bail WITHOUT generating.
-        if (cancelled || controller.isClosed || _isClosed) {
-          if (cancelled) dropInput();
+        if (terminated || controller.isClosed || _isClosed) {
+          if (terminated) dropInput();
           releaseMutexIfHeld();
           endTurn();
           if (!controller.isClosed) await controller.close();
@@ -756,16 +772,15 @@ class OnnxWebSession extends InferenceModelSession {
         claimInput();
         final messages = List<Map<String, String>>.from(_history);
         await runGeneration(messages);
-        // Record the (possibly interrupted) assistant reply that was streamed
-        // to the consumer, so the next turn's history reflects it. Skip an
-        // empty reply (interrupted before the first token) to avoid a blank
-        // assistant turn polluting the context.
-        // An empty reply (stopped before the first chunk, or none at all)
-        // is not recorded, so its input goes too.
+        // Record exactly the assistant text streamed before a stop. An empty
+        // stopped turn is taken back, while a natural empty completion keeps
+        // its input and no assistant message, matching InferenceChat.
         if (replyBuffer.isNotEmpty) {
           recordReply(replyBuffer.toString());
-        } else {
+        } else if (terminated) {
           dropInput();
+        } else {
+          keepInputWithoutReply();
         }
         if (kDebugMode) {
           edgeAiLog(
@@ -782,7 +797,7 @@ class OnnxWebSession extends InferenceModelSession {
         // history keeps alternating.
         dropInput();
         releaseMutexIfHeld();
-        if (cancelled) {
+        if (stoppedByConsumer) {
           // Reported as the stop it followed (EngineTurn ends `stopped`), so
           // say what really happened. `print`: edgeAiLog is silent in
           // release.
@@ -799,14 +814,16 @@ class OnnxWebSession extends InferenceModelSession {
         }
       } finally {
         endTurn();
+        _turnSettlements.remove(settlement);
+        if (!settlement.isCompleted) settlement.complete();
       }
     };
     // Also runs once the turn has closed the stream itself; only a cancel
     // before that is the consumer's stop.
     controller.onCancel = () {
-      if (!controller.isClosed) stop();
+      if (!controller.isClosed) stop(false);
     };
-    return (text: controller.stream, stopped: () => cancelled);
+    return (text: controller.stream, stopped: () => stoppedByConsumer);
   }
 
   /// Exact token count via the pipeline's own tokenizer — NOT an estimate
@@ -848,7 +865,7 @@ class OnnxWebSession extends InferenceModelSession {
   @override
   Future<void> stopGeneration() async {
     for (final stop in _turnStops.toList()) {
-      stop();
+      stop(false);
     }
   }
 
@@ -857,14 +874,22 @@ class OnnxWebSession extends InferenceModelSession {
   @override
   SessionMetrics getSessionMetrics() => SessionMetrics();
 
+  Future<void>? _closeFuture;
+
   @override
-  Future<void> close() async {
-    if (_isClosed) return;
+  Future<void> close() => _closeFuture ??= _close();
+
+  Future<void> _close() async {
     _isClosed = true;
-    // Interrupt any in-flight generation BEFORE the model tears the
-    // pipeline down — mirrors every other engine's "stop before teardown"
-    // ordering (use-after-free guard).
-    _activeStoppingCriteria?.interrupt();
+    // End queued turns immediately and interrupt the active one, but do not
+    // report either as a consumer stop. The shared pipeline is not free until
+    // every listened turn has left its mutex-owning coroutine.
+    for (final stop in _turnStops.toList()) {
+      stop(true);
+    }
+    await Future.wait([
+      for (final settlement in _turnSettlements.toList()) settlement.future,
+    ]);
     _history.clear();
     _claimedInput.clear();
     onClose();

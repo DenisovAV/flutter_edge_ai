@@ -116,12 +116,13 @@ List<String> _contents(JSObject call) => [
 OnnxWebInferenceModel _model({
   int? cap,
   ModelType modelType = ModelType.general,
+  void Function()? onClose,
 }) => OnnxWebInferenceModel(
   resolver: _Resolver(),
   maxTokens: 1024,
   modelType: modelType,
   maxConcurrentSessions: cap,
-  onClose: () {},
+  onClose: onClose ?? () {},
 );
 
 // ignore: invalid_use_of_protected_member
@@ -456,16 +457,109 @@ void main() {
     await a6.done;
     expect(await a6.turn.end, TurnEnd.stopped);
 
-    // A turn that completes with nothing leaves no trace either.
+    // A turn that completes naturally with nothing keeps its input, as core
+    // does, but records no empty assistant message.
     final a7 = await _ask(a, 'a7');
     _finish(await _call(7));
     await a7.done;
 
     final a8 = await _ask(a, 'a8');
     final c8 = await _call(8);
-    expect(_contents(c8).sublist(7), ['user:a5', 'assistant:p5', 'user:a8']);
+    expect(_contents(c8).sublist(7), [
+      'user:a5',
+      'assistant:p5',
+      'user:a7',
+      'user:a8',
+    ]);
     _finish(c8);
     await a8.done;
+    await model.close();
+  });
+
+  test(
+    'tokens emitted after a stop or cancel do not enter session history',
+    () async {
+      _tf['holdOnInterrupt'] = true.toJS;
+      final model = _model();
+      final session = await model.openSession(systemInstruction: 'A');
+
+      final first = await _ask(session, 'a1');
+      final firstCall = await _call(1);
+      _emit(firstCall, 'visible');
+      await pumpEventQueue();
+      await session.stopGeneration();
+      _emit(firstCall, 'hidden');
+      _finish(firstCall);
+      await first.done;
+      expect(first.text, ['visible']);
+
+      final second = await _ask(session, 'a2');
+      final secondCall = await _call(2);
+      expect(_contents(secondCall), [
+        'system:A',
+        'user:a1',
+        'assistant:visible',
+        'user:a2',
+      ]);
+      _emit(secondCall, 'r2');
+      _finish(secondCall);
+      await second.done;
+
+      await session.addQueryChunk(const Message(text: 'a3', isUser: true));
+      final third = _turn(session);
+      final thirdSub = third.text.listen((_) {});
+      final thirdCall = await _call(3);
+      await thirdSub.cancel();
+      expect(await third.end, TurnEnd.stopped);
+      _emit(thirdCall, 'hidden-before-first-visible-token');
+      _finish(thirdCall);
+
+      final fourth = await _ask(session, 'a4');
+      final fourthCall = await _call(4);
+      expect(_contents(fourthCall), [
+        'system:A',
+        'user:a1',
+        'assistant:visible',
+        'user:a2',
+        'assistant:r2',
+        'user:a4',
+      ]);
+      _finish(fourthCall);
+      await fourth.done;
+      await model.close();
+    },
+  );
+
+  test('openChat keeps input after a natural empty completion', () async {
+    _tf['holdOnInterrupt'] = true.toJS;
+    final model = _model();
+    final blocker = await model.openSession();
+    final chat = await model.openChat();
+
+    final blocked = await _ask(blocker, 'block');
+    final blockingCall = await _call(1);
+    await blocker.stopGeneration();
+
+    await chat.addQuery(const Message(text: 'empty', isUser: true));
+    final empty = chat.generateChatResponse();
+    await pumpEventQueue();
+    expect(_calls, hasLength(1), reason: 'chat waits for the stop to settle');
+    _finish(blockingCall);
+    await blocked.done;
+
+    final emptyCall = await _call(2);
+    _finish(emptyCall);
+    expect(((await empty) as TextResponse).token, isEmpty);
+    expect(chat.fullHistory.map((message) => message.text), ['empty']);
+
+    await chat.addQuery(const Message(text: 'next', isUser: true));
+    final next = chat.generateChatResponse();
+    final nextCall = await _call(3);
+    expect(_contents(nextCall), ['user:empty', 'user:next']);
+    _emit(nextCall, 'answer');
+    _finish(nextCall);
+    expect(((await next) as TextResponse).token, 'answer');
+    await chat.close();
     await model.close();
   });
 
@@ -605,6 +699,43 @@ void main() {
       );
     }
     await expectLater(model.openSession(), throwsStateError);
+  });
+
+  test('model close waits for the active generation to settle and fails a '
+      'queued chat immediately', () async {
+    _tf['holdOnInterrupt'] = true.toJS;
+    var ownerCloseCalls = 0;
+    var listenerCalls = 0;
+    final model = _model(onClose: () => ownerCloseCalls++);
+    model.addCloseListener(() => listenerCalls++);
+    final active = await model.openSession();
+    final queued = await model.openChat();
+
+    final activeTurn = await _ask(active, 'active');
+    final activeCall = await _call(1);
+    await queued.addQuery(const Message(text: 'queued', isUser: true));
+    final queuedReply = queued.generateChatResponse();
+    final queuedClosed = expectLater(queuedReply, throwsStateError);
+    await pumpEventQueue();
+    expect(_calls, hasLength(1));
+
+    var closeCompleted = false;
+    final closing = model.close().then((_) => closeCompleted = true);
+    await pumpEventQueue();
+    expect(_interrupted(activeCall), isTrue);
+    await queuedClosed.timeout(const Duration(seconds: 5));
+    expect(_calls, hasLength(1), reason: 'the queued turn never generates');
+    expect(closeCompleted, isFalse);
+    expect(ownerCloseCalls, 0);
+    expect(listenerCalls, 0);
+
+    _finish(activeCall);
+    await activeTurn.done;
+    expect(await activeTurn.turn.end, TurnEnd.closed);
+    await closing;
+    expect(closeCompleted, isTrue);
+    expect(ownerCloseCalls, 1);
+    expect(listenerCalls, 1);
   });
 
   test('a model closed while openSession waits for the pipeline fails the '

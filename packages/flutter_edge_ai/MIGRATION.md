@@ -10,8 +10,8 @@ A class that `implements InferenceModel` declares two new members,
 defaults that do. An engine that mixed in `OptionScoringModel`, which is
 removed, drops the mixin and keeps its two overrides.
 
-A class that `implements InferenceModel` declares four new members, all in
-`package:flutter_edge_ai/engine.dart`: `openEngineSession(SessionRequest)`
+A class that `implements InferenceModel` also declares four new members, all
+in `package:flutter_edge_ai/engine.dart`: `openEngineSession(SessionRequest)`
 (fail it with `UnsupportedError` if the class opens no sessions),
 `resolveChatRequest(ChatRequest)` (return a `ResolvedChatRequest`),
 `createChatTurnHooks(ResolvedChatRequest)` (return `ChatTurnHooks()`) and

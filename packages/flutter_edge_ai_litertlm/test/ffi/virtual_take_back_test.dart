@@ -115,6 +115,47 @@ void main() {
     await other.close();
   });
 
+  test('a stopped virtual audio turn is rewound with its exact exchange '
+      'instead of rebuilt through the media preface', () async {
+    final rewinds = <String?>[];
+    client.virtualRewindForTest = (conv, exchange, extraContext) async {
+      rewinds.add(exchange);
+      return StoppedTurnRewind.rewound;
+    };
+
+    await session.addQueryChunk(
+      Message.withAudio(
+        text: 'listen',
+        audioBytes: Uint8List.fromList([1, 2]),
+        isUser: true,
+      ),
+    );
+    final stopped = session.getResponseAsync().join();
+    await pumpEventQueue();
+    sends.last.chunk(
+      '{"role":"assistant","content":[{"type":"text","text":"half"}]}',
+    );
+    await pumpEventQueue();
+    await session.stopGeneration();
+    sends.last.cancelled();
+    expect(await stopped, 'half');
+
+    await completeTurn('recall');
+    expect(seeds, hasLength(1), reason: 'rewind reuses the live conversation');
+    expect(rewinds, hasLength(1));
+    final exchange = jsonDecode(rewinds.single!) as List<dynamic>;
+    expect((exchange.first as Map)['content'], [
+      {'type': 'audio', 'blob': 'AQI='},
+      {'type': 'text', 'text': 'listen'},
+    ]);
+    expect(exchange.last, {
+      'role': 'assistant',
+      'content': [
+        {'type': 'text', 'text': 'half'},
+      ],
+    });
+  });
+
   test('a failed turn is not replayed: the next turn rebuilds the shared '
       'conversation without it', () async {
     await completeTurn('one');

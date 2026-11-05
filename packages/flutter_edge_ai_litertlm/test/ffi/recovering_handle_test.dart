@@ -420,8 +420,7 @@ void main() {
       expect(first.rewinds, hasLength(1));
     });
 
-    test('a stopped audio turn rebuilds from the full media history instead '
-        'of trusting native rewind', () async {
+    test('a stopped audio turn uses exact native rewind', () async {
       first.rewindOutcome = StoppedTurnRewind.rewound;
       final gate = first.hold = Completer<void>();
       final stopped = handle
@@ -433,20 +432,15 @@ void main() {
       expect(await stopped, 'Hello');
 
       expect(await handle.chat('what did it say?').join(), 'Hello there.');
-      expect(first.rewinds, isEmpty);
-      expect(reopened, hasLength(1));
-      final seed = jsonDecode(reopened.single.seed!) as List<dynamic>;
-      final user = seed[0] as Map<String, dynamic>;
-      expect(user['content'], [
-        {'type': 'audio', 'blob': 'AQI='},
-        {'type': 'text', 'text': 'listen'},
+      expect(reopened, isEmpty);
+      expect(first.rewinds, [
+        {
+          'role': 'assistant',
+          'content': [
+            {'type': 'text', 'text': 'Hello'},
+          ],
+        },
       ]);
-      expect(seed[1], {
-        'role': 'assistant',
-        'content': [
-          {'type': 'text', 'text': 'Hello'},
-        ],
-      });
     });
 
     test('a stop that reached native after the turn had finished keeps the '

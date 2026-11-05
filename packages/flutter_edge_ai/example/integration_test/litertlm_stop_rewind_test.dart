@@ -1,8 +1,8 @@
 // A stopped turn is rewound in place (flutter_edge_ai_litertlm
 // `patch_c_api.sh` section 16): the next turn runs on the same conversation,
 // which keeps every earlier turn — images and audio included — and the
-// stopped exchange itself. A stopped audio turn is rebuilt from full messages
-// because some executors lose its audio despite reporting rewind success.
+// stopped exchange itself. A stopped audio turn is put back by exact native
+// rewind, including on virtual sessions, before another session can switch it.
 //
 // Covers both ways to stop: stopGeneration(), and cancelling the response
 // subscription (awaited or not) with the next message sent right away — the
@@ -429,7 +429,7 @@ void main() {
         expect(repeated.error, isNull);
         expect(repeated.reply.toLowerCase(), contains('paris'));
       }
-      expectRebuiltOnly(1);
+      expectRewoundOnly(1);
     } finally {
       await chat.close();
     }

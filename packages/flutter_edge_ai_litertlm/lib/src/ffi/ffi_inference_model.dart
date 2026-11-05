@@ -1326,7 +1326,6 @@ class RecoveringConversationHandle implements ConversationHandle {
     Map<String, Object?> message,
     Stream<String> Function(ConversationHandle live) send, {
     required bool raw,
-    bool rebuildStoppedAudio = false,
   }) async* {
     if (_closed) throw StateError('Conversation handle is closed');
     final epoch = _stopEpoch;
@@ -1470,16 +1469,7 @@ class RecoveringConversationHandle implements ConversationHandle {
         } else {
           if (stopped && latest) {
             _stopped = true;
-            if (rebuildStoppedAudio) {
-              // Native 0.19's cancelled-turn rewind loses a stopped turn's
-              // audio on some CPU and desktop GPU executors. Rebuild from the
-              // full multimodal history instead; the partial assistant reply
-              // below is retained exactly as Rule A requires.
-              _stoppedReply = null;
-              _rebuildBecause = 'the stopped turn carried audio';
-            } else {
-              _stoppedReply = reply;
-            }
+            _stoppedReply = reply;
           }
           // The message reached the model, so it belongs in the history a
           // rebuild replays — with whatever of the reply was produced.
@@ -1526,7 +1516,6 @@ class RecoveringConversationHandle implements ConversationHandle {
       enableThinking: enableThinking,
     ),
     raw: false,
-    rebuildStoppedAudio: audioBytes != null,
   );
 
   @override
@@ -1544,7 +1533,6 @@ class RecoveringConversationHandle implements ConversationHandle {
       enableThinking: enableThinking,
     ),
     raw: true,
-    rebuildStoppedAudio: audioBytes != null,
   );
 
   @override
@@ -1731,6 +1719,19 @@ class _VirtualConversationHandle implements ConversationHandle {
       // A stopped or abandoned turn keeps what it produced, as core's chat
       // does; one that produced nothing is taken back (Rule A).
       if (!failed && assistantText.isNotEmpty) record();
+      if (!failed && _stopRequested) {
+        client.finishVirtualStoppedTurn(
+          token,
+          messageJson: messageJson,
+          partialReply: assistantText.isEmpty
+              ? null
+              : _assistantTurn(
+                  assistantText.toString(),
+                  assistantRaw.toString(),
+                ),
+          extraContext: extraContext,
+        );
+      }
       _inFlight = false;
       done.complete();
     }

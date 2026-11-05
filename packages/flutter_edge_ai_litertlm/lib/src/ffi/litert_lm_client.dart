@@ -36,6 +36,8 @@ import '../litert_lm_log_level.dart';
 export '../litert_lm_load_errors.dart'
     show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
 
+const _virtualStoppedExchangeTimeout = Duration(seconds: 5);
+
 /// LiteRT-LM's thread-local last error, read on the calling thread.
 extension LiteRtLmLastErrorRead on LiteRtLmBindings {
   String? lastError() => lastErrorFrom(litert_lm_get_last_error_message);
@@ -2896,6 +2898,18 @@ class LiteRtLmFfiClient {
   /// must rebuild it even when it belongs to the same session.
   bool _virtualConvStopped = false;
 
+  /// The exact exchange a stopped virtual turn asks native rewind to put back.
+  /// A null value means Rule A: take the user message back too.
+  final Map<Object, String?> _virtualStoppedExchanges = {};
+
+  /// The stopped turn's extra context, needed when rewind renders its exchange.
+  final Map<Object, String?> _virtualStoppedExtraContexts = {};
+
+  /// Completed by the virtual handle once it has assembled the partial reply.
+  /// The native mutex stays held until then, so another session cannot replace
+  /// the conversation before its exact stopped exchange is rewound.
+  final Map<Object, Completer<void>> _virtualStoppedExchangeReady = {};
+
   /// Token of a session that asked to release the live conversation while a
   /// turn was in flight. The teardown is deferred to the turn's cleanup.
   Object? _pendingReleaseToken;
@@ -2944,6 +2958,52 @@ class LiteRtLmFfiClient {
       if (cleanedUp) return;
       cleanedUp = true;
       _virtualTurnInFlight = false;
+      if (_virtualConvStopped &&
+          _virtualActiveToken == conversationToken &&
+          !_releasedVirtualTokens.contains(conversationToken)) {
+        final ready = _virtualStoppedExchangeReady[conversationToken];
+        if (ready != null) {
+          await ready.future.timeout(
+            _virtualStoppedExchangeTimeout,
+            onTimeout: () {},
+          );
+        }
+        if (_virtualStoppedExchanges.containsKey(conversationToken)) {
+          final exchange = _virtualStoppedExchanges.remove(conversationToken);
+          final stoppedExtra = _virtualStoppedExtraContexts.remove(
+            conversationToken,
+          );
+          try {
+            final rewind = virtualRewindForTest == null
+                ? await _rewindStoppedTurnLocked(
+                    _virtualConv!,
+                    exchangeJson: exchange,
+                    extraContext: stoppedExtra,
+                  )
+                : await virtualRewindForTest!(
+                    _virtualConv!,
+                    exchange,
+                    stoppedExtra,
+                  );
+            if (rewind == StoppedTurnRewind.rewound ||
+                (rewind == StoppedTurnRewind.notCancelled &&
+                    exchange != null)) {
+              _virtualConvStopped = false;
+              edgeAiLog(
+                '[FfiInferenceModel] rewound the conversation after a '
+                'stopped turn or a full context',
+              );
+            }
+          } catch (e) {
+            // ignore: avoid_print
+            print(
+              '[flutter_edge_ai_litertlm] could not rewind the stopped '
+              'virtual conversation ($e); rebuilding it',
+            );
+          }
+        }
+        _virtualStoppedExchangeReady.remove(conversationToken);
+      }
       // A close can land while this turn creates its conversation. At that
       // point releaseVirtualConversation saw another token as active; delete
       // the newly-created conversation here before handing the mutex on.
@@ -2977,6 +3037,9 @@ class LiteRtLmFfiClient {
       if (turnsLeft == 0) {
         _virtualTurnCounts.remove(conversationToken);
         _releasedVirtualTokens.remove(conversationToken);
+        _virtualStoppedExchanges.remove(conversationToken);
+        _virtualStoppedExtraContexts.remove(conversationToken);
+        _virtualStoppedExchangeReady.remove(conversationToken);
       } else {
         _virtualTurnCounts[conversationToken] = turnsLeft;
       }
@@ -3005,6 +3068,9 @@ class LiteRtLmFfiClient {
           // the old live conversation and rebuild one replaying this session's
           // history as a preface.
           _virtualConvStopped = false;
+          _virtualStoppedExchanges.remove(conversationToken);
+          _virtualStoppedExtraContexts.remove(conversationToken);
+          _virtualStoppedExchangeReady.remove(conversationToken);
           final old = _virtualConv;
           if (old != null) {
             _deleteConversation(old);
@@ -3126,6 +3192,13 @@ class LiteRtLmFfiClient {
     Pointer<LiteRtLmConversation> conv,
   )?
   virtualSendForTest;
+  @visibleForTesting
+  Future<StoppedTurnRewind> Function(
+    Pointer<LiteRtLmConversation> conv,
+    String? exchangeJson,
+    String? extraContext,
+  )?
+  virtualRewindForTest;
 
   /// Test seam: a turn on [conv] registered with this client's native turns.
   @visibleForTesting
@@ -3151,7 +3224,31 @@ class LiteRtLmFfiClient {
     if (conv == null) return;
     // Only a cancel that lands inside a turn damages the conversation.
     if (_virtualTurnInFlight) _virtualConvStopped = true;
+    _virtualStoppedExchangeReady.putIfAbsent(
+      conversationToken,
+      Completer<void>.new,
+    );
     _cancelOn(conv);
+  }
+
+  /// Records the stopped exchange after its Dart stream has drained. The next
+  /// turn rewinds it on the still-live shared conversation where possible;
+  /// this preserves media exactly instead of re-encoding it through a preface.
+  void finishVirtualStoppedTurn(
+    Object conversationToken, {
+    required String messageJson,
+    required Map<String, Object?>? partialReply,
+    String? extraContext,
+  }) {
+    if (_virtualActiveToken != conversationToken || !_virtualConvStopped) {
+      return;
+    }
+    _virtualStoppedExchanges[conversationToken] = partialReply == null
+        ? null
+        : '[$messageJson,${jsonEncode(partialReply)}]';
+    _virtualStoppedExtraContexts[conversationToken] = extraContext;
+    final ready = _virtualStoppedExchangeReady[conversationToken];
+    if (ready != null && !ready.isCompleted) ready.complete();
   }
 
   /// Tear down the live virtual conversation if it belongs to
@@ -3610,46 +3707,55 @@ class LiteRtLmFfiClient {
     return _guardCreate(() async {
       await _nativeMutex.acquire();
       try {
-        if (_isShuttingDown || !_liveConvs.contains(conv)) {
-          throw StateError('Conversation was closed before it was rewound');
-        }
-        final turn = _turns.begin(conv);
-        var how = NativeTurnEnd.failed;
-        try {
-          final ({int code, int lastTurnEnd, String? message}) result;
-          try {
-            result = await rewindOffMainIsolate(
-              conversationAddr: conv.address,
-              exchangeJson: exchangeJson,
-              extraContext: extraContext,
-            );
-          } on Exception catch (e, st) {
-            // The call itself failed (an isolate that could not start); the
-            // conversation's state is unknown, so it is rebuilt. An Error is a
-            // bug and keeps its own type and stack.
-            Error.throwWithStackTrace(
-              StoppedTurnRewindException(-1, 'the call failed: $e'),
-              st,
-            );
-          }
-          final outcome = stoppedTurnRewindOutcome(
-            result.code,
-            result.lastTurnEnd,
-            result.message,
-          );
-          // A rewind resets native's record to none, and runs on [conv].
-          _recordTurnEnd(conv);
-          _executor.ranOn(conv);
-          how = NativeTurnEnd.completed;
-          return outcome;
-        } finally {
-          // Before the lock goes: a close that came meanwhile deletes here.
-          _turns.end(conv, turn, how);
-        }
+        return await _rewindStoppedTurnLocked(
+          conv,
+          exchangeJson: exchangeJson,
+          extraContext: extraContext,
+        );
       } finally {
         _nativeMutex.release();
       }
     });
+  }
+
+  /// Rewinds with [_nativeMutex] already held by the virtual multiplexer.
+  Future<StoppedTurnRewind> _rewindStoppedTurnLocked(
+    Pointer<LiteRtLmConversation> conv, {
+    required String? exchangeJson,
+    String? extraContext,
+  }) async {
+    if (!_hasTurnRewind) return StoppedTurnRewind.unsupported;
+    if (_isShuttingDown || !_liveConvs.contains(conv)) {
+      throw StateError('Conversation was closed before it was rewound');
+    }
+    final turn = _turns.begin(conv);
+    var how = NativeTurnEnd.failed;
+    try {
+      final ({int code, int lastTurnEnd, String? message}) result;
+      try {
+        result = await rewindOffMainIsolate(
+          conversationAddr: conv.address,
+          exchangeJson: exchangeJson,
+          extraContext: extraContext,
+        );
+      } on Exception catch (e, st) {
+        Error.throwWithStackTrace(
+          StoppedTurnRewindException(-1, 'the call failed: $e'),
+          st,
+        );
+      }
+      final outcome = stoppedTurnRewindOutcome(
+        result.code,
+        result.lastTurnEnd,
+        result.message,
+      );
+      _recordTurnEnd(conv);
+      _executor.ranOn(conv);
+      how = NativeTurnEnd.completed;
+      return outcome;
+    } finally {
+      _turns.end(conv, turn, how);
+    }
   }
 
   /// Reads how the last send on [conv] ended (§23,
@@ -3962,6 +4068,9 @@ class LiteRtLmFfiClient {
     }
     _releasedVirtualTokens.clear();
     _virtualTurnCounts.clear();
+    _virtualStoppedExchanges.clear();
+    _virtualStoppedExtraContexts.clear();
+    _virtualStoppedExchangeReady.clear();
     // A conversation released while an operation ran on it is deleted when
     // that operation ends; the engine must outlive both. Said out loud when it
     // takes long: nothing else would show why shutdown does not return.

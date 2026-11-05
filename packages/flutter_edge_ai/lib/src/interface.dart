@@ -382,6 +382,11 @@ abstract class InferenceModel {
   ///   generator, whose KV cache (`maxTokens` x the per-token cache size) is
   ///   allocated at its first turn; capped at 2 on Android and iOS when
   ///   `maxConcurrentSessions` is unset.
+  /// - `.task` (MediaPipe web): only its history, kept in Dart. The sessions
+  ///   share the model's one `LlmInference`, its sampling and its LoRA, so
+  ///   their calls run one at a time: a turn waits for the other sessions'
+  ///   turns, as long as they run, unless they are stopped. Each turn
+  ///   resends the session's whole conversation.
   /// - `.litertlm` web and built-in AI: not measured.
   ///
   /// Cap the count with `maxConcurrentSessions` on
@@ -389,9 +394,8 @@ abstract class InferenceModel {
   /// no cap unless the engine applies a platform default: ONNX caps open
   /// sessions at 2 on Android and iOS.
   ///
-  /// Not available on ONNX on the web or on the MediaPipe **web** `.task`
-  /// path — throws
-  /// [UnsupportedError] there.
+  /// Not available on the ONNX **web** path — throws [UnsupportedError]
+  /// there.
   ///
   /// Throws [StateError] when the model's `maxConcurrentSessions` (set on
   /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`) would be
@@ -439,12 +443,7 @@ abstract class InferenceModel {
   @protected
   Future<InferenceModelSession> openEngineSession(SessionRequest request) =>
       Future.error(
-        UnsupportedError(
-          'openSession() is not supported for $runtimeType. '
-          'Concurrent sessions are available on `.litertlm` (FFI native + '
-          'web) and `.task` (MediaPipe Android/iOS); the MediaPipe Web '
-          '`.task` path does not support concurrent sessions.',
-        ),
+        UnsupportedError('openSession() is not supported for $runtimeType.'),
       );
 
   /// Every live session: the legacy [session] (if any) and each open
@@ -846,9 +845,10 @@ abstract class InferenceModelSession {
   ///
   /// To stop generating early, prefer [stopGeneration] — it reaches the native
   /// engine and stops it decoding on every engine. `cancel()`ing the
-  /// [StreamSubscription] also stops native decoding on the `.litertlm` FFI
-  /// engine, but on other engines it only detaches the Dart side while native
-  /// keeps decoding, so [stopGeneration] is the portable choice.
+  /// [StreamSubscription] also stops decoding on the `.litertlm` FFI engine
+  /// and on MediaPipe web, but on other engines it only detaches the Dart
+  /// side while native keeps decoding, so [stopGeneration] is the portable
+  /// choice.
   ///
   /// Silently *abandoning* the stream (dropping the subscription without
   /// cancelling, so it is only GC'd) cannot be intercepted on any engine — the

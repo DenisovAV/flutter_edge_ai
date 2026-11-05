@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai_mediapipe/src/web/web_llm_lane.dart';
 import 'package:flutter_edge_ai_mediapipe/src/web/web_model_session.dart';
 import 'package:flutter_edge_ai_mediapipe/src/web/web_prompt.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +19,10 @@ class FakeBackend implements WebLlmBackend {
   Object? failWith;
   int cancels = 0;
 
+  /// The call of each generate, in order, and each call cancel was given.
+  final List<WebLlmCall> calls = [];
+  final List<WebLlmCall> cancelled = [];
+
   /// The next generate() answers only when the test completes this.
   Completer<String>? held;
 
@@ -29,8 +34,9 @@ class FakeBackend implements WebLlmBackend {
   Future<int> sizeInTokens(String text) async => text.length;
 
   @override
-  Future<String> generate(List<PromptPart> prompt) async {
+  Future<String?> generate(List<PromptPart> prompt, WebLlmCall call) async {
     prompts.add(prompt);
+    calls.add(call);
     if (failWith != null) throw failWith!;
     if (held case final hold?) {
       held = null;
@@ -40,8 +46,9 @@ class FakeBackend implements WebLlmBackend {
   }
 
   @override
-  Stream<String> generateStream(List<PromptPart> prompt) {
+  Stream<String> generateStream(List<PromptPart> prompt, WebLlmCall call) {
     prompts.add(prompt);
+    calls.add(call);
     if (failWith != null) return Stream.error(failWith!);
     if (replies.isEmpty) return (live = StreamController<String>()).stream;
     final reply = replies.removeAt(0);
@@ -52,15 +59,61 @@ class FakeBackend implements WebLlmBackend {
   }
 
   @override
-  void cancel() {
+  void cancel(WebLlmCall call) {
     cancels++;
+    cancelled.add(call);
     // A cancelled call ends; the next one waits for that.
     if (endOnCancel) live?.close();
   }
 }
 
+/// One backend for several sessions, as the open sessions of a web model
+/// share theirs: the real lane orders the calls. A streamed call runs until the
+/// test closes its entry in [live]; [cancelled] counts the cancels that reach
+/// the call running in "MediaPipe".
+class SharedBackend implements WebLlmBackend {
+  final WebLlmLane lane = WebLlmLane();
+
+  /// The prompt of each call that started, in order.
+  final List<List<PromptPart>> started = [];
+  final List<StreamController<String>> live = [];
+  int cancelled = 0;
+
+  @override
+  Future<int> sizeInTokens(String text) async => text.length;
+
+  @override
+  Future<String?> generate(List<PromptPart> prompt, WebLlmCall call) async =>
+      lane.run(call, () async {
+        started.add(prompt);
+        return 'R${started.length}';
+      });
+
+  @override
+  Stream<String> generateStream(List<PromptPart> prompt, WebLlmCall call) {
+    final out = StreamController<String>();
+    unawaited(() async {
+      await lane.run(call, () async {
+        started.add(prompt);
+        final engine = StreamController<String>();
+        live.add(engine);
+        await engine.stream.forEach(out.add);
+      });
+      await out.close();
+    }());
+    return out.stream;
+  }
+
+  @override
+  void cancel(WebLlmCall call) {
+    if (!lane.cancel(call)) return;
+    cancelled++;
+    live.last.close();
+  }
+}
+
 WebModelSession _session(
-  FakeBackend b, {
+  WebLlmBackend b, {
   int? maxImages,
   bool image = false,
   String? system,
@@ -195,6 +248,206 @@ void main() {
       '<|turn>user\nName a yellow fruit.<turn|>\n<|turn>model\nra<turn|>\n'
       '<|turn>user\nC<turn|>\n<|turn>model\n',
     );
+  });
+
+  group('sessions that share one backend', () {
+    test('each sends only its own conversation', () async {
+      final b = SharedBackend();
+      final a = _session(b);
+      final other = _session(b);
+      await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+      await other.addQueryChunk(const Message(text: 'QB', isUser: true));
+      final replies = await Future.wait([a.getResponse(), other.getResponse()]);
+      expect(replies, ['R1', 'R2']);
+
+      await a.addQueryChunk(const Message(text: 'QA2', isUser: true));
+      await a.getResponse();
+      final sent = _text(b.started.last);
+      expect(sent, contains('QA'));
+      expect(sent, contains('<|turn>model\nR1<turn|>'));
+      expect(sent, contains('QA2'));
+      expect(sent, isNot(contains('QB')));
+      expect(sent, isNot(contains('R2')));
+    });
+
+    test('a stop on one leaves the call of the other running, and its own '
+        'waiting call never starts', () async {
+      final b = SharedBackend();
+      final a = _session(b);
+      final other = _session(b);
+      await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+      await other.addQueryChunk(const Message(text: 'QB', isUser: true));
+      final aText = a.getResponseAsync().join();
+      final otherText = other.getResponseAsync().join();
+      await Future<void>.delayed(Duration.zero);
+      expect(b.started, hasLength(1), reason: 'one call at a time');
+
+      await other.stopGeneration();
+      expect(b.cancelled, 0, reason: "the running call is the other's");
+      expect(await otherText, '');
+
+      b.live.single.add('fine');
+      await b.live.single.close();
+      expect(await aText, 'fine');
+      await Future<void>.delayed(Duration.zero);
+      expect(b.started, hasLength(1), reason: 'the stopped call never ran');
+    });
+
+    test('a stop on the one that runs cancels its call, and the other\'s '
+        'queued call runs next', () async {
+      final b = SharedBackend();
+      final a = _session(b);
+      final other = _session(b);
+      await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+      await other.addQueryChunk(const Message(text: 'QB', isUser: true));
+      final aText = a.getResponseAsync().join();
+      final otherText = other.getResponseAsync().join();
+      await Future<void>.delayed(Duration.zero);
+      b.live.single.add('part');
+      await Future<void>.delayed(Duration.zero);
+
+      await a.stopGeneration();
+      expect(b.cancelled, 1);
+      expect(await aText, 'part');
+      await Future<void>.delayed(Duration.zero);
+      expect(b.started, hasLength(2));
+      expect(_text(b.started.last), contains('QB'));
+      expect(_text(b.started.last), isNot(contains('QA')));
+      b.live.last.add('other');
+      await b.live.last.close();
+      expect(await otherText, 'other');
+    });
+
+    test('a close of one leaves the call of the other running', () async {
+      final b = SharedBackend();
+      final a = _session(b);
+      final other = _session(b);
+      await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+      await other.addQueryChunk(const Message(text: 'QB', isUser: true));
+      final aText = a.getResponseAsync().join();
+      unawaited(other.getResponseAsync().join());
+      await Future<void>.delayed(Duration.zero);
+
+      await other.close();
+      expect(b.cancelled, 0);
+      b.live.single.add('fine');
+      await b.live.single.close();
+      expect(await aText, 'fine');
+      await Future<void>.delayed(Duration.zero);
+      expect(b.started, hasLength(1));
+    });
+  });
+
+  group('a cancelled subscription is a stop', () {
+    test('it cancels its call and keeps the partial reply in the '
+        'history', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      final sub = s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      b.live!.add('Bana');
+      await Future<void>.delayed(Duration.zero);
+
+      await sub.cancel();
+      expect(b.cancelled, [b.calls.single]);
+      await Future<void>.delayed(Duration.zero);
+      expect(s.pendingCalls, 0);
+
+      b.replies.add('x');
+      await s.addQueryChunk(const Message(text: 'next', isUser: true));
+      await s.getResponse();
+      expect(_text(b.prompts.last), contains('<|turn>model\nBana<turn|>'));
+      expect(_text(b.prompts.last), contains('next'));
+    });
+
+    test('the other session\'s queued call runs next', () async {
+      final b = SharedBackend();
+      final a = _session(b);
+      final other = _session(b);
+      await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+      await other.addQueryChunk(const Message(text: 'QB', isUser: true));
+      final sub = a.getResponseAsync().listen((_) {});
+      final otherText = other.getResponseAsync().join();
+      await Future<void>.delayed(Duration.zero);
+      expect(b.started, hasLength(1));
+
+      await sub.cancel();
+      expect(b.cancelled, 1);
+      await Future<void>.delayed(Duration.zero);
+      expect(b.started, hasLength(2));
+      b.live.last.add('B');
+      await b.live.last.close();
+      expect(await otherText, 'B');
+    });
+
+    test('a call still waiting never starts', () async {
+      final b = SharedBackend();
+      final a = _session(b);
+      final other = _session(b);
+      await a.addQueryChunk(const Message(text: 'QA', isUser: true));
+      await other.addQueryChunk(const Message(text: 'QB', isUser: true));
+      final aText = a.getResponseAsync().join();
+      final sub = other.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+
+      await sub.cancel();
+      expect(b.cancelled, 0, reason: "the running call is a's");
+      b.live.single.add('A');
+      await b.live.single.close();
+      expect(await aText, 'A');
+      await Future<void>.delayed(Duration.zero);
+      expect(b.started, hasLength(1));
+      expect(other.pendingCalls, 0);
+    });
+
+    test('a call waiting for this session\'s stopped one never '
+        'starts', () async {
+      final b = FakeBackend([])..endOnCancel = false;
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      await s.stopGeneration(); // the stopped call is still ending
+      await s.addQueryChunk(const Message(text: 'go on', isUser: true));
+      final sub = s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      await sub.cancel();
+      await b.live!.close();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(b.prompts, hasLength(1), reason: 'the cancelled call never ran');
+      expect(s.pendingCalls, 0);
+    });
+
+    test('through startTurn: the end is stopped and the call is '
+        'cancelled', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      // ignore: invalid_use_of_protected_member
+      final turn = s.startTurn();
+      final sub = turn.text.listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      b.live!.add('ab');
+      await Future<void>.delayed(Duration.zero);
+      await sub.cancel();
+      expect(await turn.end, TurnEnd.stopped);
+      expect(b.cancels, 1);
+    });
+
+    test('a newer call that replaces the stream is not a stop', () async {
+      final b = FakeBackend([]);
+      final s = _session(b);
+      await s.addQueryChunk(_user);
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      final first = b.live!;
+      s.getResponseAsync().listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      expect(b.cancels, 0);
+      await first.close();
+    });
   });
 
   group('a closed session', () {

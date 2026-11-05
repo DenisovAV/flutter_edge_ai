@@ -57,6 +57,8 @@ WebInferenceModel testModel({
   required bool supportImage,
   bool supportAudio = false,
   WebModelSourceResolver? resolver,
+  int? maxConcurrentSessions,
+  List<int>? loraRanks,
 }) => WebInferenceModel(
   modelType: ModelType.gemma4,
   onClose: () {},
@@ -65,6 +67,8 @@ WebInferenceModel testModel({
   supportImage: supportImage,
   supportAudio: supportAudio,
   maxNumImages: supportImage ? 4 : null,
+  maxConcurrentSessions: maxConcurrentSessions,
+  loraRanks: loraRanks,
 );
 
 /// Stands in for the page's MediaPipe globals for the rest of the test.
@@ -109,16 +113,116 @@ fakeMediaPipe() {
 }
 
 /// Like [fakeMediaPipe], but generateResponse answers only when the test says
-/// so: `calls` holds one completer per call made, in order.
-({List<Completer<String>> calls, JSObject instance}) heldMediaPipe() {
+/// so: `calls` holds one completer per call made, in order, `prompts` the
+/// prompt of each and `progress` its progress callback, through which a test
+/// streams a piece. `cancels` counts the cancelProcessing calls, and `sizes`
+/// holds the text of each sizeInTokens call.
+({
+  List<Completer<String>> calls,
+  List<JSAny> prompts,
+  JSObject instance,
+  List<void> cancels,
+  List<JSFunction?> progress,
+  List<String> sizes,
+})
+heldMediaPipe({bool streamReplies = false}) {
   final calls = <Completer<String>>[];
+  final progresses = <JSFunction?>[];
+  final sizes = <String>[];
+  final prompts = <JSAny>[];
+  final cancels = <void>[];
   final instance = JSObject()
     ..setProperty(
       'generateResponse'.toJS,
-      ((JSAny prompt, JSAny? _) {
+      ((JSAny prompt, JSFunction? progress) {
         final call = Completer<String>();
         calls.add(call);
-        return call.future.then((text) => text.toJS).toJS;
+        prompts.add(prompt);
+        progresses.add(progress);
+        return call.future.then((text) {
+          // With [streamReplies], the reply also reaches a stream, as one
+          // piece just before the call settles.
+          if (streamReplies) {
+            progress?.callAsFunction(null, text.toJS, true.toJS);
+          }
+          return text.toJS;
+        }).toJS;
+      }).toJS,
+    )
+    ..setProperty(
+      'sizeInTokens'.toJS,
+      ((JSString text) {
+        sizes.add(text.toDart);
+        if (calls.any((call) => !call.isCompleted)) {
+          throw StateError('engine is currently loading or processing');
+        }
+        return text.toDart.length.toJS;
+      }).toJS,
+    )
+    ..setProperty('cancelProcessing'.toJS, (() => cancels.add(null)).toJS)
+    ..setProperty('close'.toJS, (() {}).toJS);
+  replaceGlobal(
+    'FilesetResolver',
+    JSObject()..setProperty(
+      'forGenAiTasks'.toJS,
+      ((JSString _) => Future<JSObject>.value(JSObject()).toJS).toJS,
+    ),
+  );
+  replaceGlobal(
+    'LlmInference',
+    JSObject()..setProperty(
+      'createFromOptions'.toJS,
+      ((JSObject _, JSObject options) => Future<JSObject>.value(
+        instance,
+      ).toJS).toJS,
+    ),
+  );
+  return (
+    calls: calls,
+    prompts: prompts,
+    instance: instance,
+    cancels: cancels,
+    progress: progresses,
+    sizes: sizes,
+  );
+}
+
+/// Like [fakeMediaPipe], but as busy as the real one: generateResponse answers
+/// 'ok' a moment later, streaming it through the progress callback, and
+/// sizeInTokens throws while a call runs, as `@mediapipe/tasks-genai` 0.10.30
+/// does ("engine is currently loading or processing").
+({List<JSAny> prompts, List<String> errors}) busyMediaPipe() {
+  final prompts = <JSAny>[];
+  final errors = <String>[];
+  var busy = false;
+  final instance = JSObject()
+    ..setProperty(
+      'generateResponse'.toJS,
+      ((JSAny prompt, JSFunction? progress) {
+        if (busy) {
+          errors.add('generateResponse while busy');
+          throw StateError('Previous invocation or loading is still ongoing.');
+        }
+        busy = true;
+        prompts.add(prompt);
+        return Future<JSString>.delayed(const Duration(milliseconds: 5), () {
+          progress?.callAsFunction(null, 'ok'.toJS, true.toJS);
+          busy = false;
+          return 'ok'.toJS;
+        }).toJS;
+      }).toJS,
+    )
+    ..setProperty(
+      'sizeInTokens'.toJS,
+      ((JSString text) {
+        if (busy) {
+          errors.add('sizeInTokens while busy');
+          throw StateError(
+            'Cannot process because LLM inference engine is currently '
+            'loading or processing.',
+          );
+        }
+        return text.toDart.length.toJS;
       }).toJS,
     )
     ..setProperty('cancelProcessing'.toJS, (() {}).toJS)
@@ -139,7 +243,42 @@ fakeMediaPipe() {
       ).toJS).toJS,
     ),
   );
-  return (calls: calls, instance: instance);
+  return (prompts: prompts, errors: errors);
+}
+
+/// Answers with a Blob URL and an installed LoRA.
+final class LoraResolver implements WebModelSourceResolver {
+  LoraResolver(this.loraPath);
+  final String loraPath;
+
+  @override
+  Future<InferenceModelSpec> activeInferenceSpec() =>
+      Completer<InferenceModelSpec>().future;
+
+  @override
+  Future<({WebModelSource model, String? loraPath})>
+  resolveActiveInferenceModel() async =>
+      (model: const BlobUrlModelSource('blob:fake-model'), loraPath: loraPath);
+}
+
+/// Answers with a Blob URL, after failing its first [failures] calls.
+final class FlakyResolver implements WebModelSourceResolver {
+  FlakyResolver(this.failures);
+  int failures;
+
+  @override
+  Future<InferenceModelSpec> activeInferenceSpec() =>
+      Completer<InferenceModelSpec>().future;
+
+  @override
+  Future<({WebModelSource model, String? loraPath})>
+  resolveActiveInferenceModel() async {
+    if (failures > 0) {
+      failures--;
+      throw StateError('no model file');
+    }
+    return (model: const BlobUrlModelSource('blob:fake-model'), loraPath: null);
+  }
 }
 
 /// Sets globalThis[name] for the rest of the test, then puts back what was

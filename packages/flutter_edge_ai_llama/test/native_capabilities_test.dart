@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_edge_ai/engine.dart';
@@ -16,6 +17,11 @@ const _visionModel = String.fromEnvironment('GGUF_VISION_MODEL_PATH');
 const _visionProjector = String.fromEnvironment('GGUF_VISION_PROJECTOR_PATH');
 const _visionFile = String.fromEnvironment('GGUF_VISION_FILE_PATH');
 const _gpuModel = String.fromEnvironment('GGUF_GPU_MODEL_PATH');
+const _structuredModel = String.fromEnvironment('GGUF_STRUCTURED_MODEL_PATH');
+const _structuredBackend = String.fromEnvironment(
+  'GGUF_STRUCTURED_BACKEND',
+  defaultValue: 'cpu',
+);
 
 edge.InferenceModelSpec _spec(String path) => edge.InferenceModelSpec(
   name: 'native',
@@ -216,5 +222,105 @@ void main() {
     },
     skip: _gpuModel.isEmpty,
     timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  // The discriminating run that enables a response format on a host and
+  // backend: an enum the model would not produce unprompted, checked
+  // unconstrained first, so a pass shows the grammar at work.
+  test(
+    'native structured output enforces a schema the model would not produce',
+    () async {
+      final backend = edge.PreferredBackend.values.byName(_structuredBackend);
+      final model = await const LlamaEngineProvider().createModel(
+        _spec(_structuredModel),
+        RuntimeConfig(
+          modelPath: _structuredModel,
+          maxTokens: 2048,
+          preferredBackend: backend,
+        ),
+      );
+      addTearDown(model.close);
+      expect(model.activeBackend, backend);
+      expect(
+        model.structuredOutputSupport.isSupported,
+        isTrue,
+        reason: '${model.structuredOutputSupport}',
+      );
+      const codes = ['QX-7731-ZETA', 'WV-0042-OMICRON'];
+      final format = edge.ResponseFormat.jsonSchema({
+        'type': 'object',
+        'properties': {
+          'code': {'type': 'string', 'enum': codes},
+          'count': {'type': 'integer', 'minimum': 3, 'maximum': 9},
+          'note': {'type': 'string', 'maxLength': 24},
+        },
+        'required': ['code', 'count', 'note'],
+        'additionalProperties': false,
+      }, name: 'fruit_order');
+      const prompt = 'Name a fruit and say how many of them you would eat.';
+      bool conforms(String text) {
+        try {
+          final value = jsonDecode(text.trim());
+          return value is Map &&
+              codes.contains(value['code']) &&
+              value['count'] is int &&
+              (value['count'] as int) >= 3 &&
+              (value['count'] as int) <= 9 &&
+              value['note'] is String &&
+              (value['note'] as String).runes.length <= 24 &&
+              value.length == 3;
+        } on FormatException {
+          return false;
+        }
+      }
+
+      final control = await model.openSession(
+        temperature: 0,
+        maxOutputTokens: 128,
+      );
+      await control.addQueryChunk(
+        edge.Message.text(text: prompt, isUser: true),
+      );
+      final unconstrained = await control.getResponse();
+      final plainSpeed = control.getSessionMetrics().tokensPerSecond;
+      await control.close();
+      expect(conforms(unconstrained), isFalse, reason: unconstrained);
+
+      final session = await model.openSession(
+        temperature: 0,
+        maxOutputTokens: 128,
+        responseFormat: format,
+      );
+      await session.addQueryChunk(
+        edge.Message.text(text: prompt, isUser: true),
+      );
+      // Core's guard throws if the reply does not conform.
+      final constrained = await session.getResponse();
+      final structuredSpeed = session.getSessionMetrics().tokensPerSecond;
+      await session.close();
+      expect(conforms(constrained), isTrue, reason: constrained);
+
+      final chat = await model.openChat(
+        temperature: 0,
+        maxOutputTokens: 128,
+        responseFormat: format,
+      );
+      for (final turn in [prompt, 'And another fruit?']) {
+        await chat.addQuery(edge.Message.text(text: turn, isUser: true));
+        final reply = await chat.generateChatResponse() as edge.TextResponse;
+        expect(conforms(reply.token), isTrue, reason: reply.token);
+      }
+      expect(chat.fullHistory, hasLength(4));
+      await chat.close();
+      // ignore: avoid_print
+      print(
+        'structured ${backend.name}: unconstrained "$unconstrained" '
+        '(${plainSpeed?.toStringAsFixed(1)} tok/s); '
+        'constrained "$constrained" '
+        '(${structuredSpeed?.toStringAsFixed(1)} tok/s)',
+      );
+    },
+    skip: _structuredModel.isEmpty,
+    timeout: const Timeout(Duration(minutes: 4)),
   );
 }

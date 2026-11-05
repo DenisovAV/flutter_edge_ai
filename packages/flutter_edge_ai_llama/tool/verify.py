@@ -188,7 +188,7 @@ def main():
                         help="Packaged runtime smoke: explicit CPU generation/batch thread budget")
     parser.add_argument("--native-diagnostics", action="store_true",
                         help="Apple runtime lanes: retain recent app thread samples in RUNNER_TEMP")
-    parser.add_argument("--capability", choices=("tools", "audio", "vision", "lora", "gpu"))
+    parser.add_argument("--capability", choices=("tools", "audio", "vision", "lora", "gpu", "structured"))
     parser.add_argument("--projector-path", type=Path)
     parser.add_argument("--input-path", type=Path)
     parser.add_argument("--adapter-path", type=Path)
@@ -262,7 +262,7 @@ def main():
         run([dart, "format", "--output=none", "--set-exit-if-changed", "lib", "test", "example/lib", "example/test", "example/integration_test"])
         run([flutter, "analyze"])
         run([sys.executable, "-m", "unittest", "discover", "-s", "test", "-p", "test_tooling.py"])
-        run([flutter, "test", "test/connector_test.dart", "test/native_identity_test.dart", "test/embedding_backend_test.dart", "test/embedding_platform_test.dart"])
+        run([flutter, "test", "test/connector_test.dart", "test/native_identity_test.dart", "test/embedding_backend_test.dart", "test/embedding_platform_test.dart", "test/structured_output_platform_test.dart"])
         run([flutter, "test", "test/connector_test.dart", "test/web_smoke_test.dart", "test/web_location_test.dart", "test/embedding_backend_test.dart", "test/embedding_platform_test.dart", "--platform", "chrome"])
         run([flutter, "test"], PACKAGE / "example")
     elif args.lane == "native":
@@ -339,7 +339,7 @@ def main():
             run(command, PACKAGE / "example", smoke="packaged native runtime installs", smoke_timeout=1200)
             print("::warning::iOS simulator passed only after a startup retry; inspect the first attempt above.", flush=True)
     elif args.lane == "capabilities":
-        labels = {"tools": "native typed thinking", "audio": "native audio projector", "vision": "native vision projector", "lora": "native LoRA session", "gpu": "explicit GPU loads"}
+        labels = {"tools": "native typed thinking", "audio": "native audio projector", "vision": "native vision projector", "lora": "native LoRA session", "gpu": "explicit GPU loads", "structured": "native structured output"}
         prefix = "TOOL" if args.capability == "tools" else args.capability.upper()
         defines = [f"--dart-define=GGUF_{prefix}_MODEL_PATH={args.model_path.resolve()}"]
         if args.projector_path: defines.append(f"--dart-define=GGUF_{prefix}_PROJECTOR_PATH={args.projector_path.resolve()}")

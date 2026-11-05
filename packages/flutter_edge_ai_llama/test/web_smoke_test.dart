@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:js_interop';
 
 // Core storage fixtures avoid downloads while exercising the real Web facade.
@@ -28,6 +29,8 @@ import 'package:web/web.dart' as web;
 
 const _modelUrl = String.fromEnvironment('GGUF_WEB_MODEL_URL');
 const _storageHelperUrl = String.fromEnvironment('GGUF_WEB_STORAGE_HELPER_URL');
+// Also runs the discriminating structured output check on WebGPU.
+const _structuredGpu = bool.fromEnvironment('GGUF_WEB_STRUCTURED_GPU');
 const _bridgeRoot = String.fromEnvironment(
   'GGUF_WEB_BRIDGE_ROOT',
   defaultValue: '/webgpu_bridge/',
@@ -420,6 +423,7 @@ void main() {
           print(
             'WEB_SMOKE: cancellation rolled back and immediate retry completed',
           );
+          if (_structuredGpu) await _structuredOnWebGpu(model);
           return true;
         } catch (error, stack) {
           failure = "$error\n$stack";
@@ -435,6 +439,75 @@ void main() {
     },
     skip: _modelUrl.isEmpty,
     timeout: const Timeout(Duration(minutes: 3)),
+  );
+}
+
+/// The discriminating run that enables a response format on WebGPU: an
+/// enum the model would not produce unprompted, checked unconstrained first.
+Future<void> _structuredOnWebGpu(edge.InferenceModel cpuModel) async {
+  await cpuModel.close();
+  final model = await edge.FlutterEdgeAi.getActiveModel(
+    maxTokens: 2048,
+    preferredBackend: edge.PreferredBackend.gpu,
+  );
+  addTearDown(model.close);
+  expect(model.activeBackend, edge.PreferredBackend.gpu);
+  expect(
+    model.structuredOutputSupport.isSupported,
+    isTrue,
+    reason: '${model.structuredOutputSupport}',
+  );
+  const codes = ['QX-7731-ZETA', 'WV-0042-OMICRON'];
+  final format = edge.ResponseFormat.jsonSchema({
+    'type': 'object',
+    'properties': {
+      'code': {'type': 'string', 'enum': codes},
+      'count': {'type': 'integer', 'minimum': 3, 'maximum': 9},
+      'note': {'type': 'string', 'maxLength': 24},
+    },
+    'required': ['code', 'count', 'note'],
+    'additionalProperties': false,
+  }, name: 'fruit_order');
+  const prompt = 'Name a fruit and say how many of them you would eat.';
+  bool conforms(String text) {
+    try {
+      final value = jsonDecode(text.trim());
+      return value is Map &&
+          codes.contains(value['code']) &&
+          value['count'] is int &&
+          (value['count'] as int) >= 3 &&
+          (value['count'] as int) <= 9 &&
+          value['note'] is String &&
+          (value['note'] as String).runes.length <= 24 &&
+          value.length == 3;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  final control = await model.openSession(temperature: 0, maxOutputTokens: 96);
+  await control.addQueryChunk(edge.Message.text(text: prompt, isUser: true));
+  final unconstrained = await control.getResponse();
+  await control.close();
+  expect(conforms(unconstrained), isFalse, reason: unconstrained);
+  final chat = await model.openChat(
+    temperature: 0,
+    maxOutputTokens: 96,
+    responseFormat: format,
+  );
+  final replies = <String>[];
+  for (final turn in [prompt, 'And another fruit?']) {
+    await chat.addQuery(edge.Message.text(text: turn, isUser: true));
+    // Core's guard throws if the reply does not conform.
+    final reply = await chat.generateChatResponse() as edge.TextResponse;
+    expect(conforms(reply.token), isTrue, reason: reply.token);
+    replies.add(reply.token);
+  }
+  await chat.close();
+  // ignore: avoid_print
+  print(
+    'WEB_SMOKE: structured output on WebGPU conforms: '
+    'unconstrained "$unconstrained", constrained $replies',
   );
 }
 

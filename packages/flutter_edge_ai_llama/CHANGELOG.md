@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `responseFormat` on `openSession`/`openChat`, enforced by llamadart's grammar (#195).
+
 ## 0.0.6
 
 - Update llamadart to 0.17.5 with matching Apple and Web runtimes (#764).

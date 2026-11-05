@@ -656,6 +656,12 @@ class OnnxWebSession extends InferenceModelSession {
       }
     }
 
+    void dropPendingDeliveries() {
+      pendingDeliveries = 0;
+      deliveriesDrained?.complete();
+      deliveriesDrained = null;
+    }
+
     // Signal only — never releases the mutex. The onListen coroutine owns
     // release in every terminal path; for an in-flight generation the lock
     // must stay held until the Transformers.js Promise SETTLES (via
@@ -664,6 +670,10 @@ class OnnxWebSession extends InferenceModelSession {
     // race a pre-acquire cancel into a deadlock or let a next turn overlap.
     void stop(bool byClose) {
       terminated = true;
+      // A paused consumer may hold already-enqueued tokens indefinitely.
+      // They are filtered from the returned stream after this flag is set,
+      // so neither delivery nor history waits for the consumer to resume.
+      dropPendingDeliveries();
       if (!byClose) stoppedByConsumer = true;
       // A stopped turn frees the session: the next turn of it may start now
       // and waits on the mutex for this one to settle. The mutex package
@@ -698,20 +708,26 @@ class OnnxWebSession extends InferenceModelSession {
       }
     }
 
-    String deliverToken(String text) {
-      replyBuffer.write(text);
-      pendingDeliveries--;
+    void finishPendingDelivery() {
+      if (pendingDeliveries > 0) pendingDeliveries--;
       if (pendingDeliveries == 0) {
         deliveriesDrained?.complete();
         deliveriesDrained = null;
       }
-      return text;
     }
 
-    void dropPendingDeliveries() {
-      pendingDeliveries = 0;
-      deliveriesDrained?.complete();
-      deliveriesDrained = null;
+    final deliveredText = StreamTransformer<String, String>.fromHandlers(
+      handleData: (text, sink) {
+        if (!terminated) {
+          replyBuffer.write(text);
+          sink.add(text);
+        }
+        finishPendingDelivery();
+      },
+    );
+
+    void closeController() {
+      if (!controller.isClosed) unawaited(controller.close());
     }
 
     Future<void> runGeneration(List<Map<String, String>> messages) async {
@@ -761,7 +777,7 @@ class OnnxWebSession extends InferenceModelSession {
       // Two streams of this session made before either was listened to.
       if (_turnInFlight != null) {
         controller.addError(_turnUnderWay());
-        await controller.close();
+        closeController();
         return;
       }
       _turnInFlight = token;
@@ -785,7 +801,7 @@ class OnnxWebSession extends InferenceModelSession {
           if (terminated) dropInput();
           releaseMutexIfHeld();
           endTurn();
-          if (!controller.isClosed) await controller.close();
+          closeController();
           return;
         }
         // Snapshot history AFTER acquiring the lock: messages added while
@@ -816,7 +832,7 @@ class OnnxWebSession extends InferenceModelSession {
         }
         releaseMutexIfHeld();
         endTurn();
-        if (!controller.isClosed) await controller.close();
+        closeController();
       } catch (e, st) {
         // No reply is recorded for a failed turn, so its input goes too: the
         // history keeps alternating.
@@ -835,7 +851,7 @@ class OnnxWebSession extends InferenceModelSession {
         endTurn();
         if (!controller.isClosed) {
           controller.addError(e, st);
-          await controller.close();
+          closeController();
         }
       } finally {
         endTurn();
@@ -846,13 +862,10 @@ class OnnxWebSession extends InferenceModelSession {
     // Also runs once the turn has closed the stream itself; only a cancel
     // before that is the consumer's stop.
     controller.onCancel = () {
-      if (!controller.isClosed) {
-        dropPendingDeliveries();
-        stop(false);
-      }
+      if (!controller.isClosed) stop(false);
     };
     return (
-      text: controller.stream.map(deliverToken),
+      text: controller.stream.transform(deliveredText),
       stopped: () => stoppedByConsumer,
     );
   }

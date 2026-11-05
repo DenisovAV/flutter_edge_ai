@@ -547,6 +547,7 @@ void main() {
       subscription = first.text.listen((text) {
         delivered.add(text);
         if (text == 'visible') {
+          subscription.pause();
           _emit(firstCall, 'queued-but-cancelled');
           cancellation = subscription.cancel();
           firstDelivered.complete();
@@ -573,6 +574,95 @@ void main() {
       await model.close();
     },
   );
+
+  test(
+    'a paused stop drops queued text and frees the next turn before resume',
+    () async {
+      _tf['holdOnInterrupt'] = true.toJS;
+      final model = _model();
+      final session = await model.openSession(systemInstruction: 'A');
+
+      await session.addQueryChunk(const Message(text: 'a1', isUser: true));
+      final first = _turn(session);
+      final delivered = <String>[];
+      final visible = Completer<void>();
+      final firstDone = Completer<void>();
+      late final StreamSubscription<String> subscription;
+      subscription = first.text.listen((text) {
+        delivered.add(text);
+        if (text == 'visible') visible.complete();
+      }, onDone: firstDone.complete);
+      final firstCall = await _call(1);
+      _emit(firstCall, 'visible');
+      await visible.future;
+      subscription.pause();
+      _emit(firstCall, 'queued-before-stop');
+      await pumpEventQueue();
+
+      await session.stopGeneration();
+      expect(_interrupted(firstCall), isTrue);
+      _finish(firstCall);
+
+      final second = await _ask(session, 'a2');
+      final secondCall = await _call(2);
+      expect(_contents(secondCall), [
+        'system:A',
+        'user:a1',
+        'assistant:visible',
+        'user:a2',
+      ]);
+      _finish(secondCall);
+      await second.done;
+
+      subscription.resume();
+      await firstDone.future;
+      expect(delivered, ['visible']);
+      expect(await first.end, TurnEnd.stopped);
+      await model.close();
+    },
+  );
+
+  test('model close does not wait for a paused turn to resume', () async {
+    _tf['holdOnInterrupt'] = true.toJS;
+    final model = _model();
+    final session = await model.openSession();
+    await session.addQueryChunk(const Message(text: 'a1', isUser: true));
+    final turn = _turn(session);
+    final delivered = <String>[];
+    final visible = Completer<void>();
+    final turnDone = Completer<void>();
+    late final StreamSubscription<String> subscription;
+    subscription = turn.text.listen((text) {
+      delivered.add(text);
+      if (text == 'visible') visible.complete();
+    }, onDone: turnDone.complete);
+    final call = await _call(1);
+    _emit(call, 'visible');
+    await visible.future;
+    subscription.pause();
+    _emit(call, 'queued-before-close');
+    await pumpEventQueue();
+
+    final closing = model.close();
+    expect(_interrupted(call), isTrue);
+    _finish(call);
+    await closing.timeout(const Duration(seconds: 5));
+
+    subscription.resume();
+    await turnDone.future;
+    expect(delivered, ['visible']);
+    expect(await turn.end, TurnEnd.closed);
+  });
+
+  test('an unlistened turn does not hold model close', () async {
+    final model = _model();
+    final session = await model.openSession();
+    await session.addQueryChunk(const Message(text: 'unused', isUser: true));
+    session.getResponseAsync();
+
+    await model.close().timeout(const Duration(seconds: 5));
+    expect(_calls, isEmpty);
+  });
 
   test('openChat keeps input after a natural empty completion', () async {
     _tf['holdOnInterrupt'] = true.toJS;

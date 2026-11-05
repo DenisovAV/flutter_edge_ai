@@ -22,7 +22,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/android_arm64"
-LITERT_LM_DIR="/tmp/LiteRT-LM"
+LITERT_LM_DIR="${LITERT_LM_DIR:-/tmp/LiteRT-LM}"
 DEFAULT_REF="b2f686e2ed4718fb84ec398a61dd59ca0f0aff27"   # v0.18.0
 VERSION="${1:-}"
 
@@ -68,14 +68,35 @@ git checkout -f "$TARGET_REF"
 echo "Building from: $(git log --oneline -1)"
 
 # 3. Ensure cc_binary(linkshared=True) target exists in c/BUILD
+# Only the C APIs leave the library: litert_lm_* for the Dart client and
+# LiteRt* for the companions that resolve the runtime through NEEDED (the TopK
+# sampler, #270; the NPU dispatches). Everything else stays local. From
+# v0.19.0 libLiteRtLm NEEDs libEGL/libGLES (the static OpenCL accelerator),
+# whose vendor stack loads the system libprotobuf-cpp-lite in the same dlopen;
+# with our ~3900 protobuf symbols exported, its constructors bound to ours and
+# SIGSEGVed (Galaxy S25 Ultra, 2026-11-01). Upstream's own //c:litert-lm does
+# the same with c/litert_lm_c_api_linux.lds.
+cat > c/flutter_edge_ai_android_exports.lds << 'LDSEOF'
+{
+  global:
+    litert_lm_*;
+    LiteRt*;
+  local:
+    *;
+};
+LDSEOF
 if ! grep -q '"libLiteRtLm.dylib"' c/BUILD; then
   cat >> c/BUILD << 'BUILDEOF'
 
 cc_binary(
     name = "libLiteRtLm.dylib",
+    additional_linker_inputs = [":flutter_edge_ai_android_exports.lds"],
     linkshared = True,
     linkopts = select({
-        "@platforms//os:android": ["-Wl,-soname,libLiteRtLm.so"],
+        "@platforms//os:android": [
+            "-Wl,-soname,libLiteRtLm.so",
+            "-Wl,--version-script=$(location :flutter_edge_ai_android_exports.lds)",
+        ],
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
@@ -156,6 +177,18 @@ bazelisk build \
   '//c:libLiteRtLm.dylib' \
   '@litert//litert/vendors/google_tensor/dispatch:dispatch_api_so'
 
+# LiteRT-LM v0.19.0 stopped shipping prebuilt TopK GPU samplers (43b79e8); the
+# OpenCL one is built from source with ML Drift (47d7ba6). Older refs have no
+# such target and keep the prebuilt.
+if grep -q 'name = "top_k_opencl_sampler_so"' runtime/components/BUILD; then
+  bazelisk build \
+    -c opt \
+    --strip=always \
+    --config=android_arm64 \
+    --linkopt=-Wl,-z,max-page-size=16384 \
+    '//runtime/components:top_k_opencl_sampler_so'
+fi
+
 # 6. Copy + rename .dylib → .so (bazel target name is hardcoded to .dylib).
 mkdir -p "$PREBUILT_DIR"
 cp bazel-bin/c/libLiteRtLm.dylib "$PREBUILT_DIR/libLiteRtLm.so"
@@ -207,6 +240,29 @@ echo "=== Building StreamProxy with $NDK_CLANG ==="
   "$SCRIPT_DIR/stream_proxy.c"
 echo "  libStreamProxy.so → $PREBUILT_DIR/"
 
+# 7b. The MediaTek dispatch adapter (LiteRT-LM v0.19.0 on): our
+#     libLiteRtDispatch_MediaTek.so gives Google's legacy MediaTek dispatch
+#     the versioned dispatch ABI LiteRT now requires
+#     (mediatek_dispatch_compat.c). It does not ship: the MediaTek NPU is
+#     refused in core 2.6.0 (design decision K, 2026-11-03), and the release
+#     gate forbids the name in the Android archive. BUILD_MEDIATEK_ADAPTER=1
+#     builds it, with its host test, into $PREBUILT_DIR/../mediatek_adapter,
+#     outside the archive. The host test is part of CI either way.
+if [ "${BUILD_MEDIATEK_ADAPTER:-0}" = 1 ]; then
+  echo ""
+  echo "=== MediaTek dispatch adapter (not shipped) ==="
+  LITERT_DIR="${LITERT_DIR:-}" "$SCRIPT_DIR/run_mediatek_dispatch_compat_test.sh"
+  ADAPTER_DIR="$PREBUILT_DIR/../mediatek_adapter"
+  mkdir -p "$ADAPTER_DIR"
+  "$NDK_CLANG" -std=c11 -O2 -shared -fPIC -fvisibility=hidden \
+    -Wall -Wextra -Werror \
+    -Wl,-z,max-page-size=16384 \
+    -Wl,-soname,libLiteRtDispatch_MediaTek.so \
+    -o "$ADAPTER_DIR/libLiteRtDispatch_MediaTek.so" \
+    "$SCRIPT_DIR/mediatek_dispatch_compat.c"
+  echo "  libLiteRtDispatch_MediaTek.so → $ADAPTER_DIR/"
+fi
+
 # 8. Copy companion libs from upstream prebuilt (we don't rebuild these
 #    — they're Google's GPU accelerator + sampler binaries).
 #
@@ -223,20 +279,29 @@ echo "  libStreamProxy.so → $PREBUILT_DIR/"
 #    order on every Android device — a path nobody ships.
 echo ""
 echo "=== Copying companion libs from upstream prebuilt ==="
-for lib in libGemmaModelConstraintProvider.so \
-           libLiteRtOpenClAccelerator.so \
-           libLiteRtTopKOpenClSampler.so; do
+# From native-v0.19.0-a only the constraint provider: libLiteRtLm.so links the
+# OpenCL accelerator and sampler in (patch_c_api.sh section 19), and Adreno 830
+# and Mali-G715 run the GPU without upstream's separate
+# libLiteRtOpenClAccelerator.so and libLiteRtTopKOpenClSampler.so with the
+# same results (DDP, 2026-11-04), so those two are no longer shipped.
+for lib in libGemmaModelConstraintProvider.so; do
   if [ -f "prebuilt/android_arm64/$lib" ]; then
     cp "prebuilt/android_arm64/$lib" "$PREBUILT_DIR/$lib"
     echo "  $lib"
+  elif [ -f "bazel-bin/runtime/components/$lib" ]; then
+    cp "bazel-bin/runtime/components/$lib" "$PREBUILT_DIR/$lib"
+    chmod +w "$PREBUILT_DIR/$lib"
+    echo "  $lib (built from source)"
   else
     echo "ERROR: prebuilt/android_arm64/$lib not found in upstream" >&2
     exit 1
   fi
 done
-# PREBUILT_DIR outlives builds: drop copies a ≤0.17 build left there, or they
+# PREBUILT_DIR outlives builds: drop copies an older build left there, or they
 # get packed into the tarball again.
 for lib in libLiteRtGpuAccelerator.so \
+           libLiteRtOpenClAccelerator.so \
+           libLiteRtTopKOpenClSampler.so \
            libLiteRtWebGpuAccelerator.so \
            libLiteRtTopKWebGpuSampler.so; do
   if [ -f "$PREBUILT_DIR/$lib" ]; then
@@ -267,72 +332,14 @@ for lib in libQnnHtp.so libQnnSystem.so \
   fi
 done
 
-# 8b. Patch sampler libs with DT_NEEDED libLiteRtLm.so. Bionic per-library
-#     linker namespaces (Nougat+) only resolve UND symbols against the
-#     caller's DT_NEEDED chain, NOT against arbitrary libs already loaded
-#     in the process. Upstream samplers reference LiteRtCreateEnvironment
-#     as UND but ship with NEEDED list containing only libm/libdl/liblog/
-#     libc — so dlopen fails at runtime and the engine silently falls back
-#     to CPU sampling (~3× decode slowdown). Adding libLiteRtLm.so to
-#     NEEDED on each sampler binary lets bionic resolve LiteRtCreateEnvironment
-#     against our libLiteRtLm.so (which exports it). See:
-#       - DenisovAV/flutter_edge_ai#270
-#       - google-ai-edge/LiteRT-LM#2211
-if ! command -v patchelf >/dev/null 2>&1; then
-  echo "ERROR: patchelf not installed — the DT_NEEDED fixes below cannot run," >&2
-  echo "       and a bundle without them crashes on device (#270, #545)." >&2
-  echo "       Install with: brew install patchelf" >&2
-  exit 1
-else
-  echo ""
-  echo "=== Patching sampler DT_NEEDED (#270) ==="
-  for lib in libLiteRtTopKOpenClSampler.so; do
-    if [ -f "$PREBUILT_DIR/$lib" ]; then
-      # Idempotent: only add if not already present.
-      if ! patchelf --print-needed "$PREBUILT_DIR/$lib" | grep -q '^libLiteRtLm\.so$'; then
-        patchelf --add-needed libLiteRtLm.so "$PREBUILT_DIR/$lib"
-        echo "  $lib: added libLiteRtLm.so to NEEDED"
-      else
-        echo "  $lib: libLiteRtLm.so already in NEEDED, skipping"
-      fi
-    fi
-  done
-fi
-
-# 8c. Patch GPU accelerator libs with DT_NEEDED libandroid.so. At the pinned
-#     PREBUILT_REF, upstream's libLiteRtOpenClAccelerator.so and
-#     libLiteRtGpuAccelerator.so reference AHardwareBuffer_allocate/_release
-#     as WEAK UND but list neither libandroid.so nor libnativewindow.so in
-#     NEEDED, so under BIND_NOW both bind to NULL (same bionic rule as 8b:
-#     a symbol only resolves through the library's own DT_NEEDED chain).
-#     Adreno evidently doesn't take that path (the GPU backend works there).
-#     On Mali, weights preparation on GPU is disabled and buffers go through
-#     AHardwareBuffer, so engine_create jumps to address 0 (SIGSEGV) while
-#     delegating the decode subgraph.
-#     Upstream fixed this by linking accelerators with -landroid under
-#     --no-as-needed (litert_accelerator_library in LiteRT); newer LiteRT-LM
-#     prebuilts already carry libandroid.so, so this becomes a no-op once
-#     PREBUILT_REF moves past that change. libandroid.so pulls in
-#     libnativewindow.so. Verified on Galaxy A34 (Mali-G68 MC4).
-#     The v0.18.0 prebuilts already list libandroid.so, so this prints
-#     "already in NEEDED"; kept as a guard against a regression upstream.
-#     patchelf is guaranteed here: step 8b exits without it.
-echo ""
-echo "=== Patching GPU accelerator DT_NEEDED (Mali AHardwareBuffer) ==="
-for lib in libLiteRtOpenClAccelerator.so; do
-  if [ -f "$PREBUILT_DIR/$lib" ]; then
-    # Idempotent: only add if not already present.
-    if ! patchelf --print-needed "$PREBUILT_DIR/$lib" | grep -q '^libandroid\.so$'; then
-      patchelf --add-needed libandroid.so "$PREBUILT_DIR/$lib"
-      echo "  $lib: added libandroid.so to NEEDED"
-    else
-      echo "  $lib: libandroid.so already in NEEDED, skipping"
-    fi
-  fi
-done
-
+# 8b/8c (until native-v0.18.0-h): patchelf added libLiteRtLm.so to the OpenCL
+#     sampler's NEEDED (#270) and libandroid.so to the OpenCL accelerator's
+#     (the Mali crash, #545). Both libraries left the bundle in
+#     native-v0.19.0-a (the accelerator and sampler are linked into
+#     libLiteRtLm.so, section 19), so nothing is patched here any more; 8d
+#     still checks every import of what ships.
 # 8d. Every import must be reachable through the library's own NEEDED (#545).
-#     8b and 8c fix the cases we know about; this catches the next one.
+#     It caught #270 and #545 before 8b/8c fixed them; it catches the next one.
 echo ""
 echo "=== DT_NEEDED closure ==="
 python3 "$SCRIPT_DIR/check_android_needed.py" "$PREBUILT_DIR" || exit 1

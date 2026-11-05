@@ -21,7 +21,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/macos_arm64"
-LITERT_LM_DIR="/tmp/LiteRT-LM"
+LITERT_LM_DIR="${LITERT_LM_DIR:-/tmp/LiteRT-LM}"
 DEFAULT_REF="b2f686e2ed4718fb84ec398a61dd59ca0f0aff27"   # v0.18.0
 VERSION="${1:-}"
 
@@ -118,7 +118,15 @@ echo "provider ABI: source and provider agree (ComputeMask=$want)"
 
 # 5. Build
 echo "Building with Bazel..."
-bazelisk build -c opt --strip=always --config=macos_arm64 '//c:libLiteRtLm.dylib'
+# From LiteRT-LM v0.19.0 the GPU accelerator and the TopK samplers are linked
+# into libLiteRtLm on Apple. macOS defaults to ML Drift WebGPU, which makes
+# libLiteRtLm NEED libwebgpu_dawn.dylib; Metal keeps it to Metal, the backend
+# we ship on macOS. Older trees have no such flag.
+GPU_FLAG=()
+if grep -q 'name = "gpu_accelerator"' runtime/executor/BUILD 2>/dev/null; then
+  GPU_FLAG=(--//runtime/executor:gpu_accelerator="${MACOS_GPU_ACCELERATOR:-metal}")
+fi
+bazelisk build -c opt --strip=always --config=macos_arm64 "${GPU_FLAG[@]}" '//c:libLiteRtLm.dylib'
 
 # 6. Copy to prebuilt
 BUILT_LIB="bazel-bin/c/libLiteRtLm.dylib"

@@ -1,0 +1,27 @@
+diff --git src/model_interface.cc src/model_interface.cc
+index 0262856..6e9dcb2 100644
+--- src/model_interface.cc
++++ src/model_interface.cc
+@@ -100,11 +100,18 @@ void ModelInterface::InitializePieces(bool use_reserved_id_map) {
+       status_ = absl::InternalError("piece must not be empty.");
+       return;
+     }
++    // flutter_edge_ai (on top of LiteRT-LM's sentencepiece.patch, which
++    // accepts only the one-byte piece "\0"): a NUL byte is refused only where
++    // a Darts trie would be built over the piece, because Darts throws on it:
++    // every piece of a model that keeps a reserved-id map (Unigram's trie
++    // holds them all) and every USER_DEFINED piece (the prefix matcher). A BPE
++    // model keeps its other pieces in a hash map. Byte-level BPE vocabularies
++    // converted without byte_fallback carry byte 0x00 as such a piece
++    // (Qwen3-0.6B, FastVLM-0.5B: id 188), and merges of it too
++    // (Phi-4-mini-instruct: "\0\0", id 156344).
+     if (sp.piece().find('\0') != absl::string_view::npos &&
+-        !(sp.piece() == absl::string_view("\0", 1) &&
+-          sp.type() == ModelProto::SentencePiece::NORMAL &&
+-          model_proto_->trainer_spec().model_type() == TrainerSpec::BPE &&
+-          !model_proto_->trainer_spec().byte_fallback())) {
++        (use_reserved_id_map ||
++         sp.type() == ModelProto::SentencePiece::USER_DEFINED)) {
+       status_ = absl::InternalError("piece must not include null character.");
+       return;
+     }

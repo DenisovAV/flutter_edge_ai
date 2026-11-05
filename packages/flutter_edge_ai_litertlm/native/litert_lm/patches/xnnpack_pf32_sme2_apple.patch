@@ -1,0 +1,56 @@
+XNNPACK: no KleidiAI pf32 SME2 GEMM and no x32 SME2 LHS packing on Apple
+(macOS and iOS). patch_c_api.sh section 21.
+
+On SME2 CPUs (Apple M4/M5 measured) the pf32 SME2 f32 GEMM gives results
+that depend on the thread count. At 4 threads (LiteRT-LM's default) sessions
+differ by up to 2.5 nat per token; other thread counts repeat a wrong answer;
+on some models 1 thread is off too. Skipping only these three SME2 branches
+gives one result at 1/4/12 threads on every affected model
+(doc/research/macos-cpu-nondeterminism-0.19.md on research/
+macos-cpu-nondeterminism-0.19). The three go together: the pf32 kernels
+expect an LHS packed by the matching pack-lh config, and either alone
+gives garbage. On Apple the SME (non-2) branches that follow are used instead.
+
+Upstream: google/XNNPACK#11789 (also google-ai-edge/LiteRT-LM#4145).
+Drop this when XNNPACK fixes #11789: re-run the scorerep probe at 1/4/12
+threads on an SME2 Mac without it. When the XNNPACK pin moves, the fetch fails
+(tensorflow_xnnpack_patch_file.patch names the pinned archive) until this is
+re-checked against the new pin.
+Against XNNPACK 28d1fc6d908bc4d80920be989177b7eb1a4aebc8, strip 1.
+
+diff -ru a/src/configs/gemm-config.c b/src/configs/gemm-config.c
+--- a/src/configs/gemm-config.c	2026-11-02 08:45:09
++++ b/src/configs/gemm-config.c	2026-11-02 08:45:09
+@@ -514,7 +514,8 @@
+   const struct xnn_hardware_config* hardware_config = xnn_init_hardware_config();
+   assert(hardware_config != NULL);
+   (void) hardware_config;  // May be unused.
+-  if (XNN_ENABLE_ARM_SME2 && (hardware_config->arch_flags & xnn_arch_arm_sme2)) {
++  if (XNN_ENABLE_ARM_SME2 && !XNN_PLATFORM_MAC && !XNN_PLATFORM_IOS &&
++      (hardware_config->arch_flags & xnn_arch_arm_sme2)) {
+     #if XNN_ENABLE_ARM_SME2
+       const size_t mr = xnn_pf32_gemm_minmax_ukernel_32x32__neonsme2_get_mr();
+       const size_t nr = xnn_pf32_gemm_minmax_ukernel_32x32__neonsme2_get_nr();
+diff -ru a/src/configs/pack-lh-config.c b/src/configs/pack-lh-config.c
+--- a/src/configs/pack-lh-config.c	2026-11-02 08:45:09
++++ b/src/configs/pack-lh-config.c	2026-11-02 08:45:09
+@@ -93,7 +93,8 @@
+   assert(hardware_config != NULL);
+   (void)hardware_config;
+ #if XNN_ENABLE_ARM_SME2
+-  if ((hardware_config->arch_flags & xnn_arch_arm_sme2)) {
++  if (!XNN_PLATFORM_MAC && !XNN_PLATFORM_IOS &&
++      (hardware_config->arch_flags & xnn_arch_arm_sme2)) {
+     x32_pack_lh_config.pack_lh_fn =
+         (xnn_pack_lh_ukernel_fn)xnn_x32_pack_lh_ukernel__neonsme2;
+     x32_pack_lh_config.size_fn =
+@@ -135,7 +136,8 @@
+   assert(hardware_config != NULL);
+   (void)hardware_config;
+ #if XNN_ENABLE_ARM_SME2
+-    if ((hardware_config->arch_flags & xnn_arch_arm_sme2)) {
++    if (!XNN_PLATFORM_MAC && !XNN_PLATFORM_IOS &&
++        (hardware_config->arch_flags & xnn_arch_arm_sme2)) {
+         x32_igemm_pack_lh_config.pack_lh_for_igemm_fn  = (xnn_pack_lh_igemm_ukernel_fn) xnn_x32_pack_lh_ukernel__igemm_neonsme2;
+         x32_igemm_pack_lh_config.size_for_igemm_fn  = (xnn_pack_lh_igemm_size_fn) xnn_x32_pack_lh_size__igemm_neonsme2;
+         x32_igemm_pack_lh_config.offset_for_igemm_fn  = (xnn_pack_lh_igemm_offset_fn) xnn_x32_pack_lh_offset__igemm_neonsme2;

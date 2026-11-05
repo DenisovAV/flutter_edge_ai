@@ -1,0 +1,712 @@
+diff --git a/c/conversation.cc b/c/conversation.cc
+index daea9e4..6093136 100644
+--- a/c/conversation.cc
++++ b/c/conversation.cc
+@@ -49,17 +49,57 @@ namespace {
+ uint64_t BeginTurn(LiteRtLmConversation* conversation) {
+   std::lock_guard<std::mutex> lock(conversation->turn_mutex);
+   conversation->last_turn_end = kLiteRtLmTurnEndRunning;
++  conversation->last_turn_status_code = 0;
++  conversation->refused_status_code = 0;
+   return ++conversation->turn_seq;
+ }
+ 
++// flutter_edge_ai section 23: a send refused before BeginTurn. Recorded, so
++// get_last_turn_end does not report the send before it.
++LiteRtLmStatusCode RefuseTurn(LiteRtLmConversation* conversation,
++                              absl::StatusCode code, const char* message) {
++  {
++    std::lock_guard<std::mutex> lock(conversation->turn_mutex);
++    conversation->refused_status_code = static_cast<int>(code);
++  }
++  return litert::lm::c::ReturnError(code, message);
++}
++
++// flutter_edge_ai section 23: the status as the caller sees it, without the
++// context-window marker the turn end was read from (Status::ToString() would
++// print it into the message).
++absl::Status ForCaller(absl::Status status) {
++  status.ErasePayload(litert::lm::kContextWindowFullPayload);
++  return status;
++}
++
+ void EndTurn(LiteRtLmConversation* conversation, uint64_t turn,
+              const absl::Status& status) {
++  // flutter_edge_ai section 23: how the decode ended, recorded by the
++  // conversation before the callback that reports the end.
++  int end;
++  if (status.ok()) {
++    switch (conversation->conversation->LastDecodeEnd()) {
++      case litert::lm::Conversation::kDecodeEndMaxOutputTokens:
++        end = kLiteRtLmTurnEndOutputLimit;
++        break;
++      case litert::lm::Conversation::kDecodeEndMaxNumTokens:
++        end = kLiteRtLmTurnEndContextLimit;
++        break;
++      default:
++        end = kLiteRtLmTurnEndCompleted;
++    }
++  } else if (absl::IsCancelled(status)) {
++    end = kLiteRtLmTurnEndCancelled;
++  } else if (litert::lm::IsContextWindowFullStatus(status)) {
++    end = kLiteRtLmTurnEndContextFull;
++  } else {
++    end = kLiteRtLmTurnEndFailed;
++  }
+   std::lock_guard<std::mutex> lock(conversation->turn_mutex);
+   if (conversation->turn_seq != turn) return;
+-  conversation->last_turn_end =
+-      status.ok()                 ? kLiteRtLmTurnEndCompleted
+-      : absl::IsCancelled(status) ? kLiteRtLmTurnEndCancelled
+-                                  : kLiteRtLmTurnEndFailed;
++  conversation->last_turn_end = end;
++  conversation->last_turn_status_code = static_cast<int>(status.code());
+ }
+ 
+ absl::AnyInvocable<void(absl::StatusOr<litert::lm::Message>)>
+@@ -75,7 +115,7 @@ CreateConversationCallback(LiteRtLmStreamCallback callback, void* user_data,
+       EndTurn(conversation, turn, absl::OkStatus());
+     }
+     if (!message.ok()) {
+-      std::string error_str = message.status().ToString();
++      std::string error_str = ForCaller(message.status()).ToString();
+       LiteRtLmStreamChunk chunk;
+       chunk.text = nullptr;
+       chunk.is_final = true;
+@@ -632,14 +672,17 @@ LiteRtLmStatusCode litert_lm_conversation_send_message(
+     return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
+                                       "Invalid conversation.");
+   }
+-  LITERT_LM_C_RETURN_IF_NULL(message_json);
++  if (message_json == nullptr) {
++    return RefuseTurn(conversation, absl::StatusCode::kInvalidArgument,
++                      "message_json is NULL.");
++  }
+   nlohmann::json json_message =
+       nlohmann::json::parse(message_json, /*cb=*/nullptr,
+                             /*allow_exceptions=*/false);
+   if (json_message.is_discarded()) {
+     ABSL_LOG(ERROR) << "Failed to parse message JSON.";
+-    return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
+-                                      "Failed to parse message JSON.");
++    return RefuseTurn(conversation, absl::StatusCode::kInvalidArgument,
++                      "Failed to parse message JSON.");
+   }
+ 
+   OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
+@@ -650,8 +693,9 @@ LiteRtLmStatusCode litert_lm_conversation_send_message(
+       json_message, std::move(litert_lm_optional_args));
+   EndTurn(conversation, turn, response.status());
+   if (!response.ok()) {
+-    ABSL_LOG(ERROR) << "Failed to send message: " << response.status();
+-    return litert::lm::c::ToCStatus(response.status());
++    const absl::Status status = ForCaller(response.status());
++    ABSL_LOG(ERROR) << "Failed to send message: " << status;
++    return litert::lm::c::ToCStatus(status);
+   }
+   auto c_response = std::make_unique<LiteRtLmJsonResponse>();
+   c_response->json_string = response->dump();
+@@ -681,15 +725,18 @@ LiteRtLmStatusCode litert_lm_conversation_send_message_stream(
+     return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
+                                       "Invalid conversation.");
+   }
+-  LITERT_LM_C_RETURN_IF_NULL(message_json);
+-  LITERT_LM_C_RETURN_IF_NULL(callback);
++  if (message_json == nullptr || callback == nullptr) {
++    return RefuseTurn(conversation, absl::StatusCode::kInvalidArgument,
++                      message_json == nullptr ? "message_json is NULL."
++                                              : "callback is NULL.");
++  }
+   nlohmann::json json_message =
+       nlohmann::json::parse(message_json, /*cb=*/nullptr,
+                             /*allow_exceptions=*/false);
+   if (json_message.is_discarded()) {
+     ABSL_LOG(ERROR) << "Failed to parse message JSON.";
+-    return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
+-                                      "Failed to parse message JSON.");
++    return RefuseTurn(conversation, absl::StatusCode::kInvalidArgument,
++                      "Failed to parse message JSON.");
+   }
+ 
+   litert::lm::OptionalArgs litert_lm_optional_args = CreateOptionalArgs(
+@@ -703,8 +750,8 @@ LiteRtLmStatusCode litert_lm_conversation_send_message_stream(
+   if (!status.ok()) EndTurn(conversation, turn, status);
+ 
+   if (!status.ok()) {
+-    ABSL_LOG(ERROR) << "Failed to start message stream: " << status;
+-    return litert::lm::c::ToCStatus(status);
++    ABSL_LOG(ERROR) << "Failed to start message stream: " << ForCaller(status);
++    return litert::lm::c::ToCStatus(ForCaller(status));
+   }
+   return kLiteRtLmStatusOk;
+ }
+@@ -768,6 +815,26 @@ LiteRtLmStatusCode litert_lm_conversation_cancel_process(
+   return kLiteRtLmStatusOk;
+ }
+ 
++LiteRtLmStatusCode litert_lm_conversation_get_last_turn_end(
++    LiteRtLmConversation* conversation, int* out_turn_end,
++    int* out_status_code) {
++  if (out_turn_end) *out_turn_end = kLiteRtLmTurnEndNone;
++  if (out_status_code) *out_status_code = 0;
++  if (!conversation) {
++    return litert::lm::c::ReturnError(absl::StatusCode::kInvalidArgument,
++                                      "Invalid conversation.");
++  }
++  std::lock_guard<std::mutex> lock(conversation->turn_mutex);
++  if (conversation->refused_status_code != 0) {
++    if (out_turn_end) *out_turn_end = kLiteRtLmTurnEndRefused;
++    if (out_status_code) *out_status_code = conversation->refused_status_code;
++    return kLiteRtLmStatusOk;
++  }
++  if (out_turn_end) *out_turn_end = conversation->last_turn_end;
++  if (out_status_code) *out_status_code = conversation->last_turn_status_code;
++  return kLiteRtLmStatusOk;
++}
++
+ LiteRtLmStatusCode litert_lm_conversation_rewind_cancelled_turn(
+     LiteRtLmConversation* conversation, const char* messages_json,
+     const char* extra_context,
+@@ -804,10 +871,18 @@ LiteRtLmStatusCode litert_lm_conversation_rewind_cancelled_turn(
+   if (!waited.ok()) {
+     return litert::lm::c::ToCStatus(waited);
+   }
+-  if (end == kLiteRtLmTurnEndNone || end == kLiteRtLmTurnEndCompleted) {
++  if (end == kLiteRtLmTurnEndNone || end == kLiteRtLmTurnEndCompleted ||
++      end == kLiteRtLmTurnEndOutputLimit ||
++      end == kLiteRtLmTurnEndContextLimit) {
+     return kLiteRtLmStatusOk;
+   }
+-  if (end != kLiteRtLmTurnEndCancelled) {
++  // flutter_edge_ai section 23: an input that did not fit leaves the session
++  // failed; rewinding to the turn's checkpoint makes it usable, without the
++  // dropped input (it was never prefilled, so there is nothing to prefill
++  // back: messages_json is ignored).
++  if (end == kLiteRtLmTurnEndContextFull) {
++    stopped_exchange.reset();
++  } else if (end != kLiteRtLmTurnEndCancelled) {
+     return litert::lm::c::ReturnError(
+         absl::StatusCode::kInternal,
+         "The last turn failed; the conversation cannot continue.");
+@@ -824,6 +899,7 @@ LiteRtLmStatusCode litert_lm_conversation_rewind_cancelled_turn(
+   {
+     std::lock_guard<std::mutex> lock(conversation->turn_mutex);
+     conversation->last_turn_end = kLiteRtLmTurnEndNone;
++    conversation->refused_status_code = 0;
+   }
+   return kLiteRtLmStatusOk;
+ }
+diff --git a/c/conversation.h b/c/conversation.h
+index 6e61512..c365d24 100644
+--- a/c/conversation.h
++++ b/c/conversation.h
+@@ -659,14 +659,47 @@ typedef enum {
+   kLiteRtLmTurnEndCancelled = 2,  // cancelled; the conversation is poisoned
+   kLiteRtLmTurnEndFailed = 3,     // ended with an error
+   kLiteRtLmTurnEndRunning = 4,    // had not ended when the wait timed out
++  // flutter_edge_ai (patch_c_api.sh section 23): the ends that section 16
++  // reported as "completed" or "failed".
++  kLiteRtLmTurnEndOutputLimit = 5,   // the reply reached max_output_tokens
++  kLiteRtLmTurnEndContextLimit = 6,  // the decode filled the context window
++                                     // (max_num_tokens); the reply is cut
++  kLiteRtLmTurnEndContextFull = 7,   // the input did not fit what the context
++                                     // window has left (or the window has no
++                                     // room for any prefill): it is not in the
++                                     // history, and the conversation fails
++                                     // until rewind_cancelled_turn
++                                     // (RESOURCE_EXHAUSTED; one for another
++                                     // reason, such as a failed allocation,
++                                     // is kLiteRtLmTurnEndFailed)
++  kLiteRtLmTurnEndRefused = 8,  // the last send was refused before it started
++                                // (a NULL argument or a message that is not
++                                // JSON): nothing ran and the conversation is
++                                // as the send before it left it
+ } LiteRtLmTurnEnd;
+ 
++// flutter_edge_ai (patch_c_api.sh section 23). How the last send on
++// `conversation` ended, as a LiteRtLmTurnEnd, with the absl status code it
++// ended with (0 unless it is kLiteRtLmTurnEndFailed or
++// kLiteRtLmTurnEndContextFull). It is settled before that send's final
++// callback runs: read it after the final chunk, or after send_message
++// returns. While a send runs it is kLiteRtLmTurnEndRunning. A send refused
++// before it starts is kLiteRtLmTurnEndRefused with its status code, so a
++// caller never reads the end of the send before it. Either out pointer may be
++// NULL.
++LITERT_LM_C_API_EXPORT
++LiteRtLmStatusCode litert_lm_conversation_get_last_turn_end(
++    LiteRtLmConversation* conversation, int* out_turn_end,
++    int* out_status_code);
++
+ // flutter_edge_ai (patch_c_api.sh section 16). Makes a conversation whose last
+ // send was stopped usable again, without deleting it. It cancels whatever of
+ // that send still runs and waits, up to 10 minutes, until every task of the
+ // conversation has ended and its callbacks have run; never call it from a
+ // stream callback. Then, by how the last send ended:
+-// - none or completed: nothing changes;
++// - none, completed, output limit or context limit: nothing changes;
++// - context full: the conversation is rewound to just before that send's own
++//   prefill (its input was never prefilled: `messages_json` is ignored);
+ // - cancelled: the conversation is rewound to just before that send's own
+ //   prefill, which also undoes the poisoning, and when `messages_json` is not
+ //   NULL those messages (a JSON array, for example the stopped message and the
+diff --git a/c/conversation_internal.h b/c/conversation_internal.h
+index de1a879..c14051f 100644
+--- a/c/conversation_internal.h
++++ b/c/conversation_internal.h
+@@ -53,6 +53,13 @@ struct LiteRtLmConversation {
+   std::mutex turn_mutex;
+   uint64_t turn_seq = 0;
+   int last_turn_end = kLiteRtLmTurnEndNone;
++  // flutter_edge_ai section 23: the absl status code that send ended with.
++  int last_turn_status_code = 0;
++  // flutter_edge_ai section 23: the last send attempt was refused before it
++  // started, with this absl status code (0: it was not). Reported by
++  // get_last_turn_end; rewind_cancelled_turn still decides by the last send
++  // that started, which a refusal did not touch.
++  int refused_status_code = 0;
+   std::unique_ptr<litert::lm::Conversation> conversation;
+   // This field stores the result of the last call to
+   // `litert_lm_conversation_render_message_to_string`. This ties the lifetime
+diff --git a/runtime/conversation/conversation.cc b/runtime/conversation/conversation.cc
+index 1b04ee7..52bbd91 100644
+--- a/runtime/conversation/conversation.cc
++++ b/runtime/conversation/conversation.cc
+@@ -101,8 +101,10 @@ absl::Status ContextWindowFullError(
+   if (!responses.ok()) {
+     return responses.status();
+   }
+-  return absl::ResourceExhaustedError(
++  absl::Status status = absl::ResourceExhaustedError(
+       "Max number of tokens reached, the context window is full.");
++  status.SetPayload(kContextWindowFullPayload, absl::Cord());  // section 23
++  return status;
+ }
+ 
+ bool IsEmptyPreface(const Preface& preface) {
+@@ -607,6 +609,9 @@ absl::Status Conversation::SendMessageAsync(
+     turn_checkpoint_saved_ = false;
+     turn_checkpoint_error_ = absl::OkStatus();
+     last_turn_cancelled_ = false;
++    // flutter_edge_ai section 23.
++    last_decode_end_ = kDecodeEndNone;
++    last_turn_context_full_ = false;
+   }
+   ABSL_ASSIGN_OR_RETURN(std::string single_turn_text,
+                         GetSingleTurnText(message, optional_args));
+@@ -836,7 +841,9 @@ absl::Status Conversation::SendMessageAsync(
+ 
+   if (session_inputs.empty()) {
+     auto decode_task_controller = session_->RunDecodeAsync(
+-        [callback = internal_callback](absl::StatusOr<Responses> responses) {
++        [this, callback = internal_callback](
++            absl::StatusOr<Responses> responses) {
++          NoteDecodeEnd(responses);  // flutter_edge_ai section 23
+           (*callback)(responses);
+         },
+         decode_config);
+@@ -878,6 +885,14 @@ absl::Status Conversation::SendMessageAsync(
+               // The input was not prefilled, so it is not part of the
+               // conversation.
+               remove_turn_from_history();
++              {
++                // flutter_edge_ai section 23: rewound like a cancel, when the
++                // window is what was full (not any RESOURCE_EXHAUSTED).
++                absl::MutexLock lock(history_mutex_);
++                last_turn_context_full_ =
++                    responses.ok() ||
++                    IsContextWindowFullStatus(responses.status());
++              }
+               (*callback)(ContextWindowFullError(responses));
+             } else if (!status.ok()) {
+               // Scenario 1: Prefill failed with an unexpected error.
+@@ -911,7 +926,8 @@ absl::Status Conversation::SendMessageAsync(
+ 
+               // Run decode.
+               auto decode_task_controller = session_->RunDecodeAsync(
+-                  [callback](absl::StatusOr<Responses> responses) {
++                  [this, callback](absl::StatusOr<Responses> responses) {
++                    NoteDecodeEnd(responses);  // flutter_edge_ai section 23
+                     (*callback)(responses);
+                   },
+                   decode_config);
+@@ -935,6 +951,30 @@ absl::Status Conversation::SendMessageAsync(
+   return absl::OkStatus();
+ };
+ 
++// flutter_edge_ai (patch_c_api.sh section 23).
++void Conversation::NoteDecodeEnd(const absl::StatusOr<Responses>& responses) {
++  if (!responses.ok()) return;
++  DecodeEnd end;
++  switch (responses->GetTaskState()) {
++    case TaskState::kDone:
++      end = responses->MaxOutputTokensReached() ? kDecodeEndMaxOutputTokens
++                                                : kDecodeEndStopToken;
++      break;
++    case TaskState::kMaxNumTokensReached:
++      end = kDecodeEndMaxNumTokens;
++      break;
++    default:
++      return;
++  }
++  absl::MutexLock lock(history_mutex_);
++  last_decode_end_ = end;
++}
++
++Conversation::DecodeEnd Conversation::LastDecodeEnd() const {
++  absl::MutexLock lock(history_mutex_);
++  return last_decode_end_;
++}
++
+ absl::StatusOr<Responses> Conversation::RunTextScoring(
+     const std::vector<absl::string_view>& target_text,
+     OptionalArgs optional_args) {
+@@ -972,7 +1012,9 @@ absl::Status Conversation::RewindCancelledTurn(
+   }
+   {
+     absl::MutexLock lock(history_mutex_);
+-    if (!last_turn_cancelled_) {
++    // flutter_edge_ai section 23: a turn whose input did not fit the context
++    // window is rewound the same way (its failed prefill poisons the session).
++    if (!last_turn_cancelled_ && !last_turn_context_full_) {
+       return absl::FailedPreconditionError("The last turn was not cancelled.");
+     }
+     if (!turn_checkpoint_saved_) {
+@@ -985,6 +1027,7 @@ absl::Status Conversation::RewindCancelledTurn(
+     }
+     // One rewind per cancelled turn.
+     last_turn_cancelled_ = false;
++    last_turn_context_full_ = false;
+     turn_checkpoint_saved_ = false;
+   }
+   ABSL_RETURN_IF_ERROR(session_->RewindToCheckpoint(kTurnStartCheckpoint));
+diff --git a/runtime/conversation/conversation.h b/runtime/conversation/conversation.h
+index 8610fa9..26cc604 100644
+--- a/runtime/conversation/conversation.h
++++ b/runtime/conversation/conversation.h
+@@ -49,6 +49,19 @@
+ 
+ namespace litert::lm {
+ 
++// flutter_edge_ai (patch_c_api.sh section 23): the payload the context-window
++// checks put on their RESOURCE_EXHAUSTED (runtime/core/tasks.cc and
++// runtime/executor/litert_compiled_model_executor_utils.cc spell it out: they
++// cannot include this header). An input that does not fit the window carries
++// it; a RESOURCE_EXHAUSTED without it (a failed allocation) is an error.
++inline constexpr absl::string_view kContextWindowFullPayload =
++    "flutter_edge_ai/context_window_full";
++
++inline bool IsContextWindowFullStatus(const absl::Status& status) {
++  return absl::IsResourceExhausted(status) &&
++         status.GetPayload(kContextWindowFullPayload).has_value();
++}
++
+ // Configuration for the Conversation instance. This class is used to initialize
+ // the Conversation instance.
+ //
+@@ -687,6 +700,18 @@ class Conversation {
+       const std::optional<Message>& stopped_exchange,
+       const OptionalArgs& optional_args = OptionalArgs());
+ 
++  // flutter_edge_ai (patch_c_api.sh section 23): how the decode of the last
++  // send ended, recorded before its final callback. A send that never decoded
++  // (failed or cancelled before, or a prefill that did not fit) leaves
++  // kDecodeEndNone.
++  enum DecodeEnd {
++    kDecodeEndNone = 0,
++    kDecodeEndStopToken = 1,      // a stop token (end of the reply)
++    kDecodeEndMaxOutputTokens = 2,  // max_output_tokens reached
++    kDecodeEndMaxNumTokens = 3,   // the context window (max_num_tokens) is full
++  };
++  DecodeEnd LastDecodeEnd() const;
++
+   // Clones the conversation. The cloned conversation will be independent of the
+   // original conversation, including the history, state, etc.
+   //
+@@ -874,6 +899,16 @@ class Conversation {
+   // Set by the last send's cancel callback, which has removed its messages
+   // from the history.
+   bool last_turn_cancelled_ ABSL_GUARDED_BY(history_mutex_) = false;
++  // flutter_edge_ai section 23: see LastDecodeEnd(). Cleared at the start of
++  // every send, set by its decode's end-state callback.
++  DecodeEnd last_decode_end_ ABSL_GUARDED_BY(history_mutex_) = kDecodeEndNone;
++  // flutter_edge_ai section 23: the last send's input did not fit the context
++  // window. Its failed prefill stays a dependency of every later task, so the
++  // conversation fails until RewindCancelledTurn() rewinds it to the turn's
++  // checkpoint, as for a cancel.
++  bool last_turn_context_full_ ABSL_GUARDED_BY(history_mutex_) = false;
++  // Records a decode's end state, before the callback that reports it.
++  void NoteDecodeEnd(const absl::StatusOr<Responses>& responses);
+ 
+   // Declare the session after model_data_processor_ and other members it
+   // depends on so that the session is destroyed before them. This is to avoid
+diff --git a/runtime/core/tasks.cc b/runtime/core/tasks.cc
+index 6912ae4..f8cb54a 100644
+--- a/runtime/core/tasks.cc
++++ b/runtime/core/tasks.cc
+@@ -572,6 +572,29 @@ absl::Status PrefillLastSampledTokens(LlmExecutor& executor,
+ 
+ }  // namespace
+ 
++// flutter_edge_ai (patch_c_api.sh section 23): on every exit from a prefill
++// or decode turn, forget its start if it never reached its end, so a turn
++// that failed (a prefill the executor refused, a decode step error) does not
++// fail every later turn of the session with "already started".
++class AbandonUnendedTurn {
++ public:
++  AbandonUnendedTurn(std::optional<BenchmarkInfo>& benchmark_info,
++                     bool prefill)
++      : benchmark_info_(benchmark_info), prefill_(prefill) {}
++  ~AbandonUnendedTurn() {
++    if (!benchmark_info_.has_value()) return;
++    if (prefill_) {
++      benchmark_info_->AbandonPrefillTurn();
++    } else {
++      benchmark_info_->AbandonDecodeTurn();
++    }
++  }
++
++ private:
++  std::optional<BenchmarkInfo>& benchmark_info_;
++  bool prefill_;
++};
++
+ absl::StatusOr<Responses> Prefill(
+     LlmExecutor& executor, ExecutorInputs& inputs, bool wait_for_completion,
+     std::optional<BenchmarkInfo>& benchmark_info) {
+@@ -582,10 +605,18 @@ absl::StatusOr<Responses> Prefill(
+                           text_data->GetTokenIds().TensorType());
+   auto num_tokens = token_id_tensor_type.Layout().Dimensions().back();
+   if (num_tokens >= max_num_tokens) {
+-    return absl::InvalidArgumentError(absl::StrCat(
++    // flutter_edge_ai section 23: the same condition as the check below (the
++    // context window), so the same code: the conversation treats it as a full
++    // context window and drops the turn, instead of failing on it.
++    absl::Status status = absl::ResourceExhaustedError(absl::StrCat(
+         "Input token ids are too long. Exceeding the maximum number of tokens "
+         "allowed: ",
+         num_tokens, " >= ", max_num_tokens));
++    // flutter_edge_ai section 23: tagged as the context window (see
++    // kContextWindowFullPayload in runtime/conversation/conversation.h), so a
++    // RESOURCE_EXHAUSTED from anywhere else is not read as one.
++    status.SetPayload("flutter_edge_ai/context_window_full", absl::Cord());
++    return status;
+   }
+   // The input is appended after the tokens already in the context (e.g.
+   // previous turns), so they count against the limit too. As above, at least
+@@ -594,10 +625,13 @@ absl::StatusOr<Responses> Prefill(
+   // past `max_num_tokens`.
+   if (auto current_step = executor.GetCurrentStep();
+       current_step.ok() && *current_step + num_tokens >= max_num_tokens) {
+-    return absl::ResourceExhaustedError(absl::StrCat(
++    absl::Status status = absl::ResourceExhaustedError(absl::StrCat(
+         "Not enough space left in the context window for the input: ",
+         *current_step, " tokens in the context + ", num_tokens,
+         " input tokens >= ", max_num_tokens, " max number of tokens."));
++    // flutter_edge_ai section 23: tagged as the context window, as above.
++    status.SetPayload("flutter_edge_ai/context_window_full", absl::Cord());
++    return status;
+   }
+   size_t num_token_ids;
+   {
+@@ -615,6 +649,7 @@ absl::StatusOr<Responses> Prefill(
+   if (benchmark_info.has_value()) {
+     ABSL_RETURN_IF_ERROR(benchmark_info->TimePrefillTurnStart());
+   }
++  AbandonUnendedTurn abandon_unended_prefill(benchmark_info, /*prefill=*/true);
+   ABSL_RETURN_IF_ERROR(executor.Prefill(inputs, params));
+   if (benchmark_info.has_value()) {
+     ABSL_RETURN_IF_ERROR(benchmark_info->TimePrefillTurnEnd(num_token_ids));
+@@ -676,6 +711,7 @@ absl::StatusOr<Responses> Decode(
+         benchmark_info->GetBenchmarkParams().num_decode_tokens();
+     ABSL_RETURN_IF_ERROR(benchmark_info->TimeDecodeTurnStart());
+   }
++  AbandonUnendedTurn abandon_unended_decode(benchmark_info, /*prefill=*/false);
+ 
+   // The final decoded texts for each candidate.
+   std::vector<std::string> final_texts(num_output_candidates);
+@@ -739,6 +775,8 @@ absl::StatusOr<Responses> Decode(
+           benchmark_info, sampler, std::move(repetition_penalty_config),
+           std::move(no_repeat_ngram_config), std::move(suppress_tokens_config),
+           constraint, cancelled, speculative_decoding_config));
++  // flutter_edge_ai section 23: whether the last step hit a stop token.
++  bool hit_stop_tokens = false;
+   while (true) {
+     if (cancelled != nullptr && cancelled->load()) {
+       if (benchmark_info.has_value()) {
+@@ -766,6 +804,7 @@ absl::StatusOr<Responses> Decode(
+     if (!all_done.ok()) {
+       return all_done.status();
+     }
++    hit_stop_tokens = *all_done;
+     std::vector<std::string> step_texts;
+     std::vector<std::vector<int>> step_token_ids;
+     std::vector<float> step_scores;
+@@ -865,11 +904,19 @@ absl::StatusOr<Responses> Decode(
+     ABSL_RETURN_IF_ERROR(PrefillLastSampledTokens(executor, *decoded_ids));
+   }
+ 
++  // flutter_edge_ai section 23: the same order of checks as ShouldStop: a stop
++  // token wins, then the context window, then max_output_tokens.
++  const bool max_output_tokens_reached =
++      !hit_stop_tokens && benchmark_decode_token_count == 0 &&
++      executor.GetCurrentStep().value() < max_num_tokens &&
++      num_decode_steps >= max_output_tokens;
+   if (is_streaming) {
+     if (executor.GetCurrentStep().value() >= max_num_tokens) {
+       return Responses(TaskState::kMaxNumTokensReached);
+     }
+-    return Responses(TaskState::kDone);
++    Responses done(TaskState::kDone);
++    done.SetMaxOutputTokensReached(max_output_tokens_reached);
++    return done;
+   }
+ 
+   // Finalize scores for non-streaming custom sampling.
+@@ -885,9 +932,12 @@ absl::StatusOr<Responses> Decode(
+   TaskState task_state = executor.GetCurrentStep().value() >= max_num_tokens
+                              ? TaskState::kMaxNumTokensReached
+                              : TaskState::kDone;
+-  return Responses(std::move(task_state), std::move(final_texts),
+-                   std::move(final_scores), /*token_lengths=*/{},
+-                   std::move(final_token_ids));
++  Responses final_responses(task_state, std::move(final_texts),
++                            std::move(final_scores), /*token_lengths=*/{},
++                            std::move(final_token_ids));
++  final_responses.SetMaxOutputTokensReached(task_state == TaskState::kDone &&
++                                            max_output_tokens_reached);
++  return final_responses;
+ }
+ 
+ absl::StatusOr<Responses> Score(
+diff --git a/runtime/engine/io_types.cc b/runtime/engine/io_types.cc
+index 546e429..435e50b 100644
+--- a/runtime/engine/io_types.cc
++++ b/runtime/engine/io_types.cc
+@@ -215,6 +215,14 @@ absl::Status BenchmarkInfo::TimePrefillTurnEnd(uint64_t num_prefill_tokens) {
+   return absl::OkStatus();
+ }
+ 
++void BenchmarkInfo::AbandonPrefillTurn() {
++  start_time_map_.erase(absl::StrCat("prefill:", prefill_turn_index_));
++}
++
++void BenchmarkInfo::AbandonDecodeTurn() {
++  start_time_map_.erase(absl::StrCat("decode:", decode_turn_index_));
++}
++
+ absl::StatusOr<BenchmarkTurnData> BenchmarkInfo::GetPrefillTurn(
+     int turn_index) const {
+   if (turn_index < 0 ||
+diff --git a/runtime/engine/io_types.h b/runtime/engine/io_types.h
+index e8cc70e..455c2ec 100644
+--- a/runtime/engine/io_types.h
++++ b/runtime/engine/io_types.h
+@@ -162,10 +162,20 @@ class Responses {
+     return token_scores_;
+   };
+ 
++  // flutter_edge_ai (patch_c_api.sh section 23): a decode that ended because
++  // it reached max_output_tokens, not a stop token. Its task state is still
++  // kDone, which every consumer already handles.
++  bool MaxOutputTokensReached() const { return max_output_tokens_reached_; }
++  void SetMaxOutputTokensReached(bool reached) {
++    max_output_tokens_reached_ = reached;
++  }
++
+  private:
+   // The state of the task.
+   TaskState task_state_;
+ 
++  bool max_output_tokens_reached_ = false;
++
+   // The output vector of response tokens (as strings).
+   std::vector<std::string> response_texts_;
+ 
+@@ -250,6 +260,12 @@ class BenchmarkInfo {
+   absl::Status TimePrefillTurnEnd(uint64_t num_prefill_tokens);
+   absl::Status TimeDecodeTurnStart();
+   absl::Status TimeDecodeTurnEnd(uint64_t num_decode_tokens);
++  // flutter_edge_ai (patch_c_api.sh section 23): forget the start of the
++  // current prefill/decode turn when it never reached its end, i.e. the turn
++  // failed. Without it every later turn of the session fails with "already
++  // started". No-op after the turn's end (the index has moved on).
++  void AbandonPrefillTurn();
++  void AbandonDecodeTurn();
+   absl::Status TimeTextToTokenIdsStart();
+   absl::Status TimeTextToTokenIdsEnd(uint64_t num_tokens);
+   // Time the duration between two consecutive marks. Useful for profiling the
+diff --git a/runtime/executor/litert_compiled_model_executor_utils.cc b/runtime/executor/litert_compiled_model_executor_utils.cc
+index cbf51d7..95ea6c3 100644
+--- a/runtime/executor/litert_compiled_model_executor_utils.cc
++++ b/runtime/executor/litert_compiled_model_executor_utils.cc
+@@ -557,9 +557,18 @@ GetOptimizedPrefillWorkGroups(
+       return pair.first > max_prefill_sequence_length.value();
+     });
+     if (available_runner_set.empty()) {
+-      return absl::FailedPreconditionError(absl::StrCat(
++      // flutter_edge_ai (patch_c_api.sh section 23): every prefill signature
++      // is longer than what the context window has left, so the input cannot
++      // be prefilled however short it is: the window is full for this graph.
++      // RESOURCE_EXHAUSTED, as for an input that does not fit, so the
++      // conversation drops the turn and can be rewound.
++      absl::Status status = absl::ResourceExhaustedError(absl::StrCat(
+           "Chosen prefill work group size exceeds available state entries (",
+           max_prefill_sequence_length.value(), ")."));
++      // Tagged as the context window (kContextWindowFullPayload in
++      // runtime/conversation/conversation.h).
++      status.SetPayload("flutter_edge_ai/context_window_full", absl::Cord());
++      return status;
+     }
+   }
+ 
+@@ -670,10 +679,14 @@ GetOptimizedPrefillWorkGroups(
+   }
+ 
+   if (input_length > 0) {
+-    return absl::FailedPreconditionError(
++    // flutter_edge_ai section 23: the same, for an input the remaining chunks
++    // cannot hold.
++    absl::Status status = absl::ResourceExhaustedError(
+         absl::StrCat("Prefill input length exceeds available state entries "
+                      "(remaining capacity: ",
+                      max_prefill_sequence_length.value_or(0), ")."));
++    status.SetPayload("flutter_edge_ai/context_window_full", absl::Cord());
++    return status;
+   }
+ 
+   return work_groups;
+diff --git a/runtime/executor/litert_compiled_model_executor_utils_test.cc b/runtime/executor/litert_compiled_model_executor_utils_test.cc
+index 7738369..0f6cb0b 100644
+--- a/runtime/executor/litert_compiled_model_executor_utils_test.cc
++++ b/runtime/executor/litert_compiled_model_executor_utils_test.cc
+@@ -541,9 +541,27 @@ TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
+   // input_length = 300, max_prefill_sequence_length = 256.
+   // 512 runner filtered out. 256 runner covers 256 tokens, remaining 44 tokens
+   // cannot fit in 0 capacity.
+-  EXPECT_THAT(GetOptimizedPrefillWorkGroups(
+-                  prefill_runner_set, 300, /*max_prefill_sequence_length=*/256),
+-              StatusIs(absl::StatusCode::kFailedPrecondition));
++  auto result = GetOptimizedPrefillWorkGroups(
++      prefill_runner_set, 300, /*max_prefill_sequence_length=*/256);
++  EXPECT_THAT(result, StatusIs(absl::StatusCode::kResourceExhausted));
++  // flutter_edge_ai section 23: tagged as the context window.
++  EXPECT_TRUE(result.status()
++                  .GetPayload("flutter_edge_ai/context_window_full")
++                  .has_value());
++}
++
++// flutter_edge_ai section 23: every signature is longer than the positions
++// left, so even a short input has no prefill: the window is full.
++TEST(LlmLiteRTCompiledModelExecutorUtilsTest,
++     GetOptimizedPrefillWorkGroups_NoSignatureFitsIsContextWindowFull) {
++  SortedPrefillSignatureMap prefill_runner_set = {
++      {512, "prefill_512"}, {256, "prefill_256"}, {128, "prefill_128"}};
++  auto result = GetOptimizedPrefillWorkGroups(
++      prefill_runner_set, 8, /*max_prefill_sequence_length=*/64);
++  EXPECT_THAT(result, StatusIs(absl::StatusCode::kResourceExhausted));
++  EXPECT_TRUE(result.status()
++                  .GetPayload("flutter_edge_ai/context_window_full")
++                  .has_value());
+ }
+ 
+ TEST(LlmLiteRTCompiledModelExecutorUtilsTest, GetPrefillRunnerSetFromModel) {

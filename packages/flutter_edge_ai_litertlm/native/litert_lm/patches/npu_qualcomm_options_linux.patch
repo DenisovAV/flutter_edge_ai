@@ -1,6 +1,8 @@
+diff --git a/runtime/executor/npu/llm_litert_npu_compiled_model_executor_utils.cc b/runtime/executor/npu/llm_litert_npu_compiled_model_executor_utils.cc
+index 00fea68..8f3f398 100644
 --- a/runtime/executor/npu/llm_litert_npu_compiled_model_executor_utils.cc
 +++ b/runtime/executor/npu/llm_litert_npu_compiled_model_executor_utils.cc
-@@ -420,13 +420,20 @@
+@@ -423,7 +423,12 @@ litert::Expected<litert::Options> CreateLiteRtNpuOptions(
    options.SetHardwareAccelerators(litert::HwAccelerators::kNpu |
                                    litert::HwAccelerators::kCpu);
    // TODO: saliltambe - Bug: 498622107
@@ -14,9 +16,10 @@
    LITERT_ASSIGN_OR_RETURN(
        ::litert::qualcomm::QualcommOptions & qnn_opts,
        options.GetOptions<::litert::qualcomm::QualcommOptions>());
-   qnn_opts.SetLogLevel(::litert::qualcomm::QualcommOptions::LogLevel::kOff);
+@@ -431,6 +436,8 @@ litert::Expected<litert::Options> CreateLiteRtNpuOptions(
    qnn_opts.SetHtpPerformanceMode(
        ::litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
+   qnn_opts.SetHtpFileReadMemoryBudgetMB(16);
 +#endif
 +#if defined(__ANDROID__)
    // Dynamic models embed fine-grained EdgetpuMemoryPowerState directives

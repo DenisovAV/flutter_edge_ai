@@ -48,7 +48,7 @@ case "$TARGET" in
   *) echo "ERROR: TARGET must be android_arm64 or linux_arm64, got '$TARGET'" >&2; exit 1 ;;
 esac
 PREBUILT_DIR="$SCRIPT_DIR/prebuilt/$TARGET"
-LITERT_DIR="/tmp/LiteRT"
+LITERT_DIR="${LITERT_DIR:-/tmp/LiteRT}"
 
 if [ "$TARGET" = linux_arm64 ]; then
   if [ "$(uname -s)" != Linux ] || [ "$(uname -m)" != aarch64 ]; then
@@ -317,12 +317,21 @@ PYALIGN
 fi
 
 # 6. Verify the staged dispatch before it can reach the bundle. This is the one
-# symbol the library exists to export; without it the NPU path is dead.
+# symbol the library exists to export; without it the NPU path is dead. Which
+# one depends on the LiteRT pin: LiteRT's versioned dispatch ABI (in the
+# LiteRT-LM v0.19.0 pin) loads LiteRtDispatchQueryInterface and refuses a
+# library that exports only the older LiteRtDispatchGetApi.
+DISPATCH_ENTRY=LiteRtDispatchGetApi
+if grep -q 'LiteRtDispatchQueryInterface' \
+    "$LITERT_DIR/litert/vendors/qualcomm/dispatch/dispatch_api.cc"; then
+  DISPATCH_ENTRY=LiteRtDispatchQueryInterface
+fi
 if ! nm -D "$STAGE/libLiteRtDispatch_Qualcomm.so" 2>/dev/null \
-     | grep -q 'LiteRtDispatchGetApi'; then
-  echo "ERROR: staged dispatch does not export LiteRtDispatchGetApi" >&2
+     | grep -q "$DISPATCH_ENTRY"; then
+  echo "ERROR: staged dispatch does not export $DISPATCH_ENTRY" >&2
   exit 1
 fi
+echo "  dispatch exports $DISPATCH_ENTRY"
 
 # Linux shim. Qualcomm's Linux Stubs (libQnnHtpV*Stub.so) carry
 # `NEEDED libcdsprpc.so` and `RPATH $ORIGIN`, but Ubuntu's qcom-fastrpc1

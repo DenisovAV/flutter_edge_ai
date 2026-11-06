@@ -1437,6 +1437,10 @@ class LiteRtLmFfiClient {
     String messageJson,
   ) => _sendMessageStreamRawOn(conv, messageJson, thinking: false);
 
+  /// Test seam for virtual sessions' per-turn benchmark snapshot.
+  @visibleForTesting
+  SessionMetrics Function(Pointer<LiteRtLmConversation> conv)? metricsForTest;
+
   /// Test seam: whether a send on [conv] has started (`_sentConvs`).
   @visibleForTesting
   bool hasSentForTest(Pointer<LiteRtLmConversation> conv) =>
@@ -2917,6 +2921,11 @@ class LiteRtLmFfiClient {
   /// after it acquires the mutex and again after an asynchronous create.
   final Set<Object> _releasedVirtualTokens = {};
 
+  /// Virtual turns stopped while they are still waiting for the mutex or
+  /// creating their shared conversation. There is no native operation to
+  /// cancel yet, so the turn consumes this marker before it sends.
+  final Set<Object> _pendingVirtualStops = {};
+
   /// Turns waiting for, or holding, the virtual-session mutex per token. This
   /// bounds [_releasedVirtualTokens]: the close tombstone is forgotten after
   /// every already-started turn of that closed handle has drained.
@@ -3029,6 +3038,7 @@ class LiteRtLmFfiClient {
       if (turnsLeft == 0) {
         _virtualTurnCounts.remove(conversationToken);
         _releasedVirtualTokens.remove(conversationToken);
+        _pendingVirtualStops.remove(conversationToken);
         _virtualStoppedExchanges.remove(conversationToken);
         _virtualStoppedExtraContexts.remove(conversationToken);
         _virtualStoppedExchangeReady.remove(conversationToken);
@@ -3052,6 +3062,11 @@ class LiteRtLmFfiClient {
         _virtualTurnInFlight = true;
         if (_releasedVirtualTokens.contains(conversationToken)) {
           throw LiteRtLmTurnClosedException();
+        }
+        if (_pendingVirtualStops.remove(conversationToken)) {
+          await releaseAndCleanup();
+          if (!controller.isClosed) await controller.close();
+          return;
         }
         if (_virtualActiveToken != conversationToken ||
             _virtualConv == null ||
@@ -3095,6 +3110,11 @@ class LiteRtLmFfiClient {
         // await must still prevent the send and tear down what was just made.
         if (_releasedVirtualTokens.contains(conversationToken)) {
           throw LiteRtLmTurnClosedException();
+        }
+        if (_pendingVirtualStops.remove(conversationToken)) {
+          await releaseAndCleanup();
+          if (!controller.isClosed) await controller.close();
+          return;
         }
         // _guardCreate above yields the event loop, so a shutdown() queued
         // behind us can delete _virtualConv before we get here. Surface it as a
@@ -3210,9 +3230,22 @@ class LiteRtLmFfiClient {
   /// otherwise one session's `stopGeneration()` would cancel another session's
   /// in-flight generation (the single conversation is shared).
   void cancelVirtualTurn(Object conversationToken) {
-    if (_virtualActiveToken != conversationToken) return;
-    final conv = _virtualConv;
-    if (conv == null) return;
+    final conv = _virtualActiveToken == conversationToken
+        ? _virtualConv
+        : null;
+    if (conv == null) {
+      if ((_virtualTurnCounts[conversationToken] ?? 0) > 0) {
+        _pendingVirtualStops.add(conversationToken);
+      }
+      return;
+    }
+    // While the turn is waiting or creating there is no native operation to
+    // cancel. Creation publishes the active conversation and checks its pending
+    // marker in one event-loop turn; no callback can land between those steps.
+    // A null running turn here is therefore a native end already cleaning up,
+    // not a stop that should leak into the next turn.
+    if (_turns.runningOn(conv) == null) return;
+    _pendingVirtualStops.remove(conversationToken);
     // Only a cancel that lands inside a turn damages the conversation.
     if (_virtualTurnInFlight) _virtualConvStopped = true;
     _virtualStoppedExchangeReady.putIfAbsent(
@@ -3935,12 +3968,18 @@ class LiteRtLmFfiClient {
   /// The status code that turn ended with; see [virtualLastTurnEnd].
   int? virtualLastTurnCode(Object token) => _virtualTurnEnds[token]?.code;
 
+  /// Last completed native benchmark snapshot for [token].
+  SessionMetrics virtualSessionMetrics(Object token) =>
+      _virtualMetrics[token] ?? SessionMetrics();
+
   /// The end of each virtual session's last turn, snapshot when native ended
   /// it ([watchVirtualTurnEnd]): the shared conversation's own record goes
   /// with it when another session takes it over. Keyed weakly by the
   /// session's token, so a closed session leaves nothing behind.
   final Expando<({NativeLastTurnEnd end, int code})> _virtualTurnEnds =
       Expando();
+
+  final Expando<SessionMetrics> _virtualMetrics = Expando();
 
   /// When native ends the virtual turn [ended] of the session holding
   /// [token] on [conv], keeps how it ended for that session, and marks the
@@ -3960,6 +3999,7 @@ class LiteRtLmFfiClient {
       ended.then((_) {
         final record = _lastTurnEnds[conv];
         _virtualTurnEnds[token] = record;
+        _virtualMetrics[token] = _getMetricsOn(conv);
         // A turn native ended context_full or failed (a decode error, a
         // resource other than the window): it is taken out of the session
         // (decision W), and the shared conversation, which still holds it or
@@ -4454,6 +4494,8 @@ class LiteRtLmFfiClient {
   /// Get session metrics from the given conversation including token usage.
   /// Returns empty SessionMetrics if benchmark unavailable.
   SessionMetrics _getMetricsOn(Pointer<LiteRtLmConversation> conv) {
+    final testMetrics = metricsForTest;
+    if (testMetrics != null) return testMetrics(conv);
     final b = _bindings;
     if (b == null) return SessionMetrics();
 

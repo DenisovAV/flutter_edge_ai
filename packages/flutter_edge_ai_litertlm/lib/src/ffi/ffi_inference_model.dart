@@ -1827,7 +1827,7 @@ class _VirtualConversationHandle implements ConversationHandle {
   ) async => StoppedTurnRewind.unsupported;
 
   @override
-  SessionMetrics getSessionMetrics() => SessionMetrics();
+  SessionMetrics getSessionMetrics() => client.virtualSessionMetrics(token);
 
   /// The latest turn reached native; a turn refused before it has no end of
   /// its own to report.

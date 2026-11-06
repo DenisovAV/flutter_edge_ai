@@ -13,39 +13,49 @@ import 'package:flutter_test/flutter_test.dart';
 /// tests run it on fake native functions that record each call, so they see
 /// the order and the values a real library would get.
 
+// C API 1.0: a create writes through an out-parameter, and every call that
+// can fail returns a LiteRtLmStatusCode.
 typedef _CreateSettingsN =
-    Pointer<Void> Function(
+    UnsignedInt Function(
       Pointer<Utf8>,
       Pointer<Utf8>,
       Pointer<Utf8>,
       Pointer<Utf8>,
+      Pointer<Pointer<Void>>,
     );
-typedef _SettingsN = Void Function(Pointer<Void>);
-typedef _SettingsIntN = Void Function(Pointer<Void>, Int);
-typedef _SettingsBoolN = Void Function(Pointer<Void>, Bool);
-typedef _SettingsStringN = Void Function(Pointer<Void>, Pointer<Utf8>);
-typedef _CreateEngineN = Pointer<Void> Function(Pointer<Void>);
-typedef _IntN = Void Function(Int);
+typedef _SettingsN = UnsignedInt Function(Pointer<Void>);
+typedef _SettingsIntN = UnsignedInt Function(Pointer<Void>, Int);
+typedef _SettingsEnumN = UnsignedInt Function(Pointer<Void>, UnsignedInt);
+typedef _SettingsBoolN = UnsignedInt Function(Pointer<Void>, Bool);
+typedef _SettingsStringN = UnsignedInt Function(Pointer<Void>, Pointer<Utf8>);
+typedef _DeleteN = Void Function(Pointer<Void>);
+typedef _CreateEngineN =
+    UnsignedInt Function(Pointer<Void>, Pointer<Pointer<Void>>);
+typedef _LogLevelN = UnsignedInt Function(UnsignedInt);
 typedef _VoidN = Void Function();
-typedef _CodeN = Int32 Function();
 typedef _MessageN = Pointer<Utf8> Function();
 
 class _FakeLiteRtLm {
   _FakeLiteRtLm({
-    this.settingsNull = false,
+    this.settingsCode = 0,
+    this.engineCode = 0,
     this.engineNull = false,
-    this.lastError = true,
-    this.errorCode = 0,
+    this.setterCode = 0,
     String? errorMessage,
     this.missing = const {},
   }) : _message = errorMessage == null ? nullptr : errorMessage.toNativeUtf8();
 
-  final bool settingsNull;
+  /// The status settings_create returns; non-zero writes no settings.
+  final int settingsCode;
+
+  /// The status engine_create returns; non-zero writes no engine.
+  final int engineCode;
+
+  /// engine_create returns OK and writes no engine.
   final bool engineNull;
 
-  /// Whether the library exports the last-error functions.
-  final bool lastError;
-  final int errorCode;
+  /// The status every setter returns.
+  final int setterCode;
   final Pointer<Utf8> _message;
 
   /// Symbols whose lookup throws, as a library without the export does.
@@ -57,8 +67,6 @@ class _FakeLiteRtLm {
   final _callables = <NativeCallable<Function>>[];
 
   late final LiteRtLmBindings bindings = LiteRtLmBindings.fromLookup(lookup);
-
-  bool provides(String symbol) => lastError || !symbol.contains('last_error');
 
   String _settings(Pointer<Void> s) => s == settings ? '' : ' (foreign)';
 
@@ -73,32 +81,37 @@ class _FakeLiteRtLm {
     NativeCallable<Function> callable;
     switch (short) {
       case 'set_min_log_level':
-        callable = NativeCallable<_IntN>.isolateLocal((int level) {
+        callable = NativeCallable<_LogLevelN>.isolateLocal((int level) {
           calls.add('log_level $level');
-        });
+          return 0;
+        }, exceptionalReturn: 13);
       case 'engine_settings_create':
         callable = NativeCallable<_CreateSettingsN>.isolateLocal((
           Pointer<Utf8> model,
           Pointer<Utf8> backend,
           Pointer<Utf8> vision,
           Pointer<Utf8> audio,
+          Pointer<Pointer<Void>> out,
         ) {
           calls.add(
             'settings_create ${_string(model)} ${_string(backend)} '
             'vision=${_string(vision)} audio=${_string(audio)}',
           );
-          return settingsNull ? nullptr : settings;
-        });
-      case 'engine_settings_enable_benchmark' || 'engine_settings_delete':
+          if (settingsCode != 0) return settingsCode;
+          out.value = settings;
+          return 0;
+        }, exceptionalReturn: 13);
+      case 'engine_settings_enable_benchmark':
         callable = NativeCallable<_SettingsN>.isolateLocal((Pointer<Void> s) {
-          calls.add(
-            '${short.replaceFirst('engine_settings_', '')}'
-            '${_settings(s)}',
-          );
+          calls.add('enable_benchmark${_settings(s)}');
+          return setterCode;
+        }, exceptionalReturn: 13);
+      case 'engine_settings_delete':
+        callable = NativeCallable<_DeleteN>.isolateLocal((Pointer<Void> s) {
+          calls.add('delete${_settings(s)}');
         });
       case 'engine_settings_set_max_num_tokens' ||
           'engine_settings_set_max_num_images' ||
-          'engine_settings_set_activation_data_type' ||
           'engine_settings_set_kernel_batch_size':
         callable = NativeCallable<_SettingsIntN>.isolateLocal((
           Pointer<Void> s,
@@ -108,7 +121,16 @@ class _FakeLiteRtLm {
             '${short.replaceFirst('engine_settings_set_', '')} $value'
             '${_settings(s)}',
           );
-        });
+          return setterCode;
+        }, exceptionalReturn: 13);
+      case 'engine_settings_set_activation_data_type':
+        callable = NativeCallable<_SettingsEnumN>.isolateLocal((
+          Pointer<Void> s,
+          int value,
+        ) {
+          calls.add('activation_data_type $value${_settings(s)}');
+          return setterCode;
+        }, exceptionalReturn: 13);
       case 'engine_settings_set_enable_speculative_decoding' ||
           'engine_settings_set_use_hw_masking_for_npu':
         callable = NativeCallable<_SettingsBoolN>.isolateLocal((
@@ -119,7 +141,8 @@ class _FakeLiteRtLm {
             '${short.replaceFirst('engine_settings_set_', '')} $value'
             '${_settings(s)}',
           );
-        });
+          return setterCode;
+        }, exceptionalReturn: 13);
       case 'engine_settings_set_cache_dir' ||
           'engine_settings_set_litert_dispatch_lib_dir':
         callable = NativeCallable<_SettingsStringN>.isolateLocal((
@@ -130,23 +153,22 @@ class _FakeLiteRtLm {
             '${short.replaceFirst('engine_settings_set_', '')} '
             '${_string(value)}${_settings(s)}',
           );
-        });
+          return setterCode;
+        }, exceptionalReturn: 13);
       case 'engine_create':
         callable = NativeCallable<_CreateEngineN>.isolateLocal((
           Pointer<Void> s,
+          Pointer<Pointer<Void>> out,
         ) {
           calls.add('engine_create${_settings(s)}');
-          return engineNull ? nullptr : engine;
-        });
+          if (engineCode != 0) return engineCode;
+          out.value = engineNull ? nullptr : engine;
+          return 0;
+        }, exceptionalReturn: 13);
       case 'clear_last_error':
         callable = NativeCallable<_VoidN>.isolateLocal(() {
           calls.add('clear_last_error');
         });
-      case 'get_last_error_code':
-        callable = NativeCallable<_CodeN>.isolateLocal(() {
-          calls.add('get_last_error_code');
-          return errorCode;
-        }, exceptionalReturn: 0);
       case 'get_last_error_message':
         callable = NativeCallable<_MessageN>.isolateLocal(() {
           calls.add('get_last_error_message');
@@ -170,13 +192,8 @@ class _FakeLiteRtLm {
     }
   }
 
-  EngineCreateResult create(EngineCreateRequest request) => createEngineWith(
-    request,
-    bindings,
-    provides: provides,
-    lookup: lookup,
-    blockingSigprof: blockingSigprof,
-  );
+  EngineCreateResult create(EngineCreateRequest request) =>
+      createEngineWith(request, bindings, blockingSigprof: blockingSigprof);
 
   void close() {
     for (final c in _callables) {
@@ -264,11 +281,10 @@ void main() {
     ]);
   });
 
-  test('a NULL engine reads the last error right after the create, then '
-      'deletes the settings', () {
+  test('a failed engine create returns its status and the last error read '
+      'right after it, then deletes the settings', () {
     fake = _FakeLiteRtLm(
-      engineNull: true,
-      errorCode: 13,
+      engineCode: 13,
       errorMessage: 'Main backend constraint mismatch',
     );
 
@@ -277,7 +293,6 @@ void main() {
     final create = fake.calls.indexOf('engine_create');
     expect(fake.calls.sublist(create), [
       'engine_create',
-      'get_last_error_code',
       'get_last_error_message',
       'delete',
     ]);
@@ -287,22 +302,21 @@ void main() {
     expect(result.banks, isNull);
   });
 
-  test('a library without the last error: no clear, no read, code 0', () {
-    fake = _FakeLiteRtLm(engineNull: true, lastError: false);
+  test('an engine create that returns OK with no engine is a failure, not an '
+      'engine at address 0 taken for one', () {
+    fake = _FakeLiteRtLm(engineNull: true);
 
     final result = fake.create(_empty);
 
-    expect(fake.calls.where((c) => c.contains('last_error')), isEmpty);
     expect(result.address, 0);
     expect(result.code, 0);
     expect(result.message, isNull);
   });
 
-  test('a NULL settings create throws with LiteRT-LM\'s reason, and has '
-      'nothing to delete', () {
+  test('a failed settings create throws with its status and LiteRT-LM\'s '
+      'reason, and has nothing to delete', () {
     fake = _FakeLiteRtLm(
-      settingsNull: true,
-      errorCode: 3,
+      settingsCode: 3,
       errorMessage: 'Unsupported backend: gpu2',
     );
 
@@ -320,6 +334,7 @@ void main() {
               (e) => e.message,
               'message',
               allOf(
+                contains('(INVALID_ARGUMENT)'),
                 contains('Unsupported backend: gpu2'),
                 contains('Model: /models/gemma.litertlm'),
               ),
@@ -329,32 +344,55 @@ void main() {
     expect(fake.calls, [
       'clear_last_error',
       'settings_create /models/gemma.litertlm cpu vision=null audio=null',
-      'get_last_error_code',
       'get_last_error_message',
     ]);
   });
 
-  for (final lastError in [true, false]) {
-    test('a NULL settings create with no reason (last error '
-        '${lastError ? 'code 0' : 'not exported'}) throws without one', () {
-      fake = _FakeLiteRtLm(settingsNull: true, lastError: lastError);
+  test('a failed settings create with no reason throws with its status '
+      'alone', () {
+    fake = _FakeLiteRtLm(settingsCode: 3);
 
-      expect(
-        () => fake.create(_empty),
-        throwsA(
-          isA<LiteRtLmEngineCreateException>()
-              .having((e) => e.nativeCode, 'nativeCode', isNull)
-              .having((e) => e.nativeMessage, 'nativeMessage', isNull)
-              .having(
-                (e) => e.message,
-                'message',
-                'Failed to create engine settings on cpu. '
-                    'Model: /models/gemma.litertlm',
-              ),
+    expect(
+      () => fake.create(_empty),
+      throwsA(
+        isA<LiteRtLmEngineCreateException>()
+            .having((e) => e.nativeCode, 'nativeCode', 3)
+            .having((e) => e.nativeMessage, 'nativeMessage', isNull)
+            .having(
+              (e) => e.message,
+              'message',
+              'Failed to create engine settings on cpu (INVALID_ARGUMENT). '
+                  'Model: /models/gemma.litertlm',
+            ),
+      ),
+    );
+  });
+
+  test('a setter that returns a status other than OK is a StateError naming '
+      'it (no backend fallback takes it for a reason to retry), and the '
+      'settings are deleted exactly once', () {
+    fake = _FakeLiteRtLm(
+      setterCode: 3,
+      errorMessage: 'max_num_tokens must be positive',
+    );
+
+    expect(
+      () => fake.create(_empty),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          allOf(
+            contains('litert_lm_engine_settings_set_max_num_tokens'),
+            contains('INVALID_ARGUMENT'),
+            contains('max_num_tokens must be positive'),
+          ),
         ),
-      );
-    });
-  }
+      ),
+    );
+    expect(fake.calls.where((c) => c == 'delete'), hasLength(1));
+    expect(fake.calls, isNot(contains('engine_create')));
+  });
 
   test('a setter the library lacks throws, and the settings are deleted '
       'exactly once', () {

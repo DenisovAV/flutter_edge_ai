@@ -31,7 +31,7 @@ import zipfile
 LITERTLM_REF = "771b06e1a2c7f70a399a718599109facf37e38fd"  # v0.19.0
 # Google's Android library for the same LiteRT-LM release: its
 # THIRD_PARTY_NOTICE.txt is Google's own list for the code the runtime links.
-# Keep committed NOTICES on 0.18 until PR B moves the consumer pin; do not regenerate it in PR A.
+# PR B moves the consumer pin and regenerates NOTICES from this 0.19.0 AAR.
 LITERTLM_AAR = (
     "https://dl.google.com/android/maven2/com/google/ai/edge/litertlm/"
     "litertlm-android/0.19.0/litertlm-android-0.19.0.aar"

@@ -383,12 +383,20 @@ independent conversations; keep each handle and close it yourself.
 applies it to every live underlying session, including the legacy lane. Native
 ONNX defaults the detached cap to 2 on Android and iOS.
 
-Native LiteRT-LM detached sessions in this release are virtual, text-only
-conversations: switching sessions replays Dart history into one native
-conversation, so image and audio input throws `UnsupportedError`. Use
-`createSession()` / `createChat()` for native LiteRT-LM multimodal turns.
-MediaPipe Web and ONNX Web keep independent replayable histories over their
-shared browser model.
+Native `.litertlm` sessions have one conversation and KV cache each on macOS
+CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, Qualcomm or Google
+Tensor NPUs on Android, and Intel NPUs on Windows. Linux Vulkan, Windows D3D12,
+iOS, Android CPU/PowerVR/MediaTek, and unverified Linux arm64 accelerators use
+virtual sessions that replay full messages, including image and audio parts,
+into one shared conversation. The web runtime is also virtual but remains
+text-only. Hybrid models such as LFM2 rebuild from full messages when recovery
+is needed and never rewind.
+
+Native-backed sessions cost memory while idle. Gemma 4 E2B on an M5 Pro added
+36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the third session
+onward; the first two reused freed memory. Set `maxConcurrentSessions` on
+`getActiveModel` or `openModel` to bound the count. MediaPipe Web and ONNX Web
+keep independent replayable histories over their shared browser model.
 
 For a core-managed chat turn, any engine error removes the staged turn before
 the error reaches the app. `ContextLimitException` specifically means the input

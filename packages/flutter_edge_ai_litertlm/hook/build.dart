@@ -223,7 +223,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 final _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0-h',
+  version: '0.19.0-a',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -234,6 +234,11 @@ final _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.19.0-a: LiteRT-LM v0.19.0 (771b06e1, LiteRT dcb657e8), C API 1.0 and
+  // patch_c_api.sh sections 17-25; StreamProxy exports stream_proxy_create_v1
+  // only. Android no longer ships the separate OpenCL accelerator and sampler,
+  // Linux and Windows no TopK WebGPU sampler (both linked or dropped, see
+  // verify_tarball_manifest.sh).
   // 0.18.0-h changes the Windows archive and nothing else: both copies of
   // libLiteRtWebGpuAccelerator.dll are Google's prebuilt from LiteRT-LM
   // 5f973f57, which contains LiteRT #11120 — on an Intel GPU it turns off the
@@ -336,19 +341,19 @@ final _litertlmBundle = _NativeBundle(
   // while debugging a mismatch (#316).
   checksums: {
     'litertlm-linux_x86_64.tar.gz':
-        '3b6dbdbd8b9aaace4769c686b4f63a7d43cf65fb28fec891d24291e105627e84',
+        '29e0aea5213a1ceeb1d7372d47cc1a1a19c42ab94376fd15f8948f6cbf98bda7',
     'litertlm-linux_arm64.tar.gz':
-        'd437293a4a83a6502e393c99b17f8962eb66d4579361d3bab9c863d4a4724698',
+        'ed4ac17f47edddb28ae3498c8d6f347356cae3e2408c2b06a7addd5848ec4f4d',
     'litertlm-windows_x86_64.tar.gz':
-        '9b550ad40c5ef33346596d21df9498217eb96662a7bd457272b6c5e6742d5d59',
+        '2aca72970136b81087b4b6d6327d10f7c7f649b53285d90b1c070ef9f388d43d',
     'litertlm-macos_arm64.tar.gz':
-        'f95b27723324217f41a5b0b7aa04a24755e237f75b64ed37d852da8c249bfb67',
+        '42652644fdef056e8989c5fed0df288985e55c71e944c5a1a65a3e82bc92ef93',
     'litertlm-ios_arm64.tar.gz':
-        '5d673601ef4691da74adee13e09230969399f41f7983aab9e305014663faaed1',
+        '07eb20095da6d01588dfd7392a61ed412b87abce7ca14da3d6bb1c881a21f90d',
     'litertlm-ios_sim_arm64.tar.gz':
-        '739ca01a86b369b6542dba29c7003d6a51374c356032cce8aa2633001365e3f5',
+        '96fd3b46fd18124705fb6a72b622fc183307f72013af76e07a291a83b37499fa',
     'litertlm-android_arm64.tar.gz':
-        'd7ed14f761905cfe50bc06e3693e9abf934a96584c869410a78dfaef26080e62',
+        '3660edae145e82a68b09860f1120d290032945715ccd361302f768cde689b99e',
   },
   companions: [
     'GemmaModelConstraintProvider',
@@ -356,15 +361,21 @@ final _litertlmBundle = _NativeBundle(
     // flutter_litert ships a framework under the upstream name, and an app
     // bundle holds only one (see patch_c_api.sh §10).
     'LiteRtLmMetalAccelerator',
-    'LiteRtTopKMetalSampler', // macOS + iOS device GPU sampler (Metal)
-    'LiteRtOpenClAccelerator', // Android GPU (OpenCL)
     'LiteRtWebGpuAccelerator', // Linux/Windows GPU (WebGPU → Vulkan/DX12)
-    'LiteRtTopKOpenClSampler', // Android OpenCL GPU sampler — honors seed
-    'LiteRtTopKWebGpuSampler', // Linux/Windows GPU sampler
     'LiteRt', // Linux/Windows core runtime
     'webgpu_dawn', // Linux/Windows Dawn WebGPU (split to a shared lib in v0.14.0)
   ],
   legacyFileNames: [
+    // Not shipped since native-v0.19.0-a: libLiteRtLm.so links Android's
+    // OpenCL accelerator and sampler in (patch_c_api.sh section 19).
+    'LiteRtOpenClAccelerator',
+    'LiteRtTopKOpenClSampler',
+    // Not shipped since native-v0.19.0-a: Linux and Windows build no GPU
+    // sampler (section 20, CPU sampling), and Apple links its sampler into
+    // libLiteRtLm. A stale 0.18 copy in the cache is deleted, never bundled.
+    'LiteRtTopKWebGpuSampler',
+    'libLiteRtTopKWebGpuSampler',
+    'LiteRtTopKMetalSampler',
     // Not shipped on any platform since native-v0.18.0: on Android it needs
     // Dawn, which no bundle carries.
     'LiteRtGpuAccelerator',
@@ -400,7 +411,6 @@ final _litertlmBundle = _NativeBundle(
   windowsExtraLibs: [
     'libGemmaModelConstraintProvider',
     'libLiteRt',
-    'libLiteRtTopKWebGpuSampler',
     'libLiteRtWebGpuAccelerator',
     'libwebgpu_dawn', // lib-prefixed for the accelerator's PE import (v0.14.0)
     // DXC runtime
@@ -1186,6 +1196,8 @@ Future<void> _registerMediatekNpu({
   required BuildOutputBuilder output,
   required Uri Function(Uri) stage,
 }) async {
+  final refusal = mediatekNpuBuildRefusal(_packageName);
+  if (refusal != null) throw StateError(refusal);
   if (npuDispatchInNativeTarball(NpuStack.mediatek)) {
     throw StateError(
       'MediaTek: its dispatch is in the native bundle, not fetched',

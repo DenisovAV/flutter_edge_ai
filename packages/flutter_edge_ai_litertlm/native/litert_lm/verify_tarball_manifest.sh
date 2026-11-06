@@ -524,12 +524,20 @@ if [[ $rewind_fail -eq 1 ]]; then
 fi
 
 echo
-echo "==> Checking the Windows C++ runtime imports"
-# Since litertlm 1.7.1 the runtime is linked statically. Check that property
-# against the bytes here, where an Intel OpenVINO bump can introduce another
-# CRT-importing DLL or bring vcruntime140_threads.dll back (#456).
-# TODO(PR B): restore the repository-documentation assertion when the docs and
-# the native-v0.19.0-a consumer pin move together.
+echo "==> Checking the Windows C++ runtime against what the docs promise"
+# The docs tell Windows end-users what they must install. That sentence is a
+# claim about the bundle's import tables, and it drifted for a year: the pages
+# asked for "Visual C++ Redistributable 2019 or newer" while `LiteRtLm.dll` also
+# needed `vcruntime140_threads.dll`, which VS 2022 17.8 introduced and the 2019
+# redistributable does not carry. Nothing failed until a Microsoft Store
+# certification VM refused the app (#456).
+#
+# Since litertlm 1.7.1 the runtime is linked statically and the promise is
+# "nothing to install". This checks that promise against the bytes, here rather
+# than in a separate tool, because here is where the bundle changes: an Intel
+# OpenVINO bump is exactly how a ninth CRT-importing DLL — or `_threads` coming
+# back — would arrive, and the page saying "nothing to install" would go on
+# saying it.
 win_dir=""
 for d in "$align_tmp"/litertlm-windows_*; do
   [[ -d "$d" ]] && win_dir="$d"
@@ -540,13 +548,21 @@ if [[ -z "$win_dir" ]]; then
   # is where "was an asset of the previous tag but was not packed" is caught.
   echo "  [skip] this release ships no Windows tarball"
 else
+  # `dirname $0` does not resolve a symlink, and this script is short enough to
+  # be symlinked somewhere convenient. Resolve before walking up.
+  self="$0"
+  while [[ -L "$self" ]]; do
+    link="$(readlink "$self")"
+    case "$link" in /*) self="$link" ;; *) self="$(dirname "$self")/$link" ;; esac
+  done
+  REPO_ROOT="$(cd "$(dirname "$self")/../../../.." && pwd)"
   # `if ! cmd` rather than `cmd; if [[ $? -ne 0 ]]`: under `set -e` the second
   # form never reaches the test — bash exits at the failing command and the
   # explanatory banner is dead code. Measured on bash 3.2.
-  if ! WIN_DIR="$win_dir" python3 - <<'PYWIN'
-import glob, os, re, struct, sys
+  if ! WIN_DIR="$win_dir" REPO_ROOT="$REPO_ROOT" python3 - <<'PYWIN'
+import glob, io, os, re, struct, sys
 
-win = os.environ["WIN_DIR"]
+win, root = os.environ["WIN_DIR"], os.environ["REPO_ROOT"]
 
 def pe_imports(path):
     """DLL names from the PE import directory.
@@ -672,20 +688,67 @@ for name, got in sorted(crt.items()):
         fail = True
 
 # 3. The NPU stack is reachable only through PreferredBackend.npu. A static
-#    import from an always-loaded DLL would make that false.
+#    import from an always-loaded DLL would make that false, and the docs say it.
 if dispatch_importers:
     print("  [FAIL] these statically import LiteRtDispatch.dll, so its OpenVINO"
           f" runtime loads unconditionally: {', '.join(dispatch_importers)}")
     fail = True
 
+# 4. Every page that states the split must state the measured one, and each of
+#    them must still state it — one page keeping the sentence would otherwise
+#    cover for three that dropped it.
+# The core README left this list when it became a landing page (4ed9da27): it
+# makes no runtime promise any more. If it ever does again, it goes back here.
+DOCS = ["website/content/docs/desktop.md",
+        "packages/flutter_edge_ai/DESKTOP_SUPPORT.md",
+        "packages/flutter_edge_ai/skills/flutter-edge-ai-inference/references/platform-setup.md"]
+COUNT = re.compile(r"(\d+) of (?:the bundle's |its )?(\d+) DLLs")
+# Every mention of a redistributable must be a denial or a description of the
+# past. Checking for instruction verbs instead would miss "Download the …" and
+# any phrasing nobody thought of; this way an approving mention has to opt in.
+# Deliberately narrow. "before" and "was" were in a first draft and would have
+# waved through "Download the Visual C++ Redistributable before launching."
+DENIAL = re.compile(r"\bno\b|\bnot\b|\bnothing\b|\bnever\b|\blacks\b|\babsent\b|"
+                    r"\bused to\b|\bup to\b|\bpreviously\b|\b1\.7\.0\b", re.I)
+for rel in DOCS:
+    p = os.path.join(root, rel)
+    if not os.path.exists(p):
+        print(f"  [FAIL] {rel} is gone — this check names the pages it guards")
+        fail = True
+        continue
+    text = io.open(p, encoding="utf-8").read()
+    hits = list(COUNT.finditer(text))
+    if not hits:
+        print(f"  [FAIL] {rel} no longer states the DLL split; this check would"
+              " pass vacuously for it")
+        fail = True
+    for m in hits:
+        if (int(m.group(1)), int(m.group(2))) != (clean, len(dlls)):
+            line = text[:m.start()].count("\n") + 1
+            print(f'  [FAIL] {rel}:{line} says "{m.group(0)}";'
+                  f" measured {clean} of {len(dlls)}")
+            fail = True
+    for sentence in re.split(r"(?<=[.!?])\s+|\n\n", text):
+        if not re.search(r"redistributable", sentence, re.I):
+            continue
+        if DENIAL.search(sentence):
+            continue
+        line = text[:text.index(sentence)].count("\n") + 1
+        one = " ".join(sentence.split())[:80]
+        print(f'  [FAIL] {rel}:{line} mentions a redistributable without denying'
+              f' it is needed: "{one}"')
+        fail = True
+
 if fail:
     sys.exit(1)
-print(f"    runtime check passed: {clean} of {len(dlls)} DLLs import no C++ runtime")
+print(f"    docs agree: {clean} of {len(dlls)}, nothing to install")
 PYWIN
   then
     echo
-    echo "❌ WINDOWS RUNTIME CHECK FAILED — a DLL needs a C++ runtime outside"
-    echo "   the allowed Flutter application set, or the NPU stack loads eagerly."
+    echo "❌ WINDOWS RUNTIME CHECK FAILED — the bundle and the docs disagree, or"
+    echo "   a DLL now needs a runtime the end-user would have to install."
+    echo "   Fix whichever is wrong before publishing; #456 is what happens when"
+    echo "   the page keeps promising something the bytes stopped doing."
     exit 1
   fi
 fi

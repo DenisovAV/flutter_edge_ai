@@ -9,6 +9,21 @@ builds and then fails at model load, or is killed for memory.
 - [Windows and Linux](#windows-and-linux)
 - [Web](#web)
 
+## Concurrent LiteRT-LM sessions
+
+`openSession` and `openChat` use one native conversation and KV cache per
+session on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, and
+Qualcomm or Google Tensor NPUs on Android and Intel NPUs on Windows. Linux
+Vulkan, Windows D3D12, iOS, Android CPU and PowerVR, MediaTek, unverified Linux
+arm64 accelerators and the web use virtual sessions that replay full messages
+into one shared conversation. Hybrid models such as LFM2 rebuild from full
+messages when recovery is needed and never rewind.
+
+Native sessions consume memory while idle. Gemma 4 E2B on an M5 Pro added
+36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the third session
+onward; the first two reused freed memory. Set
+`maxConcurrentSessions` on `getActiveModel` or `openModel` to bound the count.
+
 ## Android
 
 `android/app/build.gradle.kts` (or `build.gradle`):
@@ -254,8 +269,8 @@ shader compiler and NPU runtime — are bundled at build time.
 
 - Windows: `x64` only — no Windows on Arm build. End users need no VC++
   redistributable installed. (In the legacy `flutter_gemma_litertlm` package
-  this arrived in 1.7.1.) Measured on `native-v0.18.0-g`:
-  17 of the bundle's 25 DLLs import no C++ runtime; the other eight, the Intel
+  this arrived in 1.7.1.) Measured on `native-v0.19.0-a`:
+  15 of the bundle's 23 DLLs import no C++ runtime; the other eight, the Intel
   NPU stack, import only `msvcp140`, `vcruntime140` and `vcruntime140_1`,
   which every Flutter Windows app already resolves.
 - Windows Intel NPU: a bundle whose NPU blobs carry no weights (Intel's Gemma 4

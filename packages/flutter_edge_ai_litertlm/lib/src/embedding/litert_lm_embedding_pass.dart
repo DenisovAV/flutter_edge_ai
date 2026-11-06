@@ -101,6 +101,7 @@ import '../bundle/litertlm_bundle_info.dart' show npuVendorOf;
 import '../ffi/intel_weight_banks.dart';
 import '../ffi/litert_lm_embedding_bindings.dart';
 import '../ffi/litert_lm_library.dart';
+import '../ffi/litert_lm_status.dart' show lastErrorFrom, liteRtLmStatusName;
 import '../ffi/npu_vendor_host.dart' show npuStagesWeightBanks;
 import '../ffi/sigprof_mask.dart';
 import '../npu_stacks.dart' show NpuStack;
@@ -123,6 +124,9 @@ export 'litert_lm_embedding_common.dart'
 const _statusOk = 0;
 const _statusUnknown = 2;
 const _statusInvalidArgument = 3;
+
+/// `kLiteRtLmStatusNotFound`: ModelInfo's "the file does not define it".
+const _statusNotFound = 5;
 
 /// Throws [EmbeddingLoadException] unless the `.litertlm` bundle at
 /// [modelPath] has an audio encoder, read from its container header (D23:
@@ -201,8 +205,12 @@ final class LiteRtLmEmbeddingConfig {
          'an NPU bundle runs with a dispatch directory, a CPU one without',
        ),
        assert(
-         gpu || !(visionTowerOnCpu || audioTowerOnCpu),
-         'a tower is named cpu only beside a text tower on the GPU',
+         gpu || !visionTowerOnCpu,
+         'the vision tower is named cpu only beside a text tower on the GPU',
+       ),
+       assert(
+         gpu || npuTarget != null || !audioTowerOnCpu,
+         'the audio tower is named cpu only beside a GPU or an NPU text tower',
        );
 
   /// The `.litertlm` bundle core resolved for the active spec.
@@ -262,8 +270,10 @@ final class LiteRtLmEmbeddingConfig {
   /// fails create.
   final bool visionTowerOnCpu;
 
-  /// With [gpu]: the bundle carries an audio tower (the 740m), named `cpu`
-  /// like [visionTowerOnCpu].
+  /// With [gpu] or on the NPU: the bundle carries an audio tower (the 740m),
+  /// named `cpu` like [visionTowerOnCpu], declared audio or not. On the NPU
+  /// the per-SoC 740m compiles it for cpu/gpu only, and with its backend NULL
+  /// engine create fails ("Audio backend constraint mismatch").
   final bool audioTowerOnCpu;
 
   /// The backend the engine is created on.
@@ -307,7 +317,6 @@ String liteRtLmNpuProbeFailureCauses(LiteRtLmNpuTarget target) =>
 /// failing on the first lookup somewhere inside the worker.
 const liteRtLmEmbeddingSymbols = <String>[
   'litert_lm_clear_last_error',
-  'litert_lm_get_last_error_code',
   'litert_lm_get_last_error_message',
   'litert_lm_loaded_file_create',
   'litert_lm_loaded_file_delete',
@@ -355,7 +364,7 @@ void checkLiteRtLmEmbeddingSymbols(
   throw EmbeddingLoadException(
     '$library does not export the LiteRT-LM EmbeddingEngine C API '
     '(missing: ${missing.join(', ')}). EmbeddingGemma 2 needs the native '
-    'libraries of native-v0.18.0-e or newer; a stale local prebuilt under '
+    'libraries of native-v0.19.0-a or newer; a stale local prebuilt under '
     'native/litert_lm/prebuilt/ is the usual cause.',
     engine: liteRtLmEngineTag,
   );
@@ -489,7 +498,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       final vision = onCpu ? _hasVision(info) : _config.visionTowerOnCpu;
       final audioOnCpu = audio || _config.audioTowerOnCpu;
       if (onCpu ||
-          (_onNpu && audio) ||
+          (_onNpu && audioOnCpu) ||
           (_config.gpu && (vision || audioOnCpu))) {
         _checkWeightCache(
           cacheDir,
@@ -635,9 +644,9 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     final Pointer<LiteRtLmInputData> handle;
     try {
       buffer.asTypedList(bytes.length).setAll(0, bytes);
-      // Copies the bytes (std::string). Returns NULL only for an unknown
-      // type, and then sets no error — so none is read.
-      handle = b.litert_lm_input_data_create(
+      // Copies the bytes (std::string). Fails only for an unknown type.
+      handle = _createInputData(
+        b,
         switch (part.kind) {
           EmbeddingPartKind.text =>
             LiteRtLmInputDataType.kLiteRtLmInputDataTypeText,
@@ -646,7 +655,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
           EmbeddingPartKind.audio =>
             LiteRtLmInputDataType.kLiteRtLmInputDataTypeAudio,
         },
-        buffer.cast(),
+        buffer,
         bytes.length,
       );
     } finally {
@@ -654,12 +663,61 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     }
     if (handle == nullptr) {
       throw EmbeddingEngineException(
-        'litert_lm_input_data_create returned NULL for a ${part.kind.name} '
-        'part',
+        'litert_lm_input_data_create failed for a ${part.kind.name} part',
         engine: liteRtLmEngineTag,
       );
     }
     return handle;
+  }
+
+  /// One `LiteRtLmInputData` of [type] over [size] bytes at [data], or NULL
+  /// when the create fails.
+  Pointer<LiteRtLmInputData> _createInputData(
+    LiteRtLmEmbeddingBindings b,
+    LiteRtLmInputDataType type,
+    Pointer<Uint8> data,
+    int size,
+  ) {
+    final out = _alloc<Pointer<LiteRtLmInputData>>();
+    try {
+      final code = b.litert_lm_input_data_create(type, data.cast(), size, out);
+      return code == _statusOk ? out.value : nullptr;
+    } finally {
+      _alloc.free(out);
+    }
+  }
+
+  /// A response getter's int, or -1 when it fails.
+  int _responseInt(int Function(Pointer<Int>) get) {
+    final out = _alloc<Int>();
+    try {
+      return get(out) == _statusOk ? out.value : -1;
+    } finally {
+      _alloc.free(out);
+    }
+  }
+
+  /// The [response]'s vector as size and values; size -1 and NULL values
+  /// when a getter fails.
+  ({int size, Pointer<Float> values}) _responseVector(
+    LiteRtLmEmbeddingBindings b,
+    Pointer<LiteRtLmEmbeddingResponse> response,
+  ) {
+    final size = _alloc<Size>();
+    final values = _alloc<Pointer<Float>>();
+    try {
+      final ok =
+          b.litert_lm_embedding_response_get_size(response, size) ==
+              _statusOk &&
+          b.litert_lm_embedding_response_get_values(response, values) ==
+              _statusOk;
+      return ok
+          ? (size: size.value, values: values.value)
+          : (size: -1, values: nullptr);
+    } finally {
+      _alloc.free(size);
+      _alloc.free(values);
+    }
   }
 
   /// The vector in [response], or the overflow it reports.
@@ -667,14 +725,15 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     LiteRtLmEmbeddingBindings b,
     Pointer<LiteRtLmEmbeddingResponse> response,
   ) {
-    final inputLength = b.litert_lm_embedding_response_get_input_length(
-      response,
+    final inputLength = _responseInt(
+      (out) => b.litert_lm_embedding_response_get_input_length(response, out),
     );
-    final truncatedLength = b.litert_lm_embedding_response_get_truncated_length(
-      response,
+    final truncatedLength = _responseInt(
+      (out) =>
+          b.litert_lm_embedding_response_get_truncated_length(response, out),
     );
     if (inputLength < 0 || truncatedLength < 0) {
-      // -1 is the getters' answer to a NULL response, which this is not.
+      // A failed getter (or a negative count) on a response that exists.
       throw EmbeddingEngineException(
         '$_file returned a response without token counts (input length '
         '$inputLength, truncated length $truncatedLength)',
@@ -697,8 +756,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         actualTokens: inputLength,
       );
     }
-    final size = b.litert_lm_embedding_response_get_size(response);
-    final values = b.litert_lm_embedding_response_get_values(response);
+    final (:size, :values) = _responseVector(b, response);
     if (size != _dimension || values == nullptr) {
       throw EmbeddingEngineException(
         '$_file returned a vector of $size values for dimension $_dimension',
@@ -754,17 +812,27 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     int count,
   ) => _npuCall(() {
     // The error state is per thread and survives successful calls: clear it,
-    // so a NULL with nothing reported is never read as an old status.
+    // so a failure with nothing reported is never read as an old message.
     b.litert_lm_clear_last_error();
-    final response = b.litert_lm_embedding_engine_compute_embedding(
-      _engine,
-      parts,
-      count,
-      _options,
-    );
-    if (response != nullptr) return (response: response, code: 0, message: '');
-    final (:code, :message) = _lastError(b);
-    return (response: response, code: code, message: message);
+    final out = _alloc<Pointer<LiteRtLmEmbeddingResponse>>();
+    try {
+      final code = b.litert_lm_embedding_engine_compute_embedding(
+        _engine,
+        parts,
+        count,
+        _options,
+        out,
+      );
+      final response = code == _statusOk
+          ? out.value
+          : nullptr.cast<LiteRtLmEmbeddingResponse>();
+      if (response != nullptr) {
+        return (response: response, code: 0, message: '');
+      }
+      return (response: response, code: code, message: _lastError(b, code));
+    } finally {
+      _alloc.free(out);
+    }
   });
 
   /// The text the NPU load check embeds.
@@ -792,9 +860,10 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     final Pointer<LiteRtLmInputData> part;
     try {
       buffer.asTypedList(bytes.length).setAll(0, bytes);
-      part = b.litert_lm_input_data_create(
+      part = _createInputData(
+        b,
         LiteRtLmInputDataType.kLiteRtLmInputDataTypeText,
-        buffer.cast(),
+        buffer,
         bytes.length,
       );
     } finally {
@@ -802,7 +871,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     }
     if (part == nullptr) {
       throw const EmbeddingLoadException(
-        'litert_lm_input_data_create returned NULL for the accelerator probe',
+        'litert_lm_input_data_create failed for the accelerator probe',
         engine: liteRtLmEngineTag,
       );
     }
@@ -824,8 +893,7 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         );
       }
       try {
-        final size = b.litert_lm_embedding_response_get_size(response);
-        final values = b.litert_lm_embedding_response_get_values(response);
+        final (:size, :values) = _responseVector(b, response);
         final fault = size != dimension || values == nullptr
             ? '$size values for dimension $dimension'
             : _vectorFault(values, size);
@@ -861,15 +929,19 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
 
   _ModelInfo _readModelInfo(LiteRtLmEmbeddingBindings b) {
     final path = _config.modelPath.toNativeUtf8(allocator: _alloc);
+    final out = _alloc<Pointer<LiteRtLmLoadedFile>>();
     final Pointer<LiteRtLmLoadedFile> file;
+    final int code;
     try {
       b.litert_lm_clear_last_error();
-      file = b.litert_lm_loaded_file_create(path.cast());
+      code = b.litert_lm_loaded_file_create(path.cast(), out);
+      file = code == _statusOk ? out.value : nullptr;
     } finally {
       _alloc.free(path);
+      _alloc.free(out);
     }
     if (file == nullptr) {
-      final (:code, :message) = _lastError(b);
+      final message = _lastError(b, code);
       throw EmbeddingLoadException(
         'LiteRT-LM could not read $_file: $message',
         engine: liteRtLmEngineTag,
@@ -877,30 +949,60 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       );
     }
     try {
-      final LiteRtLmModelType? type;
+      final rawType = _alloc<UnsignedInt>();
+      final dimension = _alloc<Int32>();
+      final LiteRtLmModelType type;
+      final int dimensionValue;
       try {
-        type = b.litert_lm_loaded_file_model_type(file);
-      } on ArgumentError {
-        // A model type newer than these bindings: not one this pass runs.
-        return _unknownModelInfo;
+        _modelInfoRead(
+          b,
+          'litert_lm_loaded_file_model_type',
+          b.litert_lm_loaded_file_model_type(file, rawType),
+          absentAllowed: false,
+        );
+        try {
+          type = LiteRtLmModelType.fromValue(rawType.value);
+        } on ArgumentError {
+          // A model type newer than these bindings: not one this pass runs.
+          return _unknownModelInfo;
+        }
+        // NOT_FOUND on a bundle that is not an embedder: -1, as before 1.0.
+        dimensionValue =
+            _modelInfoRead(
+              b,
+              'litert_lm_loaded_file_embedding_dimension',
+              b.litert_lm_loaded_file_embedding_dimension(file, dimension),
+            )
+            ? dimension.value
+            : -1;
+      } finally {
+        _alloc.free(rawType);
+        _alloc.free(dimension);
       }
       return (
         type: type,
-        dimension: b.litert_lm_loaded_file_embedding_dimension(file),
+        dimension: dimensionValue,
         textSignatures: _signatures(
-          (lengths, max) =>
+          b,
+          'litert_lm_loaded_file_embedding_signature_selection',
+          (lengths, max, count) =>
               b.litert_lm_loaded_file_embedding_signature_selection(
                 file,
                 lengths,
                 max,
+                count,
               ),
         ),
         visionSignatures: _signatures(
-          (lengths, max) => b.litert_lm_loaded_file_vision_signature_selection(
-            file,
-            lengths,
-            max,
-          ),
+          b,
+          'litert_lm_loaded_file_vision_signature_selection',
+          (lengths, max, count) =>
+              b.litert_lm_loaded_file_vision_signature_selection(
+                file,
+                lengths,
+                max,
+                count,
+              ),
         ),
       );
     } finally {
@@ -909,18 +1011,54 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   }
 
   /// A ModelInfo length list: the count first (a NULL array), then the
-  /// values. Null when the file defines none (-1).
-  List<int>? _signatures(int Function(Pointer<Int32>, int) read) {
-    final count = read(nullptr, 0);
-    if (count < 0) return null;
-    if (count == 0) return const [];
-    final lengths = _alloc<Int32>(count);
+  /// values. Null when the file defines none (NOT_FOUND); any other failure
+  /// refuses the load ([_modelInfoRead]).
+  List<int>? _signatures(
+    LiteRtLmEmbeddingBindings b,
+    String call,
+    int Function(Pointer<Int32> lengths, int max, Pointer<Size> count) read,
+  ) {
+    final countOut = _alloc<Size>();
     try {
-      final written = math.min(read(lengths, count), count);
-      return [for (var i = 0; i < written; i++) lengths[i]];
+      if (!_modelInfoRead(b, call, read(nullptr, 0, countOut))) return null;
+      final count = countOut.value;
+      if (count == 0) return const [];
+      final lengths = _alloc<Int32>(count);
+      try {
+        _modelInfoRead(
+          b,
+          call,
+          read(lengths, count, countOut),
+          absentAllowed: false,
+        );
+        final written = math.min(countOut.value, count);
+        return [for (var i = 0; i < written; i++) lengths[i]];
+      } finally {
+        _alloc.free(lengths);
+      }
     } finally {
-      _alloc.free(lengths);
+      _alloc.free(countOut);
     }
+  }
+
+  /// Whether a ModelInfo read found its value: true for OK, false for
+  /// NOT_FOUND (the file does not define it) when [absentAllowed]. Any other
+  /// status is a read that failed, never taken for an absent value: an
+  /// [EmbeddingLoadException] naming [call].
+  bool _modelInfoRead(
+    LiteRtLmEmbeddingBindings b,
+    String call,
+    int code, {
+    bool absentAllowed = true,
+  }) {
+    if (code == _statusOk) return true;
+    if (code == _statusNotFound && absentAllowed) return false;
+    throw EmbeddingLoadException(
+      'LiteRT-LM could not read $_file ($call failed with '
+      '${liteRtLmStatusName(code)}): ${_lastError(b, code)}',
+      engine: liteRtLmEngineTag,
+      nativeCode: code,
+    );
   }
 
   /// Refuses what this pass cannot run, from ModelInfo alone; returns the
@@ -1376,56 +1514,75 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
     final audioBackend = (_onNpu && audio) || _config.audioTowerOnCpu
         ? 'cpu'.toNativeUtf8(allocator: _alloc)
         : nullptr;
+    final settingsOut = _alloc<Pointer<LiteRtLmEmbeddingEngineSettings>>();
     final Pointer<LiteRtLmEmbeddingEngineSettings> settings;
+    final int settingsCode;
     try {
       b.litert_lm_clear_last_error();
-      settings = b.litert_lm_embedding_engine_settings_create(
+      settingsCode = b.litert_lm_embedding_engine_settings_create(
         path.cast(),
         backend.cast(),
         visionBackend.cast(),
         audioBackend.cast(),
+        settingsOut,
       );
+      settings = settingsCode == _statusOk ? settingsOut.value : nullptr;
     } finally {
+      _alloc.free(settingsOut);
       _alloc.free(path);
       _alloc.free(backend);
       if (visionBackend != nullptr) _alloc.free(visionBackend);
       if (audioBackend != nullptr) _alloc.free(audioBackend);
     }
     if (settings == nullptr) {
-      final (:code, :message) = _lastError(b);
+      final code = settingsCode;
+      final message = _lastError(b, code);
       throw EmbeddingLoadException(
         'LiteRT-LM could not build embedding settings for $_file: $message',
         engine: liteRtLmEngineTag,
         nativeCode: code == _statusOk ? null : code,
       );
     }
+    void setter(String call, int code) => _checkSetter(b, call, code);
     try {
       final dir = cacheDir.toNativeUtf8(allocator: _alloc);
       try {
-        b.litert_lm_embedding_engine_settings_set_cache_dir(
-          settings,
-          dir.cast(),
+        setter(
+          'litert_lm_embedding_engine_settings_set_cache_dir',
+          b.litert_lm_embedding_engine_settings_set_cache_dir(
+            settings,
+            dir.cast(),
+          ),
         );
       } finally {
         _alloc.free(dir);
       }
-      b.litert_lm_embedding_engine_settings_set_max_input_length(
-        settings,
-        maxInputLength,
+      setter(
+        'litert_lm_embedding_engine_settings_set_max_input_length',
+        b.litert_lm_embedding_engine_settings_set_max_input_length(
+          settings,
+          maxInputLength,
+        ),
       );
       final threads = _config.numThreads;
       if (threads != null) {
-        b.litert_lm_embedding_engine_settings_set_num_threads(
-          settings,
-          threads,
+        setter(
+          'litert_lm_embedding_engine_settings_set_num_threads',
+          b.litert_lm_embedding_engine_settings_set_num_threads(
+            settings,
+            threads,
+          ),
         );
       }
       if (visionTokensPerImage != null) {
         // D25: 140 by default, 70 opt-in; checked against the bundle's vision
         // signatures from ModelInfo already.
-        b.litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
-          settings,
-          visionTokensPerImage,
+        setter(
+          'litert_lm_embedding_engine_settings_set_vision_tokens_per_image',
+          b.litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
+            settings,
+            visionTokensPerImage,
+          ),
         );
       }
       final dispatchDir = _config.npuDispatchDir;
@@ -1440,19 +1597,27 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         // 2 270m `_Intel_PTL` runs without it (Panther Lake, 2026-10-21).
         final dir = dispatchDir.toNativeUtf8(allocator: _alloc);
         try {
-          b
-            ..litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir(
+          setter(
+            'litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir',
+            b.litert_lm_embedding_engine_settings_set_litert_dispatch_lib_dir(
               settings,
               dir.cast(),
-            )
-            ..litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir(
+            ),
+          );
+          setter(
+            'litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir',
+            b.litert_lm_embedding_engine_settings_set_vision_litert_dispatch_lib_dir(
               settings,
               dir.cast(),
-            )
-            ..litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir(
+            ),
+          );
+          setter(
+            'litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir',
+            b.litert_lm_embedding_engine_settings_set_audio_litert_dispatch_lib_dir(
               settings,
               dir.cast(),
-            );
+            ),
+          );
         } finally {
           _alloc.free(dir);
         }
@@ -1465,10 +1630,17 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
       final banksBefore = claimBanks ? listIntelWeightBanks() : null;
       final (:engine, :code, :message) = _npuCall(() {
         b.litert_lm_clear_last_error();
-        final engine = b.litert_lm_embedding_engine_create(settings);
-        if (engine != nullptr) return (engine: engine, code: 0, message: '');
-        final (:code, :message) = _lastError(b);
-        return (engine: engine, code: code, message: message);
+        final out = _alloc<Pointer<LiteRtLmEmbeddingEngine>>();
+        try {
+          final code = b.litert_lm_embedding_engine_create(settings, out);
+          final engine = code == _statusOk
+              ? out.value
+              : nullptr.cast<LiteRtLmEmbeddingEngine>();
+          if (engine != nullptr) return (engine: engine, code: 0, message: '');
+          return (engine: engine, code: code, message: _lastError(b, code));
+        } finally {
+          _alloc.free(out);
+        }
       });
       if (engine == nullptr) {
         throw EmbeddingLoadException(
@@ -1507,25 +1679,48 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
   Pointer<LiteRtLmEmbeddingOptions> _createOptions(
     LiteRtLmEmbeddingBindings b,
   ) {
-    final options = b.litert_lm_embedding_options_create();
+    final out = _alloc<Pointer<LiteRtLmEmbeddingOptions>>();
+    final Pointer<LiteRtLmEmbeddingOptions> options;
+    try {
+      final code = b.litert_lm_embedding_options_create(out);
+      options = code == _statusOk ? out.value : nullptr;
+    } finally {
+      _alloc.free(out);
+    }
     if (options == nullptr) {
-      // `new` in C++; a NULL here sets no error.
+      // `new` in C++: it fails only on a NULL out-parameter.
       throw const EmbeddingLoadException(
-        'litert_lm_embedding_options_create returned NULL',
+        'litert_lm_embedding_options_create failed',
         engine: liteRtLmEngineTag,
       );
     }
-    b
-      ..litert_lm_embedding_options_set_normalize(options, true)
+    try {
+      _checkSetter(
+        b,
+        'litert_lm_embedding_options_set_normalize',
+        b.litert_lm_embedding_options_set_normalize(options, true),
+      );
       // Pinned (D26): BOS 2 / EOS 1, as Sentence Transformers; off changes
       // the vectors (cos ≈ 0.90).
-      ..litert_lm_embedding_options_set_insert_special_tokens(options, true)
+      _checkSetter(
+        b,
+        'litert_lm_embedding_options_set_insert_special_tokens',
+        b.litert_lm_embedding_options_set_insert_special_tokens(options, true),
+      );
       // kTruncate (§4.8, the P3 gate): an overflowing input comes back as a
       // truncated response whose token counts the pass reports exactly.
-      ..litert_lm_embedding_options_set_input_overflow_strategy(
-        options,
-        LiteRtLmInputOverflowStrategy.kLiteRtLmInputOverflowStrategyTruncate,
+      _checkSetter(
+        b,
+        'litert_lm_embedding_options_set_input_overflow_strategy',
+        b.litert_lm_embedding_options_set_input_overflow_strategy(
+          options,
+          LiteRtLmInputOverflowStrategy.kLiteRtLmInputOverflowStrategyTruncate,
+        ),
       );
+    } catch (_) {
+      b.litert_lm_embedding_options_delete(options);
+      rethrow;
+    }
     // output_size is never set: MRL is an app recipe (D18).
     return options;
   }
@@ -1843,19 +2038,23 @@ const _ModelInfo _unknownModelInfo = (
   visionSignatures: null,
 );
 
-/// The calling thread's last LiteRT-LM error, copied. Call it right after the
-/// failing call, before any other native call or `await`, and clear the state
-/// right before that call: success never resets it, so without the clear an
-/// earlier failure on this (pooled) thread would read as this one's. Code 0
-/// after a NULL means the call reported nothing.
-({int code, String message}) _lastError(LiteRtLmEmbeddingBindings b) {
-  final code = b.litert_lm_get_last_error_code();
-  final message = b.litert_lm_get_last_error_message();
-  return (
-    code: code,
-    message: code == _statusOk || message == nullptr
-        ? 'no error reported (status $code)'
-        : message.cast<Utf8>().toDartString(),
+/// The calling thread's last LiteRT-LM error for a call that returned
+/// [code], copied. Call it right after the failing call, before any other
+/// native call or `await`, and clear the state right before that call:
+/// success never resets it, so without the clear an earlier failure on this
+/// (pooled) thread would read as this one's.
+String _lastError(LiteRtLmEmbeddingBindings b, int code) =>
+    lastErrorFrom(b.litert_lm_get_last_error_message) ??
+    'no error reported (${liteRtLmStatusName(code)})';
+
+/// Throws [EmbeddingLoadException] for a setter whose status is not OK: it
+/// refuses only an argument, so this is a bug in the pass.
+void _checkSetter(LiteRtLmEmbeddingBindings b, String call, int code) {
+  if (code == _statusOk) return;
+  throw EmbeddingLoadException(
+    '$call failed with ${liteRtLmStatusName(code)}: ${_lastError(b, code)}',
+    engine: liteRtLmEngineTag,
+    nativeCode: code,
   );
 }
 

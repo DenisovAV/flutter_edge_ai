@@ -3,6 +3,7 @@
 // call it directly.
 // ignore_for_file: experimental_member_use, invalid_use_of_protected_member
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -144,4 +145,40 @@ void main() {
     expect(model.isClosed, isTrue);
     await closing;
   });
+
+  test(
+    'a failed close remains retryable and notifies only after success',
+    () async {
+      final client = _FailingShutdownClient();
+      var legacyCloses = 0;
+      var listenerCloses = 0;
+      final model = FfiInferenceModel(
+        ffiClient: client,
+        maxTokens: 2048,
+        modelType: ModelType.gemmaIt,
+        activeBackend: PreferredBackend.cpu,
+        onClose: () => legacyCloses++,
+      )..addCloseListener(() => listenerCloses++);
+
+      await expectLater(model.close(), throwsA(isA<TimeoutException>()));
+      expect(client.attempts, 1);
+      expect(legacyCloses, 0);
+      expect(listenerCloses, 0);
+
+      await model.close();
+      expect(client.attempts, 2);
+      expect(legacyCloses, 1);
+      expect(listenerCloses, 1);
+    },
+  );
+}
+
+final class _FailingShutdownClient extends LiteRtLmFfiClient {
+  int attempts = 0;
+
+  @override
+  Future<void> shutdown() async {
+    attempts++;
+    if (attempts == 1) throw TimeoutException('native turn did not end');
+  }
 }

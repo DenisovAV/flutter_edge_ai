@@ -100,3 +100,11 @@ Directory promoteMediatekCache(Directory cacheRoot, File aar) =>
       () =>
           extractZipEntriesFromFile(aar, {'LICENSE', 'THIRD_PARTY_NOTICE.txt'}),
     );
+
+/// Why the build fails for an app that set `mediatek_npu: true`, or null when
+/// the MediaTek NPU is not refused ([mediatekNpuRefused]). The hook throws it
+/// before it fetches anything.
+String? mediatekNpuBuildRefusal(String packageName) => mediatekNpuRefused
+    ? '[$packageName] $mediatekNpuUserDefine is set, but '
+          '$mediatekNpuRefusedReason.'
+    : null;

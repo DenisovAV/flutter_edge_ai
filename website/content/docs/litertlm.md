@@ -400,6 +400,23 @@ final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096); // context
 final session = await model.createSession(maxOutputTokens: 100);  // reply cap
 ```
 
+## Open sessions
+
+`openSession()` and `openChat()` share the loaded model but keep independent
+contexts. Each session has a native conversation and KV cache on macOS
+CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, Qualcomm or Google Tensor
+NPUs on Android, and Intel NPUs on Windows. Linux Vulkan, Windows D3D12, iOS,
+Android CPU/PowerVR/MediaTek, and unverified Linux arm64 accelerators use virtual
+sessions that replay full messages, including image and audio parts, into one
+shared conversation. The web runtime is also virtual but remains text-only.
+Generation remains serialized on every backing.
+
+Hybrid models such as LFM2 rebuild from full messages when recovery is needed
+and never rewind. Native sessions cost memory while idle: Gemma 4 E2B on an
+M5 Pro added 36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the
+third session onward (the first two reused freed memory). Set
+`maxConcurrentSessions` on `getActiveModel` or `openModel` to bound the count.
+
 ## Web setup
 
 `.litertlm` web inference runs via `@litert-lm/core`. The ESM doesn't assign

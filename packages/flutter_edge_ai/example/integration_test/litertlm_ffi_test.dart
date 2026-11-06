@@ -614,10 +614,10 @@ void main() {
 
   // ── Multi-session (#226): concurrent openSession() dialogues ──────
   //
-  // The LiteRT-LM engine allows only ONE live conversation at a time, so
-  // openSession() sessions multiplex — each keeps its history in Dart and
-  // replays it (messages_json preface) into the single shared conversation
-  // on switch. Logically concurrent contexts, serialized inference. These
+  // On a backend whose live conversations were verified (LiteRT-LM 0.19,
+  // L3) each openSession() session is its own native conversation; elsewhere
+  // sessions multiplex — each keeps its history in Dart and replays it
+  // (messages_json preface) into one shared conversation on switch. These
   // verify the property end-to-end on the native engine: two sessions keep
   // isolated history, and closing one leaves the other usable. Runs on the
   // shared GPU model — also exercises the GPU sampler path under multiplexing.
@@ -735,20 +735,23 @@ void main() {
       await b.close();
     });
 
-    // Media on a virtual (openSession) .litertlm session is rejected loudly,
-    // not silently dropped — history is replayed text-only on switch.
-    testWidgets('openSession rejects image/audio loudly', (t) async {
+    // Media parity: a native open session keeps the media in its own
+    // conversation, while a virtual one keeps it in Dart and replays the full
+    // message when sessions switch. Both accept the same input.
+    testWidgets('openSession takes image on every backing', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 1024);
       final a = await model.openSession(temperature: 0.0, topK: 1);
       try {
         await a.addQueryChunk(
-          Message(
-            text: 'describe',
+          Message.withImage(
+            text: 'What is in the picture? One word.',
             isUser: true,
-            imageBytes: Uint8List.fromList(List<int>.filled(16, 0)),
+            imageBytes: _testImage,
           ),
         );
-        await expectLater(a.getResponse(), throwsA(isA<UnsupportedError>()));
+        final reply = await a.getResponse();
+        print('[multi-session media] "$reply"');
+        expect(reply.trim(), isNotEmpty);
       } finally {
         await a.close();
       }

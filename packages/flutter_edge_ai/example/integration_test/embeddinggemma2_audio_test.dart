@@ -10,9 +10,10 @@
 //   pass-owned directory, RSS by step;
 // - each clip against the golden (goldens/eg2_audio_golden.json, through its
 //   .dart twin): cos >= 0.9999 against `vector_native` on macOS arm64 (our
-//   native-v0.18.0-e build, the one the golden measured, deterministic at any
+//   native-v0.19.0-a build, the one the golden measured, deterministic at any
 //   thread count), and >= 0.94 against it anywhere else and against Google's
-//   litert-lm 0.18.0 wheel (`vector`). The audio encoder quantizes its
+//   litert-lm 0.19.0 wheel (`vector`; both re-recorded from 0.18 on
+//   2026-11-04, see the golden's tool). The audio encoder quantizes its
 //   activations to int8 (120 QUANTIZE ops), so a last-bit difference — another
 //   CPU kernel, or one sample changed by 1 — moves a clip's vector by up to
 //   cos 0.05 in any build (measured: ±1 LSB dither, min 0.948, in our build
@@ -153,7 +154,7 @@ List<double> _f32(String encoded) {
   ];
 }
 
-/// `vector_native` came from native-v0.18.0-e on macOS arm64.
+/// `vector_native` came from native-v0.19.0-a on macOS arm64.
 bool get _sameBuildAsGolden =>
     Platform.isMacOS && Abi.current() == Abi.macosArm64;
 

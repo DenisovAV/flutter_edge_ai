@@ -59,22 +59,28 @@ LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 /// stale with the next run; the page does not.
 const liteRtLmRegistryUrl = 'https://flutteredge.ai/docs/registry';
 
-/// The issue tracking [liteRtLmEmbeddingGpuRefusedAbis].
-const liteRtLmEmbeddingGpuWindowsIssue = '#744';
-
 /// Why `preferredBackend: gpu` is refused for [file] on a
 /// [liteRtLmEmbeddingGpuRefusedAbis] host, and what to do instead.
 String liteRtLmEmbeddingGpuRefusal(String file) =>
-    'EmbeddingGemma 2 on the GPU is not supported on Windows x64 with '
-    'native-v0.18.0-h: its LiteRT-LM WebGPU accelerator ends the process at '
-    'the first GPU load of $file (tracked in $liteRtLmEmbeddingGpuWindowsIssue). '
-    'Load it with preferredBackend: cpu (or leave preferredBackend unset) on '
-    'Windows; the GPU stays available on Linux x64.';
+    'EmbeddingGemma 2 on the GPU is not supported on this platform with this '
+    "release's native libraries: LiteRT-LM's GPU accelerator ends the process "
+    'at the first GPU load of $file. Load it with preferredBackend: cpu (or '
+    'leave preferredBackend unset) here. Where each build runs: '
+    '$liteRtLmRegistryUrl';
 
 /// Whether this host is one of [liteRtLmEmbeddingGpuAbis], asked of the same
 /// host [placeLiteRtLmEmbedder] places on, so the two never disagree.
 bool liteRtLmEmbeddingGpuHost() =>
     liteRtLmEmbeddingGpuAbis.contains(liteRtLmNpuHost.abi);
+
+/// This host's ABI and the EmbeddingGemma 2 bundles measured on its GPU
+/// ([liteRtLmEmbeddingGpuMeasured]), asked of the same host
+/// [placeLiteRtLmEmbedder] places on.
+({String abi, Set<LiteRtLmEg2Bundle> bundles})
+liteRtLmEmbeddingGpuBundlesHere() {
+  final abi = liteRtLmNpuHost.abi;
+  return (abi: abi, bundles: liteRtLmEmbeddingGpuMeasured[abi] ?? const {});
+}
 
 /// Whether this host is one of [liteRtLmEmbeddingGpuRefusedAbis].
 bool liteRtLmEmbeddingGpuRefusedHost() =>
@@ -89,8 +95,9 @@ bool liteRtLmEmbeddingGpuRefusedHost() =>
 /// stack, the device, then the dispatch directory (Android extracts the
 /// libraries out of the APK there). Where EmbeddingGemma 2 runs on an NPU is
 /// [NpuStack.abis]: Qualcomm on Android arm64 and Linux arm64, Google Tensor
-/// and MediaTek on Android arm64, Intel on Windows x64; which builds have run
-/// where is [liteRtLmRegistryUrl].
+/// on Android arm64, Intel on Windows x64; a MediaTek bundle is refused in
+/// this release ([mediatekNpuRefused]). Which builds have run where is
+/// [liteRtLmRegistryUrl].
 Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
   required String file,
   required LiteRtLmNpuTarget? target,
@@ -132,7 +139,13 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     _refuse(
       '$file is compiled for a ${target.vendor} NPU (${target.soc}). '
       'flutter_edge_ai_litertlm runs EmbeddingGemma 2 NPU bundles on '
-      '${npuSentenceList(NpuStack.values.map((v) => v.label))} NPUs only. '
+      '${npuSentenceList(offeredNpuStacks.map((v) => v.label))} NPUs only. '
+      'Install the generic EmbeddingGemma 2 bundle to embed on CPU.',
+    );
+  }
+  if (vendor == NpuStack.mediatek && mediatekNpuRefused) {
+    _refuse(
+      '$file is compiled for the $target NPU: $mediatekNpuRefusedReason. '
       'Install the generic EmbeddingGemma 2 bundle to embed on CPU.',
     );
   }
@@ -140,7 +153,8 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     _refuse(
       '$file is compiled for the $target NPU, and on ${host.operatingSystem} '
       '(${host.abi}) flutter_edge_ai_litertlm runs '
-      '${npuSentenceList(hostVendors.map((v) => v.label))} NPU bundles only; '
+      '${npuSentenceList(hostVendors.where(offeredNpuStacks.contains).map((v) => v.label))} '
+      'NPU bundles only; '
       '${vendor.label} ones run on ${npuSentenceList(vendor.abis)}. Install the '
       'generic EmbeddingGemma 2 bundle to embed here on CPU.',
     );
@@ -176,7 +190,7 @@ String liteRtLmGenericOnNpuRefusal(String file) =>
     '$file is the generic EmbeddingGemma 2 bundle: it has no NPU graph and '
     'runs on CPU only. To embed on the NPU, install the bundle compiled for '
     "this device's SoC (litert-community publishes "
-    '${npuSentenceList(NpuStack.values.map(_bundleNames))} '
+    '${npuSentenceList(offeredNpuStacks.map(_bundleNames))} '
     'beside it; which have run on which device: $liteRtLmRegistryUrl) and load '
     'it with PreferredBackend.npu. To run this bundle, omit preferredBackend.';
 

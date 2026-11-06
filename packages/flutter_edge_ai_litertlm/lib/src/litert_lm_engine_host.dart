@@ -5,7 +5,7 @@
 // path_provider, a native library or a device. Not exported.
 
 import 'dart:ffi' show Abi;
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_stack_manifest.dart';
 import 'ffi/npu_vendor_host.dart';
+import 'ffi/open_session_backing.dart';
 import 'litert_lm_log_level.dart';
 import 'npu_stacks.dart';
 
@@ -46,6 +47,12 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
   @override
   Future<String> prepareDispatchDir(NpuStack vendor) =>
       _npu.prepareDispatchDir(vendor);
+
+  /// The GPU family of an Android device, told by the device node its driver
+  /// exposes (`/dev/kgsl-3d0` Adreno, `/dev/mali0` Mali); null elsewhere.
+  AndroidGpuFamily? androidGpuFamily() => Platform.isAndroid
+      ? androidGpuFamilyFrom((path) => File(path).existsSync())
+      : null;
 
   /// A client for one backend attempt.
   LiteRtLmFfiClient createClient() => LiteRtLmFfiClient();

@@ -163,8 +163,7 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
+        "status": "untested"
        },
        "cpu": {
         "status": "documented",
@@ -225,7 +224,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -248,7 +248,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -493,7 +494,7 @@
         "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_android_arm64_pixel-11-ddp-cubs-37-tensor-g6-powervr.json",
         "note": "Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -504,29 +505,27 @@
         "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
         "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "macos_arm64": {
        "gpu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
+        "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
         "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "windows_x64": {
        "gpu": {
-        "status": "refused",
-        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
+        "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
         "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -536,7 +535,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
         "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -577,7 +576,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -600,7 +600,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -859,7 +860,7 @@
         "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
         "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -870,7 +871,7 @@
         "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
         "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -881,7 +882,7 @@
         "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
         "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -891,7 +892,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
         "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -932,7 +933,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -955,7 +957,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -3818,8 +3821,9 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "documented",
-        "source": "PR #697, run on a DDP Galaxy Tab S10+ (MT6989)"
+        "status": "withheld",
+        "note": "MediaTek NPU is refused from flutter_edge_ai_litertlm 1.20.0 on LiteRT-LM 0.19 because the vendor dispatch does not export LiteRtDispatchQueryInterface and an MT6989 conversation returned an empty second message (decision K). Version 1.19.x ran this build.",
+        "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/4256"
        }
       }
      }
@@ -3844,7 +3848,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -3869,7 +3874,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -4053,7 +4059,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -4078,7 +4085,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -4205,7 +4213,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }
@@ -4338,60 +4347,60 @@
      "cells": {
       "android_arm64": {
        "gpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
         "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
         "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "ios_arm64": {
        "gpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
         "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
         "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "macos_arm64": {
        "gpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
         "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
         "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "windows_x64": {
        "gpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
         "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
         "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
       },
       "linux_x64": {
        "gpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
         "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
         "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -4534,7 +4543,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_android_arm64_pixel-11-ddp-cubs-37-tensor-g6-powervr.json",
         "note": "Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -4560,7 +4569,7 @@
      "cells": {
       "windows_x64": {
        "npu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
         "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -4640,7 +4649,7 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
         "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
        }
@@ -5242,7 +5251,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
         "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
@@ -5252,7 +5261,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
         "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
@@ -5262,7 +5271,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
         "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
@@ -5272,7 +5281,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
         "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
@@ -5282,7 +5291,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
         "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
@@ -5335,7 +5344,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
         "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
@@ -5345,7 +5354,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
         "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
@@ -5355,7 +5364,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
         "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
@@ -5365,7 +5374,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-4.json",
         "note": "Intel Lunar Lake (Core Ultra 7 258V, Arc 140V, NPU 4), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
@@ -5375,7 +5384,7 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "verified",
+        "status": "stale",
         "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
         "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_speech 0.5.13"
        }
@@ -7575,7 +7584,8 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "untested"
+        "status": "refused",
+        "refused_by": "flutter_edge_ai_litertlm 1.19.2"
        }
       }
      }

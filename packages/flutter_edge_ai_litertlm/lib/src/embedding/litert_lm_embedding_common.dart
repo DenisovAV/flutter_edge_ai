@@ -87,7 +87,7 @@ final liteRtLmWebNpuRefusal =
 /// Where EmbeddingGemma 2 runs on an NPU, for a sentence: `on <vendor's
 /// hosts>, and on <…>, only`.
 String liteRtLmEmbeddingNpuHosts() =>
-    'on ${NpuStack.values.map(_embeddingNpuHosts).join(', and on ')}, only';
+    'on ${offeredNpuStacks.map(_embeddingNpuHosts).join(', and on ')}, only';
 
 String _embeddingNpuHosts(NpuStack vendor) => switch (vendor) {
   NpuStack.qualcomm => 'Qualcomm Android and Qualcomm Linux arm64',

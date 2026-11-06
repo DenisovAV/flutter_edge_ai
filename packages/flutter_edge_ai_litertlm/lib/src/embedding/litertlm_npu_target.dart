@@ -183,6 +183,121 @@ Future<LiteRtLmNpuTarget?> _stampOf(
   return null;
 }
 
+/// The prefill lengths of the TFLite model in `[begin, end)` of the open
+/// [file] of [length] bytes, as LiteRT-LM's CPU/GPU executor derives them
+/// (`GetPrefillRunnerSetFromSignatures`, v0.19.0): for each signature whose
+/// key starts with `prefill`, the last dimension of its input positions
+/// tensor (`positions` or `input_pos`; `[batch, len]` or `[len]`). Sorted,
+/// without duplicates; empty when the model has no prefill signature.
+/// Throws [FormatException] or [RangeError] for a model it cannot walk.
+Future<List<int>> readLiteRtLmPrefillLengths(
+  RandomAccessFile file,
+  int length,
+  int begin,
+  int end,
+) async {
+  if (end <= begin || end > length) {
+    throw RangeError('TFLiteModel section $begin..$end');
+  }
+  final model = _AsyncTable(_FileReader(file, length), begin, end);
+  final root = await model.ref(0);
+  final signatures = await model.table(root, 7); // Model.signature_defs
+  if (signatures == null) return const [];
+  final subgraphs = await model.table(root, 2); // Model.subgraphs
+  final lengths = <int>{};
+  final count = await model.length(signatures);
+  if (count > _maxMetadataEntries) {
+    throw RangeError.range(count, 0, _maxMetadataEntries, 'signatures');
+  }
+  for (var i = 0; i < count; i++) {
+    final signature = await model.element(signatures, i);
+    final key = await model.string(signature, 2); // SignatureDef.signature_key
+    if (key == null || !key.startsWith('prefill')) continue;
+    final inputs = await model.table(signature, 0); // SignatureDef.inputs
+    if (inputs == null || subgraphs == null) {
+      throw FormatException('signature $key has no inputs or subgraph');
+    }
+    final subgraph = await model.element(
+      subgraphs,
+      await model.uint32(signature, 4), // SignatureDef.subgraph_index
+    );
+    final tensors = await model.table(subgraph, 0); // SubGraph.tensors
+    int? positions;
+    for (var j = 0; j < await model.length(inputs); j++) {
+      final input = await model.element(inputs, j);
+      final name = await model.string(input, 0); // TensorMap.name
+      if (name != 'positions' && name != 'input_pos') continue;
+      if (tensors == null) throw FormatException('signature $key: no tensors');
+      final tensor = await model.element(
+        tensors,
+        await model.uint32(input, 1), // TensorMap.tensor_index
+      );
+      final shape = await model.table(tensor, 0); // Tensor.shape
+      final rank = shape == null ? 0 : await model.length(shape);
+      if (rank != 1 && rank != 2) {
+        throw FormatException('signature $key: input positions of rank $rank');
+      }
+      positions = (await model._view(
+        shape! + 4 + 4 * (rank - 1),
+        4,
+      )).getInt32(0, Endian.little);
+    }
+    if (positions == null || positions <= 0) {
+      throw FormatException('signature $key: no input positions length');
+    }
+    lengths.add(positions);
+  }
+  return lengths.toList()..sort();
+}
+
+/// The input name prefixes LiteRT-LM reads as linear attention state
+/// (`IsLinearAttentionStateName`, v0.19.0): the convolution (`kv_cache_c_`)
+/// and recurrent (`kv_cache_r_`) state of a hybrid model such as LFM2.
+const liteRtLmLinearAttentionStatePrefixes = ['kv_cache_c_', 'kv_cache_r_'];
+
+/// Whether the TFLite model in `[begin, end)` of the open [file] of [length]
+/// bytes keeps linear attention state: a signature input named with one of
+/// [liteRtLmLinearAttentionStatePrefixes], which LiteRT-LM allocates as
+/// `TYPE_LINEAR_ATTENTION` state buffers. That state has no position axis, so
+/// rewinding a conversation to an earlier step cannot restore it. Throws
+/// [FormatException] or [RangeError] for a model it cannot walk.
+Future<bool> readLiteRtLmLinearAttentionState(
+  RandomAccessFile file,
+  int length,
+  int begin,
+  int end,
+) async {
+  if (end <= begin || end > length) {
+    throw RangeError('TFLiteModel section $begin..$end');
+  }
+  final model = _AsyncTable(_FileReader(file, length), begin, end);
+  final root = await model.ref(0);
+  final signatures = await model.table(root, 7); // Model.signature_defs
+  if (signatures == null) return false;
+  final count = await model.length(signatures);
+  if (count > _maxMetadataEntries) {
+    throw RangeError.range(count, 0, _maxMetadataEntries, 'signatures');
+  }
+  for (var i = 0; i < count; i++) {
+    final signature = await model.element(signatures, i);
+    final inputs = await model.table(signature, 0); // SignatureDef.inputs
+    if (inputs == null) continue;
+    final inputCount = await model.length(inputs);
+    if (inputCount > _maxMetadataEntries) {
+      throw RangeError.range(inputCount, 0, _maxMetadataEntries, 'inputs');
+    }
+    for (var j = 0; j < inputCount; j++) {
+      final input = await model.element(inputs, j);
+      final name = await model.string(input, 0); // TensorMap.name
+      if (name != null &&
+          liteRtLmLinearAttentionStatePrefixes.any(name.startsWith)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /// [length], when it is the size of a stamp this reader knows. Only LiteRT's
 /// AOT compiler writes `LiteRtStamp`, so a model that has one IS compiled for
 /// an NPU: a layout this reader does not know must not read as "no stamp" —

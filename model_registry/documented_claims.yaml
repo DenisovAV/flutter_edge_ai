@@ -263,12 +263,11 @@
   source: website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:547-553
 
 # --- MediaTek NPU and OpenVINO 2026.4.1 (PR #697, PR #702) ----------------------
-- what: Gemma 3 1B on the MediaTek MT6989 NPU (DDP Galaxy Tab S10+, debug build)
-  variants: [gemma-3-1b-it/npu-mt6989]
-  hosts: [android_arm64]
-  backends: [npu]
-  status: documented
-  source: "PR #697, run on a DDP Galaxy Tab S10+ (MT6989)"
+# Historical claim: PR #697 ran gemma-3-1b-it/npu-mt6989 on the MediaTek
+# MT6989 NPU in a DDP Galaxy Tab S10+ debug build. It applied through
+# flutter_edge_ai_litertlm 1.19.x. From 1.20.0 the variant is withheld because
+# LiteRT-LM 0.19 refuses MediaTek NPU (decision K); keep this record rather than
+# presenting the old result as a current supported cell.
 - what: EmbeddingGemma 2 270m on the Intel Panther Lake NPU (Core Ultra X7 358H)
   variants: [embeddinggemma-2-text-270m/npu-ptl]
   hosts: [windows_x64]

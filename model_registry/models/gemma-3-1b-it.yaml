@@ -47,6 +47,11 @@ variants:
   fixed_max_tokens: 1280
   runtime:
     preferred_backend: npu
+  withhold:
+    reason: MediaTek NPU is refused from flutter_edge_ai_litertlm 1.20.0 on LiteRT-LM 0.19
+      because the vendor dispatch does not export LiteRtDispatchQueryInterface and an MT6989
+      conversation returned an empty second message (decision K). Version 1.19.x ran this build.
+    issue: https://github.com/google-ai-edge/LiteRT-LM/issues/4256
 - slug: npu-mt6991
   file_type: litertlm
   file:

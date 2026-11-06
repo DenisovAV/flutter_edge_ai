@@ -81,7 +81,7 @@ Future<String> _chat(
   bool enableThinking = false,
   Uint8List? image,
 }) async {
-  final session = await _model!.createSession(
+  final session = await _model!.openSession(
     temperature: 0.7,
     topK: 40,
     enableVisionModality: supportImage,

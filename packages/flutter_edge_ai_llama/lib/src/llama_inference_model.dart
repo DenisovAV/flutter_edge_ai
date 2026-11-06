@@ -1,3 +1,6 @@
+// This implementation keeps the deprecated singleton chat API until 3.0.
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

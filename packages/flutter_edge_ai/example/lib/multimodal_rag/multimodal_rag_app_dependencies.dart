@@ -373,7 +373,7 @@ final class _LlmAnswerer implements MultimodalRagAnswerer {
     int maxOutputTokens = 220,
   }) async* {
     final model = await _model();
-    final session = await model.createSession(
+    final session = await model.openSession(
       systemInstruction: systemInstruction,
       enableVisionModality: images.isNotEmpty,
       enableAudioModality: audio != null,

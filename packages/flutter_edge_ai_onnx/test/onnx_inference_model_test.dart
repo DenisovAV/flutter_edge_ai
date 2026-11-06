@@ -1,3 +1,6 @@
+// This suite covers the legacy singleton lane and its open-session coexistence.
+// ignore_for_file: deprecated_member_use
+
 // Fake-backed unit tests for OnnxInferenceModel — zero dlopen (hardened
 // plan Phase 3, Task 6).
 import 'dart:async';

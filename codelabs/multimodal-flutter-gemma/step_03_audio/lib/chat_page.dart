@@ -113,7 +113,7 @@ class _ChatPageState extends State<ChatPage> {
         supportImage: true,
         supportAudio: true,
       );
-      // Hold the runtime before opening a chat on it: `createChat` can throw,
+      // Hold the runtime before opening a chat on it: `openChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
       if (!mounted) {
@@ -122,7 +122,7 @@ class _ChatPageState extends State<ChatPage> {
       }
       setState(() => _inference = inference);
 
-      final chat = await inference.createChat(
+      final chat = await inference.openChat(
         modelType: widget.model.modelType,
         // Two flags, ONE model. They map to `enableVisionModality` and
         // `enableAudioModality` on the native session. Step 2's model had no

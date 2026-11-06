@@ -1,6 +1,7 @@
 // The decider SPI (InferenceModel.readDecisionSection, openOptionScorer) is
 // @experimental; this model is its LiteRT-LM implementation.
-// ignore_for_file: experimental_member_use
+// The model also keeps the deprecated singleton chat API until 3.0.
+// ignore_for_file: experimental_member_use, deprecated_member_use
 
 import 'dart:async';
 import 'dart:convert';

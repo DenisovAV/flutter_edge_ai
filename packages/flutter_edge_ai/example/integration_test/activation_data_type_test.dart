@@ -257,7 +257,7 @@ Future<_Run> _askAll(ActivationDataType? type) async {
       );
     }
     for (final q in _questions(log)) {
-      final session = await model.createSession(topK: 1, maxOutputTokens: 512);
+      final session = await model.openSession(topK: 1, maxOutputTokens: 512);
       try {
         final prompt = '$text\n\n${q.text}';
         final tokens = await session.sizeInTokens(prompt);

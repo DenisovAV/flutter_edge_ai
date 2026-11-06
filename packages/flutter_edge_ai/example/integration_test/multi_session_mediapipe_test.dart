@@ -1,3 +1,6 @@
+// This suite keeps one compatibility check for the legacy singleton lane.
+// ignore_for_file: deprecated_member_use
+
 /// MediaPipe `.task` multi-session integration test (#226).
 ///
 /// Verifies concurrent openSession() on the MediaPipe engine: two sessions

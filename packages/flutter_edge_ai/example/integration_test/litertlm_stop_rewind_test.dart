@@ -173,7 +173,7 @@ void main() {
   // that sometimes does not hear its own audio), and a probe must test the
   // rewind, not the sampler.
   Future<InferenceChat> newChat({bool thinking = false}) async =>
-      (await ensureModel()).createChat(
+      (await ensureModel()).openChat(
         topK: 1,
         supportImage: true,
         supportAudio: true,

@@ -1,4 +1,5 @@
 ## Unreleased
+- `createSession`, `createChat`, `session` and `chat` are deprecated until 3.0.0.
 - Engine SPI: `openEngineSession`, `resolveChatRequest`, `ChatTurnHooks`; `openSession`, `openChat` and chat turns are `@nonVirtual`.
 - `openChat` fills unset values with the model's own, as `createChat` does.
 - On LiteRT-LM and MediaPipe, a chat turn closed by the app keeps its partial reply, then throws `StateError`.

@@ -95,7 +95,7 @@ void main() {
       preferredBackend: PreferredBackend.cpu,
     );
     try {
-      final chat = await model.createChat(modelType: ModelType.gemmaIt);
+      final chat = await model.openChat(modelType: ModelType.gemmaIt);
       await chat.addQueryChunk(
         const Message(text: 'What is 2+2? Answer briefly.', isUser: true),
       );
@@ -124,7 +124,7 @@ void main() {
       maxNumImages: 1,
     );
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         modelType: ModelType.gemmaIt,
         supportImage: true,
       );
@@ -155,7 +155,7 @@ void main() {
       preferredBackend: PreferredBackend.cpu,
     );
     try {
-      final chat = await model.createChat(modelType: ModelType.gemmaIt);
+      final chat = await model.openChat(modelType: ModelType.gemmaIt);
       await chat.addQueryChunk(
         const Message(
           text: 'Write a very long story about space exploration',

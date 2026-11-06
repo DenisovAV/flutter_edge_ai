@@ -68,7 +68,7 @@ void main() {
       testWidgets('two sequential queries on same chat', (tester) async {
         final model = await _installAndLoad(path, modelType);
         try {
-          final chat = await model.createChat(modelType: modelType);
+          final chat = await model.openChat(modelType: modelType);
 
           // First query — should work
           await chat.addQueryChunk(
@@ -104,7 +104,7 @@ void main() {
       testWidgets('three sequential queries on same chat', (tester) async {
         final model = await _installAndLoad(path, modelType);
         try {
-          final chat = await model.createChat(modelType: modelType);
+          final chat = await model.openChat(modelType: modelType);
 
           for (var i = 1; i <= 3; i++) {
             await chat.addQueryChunk(
@@ -127,7 +127,7 @@ void main() {
       ) async {
         final model = await _installAndLoad(path, modelType);
         try {
-          final chat = await model.createChat(modelType: modelType);
+          final chat = await model.openChat(modelType: modelType);
 
           // First streaming query
           await chat.addQueryChunk(
@@ -166,7 +166,7 @@ void main() {
         final model = await _installAndLoad(path, modelType);
         try {
           for (var i = 1; i <= 2; i++) {
-            final chat = await model.createChat(modelType: modelType);
+            final chat = await model.openChat(modelType: modelType);
             await chat.addQueryChunk(
               Message(text: 'What is ${i * 10}? Answer briefly.', isUser: true),
             );

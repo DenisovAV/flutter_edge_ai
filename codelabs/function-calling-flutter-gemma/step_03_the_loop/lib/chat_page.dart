@@ -106,7 +106,7 @@ class _ChatPageState extends State<ChatPage> {
         maxTokens: 1024,
         activationDataType: ActivationDataType.float32,
       );
-      // Hold the runtime before opening a chat on it: `createChat` can throw,
+      // Hold the runtime before opening a chat on it: `openChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
       if (!mounted) {
@@ -117,7 +117,7 @@ class _ChatPageState extends State<ChatPage> {
 
       // Unchanged from Step 2. The declarations and the switch are properties
       // of the session; what changes below is only who drives the turns.
-      final chat = await inference.createChat(
+      final chat = await inference.openChat(
         modelType: widget.model.modelType,
         tools: const [multiplyTool],
         supportsFunctionCalls: true,

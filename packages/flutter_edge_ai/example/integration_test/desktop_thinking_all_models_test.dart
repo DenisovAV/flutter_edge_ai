@@ -77,7 +77,7 @@ void main() {
 
       final model = await FlutterEdgeAi.getActiveModel(maxTokens: 256);
       try {
-        final chat = await model.createChat(
+        final chat = await model.openChat(
           modelType: config.modelType,
           enableThinking: false,
         );
@@ -130,7 +130,7 @@ void main() {
 
       final model = await FlutterEdgeAi.getActiveModel(maxTokens: 256);
       try {
-        final chat = await model.createChat(
+        final chat = await model.openChat(
           modelType: config.modelType,
           enableThinking: true,
         );

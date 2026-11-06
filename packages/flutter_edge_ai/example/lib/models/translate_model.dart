@@ -9,7 +9,7 @@ import 'base_model.dart';
 /// Translator models (TranslateGemma and any future single-shot translators).
 ///
 /// TranslateGemma 4B is a Gemma 3 fine-tune so it runs through the same
-/// `InferenceModel.createSession()` path as any chat model — only the prompt
+/// `InferenceModel.openSession()` path as any chat model — only the prompt
 /// format differs (carried by `promptStrategy`). The `.litertlm` files come
 /// from a community conversion at
 /// `barakplasma/translategemma-4b-it-android-task-quantized` because Google

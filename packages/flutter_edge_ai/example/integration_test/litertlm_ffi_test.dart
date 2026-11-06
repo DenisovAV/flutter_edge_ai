@@ -238,7 +238,7 @@ Future<String> _chat(
   Uint8List? audio,
 }) async {
   final model = await _ensureModel(backend, maxTokens);
-  final session = await model.createSession(
+  final session = await model.openSession(
     temperature: 0.8,
     topK: 1,
     enableVisionModality: supportImage,
@@ -419,7 +419,7 @@ void main() {
 
     testWidgets('chat generateChatResponse (sync)', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final chat = await model.createChat(temperature: 0.8, topK: 1);
+      final chat = await model.openChat(temperature: 0.8, topK: 1);
       await chat.addQueryChunk(Message(text: 'Say hi', isUser: true));
       final r = await chat.generateChatResponse();
       print('[Gemma4 chat sync] ${r.runtimeType}: $r');
@@ -429,7 +429,7 @@ void main() {
 
     testWidgets('chat generateChatResponseAsync (stream)', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final chat = await model.createChat(temperature: 0.8, topK: 1);
+      final chat = await model.openChat(temperature: 0.8, topK: 1);
       await chat.addQueryChunk(Message(text: 'Say hi', isUser: true));
       final chunks = <String>[];
       await for (final r in chat.generateChatResponseAsync()) {
@@ -442,7 +442,7 @@ void main() {
 
     testWidgets('chat multi-turn (history retained)', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final chat = await model.createChat(temperature: 0.8, topK: 1);
+      final chat = await model.openChat(temperature: 0.8, topK: 1);
 
       await chat.addQueryChunk(
         Message(text: 'My favourite colour is purple.', isUser: true),
@@ -465,7 +465,7 @@ void main() {
 
     testWidgets('chat clearHistory resets conversation', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final chat = await model.createChat(temperature: 0.8, topK: 1);
+      final chat = await model.openChat(temperature: 0.8, topK: 1);
 
       await chat.addQueryChunk(
         Message(text: 'Remember the secret word: BANANA.', isUser: true),
@@ -488,7 +488,7 @@ void main() {
 
     testWidgets('chat stopGeneration interrupts stream', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final chat = await model.createChat(temperature: 0.8, topK: 1);
+      final chat = await model.openChat(temperature: 0.8, topK: 1);
       await chat.addQueryChunk(
         Message(text: 'Write a 1000-word essay about Berlin.', isUser: true),
       );
@@ -521,7 +521,7 @@ void main() {
       // the shared GPU model to avoid destroying the engine (which on
       // Linux/Vulkan triggers the upstream wgpu::Instance singleton issue).
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       final n = await session.sizeInTokens('Hello, how many tokens am I?');
       print('[Gemma4 sizeInTokens] $n');
       expect(n, greaterThan(0));
@@ -530,7 +530,7 @@ void main() {
 
     testWidgets('session stopGeneration (low-level)', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         Message(
           text: 'Write a 1000-word essay about the Berlin Wall.',
@@ -563,7 +563,7 @@ void main() {
       t,
     ) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         Message(text: 'Write a 1000-word essay about Paris.', isUser: true),
       );
@@ -591,13 +591,13 @@ void main() {
       await session.close();
     });
 
-    testWidgets('multiple createSession on same model', (t) async {
+    testWidgets('multiple openSession calls on same model', (t) async {
       // FfiInferenceModel is single-session at a time — this test verifies
       // we can sequentially create + close sessions without leaking the engine.
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
 
       for (var i = 0; i < 3; i++) {
-        final session = await model.createSession(temperature: 0.8, topK: 1);
+        final session = await model.openSession(temperature: 0.8, topK: 1);
         await session.addQueryChunk(
           Message(text: 'Iteration $i: hi', isUser: true),
         );
@@ -877,7 +877,7 @@ void main() {
     ) async {
       final model = await _installAndGetNpu();
       if (model == null) return;
-      final session = await model.createSession(
+      final session = await model.openSession(
         // Non-default sampler params — these MUST be ignored on NPU.
         temperature: 0.5,
         topK: 20,
@@ -904,14 +904,14 @@ void main() {
     ) async {
       final model = await _installAndGetNpu();
       if (model == null) return;
-      final s1 = await model.createSession(temperature: 0.8, randomSeed: 1);
+      final s1 = await model.openSession(temperature: 0.8, randomSeed: 1);
       await s1.addQueryChunk(
         const Message(text: 'List three colors', isUser: true),
       );
       final r1 = await s1.getResponse();
       await s1.close();
 
-      final s2 = await model.createSession(temperature: 0.8, randomSeed: 99999);
+      final s2 = await model.openSession(temperature: 0.8, randomSeed: 99999);
       await s2.addQueryChunk(
         const Message(text: 'List three colors', isUser: true),
       );
@@ -990,7 +990,7 @@ void main() {
     testWidgets('NPU vision (towers on CPU)', (t) async {
       final model = await installAndGetNpuMedia();
       if (model == null) return;
-      final session = await model.createSession(enableVisionModality: true);
+      final session = await model.openSession(enableVisionModality: true);
       await session.addQueryChunk(
         Message(
           text: 'What colour is this image? Answer in one word.',
@@ -1007,7 +1007,7 @@ void main() {
     testWidgets('NPU audio (towers on CPU)', (t) async {
       final model = await installAndGetNpuMedia();
       if (model == null) return;
-      final session = await model.createSession(enableAudioModality: true);
+      final session = await model.openSession(enableAudioModality: true);
       await session.addQueryChunk(
         Message(
           text: 'Describe this sound in one sentence.',
@@ -1030,7 +1030,7 @@ void main() {
     testWidgets('NPU decode rate (printed)', (t) async {
       final model = await _installAndGetNpu();
       if (model == null) return;
-      final session = await model.createSession(maxOutputTokens: 128);
+      final session = await model.openSession(maxOutputTokens: 128);
       await session.addQueryChunk(
         const Message(
           text:

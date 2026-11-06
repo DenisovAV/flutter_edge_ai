@@ -27,7 +27,7 @@ void main() {
     );
 
     try {
-      final chat = await model.createChat();
+      final chat = await model.openChat();
 
       await chat.addQueryChunk(const Message(text: 'Hi', isUser: true));
 

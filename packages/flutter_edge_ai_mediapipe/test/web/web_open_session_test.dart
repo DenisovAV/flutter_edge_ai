@@ -1,3 +1,6 @@
+// Remaining deprecated calls verify that open sessions do not alter the legacy lane.
+// ignore_for_file: deprecated_member_use
+
 // openSession and openChat on the web model, over fake MediaPipe globals:
 // sessions of their own over one LlmInference, the cap, and what a stop or a
 // close of one session does to the others.

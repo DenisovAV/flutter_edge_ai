@@ -28,7 +28,7 @@ void main() {
     final model = await FlutterEdgeAi.getActiveModel(maxTokens: 512);
     try {
       // Create chat WITHOUT thinking mode
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         modelType: ModelType.qwen3,
         enableThinking: false,
       );
@@ -72,7 +72,7 @@ void main() {
     final model = await FlutterEdgeAi.getActiveModel(maxTokens: 512);
     try {
       // Create chat WITH thinking mode
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         modelType: ModelType.qwen3,
         enableThinking: true,
       );

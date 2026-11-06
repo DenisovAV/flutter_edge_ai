@@ -23,6 +23,55 @@ chunks arrive before the final validation error;
 complete chunk. Formats cannot be combined with tools or
 `enableThinking: true`.
 
+### Open sessions and chats
+
+`createSession`, `createChat`, `session` and `chat` are deprecated and will be
+removed in 3.0.0. Keep the handle returned by `openSession` or `openChat`, and
+close it when done.
+
+Before:
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel();
+final session = await model.createSession();
+await session.addQueryChunk(Message(text: prompt, isUser: true));
+final reply = await session.getResponse();
+// A later createSession() closed this session implicitly.
+```
+
+After:
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel();
+final session = await model.openSession();
+try {
+  await session.addQueryChunk(Message(text: prompt, isUser: true));
+  final reply = await session.getResponse();
+} finally {
+  await session.close();
+}
+```
+
+For a chat, make the same ownership explicit:
+
+```dart
+final chat = await model.openChat();
+try {
+  await chat.addQueryChunk(Message(text: prompt, isUser: true));
+  final reply = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}
+```
+
+The behavior differs intentionally: `createSession` closed the previous
+singleton session, while `openSession` does not close any prior session. Every
+open session remains live and counts against `maxConcurrentSessions` until it
+or its model is closed. Do not rename a per-turn `createSession` call to
+`openSession` without retaining and closing the returned handle; that leaks one
+session per turn and eventually reaches the concurrency cap (or exhausts
+memory). The same ownership rule applies to `openChat`.
+
 ### `implements InferenceModel`
 
 A class that `implements InferenceModel` declares two new members,

@@ -79,8 +79,8 @@ SoC). Every build, and where each has been run:
 
 ## Sampling
 
-Leave `temperature`, `topK`, `topP` and `randomSeed` unset on `createSession`
-or `createChat` and each comes from the sampler the `.litertlm` file ships,
+Leave `temperature`, `topK`, `topP` and `randomSeed` unset on `openSession`
+or `openChat` and each comes from the sampler the `.litertlm` file ships,
 else from the model family's defaults (`SamplingParams.forModelType`), else
 `temperature: 0.8, topK: 40, topP: 0.95, randomSeed: 1`; a value you pass wins,
 field by field. `topK: 1` or `temperature: 0` decodes greedily. Before core
@@ -103,7 +103,7 @@ field by field. `topK: 1` or `temperature: 0` decodes greedily. Before core
 and reply — not the reply length. On CPU and GPU a value below 1024 is raised
 to 1024, because the published bundles fail to allocate below it; on the NPU it
 is passed through, so use the context size the bundle was compiled for. Cap the
-reply with `createSession(maxOutputTokens:)`.
+reply with `openSession(maxOutputTokens:)`.
 
 ## Multimodal order
 
@@ -248,12 +248,13 @@ await FlutterEdgeAi.installModel(
     .fromNetwork(r.url) // authoritative: carries the resolver's revision pin
     .install();
 final model = await FlutterEdgeAi.getActiveModel(defaults: r.runtime);
-final session = await model.createSession(
+final session = await model.openSession(
   enableThinking: r.runtime.thinkingDeclared ?? false,
   // minOutputTokens is a floor, not a cap: keep the app's own budget unless
   // the manifest asks for more.
   maxOutputTokens: max(1024, r.runtime.minOutputTokens ?? 0),
 );
+await session.close();
 ```
 
 Everything the manifest returns is an overridable default (explicit argument >
@@ -873,7 +874,7 @@ Native embeddings need no web files; the platform setup under
 model's web export (`gemma-4-E2B-it-web.litertlm`, not `gemma-4-E2B-it.litertlm`).
 It is text-only: an image or audio message throws `UnsupportedError`, because
 the JS API creates the LLM engine with no vision or audio executor, and
-`loraPath` throws too. `createSession(maxOutputTokens:)` is honoured here as it
+`loraPath` throws too. `openSession(maxOutputTokens:)` is honoured here as it
 is on native.
 Add the handshake below to your app's `web/index.html` `<head>` — the ESM doesn't
 assign window globals and module scripts are deferred, so Dart awaits
@@ -1061,7 +1062,7 @@ await FlutterEdgeAi.initialize(
   inferenceEngines: const [LiteRtLmEngine(thinkingTokenBudget: 512)],
 );
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final chat = await model.createChat(
+final chat = await model.openChat(
   enableThinking: true,
   maxOutputTokens: 2048,
   modelType: ModelType.gemma4,

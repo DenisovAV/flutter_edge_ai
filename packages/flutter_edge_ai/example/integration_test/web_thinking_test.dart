@@ -63,7 +63,7 @@ void main() {
 
     testWidgets('enableThinking reaches the model on web', (tester) async {
       final model = await _ensureModel();
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         enableThinking: true,
         modelType: ModelType.gemma4,
       );

@@ -295,7 +295,7 @@ void main() {
       preferredBackend: PreferredBackend.cpu,
     );
     try {
-      final chat = await model.createChat(modelType: ModelType.functionGemma);
+      final chat = await model.openChat(modelType: ModelType.functionGemma);
       await chat.addQuery(
         const Message(text: 'What is 2+2? Answer briefly.', isUser: true),
       );

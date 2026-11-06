@@ -152,7 +152,7 @@ Now look at the call that opens the chat, because that is where this codelab's
 change lands:
 
 ```dart
-      final chat = await inference.createChat(
+      final chat = await inference.openChat(
         modelType: widget.model.modelType,
         maxOutputTokens: 256,
       );
@@ -297,10 +297,10 @@ the turn and leaves a call in the history that nothing replied to.
 
 ### Open a session that has tools
 
-Two arguments on `createChat`:
+Two arguments on `openChat`:
 
 ```dart
-      final chat = await inference.createChat(
+      final chat = await inference.openChat(
         // Which family's call syntax to speak. For FunctionGemma on a
         // `.litertlm`, the declarations go to LiteRT-LM, which renders them
         // into the developer turn these weights were trained on, hands the
@@ -937,8 +937,8 @@ declaration renders two ways.
 
 ```dart
         // Whether the model may, must, or must not call. On a `.litertlm` the
-        // runtime holds the declarations for both families — `createChat`
-        // forwards `tools` to `createSession` without consulting this — so
+        // runtime holds the declarations for both families — `openChat`
+        // forwards `tools` to `openSession` without consulting this — so
         // `none` cannot take them back out. What it switches off is the SDK's
         // suppression of tool-call JSON, which is why a call made under `none`
         // can arrive as raw markup in the bubble. On a `.task` FunctionGemma
@@ -1136,7 +1136,7 @@ defaults:
 
 **The web** builds and runs, and text chat works. Function calling is a
 **maybe**, and the honest reason is that nobody here has run it. The plumbing
-is in place: core 1.7.3 fixed `createChat` dropping `tools`, and the browser
+is in place: core 1.7.3 fixed `openChat` dropping `tools`, and the browser
 arm sends the declarations to the runtime as a structured preface for both
 families, the same JSON the native side sends. What is missing is a
 measurement — no browser run against either model, with either kind of tool.

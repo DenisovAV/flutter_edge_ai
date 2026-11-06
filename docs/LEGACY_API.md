@@ -211,7 +211,7 @@ If you need to generate individual responses without maintaining a conversation 
 1) **Text-Only Session:**
 
 ```dart
-final session = await inferenceModel.createSession(
+final session = await inferenceModel.openSession(
   temperature: 1.0, // Optional; unset: the model's own (2.2.0+)
   randomSeed: 1, // Optional; unset: 1
   topK: 1, // Optional; 1 is greedy, unset: the model's own (2.2.0+)
@@ -232,7 +232,7 @@ await session.close(); // Always close the session when done
 ```dart
 import 'dart:typed_data'; // For Uint8List
 
-final session = await inferenceModel.createSession(
+final session = await inferenceModel.openSession(
   enableVisionModality: true, // Enable image processing
 );
 
@@ -254,7 +254,7 @@ await session.close();
 3) **Asynchronous Response Generation:**
 
 ```dart
-final session = await inferenceModel.createSession();
+final session = await inferenceModel.openSession();
 await session.addQueryChunk(Message.text(text: 'Tell me something interesting', isUser: true));
 
 // Note: session.getResponseAsync() returns Stream<String>
@@ -275,7 +275,7 @@ For chat-based applications, you can create a chat instance. Unlike sessions, th
 
 **Text-Only Chat:**
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 0.8, // Controls response randomness; unset: the model's own
   randomSeed: 1, // Ensures reproducibility; unset: 1
   topK: 1, // Limits vocabulary scope; 1 is greedy, unset: the model's own
@@ -288,22 +288,24 @@ final chat = await inferenceModel.createChat(
   // isThinking: false, // Enable thinking mode, default: false
   // modelType: ModelType.gemmaIt, // Model type, default: ModelType.gemmaIt
 );
+await chat.close(); // Keep the chat open while it is in use, then close it.
 ```
 
 **🖼️ Multimodal Chat:**
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 0.8, // Controls response randomness
   randomSeed: 1, // Ensures reproducibility
   topK: 1, // Limits vocabulary scope
   supportImage: true, // Enable image support in chat
   // tokenBuffer: 256, // Token buffer size for context management
 );
+await chat.close();
 ```
 
 **🧠 Thinking Mode Chat (DeepSeek Models):**
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 0.8,
   randomSeed: 1,
   topK: 1,
@@ -311,6 +313,7 @@ final chat = await inferenceModel.createChat(
   modelType: ModelType.deepSeek, // Specify DeepSeek model type
   // supportsFunctionCalls: true, // Enable function calling for DeepSeek models
 );
+await chat.close();
 ```
 
 1) **Synchronous Chat:**
@@ -427,7 +430,7 @@ final List<Tool> _tools = [
 **Step 2: Create Chat with Tools**
 
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 0.8,
   randomSeed: 1,
   topK: 1,
@@ -435,6 +438,7 @@ final chat = await inferenceModel.createChat(
   supportsFunctionCalls: true, // Enable function calling (required for tools)
   toolChoice: ToolChoice.auto, // auto (default) | required | none
 );
+// Keep this chat open through the response loop, then call await chat.close().
 ```
 
 **ToolChoice modes:**
@@ -558,10 +562,11 @@ final model = await FlutterEdgeAi.getActiveModel(
 );
 
 // Use with function calling
-final chat = await model.createChat(
+final chat = await model.openChat(
   tools: myTools,
   supportsFunctionCalls: true,
 );
+await chat.close();
 ```
 
 #### Platform Support
@@ -621,7 +626,7 @@ DeepSeek, Qwen3, and Gemma 4 (E2B/E4B) models support "thinking mode" where you 
 **Enable Thinking Mode (DeepSeek):**
 
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 0.8,
   randomSeed: 1,
   topK: 1,
@@ -653,18 +658,20 @@ chat.generateChatResponseAsync().listen((response) {
     _handleFunctionCall(response);
   }
 });
+// Close the chat after the stream completes: await chat.close();
 ```
 
 **Enable Thinking Mode (Gemma 4):**
 
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 1.0,
   topK: 64,
   topP: 0.95,
   isThinking: true, // Enable thinking mode
   modelType: ModelType.gemmaIt, // Gemma 4 E2B/E4B
 );
+await chat.close();
 // <|think|> is auto-injected into systemInstruction — no manual prompt needed.
 ```
 
@@ -868,7 +875,7 @@ final context = results.map((r) => r.content).join('\n');
 final prompt = 'Context:\n$context\n\nQuestion: $query';
 
 final inferenceModel = await FlutterEdgeAi.getActiveModel();
-final session = await inferenceModel.createSession();
+final session = await inferenceModel.openSession();
 await session.addQueryChunk(Message.text(text: prompt, isUser: true));
 final answer = await session.getResponse();
 print('Answer: $answer');
@@ -1112,9 +1119,10 @@ final inferenceModel = await FlutterEdgeAi.getActiveModel(
   preferredBackend: PreferredBackend.gpu,
 );
 
-final chat = await inferenceModel.createChat();
+final chat = await inferenceModel.openChat();
 await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
 final response = await chat.generateChatResponse();
+await chat.close();
 ```
 
 **Legacy API (deprecated since 2.5.0, removed in 3.0.0):**
@@ -1127,7 +1135,8 @@ final inferenceModel = await FlutterEdgeAiPlugin.instance.createModel(
   maxTokens: 2048,
 );
 
-final chat = await inferenceModel.createChat();
+final chat = await inferenceModel.openChat();
 await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
 final response = await chat.generateChatResponse();
+await chat.close();
 ```

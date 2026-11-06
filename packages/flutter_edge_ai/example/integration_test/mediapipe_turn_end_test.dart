@@ -1,3 +1,6 @@
+// This suite compares the deprecated singleton and open multi-session lanes.
+// ignore_for_file: deprecated_member_use
+
 // Integration test: how MediaPipe `.task` chat turns end on a device, after
 // core 2.6.0 ran blocking chat turns through the streaming path (PR 3).
 //
@@ -301,3 +304,4 @@ Future<void> _expectRecall(InferenceChat chat, String lane, String what) async {
     reason: 'the taken-back message is not in the session',
   );
 }
+// The deprecated lane stays covered until its 3.0 removal.

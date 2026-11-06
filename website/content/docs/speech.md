@@ -307,7 +307,7 @@ when no model is installed, or `No inference engine can handle this model
 final recognizer = await FlutterEdgeAi.getActiveStt();
 final synthesizer = await FlutterEdgeAi.getActiveTts();
 final chat = await (await FlutterEdgeAi.getActiveModel(maxTokens: 1024))
-    .createChat(tokenBuffer: 256, maxOutputTokens: 128); // no tools, short replies
+    .openChat(tokenBuffer: 256, maxOutputTokens: 128); // no tools, short replies
 
 final session = VoiceSession.fromChat(
   recognizer: recognizer, chat: chat, synthesizer: synthesizer);
@@ -361,7 +361,7 @@ is synthesized.
 
 ```dart
 final chat = await (await FlutterEdgeAi.getActiveModel(maxTokens: 1024))
-    .createChat(tools: myTools, supportsFunctionCalls: true,
+    .openChat(tools: myTools, supportsFunctionCalls: true,
                 toolChoice: ToolChoice.auto, maxOutputTokens: 128);
 
 final session = VoiceSession.fromChat(
@@ -385,7 +385,7 @@ final model = await FlutterEdgeAi.getActiveModel(
   maxTokens: 4096,
   supportAudio: true, // loads the audio encoder
 );
-final chat = await model.createChat(supportAudio: true, maxOutputTokens: 128);
+final chat = await model.openChat(supportAudio: true, maxOutputTokens: 128);
 final session = VoiceSession.fromChat(
   recognizer: recognizer, chat: chat, synthesizer: synthesizer);
 
@@ -412,7 +412,7 @@ await for (final event in session.runAudioTurn(pcm16kMono)) {
   `runTurn`. `runAudioTurn` adds the WAV header, because a `.litertlm` model
   decodes an audio file, not bare samples.
 - **The flags.** `supportAudio` on `getActiveModel` creates the engine with its
-  audio encoder. `createChat` takes it from the model unless you pass it, and
+  audio encoder. `openChat` takes it from the model unless you pass it, and
   the chat's flag is what `fromChat` checks: on a chat whose `supportAudio` is
   false, `runAudioTurn` throws a `StateError`.
 - **Native only.** No web engine takes audio input.

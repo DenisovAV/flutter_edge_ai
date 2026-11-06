@@ -78,7 +78,7 @@ Future<String> _ask(
   String prompt, {
   Uint8List? image,
 }) async {
-  final session = await model.createSession(
+  final session = await model.openSession(
     topK: 1,
     enableVisionModality: image != null,
   );

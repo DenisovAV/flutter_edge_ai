@@ -170,7 +170,7 @@ Future<String> _secondTurn(
   InferenceModel model, {
   Future<void> Function()? between,
 }) async {
-  final chat = await model.createChat(topK: 1, maxOutputTokens: 24);
+  final chat = await model.openChat(topK: 1, maxOutputTokens: 24);
   try {
     Future<String> turn(String text) async {
       await chat.addQueryChunk(Message(text: text, isUser: true));
@@ -797,7 +797,7 @@ void main() {
       final m = await model();
       final d = await decider(m);
       final before = await d.choose(input);
-      final chat = await m.createChat(topK: 1, maxOutputTokens: 16);
+      final chat = await m.openChat(topK: 1, maxOutputTokens: 16);
       try {
         await chat.addQueryChunk(
           const Message(text: 'Say hello.', isUser: true),

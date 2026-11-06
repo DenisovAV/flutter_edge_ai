@@ -41,7 +41,7 @@ class _ChatPageState extends State<ChatPage> {
         return;
       }
       setState(() => _inference = inference);
-      final chat = await inference.createChat(
+      final chat = await inference.openChat(
         modelType: widget.model.modelType,
         maxOutputTokens: 256,
       );

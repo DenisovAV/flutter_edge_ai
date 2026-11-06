@@ -127,7 +127,7 @@ void main() {
       );
       expect(model.activeBackend, PreferredBackend.npu);
 
-      final session = await model.createSession(maxOutputTokens: 48);
+      final session = await model.openSession(maxOutputTokens: 48);
       try {
         await session.addQueryChunk(
           const Message(

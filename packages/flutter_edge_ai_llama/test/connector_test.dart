@@ -1,3 +1,6 @@
+// The remaining deprecated calls verify the legacy singleton lane until 3.0.
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -141,7 +144,7 @@ void main() {
         await engine.disposeStarted.future.timeout(const Duration(seconds: 2));
         expect(notifications, 0);
         expect(engine.disposals, 0);
-        await expectLater(model.createSession(), throwsA(isA<StateError>()));
+        await expectLater(model.openSession(), throwsA(isA<StateError>()));
       } finally {
         gate.complete();
         await closing;
@@ -298,7 +301,7 @@ void main() {
   });
 
   test('public Edge AI chat streams raw input, history and sampling', () async {
-    final chat = await model.createChat(
+    final chat = await model.openChat(
       systemInstruction: 'Be concise.',
       temperature: .25,
       randomSeed: 42,
@@ -405,14 +408,14 @@ void main() {
 
   test('disabled modalities and orphan tool results fail loudly', () async {
     await expectLater(
-      model.createChat(toolChoice: edge.ToolChoice.required),
+      model.openChat(toolChoice: edge.ToolChoice.required),
       throwsA(isA<ArgumentError>()),
     );
     expect(
-      () => model.createSession(enableVisionModality: true),
+      () => model.openSession(enableVisionModality: true),
       throwsA(isA<UnsupportedError>()),
     );
-    final session = await model.createSession();
+    final session = await model.openSession();
     for (final message in [
       edge.Message.withImage(
         text: 'image',
@@ -436,7 +439,7 @@ void main() {
 
   test('rendered template overhead is checked before inference', () async {
     engine.promptTokens = 2048;
-    final session = await model.createSession(maxOutputTokens: 64);
+    final session = await model.openSession(maxOutputTokens: 64);
     await session.addQueryChunk(
       edge.Message.text(text: 'short raw text', isUser: true),
     );
@@ -450,15 +453,15 @@ void main() {
   test('invalid sampling and output budgets are rejected', () async {
     for (final limit in [0, -1]) {
       await expectLater(
-        model.createSession(maxOutputTokens: limit),
+        model.openSession(maxOutputTokens: limit),
         throwsA(isA<ArgumentError>()),
       );
     }
     await expectLater(
-      model.createSession(temperature: double.nan),
+      model.openSession(temperature: double.nan),
       throwsArgumentError,
     );
-    await expectLater(model.createSession(topP: 0), throwsArgumentError);
+    await expectLater(model.openSession(topP: 0), throwsArgumentError);
   });
 
   for (final operation in [
@@ -699,7 +702,7 @@ void main() {
   );
 
   test('Edge AI family heuristics do not alter GGUF user text', () async {
-    final chat = await model.createChat(modelType: edge.ModelType.qwen3);
+    final chat = await model.openChat(modelType: edge.ModelType.qwen3);
     await chat.addQueryChunk(
       edge.Message.text(text: 'plain input', isUser: true),
     );
@@ -709,7 +712,7 @@ void main() {
 
   test('generation errors discard partial output before retry', () async {
     engine.failAfterFirstToken = true;
-    final session = await model.createSession();
+    final session = await model.openSession();
     await session.addQueryChunk(
       edge.Message.text(text: 'failed', isUser: true),
     );
@@ -730,7 +733,7 @@ void main() {
   });
 
   test('stop cancels the engine and rolls back the interrupted turn', () async {
-    final session = await model.createSession(maxOutputTokens: 64);
+    final session = await model.openSession(maxOutputTokens: 64);
     await session.addQueryChunk(edge.Message.text(text: 'keep', isUser: true));
     await session.getResponse();
     engine.blockGeneration = true;
@@ -759,7 +762,7 @@ void main() {
     'subscription cancellation stops native work before the next turn',
     () async {
       engine.blockGeneration = true;
-      final session = await model.createSession(maxOutputTokens: 64);
+      final session = await model.openSession(maxOutputTokens: 64);
       await session.addQueryChunk(
         edge.Message.text(text: 'abandoned', isUser: true),
       );
@@ -781,7 +784,7 @@ void main() {
 
   test('rejecting overlapping generation does not cancel its owner', () async {
     engine.blockGeneration = true;
-    final session = await model.createSession(maxOutputTokens: 64);
+    final session = await model.openSession(maxOutputTokens: 64);
     await session.addQueryChunk(edge.Message.text(text: 'one', isUser: true));
     final firstToken = Completer<void>();
     final subscription = session.getResponseAsync().listen(
@@ -800,7 +803,7 @@ void main() {
       var closed = 0;
       model.addCloseListener(() => closed++);
       engine.blockGeneration = true;
-      final session = await model.createSession(maxOutputTokens: 64);
+      final session = await model.openSession(maxOutputTokens: 64);
       await session.addQueryChunk(edge.Message.text(text: 'one', isUser: true));
       final firstToken = Completer<void>();
       final subscription = session.getResponseAsync().listen(
@@ -815,13 +818,13 @@ void main() {
       await subscription.cancel();
       expect(engine.disposals, 1);
       expect(closed, 1);
-      await expectLater(model.createSession(), throwsA(isA<StateError>()));
+      await expectLater(model.openSession(), throwsA(isA<StateError>()));
       expect(model.sessions, isEmpty);
     },
   );
   test('typed thinking reaches chat only when enabled', () async {
     engine.script = [_thinking('reason'), _chunk('answer')];
-    final chat = await model.createChat(enableThinking: true);
+    final chat = await model.openChat(enableThinking: true);
     await chat.addQuery(edge.Message.text(text: 'why', isUser: true));
     final responses = await chat.generateChatResponseAsync().toList();
     expect(
@@ -834,7 +837,7 @@ void main() {
       edge.MessageType.thinking,
       edge.MessageType.text,
     ]);
-    final hidden = await model.createChat(enableThinking: false);
+    final hidden = await model.openChat(enableThinking: false);
     await hidden.addQuery(edge.Message.text(text: 'why', isUser: true));
     expect(
       (await hidden.generateChatResponseAsync().toList())
@@ -1569,7 +1572,7 @@ void main() {
         _toolChunk(0, 'search', '{"q":', id: 'call00001'),
         _toolChunk(0, null, '"flower"}'),
       ];
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         tools: [tool],
         toolChoice: edge.ToolChoice.required,
       );
@@ -1608,7 +1611,7 @@ void main() {
         _toolChunk(0, 'search', '{"q":"a"}', id: 'call00001'),
         _toolChunk(1, 'search', '{"q":"b"}', id: 'call00002'),
       ];
-      final chat = await model.createChat(tools: [tool]);
+      final chat = await model.openChat(tools: [tool]);
       await chat.addQuery(edge.Message.text(text: 'both', isUser: true));
       final response =
           await chat.generateChatResponse()
@@ -1642,7 +1645,7 @@ void main() {
         [_toolChunk(0, 'search', '{"q":"a"}', id: 'a')],
         [_chunk('found')],
       ];
-      final chat = await model.createChat(tools: [tool]);
+      final chat = await model.openChat(tools: [tool]);
       await chat.addQuery(edge.Message.text(text: 'search', isUser: true));
       var calls = 0;
       final responses = await chat
@@ -1662,7 +1665,7 @@ void main() {
   test(
     'none tool choice keeps declarations for replay and forbids calls',
     () async {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         tools: [tool],
         toolChoice: edge.ToolChoice.none,
       );
@@ -1680,7 +1683,7 @@ void main() {
       [_chunk('no call')],
     ]) {
       engine.script = script;
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         tools: [tool],
         toolChoice: edge.ToolChoice.required,
       );
@@ -1897,7 +1900,7 @@ void main() {
     'llama.cpp tools preflight without a runtime capability probe',
     () async {
       engine.capabilityError = StateError('Must not probe capabilities');
-      final chat = await model.createChat(tools: [tool]);
+      final chat = await model.openChat(tools: [tool]);
       expect(chat, isNotNull);
       expect(engine.lastTemplateTools.single.name, tool.name);
     },
@@ -1976,7 +1979,7 @@ void main() {
   test(
     'chat error and cancellation roll back the same visible transcript',
     () async {
-      final chat = await model.createChat();
+      final chat = await model.openChat();
       engine.failAfterFirstToken = true;
       await chat.addQuery(edge.Message.text(text: 'failed', isUser: true));
       await expectLater(
@@ -2065,7 +2068,7 @@ void main() {
           maxNumImages: 1,
         ),
       );
-      final chat = await loaded.createChat(
+      final chat = await loaded.openChat(
         supportImage: true,
         supportAudio: true,
       );

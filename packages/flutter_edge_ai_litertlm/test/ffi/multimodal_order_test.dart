@@ -1,3 +1,6 @@
+// This test exercises the legacy native-conversation constructor directly.
+// ignore_for_file: deprecated_member_use
+
 import 'dart:convert';
 import 'dart:typed_data';
 

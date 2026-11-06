@@ -185,7 +185,7 @@ final class _Reply {
   Future<String> get done => _done.future.timeout(_bound);
 
   static Future<_Reply> start(InferenceModel llm, Stopwatch watch) async {
-    final session = await llm.createSession(topK: 1, maxOutputTokens: 160);
+    final session = await llm.openSession(topK: 1, maxOutputTokens: 160);
     await session.addQueryChunk(const Message(text: _prompt, isUser: true));
     final reply = _Reply(session);
     session.getResponseAsync().listen(

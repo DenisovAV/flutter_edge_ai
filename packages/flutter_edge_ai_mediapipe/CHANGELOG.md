@@ -1,4 +1,5 @@
 ## Unreleased
+- README examples use `openSession`/`openChat` and close returned handles.
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and audio.
 - Android: a streamed reply no longer loses chunks while the UI thread is busy.
 - Failed turns and turns stopped before producing text are removed from session history.

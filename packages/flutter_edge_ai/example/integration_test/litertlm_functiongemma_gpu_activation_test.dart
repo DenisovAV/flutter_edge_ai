@@ -61,7 +61,7 @@ typedef _Answer = ({List<FunctionCallResponse> calls, String text});
 
 /// One question through the tool path; the calls and the answer text.
 Future<_Answer> _ask(InferenceModel model) async {
-  final chat = await model.createChat(
+  final chat = await model.openChat(
     topK: 1,
     tools: const [_multiply],
     supportsFunctionCalls: true,

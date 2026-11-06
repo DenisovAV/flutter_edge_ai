@@ -177,7 +177,7 @@ final shortlist = picked.choice == null
         for (final r in picked.ranked)
           myTools.firstWhere((t) => t.name == r.id),
       ];
-final toolChat = await model.createChat(
+final toolChat = await model.openChat(
   tools: shortlist,
   supportsFunctionCalls: true,
   modelType: ModelType.functionGemma,

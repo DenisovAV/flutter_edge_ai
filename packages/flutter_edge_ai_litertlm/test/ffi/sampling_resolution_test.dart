@@ -1,3 +1,6 @@
+// These tests verify sampling on the legacy native-conversation lane.
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';

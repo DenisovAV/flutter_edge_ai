@@ -72,7 +72,7 @@ Future<InferenceModel> _openModel() async => FlutterEdgeAi.getActiveModel(
 Future<InferenceChat> _openChat(
   InferenceModel model, {
   List<Tool> tools = const [_changeColorTool],
-}) async => model.createChat(
+}) async => model.openChat(
   tools: tools,
   supportsFunctionCalls: true,
   modelType: ModelType.gemma4,

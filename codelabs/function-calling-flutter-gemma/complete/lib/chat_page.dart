@@ -103,7 +103,7 @@ class _ChatPageState extends State<ChatPage> {
         preferredBackend: widget.model.preferredBackend,
         activationDataType: widget.model.activationDataType,
       );
-      // Hold the runtime before opening a chat on it: `createChat` can throw,
+      // Hold the runtime before opening a chat on it: `openChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
       if (!mounted) {
@@ -130,7 +130,7 @@ class _ChatPageState extends State<ChatPage> {
 
   /// The session, with everything that is per-session on it.
   Future<InferenceChat> _openChat(InferenceModel inference) =>
-      inference.createChat(
+      inference.openChat(
         // Which family's call syntax the SDK writes and reads.
         modelType: widget.model.modelType,
         // Four declarations now instead of one. Nothing else in this file
@@ -138,8 +138,8 @@ class _ChatPageState extends State<ChatPage> {
         tools: toolbox,
         supportsFunctionCalls: true,
         // Whether the model may, must, or must not call. On a `.litertlm` the
-        // runtime holds the declarations for both families — `createChat`
-        // forwards `tools` to `createSession` without consulting this — so
+        // runtime holds the declarations for both families — `openChat`
+        // forwards `tools` to `openSession` without consulting this — so
         // `none` cannot take them back out. What it switches off is the SDK's
         // suppression of tool-call JSON, which is why a call made under `none`
         // can arrive as raw markup in the bubble. On a `.task` FunctionGemma

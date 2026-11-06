@@ -101,7 +101,7 @@ Future<void> _variant(InferenceModel model, {required bool asIOS}) async {
 
     InferenceModelSession? session;
     try {
-      session = await model.createSession(topK: 1);
+      session = await model.openSession(topK: 1);
       await session.addQueryChunk(message);
       final raw = await session.getResponse();
       final counts = _markerCounts(raw);
@@ -115,7 +115,7 @@ Future<void> _variant(InferenceModel model, {required bool asIOS}) async {
 
     InferenceChat? chat;
     try {
-      chat = await model.createChat(topK: 1);
+      chat = await model.openChat(topK: 1);
       await chat.addQueryChunk(message);
       final response = await chat.generateChatResponse();
       final visible = response is TextResponse ? response.token : '$response';

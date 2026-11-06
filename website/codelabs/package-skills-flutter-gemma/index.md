@@ -365,7 +365,7 @@ handle this model"*: the only engine you registered does not handle `.task`.
 
 ```dart
 final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   modelType: widget.model.modelType,
   maxOutputTokens: 256,
 );
@@ -425,7 +425,7 @@ mauvish"* — because item 4 below is about what happens then.
 **1. The chat is told it may call functions.**
 
 ```dart
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   tools: const [ColorTool.declaration],
   supportsFunctionCalls: true,
   modelType: widget.model.modelType,

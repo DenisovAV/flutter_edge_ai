@@ -88,7 +88,7 @@ Future<String> _reply(InferenceChat chat) async {
 }
 
 Future<String> _ask(InferenceModel model) async {
-  final chat = await model.createChat(modelType: ModelType.functionGemma);
+  final chat = await model.openChat(modelType: ModelType.functionGemma);
   try {
     return await _reply(chat);
   } finally {
@@ -131,7 +131,7 @@ void main() {
     const name = 'uninstall-loaded.litertlm';
     final (_, copy) = await _activeCopy(name);
     final model = await _active();
-    final chat = await model.createChat(modelType: ModelType.functionGemma);
+    final chat = await model.openChat(modelType: ModelType.functionGemma);
     InferenceModel? again;
     try {
       expect((await _reply(chat)).trim(), isNotEmpty);
@@ -176,7 +176,7 @@ void main() {
     final (_, copy) = await _activeCopy(name);
     final model = await _active();
     // A session, the path every model's generation takes.
-    final session = await model.createSession();
+    final session = await model.openSession();
     StreamSubscription<String>? subscription;
     try {
       await session.addQueryChunk(

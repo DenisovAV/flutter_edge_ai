@@ -158,7 +158,7 @@ void main() {
         maxTokens: 1024,
         preferredBackend: PreferredBackend.cpu,
       );
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         tokenBuffer: 256,
         tools: const [],
         systemInstruction: 'Reply in one short sentence.',

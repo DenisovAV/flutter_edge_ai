@@ -54,7 +54,7 @@ void main() {
       maxTokens: model.maxTokens,
       preferredBackend: model.preferredBackend,
     );
-    final chat = await inference.createChat(
+    final chat = await inference.openChat(
       modelType: model.modelType,
       tools: toolbox,
       supportsFunctionCalls: true,

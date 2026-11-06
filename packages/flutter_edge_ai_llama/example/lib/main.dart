@@ -235,7 +235,8 @@ class _ChatPageState extends State<_ChatPage> with WidgetsBindingObserver {
   }
 
   Future<void> _newChat() async {
-    final chat = await _model!.createChat(
+    await _chat?.close();
+    final chat = await _model!.openChat(
       systemInstruction: 'You are a helpful assistant. Keep answers concise.',
       modelType: edge.ModelType.general,
       temperature: .7,

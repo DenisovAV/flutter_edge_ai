@@ -367,7 +367,7 @@ void main() {
       ModelType.functionGemma,
     );
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: _codelabTools,
         supportsFunctionCalls: true,
@@ -406,7 +406,7 @@ void main() {
       ModelType.functionGemma,
     );
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: _exampleTools,
         supportsFunctionCalls: true,
@@ -454,7 +454,7 @@ void main() {
       ModelType.functionGemma,
     );
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: _mobileActionsTools,
         supportsFunctionCalls: true,
@@ -489,7 +489,7 @@ void main() {
       // The bundle declares a function-call-only constraint: it answers with
       // calls and nothing else, so there is no text to wait for — only no
       // repeated call.
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: _tinyGardenTools,
         supportsFunctionCalls: true,
@@ -523,7 +523,7 @@ void main() {
       maxTokens: 2048,
     );
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: _codelabTools,
         supportsFunctionCalls: true,

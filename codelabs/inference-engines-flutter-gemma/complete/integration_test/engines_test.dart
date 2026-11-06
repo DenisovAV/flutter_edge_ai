@@ -60,7 +60,7 @@ void main() {
       expect(await BuiltInAi.availability(), BuiltInAiAvailability.available);
 
       final builtIn = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-      final builtInChat = await builtIn.createChat(
+      final builtInChat = await builtIn.openChat(
         modelType: Models.builtIn.modelType,
         maxOutputTokens: 64,
       );
@@ -94,7 +94,7 @@ void main() {
     expect(await FlutterEdgeAi.isModelInstalled(fallback.id), isTrue);
 
     final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-    final chat = await inference.createChat(
+    final chat = await inference.openChat(
       modelType: fallback.modelType,
       maxOutputTokens: 64,
     );

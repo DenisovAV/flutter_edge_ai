@@ -57,7 +57,7 @@ void main() {
       );
 
       try {
-        final chat = await model.createChat(
+        final chat = await model.openChat(
           temperature: 1.0,
           topK: 64,
           topP: 0.95,
@@ -141,7 +141,7 @@ void main() {
       );
 
       try {
-        final chat = await model.createChat(
+        final chat = await model.openChat(
           temperature: 1.0,
           topK: 64,
           topP: 0.95,

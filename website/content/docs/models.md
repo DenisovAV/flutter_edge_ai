@@ -486,9 +486,10 @@ final model = await FlutterEdgeAi.getActiveModel(defaults: install.runtime);
 // `minOutputTokens` is a FLOOR, not a cap — leave `maxOutputTokens` unset (or
 // keep it >= `install.runtime?.minOutputTokens`). Passing the floor as the cap
 // would truncate a reasoning model mid-thought.
-final session = await model.createSession(
+final session = await model.openSession(
   enableThinking: install.runtime?.thinkingDeclared ?? false,
 );
+await session.close();
 ```
 
 `.onnx` repos install the whole ORT-GenAI **directory** — the ONNX resolver (carried by `OnnxEngine`) lists the repo, picks a CPU execution-provider folder (the bundled runtime is CPU-only; pin one with `OnnxHuggingFaceResolver(variant: …)`) and downloads every file in it; see [ONNX](/docs/onnx). `.builtIn` repos surface that OS models have no Hugging Face file.

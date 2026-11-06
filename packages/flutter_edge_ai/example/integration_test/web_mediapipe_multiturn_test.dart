@@ -148,7 +148,7 @@ void main() {
       timeout: const Timeout(Duration(minutes: 20)),
       (tester) async {
         final model = await _load(task);
-        final chat = await model.createChat(
+        final chat = await model.openChat(
           modelType: task.type,
           temperature: 0,
           topK: 1,
@@ -177,7 +177,7 @@ void main() {
           );
 
           // A second chat: the reply of turn 1 is a number the model must use.
-          final numbers = await model.createChat(
+          final numbers = await model.openChat(
             modelType: task.type,
             temperature: 0,
             topK: 1,
@@ -219,7 +219,7 @@ void main() {
       timeout: const Timeout(Duration(minutes: 20)),
       (tester) async {
         final model = await _load(task);
-        final chat = await model.createChat(
+        final chat = await model.openChat(
           modelType: task.type,
           temperature: 0,
           topK: 1,

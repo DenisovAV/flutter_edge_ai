@@ -138,9 +138,9 @@ final canOpen = rag.canOpen(spec);
 `flutter_edge_ai`'s per-platform qualification gate.
 
 **Model features are flags you set**: `supportImage` and `supportAudio` on
-`getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `createChat`
+`getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `openChat`
 (a MediaPipe chat on Android or iOS also needs `supportImage: true` on
-`createChat`, or the image is dropped).
+`openChat`, or the image is dropped).
 ONNX and Built-in AI, and LiteRT-LM on web, throw `UnsupportedError` for image
 or audio input they cannot take.
 

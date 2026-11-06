@@ -1,4 +1,5 @@
 ## Unreleased
+- README examples use `openSession`/`openChat` and close returned handles.
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and image support.
 - `responseFormat` wired to Apple, Chrome and Windows schemas; each refused until its device run.
 - `getResponse`/`getResponseAsync` on a closed session fail asynchronously instead of throwing.

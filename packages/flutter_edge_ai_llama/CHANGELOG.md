@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Examples use `openSession`/`openChat` and close returned handles.
 - `responseFormat` on `openSession`/`openChat`, enforced by llamadart's grammar (#195).
 
 ## 0.0.6

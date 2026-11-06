@@ -15,7 +15,7 @@ await FlutterEdgeAi.installModel(
 ).fromNetwork('https://.../gemma-4-E2B-it.litertlm').install();
 
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
-final chat = await model.createChat();
+final chat = await model.openChat();
 await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
 final response = await chat.generateChatResponse();''';
 

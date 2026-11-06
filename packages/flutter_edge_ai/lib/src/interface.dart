@@ -82,7 +82,7 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// shared by input (system prompt + history + current message) AND the
   /// generated output, i.e. the KV-cache budget. It is NOT the maximum
   /// response length — to cap how much is generated, use `maxOutputTokens`
-  /// on [InferenceModel.createSession]. `.litertlm` models require a context
+  /// on [InferenceModel.openSession]. `.litertlm` models require a context
   /// window of at least 1024 (their baked `kv_cache_max_len`); a smaller
   /// value is clamped up to 1024 to avoid a native tensor-allocation crash
   /// (#318). The default (1024) is safe for every supported model.
@@ -261,8 +261,13 @@ abstract class InferenceModel {
   /// For concurrent dialogues on a single loaded model use [openSession]
   /// instead — it returns detached sessions that don't touch this field.
   /// Read [sessions] to enumerate all live sessions (legacy + open).
+  @Deprecated('Keep the session openSession() returns. Removed in 3.0.0.')
   InferenceModelSession? get session;
 
+  /// The single chat created via [createChat].
+  ///
+  /// Keep the value returned by [openChat] instead and close it when done.
+  @Deprecated('Keep the chat openChat() returns. Removed in 3.0.0.')
   InferenceChat? chat;
 
   int get maxTokens;
@@ -319,6 +324,10 @@ abstract class InferenceModel {
   /// below it (#318). Currently honored on the `.litertlm` (FFI) path; the
   /// MediaPipe `.task` path has no session-level output cap and ignores it
   /// (a log line is emitted).
+  @Deprecated(
+    'Use openSession(). It does not close the previous session: '
+    'close each session yourself. Removed in 3.0.0.',
+  )
   Future<InferenceModelSession> createSession({
     double? temperature,
     int? randomSeed,
@@ -346,8 +355,8 @@ abstract class InferenceModel {
   /// tabbed chat UI, two different system instructions / roles side by side,
   /// or background summarization alongside an active chat — without reloading
   /// the weights or clearing+rebuilding a single session's history on every
-  /// switch. If you only ever have one conversation at a time, use
-  /// [createSession] / [createChat] instead.
+  /// switch. Keep every returned handle and close it when done, including
+  /// when only one conversation is open.
   ///
   /// Unlike [createSession], this does NOT modify the legacy [session]
   /// field. Concurrent sessions are tracked separately and surface via
@@ -539,7 +548,7 @@ abstract class InferenceModel {
         UnsupportedError('openSession() is not supported for $runtimeType.'),
       );
 
-  /// Every live session: the legacy [session] (if any) and each open
+  /// Every live session: the deprecated [session] (if any) and each open
   /// session, as the caller holds it. Returns an unmodifiable list; mutate
   /// via [openSession], `session.close()`, or [close]. Engines report theirs
   /// through [engineSessions].
@@ -554,6 +563,10 @@ abstract class InferenceModel {
     if (session != null) session!,
   ];
 
+  /// Creates a chat in the legacy singleton lane, closing its prior session.
+  ///
+  /// Use [openChat] and close the returned chat when done.
+  @Deprecated('Use openChat() and close the chat when done. Removed in 3.0.0.')
   Future<InferenceChat> createChat({
     double? temperature,
     int? randomSeed,
@@ -613,10 +626,8 @@ abstract class InferenceModel {
     return chat!;
   }
 
-  /// Same as [createChat], but uses [openSession] internally so the
-  /// resulting chat owns an independent session that does not touch the
-  /// legacy [session] field or other open chats. Use this when you need
-  /// concurrent chats on a single loaded model.
+  /// Opens a chat that owns an independent [openSession] and does not touch
+  /// other open chats. Keep the returned chat and close it when done.
   ///
   /// Each chat's own context-overflow rotation
   /// (`_recreateSessionWithReducedChunks`) creates a fresh sibling
@@ -627,9 +638,8 @@ abstract class InferenceModel {
   /// singleton. Hold the returned chat reference yourself and close it
   /// when done.
   ///
-  /// An unset value is the model's own, as [createChat] fills it: the engine
-  /// resolves the request ([resolveChatRequest]), so a model whose type is
-  /// not Gemma gets its own parsers here too.
+  /// An unset value is filled from the model by [resolveChatRequest], so a
+  /// model whose type is not Gemma gets its own parsers here too.
   ///
   /// [responseFormat] — what every reply must be, as on [openSession]: every
   /// session of the chat, its rebuilt ones too, is opened with it. A reply

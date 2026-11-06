@@ -101,7 +101,7 @@ Future<_Turn> _turn(
   final thinking = StringBuffer();
   final answer = StringBuffer();
   try {
-    final chat = await model.createChat(
+    final chat = await model.openChat(
       topK: 1,
       enableThinking: enableThinking,
       maxOutputTokens: _maxOutputTokens,
@@ -205,7 +205,7 @@ void main() {
       'tool and answers from its result ($_backendName)', (tester) async {
     final model = await _activeModel(_budget);
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: const [_multiply],
         supportsFunctionCalls: true,

@@ -15,7 +15,7 @@ void main() {
 
   testWidgets('getPlatformVersion test', (tester) async {
     final InferenceModel model = await FlutterEdgeAi.getActiveModel();
-    final InferenceModelSession session = await model.createSession();
+    final InferenceModelSession session = await model.openSession();
     final String response = await session.getResponse();
     // The version string depends on the host platform running the test, so
     // just assert that some non-empty string is returned.

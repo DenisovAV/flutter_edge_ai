@@ -1,4 +1,5 @@
 ## Unreleased
+- Each request opens its owned chat through `openChat`.
 - An output schema goes to the model as `responseFormat` when it enforces one (#195).
 - The embedder passes Genkit's cancel to `embedAll`.
 

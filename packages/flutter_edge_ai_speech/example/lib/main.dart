@@ -125,7 +125,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
     _tokenController.dispose();
     _recorder.dispose();
     _player.dispose();
-    _toolsChat?.session.close();
+    _toolsChat?.close();
     _agent?.close();
     _model?.close();
     _recognizer?.close();
@@ -257,14 +257,14 @@ class _VoiceHomePageState extends State<VoiceHomePage> {
   }
 
   Future<void> _bindMode(VoiceMode mode) async {
-    await _toolsChat?.session.close();
+    await _toolsChat?.close();
     _toolsChat = null;
     await _agent?.close();
     _agent = null;
 
     final model = _model!;
     if (mode == VoiceMode.tools) {
-      _toolsChat = await model.createChat(
+      _toolsChat = await model.openChat(
         tools: _tools,
         supportsFunctionCalls: true,
         modelType: ModelType.gemma4,

@@ -2,6 +2,9 @@
 // text, is not kept by the chat, so the native session must not keep it
 // either. MediaPipe cannot take queued input back, so the session builds the
 // native session again and replays what it held before the turn.
+// The deprecated calls verify replacement/rebuild ordering in the legacy lane.
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 import 'dart:typed_data';
 

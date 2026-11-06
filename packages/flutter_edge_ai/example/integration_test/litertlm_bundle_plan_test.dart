@@ -167,7 +167,7 @@ void main() {
     expect(model.activeBackend, PreferredBackend.gpu);
     expect(model.activeVisionBackend, PreferredBackend.cpu);
     expect(model.activeAudioBackend, PreferredBackend.cpu);
-    final session = await model.createSession(maxOutputTokens: 16);
+    final session = await model.openSession(maxOutputTokens: 16);
     await session.addQueryChunk(
       const Message(text: 'Say the word hello.', isUser: true),
     );

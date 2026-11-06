@@ -67,7 +67,7 @@ void main() {
       maxTokens: 1024,
       preferredBackend: PreferredBackend.cpu,
     );
-    final chat = await model.createChat(
+    final chat = await model.openChat(
       tools: _tools,
       supportsFunctionCalls: true,
       modelType: ModelType.gemmaIt,

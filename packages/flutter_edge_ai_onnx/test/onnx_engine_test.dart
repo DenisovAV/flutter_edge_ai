@@ -152,7 +152,7 @@ void main() {
           RuntimeConfig(maxTokens: 1024, modelPath: modelFile.path),
         );
 
-        final session = await model.createSession(temperature: 0.7);
+        final session = await model.openSession(temperature: 0.7);
         await session.addQueryChunk(const Message(text: 'Hi', isUser: true));
         await session.getResponse();
 

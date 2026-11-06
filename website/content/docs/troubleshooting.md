@@ -66,11 +66,11 @@ Auth errors (401/403/404) fail fast after one attempt — they are not retried. 
 
 `.litertlm` models require a context window of at least **1024**. Passing a smaller `maxTokens` (e.g. `100`) used to crash with `DYNAMIC_UPDATE_SLICE failed to prepare` / `Failed to allocate tensors` (even on CPU — the failure is at graph compile, before the backend runs). As of **`flutter_gemma_litertlm` 1.0.2** a too-small `maxTokens` is clamped up to 1024 automatically with a log warning — except on `PreferredBackend.npu`, where the context is baked into the compiled bundle (see [NPU](#npu)).
 
-To limit how many tokens the model **generates**, use `maxOutputTokens` on `createSession`/`openSession`/`createChat`/`openChat` instead:
+To limit how many tokens the model **generates**, use `maxOutputTokens` on `openSession` or `openChat` instead:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024); // context window
-final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
+final chat = await model.openChat(maxOutputTokens: 100);        // reply cap
 ```
 
 (`maxOutputTokens` is honored on `.litertlm` and ONNX; the MediaPipe `.task` path has no session-level output cap and ignores it.)
@@ -358,7 +358,7 @@ if you hit it.
 ## Multimodal
 
 - Ensure the model has a vision (or audio) encoder — see [Multimodal](/docs/multimodal) and [Models](/docs/models).
-- Set `supportImage: true` (and `supportAudio: true` for audio) when creating the model. On MediaPipe (Android and iOS), pass `supportImage: true` to `createChat` as well, or the image is dropped.
+- Set `supportImage: true` (and `supportAudio: true` for audio) when creating the model. On MediaPipe (Android and iOS), pass `supportImage: true` to `openChat` as well, or the image is dropped.
 - Check device memory — multimodal models require more RAM.
 - **Image input crashes at model load on a GPU text backend (older releases).**
   On Metal (iOS/macOS) and WebGPU (Windows/Linux) the vision encoder's ops can't

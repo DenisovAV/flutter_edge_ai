@@ -52,7 +52,7 @@ await FlutterEdgeAi.installModel(
 ).fromFile('$path/genai_config.json').install();
 ```
 
-Sessions, chats and streaming work as in the flutter-edge-ai-inference skill, except that `openSession` / `openChat` need `flutter_edge_ai_onnx` 0.8.0 natively and a later release on web, where each session keeps its own history on the shared Transformers.js pipeline, holds no KV cache and is uncapped unless `maxConcurrentSessions` is set. Natively each opened session has its own generator, whose KV cache is `maxTokens` × 2 × layers × KV heads × head size × dtype size once it has had a turn (0.75 MiB per token for Phi-3.5-mini int4), so more than `maxConcurrentSessions` throws a `StateError` (unset: 2 on Android and iOS, unlimited on desktop; the `createSession` session is not counted). `FlutterEdgeAi.openModel` is not supported either (`UnsupportedError` before anything loads; on a host outside ONNX's platforms no engine claims the spec, so `StateError`): use `getActiveModel`. Pass `modelType` to `createChat` for function calling; ONNX falls back to `ModelType.gemmaIt`.
+Sessions, chats and streaming work as in the flutter-edge-ai-inference skill, except that `openSession` / `openChat` need `flutter_edge_ai_onnx` 0.8.0 natively and a later release on web, where each session keeps its own history on the shared Transformers.js pipeline, holds no KV cache and is uncapped unless `maxConcurrentSessions` is set. Natively each opened session has its own generator, whose KV cache is `maxTokens` × 2 × layers × KV heads × head size × dtype size once it has had a turn (0.75 MiB per token for Phi-3.5-mini int4), so more than `maxConcurrentSessions` throws a `StateError` (unset: 2 on Android and iOS, unlimited on desktop). `FlutterEdgeAi.openModel` is not supported either (`UnsupportedError` before anything loads; on a host outside ONNX's platforms no engine claims the spec, so `StateError`): use `getActiveModel`.
 
 ## Structured output
 
@@ -76,7 +76,7 @@ await FlutterEdgeAi.installModel(
 ).fromNetwork('https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct').install();
 ```
 
-The repo must be in Transformers.js layout, as the `onnx-community` ones are. ORT-GenAI repos such as `microsoft/Phi-3.5-mini-instruct-onnx` do not run in the browser. `fromFile` and `fromAsset` install on web without complaint and then throw `UnsupportedError` from the first `createSession` — on web the model identity has to be a repo, not a file. `fromBundled('<id>')` serves one from the app's own origin. `PreferredBackend.cpu` forces WASM; anything else tries WebGPU first.
+The repo must be in Transformers.js layout, as the `onnx-community` ones are. ORT-GenAI repos such as `microsoft/Phi-3.5-mini-instruct-onnx` do not run in the browser. `fromFile` and `fromAsset` install on web without complaint and then throw `UnsupportedError` from the first `openSession` — on web the model identity has to be a repo, not a file. `fromBundled('<id>')` serves one from the app's own origin. `PreferredBackend.cpu` forces WASM; anything else tries WebGPU first.
 
 Add to `web/index.html` `<head>`, before Flutter boots — the first script for generation, the second for embeddings:
 

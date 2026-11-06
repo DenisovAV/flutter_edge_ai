@@ -118,7 +118,7 @@ void main() {
         ),
       );
       addTearDown(model.close);
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         supportAudio: true,
         temperature: 0,
         maxOutputTokens: 128,
@@ -152,7 +152,7 @@ void main() {
         ),
       );
       addTearDown(model.close);
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         supportImage: true,
         temperature: 0,
         maxOutputTokens: 128,
@@ -213,7 +213,7 @@ void main() {
       );
       addTearDown(model.close);
       expect(model.activeBackend, edge.PreferredBackend.gpu);
-      final chat = await model.createChat(temperature: 0, maxOutputTokens: 16);
+      final chat = await model.openChat(temperature: 0, maxOutputTokens: 16);
       await chat.addQuery(edge.Message.text(text: 'Hello', isUser: true));
       expect(
         (await chat.generateChatResponse() as edge.TextResponse).token,

@@ -9,8 +9,8 @@ Packages, engine and model install are in the flutter-edge-ai-inference skill. T
 
 ## Rules
 
-1. `createChat` needs `tools` and `supportsFunctionCalls: true`. Without the flag no call is parsed and only a debug warning is logged — and on `.litertlm` with Gemma 4 or FunctionGemma the declarations still reach the SDK, so the model answers with raw tool-call JSON inside the text stream.
-2. Pass `modelType` to legacy `createChat` on MediaPipe Web, LiteRT-LM Web, and native or web ONNX: those create paths still fall back to `ModelType.gemmaIt`, and another model's calls then arrive as raw text. `openChat` on native LiteRT-LM, MediaPipe Android/iOS/Web, built-in AI, native/web ONNX and llama.cpp takes the installed model's type when it is omitted. LiteRT-LM Web still uses core's Gemma default, so pass `modelType` there. On `flutter_edge_ai_llama`, the GGUF chat template parses calls itself; `modelType` only selects sampling defaults, and tools are enabled unless `supportsFunctionCalls: false`.
+1. `openChat` needs `tools` and `supportsFunctionCalls: true`. Without the flag no call is parsed and only a debug warning is logged — and on `.litertlm` with Gemma 4 or FunctionGemma the declarations still reach the SDK, so the model answers with raw tool-call JSON inside the text stream.
+2. `openChat` on native LiteRT-LM, MediaPipe Android/iOS/Web, built-in AI, native/web ONNX and llama.cpp takes the installed model's type when it is omitted. LiteRT-LM Web still uses core's Gemma default, so pass `modelType` there or another model's calls arrive as raw text. On `flutter_edge_ai_llama`, the GGUF chat template parses calls itself; `modelType` only selects sampling defaults, and tools are enabled unless `supportsFunctionCalls: false`.
 3. Switch over all four `ModelResponse` subtypes. It is sealed — a switch that leaves out `ThinkingResponse` does not compile.
 4. Return tool results as data, errors included. Never throw from a tool.
 5. Prefer `generateChatResponseWithTools` to a hand-written loop.
@@ -46,7 +46,7 @@ const changeColor = Tool(
 ## Open the chat
 
 ```dart
-final InferenceChat chat = await model.createChat(
+final InferenceChat chat = await model.openChat(
   tools: myTools,
   supportsFunctionCalls: true,
   modelType: ModelType.gemma4,
@@ -166,4 +166,4 @@ The model can recover from an error it can read. An exception thrown out of a to
 
 ## Web
 
-Function calling works on the `.litertlm` web engine. Pass `modelType`. On web `createSession` and `createChat` hold one slot: a second `createChat` while the first is open hands back the open session, history and all. Close the chat before creating the next, or use `openChat` for conversations that run side by side.
+Function calling works on the `.litertlm` web engine. Each `openChat` owns an independent conversation on the shared model; close every chat when done.

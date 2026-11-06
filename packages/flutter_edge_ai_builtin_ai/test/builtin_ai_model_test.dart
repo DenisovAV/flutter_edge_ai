@@ -1,3 +1,6 @@
+// These tests cover the legacy singleton lane alongside open sessions.
+// ignore_for_file: deprecated_member_use
+
 // The model is where the two flutter_edge_ai session lanes meet flutter_local_ai:
 // `createSession` keeps a singleton (replacing and closing its predecessor)
 // while `openSession` returns detached sessions. Both lanes are newly routed

@@ -16,8 +16,12 @@ await FlutterEdgeAi.installModel(
 
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
 final chat = await model.openChat();
-await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
-final response = await chat.generateChatResponse();''';
+try {
+  await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
+  final response = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}''';
 
 /// Static code block showing canonical flutter_edge_ai usage.
 class QuickStart extends StatelessComponent {

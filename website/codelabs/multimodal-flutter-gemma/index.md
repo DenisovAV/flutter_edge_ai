@@ -37,7 +37,7 @@ and the rest of your chat code does not move.
 
 The flag goes in **two** places, and this is the trap: on `getActiveModel`,
 where the engine is built and decides whether to load a vision or audio
-executor, *and* on `openChat`, where the session declares what it will send.
+executor, *and* on `createChat`, where the session declares what it will send.
 Set it only on the chat and nothing complains — the model downloads, the engine
 starts, the UI offers you the camera — until the first picture, when native
 fails the turn with `INVALID_ARGUMENT: Vision executor should not be null`.
@@ -58,7 +58,7 @@ each.
 
 * how to attach an image with `Message.withImages` and a clip with
   `Message.withAudio`
-* what `supportImage` / `supportAudio` on `openChat` actually switch on, and
+* what `supportImage` / `supportAudio` on `createChat` actually switch on, and
   why the same flag has to go on `getActiveModel` as well
 * what a second modality costs when the weights do not have it, and why one
   checkpoint carrying both beats two that carry one each
@@ -136,7 +136,7 @@ text.
   /// a microphone, says yes.
   /// Run on macOS 2026-09-07: installs (0.36 GB) and answers "RED" to a
   /// 16x16 red square, with `supportImage` set on both `getActiveModel` and
-  /// `openChat`. Nothing in CI runs a model, so this line is the only
+  /// `createChat`. Nothing in CI runs a model, so this line is the only
   /// evidence these weights were ever executed.
   static const smolVlm2 = ModelChoice(
     nativeLabel: 'SmolVLM2 500M',
@@ -174,7 +174,7 @@ do not even agree on which *model* it is. On the web this one resolves to the
 Gemma 4 E2B web build: the same file Step 3 installs in the browser, here from
 Step 1 on. `modelType` has to follow the platform for the same reason the
 URL does — `general` for SmolVLM2, `gemma4` for the substitute — and every call
-site (`main.dart`'s gate, `download_page.dart`, `openChat`) reads it through
+site (`main.dart`'s gate, `download_page.dart`, `createChat`) reads it through
 one getter, so the two can never drift apart the way two independently-set
 fields could.
 
@@ -256,7 +256,7 @@ Now look at the call that opens the chat, because that is where this codelab's
 central change lands:
 
 ```dart
-      final chat = await inference.openChat(
+      final chat = await inference.createChat(
         modelType: widget.model.modelType,
         maxOutputTokens: 256,
       );
@@ -268,7 +268,7 @@ file with one more capability switched on.
 
 ### One checkpoint, several sessions
 
-`openChat` takes `supportImage` and `supportAudio`. They map to
+`createChat` takes `supportImage` and `supportAudio`. They map to
 `enableVisionModality` and `enableAudioModality` on the native session. Set
 neither and you get a text session. Set one and the same weights will take
 pictures. Set both and they will take pictures and sound.
@@ -387,7 +387,7 @@ permission is never requested. Windows, Linux and the web need nothing.
 One argument:
 
 ```dart
-      final chat = await inference.openChat(
+      final chat = await inference.createChat(
         modelType: widget.model.modelType,
         // The session half of "this chat can see". It maps to
         // `enableVisionModality` on the native session — a session flag, not a
@@ -507,7 +507,7 @@ it, and the turn fails: `addQueryChunk` throws `UnsupportedError`, and the
 `catch` in `_send` puts it in the reply bubble — *"⚠️ Unsupported operation:
 Web LiteRT-LM does not support image input for LLMs yet…"*, or *audio input*
 for a clip. Nothing reaches the model, and the next text-only turn works as
-before. A debug build also prints one line at `openChat`, saying the
+before. A debug build also prints one line at `createChat`, saying the
 modalities were requested and an image or audio message will throw; a release
 build does not, because `edgeAiLog` compiles out of release entirely. The error
 in the bubble is there either way. It is an honest failure, and a late one: the
@@ -639,7 +639,7 @@ Windows and Linux need nothing declared either.
 On the session:
 
 ```dart
-      final chat = await inference.openChat(
+      final chat = await inference.createChat(
         modelType: widget.model.modelType,
         // Two flags, ONE model. They map to `enableVisionModality` and
         // `enableAudioModality` on the native session. Step 2's model had no
@@ -862,7 +862,7 @@ room that knows which.
 ### The flags stop being constants
 
 ```dart
-      final chat = await inference.openChat(
+      final chat = await inference.createChat(
         modelType: widget.model.modelType,
         // Still two session flags on one model — but no longer hard-coded
         // `true`. Each is the AND of both answers: what the weights accept
@@ -1049,7 +1049,7 @@ Two downloads, two modalities, one model at the end — and an app that knows
 where it can use them.
 
 * **Function calling** turns the model's answer into an action, and the same
-  `openChat` grows a `tools:` argument for it
+  `createChat` grows a `tools:` argument for it
 * **Speech-to-text** (`flutter_edge_ai_speech`) is the other way to use a
   microphone: transcribe first, then send text — which works on models with no
   audio encoder at all, Step 2's SmolVLM2 among them, and is often the cheaper

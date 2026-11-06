@@ -653,15 +653,19 @@ void main() {
               topK: _benchmarkTopK,
               modelType: ModelType.gemmaIt,
             );
-            final result = await _runTextBenchmark(
-              modelName: modelConfig.name,
-              load: load,
-              chat: chat,
-              category: 'text',
-              testName: name,
-              question: question,
-            );
-            _allResults.add(result);
+            try {
+              final result = await _runTextBenchmark(
+                modelName: modelConfig.name,
+                load: load,
+                chat: chat,
+                category: 'text',
+                testName: name,
+                question: question,
+              );
+              _allResults.add(result);
+            } finally {
+              await chat.close();
+            }
           }
         } finally {
           await model.close();

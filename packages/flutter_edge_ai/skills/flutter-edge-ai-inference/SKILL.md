@@ -113,6 +113,11 @@ final model = await FlutterEdgeAi.getActiveModel(maxTokens: 100);
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 final session = await model.openSession(maxOutputTokens: 100);
+try {
+  // Use session for this conversation.
+} finally {
+  await session.close();
+}
 ```
 
 Use 4096 or more with images or audio — one image costs hundreds of tokens.
@@ -307,9 +312,14 @@ await chat.close();
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096, supportImage: true);
 final chat = await model.openChat(supportImage: true);
-await chat.addQueryChunk(
-  Message(text: 'What is in this photo?', isUser: true, imageBytes: bytes),
-);
+try {
+  await chat.addQueryChunk(
+    Message(text: 'What is in this photo?', isUser: true, imageBytes: bytes),
+  );
+  final response = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}
 ```
 
 On web, images need a MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` (same Hugging Face repo as the `.litertlm`, `ModelFileType.task`, the flutter-edge-ai-mediapipe skill). On that build Gemma 4 has no thinking, and its tools never reach the model. The `.litertlm` web engine is text-only: `supportImage: true` loads without error, but `addQueryChunk` with an image throws `UnsupportedError`.
@@ -319,9 +329,14 @@ On web, images need a MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096, supportAudio: true);
 final chat = await model.openChat(supportAudio: true);
-await chat.addQueryChunk(
-  Message(text: 'What is said in this recording?', isUser: true, audioBytes: bytes),
-);
+try {
+  await chat.addQueryChunk(
+    Message(text: 'What is said in this recording?', isUser: true, audioBytes: bytes),
+  );
+  final response = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}
 ```
 
 `audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop (VibeVoice-ASR also takes audio, for transcription only; measured on Android and macOS); on the `.litertlm` web engine an audio message throws `UnsupportedError`.

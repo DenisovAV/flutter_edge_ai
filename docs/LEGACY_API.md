@@ -288,7 +288,6 @@ final chat = await inferenceModel.openChat(
   // isThinking: false, // Enable thinking mode, default: false
   // modelType: ModelType.gemmaIt, // Model type, default: ModelType.gemmaIt
 );
-await chat.close(); // Keep the chat open while it is in use, then close it.
 ```
 
 **🖼️ Multimodal Chat:**
@@ -300,7 +299,6 @@ final chat = await inferenceModel.openChat(
   supportImage: true, // Enable image support in chat
   // tokenBuffer: 256, // Token buffer size for context management
 );
-await chat.close();
 ```
 
 **🧠 Thinking Mode Chat (DeepSeek Models):**
@@ -313,73 +311,83 @@ final chat = await inferenceModel.openChat(
   modelType: ModelType.deepSeek, // Specify DeepSeek model type
   // supportsFunctionCalls: true, // Enable function calling for DeepSeek models
 );
-await chat.close();
 ```
 
 1) **Synchronous Chat:**
 
 ```dart
-await chat.addQueryChunk(Message.text(text: 'User: Hello, who are you?', isUser: true));
-ModelResponse response = await chat.generateChatResponse();
-if (response is TextResponse) {
-  print(response.token);
-}
+try {
+  await chat.addQueryChunk(Message.text(text: 'User: Hello, who are you?', isUser: true));
+  ModelResponse response = await chat.generateChatResponse();
+  if (response is TextResponse) {
+    print(response.token);
+  }
 
-await chat.addQueryChunk(Message.text(text: 'User: Are you sure?', isUser: true));
-ModelResponse response2 = await chat.generateChatResponse();
-if (response2 is TextResponse) {
-  print(response2.token);
+  await chat.addQueryChunk(Message.text(text: 'User: Are you sure?', isUser: true));
+  ModelResponse response2 = await chat.generateChatResponse();
+  if (response2 is TextResponse) {
+    print(response2.token);
+  }
+} finally {
+  await chat.close();
 }
 ```
 
 2) **🖼️ Multimodal Chat Example:**
 
 ```dart
-// Add text message
-await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
-ModelResponse response1 = await chat.generateChatResponse();
-if (response1 is TextResponse) {
-  print(response1.token);
-}
+try {
+  // Add text message
+  await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
+  ModelResponse response1 = await chat.generateChatResponse();
+  if (response1 is TextResponse) {
+    print(response1.token);
+  }
 
-// Add image message
-final imageBytes = await loadImageBytes();
-await chat.addQueryChunk(Message.withImage(
-  text: 'Can you analyze this image?',
-  imageBytes: imageBytes,
-  isUser: true,
-));
-ModelResponse response2 = await chat.generateChatResponse();
-if (response2 is TextResponse) {
-  print(response2.token);
-}
+  // Add image message
+  final imageBytes = await loadImageBytes();
+  await chat.addQueryChunk(Message.withImage(
+    text: 'Can you analyze this image?',
+    imageBytes: imageBytes,
+    isUser: true,
+  ));
+  ModelResponse response2 = await chat.generateChatResponse();
+  if (response2 is TextResponse) {
+    print(response2.token);
+  }
 
-// Add image-only message
-await chat.addQueryChunk(Message.imageOnly(imageBytes: imageBytes, isUser: true));
-ModelResponse response3 = await chat.generateChatResponse();
-if (response3 is TextResponse) {
-  print(response3.token);
+  // Add image-only message
+  await chat.addQueryChunk(Message.imageOnly(imageBytes: imageBytes, isUser: true));
+  ModelResponse response3 = await chat.generateChatResponse();
+  if (response3 is TextResponse) {
+    print(response3.token);
+  }
+} finally {
+  await chat.close();
 }
 ```
 
 3) **Asynchronous Chat (Streaming):**
 
 ```dart
-await chat.addQueryChunk(Message.text(text: 'User: Hello, who are you?', isUser: true));
-
-chat.generateChatResponseAsync().listen((ModelResponse response) {
-  if (response is TextResponse) {
-    print(response.token);
-  } else if (response is FunctionCallResponse) {
-    print('Function call: ${response.name}');
-  } else if (response is ThinkingResponse) {
-    print('Thinking: ${response.content}');
+try {
+  await chat.addQueryChunk(Message.text(text: 'User: Hello, who are you?', isUser: true));
+  await for (final response in chat.generateChatResponseAsync()) {
+    if (response is TextResponse) {
+      print(response.token);
+    } else if (response is FunctionCallResponse) {
+      print('Function call: ${response.name}');
+    } else if (response is ThinkingResponse) {
+      print('Thinking: ${response.content}');
+    }
   }
-}, onDone: () {
   print('Chat stream closed');
-}, onError: (error) {
+} catch (error) {
   print('Chat error: $error');
-});
+  rethrow;
+} finally {
+  await chat.close();
+}
 ```
 
 8. **🛠️ Function Calling**

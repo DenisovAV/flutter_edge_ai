@@ -483,7 +483,7 @@ Future<void> _ask() async {
   InferenceModelSession? session;
   String? failure;
   try {
-    session = await model.openSession();
+    session = await model.createSession();
     await session.addQueryChunk(Message.text(text: text, isUser: true));
     final answer = await session.getResponse();
     if (mounted) setState(() => _answer = answer);
@@ -641,7 +641,7 @@ Run the `complete` app. It follows the whole built-in path, one tap per step:
 launch / resume / Check again → availability() → status card
 Prepare tap                   → ensureReady()   → status card
 Start tap                     → install builtIn → getActiveModel()
-Ask tap                       → openSession() → stream answer → close()
+Ask tap                       → createSession() → stream answer → close()
 ```
 
 No model or session code names Gemini Nano or Apple Foundation Models.

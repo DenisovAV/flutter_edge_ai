@@ -101,7 +101,7 @@ opens the model and a chat:
 
 ```dart
 final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final chat = await inference.openChat(
+final chat = await inference.createChat(
   modelType: widget.model.modelType,
   maxOutputTokens: 512,
 );

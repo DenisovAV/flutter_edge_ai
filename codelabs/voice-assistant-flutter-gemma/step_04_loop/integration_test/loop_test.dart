@@ -75,7 +75,7 @@ void main() {
     final stt = await FlutterEdgeAi.getActiveStt();
     final tts = await FlutterEdgeAi.getActiveTts();
     final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-    final chat = await inference.openChat(
+    final chat = await inference.createChat(
       modelType: model.modelType,
       systemInstruction:
           'You are a voice assistant. Your reply is read aloud by a speech '

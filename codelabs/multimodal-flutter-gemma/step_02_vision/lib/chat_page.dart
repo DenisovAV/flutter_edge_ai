@@ -69,7 +69,7 @@ class _ChatPageState extends State<ChatPage> {
         maxTokens: 4096,
         supportImage: true,
       );
-      // Hold the runtime before opening a chat on it: `openChat` can throw,
+      // Hold the runtime before opening a chat on it: `createChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
       if (!mounted) {
@@ -78,7 +78,7 @@ class _ChatPageState extends State<ChatPage> {
       }
       setState(() => _inference = inference);
 
-      final chat = await inference.openChat(
+      final chat = await inference.createChat(
         modelType: widget.model.modelType,
         // The session half of "this chat can see". It maps to
         // `enableVisionModality` on the native session — a session flag, not a

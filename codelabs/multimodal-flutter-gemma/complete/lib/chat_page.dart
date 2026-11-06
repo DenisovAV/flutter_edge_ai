@@ -119,7 +119,7 @@ class _ChatPageState extends State<ChatPage> {
         supportImage: _imageCapability.available,
         supportAudio: _audioCapability.available,
       );
-      // Hold the runtime before opening a chat on it: `openChat` can throw,
+      // Hold the runtime before opening a chat on it: `createChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
       if (!mounted) {
@@ -128,7 +128,7 @@ class _ChatPageState extends State<ChatPage> {
       }
       setState(() => _inference = inference);
 
-      final chat = await inference.openChat(
+      final chat = await inference.createChat(
         modelType: widget.model.modelType,
         // Still two session flags on one model — but no longer hard-coded
         // `true`. Each is the AND of both answers: what the weights accept

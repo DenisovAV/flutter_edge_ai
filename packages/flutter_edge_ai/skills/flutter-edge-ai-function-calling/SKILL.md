@@ -58,17 +58,21 @@ final InferenceChat chat = await model.openChat(
 It calls the handler for each tool call, feeds the result back, and continues until the model answers in text or `maxToolTurns` is reached.
 
 ```dart
-await chat.addQueryChunk(Message(text: prompt, isUser: true));
-final answer = StringBuffer();
-await for (final r in chat.generateChatResponseWithTools(
-  onToolCall: (FunctionCallResponse call) {
-    answer.clear(); // text streamed before a call is not the answer
-    return runTool(call.name, call.args);
-  },
-  maxToolTurns: 8,
-  onMaxToolTurns: () => print('stopped after 8 tool turns'),
-)) {
-  if (r is TextResponse) answer.write(r.token);
+try {
+  await chat.addQueryChunk(Message(text: prompt, isUser: true));
+  final answer = StringBuffer();
+  await for (final r in chat.generateChatResponseWithTools(
+    onToolCall: (FunctionCallResponse call) {
+      answer.clear(); // text streamed before a call is not the answer
+      return runTool(call.name, call.args);
+    },
+    maxToolTurns: 8,
+    onMaxToolTurns: () => print('stopped after 8 tool turns'),
+  )) {
+    if (r is TextResponse) answer.write(r.token);
+  }
+} finally {
+  await chat.close();
 }
 ```
 

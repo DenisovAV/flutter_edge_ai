@@ -79,7 +79,7 @@ void main() {
       supportAudio: audio.available,
     );
     // Exactly what the app opens: both flags, each ANDed with the platform.
-    final chat = await inference.openChat(
+    final chat = await inference.createChat(
       modelType: model.modelType,
       supportImage: image.available,
       supportAudio: audio.available,

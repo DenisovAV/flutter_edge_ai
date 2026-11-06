@@ -225,7 +225,11 @@ final voice = VoiceSession.fromChat(
   synthesizer: synth,
 );
 
-await for (final event in voice.runAudioTurn(pcm16kMono)) {
-  if (event is VoiceReplyTextEvent) print(event.chunk);
+try {
+  await for (final event in voice.runAudioTurn(pcm16kMono)) {
+    if (event is VoiceReplyTextEvent) print(event.chunk);
+  }
+} finally {
+  await chat.close();
 }
 ```

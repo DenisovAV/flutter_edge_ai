@@ -182,6 +182,11 @@ final toolChat = await model.openChat(
   supportsFunctionCalls: true,
   modelType: ModelType.functionGemma,
 );
+try {
+  // Use toolChat for this request or screen.
+} finally {
+  await toolChat.close();
+}
 ```
 
 Descriptions alone cannot cross-fit, so this router never abstains

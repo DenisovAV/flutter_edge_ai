@@ -100,7 +100,21 @@ class ChatScreenState extends State<ChatScreen> {
     _isInitializing = false; // Reset initialization flag
     _isModelInitialized = false; // Reset model flag
     final currentChat = chat;
-    if (currentChat != null) unawaited(currentChat.close());
+    if (currentChat != null) {
+      unawaited(
+        currentChat.close().catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[ChatScreen] ❌ Failed to close chat: $error');
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stackTrace,
+              library: 'flutter_edge_ai example',
+              context: ErrorDescription('while closing the chat screen'),
+            ),
+          );
+        }),
+      );
+    }
     super.dispose();
   }
 

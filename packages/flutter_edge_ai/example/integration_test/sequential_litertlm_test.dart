@@ -167,14 +167,21 @@ void main() {
         try {
           for (var i = 1; i <= 2; i++) {
             final chat = await model.openChat(modelType: modelType);
-            await chat.addQueryChunk(
-              Message(text: 'What is ${i * 10}? Answer briefly.', isUser: true),
-            );
-            final r = await chat.generateChatResponse();
-            expect(r, isA<TextResponse>());
-            final text = (r as TextResponse).token;
-            print('[$name] New chat #$i response: "$text"');
-            expect(text, isNotEmpty);
+            try {
+              await chat.addQueryChunk(
+                Message(
+                  text: 'What is ${i * 10}? Answer briefly.',
+                  isUser: true,
+                ),
+              );
+              final r = await chat.generateChatResponse();
+              expect(r, isA<TextResponse>());
+              final text = (r as TextResponse).token;
+              print('[$name] New chat #$i response: "$text"');
+              expect(text, isNotEmpty);
+            } finally {
+              await chat.close();
+            }
           }
         } finally {
           await model.close();

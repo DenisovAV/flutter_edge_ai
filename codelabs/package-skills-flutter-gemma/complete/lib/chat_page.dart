@@ -48,7 +48,7 @@ class _ChatPageState extends State<ChatPage> {
         return;
       }
       setState(() => _inference = inference);
-      final chat = await inference.openChat(
+      final chat = await inference.createChat(
         // Without supportsFunctionCalls no call is parsed, and on Gemma 4 the
         // model's raw tool-call JSON lands in the reply text instead.
         tools: const [ColorTool.declaration],

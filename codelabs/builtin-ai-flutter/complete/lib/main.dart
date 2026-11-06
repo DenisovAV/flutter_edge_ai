@@ -192,7 +192,7 @@ class _BuiltInAiPageState extends State<BuiltInAiPage>
     try {
       // A fresh session makes each Ask independent and prevents invisible
       // history from filling the model's context window.
-      session = await model.openSession();
+      session = await model.createSession();
       await session.addQueryChunk(Message.text(text: text, isUser: true));
       final answer = StringBuffer();
       final finished = Completer<void>();

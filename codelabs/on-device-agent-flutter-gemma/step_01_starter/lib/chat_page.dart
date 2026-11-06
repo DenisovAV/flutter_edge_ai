@@ -50,7 +50,7 @@ class _ChatPageState extends State<ChatPage> {
       // 4096 leaves room for what an agent adds from Step 2 on: a list of
       // skills in the system prompt, a skill's instructions, tool results.
       final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-      // Hold the runtime before opening a chat on it: `openChat` can throw,
+      // Hold the runtime before opening a chat on it: `createChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
       if (!mounted) {
@@ -59,7 +59,7 @@ class _ChatPageState extends State<ChatPage> {
       }
       setState(() => _inference = inference);
 
-      final chat = await inference.openChat(
+      final chat = await inference.createChat(
         modelType: widget.model.modelType,
         maxOutputTokens: 512,
       );

@@ -415,7 +415,7 @@ const _spokenStyle =
 ```
 
 ```dart
-final chat = await inference.openChat(
+final chat = await inference.createChat(
   modelType: widget.model.modelType,
   systemInstruction: _spokenStyle,
   maxOutputTokens: 128,
@@ -695,7 +695,7 @@ Future<void> _timerDone(num minutes) async {
 ### Give them to the chat and the session
 
 ```dart
-final chat = await inference.openChat(
+final chat = await inference.createChat(
   modelType: widget.model.modelType,
   systemInstruction: _spokenStyle,
   maxOutputTokens: 128,

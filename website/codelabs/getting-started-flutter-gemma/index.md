@@ -516,13 +516,13 @@ Two objects stand between you and an answer.
 ```dart
 final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 // ... hand `inference` to the State here, before anything else can throw
-final chat = await inference.openChat(
+final chat = await inference.createChat(
   modelType: widget.model.modelType,
   maxOutputTokens: 256,
 );
 ```
 
-`getActiveModel` loads the installed weights into a runtime. `openChat` opens
+`getActiveModel` loads the installed weights into a runtime. `createChat` opens
 a conversation on top, and it is the chat that remembers what was said.
 
 The elided line is not bookkeeping. `_load` assigns `_inference` the moment

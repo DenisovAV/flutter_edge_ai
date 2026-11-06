@@ -66,9 +66,14 @@ Run `.task` models on `PreferredBackend.cpu` on iOS: on the GPU even Gemma 3 1B 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096, supportImage: true);
 final chat = await model.openChat(supportImage: true);
-await chat.addQueryChunk(
-  Message(text: 'Describe this image.', isUser: true, imageBytes: bytes),
-);
+try {
+  await chat.addQueryChunk(
+    Message(text: 'Describe this image.', isUser: true, imageBytes: bytes),
+  );
+  final response = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}
 ```
 
 On Android and iOS, a chat without `supportImage: true` drops the image and the model answers the text alone. On web the chat follows the model: an image sent to a model loaded without `supportImage: true` throws `ArgumentError`.

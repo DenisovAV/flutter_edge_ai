@@ -194,17 +194,20 @@ void main() {
         topK: _topK,
         modelType: ModelType.gemma4,
       );
+      try {
+        await chat.addQueryChunk(
+          const Message(text: 'My favourite color is blue.', isUser: true),
+        );
+        await chat.generateChatResponse();
 
-      await chat.addQueryChunk(
-        const Message(text: 'My favourite color is blue.', isUser: true),
-      );
-      await chat.generateChatResponse();
-
-      await chat.addQueryChunk(
-        const Message(text: 'What is my favourite color?', isUser: true),
-      );
-      final response = await chat.generateChatResponse();
-      expect(response.toString().toLowerCase(), contains('blue'));
+        await chat.addQueryChunk(
+          const Message(text: 'What is my favourite color?', isUser: true),
+        );
+        final response = await chat.generateChatResponse();
+        expect(response.toString().toLowerCase(), contains('blue'));
+      } finally {
+        await chat.close();
+      }
     });
 
     testWidgets('chat: clearHistory wipes context', (tester) async {
@@ -213,29 +216,32 @@ void main() {
         topK: _topK,
         modelType: ModelType.gemma4,
       );
+      try {
+        await chat.addQueryChunk(
+          const Message(text: 'Remember the number 42.', isUser: true),
+        );
+        await chat.generateChatResponse();
 
-      await chat.addQueryChunk(
-        const Message(text: 'Remember the number 42.', isUser: true),
-      );
-      await chat.generateChatResponse();
+        await chat.clearHistory();
 
-      await chat.clearHistory();
-
-      await chat.addQueryChunk(
-        const Message(
-          text: 'What number did I ask you to remember?',
-          isUser: true,
-        ),
-      );
-      final response = (await chat.generateChatResponse())
-          .toString()
-          .toLowerCase();
-      // After clearHistory the assistant should NOT recall "42" verbatim.
-      expect(
-        response.contains('42'),
-        isFalse,
-        reason: 'clearHistory should drop the prior context.',
-      );
+        await chat.addQueryChunk(
+          const Message(
+            text: 'What number did I ask you to remember?',
+            isUser: true,
+          ),
+        );
+        final response = (await chat.generateChatResponse())
+            .toString()
+            .toLowerCase();
+        // After clearHistory the assistant should NOT recall "42" verbatim.
+        expect(
+          response.contains('42'),
+          isFalse,
+          reason: 'clearHistory should drop the prior context.',
+        );
+      } finally {
+        await chat.close();
+      }
     });
 
     testWidgets('session: sizeInTokens returns a non-negative integer', (

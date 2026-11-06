@@ -76,4 +76,73 @@ void main() {
     await session.close();
     await model.close();
   });
+
+  test('a plain virtual follow-up stopped behind another native operation '
+      'never sends and clears the previous turn metrics', () async {
+    final client = LiteRtLmFfiClient();
+    final conv = Pointer<LiteRtLmConversation>.fromAddress(0x7100);
+    final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
+    client
+      ..virtualCreateForTest = (_) async {
+        client.registerLiveForTest(conv);
+        return conv;
+      }
+      ..virtualSendForTest = (conversation) {
+        final send = client.newTurnForTest(conversation);
+        final isFollowUp = sends.isNotEmpty;
+        sends.add(send);
+        if (isFollowUp) scheduleMicrotask(send.finished);
+        return send;
+      }
+      ..metricsForTest = (_) => SessionMetrics(tokensPerSecond: 42);
+    final model = FfiInferenceModel(
+      ffiClient: client,
+      maxTokens: 1024,
+      modelType: ModelType.gemmaIt,
+      activeBackend: PreferredBackend.gpu,
+      openSessionBacking: OpenSessionBacking.virtual,
+      onClose: () {},
+    );
+    final session = await model.openSession();
+
+    await session.addQueryChunk(const Message(text: 'first', isUser: true));
+    final first = session.getResponse();
+    await pumpEventQueue();
+    sends.single
+      ..chunk(
+        '{"role":"assistant","content":['
+        '{"type":"text","text":"OK"}]}',
+      )
+      ..finished();
+    expect(await first, 'OK');
+    await pumpEventQueue();
+    expect(session.getSessionMetrics().tokensPerSecond, 42);
+
+    final operationStarted = Completer<void>();
+    final releaseOperation = Completer<void>();
+    final operation = client.holdNativeMutexForTest(() async {
+      operationStarted.complete();
+      await releaseOperation.future;
+    });
+    await operationStarted.future;
+
+    await session.addQueryChunk(const Message(text: 'second', isUser: true));
+    final stopped = session.getResponse();
+    await pumpEventQueue();
+    await session.stopGeneration();
+    expect(
+      session.getSessionMetrics().tokensPerSecond,
+      isNull,
+      reason: 'a turn that never reaches native has no benchmark snapshot',
+    );
+    releaseOperation.complete();
+    await operation;
+
+    expect(await stopped, isEmpty);
+    expect(sends, hasLength(1), reason: 'the stopped follow-up must not send');
+    expect(session.getSessionMetrics().tokensPerSecond, isNull);
+
+    await session.close();
+    await model.close();
+  });
 }

@@ -2931,6 +2931,12 @@ class LiteRtLmFfiClient {
   /// every already-started turn of that closed handle has drained.
   final Map<Object, int> _virtualTurnCounts = {};
 
+  /// Started virtual turns that have not reached their native send yet. Unlike
+  /// [_virtualTurnCounts], this excludes a native turn that ended but whose
+  /// stream cleanup is still draining, so a late consumer-cancel cannot leave
+  /// a stop marker for the next turn.
+  final Map<Object, int> _virtualTurnsBeforeSend = {};
+
   Stream<String> startVirtualTurn({
     required Object conversationToken,
     required String messageJson,
@@ -2958,10 +2964,23 @@ class LiteRtLmFfiClient {
     // reach it — and onListen would otherwise resume and start a generation
     // nobody is listening to. onListen checks this before starting the turn.
     var cancelledByConsumer = false;
+    var reachedNativeSend = false;
+
+    void leaveBeforeSend() {
+      if (reachedNativeSend) return;
+      reachedNativeSend = true;
+      final turnsLeft = (_virtualTurnsBeforeSend[conversationToken] ?? 1) - 1;
+      if (turnsLeft == 0) {
+        _virtualTurnsBeforeSend.remove(conversationToken);
+      } else {
+        _virtualTurnsBeforeSend[conversationToken] = turnsLeft;
+      }
+    }
 
     Future<void> releaseAndCleanup() async {
       if (cleanedUp) return;
       cleanedUp = true;
+      leaveBeforeSend();
       // Generation has ended. A rewind below registers its own operation in
       // [_turns], which releaseVirtualConversation also checks before delete.
       _virtualTurnInFlight = false;
@@ -3053,9 +3072,15 @@ class LiteRtLmFfiClient {
         (count) => count + 1,
         ifAbsent: () => 1,
       );
+      _virtualTurnsBeforeSend.update(
+        conversationToken,
+        (count) => count + 1,
+        ifAbsent: () => 1,
+      );
       // A turn that fails before its send has no end of its own: never read
-      // the session's previous one for it.
+      // the session's previous end or metrics for it.
       _virtualTurnEnds[conversationToken] = null;
+      _virtualMetrics[conversationToken] = null;
       try {
         await _nativeMutex.acquire();
         mutexHeld = true;
@@ -3131,6 +3156,10 @@ class LiteRtLmFfiClient {
           return;
         }
         final conv = _virtualConv!;
+        // No await separates this from creating the native turn, so a stop can
+        // see either a before-send marker or the registered native turn, never
+        // a gap between them.
+        leaveBeforeSend();
         final send =
             virtualSendForTest?.call(conv) ??
             _doSendMessageStreamRawOn(
@@ -3217,6 +3246,12 @@ class LiteRtLmFfiClient {
     Pointer<LiteRtLmConversation> conv,
   ) => NativeTurnStream(_turns, conv);
 
+  /// Test seam: models an engine-level native operation that owns the same
+  /// serialization lock as tokenization and option scoring.
+  @visibleForTesting
+  Future<T> holdNativeMutexForTest<T>(Future<T> Function() body) =>
+      _nativeMutex.protect(body);
+
   /// Token of the virtual session whose history is currently materialized in
   /// [_virtualConv]. Used to skip the teardown+replay when the next turn is on
   /// the same session.
@@ -3230,21 +3265,24 @@ class LiteRtLmFfiClient {
   /// otherwise one session's `stopGeneration()` would cancel another session's
   /// in-flight generation (the single conversation is shared).
   void cancelVirtualTurn(Object conversationToken) {
-    final conv = _virtualActiveToken == conversationToken
-        ? _virtualConv
-        : null;
+    final conv = _virtualActiveToken == conversationToken ? _virtualConv : null;
     if (conv == null) {
-      if ((_virtualTurnCounts[conversationToken] ?? 0) > 0) {
+      if ((_virtualTurnsBeforeSend[conversationToken] ?? 0) > 0) {
         _pendingVirtualStops.add(conversationToken);
       }
       return;
     }
-    // While the turn is waiting or creating there is no native operation to
-    // cancel. Creation publishes the active conversation and checks its pending
-    // marker in one event-loop turn; no callback can land between those steps.
-    // A null running turn here is therefore a native end already cleaning up,
-    // not a stop that should leak into the next turn.
-    if (_turns.runningOn(conv) == null) return;
+    // The active conversation can remain published while a follow-up waits for
+    // the mutex behind tokenization, option scoring or another engine-level
+    // operation. Until this token has reached its native send there is nothing
+    // to cancel, so leave a marker for the queued turn to consume. Cleanup
+    // removes it when this was instead a stop after an already-ended turn.
+    if (_turns.runningOn(conv) == null) {
+      if ((_virtualTurnsBeforeSend[conversationToken] ?? 0) > 0) {
+        _pendingVirtualStops.add(conversationToken);
+      }
+      return;
+    }
     _pendingVirtualStops.remove(conversationToken);
     // Only a cancel that lands inside a turn damages the conversation.
     if (_virtualTurnInFlight) _virtualConvStopped = true;

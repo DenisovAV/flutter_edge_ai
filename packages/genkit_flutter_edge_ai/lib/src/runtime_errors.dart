@@ -55,8 +55,8 @@ Future<T> withRuntimeErrors<T>(String what, Future<T> Function() call) async {
 
 /// [error], an input the model refused as too long for what its context
 /// window had left, as OUT_OF_RANGE: not transient for genkit_hybrid, so no
-/// router or deprecated fallback moves the prompt off the device for it, as
-/// for a structured reply cut by the window ([structuredOutputError]).
+/// router moves the prompt off the device for it, as for a structured reply
+/// cut by the window ([structuredOutputError]).
 GenkitException contextLimitError(
   gemma.ContextLimitException error,
   StackTrace stack,
@@ -72,11 +72,9 @@ GenkitException contextLimitError(
 ///
 /// None of these statuses moves the request off the device: genkit_hybrid's
 /// router moves a call to a cloud target on UNAVAILABLE, DEADLINE_EXCEEDED,
-/// RESOURCE_EXHAUSTED and UNIMPLEMENTED, and its deprecated `hybridModel`,
-/// `hybridModelOnDeviceCloud` and `cascadeModel` (`isTransient`) on those and
-/// INTERNAL. A reply that failed its schema here is this model's, and would
-/// fail the same way again; sending the prompt to the cloud instead is the
-/// app's decision, not a side effect of a status.
+/// RESOURCE_EXHAUSTED and UNIMPLEMENTED. A reply that failed its schema here
+/// is this model's, and would fail the same way again; sending the prompt to
+/// the cloud instead is the app's decision, not a side effect of a status.
 ///
 /// - [gemma.IncompleteStructuredOutputException] by its end:
 ///   - [gemma.TurnEnd.outputLimit] and [gemma.TurnEnd.contextLimit] →

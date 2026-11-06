@@ -4,7 +4,7 @@ part 'flutter_edge_ai_options.g.dart';
 
 /// Configuration options for flutter_edge_ai model inference.
 ///
-/// These options map to flutter_edge_ai's `createChat` and `getActiveModel`
+/// These options map to flutter_edge_ai's `openChat` and `getActiveModel`
 /// parameters.
 @Schema(description: 'Configuration options for flutter_edge_ai inference')
 abstract class $FlutterEdgeAiModelOptions {
@@ -15,7 +15,7 @@ abstract class $FlutterEdgeAiModelOptions {
   int? get maxTokens;
 
   /// Cap on the tokens generated for one reply, passed to
-  /// `createChat(maxOutputTokens:)`. `.litertlm` models honour it; MediaPipe
+  /// `openChat(maxOutputTokens:)`. `.litertlm` models honour it; MediaPipe
   /// ignores it.
   @IntegerField(minimum: 1)
   int? get maxOutputTokens;
@@ -54,7 +54,7 @@ abstract class $FlutterEdgeAiModelOptions {
   @StringField(enumValues: ['auto', 'required', 'none'])
   String? get toolChoice;
 
-  /// System-level instruction passed natively to flutter_edge_ai's createChat().
+  /// System-level instruction passed natively to flutter_edge_ai's openChat().
   /// If set, takes priority over any system-role messages in the Genkit request.
   /// If not set, system messages from the request are extracted and used instead.
   String? get systemInstruction;

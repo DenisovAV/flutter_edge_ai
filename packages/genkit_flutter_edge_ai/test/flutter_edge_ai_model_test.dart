@@ -160,7 +160,7 @@ void main() {
         // arguments or the active model change; a handle cached here would miss
         // both.
         expect(runtime.getActiveModelCallCount, 2);
-        expect(fakeModel.createChatCallCount, 2);
+        expect(fakeModel.promptOpenChatCallCount, 2);
       },
     );
 
@@ -217,7 +217,7 @@ void main() {
       expect(fakeChat.receivedMessages[2].text, 'How are you?');
     });
 
-    test('passes toolChoice required to createChat', () async {
+    test('passes toolChoice required to openChat', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -236,7 +236,7 @@ void main() {
       expect(fakeModel.lastToolChoice, gemma.ToolChoice.required);
     });
 
-    test('passes toolChoice none to createChat', () async {
+    test('passes toolChoice none to openChat', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -255,7 +255,7 @@ void main() {
       expect(fakeModel.lastToolChoice, gemma.ToolChoice.none);
     });
 
-    test('native request.toolChoice reaches createChat', () async {
+    test('native request.toolChoice reaches openChat', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -318,7 +318,7 @@ void main() {
       expect(fakeModel.lastToolChoice, gemma.ToolChoice.auto);
     });
 
-    test('passes maxFunctionBufferLength to createChat when set', () async {
+    test('passes maxFunctionBufferLength to openChat when set', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -338,14 +338,17 @@ void main() {
     });
 
     test(
-      'passes null maxFunctionBufferLength to createChat when not set',
+      'uses the openChat maxFunctionBufferLength default when not set',
       () async {
         fakeChat.blockingResponse = const gemma.TextResponse('ok');
         final model = buildModel();
 
         await model(simpleRequest());
 
-        expect(fakeModel.lastMaxFunctionBufferLength, isNull);
+        expect(
+          fakeModel.lastMaxFunctionBufferLength,
+          gemma.defaultMaxFunctionBufferLength,
+        );
       },
     );
 
@@ -813,7 +816,7 @@ void main() {
       await expectLater(model(null), throwsA(isA<GenkitException>()));
     });
 
-    test('passes systemInstruction from config to createChat', () async {
+    test('passes systemInstruction from config to openChat', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -937,7 +940,7 @@ void main() {
         ),
       );
 
-      // System message should be passed via createChat, not prepended to user message.
+      // The system message goes through openChat, not into the user message.
       expect(fakeChat.receivedMessages, hasLength(1));
       expect(fakeChat.receivedMessages[0].text, 'Hello');
     });
@@ -1004,7 +1007,7 @@ void main() {
 
         await first;
         await second;
-        expect(fakeModel.createChatCallCount, 1);
+        expect(fakeModel.promptOpenChatCallCount, 1);
       },
     );
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Remove the deprecated composite-model API and `RoutingStrategy` family.
+
 ## 0.4.0
 
 - `defineHybridRouter`: one decision per call, rules then a classifier, cloud reachable only through it.

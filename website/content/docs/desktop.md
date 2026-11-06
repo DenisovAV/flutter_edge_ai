@@ -425,9 +425,20 @@ await session.close();   // cheap
 await model.close();
 ```
 
-Sessions are cheap to create/destroy. The expensive part is `engine_create`
-(2–10 s depending on backend and model size), which happens once when the model is
-first opened.
+Sessions do not reload the model weights, so they are cheap to create/destroy
+compared with `engine_create` (2–10 s depending on backend and model size),
+which happens once when the model is first opened. Native sessions still have
+the per-session memory cost below.
+
+For independent conversations, use `openSession` or `openChat`. LiteRT-LM gives
+each session its own native conversation and KV cache on macOS CPU/Metal and on
+Linux/Windows CPU. Linux Vulkan and Windows D3D12 use virtual sessions instead:
+they replay full messages into one shared conversation when sessions switch.
+Hybrid models such as LFM2 rebuild from full messages when recovery is needed
+and never rewind. Native sessions consume memory while idle: Gemma 4 E2B on an
+M5 Pro added 36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the
+third session onward. Bound the count with
+`maxConcurrentSessions` on `getActiveModel` or `openModel`.
 
 ### Several models at once
 

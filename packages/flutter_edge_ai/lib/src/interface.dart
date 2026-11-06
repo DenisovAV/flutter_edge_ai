@@ -341,7 +341,7 @@ abstract class InferenceModel {
   /// dialogues on a single loaded model.
   ///
   /// **Why:** the (expensive) model weights are loaded once and shared across
-  /// every session; each session only adds its own lightweight context. This
+  /// every session; each session adds its own context. This
   /// lets one loaded model back several independent conversations — e.g. a
   /// tabbed chat UI, two different system instructions / roles side by side,
   /// or background summarization alongside an active chat — without reloading
@@ -361,11 +361,14 @@ abstract class InferenceModel {
   /// calls do NOT run in parallel. This is intentional (parallel on-device
   /// inference would contend for the accelerator and risk OOM) and is the
   /// same on every backend:
-  /// - `.litertlm` (FFI, all native): the engine allows one live
-  ///   conversation at a time, so sessions multiplex — the active session's
-  ///   history is replayed into the single conversation on switch.
-  /// - `.litertlm` (web, `@litert-lm/core`): separate conversations, but
-  ///   generation is still serialized.
+  /// - `.litertlm` (FFI): each session has a native conversation and KV cache
+  ///   on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, and
+  ///   Qualcomm or Google Tensor NPUs on Android and Intel NPUs on Windows.
+  ///   Linux Vulkan, Windows D3D12, iOS, Android CPU/PowerVR/MediaTek,
+  ///   and unverified Linux arm64 accelerators use virtual sessions: full
+  ///   messages are replayed into one shared conversation on a switch.
+  /// - `.litertlm` (web, `@litert-lm/core`): virtual sessions replay full
+  ///   messages into the shared conversation; generation is serialized.
   /// - `.task` (MediaPipe, Android/iOS): N real `LlmInferenceSession` live
   ///   at once (each with its own KV cache), generation serialized by a
   ///   mutex.
@@ -376,9 +379,13 @@ abstract class InferenceModel {
   ///   (Gemma 4 E2B+), several concurrent sessions can OOM the process; for
   ///   them the safer pattern is still close+recreate with
   ///   [InferenceChat]'s built-in history replay.
-  /// - `.litertlm` (FFI): only its history, kept in Dart; switching
-  ///   sessions replays that history into the one native conversation,
-  ///   which takes time on each switch.
+  /// - `.litertlm` (FFI): a native-backed session keeps its own KV cache.
+  ///   Gemma 4 E2B on an M5 Pro added 36.8 MiB of RSS per idle session at
+  ///   `maxTokens: 4096`, from the third session onward (the first two reused
+  ///   freed memory). A virtual session keeps full message history
+  ///   instead and pays replay time when it becomes active. Hybrid models
+  ///   such as LFM2 rebuild from full messages when recovery is needed and
+  ///   never rewind.
   /// - GGUF (`flutter_edge_ai_llama`): the sessions share one runtime and
   ///   allocate no separate native KV caches.
   /// - ONNX (native, `flutter_edge_ai_onnx` 0.8.0): its own ORT-GenAI
@@ -393,7 +400,8 @@ abstract class InferenceModel {
   /// - ONNX (web): only its history, resent in full on every turn.
   /// - `.litertlm` web and built-in AI: not measured.
   ///
-  /// Cap the count with `maxConcurrentSessions` on
+  /// Cap native KV-cache memory and the total session count with
+  /// `maxConcurrentSessions` on
   /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`. Null sets
   /// no cap unless the engine applies a platform default: ONNX caps open
   /// sessions at 2 on Android and iOS.

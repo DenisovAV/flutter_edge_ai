@@ -9,6 +9,21 @@ builds and then fails at model load, or is killed for memory.
 - [Windows and Linux](#windows-and-linux)
 - [Web](#web)
 
+## Concurrent LiteRT-LM sessions
+
+`openSession` and `openChat` use one native conversation and KV cache per
+session on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, and
+Qualcomm or Google Tensor NPUs on Android and Intel NPUs on Windows. Linux
+Vulkan, Windows D3D12, iOS, Android CPU and PowerVR, MediaTek, unverified Linux
+arm64 accelerators and the web use virtual sessions that replay full messages
+into one shared conversation. Hybrid models such as LFM2 rebuild from full
+messages when recovery is needed and never rewind.
+
+Native sessions consume memory while idle. Gemma 4 E2B on an M5 Pro added
+36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the third session
+onward; the first two reused freed memory. Set
+`maxConcurrentSessions` on `getActiveModel` or `openModel` to bound the count.
+
 ## Android
 
 `android/app/build.gradle.kts` (or `build.gradle`):

@@ -238,6 +238,8 @@ non-Gemma model; it is text-only too. Detached sessions work on native/web
 `.litertlm`, MediaPipe Android/iOS/Web, native ONNX 0.8.0, the unreleased ONNX
 Web line, built-in AI and llama.cpp; close every detached session yourself.
 
+For native `.litertlm`, each session has its own conversation and KV cache on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, and Qualcomm or Google Tensor NPUs on Android and Intel NPUs on Windows. Linux Vulkan, Windows D3D12, iOS, Android CPU and PowerVR, MediaTek, unverified Linux arm64 accelerators and the web use virtual sessions that replay full messages into one shared conversation. Hybrid models such as LFM2 rebuild from full messages when recovery is needed and never rewind. Native sessions cost memory while idle: Gemma 4 E2B on an M5 Pro added 36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the third session onward. Set `maxConcurrentSessions` on `getActiveModel` or `openModel` to bound the count.
+
 ```dart
 final summariser = await model.openChat(modelType: ModelType.gemma4);
 final assistant = await model.openChat(modelType: ModelType.gemma4);

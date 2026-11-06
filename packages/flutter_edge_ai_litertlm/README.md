@@ -171,12 +171,14 @@ take turns. The model decides this when it loads; there is no setting.
 | GPU | macOS (Metal), Android Adreno and Mali | the same, on M5 Pro, Adreno 830, Mali-G715 |
 | NPU | Qualcomm and Google Tensor on Android, Intel on Windows | the same, past the first context group |
 
-Replayed as full messages: iOS, Android CPU, Android GPUs other than Adreno and Mali
-(two greedy conversations diverged on a PowerVR GPU), Linux arm64 GPU and
-NPU, and the Linux and Windows GPUs: they ran correctly on a Tesla T4
-(Vulkan) and on Intel Arc (D3D12), but the load cannot tell which GPU it got,
-so no other vendor is given native conversations on that evidence. MediaTek
-NPU is refused at load.
+Replayed as full messages: iOS, Android CPU, Android GPUs other than Adreno and
+Mali (two greedy conversations diverged on a PowerVR GPU), MediaTek, Linux
+arm64 GPU and NPU, Linux Vulkan, Windows D3D12, and the web. Linux Vulkan and
+Windows D3D12 ran correctly on a Tesla T4 and Intel Arc respectively, but the
+load cannot tell which GPU it got, so no desktop GPU vendor is given native
+conversations on that evidence. MediaTek NPU models are currently refused at
+load; if that backend becomes available, its session backing remains virtual
+until it passes the native-conversation campaign.
 
 After a stopped turn, or a turn whose input did not fit, the next turn
 rewinds the conversation to before it: a stopped turn is put back, partial
@@ -191,9 +193,9 @@ its audio while reporting that the rewind succeeded. The same rebuild holds
 for an `openSession` session when the model file could not be read to tell;
 that is printed when the model loads.
 
-Every idle session keeps a copy of its KV cache, so an open session costs
+Every idle native-backed session keeps a copy of its KV cache, so it costs
 memory while it is open, and the cost grows with `maxTokens`. Measured on
-macOS (M5 Pro) with Gemma 4 E2B, as resident memory: 36.8 MiB more per idle
+macOS (M5 Pro) with Gemma 4 E2B, as RSS: 36.8 MiB more per idle
 session at `maxTokens: 4096` and about 9.6 MiB at 1024, on the CPU and on
 Metal (from the third session on; the first two reuse freed memory). Over
 turns alternating between two sessions, resident memory moved by 1-4 MiB on
@@ -203,10 +205,10 @@ GPU memory, and phones and the other backends are not measured yet. There is
 no default cap on the number of sessions; `maxConcurrentSessions` on
 `getActiveModel` sets one.
 
-A send to another session than the one the engine ran last first saves the
-previous session's KV cache and restores this one, inside the native send
-call. That call then runs on a spawned isolate, so the isolate that sends
-(the UI isolate in an app) is not held by the copy: measured on macOS with
+On native backing, a send to another session than the one the engine ran last
+first saves the previous session's KV cache and restores this one, inside the
+native send call. That call then runs on a spawned isolate, so the isolate that
+sends (the UI isolate in an app) is not held by the copy: measured on macOS with
 Gemma 4 E2B at `maxTokens: 4096`, it held the calling isolate under 1 ms
 while the copy took about 147 ms on Metal and 1.4 ms on the CPU. The copy
 still delays that turn's first token.

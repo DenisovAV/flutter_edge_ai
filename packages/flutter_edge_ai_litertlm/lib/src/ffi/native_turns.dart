@@ -184,10 +184,10 @@ class NativeTurns<C extends Object> {
     NativeTurn? turn,
     void Function(C conversation) cancel,
   ) {
+    cancel(conversation);
     if (turn != null && !turn._cancelIssued.isCompleted) {
       turn._cancelIssued.complete();
     }
-    cancel(conversation);
   }
 
   void _retryCancelDuringNativeStart(C conversation, NativeTurn turn) {

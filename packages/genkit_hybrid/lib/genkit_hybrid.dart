@@ -6,8 +6,7 @@
 /// plugins live only inside the router, so a call that skips it cannot reach
 /// the cloud.
 ///
-/// The 0.3 composite-model API (`hybridModel`, `cascadeModel`, the
-/// `RoutingStrategy` family) is deprecated and is removed in 0.5.0.
+/// The 0.3 composite-model API was removed in 0.5.0.
 library;
 
 export 'src/model_capability.dart' show ModelCapability;
@@ -33,17 +32,3 @@ export 'src/router/route_info.dart'
 export 'src/router/route_policy.dart' show CascadeCheck, RoutePolicy;
 export 'src/router/route_request.dart' show RouteRequest;
 export 'src/router/route_rule.dart' show RouteRule;
-
-// Deprecated in 0.4.0, removed in 0.5.0.
-export 'src/routing_context.dart';
-export 'src/routing_strategy.dart';
-export 'src/hybrid_model.dart' show hybridModel, hybridModelOnDeviceCloud;
-export 'src/strategies/pre_routing.dart';
-export 'src/strategies/fallback.dart';
-export 'src/strategies/connectivity.dart';
-export 'src/strategies/input_size.dart';
-export 'src/strategies/first_match.dart';
-export 'src/strategies/with_fallback.dart';
-export 'src/strategies/capability.dart' show CapabilityStrategy;
-export 'src/strategies/cost.dart';
-export 'src/cascade_model.dart';

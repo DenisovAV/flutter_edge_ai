@@ -49,7 +49,8 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
       _npu.prepareDispatchDir(vendor);
 
   /// The GPU family of an Android device, told by the device node its driver
-  /// exposes (`/dev/kgsl-3d0` Adreno, `/dev/mali0` Mali); null elsewhere.
+  /// exposes (`/dev/kgsl-3d0` Adreno, `/dev/mali0` Mali, `/dev/pvr_sync`
+  /// PowerVR); null elsewhere.
   AndroidGpuFamily? androidGpuFamily() => Platform.isAndroid
       ? androidGpuFamilyFrom((path) => File(path).existsSync())
       : null;

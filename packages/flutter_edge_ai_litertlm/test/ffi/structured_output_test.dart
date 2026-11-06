@@ -134,6 +134,30 @@ void main() {
         androidGpu: null,
         npuVendor: null,
       ),
+      (
+        abi: 'android_arm64',
+        backend: PreferredBackend.cpu,
+        androidGpu: null,
+        npuVendor: null,
+      ),
+      (
+        abi: 'android_arm64',
+        backend: PreferredBackend.gpu,
+        androidGpu: AndroidGpuFamily.adreno,
+        npuVendor: null,
+      ),
+      (
+        abi: 'android_arm64',
+        backend: PreferredBackend.gpu,
+        androidGpu: AndroidGpuFamily.mali,
+        npuVendor: null,
+      ),
+      (
+        abi: 'android_arm64',
+        backend: PreferredBackend.gpu,
+        androidGpu: AndroidGpuFamily.powerVr,
+        npuVendor: null,
+      ),
     };
     expect(liteRtLmStructuredOutputRows, expected);
     for (final row in liteRtLmStructuredOutputCandidateRows) {
@@ -153,22 +177,33 @@ void main() {
     }
   });
 
-  test('an unknown Android GPU family and an unknown backend stay refused', () {
-    expect(
-      liteRtLmStructuredOutputSupport(
-        abi: 'android_arm64',
-        backend: PreferredBackend.gpu,
-      ).isSupported,
-      isFalse,
-    );
-    expect(
-      liteRtLmStructuredOutputSupport(
-        abi: 'macos_arm64',
-        backend: null,
-      ).isSupported,
-      isFalse,
-    );
-  });
+  test(
+    'an unrecognized Android GPU family and unknown backend stay refused',
+    () {
+      expect(
+        liteRtLmStructuredOutputSupport(
+          abi: 'android_arm64',
+          backend: PreferredBackend.gpu,
+          androidGpu: AndroidGpuFamily.other,
+        ).isSupported,
+        isFalse,
+      );
+      expect(
+        liteRtLmStructuredOutputSupport(
+          abi: 'android_arm64',
+          backend: PreferredBackend.gpu,
+        ).isSupported,
+        isFalse,
+      );
+      expect(
+        liteRtLmStructuredOutputSupport(
+          abi: 'macos_arm64',
+          backend: null,
+        ).isSupported,
+        isFalse,
+      );
+    },
+  );
 
   test('only LLGuidance CreateConstraint failures become schema refusals', () {
     const schema = '{"type":"string"}';

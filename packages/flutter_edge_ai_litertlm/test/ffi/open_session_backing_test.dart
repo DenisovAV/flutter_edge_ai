@@ -86,6 +86,14 @@ void main() {
         backing(
           'android_arm64',
           PreferredBackend.gpu,
+          gpu: AndroidGpuFamily.powerVr,
+        ),
+        OpenSessionBacking.virtual,
+      );
+      expect(
+        backing(
+          'android_arm64',
+          PreferredBackend.gpu,
           gpu: AndroidGpuFamily.other,
         ),
         OpenSessionBacking.virtual,
@@ -214,13 +222,13 @@ void main() {
     expect(reason(PreferredBackend.gpu, linear: true), contains('linear'));
   });
 
-  test('androidGpuFamilyFrom: Adreno by /dev/kgsl-3d0, Mali by /dev/mali0, '
-      'anything else other', () {
+  test('androidGpuFamilyFrom distinguishes Adreno, Mali and PowerVR; an '
+      'unrecognized device stays other', () {
     AndroidGpuFamily family(Set<String> nodes) =>
         androidGpuFamilyFrom(nodes.contains);
     expect(family({'/dev/kgsl-3d0'}), AndroidGpuFamily.adreno);
     expect(family({'/dev/mali0'}), AndroidGpuFamily.mali);
-    expect(family({'/dev/pvr_sync'}), AndroidGpuFamily.other);
+    expect(family({'/dev/pvr_sync'}), AndroidGpuFamily.powerVr);
     expect(family({}), AndroidGpuFamily.other);
   });
 

@@ -55,6 +55,33 @@ const liteRtLmStructuredOutputRows = <LiteRtLmStructuredOutputRow>{
     androidGpu: null,
     npuVendor: null,
   ),
+  // 2026-11-06: DDP round 2 +8/-0 on S25 Ultra and Pixel 8a CPU.
+  (
+    abi: 'android_arm64',
+    backend: PreferredBackend.cpu,
+    androidGpu: null,
+    npuVendor: null,
+  ),
+  // 2026-11-06: DDP round 2 +8/-0 on Adreno 830 and Mali-G715.
+  (
+    abi: 'android_arm64',
+    backend: PreferredBackend.gpu,
+    androidGpu: AndroidGpuFamily.adreno,
+    npuVendor: null,
+  ),
+  (
+    abi: 'android_arm64',
+    backend: PreferredBackend.gpu,
+    androidGpu: AndroidGpuFamily.mali,
+    npuVendor: null,
+  ),
+  // 2026-11-06: DDP round 2 +8/-0 on Pixel 11 PowerVR (virtual sessions).
+  (
+    abi: 'android_arm64',
+    backend: PreferredBackend.gpu,
+    androidGpu: AndroidGpuFamily.powerVr,
+    npuVendor: null,
+  ),
 };
 
 /// Every row that may be qualified in the 2.6.0 device campaign.
@@ -86,7 +113,7 @@ final liteRtLmStructuredOutputCandidateRows = <LiteRtLmStructuredOutputRow>{
       androidGpu: null,
       npuVendor: null,
     ),
-  for (final gpu in [AndroidGpuFamily.adreno, AndroidGpuFamily.mali])
+  for (final gpu in AndroidGpuFamily.values)
     (
       abi: 'android_arm64',
       backend: PreferredBackend.gpu,

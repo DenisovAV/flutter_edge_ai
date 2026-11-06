@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:fake_async/fake_async.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genkit/genkit.dart';
@@ -94,41 +93,57 @@ void main() {
     expect(prompt(), isNot(contains('conform to the following schema')));
   });
 
-  test('an abandoned long stream is stopped and its chat is closed', () {
-    fakeAsync((async) {
+  test('an abandoned stream finishes naturally and closes its chat', () async {
+    fakeChat
+      ..generationGate = Completer<void>()
+      ..streamingResponses = const [
+        gemma.TextResponse('first'),
+        gemma.TextResponse('second'),
+      ];
+
+    final stream = ai.generateStream(
+      model: flutterEdgeAi.model('m'),
+      prompt: 'Keep going.',
+      config: FlutterEdgeAiModelOptions(maxOutputTokens: 2),
+    );
+    await stream.take(1).drain<void>();
+
+    expect(fakeModel.lastMaxOutputTokens, 2);
+    expect(fakeChat.stopGenerationCallCount, 0);
+    expect(fakeChat.closeCallCount, 0);
+
+    fakeChat.generationGate!.complete();
+    await stream.onResult;
+
+    expect(fakeChat.stopGenerationCallCount, 0);
+    expect(fakeChat.closeCallCount, 1);
+  });
+
+  test(
+    'an explicit cancel stops generation and closes its chat once',
+    () async {
       fakeChat
         ..generationGate = Completer<void>()
         ..streamingResponses = const [
           gemma.TextResponse('first'),
           gemma.TextResponse('second'),
         ];
-      var consumerDone = false;
+      final cancel = CancellationController();
 
-      ai
-          .generateStream(
-            model: flutterEdgeAi.model('m'),
-            prompt: 'Keep going.',
-          )
-          .take(1)
-          .drain<void>()
-          .then((_) => consumerDone = true);
-      async.flushMicrotasks();
+      final stream = ai.generateStream(
+        model: flutterEdgeAi.model('m'),
+        prompt: 'Keep going.',
+        cancel: cancel.token,
+      );
+      await stream.first;
+      cancel.cancel();
+      final result = await stream.onResult;
 
-      expect(consumerDone, isTrue);
-      expect(fakeChat.stopGenerationCallCount, 0);
-      expect(fakeChat.closeCallCount, 0);
-
-      async.elapse(const Duration(minutes: 10));
-      async.flushMicrotasks();
-
+      expect(result.finishReason, FinishReason.aborted);
       expect(fakeChat.stopGenerationCallCount, 1);
       expect(fakeChat.closeCallCount, 1);
-      async.elapse(const Duration(minutes: 10));
-      async.flushMicrotasks();
-      expect(fakeChat.stopGenerationCallCount, 1);
-      expect(fakeChat.closeCallCount, 1);
-    });
-  });
+    },
+  );
 
   test('a model that enforces the schema gets a schemantic type\'s '
       'schema as the chat\'s responseFormat', () async {

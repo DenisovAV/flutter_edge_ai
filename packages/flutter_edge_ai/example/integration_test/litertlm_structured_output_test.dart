@@ -3,8 +3,10 @@
 // enum schema, while every structured turn must. It also exercises the turn
 // ends and conversation recovery that can silently lose a constraint.
 //
-// The model is read directly from ~/models; FileSource registers that path and
-// does not copy it into the app container. Run one backend at a time:
+// Desktop models are read directly from ~/models; iOS uses
+// IOS_TEST_DOCS_DIR or the app's Documents directory. FileSource registers
+// that path and does not copy it into the app container. Run one backend at a
+// time:
 //   flutter test integration_test/litertlm_structured_output_test.dart -d macos
 //   flutter test integration_test/litertlm_structured_output_test.dart -d macos \
 //     --dart-define=STRUCTURED_BACKEND=gpu
@@ -17,6 +19,8 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+
+import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _modelFile = 'gemma-4-E2B-it.litertlm';
 const _backendName = String.fromEnvironment(
@@ -58,6 +62,25 @@ bool _isCode(String text) {
   }
 }
 
+Future<String> _modelPath() async {
+  const explicit = String.fromEnvironment('LITERTLM_STRUCTURED_MODEL');
+  if (explicit.isNotEmpty) return explicit;
+  if (Platform.isIOS) {
+    const hostDocuments = String.fromEnvironment('IOS_TEST_DOCS_DIR');
+    if (hostDocuments.isNotEmpty) return '$hostDocuments/$_modelFile';
+    final staged = await stagedModelPath(_modelFile);
+    if (staged != null) return staged;
+    throw StateError(
+      '$_modelFile is not staged in the iOS Documents directory',
+    );
+  }
+  final home = Platform.environment['HOME'];
+  if (home == null || home.isEmpty) {
+    throw StateError('HOME is unavailable; set LITERTLM_STRUCTURED_MODEL');
+  }
+  return '$home/models/$_modelFile';
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -65,10 +88,7 @@ void main() {
 
   Future<InferenceModel> ensureModel() async {
     if (model != null) return model!;
-    final path =
-        const String.fromEnvironment('LITERTLM_STRUCTURED_MODEL').isEmpty
-        ? '${Platform.environment['HOME']}/models/$_modelFile'
-        : const String.fromEnvironment('LITERTLM_STRUCTURED_MODEL');
+    final path = await _modelPath();
     expect(File(path).existsSync(), isTrue, reason: 'model not found: $path');
     FlutterEdgeAi.reset();
     await FlutterEdgeAi.initialize(

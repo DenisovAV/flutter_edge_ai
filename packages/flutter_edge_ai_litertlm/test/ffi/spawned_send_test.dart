@@ -292,77 +292,82 @@ void main() {
       expect(client.hasSentForTest(conv), isFalse);
     });
 
-    test('the real isolate boundary retains stops before spawn, before native '
-        'entry and during synchronous prefill', () async {
-      for (final point in _StopPoint.values) {
-        final harness = _SpawnedSendHarness(0x5000 + point.index * 0x100);
-        final stopwatch = Stopwatch()..start();
-        late Future<List<String>> chunks;
-        var stopped = false;
-        int? stoppedAtMillis;
+    test(
+      'the real isolate boundary retains stops before spawn, before native '
+      'entry and during synchronous prefill without overlapping the call',
+      () async {
+        for (final point in _StopPoint.values) {
+          final harness = _SpawnedSendHarness(0x5000 + point.index * 0x100);
+          final stopwatch = Stopwatch()..start();
+          late Future<List<String>> chunks;
+          var stopped = false;
+          int? stoppedAtMillis;
 
-        void stop() {
-          if (stopped) return;
-          stopped = true;
-          stoppedAtMillis = stopwatch.elapsedMilliseconds;
-          harness.client.cancelConversationForTest(harness.conv);
-        }
+          void stop() {
+            if (stopped) return;
+            stopped = true;
+            stoppedAtMillis = stopwatch.elapsedMilliseconds;
+            harness.client.cancelConversationForTest(harness.conv);
+          }
 
-        switch (point) {
-          case _StopPoint.beforeSpawn:
-            harness.client.beforeSendSpawnForTest = stop;
-            harness.client.spawnedSendPrefillDelayForTest = const Duration(
-              milliseconds: 300,
-            );
-          case _StopPoint.afterSpawnBeforeEntry:
-            harness.client.afterSendSpawnForTest = stop;
-            harness.client.spawnedSendBeforeEntryDelayForTest = const Duration(
-              milliseconds: 250,
-            );
-            harness.client.spawnedSendPrefillDelayForTest = const Duration(
-              milliseconds: 300,
-            );
-          case _StopPoint.duringPrefill:
-            harness.client.nativeSendEnteredForTest = () {
-              Future<void>.delayed(const Duration(milliseconds: 20), () {
-                harness.nativeRunning = true;
-                stop();
-              });
-            };
-            harness.client.spawnedSendPrefillDelayForTest = const Duration(
-              milliseconds: 300,
-            );
-        }
+          switch (point) {
+            case _StopPoint.beforeSpawn:
+              harness.client.beforeSendSpawnForTest = stop;
+              harness.client.spawnedSendPrefillDelayForTest = const Duration(
+                milliseconds: 300,
+              );
+            case _StopPoint.afterSpawnBeforeEntry:
+              harness.client.afterSendSpawnForTest = stop;
+              harness.client.spawnedSendBeforeEntryDelayForTest =
+                  const Duration(milliseconds: 250);
+              harness.client.spawnedSendPrefillDelayForTest = const Duration(
+                milliseconds: 300,
+              );
+            case _StopPoint.duringPrefill:
+              harness.client.nativeSendEnteredForTest = () {
+                Future<void>.delayed(const Duration(milliseconds: 20), () {
+                  stop();
+                });
+              };
+              harness.client.spawnedSendPrefillDelayForTest = const Duration(
+                milliseconds: 300,
+              );
+          }
 
-        try {
-          chunks = harness.client.sendForTest(harness.conv, '{}').toList();
-          await harness.cancelObserved.future.timeout(
-            const Duration(seconds: 2),
-          );
-          expect(
-            stoppedAtMillis,
-            lessThan(200),
-            reason:
-                '$point stop must run while the spawned fake native send is '
-                'still before/in prefill',
-          );
-          expect(
-            harness.cancelBeforeNativeEntry,
-            isFalse,
-            reason: '$point must retain the stop until native send entry',
-          );
-          expect(
-            harness.nativeCancels,
-            greaterThanOrEqualTo(1),
-            reason: '$point reaches native cancellation',
-          );
-          harness.emitCancelled();
-          expect(await chunks, isEmpty, reason: '$point decoded no text');
-        } finally {
-          await harness.dispose();
+          try {
+            chunks = harness.client.sendForTest(harness.conv, '{}').toList();
+            await Future<void>.delayed(const Duration(milliseconds: 100));
+            expect(
+              harness.nativeCancels,
+              0,
+              reason:
+                  '$point must not overlap cancel_process with the send call',
+            );
+            await harness.cancelObserved.future.timeout(
+              const Duration(seconds: 2),
+            );
+            expect(
+              stoppedAtMillis,
+              lessThan(200),
+              reason:
+                  '$point stop must run while the spawned fake native send is '
+                  'still before/in prefill',
+            );
+            expect(harness.nativeCancels, 1);
+            harness.emitCancelled();
+            expect(await chunks, isEmpty, reason: '$point decoded no text');
+            await pumpEventQueue();
+            expect(
+              harness.nativeCancels,
+              1,
+              reason: '$point must cancel the native turn exactly once',
+            );
+          } finally {
+            await harness.dispose();
+          }
         }
-      }
-    });
+      },
+    );
   });
 }
 
@@ -394,8 +399,7 @@ final class _SpawnedSendHarness {
           UnsignedInt Function(Pointer<LiteRtLmConversation>)
         >.isolateLocal((Pointer<LiteRtLmConversation> _) {
           nativeCancels++;
-          cancelBeforeNativeEntry = !nativeRunning;
-          if (nativeRunning && !cancelObserved.isCompleted) {
+          if (!cancelObserved.isCompleted) {
             cancelObserved.complete();
           }
           return 0;
@@ -422,11 +426,6 @@ final class _SpawnedSendHarness {
       freeString: calloc.free,
       destroyProxy: (_) {},
     );
-    client.nativeSendEnteredForTest = () {
-      Future<void>.delayed(const Duration(milliseconds: 20), () {
-        nativeRunning = true;
-      });
-    };
     client.registerLiveForTest(conv);
   }
 
@@ -442,9 +441,6 @@ final class _SpawnedSendHarness {
   >
   _callback;
   int nativeCancels = 0;
-  bool nativeRunning = false;
-  bool cancelBeforeNativeEntry = false;
-
   Pointer<NativeFunction<T>> _keep<T extends Function>(NativeCallable<T> c) {
     _callables.add(c);
     return c.nativeFunction;

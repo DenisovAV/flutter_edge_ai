@@ -3615,8 +3615,6 @@ class LiteRtLmFfiClient {
     nativeEntry.listen((_) {
       nativeEntry.close();
       nativeSendEnteredForTest?.call();
-      send.nativeStarted();
-      _retryPendingNativeCancel(conv, send.turn);
     });
     beforeSendSpawnForTest?.call();
     final call = _sendMessageStreamOffMainIsolate(
@@ -3641,6 +3639,11 @@ class LiteRtLmFfiClient {
           // native called back with meanwhile is held), then that end.
           handleResult(r.code, r.message);
           gate.flushEnd();
+          // The C API forbids overlapping calls on one conversation. Retain a
+          // stop asked during synchronous prefill until the spawned send call
+          // has returned, then issue exactly one native cancellation if the
+          // stream is still running.
+          send.nativeStarted();
         },
         onError: (Object e, StackTrace st) {
           // The isolate could not run the call (a spawn that failed under
@@ -3663,33 +3666,6 @@ class LiteRtLmFfiClient {
     // orphaned response, and the next close()/inference stalls on a still-busy
     // shared conversation (a hang on session.close() on a Windows Intel iGPU).
     return send;
-  }
-
-  /// The spawned isolate posts immediately before its C send. A cancel issued
-  /// in that small gap can reach an idle conversation and be lost, so repeat
-  /// the one conversation call the threading contract explicitly permits to
-  /// overlap a send until native reports the turn's end.
-  void _retryPendingNativeCancel(
-    Pointer<LiteRtLmConversation> conv,
-    NativeTurn turn,
-  ) {
-    if (!turn.requiresCancelRetry ||
-        !turn.cancelRequested ||
-        turn.cancelRetryRunning ||
-        turn.hasEnded) {
-      return;
-    }
-    turn.cancelRetryRunning = true;
-    unawaited(() async {
-      try {
-        while (!turn.hasEnded) {
-          await Future<void>.delayed(const Duration(milliseconds: 2));
-          if (!turn.hasEnded) _cancelNative(conv, log: false);
-        }
-      } finally {
-        turn.cancelRetryRunning = false;
-      }
-    }());
   }
 
   /// Legacy: streaming raw on the implicit [_legacyHandle] conversation.
@@ -3791,10 +3767,6 @@ class LiteRtLmFfiClient {
   /// for, so its cancelled end closes the stream cleanly.
   void _cancelOn(Pointer<LiteRtLmConversation> conv) {
     _turns.cancel(conv);
-    final turn = _turns.runningOn(conv);
-    if (turn != null && !turn.nativeStartPending) {
-      _retryPendingNativeCancel(conv, turn);
-    }
   }
 
   void _cancelNative(Pointer<LiteRtLmConversation> conv, {bool log = true}) {

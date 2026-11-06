@@ -121,13 +121,24 @@ void main() {
       lessThan(500),
       reason: 'the fake synchronous prefill must not block stopGeneration',
     );
+    expect(
+      nativeCancels,
+      0,
+      reason: 'cancel_process must not overlap the synchronous send call',
+    );
     await cancelObserved.future.timeout(const Duration(seconds: 2));
-    expect(nativeCancels, 1, reason: 'stop must reach the running native turn');
+    expect(
+      nativeCancels,
+      1,
+      reason: 'the retained stop must cancel once after the send call returns',
+    );
     callback!
         .asFunction<
           void Function(Pointer<Void>, Pointer<Char>, int, Pointer<Char>)
         >()(nullptr, nullptr, 0, 'CANCELLED'.toNativeUtf8().cast());
     expect(await response, isEmpty);
+    await pumpEventQueue();
+    expect(nativeCancels, 1, reason: 'late chunks must not repeat the cancel');
     expect(
       virtualConversationHistoryForTest(session.handle),
       isEmpty,

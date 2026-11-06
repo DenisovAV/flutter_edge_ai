@@ -157,12 +157,26 @@ void main() {
       },
     );
 
-    test('a chunk after a stop repeats the cancel', () {
+    test('a chunk after a stop does not repeat the native cancel', () {
       final send = NativeTurnStream(turns, 'a');
       send.stream.listen(null);
       turns.cancel('a');
       send.chunk('late');
-      expect(log, ['cancel a', 'cancel a']);
+      expect(log, ['cancel a']);
+    });
+
+    test('a stop during a spawned send is retained until the call returns and '
+        'then cancels exactly once', () {
+      final send = NativeTurnStream(turns, 'a', nativeStartPending: true);
+      send.stream.listen(null);
+      turns.cancel('a');
+      send.chunk('late');
+      expect(log, isEmpty, reason: 'the native send call is still running');
+
+      send.nativeStarted();
+      send.chunk('later');
+      turns.cancel('a');
+      expect(log, ['cancel a']);
     });
 
     test('a consumer that cancels waits for the native end', () async {

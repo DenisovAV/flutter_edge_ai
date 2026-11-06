@@ -35,6 +35,13 @@ const liteRtLmStructuredOutputRows = <LiteRtLmStructuredOutputRow>{
     androidGpu: null,
     npuVendor: null,
   ),
+  // 2026-11-06: LNL D3D12 suite +7/-0, 43.5 plain/43.8 constrained tok/s.
+  (
+    abi: 'windows_x64',
+    backend: PreferredBackend.gpu,
+    androidGpu: null,
+    npuVendor: null,
+  ),
 };
 
 /// Every row that may be qualified in the 2.6.0 device campaign.

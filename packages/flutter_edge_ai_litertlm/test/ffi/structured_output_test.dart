@@ -116,6 +116,12 @@ void main() {
         androidGpu: null,
         npuVendor: null,
       ),
+      (
+        abi: 'windows_x64',
+        backend: PreferredBackend.gpu,
+        androidGpu: null,
+        npuVendor: null,
+      ),
     };
     expect(liteRtLmStructuredOutputRows, expected);
     for (final row in liteRtLmStructuredOutputCandidateRows) {

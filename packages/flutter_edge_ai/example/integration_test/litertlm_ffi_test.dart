@@ -22,12 +22,6 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
 // ignore: implementation_imports — reads core's file-system service to check install paths
 import 'package:flutter_edge_ai/src/di/service_registry.dart'
     show ServiceRegistry;
-// ignore: implementation_imports — the open-session backing the load chose
-import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart'
-    show FfiInferenceModel;
-// ignore: implementation_imports — the open-session backing the load chose
-import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart'
-    show OpenSessionBacking;
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'registry_evidence.dart';
 
@@ -741,17 +735,11 @@ void main() {
       await b.close();
     });
 
-    // Media on an openSession .litertlm session: taken where the session is
-    // its own native conversation (a backend whose live conversations were
-    // verified, L3), rejected loudly where it is virtual — its history is
-    // replayed text-only on switch.
-    testWidgets('openSession takes image/audio only on native backing', (
-      t,
-    ) async {
+    // Media parity: a native open session keeps the media in its own
+    // conversation, while a virtual one keeps it in Dart and replays the full
+    // message when sessions switch. Both accept the same input.
+    testWidgets('openSession takes image on every backing', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 1024);
-      final native =
-          (model as FfiInferenceModel).openSessionBacking ==
-          OpenSessionBacking.native;
       final a = await model.openSession(temperature: 0.0, topK: 1);
       try {
         await a.addQueryChunk(
@@ -761,13 +749,9 @@ void main() {
             imageBytes: _testImage,
           ),
         );
-        if (native) {
-          final reply = await a.getResponse();
-          print('[multi-session media] native: "$reply"');
-          expect(reply.trim(), isNotEmpty);
-        } else {
-          await expectLater(a.getResponse(), throwsA(isA<UnsupportedError>()));
-        }
+        final reply = await a.getResponse();
+        print('[multi-session media] "$reply"');
+        expect(reply.trim(), isNotEmpty);
       } finally {
         await a.close();
       }

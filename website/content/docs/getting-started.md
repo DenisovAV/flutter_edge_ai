@@ -512,12 +512,13 @@ sampling and LoRA of the session that loaded it.
 
 The model weights (the big, expensive part — hundreds of MB to several GB) are
 loaded **once** and shared across every session, but a session is not always
-lightweight. Native `.litertlm` sessions
-have one conversation and KV cache each on macOS CPU/Metal, Linux and Windows
-CPU, Android Adreno/Mali, Qualcomm or Google Tensor NPUs on Android, and Intel
-NPUs on Windows. Linux Vulkan, Windows D3D12, iOS, Android
-CPU/PowerVR/MediaTek, unverified Linux arm64 accelerators and the web instead
-use virtual sessions that replay full messages into one shared conversation.
+lightweight. Native `.litertlm` sessions have one conversation and KV cache
+each on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, Qualcomm or
+Google Tensor NPUs on Android, and Intel NPUs on Windows. Linux Vulkan, Windows
+D3D12, iOS, Android CPU/PowerVR/MediaTek, and unverified Linux arm64
+accelerators instead use virtual sessions that replay full messages, including
+media, into one shared conversation. The web runtime is also virtual but
+remains text-only.
 Hybrid models such as LFM2 rebuild from full messages when recovery is needed
 and never rewind.
 
@@ -558,7 +559,8 @@ onward (the first two reused freed memory). A virtual `.litertlm`
 session keeps full message history instead and pays replay time when it becomes
 active. A MediaPipe `.task` session on Android or iOS holds its own KV cache (~100–500 MB depending
 on model + `maxTokens`), so on phones with large models (Gemma 4 E2B+) several
-concurrent sessions can OOM. GGUF sessions share one runtime with no separate native KV cache.
+concurrent sessions can OOM. GGUF sessions share one runtime with no separate
+native KV cache.
 An ONNX session on the web keeps only its history, resent on every turn.
 `.litertlm` on the web and built-in AI are not measured. Cap the count with
 `maxConcurrentSessions:` on `getActiveModel(...)` — `openSession()` throws

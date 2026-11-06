@@ -29,6 +29,11 @@ const Map<String, dynamic> kFlutterEdgeAiModelSupports = {
   'output': ['text', 'json'],
 };
 
+/// Genkit 1.0 does not notify a model action when the consumer cancels its
+/// chunk subscription. Bound the native session even when no cancellation
+/// token was supplied and the action keeps running without a listener.
+const Duration _streamingGenerationTimeout = Duration(minutes: 10);
+
 /// Capabilities a flutter_edge_ai model advertises to Genkit. Shared by the
 /// plugin's `list()` metadata AND the resolved [Model]'s `metadata` so the two
 /// never drift. [tools] and [media] come from the model's configuration; a
@@ -476,6 +481,13 @@ Future<ModelResponse> _respond(
     );
   }
 
+  var streamingTimedOut = false;
+  final streamingTimer = context.streamingRequested
+      ? Timer(_streamingGenerationTimeout, () {
+          streamingTimedOut = true;
+          stop();
+        })
+      : null;
   final detach = cancel?.onCancel(stop);
   ModelResponse? response;
   Object? failure;
@@ -498,6 +510,7 @@ Future<ModelResponse> _respond(
     failure = error;
     failureStack = stack;
   }
+  streamingTimer?.cancel();
   // Detach before the first await below: from here on no stop can start, so
   // the one awaited next is the last. It must land before the caller releases
   // the lock, or it reaches the shared native model during the next request.
@@ -521,6 +534,14 @@ Future<ModelResponse> _respond(
     // context window had left. The engine and the chat are as before the
     // turn, and the same input fails the same way again, so it stays local.
     failure = contextLimitError(error, failureStack!);
+  }
+  if (streamingTimedOut && failure == null) {
+    failure = GenkitException(
+      'The streamed on-device generation exceeded the connector\'s '
+      '10-minute limit.',
+      status: StatusCode.deadlineExceeded,
+    );
+    failureStack = StackTrace.current;
   }
   if (failure != null) {
     // The generation's own error is the one reported. A stop that failed as

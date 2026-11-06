@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genkit/genkit.dart';
@@ -89,6 +92,42 @@ void main() {
 
     expect(response.finishReason, FinishReason.stop);
     expect(prompt(), isNot(contains('conform to the following schema')));
+  });
+
+  test('an abandoned long stream is stopped and its chat is closed', () {
+    fakeAsync((async) {
+      fakeChat
+        ..generationGate = Completer<void>()
+        ..streamingResponses = const [
+          gemma.TextResponse('first'),
+          gemma.TextResponse('second'),
+        ];
+      var consumerDone = false;
+
+      ai
+          .generateStream(
+            model: flutterEdgeAi.model('m'),
+            prompt: 'Keep going.',
+          )
+          .take(1)
+          .drain<void>()
+          .then((_) => consumerDone = true);
+      async.flushMicrotasks();
+
+      expect(consumerDone, isTrue);
+      expect(fakeChat.stopGenerationCallCount, 0);
+      expect(fakeChat.closeCallCount, 0);
+
+      async.elapse(const Duration(minutes: 10));
+      async.flushMicrotasks();
+
+      expect(fakeChat.stopGenerationCallCount, 1);
+      expect(fakeChat.closeCallCount, 1);
+      async.elapse(const Duration(minutes: 10));
+      async.flushMicrotasks();
+      expect(fakeChat.stopGenerationCallCount, 1);
+      expect(fakeChat.closeCallCount, 1);
+    });
   });
 
   test('a model that enforces the schema gets a schemantic type\'s '

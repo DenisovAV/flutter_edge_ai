@@ -52,6 +52,16 @@ is on the [Capabilities](/docs/capabilities) page.
   `flutter_edge_ai_speech` has no hook of its own and consumes that bundle
   transitively. `flutter_edge_ai_embeddings` touches no native library at all. `flutter_edge_ai_onnx` owns its own separate ORT / ORT-GenAI
   native archives.
+- **LiteRT-LM open sessions.** `openSession` / `openChat` use one native
+  conversation and KV cache per session on macOS CPU/Metal, Linux and Windows
+  CPU, Android Adreno/Mali, Qualcomm or Google Tensor NPUs on Android, and Intel
+  NPUs on Windows. Linux Vulkan, Windows D3D12, iOS, Android
+  CPU/PowerVR/MediaTek, unverified Linux arm64 accelerators and the web use
+  virtual replay.
+  Hybrid models such as LFM2 rebuild from full messages when recovery is needed
+  and never rewind. At `maxTokens: 4096`, Gemma 4 E2B measured 36.8 MiB of
+  RSS per idle native session from the third session onward on an M5 Pro; use
+  `maxConcurrentSessions` to bound the count.
 
 ## Choosing packages
 

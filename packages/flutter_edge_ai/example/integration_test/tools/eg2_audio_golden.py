@@ -1,7 +1,8 @@
 """The EmbeddingGemma 2 audio and combined-input golden (R5 §10.4), measured the
 way the earlier EG2 goldens were (eg2_design_backup/measurements/eg2common.py,
-RawEngine): Google's `litert-lm` 0.18.0 wheel from PyPI, its own native
-library driven over the LiteRT-LM C API with ctypes, on the 740m bundle, CPU.
+RawEngine): Google's `litert-lm` wheel from PyPI (0.19.0 since 2026-11-04;
+0.18.0 before), its own native library driven over the LiteRT-LM C API 1.0
+with ctypes, on the 740m bundle, CPU.
 
 Engine settings mirror flutter_edge_ai_litertlm's `.litertlm` pass: backend
 "cpu", NULL vision and audio backends (present towers run on the main one),
@@ -34,8 +35,8 @@ and two of the vision scenes (example/assets/eg2_vision/), and writes:
 
 Vectors are base64 little-endian float32, as the image golden's.
 
-usage: <venv with litert-lm==0.18.0 and numpy>/bin/python -I eg2_audio_golden.py \\
-           <path to embeddinggemma-2-740m.litertlm> [<our libLiteRtLm>]
+usage: <venv with litert-lm==0.19.0 and numpy>/bin/python -I eg2_audio_golden.py \\
+           <path to embeddinggemma-2-740m.litertlm> [<our libLiteRtLm> <its build>]
 """
 import base64
 import ctypes
@@ -99,34 +100,39 @@ def cos(a, b):
 
 
 def _bind(lib):
-    """C signatures for a libLiteRtLm loaded with ctypes (the wheel's own
-    loader sets the same ones)."""
+    """C signatures for a libLiteRtLm on LiteRT-LM C API 1.0 (0.19.0 and later)
+    loaded with ctypes: every call that can fail returns a LiteRtLmStatusCode
+    (0 = OK) and writes its result through an out-parameter."""
     vp, cp, i, b, sz = ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_bool, ctypes.c_size_t
+    out = ctypes.POINTER(vp)
     for name, (res, args) in {
-        "litert_lm_get_last_error_code": (i, []),
+        "litert_lm_get_api_version": (i, [ctypes.POINTER(i)] * 3),
         "litert_lm_get_last_error_message": (cp, []),
         "litert_lm_clear_last_error": (None, []),
-        "litert_lm_embedding_engine_settings_create": (vp, [cp, cp, cp, cp]),
+        "litert_lm_embedding_engine_settings_create": (i, [cp, cp, cp, cp, out]),
         "litert_lm_embedding_engine_settings_delete": (None, [vp]),
-        "litert_lm_embedding_engine_settings_set_cache_dir": (None, [vp, cp]),
-        "litert_lm_embedding_engine_settings_set_max_input_length": (None, [vp, i]),
-        "litert_lm_embedding_engine_settings_set_vision_tokens_per_image": (None, [vp, i]),
-        "litert_lm_embedding_engine_create": (vp, [vp]),
+        "litert_lm_embedding_engine_settings_set_cache_dir": (i, [vp, cp]),
+        "litert_lm_embedding_engine_settings_set_max_input_length": (i, [vp, i]),
+        "litert_lm_embedding_engine_settings_set_vision_tokens_per_image": (i, [vp, i]),
+        "litert_lm_embedding_engine_create": (i, [vp, out]),
         "litert_lm_embedding_engine_delete": (None, [vp]),
-        "litert_lm_embedding_options_create": (vp, []),
+        "litert_lm_embedding_options_create": (i, [out]),
         "litert_lm_embedding_options_delete": (None, [vp]),
-        "litert_lm_embedding_options_set_normalize": (None, [vp, b]),
-        "litert_lm_embedding_options_set_insert_special_tokens": (None, [vp, b]),
-        "litert_lm_embedding_options_set_input_overflow_strategy": (None, [vp, i]),
-        "litert_lm_input_data_create": (vp, [i, cp, sz]),
+        "litert_lm_embedding_options_set_normalize": (i, [vp, b]),
+        "litert_lm_embedding_options_set_insert_special_tokens": (i, [vp, b]),
+        "litert_lm_embedding_options_set_input_overflow_strategy": (i, [vp, i]),
+        "litert_lm_input_data_create": (i, [i, cp, sz, out]),
         "litert_lm_input_data_delete": (None, [vp]),
-        "litert_lm_embedding_engine_compute_embedding": (vp, [vp, ctypes.POINTER(vp), sz, vp]),
-        "litert_lm_embedding_response_get_size": (sz, [vp]),
-        "litert_lm_embedding_response_get_values": (ctypes.POINTER(ctypes.c_float), [vp]),
+        "litert_lm_embedding_engine_compute_embedding": (i, [vp, out, sz, vp, out]),
+        "litert_lm_embedding_response_get_size": (i, [vp, ctypes.POINTER(sz)]),
+        "litert_lm_embedding_response_get_values": (i, [vp, ctypes.POINTER(ctypes.POINTER(ctypes.c_float))]),
         "litert_lm_embedding_response_delete": (None, [vp]),
     }.items():
         f = getattr(lib, name)
         f.restype, f.argtypes = res, args
+    major, minor, patch = ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+    if lib.litert_lm_get_api_version(ctypes.byref(major), ctypes.byref(minor), ctypes.byref(patch)) or major.value != 1:
+        raise SystemExit(f"not LiteRT-LM C API 1.x: {major.value}.{minor.value}.{patch.value}")
     return lib
 
 
@@ -134,27 +140,35 @@ class Engine:
     """A libLiteRtLm over the C API (the RawEngine of the measurements), with
     the pass's settings: the wheel's own library, or [dylib]."""
 
-    def __init__(self, model_path, cache_dir, dylib=None):
+    def __init__(self, model_path, cache_dir, dylib=None, vision_tokens_per_image=140):
         from litert_lm._ffi import InputDataType, _get_lib
 
         lib = _bind(_get_lib() if dylib is None else ctypes.CDLL(dylib))
         self.lib, self.types = lib, InputDataType
-        s = lib.litert_lm_embedding_engine_settings_create(model_path.encode(), b"cpu", None, None)
-        if not s:
-            raise RuntimeError(self._error("settings_create"))
+        s = self._create("settings_create", lambda out: lib.litert_lm_embedding_engine_settings_create(
+            model_path.encode(), b"cpu", None, None, out))
         try:
-            lib.litert_lm_embedding_engine_settings_set_cache_dir(s, cache_dir.encode())
-            lib.litert_lm_embedding_engine_settings_set_max_input_length(s, 1024)
-            lib.litert_lm_embedding_engine_settings_set_vision_tokens_per_image(s, 140)
-            self.engine = lib.litert_lm_embedding_engine_create(s)
-            if not self.engine:
-                raise RuntimeError(self._error("engine_create"))
+            self._check("set_cache_dir", lib.litert_lm_embedding_engine_settings_set_cache_dir(s, cache_dir.encode()))
+            self._check("set_max_input_length", lib.litert_lm_embedding_engine_settings_set_max_input_length(s, 1024))
+            if vision_tokens_per_image is not None:
+                self._check("set_vision_tokens_per_image",
+                            lib.litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
+                                s, vision_tokens_per_image))
+            self.engine = self._create("engine_create", lambda out: lib.litert_lm_embedding_engine_create(s, out))
         finally:
             lib.litert_lm_embedding_engine_settings_delete(s)
 
-    def _error(self, where):
-        message = self.lib.litert_lm_get_last_error_message()
-        return f"{where}: code {self.lib.litert_lm_get_last_error_code()} {message!r}"
+    def _check(self, where, code):
+        if code:
+            message = self.lib.litert_lm_get_last_error_message()
+            raise RuntimeError(f"{where}: status {code} {message!r}")
+
+    def _create(self, where, call):
+        out = ctypes.c_void_p()
+        self._check(where, call(ctypes.byref(out)))
+        if not out.value:
+            raise RuntimeError(f"{where}: OK with no result")
+        return out.value
 
     def embed(self, text=None, images=(), audio=None):
         """One vector: the text part, then the images, then the audio — the
@@ -166,23 +180,28 @@ class Engine:
         parts += [(t.IMAGE, image) for image in images]
         if audio is not None:
             parts.append((t.AUDIO, audio))
-        options = lib.litert_lm_embedding_options_create()
+        options = self._create("options_create", lib.litert_lm_embedding_options_create)
         created = []
         try:
-            lib.litert_lm_embedding_options_set_normalize(options, True)
-            lib.litert_lm_embedding_options_set_insert_special_tokens(options, True)
-            lib.litert_lm_embedding_options_set_input_overflow_strategy(options, 1)
+            self._check("set_normalize", lib.litert_lm_embedding_options_set_normalize(options, True))
+            self._check("set_insert_special_tokens",
+                        lib.litert_lm_embedding_options_set_insert_special_tokens(options, True))
+            self._check("set_input_overflow_strategy",
+                        lib.litert_lm_embedding_options_set_input_overflow_strategy(options, 1))
             for kind, data in parts:
-                created.append(lib.litert_lm_input_data_create(kind, data, len(data)))
+                created.append(self._create("input_data_create",
+                                            lambda out: lib.litert_lm_input_data_create(kind, data, len(data), out)))
             array = (ctypes.c_void_p * len(created))(*created)
             lib.litert_lm_clear_last_error()
-            response = lib.litert_lm_embedding_engine_compute_embedding(self.engine, array, len(created), options)
-            if not response:
-                raise RuntimeError(self._error("compute_embedding"))
+            response = self._create("compute_embedding", lambda out: lib.litert_lm_embedding_engine_compute_embedding(
+                self.engine, array, len(created), options, out))
             try:
-                n = lib.litert_lm_embedding_response_get_size(response)
-                values = lib.litert_lm_embedding_response_get_values(response)
-                return np.array([values[i] for i in range(n)], dtype=np.float32)
+                n = ctypes.c_size_t()
+                values = ctypes.POINTER(ctypes.c_float)()
+                self._check("response_get_size", lib.litert_lm_embedding_response_get_size(response, ctypes.byref(n)))
+                self._check("response_get_values",
+                            lib.litert_lm_embedding_response_get_values(response, ctypes.byref(values)))
+                return np.array([values[i] for i in range(n.value)], dtype=np.float32)
             finally:
                 lib.litert_lm_embedding_response_delete(response)
         finally:
@@ -222,7 +241,7 @@ def measure_native(model_path, dylib, out_path):
         json.dump(out, f)
 
 
-def main(model_path, dylib=None):
+def main(model_path, dylib=None, build=None):
     if sha256(model_path) != BUNDLE["sha256"]:
         raise SystemExit(f"{model_path} is not the pinned 740m bundle")
     def separate_run(library):
@@ -300,8 +319,8 @@ def main(model_path, dylib=None):
 
     golden = {
         "description": (
-            "EmbeddingGemma 2 740m audio and combined-input vectors from Google's litert-lm 0.18.0 "
-            "wheel (PyPI), its own native library over the LiteRT-LM C API, CPU. Clips: "
+            "EmbeddingGemma 2 740m audio and combined-input vectors from Google's litert-lm "
+            f"{version('litert-lm')} wheel (PyPI), its own native library over the LiteRT-LM C API, CPU. Clips: "
             "example/assets/eg2_audio (generate_eg2_audio_clips.py, eSpeak NG 1.52.0 + FFmpeg 9.0.2); "
             "images: example/assets/eg2_vision. Written by integration_test/tools/eg2_audio_golden.py. "
             "Vectors are base64 little-endian float32."
@@ -322,7 +341,7 @@ def main(model_path, dylib=None):
         },
         "native_library": None if dylib is None else {
             "what": "vector_native: flutter_edge_ai's own libLiteRtLm build, same settings, over ctypes",
-            "build": "native-v0.18.0-e (patch_c_api.sh sections 13-14; build_macos.sh), local build",
+            "build": build,
             "file": os.path.basename(dylib),
             "sha256": sha256(dylib),
             "host": f"{platform.system()} {platform.machine()}",
@@ -345,7 +364,7 @@ def main(model_path, dylib=None):
     with open(os.path.join(GOLDENS, "eg2_audio_golden.dart"), "w", encoding="utf-8") as f:
         f.write(
             "// GENERATED by integration_test/tools/eg2_audio_golden.py from Google's\n"
-            "// litert-lm 0.18.0 wheel — do not edit. Same content as\n"
+            f"// litert-lm {version('litert-lm')} wheel — do not edit. Same content as\n"
             "// eg2_audio_golden.json (test/eg2_audio_golden_test.dart checks it).\n"
             "//\n"
             "// EmbeddingGemma 2 740m audio and combined-input golden for\n"
@@ -372,4 +391,4 @@ if __name__ == "__main__":
     if sys.argv[1] == "--native":
         measure_native(*sys.argv[2:5])
     else:
-        main(*sys.argv[1:3])
+        main(*sys.argv[1:4])

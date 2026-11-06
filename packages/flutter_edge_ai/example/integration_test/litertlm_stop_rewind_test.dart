@@ -1,8 +1,8 @@
 // A stopped turn is rewound in place (flutter_edge_ai_litertlm
 // `patch_c_api.sh` section 16): the next turn runs on the same conversation,
 // which keeps every earlier turn — images and audio included — and the
-// stopped exchange itself. Before it, the conversation was rebuilt from a
-// text-only history and forgot earlier media.
+// stopped exchange itself. A stopped audio turn is put back by exact native
+// rewind, including on virtual sessions, before another session can switch it.
 //
 // Covers both ways to stop: stopGeneration(), and cancelling the response
 // subscription (awaited or not) with the next message sent right away — the
@@ -83,6 +83,21 @@ Future<_Turn> _send(
   Object? error;
   final sw = Stopwatch()..start();
   var textChunks = 0;
+  var stopIssued = false;
+  // A native media prefill can stall before producing its first chunk. The
+  // chunk-count barge-in still needs a deadline, otherwise the test never asks
+  // the now-off-main send to stop and a device campaign can wait forever.
+  final prefillDeadline = !stop && stopAfterText == null
+      ? null
+      : Timer(const Duration(seconds: 15), () {
+          if (stopIssued) return;
+          stopIssued = true;
+          debugPrint(
+            '[rewind/$_backendName] $label produced no stop point within '
+            '15 s; cancelling the native prefill',
+          );
+          unawaited(chat.stopGeneration());
+        });
   try {
     await for (final r in chat.generateChatResponseAsync()) {
       if (r is TextResponse) {
@@ -93,12 +108,15 @@ Future<_Turn> _send(
           ? textChunks == stopAfterText && r is TextResponse
           : stop && (r is TextResponse || r is ThinkingResponse);
       if (due) {
+        stopIssued = true;
         await chat.stopGeneration();
         stop = false;
       }
     }
   } catch (e) {
     error = e;
+  } finally {
+    prefillDeadline?.cancel();
   }
   debugPrint(
     '[rewind/$_backendName] $label (${sw.elapsedMilliseconds} ms) '
@@ -355,9 +373,9 @@ void main() {
   });
 
   // Stopped a few words in, before the reply names the city, so the answer has
-  // to come from the audio. On Metal the model names it. On CPU, Gemma 4 E2B
-  // (greedy) answers from its own cut reply instead and says it has no audio:
-  // measured with the same rewind and the same audio, the reply put back
+  // to come from the replayed audio. Before full-message recovery, Gemma 4 E2B
+  // could answer from its own cut reply instead and say it had no audio:
+  // measured with the same native rewind and the same audio, the reply put back
   // decided it — "OK" gave "Paris", "The recording asks what the" (with or
   // without "…" or "(interrupted)") gave "please provide the audio". So on CPU
   // this checks the rewind and that the chat answers, not the city. Android's
@@ -368,9 +386,7 @@ void main() {
   // recording, the model wrote "What will it be like in Paris tomorrow?", and
   // a cut at "OK." or no stop at all gave "Paris". So Android's GPU is checked
   // as the CPU is.
-  testWidgets('a stopped turn that carried audio keeps it (a barge-in)', (
-    tester,
-  ) async {
+  Future<void> stoppedAudioBargeIn() async {
     _log.clear();
     final chat = await newChat();
     try {
@@ -399,16 +415,44 @@ void main() {
       );
 
       expect(city.error, isNull);
-      if (backend == PreferredBackend.cpu || Platform.isAndroid) {
-        expect(city.reply.trim(), isNotEmpty);
-      } else {
-        expect(city.reply.toLowerCase(), contains('paris'));
+      if (!city.reply.toLowerCase().contains('paris')) {
+        if (backend == PreferredBackend.cpu || Platform.isAndroid) {
+          // This is the model's established 0.18 behaviour with the exact
+          // audio rewind and the stopped partial reply retained: CPU and the
+          // Android GPU condition on that partial text and can deny the city.
+          // The desktop virtual GPU regression is stricter below.
+          expect(city.reply.trim(), isNotEmpty);
+          expectRewoundOnly(1);
+          return;
+        }
+        // Some backends condition the next answer on the stopped assistant
+        // text (for example, "The recording is a question") and deny that a
+        // city was mentioned even though the rewound audio is still present.
+        // Ask for the recording itself to distinguish that model answer from
+        // media loss. This reproduced on 0.18 and 0.19 on PTL D3D12.
+        final repeated = await _send(
+          chat,
+          const Message(
+            text:
+                'Repeat the sentence from the audio recording as exactly as '
+                'you can.',
+            isUser: true,
+          ),
+          'T3 repeat audio',
+        );
+        expect(repeated.error, isNull);
+        expect(repeated.reply.toLowerCase(), contains('paris'));
       }
       expectRewoundOnly(1);
     } finally {
       await chat.close();
     }
-  });
+  }
+
+  testWidgets(
+    'a stopped turn that carried audio keeps it (an openChat barge-in)',
+    (tester) => stoppedAudioBargeIn(),
+  );
 
   testWidgets('thinking: after a stop the conversation keeps answering '
       '(#681 review, critical 2)', (tester) async {
@@ -464,23 +508,46 @@ void main() {
       final bad = await _send(
         chat,
         Message.withImage(
-          text: 'What is this?',
+          text: 'Remember the secret code QUUXIMAGE. What is this?',
           imageBytes: Uint8List.fromList([0, 1, 2, 3]),
           isUser: true,
         ),
         'T1 bad image',
       );
-      await _send(chat, name, 'T2 name');
-      await _send(chat, story, 'T3 stopped', stop: true);
-      final first = await _send(chat, askName, 'T4 name');
-      final second = await _send(chat, askName, 'T5 name');
+      final rejectedHistory = await _send(
+        chat,
+        const Message(
+          text:
+              'What secret code did I give before this question? If there was '
+              'no earlier accepted user message, answer exactly NONE.',
+          isUser: true,
+        ),
+        'T2 rejected message absent',
+      );
+      await _send(chat, name, 'T3 name');
+      await _send(chat, story, 'T4 stopped', stop: true);
+      final first = await _send(chat, askName, 'T5 name');
+      final second = await _send(chat, askName, 'T6 name');
 
       expect(bad.error, isNotNull, reason: 'four bytes are not an image');
+      expect(rejectedHistory.error, isNull);
+      expect(rejectedHistory.reply.toUpperCase(), contains('NONE'));
+      expect(rejectedHistory.reply.toUpperCase(), isNot(contains('QUUXIMAGE')));
       for (final turn in [first, second]) {
         expect(turn.error, isNull);
         expect(turn.reply.toLowerCase(), contains('zorblax'));
       }
-      expectRewoundOnly(1);
+      expect(
+        _log.where((l) => l.contains('rebuilt the conversation')),
+        hasLength(1),
+        reason: 'the failed media message requires a history rebuild',
+      );
+      expect(
+        _log.where((l) => l.contains('rewound the conversation')),
+        hasLength(1),
+        reason: 'the later stopped turn still rewinds exactly',
+      );
+      _log.clear();
     } finally {
       await chat.close();
     }

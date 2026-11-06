@@ -412,6 +412,9 @@ final class LiteRtLmGemma3_1bIt extends LiteRtLmModel {
   LiteRtLmVariant get q4Ekv4096 => _gemma3_1bIt$q4Ekv4096;
 
   /// `Gemma3-1B-IT_q4_ekv1280_mt6989.litertlm`, 1.03 GB.
+  @Deprecated(
+    'Withheld: MediaTek NPU is refused from flutter_edge_ai_litertlm 1.20.0 on LiteRT-LM 0.19 because the vendor dispatch does not export LiteRtDispatchQueryInterface and an MT6989 conversation returned an empty second message (decision K). Version 1.19.x ran this build. (https://github.com/google-ai-edge/LiteRT-LM/issues/4256) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
+  )
   LiteRtLmVariant get npuMt6989 => _gemma3_1bIt$npuMt6989;
 
   /// `Gemma3-1B-IT_q4_ekv1280_mt6991.litertlm`, 1.03 GB.
@@ -484,6 +487,7 @@ const _gemma3_1bIt$npuMt6989 = LiteRtLmVariant._(
   textBackends: {PreferredBackend.npu},
   npuTarget: LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6989'),
   requiredMaxTokens: 1280,
+  withheld: {PreferredBackend.cpu, PreferredBackend.gpu, PreferredBackend.npu},
 );
 
 const _gemma3_1bIt$npuMt6991 = LiteRtLmVariant._(

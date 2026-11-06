@@ -4,6 +4,15 @@ import 'package:flutter_edge_ai/engine.dart';
 /// for every later conversation (google-ai-edge/LiteRT-LM#2080), so a later
 /// session that asks for another sampler does not get it. This records the
 /// first and says what a later generation should report.
+///
+/// A larger `topK` later is covered too. LiteRT-LM 0.19 refuses a GPU
+/// sampler `k` above the one the sampler was created with (upstream
+/// `6b799ae`, `TopKGpuSampler::CheckTopKWithinMax`), but only in
+/// `UpdateConfig`, whose one caller (the MTP drafter's
+/// `UpdateOrRecreateSampler`) creates a new sampler for a larger `k` first;
+/// the main executor never updates its sampler after the first generation
+/// (`InitializeSampler` returns early). So a later session's larger `topK`
+/// meets no native error: it is not applied, and this latch says so.
 final class EngineSamplerLatch {
   ResolvedSampling? _fixed;
   bool _fixedExplicit = false;

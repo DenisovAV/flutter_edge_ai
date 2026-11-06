@@ -1,21 +1,20 @@
-// How this LiteRT-LM scores right after a prefill, found out once per loaded
-// model before its first decision. LiteRT-LM 0.18.0 scores a target right
-// after a prefill without the prompt's second-to-last token (#3561, fixed
-// upstream after 0.18.0): mode `once` prefills the prompt's last token again,
-// once per decision, which gives the reference's scores there; mode `plain`
-// does not, which is right on an engine with the fix. Each is wrong on the
-// other engine, so the check picks, and refuses an engine it cannot tell.
+// Whether this LiteRT-LM scores a target right after a prefill correctly,
+// found out once per loaded model before its first decision. LiteRT-LM 0.18.0
+// scored it without the prompt's second-to-last token (#3561); this package
+// worked around that with a mode `once` that prefilled the prompt's last token
+// again. 0.19.0 carries the fix (upstream b8b3131), the pinned native build is
+// 0.19, and the workaround is gone: a decision is scored right after its
+// prefill, and an engine that still scores the 0.18 way is refused.
 //
 // The check is litetune's own (`decision_scripts` ENGINE_SCRIPT, 0.5.0): two
 // prompts that differ only in their second-to-last token score each probe
 // token identically on 0.18.0 and differently with the fix. Two checks of our
-// own follow: a prompt that differs early must score differently (so
-// "identical" cannot mean scores that ignore the prompt), and the picked mode
-// must score targets in one run, in either order, as each scores alone (mode
-// `once` is exact after a rewind only through how 0.18.0's step, rollback and
-// rewind interact; a LiteRT-LM that changes them is refused here, not trusted
-// silently). Pure Dart over the scorer's calls, so it is unit-tested without
-// an engine.
+// own follow: a prompt that differs early must score differently (so a
+// difference cannot come from scores that ignore the prompt), and targets
+// scored in one run, in either order, must score as each scores alone (each
+// target after the first is scored after a rewind; a LiteRT-LM whose rewind
+// changes them is refused here, not trusted silently). Pure Dart over the
+// scorer's calls, so it is unit-tested without an engine.
 
 // The decider SPI (DeciderUnsupportedException) is @experimental.
 // ignore_for_file: experimental_member_use
@@ -24,30 +23,20 @@ import 'dart:math' as math;
 
 import 'package:flutter_edge_ai/engine.dart';
 
-/// How a decision is scored on this engine; see the file comment.
-enum LiteRtLmScoringMode {
-  /// Prefill the prompt's last token again, once per decision (0.18.0).
-  once,
-
-  /// Score right after the prefill (an engine with the #3561 fix).
-  plain,
-}
-
-/// The mode a release build scores in, without the self-check: the mode it
-/// picked on every engine measured (LiteRT-LM 0.18.0 on the CPU, Apple Metal
-/// and Adreno 830; Gemma 3 270M, Qwen3 1.7B, Gemma 4 E2B). It belongs to the
-/// native build: a LiteRT-LM with the #3561 fix scores in `plain`, and a
-/// debug run's self-check is what tells.
-const liteRtLmReleaseScoringMode = LiteRtLmScoringMode.once;
-
-/// How a model scores: [selfCheck] in debug and profile builds, so a
-/// developer's run on the target hardware checks the engine; in a release
-/// build ([releaseMode]) [liteRtLmReleaseScoringMode], without the check and
-/// its cost at the first decision.
-Future<LiteRtLmScoringMode> liteRtLmScoringMode({
+/// Runs [selfCheck] in debug and profile builds, so a developer's run on the
+/// target hardware checks the engine; skips it in a release build
+/// ([releaseMode]), and its cost at the first decision with it. The pinned
+/// native build passed it on every engine measured (LiteRT-LM 0.19 on the
+/// CPU, Apple Metal, Adreno 830, Tesla T4 and Arc B390). True when the check
+/// ran and passed, false when it was skipped.
+Future<bool> liteRtLmScoringChecked({
   required bool releaseMode,
-  required Future<LiteRtLmScoringMode> Function() selfCheck,
-}) => releaseMode ? Future.value(liteRtLmReleaseScoringMode) : selfCheck();
+  required Future<void> Function() selfCheck,
+}) async {
+  if (releaseMode) return false;
+  await selfCheck();
+  return true;
+}
 
 /// The pair the check compares: the same text ending in the model turn's
 /// opening and in the user turn's (`decision_scripts.FIXED`).
@@ -61,37 +50,33 @@ const liteRtLmSelfCheckControlPrompt =
     '<start_of_turn>user\nReply with one word.<end_of_turn>\n'
     '<start_of_turn>model\n';
 
-/// Picks the [LiteRtLmScoringMode] for an engine, from the first three
-/// [targets], the first token of each that tokenises back to itself, each
-/// scored after both prompts of the pair, twice; then checks the mode it
-/// picked the way a decision uses it.
+/// Checks that an engine scores right after a prefill with the whole prompt,
+/// from the first three [targets], the first token of each that tokenises
+/// back to itself, each scored after both prompts of the pair, twice; then
+/// checks targets scored the way a decision scores them.
 ///
-/// [scoreOneToken] scores one token right after a fresh prefill of a prompt,
-/// with nothing prefilled again. [scoreInMode] scores one-token targets after
-/// a prompt in one run, as a decision does in that mode: each target after a
-/// rewind but the first.
+/// [scoreOneToken] scores one token right after a fresh prefill of a prompt.
+/// [scoreInRun] scores one-token targets after a prompt in one run, as a
+/// decision does: each target after a rewind but the first.
 ///
 /// Throws `DeciderUnsupportedException` when there is nothing to compare,
 /// when the two runs of one prompt differ (an engine whose scores are not
 /// repeatable cannot be told apart), when a score is not a log-probability,
-/// when some comparisons are identical and others are not, when a prompt
-/// that differs early scores the same (the scores do not see the prompt),
-/// and when targets scored in one run, in either order, do not score as each
-/// does alone (rewinding between targets changes them). The refusals that
-/// depend on the engine's arithmetic name [backend], the one the check ran
-/// on, and on the GPU point to the CPU.
-Future<LiteRtLmScoringMode> liteRtLmScoringSelfCheck({
+/// when every comparison of the pair is identical (the 0.18 scoring, #3561),
+/// when some are identical and others are not, when a prompt that differs
+/// early scores the same (the scores do not see the prompt), and when
+/// targets scored in one run, in either order, do not score as each does
+/// alone (rewinding between targets changes them). The refusals that depend
+/// on the engine's arithmetic name [backend], the one the check ran on, and
+/// on the GPU point to the CPU.
+Future<void> liteRtLmScoringSelfCheck({
   required PreferredBackend? backend,
   required List<String> targets,
   required Future<List<int>> Function(String text) tokenize,
   required Future<String> Function(List<int> ids) detokenize,
   required Future<double> Function(String prompt, String token) scoreOneToken,
-  required Future<List<double>> Function(
-    LiteRtLmScoringMode mode,
-    String prompt,
-    List<String> tokens,
-  )
-  scoreInMode,
+  required Future<List<double>> Function(String prompt, List<String> tokens)
+  scoreInRun,
 }) async {
   final probes = <String>[];
   for (final target in targets.take(3)) {
@@ -117,7 +102,7 @@ Future<LiteRtLmScoringMode> liteRtLmScoringSelfCheck({
       'The scoring self-check had nothing to compare: none of the first three '
       'options starts with a token that tokenises back to itself, or the '
       'check\'s two prompts do not differ in their second-to-last token alone. '
-      'Without it this LiteRT-LM\'s scoring mode cannot be told.',
+      'Without it this LiteRT-LM\'s scoring cannot be checked.',
     );
   }
   final diffs = <double>[];
@@ -166,40 +151,43 @@ Future<LiteRtLmScoringMode> liteRtLmScoringSelfCheck({
   }
   final most = diffs.reduce(math.max);
   final least = diffs.reduce(math.min);
-  final LiteRtLmScoringMode mode;
   if (most == 0) {
-    mode = LiteRtLmScoringMode.once;
-  } else if (least > 0) {
-    mode = LiteRtLmScoringMode.plain;
-  } else {
+    throw DeciderUnsupportedException(
+      'The scoring self-check scored its probes identically after two '
+      'prompts that differ in their second-to-last token: this LiteRT-LM '
+      'scores right after a prefill without that token (LiteRT-LM #3561, '
+      'fixed in 0.19.0), so its options would be scored wrongly. A native '
+      'library older than this package\'s is loaded.${_ranOn(backend)}',
+    );
+  }
+  if (least == 0) {
     throw DeciderUnsupportedException(
       'The scoring self-check is mixed: of ${diffs.length} comparisons some '
       'scored identically and some did not (largest difference $most). This '
       'LiteRT-LM scores in a way nobody has measured.${_ranOn(backend)}',
     );
   }
-  // The mode as a decision uses it: every target after the first is scored
-  // after a rewind, which 0.18.0 makes exact only through how its step, its
-  // rollback and its rewind interact. A LiteRT-LM that changes any of them
-  // would score every option after the first wrongly, with no error.
+  // As a decision scores: every target after the first after a rewind. A
+  // LiteRT-LM whose rewind changes the step, the rollback or what the next
+  // score reads would score every option after the first wrongly, with no
+  // error.
   final run = probes.length >= 2 ? probes : [probes.single, probes.single];
   final alone = [
-    for (final z in run) (await scoreInMode(mode, a, [z])).single,
+    for (final z in run) (await scoreInRun(a, [z])).single,
   ];
-  final forward = await scoreInMode(mode, a, run);
-  final backward = await scoreInMode(mode, a, run.reversed.toList());
+  final forward = await scoreInRun(a, run);
+  final backward = await scoreInRun(a, run.reversed.toList());
   for (var i = 0; i < run.length; i++) {
     if (forward[i] != alone[i] || backward[run.length - 1 - i] != alone[i]) {
       throw DeciderUnsupportedException(
         'The scoring self-check scored "${run[i]}" ${alone[i]} alone, '
         '${forward[i]} and ${backward[run.length - 1 - i]} in one run with '
-        'other targets (mode ${mode.name}): on this LiteRT-LM rewinding '
-        'between targets changes their scores, so a decision\'s options '
-        'cannot be scored exactly.${_ranOn(backend)}',
+        'other targets: on this LiteRT-LM rewinding between targets changes '
+        'their scores, so a decision\'s options cannot be scored '
+        'exactly.${_ranOn(backend)}',
       );
     }
   }
-  return mode;
 }
 
 /// Where the check ran, for a refusal; on the GPU, the way to the CPU.

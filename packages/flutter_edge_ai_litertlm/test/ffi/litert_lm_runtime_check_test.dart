@@ -30,6 +30,17 @@ String? _hostDylib() => firstExistingPath(
   ),
 );
 
+/// Why the host libLiteRtLm at [path] is not this release's build, or null.
+/// The download cache is shared by every checkout on the machine, so it can
+/// hold another checkout's native release (one before C API 1.0).
+String? _notThisRelease(String path) {
+  final library = DynamicLibrary.open(path);
+  return library.providesSymbol('litert_lm_get_api_version')
+      ? null
+      : '$path predates LiteRT-LM C API 1.0 (another checkout\'s native '
+            'release in the shared cache; set LITERTLM_DYLIB)';
+}
+
 /// The C library of this host: a real handle that cannot export the sentinel
 /// (a handle's lookup searches that image and its dependencies only).
 String? _hostCLibrary() => Platform.isMacOS
@@ -41,6 +52,153 @@ String? _hostCLibrary() => Platform.isMacOS
     : null;
 
 void main() {
+  group('checkLiteRtLmCApiVersion', () {
+    bool all(String _) => true;
+
+    test('passes a library on C API 1.x', () {
+      for (final minor in [0, 3]) {
+        expect(
+          () => checkLiteRtLmCApiVersion(
+            all,
+            () => (code: 0, major: 1, minor: minor, patch: 2),
+            path: _iosPath,
+          ),
+          returnsNormally,
+        );
+      }
+    });
+
+    test('refuses a library without litert_lm_get_api_version (before 1.0) '
+        'by name, without calling it', () {
+      var called = false;
+      expect(
+        () => checkLiteRtLmCApiVersion(
+          (symbol) => symbol != 'litert_lm_get_api_version',
+          () {
+            called = true;
+            return (code: 0, major: 1, minor: 0, patch: 0);
+          },
+          path: _iosPath,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains(_iosPath),
+              contains('predates its C API 1.0'),
+              contains('litert_lm_get_api_version'),
+            ),
+          ),
+        ),
+      );
+      expect(called, isFalse);
+    });
+
+    test('refuses another major, and a version it could not read', () {
+      for (final (version, says) in [
+        ((code: 0, major: 2, minor: 0, patch: 0), 'reports C API 2.0.0'),
+        ((code: 0, major: 0, minor: 9, patch: 0), 'reports C API 0.9.0'),
+        ((code: 3, major: 1, minor: 0, patch: 0), 'version unknown (status 3)'),
+      ]) {
+        expect(
+          () => checkLiteRtLmCApiVersion(all, () => version, path: _iosPath),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains(says), contains('built against 1.x')),
+            ),
+          ),
+          reason: says,
+        );
+      }
+    });
+
+    test('the major is the one the vendored headers declare', () {
+      final header = File(
+        'native/litert_lm/include/c/engine.h',
+      ).readAsStringSync();
+      expect(
+        header,
+        contains('#define LITERT_LM_C_API_VERSION_MAJOR $liteRtLmCApiMajor\n'),
+      );
+    });
+  });
+
+  group('checkLiteRtLmLibrary, what every open runs', () {
+    test('our build on C API 1.x passes', () {
+      expect(
+        () => checkLiteRtLmLibrary(
+          (_) => true,
+          () => (code: 0, major: 1, minor: 0, patch: 0),
+          path: _iosPath,
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('our build before C API 1.0 is refused: the version gate runs on '
+        'open, not only when called by itself', () {
+      expect(
+        () => checkLiteRtLmLibrary(
+          (symbol) => symbol == liteRtLmOwnBuildSymbol,
+          () => throw StateError('not exported, never called'),
+          path: _iosPath,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('predates its C API 1.0'),
+          ),
+        ),
+      );
+      expect(
+        () => checkLiteRtLmLibrary(
+          (_) => true,
+          () => (code: 0, major: 2, minor: 0, patch: 0),
+          path: _iosPath,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('reports C API 2.0.0'),
+          ),
+        ),
+      );
+    });
+
+    test('another package\'s build is refused first, as that, whatever its '
+        'C API', () {
+      expect(
+        () => checkLiteRtLmLibrary(
+          (symbol) => symbol != liteRtLmOwnBuildSymbol,
+          () => (code: 0, major: 1, minor: 0, patch: 0),
+          path: _iosPath,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('is not the one flutter_edge_ai_litertlm ships'),
+          ),
+        ),
+      );
+    });
+
+    test('requireOwnLiteRtLmBuild runs it', () {
+      final source = File(
+        'lib/src/ffi/litert_lm_runtime_check.dart',
+      ).readAsStringSync();
+      final body = source.substring(
+        source.indexOf('DynamicLibrary requireOwnLiteRtLmBuild('),
+      );
+      expect(body, contains('checkLiteRtLmLibrary('));
+    });
+  });
+
   group('checkOwnLiteRtLmBuild', () {
     test('passes a library that exports our sentinel', () {
       expect(
@@ -190,7 +348,7 @@ void main() {
     final dylib = _hostDylib();
     final noDylib = dylib == null
         ? 'no host libLiteRtLm in the download cache'
-        : null;
+        : _notThisRelease(dylib);
 
     test('is exported by the host libLiteRtLm this package ships', () {
       final library = DynamicLibrary.open(dylib!);
@@ -235,15 +393,11 @@ void main() {
       });
     }
 
-    test('a macOS dev copy that is not ours is skipped, not returned', () {
+    test('a macOS dev copy that is not ours, or not on C API 1.x, is '
+        'skipped, not returned', () {
       expect(
         code('lib/src/ffi/litert_bindings.dart'),
-        matches(
-          RegExp(
-            r'isOwnBuild:\s*\(library\)\s*=>\s*'
-            r'library\.providesSymbol\(liteRtLmOwnBuildSymbol\)',
-          ),
-        ),
+        contains('isOwnBuild: isUsableLiteRtLmBuild,'),
       );
     });
 

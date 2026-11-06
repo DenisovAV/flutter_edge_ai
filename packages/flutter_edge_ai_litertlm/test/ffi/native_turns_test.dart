@@ -157,12 +157,105 @@ void main() {
       },
     );
 
-    test('a chunk after a stop repeats the cancel', () {
+    test('a chunk after a stop does not repeat the native cancel', () {
       final send = NativeTurnStream(turns, 'a');
       send.stream.listen(null);
       turns.cancel('a');
       send.chunk('late');
-      expect(log, ['cancel a', 'cancel a']);
+      expect(log, ['cancel a']);
+    });
+
+    test('a serialized stop during a spawned send is retained until the call '
+        'returns and then cancels exactly once', () {
+      final send = NativeTurnStream(turns, 'a', nativeStartPending: true);
+      send.stream.listen(null);
+      turns.cancel('a');
+      send.chunk('late');
+      expect(log, isEmpty, reason: 'the native send call is still running');
+
+      send.nativeEntered();
+      expect(log, isEmpty, reason: 'the test policy serializes cancellation');
+      send.nativeReturned();
+      send.chunk('later');
+      turns.cancel('a');
+      expect(log, ['cancel a']);
+    });
+
+    test('a non-serialized stop interrupts native prefill after entry and a '
+        'late chunk repeats it', () {
+      final concurrent = NativeTurns<String>(
+        cancelNative: (c) => log.add('cancel $c'),
+        deleteNative: (c) => log.add('delete $c'),
+        serializeCancelWithNativeStart: false,
+      );
+      final send = NativeTurnStream(concurrent, 'a', nativeStartPending: true);
+      send.stream.listen(null);
+      concurrent.cancel('a');
+      expect(log, isEmpty, reason: 'native has no work before entry');
+
+      send.nativeEntered();
+      expect(log, ['cancel a']);
+      send.chunk('late');
+      expect(log, [
+        'cancel a',
+        'cancel a',
+      ], reason: 'a task created after the first cancel is stopped too');
+      send.nativeReturned();
+      expect(log, [
+        'cancel a',
+        'cancel a',
+        'cancel a',
+      ], reason: 'return is the final reliable cancellation boundary');
+      send.cancelled();
+    });
+
+    test(
+      'the stall deadline starts only after native cancellation is issued',
+      () async {
+        final serialized = NativeTurns<String>(
+          cancelNative: (c) => log.add('cancel $c'),
+          deleteNative: (c) => log.add('delete $c'),
+          cancelEndTimeout: const Duration(milliseconds: 30),
+        );
+        final send = NativeTurnStream(
+          serialized,
+          'a',
+          nativeStartPending: true,
+          consumerCancelWait: const Duration(milliseconds: 10),
+        );
+        final result = send.stream.toList();
+
+        serialized.cancel('a');
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(log, isEmpty, reason: 'cancel is still retained during prefill');
+        expect(send.turn.hasEnded, isFalse);
+
+        send.nativeReturned();
+        expect(log, ['cancel a']);
+        await expectLater(result, throwsA(isA<TimeoutException>()));
+        send.cancelled();
+      },
+    );
+
+    test('late chunks after a cancellation stall are dropped safely', () async {
+      final stalled = NativeTurns<String>(
+        cancelNative: (c) => log.add('cancel $c'),
+        deleteNative: (c) => log.add('delete $c'),
+        cancelEndTimeout: const Duration(milliseconds: 20),
+      );
+      final send = NativeTurnStream(
+        stalled,
+        'a',
+        consumerCancelWait: const Duration(milliseconds: 10),
+      );
+      final result = send.stream.toList();
+      stalled.cancel('a');
+      await expectLater(result, throwsA(isA<TimeoutException>()));
+
+      expect(() => send.chunk('late native text'), returnsNormally);
+      expect(send.turn.hasEnded, isFalse, reason: 'native still owns the turn');
+      send.cancelled();
+      expect(await send.turn.ended, NativeTurnEnd.cancelled);
     });
 
     test('a consumer that cancels waits for the native end', () async {

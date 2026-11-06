@@ -112,7 +112,8 @@ Future<NpuStackCheck> checkNpuStackInManifest(
 String npuNotBundledReason(NpuStack vendor) => switch (vendor) {
   NpuStack.qualcomm => qualcommNpuNotEnabledReason,
   NpuStack.googleTensor => googleTensorNpuNotEnabledReason,
-  NpuStack.mediatek => mediatekNpuNotEnabledReason,
+  NpuStack.mediatek =>
+    mediatekNpuRefused ? mediatekNpuRefusedReason : mediatekNpuNotEnabledReason,
   NpuStack.intel =>
     'this build carries none of the Intel NPU stack; use a '
         'flutter_edge_ai_litertlm whose native release bundles it and rebuild',

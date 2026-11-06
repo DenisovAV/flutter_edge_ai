@@ -230,16 +230,25 @@ kept.
 Every `openSession` and `openChat` owns a conversation and counts against `maxConcurrentSessions`. Keep each returned handle and close it when done.
 
 An argument you leave out of `openChat` is filled by the engine. Native
-`.litertlm` takes the installed model's type and media flags, but its current
-detached sessions are virtual and text-only: they reject images and audio even
-when the model was loaded with those modalities, so use `createChat` for native
-LiteRT-LM multimodal turns. `flutter_edge_ai_llama` and MediaPipe on the web take
-the installed type and media support. MediaPipe on Android and iOS takes the
-type and audio support, with images off unless you pass `supportImage: true`.
-Built-in AI takes the type and image support and refuses `supportAudio: true`.
-Native and web ONNX take the installed type but remain text-only. The
-`.litertlm` web engine uses core's defaults, so pass `modelType:` for a
-non-Gemma model; it is text-only too. Detached sessions work on native/web
+`.litertlm` takes the installed model's type and media flags. Its native FFI
+sessions accept declared image and audio input on both native and virtual
+backings. Each session has its own conversation and KV cache on macOS CPU/Metal,
+Linux and Windows CPU, Android Adreno/Mali, Qualcomm or Google Tensor NPUs on
+Android, and Intel NPUs on Windows. Linux Vulkan, Windows D3D12, iOS, Android
+CPU/PowerVR/MediaTek, and unverified Linux arm64 accelerators use virtual
+sessions that replay full messages, including media, into one shared
+conversation. The `.litertlm` web engine is also virtual but text-only and uses
+core's defaults, so pass `modelType:` for a non-Gemma model. Hybrid models such
+as LFM2 rebuild from full messages when recovery is needed and never rewind.
+Native sessions cost memory while idle: Gemma 4 E2B on an M5 Pro added 36.8 MiB
+of RSS per idle session at `maxTokens: 4096`, from the third session onward. Set
+`maxConcurrentSessions` on `getActiveModel` or `openModel` to bound the count.
+
+`flutter_edge_ai_llama` and MediaPipe on the web take the installed type and
+media support. MediaPipe on Android and iOS takes the type and audio support,
+with images off unless you pass `supportImage: true`. Built-in AI takes the type
+and image support and refuses `supportAudio: true`. Native and web ONNX take the
+installed type but remain text-only. Detached sessions work on native/web
 `.litertlm`, MediaPipe Android/iOS/Web, native ONNX 0.8.0, the unreleased ONNX
 Web line, built-in AI and llama.cpp; close every detached session yourself.
 

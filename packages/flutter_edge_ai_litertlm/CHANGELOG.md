@@ -2,6 +2,7 @@
 - README examples use `openSession`/`openChat` and close returned handles.
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and media.
 - Native: a turn cut short by closing its session or model ends with a `StateError`.
+- `openSession` sessions are native conversations where verified: media, stop rewind, full-context recovery.
 
 ## 1.19.2
 - Android GPU: the #364 prefill flush is set on Adreno only; other GPUs use the engine default (#763).

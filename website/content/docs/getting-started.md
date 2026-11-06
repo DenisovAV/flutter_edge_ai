@@ -510,11 +510,16 @@ too: its sessions share the one loaded model, take turns on it, and share the
 sampling and LoRA of the session that loaded it.
 
 The model weights (the big, expensive part — hundreds of MB to several GB) are
-loaded once and shared, but a session is not always lightweight. Native
-MediaPipe sessions have their own KV cache, and native ONNX sessions have their
-own generator and a KV cache allocated on first use. Current native LiteRT-LM,
-MediaPipe Web and ONNX Web detached sessions keep replayable history instead;
-see the engine-specific memory costs below.
+loaded **once** and shared across every session, but a session is not always
+lightweight. Native `.litertlm` sessions have one conversation and KV cache
+each on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, Qualcomm or
+Google Tensor NPUs on Android, and Intel NPUs on Windows. Linux Vulkan, Windows
+D3D12, iOS, Android CPU/PowerVR/MediaTek, and unverified Linux arm64
+accelerators instead use virtual sessions that replay full messages, including
+media, into one shared conversation. The web runtime is also virtual but
+remains text-only.
+Hybrid models such as LFM2 rebuild from full messages when recovery is needed
+and never rewind.
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
@@ -546,16 +551,15 @@ parallel on-device inference would contend for the accelerator and risk OOM.
 
 </Warning>
 
-**Memory:** what an open session costs depends on the engine. A MediaPipe
-`.task` session on Android or iOS holds its own KV cache (~100–500 MB depending
+**Memory:** what an open session costs depends on the engine. A native
+`.litertlm` session holds its own KV cache: Gemma 4 E2B on an M5 Pro added
+36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the third session
+onward (the first two reused freed memory). A virtual `.litertlm`
+session keeps full message history instead and pays replay time when it becomes
+active. A MediaPipe `.task` session on Android or iOS holds its own KV cache (~100–500 MB depending
 on model + `maxTokens`), so on phones with large models (Gemma 4 E2B+) several
-concurrent sessions can OOM. A native `.litertlm` session keeps only its
-history; switching sessions replays it into the one native conversation, which
-takes time; GGUF sessions share one runtime with no separate native KV cache.
-In this release native LiteRT-LM `openSession()` / `openChat()` is text-only: a
-virtual session cannot replay images or audio when sessions switch, so a
-multimodal turn throws `UnsupportedError`. Use the supported `createSession()` /
-`createChat()` singleton lane for native LiteRT-LM multimodal conversations.
+concurrent sessions can OOM. GGUF sessions share one runtime with no separate
+native KV cache.
 An ONNX session on the web keeps only its history, resent on every turn.
 `.litertlm` on the web and built-in AI are not measured. Cap the count with
 `maxConcurrentSessions:` on `getActiveModel(...)` — `openSession()` throws

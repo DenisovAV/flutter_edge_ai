@@ -32,14 +32,7 @@ void main() {
       for (final model in catalog.EmbeddingModel.values)
         if (model.npuSoc case final soc?) soc: model.ragProfileId,
     };
-    expect(npu.keys, [
-      'SM8850',
-      'SM8650',
-      'QCS8275',
-      'PTL',
-      'Tensor_G6',
-      'mt6991',
-    ]);
+    expect(npu.keys, ['SM8850', 'SM8650', 'QCS8275', 'PTL', 'Tensor_G6']);
     ids.addAll(npu.values);
 
     expect(ids.toSet(), hasLength(ids.length));
@@ -232,7 +225,6 @@ void main() {
       'embeddingGemma2TextVision440mPtl',
       'embeddingGemma2Text270mTensorG6',
       'embeddingGemma2TextVision440mTensorG6',
-      'embeddingGemma2Text270mMt6991',
     ]);
     const cpuTextId = 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1';
     for (final model in npu) {
@@ -241,7 +233,6 @@ void main() {
         catalog.EmbeddingNpuVendor.qualcomm => 'Qualcomm',
         catalog.EmbeddingNpuVendor.intel => 'Intel',
         catalog.EmbeddingNpuVendor.googleTensor => 'Google',
-        catalog.EmbeddingNpuVendor.mediatek => 'MediaTek',
       };
       expect(
         vendor,
@@ -249,8 +240,6 @@ void main() {
             ? 'Intel'
             : soc.startsWith('Tensor_')
             ? 'Google'
-            : soc.startsWith('mt')
-            ? 'MediaTek'
             : 'Qualcomm',
         reason: model.name,
       );
@@ -265,18 +254,15 @@ void main() {
           : 'embeddinggemma-2-text-270m-litert-lm/resolve/'
                 '9be6e8b90982095dc05c2bd162e4b954ee4dbac7/'
                 'embeddinggemma-2-text-270m';
-      // MediaTek's compiler stamps the SoC in lower case; its file names
-      // carry it in upper case.
-      final fileSoc = vendor == 'MediaTek' ? soc.toUpperCase() : soc;
       expect(
         model.url,
-        'https://huggingface.co/litert-community/${repo}_${vendor}_$fileSoc.litertlm',
+        'https://huggingface.co/litert-community/${repo}_${vendor}_$soc.litertlm',
         reason: model.name,
       );
       expect(model.isLiteRtLmBundle, isTrue);
       expect(model.needsAuth, isFalse);
       expect(model.sha256, hasLength(64));
-      expect(model.filename, contains('_${vendor}_${fileSoc}__rev-'));
+      expect(model.filename, contains('_${vendor}_${soc}__rev-'));
       expect(model.embedderBackend, PreferredBackend.npu);
       expect(
         model.ragProfileId,
@@ -369,11 +355,6 @@ void main() {
           (m) => m.npuVendor == catalog.EmbeddingNpuVendor.googleTensor,
         ),
         hasLength(platform == TargetPlatform.android ? 2 : 0),
-        reason: '$platform',
-      );
-      expect(
-        listed.where((m) => m.npuVendor == catalog.EmbeddingNpuVendor.mediatek),
-        hasLength(platform == TargetPlatform.android ? 1 : 0),
         reason: '$platform',
       );
       expect(

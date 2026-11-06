@@ -122,7 +122,11 @@ final support = model.structuredOutputSupport;
 final refusal = model.refusalFor(format);
 if (support.isSupported && refusal == null) {
   final session = await model.openSession(responseFormat: format);
-  // Use and close session.
+  try {
+    // Use the structured session.
+  } finally {
+    await session.close();
+  }
 }
 
 // Vector stores: can a registered provider open this store on this platform?

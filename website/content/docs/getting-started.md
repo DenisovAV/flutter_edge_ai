@@ -480,6 +480,11 @@ final format = ResponseFormat.jsonSchema({
 final refusal = model.refusalFor(format);
 if (refusal != null) throw refusal;
 final chat = await model.openChat(responseFormat: format);
+try {
+  // Use the structured chat.
+} finally {
+  await chat.close();
+}
 ```
 
 Read `model.structuredOutputSupport` after loading: it reports the keywords this

@@ -163,6 +163,11 @@ final response = await session.getResponse();
 
 ## Capabilities & limits
 
+**Release availability:** the structured-output behavior below describes core
+2.6.0 and the next `flutter_edge_ai_builtin_ai` release, built on
+`flutter_edge_ai` 2.6.0. The currently published package shown by the install
+block above remains on core 2.5.x and does not expose these APIs.
+
 | Feature | Android (Gemini Nano) | iOS / macOS (Apple FM) | Windows (Phi Silica) | Web (Chrome Prompt API) |
 |---------|------------------------|-------------------------|----------------------|--------------------------|
 | Streaming | ✅ | ✅ | ⚠️ one final chunk | ✅ |
@@ -179,7 +184,7 @@ final response = await session.getResponse();
   Prompt-API tool use is still experimental, so it also uses the prompt path.
   Gemini Nano handles single-turn calls; multi-turn agent chaining is not
   supported on Web (see [Agent Skills](/docs/agent)).
-- **Response formats are wired but not enabled on any built-in platform in this
+- **Response formats are wired but not enabled on any built-in platform in that
   release.** Read `model.structuredOutputSupport` or call
   `model.refusalFor(format)` before opening a session. Apple Foundation Models,
   Chrome's Prompt API and Phi Silica all return

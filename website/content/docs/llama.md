@@ -80,10 +80,15 @@ A prompt that does not fit the context is different: it fails with
 
 ### Structured JSON output
 
+**Release availability:** this section describes core 2.6.0 and the next
+`flutter_edge_ai_llama` release, built on `flutter_edge_ai` 2.6.0. The currently
+published 0.0.6 package in the install block below requires core 2.5.x and does
+not expose these structured-output APIs.
+
 `openSession(responseFormat: ...)` and `openChat(responseFormat: ...)` ask
 llamadart's grammar to constrain every reply, and core validates the complete
 JSON value again. Check `model.structuredOutputSupport` and
-`model.refusalFor(format)` first. This release enables formats only on macOS
+`model.refusalFor(format)` first. That release enables formats only on macOS
 arm64 with CPU or Metal, and in Chrome on macOS in a dart2wasm build using
 WebGPU. Other hosts, browsers, build modes and backends refuse them until
 qualified. The capability advertises the core dialect, but `refusalFor` rejects
@@ -102,6 +107,11 @@ final format = ResponseFormat.jsonSchema({
 final refusal = model.refusalFor(format);
 if (refusal != null) throw refusal;
 final chat = await model.openChat(responseFormat: format);
+try {
+  // Use the structured chat.
+} finally {
+  await chat.close();
+}
 ```
 
 Core restores installed models during initialization; conversation history

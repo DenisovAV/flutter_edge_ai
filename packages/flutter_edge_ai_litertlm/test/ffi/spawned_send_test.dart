@@ -291,5 +291,177 @@ void main() {
       // conversation already deleted as sent.
       expect(client.hasSentForTest(conv), isFalse);
     });
+
+    test('the real isolate boundary retains stops before spawn, before native '
+        'entry and during synchronous prefill', () async {
+      for (final point in _StopPoint.values) {
+        final harness = _SpawnedSendHarness(0x5000 + point.index * 0x100);
+        final stopwatch = Stopwatch()..start();
+        late Future<List<String>> chunks;
+        var stopped = false;
+        int? stoppedAtMillis;
+
+        void stop() {
+          if (stopped) return;
+          stopped = true;
+          stoppedAtMillis = stopwatch.elapsedMilliseconds;
+          harness.client.cancelConversationForTest(harness.conv);
+        }
+
+        switch (point) {
+          case _StopPoint.beforeSpawn:
+            harness.client.beforeSendSpawnForTest = stop;
+            harness.client.spawnedSendPrefillDelayForTest = const Duration(
+              milliseconds: 300,
+            );
+          case _StopPoint.afterSpawnBeforeEntry:
+            harness.client.afterSendSpawnForTest = stop;
+            harness.client.spawnedSendBeforeEntryDelayForTest = const Duration(
+              milliseconds: 250,
+            );
+            harness.client.spawnedSendPrefillDelayForTest = const Duration(
+              milliseconds: 300,
+            );
+          case _StopPoint.duringPrefill:
+            harness.client.nativeSendEnteredForTest = () {
+              Future<void>.delayed(const Duration(milliseconds: 20), () {
+                harness.nativeRunning = true;
+                stop();
+              });
+            };
+            harness.client.spawnedSendPrefillDelayForTest = const Duration(
+              milliseconds: 300,
+            );
+        }
+
+        try {
+          chunks = harness.client.sendForTest(harness.conv, '{}').toList();
+          await harness.cancelObserved.future.timeout(
+            const Duration(seconds: 2),
+          );
+          expect(
+            stoppedAtMillis,
+            lessThan(200),
+            reason:
+                '$point stop must run while the spawned fake native send is '
+                'still before/in prefill',
+          );
+          expect(
+            harness.cancelBeforeNativeEntry,
+            isFalse,
+            reason: '$point must retain the stop until native send entry',
+          );
+          expect(
+            harness.nativeCancels,
+            greaterThanOrEqualTo(1),
+            reason: '$point reaches native cancellation',
+          );
+          harness.emitCancelled();
+          expect(await chunks, isEmpty, reason: '$point decoded no text');
+        } finally {
+          await harness.dispose();
+        }
+      }
+    });
   });
+}
+
+enum _StopPoint { beforeSpawn, afterSpawnBeforeEntry, duringPrefill }
+
+final class _SpawnedSendHarness {
+  _SpawnedSendHarness(int address)
+    : conv = Pointer<LiteRtLmConversation>.fromAddress(address) {
+    final symbols = <String, Pointer<NativeType>>{
+      'litert_lm_conversation_optional_args_create': _keep(
+        NativeCallable<
+          UnsignedInt Function(
+            Pointer<Pointer<LiteRtLmConversationOptionalArgs>>,
+          )
+        >.isolateLocal((
+          Pointer<Pointer<LiteRtLmConversationOptionalArgs>> out,
+        ) {
+          out.value = _optionalArgs.cast();
+          return 0;
+        }, exceptionalReturn: 1),
+      ),
+      'litert_lm_conversation_optional_args_delete': _keep(
+        NativeCallable<
+          Void Function(Pointer<LiteRtLmConversationOptionalArgs>)
+        >.isolateLocal((Pointer<LiteRtLmConversationOptionalArgs> _) {}),
+      ),
+      'litert_lm_conversation_cancel_process': _keep(
+        NativeCallable<
+          UnsignedInt Function(Pointer<LiteRtLmConversation>)
+        >.isolateLocal((Pointer<LiteRtLmConversation> _) {
+          nativeCancels++;
+          cancelBeforeNativeEntry = !nativeRunning;
+          if (nativeRunning && !cancelObserved.isCompleted) {
+            cancelObserved.complete();
+          }
+          return 0;
+        }, exceptionalReturn: 1),
+      ),
+      'litert_lm_conversation_delete': _keep(
+        NativeCallable<
+          Void Function(Pointer<LiteRtLmConversation>)
+        >.isolateLocal((Pointer<LiteRtLmConversation> _) {}),
+      ),
+    };
+    client = LiteRtLmFfiClient()
+      ..bindingsForTest = LiteRtLmBindings.fromLookup(
+        <T extends NativeType>(String name) =>
+            (symbols[name] ?? (throw ArgumentError('no fake for $name')))
+                .cast<T>(),
+      );
+    client.streamForTest(
+      createProxy: (dartCallback, _, _, _, _, outProxyFn) {
+        _callback = dartCallback;
+        outProxyFn.value = dartCallback;
+        return Pointer.fromAddress(0x20);
+      },
+      freeString: calloc.free,
+      destroyProxy: (_) {},
+    );
+    client.nativeSendEnteredForTest = () {
+      Future<void>.delayed(const Duration(milliseconds: 20), () {
+        nativeRunning = true;
+      });
+    };
+    client.registerLiveForTest(conv);
+  }
+
+  final Pointer<LiteRtLmConversation> conv;
+  final Pointer<Int64> _optionalArgs = calloc<Int64>();
+  final List<NativeCallable<Function>> _callables = [];
+  final Completer<void> cancelObserved = Completer<void>();
+  late final LiteRtLmFfiClient client;
+  late Pointer<
+    NativeFunction<
+      Void Function(Pointer<Void>, Pointer<Char>, Uint8, Pointer<Char>)
+    >
+  >
+  _callback;
+  int nativeCancels = 0;
+  bool nativeRunning = false;
+  bool cancelBeforeNativeEntry = false;
+
+  Pointer<NativeFunction<T>> _keep<T extends Function>(NativeCallable<T> c) {
+    _callables.add(c);
+    return c.nativeFunction;
+  }
+
+  void emitCancelled() {
+    _callback
+        .asFunction<
+          void Function(Pointer<Void>, Pointer<Char>, int, Pointer<Char>)
+        >()(nullptr, nullptr, 0, 'CANCELLED'.toNativeUtf8().cast());
+  }
+
+  Future<void> dispose() async {
+    await pumpEventQueue();
+    for (final callable in _callables) {
+      callable.close();
+    }
+    calloc.free(_optionalArgs);
+  }
 }

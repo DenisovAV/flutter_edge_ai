@@ -43,6 +43,19 @@ class NativeTurn {
   /// cancelling its subscription.
   bool cancelRequested = false;
 
+  /// A streamed send has been registered in Dart but its spawned isolate has
+  /// not yet entered `litert_lm_conversation_send_message_stream`. Cancelling
+  /// an idle conversation in that gap is lost, so [NativeTurns.cancel] keeps
+  /// the request here until [NativeTurns.nativeStarted].
+  bool nativeStartPending = false;
+
+  /// This turn crosses the spawned-send boundary, where an idle cancellation
+  /// can race the C call. Its owner retries the permitted native cancel until
+  /// the turn ends.
+  bool requiresCancelRetry = false;
+
+  bool cancelRetryRunning = false;
+
   /// The conversation's session or model was closed while this ran, before
   /// anyone asked to stop it: a streamed send then ends with a
   /// [StateError], not as a reply that merely stopped early.
@@ -71,7 +84,7 @@ class NativeTurns<C extends Object> {
   NativeTurn? runningOn(C conversation) => _running[conversation];
 
   /// Registers an operation that is about to start on [conversation].
-  NativeTurn begin(C conversation) {
+  NativeTurn begin(C conversation, {bool nativeStartPending = false}) {
     final previous = _running[conversation];
     if (previous != null && !previous.hasEnded) {
       throw StateError(
@@ -79,14 +92,29 @@ class NativeTurns<C extends Object> {
         'conversation',
       );
     }
-    return _running[conversation] = NativeTurn();
+    return _running[conversation] = NativeTurn()
+      ..nativeStartPending = nativeStartPending
+      ..requiresCancelRetry = nativeStartPending;
   }
 
   /// Asks native to stop [conversation]'s running operation, and marks it as
   /// asked so its cancelled end is not taken for a poisoned conversation.
   void cancel(C conversation) {
-    _running[conversation]?.cancelRequested = true;
+    final turn = _running[conversation];
+    if (turn != null) {
+      turn.cancelRequested = true;
+      if (turn.nativeStartPending) return;
+    }
     cancelNative(conversation);
+  }
+
+  /// Marks the exact boundary where a spawned streamed send has entered its
+  /// native call. A stop requested after Dart registered the turn but before
+  /// this boundary is issued now, when native has work to cancel.
+  void nativeStarted(C conversation, NativeTurn turn) {
+    if (turn.hasEnded || !identical(_running[conversation], turn)) return;
+    turn.nativeStartPending = false;
+    if (turn.cancelRequested) cancelNative(conversation);
   }
 
   /// Records that [turn] has ended natively. Deletes the conversation first
@@ -152,7 +180,11 @@ class NativeTurnStream<C extends Object> {
     this._turns,
     this._conversation, {
     this.consumerCancelWait = const Duration(seconds: 2),
-  }) : turn = _turns.begin(_conversation) {
+    bool nativeStartPending = false,
+  }) : turn = _turns.begin(
+         _conversation,
+         nativeStartPending: nativeStartPending,
+       ) {
     _controller.onCancel = _onConsumerCancel;
   }
 
@@ -163,6 +195,10 @@ class NativeTurnStream<C extends Object> {
   final _controller = StreamController<String>();
 
   Stream<String> get stream => _controller.stream;
+
+  /// See [NativeTurns.nativeStarted]. Only real spawned sends need this;
+  /// rewinds and test-driven turns start immediately.
+  void nativeStarted() => _turns.nativeStarted(_conversation, turn);
 
   void chunk(String text) {
     if (turn.hasEnded) return;

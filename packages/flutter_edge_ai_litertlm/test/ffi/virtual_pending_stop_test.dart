@@ -15,6 +15,7 @@ void main() {
       'and takes an empty turn back', () async {
     final client = LiteRtLmFfiClient();
     final conv = Pointer<LiteRtLmConversation>.fromAddress(0x6f00);
+    final optionalArgs = calloc<Int64>();
     final callables = <NativeCallable<Function>>[];
     Pointer<NativeFunction<T>> keep<T extends Function>(NativeCallable<T> c) {
       callables.add(c);
@@ -22,29 +23,58 @@ void main() {
     }
 
     var nativeCancels = 0;
+    final cancelObserved = Completer<void>();
     final symbols = <String, Pointer<NativeType>>{
+      'litert_lm_conversation_optional_args_create': keep(
+        NativeCallable<
+          UnsignedInt Function(
+            Pointer<Pointer<LiteRtLmConversationOptionalArgs>>,
+          )
+        >.isolateLocal((
+          Pointer<Pointer<LiteRtLmConversationOptionalArgs>> out,
+        ) {
+          out.value = optionalArgs.cast();
+          return 0;
+        }, exceptionalReturn: 1),
+      ),
+      'litert_lm_conversation_optional_args_delete': keep(
+        NativeCallable<
+          Void Function(Pointer<LiteRtLmConversationOptionalArgs>)
+        >.isolateLocal((Pointer<LiteRtLmConversationOptionalArgs> _) {}),
+      ),
       'litert_lm_conversation_cancel_process': keep(
         NativeCallable<
           UnsignedInt Function(Pointer<LiteRtLmConversation>)
-        >.isolateLocal((_) {
+        >.isolateLocal((Pointer<LiteRtLmConversation> _) {
           nativeCancels++;
+          if (!cancelObserved.isCompleted) cancelObserved.complete();
           return 0;
         }, exceptionalReturn: 1),
       ),
       'litert_lm_conversation_delete': keep(
         NativeCallable<
           Void Function(Pointer<LiteRtLmConversation>)
-        >.isolateLocal((_) {}),
+        >.isolateLocal((Pointer<LiteRtLmConversation> _) {}),
+      ),
+      'litert_lm_engine_delete': keep(
+        NativeCallable<Void Function(Pointer<LiteRtLmEngine>)>.isolateLocal(
+          (Pointer<LiteRtLmEngine> _) {},
+        ),
       ),
     };
     addTearDown(() {
       for (final callable in callables) {
         callable.close();
       }
+      calloc.free(optionalArgs);
     });
 
-    final sendStarted = Completer<void>();
-    late NativeTurnStream<Pointer<LiteRtLmConversation>> send;
+    Pointer<
+      NativeFunction<
+        Void Function(Pointer<Void>, Pointer<Char>, Uint8, Pointer<Char>)
+      >
+    >?
+    callback;
     client
       ..bindingsForTest = LiteRtLmBindings.fromLookup(
         <T extends NativeType>(String name) =>
@@ -55,14 +85,19 @@ void main() {
         client.registerLiveForTest(conv);
         return conv;
       }
-      ..virtualSendForTest = (conversation) {
-        send = client.newTurnForTest(conversation);
-        sendStarted.complete();
-        return send;
-      }
       ..virtualRewindForTest = ((_, _, _) async =>
           StoppedTurnRewind.unsupported)
-      ..metricsForTest = (_) => SessionMetrics();
+      ..metricsForTest = ((_) => SessionMetrics())
+      ..spawnedSendPrefillDelayForTest = const Duration(milliseconds: 600);
+    client.streamForTest(
+      createProxy: (dartCallback, _, _, _, _, outProxyFn) {
+        callback = dartCallback;
+        outProxyFn.value = dartCallback;
+        return Pointer.fromAddress(0x20);
+      },
+      freeString: calloc.free,
+      destroyProxy: (_) {},
+    );
     final model = FfiInferenceModel(
       ffiClient: client,
       maxTokens: 1024,
@@ -74,15 +109,24 @@ void main() {
     final session = await model.openSession() as FfiInferenceModelSession;
 
     await session.addQueryChunk(const Message(text: 'slow', isUser: true));
+    final stopwatch = Stopwatch()..start();
     final response = session.getResponse();
-    await sendStarted.future;
     // The iPhone regression stopped 300 ms into a 570--690 ms prefill, before
     // native emitted its first token.
     await Future<void>.delayed(const Duration(milliseconds: 300));
     await session.stopGeneration();
 
+    expect(
+      stopwatch.elapsedMilliseconds,
+      lessThan(500),
+      reason: 'the fake synchronous prefill must not block stopGeneration',
+    );
+    await cancelObserved.future.timeout(const Duration(seconds: 2));
     expect(nativeCancels, 1, reason: 'stop must reach the running native turn');
-    send.cancelled();
+    callback!
+        .asFunction<
+          void Function(Pointer<Void>, Pointer<Char>, int, Pointer<Char>)
+        >()(nullptr, nullptr, 0, 'CANCELLED'.toNativeUtf8().cast());
     expect(await response, isEmpty);
     expect(
       virtualConversationHistoryForTest(session.handle),

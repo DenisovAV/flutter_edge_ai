@@ -883,15 +883,27 @@ _sendMessageStreamOffMainIsolate({
   required int optionalArgsAddr,
   required int callbackAddr,
   required int proxyDataAddr,
+  required SendPort nativeEntryPort,
+  int testBeforeEntryMicros = 0,
+  int testPrefillMicros = 0,
 }) {
   final isolateLogLevel = edgeAiLogLevel;
   return sendOffMainIsolate(() {
     edgeAiLogLevel = isolateLogLevel;
+    if (testBeforeEntryMicros > 0) {
+      sleep(Duration(microseconds: testBeforeEntryMicros));
+    }
+    if (testPrefillMicros > 0) {
+      nativeEntryPort.send(null);
+      sleep(Duration(microseconds: testPrefillMicros));
+      return (code: liteRtLmStatusOk, message: null, micros: testPrefillMicros);
+    }
     // Plain open, as for the create: only called on a client whose engine is
     // loaded, so the library and its preloads are already in the process.
     final b = LiteRtLmBindings(openLiteRtLmLibrary());
     final sw = Stopwatch()..start();
     b.litert_lm_clear_last_error();
+    nativeEntryPort.send(null);
     final code = b.litert_lm_conversation_send_message_stream(
       Pointer.fromAddress(conversationAddr),
       Pointer.fromAddress(messageAddr),
@@ -1428,6 +1440,20 @@ class LiteRtLmFfiClient {
     _missingChunkAccessors = const [];
   }
 
+  /// Test-only timing around the real [Isolate.run] send boundary. When the
+  /// prefill delay is non-zero, the spawned isolate uses a synchronous sleep
+  /// as a fake native send instead of opening LiteRT-LM.
+  @visibleForTesting
+  Duration spawnedSendBeforeEntryDelayForTest = Duration.zero;
+  @visibleForTesting
+  Duration spawnedSendPrefillDelayForTest = Duration.zero;
+  @visibleForTesting
+  void Function()? beforeSendSpawnForTest;
+  @visibleForTesting
+  void Function()? afterSendSpawnForTest;
+  @visibleForTesting
+  void Function()? nativeSendEnteredForTest;
+
   /// Test seam: a streamed send of [messageJson] on [conv], as a handle's
   /// `chatRawMessage` makes it.
   @visibleForTesting
@@ -1449,6 +1475,11 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   void releaseConversationForTest(Pointer<LiteRtLmConversation> conv) =>
       _turns.release(conv);
+
+  /// Test seam: what a handle's `cancel` does to its active native turn.
+  @visibleForTesting
+  void cancelConversationForTest(Pointer<LiteRtLmConversation> conv) =>
+      _cancelOn(conv);
 
   /// Test seam: whether the loaded library has the section 16 rewind.
   @visibleForTesting
@@ -3155,9 +3186,9 @@ class LiteRtLmFfiClient {
           return;
         }
         final conv = _virtualConv!;
-        // No await separates this from creating the native turn, so a stop can
-        // see either a before-send marker or the registered native turn, never
-        // a gap between them.
+        // No await separates this from registering the native turn. Until its
+        // spawned isolate enters the C send, that turn itself retains a stop;
+        // see NativeTurn.nativeStartPending.
         leaveBeforeSend();
         final send =
             virtualSendForTest?.call(conv) ??
@@ -3380,7 +3411,7 @@ class LiteRtLmFfiClient {
 
     // Registered before anything native is allocated; every path below either
     // starts the send or ends this turn.
-    final send = NativeTurnStream(_turns, conv);
+    final send = NativeTurnStream(_turns, conv, nativeStartPending: true);
 
     final messagePtr = messageJson.toNativeUtf8();
     final extraPtr = extraContext != null
@@ -3580,6 +3611,14 @@ class LiteRtLmFfiClient {
     _executor.send(conv);
     final uiBlock = Stopwatch()..start();
     gate.callStarted();
+    final nativeEntry = ReceivePort();
+    nativeEntry.listen((_) {
+      nativeEntry.close();
+      nativeSendEnteredForTest?.call();
+      send.nativeStarted();
+      _retryPendingNativeCancel(conv, send.turn);
+    });
+    beforeSendSpawnForTest?.call();
     final call = _sendMessageStreamOffMainIsolate(
       conversationAddr: conv.address,
       messageAddr: messagePtr.address,
@@ -3587,7 +3626,11 @@ class LiteRtLmFfiClient {
       optionalArgsAddr: optionalArgs.address,
       callbackAddr: proxyFn.address,
       proxyDataAddr: proxyData.address,
+      nativeEntryPort: nativeEntry.sendPort,
+      testBeforeEntryMicros: spawnedSendBeforeEntryDelayForTest.inMicroseconds,
+      testPrefillMicros: spawnedSendPrefillDelayForTest.inMicroseconds,
     );
+    afterSendSpawnForTest?.call();
     lastSendCallMicros = uiBlock.elapsedMicroseconds;
     unawaited(
       call.then(
@@ -3603,6 +3646,7 @@ class LiteRtLmFfiClient {
           // The isolate could not run the call (a spawn that failed under
           // memory pressure): nothing was sent.
           _executor.unknown();
+          nativeEntry.close();
           gate.callReturned();
           b.litert_lm_conversation_optional_args_delete(optionalArgs);
           releaseRefusedStreamProxy(-1, proxyData, _proxyDestroy!);
@@ -3619,6 +3663,33 @@ class LiteRtLmFfiClient {
     // orphaned response, and the next close()/inference stalls on a still-busy
     // shared conversation (a hang on session.close() on a Windows Intel iGPU).
     return send;
+  }
+
+  /// The spawned isolate posts immediately before its C send. A cancel issued
+  /// in that small gap can reach an idle conversation and be lost, so repeat
+  /// the one conversation call the threading contract explicitly permits to
+  /// overlap a send until native reports the turn's end.
+  void _retryPendingNativeCancel(
+    Pointer<LiteRtLmConversation> conv,
+    NativeTurn turn,
+  ) {
+    if (!turn.requiresCancelRetry ||
+        !turn.cancelRequested ||
+        turn.cancelRetryRunning ||
+        turn.hasEnded) {
+      return;
+    }
+    turn.cancelRetryRunning = true;
+    unawaited(() async {
+      try {
+        while (!turn.hasEnded) {
+          await Future<void>.delayed(const Duration(milliseconds: 2));
+          if (!turn.hasEnded) _cancelNative(conv, log: false);
+        }
+      } finally {
+        turn.cancelRetryRunning = false;
+      }
+    }());
   }
 
   /// Legacy: streaming raw on the implicit [_legacyHandle] conversation.
@@ -3718,9 +3789,15 @@ class LiteRtLmFfiClient {
 
   /// Cancel ongoing generation on the given conversation, marking it as asked
   /// for, so its cancelled end closes the stream cleanly.
-  void _cancelOn(Pointer<LiteRtLmConversation> conv) => _turns.cancel(conv);
+  void _cancelOn(Pointer<LiteRtLmConversation> conv) {
+    _turns.cancel(conv);
+    final turn = _turns.runningOn(conv);
+    if (turn != null && !turn.nativeStartPending) {
+      _retryPendingNativeCancel(conv, turn);
+    }
+  }
 
-  void _cancelNative(Pointer<LiteRtLmConversation> conv) {
+  void _cancelNative(Pointer<LiteRtLmConversation> conv, {bool log = true}) {
     // #379: never cancel a conversation that has already been freed. The
     // raw-stream and virtual-turn onCancel hooks can fire after model/handle/
     // engine teardown deleted the conversation; dereferencing the dangling
@@ -3731,12 +3808,15 @@ class LiteRtLmFfiClient {
     if (b != null) {
       // It refuses only a NULL conversation, which the check above rules out.
       final code = b.litert_lm_conversation_cancel_process(conv);
-      edgeAiLog(
-        code == liteRtLmStatusOk
-            ? '[LiteRtLmFfi] Generation cancelled'
-            : '[LiteRtLmFfi] litert_lm_conversation_cancel_process failed with '
-                  '${liteRtLmStatusName(code)}',
-      );
+      if (log) {
+        edgeAiLog(
+          code == liteRtLmStatusOk
+              ? '[LiteRtLmFfi] Generation cancelled'
+              : '[LiteRtLmFfi] '
+                    'litert_lm_conversation_cancel_process failed with '
+                    '${liteRtLmStatusName(code)}',
+        );
+      }
     }
   }
 

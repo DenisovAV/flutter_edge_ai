@@ -209,6 +209,55 @@ void main() {
       send.cancelled();
     });
 
+    test(
+      'the stall deadline starts only after native cancellation is issued',
+      () async {
+        final serialized = NativeTurns<String>(
+          cancelNative: (c) => log.add('cancel $c'),
+          deleteNative: (c) => log.add('delete $c'),
+          cancelEndTimeout: const Duration(milliseconds: 30),
+        );
+        final send = NativeTurnStream(
+          serialized,
+          'a',
+          nativeStartPending: true,
+          consumerCancelWait: const Duration(milliseconds: 10),
+        );
+        final result = send.stream.toList();
+
+        serialized.cancel('a');
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        expect(log, isEmpty, reason: 'cancel is still retained during prefill');
+        expect(send.turn.hasEnded, isFalse);
+
+        send.nativeReturned();
+        expect(log, ['cancel a']);
+        await expectLater(result, throwsA(isA<TimeoutException>()));
+        send.cancelled();
+      },
+    );
+
+    test('late chunks after a cancellation stall are dropped safely', () async {
+      final stalled = NativeTurns<String>(
+        cancelNative: (c) => log.add('cancel $c'),
+        deleteNative: (c) => log.add('delete $c'),
+        cancelEndTimeout: const Duration(milliseconds: 20),
+      );
+      final send = NativeTurnStream(
+        stalled,
+        'a',
+        consumerCancelWait: const Duration(milliseconds: 10),
+      );
+      final result = send.stream.toList();
+      stalled.cancel('a');
+      await expectLater(result, throwsA(isA<TimeoutException>()));
+
+      expect(() => send.chunk('late native text'), returnsNormally);
+      expect(send.turn.hasEnded, isFalse, reason: 'native still owns the turn');
+      send.cancelled();
+      expect(await send.turn.ended, NativeTurnEnd.cancelled);
+    });
+
     test('a consumer that cancels waits for the native end', () async {
       final send = NativeTurnStream(turns, 'a');
       final sub = send.stream.listen(null);

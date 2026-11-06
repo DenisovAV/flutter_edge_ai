@@ -389,6 +389,25 @@ void main() {
     expect(virtualConversationHistoryForTest(session.handle), isEmpty);
     expect(creatingClient.isConversationLiveForTest(conv), isFalse);
   });
+
+  test('a queued virtual turn observes a native-turn stall before the mutex '
+      'becomes available', () async {
+    final releaseMutex = Completer<void>();
+    final holding = client.holdNativeMutexForTest(() => releaseMutex.future);
+    await pumpEventQueue();
+
+    await session.addQueryChunk(const Message(text: 'queued', isUser: true));
+    final turn = _startTurn(session as FfiInferenceModelSession);
+    final stall = TimeoutException('native turn stalled');
+    final text = turn.text.toList().timeout(const Duration(milliseconds: 250));
+    await pumpEventQueue();
+    client.markNativeTurnStalledForTest(stall);
+
+    await expectLater(text, throwsA(same(stall)));
+    expect(sends, isEmpty, reason: 'the poisoned engine is never entered');
+    releaseMutex.complete();
+    await holding;
+  });
 }
 
 /// The session's `startTurn`, which is protected: a test may call it.

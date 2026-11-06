@@ -34,11 +34,13 @@ class LiteRtLmTurnClosedException extends StateError {
 class NativeTurn {
   final _ended = Completer<NativeTurnEnd>();
   final _cancelRequested = Completer<void>();
+  final _cancelIssued = Completer<void>();
 
   /// Completes once native has posted the end and, if [NativeTurns.release]
   /// was called meanwhile, the conversation has been deleted.
   Future<NativeTurnEnd> get ended => _ended.future;
   Future<void> get cancellationRequested => _cancelRequested.future;
+  Future<void> get cancellationIssued => _cancelIssued.future;
   bool get hasEnded => _ended.isCompleted;
 
   /// A stop was asked for: stopGeneration(), close(), or the consumer
@@ -145,7 +147,7 @@ class NativeTurns<C extends Object> {
       }
       turn.cancelSent = true;
     }
-    cancelNative(conversation);
+    _issueCancel(conversation, turn, cancelNative);
     if (turn != null) _retryCancelDuringNativeStart(conversation, turn);
   }
 
@@ -159,7 +161,7 @@ class NativeTurns<C extends Object> {
     turn.nativeStartPending = false;
     if (turn.cancelRequested && !turn.cancelSent) {
       turn.cancelSent = true;
-      cancelNative(conversation);
+      _issueCancel(conversation, turn, cancelNative);
     }
     _retryCancelDuringNativeStart(conversation, turn);
   }
@@ -174,8 +176,19 @@ class NativeTurns<C extends Object> {
     if (turn.cancelRequested &&
         (!turn.cancelSent || !serializeCancelWithNativeStart)) {
       turn.cancelSent = true;
-      cancelNative(conversation);
+      _issueCancel(conversation, turn, cancelNative);
     }
+  }
+
+  void _issueCancel(
+    C conversation,
+    NativeTurn? turn,
+    void Function(C conversation) cancel,
+  ) {
+    if (turn != null && !turn._cancelIssued.isCompleted) {
+      turn._cancelIssued.complete();
+    }
+    cancel(conversation);
   }
 
   void _retryCancelDuringNativeStart(C conversation, NativeTurn turn) {
@@ -197,7 +210,7 @@ class NativeTurns<C extends Object> {
           await Future<void>.delayed(cancelRetryInterval);
           if (turn.nativeCallInFlight && !turn.hasEnded) {
             turn.cancelSent = true;
-            retryCancelNative(conversation);
+            _issueCancel(conversation, turn, retryCancelNative);
           }
         }
       } finally {
@@ -302,7 +315,12 @@ class NativeTurnStream<C extends Object> {
   void nativeReturned() => _turns.nativeReturned(_conversation, turn);
 
   void chunk(String text) {
-    if (turn.hasEnded) return;
+    // A consumer timeout poisons the engine but deliberately leaves this
+    // native turn and its callback alive. Native may still post chunks before
+    // its final callback; dropping them is the only safe action. Writing to
+    // the closed controller would throw through the FFI callback and release
+    // that callback while native can still invoke it.
+    if (turn.hasEnded || _consumerEnded) return;
     if (turn.cancelRequested) _turns.cancel(_conversation);
     if (text.isNotEmpty) _controller.add(text);
   }
@@ -332,7 +350,11 @@ class NativeTurnStream<C extends Object> {
   }
 
   Future<void> _failConsumerWhenCancellationStalls(Duration timeout) async {
-    await turn.cancellationRequested;
+    await Future.any<void>([
+      turn.cancellationIssued,
+      turn.ended.then<void>((_) {}),
+    ]);
+    if (turn.hasEnded || _consumerEnded) return;
     await Future.any<void>([
       turn.ended.then<void>((_) {}),
       Future<void>.delayed(timeout),
@@ -369,6 +391,34 @@ class NativeTurnStream<C extends Object> {
   }
 }
 
+/// Acquires [mutex], unless [abort] completes first with the error to throw.
+///
+/// A mutex acquisition cannot itself be cancelled. When abort wins, the
+/// pending acquisition is therefore left in the queue and releases the lock
+/// immediately when it eventually obtains it.
+Future<void> acquireUntilAbort(Mutex mutex, Future<Object> abort) async {
+  var abandoned = false;
+  final acquired = Completer<void>();
+  unawaited(
+    mutex.acquire().then((_) {
+      if (abandoned) {
+        mutex.release();
+      } else {
+        acquired.complete();
+      }
+    }),
+  );
+  try {
+    await Future.any<void>([
+      acquired.future,
+      abort.then<void>((error) => throw error),
+    ]);
+  } catch (_) {
+    abandoned = true;
+    rethrow;
+  }
+}
+
 /// Runs [start] under [mutex] and returns its stream, keeping [mutex] held
 /// until the native operation has ended — not until the consumer stops
 /// listening, which can be long before (a cancelled subscription) or after (a
@@ -382,28 +432,13 @@ Stream<String> heldUntilNativeEnd<C extends Object>(
   StreamSubscription<String>? inner;
   var consumerGone = false;
   controller.onListen = () async {
-    var aborted = false;
-    final acquired = Completer<void>();
-    unawaited(
-      mutex.acquire().then((_) {
-        if (aborted || consumerGone) {
-          mutex.release();
-        } else {
-          acquired.complete();
-        }
-      }),
-    );
     try {
       if (abort == null) {
-        await acquired.future;
+        await mutex.acquire();
       } else {
-        await Future.any<void>([
-          acquired.future,
-          abort.then<void>((error) => throw error),
-        ]);
+        await acquireUntilAbort(mutex, abort);
       }
     } catch (e, st) {
-      aborted = true;
       if (!consumerGone) {
         controller.addError(e, st);
         await controller.close();

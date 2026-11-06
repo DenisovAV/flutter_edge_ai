@@ -1490,6 +1490,30 @@ class LiteRtLmFfiClient {
     _nativeTurnStall.complete(error);
   }
 
+  @visibleForTesting
+  void markNativeTurnStalledForTest(Object error) =>
+      _markNativeTurnStalled(error);
+
+  Future<void> _acquireNativeMutex() async {
+    final stalled = _nativeTurnStallError;
+    if (stalled != null) throw stalled;
+    await acquireUntilAbort(_nativeMutex, _nativeTurnStall.future);
+    final stalledAfterWait = _nativeTurnStallError;
+    if (stalledAfterWait != null) {
+      _nativeMutex.release();
+      throw stalledAfterWait;
+    }
+  }
+
+  Future<T> _protectNativeMutex<T>(FutureOr<T> Function() body) async {
+    await _acquireNativeMutex();
+    try {
+      return await body();
+    } finally {
+      _nativeMutex.release();
+    }
+  }
+
   /// Test seam: what a handle's `close` does to its conversation.
   @visibleForTesting
   void releaseConversationForTest(Pointer<LiteRtLmConversation> conv) =>
@@ -2502,7 +2526,7 @@ class LiteRtLmFfiClient {
       // `protect` releases on every path (_createRawConversation can throw).
       // Only the native create is guarded; handle registration below is
       // pure-Dart bookkeeping and must stay inside _guardCreate, not the mutex.
-      final conv = await _nativeMutex.protect(
+      final conv = await _protectNativeMutex(
         () => _createRawConversation(
           systemMessage: systemMessage,
           toolsJson: toolsJson,
@@ -3137,7 +3161,7 @@ class LiteRtLmFfiClient {
       _virtualTurnEnds[conversationToken] = null;
       _virtualMetrics[conversationToken] = null;
       try {
-        await _nativeMutex.acquire();
+        await _acquireNativeMutex();
         mutexHeld = true;
         _virtualTurnInFlight = true;
         if (_releasedVirtualTokens.contains(conversationToken)) {
@@ -3715,7 +3739,7 @@ class LiteRtLmFfiClient {
     String messageJson, {
     String? extraContext,
   }) {
-    return _nativeMutex.protect(() async {
+    return _protectNativeMutex(() async {
       _assertInitialized();
       final b = _bindings!;
 
@@ -3836,7 +3860,7 @@ class LiteRtLmFfiClient {
   }) async {
     if (!_hasTurnRewind) return StoppedTurnRewind.unsupported;
     return _guardCreate(() async {
-      await _nativeMutex.acquire();
+      await _acquireNativeMutex();
       try {
         return await _rewindStoppedTurnLocked(
           conv,
@@ -3959,7 +3983,7 @@ class LiteRtLmFfiClient {
     if (lengths.isEmpty) return null;
     // Under the lock, as every native call on this engine: the counts must not
     // be read while a decode on another conversation moves them.
-    return _nativeMutex.protect(() async {
+    return _protectNativeMutex(() async {
       final b = _bindings;
       // A shutdown (and maybe a new engine) during the awaits: the address
       // may now name another engine's conversation.
@@ -4296,7 +4320,7 @@ class LiteRtLmFfiClient {
     // decode runs, and an unguarded tokenize would reach liblitert_lm
     // concurrently with it. Callers arrive through the already-async
     // sizeInTokens, so the await costs nothing.
-    return _nativeMutex.protect(() async {
+    return _protectNativeMutex(() async {
       final b = _bindings;
       final engine = _engine;
       // Re-read inside the lock: shutdown() can null these while we waited.
@@ -4359,7 +4383,7 @@ class LiteRtLmFfiClient {
   /// scorer of `InferenceModel.createDecider` compares. Unlike [tokenCount]
   /// it throws: a [StateError] without a loaded engine, and when the native
   /// call fails. Holds [_nativeMutex].
-  Future<List<int>> tokenIds(String text) => _nativeMutex.protect(() async {
+  Future<List<int>> tokenIds(String text) => _protectNativeMutex(() async {
     final b = _bindings;
     final engine = _engine;
     if (b == null || engine == null || engine == nullptr) {
@@ -4414,7 +4438,7 @@ class LiteRtLmFfiClient {
   /// The text of [ids], from the engine's tokenizer, malformed UTF-8 (a
   /// token that ends inside a character) replaced rather than thrown. Throws
   /// as [tokenIds].
-  Future<String> detokenizeIds(List<int> ids) => _nativeMutex.protect(() async {
+  Future<String> detokenizeIds(List<int> ids) => _protectNativeMutex(() async {
     final b = _bindings;
     final engine = _engine;
     if (b == null || engine == null || engine == nullptr) {
@@ -4461,7 +4485,7 @@ class LiteRtLmFfiClient {
   /// to where its reply begins. On a spawned isolate, under [_nativeMutex];
   /// [shutdown] waits for it.
   Future<String> renderUserMessage(String content) => _guardCreate(
-    () => _nativeMutex.protect(() async {
+    () => _protectNativeMutex(() async {
       final engine = _engine;
       if (_isShuttingDown || engine == null || engine == nullptr) {
         throw StateError('The LiteRT-LM engine is not loaded.');
@@ -4498,7 +4522,7 @@ class LiteRtLmFfiClient {
     ScoringStops? stops,
   }) {
     final run = _guardCreate(
-      () => _nativeMutex.protect(() async {
+      () => _protectNativeMutex(() async {
         final engine = _engine;
         if (_isShuttingDown || engine == null || engine == nullptr) {
           throw StateError('The LiteRT-LM engine is not loaded.');

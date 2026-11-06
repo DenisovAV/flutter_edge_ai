@@ -625,11 +625,14 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   Future<void> close() {
     final teardown = _closeFuture;
     if (teardown != null) return teardown;
-    final settled = Completer<void>();
-    _closeFuture = settled.future;
-    // The first caller gets the teardown's own outcome; every later caller
-    // gets `settled`, which completes normally once the teardown has ended.
-    return _close().whenComplete(settled.complete);
+    final attempt = _close();
+    _closeFuture = attempt;
+    unawaited(
+      attempt.onError((_, _) {
+        if (identical(_closeFuture, attempt)) _closeFuture = null;
+      }),
+    );
+    return attempt;
   }
 
   Future<void> _close() async {

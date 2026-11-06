@@ -391,7 +391,7 @@ exception. Formats cannot be combined with tools or thinking.
 | Windows x64 CPU / D3D12 | ✅ |
 | Android arm64 CPU | ✅ |
 | Android arm64 Adreno / Mali / PowerVR GPU | ✅ |
-| iOS arm64 CPU / Metal | ⏳ pending its device run |
+| iOS arm64 CPU / Metal | ✅ |
 | NPU, Web, and every unlisted row | ❌ refused |
 
 The Web `.litertlm` runtime remains on `@litert-lm/core` 0.18 and has no

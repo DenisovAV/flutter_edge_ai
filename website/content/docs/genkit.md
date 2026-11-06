@@ -276,12 +276,12 @@ a type's definitions are inlined first. A structured request opens a session
 of its own, which counts against `maxConcurrentSessions`.
 
 On the engine builds paired with those releases, this native path is available
-for LiteRT-LM on macOS arm64 CPU/Metal, Linux x64 CPU/Vulkan, Windows x64
-CPU/D3D12, and Android arm64 CPU plus Adreno/Mali/PowerVR GPU; for a qualified
-GGUF model (macOS arm64 CPU/Metal, or Chrome on macOS with dart2wasm + WebGPU);
-and for native ONNX on macOS arm64 when the model directory contains
-`tokenizer.json`. LiteRT-LM on iOS is pending its device run, and its NPU, Web,
-and unlisted rows are refused. MediaPipe, ONNX Web, and every built-in-AI
+for LiteRT-LM on macOS and iOS arm64 CPU/Metal, Linux x64 CPU/Vulkan, Windows
+x64 CPU/D3D12, and Android arm64 CPU plus Adreno/Mali/PowerVR GPU; for a
+qualified GGUF model (macOS arm64 CPU/Metal, or Chrome on macOS with dart2wasm
++ WebGPU); and for native ONNX on macOS arm64 when the model directory contains
+`tokenizer.json`. LiteRT-LM NPU, Web, and unlisted rows are refused. MediaPipe,
+ONNX Web, and every built-in-AI
 platform also refuse formats. On a refused row the `gemma-4-e2b` example below
 is prompt-only: its schema is added to the prompt and Genkit parses
 `response.output`, but decoding is not constrained and core does not validate

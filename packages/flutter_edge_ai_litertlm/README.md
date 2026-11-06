@@ -98,10 +98,10 @@ if (refusal != null) throw refusal;
 final session = await model.openSession(responseFormat: format);
 ```
 
-The full core dialect is qualified on macOS arm64 CPU/Metal, Linux x64
+The full core dialect is qualified on macOS and iOS arm64 CPU/Metal, Linux x64
 CPU/Vulkan, Windows x64 CPU/D3D12, and Android arm64 CPU plus
-Adreno/Mali/PowerVR GPU. iOS CPU/Metal is pending its device run. NPU, Web, and
-every unlisted row are refused rather than decoded without a constraint.
+Adreno/Mali/PowerVR GPU. NPU, Web, and every unlisted row are refused rather
+than decoded without a constraint.
 
 ## Sampling
 

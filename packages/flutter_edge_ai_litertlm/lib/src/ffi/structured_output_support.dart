@@ -28,6 +28,20 @@ const liteRtLmStructuredOutputRows = <LiteRtLmStructuredOutputRow>{
     androidGpu: null,
     npuVendor: null,
   ),
+  // 2026-11-06: iPhone 17 Pro, iOS 26.5.2, CPU/Metal suites +7/-0 at
+  // 4fbf6508.
+  (
+    abi: 'ios_arm64',
+    backend: PreferredBackend.cpu,
+    androidGpu: null,
+    npuVendor: null,
+  ),
+  (
+    abi: 'ios_arm64',
+    backend: PreferredBackend.gpu,
+    androidGpu: null,
+    npuVendor: null,
+  ),
   // 2026-11-06: Linux x64 CPU/Vulkan suites +7/-0; Vulkan rewind +13/-0.
   (
     abi: 'linux_x64',

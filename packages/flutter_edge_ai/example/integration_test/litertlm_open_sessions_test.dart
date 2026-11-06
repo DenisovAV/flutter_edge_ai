@@ -570,7 +570,11 @@ void main() {
 
     String delta(int? now, int? then) =>
         now == null || then == null ? 'n/a' : _mib(now - then);
+    final footprintLabel = Platform.isIOS || Platform.isMacOS
+        ? 'phys_footprint'
+        : 'anonymous';
     final base = await read();
+    var switchBaseline = base;
     const extra = 4;
     final idle = <InferenceModelSession>[];
     try {
@@ -592,6 +596,7 @@ void main() {
       // Switches: alternate two sessions.
       final b = idle.first;
       final before = await read();
+      switchBaseline = before;
       final switchSends = <int>[];
       final switchNative = <int>[];
       final sw = Stopwatch()..start();
@@ -599,11 +604,14 @@ void main() {
         await _ask(i.isEven ? first : b, 'Reply with OK only.');
         switchSends.add(m.ffiClient.lastSendCallMicros!);
         switchNative.add(m.ffiClient.lastSendNativeMicros!);
-        if ((i + 1) % 50 == 0) {
+        if ((i + 1) % 10 == 0) {
           final now = await read();
-          debugPrint(
-            '[open] after ${i + 1} switches: anon ${delta(now.$1, before.$1)} '
-            'MiB, gpu ${delta(now.$3, before.$3)} MiB',
+          _result(
+            'switch_memory=${i + 1} ${footprintLabel}_mib=${_mib(now.$1)} '
+            '${footprintLabel}_delta_mib=${delta(now.$1, before.$1)} '
+            'file_mib=${now.$2 == null ? 'n/a' : _mib(now.$2!)} '
+            'gpu_mib=${now.$3 == null ? 'n/a' : _mib(now.$3!)} '
+            'gpu_delta_mib=${delta(now.$3, before.$3)}',
           );
         }
       }
@@ -631,6 +639,18 @@ void main() {
         await s.close();
       }
       await first.close();
+      await m.close();
+      if (identical(model, m)) model = null;
+      final afterClose = await read();
+      _result(
+        'after_model_close ${footprintLabel}_mib=${_mib(afterClose.$1)} '
+        '${footprintLabel}_from_engine_base_mib='
+        '${delta(afterClose.$1, base.$1)} '
+        '${footprintLabel}_from_switch_base_mib='
+        '${delta(afterClose.$1, switchBaseline.$1)} '
+        'file_mib=${afterClose.$2 == null ? 'n/a' : _mib(afterClose.$2!)} '
+        'gpu_mib=${afterClose.$3 == null ? 'n/a' : _mib(afterClose.$3!)}',
+      );
     }
   });
 }

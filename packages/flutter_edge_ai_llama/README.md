@@ -5,8 +5,8 @@ Run local GGUF chat models through Flutter Edge AI, powered by
 a model, then use the usual Edge AI chat API.
 
 The package has runners for Android, iOS, macOS, Windows, Linux and Web.
-Tools, thinking, images/audio and native LoRA require compatible models and
-runtimes. See [advanced usage](doc/advanced_usage.md) and the
+Tools, thinking, response formats, images/audio and native LoRA require
+compatible models and runtimes. See [advanced usage](doc/advanced_usage.md) and the
 [platform qualification matrix](doc/platforms.md) for their limits.
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).

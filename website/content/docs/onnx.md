@@ -159,6 +159,46 @@ ORT with no provider appended, which is CPU, and the embedder reports `cpu`.
 `PreferredBackend.cpu` pins WASM on Web; anything else tries WebGPU first and
 falls back to WASM.
 
+## Structured JSON output
+
+**Release availability:** this section describes core 2.6.0 and the next
+`flutter_edge_ai_onnx` release, built on `flutter_edge_ai` 2.6.0. The currently
+published package shown by the install block above remains on core 2.5.x and
+does not expose these structured-output APIs.
+
+Native ORT-GenAI can apply llguidance to each independent generator opened by
+`openSession(responseFormat: ...)` or `openChat(responseFormat: ...)`. In that
+release it is enabled only on macOS arm64, after its host run passed, and only
+when the model directory contains `tokenizer.json`. Linux x64, Windows
+x64/ARM64, Android, iOS and ONNX Web return a reason from
+`structuredOutputSupport` and throw `ResponseFormatUnsupportedException` if a
+format is requested; the desktop Linux/Windows archives containing guidance are
+still disabled until their own runs pass.
+
+```dart
+final format = ResponseFormat.jsonSchema({
+  'type': 'object',
+  'properties': {'answer': {'type': 'string'}},
+  'required': ['answer'],
+  'additionalProperties': false,
+});
+final refusal = model.refusalFor(format);
+if (refusal != null) throw refusal;
+final session = await model.openSession(responseFormat: format);
+try {
+  // Use the structured session.
+} finally {
+  await session.close();
+}
+```
+
+ONNX advertises the whole core dialect and delivers structured text
+incrementally. Core validates the completed reply. A turn cut during generation
+therefore emits any generated chunks and then throws
+`IncompleteStructuredOutputException`; a normally completed non-matching value
+throws `NonConformingStructuredOutputException`. A prompt that does not fit the
+remaining context fails with `ContextLimitException` and is not kept.
+
 ## Embeddings — `OnnxEmbeddingBackend`
 
 A plain ONNX Runtime forward pass over an `.onnx`/`.ort` embedding model. The

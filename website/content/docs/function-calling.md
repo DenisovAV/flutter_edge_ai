@@ -86,6 +86,16 @@ runtime's own tool path: Gemma 4, and FunctionGemma on a `.litertlm`. For every
 other model it is the chat that puts the tools into the prompt and parses the
 calls back out, so use the chat API:
 
+<Warning>
+
+A tool chat cannot also have `responseFormat`.
+`openChat(tools: ..., responseFormat: ...)` throws `ArgumentError` before the
+engine is called, because a tool call is not a value of the requested response
+format. Use separate chats/sessions for the tool phase and the final typed JSON
+phase, or request JSON in the prompt and validate it in the app.
+
+</Warning>
+
 ```dart
 final tools = [
   const Tool(

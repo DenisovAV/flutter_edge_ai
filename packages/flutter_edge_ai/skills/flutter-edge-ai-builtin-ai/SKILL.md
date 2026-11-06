@@ -116,4 +116,20 @@ There is no script to add: the Prompt API is part of the browser.
 
 No choice of weights, no LoRA, and capabilities that vary by OS version. The right pick when zero download and zero disk matter more than choosing the model.
 
-Tool calls go through the prompt on every platform. Apple's native tool calling and schema-constrained output are reachable only through `BuiltInAiModel.localAiModel` / `BuiltInAiSession.localAiSession` — `@experimental`, and they change with flutter_local_ai's next major release.
+Tool calls go through the prompt on every platform. The flutter_edge_ai
+`responseFormat` path is implemented but no built-in platform is qualified in
+this release: `model.structuredOutputSupport.isSupported` is false and
+`openSession` / `openChat(responseFormat: ...)` throw
+`ResponseFormatUnsupportedException` on Apple, Chrome, Windows and Android.
+Android has no bridged runtime-schema API; Apple, Chrome and Windows remain
+gated until their own runs pass. Platform-native tool and structured APIs that
+`flutter_local_ai` exposes remain reachable through
+`BuiltInAiModel.localAiModel` / `BuiltInAiSession.localAiSession`
+(`@experimental`).
+
+When a built-in platform is eventually enabled, its flutter_edge_ai structured
+reply is buffered as one final chunk and supports only the keywords reported by
+`structuredOutputSupport`; `model.refusalFor(format)` can still reject a
+particular schema. On Apple, `responseFormat` together with `maxOutputTokens` is
+also refused at `openSession` / `openChat` even if `refusalFor(format)` returns
+null, because the platform cannot report that the cap cut the value.

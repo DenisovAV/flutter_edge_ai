@@ -1,10 +1,80 @@
 ---
 title: Migration
-description: Upgrade to Flutter Edge AI 2.5 (openModel, createModel deprecated, members deprecated for 2.5 removed), flutter_edge_ai_litertlm 1.16 (openModel) and 1.15 (npu on a generic bundle runs on the GPU, opt-in Google Tensor NPU), flutter_edge_ai_agent 0.4 (notifications are opt-in), Flutter Edge AI 2.4 (backends follow the .litertlm file, Gemma 4 audio after the text, agent 0.3), 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
+description: Upgrade to Flutter Edge AI 2.6 (engine session/chat/turn SPI, decider SPI on InferenceModel, typed responses and failed-turn rollback), 2.5 (openModel and embedding providers), and earlier releases.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
+
+## flutter_edge_ai 2.6.0: engine SPI
+
+Engine packages continue to import `package:flutter_edge_ai/engine.dart`. Core
+now owns `openSession`, `openChat`, `sessions` and both `InferenceChat`
+generation methods (`@nonVirtual`). Move an `openSession` override to
+`openEngineSession(SessionRequest)`, an `openChat` override's defaults and
+validation to `resolveChatRequest(ChatRequest)`, per-chat turn behavior to
+`createChatTurnHooks(ResolvedChatRequest)`, and a `sessions` override to
+`engineSessions`.
+
+`openEngineSession` serves both direct sessions and every initial or rebuilt
+chat session. If `SessionRequest.responseFormat` is non-null, core has accepted
+it and the engine must enforce it during every generation.
+`resolveChatRequest` fills only values the caller left unset, preserves caller
+values, and carries `responseFormat` over unchanged; core throws `StateError` if
+it changes.
+
+A session that can report turn endings overrides `startTurn()` and returns
+`EngineTurn(text:, end:)`; `end` never fails and completes after the text,
+including cancellation. Use `end: null` only when the engine cannot report a
+reliable end, and then keep `StructuredOutputSupport.none`. On core's turn path
+a failed turn commits nothing to core history, and the engine must mirror that
+take-back in its own context. Restore the engine context after any text error
+and after a stop that emitted no non-empty text; a refused too-long input is
+`ContextLimitException` with `TurnEnd.contextLimit`. A stop after text,
+`outputLimit`, and a decode that reaches `contextLimit` keep the partial
+exchange.
+
+`ChatTurnHooks.responses` replaces the whole plain turn, including generation,
+parsing, history, token accounting, take-back and overflow rebuilds. Core never
+calls it for a structured chat; those turns always use `startTurn` and core's
+validation path.
+
+### `implements InferenceModel`
+
+An implementation adds `openEngineSession`, `resolveChatRequest`,
+`createChatTurnHooks`, `engineSessions`, `structuredOutputSupport`, `refusalFor`,
+`engineStructuredOutputSupport`, `engineRefusalFor`, `readDecisionSection` and
+`openOptionScorer`, and updates `openSession`/`openChat` for
+`ResponseFormat? responseFormat`. If it does not support independent sessions,
+option scoring or formats, implement the same refusing behavior as
+`InferenceModel`'s defaults. A class that `extends InferenceModel` inherits
+those defaults. The removed `OptionScoringModel` mixin becomes overrides of
+`readDecisionSection` and `openOptionScorer` on the model.
+
+### `implements InferenceModelSession`
+
+Add `startTurn()`. If the engine cannot report a reliable ending, return
+`EngineTurn(text: getResponseAsync(), end: null)`; a class that extends
+`InferenceModelSession` inherits that default.
+
+## flutter_edge_ai 2.6.0: typed responses
+
+`openSession` and `openChat` accept `responseFormat:`; `createSession` and
+`createChat` do not. Keep and close the independent session/chat returned by
+`open*`. Before opening it, inspect `model.structuredOutputSupport` and
+`model.refusalFor(format)`, because support is specific to the loaded engine,
+platform and backend.
+
+`ResponseFormatUnsupportedException` means the format was refused. If a
+structured generation's text closes normally with `TurnEnd.outputLimit`,
+`contextLimit`, `stopped` or `closed`, `IncompleteStructuredOutputException`
+carries that end and the partial text; a refused input that never fit the
+context fails with `ContextLimitException` instead.
+`NonConformingStructuredOutputException` means an engine accepted a format but
+ended normally with text that was not exactly one matching JSON value.
+Incremental engines emit their text before the final validation error; buffered
+engines emit one complete chunk. A format cannot be combined with tools or
+`enableThinking: true`.
 
 ## flutter_edge_ai 2.5.x: engines that keep core below 2.6.0
 

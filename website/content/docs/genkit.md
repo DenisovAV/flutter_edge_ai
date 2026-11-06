@@ -251,6 +251,11 @@ the plugin sends back, a request's `ref` becomes its call's id
 
 ### Structured (JSON) output
 
+**Release availability:** the native constrained-decoding behavior below
+arrives with core 2.6.0 and the next `genkit_flutter_edge_ai` release, built on
+`flutter_edge_ai` 2.6.0. The currently published versions in the install block
+remain on core 2.5.x and use prompt-only schema guidance.
+
 The plugin advertises `output: ['text', 'json']`. Genkit asks for constrained
 output whenever you pass an `outputSchema`. The plugin always writes the schema
 into the prompt as instructions, the way Genkit's
@@ -269,6 +274,17 @@ recursive type, `format`, `oneOf`/`anyOf`), or one the engine rejects at the
 first send, is not an error: the request runs prompt-only. Genkit's `$ref`s to
 a type's definitions are inlined first. A structured request opens a session
 of its own, which counts against `maxConcurrentSessions`.
+
+On the engine builds paired with those releases, this native path is available
+only for a qualified GGUF model (macOS arm64 CPU/Metal, or Chrome on macOS with
+dart2wasm + WebGPU) and for native ONNX on macOS arm64 when the model directory
+contains `tokenizer.json`. LiteRT-LM, MediaPipe, ONNX Web and every built-in-AI
+platform currently refuse formats, so the `gemma-4-e2b` example below is
+prompt-only: its schema is added to the prompt and Genkit parses
+`response.output`, but decoding
+is not constrained and core does not validate the reply. Always inspect the
+loaded model's `structuredOutputSupport` when the distinction matters; for
+GGUF, `refusalFor(format)` can still reject an individual schema.
 
 ```dart
 final response = await ai.generate(

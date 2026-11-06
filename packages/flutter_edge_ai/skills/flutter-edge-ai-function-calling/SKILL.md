@@ -10,7 +10,7 @@ Packages, engine and model install are in the flutter-edge-ai-inference skill. T
 ## Rules
 
 1. `createChat` needs `tools` and `supportsFunctionCalls: true`. Without the flag no call is parsed and only a debug warning is logged — and on `.litertlm` with Gemma 4 or FunctionGemma the declarations still reach the SDK, so the model answers with raw tool-call JSON inside the text stream.
-2. Pass `modelType` on web and on ONNX. `createChat` on native `.litertlm`, on MediaPipe Android and iOS, and on built-in AI uses the installed model's type when it is left out; the web engines and ONNX fall back to `ModelType.gemmaIt`, and another model's calls then arrive as raw text. `openChat` always falls back — pass it there on every platform. On `flutter_edge_ai_llama` (GGUF) llamadart reads the calls through the file's own chat template: `modelType`, which `createChat` and `openChat` both take from the install, only picks sampling defaults, and the tools are on unless `supportsFunctionCalls: false`.
+2. Pass `modelType` to legacy `createChat` on MediaPipe Web, LiteRT-LM Web, and native or web ONNX: those create paths still fall back to `ModelType.gemmaIt`, and another model's calls then arrive as raw text. `openChat` on native LiteRT-LM, MediaPipe Android/iOS/Web, built-in AI, native/web ONNX and llama.cpp takes the installed model's type when it is omitted. LiteRT-LM Web still uses core's Gemma default, so pass `modelType` there. On `flutter_edge_ai_llama`, the GGUF chat template parses calls itself; `modelType` only selects sampling defaults, and tools are enabled unless `supportsFunctionCalls: false`.
 3. Switch over all four `ModelResponse` subtypes. It is sealed — a switch that leaves out `ThinkingResponse` does not compile.
 4. Return tool results as data, errors included. Never throw from a tool.
 5. Prefer `generateChatResponseWithTools` to a hand-written loop.
@@ -21,6 +21,7 @@ Packages, engine and model install are in the flutter-edge-ai-inference skill. T
    (FastVLM, Qwen2-VL, SmolVLM2, LLaVA-OneVision) cannot — they describe the
    action in prose instead. A GGUF model through `flutter_edge_ai_llama` can
    call tools when its chat template supports them.
+9. Never combine tools with `responseFormat`. `openChat(tools: ..., responseFormat: ...)` throws `ArgumentError` before the engine is called because a tool call is not a value of the requested format. Use a separate structured chat/session for the final typed answer, or request JSON in the prompt and validate it in the app.
 
 ## Declare a tool
 

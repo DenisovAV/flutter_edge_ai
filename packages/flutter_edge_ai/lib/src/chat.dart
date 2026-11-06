@@ -328,10 +328,13 @@ class InferenceChat {
   /// When the model writes text before a call, only the call is returned;
   /// [generateChatResponseAsync] streams the text as well.
   ///
-  /// Fails with [StateError] when the session or its model is closed during
-  /// the turn by anything but the consumer's own stop, on an engine that
-  /// reports it (LiteRT-LM and MediaPipe; built-in AI, llama and ONNX do
-  /// not yet); the text generated until then is in [fullHistory].
+  /// In a plain chat, fails with [StateError] when the turn's text completes and
+  /// the session's [InferenceModelSession.startTurn] reports [TurnEnd.closed].
+  /// Any partial text is committed to [fullHistory] first. If the text itself
+  /// fails, the failed-turn take-back rule below applies. An engine whose
+  /// [EngineTurn.end] is null cannot expose the close distinction to core;
+  /// structured chats report it as [IncompleteStructuredOutputException] as
+  /// described below.
   ///
   /// A turn the engine fails commits nothing: the messages staged for it, and
   /// any tool call it had committed, are taken back out of [fullHistory]
@@ -650,13 +653,15 @@ class InferenceChat {
   /// implementation that balances all four paths; new consumers should prefer it
   /// over re-driving this stream directly.
   ///
-  /// Ends with [StateError] when the session or its model is closed during
-  /// the turn by anything but the consumer's own stop, on an engine that
-  /// reports it (LiteRT-LM and MediaPipe; built-in AI, llama and ONNX do
-  /// not yet); the text streamed until then is in [fullHistory]. A failure
-  /// to count the reply's tokens or to rebuild the session after a full
-  /// context is the stream's error too, after the reply has been committed
-  /// to [fullHistory].
+  /// In a plain chat, fails with [StateError] when the turn's text completes and
+  /// the session's [InferenceModelSession.startTurn] reports [TurnEnd.closed].
+  /// Any partial text is committed to [fullHistory] first. If the text itself
+  /// fails, the failed-turn take-back rule below applies. An engine whose
+  /// [EngineTurn.end] is null cannot expose the close distinction to core;
+  /// structured chats report it as [IncompleteStructuredOutputException] as
+  /// described below. A failure to count the reply's tokens or to rebuild the
+  /// session after a full context is the stream's error too, after the reply has
+  /// been committed to [fullHistory].
   ///
   /// A turn the engine fails commits nothing: the messages staged for it, and
   /// any tool call it had committed, are taken back out of [fullHistory]
@@ -1882,6 +1887,13 @@ class InferenceChat {
 /// What an engine (or a test) changes about one chat's turns: an engine
 /// returns one from `InferenceModel.createChatTurnHooks`, once per chat, and
 /// a test passes one to [InferenceChat]'s constructor.
+///
+/// Core never calls [responses] for a chat with a `responseFormat`: a
+/// structured turn always uses the guarded [InferenceModelSession.startTurn]
+/// path. When [responses] returns non-null it replaces the whole plain turn;
+/// the hook and engine own generation, parsing, history, token accounting,
+/// take-back and overflow rebuild behavior. Core does not append that turn to
+/// its own history.
 ///
 /// A `base class` (instantiable) whose defaults are core's behaviour, so a
 /// member added later arrives with its default. Subclasses are `base` or

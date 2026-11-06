@@ -38,6 +38,12 @@ final InferenceModel model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024)
 
 Sessions, chats, streaming and the common traps work as in the flutter-edge-ai-inference skill — except that on web the `openSession` / `openChat` sessions (its concurrent-conversation pattern) share the one loaded model (MediaPipe's JS LlmInference object): their turns run one at a time (a turn waits for the other sessions' turns as long as they run, unless they are stopped), each resends that session's whole conversation, and the sampling and LoRA are the ones the first session loaded the model with (a later session that asks for others gets a one-time printed warning).
 
+Response formats are the exception: MediaPipe does not enforce them on mobile
+or Web. `model.structuredOutputSupport` is `none`, `refusalFor(format)` returns a
+`ResponseFormatUnsupportedException`, and
+`openSession` / `openChat(responseFormat: format)` throw it before opening the
+MediaPipe session.
+
 ## iOS
 
 `ios/Podfile`, declared once:

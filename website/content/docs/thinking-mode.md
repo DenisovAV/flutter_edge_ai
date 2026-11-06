@@ -34,6 +34,13 @@ that does not load ([#659](https://github.com/DenisovAV/flutter_edge_ai/issues/6
 Enable it with `enableThinking: true` and the matching `ModelType`. See
 [Models](/docs/models) for which models think.
 
+`responseFormat` and thinking cannot be enabled on the same session/chat.
+`openSession` or `openChat` with both `responseFormat:` and
+`enableThinking: true` throws `ArgumentError` before the engine is called:
+thought chunks are not values of the requested format. Use a non-thinking
+structured session, or keep thinking enabled and validate a prompt-requested
+JSON answer yourself.
+
 Some models always reason — DeepSeek R1, Qwen3 4B Thinking 2507. With
 `enableThinking: false` their reasoning is hidden, not skipped: it still costs
 time and output tokens, and flutter_edge_ai prints a one-time `NOTE` per chat

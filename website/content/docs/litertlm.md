@@ -373,6 +373,15 @@ info.audioEncoder?.backendConstraint; // e.g. ['cpu']
 info.hasMtpDrafter;            // can decode speculatively
 ```
 
+## Response formats
+
+LiteRT-LM does not enforce `ResponseFormat` in this release, on native or Web. A
+loaded LiteRT-LM model reports `StructuredOutputSupport.none(...)`;
+`model.refusalFor(format)` returns a `ResponseFormatUnsupportedException`, and
+`openSession` / `openChat(responseFormat: format)` throw it before a LiteRT-LM
+session is opened. Do not document or rely on LiteRT-LM 0.19 constraint support
+until that runtime and the engine binding land in a later release.
+
 ## `maxTokens` is the CONTEXT window, not the reply length
 
 `maxTokens` (on `getActiveModel` / `createModel`) sizes the whole **context

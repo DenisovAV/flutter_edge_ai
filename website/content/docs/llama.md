@@ -67,10 +67,52 @@ Future<void> main() async {
 }
 ```
 
-Replace the file path with your downloaded instruction-tuned GGUF.
-`maxTokens` is the whole conversation context; `maxOutputTokens` limits one
-response. Stop a stream with `await chat.session.stopGeneration()` and start
-a new chat to clear history. Old complete turns are trimmed when the context fills. Interrupted turns are discarded.
+Replace the file path with your downloaded instruction-tuned GGUF. `maxTokens`
+is the whole conversation context; `maxOutputTokens` limits one response. Stop
+a plain stream with `await chat.stopGeneration()`; a plain interrupted turn is
+discarded. In a chat opened with `responseFormat`, text is delivered
+incrementally, and a turn that emitted text keeps its input and partial reply in
+the chat history when it reaches the output limit, fills the context during
+decoding, is stopped, or is closed. The stream then ends with
+`IncompleteStructuredOutputException` carrying the partial text and `TurnEnd`.
+A prompt that does not fit the context is different: it fails with
+`ContextLimitException`, and none of that turn is kept.
+
+### Structured JSON output
+
+**Release availability:** this section describes core 2.6.0 and the next
+`flutter_edge_ai_llama` release, built on `flutter_edge_ai` 2.6.0. The currently
+published 0.0.6 package in the install block below requires core 2.5.x and does
+not expose these structured-output APIs.
+
+`openSession(responseFormat: ...)` and `openChat(responseFormat: ...)` ask
+llamadart's grammar to constrain every reply, and core validates the complete
+JSON value again. Check `model.structuredOutputSupport` and
+`model.refusalFor(format)` first. That release enables formats only on macOS
+arm64 with CPU or Metal, and in Chrome on macOS in a dart2wasm build using
+WebGPU. Other hosts, browsers, build modes and backends refuse them until
+qualified. The capability advertises the core dialect, but `refusalFor` rejects
+schemas that llamadart's GBNF converter cannot express, including
+`minimum`/`maximum` on `number`, some one-sided integer bounds, length or item
+bounds above 2000, `enum`/`const` combined with another assertion, or an
+`enum`/`const` value that does not match the declared `type`.
+
+```dart
+final format = ResponseFormat.jsonSchema({
+  'type': 'object',
+  'properties': {'answer': {'type': 'string'}},
+  'required': ['answer'],
+  'additionalProperties': false,
+});
+final refusal = model.refusalFor(format);
+if (refusal != null) throw refusal;
+final chat = await model.openChat(responseFormat: format);
+try {
+  // Use the structured chat.
+} finally {
+  await chat.close();
+}
+```
 
 Core restores installed models during initialization; conversation history
 starts fresh. On Web, use `.fromNetwork(modelUrl)` with the assets and headers

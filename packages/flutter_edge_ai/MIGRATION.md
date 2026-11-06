@@ -2,6 +2,27 @@
 
 ## flutter_edge_ai 2.6.0
 
+### Typed responses
+
+`openSession` and `openChat` now take `responseFormat:`. `createSession` and
+`createChat` do not: move a conversation that needs constrained JSON to
+`openSession` / `openChat`, keep the returned session/chat, and close it
+yourself. Check the loaded model with `structuredOutputSupport` and
+`refusalFor(format)` first; support depends on the engine, platform and active
+backend.
+
+A refused format throws `ResponseFormatUnsupportedException`. If a structured
+generation's text closes normally but its `TurnEnd` is `outputLimit`,
+`contextLimit`, `stopped` or `closed`, `IncompleteStructuredOutputException`
+carries that end and `partialText`; a refused input that never fit the context
+fails with `ContextLimitException` instead. A normally ended reply that is not
+exactly one JSON value matching the schema throws
+`NonConformingStructuredOutputException`. On an incremental engine the text
+chunks arrive before the final validation error;
+`StructuredOutputSupport.delivery == StructuredDelivery.buffered` means one
+complete chunk. Formats cannot be combined with tools or
+`enableThinking: true`.
+
 ### `implements InferenceModel`
 
 A class that `implements InferenceModel` declares two new members,
@@ -10,16 +31,18 @@ A class that `implements InferenceModel` declares two new members,
 defaults that do. An engine that mixed in `OptionScoringModel`, which is
 removed, drops the mixin and keeps its two overrides.
 
-A class that `implements InferenceModel` also declares four new members, all
-in `package:flutter_edge_ai/engine.dart`: `openEngineSession(SessionRequest)`
-(fail it with `UnsupportedError` if the class opens no sessions),
-`resolveChatRequest(ChatRequest)` (return a `ResolvedChatRequest`),
-`createChatTurnHooks(ResolvedChatRequest)` (return `ChatTurnHooks()`) and
-`engineSessions`. A class that `extends InferenceModel` inherits core's
-defaults. `openSession`, `openChat` and `sessions` are `@nonVirtual`: an
-engine that overrode them moves its `openSession` body to
-`openEngineSession`, its `openChat` defaults to `resolveChatRequest`, and its
-`sessions` to `engineSessions`.
+A class that `implements InferenceModel` also declares four new members, all in
+`package:flutter_edge_ai/engine.dart`: `openEngineSession(SessionRequest)` (fail
+it with `UnsupportedError` if the class opens no independent sessions),
+`resolveChatRequest(ChatRequest)`,
+`createChatTurnHooks(ResolvedChatRequest)` (return `ChatTurnHooks()` for core
+behavior), and `engineSessions`. `openEngineSession` serves both `openSession`
+and every initial or rebuilt `openChat` session. `resolveChatRequest` fills only
+unset values, preserves caller-set values, and must carry `responseFormat`
+unchanged. `engineSessions` returns the legacy session plus every still-open
+independent engine session. A class that `extends InferenceModel` inherits
+core's defaults. Move overrides of `openSession`, `openChat`, and `sessions` to
+those SPI members.
 
 For typed responses it also declares `structuredOutputSupport` and
 `refusalFor(ResponseFormat)`, which core implements once for every class that
@@ -58,10 +81,23 @@ no tool call of that turn. Both hold for core's turns; an engine that runs
 its turns through `ChatTurnHooks.responses` (llama) keeps its own history
 and its committed calls are answered as before. A stop or a cancelled
 subscription is not a failure and keeps what was generated, except a stop
-before any text: such a turn is taken back as well. An engine that refuses
-an input too long for what the context window has left fails the turn with
-the new `ContextLimitException` (and `TurnEnd.contextLimit`): resend a
-shorter input, or start the chat over.
+before any text: such a turn is taken back as well.
+
+`ContextLimitException` has one precise meaning: the input did not fit what
+remained of the context window, so neither the input nor a reply was committed.
+Its `EngineTurn.end` is `TurnEnd.contextLimit`; resend a shorter input or start
+the chat over. A turn may also end cleanly with `TurnEnd.contextLimit` when
+generation fills the context during decoding. That case has no stream error and
+keeps its input and partial reply. With a `responseFormat`, the clean cut is
+reported as
+`IncompleteStructuredOutputException(end: TurnEnd.contextLimit, partialText: ...)`.
+
+The engine session must mirror the same take-back. After any error on a turn's
+text, restore its context to before the turn, or make the session unusable if it
+cannot be restored. Do the same for a stopped turn that emitted no non-empty
+text. A stop after text, `outputLimit`, and a decode that reaches `contextLimit`
+keep the partial exchange; a refused input fails with `ContextLimitException`
+plus `TurnEnd.contextLimit` and commits nothing.
 
 ## flutter_edge_ai 2.5.x: engines that keep core below 2.6.0
 

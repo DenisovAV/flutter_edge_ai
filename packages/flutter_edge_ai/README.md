@@ -330,6 +330,80 @@ await for (final response in chat.generateChatResponseAsync()) {
 await model.close();
 ```
 
+### Structured JSON replies (2.6.0)
+
+A response format is fixed for an independent `openSession` / `openChat`
+session; the legacy `createSession` / `createChat` methods do not take one. Ask
+the loaded model before opening it:
+
+```dart
+final format = ResponseFormat.jsonSchema({
+  'type': 'object',
+  'properties': {
+    'answer': {'type': 'string'},
+    'confidence': {'type': 'number', 'minimum': 0, 'maximum': 1},
+  },
+  'required': ['answer', 'confidence'],
+  'additionalProperties': false,
+});
+
+final refusal = model.refusalFor(format);
+if (refusal != null) throw refusal;
+final chat = await model.openChat(responseFormat: format);
+try {
+  // Use the structured chat.
+} finally {
+  await chat.close();
+}
+```
+
+`model.structuredOutputSupport` reports whether this loaded
+engine/platform/backend enforces a format, the enforced keywords, and whether
+delivery is `incremental` or `buffered`. Core validates the complete reply in
+addition to the engine's constraint: an unsupported format throws
+`ResponseFormatUnsupportedException`; a generation that ends with
+`TurnEnd.outputLimit`, `contextLimit`, `stopped` or `closed` throws
+`IncompleteStructuredOutputException`; a normally ended reply that is not
+exactly one matching JSON value throws
+`NonConformingStructuredOutputException`. Incremental engines deliver their
+text chunks before the final validation error; buffered engines deliver one
+complete chunk. A prompt that never fits the context fails with
+`ContextLimitException` instead. A format cannot be combined with tools or
+`enableThinking: true`.
+
+### Sessions and turn history
+
+`createSession()` and `createChat()` remain supported in 2.6.0. They use the
+model's legacy singleton lane: a later create normally closes and replaces the
+previous session or chat. `openSession()` and `openChat()` return detached,
+independent conversations; keep each handle and close it yourself.
+`model.sessions` lists the live legacy and detached sessions.
+
+`maxConcurrentSessions` usually caps detached sessions; built-in AI instead
+applies it to every live underlying session, including the legacy lane. Native
+ONNX defaults the detached cap to 2 on Android and iOS.
+
+Native LiteRT-LM detached sessions in this release are virtual, text-only
+conversations: switching sessions replays Dart history into one native
+conversation, so image and audio input throws `UnsupportedError`. Use
+`createSession()` / `createChat()` for native LiteRT-LM multimodal turns.
+MediaPipe Web and ONNX Web keep independent replayable histories over their
+shared browser model.
+
+For a core-managed chat turn, any engine error removes the staged turn before
+the error reaches the app. `ContextLimitException` specifically means the input
+was refused and nothing was committed; a clean `TurnEnd.contextLimit` can
+instead mean decoding filled the window, in which case the partial exchange
+stays. A clean stopped turn stays after it produced text and is removed if it
+produced none. Current plain GGUF hook-backed chats own their transcript and
+roll a stopped or cancelled turn back even after text; structured GGUF turns use
+core's guarded path and keep the partial reply.
+
+Engines that can report an end use `TurnEnd.endOfSequence`, `outputLimit`,
+`contextLimit`, `stopped`, or `closed`; `EngineTurn.end` can be null on an engine
+that cannot distinguish them. A structured session reports every
+non-`endOfSequence` end as `IncompleteStructuredOutputException`.
+
 `getActiveModel` returns the same model while the active model and its
 arguments stay the same. Another model, or other arguments, builds a new one
 and closes the previous handle. A model is closed from the moment its

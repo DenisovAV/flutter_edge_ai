@@ -83,30 +83,34 @@ Gemma 4 often writes a sentence, then calls a tool. The sentence streams as `Tex
 ## Handling calls yourself
 
 ```dart
-final response = await chat.generateChatResponse();
-switch (response) {
-  case FunctionCallResponse(:final name, :final args, :final id):
-    final result = await runTool(name, args);
-    await chat.addQueryChunk(
-      Message.toolResponse(toolName: name, response: result, toolCallId: id),
-    );
-    final followUp = await chat.generateChatResponse();
-  case ParallelFunctionCallResponse(:final calls):
-    for (final call in calls) {
-      final result = await runTool(call.name, call.args);
+try {
+  final response = await chat.generateChatResponse();
+  switch (response) {
+    case FunctionCallResponse(:final name, :final args, :final id):
+      final result = await runTool(name, args);
       await chat.addQueryChunk(
-        Message.toolResponse(
-          toolName: call.name,
-          response: result,
-          toolCallId: call.id, // llama pairs by id; other engines by name, in order
-        ),
+        Message.toolResponse(toolName: name, response: result, toolCallId: id),
       );
-    }
-    final afterAll = await chat.generateChatResponse();
-  case TextResponse(:final token):
-    print(token); // the model chose to answer directly — a valid outcome
-  case ThinkingResponse():
-    break;
+      final followUp = await chat.generateChatResponse();
+    case ParallelFunctionCallResponse(:final calls):
+      for (final call in calls) {
+        final result = await runTool(call.name, call.args);
+        await chat.addQueryChunk(
+          Message.toolResponse(
+            toolName: call.name,
+            response: result,
+            toolCallId: call.id, // llama pairs by id; other engines by name, in order
+          ),
+        );
+      }
+      final afterAll = await chat.generateChatResponse();
+    case TextResponse(:final token):
+      print(token); // the model chose to answer directly — a valid outcome
+    case ThinkingResponse():
+      break;
+  }
+} finally {
+  await chat.close();
 }
 ```
 

@@ -189,8 +189,8 @@ Upgrading from 2.3: see [Migration](/docs/migration).
 
 ## What's new in 2.1
 
-- **`enableThinking` replaces `isThinking`** on `openChat`, `openSession`
-  and `openSession` (breaking); `ModelRuntimeDefaults.isThinking` is
+- **`enableThinking` replaces `isThinking`** on `openChat` and `openSession`
+  (breaking); `ModelRuntimeDefaults.isThinking` is
   `thinkingDeclared`. New `ModelType.qwen35`. See [Migration](/docs/migration).
 - **Qualcomm NPU is opt-in** (`flutter_edge_ai_litertlm` 1.10.0): set
   `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:`,

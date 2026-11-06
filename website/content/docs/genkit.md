@@ -276,15 +276,17 @@ a type's definitions are inlined first. A structured request opens a session
 of its own, which counts against `maxConcurrentSessions`.
 
 On the engine builds paired with those releases, this native path is available
-only for a qualified GGUF model (macOS arm64 CPU/Metal, or Chrome on macOS with
-dart2wasm + WebGPU) and for native ONNX on macOS arm64 when the model directory
-contains `tokenizer.json`. LiteRT-LM, MediaPipe, ONNX Web and every built-in-AI
-platform currently refuse formats, so the `gemma-4-e2b` example below is
-prompt-only: its schema is added to the prompt and Genkit parses
-`response.output`, but decoding
-is not constrained and core does not validate the reply. Always inspect the
-loaded model's `structuredOutputSupport` when the distinction matters; for
-GGUF, `refusalFor(format)` can still reject an individual schema.
+for LiteRT-LM on macOS arm64 CPU/Metal, Linux x64 CPU/Vulkan, Windows x64
+CPU/D3D12, and Android arm64 CPU plus Adreno/Mali/PowerVR GPU; for a qualified
+GGUF model (macOS arm64 CPU/Metal, or Chrome on macOS with dart2wasm + WebGPU);
+and for native ONNX on macOS arm64 when the model directory contains
+`tokenizer.json`. LiteRT-LM on iOS is pending its device run, and its NPU, Web,
+and unlisted rows are refused. MediaPipe, ONNX Web, and every built-in-AI
+platform also refuse formats. On a refused row the `gemma-4-e2b` example below
+is prompt-only: its schema is added to the prompt and Genkit parses
+`response.output`, but decoding is not constrained and core does not validate
+the reply. Always inspect the loaded model's `structuredOutputSupport` when the
+distinction matters; `refusalFor(format)` can still reject an individual schema.
 
 ```dart
 final response = await ai.generate(

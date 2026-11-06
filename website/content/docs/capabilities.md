@@ -60,13 +60,16 @@ native platforms).
 | **Audio** | ✅ Native | — | — | — |
 | **Function calling** | ✅ Native/Prompt | ✅ Prompt | ✅ Prompt | ✅ Prompt |
 | **Thinking** | ✅ Full | ✅ Tags | ✅ Tags | — |
-| **Structured output (`responseFormat`)** | ❌ refused | ❌ refused | ✅ native macOS arm64 only | ❌ no qualified platform yet |
+| **Structured output (`responseFormat`)** | ✅ qualified native CPU/GPU rows | ❌ refused | ✅ native macOS arm64 only | ❌ no qualified platform yet |
 
 `flutter_edge_ai_llama` also supports response formats on macOS arm64 CPU/Metal
 and in Chrome on macOS with dart2wasm + WebGPU; other GGUF hosts/backends are
 refused until qualified. ONNX requires native macOS arm64 and a model directory
 containing `tokenizer.json`; ONNX Web refuses formats. LiteRT-LM currently
-refuses formats on native and Web.
+enforces the whole dialect on macOS arm64 CPU/Metal, Linux x64 CPU/Vulkan,
+Windows x64 CPU/D3D12, and Android arm64 CPU plus Adreno/Mali/PowerVR GPU. Its
+iOS CPU/Metal rows await a device run; NPU, Web, and every unlisted row are
+refused.
 
 - **Function calling.** *Native*: the engine hands the tools to the runtime.
   LiteRT-LM does this for Gemma 4 and FunctionGemma, and on native platforms

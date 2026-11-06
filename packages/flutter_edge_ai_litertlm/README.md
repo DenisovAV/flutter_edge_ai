@@ -77,6 +77,32 @@ SoC). Every build, and where each has been run:
 > [migration guide](https://flutteredge.ai/docs/migration) lists the API
 > changes.
 
+## Structured output
+
+Pass a `ResponseFormat` to `openSession` or `openChat` to enforce JSON with
+LiteRT-LM 0.19 constrained decoding. The constraint provider belongs to that
+conversation and the schema is applied on every send; core validates the final
+reply too.
+
+```dart
+final format = ResponseFormat.jsonSchema({
+  'type': 'object',
+  'properties': {
+    'answer': {'type': 'string', 'enum': ['yes', 'no']},
+  },
+  'required': ['answer'],
+  'additionalProperties': false,
+});
+final refusal = model.refusalFor(format);
+if (refusal != null) throw refusal;
+final session = await model.openSession(responseFormat: format);
+```
+
+The full core dialect is qualified on macOS arm64 CPU/Metal, Linux x64
+CPU/Vulkan, Windows x64 CPU/D3D12, and Android arm64 CPU plus
+Adreno/Mali/PowerVR GPU. iOS CPU/Metal is pending its device run. NPU, Web, and
+every unlisted row are refused rather than decoded without a constraint.
+
 ## Sampling
 
 Leave `temperature`, `topK`, `topP` and `randomSeed` unset on `createSession`

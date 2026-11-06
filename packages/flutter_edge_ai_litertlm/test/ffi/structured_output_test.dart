@@ -25,6 +25,9 @@ void main() {
     }
 
     final symbols = <String, Pointer<Void>>{
+      'litert_lm_get_last_error_message': retain(
+        NativeCallable<Pointer<Char> Function()>.isolateLocal(() => nullptr),
+      ),
       'litert_lm_conversation_config_set_constraint_provider': retain(
         NativeCallable<
           UnsignedInt Function(Pointer<LiteRtLmConversationConfig>, UnsignedInt)
@@ -172,6 +175,7 @@ void main() {
       'never do', () async {
     const schema = '{"type":"string","enum":["PASS"]}';
     final client = LiteRtLmFfiClient();
+    final native = _installConstraintRecorder(client);
     final seen = <String?>[];
     final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
     client.structuredSendForTest = (conv, jsonSchema) {
@@ -201,12 +205,21 @@ void main() {
     await turn(plain);
     await turn(structured);
     expect(seen, [schema, null, schema]);
+    expect(native.schemas, [schema, schema]);
+    expect(
+      native.constraintTypes,
+      everyElement(
+        LiteRtLmConstraintType.kLiteRtLmConstraintTypeJsonSchema.value,
+      ),
+    );
+    expect(native.providerCalls, isEmpty);
   });
 
   test('virtual creation and every send retain each session schema across '
       'switches, context and failed-send rebuilds', () async {
     const schema = '{"type":"string","enum":["PASS"]}';
     final client = LiteRtLmFfiClient();
+    final native = _installConstraintRecorder(client);
     final creates = <String?>[];
     final sent = <String?>[];
     final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
@@ -296,11 +309,20 @@ void main() {
       schema,
     ]);
     expect(creates, [schema, null, schema, schema, schema, schema]);
+    expect(native.providerCalls, hasLength(5));
+    expect(native.schemas, List.filled(8, schema));
+    expect(
+      native.constraintTypes,
+      everyElement(
+        LiteRtLmConstraintType.kLiteRtLmConstraintTypeJsonSchema.value,
+      ),
+    );
   });
 
   test('native recovery and a chat replacement keep the same schema', () async {
     const schema = '{"type":"string","enum":["PASS"]}';
     final client = _SchemaClient();
+    final native = _installConstraintRecorder(client);
     final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
     final sentSchemas = <String?>[];
     client.structuredSendForTest = (conv, jsonSchema) {
@@ -397,6 +419,14 @@ void main() {
     expect(client.createdSchemas, everyElement(schema));
     expect(sentSchemas, everyElement(schema));
     expect(client.createdSchemas.length, greaterThanOrEqualTo(4));
+    expect(native.providerCalls, hasLength(client.createdSchemas.length));
+    expect(native.schemas, sentSchemas);
+    expect(
+      native.constraintTypes,
+      everyElement(
+        LiteRtLmConstraintType.kLiteRtLmConstraintTypeJsonSchema.value,
+      ),
+    );
   });
 
   test('the loaded model reports the support supplied by its engine', () {
@@ -445,26 +475,89 @@ class _SchemaClient extends LiteRtLmFfiClient {
   final createdSchemas = <String?>[];
   final conversations = <Pointer<LiteRtLmConversation>>[];
 
-  @override
-  Future<LiteRtLmConversationHandle> createConversationHandle({
-    String? systemMessage,
-    String? toolsJson,
-    String? messagesJson,
-    required ResolvedSampling sampling,
-    required bool samplingExplicit,
-    int? maxOutputTokens,
-    required MultimodalOrder multimodalOrder,
-    String? jsonSchema,
-  }) async {
-    createdSchemas.add(jsonSchema);
-    final conv = Pointer<LiteRtLmConversation>.fromAddress(
-      0x6000 + conversations.length * 0x10,
+  _SchemaClient() {
+    structuredCreateForTest = (_, jsonSchema) async {
+      createdSchemas.add(jsonSchema);
+      final conv = Pointer<LiteRtLmConversation>.fromAddress(
+        0x6000 + conversations.length * 0x10,
+      );
+      conversations.add(conv);
+      return conv;
+    };
+  }
+}
+
+_ConstraintRecorder _installConstraintRecorder(LiteRtLmFfiClient client) {
+  final recorder = _ConstraintRecorder();
+  client.bindingsForTest = recorder.bindings;
+  addTearDown(recorder.close);
+  return recorder;
+}
+
+class _ConstraintRecorder {
+  _ConstraintRecorder() {
+    final symbols = <String, Pointer<Void>>{
+      'litert_lm_get_last_error_message': _retain(
+        NativeCallable<Pointer<Char> Function()>.isolateLocal(() => nullptr),
+      ),
+      'litert_lm_conversation_config_set_constraint_provider': _retain(
+        NativeCallable<
+          UnsignedInt Function(Pointer<LiteRtLmConversationConfig>, UnsignedInt)
+        >.isolateLocal((Pointer<LiteRtLmConversationConfig> _, int provider) {
+          providerCalls.add(provider);
+          return 0;
+        }, exceptionalReturn: 1),
+      ),
+      'litert_lm_conversation_optional_args_set_constraint': _retain(
+        NativeCallable<
+          UnsignedInt Function(
+            Pointer<LiteRtLmConversationOptionalArgs>,
+            UnsignedInt,
+            Pointer<Char>,
+          )
+        >.isolateLocal((
+          Pointer<LiteRtLmConversationOptionalArgs> _,
+          int type,
+          Pointer<Char> schema,
+        ) {
+          constraintTypes.add(type);
+          schemas.add(schema.cast<Utf8>().toDartString());
+          return 0;
+        }, exceptionalReturn: 1),
+      ),
+      'litert_lm_conversation_delete': _retain(
+        NativeCallable<
+          Void Function(Pointer<LiteRtLmConversation>)
+        >.isolateLocal((Pointer<LiteRtLmConversation> _) {}),
+      ),
+      'litert_lm_conversation_cancel_process': _retain(
+        NativeCallable<
+          UnsignedInt Function(Pointer<LiteRtLmConversation>)
+        >.isolateLocal(
+          (Pointer<LiteRtLmConversation> _) => 0,
+          exceptionalReturn: 1,
+        ),
+      ),
+    };
+    bindings = LiteRtLmBindings.fromLookup(
+      <T extends NativeType>(String name) => symbols[name]!.cast<T>(),
     );
-    conversations.add(conv);
-    return LiteRtLmConversationHandle.forTest(
-      this,
-      conversation: conv,
-      jsonSchema: jsonSchema,
-    );
+  }
+
+  final providerCalls = <int>[];
+  final constraintTypes = <int>[];
+  final schemas = <String>[];
+  final _callables = <NativeCallable>[];
+  late final LiteRtLmBindings bindings;
+
+  Pointer<Void> _retain(NativeCallable callable) {
+    _callables.add(callable);
+    return callable.nativeFunction.cast();
+  }
+
+  void close() {
+    for (final callable in _callables) {
+      callable.close();
+    }
   }
 }

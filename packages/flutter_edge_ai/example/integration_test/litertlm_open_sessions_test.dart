@@ -137,6 +137,36 @@ int _median(List<int> xs) => (List.of(xs)..sort())[xs.length ~/ 2];
 
 String _mib(num bytes) => (bytes / (1 << 20)).toStringAsFixed(1);
 
+/// Content-bearing word stems used to compare an audio recall with the
+/// transcription that this same session produced. Four-character stems let
+/// "wash", "washboard", and "wash water" agree without accepting a generic
+/// no-audio answer.
+Set<String> _audioContentStems(String text) {
+  const ignored = {
+    'about',
+    'audio',
+    'clip',
+    'from',
+    'have',
+    'hear',
+    'recording',
+    'repeat',
+    'said',
+    'that',
+    'this',
+    'transcription',
+    'what',
+    'with',
+    'your',
+  };
+  return {
+    for (final match in RegExp(r"[a-z0-9']+").allMatches(text.toLowerCase()))
+      if (match[0] case final word?
+          when word.length >= 4 && !ignored.contains(word))
+        word.substring(0, 4),
+  };
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -225,19 +255,24 @@ void main() {
     required String label,
     required Message Function() message,
     required String question,
-    required List<String> expected,
+    required bool Function(String initialReply, String recall) retained,
+    required String expectation,
   }) async {
     await ensureModel();
     final a = await open();
     final b = await open();
     try {
       await a.addQueryChunk(message());
-      await a.getResponse();
+      final initialReply = await a.getResponse();
       await _ask(b, 'Name a fruit. One word.');
-      final reply = (await _ask(a, question)).toLowerCase();
-      final hit = expected.any(reply.contains);
+      final reply = await _ask(a, question);
+      final hit = retained(initialReply, reply);
       _result('$label=${hit ? 'PASS' : 'FAIL'}');
-      expect(hit, isTrue, reason: 'expected one of $expected: "$reply"');
+      expect(
+        hit,
+        isTrue,
+        reason: '$expectation; initial="$initialReply", recall="$reply"',
+      );
     } finally {
       await a.close();
       await b.close();
@@ -263,7 +298,8 @@ void main() {
       ),
       question:
           'What shape is in the picture I showed you? Answer in one word.',
-      expected: const ['circle'],
+      retained: (_, recall) => recall.toLowerCase().contains('circle'),
+      expectation: 'expected the recalled image to contain "circle"',
     );
   });
 
@@ -284,11 +320,18 @@ void main() {
         audioBytes: audio,
         isUser: true,
       ),
-      // The clip: "She had your dark suit in greasy wash water all year".
-      question:
-          'In the clip I played you, what was in the greasy wash water? A '
-          'few words.',
-      expected: const ['suit'],
+      // Compare with this session's own transcription. Gemma 4 E2B on a GPU
+      // can retain the clip yet answer "Greasy wash water" instead of naming
+      // the suit. The generic question deliberately leaks none of those words.
+      question: 'Repeat the first six words of your transcription.',
+      retained: (transcription, recall) {
+        final content = _audioContentStems(transcription);
+        final shared = content.intersection(_audioContentStems(recall));
+        return content.length >= 2 && shared.length >= 2;
+      },
+      expectation:
+          'expected at least two content stems from this session\'s own '
+          'transcription',
     );
   });
 

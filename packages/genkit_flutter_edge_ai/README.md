@@ -263,10 +263,9 @@ A structured turn that does not end in a value of the schema fails with a
 `GenkitException` (inside `ai.generate`, a result with
 `FinishReason.failed`) whose `cause` is flutter_edge_ai's exception, carrying
 the partial or non-conforming text. None of these statuses sends the request
-to another model: not `genkit_hybrid`'s router, and not its deprecated
-`hybridModel`, `hybridModelOnDeviceCloud` and `cascadeModel`. A reply that
-failed its schema would fail the same way again, and whether the prompt may go
-to the cloud is the app's decision.
+to another model through `genkit_hybrid`'s router. A reply that failed its
+schema would fail the same way again, and whether the prompt may go to the
+cloud is the app's decision.
 
 | flutter_edge_ai | Status |
 |---|---|

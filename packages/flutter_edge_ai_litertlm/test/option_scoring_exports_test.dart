@@ -30,8 +30,9 @@ void main() {
       client.indexOf('Future<String> renderUserMessage('),
     );
     final called = {..._calledSymbols(ffi), ..._calledSymbols(tokenizer)};
-    final gate = File('native/litert_lm/check_embedding_exports.py')
-        .readAsStringSync();
+    final gate = File(
+      'native/litert_lm/check_embedding_exports.py',
+    ).readAsStringSync();
     final listed = RegExp(
       r'SCORING_SYMBOLS = \[(.*?)\]',
       dotAll: true,

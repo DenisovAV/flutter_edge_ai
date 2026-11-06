@@ -285,47 +285,50 @@ void main() {
       );
     });
 
-    test('a text model that declares only the NPU but is compiled for none '
-        'has nothing to run on: refused for every request, the NPU not asked', () {
-      // No published bundle has this shape (14 read 2026-10-18): each that
-      // declares npu also carries a stamp and tf_lite_aux. On npu it would
-      // take LiteRT-LM's compiler-plugin path, as a generic bundle does.
-      final npuDeclared = bundle(text: ('npu', null));
-      expect(npuDeclared.isCompiledForNpu, isFalse);
-      final nothing = refusedWith(
-        LiteRtLmBundleProblem.wrongBackend,
-        'model.litertlm declares that its text model runs on npu '
-        '(backend_constraint) but is not compiled for an NPU (its text model '
-        'carries no LiteRtStamp and there is no tf_lite_aux), so no backend '
-        'here can run it: on the NPU LiteRT would try to compile it on the '
-        'device with a compiler plugin, which no NPU stack here ships, and run '
-        "it on the CPU. Install the bundle compiled for this device's NPU.",
-      );
-      for (final preferred in [null, npu, gpu, cpu]) {
-        for (final fallback in [true, false]) {
-          expect(
-            () => plan(
-              info: npuDeclared,
-              preferred: preferred,
-              fallback: fallback,
-            ),
-            nothing,
-            reason: '$preferred, fallback $fallback',
-          );
+    test(
+      'a text model that declares only the NPU but is compiled for none '
+      'has nothing to run on: refused for every request, the NPU not asked',
+      () {
+        // No published bundle has this shape (14 read 2026-10-18): each that
+        // declares npu also carries a stamp and tf_lite_aux. On npu it would
+        // take LiteRT-LM's compiler-plugin path, as a generic bundle does.
+        final npuDeclared = bundle(text: ('npu', null));
+        expect(npuDeclared.isCompiledForNpu, isFalse);
+        final nothing = refusedWith(
+          LiteRtLmBundleProblem.wrongBackend,
+          'model.litertlm declares that its text model runs on npu '
+          '(backend_constraint) but is not compiled for an NPU (its text model '
+          'carries no LiteRtStamp and there is no tf_lite_aux), so no backend '
+          'here can run it: on the NPU LiteRT would try to compile it on the '
+          'device with a compiler plugin, which no NPU stack here ships, and run '
+          "it on the CPU. Install the bundle compiled for this device's NPU.",
+        );
+        for (final preferred in [null, npu, gpu, cpu]) {
+          for (final fallback in [true, false]) {
+            expect(
+              () => plan(
+                info: npuDeclared,
+                preferred: preferred,
+                fallback: fallback,
+              ),
+              nothing,
+              reason: '$preferred, fallback $fallback',
+            );
+          }
         }
-      }
-      expect(
-        () => liteRtLmTextCandidates(
-          path: 'model.litertlm',
-          bundle: npuDeclared,
-          preferredBackend: null,
-          backendFallback: true,
-          abi: 'android_arm64',
-        ),
-        nothing,
-      );
-      expect(npuAsked, 0);
-    });
+        expect(
+          () => liteRtLmTextCandidates(
+            path: 'model.litertlm',
+            bundle: npuDeclared,
+            preferredBackend: null,
+            backendFallback: true,
+            abi: 'android_arm64',
+          ),
+          nothing,
+        );
+        expect(npuAsked, 0);
+      },
+    );
 
     test('one that declares the NPU and the CPU runs on the CPU, the NPU '
         'dropped for its missing NPU graph', () {

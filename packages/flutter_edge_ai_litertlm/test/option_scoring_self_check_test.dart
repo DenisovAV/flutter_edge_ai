@@ -52,10 +52,8 @@ final class _Engine {
 
   /// The scores of one run of [tokens] after [prompt]: by default each as it
   /// scores alone, which is what an exact rewind gives.
-  List<double> Function(String prompt, List<String> tokens) inRun = (
-    prompt,
-    tokens,
-  ) => [for (final t in tokens) _base[t] ?? -1.5];
+  List<double> Function(String prompt, List<String> tokens) inRun =
+      (prompt, tokens) => [for (final t in tokens) _base[t] ?? -1.5];
   PreferredBackend? backend = PreferredBackend.cpu;
   final runs = <List<String>>[];
   final runPrompts = <String>[];

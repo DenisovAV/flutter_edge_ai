@@ -82,12 +82,15 @@ void main() {
     File('$bundles/eg2.litertlm').writeAsBytesSync(generic);
     File('$bundles/EG2.LITERTLM').writeAsBytesSync(generic);
     File('$bundles/eg2_text.litertlm').writeAsBytesSync(eg2Container());
-    File('$bundles/eg2_audio.litertlm')
-        .writeAsBytesSync(eg2Container(vision: true, audio: true));
-    File('$bundles/eg2_npu.litertlm')
-        .writeAsBytesSync(eg2Container(textStamp: ('Qualcomm', 'SM8850')));
-    File('$bundles/eg2_ptl.litertlm')
-        .writeAsBytesSync(eg2Container(textStamp: ('IntelOpenVINO', 'PTL')));
+    File(
+      '$bundles/eg2_audio.litertlm',
+    ).writeAsBytesSync(eg2Container(vision: true, audio: true));
+    File(
+      '$bundles/eg2_npu.litertlm',
+    ).writeAsBytesSync(eg2Container(textStamp: ('Qualcomm', 'SM8850')));
+    File(
+      '$bundles/eg2_ptl.litertlm',
+    ).writeAsBytesSync(eg2Container(textStamp: ('IntelOpenVINO', 'PTL')));
     File('$bundles/eg2_npu_audio.litertlm').writeAsBytesSync(
       eg2Container(
         textStamp: ('Qualcomm', 'SM8850'),

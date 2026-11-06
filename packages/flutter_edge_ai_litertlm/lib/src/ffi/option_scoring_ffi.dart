@@ -77,8 +77,10 @@ Future<String> renderUserMessageOffMainIsolate({
     } finally {
       n.b.litert_lm_session_config_delete(sessionConfig);
     }
-    final message = jsonEncode({'role': 'user', 'content': content})
-        .toNativeUtf8();
+    final message = jsonEncode({
+      'role': 'user',
+      'content': content,
+    }).toNativeUtf8();
     try {
       final rendered = n.pointer<Char>(
         'litert_lm_conversation_render_message_to_string',

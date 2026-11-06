@@ -99,7 +99,8 @@ enum EmbeddingModel implements EmbeddingModelInterface {
         .asset, // Use Flutter assets - works in debug and production
     // Kept separate from the hosted seq=256 profile until the checked-in asset
     // is proven byte-identical to that immutable Hugging Face revision.
-    ragProfileId: 'embeddinggemma-300m-seq256-mp-example-asset-v1-retrieval-prefix-meanpool-l2-v1',
+    ragProfileId:
+        'embeddinggemma-300m-seq256-mp-example-asset-v1-retrieval-prefix-meanpool-l2-v1',
   ),
 
   embeddingGemma512(

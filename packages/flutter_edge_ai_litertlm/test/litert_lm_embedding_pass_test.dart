@@ -367,8 +367,9 @@ void main() {
       test('images on a bundle with vision: text and images, the formats '
           'stb decodes, and the budget handed to the settings', () async {
         native.visionSignatures = const [70, 140];
-        final info = await pass(declaredMedia: {EmbeddingModality.image})
-            .load();
+        final info = await pass(
+          declaredMedia: {EmbeddingModality.image},
+        ).load();
         expect(info.modalities, {
           EmbeddingModality.text,
           EmbeddingModality.image,
@@ -441,8 +442,9 @@ void main() {
 
         native.dispose();
         native = _FakeLiteRtLm()..visionSignatures = const [70, 140];
-        final audioOnly = await pass(declaredMedia: {EmbeddingModality.audio})
-            .load();
+        final audioOnly = await pass(
+          declaredMedia: {EmbeddingModality.audio},
+        ).load();
         expect(audioOnly.modalities, {
           EmbeddingModality.text,
           EmbeddingModality.image,
@@ -472,8 +474,9 @@ void main() {
           'image load never depends on it', () async {
         // The same unreadable container as above.
         native.visionSignatures = const [70, 140];
-        final info = await pass(declaredMedia: {EmbeddingModality.image})
-            .load();
+        final info = await pass(
+          declaredMedia: {EmbeddingModality.image},
+        ).load();
         expect(info.modalities, {
           EmbeddingModality.text,
           EmbeddingModality.image,
@@ -1104,8 +1107,9 @@ void main() {
           'is no cache', () async {
         native.writeCacheOnCreate = false;
         final dir = Directory(expectedCacheDir())..createSync(recursive: true);
-        File('${dir.path}/eg2.litertlm.mldrift_program_cache.bin')
-            .openSync(mode: FileMode.write)
+        File(
+            '${dir.path}/eg2.litertlm.mldrift_program_cache.bin',
+          ).openSync(mode: FileMode.write)
           ..truncateSync(4 << 20)
           ..closeSync();
         final p = pass(requireWeightCache: true);
@@ -2629,42 +2633,45 @@ void main() {
         }
       });
 
-      test('the 440m without its vision cache: a warning naming the vision '
-          'tower, and with the flag a load failure; the engine is deleted', () async {
-        expect(await load(header: _header440m, omit: {'vision_encoder'}), [
-          allOf(
-            contains('WARNING'),
-            contains(
-              'wrote no weight cache to ${expectedCacheDir()} for the vision '
-              'tower, which runs on CPU,',
+      test(
+        'the 440m without its vision cache: a warning naming the vision '
+        'tower, and with the flag a load failure; the engine is deleted',
+        () async {
+          expect(await load(header: _header440m, omit: {'vision_encoder'}), [
+            allOf(
+              contains('WARNING'),
+              contains(
+                'wrote no weight cache to ${expectedCacheDir()} for the vision '
+                'tower, which runs on CPU,',
+              ),
+              contains('requireWeightCache: true'),
+              isNot(contains('290 MB')),
             ),
-            contains('requireWeightCache: true'),
-            isNot(contains('290 MB')),
-          ),
-        ]);
-        await expectLater(
-          load(
-            header: _header440m,
-            omit: {'vision_encoder'},
-            requireWeightCache: true,
-          ),
-          throwsA(
-            isA<EmbeddingLoadException>().having(
-              (e) => e.message,
-              'message',
-              allOf(
-                contains('for the vision tower, which runs on CPU,'),
-                contains('requireWeightCache: true'),
-                contains(
-                  'about ${liteRtLmCacheFilePathLength(expectedCacheDir(), _file, File(_header440m).lengthSync(), tower: '.vision_encoder')} '
-                  'characters',
+          ]);
+          await expectLater(
+            load(
+              header: _header440m,
+              omit: {'vision_encoder'},
+              requireWeightCache: true,
+            ),
+            throwsA(
+              isA<EmbeddingLoadException>().having(
+                (e) => e.message,
+                'message',
+                allOf(
+                  contains('for the vision tower, which runs on CPU,'),
+                  contains('requireWeightCache: true'),
+                  contains(
+                    'about ${liteRtLmCacheFilePathLength(expectedCacheDir(), _file, File(_header440m).lengthSync(), tower: '.vision_encoder')} '
+                    'characters',
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-        expect(native.deleted('engine'), 1);
-      });
+          );
+          expect(native.deleted('engine'), 1);
+        },
+      );
 
       test('the 740m: one tower missing beside the other is a warning, never a '
           'refusal; both missing is a refusal under the flag', () async {
@@ -3095,8 +3102,9 @@ void main() {
   test('the release gate checks exactly the symbols the pass needs', () {
     // native/litert_lm/check_embedding_exports.py refuses to publish a
     // tarball whose libLiteRtLm lacks one; it must ask for the same list.
-    final script = File('native/litert_lm/check_embedding_exports.py')
-        .readAsStringSync();
+    final script = File(
+      'native/litert_lm/check_embedding_exports.py',
+    ).readAsStringSync();
     final list = RegExp(
       r'REQUIRED = \[(.*?)\]',
       dotAll: true,
@@ -3108,8 +3116,9 @@ void main() {
   });
 
   test('the bindings do not bind what D23 rules out', () {
-    final source = File('lib/src/ffi/litert_lm_embedding_bindings.dart')
-        .readAsStringSync();
+    final source = File(
+      'lib/src/ffi/litert_lm_embedding_bindings.dart',
+    ).readAsStringSync();
     for (final symbol in [
       'litert_lm_loaded_file_supports_input_modality',
       'litert_lm_loaded_file_max_vision_token_budget',
@@ -3594,8 +3603,9 @@ final class _FakeLiteRtLm extends LiteRtLmEmbeddingBindings {
       for (final tower in _cachedTowers()) {
         if (omitTowerCaches.contains(tower)) continue;
         // Sparse: the size is what the pass reads, not the bytes.
-        File('$dir/eg2.litertlm_1791758581_37.$tower.xnnpack_cache')
-            .openSync(mode: FileMode.write)
+        File(
+            '$dir/eg2.litertlm_1791758581_37.$tower.xnnpack_cache',
+          ).openSync(mode: FileMode.write)
           ..truncateSync(cacheFileBytes)
           ..closeSync();
       }

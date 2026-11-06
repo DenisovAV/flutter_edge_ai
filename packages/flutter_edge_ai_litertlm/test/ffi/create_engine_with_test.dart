@@ -15,23 +15,22 @@ import 'package:flutter_test/flutter_test.dart';
 
 // C API 1.0: a create writes through an out-parameter, and every call that
 // can fail returns a LiteRtLmStatusCode.
-typedef _CreateSettingsN = UnsignedInt Function(
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-  Pointer<Utf8>,
-  Pointer<Pointer<Void>>,
-);
+typedef _CreateSettingsN =
+    UnsignedInt Function(
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Utf8>,
+      Pointer<Pointer<Void>>,
+    );
 typedef _SettingsN = UnsignedInt Function(Pointer<Void>);
 typedef _SettingsIntN = UnsignedInt Function(Pointer<Void>, Int);
 typedef _SettingsEnumN = UnsignedInt Function(Pointer<Void>, UnsignedInt);
 typedef _SettingsBoolN = UnsignedInt Function(Pointer<Void>, Bool);
 typedef _SettingsStringN = UnsignedInt Function(Pointer<Void>, Pointer<Utf8>);
 typedef _DeleteN = Void Function(Pointer<Void>);
-typedef _CreateEngineN = UnsignedInt Function(
-  Pointer<Void>,
-  Pointer<Pointer<Void>>,
-);
+typedef _CreateEngineN =
+    UnsignedInt Function(Pointer<Void>, Pointer<Pointer<Void>>);
 typedef _LogLevelN = UnsignedInt Function(UnsignedInt);
 typedef _VoidN = Void Function();
 typedef _MessageN = Pointer<Utf8> Function();

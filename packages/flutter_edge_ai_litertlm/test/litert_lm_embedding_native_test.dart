@@ -151,8 +151,9 @@ String? _dylib() {
   )) {
     if (!File(path).existsSync()) continue;
     try {
-      if (DynamicLibrary.open(path)
-          .providesSymbol('litert_lm_get_api_version')) {
+      if (DynamicLibrary.open(
+        path,
+      ).providesSymbol('litert_lm_get_api_version')) {
         return path;
       }
     } on ArgumentError {
@@ -718,9 +719,9 @@ void main() {
     'text→audio retrieval, WAV/MP3/FLAC and resampling, a corrupt WAV, the '
     'exact overflow of a 60-second clip',
     () async {
-      final golden = jsonDecode(
-        File(_audioGoldenPath).readAsStringSync(),
-      ) as Map<String, dynamic>;
+      final golden =
+          jsonDecode(File(_audioGoldenPath).readAsStringSync())
+              as Map<String, dynamic>;
       final clips = (golden['clips'] as Map).cast<String, dynamic>();
       final p = pass(
         bundle740m!,

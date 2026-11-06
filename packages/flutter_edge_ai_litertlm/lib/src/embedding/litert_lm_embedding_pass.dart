@@ -1981,8 +1981,9 @@ bool _ansiCodePageIsUtf8() => _ansiCodePageIsUtf8Once;
 
 final bool _ansiCodePageIsUtf8Once =
     Platform.isWindows &&
-    DynamicLibrary.open('kernel32.dll')
-            .lookupFunction<Uint32 Function(), int Function()>('GetACP')() ==
+    DynamicLibrary.open(
+          'kernel32.dll',
+        ).lookupFunction<Uint32 Function(), int Function()>('GetACP')() ==
         65001;
 
 /// The names of the real GPU cache files among [entries], a cache directory's

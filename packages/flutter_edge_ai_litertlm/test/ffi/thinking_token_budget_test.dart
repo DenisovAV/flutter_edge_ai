@@ -295,8 +295,9 @@ void main() {
       for (final m in RegExp(r'b\.(litert_lm_[a-z_]+)\b').allMatches(apply))
         m.group(1)!,
     };
-    final gate = File('native/litert_lm/check_embedding_exports.py')
-        .readAsStringSync();
+    final gate = File(
+      'native/litert_lm/check_embedding_exports.py',
+    ).readAsStringSync();
     final listed = RegExp(
       r'THINKING_BUDGET_SYMBOLS = \[(.*?)\]',
       dotAll: true,

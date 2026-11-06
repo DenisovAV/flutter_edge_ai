@@ -116,8 +116,9 @@ void main() {
     });
 
     test('the major is the one the vendored headers declare', () {
-      final header = File('native/litert_lm/include/c/engine.h')
-          .readAsStringSync();
+      final header = File(
+        'native/litert_lm/include/c/engine.h',
+      ).readAsStringSync();
       expect(
         header,
         contains('#define LITERT_LM_C_API_VERSION_MAJOR $liteRtLmCApiMajor\n'),
@@ -188,8 +189,9 @@ void main() {
     });
 
     test('requireOwnLiteRtLmBuild runs it', () {
-      final source = File('lib/src/ffi/litert_lm_runtime_check.dart')
-          .readAsStringSync();
+      final source = File(
+        'lib/src/ffi/litert_lm_runtime_check.dart',
+      ).readAsStringSync();
       final body = source.substring(
         source.indexOf('DynamicLibrary requireOwnLiteRtLmBuild('),
       );
@@ -325,8 +327,9 @@ void main() {
     test('the release gate requires it from every native archive', () {
       // check_embedding_exports.py runs on each of the seven tarballs
       // (verify_tarball_manifest.sh); the host test below sees one of them.
-      final gate = File('native/litert_lm/check_embedding_exports.py')
-          .readAsStringSync();
+      final gate = File(
+        'native/litert_lm/check_embedding_exports.py',
+      ).readAsStringSync();
       final listed = RegExp(
         r'OWN_BUILD_SYMBOLS = \[(.*?)\]',
         dotAll: true,
@@ -369,11 +372,10 @@ void main() {
       r'DefaultScope|openBundledWindowsLibrary)\((?:libPath|path|bundled)\)'
       r'|openMacOSLiteRtLm\w*\(',
     );
-    String code(String file) =>
-        File(file)
-            .readAsLinesSync()
-            .where((line) => !line.trimLeft().startsWith('//'))
-            .join('\n');
+    String code(String file) => File(file)
+        .readAsLinesSync()
+        .where((line) => !line.trimLeft().startsWith('//'))
+        .join('\n');
 
     for (final (file, count) in const [
       ('lib/src/ffi/litert_lm_library.dart', 5),

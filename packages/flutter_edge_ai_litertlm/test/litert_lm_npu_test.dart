@@ -483,8 +483,9 @@ void main() {
     tearDown(() => dir.deleteSync(recursive: true));
 
     test('finds LiteRtDispatch.dll in the directory it is given', () {
-      File('${dir.path}${Platform.pathSeparator}LiteRtDispatch.dll')
-          .writeAsBytesSync(const [0]);
+      File(
+        '${dir.path}${Platform.pathSeparator}LiteRtDispatch.dll',
+      ).writeAsBytesSync(const [0]);
       final check = checkIntelNpuStack(dir.path);
       expect(check.bundled, isTrue);
       expect(check.known, isTrue);
@@ -492,8 +493,9 @@ void main() {
 
     test('says where it looked when the dispatch is not there — other Intel '
         'libraries do not count', () {
-      File('${dir.path}${Platform.pathSeparator}openvino.dll')
-          .writeAsBytesSync(const [0]);
+      File(
+        '${dir.path}${Platform.pathSeparator}openvino.dll',
+      ).writeAsBytesSync(const [0]);
       final check = checkIntelNpuStack(dir.path);
       expect(check.bundled, isFalse);
       expect(check.known, isTrue, reason: 'a missing file is an answer');

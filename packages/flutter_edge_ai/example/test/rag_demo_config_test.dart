@@ -435,34 +435,39 @@ void main() {
     },
   );
 
-  test('legacy basename cache is never relabeled with catalog provenance', () async {
-    const model = catalog.EmbeddingModel.embeddingGemma256;
-    await persistVerifiedEmbeddingCatalogSelection(
-      model,
-      spec: _catalogSpec(model),
-    );
-    final prefs = await SharedPreferences.getInstance();
+  test(
+    'legacy basename cache is never relabeled with catalog provenance',
+    () async {
+      const model = catalog.EmbeddingModel.embeddingGemma256;
+      await persistVerifiedEmbeddingCatalogSelection(
+        model,
+        spec: _catalogSpec(model),
+      );
+      final prefs = await SharedPreferences.getInstance();
 
-    final oldModelFilename = Uri.parse(model.url).pathSegments.last;
-    final oldTokenizerFilename =
-        '${oldModelFilename.substring(0, oldModelFilename.lastIndexOf('.'))}__sentencepiece.model';
-    final legacyRestored = EmbeddingModelSpec(
-      name: oldModelFilename,
-      modelSource: ModelSource.file('/legacy/$oldModelFilename'),
-      tokenizerSource: ModelSource.file('/legacy/$oldTokenizerFilename'),
-      modelFilename: oldModelFilename,
-      tokenizerFilename: oldTokenizerFilename,
-    );
+      final oldModelFilename = Uri.parse(model.url).pathSegments.last;
+      final oldTokenizerFilename =
+          '${oldModelFilename.substring(0, oldModelFilename.lastIndexOf('.'))}__sentencepiece.model';
+      final legacyRestored = EmbeddingModelSpec(
+        name: oldModelFilename,
+        modelSource: ModelSource.file('/legacy/$oldModelFilename'),
+        tokenizerSource: ModelSource.file('/legacy/$oldTokenizerFilename'),
+        modelFilename: oldModelFilename,
+        tokenizerFilename: oldTokenizerFilename,
+      );
 
-    expect(
-      await resolveActiveEmbeddingCatalogProfile(spec: legacyRestored),
-      isNull,
-    );
-    expect(
-      prefs.getString(EmbeddingCatalogPreferencesKeys.activeProfileProvenance),
-      isNull,
-    );
-  });
+      expect(
+        await resolveActiveEmbeddingCatalogProfile(spec: legacyRestored),
+        isNull,
+      );
+      expect(
+        prefs.getString(
+          EmbeddingCatalogPreferencesKeys.activeProfileProvenance,
+        ),
+        isNull,
+      );
+    },
+  );
 
   test('unknown provenance schema is cleared instead of adopted', () async {
     final prefs = await SharedPreferences.getInstance();

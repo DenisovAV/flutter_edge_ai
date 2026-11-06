@@ -306,9 +306,9 @@ void main() {
 /// The bundle as the loader would read it, from the facts
 /// inspect_bundle_test.dart read from its bytes.
 LiteRtLmBundleInfo _bundleInfo(String sha256) {
-  final facts = jsonDecode(
-    File('$_registry/derived/$sha256.json').readAsStringSync(),
-  ) as Map<String, Object?>;
+  final facts =
+      jsonDecode(File('$_registry/derived/$sha256.json').readAsStringSync())
+          as Map<String, Object?>;
   LiteRtLmNpuTarget? target(Object? stamp) {
     if (stamp is! String) return null;
     final slash = stamp.indexOf('/');

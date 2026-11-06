@@ -999,8 +999,9 @@ void main() {
         supportImage: true,
       );
       await expectLater(
-        const LiteRtEmbeddingBackend(visionTokensPerImage: 280)
-            .describe(spec, config),
+        const LiteRtEmbeddingBackend(
+          visionTokensPerImage: 280,
+        ).describe(spec, config),
         throwsA(
           isA<EmbeddingLoadException>()
               .having((e) => e.engine, 'engine', 'LiteRT-LM')
@@ -1013,8 +1014,9 @@ void main() {
       );
       // The default and the opt-in are accepted.
       for (final budget in [140, 70]) {
-        await LiteRtEmbeddingBackend(visionTokensPerImage: budget)
-            .describe(spec, config);
+        await LiteRtEmbeddingBackend(
+          visionTokensPerImage: budget,
+        ).describe(spec, config);
       }
     }, timeout: const Timeout(Duration(minutes: 20)));
 

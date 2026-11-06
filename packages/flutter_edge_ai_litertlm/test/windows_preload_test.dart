@@ -65,8 +65,9 @@ List<String> _hookList(String hook, String field) {
 
 /// The Windows file names verify_tarball_manifest.sh forbids.
 Set<String> _forbiddenOnWindows() {
-  final script = File('native/litert_lm/verify_tarball_manifest.sh')
-      .readAsStringSync();
+  final script = File(
+    'native/litert_lm/verify_tarball_manifest.sh',
+  ).readAsStringSync();
   return {
     for (final m in RegExp(r'"windows_x86_64:([^"]+)"').allMatches(script))
       m.group(1)!,

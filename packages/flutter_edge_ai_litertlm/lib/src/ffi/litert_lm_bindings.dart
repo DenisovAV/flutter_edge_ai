@@ -4185,14 +4185,16 @@ enum LiteRtLmActivationDataType {
 
 final class LiteRtLmStreamChunk extends ffi.Opaque {}
 
-typedef LiteRtLmStreamCallbackFunction = ffi.Void Function(
-  ffi.Pointer<ffi.Void> callback_data,
-  ffi.Pointer<LiteRtLmStreamChunk> chunk,
-);
-typedef DartLiteRtLmStreamCallbackFunction = void Function(
-  ffi.Pointer<ffi.Void> callback_data,
-  ffi.Pointer<LiteRtLmStreamChunk> chunk,
-);
+typedef LiteRtLmStreamCallbackFunction =
+    ffi.Void Function(
+      ffi.Pointer<ffi.Void> callback_data,
+      ffi.Pointer<LiteRtLmStreamChunk> chunk,
+    );
+typedef DartLiteRtLmStreamCallbackFunction =
+    void Function(
+      ffi.Pointer<ffi.Void> callback_data,
+      ffi.Pointer<LiteRtLmStreamChunk> chunk,
+    );
 typedef LiteRtLmStreamCallback =
     ffi.Pointer<ffi.NativeFunction<LiteRtLmStreamCallbackFunction>>;
 

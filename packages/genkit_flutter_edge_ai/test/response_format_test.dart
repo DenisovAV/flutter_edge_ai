@@ -80,7 +80,7 @@ void main() {
 
       expect(response.finishReason, FinishReason.stop);
       expect(response.message!.text, '{"backend": "gpu"}');
-      expect(fakeModel.createChatCallCount, 0);
+      expect(fakeModel.promptOpenChatCallCount, 0);
       final sent = fakeModel.sessionRequests.single.responseFormat;
       expect(sent?.schema, schema);
       // The schema is in the prompt as well: whether the model enforces it
@@ -100,7 +100,7 @@ void main() {
 
       expect(chunks.map((c) => c.text), ['{"backend": ', '"gpu"}']);
       expect(response.message!.text, '{"backend": "gpu"}');
-      expect(fakeModel.createChatCallCount, 0);
+      expect(fakeModel.promptOpenChatCallCount, 0);
       expect(fakeModel.sessionRequests.single.responseFormat?.schema, schema);
     });
 
@@ -211,7 +211,7 @@ void main() {
       test('$what is sent without a format', () async {
         await buildModel()(build());
 
-        expect(fakeModel.createChatCallCount, 1);
+        expect(fakeModel.promptOpenChatCallCount, 1);
         expect(fakeModel.sessionRequests, isEmpty);
       });
     }
@@ -222,7 +222,7 @@ void main() {
       final response = await buildModel()(request());
 
       expect(response.message!.text, '{"backend": "cpu"}');
-      expect(fakeModel.createChatCallCount, 1);
+      expect(fakeModel.promptOpenChatCallCount, 1);
       expect(fakeModel.sessionRequests, isEmpty);
       expect(
         fakeChat.receivedMessages.map((m) => m.text).join('\n'),
@@ -239,7 +239,7 @@ void main() {
 
         await buildModel()(request());
 
-        expect(fakeModel.createChatCallCount, 1);
+        expect(fakeModel.promptOpenChatCallCount, 1);
         expect(fakeModel.sessionRequests, isEmpty);
       },
     );
@@ -265,7 +265,7 @@ void main() {
         expect(response.message!.text, '{"backend": "cpu"}');
         expect(rejected.closed, isTrue);
         expect(fakeModel.openedSessions, [rejected]);
-        expect(fakeModel.createChatCallCount, 1);
+        expect(fakeModel.promptOpenChatCallCount, 1);
         expect(fakeChat.closeCallCount, 1);
         expect(
           fakeChat.receivedMessages.map((m) => m.text).join('\n'),
@@ -313,7 +313,7 @@ void main() {
 
       expect(response.message!.text, '{"backend": "cpu"}');
       expect(rejected.closed, isTrue);
-      expect(fakeModel.createChatCallCount, 1);
+      expect(fakeModel.promptOpenChatCallCount, 1);
       final sent = fakeChat.receivedMessages;
       expect(sent.map((m) => m.isUser), [true, false, true]);
       expect(sent.first.text, 'Which backends are there?');
@@ -343,7 +343,7 @@ void main() {
         ),
       );
       expect(chunks, hasLength(1));
-      expect(fakeModel.createChatCallCount, 0);
+      expect(fakeModel.promptOpenChatCallCount, 0);
       expect(fakeModel.openedSessions.single.closed, isTrue);
     });
 
@@ -360,7 +360,7 @@ void main() {
       expect(response.message!.text, '{"backend": "cpu"}');
       expect(fakeModel.refusalCalls, 2);
       expect(fakeModel.sessionRequests, isEmpty);
-      expect(fakeModel.createChatCallCount, 1);
+      expect(fakeModel.promptOpenChatCallCount, 1);
     });
 
     test('an engine that claims keywords outside the dialect fails the '
@@ -379,7 +379,7 @@ void main() {
           ),
         ),
       );
-      expect(fakeModel.createChatCallCount, 0);
+      expect(fakeModel.promptOpenChatCallCount, 0);
     });
   });
 
@@ -518,7 +518,7 @@ void main() {
             ),
           );
           expect(session.closed, isTrue);
-          expect(fakeModel.createChatCallCount, 0);
+          expect(fakeModel.promptOpenChatCallCount, 0);
         },
       );
     }

@@ -22,7 +22,7 @@ const Duration kMediaDownloadTimeout = Duration(seconds: 30);
 /// A system message with a part other than text is an INVALID_ARGUMENT:
 /// flutter_edge_ai takes text system instructions only.
 ///
-/// Used to pass system instructions natively via `createChat(systemInstruction:)`.
+/// Used to pass system instructions natively via `openChat(systemInstruction:)`.
 String? extractSystemInstruction(List<Message> messages) {
   final buffer = StringBuffer();
   for (final message in messages) {
@@ -61,7 +61,7 @@ void _checkParts(Message message, bool Function(Part) allowed, String rule) {
 /// Converts Genkit [ModelRequest] messages to flutter_edge_ai [gemma.Message] list.
 ///
 /// Key mapping rules:
-/// - `Role.system` → Skipped (handled via [extractSystemInstruction] + `createChat(systemInstruction:)`)
+/// - `Role.system` → Skipped (handled via [extractSystemInstruction] + `openChat(systemInstruction:)`)
 /// - `Role.user` → `Message(text: ..., isUser: true, images: ..., audioBytes: ...)`
 /// - `Role.model` → `Message(text: ..., isUser: false)`, or a tool call;
 ///   its reasoning is left out, as models do not read their own back
@@ -95,7 +95,7 @@ Future<List<gemma.Message>> convertMessages(
       final role = message.role;
 
       if (role == Role.system) {
-        // Its text goes to createChat(systemInstruction:), see
+        // Its text goes to openChat(systemInstruction:), see
         // extractSystemInstruction.
         _checkSystemMessage(message);
       } else if (role == Role.user) {

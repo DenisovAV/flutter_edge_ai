@@ -8,7 +8,7 @@ part of 'flutter_edge_ai_options.dart';
 
 /// Configuration options for flutter_edge_ai model inference.
 ///
-/// These options map to flutter_edge_ai's `createChat` and `getActiveModel`
+/// These options map to flutter_edge_ai's `openChat` and `getActiveModel`
 /// parameters.
 base class FlutterEdgeAiModelOptions {
   /// Creates a [FlutterEdgeAiModelOptions] from a JSON map.
@@ -80,14 +80,14 @@ base class FlutterEdgeAiModelOptions {
   }
 
   /// Cap on the tokens generated for one reply, passed to
-  /// `createChat(maxOutputTokens:)`. `.litertlm` models honour it; MediaPipe
+  /// `openChat(maxOutputTokens:)`. `.litertlm` models honour it; MediaPipe
   /// ignores it.
   int? get maxOutputTokens {
     return (_json['maxOutputTokens'] as num?)?.toInt();
   }
 
   /// Cap on the tokens generated for one reply, passed to
-  /// `createChat(maxOutputTokens:)`. `.litertlm` models honour it; MediaPipe
+  /// `openChat(maxOutputTokens:)`. `.litertlm` models honour it; MediaPipe
   /// ignores it.
   set maxOutputTokens(int? value) {
     if (value == null) {
@@ -221,14 +221,14 @@ base class FlutterEdgeAiModelOptions {
     }
   }
 
-  /// System-level instruction passed natively to flutter_edge_ai's createChat().
+  /// System-level instruction passed natively to flutter_edge_ai's openChat().
   /// If set, takes priority over any system-role messages in the Genkit request.
   /// If not set, system messages from the request are extracted and used instead.
   String? get systemInstruction {
     return _json['systemInstruction'] as String?;
   }
 
-  /// System-level instruction passed natively to flutter_edge_ai's createChat().
+  /// System-level instruction passed natively to flutter_edge_ai's openChat().
   /// If set, takes priority over any system-role messages in the Genkit request.
   /// If not set, system messages from the request are extracted and used instead.
   set systemInstruction(String? value) {

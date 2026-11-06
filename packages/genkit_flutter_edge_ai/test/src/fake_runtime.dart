@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart'
-    show ChatTurnHooks, EngineTurn, SessionRequest;
+    show ChatTurnHooks, EngineTurn, ResolvedChatRequest, SessionRequest;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_runtime.dart';
 
@@ -66,18 +66,20 @@ class FakeRuntime implements FlutterEdgeAiRuntime {
   }
 }
 
-/// Fake inference model that returns a [FakeInferenceChat] from [createChat].
+/// Fake inference model that backs each prompt-only [openChat] with a
+/// [FakeInferenceChat].
 class FakeInferenceModel extends gemma.InferenceModel {
   int _maxTokens = 1024;
   FakeInferenceChat? chatToReturn;
-  int createChatCallCount = 0;
+  int promptOpenChatCallCount = 0;
 
-  /// Without [chatToReturn], each [createChat] returns a fresh chat from this
-  /// (a plain one when unset) and records it in [chats].
+  /// Without [chatToReturn], each prompt-only [openChat] gets a fresh fake
+  /// chat from this (a plain one when unset) and records it in [chats].
   FakeInferenceChat Function()? newChat;
 
-  /// The chats [createChat] returned, in order.
+  /// The fake chats backing prompt-only [openChat] calls, in order.
   final List<FakeInferenceChat> chats = [];
+  final List<FakeInferenceChat> _pendingPlainChats = [];
 
   @override
   int get maxTokens => _maxTokens;
@@ -111,38 +113,25 @@ class FakeInferenceModel extends gemma.InferenceModel {
   lastSampling;
 
   @override
-  Future<gemma.InferenceChat> createChat({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    int tokenBuffer = 256,
-    String? loraPath,
-    bool? supportImage,
-    bool? supportAudio,
-    List<gemma.Tool> tools = const [],
-    bool? supportsFunctionCalls,
-    bool enableThinking = false,
-    gemma.ModelType? modelType,
-    gemma.ToolChoice toolChoice = gemma.ToolChoice.auto,
-    String? systemInstruction,
-    int? maxFunctionBufferLength,
-    int? maxOutputTokens,
-  }) async {
-    createChatCallCount++;
-    lastToolChoice = toolChoice;
-    lastSystemInstruction = systemInstruction;
-    lastMaxFunctionBufferLength = maxFunctionBufferLength;
-    lastMaxOutputTokens = maxOutputTokens;
+  ChatTurnHooks createChatTurnHooks(ResolvedChatRequest request) {
+    if (request.responseFormat != null) {
+      return super.createChatTurnHooks(request);
+    }
+    promptOpenChatCallCount++;
+    lastToolChoice = request.toolChoice;
+    lastSystemInstruction = request.systemInstruction;
+    lastMaxFunctionBufferLength = request.maxFunctionBufferLength;
+    lastMaxOutputTokens = request.maxOutputTokens;
     lastSampling = (
-      temperature: temperature,
-      topK: topK,
-      topP: topP,
-      randomSeed: randomSeed,
+      temperature: request.temperature,
+      topK: request.topK,
+      topP: request.topP,
+      randomSeed: request.randomSeed,
     );
     final chat = chatToReturn ?? newChat?.call() ?? FakeInferenceChat();
     chats.add(chat);
-    return chat;
+    _pendingPlainChats.add(chat);
+    return chat._turns;
   }
 
   /// What the model enforces; null = core's default, which refuses every
@@ -177,6 +166,9 @@ class FakeInferenceModel extends gemma.InferenceModel {
   Future<gemma.InferenceModelSession> openEngineSession(
     SessionRequest request,
   ) async {
+    if (request.responseFormat == null && _pendingPlainChats.isNotEmpty) {
+      return _FakeChatSession(_pendingPlainChats.removeAt(0));
+    }
     sessionRequests.add(request);
     final session = newSession?.call() ?? FakeStructuredSession();
     openedSessions.add(session);
@@ -365,6 +357,44 @@ class FakeInferenceChat extends gemma.InferenceChat {
   }
 }
 
+/// The engine session under a prompt-only core [gemma.InferenceModel.openChat].
+/// Its turn hooks use [chat] for replies; the remaining operations delegate so
+/// existing tests can script and inspect the same fake chat.
+final class _FakeChatSession extends gemma.InferenceModelSession {
+  _FakeChatSession(this.chat);
+
+  final FakeInferenceChat chat;
+
+  @override
+  EngineTurn startTurn() =>
+      throw StateError('The fake chat supplies responses');
+
+  @override
+  Stream<String> getResponseAsync() =>
+      throw StateError('The fake chat supplies responses');
+
+  @override
+  Future<String> getResponse() =>
+      throw StateError('The fake chat supplies responses');
+
+  @override
+  Future<int> sizeInTokens(String text) async => text.length;
+
+  @override
+  Future<void> addQueryChunk(gemma.Message message) =>
+      chat.addQueryChunk(message);
+
+  @override
+  Future<void> stopGeneration() => chat.stopGeneration();
+
+  @override
+  gemma.SessionMetrics getSessionMetrics() =>
+      chat.sessionMetrics ?? gemma.SessionMetrics();
+
+  @override
+  Future<void> close() => chat.close();
+}
+
 /// An engine session for core's `openChat`: each turn streams [tokens] and
 /// ends with [end], as an engine that reports how its turns end does.
 final class FakeStructuredSession extends gemma.InferenceModelSession {
@@ -468,6 +498,12 @@ final class _FakeTurns extends ChatTurnHooks {
     gemma.InferenceModelSession session, {
     required int tokenBuffer,
   }) => chat._turn();
+
+  @override
+  Future<void>? addQueryChunk(
+    gemma.InferenceModelSession session,
+    gemma.Message message,
+  ) => chat.addQueryChunk(message);
 }
 
 /// Fake embedding model in the shape core 2.3 requires of a fake: a `final

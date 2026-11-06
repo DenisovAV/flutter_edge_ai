@@ -108,7 +108,7 @@ void main() {
 
     expect(response.finishReason, FinishReason.stop);
     expect(response.output?.preferredBackend, 'npu');
-    expect(fakeModel.createChatCallCount, 0);
+    expect(fakeModel.promptOpenChatCallCount, 0);
     final schema = fakeModel.sessionRequests.single.responseFormat?.schema;
     expect(
       (schema?['properties'] as Map?)?.keys,

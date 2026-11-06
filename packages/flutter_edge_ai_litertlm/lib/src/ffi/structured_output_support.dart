@@ -41,14 +41,14 @@ const liteRtLmStructuredOutputRows = <LiteRtLmStructuredOutputRow>{
     androidGpu: null,
     npuVendor: null,
   ),
-  // 2026-11-06: suite +7/-0 on Intel LNL and PTL, 33.5/36.6 constrained tok/s.
+  // 2026-11-06: suite +7/-0 on Intel LNL and PTL.
   (
     abi: 'windows_x64',
     backend: PreferredBackend.cpu,
     androidGpu: null,
     npuVendor: null,
   ),
-  // 2026-11-06: LNL D3D12 suite +7/-0, 43.5 plain/43.8 constrained tok/s.
+  // 2026-11-06: LNL D3D12 suite +7/-0; stop/rewind +13/-0.
   (
     abi: 'windows_x64',
     backend: PreferredBackend.gpu,

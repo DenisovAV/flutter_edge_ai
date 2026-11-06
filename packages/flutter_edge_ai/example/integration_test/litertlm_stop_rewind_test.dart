@@ -190,15 +190,37 @@ void main() {
   // Greedy: Gemma 4's own sampler makes a reply vary from run to run (a turn
   // that sometimes does not hear its own audio), and a probe must test the
   // rewind, not the sampler.
-  Future<InferenceChat> newChat({bool thinking = false}) async =>
-      (await ensureModel()).openChat(
-        topK: 1,
-        supportImage: true,
-        supportAudio: true,
-        enableThinking: thinking,
-        // A thinking turn spends most of its tokens on thoughts.
-        maxOutputTokens: thinking ? 1024 : 160,
-      );
+  Future<InferenceChat> newChat({
+    bool thinking = false,
+    bool open = true,
+  }) async {
+    final m = await ensureModel();
+    final options = (
+      topK: 1,
+      supportImage: true,
+      supportAudio: true,
+      enableThinking: thinking,
+      maxOutputTokens: thinking ? 1024 : 160,
+    );
+    return open
+        ? m.openChat(
+            topK: options.topK,
+            supportImage: options.supportImage,
+            supportAudio: options.supportAudio,
+            enableThinking: options.enableThinking,
+            maxOutputTokens: options.maxOutputTokens,
+          )
+        // Compatibility coverage: createChat remains supported until 3.0.0.
+        // ignore: deprecated_member_use
+        : m.createChat(
+            topK: options.topK,
+            supportImage: options.supportImage,
+            supportAudio: options.supportAudio,
+            enableThinking: options.enableThinking,
+            // A thinking turn spends most of its tokens on thoughts.
+            maxOutputTokens: options.maxOutputTokens,
+          );
+  }
 
   final printer = debugPrint;
   setUpAll(() {
@@ -386,9 +408,9 @@ void main() {
   // recording, the model wrote "What will it be like in Paris tomorrow?", and
   // a cut at "OK." or no stop at all gave "Paris". So Android's GPU is checked
   // as the CPU is.
-  Future<void> stoppedAudioBargeIn() async {
+  Future<void> stoppedAudioBargeIn({required bool open}) async {
     _log.clear();
-    final chat = await newChat();
+    final chat = await newChat(open: open);
     try {
       final stopped = await _send(
         chat,
@@ -449,10 +471,17 @@ void main() {
     }
   }
 
-  testWidgets(
-    'a stopped turn that carried audio keeps it (an openChat barge-in)',
-    (tester) => stoppedAudioBargeIn(),
-  );
+  for (final open in [false, true]) {
+    testWidgets('a stopped turn that carried audio keeps it (a barge-in, '
+        '${open ? 'openChat' : 'createChat'})', (tester) async {
+      if (open &&
+          (backend != PreferredBackend.gpu ||
+              !(Platform.isLinux || Platform.isWindows))) {
+        return;
+      }
+      await stoppedAudioBargeIn(open: open);
+    });
+  }
 
   testWidgets('thinking: after a stop the conversation keeps answering '
       '(#681 review, critical 2)', (tester) async {

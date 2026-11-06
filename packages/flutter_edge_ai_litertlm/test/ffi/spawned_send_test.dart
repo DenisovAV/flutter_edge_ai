@@ -1,7 +1,8 @@
-// A send to another conversation than the one LiteRT-LM's executor ran last
-// runs its native call on a spawned isolate (doc/research/
-// litertlm-l3-switch-send.md). Which sends switch (ExecutorConversation),
-// and what may happen while such a call is still inside native
+// Every send runs its native start call on a spawned isolate because LiteRT-LM
+// performs prefill synchronously there; a send to another conversation also
+// switches executor state (doc/research/litertlm-l3-switch-send.md). Which
+// sends switch (ExecutorConversation), and what may happen while a call is
+// still inside native
 // (SendCallGate): nothing that ends the turn — the engine lock, a deferred
 // delete, a shutdown — and no free of the strings the call reads.
 import 'dart:async';
@@ -146,8 +147,9 @@ void main() {
       expect(client.executorForTest.last, conv);
     });
 
-    test('through the send path: the final chunk arrives while the spawned '
-        'call is still inside native, and a close comes before it returns; '
+    test('through the same-conversation send path: the final chunk arrives '
+        'while the spawned call is still inside native, and a close comes '
+        'before it returns; '
         'the turn ends, the conversation is deleted and the strings are '
         'freed only after the call has returned', () async {
       final deletes = <int>[];
@@ -256,9 +258,17 @@ void main() {
         return (code: 0, message: null, micros: 0);
       };
 
+      // Model a follow-up whose prefill would block the calling isolate if
+      // only executor switches were spawned. A stop/close must remain able to
+      // run while this same-conversation native call is still in prefill.
+      client.executorForTest.ranOn(conv);
       final text = client.sendForTest(conv, '{}').toList();
       await pumpEventQueue();
-      expect(callStarted, isTrue, reason: 'a first send switches');
+      expect(
+        callStarted,
+        isTrue,
+        reason: 'a same-conversation follow-up must also run off-main',
+      );
       client.releaseConversationForTest(conv);
       await pumpEventQueue();
       expect(deletes, isEmpty, reason: 'the call still runs on it');

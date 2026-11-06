@@ -1386,23 +1386,22 @@ class LiteRtLmFfiClient {
   String? get bundleSamplerError => _bundleSamplerRead.error;
   BundleSamplerRead _bundleSamplerRead = const BundleSamplerRead.notRead();
 
-  /// How long the last `send_message_stream` call held the calling isolate,
-  /// in microseconds. On a send to another conversation than the one the
-  /// executor last ran, LiteRT-LM saves the outgoing conversation's KV cache
-  /// and restores this one inside that call (`SaveCheckpoint`), so a switch
-  /// is paid here, on the isolate that sends. Read by the open-session suites.
+  /// How long starting the last `send_message_stream` call held the calling
+  /// isolate, in microseconds. The native call itself always runs on a spawned
+  /// isolate because it synchronously performs prefill before returning; this
+  /// lets `stopGeneration()` reach native while prefill is still running.
+  /// Read by the open-session suites.
   @visibleForTesting
   int? lastSendCallMicros;
 
-  /// How long the last send's native call took, wherever it ran: on a
-  /// switching send, a spawned isolate's (so not the calling isolate's).
+  /// How long the last send's native call took on its spawned isolate.
   @visibleForTesting
   int? lastSendNativeMicros;
 
   /// The conversation whose turn the executor ran last, as far as this
   /// client knows (unknown after a create, a scoring run, a render, a delete
   /// of it). A send to any other conversation switches KV caches inside the
-  /// native call and runs off the calling isolate.
+  /// native call.
   final _executor = ExecutorConversation<Pointer<LiteRtLmConversation>>();
 
   /// Test seam: a client that sends with [bindingsForTest] and these
@@ -3573,62 +3572,46 @@ class LiteRtLmFfiClient {
       releaseNative();
     }
 
-    // A send to another conversation than the executor's last makes LiteRT-LM
-    // save and restore KV caches inside the call: that one runs on a spawned
-    // isolate, so the calling (UI) isolate is not held by the copy.
-    final switching = _executor.send(conv);
+    // LiteRT-LM performs prefill synchronously inside this call before it
+    // returns and decode continues through callbacks. Run every send start on
+    // a spawned isolate, including a follow-up on the same conversation, so a
+    // timer or UI action can call stopGeneration() during a long prefill. A
+    // switch additionally saves and restores KV caches inside the same call.
+    _executor.send(conv);
     final uiBlock = Stopwatch()..start();
-    if (!switching) {
-      b.litert_lm_clear_last_error();
-      final result = b.litert_lm_conversation_send_message_stream(
-        conv,
-        messagePtr.cast(),
-        extraPtr == nullptr ? nullptr : extraPtr.cast(),
-        optionalArgs,
-        proxyFn.cast(),
-        proxyData,
-      );
-      // A refused send leaves its message in LiteRT-LM's thread-local last
-      // error (`c/conversation.cc`); read it before any other native call.
-      final nativeError = result == 0 ? null : b.lastError();
-      lastSendCallMicros = uiBlock.elapsedMicroseconds;
-      lastSendNativeMicros = lastSendCallMicros;
-      handleResult(result, nativeError);
-    } else {
-      gate.callStarted();
-      final call = _sendMessageStreamOffMainIsolate(
-        conversationAddr: conv.address,
-        messageAddr: messagePtr.address,
-        extraAddr: extraPtr.address,
-        optionalArgsAddr: optionalArgs.address,
-        callbackAddr: proxyFn.address,
-        proxyDataAddr: proxyData.address,
-      );
-      lastSendCallMicros = uiBlock.elapsedMicroseconds;
-      unawaited(
-        call.then(
-          (r) {
-            lastSendNativeMicros = r.micros;
-            gate.callReturned();
-            // The call's own result first (the turn has not ended: an end
-            // native called back with meanwhile is held), then that end.
-            handleResult(r.code, r.message);
-            gate.flushEnd();
-          },
-          onError: (Object e, StackTrace st) {
-            // The isolate could not run the call (a spawn that failed under
-            // memory pressure): nothing was sent.
-            _executor.unknown();
-            gate.callReturned();
-            b.litert_lm_conversation_optional_args_delete(optionalArgs);
-            releaseRefusedStreamProxy(-1, proxyData, _proxyDestroy!);
-            send.failed(e);
-            releaseNative();
-            gate.flushEnd();
-          },
-        ),
-      );
-    }
+    gate.callStarted();
+    final call = _sendMessageStreamOffMainIsolate(
+      conversationAddr: conv.address,
+      messageAddr: messagePtr.address,
+      extraAddr: extraPtr.address,
+      optionalArgsAddr: optionalArgs.address,
+      callbackAddr: proxyFn.address,
+      proxyDataAddr: proxyData.address,
+    );
+    lastSendCallMicros = uiBlock.elapsedMicroseconds;
+    unawaited(
+      call.then(
+        (r) {
+          lastSendNativeMicros = r.micros;
+          gate.callReturned();
+          // The call's own result first (the turn has not ended: an end
+          // native called back with meanwhile is held), then that end.
+          handleResult(r.code, r.message);
+          gate.flushEnd();
+        },
+        onError: (Object e, StackTrace st) {
+          // The isolate could not run the call (a spawn that failed under
+          // memory pressure): nothing was sent.
+          _executor.unknown();
+          gate.callReturned();
+          b.litert_lm_conversation_optional_args_delete(optionalArgs);
+          releaseRefusedStreamProxy(-1, proxyData, _proxyDestroy!);
+          send.failed(e);
+          releaseNative();
+          gate.flushEnd();
+        },
+      ),
+    );
 
     // A consumer that abandons the stream (subscription.cancel) without
     // calling stopGeneration() still stops native: NativeTurnStream cancels it

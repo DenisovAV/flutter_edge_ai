@@ -1455,11 +1455,11 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   void Function()? nativeSendEnteredForTest;
 
-  /// Windows serializes `cancel_process` after the synchronous send entry
-  /// point returns. Other hosts issue it while prefill runs, as their native
-  /// implementation permits and requires for a cancellable long prefill.
+  /// Test seam for the conservative policy that retains `cancel_process`
+  /// until the synchronous send entry point returns. Production issues it
+  /// during prefill on every host; the LNL Windows CPU run passed that path.
   @visibleForTesting
-  bool serializeNativeCancelWithSendForTest = Platform.isWindows;
+  bool serializeNativeCancelWithSendForTest = false;
 
   @visibleForTesting
   Duration nativeCancelEndTimeoutForTest = _nativeCancelEndTimeout;
@@ -3690,10 +3690,9 @@ class LiteRtLmFfiClient {
           // native called back with meanwhile is held), then that end.
           handleResult(r.code, r.message);
           gate.flushEnd();
-          // Windows retains a stop asked during synchronous prefill until the
-          // spawned send call has returned, then issues exactly one native
-          // cancellation. Other hosts already cancelled (and retried) while
-          // the call ran; this only closes their entry-point lifecycle.
+          // A test-only serialized policy retains a stop until this return.
+          // Production already cancelled (and retried) while the call ran;
+          // this final boundary catches work created after the last retry.
           send.nativeReturned();
         },
         onError: (Object e, StackTrace st) {

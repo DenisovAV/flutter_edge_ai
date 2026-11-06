@@ -125,7 +125,7 @@ void main() {
     expect(
       nativeCancels,
       greaterThanOrEqualTo(1),
-      reason: 'a non-Windows stop must interrupt synchronous prefill',
+      reason: 'a production stop must interrupt synchronous prefill',
     );
     await cancelObserved.future.timeout(const Duration(seconds: 2));
     await Future<void>.delayed(const Duration(milliseconds: 100));

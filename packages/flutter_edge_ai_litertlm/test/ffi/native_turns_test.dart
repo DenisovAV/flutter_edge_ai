@@ -174,7 +174,7 @@ void main() {
       expect(log, isEmpty, reason: 'the native send call is still running');
 
       send.nativeEntered();
-      expect(log, isEmpty, reason: 'Windows still serializes cancellation');
+      expect(log, isEmpty, reason: 'the test policy serializes cancellation');
       send.nativeReturned();
       send.chunk('later');
       turns.cancel('a');

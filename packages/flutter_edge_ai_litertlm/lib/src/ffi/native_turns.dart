@@ -98,9 +98,8 @@ class NativeTurns<C extends Object> {
   final void Function(C conversation) deleteNative;
 
   /// Whether cancellation must wait until a synchronous streamed-send entry
-  /// point has returned. Windows needs this because its C API implementation
-  /// cannot overlap `cancel_process` with that call. Other platforms permit
-  /// the overlap; there cancellation must remain able to interrupt prefill.
+  /// point has returned. Production leaves this false so a stop can interrupt
+  /// prefill; true remains available to exercise the retained-stop policy.
   final bool serializeCancelWithNativeStart;
 
   /// How long a consumer waits for native to post its end after cancellation.
@@ -153,8 +152,8 @@ class NativeTurns<C extends Object> {
 
   /// Marks the boundary immediately before a spawned isolate enters the C
   /// streamed-send call. Platforms that allow concurrent cancellation issue a
-  /// retained stop here, once native has work to cancel. Windows keeps it
-  /// retained until [nativeReturned].
+  /// retained stop here, once native has work to cancel. A serialized policy
+  /// keeps it retained until [nativeReturned].
   void nativeEntered(C conversation, NativeTurn turn) {
     if (turn.hasEnded || !identical(_running[conversation], turn)) return;
     if (serializeCancelWithNativeStart) return;
@@ -167,8 +166,8 @@ class NativeTurns<C extends Object> {
   }
 
   /// Marks the boundary where the spawned streamed-send call has returned.
-  /// This is the first safe cancellation point on Windows, and a fallback for
-  /// another platform when its native-entry notification raced or was lost.
+  /// This is the first cancellation point for a serialized policy, and the
+  /// final reliable boundary when an earlier notification raced or was lost.
   void nativeReturned(C conversation, NativeTurn turn) {
     if (turn.hasEnded || !identical(_running[conversation], turn)) return;
     turn.nativeCallInFlight = false;

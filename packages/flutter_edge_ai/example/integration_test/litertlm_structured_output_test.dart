@@ -37,6 +37,17 @@ const _codeSchema = {
   'additionalProperties': false,
 };
 const _poem = 'Write a short poem about the sea. Do not output JSON.';
+const _throughputPrompt =
+    'Repeat the word ocean separated by spaces for at least five hundred '
+    'words. Do not stop early.';
+const _throughputSchema = {
+  'type': 'object',
+  'properties': {
+    'text': {'type': 'string', 'minLength': 2000},
+  },
+  'required': ['text'],
+  'additionalProperties': false,
+};
 
 bool _isCode(String text) {
   try {
@@ -266,37 +277,80 @@ void main() {
     );
   }, timeout: const Timeout(Duration(minutes: 5)));
 
-  test('reports tok/s with and without an active constraint', () async {
-    final m = await ensureModel();
+  test(
+    'reports comparable median tok/s with and without a constraint',
+    () async {
+      final m = await ensureModel();
 
-    Future<double> measure(ResponseFormat? format) async {
-      final session = await m.openSession(
-        topK: 1,
-        maxOutputTokens: 128,
-        responseFormat: format,
-      );
-      try {
-        await session.addQueryChunk(
-          const Message(
-            text: 'Describe three benefits of reading in about sixty words.',
-            isUser: true,
-          ),
+      Future<({int tokens, double tokensPerSecond})> measure(
+        ResponseFormat? format,
+      ) async {
+        final session = await m.openSession(
+          topK: 1,
+          maxOutputTokens: 64,
+          responseFormat: format,
         );
-        await session.getResponse();
-        final speed = session.getSessionMetrics().tokensPerSecond;
-        expect(speed, isNotNull);
-        return speed!;
-      } finally {
-        await session.close();
+        try {
+          await session.addQueryChunk(
+            const Message(text: _throughputPrompt, isUser: true),
+          );
+          try {
+            await session.getResponse();
+          } on IncompleteStructuredOutputException catch (error) {
+            expect(format, isNotNull);
+            expect(error.end, TurnEnd.outputLimit);
+          }
+          final metrics = session.getSessionMetrics();
+          final speed = metrics.tokensPerSecond;
+          expect(speed, isNotNull);
+          expect(metrics.outputTokens, greaterThanOrEqualTo(60));
+          return (tokens: metrics.outputTokens, tokensPerSecond: speed!);
+        } finally {
+          await session.close();
+        }
       }
-    }
 
-    final plain = await measure(null);
-    final constrained = await measure(ResponseFormat.jsonSchema(_codeSchema));
-    debugPrint(
-      '[litertlm structured] $_backendName decode tok/s: '
-      'plain=${plain.toStringAsFixed(1)}, '
-      'constraint=${constrained.toStringAsFixed(1)}',
-    );
-  }, timeout: const Timeout(Duration(minutes: 10)));
+      final constrainedFormat = ResponseFormat.jsonSchema(_throughputSchema);
+
+      // Exclude one warm-up turn in each mode, then alternate order so neither
+      // median consistently benefits from being the second run in a pair.
+      await measure(null);
+      await measure(constrainedFormat);
+      final plain = <({int tokens, double tokensPerSecond})>[];
+      final constrained = <({int tokens, double tokensPerSecond})>[];
+      for (var i = 0; i < 5; i++) {
+        if (i.isEven) {
+          plain.add(await measure(null));
+          constrained.add(await measure(constrainedFormat));
+        } else {
+          constrained.add(await measure(constrainedFormat));
+          plain.add(await measure(null));
+        }
+      }
+
+      for (var i = 0; i < plain.length; i++) {
+        expect(
+          (plain[i].tokens - constrained[i].tokens).abs(),
+          lessThanOrEqualTo(1),
+          reason:
+              'plain and constrained runs must measure the same token count',
+        );
+      }
+      double median(List<({int tokens, double tokensPerSecond})> samples) {
+        final values = samples.map((sample) => sample.tokensPerSecond).toList()
+          ..sort();
+        return values[values.length ~/ 2];
+      }
+
+      debugPrint(
+        '[litertlm structured] $_backendName median native decode tok/s '
+        '(5 runs after per-mode warm-up): '
+        'plain=${median(plain).toStringAsFixed(1)} '
+        'tokens=${plain.map((sample) => sample.tokens).toList()}, '
+        'constraint=${median(constrained).toStringAsFixed(1)} '
+        'tokens=${constrained.map((sample) => sample.tokens).toList()}',
+      );
+    },
+    timeout: const Timeout(Duration(minutes: 10)),
+  );
 }

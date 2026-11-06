@@ -111,6 +111,18 @@ void main() {
         npuVendor: null,
       ),
       (
+        abi: 'linux_x64',
+        backend: PreferredBackend.cpu,
+        androidGpu: null,
+        npuVendor: null,
+      ),
+      (
+        abi: 'linux_x64',
+        backend: PreferredBackend.gpu,
+        androidGpu: null,
+        npuVendor: null,
+      ),
+      (
         abi: 'windows_x64',
         backend: PreferredBackend.cpu,
         androidGpu: null,

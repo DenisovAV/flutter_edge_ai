@@ -28,6 +28,19 @@ const liteRtLmStructuredOutputRows = <LiteRtLmStructuredOutputRow>{
     androidGpu: null,
     npuVendor: null,
   ),
+  // 2026-11-06: Linux x64 CPU/Vulkan suites +7/-0; Vulkan rewind +13/-0.
+  (
+    abi: 'linux_x64',
+    backend: PreferredBackend.cpu,
+    androidGpu: null,
+    npuVendor: null,
+  ),
+  (
+    abi: 'linux_x64',
+    backend: PreferredBackend.gpu,
+    androidGpu: null,
+    npuVendor: null,
+  ),
   // 2026-11-06: suite +7/-0 on Intel LNL and PTL, 33.5/36.6 constrained tok/s.
   (
     abi: 'windows_x64',

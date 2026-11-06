@@ -2,21 +2,22 @@
 // ignore_for_file: invalid_use_of_protected_member
 
 import 'dart:ffi';
-import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/structured_output_support.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('the generated C API 1.0 bindings pass both constraint setters', () {
-    var provider = -1;
+    final providers = <int>[];
     var constraintType = -1;
-    var constraintAddress = 0;
+    final constraints = <String>[];
     final keep = <NativeCallable>[];
     Pointer<Void> retain(NativeCallable callable) {
       keep.add(callable);
@@ -28,7 +29,7 @@ void main() {
         NativeCallable<
           UnsignedInt Function(Pointer<LiteRtLmConversationConfig>, UnsignedInt)
         >.isolateLocal((Pointer<LiteRtLmConversationConfig> _, int value) {
-          provider = value;
+          providers.add(value);
           return 0;
         }, exceptionalReturn: 1),
       ),
@@ -45,7 +46,7 @@ void main() {
           Pointer<Char> text,
         ) {
           constraintType = type;
-          constraintAddress = text.address;
+          constraints.add(text.cast<Utf8>().toDartString());
           return 0;
         }, exceptionalReturn: 1),
       ),
@@ -77,16 +78,36 @@ void main() {
       ),
       0,
     );
-    expect(provider, 1);
+    final client = LiteRtLmFfiClient()..bindingsForTest = bindings;
+    client
+      ..constraintProviderForTest(Pointer.fromAddress(0x30), null)
+      ..constraintProviderForTest(
+        Pointer.fromAddress(0x40),
+        '{"type":"string"}',
+      )
+      ..constraintForTest(Pointer.fromAddress(0x50), null)
+      ..constraintForTest(Pointer.fromAddress(0x60), '{"type":"string"}');
+    expect(providers, [1, 1], reason: 'plain conversation gets no provider');
     expect(constraintType, 2);
-    expect(
-      Pointer<Utf8>.fromAddress(constraintAddress).toDartString(),
-      '{"type":"string"}',
-    );
+    expect(constraints, ['{"type":"string"}', '{"type":"string"}']);
   });
 
   test('only the device-run table advertises the whole dialect', () {
-    expect(liteRtLmStructuredOutputRows, isNotEmpty);
+    const expected = <LiteRtLmStructuredOutputRow>{
+      (
+        abi: 'macos_arm64',
+        backend: PreferredBackend.cpu,
+        androidGpu: null,
+        npuVendor: null,
+      ),
+      (
+        abi: 'macos_arm64',
+        backend: PreferredBackend.gpu,
+        androidGpu: null,
+        npuVendor: null,
+      ),
+    };
+    expect(liteRtLmStructuredOutputRows, expected);
     for (final row in liteRtLmStructuredOutputCandidateRows) {
       final support = liteRtLmStructuredOutputSupport(
         abi: row.abi,
@@ -94,7 +115,7 @@ void main() {
         androidGpu: row.androidGpu,
         npuVendor: row.npuVendor,
       );
-      if (liteRtLmStructuredOutputRows.contains(row)) {
+      if (expected.contains(row)) {
         expect(support.isSupported, isTrue, reason: '$row');
         expect(support.keywords, ResponseFormat.dialect, reason: '$row');
       } else {
@@ -147,60 +168,236 @@ void main() {
     );
   });
 
-  test(
-    'every rebuild and send path keeps the fixed schema (mutation guard)',
-    () {
-      final source = File(
-        'lib/src/ffi/litert_lm_client.dart',
-      ).readAsStringSync().replaceAll('\r\n', '\n');
-      final model = File(
-        'lib/src/ffi/ffi_inference_model.dart',
-      ).readAsStringSync().replaceAll('\r\n', '\n');
+  test('native handles pass their fixed schema on every send; plain handles '
+      'never do', () async {
+    const schema = '{"type":"string","enum":["PASS"]}';
+    final client = LiteRtLmFfiClient();
+    final seen = <String?>[];
+    final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
+    client.structuredSendForTest = (conv, jsonSchema) {
+      seen.add(jsonSchema);
+      final send = client.newTurnForTest(conv);
+      sends.add(send);
+      return send;
+    };
+    final structured = LiteRtLmConversationHandle.forTest(
+      client,
+      conversation: Pointer.fromAddress(0x1000),
+      jsonSchema: schema,
+    );
+    final plain = LiteRtLmConversationHandle.forTest(
+      client,
+      conversation: Pointer.fromAddress(0x2000),
+    );
 
-      expect(
-        RegExp(
-          r'createConversationHandle\([\s\S]*?jsonSchema: jsonSchema,',
-        ).allMatches(model),
-        hasLength(1),
-        reason: 'the native open/reopen closure must carry the schema',
-      );
-      expect(
-        model,
-        contains('reopen: (messagesJson) => open(messagesJson: messagesJson)'),
-        reason: 'native recovery must reuse the schema-bearing open closure',
-      );
-      expect(
-        model,
-        contains('jsonSchema: jsonSchema,\n      ))'),
-        reason: 'the virtual handle must pass its schema on every turn',
-      );
-      expect(
-        RegExp(
-          r'_createRawConversation\([\s\S]*?jsonSchema: jsonSchema,',
-        ).allMatches(source),
-        hasLength(3),
-        reason: 'initial native creation and virtual rebuild both need it',
-      );
-      expect(
-        source,
-        contains(
-          'litert_lm_conversation_config_set_constraint_provider(\n'
-          '              convConfig,',
+    Future<void> turn(LiteRtLmConversationHandle handle) async {
+      final result = handle.chatRawMessage('{}').toList();
+      await pumpEventQueue();
+      sends.last.finished();
+      await result;
+    }
+
+    await turn(structured);
+    await turn(plain);
+    await turn(structured);
+    expect(seen, [schema, null, schema]);
+  });
+
+  test('virtual creation and every send retain each session schema across '
+      'switches, context and failed-send rebuilds', () async {
+    const schema = '{"type":"string","enum":["PASS"]}';
+    final client = LiteRtLmFfiClient();
+    final creates = <String?>[];
+    final sent = <String?>[];
+    final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
+    final sentOn = <Pointer<LiteRtLmConversation>>[];
+    var nextAddress = 0x3000;
+    client
+      ..structuredCreateForTest = (_, jsonSchema) async {
+        creates.add(jsonSchema);
+        final conv = Pointer<LiteRtLmConversation>.fromAddress(nextAddress);
+        nextAddress += 0x10;
+        client.registerLiveForTest(conv);
+        return conv;
+      }
+      ..structuredSendForTest = (conv, jsonSchema) {
+        sent.add(jsonSchema);
+        sentOn.add(conv);
+        final send = client.newTurnForTest(conv);
+        sends.add(send);
+        return send;
+      };
+    final sampling = SamplingParams.resolve(
+      const SamplingParams(),
+      modelType: ModelType.gemmaIt,
+    );
+    final structured = Object();
+    final plain = Object();
+
+    Future<void> turn(
+      Object token,
+      String? jsonSchema, {
+      NativeLastTurnEnd end = NativeLastTurnEnd.completed,
+      bool fail = false,
+    }) async {
+      final result = client
+          .startVirtualTurn(
+            conversationToken: token,
+            messageJson: '{}',
+            history: const [],
+            sampling: sampling,
+            samplingExplicit: false,
+            thinking: false,
+            jsonSchema: jsonSchema,
+          )
+          .toList();
+      await pumpEventQueue();
+      final send = sends.last;
+      client.recordTurnEndForTest(sentOn.last, end);
+      if (fail) {
+        send.failed(StateError('injected send failure'));
+        await expectLater(result, throwsStateError);
+      } else {
+        send.finished();
+        await result;
+      }
+      await pumpEventQueue();
+    }
+
+    await turn(structured, schema); // initial structured conversation
+    await turn(plain, null); // structured -> plain switch
+    await turn(structured, schema); // plain -> structured switch
+    await turn(
+      structured,
+      schema,
+      end: NativeLastTurnEnd.contextFull,
+      fail: true,
+    );
+    await turn(structured, schema); // rebuild after context-full
+    await turn(
+      structured,
+      schema,
+      end: NativeLastTurnEnd.cancelled,
+      fail: true,
+    );
+    await turn(structured, schema); // rebuild after a stopped send
+    await turn(structured, schema, fail: true);
+    await turn(structured, schema); // rebuild after a failed send
+
+    expect(sent, [
+      schema,
+      null,
+      schema,
+      schema,
+      schema,
+      schema,
+      schema,
+      schema,
+      schema,
+    ]);
+    expect(creates, [schema, null, schema, schema, schema, schema]);
+  });
+
+  test('native recovery and a chat replacement keep the same schema', () async {
+    const schema = '{"type":"string","enum":["PASS"]}';
+    final client = _SchemaClient();
+    final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
+    final sentSchemas = <String?>[];
+    client.structuredSendForTest = (conv, jsonSchema) {
+      sentSchemas.add(jsonSchema);
+      final send = NativeTurnStream(
+        NativeTurns<Pointer<LiteRtLmConversation>>(
+          cancelNative: (_) {},
+          deleteNative: (_) {},
         ),
-        reason: 'removing the provider setter must fail this test',
+        conv,
       );
-      expect(
-        source,
-        contains('jsonSchema: jsonSchema,\n            );'),
-        reason: 'the virtual send must apply its schema every turn',
-      );
-      expect(
-        source,
-        contains('litert_lm_conversation_optional_args_set_constraint('),
-        reason: 'removing the per-send constraint must fail this test',
-      );
-    },
-  );
+      sends.add(send);
+      return send;
+    };
+    final model = FfiInferenceModel(
+      ffiClient: client,
+      maxTokens: 1024,
+      modelType: ModelType.gemmaIt,
+      activeBackend: PreferredBackend.cpu,
+      openSessionBacking: OpenSessionBacking.native,
+      linearAttentionState: null,
+      structuredOutput: const StructuredOutputSupport(
+        keywords: ResponseFormat.dialect,
+      ),
+      onClose: () {},
+    );
+    final format = ResponseFormat.jsonSchema(const {
+      'type': 'string',
+      'enum': ['PASS'],
+    });
+
+    Future<void> beginAndFinish(InferenceModelSession session) async {
+      await session.addQueryChunk(const Message(text: 'x', isUser: true));
+      final result = session.getResponseAsync().toList();
+      await pumpEventQueue();
+      sends.last
+        ..chunk(
+          '{"role":"assistant","content":['
+          '{"type":"text","text":"\\"PASS\\""}]}',
+        )
+        ..finished();
+      await result;
+    }
+
+    final session = await model.openSession(responseFormat: format);
+    await beginAndFinish(session);
+    await session.addQueryChunk(const Message(text: 'full', isUser: true));
+    final failed = session.getResponseAsync().toList();
+    await pumpEventQueue();
+    client.recordTurnEndForTest(
+      client.conversations.last,
+      NativeLastTurnEnd.contextFull,
+    );
+    sends.last.failed(StateError('injected context limit'));
+    await expectLater(failed, throwsA(isA<ContextLimitException>()));
+    await beginAndFinish(session);
+    await session.close();
+
+    final chat = await model.openChat(responseFormat: format);
+    await chat.addQueryChunk(const Message(text: 'x', isUser: true));
+    final chatResult = chat.generateChatResponseAsync().toList();
+    await pumpEventQueue();
+    sends.last
+      ..chunk(
+        '{"role":"assistant","content":['
+        '{"type":"text","text":"\\"PASS\\""}]}',
+      )
+      ..finished();
+    await chatResult;
+
+    await chat.addQueryChunk(const Message(text: 'full', isUser: true));
+    final failedChat = chat.generateChatResponseAsync().toList();
+    await pumpEventQueue();
+    client.recordTurnEndForTest(
+      client.conversations.last,
+      NativeLastTurnEnd.contextFull,
+    );
+    sends.last.failed(StateError('injected chat context limit'));
+    await expectLater(failedChat, throwsA(isA<ContextLimitException>()));
+
+    await chat.addQueryChunk(const Message(text: 'after', isUser: true));
+    final replacementResult = chat.generateChatResponseAsync().toList();
+    await pumpEventQueue();
+    sends.last
+      ..chunk(
+        '{"role":"assistant","content":['
+        '{"type":"text","text":"\\"PASS\\""}]}',
+      )
+      ..finished();
+    await replacementResult;
+    await chat.close();
+    await model.close();
+
+    expect(client.createdSchemas, everyElement(schema));
+    expect(sentSchemas, everyElement(schema));
+    expect(client.createdSchemas.length, greaterThanOrEqualTo(4));
+  });
 
   test('the loaded model reports the support supplied by its engine', () {
     const support = StructuredOutputSupport(keywords: ResponseFormat.dialect);
@@ -242,4 +439,32 @@ void main() {
 class _BudgetClient extends LiteRtLmFfiClient {
   @override
   int? get thinkingTokenBudget => 64;
+}
+
+class _SchemaClient extends LiteRtLmFfiClient {
+  final createdSchemas = <String?>[];
+  final conversations = <Pointer<LiteRtLmConversation>>[];
+
+  @override
+  Future<LiteRtLmConversationHandle> createConversationHandle({
+    String? systemMessage,
+    String? toolsJson,
+    String? messagesJson,
+    required ResolvedSampling sampling,
+    required bool samplingExplicit,
+    int? maxOutputTokens,
+    required MultimodalOrder multimodalOrder,
+    String? jsonSchema,
+  }) async {
+    createdSchemas.add(jsonSchema);
+    final conv = Pointer<LiteRtLmConversation>.fromAddress(
+      0x6000 + conversations.length * 0x10,
+    );
+    conversations.add(conv);
+    return LiteRtLmConversationHandle.forTest(
+      this,
+      conversation: conv,
+      jsonSchema: jsonSchema,
+    );
+  }
 }

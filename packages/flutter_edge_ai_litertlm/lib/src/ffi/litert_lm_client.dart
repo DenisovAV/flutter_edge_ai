@@ -500,14 +500,24 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     this._client,
     this._conversation,
     this._multimodalOrder,
-    this._jsonSchema,
-  );
+    this._jsonSchema, [
+    this._releaseOnClose = true,
+  ]);
 
   /// A handle with no native conversation (already closed), for a test
   /// client's `createConversationHandle`.
   @visibleForTesting
-  LiteRtLmConversationHandle.forTest(LiteRtLmFfiClient client)
-    : this._(client, null, MultimodalOrder.imagesAudioText, null);
+  LiteRtLmConversationHandle.forTest(
+    LiteRtLmFfiClient client, {
+    Pointer<LiteRtLmConversation>? conversation,
+    String? jsonSchema,
+  }) : this._(
+         client,
+         conversation,
+         MultimodalOrder.imagesAudioText,
+         jsonSchema,
+         false,
+       );
 
   final LiteRtLmFfiClient _client;
   Pointer<LiteRtLmConversation>? _conversation;
@@ -515,6 +525,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
   /// Where [chat] and [chatRaw] put a message's media around its text.
   final MultimodalOrder _multimodalOrder;
   final String? _jsonSchema;
+  final bool _releaseOnClose;
 
   bool get isClosed => _conversation == null;
 
@@ -696,7 +707,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     // is cancelled, and the delete waits for its native end: deleting under a
     // running prefill crashes (LiteRT-LM #3771), and an uncancelled delete
     // blocks the platform thread until the generation drains (#364).
-    _client._turns.release(conv);
+    if (_releaseOnClose) _client._turns.release(conv);
   }
 }
 
@@ -1491,8 +1502,34 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   Stream<String> sendForTest(
     Pointer<LiteRtLmConversation> conv,
-    String messageJson,
-  ) => _sendMessageStreamRawOn(conv, messageJson, thinking: false);
+    String messageJson, {
+    String? jsonSchema,
+  }) => _sendMessageStreamRawOn(
+    conv,
+    messageJson,
+    thinking: false,
+    jsonSchema: jsonSchema,
+  );
+
+  /// Test seam at the native send boundary, shared by native handles and the
+  /// virtual multiplexer. It observes the schema that would be installed on
+  /// the optional args without loading a native library.
+  @visibleForTesting
+  NativeTurnStream<Pointer<LiteRtLmConversation>> Function(
+    Pointer<LiteRtLmConversation> conv,
+    String? jsonSchema,
+  )?
+  structuredSendForTest;
+
+  /// Test seam at the raw conversation-create boundary. It is below every
+  /// native and virtual rebuild caller, so tests observe the schema actually
+  /// handed to conversation creation.
+  @visibleForTesting
+  Future<Pointer<LiteRtLmConversation>> Function(
+    String? messagesJson,
+    String? jsonSchema,
+  )?
+  structuredCreateForTest;
 
   /// Test seam for virtual sessions' per-turn benchmark snapshot.
   @visibleForTesting
@@ -1545,6 +1582,22 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   void cancelConversationForTest(Pointer<LiteRtLmConversation> conv) =>
       _cancelOn(conv);
+
+  /// Exercises the same provider guard and binding call used by conversation
+  /// creation without requiring a native engine.
+  @visibleForTesting
+  void constraintProviderForTest(
+    Pointer<LiteRtLmConversationConfig> config,
+    String? jsonSchema,
+  ) => _setConstraintProvider(config, jsonSchema);
+
+  /// Exercises the same per-send constraint guard and binding call as a real
+  /// streamed send.
+  @visibleForTesting
+  void constraintForTest(
+    Pointer<LiteRtLmConversationOptionalArgs> args,
+    String? jsonSchema,
+  ) => _setConstraint(args, jsonSchema);
 
   /// Test seam: whether the loaded library has the section 16 rewind.
   @visibleForTesting
@@ -2588,6 +2641,8 @@ class LiteRtLmFfiClient {
     int? maxOutputTokens,
     String? jsonSchema,
   }) async {
+    final testCreate = structuredCreateForTest;
+    if (testCreate != null) return testCreate(messagesJson, jsonSchema);
     _assertInitialized();
     final b = _bindings!;
 
@@ -2760,16 +2815,7 @@ class LiteRtLmFfiClient {
             ),
           );
         }
-        if (jsonSchema != null) {
-          check(
-            'litert_lm_conversation_config_set_constraint_provider',
-            b.litert_lm_conversation_config_set_constraint_provider(
-              convConfig,
-              LiteRtLmConstraintProviderType
-                  .kLiteRtLmConstraintProviderTypeLlGuidance,
-            ),
-          );
-        }
+        _setConstraintProvider(convConfig, jsonSchema);
         if (messagesPtr != null) {
           check(
             'litert_lm_conversation_config_set_messages',
@@ -2841,6 +2887,45 @@ class LiteRtLmFfiClient {
     _liveConvs.add(conv); // #379: track liveness so late cancels can't UAF
     _conversationSampling[conv] = (sampling, samplingExplicit);
     return conv;
+  }
+
+  void _setConstraintProvider(
+    Pointer<LiteRtLmConversationConfig> config,
+    String? jsonSchema,
+  ) {
+    if (jsonSchema == null) return;
+    final b = _bindings!;
+    checkLiteRtLmSetter(
+      'litert_lm_conversation_config_set_constraint_provider',
+      b.litert_lm_conversation_config_set_constraint_provider(
+        config,
+        LiteRtLmConstraintProviderType
+            .kLiteRtLmConstraintProviderTypeLlGuidance,
+      ),
+      b.lastError,
+    );
+  }
+
+  void _setConstraint(
+    Pointer<LiteRtLmConversationOptionalArgs> args,
+    String? jsonSchema,
+  ) {
+    if (jsonSchema == null) return;
+    final b = _bindings!;
+    final schemaPtr = jsonSchema.toNativeUtf8();
+    try {
+      checkLiteRtLmSetter(
+        'litert_lm_conversation_optional_args_set_constraint',
+        b.litert_lm_conversation_optional_args_set_constraint(
+          args,
+          LiteRtLmConstraintType.kLiteRtLmConstraintTypeJsonSchema,
+          schemaPtr.cast(),
+        ),
+        b.lastError,
+      );
+    } finally {
+      calloc.free(schemaPtr);
+    }
   }
 
   /// Legacy single-conversation create. Closes the previous legacy
@@ -3497,6 +3582,8 @@ class LiteRtLmFfiClient {
     required bool thinking,
     String? jsonSchema,
   }) {
+    final testSend = structuredSendForTest;
+    if (testSend != null) return testSend(conv, jsonSchema);
     _assertInitialized();
     final b = _bindings!;
     // Queued behind an operation whose end deleted it (a close meanwhile).
@@ -3636,22 +3723,7 @@ class LiteRtLmFfiClient {
         thinking: thinking,
         budget: thinkingTokenBudget,
       );
-      if (jsonSchema != null) {
-        final schemaPtr = jsonSchema.toNativeUtf8();
-        try {
-          checkLiteRtLmSetter(
-            'litert_lm_conversation_optional_args_set_constraint',
-            b.litert_lm_conversation_optional_args_set_constraint(
-              optionalArgs,
-              LiteRtLmConstraintType.kLiteRtLmConstraintTypeJsonSchema,
-              schemaPtr.cast(),
-            ),
-            b.lastError,
-          );
-        } finally {
-          calloc.free(schemaPtr);
-        }
-      }
+      _setConstraint(optionalArgs, jsonSchema);
     } catch (e) {
       b.litert_lm_conversation_optional_args_delete(optionalArgs);
       releaseNative();

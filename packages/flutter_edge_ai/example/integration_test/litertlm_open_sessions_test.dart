@@ -167,6 +167,10 @@ Set<String> _audioContentStems(String text) {
   };
 }
 
+const _audioFixtureStems = {'dark', 'suit', 'grea', 'wash', 'wate', 'year'};
+const _audioRecallQuestion =
+    'Repeat the first six words of your transcription.';
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -257,6 +261,7 @@ void main() {
     required String question,
     required bool Function(String initialReply, String recall) retained,
     required String expectation,
+    Future<void> Function(InferenceModelSession other)? verifyIsolation,
   }) async {
     await ensureModel();
     final a = await open();
@@ -273,6 +278,7 @@ void main() {
         isTrue,
         reason: '$expectation; initial="$initialReply", recall="$reply"',
       );
+      await verifyIsolation?.call(b);
     } finally {
       await a.close();
       await b.close();
@@ -323,15 +329,40 @@ void main() {
       // Compare with this session's own transcription. Gemma 4 E2B on a GPU
       // can retain the clip yet answer "Greasy wash water" instead of naming
       // the suit. The generic question deliberately leaks none of those words.
-      question: 'Repeat the first six words of your transcription.',
+      question: _audioRecallQuestion,
       retained: (transcription, recall) {
-        final content = _audioContentStems(transcription);
-        final shared = content.intersection(_audioContentStems(recall));
-        return content.length >= 2 && shared.length >= 2;
+        final prompt = _audioContentStems(_audioRecallQuestion);
+        final transcript = _audioContentStems(transcription);
+        final recalled = _audioContentStems(recall);
+        final fixtureInTranscript = transcript.intersection(_audioFixtureStems);
+        final unpromptedFixture = _audioFixtureStems.difference(prompt);
+        final fixtureInRecall = recalled.intersection(unpromptedFixture);
+        final shared = transcript.intersection(recalled);
+        // Recalling the assistant's transcription from text history is valid:
+        // core deliberately keeps that reply when sessions switch.
+        return fixtureInTranscript.length >= 2 &&
+            fixtureInRecall.isNotEmpty &&
+            shared.isNotEmpty;
       },
       expectation:
-          'expected at least two content stems from this session\'s own '
-          'transcription',
+          'expected a real fixture transcription and an unprompted fixture '
+          'stem shared by its recall',
+      verifyIsolation: (other) async {
+        final otherRecall = await _ask(
+          other,
+          'What did the audio clip say? Answer briefly.',
+        );
+        final leaked = _audioContentStems(
+          otherRecall,
+        ).intersection(_audioFixtureStems);
+        expect(
+          leaked,
+          isEmpty,
+          reason:
+              'the session that received no audio recalled fixture stems '
+              '$leaked: "$otherRecall"',
+        );
+      },
     );
   });
 

@@ -316,6 +316,7 @@ class _SlowClient extends LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     required MultimodalOrder multimodalOrder,
+    String? jsonSchema,
   }) async {
     await gate.future;
     final handle = LiteRtLmConversationHandle.forTest(this);

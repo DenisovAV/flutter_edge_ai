@@ -36,6 +36,25 @@ import '../litert_lm_log_level.dart';
 export '../litert_lm_load_errors.dart'
     show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
 
+const _llGuidanceConstraintFailure = 'Failed to create LLGuidance constraint';
+
+/// The one native send failure that means the schema, rather than inference,
+/// was refused. CreateConstraint runs only when this send carries a schema;
+/// every other INTERNAL remains the native inference failure it is.
+@visibleForTesting
+ResponseFormatUnsupportedException? liteRtLmConstraintFailure(
+  String? jsonSchema,
+  String? nativeError,
+) =>
+    jsonSchema != null &&
+        nativeError != null &&
+        (nativeError.startsWith(_llGuidanceConstraintFailure) ||
+            nativeError.startsWith('INTERNAL: $_llGuidanceConstraintFailure'))
+    ? ResponseFormatUnsupportedException(
+        'LiteRT-LM LLGuidance rejected this JSON schema: $nativeError',
+      )
+    : null;
+
 const _virtualStoppedExchangeTimeout = Duration(seconds: 5);
 const _nativeCancelEndTimeout = Duration(seconds: 5);
 
@@ -481,19 +500,21 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     this._client,
     this._conversation,
     this._multimodalOrder,
+    this._jsonSchema,
   );
 
   /// A handle with no native conversation (already closed), for a test
   /// client's `createConversationHandle`.
   @visibleForTesting
   LiteRtLmConversationHandle.forTest(LiteRtLmFfiClient client)
-    : this._(client, null, MultimodalOrder.imagesAudioText);
+    : this._(client, null, MultimodalOrder.imagesAudioText, null);
 
   final LiteRtLmFfiClient _client;
   Pointer<LiteRtLmConversation>? _conversation;
 
   /// Where [chat] and [chatRaw] put a message's media around its text.
   final MultimodalOrder _multimodalOrder;
+  final String? _jsonSchema;
 
   bool get isClosed => _conversation == null;
 
@@ -528,6 +549,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
       messageJson,
       extraContext: extraContext,
       thinking: thinking,
+      jsonSchema: _jsonSchema,
       onEnded: (how) {
         // Kept only after a cancelled send, the one a rewind puts back, and
         // after one native ended context_full (section 23): its input never
@@ -2513,6 +2535,7 @@ class LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     required MultimodalOrder multimodalOrder,
+    String? jsonSchema,
   }) {
     // The handle must be registered before the guard lifts: otherwise shutdown()
     // can clear _handles between the create and the add, leaving a live
@@ -2534,10 +2557,16 @@ class LiteRtLmFfiClient {
           sampling: sampling,
           samplingExplicit: samplingExplicit,
           maxOutputTokens: maxOutputTokens,
+          jsonSchema: jsonSchema,
         ),
       );
       edgeAiLog('[LiteRtLmFfi] Conversation created');
-      final handle = LiteRtLmConversationHandle._(this, conv, multimodalOrder);
+      final handle = LiteRtLmConversationHandle._(
+        this,
+        conv,
+        multimodalOrder,
+        jsonSchema,
+      );
       _handles.add(handle);
       return handle;
     });
@@ -2557,6 +2586,7 @@ class LiteRtLmFfiClient {
     required ResolvedSampling sampling,
     required bool samplingExplicit,
     int? maxOutputTokens,
+    String? jsonSchema,
   }) async {
     _assertInitialized();
     final b = _bindings!;
@@ -2727,6 +2757,16 @@ class LiteRtLmFfiClient {
             b.litert_lm_conversation_config_set_enable_constrained_decoding(
               convConfig,
               true,
+            ),
+          );
+        }
+        if (jsonSchema != null) {
+          check(
+            'litert_lm_conversation_config_set_constraint_provider',
+            b.litert_lm_conversation_config_set_constraint_provider(
+              convConfig,
+              LiteRtLmConstraintProviderType
+                  .kLiteRtLmConstraintProviderTypeLlGuidance,
             ),
           );
         }
@@ -2926,6 +2966,7 @@ class LiteRtLmFfiClient {
     String messageJson, {
     String? extraContext,
     required bool thinking,
+    String? jsonSchema,
     void Function(NativeTurnEnd how)? onEnded,
   }) {
     final stalled = _nativeTurnStallError;
@@ -2938,6 +2979,7 @@ class LiteRtLmFfiClient {
         messageJson,
         extraContext: extraContext,
         thinking: thinking,
+        jsonSchema: jsonSchema,
       );
       if (onEnded != null) unawaited(send.turn.ended.then(onEnded));
       return send;
@@ -3027,6 +3069,7 @@ class LiteRtLmFfiClient {
     String? extraContext,
     required bool thinking,
     int? maxOutputTokens,
+    String? jsonSchema,
   }) {
     // StreamController (not async*) so the mutex release is tied to the native
     // turn's end — done, error, or a cancel that native has finished — and not
@@ -3205,6 +3248,7 @@ class LiteRtLmFfiClient {
                     sampling: sampling,
                     samplingExplicit: samplingExplicit,
                     maxOutputTokens: maxOutputTokens,
+                    jsonSchema: jsonSchema,
                   );
             _virtualConv = conv;
             _virtualActiveToken = conversationToken;
@@ -3246,6 +3290,7 @@ class LiteRtLmFfiClient {
               messageJson,
               extraContext: extraContext,
               thinking: thinking,
+              jsonSchema: jsonSchema,
             );
         // Read when native ends the turn, in the same event as the release
         // below: a session queued on the lock resumes only after it, so the
@@ -3450,6 +3495,7 @@ class LiteRtLmFfiClient {
     String messageJson, {
     String? extraContext,
     required bool thinking,
+    String? jsonSchema,
   }) {
     _assertInitialized();
     final b = _bindings!;
@@ -3590,6 +3636,22 @@ class LiteRtLmFfiClient {
         thinking: thinking,
         budget: thinkingTokenBudget,
       );
+      if (jsonSchema != null) {
+        final schemaPtr = jsonSchema.toNativeUtf8();
+        try {
+          checkLiteRtLmSetter(
+            'litert_lm_conversation_optional_args_set_constraint',
+            b.litert_lm_conversation_optional_args_set_constraint(
+              optionalArgs,
+              LiteRtLmConstraintType.kLiteRtLmConstraintTypeJsonSchema,
+              schemaPtr.cast(),
+            ),
+            b.lastError,
+          );
+        } finally {
+          calloc.free(schemaPtr);
+        }
+      }
     } catch (e) {
       b.litert_lm_conversation_optional_args_delete(optionalArgs);
       releaseNative();
@@ -3641,14 +3703,15 @@ class LiteRtLmFfiClient {
         code: recorded?.code ?? result,
       );
       send.failed(
-        Exception(
-          streamStartFailureMessage(
-            code: result,
-            nativeMessage: nativeError,
-            npu: _backend == 'npu',
-            laterMessage: _sentConvs.contains(conv),
-          ),
-        ),
+        liteRtLmConstraintFailure(jsonSchema, nativeError) ??
+            Exception(
+              streamStartFailureMessage(
+                code: result,
+                nativeMessage: nativeError,
+                npu: _backend == 'npu',
+                laterMessage: _sentConvs.contains(conv),
+              ),
+            ),
       );
       releaseNative();
     }

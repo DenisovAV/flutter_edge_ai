@@ -3,8 +3,10 @@
 // the shared web infra (web_model_source) and core parsing
 // directly so it no longer needs to be a `part of flutter_edge_ai_web.dart`.
 import 'dart:async';
+
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_web.dart';
+
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
@@ -78,6 +80,13 @@ class LiteRtLmWebInferenceModel extends InferenceModel with CloseNotifier {
 
   @override
   bool get isClosed => _isClosed;
+
+  @override
+  StructuredOutputSupport get engineStructuredOutputSupport =>
+      const StructuredOutputSupport.none(
+        'LiteRT-LM web uses @litert-lm/core 0.18, whose conversation API '
+        'has no constrained-decoding option.',
+      );
 
   /// Guards [_ensureEngine] against concurrent calls. Without it, two
   /// overlapping openSession/createSession calls both see `_engine == null`

@@ -1,6 +1,7 @@
 // Calls the protected engine SPI to verify the package's qualification table.
 // ignore_for_file: invalid_use_of_protected_member
 
+import 'dart:async';
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
@@ -106,6 +107,12 @@ void main() {
       (
         abi: 'macos_arm64',
         backend: PreferredBackend.gpu,
+        androidGpu: null,
+        npuVendor: null,
+      ),
+      (
+        abi: 'windows_x64',
+        backend: PreferredBackend.cpu,
         androidGpu: null,
         npuVendor: null,
       ),
@@ -319,6 +326,78 @@ void main() {
     );
   });
 
+  test('a structured virtual stop during conversation creation reports '
+      'stopped, never sends, and preserves later metrics', () async {
+    final client = LiteRtLmFfiClient();
+    _installConstraintRecorder(client);
+    final conv = Pointer<LiteRtLmConversation>.fromAddress(0x5800);
+    final createStarted = Completer<void>();
+    final finishCreate = Completer<void>();
+    final sends = <NativeTurnStream<Pointer<LiteRtLmConversation>>>[];
+    client
+      ..structuredCreateForTest = (_, _) async {
+        createStarted.complete();
+        await finishCreate.future;
+        return conv;
+      }
+      ..structuredSendForTest = (conversation, _) {
+        final send = client.newTurnForTest(conversation);
+        sends.add(send);
+        return send;
+      }
+      ..metricsForTest = (_) => SessionMetrics(tokensPerSecond: 51);
+    final model = FfiInferenceModel(
+      ffiClient: client,
+      maxTokens: 1024,
+      modelType: ModelType.gemmaIt,
+      activeBackend: PreferredBackend.gpu,
+      openSessionBacking: OpenSessionBacking.virtual,
+      structuredOutput: const StructuredOutputSupport(
+        keywords: ResponseFormat.dialect,
+      ),
+      onClose: () {},
+    );
+    final session = await model.openSession(
+      responseFormat: ResponseFormat.jsonSchema(const {
+        'type': 'string',
+        'enum': ['PASS'],
+      }),
+    );
+
+    await session.addQueryChunk(const Message(text: 'first', isUser: true));
+    final stopped = session.getResponse();
+    await createStarted.future;
+    await session.stopGeneration();
+    finishCreate.complete();
+    await expectLater(
+      stopped,
+      throwsA(
+        isA<IncompleteStructuredOutputException>().having(
+          (error) => error.end,
+          'end',
+          TurnEnd.stopped,
+        ),
+      ),
+    );
+    expect(sends, isEmpty, reason: 'the pending stop must prevent native send');
+
+    await session.addQueryChunk(const Message(text: 'second', isUser: true));
+    final answered = session.getResponse();
+    await pumpEventQueue();
+    sends.single
+      ..chunk(
+        '{"role":"assistant","content":['
+        '{"type":"text","text":"\\"PASS\\""}]}',
+      )
+      ..finished();
+    expect(await answered, '"PASS"');
+    await pumpEventQueue();
+    expect(session.getSessionMetrics().tokensPerSecond, 51);
+
+    await session.close();
+    await model.close();
+  });
+
   test('native recovery and a chat replacement keep the same schema', () async {
     const schema = '{"type":"string","enum":["PASS"]}';
     final client = _SchemaClient();
@@ -489,7 +568,9 @@ class _SchemaClient extends LiteRtLmFfiClient {
 
 _ConstraintRecorder _installConstraintRecorder(LiteRtLmFfiClient client) {
   final recorder = _ConstraintRecorder();
-  client.bindingsForTest = recorder.bindings;
+  client
+    ..bindingsForTest = recorder.bindings
+    ..metricsForTest = (_) => SessionMetrics();
   addTearDown(recorder.close);
   return recorder;
 }

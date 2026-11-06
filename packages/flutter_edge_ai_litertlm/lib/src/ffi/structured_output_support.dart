@@ -28,6 +28,13 @@ const liteRtLmStructuredOutputRows = <LiteRtLmStructuredOutputRow>{
     androidGpu: null,
     npuVendor: null,
   ),
+  // 2026-11-06: suite +7/-0 on Intel LNL and PTL, 33.5/36.6 constrained tok/s.
+  (
+    abi: 'windows_x64',
+    backend: PreferredBackend.cpu,
+    androidGpu: null,
+    npuVendor: null,
+  ),
 };
 
 /// Every row that may be qualified in the 2.6.0 device campaign.

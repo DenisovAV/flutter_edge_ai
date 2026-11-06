@@ -492,9 +492,10 @@ abstract class InferenceModel {
     }
   }
 
-  /// What formats this model can enforce, as loaded: engine, platform and the
-  /// backend it was loaded on. [StructuredOutputSupport.none] (with its
-  /// reason) when it enforces none, which in this release is every engine.
+  /// What formats this model can enforce as loaded: its engine, platform,
+  /// backend, and model. [StructuredOutputSupport.none] carries the reason when
+  /// it enforces none; support must not be inferred from the engine package
+  /// alone.
   ///
   /// Core implements this once (`@nonVirtual`); an engine reports its own in
   /// [engineStructuredOutputSupport], and core throws [StateError] naming the
@@ -519,18 +520,19 @@ abstract class InferenceModel {
         'This engine does not enforce a format.',
       );
 
-  /// A refusal a keyword set cannot express (built-in AI on Apple: a
-  /// property-less object can only produce `{}`; LiteRT-LM: a model loaded
-  /// with a `thinkingTokenBudget`). Called by [refusalFor] only after the
-  /// support and keyword checks passed. Default: none.
+  /// A refusal a keyword set cannot express (for example, built-in AI on
+  /// Apple: a property-less object can only produce `{}`). Called by
+  /// [refusalFor] only after the support and keyword checks passed. Default:
+  /// none.
   @protected
   ResponseFormatUnsupportedException? engineRefusalFor(
     JsonSchemaResponseFormat format,
   ) => null;
 
-  /// An independent session for [request]. Called only by core's
-  /// [openSession], after its checks. Default: [UnsupportedError], as the
-  /// base [openSession] gave before 2.6.0.
+  /// An independent session for [request]. Called by core for [openSession]
+  /// and for every initial or rebuilt [openChat] session, after format checks
+  /// when [SessionRequest.responseFormat] is non-null. Default:
+  /// [UnsupportedError], as the base [openSession] gave before 2.6.0.
   @protected
   Future<InferenceModelSession> openEngineSession(SessionRequest request) =>
       Future.error(
@@ -1023,14 +1025,22 @@ enum TurnEnd {
   /// The turn reached `maxOutputTokens`.
   outputLimit,
 
-  /// The context window (`maxTokens`) was full.
+  /// The context window (`maxTokens`) was full. If decoding filled it,
+  /// [EngineTurn.text] completes and the partial turn stays committed. If the
+  /// input did not fit, [EngineTurn.text] fails with [ContextLimitException],
+  /// the engine restores its context to before the turn, and core takes the
+  /// turn back.
   contextLimit,
 
-  /// The consumer asked: `stopGeneration()`, or a cancelled subscription.
+  /// The consumer asked: `stopGeneration()`, or cancelled the text
+  /// subscription. A partial reply stays committed; a turn that emitted no
+  /// non-empty text is taken back.
   stopped,
 
-  /// Ended by a close the consumer did not ask for: the session or model was
-  /// closed (`close()`, `uninstallModel`, a replaced active model) mid-turn.
+  /// The session or model was closed mid-turn without the consumer asking to
+  /// stop. When [EngineTurn.text] completes with this end, core keeps any
+  /// partial reply and then fails the chat turn. An error on the text instead
+  /// follows the failed-turn take-back rule.
   closed,
 }
 
@@ -1056,6 +1066,12 @@ final class ContextLimitException implements Exception {
 /// passes `end: null` and must keep `StructuredOutputSupport.none`; so must
 /// an engine whose [end] is a guess for some turns (LiteRT-LM 0.18 cannot
 /// tell `endOfSequence` from `outputLimit` or `contextLimit`).
+///
+/// The engine must keep its own context aligned with core's history. A turn
+/// whose text fails commits nothing: restore the engine context to before that
+/// turn, or make the session unusable and report [TurnEnd.closed] if it cannot
+/// be restored. A stopped turn that emitted no non-empty text is also restored;
+/// a stop after text keeps the partial exchange.
 final class EngineTurn {
   EngineTurn({required this.text, required this.end});
 
@@ -1109,9 +1125,11 @@ final class SessionRequest {
   /// [InferenceModel.openSession].
   final ToolChoice toolChoice;
 
-  /// What every reply must be. Non-null only when core accepted it
-  /// ([InferenceModel.refusalFor] returned null); core checks each reply
-  /// itself.
+  /// What every reply must be. Non-null only after core accepted the format
+  /// ([InferenceModel.refusalFor] returned null). The engine must enforce the
+  /// schema during generation for every reply from this session. Core validates
+  /// the completed reply as a guard; that validation is not a substitute for
+  /// constrained generation, and a non-conforming reply is an engine bug.
   final JsonSchemaResponseFormat? responseFormat;
 }
 

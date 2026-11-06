@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-inference
-description: Use when adding on-device LLM inference to a Flutter app with flutter_edge_ai — offline chat, running an LLM locally, installing a model from Hugging Face (gated repos included), streaming replies, a system prompt, thinking or reasoning output, image or audio prompts, picking a CPU, GPU or NPU backend, stopping generation — or setting up the recommended .litertlm engine (ModelFileType.litertlm) on Android, iOS, macOS, Windows, Linux or web, including the Android minSdk and internet permission, the Apple entitlements and Podfile, and the web index.html script tags. Also use when a reply comes back empty, the model answers identically every time, maxTokens does not shorten replies, FlutterEdgeAi is an undefined name, getActiveModel throws "No inference engine can handle this model", a session throws "Session is closed", numbers come back wrong on the GPU, or .litertlm fails to load on Android. For .task or .bin models (ModelFileType.task or ModelFileType.binary), use flutter-edge-ai-mediapipe.
+description: Use when adding on-device LLM inference with flutter_edge_ai — offline chat, local models, Hugging Face installs, streaming, system prompts, thinking, structured JSON output, ResponseFormat or a schema-constrained reply, image/audio prompts, CPU/GPU/NPU selection, stopping generation, or setting up the recommended .litertlm engine on Android, iOS, macOS, Windows, Linux or web. Also use when a reply is empty or deterministic, maxTokens does not shorten replies, FlutterEdgeAi is undefined, getActiveModel reports no engine, a session is closed, GPU numbers are wrong, or .litertlm fails on Android. For .task or .bin models, use flutter-edge-ai-mediapipe.
 ---
 
 # Running a model with flutter_edge_ai
@@ -159,6 +159,33 @@ await for (final token in session.getResponseAsync()) {
 
 To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()` on a chat. Cancelling the stream subscription detaches Dart but does not stop native decoding on every engine. On `.litertlm` on Android, iOS and desktop the chat keeps working after a stop — whether the app called `stopGeneration()` or cancelled its subscription. With `flutter_edge_ai_litertlm` 1.15.0 and later it is rewound to before the stopped turn, which is put back with its partial reply, so the model still sees images and audio from earlier turns. With 1.14.0 and earlier, and on the NPU, it is rebuilt from text instead, and those are gone — re-send an image there if the next question is about it. The legacy `flutter_gemma_litertlm` package needs 1.8.1 or later for a stopped chat to answer again at all.
 
+## Structured JSON output
+
+Use only `openSession(responseFormat:)` or `openChat(responseFormat:)`;
+`createSession` and `createChat` have no format argument. Build
+`ResponseFormat.jsonObject()` or `ResponseFormat.jsonSchema(...)`, then call
+`model.refusalFor(format)`. Do not open the session when it returns a
+`ResponseFormatUnsupportedException`. `model.structuredOutputSupport` reports
+the enforced keywords and `delivery` (`incremental` or `buffered`).
+
+Core's dialect is `type`, `properties`, `required`,
+`additionalProperties: false`, `items`, `enum`, `const`, the min/max item,
+string and numeric bounds, plus `description`, `title`, `examples`. The root
+needs one scalar `type`; do not use unions, `$ref`, `$defs`, composition,
+`pattern` or `format`.
+
+Handle all three structured failures: `ResponseFormatUnsupportedException`;
+`IncompleteStructuredOutputException` (`end`, `partialText`);
+`NonConformingStructuredOutputException` (`text`, optional `schemaPath`).
+Incremental engines stream text before the final validation error. A prompt that
+never fits the context fails with `ContextLimitException` instead. Never combine
+a format with tools or `enableThinking: true`.
+
+Current support: LiteRT-LM and MediaPipe refuse every format; ONNX accepts only
+native macOS arm64 with `tokenizer.json`; a qualified GGUF runtime accepts macOS
+arm64 CPU/Metal and Chrome on macOS with dart2wasm + WebGPU, subject to
+`refusalFor`; built-in AI has no qualified platform yet.
+
 ## Multi-turn chat
 
 ```dart
@@ -184,11 +211,32 @@ try {
 
 The chat keeps the history: add the next user message and generate again. `generateChatResponse()` returns the whole reply as one sealed `ModelResponse` — `TextResponse`, `FunctionCallResponse`, `ParallelFunctionCallResponse` or `ThinkingResponse` — and a `switch` over it must cover all four.
 
+For a core-managed turn, any engine error removes the entire staged turn before
+the error reaches the app. A hook-backed chat owns that policy itself; the
+shipped llama.cpp hook also rolls failed turns back. Catch
+`ContextLimitException` as a refused input: nothing from that turn was
+committed, so shorten it or reopen with less history. Do not treat every
+`TurnEnd.contextLimit` as a refusal—a turn can fill the window during decoding
+and end cleanly after producing text, in which case the partial exchange is
+kept.
+
 ## Two conversations at once
 
 `createSession` and `createChat` fill a single slot on the model, so a second one closes the first. For concurrent conversations use `openSession` / `openChat`, and close each one.
 
-An argument you leave out of `openChat` is filled by the engine. Native `.litertlm`, `flutter_edge_ai_llama` and MediaPipe on the web take the installed model's type and its image and audio support. MediaPipe on Android and iOS takes the type and audio support, with images off unless you pass `supportImage: true`. Built-in AI takes the type and image support, and refuses `supportAudio: true` with an `ArgumentError`. Native ONNX takes the type, with images and audio off. ONNX on the web takes the type too, with no images, no audio, no function calls and the default function-call buffer length. The `.litertlm` web engine fills nothing: the chat runs as `ModelType.gemmaIt` unless you pass `modelType:`; it is text-only, so an image or audio message throws `UnsupportedError`. They work on `.litertlm` (native and web), on MediaPipe (Android, iOS and web; on the web the sessions take turns on the one loaded model), on native ONNX (`flutter_edge_ai_onnx` 0.8.0; one generator per session, capped by `maxConcurrentSessions`) and ONNX on the web (each session keeps its own history on the shared Transformers.js pipeline), on built-in AI and on `flutter_edge_ai_llama`.
+An argument you leave out of `openChat` is filled by the engine. Native
+`.litertlm` takes the installed model's type and media flags, but its current
+detached sessions are virtual and text-only: they reject images and audio even
+when the model was loaded with those modalities, so use `createChat` for native
+LiteRT-LM multimodal turns. `flutter_edge_ai_llama` and MediaPipe on the web take
+the installed type and media support. MediaPipe on Android and iOS takes the
+type and audio support, with images off unless you pass `supportImage: true`.
+Built-in AI takes the type and image support and refuses `supportAudio: true`.
+Native and web ONNX take the installed type but remain text-only. The
+`.litertlm` web engine uses core's defaults, so pass `modelType:` for a
+non-Gemma model; it is text-only too. Detached sessions work on native/web
+`.litertlm`, MediaPipe Android/iOS/Web, native ONNX 0.8.0, the unreleased ONNX
+Web line, built-in AI and llama.cpp; close every detached session yourself.
 
 ```dart
 final summariser = await model.openChat(modelType: ModelType.gemma4);

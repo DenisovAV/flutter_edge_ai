@@ -9,12 +9,12 @@ sealed class StructuredOutputException implements Exception {
   final String message;
 }
 
-/// The format is refused: by this engine, platform or backend, or a schema
-/// keyword at [schemaPath] the engine cannot enforce. Thrown by
-/// `openSession`/`openChat` before the engine is called, and returned (not
-/// thrown) by `InferenceModel.refusalFor`. On LiteRT-LM a schema the native
-/// compiler rejects is first seen at the first send; it is thrown from that
-/// turn, and the session is closed.
+/// The format is refused by this engine, platform or backend, or a schema
+/// keyword at [schemaPath] cannot be enforced. Returned (not thrown) by
+/// `InferenceModel.refusalFor`; `openSession` and `openChat` throw that refusal
+/// before opening an engine session. An engine whose native constraint compiler
+/// can reject a schema only at first send may instead put this exception on that
+/// turn's text; core passes it through and takes the turn back.
 final class ResponseFormatUnsupportedException
     extends StructuredOutputException {
   const ResponseFormatUnsupportedException(super.message, {this.schemaPath});

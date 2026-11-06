@@ -458,6 +458,42 @@ On native `.litertlm` (except the NPU) a `maxTokens` below 1024 is clamped up to
 
 </Info>
 
+### Structured JSON replies
+
+Use `responseFormat` only with `openSession` or `openChat`; it is fixed for that
+session and every normally completed reply is checked.
+`ResponseFormat.jsonObject()` accepts any JSON object.
+`ResponseFormat.jsonSchema(...)` supports `type`, `properties`, `required`,
+`additionalProperties: false`, `items`, `enum`, `const`, `minItems`, `maxItems`,
+`minLength`, `maxLength`, `minimum`, `maximum`, plus the annotation-only
+`description`, `title` and `examples`. The root must declare one scalar `type`;
+unions, `$ref`, `$defs`, composition keywords, `pattern` and `format` are outside
+this dialect.
+
+```dart
+final format = ResponseFormat.jsonSchema({
+  'type': 'object',
+  'properties': {'summary': {'type': 'string', 'maxLength': 200}},
+  'required': ['summary'],
+  'additionalProperties': false,
+});
+final refusal = model.refusalFor(format);
+if (refusal != null) throw refusal;
+final chat = await model.openChat(responseFormat: format);
+```
+
+Read `model.structuredOutputSupport` after loading: it reports the keywords this
+exact engine/platform/backend enforces and `StructuredDelivery.incremental` or
+`.buffered`. `ResponseFormatUnsupportedException` means the format was refused.
+If generation ends cleanly but early with `TurnEnd.outputLimit`, `contextLimit`,
+`stopped` or `closed`, `IncompleteStructuredOutputException` carries that end
+and the partial text; a prompt that never fits fails with
+`ContextLimitException` instead. `NonConformingStructuredOutputException` means
+an engine accepted a format but ended normally with text that was not exactly
+one matching JSON value. Incremental text is emitted before the final validation
+error. Do not combine `responseFormat` with tools or `enableThinking: true`;
+core throws `ArgumentError` before opening the engine session.
+
 ### Concurrent Sessions (`openSession`)
 
 A single loaded model can serve several **independent** dialogues at once.
@@ -470,8 +506,11 @@ too: its sessions share the one loaded model, take turns on it, and share the
 sampling and LoRA of the session that loaded it.
 
 The model weights (the big, expensive part — hundreds of MB to several GB) are
-loaded **once** and shared across every session; each session only adds its own
-lightweight conversation context.
+loaded once and shared, but a session is not always lightweight. Native
+MediaPipe sessions have their own KV cache, and native ONNX sessions have their
+own generator and a KV cache allocated on first use. Current native LiteRT-LM,
+MediaPipe Web and ONNX Web detached sessions keep replayable history instead;
+see the engine-specific memory costs below.
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
@@ -509,6 +548,10 @@ on model + `maxTokens`), so on phones with large models (Gemma 4 E2B+) several
 concurrent sessions can OOM. A native `.litertlm` session keeps only its
 history; switching sessions replays it into the one native conversation, which
 takes time; GGUF sessions share one runtime with no separate native KV cache.
+In this release native LiteRT-LM `openSession()` / `openChat()` is text-only: a
+virtual session cannot replay images or audio when sessions switch, so a
+multimodal turn throws `UnsupportedError`. Use the supported `createSession()` /
+`createChat()` singleton lane for native LiteRT-LM multimodal conversations.
 An ONNX session on the web keeps only its history, resent on every turn.
 `.litertlm` on the web and built-in AI are not measured. Cap the count with
 `maxConcurrentSessions:` on `getActiveModel(...)` — `openSession()` throws
@@ -516,8 +559,41 @@ An ONNX session on the web keeps only its history, resent on every turn.
 Dart, and resends it every turn; one session's turn waits for the other
 sessions' turns, however long they run, unless they are stopped.
 
+For LiteRT-LM, MediaPipe, ONNX and llama.cpp, the legacy `createSession()` /
+`createChat()` lane does not consume the detached-session cap. Built-in AI
+instead applies the cap to every live underlying `flutter_local_ai` session,
+including its legacy singleton lane.
+
 If you only ever have one conversation at a time, stick with the simpler
 `createSession()` / `createChat()` singleton API — you don't need this.
+
+### Turn outcomes and chat history
+
+For a core-managed chat turn, a successful exchange stays in
+`chat.fullHistory`. A clean stopped turn also stays after it produced non-empty
+text; if it reaches the chat as stopped before the first non-empty text chunk,
+its staged input is taken back. Cancelling the response subscription directly
+does not itself apply that empty-stop rollback, so do not use cancellation as a
+history-reset operation.
+
+Any engine error on a core-managed turn takes the whole staged turn back,
+including a tool call emitted before the error. A hook-backed engine owns its
+transcript and balancing instead; the shipped llama.cpp hook rolls failed turns
+back, but its current plain stopped or cancelled turn is also rolled back even
+after text. Structured llama.cpp turns use core's guarded path and keep their
+partial reply.
+
+`ContextLimitException` means the engine refused the input because it did not
+fit the remaining context; nothing from that turn was committed. A clean
+`TurnEnd.contextLimit` is different: decoding filled the window, so the partial
+exchange stays. Reporting engines also use `endOfSequence` (natural end),
+`outputLimit` (`maxOutputTokens`), `stopped`, and `closed`; an engine that cannot
+distinguish ends may expose no `EngineTurn.end`.
+
+A reported close keeps partial text, then a plain core-managed chat throws
+`StateError`. A structured session reports every non-`endOfSequence` end with
+`IncompleteStructuredOutputException`, including `outputLimit`, a clean
+`contextLimit`, `stopped`, and `closed`.
 
 ## Managing Installed Models
 

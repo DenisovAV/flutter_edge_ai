@@ -1,7 +1,6 @@
 ## Unreleased
-- `responseFormat` via ORT-GenAI guidance on macOS arm64; a stopped or cut turn keeps the session's history (#195).
-- Cancelling a paused stream no longer stops the session's next turn (#703).
-- Web: `openSession` / `openChat` open independent sessions on the shared pipeline (#703).
+- `responseFormat` uses ORT-GenAI guidance on macOS arm64 (#195).
+- Web `openSession`/`openChat` are independent; cancelling a stream is turn-scoped (#703).
 
 ## 0.8.0
 - Native `openSession` / `openChat` open independent sessions, capped at 2 on phones; **breaking** for `GenAiClient` implementers (#703).

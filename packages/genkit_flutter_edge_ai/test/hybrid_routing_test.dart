@@ -1,20 +1,14 @@
-// The deprecated genkit_hybrid models are exercised on purpose: apps still
-// call them until genkit_hybrid 0.5.0 removes them.
-// ignore_for_file: deprecated_member_use
-
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genkit/genkit.dart';
 import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';
-import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_model.dart';
 import 'package:genkit_hybrid/genkit_hybrid.dart';
 
 import 'src/fake_runtime.dart';
 
 /// A structured reply that failed on the device must never be retried in
-/// the cloud by a status: not by the router, and not by the deprecated
-/// fallback and cascade models. The control shows each path does move a
-/// status the hybrid policy moves on.
+/// the cloud by a status. The control shows the router does move a status
+/// the hybrid policy moves on.
 void main() {
   const enforcesAll = gemma.StructuredOutputSupport(
     keywords: gemma.ResponseFormat.dialect,
@@ -79,35 +73,6 @@ void main() {
     ),
   );
 
-  Model cloud() => Model(
-    name: 'cloud',
-    fn: (request, context) async {
-      cloudCalls++;
-      return cloudReply();
-    },
-  );
-
-  Model device() => createFlutterEdgeAiModel(
-    name: 'flutter-edge-ai/m',
-    modelType: gemma.ModelType.gemmaIt,
-    fileType: gemma.ModelFileType.task,
-    runtime: runtime,
-  );
-
-  ModelRequest request() => ModelRequest(
-    messages: [
-      Message(
-        role: Role.user,
-        content: [TextPart(text: 'Pick a backend.')],
-      ),
-    ],
-    output: OutputConfig(
-      format: 'json',
-      constrained: true,
-      schema: FlutterEdgeAiEmbedConfig.$schema.jsonSchema(),
-    ),
-  );
-
   Future<GenerateResult<FlutterEdgeAiEmbedConfig>> routed() {
     final ai = Genkit(
       isDevEnv: false,
@@ -151,29 +116,14 @@ void main() {
     );
   }
 
-  test(
-    'control: an UNAVAILABLE device reaches the cloud on every path',
-    () async {
-      // No model installed: a status the hybrid policy moves on.
-      runtime.loadError = gemma.NoActiveModelError('No model installed.');
+  test('control: an UNAVAILABLE device reaches the cloud', () async {
+    // No model installed: a status the hybrid policy moves on.
+    runtime.loadError = gemma.NoActiveModelError('No model installed.');
 
-      await hybridModelOnDeviceCloud(
-        onDevice: device(),
-        cloud: cloud(),
-        strategy: FallbackStrategy(const [kOnDevice, kCloud]),
-      )(request());
-      expect(cloudCalls, 1);
-      await cascadeModel(
-        branches: {kOnDevice: device(), kCloud: cloud()},
-        order: const [kOnDevice, kCloud],
-        accept: (_) => true,
-      )(request());
-      expect(cloudCalls, 2);
-      final result = await routed();
-      expect(result.route!.attempts, [kOnDevice, kCloud]);
-      expect(cloudCalls, 3);
-    },
-  );
+    final result = await routed();
+    expect(result.route!.attempts, [kOnDevice, kCloud]);
+    expect(cloudCalls, 1);
+  });
 
   for (final (what, arrange) in failures) {
     group(what, () {
@@ -184,34 +134,6 @@ void main() {
 
         expect(result.finishReason, FinishReason.failed);
         expect(result.route!.attempts, [kOnDevice]);
-        expect(cloudCalls, 0);
-      });
-
-      for (final streaming in [false, true]) {
-        test('hybridModelOnDeviceCloud${streaming ? ', streamed,' : ''} '
-            'does not fall back to the cloud', () async {
-          final hybrid = hybridModelOnDeviceCloud(
-            onDevice: device(),
-            cloud: cloud(),
-            strategy: FallbackStrategy(const [kOnDevice, kCloud]),
-          );
-
-          await expectLater(
-            hybrid(request(), onChunk: streaming ? (_) {} : null),
-            throwsA(isA<GenkitException>()),
-          );
-          expect(cloudCalls, 0);
-        });
-      }
-
-      test('cascadeModel does not escalate to the cloud', () async {
-        final cascade = cascadeModel(
-          branches: {kOnDevice: device(), kCloud: cloud()},
-          order: const [kOnDevice, kCloud],
-          accept: (_) => true,
-        );
-
-        await expectLater(cascade(request()), throwsA(isA<GenkitException>()));
         expect(cloudCalls, 0);
       });
     });

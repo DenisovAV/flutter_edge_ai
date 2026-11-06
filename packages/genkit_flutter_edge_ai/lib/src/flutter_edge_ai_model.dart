@@ -364,7 +364,7 @@ Future<ModelResponse> _generate(
     'Could not open a chat on the on-device model',
     // Unset sampling stays unset: flutter_edge_ai fills it from the model's
     // own sampler or its family's defaults.
-    () => model.createChat(
+    () => model.openChat(
       temperature: config?.temperature,
       randomSeed: config?.randomSeed,
       topK: config?.topK,

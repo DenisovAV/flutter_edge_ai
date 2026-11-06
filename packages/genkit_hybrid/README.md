@@ -161,7 +161,7 @@ keep content capture off, or redact it, or "processed on the device" stops being
 
 ## Migrating from 0.3
 
-The 0.3 composite-model API still works in 0.4.0, deprecated, and is removed in 0.5.0. It routed
+The 0.3 composite-model API was deprecated in 0.4.0 and removed in 0.5.0. It routed
 per model call, so inside a tool loop a fallback or a network change could switch models between
 turns.
 

@@ -139,7 +139,7 @@ void main() {
       }
     });
 
-    test('maxOutputTokens reaches createChat', () async {
+    test('maxOutputTokens reaches openChat', () async {
       await buildModel()(text('hi', config: {'maxOutputTokens': 128}));
       expect(inferenceModel.lastMaxOutputTokens, 128);
     });
@@ -1280,11 +1280,11 @@ void main() {
       final second = b(text('two'));
       await pumpEventQueue();
       // b waits for a's generation instead of reaching the native model.
-      expect(inferenceModel.createChatCallCount, 1);
+      expect(inferenceModel.promptOpenChatCallCount, 1);
 
       chat.generationGate!.complete();
       await Future.wait([first, second]);
-      expect(inferenceModel.createChatCallCount, 2);
+      expect(inferenceModel.promptOpenChatCallCount, 2);
       expect(runtime.getActiveModelCallCount, 2);
     });
 
@@ -1309,7 +1309,7 @@ void main() {
 
       chat.generationGate!.complete();
       await Future.wait([first, bad, third]);
-      expect(inferenceModel.createChatCallCount, 2);
+      expect(inferenceModel.promptOpenChatCallCount, 2);
     });
   });
 }

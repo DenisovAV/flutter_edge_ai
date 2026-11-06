@@ -165,18 +165,48 @@ void main() {
       expect(log, ['cancel a']);
     });
 
-    test('a stop during a spawned send is retained until the call returns and '
-        'then cancels exactly once', () {
+    test('a serialized stop during a spawned send is retained until the call '
+        'returns and then cancels exactly once', () {
       final send = NativeTurnStream(turns, 'a', nativeStartPending: true);
       send.stream.listen(null);
       turns.cancel('a');
       send.chunk('late');
       expect(log, isEmpty, reason: 'the native send call is still running');
 
-      send.nativeStarted();
+      send.nativeEntered();
+      expect(log, isEmpty, reason: 'Windows still serializes cancellation');
+      send.nativeReturned();
       send.chunk('later');
       turns.cancel('a');
       expect(log, ['cancel a']);
+    });
+
+    test('a non-serialized stop interrupts native prefill after entry and a '
+        'late chunk repeats it', () {
+      final concurrent = NativeTurns<String>(
+        cancelNative: (c) => log.add('cancel $c'),
+        deleteNative: (c) => log.add('delete $c'),
+        serializeCancelWithNativeStart: false,
+      );
+      final send = NativeTurnStream(concurrent, 'a', nativeStartPending: true);
+      send.stream.listen(null);
+      concurrent.cancel('a');
+      expect(log, isEmpty, reason: 'native has no work before entry');
+
+      send.nativeEntered();
+      expect(log, ['cancel a']);
+      send.chunk('late');
+      expect(log, [
+        'cancel a',
+        'cancel a',
+      ], reason: 'a task created after the first cancel is stopped too');
+      send.nativeReturned();
+      expect(log, [
+        'cancel a',
+        'cancel a',
+        'cancel a',
+      ], reason: 'return is the final reliable cancellation boundary');
+      send.cancelled();
     });
 
     test('a consumer that cancels waits for the native end', () async {

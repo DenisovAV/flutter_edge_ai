@@ -297,7 +297,10 @@ void main() {
       'entry and during synchronous prefill without overlapping the call',
       () async {
         for (final point in _StopPoint.values) {
-          final harness = _SpawnedSendHarness(0x5000 + point.index * 0x100);
+          final harness = _SpawnedSendHarness(
+            0x5000 + point.index * 0x100,
+            serializeCancelWithSend: true,
+          );
           final stopwatch = Stopwatch()..start();
           late Future<List<String>> chunks;
           var stopped = false;
@@ -368,14 +371,120 @@ void main() {
         }
       },
     );
+
+    test('a non-Windows stop interrupts a slow prefill at every boundary and a '
+        'follow-up send starts', () async {
+      for (final point in _StopPoint.values) {
+        final harness = _SpawnedSendHarness(
+          0x6000 + point.index * 0x100,
+          serializeCancelWithSend: false,
+        );
+        late Future<List<String>> chunks;
+
+        void stop() => harness.client.cancelConversationForTest(harness.conv);
+
+        switch (point) {
+          case _StopPoint.beforeSpawn:
+            harness.client.beforeSendSpawnForTest = stop;
+            harness.client.spawnedSendPrefillDelayForTest = const Duration(
+              milliseconds: 300,
+            );
+          case _StopPoint.afterSpawnBeforeEntry:
+            harness.client.afterSendSpawnForTest = stop;
+            harness.client.spawnedSendBeforeEntryDelayForTest = const Duration(
+              milliseconds: 250,
+            );
+            harness.client.spawnedSendPrefillDelayForTest = const Duration(
+              milliseconds: 300,
+            );
+          case _StopPoint.duringPrefill:
+            harness.client.nativeSendEnteredForTest = () {
+              Future<void>.delayed(const Duration(milliseconds: 20), stop);
+            };
+            harness.client.spawnedSendPrefillDelayForTest = const Duration(
+              milliseconds: 300,
+            );
+        }
+
+        try {
+          chunks = harness.client.sendForTest(harness.conv, '{}').toList();
+          await harness.cancelObserved.future.timeout(
+            const Duration(seconds: 2),
+          );
+          expect(
+            harness.nativeCancels,
+            greaterThanOrEqualTo(1),
+            reason: '$point must interrupt the synchronous prefill',
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          expect(
+            harness.nativeCancels,
+            greaterThan(1),
+            reason:
+                '$point must cover prefill tasks created after the first '
+                'cancel',
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 350));
+          harness.emitCancelled();
+          expect(await chunks, isEmpty);
+
+          harness.client
+            ..beforeSendSpawnForTest = null
+            ..afterSendSpawnForTest = null
+            ..nativeSendEnteredForTest = null
+            ..spawnedSendBeforeEntryDelayForTest = Duration.zero
+            // Keep the fake-send branch; zero would open the real framework.
+            ..spawnedSendPrefillDelayForTest = const Duration(milliseconds: 1);
+          final followUp = harness.client
+              .sendForTest(harness.conv, '{"text":"follow-up"}')
+              .toList();
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          harness.emitFinal('OK');
+          expect(await followUp, ['OK'], reason: '$point follow-up');
+        } finally {
+          await harness.dispose();
+        }
+      }
+    });
+
+    test('a cancelled native turn that never ends fails loudly and queued '
+        'sends fail instead of waiting forever', () async {
+      final harness = _SpawnedSendHarness(
+        0x7000,
+        serializeCancelWithSend: false,
+        cancelEndTimeout: const Duration(milliseconds: 50),
+      );
+      harness.client.nativeSendEnteredForTest = () {
+        harness.client.cancelConversationForTest(harness.conv);
+      };
+      harness.client.spawnedSendPrefillDelayForTest = const Duration(
+        milliseconds: 300,
+      );
+
+      try {
+        final stalled = harness.client.sendForTest(harness.conv, '{}').toList();
+        await expectLater(stalled, throwsA(isA<TimeoutException>()));
+        await expectLater(
+          harness.client.sendForTest(harness.conv, '{}').toList(),
+          throwsA(isA<TimeoutException>()),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        harness.emitCancelled();
+      } finally {
+        await harness.dispose();
+      }
+    });
   });
 }
 
 enum _StopPoint { beforeSpawn, afterSpawnBeforeEntry, duringPrefill }
 
 final class _SpawnedSendHarness {
-  _SpawnedSendHarness(int address)
-    : conv = Pointer<LiteRtLmConversation>.fromAddress(address) {
+  _SpawnedSendHarness(
+    int address, {
+    required bool serializeCancelWithSend,
+    Duration cancelEndTimeout = const Duration(seconds: 5),
+  }) : conv = Pointer<LiteRtLmConversation>.fromAddress(address) {
     final symbols = <String, Pointer<NativeType>>{
       'litert_lm_conversation_optional_args_create': _keep(
         NativeCallable<
@@ -412,6 +521,8 @@ final class _SpawnedSendHarness {
       ),
     };
     client = LiteRtLmFfiClient()
+      ..serializeNativeCancelWithSendForTest = serializeCancelWithSend
+      ..nativeCancelEndTimeoutForTest = cancelEndTimeout
       ..bindingsForTest = LiteRtLmBindings.fromLookup(
         <T extends NativeType>(String name) =>
             (symbols[name] ?? (throw ArgumentError('no fake for $name')))
@@ -451,6 +562,13 @@ final class _SpawnedSendHarness {
         .asFunction<
           void Function(Pointer<Void>, Pointer<Char>, int, Pointer<Char>)
         >()(nullptr, nullptr, 0, 'CANCELLED'.toNativeUtf8().cast());
+  }
+
+  void emitFinal(String text) {
+    _callback
+        .asFunction<
+          void Function(Pointer<Void>, Pointer<Char>, int, Pointer<Char>)
+        >()(nullptr, text.toNativeUtf8().cast(), 1, nullptr);
   }
 
   Future<void> dispose() async {

@@ -83,6 +83,21 @@ Future<_Turn> _send(
   Object? error;
   final sw = Stopwatch()..start();
   var textChunks = 0;
+  var stopIssued = false;
+  // A native media prefill can stall before producing its first chunk. The
+  // chunk-count barge-in still needs a deadline, otherwise the test never asks
+  // the now-off-main send to stop and a device campaign can wait forever.
+  final prefillDeadline = !stop && stopAfterText == null
+      ? null
+      : Timer(const Duration(seconds: 15), () {
+          if (stopIssued) return;
+          stopIssued = true;
+          debugPrint(
+            '[rewind/$_backendName] $label produced no stop point within '
+            '15 s; cancelling the native prefill',
+          );
+          unawaited(chat.stopGeneration());
+        });
   try {
     await for (final r in chat.generateChatResponseAsync()) {
       if (r is TextResponse) {
@@ -93,12 +108,15 @@ Future<_Turn> _send(
           ? textChunks == stopAfterText && r is TextResponse
           : stop && (r is TextResponse || r is ThinkingResponse);
       if (due) {
+        stopIssued = true;
         await chat.stopGeneration();
         stop = false;
       }
     }
   } catch (e) {
     error = e;
+  } finally {
+    prefillDeadline?.cancel();
   }
   debugPrint(
     '[rewind/$_backendName] $label (${sw.elapsedMilliseconds} ms) '

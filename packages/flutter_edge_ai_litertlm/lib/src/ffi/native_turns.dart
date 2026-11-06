@@ -33,10 +33,12 @@ class LiteRtLmTurnClosedException extends StateError {
 /// from its start until native has posted its end.
 class NativeTurn {
   final _ended = Completer<NativeTurnEnd>();
+  final _cancelRequested = Completer<void>();
 
   /// Completes once native has posted the end and, if [NativeTurns.release]
   /// was called meanwhile, the conversation has been deleted.
   Future<NativeTurnEnd> get ended => _ended.future;
+  Future<void> get cancellationRequested => _cancelRequested.future;
   bool get hasEnded => _ended.isCompleted;
 
   /// A stop was asked for: stopGeneration(), close(), or the consumer
@@ -46,12 +48,19 @@ class NativeTurn {
   /// A streamed send has been registered in Dart but its spawned isolate is
   /// still inside `litert_lm_conversation_send_message_stream`. LiteRT-LM
   /// forbids overlapping calls on one conversation, so [NativeTurns.cancel]
-  /// retains a stop until [NativeTurns.nativeStarted] says that call returned.
+  /// retains a stop until the platform's safe native-entry boundary.
   bool nativeStartPending = false;
 
-  /// Whether this turn has issued its one native cancellation. Chunks can
-  /// still arrive after a stop; they must not call cancel_process again.
+  /// The spawned send entry point has not returned yet. On platforms that
+  /// permit concurrent cancellation, retries cover native prefill tasks that
+  /// may be created after an earlier `cancel_process` call.
+  bool nativeCallInFlight = false;
+
+  /// Whether this turn has issued a native cancellation. Serialized platforms
+  /// issue exactly one; other platforms may retry while prefill runs.
   bool cancelSent = false;
+
+  bool cancelRetryRunning = false;
 
   /// The conversation's session or model was closed while this ran, before
   /// anyone asked to stop it: a streamed send then ends with a
@@ -67,13 +76,40 @@ class NativeTurn {
 /// has ended: a cancel only asks native to stop, and the task — and its
 /// callbacks — finish later.
 class NativeTurns<C extends Object> {
-  NativeTurns({required this.cancelNative, required this.deleteNative});
+  NativeTurns({
+    required this.cancelNative,
+    required this.deleteNative,
+    void Function(C conversation)? retryCancelNative,
+    this.serializeCancelWithNativeStart = true,
+    this.cancelEndTimeout,
+    this.cancelRetryInterval = const Duration(milliseconds: 20),
+  }) : retryCancelNative = retryCancelNative ?? cancelNative;
 
   /// Asks native to stop what runs on a conversation; returns at once.
   final void Function(C conversation) cancelNative;
 
+  /// Repeats cancellation during native prefill. Production uses a quiet
+  /// callback so a retained stop does not flood logs.
+  final void Function(C conversation) retryCancelNative;
+
   /// Deletes a conversation natively.
   final void Function(C conversation) deleteNative;
+
+  /// Whether cancellation must wait until a synchronous streamed-send entry
+  /// point has returned. Windows needs this because its C API implementation
+  /// cannot overlap `cancel_process` with that call. Other platforms permit
+  /// the overlap; there cancellation must remain able to interrupt prefill.
+  final bool serializeCancelWithNativeStart;
+
+  /// How long a consumer waits for native to post its end after cancellation.
+  /// A timeout fails the consumer but deliberately does not end the native
+  /// turn or release its lock: doing either could use or delete a conversation
+  /// while native still owns it.
+  final Duration? cancelEndTimeout;
+
+  /// Delay between cancellation retries while a non-serialized native send
+  /// entry point is still synchronously prefilling.
+  final Duration cancelRetryInterval;
 
   final Map<C, NativeTurn> _running = {};
 
@@ -90,7 +126,8 @@ class NativeTurns<C extends Object> {
       );
     }
     return _running[conversation] = NativeTurn()
-      ..nativeStartPending = nativeStartPending;
+      ..nativeStartPending = nativeStartPending
+      ..nativeCallInFlight = nativeStartPending;
   }
 
   /// Asks native to stop [conversation]'s running operation, and marks it as
@@ -99,22 +136,74 @@ class NativeTurns<C extends Object> {
     final turn = _running[conversation];
     if (turn != null) {
       turn.cancelRequested = true;
-      if (turn.nativeStartPending || turn.cancelSent) return;
+      if (!turn._cancelRequested.isCompleted) {
+        turn._cancelRequested.complete();
+      }
+      if (turn.nativeStartPending ||
+          (serializeCancelWithNativeStart && turn.cancelSent)) {
+        return;
+      }
       turn.cancelSent = true;
     }
     cancelNative(conversation);
+    if (turn != null) _retryCancelDuringNativeStart(conversation, turn);
   }
 
-  /// Marks the boundary where a spawned streamed-send call has returned. A
-  /// stop requested while that call was synchronously prefilling is issued
-  /// now, when it cannot overlap another call on the conversation.
-  void nativeStarted(C conversation, NativeTurn turn) {
+  /// Marks the boundary immediately before a spawned isolate enters the C
+  /// streamed-send call. Platforms that allow concurrent cancellation issue a
+  /// retained stop here, once native has work to cancel. Windows keeps it
+  /// retained until [nativeReturned].
+  void nativeEntered(C conversation, NativeTurn turn) {
     if (turn.hasEnded || !identical(_running[conversation], turn)) return;
+    if (serializeCancelWithNativeStart) return;
     turn.nativeStartPending = false;
     if (turn.cancelRequested && !turn.cancelSent) {
       turn.cancelSent = true;
       cancelNative(conversation);
     }
+    _retryCancelDuringNativeStart(conversation, turn);
+  }
+
+  /// Marks the boundary where the spawned streamed-send call has returned.
+  /// This is the first safe cancellation point on Windows, and a fallback for
+  /// another platform when its native-entry notification raced or was lost.
+  void nativeReturned(C conversation, NativeTurn turn) {
+    if (turn.hasEnded || !identical(_running[conversation], turn)) return;
+    turn.nativeCallInFlight = false;
+    turn.nativeStartPending = false;
+    if (turn.cancelRequested &&
+        (!turn.cancelSent || !serializeCancelWithNativeStart)) {
+      turn.cancelSent = true;
+      cancelNative(conversation);
+    }
+  }
+
+  void _retryCancelDuringNativeStart(C conversation, NativeTurn turn) {
+    if (serializeCancelWithNativeStart ||
+        !turn.nativeCallInFlight ||
+        !turn.cancelRequested ||
+        turn.cancelRetryRunning ||
+        turn.hasEnded) {
+      return;
+    }
+    turn.cancelRetryRunning = true;
+    unawaited(() async {
+      final timeout = cancelEndTimeout ?? const Duration(seconds: 5);
+      final deadline = DateTime.now().add(timeout);
+      try {
+        while (turn.nativeCallInFlight &&
+            !turn.hasEnded &&
+            DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(cancelRetryInterval);
+          if (turn.nativeCallInFlight && !turn.hasEnded) {
+            turn.cancelSent = true;
+            retryCancelNative(conversation);
+          }
+        }
+      } finally {
+        turn.cancelRetryRunning = false;
+      }
+    }());
   }
 
   /// Records that [turn] has ended natively. Deletes the conversation first
@@ -122,6 +211,7 @@ class NativeTurns<C extends Object> {
   /// the lock that orders native calls among them — runs after the delete.
   void end(C conversation, NativeTurn turn, NativeTurnEnd how) {
     if (turn.hasEnded) return;
+    turn.nativeCallInFlight = false;
     if (identical(_running[conversation], turn)) _running.remove(conversation);
     try {
       if (turn.deleteWhenEnded) deleteNative(conversation);
@@ -186,6 +276,10 @@ class NativeTurnStream<C extends Object> {
          nativeStartPending: nativeStartPending,
        ) {
     _controller.onCancel = _onConsumerCancel;
+    final timeout = _turns.cancelEndTimeout;
+    if (timeout != null) {
+      unawaited(_failConsumerWhenCancellationStalls(timeout));
+    }
   }
 
   final NativeTurns<C> _turns;
@@ -193,12 +287,19 @@ class NativeTurnStream<C extends Object> {
   final Duration consumerCancelWait;
   final NativeTurn turn;
   final _controller = StreamController<String>();
+  bool _consumerEnded = false;
+
+  /// Called when a cancelled native operation has not ended by the deadline.
+  /// The owner uses this to reject operations queued behind the stuck turn.
+  void Function(Object error)? onCancelTimeout;
 
   Stream<String> get stream => _controller.stream;
 
-  /// See [NativeTurns.nativeStarted]. Called after a real spawned send's C
-  /// entry point returns; rewinds and test-driven turns start immediately.
-  void nativeStarted() => _turns.nativeStarted(_conversation, turn);
+  /// See [NativeTurns.nativeEntered].
+  void nativeEntered() => _turns.nativeEntered(_conversation, turn);
+
+  /// See [NativeTurns.nativeReturned].
+  void nativeReturned() => _turns.nativeReturned(_conversation, turn);
 
   void chunk(String text) {
     if (turn.hasEnded) return;
@@ -223,8 +324,30 @@ class NativeTurnStream<C extends Object> {
     if (turn.hasEnded) return;
     // Ended (and any pending delete done) before the consumer hears of it.
     _turns.end(_conversation, turn, how);
-    if (error != null) _controller.addError(error);
-    _controller.close();
+    if (!_consumerEnded) {
+      _consumerEnded = true;
+      if (error != null) _controller.addError(error);
+      _controller.close();
+    }
+  }
+
+  Future<void> _failConsumerWhenCancellationStalls(Duration timeout) async {
+    await turn.cancellationRequested;
+    await Future.any<void>([
+      turn.ended.then<void>((_) {}),
+      Future<void>.delayed(timeout),
+    ]);
+    if (turn.hasEnded || _consumerEnded) return;
+    final error = TimeoutException(
+      'LiteRT-LM did not end a cancelled generation within '
+      '${timeout.inMilliseconds} ms; the engine remains locked to keep the '
+      'native conversation alive safely.',
+      timeout,
+    );
+    _consumerEnded = true;
+    onCancelTimeout?.call(error);
+    _controller.addError(error);
+    await _controller.close();
   }
 
   Future<void>? _onConsumerCancel() {
@@ -252,13 +375,41 @@ class NativeTurnStream<C extends Object> {
 /// paused one).
 Stream<String> heldUntilNativeEnd<C extends Object>(
   Mutex mutex,
-  NativeTurnStream<C> Function() start,
-) {
+  NativeTurnStream<C> Function() start, {
+  Future<Object>? abort,
+}) {
   final controller = StreamController<String>();
   StreamSubscription<String>? inner;
   var consumerGone = false;
   controller.onListen = () async {
-    await mutex.acquire();
+    var aborted = false;
+    final acquired = Completer<void>();
+    unawaited(
+      mutex.acquire().then((_) {
+        if (aborted || consumerGone) {
+          mutex.release();
+        } else {
+          acquired.complete();
+        }
+      }),
+    );
+    try {
+      if (abort == null) {
+        await acquired.future;
+      } else {
+        await Future.any<void>([
+          acquired.future,
+          abort.then<void>((error) => throw error),
+        ]);
+      }
+    } catch (e, st) {
+      aborted = true;
+      if (!consumerGone) {
+        controller.addError(e, st);
+        await controller.close();
+      }
+      return;
+    }
     if (consumerGone) {
       mutex.release();
       return;

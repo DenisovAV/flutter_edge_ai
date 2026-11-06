@@ -37,6 +37,7 @@ export '../litert_lm_load_errors.dart'
     show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
 
 const _virtualStoppedExchangeTimeout = Duration(seconds: 5);
+const _nativeCancelEndTimeout = Duration(seconds: 5);
 
 /// LiteRT-LM's thread-local last error, read on the calling thread.
 extension LiteRtLmLastErrorRead on LiteRtLmBindings {
@@ -1454,6 +1455,15 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   void Function()? nativeSendEnteredForTest;
 
+  /// Windows serializes `cancel_process` after the synchronous send entry
+  /// point returns. Other hosts issue it while prefill runs, as their native
+  /// implementation permits and requires for a cancellable long prefill.
+  @visibleForTesting
+  bool serializeNativeCancelWithSendForTest = Platform.isWindows;
+
+  @visibleForTesting
+  Duration nativeCancelEndTimeoutForTest = _nativeCancelEndTimeout;
+
   /// Test seam: a streamed send of [messageJson] on [conv], as a handle's
   /// `chatRawMessage` makes it.
   @visibleForTesting
@@ -1470,6 +1480,15 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   bool hasSentForTest(Pointer<LiteRtLmConversation> conv) =>
       _sentConvs.contains(conv);
+
+  Object? _nativeTurnStallError;
+  Completer<Object> _nativeTurnStall = Completer<Object>();
+
+  void _markNativeTurnStalled(Object error) {
+    if (_nativeTurnStallError != null) return;
+    _nativeTurnStallError = error;
+    _nativeTurnStall.complete(error);
+  }
 
   /// Test seam: what a handle's `close` does to its conversation.
   @visibleForTesting
@@ -2884,16 +2903,22 @@ class LiteRtLmFfiClient {
     String? extraContext,
     required bool thinking,
     void Function(NativeTurnEnd how)? onEnded,
-  }) => heldUntilNativeEnd(_nativeMutex, () {
-    final send = _doSendMessageStreamRawOn(
-      conv,
-      messageJson,
-      extraContext: extraContext,
-      thinking: thinking,
-    );
-    if (onEnded != null) unawaited(send.turn.ended.then(onEnded));
-    return send;
-  });
+  }) {
+    final stalled = _nativeTurnStallError;
+    if (stalled != null) return Stream<String>.error(stalled);
+    return heldUntilNativeEnd(_nativeMutex, () {
+      final stalledAfterWait = _nativeTurnStallError;
+      if (stalledAfterWait != null) throw stalledAfterWait;
+      final send = _doSendMessageStreamRawOn(
+        conv,
+        messageJson,
+        extraContext: extraContext,
+        thinking: thinking,
+      );
+      if (onEnded != null) unawaited(send.turn.ended.then(onEnded));
+      return send;
+    }, abort: _nativeTurnStall.future);
+  }
 
   /// The single native conversation currently materialized for the
   /// virtual-session multiplexer. The LiteRT-LM engine allows only ONE live
@@ -3412,6 +3437,7 @@ class LiteRtLmFfiClient {
     // Registered before anything native is allocated; every path below either
     // starts the send or ends this turn.
     final send = NativeTurnStream(_turns, conv, nativeStartPending: true);
+    send.onCancelTimeout = _markNativeTurnStalled;
 
     final messagePtr = messageJson.toNativeUtf8();
     final extraPtr = extraContext != null
@@ -3615,6 +3641,7 @@ class LiteRtLmFfiClient {
     nativeEntry.listen((_) {
       nativeEntry.close();
       nativeSendEnteredForTest?.call();
+      send.nativeEntered();
     });
     beforeSendSpawnForTest?.call();
     final call = _sendMessageStreamOffMainIsolate(
@@ -3639,11 +3666,11 @@ class LiteRtLmFfiClient {
           // native called back with meanwhile is held), then that end.
           handleResult(r.code, r.message);
           gate.flushEnd();
-          // The C API forbids overlapping calls on one conversation. Retain a
-          // stop asked during synchronous prefill until the spawned send call
-          // has returned, then issue exactly one native cancellation if the
-          // stream is still running.
-          send.nativeStarted();
+          // Windows retains a stop asked during synchronous prefill until the
+          // spawned send call has returned, then issues exactly one native
+          // cancellation. Other hosts already cancelled (and retried) while
+          // the call ran; this only closes their entry-point lifecycle.
+          send.nativeReturned();
         },
         onError: (Object e, StackTrace st) {
           // The isolate could not run the call (a spawn that failed under
@@ -3760,7 +3787,10 @@ class LiteRtLmFfiClient {
   /// operation, only once the one that runs has ended natively.
   late final _turns = NativeTurns<Pointer<LiteRtLmConversation>>(
     cancelNative: _cancelNative,
+    retryCancelNative: (conv) => _cancelNative(conv, log: false),
     deleteNative: _deleteConversation,
+    serializeCancelWithNativeStart: serializeNativeCancelWithSendForTest,
+    cancelEndTimeout: nativeCancelEndTimeoutForTest,
   );
 
   /// Cancel ongoing generation on the given conversation, marking it as asked
@@ -4192,14 +4222,12 @@ class LiteRtLmFfiClient {
     // takes long: nothing else would show why shutdown does not return.
     await _turns.allEnded().timeout(
       const Duration(seconds: 10),
-      onTimeout: () async {
-        // ignore: avoid_print
-        print(
-          '[flutter_edge_ai_litertlm] shutdown is waiting for a native '
-          'generation that has not ended after 10 s',
-        );
-        await _turns.allEnded();
-      },
+      onTimeout: () => throw TimeoutException(
+        'LiteRT-LM shutdown stopped after 10 s because a native generation '
+        'did not end; the engine was deliberately not deleted while native '
+        'still owns its conversation.',
+        const Duration(seconds: 10),
+      ),
     );
 
     if (_engine != null && _engine != nullptr && _bindings != null) {

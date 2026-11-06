@@ -76,6 +76,7 @@ void main() {
     >?
     callback;
     client
+      ..serializeNativeCancelWithSendForTest = false
       ..bindingsForTest = LiteRtLmBindings.fromLookup(
         <T extends NativeType>(String name) =>
             (symbols[name] ?? (throw ArgumentError('no fake for $name')))
@@ -123,22 +124,28 @@ void main() {
     );
     expect(
       nativeCancels,
-      0,
-      reason: 'cancel_process must not overlap the synchronous send call',
+      greaterThanOrEqualTo(1),
+      reason: 'a non-Windows stop must interrupt synchronous prefill',
     );
     await cancelObserved.future.timeout(const Duration(seconds: 2));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
     expect(
       nativeCancels,
-      1,
-      reason: 'the retained stop must cancel once after the send call returns',
+      greaterThan(1),
+      reason: 'prefill cancellation must cover tasks created after the stop',
     );
     callback!
         .asFunction<
           void Function(Pointer<Void>, Pointer<Char>, int, Pointer<Char>)
         >()(nullptr, nullptr, 0, 'CANCELLED'.toNativeUtf8().cast());
     expect(await response, isEmpty);
+    final cancelsAtEnd = nativeCancels;
     await pumpEventQueue();
-    expect(nativeCancels, 1, reason: 'late chunks must not repeat the cancel');
+    expect(
+      nativeCancels,
+      cancelsAtEnd,
+      reason: 'retries stop when the native send call returns',
+    );
     expect(
       virtualConversationHistoryForTest(session.handle),
       isEmpty,

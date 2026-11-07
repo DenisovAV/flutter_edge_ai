@@ -6,6 +6,9 @@
 // Runs over a JS fake of `window.transformers` (a pipeline whose calls the
 // test answers chunk by chunk), so no model and no WebGPU are needed. Run:
 //   flutter test --platform chrome test/web/onnx_web_open_session_test.dart
+// Remaining deprecated calls verify that open sessions leave the legacy lane intact.
+// ignore_for_file: deprecated_member_use
+
 @TestOn('browser')
 library;
 

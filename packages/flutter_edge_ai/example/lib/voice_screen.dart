@@ -219,7 +219,7 @@ class _VoiceScreenState extends State<VoiceScreen> {
         maxTokens: widget.llmModel.maxTokens,
         preferredBackend: widget.llmModel.preferredBackend,
       );
-      chat = await model.createChat(
+      chat = await model.openChat(
         temperature: widget.llmModel.temperature,
         randomSeed: 1,
         topK: widget.llmModel.topK,

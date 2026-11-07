@@ -53,7 +53,7 @@ void main() {
       maxNumImages: 1,
     );
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         modelType: ModelType.gemmaIt,
         supportImage: true,
       );

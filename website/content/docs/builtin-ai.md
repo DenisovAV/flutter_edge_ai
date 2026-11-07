@@ -156,9 +156,10 @@ if (builtInReady) {
 
 // From here the code is identical regardless of which engine backs the model:
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final session = await model.createSession();
+final session = await model.openSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
+await session.close();
 ```
 
 ## Capabilities & limits

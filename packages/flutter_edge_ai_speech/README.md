@@ -159,7 +159,7 @@ tools-enabled chat arrives without a handler. Use `VoiceSession.custom` for an
 final recognizer = await FlutterEdgeAi.getActiveStt();
 final synthesizer = await FlutterEdgeAi.getActiveTts();
 final chat = await (await FlutterEdgeAi.getActiveModel(maxTokens: 1024))
-    .createChat(tokenBuffer: 256, maxOutputTokens: 128); // no tools, short replies
+    .openChat(tokenBuffer: 256, maxOutputTokens: 128); // no tools, short replies
 
 final session = VoiceSession.fromChat(
   recognizer: recognizer, chat: chat, synthesizer: synthesizer);
@@ -193,7 +193,7 @@ final model = await FlutterEdgeAi.getActiveModel(
   maxTokens: 4096,
   supportAudio: true, // loads the audio encoder
 );
-final chat = await model.createChat(supportAudio: true, maxOutputTokens: 128);
+final chat = await model.openChat(supportAudio: true, maxOutputTokens: 128);
 final session = VoiceSession.fromChat(
   recognizer: recognizer, chat: chat, synthesizer: synthesizer);
 
@@ -207,7 +207,7 @@ interrupted events carry an empty transcript, and a recording under 2 bytes (a
 push-to-talk tap) completes without asking the model. After a barge-in a
 `.litertlm` chat keeps what was said in earlier audio turns with
 `flutter_edge_ai_litertlm` 1.15.0 and later; with 1.14.0 and earlier, and
-on the NPU, it rebuilds its conversation from text and forgets it. `createChat` takes
+on the NPU, it rebuilds its conversation from text and forgets it. `openChat` takes
 `supportAudio` from the model unless you pass it on native `.litertlm`, MediaPipe
 Android/iOS and `flutter_edge_ai_llama` models; other engines default it to
 false. On a chat whose

@@ -62,7 +62,7 @@ void main() {
     }) async {
       final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
       try {
-        final session = await model.createSession(
+        final session = await model.openSession(
           temperature: temperature,
           topK: topK,
           topP: topP,

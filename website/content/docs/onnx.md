@@ -118,15 +118,15 @@ From here the code is identical to any other engine:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final session = await model.createSession();
+final session = await model.openSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
+await session.close();
 ```
 
 ## Generation — `OnnxEngine`
 
-Text-only (v1): no vision, no audio, no LoRA. `createSession` is the one legacy
-session; `openSession` / `openChat` open further independent sessions on the
+Text-only (v1): no vision, no audio, no LoRA. `openSession` / `openChat` open independent sessions on the
 same loaded model, natively since 0.8.0 and on Web since the release after
 it. On Web each keeps its own history on the one Transformers.js pipeline,
 holds no KV cache and is not capped unless you set `maxConcurrentSessions`.
@@ -136,8 +136,7 @@ replayed. A generator allocates its whole KV cache at its first turn,
 dtype size; 0.75 MiB for Phi-3.5-mini int4, on Linux CPU 771 MiB at 1024, 3077
 at 4096), so opening more than `maxConcurrentSessions` throws a `StateError`;
 unset, that is 2 on Android and iOS and unlimited on desktop. Pass a larger
-`maxConcurrentSessions` to allow more on a phone. The `createSession` session
-is not counted, though it holds a generator too. Windows gives a closed
+`maxConcurrentSessions` to allow more on a phone. Windows gives a closed
 session's memory back (commit −383 MiB at 512, −768 MiB at 1024); on Linux the RSS did not
 fall at 512 to 2048. Sampling
 follows the model's own config (`genai_config.json` natively,

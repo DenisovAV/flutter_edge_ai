@@ -75,7 +75,7 @@ Future<(String, int)> _reply(
   int maxOutputTokens = 64,
 }) async {
   final sw = Stopwatch()..start();
-  final session = await model.createSession(
+  final session = await model.openSession(
     temperature: temperature,
     topK: topK,
     topP: topP,

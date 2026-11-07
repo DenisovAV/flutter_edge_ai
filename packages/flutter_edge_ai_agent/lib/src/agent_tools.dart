@@ -125,7 +125,7 @@ const Tool runMcpTool = Tool(
 );
 
 /// The four built-in agent tools, in the order the model sees them. Pass these
-/// to `createChat(tools: agentTools)`.
+/// to `openChat(tools: agentTools)`.
 const List<Tool> agentTools = [
   loadSkillTool,
   runSkillTool,

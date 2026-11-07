@@ -91,7 +91,7 @@ void main() {
       );
       try {
         Future<String> runOnce(int seed) async {
-          final session = await model.createSession(
+          final session = await model.openSession(
             temperature: 1.0,
             topK: 50,
             topP: 0.95,
@@ -159,7 +159,7 @@ void main() {
         );
         try {
           Future<String> runOnce(int seed) async {
-            final session = await model.createSession(
+            final session = await model.openSession(
               temperature: 0.0, // greedy — argmax, seed should not matter
               topK: 1,
               randomSeed: seed,
@@ -224,7 +224,7 @@ void main() {
       );
       try {
         Future<String> runOnce(int seed) async {
-          final session = await model.createSession(
+          final session = await model.openSession(
             temperature: 1.0,
             topK: 1, // hard greedy via top-k
             randomSeed: seed,
@@ -276,7 +276,7 @@ void main() {
       );
       try {
         Future<String> runOnce(int seed) async {
-          final session = await model.createSession(
+          final session = await model.openSession(
             temperature: 0.0,
             topK: 1,
             randomSeed: seed,
@@ -318,7 +318,7 @@ void main() {
       );
       try {
         Future<String> runOnce(int seed) async {
-          final session = await model.createSession(
+          final session = await model.openSession(
             temperature: 1.0,
             topK: 1,
             randomSeed: seed,
@@ -384,7 +384,7 @@ void main() {
       );
       try {
         Future<String> runOnce() async {
-          final session = await model.createSession(
+          final session = await model.openSession(
             temperature: 1.0,
             topK: 50,
             topP: 0.95,
@@ -419,7 +419,7 @@ void main() {
   });
 
   group('C4 — loraPath silently dropped on FFI path', () {
-    // The bug: createSession/createChat accept String? loraPath but never
+    // The bug: openSession/openChat accept String? loraPath but never
     // forward it to ffiClient.createConversation. A user expecting LoRA
     // weights to be applied gets a base-model response with no warning.
     //
@@ -438,12 +438,12 @@ void main() {
       );
       try {
         // /this/path/does/not/exist.bin — must produce a clear error,
-        // either at createSession time (validation) or at first inference
+        // either at openSession time (validation) or at first inference
         // (engine-side error). Silent success means the param was dropped.
         Object? caught;
         InferenceModelSession? session;
         try {
-          session = await model.createSession(
+          session = await model.openSession(
             temperature: 0.8,
             topK: 1,
             loraPath: '/this/path/does/not/exist/lora.bin',
@@ -458,7 +458,7 @@ void main() {
           caught,
           isNotNull,
           reason:
-              'Either throw at createSession (validation) or UnsupportedError if not yet implemented. See review C4.',
+              'Either throw at openSession (validation) or UnsupportedError if not yet implemented. See review C4.',
         );
       } finally {
         await model.close();
@@ -467,7 +467,7 @@ void main() {
   });
 
   group('C5 — tools list silently dropped from native conversation config', () {
-    // The bug: createChat accepts tools: List<Tool> and forwards them to
+    // The bug: openChat accepts tools: List<Tool> and forwards them to
     // InferenceChat, but the underlying ffiClient.createConversation is
     // called without toolsJson. Native engine is configured in pure-text
     // mode while Dart-side template formatting may produce something —
@@ -475,7 +475,7 @@ void main() {
     //
     // Fix expectation: either tools are correctly threaded to native
     // (and the model produces structured tool-call output), or
-    // createChat throws UnsupportedError when tools is non-empty.
+    // openChat throws UnsupportedError when tools is non-empty.
     // Stronger test: bypass InferenceChat (which Dart-formats the prompt
     // and parses JSON back). Use the low-level session API directly with
     // a tools-aware model. If tools are threaded to native, the native
@@ -485,10 +485,10 @@ void main() {
     // no tool context — the model will respond with plain conversational
     // text, NOT structured JSON.
     //
-    // This test cannot exercise `tools` directly because createSession
+    // This test cannot exercise `tools` directly because openSession
     // doesn't accept tools. It instead asserts that the FFI client does
     // NOT have a public createConversation overload taking tools — which
-    // means there's no way for InferenceModel.createSession to communicate
+    // means there's no way for InferenceModel.openSession to communicate
     // tools to native. The bug is therefore structural: the API surface
     // doesn't even expose tools to the native config in the FFI path.
     //
@@ -523,7 +523,7 @@ void main() {
           //       were threaded to native, OR
           //   (b) throw UnsupportedError if tools-on-FFI is not yet wired.
           try {
-            final chat = await model.createChat(
+            final chat = await model.openChat(
               temperature: 0.8,
               topK: 1,
               tools: const [tool],
@@ -578,7 +578,7 @@ void main() {
         maxNumImages: 1,
         supportAudio: true,
       );
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(const Message(text: 'Hi.', isUser: true));
       await session.close();
 
@@ -690,7 +690,7 @@ void main() {
         supportAudio: true,
       );
       try {
-        final session = await model.createSession(temperature: 0.8, topK: 1);
+        final session = await model.openSession(temperature: 0.8, topK: 1);
         await session.addQueryChunk(
           const Message(
             text: 'Tell me a long story about a brave knight.',

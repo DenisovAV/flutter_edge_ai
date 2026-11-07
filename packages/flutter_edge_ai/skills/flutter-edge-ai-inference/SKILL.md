@@ -112,7 +112,12 @@ final model = await FlutterEdgeAi.getActiveModel(maxTokens: 100);
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-final session = await model.createSession(maxOutputTokens: 100);
+final session = await model.openSession(maxOutputTokens: 100);
+try {
+  // Use session for this conversation.
+} finally {
+  await session.close();
+}
 ```
 
 Use 4096 or more with images or audio — one image costs hundreds of tokens.
@@ -127,16 +132,16 @@ Use 4096 or more with images or audio — one image costs hundreds of tokens.
 - Fix: leave `temperature`, `topK` and `topP` unset to get the model's own sampler or its family's defaults (`SamplingParams.forModelType`), or pass a `temperature` — with no `topK`, a greedy family or bundle then contributes no `topK: 1`. Set them on the first session after `getActiveModel`: on `.litertlm` the sampler of the first generation stays in effect for later sessions (a one-time warning says so when a later session asks for other values), and its random state carries on, so a new chat already gets a new answer. MediaPipe starts each session from its seed: vary `randomSeed` there for a different answer to the same prompt.
 - Exception: decoding stays greedy whatever you pass on `.litertlm` running on the NPU (`activeBackend == PreferredBackend.npu`); a one-time warning says so when you set any of them. ONNX follows the model's `genai_config.json`, which is greedy unless it sets `do_sample`; values you pass override it.
 
-**`Session is closed`**
-- Symptom: `StateError: Session is closed` from a session or chat that is still in use.
-- Cause: `createSession` and `createChat` fill one slot per model; creating another closes the one before.
-- Fix: one conversation at a time, or `openSession` / `openChat` for several (below). On the web `.litertlm` engine a second `createSession` hands back the session that is already open, history and all, rather than a fresh one — close the current chat before creating the next.
+**Too many open sessions**
+- Symptom: `StateError` says the model reached `maxConcurrentSessions`.
+- Cause: every `openSession` and `openChat` stays live until it is closed.
+- Fix: keep and reuse the handle for a conversation, and close it in `finally` or widget/service teardown.
 
 ## Generate
 
 ```dart
 // Sampling left unset: the model's own sampler, else its family's defaults.
-final InferenceModelSession session = await model.createSession(
+final InferenceModelSession session = await model.openSession(
   maxOutputTokens: 256,
 );
 try {
@@ -192,7 +197,7 @@ macOS arm64 CPU/Metal and Chrome on macOS with dart2wasm + WebGPU, subject to
 ## Multi-turn chat
 
 ```dart
-final InferenceChat chat = await model.createChat(
+final InferenceChat chat = await model.openChat(
   systemInstruction: 'You are a concise assistant.',
   maxOutputTokens: 512,
 );
@@ -225,7 +230,7 @@ kept.
 
 ## Two conversations at once
 
-`createSession` and `createChat` fill a single slot on the model, so a second one closes the first. For concurrent conversations use `openSession` / `openChat`, and close each one.
+Every `openSession` and `openChat` owns a conversation and counts against `maxConcurrentSessions`. Keep each returned handle and close it when done.
 
 An argument you leave out of `openChat` is filled by the engine. Native
 `.litertlm` takes the installed model's type and media flags. Its native FFI
@@ -266,7 +271,7 @@ try {
 
 Gemma 4, Qwen3, DeepSeek R1 and `.litertlm` bundles with a thought channel
 (e.g. SmolLM3, Phi-4 Mini Reasoning) can emit reasoning on their supported engines.
-Pass `enableThinking: true` to `createChat`. Reasoning arrives as
+Pass `enableThinking: true` to `openChat`. Reasoning arrives as
 `ThinkingResponse` only from `generateChatResponseAsync()`;
 `generateChatResponse()` strips it. On a native `.litertlm`, reasoning that a
 bundle streams on its thought channel arrives as `ThinkingResponse` whatever
@@ -298,7 +303,7 @@ fifth on an M5 Pro, about 40% on an NVIDIA L4); on the CPU no cost was
 measured.
 
 ```dart
-final chat = await model.createChat(enableThinking: true, modelType: ModelType.qwen3);
+final chat = await model.openChat(enableThinking: true, modelType: ModelType.qwen3);
 final answer = StringBuffer();
 await chat.addQueryChunk(Message(text: question, isUser: true));
 await for (final r in chat.generateChatResponseAsync()) {
@@ -318,10 +323,15 @@ await chat.close();
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096, supportImage: true);
-final chat = await model.createChat(supportImage: true);
-await chat.addQueryChunk(
-  Message(text: 'What is in this photo?', isUser: true, imageBytes: bytes),
-);
+final chat = await model.openChat(supportImage: true);
+try {
+  await chat.addQueryChunk(
+    Message(text: 'What is in this photo?', isUser: true, imageBytes: bytes),
+  );
+  final response = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}
 ```
 
 On web, images need a MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` (same Hugging Face repo as the `.litertlm`, `ModelFileType.task`, the flutter-edge-ai-mediapipe skill). On that build Gemma 4 has no thinking, and its tools never reach the model. The `.litertlm` web engine is text-only: `supportImage: true` loads without error, but `addQueryChunk` with an image throws `UnsupportedError`.
@@ -330,10 +340,15 @@ On web, images need a MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` 
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096, supportAudio: true);
-final chat = await model.createChat(supportAudio: true);
-await chat.addQueryChunk(
-  Message(text: 'What is said in this recording?', isUser: true, audioBytes: bytes),
-);
+final chat = await model.openChat(supportAudio: true);
+try {
+  await chat.addQueryChunk(
+    Message(text: 'What is said in this recording?', isUser: true, audioBytes: bytes),
+  );
+  final response = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}
 ```
 
 `audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop (VibeVoice-ASR also takes audio, for transcription only; measured on Android and macOS); on the `.litertlm` web engine an audio message throws `UnsupportedError`.

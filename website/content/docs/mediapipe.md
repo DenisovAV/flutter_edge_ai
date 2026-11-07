@@ -80,9 +80,10 @@ await FlutterEdgeAi.installModel(
 ).fromNetwork('https://.../gemma3-1b-it.task').install();
 
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final session = await model.createSession();
+final session = await model.openSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
+await session.close();
 ```
 
 Models can also come from an asset, a bundled file, or a local path — see
@@ -113,8 +114,8 @@ MediaPipe on Web keeps nothing between calls, so the session sends the whole
 conversation, the model's replies included, with every turn. Each answer
 re-reads the history, so its time grows with the chat, and `maxNumImages`
 counts every image of the conversation. A turn that would exceed it fails with
-an error naming `maxNumImages`; nothing is dropped. Each `createSession` or
-`createChat` starts a new conversation and closes the previous one.
+an error naming `maxNumImages`; nothing is dropped. Each `openSession` or
+`openChat` starts an independent conversation; close every returned handle.
 
 `openSession` and `openChat` work on Web too. Each session keeps its own
 conversation; they share the one loaded model and take turns on it, so a

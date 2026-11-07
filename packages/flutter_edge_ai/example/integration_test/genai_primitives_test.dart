@@ -155,7 +155,7 @@ void main() {
 
   testWidgets('sendMessage — text', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
     final reply = await chat.sendMessage(
       ChatMessage.user('Say hello in one word.'),
     );
@@ -169,7 +169,7 @@ void main() {
 
   testWidgets('sendMessageStream — text', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
     final chunks = <ChatMessage>[];
     await for (final c in chat.sendMessageStream(
       ChatMessage.user('Count to three.'),
@@ -187,7 +187,7 @@ void main() {
       return;
     }
     final model = await _ensureModel(4096);
-    final chat = await model.createChat(supportImage: true);
+    final chat = await model.openChat(supportImage: true);
     final reply = await chat.sendMessage(
       ChatMessage.user(
         '',
@@ -211,7 +211,7 @@ void main() {
       return;
     }
     final model = await _ensureModel(4096);
-    final chat = await model.createChat(supportAudio: true);
+    final chat = await model.openChat(supportAudio: true);
     final reply = await chat.sendMessage(
       ChatMessage.user(
         '',
@@ -231,7 +231,7 @@ void main() {
 
   testWidgets('sendMessage — thinking', (tester) async {
     final model = await _ensureModel(4096);
-    final chat = await model.createChat(enableThinking: true);
+    final chat = await model.openChat(enableThinking: true);
     final reply = await chat.sendMessage(
       ChatMessage.user('Why is the sky blue?'),
     );
@@ -251,7 +251,7 @@ void main() {
 
   testWidgets('sendMessage — tool call round-trip', (tester) async {
     final model = await _ensureModel(4096);
-    final chat = await model.createChat(
+    final chat = await model.openChat(
       supportsFunctionCalls: true,
       tools: const [_getWeatherTool],
       modelType: ModelType.gemma4,
@@ -315,7 +315,7 @@ void main() {
 
   testWidgets('generateContent — single user message', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
     final reply = await chat.generateContent([ChatMessage.user('Say hello.')]);
     expect(reply.role, ChatMessageRole.model);
     expect(
@@ -327,7 +327,7 @@ void main() {
 
   testWidgets('generateContentStream — single user message', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
     final chunks = <ChatMessage>[];
     await for (final c in chat.generateContentStream([
       ChatMessage.user('Say hello.'),
@@ -341,7 +341,7 @@ void main() {
 
   testWidgets('generateContent — multi-turn list', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
     final reply = await chat.generateContent([
       ChatMessage.user('My name is Sasha.'),
       ChatMessage.model('Nice to meet you, Sasha.'),
@@ -356,7 +356,7 @@ void main() {
 
   testWidgets('sendMessage — multi-turn history retained', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
 
     final r1 = await chat.sendMessage(ChatMessage.user('My name is Sasha.'));
     expect(

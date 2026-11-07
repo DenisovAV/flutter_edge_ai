@@ -102,7 +102,7 @@ final usable = availability == BuiltInAiAvailability.available ||
 | Web | Gemini Nano (Chrome Prompt API) | desktop Chrome 148+ — not mobile browsers, Firefox or Safari |
 | Web | Phi-4-mini (Edge Prompt API) | Microsoft Edge with the Prompt API flag on; Edge Dev 154–155 exposes the API but cannot run the model |
 
-Images work on Android, one per message, and only when asked for: pass `supportImage: true` to `getActiveModel` (`getActiveModel(maxTokens: 4096, supportImage: true)`); chats from `createChat` and sessions inherit it. An image sent to a model loaded without it throws `UnsupportedError`. Windows and web are text-only, and Apple is text-only on OS 26: `supportImage: true` there fails when `getActiveModel` creates the model, not mid-conversation — so do not build an image path there.
+Images work on Android, one per message, and only when asked for: pass `supportImage: true` to `getActiveModel` (`getActiveModel(maxTokens: 4096, supportImage: true)`); chats from `openChat` and sessions inherit it. An image sent to a model loaded without it throws `UnsupportedError`. Windows and web are text-only, and Apple is text-only on OS 26: `supportImage: true` there fails when `getActiveModel` creates the model, not mid-conversation — so do not build an image path there.
 
 ## Web
 

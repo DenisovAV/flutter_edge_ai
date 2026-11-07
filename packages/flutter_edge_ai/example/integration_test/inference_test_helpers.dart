@@ -113,5 +113,5 @@ Future<InferenceModel> createTestModel({int maxTokens = 512}) async {
 
 /// Create a chat from a model with FunctionGemma model type.
 Future<InferenceChat> createTestChat(InferenceModel model) async {
-  return await model.createChat(modelType: ModelType.functionGemma);
+  return await model.openChat(modelType: ModelType.functionGemma);
 }

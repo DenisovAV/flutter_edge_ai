@@ -67,7 +67,7 @@ Future<InferenceModelSpec> _register({
 
 Future<String> _generate(String label, InferenceModel model) async {
   final sw = Stopwatch()..start();
-  final session = await model.createSession(
+  final session = await model.openSession(
     temperature: 0.8,
     topK: 1,
     topP: 0.95,

@@ -61,7 +61,7 @@ Gemma 4 and FunctionGemma on a `.litertlm` are the exception: there the
 declarations still reach LiteRT-LM, though the chat still does not parse the
 calls. A `.gguf` model is the other: its tools are on unless
 `supportsFunctionCalls` is `false`, and `false` drops them with no warning.
-Pass `supportsFunctionCalls: true` to `createChat` / `openChat` for models that
+Pass `supportsFunctionCalls: true` to `openChat` for models that
 support it.
 
 </Info>
@@ -79,8 +79,8 @@ agent chaining is **not** supported on Web.
 ## Declaring tools
 
 Describe each function as a `Tool` — a `name`, a `description`, and a
-JSON-Schema `parameters` map — then pass the list to `createChat` (or
-`openChat`) together with `supportsFunctionCalls: true`. `createSession` also
+JSON-Schema `parameters` map — then pass the list to `openChat` (or
+`openChat`) together with `supportsFunctionCalls: true`. `openSession` also
 takes `tools:`, and the two passthrough families read them there, through the
 runtime's own tool path: Gemma 4, and FunctionGemma on a `.litertlm`. For every
 other model it is the chat that puts the tools into the prompt and parses the
@@ -111,7 +111,7 @@ final tools = [
   ),
 ];
 
-final chat = await model.createChat(
+final chat = await model.openChat(
   tools: tools,
   supportsFunctionCalls: true,
   toolChoice: ToolChoice.auto,
@@ -158,7 +158,7 @@ your code still receives a `FunctionCallResponse`.
 
 Two consequences worth knowing:
 
-- Nothing in your code changes. `createChat(tools: ..., supportsFunctionCalls: true)`
+- Nothing in your code changes. `openChat(tools: ..., supportsFunctionCalls: true)`
   and the loop stay the same; the wire format is chosen from `modelType` and the
   file type together.
 - `ToolChoice.none` cannot take the declarations back out, because the runtime

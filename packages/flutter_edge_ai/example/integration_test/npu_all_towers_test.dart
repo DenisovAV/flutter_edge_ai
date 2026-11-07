@@ -40,7 +40,7 @@ Future<({Duration firstToken, Duration total, String text})> _ask(
   bool vision = false,
   bool audio = false,
 }) async {
-  final session = await model.createSession(
+  final session = await model.openSession(
     enableVisionModality: vision,
     enableAudioModality: audio,
     maxOutputTokens: 64,

@@ -143,9 +143,10 @@ Then load and use the model exactly like any other flutter_edge_ai engine:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final session = await model.createSession();
+final session = await model.openSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
+await session.close();
 ```
 
 ## Feature parity vs. downloaded-model engines
@@ -185,7 +186,7 @@ alongside one. `temperature: 0` is greedy whatever `topK` comes with it. A `temp
 "Prompt-based" function calling means tool definitions are woven into the prompt (by core
 `InferenceChat`) rather than using a native structured tool-calling API. Native tool declarations
 are deliberately **not** forwarded to the OS runner: handing the same tools to both would run two
-competing tool loops for one turn. Pass `supportsFunctionCalls: true` to `createChat` along with
+competing tool loops for one turn. Pass `supportsFunctionCalls: true` to `openChat` along with
 the `tools`: it defaults to `false` here. Gemini Nano handles single-turn calls; multi-turn agent
 chaining is not supported on Web (see `flutter_edge_ai_agent`).
 

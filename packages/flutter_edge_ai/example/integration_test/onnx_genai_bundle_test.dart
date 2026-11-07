@@ -84,7 +84,7 @@ void main() {
       );
 
       try {
-        final session = await model.createSession(maxOutputTokens: 16);
+        final session = await model.openSession(maxOutputTokens: 16);
         try {
           await session.addQueryChunk(
             const Message(

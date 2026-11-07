@@ -9,7 +9,7 @@
 //   .task     → gemma-3n-E2B-it-int4.task   (MediaPipe, Dart-level prepend)
 //   .litertlm → gemma-4-E2B-it.litertlm     (LiteRT-LM, native systemInstruction)
 //
-// For each engine, tests both createChat() and createSession() paths.
+// For each engine, tests both openChat() and openSession() paths.
 
 import 'dart:io';
 
@@ -85,12 +85,12 @@ void _runTests(String path, ModelFileType fileType, String label) {
       print('[Test] Model: $path');
     });
 
-    // ── createChat tests ─────────────────────────────────────────────────────
+    // ── openChat tests ───────────────────────────────────────────────────────
 
     testWidgets('chat: systemInstruction is applied', (tester) async {
       final model = await _createModel(path, fileType);
       try {
-        final chat = await model.createChat(
+        final chat = await model.openChat(
           systemInstruction:
               'You are a pirate. Always start your response with "Arrr!".',
         );
@@ -126,7 +126,7 @@ void _runTests(String path, ModelFileType fileType, String label) {
     testWidgets('chat: no systemInstruction — no regression', (tester) async {
       final model = await _createModel(path, fileType);
       try {
-        final chat = await model.createChat();
+        final chat = await model.openChat();
         await chat.addQueryChunk(
           const Message(text: 'What is 2+2?', isUser: true),
         );
@@ -146,12 +146,12 @@ void _runTests(String path, ModelFileType fileType, String label) {
       }
     }, timeout: const Timeout(Duration(minutes: 5)));
 
-    // ── createSession tests ───────────────────────────────────────────────────
+    // ── openSession tests ─────────────────────────────────────────────────────
 
     testWidgets('session: systemInstruction is applied', (tester) async {
       final model = await _createModel(path, fileType);
       try {
-        final session = await model.createSession(
+        final session = await model.openSession(
           systemInstruction:
               'You are a pirate. Always start your response with "Arrr!".',
         );
@@ -188,7 +188,7 @@ void _runTests(String path, ModelFileType fileType, String label) {
     ) async {
       final model = await _createModel(path, fileType);
       try {
-        final session = await model.createSession();
+        final session = await model.openSession();
         await session.addQueryChunk(
           const Message(text: 'What is 2+2?', isUser: true),
         );

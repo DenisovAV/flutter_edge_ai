@@ -1,3 +1,6 @@
+// This suite is the compatibility contract for the legacy singleton lane.
+// ignore_for_file: deprecated_member_use
+
 // The web model's lifecycle on fake MediaPipe globals: createSession calls that
 // overlap or meet a close(), stops of calls that wait for an earlier one, the
 // release of the LlmInference, and the audio the prompt carries.

@@ -109,8 +109,12 @@ import 'package:flutter_edge_ai/src/catalog/registered_catalog.dart';
 /// ```dart
 /// // Get active model after installation
 /// final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-/// final session = await model.createSession();
-/// final response = await session.getResponse();
+/// final session = await model.openSession();
+/// try {
+///   final response = await session.getResponse();
+/// } finally {
+///   await session.close();
+/// }
 /// ```
 class FlutterEdgeAi {
   /// Controls flutter_edge_ai's internal log verbosity.
@@ -795,7 +799,7 @@ class FlutterEdgeAi {
   /// // minOutputTokens is a FLOOR, not a cap — leave maxOutputTokens unset (or
   /// // keep it >= r.runtime.minOutputTokens); passing the floor AS the cap
   /// // would truncate a reasoning model mid-thought.
-  /// final session = await model.createSession(
+  /// final session = await model.openSession(
   ///   enableThinking: r.runtime.thinkingDeclared ?? false,
   /// );
   /// ```

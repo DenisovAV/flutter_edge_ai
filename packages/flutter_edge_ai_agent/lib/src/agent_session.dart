@@ -180,7 +180,7 @@ class AgentSession {
         'must be 0 (no retry) or more',
       );
     }
-    final chat = await model.createChat(
+    final chat = await model.openChat(
       tools: agentTools,
       supportsFunctionCalls: supportsFunctionCalls,
       toolChoice: ToolChoice.auto,

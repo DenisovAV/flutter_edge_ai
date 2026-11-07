@@ -10,7 +10,7 @@
 ///
 /// This test verifies the fix:
 ///   - `getActiveModel(maxTokens: 100)` is auto-clamped to 1024 and answers.
-///   - `createSession(maxOutputTokens: 100)` caps generation without crashing.
+///   - `openSession(maxOutputTokens: 100)` caps generation without crashing.
 ///
 /// Run (a clean 8 GB Android, .litertlm staged on the phone):
 ///   flutter test integration_test/issue318_maxtokens_test.dart -d <device>
@@ -66,13 +66,13 @@ Future<({bool ok, String response, String error})> _runUserConfig({
   try {
     debugPrint(
       '[#318] getActiveModel(maxTokens: $maxTokens, backend: $backend), '
-      'createSession(maxOutputTokens: $maxOutputTokens)',
+      'openSession(maxOutputTokens: $maxOutputTokens)',
     );
     model = await FlutterEdgeAi.getActiveModel(
       preferredBackend: backend,
       maxTokens: maxTokens,
     );
-    final session = await model.createSession(
+    final session = await model.openSession(
       temperature: 0.8,
       topK: 1,
       maxOutputTokens: maxOutputTokens,

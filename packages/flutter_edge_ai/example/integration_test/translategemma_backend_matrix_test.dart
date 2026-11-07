@@ -67,7 +67,7 @@ Future<String?> _probe(PreferredBackend backend) async {
     );
     // Greedy, so CPU and GPU decode the same tokens unless the arithmetic
     // differs.
-    session = await model.createSession(topK: 1);
+    session = await model.openSession(topK: 1);
     await session.addQueryChunk(const Message(text: _prompt, isUser: true));
     final reply = await session.getResponse();
     final active = model.activeBackend;

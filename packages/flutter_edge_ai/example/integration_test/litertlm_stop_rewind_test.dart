@@ -192,7 +192,7 @@ void main() {
   // rewind, not the sampler.
   Future<InferenceChat> newChat({
     bool thinking = false,
-    bool open = false,
+    bool open = true,
   }) async {
     final m = await ensureModel();
     final options = (
@@ -210,6 +210,8 @@ void main() {
             enableThinking: options.enableThinking,
             maxOutputTokens: options.maxOutputTokens,
           )
+        // Compatibility coverage: createChat remains supported until 3.0.0.
+        // ignore: deprecated_member_use
         : m.createChat(
             topK: options.topK,
             supportImage: options.supportImage,

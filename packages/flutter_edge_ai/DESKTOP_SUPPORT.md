@@ -132,7 +132,7 @@ Future<void> chat() async {
   // Each chat / conversation is a session. Sessions are cheap to create
   // and destroy; the engine is reused across them.
   // Sampling left unset: the model's own sampler, else its family's defaults.
-  final session = await model.createSession();
+  final session = await model.openSession();
   await session.addQueryChunk(Message(text: 'Hi!', isUser: true));
   await for (final chunk in session.getResponseAsync()) {
     print(chunk);
@@ -142,7 +142,7 @@ Future<void> chat() async {
 ```
 
 For the high-level chat API with history + thinking + tool calling, use
-`model.createChat(...)` and `chat.generateChatResponseAsync()`. See
+`model.openChat(...)` and `chat.generateChatResponseAsync()`. See
 [`example/`](example/) for a complete app.
 
 ---
@@ -296,7 +296,7 @@ final model = await FlutterEdgeAi.getActiveModel(
 );
 
 // During app runtime, MANY TIMES:
-final session = await model.createSession(...);
+final session = await model.openSession(...);
 // ... chat, generate, etc.
 await session.close();   // cheap
 

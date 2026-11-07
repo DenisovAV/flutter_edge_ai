@@ -21,7 +21,7 @@ Future<String> _run(PreferredBackend backend) async {
     maxTokens: 2048,
     preferredBackend: backend,
   );
-  final session = await _model!.createSession(
+  final session = await _model!.openSession(
     temperature: 0.7,
     topK: 40,
     enableThinking: true,

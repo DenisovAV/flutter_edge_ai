@@ -189,8 +189,8 @@ Upgrading from 2.3: see [Migration](/docs/migration).
 
 ## What's new in 2.1
 
-- **`enableThinking` replaces `isThinking`** on `createChat`, `createSession`
-  and `openSession` (breaking); `ModelRuntimeDefaults.isThinking` is
+- **`enableThinking` replaces `isThinking`** on `openChat` and `openSession`
+  (breaking); `ModelRuntimeDefaults.isThinking` is
   `thinkingDeclared`. New `ModelType.qwen35`. See [Migration](/docs/migration).
 - **Qualcomm NPU is opt-in** (`flutter_edge_ai_litertlm` 1.10.0): set
   `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:`,
@@ -342,7 +342,7 @@ final model = await FlutterEdgeAi.getActiveModel(
 );
 
 // Use model
-final chat = await model.createChat();
+final chat = await model.openChat();
 await chat.addQueryChunk(Message.text(
   text: 'Explain quantum computing',
   isUser: true,
@@ -395,7 +395,7 @@ wins, field by field. Pass `topK: 1` or `temperature: 0` for greedy decoding.
 Control model behavior with a system-level instruction:
 
 ```dart
-final chat = await model.createChat(
+final chat = await model.openChat(
   systemInstruction: 'You are a concise assistant. Always respond in bullet points.',
 );
 ```
@@ -502,9 +502,8 @@ core throws `ArgumentError` before opening the engine session.
 ### Concurrent Sessions (`openSession`)
 
 A single loaded model can serve several **independent** dialogues at once.
-`openSession()` returns a session with its own conversation history, detached
-from the legacy `model.session` singleton; `openChat()` is the same for the
-higher-level chat API. Native ONNX has one ORT-GenAI generator per session,
+`openSession()` returns a session with its own conversation history;
+`openChat()` is the same for the higher-level chat API. Native ONNX has one ORT-GenAI generator per session,
 capped by `maxConcurrentSessions`; on the web each ONNX session keeps its own
 history on the one Transformers.js pipeline. MediaPipe on the web supports it
 too: its sessions share the one loaded model, take turns on it, and share the
@@ -538,8 +537,8 @@ await chatB.generateChatResponse();
 await chatA.addQueryChunk(Message(text: 'What is my name?', isUser: true));
 print(await chatA.generateChatResponse()); // "Alice"
 
-model.sessions;               // all live sessions (legacy + open)
-await chatA.session.close();  // closing one leaves the others usable
+model.sessions;       // all live sessions
+await chatA.close();  // closing one leaves the others usable
 ```
 
 <Warning>
@@ -573,8 +572,11 @@ For LiteRT-LM, MediaPipe, ONNX and llama.cpp, the legacy `createSession()` /
 instead applies the cap to every live underlying `flutter_local_ai` session,
 including its legacy singleton lane.
 
-If you only ever have one conversation at a time, stick with the simpler
-`createSession()` / `createChat()` singleton API — you don't need this.
+`createSession()` and `createChat()` are deprecated in 2.6.0 and will be
+removed in 3.0.0. Do not use the legacy lane in new code.
+
+If you only ever have one conversation at a time, open one session or chat,
+keep its handle for that conversation, and close it when done.
 
 ### Turn outcomes and chat history
 

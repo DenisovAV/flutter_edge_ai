@@ -6,7 +6,7 @@
 //   fileType: ModelFileType.litertlm
 //   getActiveModel: maxTokens: 2048, supportAudio: true, supportImage: true,
 //                   preferredBackend: PreferredBackend.gpu
-//   model.createChat(...)
+//   model.openChat(...)
 //
 // Goal: confirm / refute that supportImage+supportAudio (multimodal init) is
 // the cause of the reported 3-5 minute load time. Baseline (text-only,
@@ -51,11 +51,11 @@ void main() {
       final modelMs = DateTime.now().difference(modelStart).inMilliseconds;
       print('[TIMING] getActiveModel (engine_create): ${modelMs}ms');
 
-      // User uses createChat, not createSession
+      // User opens a chat rather than a raw session.
       final chatStart = DateTime.now();
-      final chat = await model.createChat();
+      final chat = await model.openChat();
       final chatMs = DateTime.now().difference(chatStart).inMilliseconds;
-      print('[TIMING] createChat: ${chatMs}ms');
+      print('[TIMING] openChat: ${chatMs}ms');
 
       final promptStart = DateTime.now();
       await chat.addQueryChunk(const Message(text: 'Hi', isUser: true));
@@ -68,7 +68,7 @@ void main() {
       print('[TIMING SUMMARY — eav-solution config]');
       print('  installModel:     ${installMs}ms');
       print('  engine_create:    ${modelMs}ms (was 7032ms text-only baseline)');
-      print('  createChat:       ${chatMs}ms');
+      print('  openChat:         ${chatMs}ms');
       print('  first response:   ${promptMs}ms');
       print('---');
       print('Comparison vs baseline:');

@@ -211,7 +211,7 @@ If you need to generate individual responses without maintaining a conversation 
 1) **Text-Only Session:**
 
 ```dart
-final session = await inferenceModel.createSession(
+final session = await inferenceModel.openSession(
   temperature: 1.0, // Optional; unset: the model's own (2.2.0+)
   randomSeed: 1, // Optional; unset: 1
   topK: 1, // Optional; 1 is greedy, unset: the model's own (2.2.0+)
@@ -232,7 +232,7 @@ await session.close(); // Always close the session when done
 ```dart
 import 'dart:typed_data'; // For Uint8List
 
-final session = await inferenceModel.createSession(
+final session = await inferenceModel.openSession(
   enableVisionModality: true, // Enable image processing
 );
 
@@ -254,7 +254,7 @@ await session.close();
 3) **Asynchronous Response Generation:**
 
 ```dart
-final session = await inferenceModel.createSession();
+final session = await inferenceModel.openSession();
 await session.addQueryChunk(Message.text(text: 'Tell me something interesting', isUser: true));
 
 // Note: session.getResponseAsync() returns Stream<String>
@@ -275,7 +275,7 @@ For chat-based applications, you can create a chat instance. Unlike sessions, th
 
 **Text-Only Chat:**
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 0.8, // Controls response randomness; unset: the model's own
   randomSeed: 1, // Ensures reproducibility; unset: 1
   topK: 1, // Limits vocabulary scope; 1 is greedy, unset: the model's own
@@ -292,7 +292,7 @@ final chat = await inferenceModel.createChat(
 
 **🖼️ Multimodal Chat:**
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 0.8, // Controls response randomness
   randomSeed: 1, // Ensures reproducibility
   topK: 1, // Limits vocabulary scope
@@ -303,7 +303,7 @@ final chat = await inferenceModel.createChat(
 
 **🧠 Thinking Mode Chat (DeepSeek Models):**
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 0.8,
   randomSeed: 1,
   topK: 1,
@@ -316,67 +316,78 @@ final chat = await inferenceModel.createChat(
 1) **Synchronous Chat:**
 
 ```dart
-await chat.addQueryChunk(Message.text(text: 'User: Hello, who are you?', isUser: true));
-ModelResponse response = await chat.generateChatResponse();
-if (response is TextResponse) {
-  print(response.token);
-}
+try {
+  await chat.addQueryChunk(Message.text(text: 'User: Hello, who are you?', isUser: true));
+  ModelResponse response = await chat.generateChatResponse();
+  if (response is TextResponse) {
+    print(response.token);
+  }
 
-await chat.addQueryChunk(Message.text(text: 'User: Are you sure?', isUser: true));
-ModelResponse response2 = await chat.generateChatResponse();
-if (response2 is TextResponse) {
-  print(response2.token);
+  await chat.addQueryChunk(Message.text(text: 'User: Are you sure?', isUser: true));
+  ModelResponse response2 = await chat.generateChatResponse();
+  if (response2 is TextResponse) {
+    print(response2.token);
+  }
+} finally {
+  await chat.close();
 }
 ```
 
 2) **🖼️ Multimodal Chat Example:**
 
 ```dart
-// Add text message
-await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
-ModelResponse response1 = await chat.generateChatResponse();
-if (response1 is TextResponse) {
-  print(response1.token);
-}
+try {
+  // Add text message
+  await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
+  ModelResponse response1 = await chat.generateChatResponse();
+  if (response1 is TextResponse) {
+    print(response1.token);
+  }
 
-// Add image message
-final imageBytes = await loadImageBytes();
-await chat.addQueryChunk(Message.withImage(
-  text: 'Can you analyze this image?',
-  imageBytes: imageBytes,
-  isUser: true,
-));
-ModelResponse response2 = await chat.generateChatResponse();
-if (response2 is TextResponse) {
-  print(response2.token);
-}
+  // Add image message
+  final imageBytes = await loadImageBytes();
+  await chat.addQueryChunk(Message.withImage(
+    text: 'Can you analyze this image?',
+    imageBytes: imageBytes,
+    isUser: true,
+  ));
+  ModelResponse response2 = await chat.generateChatResponse();
+  if (response2 is TextResponse) {
+    print(response2.token);
+  }
 
-// Add image-only message
-await chat.addQueryChunk(Message.imageOnly(imageBytes: imageBytes, isUser: true));
-ModelResponse response3 = await chat.generateChatResponse();
-if (response3 is TextResponse) {
-  print(response3.token);
+  // Add image-only message
+  await chat.addQueryChunk(Message.imageOnly(imageBytes: imageBytes, isUser: true));
+  ModelResponse response3 = await chat.generateChatResponse();
+  if (response3 is TextResponse) {
+    print(response3.token);
+  }
+} finally {
+  await chat.close();
 }
 ```
 
 3) **Asynchronous Chat (Streaming):**
 
 ```dart
-await chat.addQueryChunk(Message.text(text: 'User: Hello, who are you?', isUser: true));
-
-chat.generateChatResponseAsync().listen((ModelResponse response) {
-  if (response is TextResponse) {
-    print(response.token);
-  } else if (response is FunctionCallResponse) {
-    print('Function call: ${response.name}');
-  } else if (response is ThinkingResponse) {
-    print('Thinking: ${response.content}');
+try {
+  await chat.addQueryChunk(Message.text(text: 'User: Hello, who are you?', isUser: true));
+  await for (final response in chat.generateChatResponseAsync()) {
+    if (response is TextResponse) {
+      print(response.token);
+    } else if (response is FunctionCallResponse) {
+      print('Function call: ${response.name}');
+    } else if (response is ThinkingResponse) {
+      print('Thinking: ${response.content}');
+    }
   }
-}, onDone: () {
   print('Chat stream closed');
-}, onError: (error) {
+} catch (error) {
   print('Chat error: $error');
-});
+  rethrow;
+} finally {
+  await chat.close();
+}
 ```
 
 8. **🛠️ Function Calling**
@@ -427,7 +438,7 @@ final List<Tool> _tools = [
 **Step 2: Create Chat with Tools**
 
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 0.8,
   randomSeed: 1,
   topK: 1,
@@ -435,6 +446,7 @@ final chat = await inferenceModel.createChat(
   supportsFunctionCalls: true, // Enable function calling (required for tools)
   toolChoice: ToolChoice.auto, // auto (default) | required | none
 );
+// Keep this chat open through the response loop, then call await chat.close().
 ```
 
 **ToolChoice modes:**
@@ -558,10 +570,11 @@ final model = await FlutterEdgeAi.getActiveModel(
 );
 
 // Use with function calling
-final chat = await model.createChat(
+final chat = await model.openChat(
   tools: myTools,
   supportsFunctionCalls: true,
 );
+await chat.close();
 ```
 
 #### Platform Support
@@ -621,7 +634,7 @@ DeepSeek, Qwen3, and Gemma 4 (E2B/E4B) models support "thinking mode" where you 
 **Enable Thinking Mode (DeepSeek):**
 
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 0.8,
   randomSeed: 1,
   topK: 1,
@@ -653,18 +666,20 @@ chat.generateChatResponseAsync().listen((response) {
     _handleFunctionCall(response);
   }
 });
+// Close the chat after the stream completes: await chat.close();
 ```
 
 **Enable Thinking Mode (Gemma 4):**
 
 ```dart
-final chat = await inferenceModel.createChat(
+final chat = await inferenceModel.openChat(
   temperature: 1.0,
   topK: 64,
   topP: 0.95,
   isThinking: true, // Enable thinking mode
   modelType: ModelType.gemmaIt, // Gemma 4 E2B/E4B
 );
+await chat.close();
 // <|think|> is auto-injected into systemInstruction — no manual prompt needed.
 ```
 
@@ -868,7 +883,7 @@ final context = results.map((r) => r.content).join('\n');
 final prompt = 'Context:\n$context\n\nQuestion: $query';
 
 final inferenceModel = await FlutterEdgeAi.getActiveModel();
-final session = await inferenceModel.createSession();
+final session = await inferenceModel.openSession();
 await session.addQueryChunk(Message.text(text: prompt, isUser: true));
 final answer = await session.getResponse();
 print('Answer: $answer');
@@ -1112,9 +1127,10 @@ final inferenceModel = await FlutterEdgeAi.getActiveModel(
   preferredBackend: PreferredBackend.gpu,
 );
 
-final chat = await inferenceModel.createChat();
+final chat = await inferenceModel.openChat();
 await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
 final response = await chat.generateChatResponse();
+await chat.close();
 ```
 
 **Legacy API (deprecated since 2.5.0, removed in 3.0.0):**
@@ -1127,7 +1143,8 @@ final inferenceModel = await FlutterEdgeAiPlugin.instance.createModel(
   maxTokens: 2048,
 );
 
-final chat = await inferenceModel.createChat();
+final chat = await inferenceModel.openChat();
 await chat.addQueryChunk(Message.text(text: 'Hello!', isUser: true));
 final response = await chat.generateChatResponse();
+await chat.close();
 ```

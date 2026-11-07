@@ -1061,7 +1061,7 @@ await FlutterEdgeAi.installModel(
     modelType: ModelType.gemma4, fileType: ModelFileType.litertlm)
     .fromNetwork(url, token: token).install();
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
-final chat  = await model.createChat();
+final chat  = await model.openChat();
 await chat.addQueryChunk(Message.text(text: 'Hello', isUser: true));
 await for (final r in chat.generateChatResponseAsync()) { /* r is a ModelResponse */ }
 

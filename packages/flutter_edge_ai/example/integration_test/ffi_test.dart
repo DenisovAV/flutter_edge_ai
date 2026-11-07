@@ -39,7 +39,7 @@ void main() {
         preferredBackend: PreferredBackend.cpu,
       );
 
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(const Message(text: 'Say hi', isUser: true));
       final response = await session.getResponse();
       print('[Gemma3-1B CPU] Response: $response');
@@ -61,7 +61,7 @@ void main() {
         preferredBackend: PreferredBackend.gpu,
       );
 
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         const Message(text: 'Say hello', isUser: true),
       );
@@ -91,7 +91,7 @@ void main() {
         preferredBackend: PreferredBackend.gpu,
       );
 
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         const Message(text: 'What is 2+2?', isUser: true),
       );
@@ -115,7 +115,7 @@ void main() {
         preferredBackend: PreferredBackend.gpu,
       );
 
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         const Message(text: 'Say hello', isUser: true),
       );
@@ -145,7 +145,7 @@ void main() {
         maxNumImages: 1,
       );
 
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 0.8,
         topK: 1,
         enableVisionModality: true,
@@ -185,7 +185,7 @@ void main() {
         supportAudio: true,
       );
 
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 0.8,
         topK: 1,
         enableAudioModality: true,
@@ -221,7 +221,7 @@ void main() {
         preferredBackend: PreferredBackend.cpu,
       );
 
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(const Message(text: 'Say hi', isUser: true));
       final response = await session.getResponse();
       print('[Gemma3n CPU text] Response: $response');
@@ -243,7 +243,7 @@ void main() {
         preferredBackend: PreferredBackend.gpu,
       );
 
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         const Message(text: 'What is 2+2?', isUser: true),
       );
@@ -267,7 +267,7 @@ void main() {
         preferredBackend: PreferredBackend.gpu,
       );
 
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(const Message(text: 'Say hi', isUser: true));
 
       final chunks = <String>[];
@@ -295,7 +295,7 @@ void main() {
         maxNumImages: 1,
       );
 
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 0.8,
         topK: 1,
         enableVisionModality: true,
@@ -335,7 +335,7 @@ void main() {
         supportAudio: true,
       );
 
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 0.8,
         topK: 1,
         enableAudioModality: true,

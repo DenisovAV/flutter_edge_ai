@@ -41,7 +41,7 @@ Future<FfiInferenceModel> _load(String file, ModelType modelType) async {
 }
 
 Future<String> _reply(InferenceModel model) async {
-  final chat = await model.createChat();
+  final chat = await model.openChat();
   await chat.addQueryChunk(
     const Message(text: 'Name one planet. One word.', isUser: true),
   );

@@ -317,7 +317,7 @@ Hugging Face commit; every build and where it has been run is on the
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
-final chat = await model.createChat();
+final chat = await model.openChat();
 
 await chat.addQueryChunk(Message.text(text: 'Explain quantum computing', isUser: true));
 
@@ -477,7 +477,7 @@ scored as the model's reply, natively, on the CPU (`flutter_edge_ai_litertlm`
 
 - **`maxTokens` is the context window**, not the reply length: prompt, history
   and answer together. `.litertlm` needs at least 1024. Cap the reply with
-  `createChat(maxOutputTokens: …)` (`.litertlm`; MediaPipe ignores it).
+  `openChat(maxOutputTokens: …)` (`.litertlm`; MediaPipe ignores it).
 - **`Message.isUser` defaults to `false`.** A user message without
   `isUser: true` gets an empty answer.
 - **`fileType` picks the engine**, not the file name. `installModel` defaults

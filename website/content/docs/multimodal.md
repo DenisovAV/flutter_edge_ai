@@ -53,7 +53,7 @@ declares, and a backend it excludes is refused before the model loads;
 ### Sending an image
 
 The flag goes in **two** places: on `getActiveModel` it loads the vision encoder,
-on `createChat` the session declares it will send images. `.litertlm` inherits the
+on `openChat` the session declares it will send images. `.litertlm` inherits the
 model's flag, but MediaPipe `.task` does not — on Android and iOS a chat created
 without it **drops the image and answers about the text alone**, with no error and
 no log in a release build. On web the chat follows the model instead: an image sent
@@ -71,7 +71,7 @@ final message = Message.withImages(
 // Image only
 final imageMessage = Message.imagesOnly(imageBytes: [imageBytes], isUser: true);
 
-final chat = await model.createChat(supportImage: true);
+final chat = await model.openChat(supportImage: true);
 await chat.addQueryChunk(message);
 final response = await chat.generateChatResponse();
 
@@ -121,7 +121,7 @@ Sending audio is `Message.withAudio` — and `audioBytes` is a whole WAV file,
 `transcribe` takes raw PCM):
 
 ```dart
-final chat = await model.createChat(supportAudio: true);
+final chat = await model.openChat(supportAudio: true);
 await chat.addQueryChunk(Message.withAudio(
   text: 'What is said in this recording?',
   audioBytes: wavBytes,

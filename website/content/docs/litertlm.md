@@ -89,7 +89,7 @@ final model = await FlutterEdgeAi.getActiveModel(
   preferredBackend: PreferredBackend.gpu,
 );
 
-final session = await model.createSession();
+final session = await model.openSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 await for (final chunk in session.getResponseAsync()) {
   print(chunk);
@@ -414,7 +414,7 @@ To cap **generation length**, use `maxOutputTokens` on the session:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096); // context
-final session = await model.createSession(maxOutputTokens: 100);  // reply cap
+final session = await model.openSession(maxOutputTokens: 100);  // reply cap
 ```
 
 ## Open sessions

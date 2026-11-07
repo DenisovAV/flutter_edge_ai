@@ -30,7 +30,7 @@ void main() {
     print('Model created');
 
     // Create session
-    final session = await model.createSession(temperature: 0.8, topK: 1);
+    final session = await model.openSession(temperature: 0.8, topK: 1);
     print('Session created');
 
     // Chat

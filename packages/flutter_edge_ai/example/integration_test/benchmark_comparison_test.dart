@@ -154,7 +154,7 @@ typedef LoadMemory = ({
 /// `_peakIntervalMs` for what was measured); `interval_ms` is null when the
 /// sampler was off.
 ///
-/// The windows do not cover everything. For vision and audio, `createChat`
+/// The windows do not cover everything. For vision and audio, `openChat`
 /// runs between `after_load` and `before_prompt`, and that is where the
 /// encoder's kernels compile: a transient there lands in neither window.
 ///
@@ -483,7 +483,7 @@ Future<BenchmarkResult> _runVisionBenchmark({
   required Uint8List imageBytes,
   required LoadMemory load,
 }) async {
-  final chat = await model.createChat(
+  final chat = await model.openChat(
     topK: _benchmarkTopK,
     modelType: ModelType.gemmaIt,
     supportImage: true,
@@ -516,7 +516,7 @@ Future<BenchmarkResult> _runAudioBenchmark({
   required Uint8List audioBytes,
   required LoadMemory load,
 }) async {
-  final chat = await model.createChat(
+  final chat = await model.openChat(
     topK: _benchmarkTopK,
     modelType: ModelType.gemmaIt,
     supportAudio: true,
@@ -649,19 +649,23 @@ void main() {
         );
         try {
           for (final (name, question) in _textQuestions) {
-            final chat = await model.createChat(
+            final chat = await model.openChat(
               topK: _benchmarkTopK,
               modelType: ModelType.gemmaIt,
             );
-            final result = await _runTextBenchmark(
-              modelName: modelConfig.name,
-              load: load,
-              chat: chat,
-              category: 'text',
-              testName: name,
-              question: question,
-            );
-            _allResults.add(result);
+            try {
+              final result = await _runTextBenchmark(
+                modelName: modelConfig.name,
+                load: load,
+                chat: chat,
+                category: 'text',
+                testName: name,
+                question: question,
+              );
+              _allResults.add(result);
+            } finally {
+              await chat.close();
+            }
           }
         } finally {
           await model.close();
@@ -677,7 +681,7 @@ void main() {
           ),
         );
         try {
-          final chat = await model.createChat(
+          final chat = await model.openChat(
             topK: _benchmarkTopK,
             modelType: ModelType.gemmaIt,
           );

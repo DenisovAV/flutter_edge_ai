@@ -95,7 +95,7 @@ void main() {
         );
 
         try {
-          final chat = await model.createChat();
+          final chat = await model.openChat();
           await chat.addQueryChunk(
             const Message(text: 'Say "hello"', isUser: true),
           );
@@ -147,7 +147,7 @@ void main() {
       );
 
       try {
-        final chat = await model.createChat();
+        final chat = await model.openChat();
 
         for (var i = 1; i <= 3; i++) {
           await chat.addQueryChunk(
@@ -210,7 +210,7 @@ void main() {
         );
 
         try {
-          final chat = await model.createChat();
+          final chat = await model.openChat();
           await chat.addQueryChunk(
             Message(text: 'Cycle $cycle: say "ok"', isUser: true),
           );
@@ -269,7 +269,7 @@ void main() {
         preferredBackend: PreferredBackend.gpu,
       );
 
-      await model1.createChat().then((chat) async {
+      await model1.openChat().then((chat) async {
         await chat.addQueryChunk(
           const Message(
             text: 'Write a very long story about a dragon. At least 500 words.',
@@ -314,7 +314,7 @@ void main() {
       );
 
       try {
-        final chat2 = await model2.createChat();
+        final chat2 = await model2.openChat();
         await chat2.addQueryChunk(
           const Message(text: 'Say "alive"', isUser: true),
         );
@@ -385,7 +385,7 @@ void main() {
       );
 
       try {
-        final chat = await model.createChat();
+        final chat = await model.openChat();
         await chat.addQueryChunk(
           const Message(text: 'Say "hello"', isUser: true),
         );
@@ -435,7 +435,7 @@ void main() {
       );
 
       try {
-        final chat = await model.createChat();
+        final chat = await model.openChat();
 
         for (var i = 1; i <= 5; i++) {
           await chat.addQueryChunk(
@@ -513,7 +513,7 @@ void main() {
         bool streamStarted = false;
         final streamFuture = tester.runAsync(() async {
           try {
-            final chat = await model1.createChat();
+            final chat = await model1.openChat();
             await chat.addQueryChunk(
               const Message(text: longPrompt, isUser: true),
             );
@@ -554,7 +554,7 @@ void main() {
         );
 
         try {
-          final chat2 = await model2.createChat();
+          final chat2 = await model2.openChat();
           await chat2.addQueryChunk(
             const Message(text: 'Say "ok"', isUser: true),
           );

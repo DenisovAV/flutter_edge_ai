@@ -63,7 +63,7 @@ void main() {
     if (!available)
       return markTestSkipped('BuiltInAI not available on this device');
     final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-    final session = await model.createSession();
+    final session = await model.openSession();
     await session.addQueryChunk(
       const Message(text: 'Reply with exactly: PONG', isUser: true),
     );
@@ -77,7 +77,7 @@ void main() {
     if (!available)
       return markTestSkipped('BuiltInAI not available on this device');
     final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-    final session = await model.createSession();
+    final session = await model.openSession();
     await session.addQueryChunk(
       const Message(text: 'Count from 1 to 5.', isUser: true),
     );
@@ -92,7 +92,7 @@ void main() {
     if (!available)
       return markTestSkipped('BuiltInAI not available on this device');
     final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-    final chat = await model.createChat(supportImage: false);
+    final chat = await model.openChat(supportImage: false);
     await chat.addQueryChunk(
       const Message(text: 'My name is Sasha. Say hi.', isUser: true),
     );
@@ -109,7 +109,7 @@ void main() {
     if (!available)
       return markTestSkipped('BuiltInAI not available on this device');
     final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-    final session = await model.createSession();
+    final session = await model.openSession();
     expect(
       await session.sizeInTokens('Hello world, four words plus.'),
       greaterThan(0),

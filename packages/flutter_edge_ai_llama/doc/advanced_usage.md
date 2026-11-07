@@ -3,12 +3,11 @@
 Start with the [chat quick start](../README.md). This guide
 covers model-specific features and session behavior.
 
-`createSession`/`createChat` replace and close the previous legacy session.
 `openSession`/`openChat` keep independent conversations over the same weights.
 Inference and tokenization share one serialized runtime queue; sessions do not
 run inference in parallel or allocate separate native KV caches.
-`maxConcurrentSessions` limits detached sessions. Closing a model closes all
-of its sessions.
+`maxConcurrentSessions` limits live sessions. Close every returned handle;
+closing a model closes all of its sessions.
 
 The chat examples below assume an already loaded `model`, as in the quick start.
 Keep it open while using a chat and close it when your feature ends.

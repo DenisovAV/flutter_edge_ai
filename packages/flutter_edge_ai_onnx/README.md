@@ -118,9 +118,8 @@ profile, not of the output's name, and should move there.
 
 ## Inference — `OnnxEngine`
 
-Text-only (v1): no vision, no audio, no LoRA. `createSession` is the one
-legacy session; `openSession` / `openChat` open further independent sessions
-on the same loaded model (on web, see below). Each holds its own ORT-GenAI
+Text-only (v1): no vision, no audio, no LoRA. `openSession` / `openChat` open
+independent sessions on the same loaded model (on web, see below). Each holds its own ORT-GenAI
 generator, so its context
 is its own and closing it frees it; turns of different sessions run one at a
 time, and nothing is replayed. **Cost:** a generator allocates its whole KV
@@ -134,8 +133,7 @@ at 512, 1024 and 2048 (it did at 4096), so there budget the peak, not the
 count of open sessions. Opening more than `maxConcurrentSessions` throws a
 `StateError`; unset, that is **2 on Android and iOS and unlimited on desktop**.
 An unset cap cannot mean "unlimited" on a phone: pass a larger
-`maxConcurrentSessions` to allow more. The cap does not count the
-`createSession` session. Sampling
+`maxConcurrentSessions` to allow more. Sampling
 follows the model's `genai_config.json` (greedy unless it sets `do_sample`);
 the `temperature`, `topK`, `topP` and `randomSeed` you pass override it, and
 `temperature: 0` or `topK: 1` keeps decoding greedy. Natively, a temperature
@@ -204,7 +202,7 @@ cost of a full prefill, with one printed warning per model.
 Natively `activeBackend` is `null`: ORT-GenAI picks the execution provider from the
 model's `genai_config.json`, whose execution-provider section the plugin does
 not read, so there is no honest answer to report. On web it is `null` until the
-first `createSession` loads the Transformers.js pipeline, then `gpu` (WebGPU)
+first `openSession` loads the Transformers.js pipeline, then `gpu` (WebGPU)
 or `cpu` (WASM).
 
 ### Model layout: a directory, not a file
@@ -360,9 +358,8 @@ are native-only. See [Web setup](#web-setup).
 
 - No vision, no audio, no multimodal input on the inference arm — text only.
 - No LoRA.
-- `createSession` keeps one session (it closes any live one before opening a
-  new one, as every engine here does). `openSession` / `openChat` sessions
-  are independent (see Inference above).
+- `openSession` / `openChat` sessions are independent and must be closed by
+  their caller (see Inference above).
 
 ## Web setup
 

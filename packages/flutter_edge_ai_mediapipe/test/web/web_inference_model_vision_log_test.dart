@@ -36,7 +36,7 @@ List<String> _visionLogs(
     if (message != null) logged.add(message);
   };
   try {
-    unawaited(model.createSession(enableVisionModality: enableVisionModality));
+    unawaited(model.openSession(enableVisionModality: enableVisionModality));
   } finally {
     debugPrint = original;
   }
@@ -105,7 +105,7 @@ void main() {
     final fake = fakeMediaPipe();
     final model = testModel(supportImage: true, resolver: BlobResolver());
 
-    final session = await model.createSession();
+    final session = await model.openSession();
     expect(fake.created, hasLength(1));
     expect(_maxNumImages(fake.created.single), 4);
 
@@ -132,7 +132,7 @@ void main() {
     final fake = fakeMediaPipe();
     final model = testModel(supportImage: false, resolver: BlobResolver());
 
-    await model.createSession();
+    await model.openSession();
 
     expect(fake.created, hasLength(1));
     expect(_maxNumImages(fake.created.single), isNull);

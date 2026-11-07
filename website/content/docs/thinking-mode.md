@@ -72,7 +72,7 @@ await FlutterEdgeAi.initialize(
   inferenceEngines: const [LiteRtLmEngine(thinkingTokenBudget: 512)],
 );
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final chat = await model.createChat(
+final chat = await model.openChat(
   enableThinking: true,
   maxOutputTokens: 2048,
   modelType: ModelType.gemma4,

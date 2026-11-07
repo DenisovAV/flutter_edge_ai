@@ -95,7 +95,7 @@ void main() {
   testWidgets('Message.withImages([img1, img2]) — both images reach engine', (
     t,
   ) async {
-    final session = await _model.createSession(
+    final session = await _model.openSession(
       temperature: 0.8,
       topK: 1,
       enableVisionModality: true,
@@ -119,7 +119,7 @@ void main() {
   });
 
   testWidgets('Message.withImages([img1, img1]) — duplicate dedup', (t) async {
-    final session = await _model.createSession(
+    final session = await _model.openSession(
       temperature: 0.8,
       topK: 1,
       enableVisionModality: true,
@@ -143,7 +143,7 @@ void main() {
   testWidgets('Backward compat: Message.withImage(single) still works', (
     t,
   ) async {
-    final session = await _model.createSession(
+    final session = await _model.openSession(
       temperature: 0.8,
       topK: 1,
       enableVisionModality: true,

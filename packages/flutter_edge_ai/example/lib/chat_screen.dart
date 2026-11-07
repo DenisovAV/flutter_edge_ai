@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'services/catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -97,8 +99,23 @@ class ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _isInitializing = false; // Reset initialization flag
     _isModelInitialized = false; // Reset model flag
+    final currentChat = chat;
+    if (currentChat != null) {
+      unawaited(
+        currentChat.close().catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[ChatScreen] ❌ Failed to close chat: $error');
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stackTrace,
+              library: 'flutter_edge_ai example',
+              context: ErrorDescription('while closing the chat screen'),
+            ),
+          );
+        }),
+      );
+    }
     super.dispose();
-    // No need to call deleteModel - model cleanup handled by model.close() callback
   }
 
   Future<void> _initializeModel() async {
@@ -219,7 +236,7 @@ class ChatScreenState extends State<ChatScreen> {
 
       // Step 3: Create chat
       debugPrint('[ChatScreen] Step 3: Creating chat...');
-      chat = await model.createChat(
+      chat = await model.openChat(
         temperature: widget.model.temperature,
         randomSeed: 1,
         topK: widget.model.topK,

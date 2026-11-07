@@ -1,4 +1,5 @@
 ## Unreleased
+- README examples use `openSession`/`openChat` and close returned handles.
 - `responseFormat` uses ORT-GenAI guidance on macOS arm64 (#195).
 - Web `openSession`/`openChat` are independent; cancelling a stream is turn-scoped (#703).
 

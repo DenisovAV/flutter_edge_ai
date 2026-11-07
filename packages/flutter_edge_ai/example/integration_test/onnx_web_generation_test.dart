@@ -78,7 +78,7 @@ void main() {
 
     testWidgets('streams a non-empty answer', (tester) async {
       final model = await _ensureModel();
-      final session = await model.createSession();
+      final session = await model.openSession();
       try {
         await session.addQueryChunk(
           const Message(
@@ -101,7 +101,7 @@ void main() {
       final model = await _ensureModel();
       // Greedy: the `paris` check below stands for "the generation lock is
       // free again", so the answer must not depend on sampling.
-      final session = await model.createSession(topK: 1);
+      final session = await model.openSession(topK: 1);
       try {
         await session.addQueryChunk(
           const Message(
@@ -171,7 +171,7 @@ void main() {
         }
 
         // Not "… Reply with OK.": after it Qwen2.5-0.5B answers "Meow." to
-        // the name question on createSession and openSession alike; and it
+        // the name question in every fresh session; and it
         // answers "Your name is Qwen." for Bob even in a session of its own
         // (both measured 2026-11-05, greedy). So Bob is checked against Bob
         // alone: with greedy decoding the same history gives the same reply,

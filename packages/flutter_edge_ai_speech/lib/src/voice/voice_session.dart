@@ -39,7 +39,7 @@ class VoiceSession {
   });
 
   /// Multi-turn conversational voice. Recommended default. Create the chat via
-  /// `getActiveModel().createChat(...)` with a short `maxOutputTokens` and a
+  /// `getActiveModel().openChat(...)` with a short `maxOutputTokens` and a
   /// "reply concisely, this will be spoken aloud" system instruction.
   ///
   /// When `chat.tools` is empty this is the plain text-only path. When

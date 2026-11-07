@@ -427,7 +427,7 @@ void main() {
       addTearDown(llm.close);
       expect(llm.activeBackend, PreferredBackend.gpu);
       Future<String> ask() async {
-        final session = await llm.createSession(topK: 1, maxOutputTokens: 24);
+        final session = await llm.openSession(topK: 1, maxOutputTokens: 24);
         try {
           await session.addQueryChunk(
             const Message(

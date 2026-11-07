@@ -1,3 +1,6 @@
+// The remaining deprecated call verifies failed legacy-session close recovery.
+// ignore_for_file: deprecated_member_use
+
 // The session is now a translator, not a transport: buffering, streaming,
 // cancellation and token counting all live in flutter_local_ai, and what is
 // left here is turning a flutter_edge_ai [Message] into the text and images a
@@ -56,7 +59,7 @@ void main() {
         await const BuiltInAiEngine().createModel(builtInSpec(), config)
             as BuiltInAiModel;
     addTearDown(model.close);
-    return await model.createSession() as BuiltInAiSession;
+    return await model.openSession() as BuiltInAiSession;
   }
 
   test('a failed close can be retried', () async {

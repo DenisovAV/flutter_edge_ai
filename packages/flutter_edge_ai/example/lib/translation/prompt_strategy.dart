@@ -10,7 +10,7 @@ abstract class TranslationPromptStrategy {
   const TranslationPromptStrategy();
 
   /// Build the single-shot prompt that gets fed to
-  /// `InferenceModel.createSession()` + `addQueryChunk()`.
+  /// `InferenceModel.openSession()` + `addQueryChunk()`.
   ///
   /// [src] and [dst] are ISO 639-1 codes (`'en'`, `'fr'`, `'ja'`); strategies
   /// that need a different vocabulary (e.g. NLLB's `eng_Latn`) translate

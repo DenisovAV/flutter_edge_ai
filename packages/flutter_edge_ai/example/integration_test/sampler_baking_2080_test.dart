@@ -44,7 +44,7 @@ Future<String> _gen(
   required double temperature,
   required int randomSeed,
 }) async {
-  final session = await model.createSession(
+  final session = await model.openSession(
     temperature: temperature,
     topK: topK,
     randomSeed: randomSeed,

@@ -35,7 +35,7 @@ Future<String> _run(PreferredBackend backend) async {
     maxTokens: 2048,
     preferredBackend: backend,
   );
-  final session = await _model!.createSession(temperature: 0.7, topK: 40);
+  final session = await _model!.openSession(temperature: 0.7, topK: 40);
   await session.addQueryChunk(
     const Message(text: 'Name three primary colors.', isUser: true),
   );

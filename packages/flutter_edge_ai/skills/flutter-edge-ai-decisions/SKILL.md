@@ -177,11 +177,16 @@ final shortlist = picked.choice == null
         for (final r in picked.ranked)
           myTools.firstWhere((t) => t.name == r.id),
       ];
-final toolChat = await model.createChat(
+final toolChat = await model.openChat(
   tools: shortlist,
   supportsFunctionCalls: true,
   modelType: ModelType.functionGemma,
 );
+try {
+  // Use toolChat for this request or screen.
+} finally {
+  await toolChat.close();
+}
 ```
 
 Descriptions alone cannot cross-fit, so this router never abstains

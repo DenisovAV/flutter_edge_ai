@@ -42,7 +42,7 @@ void main() {
     final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
 
     try {
-      final chat = await model.createChat(modelType: ModelType.gemmaIt);
+      final chat = await model.openChat(modelType: ModelType.gemmaIt);
 
       // First query
       await chat.addQueryChunk(

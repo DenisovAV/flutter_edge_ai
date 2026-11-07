@@ -344,7 +344,7 @@ Future<InferenceChat> chatWithLikelyTools(
     DeciderInput(EmbeddingInput.text(request)),
     topK: 3,
   );
-  return model.createChat(
+  return model.openChat(
     tools: picked.choice == null
         ? <Tool>[]
         : [

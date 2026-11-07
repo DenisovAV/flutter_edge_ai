@@ -9,8 +9,8 @@ Packages, engine and model install are in the flutter-edge-ai-inference skill. T
 
 ## Rules
 
-1. `createChat` needs `tools` and `supportsFunctionCalls: true`. Without the flag no call is parsed and only a debug warning is logged — and on `.litertlm` with Gemma 4 or FunctionGemma the declarations still reach the SDK, so the model answers with raw tool-call JSON inside the text stream.
-2. Pass `modelType` to legacy `createChat` on MediaPipe Web, LiteRT-LM Web, and native or web ONNX: those create paths still fall back to `ModelType.gemmaIt`, and another model's calls then arrive as raw text. `openChat` on native LiteRT-LM, MediaPipe Android/iOS/Web, built-in AI, native/web ONNX and llama.cpp takes the installed model's type when it is omitted. LiteRT-LM Web still uses core's Gemma default, so pass `modelType` there. On `flutter_edge_ai_llama`, the GGUF chat template parses calls itself; `modelType` only selects sampling defaults, and tools are enabled unless `supportsFunctionCalls: false`.
+1. `openChat` needs `tools` and `supportsFunctionCalls: true`. Without the flag no call is parsed and only a debug warning is logged — and on `.litertlm` with Gemma 4 or FunctionGemma the declarations still reach the SDK, so the model answers with raw tool-call JSON inside the text stream.
+2. `openChat` on native LiteRT-LM, MediaPipe Android/iOS/Web, built-in AI, native/web ONNX and llama.cpp takes the installed model's type when it is omitted. LiteRT-LM Web still uses core's Gemma default, so pass `modelType` there or another model's calls arrive as raw text. On `flutter_edge_ai_llama`, the GGUF chat template parses calls itself; `modelType` only selects sampling defaults, and tools are enabled unless `supportsFunctionCalls: false`.
 3. Switch over all four `ModelResponse` subtypes. It is sealed — a switch that leaves out `ThinkingResponse` does not compile.
 4. Return tool results as data, errors included. Never throw from a tool.
 5. Prefer `generateChatResponseWithTools` to a hand-written loop.
@@ -46,7 +46,7 @@ const changeColor = Tool(
 ## Open the chat
 
 ```dart
-final InferenceChat chat = await model.createChat(
+final InferenceChat chat = await model.openChat(
   tools: myTools,
   supportsFunctionCalls: true,
   modelType: ModelType.gemma4,
@@ -58,17 +58,21 @@ final InferenceChat chat = await model.createChat(
 It calls the handler for each tool call, feeds the result back, and continues until the model answers in text or `maxToolTurns` is reached.
 
 ```dart
-await chat.addQueryChunk(Message(text: prompt, isUser: true));
-final answer = StringBuffer();
-await for (final r in chat.generateChatResponseWithTools(
-  onToolCall: (FunctionCallResponse call) {
-    answer.clear(); // text streamed before a call is not the answer
-    return runTool(call.name, call.args);
-  },
-  maxToolTurns: 8,
-  onMaxToolTurns: () => print('stopped after 8 tool turns'),
-)) {
-  if (r is TextResponse) answer.write(r.token);
+try {
+  await chat.addQueryChunk(Message(text: prompt, isUser: true));
+  final answer = StringBuffer();
+  await for (final r in chat.generateChatResponseWithTools(
+    onToolCall: (FunctionCallResponse call) {
+      answer.clear(); // text streamed before a call is not the answer
+      return runTool(call.name, call.args);
+    },
+    maxToolTurns: 8,
+    onMaxToolTurns: () => print('stopped after 8 tool turns'),
+  )) {
+    if (r is TextResponse) answer.write(r.token);
+  }
+} finally {
+  await chat.close();
 }
 ```
 
@@ -79,30 +83,34 @@ Gemma 4 often writes a sentence, then calls a tool. The sentence streams as `Tex
 ## Handling calls yourself
 
 ```dart
-final response = await chat.generateChatResponse();
-switch (response) {
-  case FunctionCallResponse(:final name, :final args, :final id):
-    final result = await runTool(name, args);
-    await chat.addQueryChunk(
-      Message.toolResponse(toolName: name, response: result, toolCallId: id),
-    );
-    final followUp = await chat.generateChatResponse();
-  case ParallelFunctionCallResponse(:final calls):
-    for (final call in calls) {
-      final result = await runTool(call.name, call.args);
+try {
+  final response = await chat.generateChatResponse();
+  switch (response) {
+    case FunctionCallResponse(:final name, :final args, :final id):
+      final result = await runTool(name, args);
       await chat.addQueryChunk(
-        Message.toolResponse(
-          toolName: call.name,
-          response: result,
-          toolCallId: call.id, // llama pairs by id; other engines by name, in order
-        ),
+        Message.toolResponse(toolName: name, response: result, toolCallId: id),
       );
-    }
-    final afterAll = await chat.generateChatResponse();
-  case TextResponse(:final token):
-    print(token); // the model chose to answer directly — a valid outcome
-  case ThinkingResponse():
-    break;
+      final followUp = await chat.generateChatResponse();
+    case ParallelFunctionCallResponse(:final calls):
+      for (final call in calls) {
+        final result = await runTool(call.name, call.args);
+        await chat.addQueryChunk(
+          Message.toolResponse(
+            toolName: call.name,
+            response: result,
+            toolCallId: call.id, // llama pairs by id; other engines by name, in order
+          ),
+        );
+      }
+      final afterAll = await chat.generateChatResponse();
+    case TextResponse(:final token):
+      print(token); // the model chose to answer directly — a valid outcome
+    case ThinkingResponse():
+      break;
+  }
+} finally {
+  await chat.close();
 }
 ```
 
@@ -166,4 +174,4 @@ The model can recover from an error it can read. An exception thrown out of a to
 
 ## Web
 
-Function calling works on the `.litertlm` web engine. Pass `modelType`. On web `createSession` and `createChat` hold one slot: a second `createChat` while the first is open hands back the open session, history and all. Close the chat before creating the next, or use `openChat` for conversations that run side by side.
+Function calling works on the `.litertlm` web engine. Each `openChat` owns an independent conversation on the shared model; close every chat when done.

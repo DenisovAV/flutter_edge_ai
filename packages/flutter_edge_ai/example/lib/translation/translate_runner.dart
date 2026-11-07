@@ -28,7 +28,7 @@ class TranslateRunner {
     required String src,
     required String dst,
   }) async {
-    final session = await _model.createSession(
+    final session = await _model.openSession(
       temperature: _greedyTemperature,
       topK: _greedyTopK,
     );
@@ -53,7 +53,7 @@ class TranslateRunner {
     required String src,
     required String dst,
   }) async* {
-    final session = await _model.createSession(
+    final session = await _model.openSession(
       temperature: _greedyTemperature,
       topK: _greedyTopK,
     );

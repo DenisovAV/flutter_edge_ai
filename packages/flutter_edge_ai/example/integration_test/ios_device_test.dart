@@ -33,7 +33,7 @@ void main() {
 
     // Step 4: Create session and chat
     print('Step 4: Create session...');
-    final session = await model.createSession(temperature: 0.8, topK: 1);
+    final session = await model.openSession(temperature: 0.8, topK: 1);
     print('Session created');
 
     await session.addQueryChunk(const Message(text: 'Say hi', isUser: true));

@@ -70,6 +70,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     required MultimodalOrder multimodalOrder,
+    String? jsonSchema,
   }) {
     this.multimodalOrder = multimodalOrder;
     throw const _Captured();

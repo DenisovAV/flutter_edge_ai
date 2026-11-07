@@ -186,9 +186,12 @@ Incremental engines stream text before the final validation error. A prompt that
 never fits the context fails with `ContextLimitException` instead. Never combine
 a format with tools or `enableThinking: true`.
 
-Current support: LiteRT-LM and MediaPipe refuse every format; ONNX accepts only
-native macOS arm64 with `tokenizer.json`; a qualified GGUF runtime accepts macOS
-arm64 CPU/Metal and Chrome on macOS with dart2wasm + WebGPU, subject to
+Current support: LiteRT-LM enforces the whole dialect on macOS and iOS arm64
+CPU/Metal, Linux x64 CPU/Vulkan, Windows x64 CPU/D3D12, and Android arm64 CPU
+plus Adreno/Mali/PowerVR GPU. Every NPU, Web, and unlisted row is refused.
+MediaPipe refuses every format. ONNX accepts
+only native macOS arm64 with `tokenizer.json`; a qualified GGUF runtime accepts
+macOS arm64 CPU/Metal and Chrome on macOS with dart2wasm + WebGPU, subject to
 `refusalFor`; built-in AI has no qualified platform yet.
 
 ## Multi-turn chat

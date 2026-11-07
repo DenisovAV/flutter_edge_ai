@@ -46,6 +46,9 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
     this.maxConcurrentSessions,
     this.openSessionBacking = OpenSessionBacking.virtual,
     this.linearAttentionState = false,
+    this.structuredOutput = const StructuredOutputSupport.none(
+      'This LiteRT-LM model was not loaded through LiteRtLmEngine.',
+    ),
     required this.onClose,
   }) : multimodalOrder =
            multimodalOrder ?? MultimodalOrder.forModelType(modelType);
@@ -97,6 +100,24 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
   /// when the file could not be read to tell: `createSession` then rewinds
   /// as before, and `openSession` sessions are rebuilt from full messages.
   final bool? linearAttentionState;
+
+  /// LLGuidance qualification for the exact host and backend that loaded the
+  /// model. The engine computes it from the package's device-run allow-list.
+  final StructuredOutputSupport structuredOutput;
+
+  @override
+  StructuredOutputSupport get engineStructuredOutputSupport => structuredOutput;
+
+  @override
+  ResponseFormatUnsupportedException? engineRefusalFor(
+    JsonSchemaResponseFormat format,
+  ) => ffiClient.thinkingTokenBudget == null
+      ? null
+      : const ResponseFormatUnsupportedException(
+          'LiteRT-LM cannot combine a response format with a model loaded '
+          'with thinkingTokenBudget. Register LiteRtLmEngine without a '
+          'thinkingTokenBudget and load the model again.',
+        );
 
   /// Why a [createSession] conversation of this model is rebuilt from history
   /// instead of being rewound after a stopped turn or a full context, or null
@@ -425,7 +446,9 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       :enableThinking,
       :tools,
       :maxOutputTokens,
+      :responseFormat,
     ) = request;
+    final jsonSchema = responseFormat?.schemaJson;
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
@@ -473,6 +496,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
               samplingExplicit: !explicit.isEmpty,
               maxOutputTokens: maxOutputTokens,
               multimodalOrder: multimodalOrder,
+              jsonSchema: jsonSchema,
             );
         _openSessionsPending++;
         final LiteRtLmConversationHandle first;
@@ -506,6 +530,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           samplingExplicit: !explicit.isEmpty,
           maxOutputTokens: maxOutputTokens,
           multimodalOrder: multimodalOrder,
+          jsonSchema: jsonSchema,
         );
     }
 
@@ -694,24 +719,44 @@ class FfiInferenceModelSession extends InferenceModelSession
   /// native's token-count details; any other failure is passed on as it is.
   Stream<String> _namingContextFull(Stream<String> turn) => turn.transform(
     StreamTransformer.fromHandlers(
-      handleError: (error, stack, sink) => sink.addError(
-        handle.lastTurnEnd == NativeLastTurnEnd.contextFull
-            ? ContextLimitException(
-                'The input token count does not fit the context window space '
-                'left; the session was restored to before this turn. Send a '
-                'shorter message, or close the session and open a new one. '
-                'Native token counts: $error',
-              )
-            : error,
-        stack,
-      ),
+      handleError: (error, stack, sink) {
+        sink.addError(
+          handle.lastTurnEnd == NativeLastTurnEnd.contextFull
+              ? ContextLimitException(
+                  'The input token count does not fit the context window space '
+                  'left; the session was restored to before this turn. Send a '
+                  'shorter message, or close the session and open a new one. '
+                  'Native token counts: $error',
+                )
+              : error,
+          stack,
+        );
+        if (error is ResponseFormatUnsupportedException) {
+          // Deliver and settle the failed turn before close changes
+          // reportedEngineTurn's end to `closed`. CreateConstraint has already
+          // pushed a ghost user message, so refuse another send immediately
+          // and delete the conversation on the next event-loop turn.
+          _closeAfterFormatRefusal();
+        }
+      },
     ),
   );
+
+  void _closeAfterFormatRefusal() {
+    if (_isClosed || _rejectFurtherSends) return;
+    _rejectFurtherSends = true;
+    _queryBuffer.clear();
+    _pendingImages.clear();
+    _pendingAudio = null;
+    _pendingToolResponses.clear();
+    unawaited(Future<void>.delayed(Duration.zero, close));
+  }
 
   final StringBuffer _queryBuffer = StringBuffer();
   final List<Uint8List> _pendingImages = [];
   Uint8List? _pendingAudio;
   bool _isClosed = false;
+  bool _rejectFurtherSends = false;
 
   /// Whether LiteRT-LM runs this model's tool calling natively (Gemma 4, and
   /// FunctionGemma); see [FunctionCallParser.usesSdkPassthrough].
@@ -739,7 +784,7 @@ class FfiInferenceModelSession extends InferenceModelSession
   String? get lastRawResponse => _lastRawResponse;
 
   void _assertNotClosed() {
-    if (_isClosed) {
+    if (_isClosed || _rejectFurtherSends) {
       throw StateError('Session is closed');
     }
   }
@@ -1616,6 +1661,7 @@ class _VirtualConversationHandle implements ConversationHandle {
     required this.samplingExplicit,
     required this.multimodalOrder,
     this.maxOutputTokens,
+    this.jsonSchema,
   });
 
   final LiteRtLmFfiClient client;
@@ -1625,6 +1671,7 @@ class _VirtualConversationHandle implements ConversationHandle {
   final bool samplingExplicit;
   final MultimodalOrder multimodalOrder;
   final int? maxOutputTokens;
+  final String? jsonSchema;
 
   /// The tokenizer belongs to the engine, not to a conversation, so a virtual
   /// session answers this as accurately as a live one.
@@ -1705,6 +1752,7 @@ class _VirtualConversationHandle implements ConversationHandle {
         extraContext: extraContext,
         thinking: enableThinking,
         maxOutputTokens: maxOutputTokens,
+        jsonSchema: jsonSchema,
       )) {
         final chunkText = LiteRtLmFfiClient.extractTextFromResponse(rawChunk);
         assistantText.write(chunkText);

@@ -15,6 +15,7 @@ import 'litertlm_decision_section.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_vendor_host.dart';
 import 'ffi/open_session_backing.dart';
+import 'ffi/structured_output_support.dart';
 import 'litert_lm_engine_host.dart';
 import 'litert_lm_log_level.dart';
 import 'litertlm_bundle_activation.dart';
@@ -455,6 +456,13 @@ class LiteRtLmEngine
           ? host.androidGpuFamily()
           : null,
     );
+    final npuVendor = switch (npu) {
+      NpuChosen(:final vendor) => vendor,
+      _ => null,
+    };
+    final androidGpu = ffiRuntime.activeBackend == PreferredBackend.gpu
+        ? host.androidGpuFamily()
+        : null;
     edgeAiLog(
       '[LiteRtLmEngine] open sessions: ${openSessionBacking.name} '
       'conversations on ${ffiRuntime.activeBackend.name} (${host.abi})'
@@ -481,6 +489,12 @@ class LiteRtLmEngine
       maxConcurrentSessions: config.maxConcurrentSessions,
       openSessionBacking: openSessionBacking,
       linearAttentionState: linearAttentionState,
+      structuredOutput: liteRtLmStructuredOutputSupport(
+        abi: host.abi,
+        backend: ffiRuntime.activeBackend,
+        npuVendor: npuVendor,
+        androidGpu: androidGpu,
+      ),
       onClose: () {}, // no-op: core resets its own state via addCloseListener
     );
   }

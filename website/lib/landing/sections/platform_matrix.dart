@@ -20,51 +20,50 @@ class PlatformMatrix extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return section(classes: 'matrix-section', [
-      div(classes: 'matrix-inner', [
-        h2(classes: 'section-title', [
-          Component.text('Platform support matrix'),
-        ]),
-        div(classes: 'matrix-scroll', [
-          table(classes: 'matrix-table', [
-            thead([
-              tr([
-                for (final h in _headers)
-                  th(
-                    classes: h == 'Platform' ? 'matrix-th matrix-th--platform' : 'matrix-th',
-                    [Component.text(h)],
-                  ),
+    return section(
+      classes: 'matrix-section',
+      [
+        div(classes: 'matrix-inner', [
+          h2(classes: 'section-title', [Component.text('Platform support matrix')]),
+          div(classes: 'matrix-scroll', [
+            table(classes: 'matrix-table', [
+              thead([
+                tr([
+                  for (final h in _headers)
+                    th(
+                      classes: h == 'Platform' ? 'matrix-th matrix-th--platform' : 'matrix-th',
+                      [Component.text(h)],
+                    ),
+                ]),
+              ]),
+              tbody([
+                for (final row in _rows)
+                  tr(classes: 'matrix-row', [
+                    for (var i = 0; i < row.length; i++)
+                      if (i == 0)
+                        td(classes: 'matrix-td matrix-td--platform', [Component.text(row[i])])
+                      else
+                        td(
+                          classes: row[i] == '✅' ? 'matrix-td matrix-td--yes' : 'matrix-td matrix-td--no',
+                          [Component.text(row[i])],
+                        ),
+                  ]),
               ]),
             ]),
-            tbody([
-              for (final row in _rows)
-                tr(classes: 'matrix-row', [
-                  for (var i = 0; i < row.length; i++)
-                    if (i == 0)
-                      td(classes: 'matrix-td matrix-td--platform', [
-                        Component.text(row[i]),
-                      ])
-                    else
-                      td(
-                        classes: row[i] == '✅' ? 'matrix-td matrix-td--yes' : 'matrix-td matrix-td--no',
-                        [Component.text(row[i])],
-                      ),
-                ]),
-            ]),
+          ]),
+          p(classes: 'matrix-note', [
+            Component.text(
+              'NPU: Qualcomm on Android and on the Linux arm64 QCS8275 (the '
+              'app opts in with qualcomm_npu), Google Tensor G6 on Android '
+              '(google_tensor_npu), and Intel Lunar Lake and Panther Lake on '
+              'Windows. Tensor G5 builds are accepted but have not been run. '
+              'iOS GPU runs on Metal on device; the Simulator is CPU-only '
+              '(256 MB Metal allocation cap).',
+            ),
           ]),
         ]),
-        p(classes: 'matrix-note', [
-          Component.text(
-            'NPU: Qualcomm on Android and on the Linux arm64 QCS8275 (the '
-            'app opts in with qualcomm_npu), Google Tensor G6 on Android '
-            '(google_tensor_npu), and Intel Lunar Lake and Panther Lake on '
-            'Windows. Tensor G5 builds are accepted but have not been run. '
-            'iOS GPU runs on Metal on device; the Simulator is CPU-only '
-            '(256 MB Metal allocation cap).',
-          ),
-        ]),
-      ]),
-    ]);
+      ],
+    );
   }
 
   @css
@@ -78,7 +77,9 @@ class PlatformMatrix extends StatelessComponent {
       margin: Margin.symmetric(horizontal: Unit.auto),
       padding: Padding.symmetric(horizontal: 2.rem),
     ),
-    css('.matrix-scroll').styles(overflow: Overflow.only(x: OverflowValue.auto)),
+    css('.matrix-scroll').styles(
+      overflow: Overflow.only(x: OverflowValue.auto),
+    ),
     css('.matrix-table').styles(
       width: 100.percent,
       radius: BorderRadius.circular(0.75.rem),
@@ -97,8 +98,12 @@ class PlatformMatrix extends StatelessComponent {
         bottom: BorderSide(color: Color('rgba(255,255,255,0.1)'), width: 1.px),
       ),
     ),
-    css('.matrix-th--platform').styles(textAlign: TextAlign.left),
-    css('.matrix-row:nth-child(even)').styles(backgroundColor: Color('rgba(26,58,92,0.4)')),
+    css('.matrix-th--platform').styles(
+      textAlign: TextAlign.left,
+    ),
+    css('.matrix-row:nth-child(even)').styles(
+      backgroundColor: Color('rgba(26,58,92,0.4)'),
+    ),
     css('.matrix-td').styles(
       fontFamily: Brand.fontSans,
       fontSize: 1.rem,
@@ -114,8 +119,14 @@ class PlatformMatrix extends StatelessComponent {
       color: Brand.white,
       fontSize: 0.95.rem,
     ),
-    css('.matrix-td--yes').styles(color: Brand.green, fontSize: 1.1.rem),
-    css('.matrix-td--no').styles(color: Brand.white50, fontSize: 1.1.rem),
+    css('.matrix-td--yes').styles(
+      color: Brand.green,
+      fontSize: 1.1.rem,
+    ),
+    css('.matrix-td--no').styles(
+      color: Brand.white50,
+      fontSize: 1.1.rem,
+    ),
     css('.matrix-note').styles(
       fontFamily: Brand.fontSans,
       fontSize: 0.8.rem,

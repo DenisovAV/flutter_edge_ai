@@ -126,11 +126,10 @@ await session.close();
 
 ## Generation — `OnnxEngine`
 
-Text-only (v1): no vision, no audio, no LoRA. `openSession` / `openChat` open
-independent sessions on the same loaded model, natively since 0.8.0 and on Web
-since 0.9.0. On Web each keeps its own history on the one Transformers.js
-pipeline, holds no KV cache and is not capped unless you set
-`maxConcurrentSessions`.
+Text-only (v1): no vision, no audio, no LoRA. `openSession` / `openChat` open independent sessions on the
+same loaded model, natively since 0.8.0 and on Web since 0.9.0. On Web each
+keeps its own history on the one Transformers.js pipeline, holds no KV cache
+and is not capped unless you set `maxConcurrentSessions`.
 Natively each session has its own generator and so its own context; turns of different sessions run one at a time and nothing is
 replayed. A generator allocates its whole KV cache at its first turn,
 `maxTokens` × the cache size per token (2 × layers × KV heads × head size ×

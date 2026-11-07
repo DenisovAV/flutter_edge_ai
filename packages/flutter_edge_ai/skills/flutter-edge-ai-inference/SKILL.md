@@ -247,7 +247,14 @@ Native sessions cost memory while idle: Gemma 4 E2B on an M5 Pro added 36.8 MiB
 of RSS per idle session at `maxTokens: 4096`, from the third session onward. Set
 `maxConcurrentSessions` on `getActiveModel` or `openModel` to bound the count.
 
-`flutter_edge_ai_llama` and MediaPipe on the web take the installed type and media support. MediaPipe on Android and iOS takes the type and audio support, with images off unless you pass `supportImage: true`. Built-in AI takes the type and image support and refuses `supportAudio: true`. Native and web ONNX take the installed type but remain text-only. Detached sessions work on native/web `.litertlm`, MediaPipe Android/iOS/Web, `flutter_edge_ai_onnx` natively since 0.8.0 and on Web since 0.9.0, built-in AI and llama.cpp; close every detached session yourself.
+`flutter_edge_ai_llama` and MediaPipe on the web take the installed type and
+media support. MediaPipe on Android and iOS takes the type and audio support,
+with images off unless you pass `supportImage: true`. Built-in AI takes the type
+and image support and refuses `supportAudio: true`. Native and web ONNX take the
+installed type but remain text-only. Detached sessions work on native/web
+`.litertlm`, MediaPipe Android/iOS/Web, `flutter_edge_ai_onnx` natively since
+0.8.0 and on Web since 0.9.0, built-in AI and llama.cpp; close every detached
+session yourself.
 
 ```dart
 final summariser = await model.openChat(modelType: ModelType.gemma4);

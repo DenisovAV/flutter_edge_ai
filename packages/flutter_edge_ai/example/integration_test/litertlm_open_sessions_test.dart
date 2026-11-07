@@ -25,9 +25,9 @@
 //   how long the native send call holds the calling isolate on a switch, and
 //   memory and turn time over OPEN_SWITCHES switches.
 //
-// Models: macOS in the example's container Documents (see
-// litertlm_ffi_test.dart), Linux ~/models, Windows %USERPROFILE%\models,
-// Android /data/local/tmp/flutter_gemma_test.
+// Models: macOS in ~/models with the example's container Documents as a
+// fallback, Linux ~/models, Windows %USERPROFILE%\models, Android
+// /data/local/tmp/flutter_gemma_test.
 //
 // Run, one backend at a time:
 //   flutter test integration_test/litertlm_open_sessions_test.dart -d macos \
@@ -50,7 +50,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
-import 'voice_test_helpers.dart' show stagedModelPath;
+import 'voice_test_helpers.dart' show macosStagedModelPath, stagedModelPath;
 
 const _backendName = String.fromEnvironment(
   'OPEN_BACKEND',
@@ -77,9 +77,7 @@ Future<String> _modelPath() async {
   final home = Platform.environment['HOME'];
   String? path;
   if (Platform.isMacOS) {
-    path =
-        '$home/Library/Containers/dev.flutterberlin.flutterGemmaExample55/'
-        'Data/Documents/$_modelFile';
+    path = macosStagedModelPath(_modelFile);
   } else if (Platform.isLinux) {
     path = '$home/models/$_modelFile';
   } else if (Platform.isWindows) {

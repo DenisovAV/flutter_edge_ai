@@ -4371,14 +4371,14 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
-        "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-07_macos_arm64_mac-mini-m5-pro-mac17-16-2.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
-        "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-07_macos_arm64_mac-mini-m5-pro-mac17-16-2.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {

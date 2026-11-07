@@ -143,7 +143,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [generic](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm)<br>2.59&nbsp;GB | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;📝 CPU&nbsp;📝 |  |
+| [generic](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm)<br>2.59&nbsp;GB | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;📝 CPU&nbsp;📝 |  |
 | [gpu](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-gpu.litertlm)<br>2.01&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [web](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-web.litertlm)<br>2.01&nbsp;GB |  |  |  |  |  |  | GPU&nbsp;📝 |
 | [npu-tensor-g5](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G5.litertlm)<br>3.11&nbsp;GB · context&nbsp;4096 | NPU&nbsp;⚪ |  |  |  |  |  |  |
@@ -155,7 +155,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 - Stale on Android: Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_litertlm 1.19.1.
 - Stale on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1.
-- Stale on macOS: Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1.
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_litertlm 1.20.0.
 - Verified on Windows x64: Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-07, flutter_edge_ai_litertlm 1.20.0.
 - Stale on Linux x64: GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1.
 - Documented: [PR #602](https://github.com/DenisovAV/flutter_edge_ai/pull/602), VENTUNO Q run (native-v0.18.0-c, litertlm 1.11.0).

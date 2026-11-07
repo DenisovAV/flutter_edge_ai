@@ -14,8 +14,9 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 ## Try the example
 
 The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.6.0+**.
-Version 0.1.0 uses llamadart **0.17.5** with typed overflow reporting (0.0.3 to
-0.0.5 used 0.15.1). Connector CI uses
+Version 0.1.0 uses llamadart **0.17.5** with typed overflow reporting and adds
+the 2.6 session and response-format integration (0.0.3 to 0.0.5 used 0.15.1).
+Connector CI uses
 Flutter 3.47.1 for reproducible checks. From the repository root:
 
 ```

@@ -373,10 +373,11 @@ complete chunk. A prompt that never fits the context fails with
 
 ### Sessions and turn history
 
-`createSession()` and `createChat()` remain supported in 2.6.0. They use the
-model's legacy singleton lane: a later create normally closes and replaces the
-previous session or chat. `openSession()` and `openChat()` return detached,
-independent conversations; keep each handle and close it yourself.
+`createSession()` and `createChat()` remain available in 2.6.0 but are
+deprecated and will be removed in 3.0.0. They use the model's legacy singleton
+lane: a later create normally closes and replaces the previous session or chat.
+`openSession()` and `openChat()` return detached, independent conversations;
+keep each handle and close it yourself.
 `model.sessions` lists the live legacy and detached sessions.
 
 `maxConcurrentSessions` usually caps detached sessions; built-in AI instead
@@ -538,7 +539,7 @@ dart run skills@ get --all
 
 See what others ship on the [showcase](https://flutteredge.ai/showcase), and
 [add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
-minutes, and the form links back to your store page or repository.
+minutes, and the listing links to your app's Google Play or App Store page.
 
 ## Links
 

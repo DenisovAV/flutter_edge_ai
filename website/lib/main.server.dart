@@ -216,6 +216,13 @@ void main() {
                     SidebarLink(text: 'Troubleshooting', href: '/docs/troubleshooting'),
                   ],
                 ),
+                SidebarGroup(
+                  title: 'Community',
+                  links: [
+                    SidebarLink(text: 'Showcase', href: '/showcase'),
+                    SidebarLink(text: 'Add your app', href: '/showcase/submit'),
+                  ],
+                ),
               ],
             ),
           ),

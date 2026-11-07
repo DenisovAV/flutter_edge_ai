@@ -165,7 +165,9 @@ await session.close();
 ## Capabilities & limits
 
 The structured-output behavior below requires core 2.6.0 and
-`flutter_edge_ai_builtin_ai` 0.4.0.
+`flutter_edge_ai_builtin_ai` 0.4.0. Response formats are wired, but every
+built-in platform remains refused until its qualification run passes, as
+listed below.
 
 | Feature | Android (Gemini Nano) | iOS / macOS (Apple FM) | Windows (Phi Silica) | Web (Chrome Prompt API) |
 |---------|------------------------|-------------------------|----------------------|--------------------------|

@@ -96,6 +96,11 @@ final format = ResponseFormat.jsonSchema({
 final refusal = model.refusalFor(format);
 if (refusal != null) throw refusal;
 final session = await model.openSession(responseFormat: format);
+try {
+  // Generate structured replies with session.
+} finally {
+  await session.close();
+}
 ```
 
 The full core dialect is qualified on macOS and iOS arm64 CPU/Metal, Linux x64
@@ -1197,11 +1202,20 @@ await FlutterEdgeAi.initialize(
   inferenceEngines: const [LiteRtLmEngine(thinkingTokenBudget: 512)],
 );
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final chat = await model.openChat(
-  enableThinking: true,
-  maxOutputTokens: 2048,
-  modelType: ModelType.gemma4,
-);
+try {
+  final chat = await model.openChat(
+    enableThinking: true,
+    maxOutputTokens: 2048,
+    modelType: ModelType.gemma4,
+  );
+  try {
+    // Use the thinking chat.
+  } finally {
+    await chat.close();
+  }
+} finally {
+  await model.close();
+}
 ```
 
 - The thinking counts towards `maxOutputTokens`, and the reply, with the
@@ -1672,3 +1686,9 @@ rm -rf ~/.cache/flutter_gemma/native                # Linux
 # Windows: rmdir /s /q "%LOCALAPPDATA%\flutter_gemma\native"
 flutter pub get
 ```
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the listing links to your app's Google Play or App Store page.

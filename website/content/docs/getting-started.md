@@ -54,6 +54,8 @@ only the engines, stores and features your app uses — see
   and `ContextLimitException` distinguishes an input that never fit.
 - **Open APIs are canonical**: `createSession`, `createChat`, `session` and
   `chat` remain compatible but are deprecated until core 3.0.0.
+- [Add your app to the showcase](/showcase/submit) — submit a shipped Flutter
+  Edge AI app for review.
 
 ## What's new in 2.5
 

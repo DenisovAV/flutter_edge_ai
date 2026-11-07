@@ -102,14 +102,14 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-Version 0.1.0 requires core 2.6.0+ (below 2.7.0) and llamadart 0.17.5.
+Version 0.1.0 requires core 2.6.0+ and llamadart 0.17.5.
 Use these hosted dependencies:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: '>=2.6.0 <2.7.0'
+  flutter_edge_ai: ^2.6.0
   flutter_edge_ai_llama: ^0.1.0
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.17.3

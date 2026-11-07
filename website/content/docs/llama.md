@@ -13,7 +13,7 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 ## Try the example
 
-The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.6.x**.
+The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.6.0+**.
 Version 0.1.0 uses llamadart **0.17.5** with typed overflow reporting (0.0.3 to
 0.0.5 used 0.15.1). Connector CI uses
 Flutter 3.47.1 for reproducible checks. From the repository root:
@@ -167,7 +167,7 @@ See the [workspace setup and qualification scope](https://github.com/DenisovAV/f
 Native EmbeddingGemma 2 GGUF text embeddings register through core's embedding
 SPI as `LlamaEmbeddingBackend` in this same engine package. The dedicated
 `flutter_edge_ai_embeddings` package remains tokenizer-only: GGUF carries its
-own tokenizer. Version 0.1.0 requires core 2.6.x and llamadart
+own tokenizer. Version 0.1.0 requires core 2.6.0+ and llamadart
 0.17.5 (0.0.3 introduced the backend on core 2.5.0's SPI). Use separate GGUF and LiteRT RAG profile IDs; matching dimensions do
 not make their vectors interchangeable.
 See the [embedding design and qualification](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/embeddings.md).

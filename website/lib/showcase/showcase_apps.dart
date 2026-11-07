@@ -57,8 +57,7 @@ class AppStoreListing {
   final int? ratings;
 }
 
-/// Store figures as of 2026-11-04; GiGi's, Aura's and Clean Expense's as of
-/// 2026-11-05.
+/// Store figures as of 2026-11-07.
 const showcaseApps = <ShowcaseApp>[
   ShowcaseApp(
     name: 'LocalMind: Ollama & LM Studio',
@@ -101,6 +100,23 @@ const showcaseApps = <ShowcaseApp>[
     icon: '/images/showcase/com.sutechs.expense-1.png',
     googlePlay: GooglePlayListing('com.sutechs.expense', installs: 100),
     appStore: AppStoreListing('https://apps.apple.com/us/app/clean-expense-budget-tracker/id6757723320'),
+  ),
+  ShowcaseApp(
+    name: 'PortRai',
+    icon: '/images/showcase/com.mayandro.portrai-1.png',
+    googlePlay: GooglePlayListing('com.mayandro.portrai', installs: 10),
+  ),
+  ShowcaseApp(
+    name: '스타팅블록',
+    icon: '/images/showcase/com.synapse.startingblock-1.png',
+    googlePlay: GooglePlayListing('com.synapse.startingblock', installs: 10),
+    appStore: AppStoreListing('https://apps.apple.com/kr/app/id6503169644'),
+  ),
+  ShowcaseApp(
+    name: 'OffRoad: Offline AI',
+    icon: '/images/showcase/com.odibillz.offroad-1.png',
+    googlePlay: GooglePlayListing('com.odibillz.offroad', installs: 5),
+    appStore: AppStoreListing('https://apps.apple.com/us/app/offroad-offline-ai/id6778114511'),
   ),
 ];
 

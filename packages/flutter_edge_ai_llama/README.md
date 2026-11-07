@@ -11,7 +11,7 @@ compatible models and runtimes. See [advanced usage](doc/advanced_usage.md) and 
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
 Version 0.0.3 adds native text embeddings with llamadart 0.15.1.
-Version 0.1.0 uses llamadart 0.17.5 and core 2.6.0; the setup below targets it.
+Version 0.0.6 moved to llamadart 0.17.5; 0.1.0 keeps that runtime pair and adds core 2.6 sessions and response formats.
 
 The minimum is Flutter **3.44 / Dart 3.12**, with core **2.6.0+**.
 Version 0.1.0 uses llamadart **0.17.5** with typed overflow reporting
@@ -102,14 +102,14 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-Version 0.1.0 requires core 2.6.0+ and llamadart 0.17.5.
+Version 0.1.0 requires core 2.6.0+ (below 2.7.0) and llamadart 0.17.5.
 Use these hosted dependencies:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai: '>=2.6.0 <2.7.0'
   flutter_edge_ai_llama: ^0.1.0
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.17.3
@@ -233,7 +233,7 @@ embeddings remain follow-ups.
 The connector uses core 2.3's public `engine.dart` / `engine_web.dart` APIs.
 Dedicated GGUF identity removes the routing conflict with MediaPipe. Core restores
 paired LoRA adapters after restart and refuses restoration if an adapter is missing.
-They shipped in core 2.3.2; typed tool history requires core 2.4.0; this embedding contribution raises the minimum to 2.5.0.
+They shipped in core 2.3.2; typed tool history requires core 2.4.0; the embedding contribution raised the minimum to 2.5.0; response formats and the session SPI raise 0.1.0 to core 2.6.0.
 
 ## Troubleshooting
 

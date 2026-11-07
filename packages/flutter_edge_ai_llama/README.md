@@ -287,3 +287,9 @@ Vulkan is included by default on supported Android/Linux/Windows targets.
 Android automatic selection uses CPU; Linux/Windows use Vulkan where available.
 The example's root hooks select CPU-only bundles. Android bundles support
 arm64-v8a and x86_64; 32-bit armeabi-v7a is unsupported.
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the form links back to your store page or repository.

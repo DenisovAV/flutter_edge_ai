@@ -126,10 +126,11 @@ await session.close();
 
 ## Generation — `OnnxEngine`
 
-Text-only (v1): no vision, no audio, no LoRA. `openSession` / `openChat` open independent sessions on the
-same loaded model, natively since 0.8.0 and on Web since the release after
-it. On Web each keeps its own history on the one Transformers.js pipeline,
-holds no KV cache and is not capped unless you set `maxConcurrentSessions`.
+Text-only (v1): no vision, no audio, no LoRA. `openSession` / `openChat` open
+independent sessions on the same loaded model, natively since 0.8.0 and on Web
+since 0.9.0. On Web each keeps its own history on the one Transformers.js
+pipeline, holds no KV cache and is not capped unless you set
+`maxConcurrentSessions`.
 Natively each session has its own generator and so its own context; turns of different sessions run one at a time and nothing is
 replayed. A generator allocates its whole KV cache at its first turn,
 `maxTokens` × the cache size per token (2 × layers × KV heads × head size ×
@@ -160,10 +161,8 @@ falls back to WASM.
 
 ## Structured JSON output
 
-**Release availability:** this section describes core 2.6.0 and the next
-`flutter_edge_ai_onnx` release, built on `flutter_edge_ai` 2.6.0. The currently
-published package shown by the install block above remains on core 2.5.x and
-does not expose these structured-output APIs.
+**Version scope:** this section describes `flutter_edge_ai` 2.6.0 with
+`flutter_edge_ai_onnx` 0.9.0.
 
 Native ORT-GenAI can apply llguidance to each independent generator opened by
 `openSession(responseFormat: ...)` or `openChat(responseFormat: ...)`. In that

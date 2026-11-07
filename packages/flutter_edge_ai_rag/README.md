@@ -310,3 +310,9 @@ The binding is stored so that every version, old and new, reads it safely:
 "Corrupt" and "newer version" are `VectorStoreException`s. The
 `VectorStoreBinding` dartdoc carries the same table and the one accepted limit
 of the encoding.
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the form links back to your store page or repository.

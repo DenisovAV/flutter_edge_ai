@@ -146,23 +146,22 @@ final vector = await embedder.embed(
   **EmbeddingInputTooLongException** with the exact **actualTokens** (natively
   from litertlm 1.13.1). The engine counts it by running the whole input, so
   an over-long input costs one full embedding before it is refused.
-- **CPU natively, WebGPU on the Web.** **activeBackend** is
-  **PreferredBackend.cpu** natively and **PreferredBackend.gpu** on the Web.
-- **GPU on Linux x64, when asked (litertlm 1.19.0).**
-  **preferredBackend: PreferredBackend.gpu** runs the text tower on the GPU
-  there (WebGPU over Vulkan). Linux x64 only; Windows x64 is refused on
-  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #744: there
-  **gpu** fails the load with an **EmbeddingLoadException**, and
-  **preferredBackend: cpu** (or none) loads it. Measured on the 270m,
+- **CPU by default natively, WebGPU on the Web.** `activeBackend` reports the
+  backend that actually loaded.
+- **GPU text tower on Linux x64, Windows x64 and macOS arm64 when asked
+  (LiteRT-LM 0.19 / litertlm 1.20.0).** `preferredBackend:
+  PreferredBackend.gpu` runs all three bundles on Linux x64, the 270m on
+  Windows x64, and the 270m and 740m on macOS arm64; other bundle/host
+  combinations on those three hosts are refused until qualified. Measured on
+  the 270m,
   2026-10-22: Linux on a Tesla T4 32-64 ms per text vs 232-308 ms on its CPU
   (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs 83-90 ms), min cos 0.997 to the CPU vectors (0.998 for
   a ~900-token text; the GPU computes in FP16) and the same distance to
   Sentence Transformers fp32 as the CPU. A load takes 1.7-3.6 s (0.3-0.6 s on
   CPU); the very first also builds the GPU caches, 5.9-8.2 s. A GPU LLM and
   the GPU embedder run together in one process (measured with Gemma 4 E2B).
-  - Only the text tower runs on the GPU. On the 440m and 740m the vision and
-    audio towers run on CPU, so images and audio embed at CPU speed with CPU
-    vectors. Not yet measured on a device for these two bundles.
+  - Only the text tower runs on the GPU. The 440m and 740m vision and audio
+    towers remain on CPU and were not measured in those GPU-host runs.
   - A GPU that cannot create the engine fails the load, and every GPU load
     checks one probe embedding; nothing falls back to CPU. A software adapter
     is not excluded, though: on a Linux box with no GPU driver loaded,
@@ -171,18 +170,16 @@ final vector = await embedder.embed(
     Ask for **gpu** only where a real GPU driver is installed.
   - The GPU writes its own caches next to the CPU one: about 68 MB of weights
     and 9 MB of programs. **requireWeightCache** covers them: a cache path
-    too long for the GPU (a file name past 255 bytes; on Windows, once its
-    GPU path is enabled again, also past the 260-character MAX_PATH) is refused before the engine is created, and a
+    too long for the GPU (a file name past 255 bytes; Windows currently also
+    has the 260-character MAX_PATH constraint) is refused before the engine is created, and a
     load that wrote neither file is refused after its probe embedding.
   - A cold load without **preferredBackend** runs on CPU, but a later
     automatic request reuses whatever embedder is loaded, the GPU one
     included.
   - The 270m has no vision or audio encoder. In RAG, a text index and an
     image index can share one 440m or 740m embedder on the GPU.
-  - On macOS, iOS, Android and Linux arm64 **gpu** is not applied: on macOS
-    the Metal path ends the process inside LiteRT at engine create (iOS uses
-    the same accelerator, not run), and Android and Linux arm64 are not
-    measured.
+  - On iOS, Android and Linux arm64, `gpu` is not applied because those
+    accelerator rows remain unqualified.
   - GPU and CPU vectors are close, not equal: keep one backend per index if
     you need the exact vectors back.
 - The NPU runs the per-SoC bundles
@@ -539,9 +536,9 @@ and load it as above.
 ### EmbeddingGemma 2 on an Intel NPU
 
 Google's `…_Intel_PTL.litertlm` bundles are compiled for the Intel Panther Lake
-NPU. From flutter_edge_ai_litertlm 1.13.2 they load on **Windows x64** (not
-yet run on an Intel NPU) with
-**PreferredBackend.npu**, through the Intel stack (**LiteRtDispatch.dll**,
+NPU. From flutter_edge_ai_litertlm 1.13.2 they load on **Windows x64** with
+**PreferredBackend.npu**; the 270m was measured on Panther Lake as described
+below. They use the Intel stack (**LiteRtDispatch.dll**,
 OpenVINO and TBB) that every Windows x64 build already carries beside the
 executable — no opt-in flag. Install
 `embeddinggemma-2-text-270m_Intel_PTL.litertlm` (or the 440m's or the 740m's,

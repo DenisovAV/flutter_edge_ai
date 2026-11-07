@@ -164,10 +164,10 @@ await session.close();
 
 ## Capabilities & limits
 
-**Release availability:** the structured-output behavior below describes core
-2.6.0 and the next `flutter_edge_ai_builtin_ai` release, built on
-`flutter_edge_ai` 2.6.0. The currently published package shown by the install
-block above remains on core 2.5.x and does not expose these APIs.
+**Version scope:** this section describes `flutter_edge_ai` 2.6.0 with
+`flutter_edge_ai_builtin_ai` 0.4.0. Response formats are wired, but every
+built-in platform remains refused until its qualification run passes, as
+listed below.
 
 | Feature | Android (Gemini Nano) | iOS / macOS (Apple FM) | Windows (Phi Silica) | Web (Chrome Prompt API) |
 |---------|------------------------|-------------------------|----------------------|--------------------------|

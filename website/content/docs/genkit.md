@@ -251,10 +251,10 @@ the plugin sends back, a request's `ref` becomes its call's id
 
 ### Structured (JSON) output
 
-**Release availability:** the native constrained-decoding behavior below
-arrives with core 2.6.0 and the next `genkit_flutter_edge_ai` release, built on
-`flutter_edge_ai` 2.6.0. The currently published versions in the install block
-remain on core 2.5.x and use prompt-only schema guidance.
+**Version scope:** this section describes `genkit_flutter_edge_ai` 0.12.0 with
+`flutter_edge_ai` 2.6.0. Eligible Genkit output schemas are sent both as prompt
+guidance and as the engine's `responseFormat`; schemas outside the dialect, or
+requests with tools, thinking, or an engine refusal, remain prompt-only.
 
 The plugin advertises `output: ['text', 'json']`. Genkit asks for constrained
 output whenever you pass an `outputSchema`. The plugin always writes the schema

@@ -76,15 +76,30 @@ Incremental engines emit their text before the final validation error; buffered
 engines emit one complete chunk. A format cannot be combined with tools or
 `enableThinking: true`.
 
-## flutter_edge_ai 2.5.x: engines that keep core below 2.6.0
+### Open sessions and chats
 
-> These versions require `flutter_edge_ai` `<2.6.0`, so `flutter pub upgrade` keeps
-> core on 2.5.x until each engine moves to its next line:
-> `flutter_edge_ai_litertlm` 1.19.2 · `flutter_edge_ai_mediapipe` 1.2.6 ·
-> `flutter_edge_ai_builtin_ai` 0.3.8 · `flutter_edge_ai_onnx` 0.8.0 ·
-> `flutter_edge_ai_llama` 0.0.6 · `flutter_edge_ai_speech` 0.5.14 (also
-> `flutter_edge_ai_litertlm` `<1.20.0`) · `genkit_flutter_edge_ai` 0.11.0+.
-> App code does not change.
+`createSession`, `createChat`, `session` and `chat` are deprecated and will be
+removed in 3.0.0. Keep the handle returned by `openSession` or `openChat`, and
+close it when done:
+
+```dart
+final session = await model.openSession();
+try {
+  await session.addQueryChunk(Message(text: prompt, isUser: true));
+  final reply = await session.getResponse();
+} finally {
+  await session.close();
+}
+```
+
+## Stuck on core 2.5.x after upgrading?
+
+The old package lines below require `flutter_edge_ai <2.6.0`: litertlm 1.19.x,
+mediapipe 1.2.x, builtin_ai 0.3.x, ONNX 0.8.x, llama 0.0.x, speech 0.5.x and
+genkit_flutter_edge_ai 0.11.x. Upgrade every installed package in this
+compatibility set with core 2.6.0; the 2.6-compatible lines are litertlm 1.20.0,
+mediapipe 1.3.0, builtin_ai 0.4.0, ONNX 0.9.0, llama 0.1.0, speech 0.6.0 and
+genkit_flutter_edge_ai 0.12.0.
 
 ## flutter_edge_ai 2.5.0: several open models, removed and deprecated members, embedding providers
 

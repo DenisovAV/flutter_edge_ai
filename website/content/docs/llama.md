@@ -13,9 +13,9 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 ## Try the example
 
-The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.x**.
-Version 0.0.6 uses llamadart **0.17.5** with typed overflow reporting (0.0.3 to
-0.0.5 used 0.15.1). Connector CI uses
+The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.6.x**.
+Version 0.1.0 keeps llamadart **0.17.5** and adds the 2.6 session and
+response-format integration. Connector CI uses
 Flutter 3.47.1 for reproducible checks. From the repository root:
 
 ```
@@ -80,10 +80,8 @@ A prompt that does not fit the context is different: it fails with
 
 ### Structured JSON output
 
-**Release availability:** this section describes core 2.6.0 and the next
-`flutter_edge_ai_llama` release, built on `flutter_edge_ai` 2.6.0. The currently
-published 0.0.6 package in the install block below requires core 2.5.x and does
-not expose these structured-output APIs.
+**Version scope:** this section describes `flutter_edge_ai` 2.6.0 with
+`flutter_edge_ai_llama` 0.1.0.
 
 `openSession(responseFormat: ...)` and `openChat(responseFormat: ...)` ask
 llamadart's grammar to constrain every reply, and core validates the complete
@@ -170,8 +168,8 @@ See the [workspace setup and qualification scope](https://github.com/DenisovAV/f
 Native EmbeddingGemma 2 GGUF text embeddings register through core's embedding
 SPI as `LlamaEmbeddingBackend` in this same engine package. The dedicated
 `flutter_edge_ai_embeddings` package remains tokenizer-only: GGUF carries its
-own tokenizer. Version 0.0.6 requires core 2.5.x and llamadart
-0.17.5 (0.0.3 introduced the backend on core 2.5.0's SPI). Use separate GGUF and LiteRT RAG profile IDs; matching dimensions do
+own tokenizer. Version 0.1.0 requires core 2.6.x and llamadart 0.17.5. Use
+separate GGUF and LiteRT RAG profile IDs; matching dimensions do
 not make their vectors interchangeable.
 See the [embedding design and qualification](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/embeddings.md).
 Embedding execution has been measured on macOS CPU/Metal (llamadart 0.15.1 and
@@ -189,7 +187,7 @@ Media and Web embeddings remain unavailable in the initial profile.
 
 ## Capabilities and qualification
 
-Version 0.0.6 pins llamadart `>=0.17.5 <0.17.6`, Apple companion `0.17.3`,
+Version 0.1.0 pins llamadart `>=0.17.5 <0.17.6`, Apple companion `0.17.3`,
 native artifacts `v0.8.0-1` and Web bridge `v0.1.79`. Full platform
 qualification of these pins is pending; earlier qualification evidence does
 not qualify the updated pair.

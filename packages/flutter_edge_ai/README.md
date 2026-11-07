@@ -373,10 +373,11 @@ complete chunk. A prompt that never fits the context fails with
 
 ### Sessions and turn history
 
-`createSession()` and `createChat()` remain supported in 2.6.0. They use the
-model's legacy singleton lane: a later create normally closes and replaces the
-previous session or chat. `openSession()` and `openChat()` return detached,
-independent conversations; keep each handle and close it yourself.
+`createSession()` and `createChat()` remain available in 2.6.0 but are
+deprecated and will be removed in 3.0.0. They use the model's legacy singleton
+lane: a later create normally closes and replaces the previous session or chat.
+`openSession()` and `openChat()` return detached, independent conversations;
+keep each handle and close it yourself.
 `model.sessions` lists the live legacy and detached sessions.
 
 `maxConcurrentSessions` usually caps detached sessions; built-in AI instead

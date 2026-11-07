@@ -158,8 +158,11 @@ tools-enabled chat arrives without a handler. Use `VoiceSession.custom` for an
 ```dart
 final recognizer = await FlutterEdgeAi.getActiveStt();
 final synthesizer = await FlutterEdgeAi.getActiveTts();
-final chat = await (await FlutterEdgeAi.getActiveModel(maxTokens: 1024))
-    .openChat(tokenBuffer: 256, maxOutputTokens: 128); // no tools, short replies
+final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+final chat = await model.openChat(
+  tokenBuffer: 256,
+  maxOutputTokens: 128,
+); // no tools, short replies
 
 final session = VoiceSession.fromChat(
   recognizer: recognizer, chat: chat, synthesizer: synthesizer);
@@ -174,7 +177,15 @@ await for (final event in session.runTurn(pcm16kMono)) {
   }
 }
 // Barge-in: await session.interrupt();
+
+await chat.close();
+await model.close();
+await recognizer.close();
+await synthesizer.close();
 ```
+
+`VoiceSession` does not own these handles; run this cleanup from the feature's
+async teardown.
 
 `VoiceSession` owns no microphone or player — the app captures PCM
 (`package:record`) and plays the reply (the example's own
@@ -200,6 +211,11 @@ final session = VoiceSession.fromChat(
 await for (final event in session.runAudioTurn(pcm16kMono)) {
   // the events of runTurn, without VoiceTranscriptEvent
 }
+
+await chat.close();
+await model.close();
+await recognizer.close();
+await synthesizer.close();
 ```
 
 Barge-in and the one-turn-at-a-time rule work as in `runTurn`; the complete and
@@ -237,3 +253,9 @@ says so ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 
 No `hook/build.dart` of its own — the native library is bundled by
 `flutter_edge_ai_litertlm`'s Native Assets hook and shared transitively.
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the form links back to your store page or repository.

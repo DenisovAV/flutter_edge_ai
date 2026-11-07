@@ -231,3 +231,9 @@ Cross-Origin-Embedder-Policy: require-corp
 
 There is no CDN `<script>`, no wa-sqlite worker, and no `index.html` wiring
 anymore.
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the form links back to your store page or repository.

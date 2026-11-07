@@ -43,6 +43,15 @@ only the engines, stores and features your app uses — see
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
+## What's new in 2.6
+
+- **Caller-owned sessions:** `openSession` / `openChat` are the supported ownership API; `createSession`, `createChat`, `session` and `chat` are deprecated and will be removed in 3.0.0. MediaPipe and ONNX support independent Web sessions too.
+- **Typed structured output:** pass `ResponseFormat.jsonSchema(...)` to `openSession` / `openChat`; inspect `structuredOutputSupport` and `refusalFor(format)` for the loaded engine, platform and backend.
+- **Reliable turn outcomes:** `EngineTurn.end`, `TurnEnd` and `ContextLimitException` distinguish natural completion, output/context limits, stops, closes and refused prompts; failed turns roll back.
+- **LiteRT-LM 0.19:** C API 1.0 from `native-v0.19.0-a`, native conversations on qualified rows and virtual replay elsewhere, with image/audio accepted by both.
+- **Engine integrations:** the decider SPI is on `InferenceModel`; built-in AI, ONNX and llama.cpp wire response formats; Genkit forwards eligible output schemas.
+- **Genkit Hybrid 0.5:** the deprecated composite API is removed; use `defineHybridRouter`.
+
 ## What's new in 2.5
 
 - **Several open models** (`flutter_edge_ai` 2.5.0, `flutter_edge_ai_litertlm`
@@ -768,5 +777,6 @@ chat.generateChatResponseAsync().listen((response) {
 - [Installation](/docs/installation) — per-platform setup and engine registration.
 - [Models](/docs/models) — supported models, file formats, and capabilities.
 - [Migration](/docs/migration) — upgrade from `flutter_gemma` or Flutter Edge AI 1.x.
+- [Add your app to the showcase](/showcase/submit) — submit a shipped Flutter Edge AI app for review.
 
 **Writing this with a coding assistant?** `dart run skills@ get --all` installs [`flutter-edge-ai-inference`](/docs/package-skills), the skill that teaches it engines, installing a model, sessions and chats, streaming, and the platform setup for all six targets.

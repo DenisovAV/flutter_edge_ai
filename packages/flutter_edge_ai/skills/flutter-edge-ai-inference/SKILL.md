@@ -12,7 +12,7 @@ description: Use when adding on-device LLM inference with flutter_edge_ai — of
 3. Declare `fileType` on `installModel`. It defaults to `ModelFileType.task`, and the declaration — never the file name — picks the engine.
 4. `maxTokens` is the context window. Cap the reply with `maxOutputTokens` on the session or chat.
 5. Pass `isUser: true` on every user `Message`.
-6. Close a session or chat when its conversation ends. Keep the model while the feature is in use, and close it when the app no longer needs it.
+6. Use `openSession` / `openChat`; `createSession`, `createChat`, `model.session` and `model.chat` are deprecated and will be removed in 3.0.0. Close each returned session or chat when its conversation ends, keep the model while the feature is in use, and close it when the app no longer needs it.
 7. Keep Hugging Face tokens out of source: read them with `String.fromEnvironment`. That keeps a token out of git, not out of the app — it is compiled into the binary, and on web into `main.dart.js`. A shipped app should download from a repo that needs no token.
 8. On Android, set `minSdk 30` for anything built on `.litertlm` — inference, embeddings, speech.
 9. Read [references/platform-setup.md](references/platform-setup.md) before the first build on a platform: without those entries the model fails to load or the app is killed for memory.
@@ -107,7 +107,7 @@ Other sources on the same builder: `.fromAsset(path)` for a model bundled in the
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 100);
 ```
 
-- Symptom: replies are as long as ever. On native `.litertlm` the value is raised to 1024, the smallest context those models support, and only a debug-mode log says so. The web `.litertlm` engine does not take the value at all; on MediaPipe it is the real limit.
+- Symptom: replies are as long as ever. On native `.litertlm` CPU/GPU attempts the value is raised to 1024, the smallest context those models support, and only a debug-mode log says so. NPU attempts are not clamped: keep `maxTokens` at or below that catalog variant's `requiredMaxTokens` / compiled cache length, preferably by passing its `runtimeDefaults`. The web `.litertlm` engine does not take the value at all; on MediaPipe it is the real limit.
 - Fix:
 
 ```dart
@@ -162,7 +162,7 @@ await for (final token in session.getResponseAsync()) {
 }
 ```
 
-To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()` on a chat. Cancelling the stream subscription detaches Dart but does not stop native decoding on every engine. On `.litertlm` on Android, iOS and desktop the chat keeps working after a stop — whether the app called `stopGeneration()` or cancelled its subscription. With `flutter_edge_ai_litertlm` 1.15.0 and later it is rewound to before the stopped turn, which is put back with its partial reply, so the model still sees images and audio from earlier turns. With 1.14.0 and earlier, and on the NPU, it is rebuilt from text instead, and those are gone — re-send an image there if the next question is about it. The legacy `flutter_gemma_litertlm` package needs 1.8.1 or later for a stopped chat to answer again at all.
+To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()` on a chat. Cancelling the stream subscription detaches Dart but does not stop native decoding on every engine. On current `.litertlm` Android, iOS and desktop sessions, a stopped turn that produced text stays in the chat with its partial reply; a stop before any text is taken back. Rewind-capable native conversations rewind and reinsert that exchange. NPU, linear-attention and other non-rewind paths rebuild from full message history, including image and audio parts, so earlier media is preserved. The legacy `flutter_gemma_litertlm` package needs 1.8.1 or later for a stopped chat to answer again at all.
 
 ## Structured JSON output
 
@@ -247,13 +247,7 @@ Native sessions cost memory while idle: Gemma 4 E2B on an M5 Pro added 36.8 MiB
 of RSS per idle session at `maxTokens: 4096`, from the third session onward. Set
 `maxConcurrentSessions` on `getActiveModel` or `openModel` to bound the count.
 
-`flutter_edge_ai_llama` and MediaPipe on the web take the installed type and
-media support. MediaPipe on Android and iOS takes the type and audio support,
-with images off unless you pass `supportImage: true`. Built-in AI takes the type
-and image support and refuses `supportAudio: true`. Native and web ONNX take the
-installed type but remain text-only. Detached sessions work on native/web
-`.litertlm`, MediaPipe Android/iOS/Web, native ONNX 0.8.0, the unreleased ONNX
-Web line, built-in AI and llama.cpp; close every detached session yourself.
+`flutter_edge_ai_llama` and MediaPipe on the web take the installed type and media support. MediaPipe on Android and iOS takes the type and audio support, with images off unless you pass `supportImage: true`. Built-in AI takes the type and image support and refuses `supportAudio: true`. Native and web ONNX take the installed type but remain text-only. Detached sessions work on native/web `.litertlm`, MediaPipe Android/iOS/Web, `flutter_edge_ai_onnx` natively since 0.8.0 and on Web since 0.9.0, built-in AI and llama.cpp; close every detached session yourself.
 
 ```dart
 final summariser = await model.openChat(modelType: ModelType.gemma4);
@@ -413,3 +407,5 @@ Prefill gets slower (about 3× on a Snapdragon 8 Elite and an iPhone 11, under 1
 ## Platform setup
 
 Android needs `minSdk 30` and the internet permission in release builds, and ships `arm64-v8a` only. iOS needs Podfile or Xcode settings and memory entitlements; macOS needs a 14.0 deployment target, entitlements, and with Swift Package Manager off a Podfile build phase; web needs script tags in `web/index.html`. Read [references/platform-setup.md](references/platform-setup.md) before building for any of them — without those entries the model fails to load or the app runs out of memory.
+
+Finished an app with flutter_edge_ai? See the [showcase](https://flutteredge.ai/showcase) and [submit it](https://flutteredge.ai/showcase/submit).

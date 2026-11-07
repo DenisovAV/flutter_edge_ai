@@ -337,3 +337,9 @@ attempted); it only drives a download from `downloadable`/`downloading`.
 
 `FlutterEdgeAi.getActiveModel(...)` throws the same exception when the OS model isn't
 `available` — readiness is a precondition of model creation, not something it waits out.
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the form links back to your store page or repository.

@@ -94,8 +94,8 @@ Open `step_01_starter`. It already depends on both packages:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_builtin_ai: ^0.3.6
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_builtin_ai: ^0.4.0
 ```
 
 `flutter_edge_ai` supplies the common model, session and message APIs. It does
@@ -483,7 +483,7 @@ Future<void> _ask() async {
   InferenceModelSession? session;
   String? failure;
   try {
-    session = await model.createSession();
+    session = await model.openSession();
     await session.addQueryChunk(Message.text(text: text, isUser: true));
     final answer = await session.getResponse();
     if (mounted) setState(() => _answer = answer);
@@ -641,7 +641,7 @@ Run the `complete` app. It follows the whole built-in path, one tap per step:
 launch / resume / Check again → availability() → status card
 Prepare tap                   → ensureReady()   → status card
 Start tap                     → install builtIn → getActiveModel()
-Ask tap                       → createSession() → stream answer → close()
+Ask tap                       → openSession() → stream answer → close()
 ```
 
 No model or session code names Gemini Nano or Apple Foundation Models.
@@ -678,3 +678,7 @@ Continue with [Inference Engines in Flutter](/codelabs/inference-engines-flutter
 to register LiteRT-LM beside `BuiltInAiEngine` and fall back to a downloaded
 open model. See [Built-in AI](/docs/builtin-ai) for platform requirements,
 function calling and capability differences.
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

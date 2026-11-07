@@ -79,7 +79,7 @@ void main() {
       supportAudio: audio.available,
     );
     // Exactly what the app opens: both flags, each ANDed with the platform.
-    final chat = await inference.createChat(
+    final chat = await inference.openChat(
       modelType: model.modelType,
       supportImage: image.available,
       supportAudio: audio.available,
@@ -146,7 +146,11 @@ void main() {
       debugPrint('[multimodal] audio SKIPPED: ${audio.blockedBecause}');
     }
 
-    await inference.close();
+    try {
+      await chat.close();
+    } finally {
+      await inference.close();
+    }
   }, timeout: const Timeout(Duration(minutes: 60)));
 
   test('the WAV header the recorder produces is the one the model expects', () {

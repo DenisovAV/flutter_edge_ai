@@ -60,7 +60,7 @@ void main() {
       expect(await BuiltInAi.availability(), BuiltInAiAvailability.available);
 
       final builtIn = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-      final builtInChat = await builtIn.createChat(
+      final builtInChat = await builtIn.openChat(
         modelType: Models.builtIn.modelType,
         maxOutputTokens: 64,
       );
@@ -76,7 +76,11 @@ void main() {
       }
       debugPrint('[engines] reply via built-in: ${builtInReply.toString()}');
       expect(builtInReply.toString().trim(), isNotEmpty);
-      await builtIn.close();
+      try {
+        await builtInChat.close();
+      } finally {
+        await builtIn.close();
+      }
     }
 
     // Whatever the OS said, the downloaded model must work on this device.
@@ -94,7 +98,7 @@ void main() {
     expect(await FlutterEdgeAi.isModelInstalled(fallback.id), isTrue);
 
     final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-    final chat = await inference.createChat(
+    final chat = await inference.openChat(
       modelType: fallback.modelType,
       maxOutputTokens: 64,
     );
@@ -111,6 +115,10 @@ void main() {
     debugPrint('[engines] reply via LiteRT-LM: ${buffer.toString().trim()}');
     expect(buffer.toString().trim(), isNotEmpty);
 
-    await inference.close();
+    try {
+      await chat.close();
+    } finally {
+      await inference.close();
+    }
   }, timeout: const Timeout(Duration(minutes: 30)));
 }

@@ -68,7 +68,7 @@ abstract final class Models {
   /// a microphone, says yes.
   /// Run on macOS 2026-09-07: installs (0.36 GB) and answers "RED" to a
   /// 16x16 red square, with `supportImage` set on both `getActiveModel` and
-  /// `createChat`. Nothing in CI runs a model, so this line is the only
+  /// `openChat`. Nothing in CI runs a model, so this line is the only
   /// evidence these weights were ever executed.
   static const smolVlm2 = ModelChoice(
     nativeLabel: 'SmolVLM2 500M',

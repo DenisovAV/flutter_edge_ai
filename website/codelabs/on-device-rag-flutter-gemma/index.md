@@ -781,3 +781,7 @@ knows those vectors are vectors, and a prompt that keeps the answer honest.
   grammar, the store comparison, and what `flush()` does on each store
 * [flutter_edge_ai_sqlite on pub.dev](https://pub.dev/packages/flutter_edge_ai_sqlite)
 * [Source and this codelab's code](https://github.com/DenisovAV/flutter_edge_ai)
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

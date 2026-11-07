@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-
 import 'image_processor.dart';
 import 'utils/edge_ai_log.dart';
 

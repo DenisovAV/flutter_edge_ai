@@ -4,7 +4,6 @@
 library;
 
 import 'package:shared_preferences/shared_preferences.dart';
-
 import '../../domain/web_storage_mode.dart';
 import '../../infrastructure/background_downloader_service.dart';
 import '../../infrastructure/http_remote_size_probe.dart';

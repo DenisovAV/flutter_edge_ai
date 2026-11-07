@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-
 import 'package:flutter_edge_ai_speech/src/litert/tts_chunk.dart';
 import 'package:flutter_test/flutter_test.dart';
 

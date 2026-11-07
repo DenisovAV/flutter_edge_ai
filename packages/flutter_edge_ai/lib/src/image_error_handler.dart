@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-
 import 'image_processor.dart';
 import 'image_tokenizer.dart';
 import 'vision_encoder_validator.dart';

@@ -201,7 +201,9 @@ class CodelabsPage extends StatelessComponent {
         ]),
       ]),
       section(classes: 'cl-grid-wrap', [
-        div(classes: 'cl-grid', [for (final c in _items) _card(c)]),
+        div(classes: 'cl-grid', [
+          for (final c in _items) _card(c),
+        ]),
       ]),
       const SiteFooter(),
     ]);
@@ -278,7 +280,11 @@ class CodelabsPage extends StatelessComponent {
 
     // ---- grid ----
     css('.cl-grid-wrap').styles(
-      padding: Padding.only(left: 2.rem, right: 2.rem, bottom: 5.rem),
+      padding: Padding.only(
+        left: 2.rem,
+        right: 2.rem,
+        bottom: 5.rem,
+      ),
     ),
     css('.cl-grid').styles(
       maxWidth: 1100.px,
@@ -289,9 +295,10 @@ class CodelabsPage extends StatelessComponent {
       // ≤360px viewport (iPhone SE 1st gen, Galaxy Fold cover screen).
       gridTemplate: GridTemplate(
         columns: GridTracks([
-          GridTrack.repeat(TrackRepeat.autoFit, [
-            GridTrack(TrackSize.minmax(TrackSize(280.px), TrackSize.fr(1))),
-          ]),
+          GridTrack.repeat(
+            TrackRepeat.autoFit,
+            [GridTrack(TrackSize.minmax(TrackSize(280.px), TrackSize.fr(1)))],
+          ),
         ]),
       ),
       gap: Gap.all(1.25.rem),
@@ -407,7 +414,11 @@ class CodelabsPage extends StatelessComponent {
         ),
         css('.cl-title').styles(fontSize: 1.9.rem),
         css('.cl-grid-wrap').styles(
-          padding: Padding.only(left: 1.25.rem, right: 1.25.rem, bottom: 3.rem),
+          padding: Padding.only(
+            left: 1.25.rem,
+            right: 1.25.rem,
+            bottom: 3.rem,
+          ),
         ),
       ],
     ),

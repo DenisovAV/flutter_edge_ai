@@ -22,7 +22,6 @@ import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart' as rag;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
-
 import 'inference_test_helpers.dart' show registerTestEngines;
 
 const _modelPath =

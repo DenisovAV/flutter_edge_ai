@@ -15,7 +15,6 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
-
 import 'inference_test_helpers.dart' show registerTestEngines;
 
 // Pre-stage these files in the platform sandbox before running:

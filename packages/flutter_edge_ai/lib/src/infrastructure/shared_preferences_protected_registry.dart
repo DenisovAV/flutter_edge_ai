@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_edge_ai/src/services/protected_files_registry.dart';
 

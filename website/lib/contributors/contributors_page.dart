@@ -89,17 +89,16 @@ class ContributorsPage extends StatelessComponent {
             src: m.avatarUrl,
             alt: m.name,
             classes: 'cb-avatar',
-            attributes: const {
-              'width': '72',
-              'height': '72',
-              'loading': 'lazy',
-            },
+            attributes: const {'width': '72', 'height': '72', 'loading': 'lazy'},
           ),
           div(classes: 'cb-person-text', [
             h3(classes: 'cb-name', [Component.text(m.name)]),
-            a(href: githubUrl, classes: 'cb-handle', attributes: _external, [
-              Component.text('@${m.login}'),
-            ]),
+            a(
+              href: githubUrl,
+              classes: 'cb-handle',
+              attributes: _external,
+              [Component.text('@${m.login}')],
+            ),
           ]),
         ]),
         p(classes: 'cb-about', [Component.text(m.about)]),
@@ -107,9 +106,7 @@ class ContributorsPage extends StatelessComponent {
           if (m.role case final role?)
             m.roleHref == null
                 ? span(classes: 'cb-role', [Component.text(role)])
-                : a(href: m.roleHref!, classes: 'cb-role cb-role--link', [
-                    Component.text(role),
-                  ]),
+                : a(href: m.roleHref!, classes: 'cb-role cb-role--link', [Component.text(role)]),
           for (final package in m.packages)
             a(
               href: 'https://pub.dev/packages/$package',
@@ -120,13 +117,19 @@ class ContributorsPage extends StatelessComponent {
         ]),
         p(classes: 'cb-blurb', [Component.text(m.blurb)]),
         div(classes: 'cb-links', [
-          a(href: githubUrl, classes: 'cb-link', attributes: _external, [
-            Component.text('GitHub'),
-          ]),
+          a(
+            href: githubUrl,
+            classes: 'cb-link',
+            attributes: _external,
+            [Component.text('GitHub')],
+          ),
           if (m.website case final website?)
-            a(href: website, classes: 'cb-link', attributes: _external, [
-              Component.text('Website'),
-            ]),
+            a(
+              href: website,
+              classes: 'cb-link',
+              attributes: _external,
+              [Component.text('Website')],
+            ),
         ]),
       ]),
     ]);
@@ -135,15 +138,20 @@ class ContributorsPage extends StatelessComponent {
   /// The login is visible text, not a tooltip: a phone has no hover. The
   /// avatar's alt is empty because the login next to it already names it.
   static Component _contributorTile(Contributor c) {
-    return a(href: c.commitsUrl, classes: 'cb-tile', attributes: _external, [
-      img(
-        src: c.avatarUrl,
-        alt: '',
-        classes: 'cb-tile-avatar',
-        attributes: const {'width': '56', 'height': '56', 'loading': 'lazy'},
-      ),
-      span(classes: 'cb-tile-name', [Component.text(c.login)]),
-    ]);
+    return a(
+      href: c.commitsUrl,
+      classes: 'cb-tile',
+      attributes: _external,
+      [
+        img(
+          src: c.avatarUrl,
+          alt: '',
+          classes: 'cb-tile-avatar',
+          attributes: const {'width': '56', 'height': '56', 'loading': 'lazy'},
+        ),
+        span(classes: 'cb-tile-name', [Component.text(c.login)]),
+      ],
+    );
   }
 
   @css
@@ -218,9 +226,10 @@ class ContributorsPage extends StatelessComponent {
       display: Display.grid,
       gridTemplate: GridTemplate(
         columns: GridTracks([
-          GridTrack.repeat(TrackRepeat.autoFit, [
-            GridTrack(TrackSize.minmax(TrackSize(280.px), TrackSize.fr(1))),
-          ]),
+          GridTrack.repeat(
+            TrackRepeat.autoFit,
+            [GridTrack(TrackSize.minmax(TrackSize(280.px), TrackSize.fr(1)))],
+          ),
         ]),
       ),
       gap: Gap.all(1.25.rem),
@@ -300,8 +309,13 @@ class ContributorsPage extends StatelessComponent {
       textDecoration: TextDecoration.none,
     ),
     css('.cb-package').styles(fontFamily: Brand.fontMono),
-    css('.cb-role').styles(fontFamily: Brand.fontSans, fontWeight: FontWeight.w600),
-    css('.cb-package:hover, .cb-role--link:hover').styles(backgroundColor: Color('rgba(147,197,253,0.18)')),
+    css('.cb-role').styles(
+      fontFamily: Brand.fontSans,
+      fontWeight: FontWeight.w600,
+    ),
+    css('.cb-package:hover, .cb-role--link:hover').styles(
+      backgroundColor: Color('rgba(147,197,253,0.18)'),
+    ),
     css('.cb-blurb').styles(
       margin: Margin.zero,
       fontFamily: Brand.fontSans,
@@ -331,9 +345,10 @@ class ContributorsPage extends StatelessComponent {
       display: Display.grid,
       gridTemplate: GridTemplate(
         columns: GridTracks([
-          GridTrack.repeat(TrackRepeat.autoFill, [
-            GridTrack(TrackSize.minmax(TrackSize(92.px), TrackSize.fr(1))),
-          ]),
+          GridTrack.repeat(
+            TrackRepeat.autoFill,
+            [GridTrack(TrackSize.minmax(TrackSize(92.px), TrackSize.fr(1)))],
+          ),
         ]),
       ),
       // 92px + 0.75rem: three tiles across a 360px phone, whose content box
@@ -350,7 +365,9 @@ class ContributorsPage extends StatelessComponent {
       textDecoration: TextDecoration.none,
       raw: {'transition': 'background-color .15s ease'},
     ),
-    css('.cb-tile:hover').styles(backgroundColor: Color('rgba(255,255,255,0.06)')),
+    css('.cb-tile:hover').styles(
+      backgroundColor: Color('rgba(255,255,255,0.06)'),
+    ),
     css('.landing-root .cb-tile-avatar').styles(
       width: 56.px,
       height: 56.px,
@@ -390,9 +407,14 @@ class ContributorsPage extends StatelessComponent {
         css('.cb-people').styles(
           gridTemplate: GridTemplate(
             columns: GridTracks([
-              GridTrack.repeat(TrackRepeat.autoFill, [
-                GridTrack(TrackSize.minmax(TrackSize(116.px), TrackSize.fr(1))),
-              ]),
+              GridTrack.repeat(
+                TrackRepeat.autoFill,
+                [
+                  GridTrack(
+                    TrackSize.minmax(TrackSize(116.px), TrackSize.fr(1)),
+                  ),
+                ],
+              ),
             ]),
           ),
         ),

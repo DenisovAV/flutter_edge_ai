@@ -9,94 +9,95 @@ class Hero extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return section(classes: 'hero', [
-      // Decorative oversized logo watermark behind the hero content.
-      img(
-        src: '/images/logo-edge-ai@2x.png',
-        alt: '',
-        classes: 'hero-watermark',
-        attributes: const {'aria-hidden': 'true'},
-      ),
-      div(classes: 'hero-inner', [
-        // Left column
-        div(classes: 'hero-copy', [
-          h1(classes: 'hero-h1', [
-            Component.text('On-device LLMs in your Flutter app.'),
-          ]),
-          p(classes: 'hero-subhead', [
-            Component.text('No servers. No cloud. Just Dart.'),
-          ]),
-          div(classes: 'hero-buttons', [
-            a(href: '/docs/getting-started', classes: 'btn btn-primary', [
-              Component.text('Get Started'),
-            ]),
-            a(
-              href: 'https://github.com/DenisovAV/flutter_edge_ai',
-              classes: 'btn btn-outline',
-              attributes: {'target': '_blank', 'rel': 'noopener'},
-              [Component.text('GitHub')],
-            ),
-          ]),
-          div(classes: 'hero-install', [
-            span(classes: 'install-prompt', [Component.text('\$')]),
-            span(classes: 'install-cmd', [
-              Component.text(
-                ' flutter pub add flutter_edge_ai flutter_edge_ai_litertlm',
+    return section(
+      classes: 'hero',
+      [
+        // Decorative oversized logo watermark behind the hero content.
+        img(
+          src: '/images/logo-edge-ai@2x.png',
+          alt: '',
+          classes: 'hero-watermark',
+          attributes: const {'aria-hidden': 'true'},
+        ),
+        div(classes: 'hero-inner', [
+          // Left column
+          div(classes: 'hero-copy', [
+            h1(classes: 'hero-h1', [Component.text('On-device LLMs in your Flutter app.')]),
+            p(classes: 'hero-subhead', [Component.text('No servers. No cloud. Just Dart.')]),
+            div(classes: 'hero-buttons', [
+              a(
+                href: '/docs/getting-started',
+                classes: 'btn btn-primary',
+                [Component.text('Get Started')],
+              ),
+              a(
+                href: 'https://github.com/DenisovAV/flutter_edge_ai',
+                classes: 'btn btn-outline',
+                attributes: {'target': '_blank', 'rel': 'noopener'},
+                [Component.text('GitHub')],
               ),
             ]),
-          ]),
-        ]),
-        // Right column
-        div(classes: 'hero-demo', [
-          div(classes: 'hero-phone-frame', [
-            // The demo is a muted inline video, not a GIF: the same 34 s
-            // clip is 0.35 MB as VP9 / 0.58 MB as H.264 against the 5.8 MB
-            // GIF it replaces, which every first-time visitor downloaded and
-            // which alone used most of the Hosting free-tier transfer quota.
-            video(
-              [
-                source(src: '/demos/hero.webm', type: 'video/webm'),
-                source(src: '/demos/hero.mp4', type: 'video/mp4'),
-              ],
-              classes: 'hero-video',
-              // Intrinsic size, so the frame holds its height before the
-              // poster arrives instead of growing under the page.
-              width: 600,
-              height: 1344,
-              // `autoplay` starts it without JavaScript; the marker lets
-              // `PlayWhenVisible` pause it once it is scrolled out of view
-              // and under reduced motion.
-              autoplay: true,
-              loop: true,
-              muted: true,
-              poster: '/demos/hero-poster.jpg',
-              attributes: const {
-                'playsinline': '',
-                'data-play-when-visible': '',
-                'aria-label': 'flutter_edge_ai demo running on a device',
-              },
-            ),
-            div(classes: 'hero-demo-overlay', [
-              // Links to the live Flutter web example app at /try.
-              a(href: '/try', classes: 'btn-try-live', [
-                Component.text('▶ Try it live'),
+            div(classes: 'hero-install', [
+              span(classes: 'install-prompt', [Component.text('\$')]),
+              span(classes: 'install-cmd', [
+                Component.text(' flutter pub add flutter_edge_ai flutter_edge_ai_litertlm'),
               ]),
             ]),
           ]),
-          p(classes: 'hero-caption', [Component.text('runs in your browser')]),
+          // Right column
+          div(classes: 'hero-demo', [
+            div(classes: 'hero-phone-frame', [
+              // The demo is a muted inline video, not a GIF: the same 34 s
+              // clip is 0.35 MB as VP9 / 0.58 MB as H.264 against the 5.8 MB
+              // GIF it replaces, which every first-time visitor downloaded and
+              // which alone used most of the Hosting free-tier transfer quota.
+              video(
+                [
+                  source(src: '/demos/hero.webm', type: 'video/webm'),
+                  source(src: '/demos/hero.mp4', type: 'video/mp4'),
+                ],
+                classes: 'hero-video',
+                // Intrinsic size, so the frame holds its height before the
+                // poster arrives instead of growing under the page.
+                width: 600,
+                height: 1344,
+                // `autoplay` starts it without JavaScript; the marker lets
+                // `PlayWhenVisible` pause it once it is scrolled out of view
+                // and under reduced motion.
+                autoplay: true,
+                loop: true,
+                muted: true,
+                poster: '/demos/hero-poster.jpg',
+                attributes: const {
+                  'playsinline': '',
+                  'data-play-when-visible': '',
+                  'aria-label': 'flutter_edge_ai demo running on a device',
+                },
+              ),
+              div(classes: 'hero-demo-overlay', [
+                // Links to the live Flutter web example app at /try.
+                a(
+                  href: '/try',
+                  classes: 'btn-try-live',
+                  [Component.text('▶ Try it live')],
+                ),
+              ]),
+            ]),
+            p(classes: 'hero-caption', [Component.text('runs in your browser')]),
+          ]),
         ]),
-      ]),
-      // Badges row
-      div(classes: 'hero-badges', [
-        span(classes: 'badge', [Component.text('6 platforms')]),
-        span(classes: 'badge-sep', [Component.text('·')]),
-        span(classes: 'badge', [Component.text('multimodal')]),
-        span(classes: 'badge-sep', [Component.text('·')]),
-        span(classes: 'badge', [Component.text('private')]),
-        span(classes: 'badge-sep', [Component.text('·')]),
-        span(classes: 'badge', [Component.text('MIT')]),
-      ]),
-    ]);
+        // Badges row
+        div(classes: 'hero-badges', [
+          span(classes: 'badge', [Component.text('6 platforms')]),
+          span(classes: 'badge-sep', [Component.text('·')]),
+          span(classes: 'badge', [Component.text('multimodal')]),
+          span(classes: 'badge-sep', [Component.text('·')]),
+          span(classes: 'badge', [Component.text('private')]),
+          span(classes: 'badge-sep', [Component.text('·')]),
+          span(classes: 'badge', [Component.text('MIT')]),
+        ]),
+      ],
+    );
   }
 
   @css
@@ -174,13 +175,18 @@ class Hero extends StatelessComponent {
       textDecoration: TextDecoration.none,
       cursor: Cursor.pointer,
     ),
-    css('.btn-primary').styles(backgroundColor: Brand.blue, color: Brand.white),
+    css('.btn-primary').styles(
+      backgroundColor: Brand.blue,
+      color: Brand.white,
+    ),
     css('.btn-outline').styles(
       backgroundColor: Color('transparent'),
       color: Brand.white,
       border: Border.all(color: Color('rgba(255,255,255,0.35)'), width: 1.px),
     ),
-    css('.btn-primary:hover').styles(backgroundColor: Color('#2563eb')),
+    css('.btn-primary:hover').styles(
+      backgroundColor: Color('#2563eb'),
+    ),
     css('.btn-outline:hover').styles(
       border: Border.all(color: Brand.white, width: 1.px),
     ),
@@ -225,7 +231,11 @@ class Hero extends StatelessComponent {
         color: Color('rgba(0,0,0,0.5)'),
       ),
     ),
-    css('.hero-video').styles(display: Display.block, width: 100.percent, height: Unit.auto),
+    css('.hero-video').styles(
+      display: Display.block,
+      width: 100.percent,
+      height: Unit.auto,
+    ),
     css('.hero-demo-overlay').styles(
       position: Position.absolute(bottom: 1.5.rem, left: 0.px, right: 0.px),
       display: Display.flex,
@@ -264,12 +274,17 @@ class Hero extends StatelessComponent {
       color: Brand.white70,
       fontWeight: FontWeight.w500,
     ),
-    css('.badge-sep').styles(color: Brand.white50),
+    css('.badge-sep').styles(
+      color: Brand.white50,
+    ),
     // Responsive
     StyleRule.media(
       query: MediaQuery.screen(maxWidth: 768.px),
       styles: [
-        css('.hero-inner').styles(flexDirection: FlexDirection.column, gap: Gap.all(2.5.rem)),
+        css('.hero-inner').styles(
+          flexDirection: FlexDirection.column,
+          gap: Gap.all(2.5.rem),
+        ),
         css('.hero-h1').styles(fontSize: 2.2.rem),
         css('.hero-demo').styles(width: 100.percent),
       ],

@@ -1,7 +1,5 @@
 import 'package:flutter/foundation.dart';
-
 import 'services/catalog_install.dart';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';

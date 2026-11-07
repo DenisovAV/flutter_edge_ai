@@ -100,9 +100,7 @@ const showcaseApps = <ShowcaseApp>[
     name: 'Clean Expense: Budget Tracker',
     icon: '/images/showcase/com.sutechs.expense-1.png',
     googlePlay: GooglePlayListing('com.sutechs.expense', installs: 100),
-    appStore: AppStoreListing(
-      'https://apps.apple.com/us/app/clean-expense-budget-tracker/id6757723320',
-    ),
+    appStore: AppStoreListing('https://apps.apple.com/us/app/clean-expense-budget-tracker/id6757723320'),
   ),
 ];
 
@@ -122,10 +120,7 @@ int compareByDownloads(ShowcaseApp a, ShowcaseApp b) {
 }
 
 int _ratings(ShowcaseApp app) =>
-    app.appStore?.ratings ??
-    (throw StateError(
-      '${app.name} is only on the App Store and needs its ratings',
-    ));
+    app.appStore?.ratings ?? (throw StateError('${app.name} is only on the App Store and needs its ratings'));
 
 /// [apps] in the order of [compareByDownloads].
 ///

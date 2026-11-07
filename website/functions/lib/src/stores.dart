@@ -32,33 +32,21 @@ class StoreCheck {
   /// Google Play has no public API: its details page answers 404 for an id
   /// it does not list.
   Future<void> googlePlay(String applicationId) async {
-    final uri = Uri.https('play.google.com', '/store/apps/details', {
-      'id': applicationId,
-      'hl': 'en',
-    });
+    final uri = Uri.https('play.google.com', '/store/apps/details', {'id': applicationId, 'hl': 'en'});
     final response = await _client.get(uri).timeout(_timeout);
     if (response.statusCode == 404) throw SubmissionException('Google Play has no app $applicationId.');
     if (response.statusCode != 200) {
-      throw StoreUnavailableException(
-        'Google Play',
-        'answered ${response.statusCode} for $applicationId',
-      );
+      throw StoreUnavailableException('Google Play', 'answered ${response.statusCode} for $applicationId');
     }
   }
 
   /// [country] is the storefront from the link; the lookup only finds an app
   /// in a storefront that sells it, and defaults to the US one.
   Future<AppStoreApp> appStore(int id, {String? country}) async {
-    final uri = Uri.https('itunes.apple.com', '/lookup', {
-      'id': '$id',
-      'country': ?country,
-    });
+    final uri = Uri.https('itunes.apple.com', '/lookup', {'id': '$id', 'country': ?country});
     final response = await _client.get(uri).timeout(_timeout);
     if (response.statusCode != 200) {
-      throw StoreUnavailableException(
-        'The App Store',
-        'the iTunes Lookup API answered ${response.statusCode} for $id',
-      );
+      throw StoreUnavailableException('The App Store', 'the iTunes Lookup API answered ${response.statusCode} for $id');
     }
     final body = jsonDecode(response.body);
     if (body case {'results': [final Map<String, Object?> app, ...]}) {
@@ -68,8 +56,6 @@ class StoreCheck {
         artworkUrl: app['artworkUrl512'] as String?,
       );
     }
-    throw SubmissionException(
-      'The App Store has no app id$id${country == null ? '' : ' in the $country storefront'}.',
-    );
+    throw SubmissionException('The App Store has no app id$id${country == null ? '' : ' in the $country storefront'}.');
   }
 }

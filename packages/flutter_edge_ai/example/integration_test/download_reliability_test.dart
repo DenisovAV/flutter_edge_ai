@@ -31,7 +31,6 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/mobile/smart_downloader.dart'
     show SmartDownloader;
 import 'package:path_provider/path_provider.dart';
-
 import 'inference_test_helpers.dart' show registerTestEngines;
 
 // Small public model — 284 MB, no auth token required.

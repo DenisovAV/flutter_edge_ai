@@ -93,7 +93,9 @@ const String _showcaseSubmitDescription =
 
 void main() {
   // Initializes the server environment with the generated default options.
-  Jaspr.initializeApp(options: defaultServerOptions);
+  Jaspr.initializeApp(
+    options: defaultServerOptions,
+  );
 
   // [ContentApp.custom] lets us serve a hand-built marketing landing page at `/`
   // alongside the markdown-driven docs under `/docs/*`. The docs pipeline
@@ -105,11 +107,15 @@ void main() {
       // `/docs/*` (matching the sidebar links). `content/_data` is skipped — the
       // loader treats any path segment starting with `_` as private. `/` stays
       // owned by the landing page (no markdown sits in the content root).
-      loaders: [FilesystemLoader('content')],
+      loaders: [
+        FilesystemLoader('content'),
+      ],
       configResolver: PageConfig.all(
         // Enables mustache templating inside the markdown files.
         templateEngine: MustacheTemplateEngine(),
-        parsers: [MarkdownParser()],
+        parsers: [
+          MarkdownParser(),
+        ],
         extensions: [
           // Adds heading anchors to each heading.
           HeadingAnchorsExtension(),
@@ -122,7 +128,10 @@ void main() {
           // Adds syntax highlighting to code blocks.
           CodeBlock(),
           // Adds a custom Jaspr component to be used as <Clicker/> in markdown.
-          CustomComponent(pattern: 'Clicker', builder: (_, _, _) => Clicker()),
+          CustomComponent(
+            pattern: 'Clicker',
+            builder: (_, _, _) => Clicker(),
+          ),
           // Adds zooming and caption support to images.
           Image(zoom: true),
         ],
@@ -142,7 +151,9 @@ void main() {
             sidebar: Sidebar(
               groups: [
                 SidebarGroup(
-                  links: [SidebarLink(text: 'Overview', href: '/')],
+                  links: [
+                    SidebarLink(text: 'Overview', href: '/'),
+                  ],
                 ),
                 SidebarGroup(
                   title: 'Workshop',
@@ -158,14 +169,8 @@ void main() {
                 SidebarGroup(
                   title: 'Guide',
                   links: [
-                    SidebarLink(
-                      text: 'Getting Started',
-                      href: '/docs/getting-started',
-                    ),
-                    SidebarLink(
-                      text: 'Installation',
-                      href: '/docs/installation',
-                    ),
+                    SidebarLink(text: 'Getting Started', href: '/docs/getting-started'),
+                    SidebarLink(text: 'Installation', href: '/docs/installation'),
                     SidebarLink(text: 'Models', href: '/docs/models'),
                     SidebarLink(text: 'Model Registry', href: '/docs/registry'),
                   ],
@@ -184,29 +189,14 @@ void main() {
                   title: 'Features',
                   links: [
                     SidebarLink(text: 'Multimodal', href: '/docs/multimodal'),
-                    SidebarLink(
-                      text: 'Function Calling',
-                      href: '/docs/function-calling',
-                    ),
-                    SidebarLink(
-                      text: 'Thinking Mode',
-                      href: '/docs/thinking-mode',
-                    ),
+                    SidebarLink(text: 'Function Calling', href: '/docs/function-calling'),
+                    SidebarLink(text: 'Thinking Mode', href: '/docs/thinking-mode'),
                     SidebarLink(text: 'Agent Skills', href: '/docs/agent'),
                     SidebarLink(text: 'Speech', href: '/docs/speech'),
-                    SidebarLink(
-                      text: 'Embeddings & RAG',
-                      href: '/docs/embeddings-and-rag',
-                    ),
+                    SidebarLink(text: 'Embeddings & RAG', href: '/docs/embeddings-and-rag'),
                     SidebarLink(text: 'Decisions', href: '/docs/decisions'),
-                    SidebarLink(
-                      text: 'Memory Diagnostics',
-                      href: '/docs/diagnostics',
-                    ),
-                    SidebarLink(
-                      text: 'Package Skills',
-                      href: '/docs/package-skills',
-                    ),
+                    SidebarLink(text: 'Memory Diagnostics', href: '/docs/diagnostics'),
+                    SidebarLink(text: 'Package Skills', href: '/docs/package-skills'),
                   ],
                 ),
                 SidebarGroup(
@@ -220,16 +210,10 @@ void main() {
                   title: 'Reference',
                   links: [
                     SidebarLink(text: 'Packages', href: '/docs/packages'),
-                    SidebarLink(
-                      text: 'Capabilities',
-                      href: '/docs/capabilities',
-                    ),
+                    SidebarLink(text: 'Capabilities', href: '/docs/capabilities'),
                     SidebarLink(text: 'Desktop Support', href: '/docs/desktop'),
                     SidebarLink(text: 'Migration', href: '/docs/migration'),
-                    SidebarLink(
-                      text: 'Troubleshooting',
-                      href: '/docs/troubleshooting',
-                    ),
+                    SidebarLink(text: 'Troubleshooting', href: '/docs/troubleshooting'),
                   ],
                 ),
               ],
@@ -256,12 +240,8 @@ void main() {
             ContentColors.bullets.apply(Brand.blueLight),
             ContentColors.captions.apply(Brand.white50),
             ContentColors.hr.apply(const Color('rgba(255,255,255,0.12)')),
-            ContentColors.thBorders.apply(
-              const Color('rgba(255,255,255,0.18)'),
-            ),
-            ContentColors.tdBorders.apply(
-              const Color('rgba(255,255,255,0.10)'),
-            ),
+            ContentColors.thBorders.apply(const Color('rgba(255,255,255,0.18)')),
+            ContentColors.tdBorders.apply(const Color('rgba(255,255,255,0.10)')),
             ContentColors.kbd.apply(Brand.white),
             ContentColors.preCode.apply(Brand.white70),
             ContentColors.preBg.apply(Brand.navyDeep),

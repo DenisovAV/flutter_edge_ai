@@ -17,7 +17,6 @@ import 'package:flutter_edge_ai/src/structured/structured_session.dart';
 import 'package:mutex/mutex.dart';
 
 import 'model.dart';
-
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 
 /// Default maximum length for function call buffer before flushing as text.

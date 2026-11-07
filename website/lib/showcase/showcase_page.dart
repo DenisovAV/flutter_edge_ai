@@ -20,13 +20,9 @@ class ShowcasePage extends StatelessComponent {
       section(classes: 'sc-head', [
         div(classes: 'sc-head-inner', [
           p(classes: 'sc-eyebrow', [Component.text('Showcase')]),
-          h1(classes: 'sc-title', [
-            Component.text('Built with Flutter Edge AI'),
-          ]),
+          h1(classes: 'sc-title', [Component.text('Built with Flutter Edge AI')]),
           p(classes: 'sc-standfirst', [
-            Component.text(
-              'Apps on Google Play and the App Store that run AI on-device with ',
-            ),
+            Component.text('Apps on Google Play and the App Store that run AI on-device with '),
             code([Component.text('flutter_edge_ai')]),
             Component.text(' or '),
             code([Component.text('flutter_gemma')]),
@@ -55,12 +51,7 @@ class ShowcasePage extends StatelessComponent {
     // ---- header ----
     // As wide as the grid, so the title starts where the cards do.
     css('.sc-head').styles(
-      padding: Padding.only(
-        left: 2.rem,
-        right: 2.rem,
-        top: 4.rem,
-        bottom: 2.5.rem,
-      ),
+      padding: Padding.only(left: 2.rem, right: 2.rem, top: 4.rem, bottom: 2.5.rem),
     ),
     css('.sc-head-inner').styles(
       display: Display.flex,
@@ -95,9 +86,11 @@ class ShowcasePage extends StatelessComponent {
       fontSize: 1.05.rem,
       lineHeight: 1.6.em,
     ),
-    css(
-      '.sc-standfirst code',
-    ).styles(color: Brand.white, fontFamily: Brand.fontMono, fontSize: 0.92.em),
+    css('.sc-standfirst code').styles(
+      color: Brand.white,
+      fontFamily: Brand.fontMono,
+      fontSize: 0.92.em,
+    ),
 
     // ---- section ----
     css('.sc-section').styles(
@@ -123,12 +116,7 @@ class ShowcasePage extends StatelessComponent {
       query: MediaQuery.screen(maxWidth: 640.px),
       styles: [
         css('.sc-head').styles(
-          padding: Padding.only(
-            left: 1.25.rem,
-            right: 1.25.rem,
-            top: 2.5.rem,
-            bottom: 1.75.rem,
-          ),
+          padding: Padding.only(left: 1.25.rem, right: 1.25.rem, top: 2.5.rem, bottom: 1.75.rem),
         ),
         css('.sc-title').styles(fontSize: 1.9.rem),
         css('.sc-section').styles(

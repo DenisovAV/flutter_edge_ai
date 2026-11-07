@@ -12,7 +12,9 @@ import 'main.client.options.dart';
 
 void main() {
   // Initializes the client environment with the generated default options.
-  Jaspr.initializeApp(options: defaultClientOptions);
+  Jaspr.initializeApp(
+    options: defaultClientOptions,
+  );
 
   // Starts the app.
   //
@@ -20,5 +22,7 @@ void main() {
   //
   // You can wrap this with additional [InheritedComponent]s to share state across multiple
   // @client components if needed.
-  runApp(const ClientApp());
+  runApp(
+    const ClientApp(),
+  );
 }

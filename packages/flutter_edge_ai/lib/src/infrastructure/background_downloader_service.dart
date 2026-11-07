@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter_edge_ai/src/services/download_service.dart';
 import 'package:flutter_edge_ai/src/model_management/cancel_token.dart';
 import 'package:flutter_edge_ai/src/mobile/smart_downloader.dart';

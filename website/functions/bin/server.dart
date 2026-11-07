@@ -30,10 +30,7 @@ void main(List<String> args) async {
           submission = Submission.parse(request.data);
           if (submission.googlePlayId case final id?) await stores.googlePlay(id);
           appStore = switch (submission.appStoreId) {
-            final id? => await stores.appStore(
-              id,
-              country: submission.appStoreCountry,
-            ),
+            final id? => await stores.appStore(id, country: submission.appStoreCountry),
             null => null,
           };
           source = switch (submission.source) {
@@ -43,18 +40,14 @@ void main(List<String> args) async {
         } on SubmissionException catch (e) {
           throw HttpResponseException.badRequest(message: e.message);
         } on StoreUnavailableException catch (e, stackTrace) {
-          logger.error('A submission could not be checked', {
-            'error': '$e',
-          }, stackTrace);
+          logger.error('A submission could not be checked', {'error': '$e'}, stackTrace);
           throw HttpResponseException.serviceUnavailable(
             message: e.service == 'GitHub'
                 ? 'GitHub could not be reached. Try again later, or leave the GitHub link empty.'
                 : '${e.service} could not be reached. Try again later.',
           );
         } on Exception catch (e, stackTrace) {
-          logger.error('A submission could not be checked', {
-            'error': '$e',
-          }, stackTrace);
+          logger.error('A submission could not be checked', {'error': '$e'}, stackTrace);
           throw HttpResponseException.serviceUnavailable(
             message: 'The submission could not be checked. Try again later.',
           );
@@ -99,9 +92,7 @@ void main(List<String> args) async {
           // same on every backend (ALREADY_EXISTS in Firestore, ABORTED in the
           // emulator), so the document itself says whether this was a repeat.
           if ((await document.get()).exists) {
-            throw HttpResponseException.conflict(
-              message: 'This app has already been submitted.',
-            );
+            throw HttpResponseException.conflict(message: 'This app has already been submitted.');
           }
           rethrow;
         }

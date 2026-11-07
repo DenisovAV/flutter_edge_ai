@@ -1,10 +1,7 @@
 import 'dart:async';
-
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
-
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
-
 import 'package:flutter/foundation.dart';
 
 /// Response from fetch operations

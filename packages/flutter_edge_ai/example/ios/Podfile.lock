@@ -1,6 +1,6 @@
 PODS:
   - Flutter (1.0.0)
-  - flutter_edge_ai_mediapipe (1.3.0):
+  - flutter_edge_ai_mediapipe (1.2.4):
     - Flutter
     - MediaPipeTasksGenAI (= 0.10.35)
     - MediaPipeTasksGenAIC (= 0.10.35)
@@ -37,7 +37,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
-  flutter_edge_ai_mediapipe: b9416109334adbdddc607134fab1a808896abb6f
+  flutter_edge_ai_mediapipe: 0bfbaed29fdfea222a64102c24bf84485456ab72
   flutter_inappwebview_ios: b89ba3482b96fb25e00c967aae065701b66e9b99
   MediaPipeTasksGenAI: e311d919ab79b2e615e381b65ad271b2c2617312
   MediaPipeTasksGenAIC: fee4ffd93e57fd2022287bcce0340b3c68b537be

@@ -3,7 +3,6 @@
 // model (`flutter_edge_ai_litertlm`). Engine packages reach it through
 // `package:flutter_edge_ai/engine_web.dart`.
 import 'dart:js_interop';
-
 import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 

@@ -1,7 +1,6 @@
 import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
 import 'package:flutter_edge_ai/engine.dart';
-
 import 'dart:ffi';
 import 'dart:async';
 // Virtual sessions' turn ends, read when native ends each turn, and the

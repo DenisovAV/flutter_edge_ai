@@ -73,20 +73,8 @@ class ShowcaseBrowserState extends State<ShowcaseBrowser> {
     final apps = _sort.apply(showcaseApps).where(_store.shows).toList();
     return div(classes: 'sc-browser', [
       div(classes: 'sc-controls', [
-        _control(
-          'sc-store-caption',
-          'Store',
-          ShowcaseStore.values,
-          _store,
-          (value) => _store = value,
-        ),
-        _control(
-          'sc-sort-caption',
-          'Sort by',
-          ShowcaseSort.values,
-          _sort,
-          (value) => _sort = value,
-        ),
+        _control('sc-store-caption', 'Store', ShowcaseStore.values, _store, (value) => _store = value),
+        _control('sc-sort-caption', 'Sort by', ShowcaseSort.values, _sort, (value) => _sort = value),
       ]),
       div(classes: 'sc-grid', [
         for (var i = 0; i < apps.length; i++) _appCard(apps[i], 'sc-app-$i'),
@@ -107,9 +95,7 @@ class ShowcaseBrowserState extends State<ShowcaseBrowser> {
       classes: 'sc-control',
       attributes: {'role': 'group', 'aria-labelledby': captionId},
       [
-        span(id: captionId, classes: 'sc-control-caption', [
-          Component.text(caption),
-        ]),
+        span(id: captionId, classes: 'sc-control-caption', [Component.text(caption)]),
         for (final o in options)
           button(
             type: ButtonType.button,
@@ -137,11 +123,7 @@ class ShowcaseBrowserState extends State<ShowcaseBrowser> {
             src: app.icon,
             alt: '',
             classes: 'sc-icon',
-            attributes: const {
-              'width': '64',
-              'height': '64',
-              'loading': 'lazy',
-            },
+            attributes: const {'width': '64', 'height': '64', 'loading': 'lazy'},
           ),
         ],
       ),
@@ -159,22 +141,15 @@ class ShowcaseBrowserState extends State<ShowcaseBrowser> {
           ]),
         if (app.googlePlay case final play?)
           div(classes: 'sc-badge-play-group', [
-            a(
-              href: play.url,
-              classes: 'sc-badge',
-              attributes: describedByName,
-              [
-                img(
-                  src: '/images/showcase/badges/google-play.png',
-                  alt: 'Get it on Google Play',
-                  classes: 'sc-badge-play',
-                  attributes: const {'width': '134', 'height': '40'},
-                ),
-              ],
-            ),
-            span(classes: 'sc-downloads', [
-              Component.text('${play.installsLabel} downloads'),
+            a(href: play.url, classes: 'sc-badge', attributes: describedByName, [
+              img(
+                src: '/images/showcase/badges/google-play.png',
+                alt: 'Get it on Google Play',
+                classes: 'sc-badge-play',
+                attributes: const {'width': '134', 'height': '40'},
+              ),
             ]),
+            span(classes: 'sc-downloads', [Component.text('${play.installsLabel} downloads')]),
           ]),
       ]),
     ]);
@@ -265,9 +240,7 @@ class ShowcaseBrowserState extends State<ShowcaseBrowser> {
     css('.sc-grid').styles(
       display: Display.grid,
       gap: Gap.all(1.rem),
-      raw: {
-        'grid-template-columns': 'repeat(auto-fill, minmax(min(500px, 100%), 1fr))',
-      },
+      raw: {'grid-template-columns': 'repeat(auto-fill, minmax(min(500px, 100%), 1fr))'},
     ),
     css('.sc-card').styles(
       display: Display.grid,
@@ -291,12 +264,7 @@ class ShowcaseBrowserState extends State<ShowcaseBrowser> {
     ),
     css('.sc-icon-wrap::before').styles(
       content: '',
-      position: Position.absolute(
-        top: 6.px,
-        left: 6.px,
-        right: 6.px,
-        bottom: 6.px,
-      ),
+      position: Position.absolute(top: 6.px, left: 6.px, right: 6.px, bottom: 6.px),
       radius: BorderRadius.circular(16.px),
       opacity: 0.5,
       raw: {
@@ -354,37 +322,22 @@ class ShowcaseBrowserState extends State<ShowcaseBrowser> {
 
     // ---- "Your app here" ----
     css('.sc-yours').styles(
-      border: Border.all(
-        color: Color('rgba(147,197,253,0.4)'),
-        width: 1.5.px,
-        style: BorderStyle.dashed,
-      ),
+      border: Border.all(color: Color('rgba(147,197,253,0.4)'), width: 1.5.px, style: BorderStyle.dashed),
       textDecoration: TextDecoration.none,
       backgroundColor: Color('transparent'),
     ),
     css('.sc-yours:hover').styles(
-      border: Border.all(
-        color: Brand.blueLight,
-        width: 1.5.px,
-        style: BorderStyle.dashed,
-      ),
+      border: Border.all(color: Brand.blueLight, width: 1.5.px, style: BorderStyle.dashed),
       backgroundColor: Color('rgba(147,197,253,0.06)'),
     ),
     css('.sc-yours:focus-visible').styles(
-      raw: {
-        'outline': '2px solid ${Brand.blueLight.value}',
-        'outline-offset': '2px',
-      },
+      raw: {'outline': '2px solid ${Brand.blueLight.value}', 'outline-offset': '2px'},
     ),
     css('.sc-yours-plus').styles(
       display: Display.flex,
       width: 64.px,
       height: 64.px,
-      border: Border.all(
-        color: Color('rgba(147,197,253,0.4)'),
-        width: 1.5.px,
-        style: BorderStyle.dashed,
-      ),
+      border: Border.all(color: Color('rgba(147,197,253,0.4)'), width: 1.5.px, style: BorderStyle.dashed),
       radius: BorderRadius.circular(14.px),
       justifyContent: JustifyContent.center,
       alignItems: AlignItems.center,
@@ -405,17 +358,12 @@ class ShowcaseBrowserState extends State<ShowcaseBrowser> {
         // both, and the download count under the Google Play badge.
         css('.sc-card').styles(
           padding: Padding.all(1.rem),
-          raw: {
-            'grid-template-columns': '48px minmax(0, 1fr)',
-            'column-gap': '0.85rem',
-          },
+          raw: {'grid-template-columns': '48px minmax(0, 1fr)', 'column-gap': '0.85rem'},
         ),
         css('.sc-icon-wrap').styles(width: 48.px, height: 48.px, raw: {'grid-row': 'auto'}),
         css('.landing-root .sc-icon').styles(radius: BorderRadius.circular(11.px)),
         css('.landing-root .sc-name').styles(raw: {'align-self': 'center'}),
-        css(
-          '.sc-badges',
-        ).styles(alignItems: AlignItems.start, raw: {'grid-column': '1 / -1'}),
+        css('.sc-badges').styles(alignItems: AlignItems.start, raw: {'grid-column': '1 / -1'}),
         css('.sc-badge-play-group').styles(flexDirection: FlexDirection.column),
         css('.sc-yours-plus').styles(width: 48.px, height: 48.px),
       ],

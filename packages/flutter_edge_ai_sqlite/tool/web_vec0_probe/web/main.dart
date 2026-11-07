@@ -4,7 +4,6 @@
 // RESULT=PASS iff the nearest-two come back as the expected TEXT ids. This is
 // the web-arm twin of test/vec0_text_pk_test.dart.
 import 'dart:typed_data';
-
 import 'package:web/web.dart' as web;
 import 'package:sqlite3/wasm.dart';
 

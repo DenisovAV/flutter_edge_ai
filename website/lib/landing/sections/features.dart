@@ -92,16 +92,20 @@ class Features extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return section(classes: 'features-section', [
-      div(classes: 'features-inner', [
-        h2(classes: 'section-title', [
-          Component.text('Everything you need for on-device AI'),
+    return section(
+      classes: 'features-section',
+      [
+        div(classes: 'features-inner', [
+          h2(classes: 'section-title', [Component.text('Everything you need for on-device AI')]),
+          div(
+            classes: 'features-grid',
+            [
+              for (final f in _features) _FeatureCard(feature: f),
+            ],
+          ),
         ]),
-        div(classes: 'features-grid', [
-          for (final f in _features) _FeatureCard(feature: f),
-        ]),
-      ]),
-    ]);
+      ],
+    );
   }
 
   @css
@@ -127,9 +131,10 @@ class Features extends StatelessComponent {
       display: Display.grid,
       gridTemplate: GridTemplate(
         columns: GridTracks([
-          GridTrack.repeat(TrackRepeat.autoFit, [
-            GridTrack(TrackSize.minmax(TrackSize(280.px), TrackSize.fr(1))),
-          ]),
+          GridTrack.repeat(
+            TrackRepeat.autoFit,
+            [GridTrack(TrackSize.minmax(TrackSize(280.px), TrackSize.fr(1)))],
+          ),
         ]),
       ),
       gap: Gap.all(1.5.rem),
@@ -143,7 +148,10 @@ class Features extends StatelessComponent {
       flexDirection: FlexDirection.column,
       gap: Gap.all(0.75.rem),
     ),
-    css('.feature-icon').styles(fontSize: 2.rem, lineHeight: 1.em),
+    css('.feature-icon').styles(
+      fontSize: 2.rem,
+      lineHeight: 1.em,
+    ),
     css('.feature-title').styles(
       fontFamily: Brand.fontSans,
       fontSize: 1.1.rem,
@@ -191,10 +199,13 @@ class _FeatureCard extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return div(classes: 'feature-card $_accentClass', [
-      span(classes: 'feature-icon', [Component.text(feature.icon)]),
-      h3(classes: 'feature-title', [Component.text(feature.title)]),
-      p(classes: 'feature-desc', [Component.text(feature.desc)]),
-    ]);
+    return div(
+      classes: 'feature-card $_accentClass',
+      [
+        span(classes: 'feature-icon', [Component.text(feature.icon)]),
+        h3(classes: 'feature-title', [Component.text(feature.title)]),
+        p(classes: 'feature-desc', [Component.text(feature.desc)]),
+      ],
+    );
   }
 }

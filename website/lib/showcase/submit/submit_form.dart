@@ -89,13 +89,9 @@ class ShowcaseSubmitFormState extends State<ShowcaseSubmitForm> {
         [
           h2(classes: 'ss-done-title', [Component.text('Thank you')]),
           p(classes: 'ss-done-text', [
-            Component.text(
-              'I check every app before it is listed, and I will write to $_email about it.',
-            ),
+            Component.text('I check every app before it is listed, and I will write to $_email about it.'),
           ]),
-          a(href: '/showcase', classes: 'ss-link', [
-            Component.text('Back to the showcase'),
-          ]),
+          a(href: '/showcase', classes: 'ss-link', [Component.text('Back to the showcase')]),
         ],
       );
     }
@@ -149,18 +145,14 @@ class ShowcaseSubmitFormState extends State<ShowcaseSubmitForm> {
             _checkbox(
               id: 'ss-package-$package',
               checked: _packages.contains(package),
-              onChange: (v) => setState(
-                () => v ? _packages.add(package) : _packages.remove(package),
-              ),
+              onChange: (v) => setState(() => v ? _packages.add(package) : _packages.remove(package)),
               [
                 code([Component.text(package)]),
               ],
             ),
         ]),
         div(classes: 'ss-field', [
-          label(htmlFor: 'ss-on-device', classes: 'ss-label', [
-            Component.text('What runs on the device'),
-          ]),
+          label(htmlFor: 'ss-on-device', classes: 'ss-label', [Component.text('What runs on the device')]),
           textarea(
             id: 'ss-on-device',
             classes: 'ss-input ss-textarea',
@@ -202,12 +194,7 @@ class ShowcaseSubmitFormState extends State<ShowcaseSubmitForm> {
             ),
           ],
         ),
-        if (_error case final error?)
-          p(
-            classes: 'ss-error',
-            attributes: {'role': 'alert'},
-            [Component.text(error)],
-          ),
+        if (_error case final error?) p(classes: 'ss-error', attributes: {'role': 'alert'}, [Component.text(error)]),
         button(
           type: ButtonType.submit,
           classes: 'ss-submit',
@@ -279,11 +266,7 @@ class ShowcaseSubmitFormState extends State<ShowcaseSubmitForm> {
       flexDirection: FlexDirection.column,
       gap: Gap.all(1.25.rem),
     ),
-    css('.ss-field').styles(
-      display: Display.flex,
-      flexDirection: FlexDirection.column,
-      gap: Gap.all(0.4.rem),
-    ),
+    css('.ss-field').styles(display: Display.flex, flexDirection: FlexDirection.column, gap: Gap.all(0.4.rem)),
     css('.ss-label').styles(
       padding: Padding.zero,
       color: Brand.white,
@@ -301,13 +284,8 @@ class ShowcaseSubmitFormState extends State<ShowcaseSubmitForm> {
       backgroundColor: Color('rgba(255,255,255,0.05)'),
     ),
     css('.ss-input::placeholder').styles(color: Brand.white50),
-    css(
-      '.ss-input:focus-visible, .ss-checkbox:focus-visible, .ss-submit:focus-visible',
-    ).styles(
-      raw: {
-        'outline': '2px solid ${Brand.blueLight.value}',
-        'outline-offset': '2px',
-      },
+    css('.ss-input:focus-visible, .ss-checkbox:focus-visible, .ss-submit:focus-visible').styles(
+      raw: {'outline': '2px solid ${Brand.blueLight.value}', 'outline-offset': '2px'},
     ),
     css('.ss-textarea').styles(raw: {'resize': 'vertical', 'min-height': '6rem'}),
     css('.ss-hint').styles(
@@ -342,9 +320,7 @@ class ShowcaseSubmitFormState extends State<ShowcaseSubmitForm> {
       fontSize: 0.95.rem,
       lineHeight: 1.5.em,
     ),
-    css(
-      '.ss-check-label code',
-    ).styles(color: Brand.white, fontFamily: Brand.fontMono, fontSize: 0.92.em),
+    css('.ss-check-label code').styles(color: Brand.white, fontFamily: Brand.fontMono, fontSize: 0.92.em),
     css('.ss-error').styles(
       margin: Margin.zero,
       padding: Padding.symmetric(horizontal: 0.85.rem, vertical: 0.65.rem),
@@ -388,10 +364,6 @@ class ShowcaseSubmitFormState extends State<ShowcaseSubmitForm> {
       fontSize: 1.rem,
       lineHeight: 1.6.em,
     ),
-    css('.ss-link').styles(
-      color: Brand.blueLight,
-      fontFamily: Brand.fontSans,
-      fontWeight: FontWeight.w600,
-    ),
+    css('.ss-link').styles(color: Brand.blueLight, fontFamily: Brand.fontSans, fontWeight: FontWeight.w600),
   ];
 }

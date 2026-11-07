@@ -3,7 +3,6 @@ import 'package:flutter_edge_ai/src/model_response.dart';
 import 'function_call_format.dart';
 import 'json_function_call_format.dart';
 import 'json_parsing_utils.dart';
-
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 
 /// Phi-4 tool call format.

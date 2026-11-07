@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';

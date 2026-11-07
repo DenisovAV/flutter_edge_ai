@@ -25,7 +25,6 @@ import 'dart:typed_data';
 import 'package:dart_sentencepiece_tokenizer/dart_sentencepiece_tokenizer.dart';
 
 import 'package:flutter_edge_ai/engine.dart';
-
 import 'tokenizer_contract.dart';
 import 'sentencepiece_model_proto.dart';
 import 'user_defined_pieces.dart';

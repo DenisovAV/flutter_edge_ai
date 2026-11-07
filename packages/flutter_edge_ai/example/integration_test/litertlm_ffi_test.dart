@@ -12,7 +12,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
-
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -23,7 +22,6 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
 // ignore: implementation_imports — reads core's file-system service to check install paths
 import 'package:flutter_edge_ai/src/di/service_registry.dart'
     show ServiceRegistry;
-
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'registry_evidence.dart';
 

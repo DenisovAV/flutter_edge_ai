@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter_edge_ai/engine.dart';
 
 import 'package:flutter/foundation.dart';

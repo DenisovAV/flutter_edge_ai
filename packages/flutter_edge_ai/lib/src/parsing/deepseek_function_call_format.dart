@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 
 import 'package:flutter_edge_ai/src/model_response.dart';

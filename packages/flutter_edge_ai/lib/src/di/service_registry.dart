@@ -36,11 +36,9 @@ import 'package:flutter_edge_ai/src/infrastructure/web_download_service_stub.dar
     if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_download_service.dart';
 import 'package:flutter_edge_ai/src/infrastructure/web_js_interop_stub.dart'
     if (dart.library.js_interop) 'package:flutter_edge_ai/src/infrastructure/web_js_interop.dart';
-
 import 'platform/mobile_service_factory.dart'
     if (dart.library.js_interop) 'platform/web_service_factory.dart'
     as platform;
-
 import 'package:flutter_edge_ai/src/infrastructure/shared_preferences_protected_registry.dart';
 
 /// Dependency Injection Container for managing service lifecycle

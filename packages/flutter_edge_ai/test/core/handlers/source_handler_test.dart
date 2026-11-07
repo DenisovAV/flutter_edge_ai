@@ -1,5 +1,4 @@
 import 'dart:typed_data';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:flutter_edge_ai/src/domain/model_source.dart';

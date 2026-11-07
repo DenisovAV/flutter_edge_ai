@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 import 'dart:math' show sqrt;
-
 import 'package:flutter_test/flutter_test.dart';
 
 /// Cross-Platform Parity Tests for VectorStore

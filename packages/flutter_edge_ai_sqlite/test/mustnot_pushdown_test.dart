@@ -11,7 +11,6 @@
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/src/filter_to_vec0.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'dart:ffi';
 
 import 'package:sqlite3/sqlite3.dart';

@@ -30,6 +30,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     required MultimodalOrder multimodalOrder,
+    String? jsonSchema,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;
@@ -48,6 +49,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     String? extraContext,
     required bool thinking,
     int? maxOutputTokens,
+    String? jsonSchema,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;

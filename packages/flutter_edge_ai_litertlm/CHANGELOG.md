@@ -1,4 +1,5 @@
 ## Unreleased
+- Enforce response formats with native LiteRT-LM constrained decoding.
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and media.
 - Native: a turn cut short by closing its session or model ends with a `StateError`.
 - `openSession` sessions are native conversations where verified: media, stop rewind, full-context recovery.

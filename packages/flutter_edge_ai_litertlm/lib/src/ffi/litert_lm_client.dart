@@ -36,6 +36,25 @@ import '../litert_lm_log_level.dart';
 export '../litert_lm_load_errors.dart'
     show LiteRtLmEngineCreateException, NpuDispatchUnavailableException;
 
+const _llGuidanceConstraintFailure = 'Failed to create LLGuidance constraint';
+
+/// The one native send failure that means the schema, rather than inference,
+/// was refused. CreateConstraint runs only when this send carries a schema;
+/// every other INTERNAL remains the native inference failure it is.
+@visibleForTesting
+ResponseFormatUnsupportedException? liteRtLmConstraintFailure(
+  String? jsonSchema,
+  String? nativeError,
+) =>
+    jsonSchema != null &&
+        nativeError != null &&
+        (nativeError.startsWith(_llGuidanceConstraintFailure) ||
+            nativeError.startsWith('INTERNAL: $_llGuidanceConstraintFailure'))
+    ? ResponseFormatUnsupportedException(
+        'LiteRT-LM LLGuidance rejected this JSON schema: $nativeError',
+      )
+    : null;
+
 const _virtualStoppedExchangeTimeout = Duration(seconds: 5);
 const _nativeCancelEndTimeout = Duration(seconds: 5);
 
@@ -481,19 +500,32 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     this._client,
     this._conversation,
     this._multimodalOrder,
-  );
+    this._jsonSchema, [
+    this._releaseOnClose = true,
+  ]);
 
   /// A handle with no native conversation (already closed), for a test
   /// client's `createConversationHandle`.
   @visibleForTesting
-  LiteRtLmConversationHandle.forTest(LiteRtLmFfiClient client)
-    : this._(client, null, MultimodalOrder.imagesAudioText);
+  LiteRtLmConversationHandle.forTest(
+    LiteRtLmFfiClient client, {
+    Pointer<LiteRtLmConversation>? conversation,
+    String? jsonSchema,
+  }) : this._(
+         client,
+         conversation,
+         MultimodalOrder.imagesAudioText,
+         jsonSchema,
+         false,
+       );
 
   final LiteRtLmFfiClient _client;
   Pointer<LiteRtLmConversation>? _conversation;
 
   /// Where [chat] and [chatRaw] put a message's media around its text.
   final MultimodalOrder _multimodalOrder;
+  final String? _jsonSchema;
+  final bool _releaseOnClose;
 
   bool get isClosed => _conversation == null;
 
@@ -528,6 +560,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
       messageJson,
       extraContext: extraContext,
       thinking: thinking,
+      jsonSchema: _jsonSchema,
       onEnded: (how) {
         // Kept only after a cancelled send, the one a rewind puts back, and
         // after one native ended context_full (section 23): its input never
@@ -674,7 +707,7 @@ class LiteRtLmConversationHandle implements ConversationHandle {
     // is cancelled, and the delete waits for its native end: deleting under a
     // running prefill crashes (LiteRT-LM #3771), and an uncancelled delete
     // blocks the platform thread until the generation drains (#364).
-    _client._turns.release(conv);
+    if (_releaseOnClose) _client._turns.release(conv);
   }
 }
 
@@ -1469,8 +1502,34 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   Stream<String> sendForTest(
     Pointer<LiteRtLmConversation> conv,
-    String messageJson,
-  ) => _sendMessageStreamRawOn(conv, messageJson, thinking: false);
+    String messageJson, {
+    String? jsonSchema,
+  }) => _sendMessageStreamRawOn(
+    conv,
+    messageJson,
+    thinking: false,
+    jsonSchema: jsonSchema,
+  );
+
+  /// Test seam at the native send boundary, shared by native handles and the
+  /// virtual multiplexer. It observes the schema that would be installed on
+  /// the optional args without loading a native library.
+  @visibleForTesting
+  NativeTurnStream<Pointer<LiteRtLmConversation>> Function(
+    Pointer<LiteRtLmConversation> conv,
+    String? jsonSchema,
+  )?
+  structuredSendForTest;
+
+  /// Test seam at the raw conversation-create boundary. It is below every
+  /// native and virtual rebuild caller, so tests observe the schema actually
+  /// handed to conversation creation.
+  @visibleForTesting
+  Future<Pointer<LiteRtLmConversation>> Function(
+    String? messagesJson,
+    String? jsonSchema,
+  )?
+  structuredCreateForTest;
 
   /// Test seam for virtual sessions' per-turn benchmark snapshot.
   @visibleForTesting
@@ -1523,6 +1582,22 @@ class LiteRtLmFfiClient {
   @visibleForTesting
   void cancelConversationForTest(Pointer<LiteRtLmConversation> conv) =>
       _cancelOn(conv);
+
+  /// Exercises the same provider guard and binding call used by conversation
+  /// creation without requiring a native engine.
+  @visibleForTesting
+  void constraintProviderForTest(
+    Pointer<LiteRtLmConversationConfig> config,
+    String? jsonSchema,
+  ) => _setConstraintProvider(config, jsonSchema);
+
+  /// Exercises the same per-send constraint guard and binding call as a real
+  /// streamed send.
+  @visibleForTesting
+  void constraintForTest(
+    Pointer<LiteRtLmConversationOptionalArgs> args,
+    String? jsonSchema,
+  ) => _setConstraint(args, jsonSchema);
 
   /// Test seam: whether the loaded library has the section 16 rewind.
   @visibleForTesting
@@ -2513,6 +2588,7 @@ class LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     required MultimodalOrder multimodalOrder,
+    String? jsonSchema,
   }) {
     // The handle must be registered before the guard lifts: otherwise shutdown()
     // can clear _handles between the create and the add, leaving a live
@@ -2534,10 +2610,16 @@ class LiteRtLmFfiClient {
           sampling: sampling,
           samplingExplicit: samplingExplicit,
           maxOutputTokens: maxOutputTokens,
+          jsonSchema: jsonSchema,
         ),
       );
       edgeAiLog('[LiteRtLmFfi] Conversation created');
-      final handle = LiteRtLmConversationHandle._(this, conv, multimodalOrder);
+      final handle = LiteRtLmConversationHandle._(
+        this,
+        conv,
+        multimodalOrder,
+        jsonSchema,
+      );
       _handles.add(handle);
       return handle;
     });
@@ -2557,223 +2639,237 @@ class LiteRtLmFfiClient {
     required ResolvedSampling sampling,
     required bool samplingExplicit,
     int? maxOutputTokens,
+    String? jsonSchema,
   }) async {
-    _assertInitialized();
+    final testCreate = structuredCreateForTest;
+    if (testCreate == null) _assertInitialized();
     final b = _bindings!;
+    late final Pointer<LiteRtLmConversationConfig> convConfig;
 
-    // Always send a sampler, already resolved (caller, then the bundle's own,
-    // then the family, then the fallback). A session config without one makes
-    // LiteRT-LM copy the bundle's sampler WHOLE, or fall back to greedy when
-    // the bundle has none (engine_settings.cc MaybeUpdateAndValidate), so a
-    // caller's single field could not be merged with the bundle's others.
-    //
-    // LiteRT-LM v0.14.0: litert_lm_conversation_config_create() takes no
-    // arguments — session_config, system message, tools, and messages are
-    // attached afterwards via the litert_lm_conversation_config_set_*
-    // setter chain built below. This is now real upstream API; the old
-    // 6-arg overload from the now-deleted
-    // native/litert_lm/patch_c_api.sh ("PATCH: 6-arg overload") is gone.
-    void check(String call, int code) =>
-        checkLiteRtLmSetter(call, code, b.lastError);
-    final sessionConfig = createLiteRtLm(
-      'litert_lm_session_config_create',
-      b.litert_lm_session_config_create,
-      b.lastError,
-    );
-    final Pointer<LiteRtLmConversationConfig> convConfig;
-    try {
-      // Sampler params go to every backend, NPU included.
+    if (testCreate != null) {
+      convConfig = Pointer.fromAddress(0x30);
+    } else {
+      // Always send a sampler, already resolved (caller, then the bundle's own,
+      // then the family, then the fallback). A session config without one makes
+      // LiteRT-LM copy the bundle's sampler WHOLE, or fall back to greedy when
+      // the bundle has none (engine_settings.cc MaybeUpdateAndValidate), so a
+      // caller's single field could not be merged with the bundle's others.
       //
-      // We used to skip this whole chain when the backend was NPU, citing a May
-      // measurement against LiteRT-LM 032334d8 where GetSamplerBackend() did
-      // `sampler_backend = backend` and then required CPU or GPU.
-      //
-      // Traced at the shipped pin v0.16.0 (924e79c9), that reason was never the
-      // operative one: `GetSamplerBackend(LlmExecutorSettings)` is only reachable
-      // from LlmLiteRtCompiledModelExecutorBase, and the NPU executor
-      // (LlmLiteRtNpuCompiledModelExecutor) does not derive from it. The real
-      // situation is simpler and worse — the NPU executor stores sampler_params_
-      // and never reads it; every Decode() path calls ApplyGreedySampling, a
-      // plain argmax. So NPU accepts the params because it discards them.
-      //
-      // Sending them anyway is harmless and correct the day upstream implements
-      // NPU sampling. But the caller must not be left thinking they took effect,
-      // which is why the warning below exists — dropping the old guard also
-      // dropped the only signal the user had.
-      //
-      // Sampler TYPE is a separate question: at 5e0d86b only TopP (=2) was
-      // implemented at engine level, with types 1 (TopK) and 3 (Greedy) rejected
-      // as "UNIMPLEMENTED: Sampler type: N not implemented yet". We still send
-      // TopP unconditionally and pass top_k as a hint, which native honours.
-      // At v0.18.0 the CPU sampler factory still rejects TOP_K and GREEDY
-      // (sampler_factory.cc), so a bundle declaring either is sent as TOP_P too.
-      final samplerParams = createLiteRtLm<LiteRtLmSamplerParams>(
-        'litert_lm_sampler_params_create',
-        (out) => b.litert_lm_sampler_params_create(
-          LiteRtLmSamplerType.kLiteRtLmSamplerTypeTopP, // always TopP
-          out,
-        ),
+      // LiteRT-LM v0.14.0: litert_lm_conversation_config_create() takes no
+      // arguments — session_config, system message, tools, and messages are
+      // attached afterwards via the litert_lm_conversation_config_set_*
+      // setter chain built below. This is now real upstream API; the old
+      // 6-arg overload from the now-deleted
+      // native/litert_lm/patch_c_api.sh ("PATCH: 6-arg overload") is gone.
+      void check(String call, int code) =>
+          checkLiteRtLmSetter(call, code, b.lastError);
+      final sessionConfig = createLiteRtLm(
+        'litert_lm_session_config_create',
+        b.litert_lm_session_config_create,
         b.lastError,
       );
       try {
-        check(
-          'litert_lm_sampler_params_set_top_k',
-          b.litert_lm_sampler_params_set_top_k(samplerParams, sampling.topK),
-        );
-        check(
-          'litert_lm_sampler_params_set_top_p',
-          b.litert_lm_sampler_params_set_top_p(samplerParams, sampling.topP),
-        );
-        check(
-          'litert_lm_sampler_params_set_temperature',
-          b.litert_lm_sampler_params_set_temperature(
-            samplerParams,
-            sampling.temperature,
+        // Sampler params go to every backend, NPU included.
+        //
+        // We used to skip this whole chain when the backend was NPU, citing a May
+        // measurement against LiteRT-LM 032334d8 where GetSamplerBackend() did
+        // `sampler_backend = backend` and then required CPU or GPU.
+        //
+        // Traced at the shipped pin v0.16.0 (924e79c9), that reason was never the
+        // operative one: `GetSamplerBackend(LlmExecutorSettings)` is only reachable
+        // from LlmLiteRtCompiledModelExecutorBase, and the NPU executor
+        // (LlmLiteRtNpuCompiledModelExecutor) does not derive from it. The real
+        // situation is simpler and worse — the NPU executor stores sampler_params_
+        // and never reads it; every Decode() path calls ApplyGreedySampling, a
+        // plain argmax. So NPU accepts the params because it discards them.
+        //
+        // Sending them anyway is harmless and correct the day upstream implements
+        // NPU sampling. But the caller must not be left thinking they took effect,
+        // which is why the warning below exists — dropping the old guard also
+        // dropped the only signal the user had.
+        //
+        // Sampler TYPE is a separate question: at 5e0d86b only TopP (=2) was
+        // implemented at engine level, with types 1 (TopK) and 3 (Greedy) rejected
+        // as "UNIMPLEMENTED: Sampler type: N not implemented yet". We still send
+        // TopP unconditionally and pass top_k as a hint, which native honours.
+        // At v0.18.0 the CPU sampler factory still rejects TOP_K and GREEDY
+        // (sampler_factory.cc), so a bundle declaring either is sent as TOP_P too.
+        final samplerParams = createLiteRtLm<LiteRtLmSamplerParams>(
+          'litert_lm_sampler_params_create',
+          (out) => b.litert_lm_sampler_params_create(
+            LiteRtLmSamplerType.kLiteRtLmSamplerTypeTopP, // always TopP
+            out,
           ),
+          b.lastError,
         );
-        check(
-          'litert_lm_sampler_params_set_seed',
-          b.litert_lm_sampler_params_set_seed(
-            samplerParams,
-            sampling.randomSeed,
-          ),
+        try {
+          check(
+            'litert_lm_sampler_params_set_top_k',
+            b.litert_lm_sampler_params_set_top_k(samplerParams, sampling.topK),
+          );
+          check(
+            'litert_lm_sampler_params_set_top_p',
+            b.litert_lm_sampler_params_set_top_p(samplerParams, sampling.topP),
+          );
+          check(
+            'litert_lm_sampler_params_set_temperature',
+            b.litert_lm_sampler_params_set_temperature(
+              samplerParams,
+              sampling.temperature,
+            ),
+          );
+          check(
+            'litert_lm_sampler_params_set_seed',
+            b.litert_lm_sampler_params_set_seed(
+              samplerParams,
+              sampling.randomSeed,
+            ),
+          );
+          check(
+            'litert_lm_session_config_set_sampler_params',
+            b.litert_lm_session_config_set_sampler_params(
+              sessionConfig,
+              samplerParams,
+            ),
+          );
+        } finally {
+          b.litert_lm_sampler_params_delete(samplerParams);
+        }
+
+        // The NPU executor argmaxes regardless of what we just set, so tell the
+        // caller rather than letting them believe a seed or temperature took hold.
+        // Only when they set one themselves: the defaults are not greedy, and
+        // warning on every NPU session would train people to ignore it.
+        // Printed once per engine: a release build is where it gets reported, and
+        // edgeAiLog is silent there.
+        if (_backend == 'npu' && samplingExplicit && !_warnedNpuSampling) {
+          _warnedNpuSampling = true;
+          // ignore: avoid_print
+          print(
+            '[flutter_edge_ai_litertlm] WARNING: NPU backend: sampler params '
+            '($sampling) are sent but the NPU executor decodes greedily and never '
+            'reads them, so output is deterministic argmax. Use '
+            'PreferredBackend.cpu or .gpu if you need sampling. Shown once per '
+            'engine.',
+          );
+        }
+
+        // Optional per-session cap on how many tokens are *generated* (output),
+        // independent of the engine's context window (maxTokens / KV-cache). This
+        // is what callers usually want when they say "limit the response length".
+        //
+        // This was skipped on NPU too, "for the same reason as sampler params".
+        // It was never measured — the reason was borrowed from the guard above by
+        // analogy, and an output cap has nothing to do with sampling. Exercised
+        // 2026-08-15 on Intel Lunar Lake NPU: accepted and honoured. Passing it
+        // unconditionally, because silently ignoring a documented parameter is
+        // worse than the failure the guard was imagining.
+        if (maxOutputTokens != null) {
+          check(
+            'litert_lm_session_config_set_max_output_tokens',
+            b.litert_lm_session_config_set_max_output_tokens(
+              sessionConfig,
+              maxOutputTokens,
+            ),
+          );
+        }
+
+        // No-argument create + setter chain: the session config carries
+        // everything the native side needs.
+        convConfig = createLiteRtLm(
+          'litert_lm_conversation_config_create',
+          b.litert_lm_conversation_config_create,
+          b.lastError,
         );
-        check(
-          'litert_lm_session_config_set_sampler_params',
-          b.litert_lm_session_config_set_sampler_params(
-            sessionConfig,
-            samplerParams,
-          ),
-        );
+        final systemPtr = systemMessage?.toNativeUtf8();
+        final toolsPtr = toolsJson?.toNativeUtf8();
+        final messagesPtr = messagesJson?.toNativeUtf8();
+        try {
+          check(
+            'litert_lm_conversation_config_set_session_config',
+            b.litert_lm_conversation_config_set_session_config(
+              convConfig,
+              sessionConfig,
+            ),
+          );
+          if (systemPtr != null) {
+            check(
+              'litert_lm_conversation_config_set_system_message',
+              b.litert_lm_conversation_config_set_system_message(
+                convConfig,
+                systemPtr.cast(),
+              ),
+            );
+          }
+          if (toolsPtr != null) {
+            check(
+              'litert_lm_conversation_config_set_tools',
+              b.litert_lm_conversation_config_set_tools(
+                convConfig,
+                toolsPtr.cast(),
+              ),
+            );
+            check(
+              'litert_lm_conversation_config_set_enable_constrained_decoding',
+              b.litert_lm_conversation_config_set_enable_constrained_decoding(
+                convConfig,
+                true,
+              ),
+            );
+          }
+          if (messagesPtr != null) {
+            check(
+              'litert_lm_conversation_config_set_messages',
+              b.litert_lm_conversation_config_set_messages(
+                convConfig,
+                messagesPtr.cast(),
+              ),
+            );
+          }
+        } catch (_) {
+          b.litert_lm_conversation_config_delete(convConfig);
+          rethrow;
+        } finally {
+          if (systemPtr != null) calloc.free(systemPtr);
+          if (toolsPtr != null) calloc.free(toolsPtr);
+          if (messagesPtr != null) calloc.free(messagesPtr);
+        }
       } finally {
-        b.litert_lm_sampler_params_delete(samplerParams);
+        b.litert_lm_session_config_delete(sessionConfig);
       }
-
-      // The NPU executor argmaxes regardless of what we just set, so tell the
-      // caller rather than letting them believe a seed or temperature took hold.
-      // Only when they set one themselves: the defaults are not greedy, and
-      // warning on every NPU session would train people to ignore it.
-      // Printed once per engine: a release build is where it gets reported, and
-      // edgeAiLog is silent there.
-      if (_backend == 'npu' && samplingExplicit && !_warnedNpuSampling) {
-        _warnedNpuSampling = true;
-        // ignore: avoid_print
-        print(
-          '[flutter_edge_ai_litertlm] WARNING: NPU backend: sampler params '
-          '($sampling) are sent but the NPU executor decodes greedily and never '
-          'reads them, so output is deterministic argmax. Use '
-          'PreferredBackend.cpu or .gpu if you need sampling. Shown once per '
-          'engine.',
-        );
-      }
-
-      // Optional per-session cap on how many tokens are *generated* (output),
-      // independent of the engine's context window (maxTokens / KV-cache). This
-      // is what callers usually want when they say "limit the response length".
-      //
-      // This was skipped on NPU too, "for the same reason as sampler params".
-      // It was never measured — the reason was borrowed from the guard above by
-      // analogy, and an output cap has nothing to do with sampling. Exercised
-      // 2026-08-15 on Intel Lunar Lake NPU: accepted and honoured. Passing it
-      // unconditionally, because silently ignoring a documented parameter is
-      // worse than the failure the guard was imagining.
-      if (maxOutputTokens != null) {
-        check(
-          'litert_lm_session_config_set_max_output_tokens',
-          b.litert_lm_session_config_set_max_output_tokens(
-            sessionConfig,
-            maxOutputTokens,
-          ),
-        );
-      }
-
-      // No-argument create + setter chain: the session config carries
-      // everything the native side needs.
-      convConfig = createLiteRtLm(
-        'litert_lm_conversation_config_create',
-        b.litert_lm_conversation_config_create,
-        b.lastError,
-      );
-      final systemPtr = systemMessage?.toNativeUtf8();
-      final toolsPtr = toolsJson?.toNativeUtf8();
-      final messagesPtr = messagesJson?.toNativeUtf8();
-      try {
-        check(
-          'litert_lm_conversation_config_set_session_config',
-          b.litert_lm_conversation_config_set_session_config(
-            convConfig,
-            sessionConfig,
-          ),
-        );
-        if (systemPtr != null) {
-          check(
-            'litert_lm_conversation_config_set_system_message',
-            b.litert_lm_conversation_config_set_system_message(
-              convConfig,
-              systemPtr.cast(),
-            ),
-          );
-        }
-        if (toolsPtr != null) {
-          check(
-            'litert_lm_conversation_config_set_tools',
-            b.litert_lm_conversation_config_set_tools(
-              convConfig,
-              toolsPtr.cast(),
-            ),
-          );
-          check(
-            'litert_lm_conversation_config_set_enable_constrained_decoding',
-            b.litert_lm_conversation_config_set_enable_constrained_decoding(
-              convConfig,
-              true,
-            ),
-          );
-        }
-        if (messagesPtr != null) {
-          check(
-            'litert_lm_conversation_config_set_messages',
-            b.litert_lm_conversation_config_set_messages(
-              convConfig,
-              messagesPtr.cast(),
-            ),
-          );
-        }
-      } catch (_) {
-        b.litert_lm_conversation_config_delete(convConfig);
-        rethrow;
-      } finally {
-        if (systemPtr != null) calloc.free(systemPtr);
-        if (toolsPtr != null) calloc.free(toolsPtr);
-        if (messagesPtr != null) calloc.free(messagesPtr);
-      }
-    } finally {
-      b.litert_lm_session_config_delete(sessionConfig);
     }
 
     final Pointer<LiteRtLmConversation> conv;
     final ({int address, int code, String? message}) created;
     try {
-      created = await _createConversationOffMainIsolate(
-        engineAddr: _engine!.address,
-        configAddr: convConfig.address,
-      );
-      conv = Pointer<LiteRtLmConversation>.fromAddress(created.address);
+      _setConstraintProvider(convConfig, jsonSchema);
+      if (testCreate != null) {
+        conv = await testCreate(messagesJson, jsonSchema);
+        created = (address: conv.address, code: 0, message: null);
+      } else {
+        created = await _createConversationOffMainIsolate(
+          engineAddr: _engine!.address,
+          configAddr: convConfig.address,
+        );
+        conv = Pointer<LiteRtLmConversation>.fromAddress(created.address);
 
-      // The await above yielded the event loop for the whole native round trip.
-      // _guardCreate keeps shutdown() from deleting the engine meanwhile, but a
-      // shutdown may now be queued behind us — in which case this conversation
-      // must not escape. The engine is still alive here, so deleting is safe.
-      if (_isShuttingDown || _engine == null) {
-        // Not published yet (not in _liveConvs), so delete it directly.
-        if (conv != nullptr) b.litert_lm_conversation_delete(conv);
-        throw StateError('Client shut down while creating a conversation');
+        // The await above yielded the event loop for the whole native round trip.
+        // _guardCreate keeps shutdown() from deleting the engine meanwhile, but a
+        // shutdown may now be queued behind us — in which case this conversation
+        // must not escape. The engine is still alive here, so deleting is safe.
+        if (_isShuttingDown || _engine == null) {
+          // Not published yet (not in _liveConvs), so delete it directly.
+          if (conv != nullptr) b.litert_lm_conversation_delete(conv);
+          throw StateError('Client shut down while creating a conversation');
+        }
       }
     } finally {
       // Isolate.run can throw (isolate spawn failure under memory pressure,
       // dlopen/lookupFunction failure in the fresh isolate). Without this the
       // config leaks on that path.
-      b.litert_lm_conversation_config_delete(convConfig);
+      if (testCreate == null) {
+        b.litert_lm_conversation_config_delete(convConfig);
+      }
     }
 
     if (conv == nullptr) {
@@ -2801,6 +2897,77 @@ class LiteRtLmFfiClient {
     _liveConvs.add(conv); // #379: track liveness so late cancels can't UAF
     _conversationSampling[conv] = (sampling, samplingExplicit);
     return conv;
+  }
+
+  void _setConstraintProvider(
+    Pointer<LiteRtLmConversationConfig> config,
+    String? jsonSchema,
+  ) {
+    if (jsonSchema == null) return;
+    final b = _bindings!;
+    checkLiteRtLmSetter(
+      'litert_lm_conversation_config_set_constraint_provider',
+      b.litert_lm_conversation_config_set_constraint_provider(
+        config,
+        LiteRtLmConstraintProviderType
+            .kLiteRtLmConstraintProviderTypeLlGuidance,
+      ),
+      b.lastError,
+    );
+  }
+
+  void _setConstraint(
+    Pointer<LiteRtLmConversationOptionalArgs> args,
+    String? jsonSchema,
+  ) {
+    if (jsonSchema == null) return;
+    final b = _bindings!;
+    final schemaPtr = jsonSchema.toNativeUtf8();
+    try {
+      checkLiteRtLmSetter(
+        'litert_lm_conversation_optional_args_set_constraint',
+        b.litert_lm_conversation_optional_args_set_constraint(
+          args,
+          LiteRtLmConstraintType.kLiteRtLmConstraintTypeJsonSchema,
+          schemaPtr.cast(),
+        ),
+        b.lastError,
+      );
+    } finally {
+      calloc.free(schemaPtr);
+    }
+  }
+
+  Pointer<LiteRtLmConversationOptionalArgs> _createOptionalArgs({
+    required bool thinking,
+    required String? jsonSchema,
+  }) {
+    final b = _bindings!;
+    final testSend = structuredSendForTest != null;
+    final optionalArgs = testSend
+        ? Pointer<LiteRtLmConversationOptionalArgs>.fromAddress(0x40)
+        : createLiteRtLm(
+            'litert_lm_conversation_optional_args_create',
+            b.litert_lm_conversation_optional_args_create,
+            b.lastError,
+          );
+    try {
+      if (!testSend) {
+        applyThinkingTokenBudget(
+          b,
+          optionalArgs,
+          thinking: thinking,
+          budget: thinkingTokenBudget,
+        );
+      }
+      _setConstraint(optionalArgs, jsonSchema);
+      return optionalArgs;
+    } catch (_) {
+      if (!testSend) {
+        b.litert_lm_conversation_optional_args_delete(optionalArgs);
+      }
+      rethrow;
+    }
   }
 
   /// Legacy single-conversation create. Closes the previous legacy
@@ -2926,6 +3093,7 @@ class LiteRtLmFfiClient {
     String messageJson, {
     String? extraContext,
     required bool thinking,
+    String? jsonSchema,
     void Function(NativeTurnEnd how)? onEnded,
   }) {
     final stalled = _nativeTurnStallError;
@@ -2938,6 +3106,7 @@ class LiteRtLmFfiClient {
         messageJson,
         extraContext: extraContext,
         thinking: thinking,
+        jsonSchema: jsonSchema,
       );
       if (onEnded != null) unawaited(send.turn.ended.then(onEnded));
       return send;
@@ -3027,6 +3196,7 @@ class LiteRtLmFfiClient {
     String? extraContext,
     required bool thinking,
     int? maxOutputTokens,
+    String? jsonSchema,
   }) {
     // StreamController (not async*) so the mutex release is tied to the native
     // turn's end — done, error, or a cancel that native has finished — and not
@@ -3205,6 +3375,7 @@ class LiteRtLmFfiClient {
                     sampling: sampling,
                     samplingExplicit: samplingExplicit,
                     maxOutputTokens: maxOutputTokens,
+                    jsonSchema: jsonSchema,
                   );
             _virtualConv = conv;
             _virtualActiveToken = conversationToken;
@@ -3246,6 +3417,7 @@ class LiteRtLmFfiClient {
               messageJson,
               extraContext: extraContext,
               thinking: thinking,
+              jsonSchema: jsonSchema,
             );
         // Read when native ends the turn, in the same event as the release
         // below: a session queued on the lock resumes only after it, so the
@@ -3450,7 +3622,21 @@ class LiteRtLmFfiClient {
     String messageJson, {
     String? extraContext,
     required bool thinking,
+    String? jsonSchema,
   }) {
+    final testSend = structuredSendForTest;
+    if (testSend != null) {
+      final optionalArgs = _createOptionalArgs(
+        thinking: thinking,
+        jsonSchema: jsonSchema,
+      );
+      try {
+        return testSend(conv, jsonSchema);
+      } finally {
+        // The opaque test handle has no native allocation to release.
+        assert(optionalArgs.address == 0x40);
+      }
+    }
     _assertInitialized();
     final b = _bindings!;
     // Queued behind an operation whose end deleted it (a close meanwhile).
@@ -3573,25 +3759,11 @@ class LiteRtLmFfiClient {
     // native behind.
     final Pointer<LiteRtLmConversationOptionalArgs> optionalArgs;
     try {
-      optionalArgs = createLiteRtLm(
-        'litert_lm_conversation_optional_args_create',
-        b.litert_lm_conversation_optional_args_create,
-        b.lastError,
-      );
-    } catch (e) {
-      releaseNative();
-      send.failed(e);
-      rethrow;
-    }
-    try {
-      applyThinkingTokenBudget(
-        b,
-        optionalArgs,
+      optionalArgs = _createOptionalArgs(
         thinking: thinking,
-        budget: thinkingTokenBudget,
+        jsonSchema: jsonSchema,
       );
     } catch (e) {
-      b.litert_lm_conversation_optional_args_delete(optionalArgs);
       releaseNative();
       send.failed(e);
       rethrow;
@@ -3641,14 +3813,15 @@ class LiteRtLmFfiClient {
         code: recorded?.code ?? result,
       );
       send.failed(
-        Exception(
-          streamStartFailureMessage(
-            code: result,
-            nativeMessage: nativeError,
-            npu: _backend == 'npu',
-            laterMessage: _sentConvs.contains(conv),
-          ),
-        ),
+        liteRtLmConstraintFailure(jsonSchema, nativeError) ??
+            Exception(
+              streamStartFailureMessage(
+                code: result,
+                nativeMessage: nativeError,
+                npu: _backend == 'npu',
+                laterMessage: _sentConvs.contains(conv),
+              ),
+            ),
       );
       releaseNative();
     }

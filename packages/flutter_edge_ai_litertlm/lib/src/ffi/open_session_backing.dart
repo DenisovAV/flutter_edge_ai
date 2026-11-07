@@ -20,14 +20,16 @@ enum OpenSessionBacking {
 
 /// The Android GPU families whose drivers this package tells apart, by the
 /// device node the driver exposes.
-enum AndroidGpuFamily { adreno, mali, other }
+enum AndroidGpuFamily { adreno, mali, powerVr, other }
 
 /// The GPU family of an Android device whose device nodes [exists] reports:
-/// `/dev/kgsl-3d0` Adreno, `/dev/mali0` Mali, anything else (and a node the
-/// app may not stat, which reads as absent) [AndroidGpuFamily.other].
+/// `/dev/kgsl-3d0` Adreno, `/dev/mali0` Mali, `/dev/pvr_sync` PowerVR,
+/// anything else (and a node the app may not stat, which reads as absent)
+/// [AndroidGpuFamily.other].
 AndroidGpuFamily androidGpuFamilyFrom(bool Function(String path) exists) {
   if (exists('/dev/kgsl-3d0')) return AndroidGpuFamily.adreno;
   if (exists('/dev/mali0')) return AndroidGpuFamily.mali;
+  if (exists('/dev/pvr_sync')) return AndroidGpuFamily.powerVr;
   return AndroidGpuFamily.other;
 }
 

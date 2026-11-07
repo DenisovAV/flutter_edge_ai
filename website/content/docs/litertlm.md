@@ -375,12 +375,29 @@ info.hasMtpDrafter;            // can decode speculatively
 
 ## Response formats
 
-LiteRT-LM does not enforce `ResponseFormat` in this release, on native or Web. A
-loaded LiteRT-LM model reports `StructuredOutputSupport.none(...)`;
-`model.refusalFor(format)` returns a `ResponseFormatUnsupportedException`, and
-`openSession` / `openChat(responseFormat: format)` throw it before a LiteRT-LM
-session is opened. Do not document or rely on LiteRT-LM 0.19 constraint support
-until that runtime and the engine binding land in a later release.
+`openSession(responseFormat:)` and `openChat(responseFormat:)` install
+LiteRT-LM 0.19's LLGuidance provider on that conversation and apply the JSON
+schema to every structured send. Decoding is constrained to core's full
+`ResponseFormat` dialect, and core validates the completed reply as a second
+check. Call `model.refusalFor(format)` before opening the session; an unsupported
+row returns a `ResponseFormatUnsupportedException`. If LLGuidance rejects an
+otherwise dialect-valid schema at the first send, that send throws the same
+exception. Formats cannot be combined with tools or thinking.
+
+| Native row | Structured output |
+|---|---|
+| macOS arm64 CPU / Metal | ✅ |
+| Linux x64 CPU / Vulkan | ✅ |
+| Windows x64 CPU / D3D12 | ✅ |
+| Android arm64 CPU | ✅ |
+| Android arm64 Adreno / Mali / PowerVR GPU | ✅ |
+| iOS arm64 CPU / Metal | ✅ |
+| NPU, Web, and every unlisted row | ❌ refused |
+
+The Web `.litertlm` runtime remains on `@litert-lm/core` 0.18 and has no
+constraint API. NPU support is refused per vendor until that exact row passes a
+discriminating device run; support never silently falls back to unconstrained
+decoding.
 
 ## `maxTokens` is the CONTEXT window, not the reply length
 

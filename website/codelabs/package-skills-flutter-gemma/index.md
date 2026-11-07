@@ -365,7 +365,7 @@ handle this model"*: the only engine you registered does not handle `.task`.
 
 ```dart
 final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   modelType: widget.model.modelType,
   maxOutputTokens: 256,
 );
@@ -425,7 +425,7 @@ mauvish"* — because item 4 below is about what happens then.
 **1. The chat is told it may call functions.**
 
 ```dart
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   tools: const [ColorTool.declaration],
   supportsFunctionCalls: true,
   modelType: widget.model.modelType,
@@ -585,3 +585,7 @@ works for each:
   command
 * [The Agent Skills format](https://agentskills.io)
 * [This codelab's code](https://github.com/DenisovAV/flutter_edge_ai/tree/main/codelabs/package-skills-flutter-gemma)
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

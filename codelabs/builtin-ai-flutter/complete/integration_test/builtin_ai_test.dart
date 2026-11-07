@@ -67,7 +67,7 @@ void main() {
     final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
     InferenceModelSession? session;
     try {
-      session = await model.createSession();
+      session = await model.openSession();
       await session.addQueryChunk(
         Message.text(
           text: 'Name one planet. Answer in three words.',

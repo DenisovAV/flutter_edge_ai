@@ -41,7 +41,7 @@ class _ChatPageState extends State<ChatPage> {
         return;
       }
       setState(() => _inference = inference);
-      final chat = await inference.createChat(
+      final chat = await inference.openChat(
         modelType: widget.model.modelType,
         maxOutputTokens: 256,
       );
@@ -98,7 +98,7 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _removeModel() async {
     try {
-      await _inference?.close();
+      await _closeRuntime();
       if (mounted) {
         setState(() {
           _inference = null;
@@ -112,11 +112,21 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  Future<void> _closeRuntime() async {
+    final chat = _chat;
+    final inference = _inference;
+    try {
+      await chat?.close();
+    } finally {
+      await inference?.close();
+    }
+  }
+
   @override
   void dispose() {
     // A model holds native memory. dispose cannot await, so the future is
     // dropped on purpose and its error caught.
-    _inference?.close().catchError((Object _) {});
+    _closeRuntime().catchError((Object _) {});
     _input.dispose();
     super.dispose();
   }

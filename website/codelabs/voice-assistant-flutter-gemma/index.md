@@ -415,7 +415,7 @@ const _spokenStyle =
 ```
 
 ```dart
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   modelType: widget.model.modelType,
   systemInstruction: _spokenStyle,
   maxOutputTokens: 128,
@@ -695,7 +695,7 @@ Future<void> _timerDone(num minutes) async {
 ### Give them to the chat and the session
 
 ```dart
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   modelType: widget.model.modelType,
   systemInstruction: _spokenStyle,
   maxOutputTokens: 128,
@@ -770,3 +770,7 @@ Duration: 2
   puts it behind the microphone.
 * **Fine-tune the tools.** The [Function Calling](/codelabs/function-calling-flutter-gemma)
   codelab trains a small model on your own tool set.
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

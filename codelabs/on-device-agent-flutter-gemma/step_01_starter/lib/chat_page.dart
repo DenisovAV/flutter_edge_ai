@@ -50,7 +50,7 @@ class _ChatPageState extends State<ChatPage> {
       // 4096 leaves room for what an agent adds from Step 2 on: a list of
       // skills in the system prompt, a skill's instructions, tool results.
       final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-      // Hold the runtime before opening a chat on it: `createChat` can throw,
+      // Hold the runtime before opening a chat on it: `openChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
       if (!mounted) {
@@ -59,7 +59,7 @@ class _ChatPageState extends State<ChatPage> {
       }
       setState(() => _inference = inference);
 
-      final chat = await inference.createChat(
+      final chat = await inference.openChat(
         modelType: widget.model.modelType,
         maxOutputTokens: 512,
       );
@@ -134,8 +134,10 @@ class _ChatPageState extends State<ChatPage> {
   /// Frees the disk. Takes the runtime off the page first, so nothing can
   /// send to it — or delete twice — while it closes; then closes it, since the
   /// file is mapped while a model is open, and deleting it underneath the
-  /// engine is a crash waiting to happen. Closing the model closes its chat.
+  /// engine is a crash waiting to happen. The caller closes the chat before
+  /// the model.
   Future<void> _removeModel() async {
+    final chat = _chat;
     final inference = _inference;
     setState(() {
       _removing = true;
@@ -145,7 +147,7 @@ class _ChatPageState extends State<ChatPage> {
       _removeError = null;
     });
     try {
-      await inference?.close();
+      await _closeRuntime(chat, inference);
       await FlutterEdgeAi.uninstallModel(widget.model.fileName);
       if (mounted) widget.onModelRemoved();
     } catch (error) {
@@ -160,12 +162,23 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  Future<void> _closeRuntime(
+    InferenceChat? chat,
+    InferenceModel? inference,
+  ) async {
+    try {
+      await chat?.close();
+    } finally {
+      await inference?.close();
+    }
+  }
+
   @override
   void dispose() {
     // Sessions and models hold native memory — always close them. `dispose`
     // cannot await, so the close runs on its own, and a failure is reported
     // rather than dropped: a model that did not close may still hold memory.
-    _inference?.close().catchError(_reportCloseError);
+    _closeRuntime(_chat, _inference).catchError(_reportCloseError);
     _input.dispose();
     super.dispose();
   }

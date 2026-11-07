@@ -42,26 +42,27 @@ flutter run \
 ```yaml
 genkit: ^1.0.0
 genkit_google_genai: ^1.0.0
-genkit_flutter_edge_ai: ^0.11.0
-flutter_edge_ai: ^2.5.0
-flutter_edge_ai_litertlm: ^1.14.0   # LiteRT-LM engine (flutter_edge_ai ships none by default)
+genkit_flutter_edge_ai: ^0.12.0
+flutter_edge_ai: ^2.6.0
+flutter_edge_ai_litertlm: ^1.20.0   # LiteRT-LM engine (flutter_edge_ai ships none by default)
 flutter_edge_ai_embeddings: ^2.3.0
-genkit_hybrid: ^0.4.0
+genkit_hybrid: ^0.5.0
 ```
 
 ## Architecture
 
-One `Genkit` instance with both plugins (`googleAI` + `GenkitFlutterEdgeAiPlugin`), wrapped in an `AiEngine`. Each `PolicyMode` (cloud / local / smart / cascade / budget) is composed by `genkit_hybrid` into an ordinary Genkit `Model`; the chat screen always calls the same `ai.generateStream(...)` and only the resolved model changes with the policy:
+The app's `Genkit` contains only `GenkitFlutterEdgeAiPlugin` and has no
+default model. `defineHybridRouter` registers routing middleware over
+`HybridTarget` entries, while keeping the Gemini plugin inside the router's
+private Genkit. Each `PolicyMode` (cloud / local / smart / cascade / budget)
+maps to a `RoutePolicy`; the chat screen always calls
+`router.generateStream(...)`, and the router picks one target:
 
 ```dart
-// Cloud (Gemini 3.7 Flash)
-ai.generateStream(model: googleAI.gemini('gemini-3.7-flash'), prompt: prompt)
-
-// On-device (Gemma 3 1B via LiteRT-LM)
-ai.generateStream(model: flutterEdgeAi.model('gemma-3-1b-it'), prompt: prompt)
-
-// Embeddings (EmbeddingGemma 300M)
-ai.embed(embedder: flutterEdgeAi.embedder('embedding-gemma-300m'), document: ...)
+final stream = _engine.router.generateStream(
+  policy: _engine.policyName(policy),
+  messages: [userMessage],
+);
 ```
 
 See the [codelab](https://flutteredge.ai/codelabs/hybrid-ai-flutter-genkit/) for the full walkthrough.

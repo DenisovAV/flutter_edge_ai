@@ -23,25 +23,19 @@ class WhyOnDevice extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return section(
-      classes: 'why-section',
-      [
-        div(classes: 'why-inner', [
-          h2(classes: 'section-title', [Component.text('Why on-device?')]),
-          div(
-            classes: 'why-grid',
-            [
-              for (final prop in _props)
-                div(classes: 'why-card', [
-                  span(classes: 'why-icon', [Component.text(prop.icon)]),
-                  h3(classes: 'why-title', [Component.text(prop.title)]),
-                  p(classes: 'why-desc', [Component.text(prop.desc)]),
-                ]),
-            ],
-          ),
+    return section(classes: 'why-section', [
+      div(classes: 'why-inner', [
+        h2(classes: 'section-title', [Component.text('Why on-device?')]),
+        div(classes: 'why-grid', [
+          for (final prop in _props)
+            div(classes: 'why-card', [
+              span(classes: 'why-icon', [Component.text(prop.icon)]),
+              h3(classes: 'why-title', [Component.text(prop.title)]),
+              p(classes: 'why-desc', [Component.text(prop.desc)]),
+            ]),
         ]),
-      ],
-    );
+      ]),
+    ]);
   }
 
   @css
@@ -59,10 +53,9 @@ class WhyOnDevice extends StatelessComponent {
       display: Display.grid,
       gridTemplate: GridTemplate(
         columns: GridTracks([
-          GridTrack.repeat(
-            TrackRepeat.autoFit,
-            [GridTrack(TrackSize.minmax(TrackSize(200.px), TrackSize.fr(1)))],
-          ),
+          GridTrack.repeat(TrackRepeat.autoFit, [
+            GridTrack(TrackSize.minmax(TrackSize(200.px), TrackSize.fr(1))),
+          ]),
         ]),
       ),
       gap: Gap.all(1.5.rem),
@@ -78,10 +71,7 @@ class WhyOnDevice extends StatelessComponent {
       textAlign: TextAlign.center,
       gap: Gap.all(0.75.rem),
     ),
-    css('.why-icon').styles(
-      fontSize: 2.5.rem,
-      lineHeight: 1.em,
-    ),
+    css('.why-icon').styles(fontSize: 2.5.rem, lineHeight: 1.em),
     css('.why-title').styles(
       fontFamily: Brand.fontSans,
       fontWeight: FontWeight.w700,

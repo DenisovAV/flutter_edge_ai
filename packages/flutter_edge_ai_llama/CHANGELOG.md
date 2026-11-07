@@ -1,9 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
-- Examples use `openSession`/`openChat` and close returned handles.
 - `responseFormat` on `openSession`/`openChat`, enforced by llamadart's grammar (#195).
+- Require `flutter_edge_ai` ^2.6.0.
 
 ## 0.0.6
 

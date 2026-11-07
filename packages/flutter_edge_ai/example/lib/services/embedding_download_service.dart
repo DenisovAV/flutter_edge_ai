@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
+
 import 'catalog_install.dart';
+
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'; // For EmbeddingModelSpec
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
     as example_embedding_model;

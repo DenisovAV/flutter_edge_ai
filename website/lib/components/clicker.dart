@@ -21,9 +21,7 @@ class ClickerState extends State<Clicker> {
       onClick: () {
         setState(() => count++);
       },
-      [
-        .text('Click me! ($count)'),
-      ],
+      [.text('Click me! ($count)')],
     );
   }
 

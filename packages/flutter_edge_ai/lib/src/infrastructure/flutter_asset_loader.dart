@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/src/services/asset_loader.dart';
 import 'package:large_file_handler/large_file_handler.dart';

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:genkit/genkit.dart';
 import 'package:genkit_hybrid/genkit_hybrid.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../models/message_model.dart';
 import '../services/ai_engine.dart';
 import '../services/rag_service.dart';

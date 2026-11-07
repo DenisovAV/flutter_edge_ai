@@ -28,16 +28,10 @@ List<StyleRule> get docsFixes => [
     // So did a long identifier in running text or inline code. Paragraphs
     // and list items only: in a table cell `anywhere` would shrink the
     // column instead of letting the table scroll.
-    css('html .docs .content :is(p, li)').styles(
-      raw: {'overflow-wrap': 'anywhere'},
-    ),
-    css('html .docs .content :is(p, li) code').styles(
-      raw: {'overflow-wrap': 'anywhere'},
-    ),
+    css('html .docs .content :is(p, li)').styles(raw: {'overflow-wrap': 'anywhere'}),
+    css('html .docs .content :is(p, li) code').styles(raw: {'overflow-wrap': 'anywhere'}),
     // A callout is a flex row, and its text column kept the default
     // `min-width: auto`, so it would not shrink below its longest word.
-    css(
-      'html .docs .content .callout > span:last-child',
-    ).styles(minWidth: Unit.zero),
+    css('html .docs .content .callout > span:last-child').styles(minWidth: Unit.zero),
   ]),
 ];

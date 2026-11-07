@@ -104,29 +104,24 @@ class ModelsGallery extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return section(
-      id: 'models',
-      classes: 'models-section',
-      [
-        div(classes: 'models-inner', [
-          h2(classes: 'section-title', [Component.text('Supported models')]),
-          p(classes: 'models-lead', [
-            Component.text(
-              'Highlights from the example catalog. Any model a registered engine runs works, '
-              'entirely on-device — see ',
-            ),
-            a(href: '/docs/models', classes: 'models-lead-link', [Component.text('Models')]),
-            Component.text(' for the full list.'),
-          ]),
-          div(
-            classes: 'models-grid',
-            [
-              for (final m in _models) _ModelCard(model: m),
-            ],
+    return section(id: 'models', classes: 'models-section', [
+      div(classes: 'models-inner', [
+        h2(classes: 'section-title', [Component.text('Supported models')]),
+        p(classes: 'models-lead', [
+          Component.text(
+            'Highlights from the example catalog. Any model a registered engine runs works, '
+            'entirely on-device — see ',
           ),
+          a(href: '/docs/models', classes: 'models-lead-link', [
+            Component.text('Models'),
+          ]),
+          Component.text(' for the full list.'),
         ]),
-      ],
-    );
+        div(classes: 'models-grid', [
+          for (final m in _models) _ModelCard(model: m),
+        ]),
+      ]),
+    ]);
   }
 
   @css
@@ -159,10 +154,9 @@ class ModelsGallery extends StatelessComponent {
       display: Display.grid,
       gridTemplate: GridTemplate(
         columns: GridTracks([
-          GridTrack.repeat(
-            TrackRepeat.autoFit,
-            [GridTrack(TrackSize.minmax(TrackSize(260.px), TrackSize.fr(1)))],
-          ),
+          GridTrack.repeat(TrackRepeat.autoFit, [
+            GridTrack(TrackSize.minmax(TrackSize(260.px), TrackSize.fr(1))),
+          ]),
         ]),
       ),
       gap: Gap.all(1.25.rem),
@@ -239,20 +233,17 @@ class _ModelCard extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return div(
-      classes: 'model-card',
-      [
-        h3(classes: 'model-name', [Component.text(model.name)]),
-        p(classes: 'model-best-for', [Component.text(model.bestFor)]),
-        div(classes: 'model-footer', [
-          span(classes: 'model-size', [Component.text(model.size)]),
-          div(classes: 'model-badges', [
-            if (model.fc) span(classes: 'mbadge mbadge-fc', [Component.text('FC')]),
-            if (model.thinking) span(classes: 'mbadge mbadge-think', [Component.text('Think')]),
-            if (model.vision) span(classes: 'mbadge mbadge-vision', [Component.text('Vision')]),
-          ]),
+    return div(classes: 'model-card', [
+      h3(classes: 'model-name', [Component.text(model.name)]),
+      p(classes: 'model-best-for', [Component.text(model.bestFor)]),
+      div(classes: 'model-footer', [
+        span(classes: 'model-size', [Component.text(model.size)]),
+        div(classes: 'model-badges', [
+          if (model.fc) span(classes: 'mbadge mbadge-fc', [Component.text('FC')]),
+          if (model.thinking) span(classes: 'mbadge mbadge-think', [Component.text('Think')]),
+          if (model.vision) span(classes: 'mbadge mbadge-vision', [Component.text('Vision')]),
         ]),
-      ],
-    );
+      ]),
+    ]);
   }
 }

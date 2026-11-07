@@ -6,6 +6,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart' as legacy;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_edge_ai_example/rag_demo_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'dart:io';
 import 'dart:math';
 

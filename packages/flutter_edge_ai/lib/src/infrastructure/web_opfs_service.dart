@@ -8,6 +8,7 @@ library;
 
 import 'dart:async';
 import 'dart:js_interop';
+
 import 'package:flutter_edge_ai/src/infrastructure/web_opfs_interop.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 

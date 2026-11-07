@@ -102,12 +102,11 @@ class Examples extends StatelessComponent {
       div(classes: 'examples-inner', [
         h2(classes: 'section-title', [Component.text('See it in action')]),
         p(classes: 'examples-subtitle', [
-          Component.text('Real on-device features — recorded on a phone, not a server.'),
+          Component.text(
+            'Real on-device features — recorded on a phone, not a server.',
+          ),
         ]),
-        div(
-          classes: 'examples-grid',
-          [for (final item in _items) _card(item)],
-        ),
+        div(classes: 'examples-grid', [for (final item in _items) _card(item)]),
       ]),
     ]);
   }
@@ -134,20 +133,15 @@ class Examples extends StatelessComponent {
           muted: true,
           poster: '${item.videoBase}-poster.jpg',
           preload: Preload.none,
-          attributes: const {
-            'playsinline': '',
-            'data-play-when-visible': '',
-          },
+          attributes: const {'playsinline': '', 'data-play-when-visible': ''},
         ),
       ]),
       div(classes: 'example-meta', [
         h3(classes: 'example-title', [Component.text(item.title)]),
         p(classes: 'example-blurb', [Component.text(item.blurb)]),
-        a(
-          href: item.ctaHref,
-          classes: 'example-cta',
-          [Component.text(item.ctaLabel)],
-        ),
+        a(href: item.ctaHref, classes: 'example-cta', [
+          Component.text(item.ctaLabel),
+        ]),
       ]),
     ]);
   }
@@ -178,10 +172,9 @@ class Examples extends StatelessComponent {
         // Narrower min so all four demos fit on one row on a wide screen
         // (auto-fit still wraps them to fewer columns on smaller viewports).
         columns: GridTracks([
-          GridTrack.repeat(
-            TrackRepeat.autoFit,
-            [GridTrack(TrackSize.minmax(TrackSize(220.px), TrackSize.fr(1)))],
-          ),
+          GridTrack.repeat(TrackRepeat.autoFit, [
+            GridTrack(TrackSize.minmax(TrackSize(220.px), TrackSize.fr(1))),
+          ]),
         ]),
       ),
       gap: Gap.all(1.5.rem),
@@ -211,11 +204,7 @@ class Examples extends StatelessComponent {
         color: Color('rgba(0,0,0,0.45)'),
       ),
     ),
-    css('.example-video').styles(
-      display: Display.block,
-      width: 100.percent,
-      height: Unit.auto,
-    ),
+    css('.example-video').styles(display: Display.block, width: 100.percent, height: Unit.auto),
     css('.example-meta').styles(
       display: Display.flex,
       flexDirection: FlexDirection.column,

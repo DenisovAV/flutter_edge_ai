@@ -33,8 +33,12 @@ class PlayWhenVisibleState extends State<PlayWhenVisible> {
   }
 
   void _observeVideos() {
-    final found = web.document.querySelectorAll('video[data-play-when-visible]');
-    final videos = [for (var i = 0; i < found.length; i++) found.item(i)! as web.HTMLVideoElement];
+    final found = web.document.querySelectorAll(
+      'video[data-play-when-visible]',
+    );
+    final videos = [
+      for (var i = 0; i < found.length; i++) found.item(i)! as web.HTMLVideoElement,
+    ];
     if (videos.isEmpty) return;
     if (web.window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       for (final video in videos) {
@@ -44,18 +48,22 @@ class PlayWhenVisibleState extends State<PlayWhenVisible> {
       return;
     }
     final observer = web.IntersectionObserver(
-      (JSArray<web.IntersectionObserverEntry> entries, web.IntersectionObserver _) {
-        for (final entry in entries.toDart) {
-          final video = entry.target as web.HTMLVideoElement;
-          if (entry.isIntersecting) {
-            if (video.preload == 'none') video.preload = 'auto';
-            // Rejected when the browser refuses to play; the poster stays.
-            video.play().toDart.ignore();
-          } else if (!video.paused) {
-            video.pause();
+      (
+            JSArray<web.IntersectionObserverEntry> entries,
+            web.IntersectionObserver _,
+          ) {
+            for (final entry in entries.toDart) {
+              final video = entry.target as web.HTMLVideoElement;
+              if (entry.isIntersecting) {
+                if (video.preload == 'none') video.preload = 'auto';
+                // Rejected when the browser refuses to play; the poster stays.
+                video.play().toDart.ignore();
+              } else if (!video.paused) {
+                video.pause();
+              }
+            }
           }
-        }
-      }.toJS,
+          .toJS,
       web.IntersectionObserverInit(rootMargin: '200px 0px', threshold: 0.toJS),
     );
     for (final video in videos) {

@@ -29,34 +29,31 @@ class QuickStart extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return section(
-      classes: 'quickstart-section',
-      [
-        div(classes: 'quickstart-inner', [
-          h2(classes: 'section-title', [Component.text('5 minutes to on-device inference')]),
-          p(classes: 'quickstart-lead', [
-            Component.text(
-              'Register your engines once, install a model, create a chat session — '
-              'then generate. The same Dart API across all six platforms.',
-            ),
-          ]),
-          div(classes: 'code-block-wrap', [
-            div(classes: 'code-lang', [Component.text('dart')]),
-            pre(classes: 'code-pre', [
-              code(classes: 'code-inner', [Component.text(_code)]),
-            ]),
-          ]),
-          p(classes: 'quickstart-cta', [
-            Component.text('Need step-by-step setup? '),
-            a(
-              href: '/docs/getting-started',
-              classes: 'qs-link',
-              [Component.text('Read the full guide →')],
-            ),
+    return section(classes: 'quickstart-section', [
+      div(classes: 'quickstart-inner', [
+        h2(classes: 'section-title', [
+          Component.text('5 minutes to on-device inference'),
+        ]),
+        p(classes: 'quickstart-lead', [
+          Component.text(
+            'Register your engines once, install a model, create a chat session — '
+            'then generate. The same Dart API across all six platforms.',
+          ),
+        ]),
+        div(classes: 'code-block-wrap', [
+          div(classes: 'code-lang', [Component.text('dart')]),
+          pre(classes: 'code-pre', [
+            code(classes: 'code-inner', [Component.text(_code)]),
           ]),
         ]),
-      ],
-    );
+        p(classes: 'quickstart-cta', [
+          Component.text('Need step-by-step setup? '),
+          a(href: '/docs/getting-started', classes: 'qs-link', [
+            Component.text('Read the full guide →'),
+          ]),
+        ]),
+      ]),
+    ]);
   }
 
   @css

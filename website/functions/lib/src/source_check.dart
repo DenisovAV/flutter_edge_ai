@@ -56,9 +56,13 @@ class SourceCheck {
     final ref = source.ref ?? 'HEAD';
     if (source.path case final path?) {
       final pubspecPath = '$path/pubspec.yaml';
-      final packages = showcaseDependencies(await _raw(source, ref, pubspecPath) ?? '');
+      final packages = showcaseDependencies(
+        await _raw(source, ref, pubspecPath) ?? '',
+      );
       if (packages.isEmpty) {
-        throw SubmissionException('$pubspecPath in $name does not depend on flutter_edge_ai or flutter_gemma.');
+        throw SubmissionException(
+          '$pubspecPath in $name does not depend on flutter_edge_ai or flutter_gemma.',
+        );
       }
       return (pubspecPath: pubspecPath, packages: packages);
     }
@@ -68,23 +72,35 @@ class SourceCheck {
     final paths = await _pubspecPaths(source, ref);
     for (var start = 0; start < paths.length; start += _batch) {
       final batch = paths.skip(start).take(_batch).toList();
-      final pubspecs = await Future.wait([for (final path in batch) _raw(source, ref, path)]);
+      final pubspecs = await Future.wait([
+        for (final path in batch) _raw(source, ref, path),
+      ]);
       for (var i = 0; i < batch.length; i++) {
         final packages = showcaseDependencies(pubspecs[i] ?? '');
         if (packages.isNotEmpty) return (pubspecPath: batch[i], packages: packages);
       }
     }
-    throw SubmissionException('No pubspec.yaml in $name depends on flutter_edge_ai or flutter_gemma.');
+    throw SubmissionException(
+      'No pubspec.yaml in $name depends on flutter_edge_ai or flutter_gemma.',
+    );
   }
 
   /// The file at [path], or null when the repository does not have it.
   Future<String?> _raw(GitHubSource source, String ref, String path) async {
     final response = await _client
-        .get(Uri.https('raw.githubusercontent.com', '/${source.owner}/${source.repo}/$ref/$path'))
+        .get(
+          Uri.https(
+            'raw.githubusercontent.com',
+            '/${source.owner}/${source.repo}/$ref/$path',
+          ),
+        )
         .timeout(_timeout);
     if (response.statusCode == 404) return null;
     if (response.statusCode != 200) {
-      throw StoreUnavailableException('GitHub', 'raw.githubusercontent.com answered ${response.statusCode}');
+      throw StoreUnavailableException(
+        'GitHub',
+        'raw.githubusercontent.com answered ${response.statusCode}',
+      );
     }
     return response.body;
   }
@@ -94,28 +110,45 @@ class SourceCheck {
   Future<List<String>> _pubspecPaths(GitHubSource source, String ref) async {
     final response = await _client
         .get(
-          Uri.https('api.github.com', '/repos/${source.owner}/${source.repo}/git/trees/$ref', {'recursive': '1'}),
-          headers: {'accept': 'application/vnd.github+json', 'user-agent': 'flutteredge.ai-showcase'},
+          Uri.https(
+            'api.github.com',
+            '/repos/${source.owner}/${source.repo}/git/trees/$ref',
+            {'recursive': '1'},
+          ),
+          headers: {
+            'accept': 'application/vnd.github+json',
+            'user-agent': 'flutteredge.ai-showcase',
+          },
         )
         .timeout(_timeout);
     if (response.statusCode == 404 || response.statusCode == 409) {
-      throw SubmissionException('GitHub has no public repository ${source.owner}/${source.repo}.');
+      throw SubmissionException(
+        'GitHub has no public repository ${source.owner}/${source.repo}.',
+      );
     }
     if (response.statusCode != 200) {
-      throw StoreUnavailableException('GitHub', 'the trees API answered ${response.statusCode}');
+      throw StoreUnavailableException(
+        'GitHub',
+        'the trees API answered ${response.statusCode}',
+      );
     }
     final tree = jsonDecode(response.body);
-    final paths = [
-      if (tree case {'tree': final List<Object?> entries})
-        for (final entry in entries)
-          if (entry case {
-            'type': 'blob',
-            'path': final String path,
-          } when path.endsWith('/pubspec.yaml') && !_skipped.hasMatch(path))
-            path,
-    ]..sort((a, b) => '/'.allMatches(a).length.compareTo('/'.allMatches(b).length));
+    final paths =
+        [
+          if (tree case {'tree': final List<Object?> entries})
+            for (final entry in entries)
+              if (entry case {
+                'type': 'blob',
+                'path': final String path,
+              } when path.endsWith('/pubspec.yaml') && !_skipped.hasMatch(path))
+                path,
+        ]..sort(
+          (a, b) => '/'.allMatches(a).length.compareTo('/'.allMatches(b).length),
+        );
     return paths.take(_maxPubspecs).toList();
   }
 
-  static final _skipped = RegExp(r'(^|/)(\.[^/]+|build|ios/Pods|ios/\.symlinks)/');
+  static final _skipped = RegExp(
+    r'(^|/)(\.[^/]+|build|ios/Pods|ios/\.symlinks)/',
+  );
 }

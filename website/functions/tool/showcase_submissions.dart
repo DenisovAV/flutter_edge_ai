@@ -26,7 +26,10 @@ const _collection = 'showcaseSubmissions';
 
 Future<void> main(List<String> args) async {
   final app = FirebaseApp.initializeApp(
-    options: AppOptions(credential: Credential.fromApplicationDefaultCredentials(), projectId: _projectId),
+    options: AppOptions(
+      credential: Credential.fromApplicationDefaultCredentials(),
+      projectId: _projectId,
+    ),
   );
   final submissions = app.firestore().collection(_collection);
   switch (args) {
@@ -42,10 +45,15 @@ Future<void> main(List<String> args) async {
       }
     case [final verb && ('approve' || 'reject'), final id]:
       final status = verb == 'approve' ? 'approved' : 'rejected';
-      await submissions.doc(id).update({'status': status, 'reviewedAt': FieldValue.serverTimestamp});
+      await submissions.doc(id).update({
+        'status': status,
+        'reviewedAt': FieldValue.serverTimestamp,
+      });
       stdout.writeln('$id: $status');
     default:
-      stderr.writeln('Usage: showcase_submissions.dart [--all] | approve <id> | reject <id>');
+      stderr.writeln(
+        'Usage: showcase_submissions.dart [--all] | approve <id> | reject <id>',
+      );
       exitCode = 64;
   }
   await app.close();
@@ -65,7 +73,11 @@ String _describe(String id, Map<String, Object?> data, DateTime createdAt) {
       '  app store:  https://apps.apple.com/app/id${appStore['id']} (${appStore['ratings']} ratings)',
     if (appStore?['artworkUrl'] case final String url) '  icon:       $url',
     '  packages:   ${(data['packages'] as List?)?.join(', ')}',
-    if (data['source'] case {'repository': final repository, 'pubspecPath': final path, 'packages': final List found})
+    if (data['source'] case {
+      'repository': final repository,
+      'pubspecPath': final path,
+      'packages': final List found,
+    })
       '  source:     $repository ($path: ${found.join(', ')})',
     '  on device:  ${data['onDevice']}',
     '  contact:    ${data['email']}',

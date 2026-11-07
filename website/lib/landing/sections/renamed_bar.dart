@@ -18,11 +18,9 @@ class RenamedBar extends StatelessComponent {
             ' Same models, new name — 2.0 moves RAG into flutter_edge_ai_rag. ',
           ),
         ]),
-        a(
-          href: '/docs/migration',
-          classes: 'renamed-link',
-          [Component.text('Moving from flutter_gemma →')],
-        ),
+        a(href: '/docs/migration', classes: 'renamed-link', [
+          Component.text('Moving from flutter_gemma →'),
+        ]),
       ]),
     ]);
   }

@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import '../utils/edge_ai_log.dart';
 
 /// Token for cancelling model downloads

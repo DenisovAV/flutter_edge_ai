@@ -4,6 +4,7 @@
 // Run: flutter test integration_test/ios_litertlm_test.dart -d <device_or_sim> --dart-define=HF_TOKEN=...
 
 import 'dart:typed_data';
+
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';

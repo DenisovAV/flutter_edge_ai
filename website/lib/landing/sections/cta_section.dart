@@ -9,35 +9,30 @@ class CtaSection extends StatelessComponent {
 
   @override
   Component build(BuildContext context) {
-    return section(
-      classes: 'cta-section',
-      [
-        div(classes: 'cta-inner', [
-          h2(classes: 'cta-headline', [
-            Component.text('Ship AI that never leaves the device.'),
-          ]),
-          p(classes: 'cta-sub', [
-            Component.text(
-              'Open source, MIT licensed, maintained by the community. '
-              'Star the repo and help spread on-device AI for Flutter.',
-            ),
-          ]),
-          div(classes: 'cta-buttons', [
-            a(
-              href: '/docs/getting-started',
-              classes: 'btn btn-primary',
-              [Component.text('Read the docs')],
-            ),
-            a(
-              href: 'https://github.com/DenisovAV/flutter_edge_ai',
-              classes: 'btn btn-outline',
-              attributes: {'target': '_blank', 'rel': 'noopener'},
-              [Component.text('Star on GitHub')],
-            ),
-          ]),
+    return section(classes: 'cta-section', [
+      div(classes: 'cta-inner', [
+        h2(classes: 'cta-headline', [
+          Component.text('Ship AI that never leaves the device.'),
         ]),
-      ],
-    );
+        p(classes: 'cta-sub', [
+          Component.text(
+            'Open source, MIT licensed, maintained by the community. '
+            'Star the repo and help spread on-device AI for Flutter.',
+          ),
+        ]),
+        div(classes: 'cta-buttons', [
+          a(href: '/docs/getting-started', classes: 'btn btn-primary', [
+            Component.text('Read the docs'),
+          ]),
+          a(
+            href: 'https://github.com/DenisovAV/flutter_edge_ai',
+            classes: 'btn btn-outline',
+            attributes: {'target': '_blank', 'rel': 'noopener'},
+            [Component.text('Star on GitHub')],
+          ),
+        ]),
+      ]),
+    ]);
   }
 
   @css
@@ -83,7 +78,10 @@ class CtaSection extends StatelessComponent {
       query: MediaQuery.screen(maxWidth: 480.px),
       styles: [
         css('.cta-headline').styles(fontSize: 1.8.rem),
-        css('.cta-buttons').styles(flexDirection: FlexDirection.column, alignItems: AlignItems.stretch),
+        css('.cta-buttons').styles(
+          flexDirection: FlexDirection.column,
+          alignItems: AlignItems.stretch,
+        ),
       ],
     ),
   ];

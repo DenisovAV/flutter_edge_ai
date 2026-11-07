@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
+
 import 'utils/edge_ai_log.dart';
 
 /// Comprehensive image processing utilities to prevent AI image corruption

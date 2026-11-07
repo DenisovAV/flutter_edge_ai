@@ -1,5 +1,6 @@
 import 'package:flutter_edge_ai_litertlm/src/ffi/native_turns.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
+
 import 'dart:ffi';
 import 'dart:async';
 // Which open sessions are native conversations (core 2.6.0 design §1.1): only

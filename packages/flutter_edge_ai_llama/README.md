@@ -11,10 +11,10 @@ compatible models and runtimes. See [advanced usage](doc/advanced_usage.md) and 
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
 Version 0.0.3 adds native text embeddings with llamadart 0.15.1.
-Version 0.0.6 moves to llamadart 0.17.5; the consumer setup below targets it.
+Version 0.1.0 uses llamadart 0.17.5 and core 2.6.0; the setup below targets it.
 
-The minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.0+**.
-Version 0.0.6 uses llamadart **0.17.5** with typed overflow reporting
+The minimum is Flutter **3.44 / Dart 3.12**, with core **2.6.0+**.
+Version 0.1.0 uses llamadart **0.17.5** with typed overflow reporting
 and Apple companion **0.17.3** (0.0.3 to 0.0.5 used 0.15.1 / 0.15.0). Connector CI uses Flutter
 3.47.1 / Dart 3.13.1 for reproducible checks. Native EmbeddingGemma 2 text embeddings are described in
 [the embedding guide](doc/embeddings.md). macOS CPU/Metal (llamadart 0.15.1 and
@@ -102,15 +102,15 @@ connector, even if the download completes. Choose the storage mode before instal
 
 ## Add it to your app
 
-Version 0.0.6 requires core 2.5.0+ (below 2.6.0) and llamadart 0.17.5.
+Version 0.1.0 requires core 2.6.0+ and llamadart 0.17.5.
 Use these hosted dependencies:
 
 ```yaml
 dependencies:
   flutter:
     sdk: flutter
-  flutter_edge_ai: ^2.5.5
-  flutter_edge_ai_llama: ^0.0.6
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_llama: ^0.1.0
   # Add directly for iOS/macOS SwiftPM linkage:
   llamadart_llama_cpp_flutter: 0.17.3
 
@@ -126,7 +126,7 @@ when this connector or Flutter Edge AI LiteRT-LM is in the dependency graph.
 Keep the explicit setting as defence in depth. Explicitly selecting llamadart's
 LiteRT-LM beside `flutter_edge_ai_litertlm` fails the native build with an
 actionable collision error. On Apple the llama.cpp companion is required too.
-Version 0.0.6 bounds llamadart to `>=0.17.5 <0.17.6` and selects exact
+Version 0.1.0 bounds llamadart to `>=0.17.5 <0.17.6` and selects exact
 Apple companion `0.17.3`, native artifacts `v0.8.0-1` and Web bridge `v0.1.79`.
 Full platform qualification of this pair is pending (see the
 [platform matrix](doc/platforms.md)); historical 0.15.1/0.15.0 evidence does not qualify it. Companion patches are versioned independently;

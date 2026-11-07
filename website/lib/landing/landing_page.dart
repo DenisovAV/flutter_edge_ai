@@ -47,9 +47,7 @@ class LandingPage extends StatelessComponent {
   @css
   static List<StyleRule> get styles => [
     // Global resets and base
-    css('*, *::before, *::after').styles(
-      boxSizing: BoxSizing.borderBox,
-    ),
+    css('*, *::before, *::after').styles(boxSizing: BoxSizing.borderBox),
     // NOTE: do NOT set background-color/color on `body` here — this @css is
     // bundled onto every page (incl. docs), and a global body-navy leaked under
     // the docs' light-mode dark text, making docs unreadable. Page background +
@@ -78,18 +76,12 @@ class LandingPage extends StatelessComponent {
     // into the docs pages (this @css is bundled site-wide). A global
     // `ul{padding:0}` / heading reset flattened the docs' jaspr_content
     // typography (list indentation, heading spacing).
-    css('.landing-root img').styles(
-      maxWidth: 100.percent,
-      height: Unit.auto,
-      display: Display.block,
-    ),
-    css('.landing-root h1, .landing-root h2, .landing-root h3, .landing-root h4').styles(
-      margin: Margin.zero,
-      padding: Padding.zero,
-    ),
-    css('.landing-root ul').styles(
-      margin: Margin.zero,
-      padding: Padding.zero,
-    ),
+    css(
+      '.landing-root img',
+    ).styles(maxWidth: 100.percent, height: Unit.auto, display: Display.block),
+    css(
+      '.landing-root h1, .landing-root h2, .landing-root h3, .landing-root h4',
+    ).styles(margin: Margin.zero, padding: Padding.zero),
+    css('.landing-root ul').styles(margin: Margin.zero, padding: Padding.zero),
   ];
 }

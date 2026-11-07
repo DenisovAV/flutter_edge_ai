@@ -27,7 +27,11 @@ dependencies:
 
 /// A fake GitHub: [files] by raw path (`owner/repo/ref/path`), and the tree
 /// the trees API returns, or [treeStatus] instead.
-SourceCheck _check(Map<String, String> files, {List<String> tree = const [], int treeStatus = 200}) {
+SourceCheck _check(
+  Map<String, String> files, {
+  List<String> tree = const [],
+  int treeStatus = 200,
+}) {
   final requests = <String>[];
   addTearDown(() => printOnFailure('requests: $requests'));
   return SourceCheck(
@@ -50,8 +54,13 @@ SourceCheck _check(Map<String, String> files, {List<String> tree = const [], int
   );
 }
 
-Matcher _refused(String message) =>
-    throwsA(isA<SubmissionException>().having((e) => e.message, 'message', contains(message)));
+Matcher _refused(String message) => throwsA(
+  isA<SubmissionException>().having(
+    (e) => e.message,
+    'message',
+    contains(message),
+  ),
+);
 
 void main() {
   group('parseGitHubUrl', () {
@@ -62,16 +71,17 @@ void main() {
         ref: null,
         path: null,
       ));
-      expect(parseGitHubUrl('https://github.com/yegobox/flipper.git/').repo, 'flipper');
+      expect(
+        parseGitHubUrl('https://github.com/yegobox/flipper.git/').repo,
+        'flipper',
+      );
     });
 
     test('a folder on a branch', () {
-      expect(parseGitHubUrl('https://github.com/owner/mono/tree/main/apps/shop'), (
-        owner: 'owner',
-        repo: 'mono',
-        ref: 'main',
-        path: 'apps/shop',
-      ));
+      expect(
+        parseGitHubUrl('https://github.com/owner/mono/tree/main/apps/shop'),
+        (owner: 'owner', repo: 'mono', ref: 'main', path: 'apps/shop'),
+      );
     });
 
     test('refuses other hosts and pages', () {
@@ -89,7 +99,10 @@ void main() {
   });
 
   test('showcaseDependencies reads only dependencies, satellites included', () {
-    expect(showcaseDependencies(_app), ['flutter_edge_ai_litertlm', 'flutter_gemma']);
+    expect(showcaseDependencies(_app), [
+      'flutter_edge_ai_litertlm',
+      'flutter_gemma',
+    ]);
     expect(showcaseDependencies(_other), isEmpty);
     expect(showcaseDependencies('not: [yaml'), isEmpty);
   });
@@ -98,22 +111,31 @@ void main() {
     const repo = (owner: 'o', repo: 'r', ref: null, path: null);
 
     test('the root pubspec, without the trees API', () async {
-      final found = await _check({'o/r/HEAD/pubspec.yaml': _app}, treeStatus: 500).find(repo);
+      final found = await _check({
+        'o/r/HEAD/pubspec.yaml': _app,
+      }, treeStatus: 500).find(repo);
       expect(found.pubspecPath, 'pubspec.yaml');
       expect(found.packages, ['flutter_edge_ai_litertlm', 'flutter_gemma']);
     });
 
-    test('a pubspec deeper in the tree, nearest first, generated folders skipped', () async {
-      final found = await _check(
-        {
-          'o/r/HEAD/pubspec.yaml': _other,
-          'o/r/HEAD/apps/shop/pubspec.yaml': _app,
-          'o/r/HEAD/apps/shop/build/x/pubspec.yaml': _app,
-        },
-        tree: ['apps/shop/build/x/pubspec.yaml', 'apps/shop/pubspec.yaml', 'pubspec.yaml'],
-      ).find(repo);
-      expect(found.pubspecPath, 'apps/shop/pubspec.yaml');
-    });
+    test(
+      'a pubspec deeper in the tree, nearest first, generated folders skipped',
+      () async {
+        final found = await _check(
+          {
+            'o/r/HEAD/pubspec.yaml': _other,
+            'o/r/HEAD/apps/shop/pubspec.yaml': _app,
+            'o/r/HEAD/apps/shop/build/x/pubspec.yaml': _app,
+          },
+          tree: [
+            'apps/shop/build/x/pubspec.yaml',
+            'apps/shop/pubspec.yaml',
+            'pubspec.yaml',
+          ],
+        ).find(repo);
+        expect(found.pubspecPath, 'apps/shop/pubspec.yaml');
+      },
+    );
 
     test('a dependency in the 25th of 30 pubspecs', () async {
       final tree = [for (var i = 0; i < 30; i++) 'packages/p$i/pubspec.yaml'];
@@ -131,22 +153,40 @@ void main() {
       expect(found.pubspecPath, 'apps/shop/pubspec.yaml');
     });
 
-    test('refuses a repository whose pubspecs do not depend on the packages', () async {
-      await expectLater(
-        _check({'o/r/HEAD/pubspec.yaml': _other}, tree: ['pubspec.yaml', 'tool/pubspec.yaml']).find(repo),
-        _refused('No pubspec.yaml in o/r depends on'),
-      );
-    });
+    test(
+      'refuses a repository whose pubspecs do not depend on the packages',
+      () async {
+        await expectLater(
+          _check(
+            {'o/r/HEAD/pubspec.yaml': _other},
+            tree: ['pubspec.yaml', 'tool/pubspec.yaml'],
+          ).find(repo),
+          _refused('No pubspec.yaml in o/r depends on'),
+        );
+      },
+    );
 
     test('refuses a repository that is not public', () async {
-      await expectLater(_check({}, treeStatus: 404).find(repo), _refused('GitHub has no public repository o/r'));
-    });
-
-    test('a rate-limited API is GitHub being unavailable, not a refusal', () async {
       await expectLater(
-        _check({'o/r/HEAD/pubspec.yaml': _other}, treeStatus: 403).find(repo),
-        throwsA(isA<StoreUnavailableException>().having((e) => e.service, 'service', 'GitHub')),
+        _check({}, treeStatus: 404).find(repo),
+        _refused('GitHub has no public repository o/r'),
       );
     });
+
+    test(
+      'a rate-limited API is GitHub being unavailable, not a refusal',
+      () async {
+        await expectLater(
+          _check({'o/r/HEAD/pubspec.yaml': _other}, treeStatus: 403).find(repo),
+          throwsA(
+            isA<StoreUnavailableException>().having(
+              (e) => e.service,
+              'service',
+              'GitHub',
+            ),
+          ),
+        );
+      },
+    );
   });
 }

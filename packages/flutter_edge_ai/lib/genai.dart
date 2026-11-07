@@ -6,4 +6,5 @@
 library;
 
 export 'package:genai_primitives/genai_primitives.dart';
+
 export 'src/genai/genai_chat_extension.dart' show GenAiChat;

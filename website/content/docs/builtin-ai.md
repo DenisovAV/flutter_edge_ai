@@ -42,8 +42,8 @@ engines your app uses:
 
 ```
 dependencies:
-  flutter_edge_ai: latest_version
-  flutter_edge_ai_builtin_ai: latest_version   # OS/browser built-in AI
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_builtin_ai: ^0.4.0   # OS/browser built-in AI
 ```
 
 ```dart
@@ -164,10 +164,8 @@ await session.close();
 
 ## Capabilities & limits
 
-**Release availability:** the structured-output behavior below describes core
-2.6.0 and the next `flutter_edge_ai_builtin_ai` release, built on
-`flutter_edge_ai` 2.6.0. The currently published package shown by the install
-block above remains on core 2.5.x and does not expose these APIs.
+The structured-output behavior below requires core 2.6.0 and
+`flutter_edge_ai_builtin_ai` 0.4.0.
 
 | Feature | Android (Gemini Nano) | iOS / macOS (Apple FM) | Windows (Phi Silica) | Web (Chrome Prompt API) |
 |---------|------------------------|-------------------------|----------------------|--------------------------|
@@ -185,8 +183,8 @@ block above remains on core 2.5.x and does not expose these APIs.
   Prompt-API tool use is still experimental, so it also uses the prompt path.
   Gemini Nano handles single-turn calls; multi-turn agent chaining is not
   supported on Web (see [Agent Skills](/docs/agent)).
-- **Response formats are wired but not enabled on any built-in platform in that
-  release.** Read `model.structuredOutputSupport` or call
+- **Response formats are wired but not enabled on any built-in platform.** Read
+  `model.structuredOutputSupport` or call
   `model.refusalFor(format)` before opening a session. Apple Foundation Models,
   Chrome's Prompt API and Phi Silica all return
   `StructuredOutputSupport.none(...)` until their own qualification run passes.

@@ -32,7 +32,11 @@ class Submission {
   /// on the first field that does not pass.
   factory Submission.parse(Object? data) {
     if (data is! Map) throw SubmissionException('The request has no fields.');
-    final googlePlayUrl = _optionalString(data, 'googlePlayUrl', maxLength: 300);
+    final googlePlayUrl = _optionalString(
+      data,
+      'googlePlayUrl',
+      maxLength: 300,
+    );
     final appStoreUrl = _optionalString(data, 'appStoreUrl', maxLength: 300);
     if (googlePlayUrl == null && appStoreUrl == null) {
       throw SubmissionException('Give a Google Play or an App Store link.');
@@ -41,13 +45,18 @@ class Submission {
     final sourceUrl = _optionalString(data, 'sourceUrl', maxLength: 300);
     final packages = data['packages'];
     if (packages is! List || packages.isEmpty || !packages.every(showcasePackages.contains)) {
-      throw SubmissionException('Choose flutter_edge_ai, flutter_gemma or both.');
+      throw SubmissionException(
+        'Choose flutter_edge_ai, flutter_gemma or both.',
+      );
     }
     final onDevice = _optionalString(data, 'onDevice', maxLength: 500);
     if (onDevice == null) throw SubmissionException('Say what the app runs on the device.');
     final email = _optionalString(data, 'email', maxLength: 254);
     if (email == null || !_email.hasMatch(email)) throw SubmissionException('Give an email address to reach you at.');
-    if (data['isDeveloper'] != true) throw SubmissionException('Only the app\'s developer or publisher can submit it.');
+    if (data['isDeveloper'] != true)
+      throw SubmissionException(
+        'Only the app\'s developer or publisher can submit it.',
+      );
     if (data['consent'] != true) throw SubmissionException('Agree to show the app on the showcase.');
     return Submission._(
       googlePlayId: googlePlayUrl == null ? null : parseGooglePlayUrl(googlePlayUrl),
@@ -102,7 +111,9 @@ String parseGooglePlayUrl(String url) {
       uri.path != '/store/apps/details' ||
       id == null ||
       !_applicationId.hasMatch(id)) {
-    throw SubmissionException('The Google Play link should look like https://play.google.com/store/apps/details?id=…');
+    throw SubmissionException(
+      'The Google Play link should look like https://play.google.com/store/apps/details?id=…',
+    );
   }
   return id;
 }
@@ -118,7 +129,9 @@ String parseGooglePlayUrl(String url) {
       uri.host != 'apps.apple.com' ||
       !segments.contains('app') ||
       match == null) {
-    throw SubmissionException('The App Store link should look like https://apps.apple.com/…/app/…/id…');
+    throw SubmissionException(
+      'The App Store link should look like https://apps.apple.com/…/app/…/id…',
+    );
   }
   final country = segments.first.length == 2 ? segments.first : null;
   return (id: int.parse(match.group(1)!), country: country);
@@ -139,7 +152,9 @@ GitHubSource parseGitHubUrl(String url) {
       !_owner.hasMatch(segments[0]) ||
       !_repo.hasMatch(segments[1]) ||
       (segments.length > 2 && (segments[2] != 'tree' || segments.length < 4))) {
-    throw SubmissionException('The GitHub link should look like https://github.com/<owner>/<repo>');
+    throw SubmissionException(
+      'The GitHub link should look like https://github.com/<owner>/<repo>',
+    );
   }
   final repo = segments[1].endsWith('.git') ? segments[1].substring(0, segments[1].length - 4) : segments[1];
   return (
@@ -152,14 +167,20 @@ GitHubSource parseGitHubUrl(String url) {
 
 /// Android's rules for an application id: two or more segments, each
 /// starting with a letter.
-final _applicationId = RegExp(r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$');
+final _applicationId = RegExp(
+  r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+$',
+);
 
 final _appStoreId = RegExp(r'^id(\d{1,12})$');
 
 final _owner = RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$');
 final _repo = RegExp(r'^[A-Za-z0-9._-]{1,100}$');
 
-String? _optionalString(Map<Object?, Object?> data, String field, {required int maxLength}) {
+String? _optionalString(
+  Map<Object?, Object?> data,
+  String field, {
+  required int maxLength,
+}) {
   final value = data[field];
   if (value == null) return null;
   if (value is! String) throw SubmissionException('$field should be text.');

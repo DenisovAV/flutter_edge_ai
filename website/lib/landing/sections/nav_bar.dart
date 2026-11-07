@@ -70,17 +70,21 @@ class NavBarState extends State<NavBar> {
             span(classes: 'navbar-burger-bar', []),
           ],
         ),
-        div(id: 'navbar-links', classes: _open ? 'navbar-links is-open' : 'navbar-links', [
-          for (final l in _links)
-            // Full-page navigation via `href` (static multi-page site). The
-            // menu closes on its own because navigation reloads the page.
-            a(
-              href: l.href,
-              classes: l.cta ? 'navbar-link navbar-link--cta' : 'navbar-link',
-              attributes: l.external ? {'target': '_blank', 'rel': 'noopener'} : const {},
-              [Component.text(l.text)],
-            ),
-        ]),
+        div(
+          id: 'navbar-links',
+          classes: _open ? 'navbar-links is-open' : 'navbar-links',
+          [
+            for (final l in _links)
+              // Full-page navigation via `href` (static multi-page site). The
+              // menu closes on its own because navigation reloads the page.
+              a(
+                href: l.href,
+                classes: l.cta ? 'navbar-link navbar-link--cta' : 'navbar-link',
+                attributes: l.external ? {'target': '_blank', 'rel': 'noopener'} : const {},
+                [Component.text(l.text)],
+              ),
+          ],
+        ),
       ]),
     ]);
   }
@@ -123,11 +127,7 @@ class NavBarState extends State<NavBar> {
     // silently overriding `height: 2.2rem` with `height: auto` — so the logo
     // rendered at its full intrinsic size, a giant logo filling the header.
     // `.landing-root .navbar-logo` is (0,2,0), which wins and restores 2.2rem.
-    css('.landing-root .navbar-logo').styles(
-      height: 2.2.rem,
-      width: Unit.auto,
-      display: Display.block,
-    ),
+    css('.landing-root .navbar-logo').styles(height: 2.2.rem, width: Unit.auto, display: Display.block),
     css('.navbar-wordmark').styles(
       fontFamily: Brand.fontSans,
       fontSize: 1.2.rem,
@@ -143,10 +143,7 @@ class NavBarState extends State<NavBar> {
       fontWeight: FontWeight.w500,
       fontFamily: Brand.fontSans,
     ),
-    css('.navbar-link--cta').styles(
-      color: Brand.blueLight,
-      fontWeight: FontWeight.w600,
-    ),
+    css('.navbar-link--cta').styles(color: Brand.blueLight, fontWeight: FontWeight.w600),
     css('.navbar-link:hover').styles(color: Brand.white),
     css('.navbar-burger-bar').styles(
       display: Display.block,
@@ -187,7 +184,10 @@ class NavBarState extends State<NavBar> {
     ),
     css('.navbar-links.is-open').styles(display: Display.flex),
     css('.navbar-burger:focus-visible').styles(
-      raw: {'outline': '2px solid ${Brand.blueLight.value}', 'outline-offset': '2px'},
+      raw: {
+        'outline': '2px solid ${Brand.blueLight.value}',
+        'outline-offset': '2px',
+      },
     ),
     css('.navbar-links .navbar-link').styles(
       padding: Padding.symmetric(vertical: 0.85.rem, horizontal: 2.rem),
@@ -212,10 +212,7 @@ class NavBarState extends State<NavBar> {
           padding: Padding.zero,
           border: Border.none,
         ),
-        css('.navbar-links .navbar-link').styles(
-          padding: Padding.zero,
-          fontSize: 0.95.rem,
-        ),
+        css('.navbar-links .navbar-link').styles(padding: Padding.zero, fontSize: 0.95.rem),
       ],
     ),
   ];

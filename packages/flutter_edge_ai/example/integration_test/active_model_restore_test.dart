@@ -30,6 +30,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
 
 const _modelName = 'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';

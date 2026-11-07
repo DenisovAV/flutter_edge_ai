@@ -1,4 +1,4 @@
-## Unreleased
+## 0.4.2
 - `AgentSession.fromModel` opens its owned chat through `openChat`.
 
 ## 0.4.1

@@ -3,6 +3,7 @@
 library;
 
 import 'dart:typed_data';
+
 import 'package:flutter_edge_ai/src/services/asset_loader.dart';
 
 /// Stub class - should never be instantiated on web platform

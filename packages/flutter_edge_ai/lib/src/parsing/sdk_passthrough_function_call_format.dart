@@ -1,4 +1,5 @@
 import 'function_call_format.dart';
+
 import 'package:flutter_edge_ai/src/model_response.dart';
 
 /// Passthrough [FunctionCallFormat] for backends that surface tool calls

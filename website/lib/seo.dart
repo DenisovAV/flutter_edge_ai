@@ -52,7 +52,11 @@ List<Component> seoHead({
     meta('og:image:type', 'image/png', property: true),
     meta('og:image:width', '1200', property: true),
     meta('og:image:height', '630', property: true),
-    meta('og:image:alt', 'Flutter Edge AI — On-device LLMs for Flutter', property: true),
+    meta(
+      'og:image:alt',
+      'Flutter Edge AI — On-device LLMs for Flutter',
+      property: true,
+    ),
     // Twitter Card
     meta('twitter:card', 'summary_large_image'),
     meta('twitter:title', title),
@@ -83,16 +87,9 @@ Map<String, Object?> _softwareApplicationSchema() => {
   'url': kSiteOrigin,
   'applicationCategory': 'DeveloperApplication',
   'operatingSystem': 'Android, iOS, Web, macOS, Windows, Linux',
-  'offers': {
-    '@type': 'Offer',
-    'price': '0',
-    'priceCurrency': 'USD',
-  },
+  'offers': {'@type': 'Offer', 'price': '0', 'priceCurrency': 'USD'},
   'license': 'https://opensource.org/licenses/MIT',
-  'author': {
-    '@type': 'Person',
-    'name': 'Sasha Denisov',
-  },
+  'author': {'@type': 'Person', 'name': 'Sasha Denisov'},
   'codeRepository': 'https://github.com/DenisovAV/flutter_edge_ai',
   'sameAs': [
     'https://pub.dev/packages/flutter_edge_ai',

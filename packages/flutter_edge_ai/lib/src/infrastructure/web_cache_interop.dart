@@ -5,7 +5,9 @@
 library;
 
 import 'dart:js_interop';
+
 import 'package:flutter/foundation.dart';
+
 import '../utils/edge_ai_log.dart';
 
 /// External JS functions for Cache API

@@ -1,6 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
+
 import 'dart:js_interop';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/src/domain/download_exception.dart';
 import 'package:flutter_edge_ai/src/domain/download_error.dart';

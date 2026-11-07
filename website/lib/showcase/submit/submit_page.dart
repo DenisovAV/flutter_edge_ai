@@ -16,14 +16,20 @@ class ShowcaseSubmitPage extends StatelessComponent {
       const NavBar(),
       section(classes: 'ss-section', [
         div(classes: 'ss-inner', [
-          a(href: '/showcase', classes: 'ss-eyebrow', [Component.text('Showcase')]),
+          a(href: '/showcase', classes: 'ss-eyebrow', [
+            Component.text('Showcase'),
+          ]),
           h1(classes: 'ss-title', [Component.text('Add your app')]),
           p(classes: 'ss-standfirst', [
-            Component.text('An app on Google Play or the App Store that runs AI on-device with '),
+            Component.text(
+              'An app on Google Play or the App Store that runs AI on-device with ',
+            ),
             code([Component.text('flutter_edge_ai')]),
             Component.text(' or '),
             code([Component.text('flutter_gemma')]),
-            Component.text(' can be on the showcase. I check every submission before it is listed.'),
+            Component.text(
+              ' can be on the showcase. I check every submission before it is listed.',
+            ),
           ]),
           const ShowcaseSubmitForm(),
         ]),
@@ -35,7 +41,12 @@ class ShowcaseSubmitPage extends StatelessComponent {
   @css
   static List<StyleRule> get styles => [
     css('.ss-section').styles(
-      padding: Padding.only(left: 2.rem, right: 2.rem, top: 4.rem, bottom: 4.rem),
+      padding: Padding.only(
+        left: 2.rem,
+        right: 2.rem,
+        top: 4.rem,
+        bottom: 4.rem,
+      ),
     ),
     css('.ss-inner').styles(
       display: Display.flex,
@@ -70,12 +81,19 @@ class ShowcaseSubmitPage extends StatelessComponent {
       fontSize: 1.05.rem,
       lineHeight: 1.6.em,
     ),
-    css('.ss-standfirst code').styles(color: Brand.white, fontFamily: Brand.fontMono, fontSize: 0.92.em),
+    css(
+      '.ss-standfirst code',
+    ).styles(color: Brand.white, fontFamily: Brand.fontMono, fontSize: 0.92.em),
     StyleRule.media(
       query: MediaQuery.screen(maxWidth: 640.px),
       styles: [
         css('.ss-section').styles(
-          padding: Padding.only(left: 1.25.rem, right: 1.25.rem, top: 2.5.rem, bottom: 3.rem),
+          padding: Padding.only(
+            left: 1.25.rem,
+            right: 1.25.rem,
+            top: 2.5.rem,
+            bottom: 3.rem,
+          ),
         ),
         css('.ss-title').styles(fontSize: 1.9.rem),
       ],

@@ -396,7 +396,7 @@ Flutter app boots (i.e. in `<head>`, ahead of `flutter_bootstrap.js`).
 
 See what others ship on the [showcase](https://flutteredge.ai/showcase), and
 [add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
-minutes, and the form links back to your store page or repository.
+minutes, and the listing links to your app's Google Play or App Store page.
 
 ## See also
 

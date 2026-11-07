@@ -434,7 +434,7 @@ await router.warmUp(); // the decider and the on-device model, before the first 
 
 See what others ship on the [showcase](https://flutteredge.ai/showcase), and
 [add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
-minutes, and the form links back to your store page or repository.
+minutes, and the listing links to your app's Google Play or App Store page.
 
 ## Known Limitations
 

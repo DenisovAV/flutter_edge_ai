@@ -114,8 +114,8 @@ prompt and never mentions the rest, with no error raised
 ([LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508)).
 
 EmbeddingGemma 2's Panther Lake bundles (`…_Intel_PTL.litertlm`) load on the
-same stack from `flutter_edge_ai_litertlm` 1.13.2. The 270m has been measured
-on Panther Lake; see
+same stack from `flutter_edge_ai_litertlm` 1.13.2. The 270m is enabled in code
+and was measured on a Panther Lake PC, 2026-10-21; see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 
 </Info>

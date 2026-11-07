@@ -292,4 +292,4 @@ arm64-v8a and x86_64; 32-bit armeabi-v7a is unsupported.
 
 See what others ship on the [showcase](https://flutteredge.ai/showcase), and
 [add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
-minutes, and the form links back to your store page or repository.
+minutes, and the listing links to your app's Google Play or App Store page.

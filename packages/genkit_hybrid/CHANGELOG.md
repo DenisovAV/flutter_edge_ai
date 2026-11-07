@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - Remove the deprecated composite-model API and `RoutingStrategy` family.
 

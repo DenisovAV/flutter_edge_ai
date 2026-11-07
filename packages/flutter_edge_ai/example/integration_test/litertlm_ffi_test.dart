@@ -1,7 +1,7 @@
 /// Universal FFI integration test for all platforms (macOS, iOS, Android).
 ///
 /// Prerequisites:
-///   macOS:   models in ~/Library/Containers/.../Documents/
+///   macOS:   models in ~/models/ (container Documents fallback)
 ///   Android: adb push models to /data/local/tmp/flutter_gemma_test/
 ///   iOS:     models downloaded via FlutterEdgeAi.installModel()
 ///
@@ -109,7 +109,10 @@ Future<void> _gemma4Evidence(String check) async {
 /// instead of re-downloading on every test run.
 String? _localPath(String filename) {
   if (Platform.isAndroid) return '$_androidDir/$filename';
-  if (Platform.isMacOS) return '$_macosDir/$filename';
+  if (Platform.isMacOS) {
+    final modelsPath = '${Platform.environment['HOME']}/models/$filename';
+    return File(modelsPath).existsSync() ? modelsPath : '$_macosDir/$filename';
+  }
   if (Platform.isLinux) return '$_linuxDir/$filename';
   if (Platform.isWindows) return '$_windowsDir\\$filename';
   if (Platform.isIOS) {

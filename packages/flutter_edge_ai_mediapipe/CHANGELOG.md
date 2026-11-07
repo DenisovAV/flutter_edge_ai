@@ -1,9 +1,9 @@
-## Unreleased
-- README examples use `openSession`/`openChat` and close returned handles.
+## 1.3.0
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and audio.
 - Android: a streamed reply no longer loses chunks while the UI thread is busy.
 - Failed turns and turns stopped before producing text are removed from session history.
 - Web: `openSession`/`openChat` work (`openChat` with the model's capabilities); a cancelled stream stops its call.
+- Require `flutter_edge_ai` ^2.6.0.
 
 ## 1.2.6
 - Require `flutter_edge_ai` >=2.3.0 <2.6.0.

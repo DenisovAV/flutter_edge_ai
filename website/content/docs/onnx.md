@@ -52,9 +52,9 @@ Add the package and register whichever arm(s) you use at startup:
 
 ```
 dependencies:
-  flutter_edge_ai: latest_version
-  flutter_edge_ai_onnx: latest_version         # ONNX Runtime engines
-  flutter_edge_ai_embeddings: latest_version   # tokenizers, for embeddings
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_onnx: ^0.9.0         # ONNX Runtime engines
+  flutter_edge_ai_embeddings: ^2.3.2   # tokenizers, for embeddings
 ```
 
 ```dart
@@ -160,8 +160,7 @@ falls back to WASM.
 
 ## Structured JSON output
 
-**Version scope:** this section describes `flutter_edge_ai` 2.6.0 with
-`flutter_edge_ai_onnx` 0.9.0.
+This section requires core 2.6.0 and `flutter_edge_ai_onnx` 0.9.0.
 
 Native ORT-GenAI can apply llguidance to each independent generator opened by
 `openSession(responseFormat: ...)` or `openChat(responseFormat: ...)`. In that

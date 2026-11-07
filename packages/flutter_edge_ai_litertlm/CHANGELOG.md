@@ -1,9 +1,10 @@
-## Unreleased
+## 1.20.0
 - Enforce response formats with native LiteRT-LM constrained decoding.
-- README examples use `openSession`/`openChat` and close returned handles.
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and media.
 - Native: a turn cut short by closing its session or model ends with a `StateError`.
 - `openSession` sessions are native conversations where verified: media, stop rewind, full-context recovery.
+- LiteRT-LM 0.19 / `native-v0.19.0-a` uses the status-returning C API 1.0.
+- Require `flutter_edge_ai` ^2.6.0.
 
 ## 1.19.2
 - Android GPU: the #364 prefill flush is set on Adreno only; other GPUs use the engine default (#763).

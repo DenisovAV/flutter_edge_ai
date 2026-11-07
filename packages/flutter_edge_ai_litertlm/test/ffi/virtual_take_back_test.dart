@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_bindings.dart';
@@ -228,7 +229,14 @@ void main() {
   });
 
   test('a failed turn is not replayed: the next turn rebuilds the shared '
-      'conversation without it', () async {
+      'conversation without it and logs the rebuild', () async {
+    final logged = <String>[];
+    final originalDebugPrint = debugPrint;
+    debugPrint = (message, {wrapWidth}) {
+      if (message != null) logged.add(message);
+    };
+    addTearDown(() => debugPrint = originalDebugPrint);
+
     await completeTurn('one');
     final failing = turn('two');
     await pumpEventQueue();
@@ -238,6 +246,10 @@ void main() {
     await completeTurn('three');
     expect(seeds, hasLength(2), reason: 'rebuilt after the failure');
     expect(users(seeds.last), ['one']);
+    expect(
+      logged.where((line) => line.contains('rebuilt the conversation')),
+      hasLength(1),
+    );
   });
 
   test('a turn stopped before it produced anything is not replayed (Rule A); '

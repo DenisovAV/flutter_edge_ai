@@ -24,11 +24,11 @@ notes below).
 ```
 dependencies:
   genkit: ^1.0.0                  # the framework itself — every snippet below uses it
-  genkit_flutter_edge_ai: ^0.11.1
-  flutter_edge_ai: ^2.5.5
+  genkit_flutter_edge_ai: ^0.12.0
+  flutter_edge_ai: ^2.6.0
   # Add the inference engine(s) you need:
-  flutter_edge_ai_litertlm: ^1.19.2   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.2.6  # .task / .bin models (mobile + web)
+  flutter_edge_ai_litertlm: ^1.20.0   # .litertlm models (mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.3.0  # .task / .bin models (mobile + web)
   # Optional — tokenizers for .tflite / .onnx embedding models (an EmbeddingGemma 2
   # .litertlm needs none; the backend is flutter_edge_ai_litertlm above):
   flutter_edge_ai_embeddings: ^2.3.2
@@ -251,10 +251,11 @@ the plugin sends back, a request's `ref` becomes its call's id
 
 ### Structured (JSON) output
 
-**Version scope:** this section describes `genkit_flutter_edge_ai` 0.12.0 with
-`flutter_edge_ai` 2.6.0. Eligible Genkit output schemas are sent both as prompt
-guidance and as the engine's `responseFormat`; schemas outside the dialect, or
-requests with tools, thinking, or an engine refusal, remain prompt-only.
+Native constrained decoding requires core 2.6.0 and
+`genkit_flutter_edge_ai` 0.12.0. Eligible Genkit output schemas are sent both
+as prompt guidance and as the engine's `responseFormat`; schemas outside the
+dialect, or requests with tools, thinking, or an engine refusal, remain
+prompt-only.
 
 The plugin advertises `output: ['text', 'json']`. Genkit asks for constrained
 output whenever you pass an `outputSchema`. The plugin always writes the schema
@@ -369,7 +370,7 @@ Genkit models.
 
 ```
 dependencies:
-  genkit_hybrid: ^0.4.0
+  genkit_hybrid: ^0.5.0
   genkit: ^1.0.0
 ```
 

@@ -11,7 +11,7 @@ works with any on-device or cloud plugin.
 ```yaml
 dependencies:
   genkit: ^1.0.0
-  genkit_hybrid: ^0.4.0
+  genkit_hybrid: ^0.5.0
 ```
 
 ```dart

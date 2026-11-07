@@ -1,5 +1,6 @@
-## Unreleased
-- README examples use `openChat` and close returned handles.
+## 0.6.0
+- Use litertlm 1.20.0 with LiteRT-LM 0.19 / `native-v0.19.0-a`.
+- Require `flutter_edge_ai` ^2.6.0 and `flutter_edge_ai_litertlm` ^1.20.0.
 
 ## 0.5.14
 - Require `flutter_edge_ai` >=2.5.5 <2.6.0 and `flutter_edge_ai_litertlm` >=1.19.1 <1.20.0.

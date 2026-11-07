@@ -1,7 +1,7 @@
 # llama.cpp adapter maintenance
 
-Version 0.0.6 adapts core 2.5.x (`<2.6.0`) through public engine libraries
-and llamadart 0.17.5. 0.0.3 to 0.0.5 used SDK 0.15.1 / companion 0.15.0. Keep source qualification
+Version 0.1.0 requires core 2.6.0+ through public engine libraries and llamadart
+0.17.5. 0.0.3 to 0.0.5 used SDK 0.15.1 / companion 0.15.0. Keep source qualification
 separate from hosted consumer qualification. Inference routes by declared type.
 LlamaEmbeddingBackend registers self-contained GGUF through core's embedding SPI; see doc/embeddings.md.
 

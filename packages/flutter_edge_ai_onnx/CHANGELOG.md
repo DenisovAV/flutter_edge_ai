@@ -1,7 +1,7 @@
-## Unreleased
-- README examples use `openSession`/`openChat` and close returned handles.
+## 0.9.0
 - `responseFormat` uses ORT-GenAI guidance on macOS arm64 (#195).
 - Web `openSession`/`openChat` are independent; cancelling a stream is turn-scoped (#703).
+- Require `flutter_edge_ai` ^2.6.0.
 
 ## 0.8.0
 - Native `openSession` / `openChat` open independent sessions, capped at 2 on phones; **breaking** for `GenAiClient` implementers (#703).

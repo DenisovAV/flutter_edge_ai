@@ -1,6 +1,6 @@
 name: flutter_edge_ai_speech
 description: "On-device speech (STT + TTS) for flutter_edge_ai via the LiteRT C API + dart:ffi. Opt-in Stt/TtsBackendProvider."
-version: 0.5.14
+version: 0.6.0
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_speech
 topics: [speech, stt, gemma, litert, on-device]
@@ -30,18 +30,14 @@ dependencies:
   # (1.8.0 was the older floor: this version reads `config.language` to pick
   # Whisper's output language, and only core 1.8.0's
   # `getActiveStt(language:)` sets it.)
-  # <2.6.0: core 2.6.0 changes the engine SPI this version overrides, so pub
-  # keeps an app on core 2.5.x until it moves this package to its 2.6.0 line.
-  flutter_edge_ai: '>=2.5.5 <2.6.0'
-  # 1.19.1: LiteRtLmNpuTarget is a core NpuTarget, which the catalog uses, and
-  # LiteRtBindings binds the opaque-options calls the STT GPU options use (#747).
+  # 2.6.0 supplies the catalog and registry contracts used by this release.
+  flutter_edge_ai: ^2.6.0
+  # 1.20.0 supplies the LiteRT-LM 0.19 / C API 1.0 bindings and native bundle.
   # (1.13.0 was the first litertlm that compiles against core 2.3.0 — an older
   # one paired with it fails to compile inside litertlm. (1.7.0 was the older
   # floor: before it litertlm's LiteRtRankedTensorTypeView still used the MSVC
   # LiteRtLayout on Windows, and STT/TTS failed there with status 3.)
-  # <1.20.0: litertlm 1.20.0 moves to a new LiteRT pin and regenerated
-  # LiteRtBindings, which this version's STT/TTS were not qualified on.
-  flutter_edge_ai_litertlm: '>=1.19.1 <1.20.0'
+  flutter_edge_ai_litertlm: ^1.20.0
   ffi: ^2.1.0
   meta: ^1.9.0
 

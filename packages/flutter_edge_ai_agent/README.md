@@ -118,9 +118,9 @@ which provides `LiteRtLmEngine`:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_agent: ^0.4.1
-  flutter_edge_ai_litertlm: ^1.16.0
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_agent: ^0.4.2
+  flutter_edge_ai_litertlm: ^1.20.0
 ```
 
 ```dart

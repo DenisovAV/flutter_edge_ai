@@ -43,6 +43,18 @@ only the engines, stores and features your app uses — see
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
+## What's new in 2.6
+
+- **Typed JSON replies** (`flutter_edge_ai` 2.6.0): `openSession` and
+  `openChat` accept `responseFormat`; engines advertise exact support and core
+  validates every completed reply. See [Structured JSON replies](#structured-json-replies).
+- **Native LiteRT-LM conversations** (`flutter_edge_ai_litertlm` 1.20.0):
+  verified native rows keep one conversation and KV cache per open session.
+- **Engine-owned turn recovery**: failed and refused turns roll back consistently,
+  and `ContextLimitException` distinguishes an input that never fit.
+- **Open APIs are canonical**: `createSession`, `createChat`, `session` and
+  `chat` remain compatible but are deprecated until core 3.0.0.
+
 ## What's new in 2.5
 
 - **Several open models** (`flutter_edge_ai` 2.5.0, `flutter_edge_ai_litertlm`

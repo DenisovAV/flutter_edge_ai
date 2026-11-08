@@ -455,6 +455,22 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
     return _close().whenComplete(settled.complete);
   }
 
+  /// Releases the pipeline's ONNX sessions. A failure is printed (release
+  /// builds see it) and not rethrown: the model is closing either way.
+  Future<void> _disposePipeline() async {
+    final pipeline = _pipeline;
+    if (pipeline == null) return;
+    try {
+      await pipeline.disposeIfAvailable();
+    } catch (e, st) {
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai_onnx] WARNING: releasing the Transformers.js '
+        'pipeline failed while the ONNX web model was closing: $e\n$st',
+      );
+    }
+  }
+
   Future<void> _close() async {
     _isClosed = true;
     try {
@@ -467,6 +483,10 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
       // use it is unsafe. Core's ModelCloseGate bounds a closing model wait
       // at 60 seconds and surfaces its TimeoutException to the next build.
       await Future.wait([for (final session in sessions) session.close()]);
+      // Only after every session has closed (so every generation Promise has
+      // settled): dropping the reference does not release the ONNX sessions,
+      // and each reload then adds the old model's memory on top (#800).
+      await _disposePipeline();
     } finally {
       _pipeline = null;
       _tokenizer = null;

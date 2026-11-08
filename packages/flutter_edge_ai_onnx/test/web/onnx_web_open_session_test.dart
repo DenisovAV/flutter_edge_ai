@@ -31,7 +31,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// test resolves it, as a real generation does a moment after the interrupt.
 const _fakeTransformers = r'''
 (() => {
-  const tf = { calls: [], gate: Promise.resolve(), pipelines: 0, failures: 0 };
+  const tf = { calls: [], gate: Promise.resolve(), pipelines: 0, failures: 0, disposes: 0 };
   class TextStreamer {
     constructor(tokenizer, options) { this.cb = options.callback_function; }
   }
@@ -49,12 +49,20 @@ const _fakeTransformers = r'''
         options.stopping_criteria.onInterrupt = () => tf.holdOnInterrupt
           ? undefined
           : tf.rejectOnInterrupt
-          ? reject(new Error('generate failed after the stop'))
-          : resolve();
-        tf.calls.push({ messages, options, resolve, reject });
+          ? tf.calls.at(-1).reject(new Error('generate failed after the stop'))
+          : tf.calls.at(-1).resolve();
+        const call = { messages, options, settled: false };
+        call.resolve = (v) => { call.settled = true; resolve(v); };
+        call.reject = (e) => { call.settled = true; reject(e); };
+        tf.calls.push(call);
       });
     };
     pipe.tokenizer = { encode: (text) => Array.from(text) };
+    pipe.dispose = async () => {
+      tf.disposes++;
+      tf.disposedWithPendingCalls = tf.calls.some((c) => !c.settled);
+      if (tf.failDispose) throw new Error('dispose failed');
+    };
     return pipe;
   };
   window.transformers = {
@@ -655,6 +663,48 @@ void main() {
     await turnDone.future;
     expect(delivered, ['visible']);
     expect(await turn.end, TurnEnd.closed);
+  });
+
+  test('a close during a streaming turn releases the pipeline once, after its '
+      'Promise settles', () async {
+    final model = _model();
+    final session = await model.openSession();
+    _tf['holdOnInterrupt'] = true.toJS;
+    final turn = await _ask(session, 'hi');
+    final call = await _call(1);
+    _emit(call, 'streaming');
+    await pumpEventQueue();
+    expect(turn.text, ['streaming']);
+
+    // The close arrives mid-stream: the generation is interrupted but its
+    // Promise has not settled yet, so the pipeline must not be released.
+    final closing = model.close();
+    await pumpEventQueue();
+    expect(_interrupted(call), isTrue);
+    expect((_tf['disposes']! as JSNumber).toDartInt, 0);
+
+    _finish(call);
+    await closing.timeout(const Duration(seconds: 5));
+    await turn.done;
+
+    expect((_tf['disposes']! as JSNumber).toDartInt, 1);
+    expect((_tf['disposedWithPendingCalls']! as JSBoolean).toDart, isFalse);
+    await model.close();
+    expect((_tf['disposes']! as JSNumber).toDartInt, 1);
+  });
+
+  test('a pipeline that fails to release does not fail close', () async {
+    _tf['failDispose'] = true.toJS;
+    final model = _model();
+    await model.openSession();
+    await model.close().timeout(const Duration(seconds: 5));
+    expect((_tf['disposes']! as JSNumber).toDartInt, 1);
+  });
+
+  test('a model that never loaded a pipeline releases nothing', () async {
+    final model = _model();
+    await model.close();
+    expect((_tf['disposes']! as JSNumber).toDartInt, 0);
   });
 
   test('an unlistened turn does not hold model close', () async {

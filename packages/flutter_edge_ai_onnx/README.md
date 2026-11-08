@@ -392,12 +392,6 @@ Dart awaits `window.transformersReady` / `window.ortReady` before touching
 either module's `dart:js_interop` bindings, so the shim must run before the
 Flutter app boots (i.e. in `<head>`, ahead of `flutter_bootstrap.js`).
 
-## Built something with flutter_edge_ai?
-
-See what others ship on the [showcase](https://flutteredge.ai/showcase), and
-[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
-minutes, and the listing links to your app's Google Play or App Store page.
-
 ## See also
 
 - [`flutter_edge_ai`](https://pub.dev/packages/flutter_edge_ai) — the core

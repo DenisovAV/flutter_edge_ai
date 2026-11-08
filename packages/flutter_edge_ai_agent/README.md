@@ -610,12 +610,6 @@ building the request URL, and `create-calendar-event` asks the model for a
 relative `day_offset` and `hour` instead of ISO start and end times.
 `get-current-time` was written for this package.
 
-## Built something with flutter_edge_ai?
-
-See what others ship on the [showcase](https://flutteredge.ai/showcase), and
-[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
-minutes, and the listing links to your app's Google Play or App Store page.
-
 ## License
 
 MIT — see [LICENSE](LICENSE). Bundled starter skills are Apache-2.0 (see above).

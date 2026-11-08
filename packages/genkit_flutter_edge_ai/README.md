@@ -430,12 +430,6 @@ await router.warmUp(); // the decider and the on-device model, before the first 
 - The route info carries the label, the decider's abstain signal as `score`, the margin, and its
   method, calibration, space id and timings under `details`.
 
-## Built something with flutter_edge_ai?
-
-See what others ship on the [showcase](https://flutteredge.ai/showcase), and
-[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
-minutes, and the listing links to your app's Google Play or App Store page.
-
 ## Known Limitations
 
 - **Abandoned streams**: Genkit 1.0 does not tell a model action when a stream consumer goes away. Cancel through a `CancellationToken`, or cap the reply with `maxOutputTokens`; otherwise the generation finishes on its own and then closes its chat.

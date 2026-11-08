@@ -516,14 +516,15 @@ Two objects stand between you and an answer.
 ```dart
 final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 // ... hand `inference` to the State here, before anything else can throw
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   modelType: widget.model.modelType,
   maxOutputTokens: 256,
 );
 ```
 
-`getActiveModel` loads the installed weights into a runtime. `createChat` opens
-a conversation on top, and it is the chat that remembers what was said.
+`getActiveModel` loads the installed weights into a runtime. `openChat` opens
+a caller-owned conversation on top, and it is the chat that remembers what was
+said. The page's close helper closes that chat before the model in `dispose`.
 
 The elided line is not bookkeeping. `_load` assigns `_inference` the moment
 `getActiveModel` returns, because everything after that can throw and a runtime
@@ -582,8 +583,9 @@ memory to open the weights, a half-written model file. Both entry points get a
 
 ```dart
 } catch (error) {
-  // The chat's own history now holds a user turn the model never answered;
-  // a production app would reset it with `clearHistory`.
+  // Engine errors and ContextLimitException roll the staged turn back. A
+  // clean stop before text does too; a clean stop, output limit, or context
+  // limit after text keeps the partial exchange.
   if (mounted) {
     setState(() => _turns.add(_Turn('⚠️ $error', fromUser: false)));
   }
@@ -604,20 +606,28 @@ on screen to explain it. Anything that can throw between "disable the UI" and
 `_load`'s failure gets a message and a **Try again** button in place of the
 loading bar, because "the model would not open" is a state the user can act on.
 
-One honest limitation, noted in the `catch`: `addQueryChunk` commits your
-message to the chat's history before generation runs, so a failed turn leaves a
-user message the model never answered — in the Dart-side history and in the
-native session both. The chat still works; every later turn is just asked of a
-transcript with a hole in it. An app that cares would call
-`chat.clearHistory(replayHistory: …)` there. This one keeps the screen simple.
+Engine errors and `ContextLimitException` take the whole staged turn back,
+including the user message. A clean stop before non-empty text does the same.
+A clean stop, output limit, or context limit after text keeps the partial
+exchange in history.
 
 Finally, close what you opened. The runtime holds native memory that Dart's
 garbage collector knows nothing about:
 
 ```dart
+Future<void> _closeRuntime() async {
+  final chat = _chat;
+  final inference = _inference;
+  try {
+    await chat?.close();
+  } finally {
+    await inference?.close();
+  }
+}
+
 @override
 void dispose() {
-  _inference?.close().catchError((Object _) {});
+  _closeRuntime().catchError((Object _) {});
   _input.dispose();
   super.dispose();
 }
@@ -746,7 +756,7 @@ one-line re-ask `onInstalled` has used since Step 2. The button's handler:
 ```dart
 Future<void> _removeModel() async {
   try {
-    await _inference?.close();
+    await _closeRuntime();
     // Inside `setState`: dropping the chat has to repaint, or the screen
     // keeps showing an enabled composer over a runtime that is gone.
     if (mounted) {
@@ -832,3 +842,7 @@ them all.
 * [flutter_edge_ai on pub.dev](https://pub.dev/packages/flutter_edge_ai)
 * [Documentation](/docs/getting-started)
 * [Source and this codelab's code](https://github.com/DenisovAV/flutter_edge_ai)
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

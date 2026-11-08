@@ -10,3 +10,7 @@ line; check it against the codelab's lists instead.
 flutter test                                   # the colour tool, without a model
 flutter test integration_test/skills_test.dart -d <device-id>   # ~2.6 GB download
 ```
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

@@ -60,7 +60,7 @@ void main() {
     expect(heard.toLowerCase(), contains('france'));
 
     final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-    final chat = await inference.createChat(
+    final chat = await inference.openChat(
       modelType: model.modelType,
       maxOutputTokens: 256,
     );

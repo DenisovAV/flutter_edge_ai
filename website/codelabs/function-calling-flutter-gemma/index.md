@@ -152,7 +152,7 @@ Now look at the call that opens the chat, because that is where this codelab's
 change lands:
 
 ```dart
-      final chat = await inference.createChat(
+      final chat = await inference.openChat(
         modelType: widget.model.modelType,
         maxOutputTokens: 256,
       );
@@ -297,10 +297,10 @@ the turn and leaves a call in the history that nothing replied to.
 
 ### Open a session that has tools
 
-Two arguments on `createChat`:
+Two arguments on `openChat`:
 
 ```dart
-      final chat = await inference.createChat(
+      final chat = await inference.openChat(
         // Which family's call syntax to speak. For FunctionGemma on a
         // `.litertlm`, the declarations go to LiteRT-LM, which renders them
         // into the developer turn these weights were trained on, hands the
@@ -604,6 +604,12 @@ The commands below are checked against **litetune 0.7.2**: run end to end on
 (checked against its `--help` on 2026-10-31). It pins LiteRT-LM 0.18.0 for
 verification and the matching 0.18.0 builder for conversion. The source is
 available on [GitHub](https://github.com/DenisovAV/litetune).
+
+This verification pipeline deliberately stays on litetune's measured LiteRT-LM
+0.18 verifier and matching builder. The completed Flutter app uses
+`flutter_edge_ai_litertlm` 1.20.0 and runs LiteRT-LM 0.19; the verifier
+version is not the app runtime. Do not change the commands to 0.19 without
+re-running and replacing the measurements below.
 
 Converted with litetune 0.3.0 on Python 3.10 or 3.11? Convert again: with a
 relative `--output-dir`, as below, that version wrote a bundle without its GPU
@@ -937,8 +943,8 @@ declaration renders two ways.
 
 ```dart
         // Whether the model may, must, or must not call. On a `.litertlm` the
-        // runtime holds the declarations for both families — `createChat`
-        // forwards `tools` to `createSession` without consulting this — so
+        // runtime holds the declarations for both families — `openChat`
+        // passes `tools` into the underlying session regardless of this — so
         // `none` cannot take them back out. What it switches off is the SDK's
         // suppression of tool-call JSON, which is why a call made under `none`
         // can arrive as raw markup in the bubble. On a `.task` FunctionGemma
@@ -1198,3 +1204,7 @@ you tuned yourself, if you spent the CPU time.
   Step 4 uses, including what it has and has not measured
 * [litetune source](https://github.com/DenisovAV/litetune)
 * [Source and this codelab's code](https://github.com/DenisovAV/flutter_edge_ai)
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

@@ -443,7 +443,7 @@ model.
 
 ```dart
 Future<void> _switchTo(ModelChoice next) async {
-  await _inference?.close();
+  await _closeRuntime();
   // Inside `setState`: dropping the chat has to repaint, or the screen keeps
   // showing an enabled composer over a runtime that is gone.
   if (mounted) {
@@ -690,3 +690,7 @@ Each registers the same way and answers through the same chat code.
   — supported devices, OS floors, and what each availability status means
 * [Built-in AI documentation](/docs/builtin-ai)
 * [Source and this codelab's code](https://github.com/DenisovAV/flutter_edge_ai)
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

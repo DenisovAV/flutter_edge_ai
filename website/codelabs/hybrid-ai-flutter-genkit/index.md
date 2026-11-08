@@ -487,11 +487,11 @@ Add `genkit_flutter_edge_ai` and `flutter_edge_ai`:
 
 ```yaml
   # Step 3: On-device AI (LiteRT-LM engine)
-  genkit_flutter_edge_ai: ^0.11.0
-  flutter_edge_ai: ^2.5.0
+  genkit_flutter_edge_ai: ^0.12.0
+  flutter_edge_ai: ^2.6.0
   # flutter_edge_ai registers no engine by default — opt into LiteRT-LM
   # (.litertlm inference) here.
-  flutter_edge_ai_litertlm: ^1.14.0
+  flutter_edge_ai_litertlm: ^1.20.0
   # Step 5 embeds your documents. The engine above runs the forward pass;
   # this package supplies the tokenizers it needs.
   flutter_edge_ai_embeddings: ^2.3.0
@@ -750,7 +750,7 @@ plugins and `flutter_edge_ai_litertlm`) is already in place from Steps 2–3:
 
 ```yaml
   # Hybrid on-device ↔ cloud routing
-  genkit_hybrid: ^0.4.0
+  genkit_hybrid: ^0.5.0
 ```
 
 Run `flutter pub get`.
@@ -1930,3 +1930,7 @@ Gemma 3 1B does not.
 - [genkit_google_genai on pub.dev](https://pub.dev/packages/genkit_google_genai)
 - [flutter_edge_ai on pub.dev](https://pub.dev/packages/flutter_edge_ai)
 - [Genkit Dart documentation](https://genkit.dev)
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

@@ -15,6 +15,12 @@ The commands below are checked against **litetune 0.7.2**: run end to end on
 verification and the matching 0.18.0 builder for conversion. The project source
 is also available on [GitHub](https://github.com/DenisovAV/litetune).
 
+This verification pipeline deliberately stays on litetune's measured LiteRT-LM
+0.18 verifier and matching builder. The completed Flutter app uses
+`flutter_edge_ai_litertlm` 1.20.0 and runs LiteRT-LM 0.19; the verifier
+version is not the app runtime. Do not change the commands to 0.19 without
+re-running and replacing the measurements below.
+
 Converted with litetune 0.3.0 on Python 3.10 or 3.11? Convert again: with a
 relative `--output-dir`, as below, that version wrote a bundle without its GPU
 activation key, and on the GPU it answers wrong.

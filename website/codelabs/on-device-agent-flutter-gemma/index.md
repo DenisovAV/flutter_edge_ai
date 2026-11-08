@@ -101,7 +101,7 @@ opens the model and a chat:
 
 ```dart
 final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   modelType: widget.model.modelType,
   maxOutputTokens: 512,
 );
@@ -196,9 +196,9 @@ bundles it:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.4.0
-  flutter_edge_ai_litertlm: ^1.14.0
-  flutter_edge_ai_agent: ^0.4.0
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_litertlm: ^1.20.0
+  flutter_edge_ai_agent: ^0.4.2
 
 flutter:
   assets:
@@ -881,3 +881,7 @@ Duration: 2
 * [Agent skills documentation](/docs/agent)
 * [Function Calling with On-Device Models in Flutter](/codelabs/function-calling-flutter-gemma),
   the loop underneath an agent
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

@@ -979,6 +979,9 @@ void main() {
     gate.complete();
     await expectLater(open, throwsStateError);
     expect(model.sessions, isEmpty);
+    // The pipeline that finished loading after close() is released, not kept.
+    expect((_tf['pipelines']! as JSNumber).toDartInt, 1);
+    expect((_tf['disposes']! as JSNumber).toDartInt, 1);
   });
 
   test('a response format is refused on the web, saying why, before any '

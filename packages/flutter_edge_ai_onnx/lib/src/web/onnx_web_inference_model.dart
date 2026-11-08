@@ -207,6 +207,13 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
         '${sw.elapsedMilliseconds}ms',
       );
     }
+    if (_isClosed) {
+      // Closed while it loaded: close() found no pipeline to release, so
+      // release this one here instead of keeping it (#800). The caller sees
+      // the model closed and fails.
+      await _disposePipeline(pipe);
+      return;
+    }
     _pipeline = pipe;
     _tokenizer = pipe.tokenizer;
     _activeBackend = backend;
@@ -457,8 +464,8 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
 
   /// Releases the pipeline's ONNX sessions. A failure is printed (release
   /// builds see it) and not rethrown: the model is closing either way.
-  Future<void> _disposePipeline() async {
-    final pipeline = _pipeline;
+  Future<void> _disposePipeline([TransformersPipeline? loaded]) async {
+    final pipeline = loaded ?? _pipeline;
     if (pipeline == null) return;
     try {
       await pipeline.disposeIfAvailable();

@@ -165,6 +165,15 @@ final session = await AgentSession.fromModel(
 // e.g. "Calculate the hash of hello" or "Show Paris on interactive map".
 ```
 
+`AgentSession.fromModel` owns a detached chat. In the owning widget or service's
+async teardown, close the session, then close the model when no feature still
+uses it:
+
+```dart
+await session.close();
+await model.close();
+```
+
 See `packages/flutter_edge_ai/example` (the **Agent Skills** screen) for a
 runnable demo.
 
@@ -600,6 +609,12 @@ its CDN library to load, `query-wikipedia` validates the language code before
 building the request URL, and `create-calendar-event` asks the model for a
 relative `day_offset` and `hour` instead of ISO start and end times.
 `get-current-time` was written for this package.
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the listing links to your app's Google Play or App Store page.
 
 ## License
 

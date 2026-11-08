@@ -33,6 +33,13 @@ await FlutterEdgeAi.initialize(
 
 On Android and iOS, pass `supportImage: true` to `openChat` as well as to `getActiveModel`, or the image is dropped. The Gemma 3n `.task` files carry no audio encoder; use a `.litertlm` model for audio.
 
+## Structured output
+
+MediaPipe does not expose constrained decoding. `model.structuredOutputSupport`
+reports no support, and `openSession(responseFormat: …)` /
+`openChat(responseFormat: …)` throw `ResponseFormatUnsupportedException`.
+Use prompt-only JSON or an engine that supports `ResponseFormat`.
+
 ## Sampling
 
 A `.task` file ships no sampler, so an unset `temperature`, `topK` or `topP` comes from the model family's defaults (`SamplingParams.forModelType`), with an unset `topK` capped at 40, MediaPipe's own default; an unset `randomSeed` is 1. `topK: 1` or `temperature: 0` decodes greedily, as Phi and Hammer do by default; before 1.2.0 every family did. On Android and iOS each session starts from its seed, so vary `randomSeed` for a different answer to the same prompt. On web the loaded model keeps the sampling and LoRA of its first session, so those of a later `openSession` are not applied, and a one-time warning names them; web also has no top-p, and a `topP` you pass is ignored with a one-time warning.
@@ -79,3 +86,9 @@ statically linked binaries".
 | iOS      | ✅ `MediaPipeTasksGenAI` 0.10.35 (CocoaPods) — **requires iOS 16.0+**; run `.task` models on `PreferredBackend.cpu` |
 | Web      | ✅ `@mediapipe/tasks-genai` 0.10.30 (CDN, see above) — GPU only, `-web.task` models |
 | Desktop  | ❌ (MediaPipe `.task` not supported on desktop — use `flutter_edge_ai_litertlm`) |
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the listing links to your app's Google Play or App Store page.

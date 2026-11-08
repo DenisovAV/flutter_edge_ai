@@ -14,10 +14,32 @@ const _macosContainerData =
 /// This remains available to tests that preserve their old off-macOS skip
 /// path, but macOS callers should use [macosStagedFilePath].
 String macosContainerDocumentsPath(String fileName) {
+  return '${_macosContainerDocumentsRoot()}/$fileName';
+}
+
+String _macosContainerDocumentsRoot() {
   final home = io.Platform.environment['HOME'];
   return home != null && home.endsWith(_macosContainerData)
-      ? '$home/Documents/$fileName'
-      : '$home$_macosContainerData/Documents/$fileName';
+      ? '$home/Documents'
+      : '$home$_macosContainerData/Documents';
+}
+
+/// Root containing the complete macOS staging set in [requiredFiles].
+///
+/// A partial `~/models` set is ignored so one runtime never mixes mutually
+/// dependent artifacts with files from the container Documents fallback.
+String? macosStagedRoot(Iterable<String> requiredFiles) {
+  if (!io.Platform.isMacOS) return null;
+  final home = io.Platform.environment['HOME'];
+  if (home == null || home.isEmpty) return null;
+
+  final modelsRoot = '$home/models';
+  final complete = requiredFiles.every(
+    (fileName) =>
+        io.FileSystemEntity.typeSync('$modelsRoot/$fileName') !=
+        io.FileSystemEntityType.notFound,
+  );
+  return complete ? modelsRoot : _macosContainerDocumentsRoot();
 }
 
 /// Path to [fileName] in the macOS staging directory.
@@ -26,17 +48,8 @@ String macosContainerDocumentsPath(String fileName) {
 /// access to the example app's container. Sandboxed builds cannot read that
 /// directory and keep using their container Documents directory.
 String? macosStagedFilePath(String fileName) {
-  if (!io.Platform.isMacOS) return null;
-  final home = io.Platform.environment['HOME'];
-  if (home == null || home.isEmpty) return null;
-
-  final models = '$home/models/$fileName';
-  if (io.FileSystemEntity.typeSync(models) !=
-      io.FileSystemEntityType.notFound) {
-    return models;
-  }
-
-  return macosContainerDocumentsPath(fileName);
+  final root = macosStagedRoot([fileName]);
+  return root == null ? null : '$root/$fileName';
 }
 
 /// Path to [fileName] in the directory this platform's device tests push models

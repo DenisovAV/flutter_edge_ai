@@ -116,7 +116,8 @@ void main() {
               'gated network fallback cannot authenticate. Stage the model '
               '(Android: adb push to '
               '/data/local/tmp/flutter_gemma_test/gemma3-1b-it-int4.litertlm; '
-              'desktop/iOS: app documents dir) or pass '
+              'macOS prefers ~/models, with container Documents fallback; '
+              'other desktop/iOS: app documents dir) or pass '
               '--dart-define=HUGGINGFACE_TOKEN=...',
         );
         await llm

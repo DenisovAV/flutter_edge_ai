@@ -28,11 +28,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'local_model_file_io.dart' show macosStagedRoot;
 
-Future<String> _stagedPath(String name) async => Platform.isMacOS
-    ? macosStagedFilePath(name)!
-    : '${(await getApplicationDocumentsDirectory()).path}/$name';
+const _referenceFiles = [
+  'inflect_text_encoder_fp16.tflite',
+  'inflect_decoder_fp16.tflite',
+  'inflect_fixture.bin',
+];
+
+const _endToEndFiles = [
+  'inflect_text_encoder_fp16.tflite',
+  'inflect_decoder_fp16.tflite',
+  'config.json',
+  'g2p_dict.txt.gz',
+  'dp_g2p_matcha_fp16.tflite',
+  'g2p_meta.json',
+];
+
+Future<String> _stagedRoot(List<String> requiredFiles) async => Platform.isMacOS
+    ? macosStagedRoot(requiredFiles)!
+    : (await getApplicationDocumentsDirectory()).path;
 
 double _pearson(Float32List a, Float32List b) {
   final n = math.min(a.length, b.length);
@@ -58,14 +73,17 @@ void main() {
   testWidgets(
     'Inflect FFI synthesis byte-matches the fp16 reference (per sentence)',
     (tester) async {
-      final encPath = await _stagedPath('inflect_text_encoder_fp16.tflite');
-      final decPath = await _stagedPath('inflect_decoder_fp16.tflite');
-      final fixPath = await _stagedPath('inflect_fixture.bin');
+      final root = await _stagedRoot(_referenceFiles);
+      final encPath = '$root/${_referenceFiles[0]}';
+      final decPath = '$root/${_referenceFiles[1]}';
+      final fixPath = '$root/${_referenceFiles[2]}';
       for (final p in [encPath, decPath, fixPath]) {
         expect(
           File(p).existsSync(),
           isTrue,
-          reason: 'stage $p (models + inflect_fixture.bin) in app documents',
+          reason:
+              'stage the complete Inflect reference set at $root; macOS '
+              'prefers ~/models, with container Documents fallback',
         );
       }
 
@@ -141,25 +159,17 @@ void main() {
     'Inflect end-to-end: text -> frontend (dict + neural OOV) -> synth -> '
     'non-silent 24 kHz audio',
     (tester) async {
+      final root = await _stagedRoot(_endToEndFiles);
       final paths = <String, String>{
-        'inflect_text_encoder_fp16.tflite': await _stagedPath(
-          'inflect_text_encoder_fp16.tflite',
-        ),
-        'inflect_decoder_fp16.tflite': await _stagedPath(
-          'inflect_decoder_fp16.tflite',
-        ),
-        'config.json': await _stagedPath('config.json'),
-        'g2p_dict.txt.gz': await _stagedPath('g2p_dict.txt.gz'),
-        'dp_g2p_matcha_fp16.tflite': await _stagedPath(
-          'dp_g2p_matcha_fp16.tflite',
-        ),
-        'g2p_meta.json': await _stagedPath('g2p_meta.json'),
+        for (final fileName in _endToEndFiles) fileName: '$root/$fileName',
       };
       for (final f in paths.values) {
         expect(
           File(f).existsSync(),
           isTrue,
-          reason: 'stage $f in app documents',
+          reason:
+              'stage the complete Inflect end-to-end set at $root; macOS '
+              'prefers ~/models, with container Documents fallback',
         );
       }
 

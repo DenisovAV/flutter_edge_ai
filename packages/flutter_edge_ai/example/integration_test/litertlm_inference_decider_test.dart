@@ -6,7 +6,7 @@
 //
 // The packs are private, so they are not in the repository. Stage each in a
 // directory of its own holding `model.litertlm` and `golden.json`:
-//   macOS: <the example's container Documents>/decisions/<pack>/
+//   macOS: ~/models/decisions/<pack>/ (container Documents fallback)
 //   iOS:   the app's Documents/decisions/<pack>/
 // or name the parent with --dart-define=DECIDER_PACKS=<dir>. A float32 twin
 // of a pack's model, staged beside it as `twin.litertlm`, is checked against
@@ -15,7 +15,7 @@
 // method is checked only through the int8 bounds below. The refusal tests also
 // need FunctionGemma 270M (`functiongemma-270M-it.litertlm`, a chat model
 // without a decision) and, for the self-check on another template,
-// `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` in the container Documents.
+// `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` in the staging directory.
 //
 // What is asserted per row, on this machine: the rendered prompt and its
 // token ids are the golden ones; the decider's top option is the argmax of
@@ -49,20 +49,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart'
+    show macosContainerDocumentsPath, macosStagedFilePath;
 
 const _packsDefine = String.fromEnvironment('DECIDER_PACKS');
 
-/// Where the packs and the extra models are staged. On iOS HOME is the
-/// app's own container, whose Documents is `xcrun devicectl device copy to
-/// --domain-type appDataContainer`'s target; on macOS the path below the
-/// sandboxed HOME (see the file comment).
-String get _documents => Platform.isIOS
-    ? '${Platform.environment['HOME']}/Documents'
-    : '${Platform.environment['HOME']}/Library/Containers/'
-          'dev.flutterberlin.flutterGemmaExample55/Data/Documents';
+/// Where a pack or extra model is staged. On iOS HOME is the app's own
+/// container, whose Documents is `xcrun devicectl device copy to
+/// --domain-type appDataContainer`'s target.
+String _stagedPath(String relativePath) {
+  if (Platform.isIOS) {
+    return '${Platform.environment['HOME']}/Documents/$relativePath';
+  }
+  if (Platform.isMacOS) return macosStagedFilePath(relativePath)!;
+  return macosContainerDocumentsPath(relativePath);
+}
 
-Directory get _packsDir =>
-    Directory(_packsDefine.isNotEmpty ? _packsDefine : '$_documents/decisions');
+Directory get _packsDir => Directory(
+  _packsDefine.isNotEmpty ? _packsDefine : _stagedPath('decisions'),
+);
 
 /// A per-token bound that holds on both CPUs measured: 1.4272 nats on
 /// litetune's Xeon, 1.8833 on an Apple M4 Pro (2026-10-18). Wrong scoring
@@ -914,7 +919,7 @@ void main() {
     }, skip: skip);
 
     test('a model without a decision section is refused', () async {
-      final path = '$_documents/functiongemma-270M-it.litertlm';
+      final path = _stagedPath('functiongemma-270M-it.litertlm');
       if (!File(path).existsSync()) {
         markTestSkipped('FunctionGemma 270M is not staged at $path');
         return;
@@ -938,7 +943,7 @@ void main() {
     }, skip: skip);
 
     test('the self-check also passes on another chat template', () async {
-      final path = '$_documents/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm';
+      final path = _stagedPath('Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm');
       if (!File(path).existsSync()) {
         markTestSkipped('Qwen3 0.6B is not staged at $path');
         return;

@@ -7,31 +7,22 @@ import 'dart:typed_data';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' show SpeechRecognizer;
 import 'package:path_provider/path_provider.dart';
 
-/// Resolve [filename] for the unsandboxed macOS integration-test app.
-///
-/// Models staged in `~/models` avoid TCC restrictions on Documents. Keep the
-/// example app's container Documents directory as the fallback for existing
-/// setups.
-String? macosStagedModelPath(String filename) {
-  if (!Platform.isMacOS) return null;
-  final home = Platform.environment['HOME'];
-  if (home == null || home.isEmpty) return null;
-  final local = '$home/models/$filename';
-  if (File(local).existsSync()) return local;
-  return '$home/Library/Containers/'
-      'dev.flutterberlin.flutterGemmaExample55/Data/Documents/$filename';
-}
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 /// Resolve a device-local staged model file (no network, no token) — the same
 /// convention [voice_loop_test.dart]'s `_stagedLlmPath` uses, so these tests run
-/// on every platform, not just Android. Desktop/iOS read it from the app
-/// documents dir; Android reads it from `/data/local/tmp/flutter_gemma_test/`
-/// (adb push, or the ddp-device-test skill on a DDP phone). Returns
-/// null when no staged file is present.
+/// on every platform, not just Android. macOS: ~/models (container Documents
+/// fallback); other desktop and iOS: app Documents; Android:
+/// /data/local/tmp/flutter_gemma_test/. Returns null when no staged file is
+/// present.
 Future<String?> stagedModelPath(String filename) async {
   if (Platform.isAndroid) {
     final p = '/data/local/tmp/flutter_gemma_test/$filename';
     return File(p).existsSync() ? p : null;
+  }
+  if (Platform.isMacOS) {
+    final p = macosStagedFilePath(filename);
+    return p != null && File(p).existsSync() ? p : null;
   }
   final docs = await getApplicationDocumentsDirectory();
   final p = '${docs.path}/$filename';

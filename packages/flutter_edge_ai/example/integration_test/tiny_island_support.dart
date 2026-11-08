@@ -6,10 +6,9 @@
 //       bundle (e.g. embeddingGemma2Text270mSm8850 on a Galaxy S26+) runs on
 //       the NPU, and the screen test then requires backend npu.
 //   --dart-define=TINY_ISLAND_EMBEDDER_FILE=<a local copy of that bundle>
-//       checked against the catalog's SHA-256; on macOS it must sit inside
-//       the app's container, e.g. ~/Library/Containers/
-//       dev.flutterberlin.flutterGemmaExample55/Data/eg2_local/. Unset: the
-//       bundle is downloaded (ungated).
+//       checked against the catalog's SHA-256; on macOS prefer a path under
+//       macOS: ~/models (container Documents fallback).
+//       Unset: the bundle is downloaded (ungated).
 
 import 'dart:io';
 

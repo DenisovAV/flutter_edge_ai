@@ -13,8 +13,8 @@
 // The budget is fixed when the engine is registered, so each turn closes the
 // model, resets and initializes again, as an app that changes it must.
 //
-// Stage gemma-4-E2B-it.litertlm in the app documents dir (desktop) or
-// /data/local/tmp/flutter_gemma_test/ (Android).
+// macOS: ~/models (container Documents fallback); other desktop and iOS: app
+// Documents; Android: /data/local/tmp/flutter_gemma_test/.
 // Run, one GPU workload at a time:
 //   flutter test integration_test/litertlm_thinking_budget_test.dart -d macos
 // CPU by default; --dart-define=BUDGET_BACKEND=gpu for the GPU backend.
@@ -75,8 +75,9 @@ Future<InferenceModel> _activeModel(int? budget) async {
     path,
     isNotNull,
     reason:
-        'stage $_modelFileName in the app documents dir (desktop) or in '
-        '/data/local/tmp/flutter_gemma_test/ (Android)',
+        'stage $_modelFileName; macOS: ~/models (container Documents '
+        'fallback); other desktop and iOS: app Documents; Android: '
+        '/data/local/tmp/flutter_gemma_test/.',
   );
   FlutterEdgeAi.reset();
   await FlutterEdgeAi.initialize(

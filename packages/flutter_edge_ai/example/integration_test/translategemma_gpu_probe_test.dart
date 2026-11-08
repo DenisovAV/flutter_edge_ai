@@ -16,6 +16,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter_edge_ai_example/translation/translate_gemma_xml_strategy.dart';
 import 'package:flutter_edge_ai_example/translation/translate_runner.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _modelName = 'translategemma-4b-it-int4-generic.litertlm';
 
@@ -27,12 +28,13 @@ void main() {
   ) async {
     await registerTestEngines();
 
-    final docs = await getApplicationDocumentsDirectory();
-    final modelPath = '${docs.path}/$_modelName';
+    final modelPath = Platform.isMacOS
+        ? macosStagedFilePath(_modelName)!
+        : '${(await getApplicationDocumentsDirectory()).path}/$_modelName';
     expect(
       File(modelPath).existsSync(),
       isTrue,
-      reason: 'pre-stage $_modelName in $docs',
+      reason: 'pre-stage $_modelName at $modelPath',
     );
 
     await FlutterEdgeAi.installModel(

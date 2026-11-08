@@ -1,12 +1,14 @@
 import 'dart:ffi';
+
 import 'package:ffi/ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-const _gemma4Path =
-    '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/gemma-4-E2B-it.litertlm';
-const _gemma3nPath =
-    '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/gemma-3n-E2B-it-int4.litertlm';
+import 'local_model_file_io.dart' show macosStagedFilePath;
+
+String get _gemma4Path => macosStagedFilePath('gemma-4-E2B-it.litertlm')!;
+String get _gemma3nPath =>
+    macosStagedFilePath('gemma-3n-E2B-it-int4.litertlm')!;
 
 typedef _CreateSettingsC =
     Pointer Function(

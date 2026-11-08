@@ -10,7 +10,7 @@
 //
 // Needs a libLiteRtLm with section 16: a local prebuilt from `build_macos.sh`
 // (`build_ios.sh` on iOS) until a native release carries it. Gemma 4 E2B:
-// macOS from ~/models, falling back to the example's container Documents;
+// macOS: ~/models (container Documents fallback);
 // iOS via `--dart-define=IOS_TEST_DOCS_DIR=<host dir>` on the simulator or the
 // app's Documents on a device; Android in /data/local/tmp/flutter_gemma_test.
 //
@@ -28,7 +28,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
-import 'voice_test_helpers.dart' show macosStagedModelPath, stagedModelPath;
+import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _backendName = String.fromEnvironment(
   'REWIND_BACKEND',
@@ -40,7 +41,7 @@ Future<String> _modelPath() async {
   final home = Platform.environment['HOME'];
   String? path;
   if (Platform.isMacOS) {
-    path = macosStagedModelPath(_modelFile);
+    path = macosStagedFilePath(_modelFile);
   } else if (Platform.isLinux) {
     path = '$home/models/$_modelFile';
   } else if (Platform.isWindows) {

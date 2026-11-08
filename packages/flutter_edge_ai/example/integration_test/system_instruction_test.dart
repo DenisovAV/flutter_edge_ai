@@ -18,6 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _androidModelDir = '/data/local/tmp/flutter_gemma_test';
 
@@ -39,10 +40,9 @@ List<({String path, ModelFileType fileType, String label})> _testConfigs() {
         ),
       ];
     case TargetPlatform.macOS:
-      final home = Platform.environment['HOME']!;
       final candidates = [
-        '$home/Documents/gemma-4-E2B-it.litertlm',
-        '$home/Documents/gemma-3n-E2B-it-int4.litertlm',
+        macosStagedFilePath('gemma-4-E2B-it.litertlm')!,
+        macosStagedFilePath('gemma-3n-E2B-it-int4.litertlm')!,
       ];
       final path = candidates.firstWhere(
         (p) => File(p).existsSync(),

@@ -248,6 +248,7 @@ They shipped in core 2.3.2; typed tool history requires core 2.4.0; the embeddin
 
 ## More details
 
+- [Full documentation](https://flutteredge.ai/docs/llama).
 - [Advanced API usage](doc/advanced_usage.md): tools, thinking, independent chats, media and LoRA.
 - [Platform setup and qualification](doc/platforms.md): current capabilities, setup requirements and qualification gaps.
 - [Example walkthrough](example/README.md): first run and a short showcase sequence.
@@ -287,9 +288,3 @@ Vulkan is included by default on supported Android/Linux/Windows targets.
 Android automatic selection uses CPU; Linux/Windows use Vulkan where available.
 The example's root hooks select CPU-only bundles. Android bundles support
 arm64-v8a and x86_64; 32-bit armeabi-v7a is unsupported.
-
-## Built something with flutter_edge_ai?
-
-See what others ship on the [showcase](https://flutteredge.ai/showcase), and
-[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
-minutes, and the listing links to your app's Google Play or App Store page.

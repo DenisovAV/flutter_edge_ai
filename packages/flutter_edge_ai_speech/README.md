@@ -253,9 +253,3 @@ says so ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 
 No `hook/build.dart` of its own — the native library is bundled by
 `flutter_edge_ai_litertlm`'s Native Assets hook and shared transitively.
-
-## Built something with flutter_edge_ai?
-
-See what others ship on the [showcase](https://flutteredge.ai/showcase), and
-[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
-minutes, and the listing links to your app's Google Play or App Store page.

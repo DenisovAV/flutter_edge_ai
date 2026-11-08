@@ -52,7 +52,7 @@ await FlutterEdgeAi.installModel(
 ).fromFile('$path/genai_config.json').install();
 ```
 
-Sessions, chats and streaming work as in the flutter-edge-ai-inference skill, except that `openSession` / `openChat` need `flutter_edge_ai_onnx` 0.8.0 natively and a later release on web, where each session keeps its own history on the shared Transformers.js pipeline, holds no KV cache and is uncapped unless `maxConcurrentSessions` is set. Natively each opened session has its own generator, whose KV cache is `maxTokens` × 2 × layers × KV heads × head size × dtype size once it has had a turn (0.75 MiB per token for Phi-3.5-mini int4), so more than `maxConcurrentSessions` throws a `StateError` (unset: 2 on Android and iOS, unlimited on desktop). `FlutterEdgeAi.openModel` is not supported either (`UnsupportedError` before anything loads; on a host outside ONNX's platforms no engine claims the spec, so `StateError`): use `getActiveModel`.
+Sessions, chats and streaming work as in the flutter-edge-ai-inference skill. `openSession` / `openChat` are available natively since `flutter_edge_ai_onnx` 0.8.0 and on Web since 0.9.0. On web, each session keeps its own history on the shared Transformers.js pipeline, holds no KV cache and is uncapped unless `maxConcurrentSessions` is set. Natively, each opened session has its own generator, whose KV cache is `maxTokens` × 2 × layers × KV heads × head size × dtype size once it has had a turn (0.75 MiB per token for Phi-3.5-mini int4); exceeding `maxConcurrentSessions` throws `StateError` (unset: 2 on Android and iOS, unlimited on desktop). `FlutterEdgeAi.openModel` remains unsupported (`UnsupportedError` on a supported host; `StateError` where no ONNX engine claims the spec), so use `getActiveModel`.
 
 ## Structured output
 

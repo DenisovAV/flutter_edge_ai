@@ -158,7 +158,8 @@ Installed and per-session Web adapters are rejected explicitly.
 Core restores the model and its paired LoRA after restart. If the adapter is
 missing, it restores neither rather than silently loading the base model.
 GGUF adapter filenames use `model__adapter.gguf`. Typed tool history was added
-in core 2.4.0; this connector now requires core 2.5.0 for its embedding SPI.
+in core 2.4.0 and the embedding SPI in 2.5.0; connector 0.1.0 requires core
+2.6.0 for response formats and the session SPI.
 
 ## Compatibility boundaries
 

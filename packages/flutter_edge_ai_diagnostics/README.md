@@ -133,6 +133,12 @@ dart run skills@ get --all
 
 Installs the agent skills `flutter_edge_ai` bundles — this package does not depend on `flutter_edge_ai`, so they come with it only when your app depends on `flutter_edge_ai` too. One of them, `flutter-edge-ai-diagnostics`, covers what each field means per platform, null versus `MemoryReadException`, and how to measure what a model costs.
 
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the listing links to your app's Google Play or App Store page.
+
 ## Roadmap
 
 `gpuMemory()` is experimental and Adreno-only; a Mali reading, GPU memory on iOS, macOS, Linux and Windows (DXGI `QueryVideoMemoryInfo`), and `fileBackedBytes` on iOS from `TASK_VM_INFO.external`, are not done.

@@ -85,6 +85,7 @@ final class EvidenceRun {
     required this.native,
     required this.logSha256,
     required this.logUrl,
+    this.logLocation,
     required this.cells,
     this.schemaVersion = evidenceSchemaVersion,
   });
@@ -105,8 +106,12 @@ final class EvidenceRun {
 
   /// [nativeKey] at [commit].
   final String native;
-  final String logSha256;
+  final String? logSha256;
   final String? logUrl;
+
+  /// Where an unavailable log is retained. Null when [logSha256] identifies
+  /// the imported log bytes.
+  final String? logLocation;
 
   /// Variant id → backend → the checks that passed.
   final Map<String, Map<String, List<String>>> cells;
@@ -121,6 +126,7 @@ final class EvidenceRun {
     'native': native,
     'log_sha256': logSha256,
     'log_url': logUrl,
+    if (logLocation != null) 'log_location': logLocation,
     'cells': {
       for (final MapEntry(key: v, value: byBackend)
           in (cells.entries.toList()..sort((a, b) => a.key.compareTo(b.key))))
@@ -150,6 +156,7 @@ final class EvidenceRun {
       'native',
       'log_sha256',
       'log_url',
+      'log_location',
       'cells',
     };
     for (final k in json.keys) {
@@ -173,11 +180,36 @@ final class EvidenceRun {
     final device = str('device', RegExp(r'\S'));
     final commit = str('commit', RegExp(r'^[0-9a-f]{40}$'));
     final native = str('native', null);
-    final logSha = str('log_sha256', RegExp(r'^[0-9a-f]{64}$'));
+    final rawLogSha = json['log_sha256'];
+    String? logSha;
+    if (!json.containsKey('log_sha256')) {
+      error('log_sha256: required');
+    } else if (rawLogSha != null) {
+      if (rawLogSha is String &&
+          RegExp(r'^[0-9a-f]{64}$').hasMatch(rawLogSha)) {
+        logSha = rawLogSha;
+      } else {
+        error(
+          'log_sha256: ${rawLogSha is String ? 'malformed "$rawLogSha"' : 'must be null or a sha256'}',
+        );
+      }
+    }
     final logUrl = json['log_url'];
     if (logUrl != null &&
         (logUrl is! String || !logUrl.startsWith('https://'))) {
       error('log_url must be null or an https URL');
+    }
+    final rawLogLocation = json['log_location'];
+    String? logLocation;
+    if (rawLogLocation != null) {
+      if (rawLogLocation is String && rawLogLocation.trim().isNotEmpty) {
+        logLocation = rawLogLocation;
+      } else {
+        error('log_location must be null or a non-empty string');
+      }
+    }
+    if (rawLogSha == null && logLocation == null) {
+      error('log_location is required when log_sha256 is unavailable');
     }
     final packages = json['packages'];
     if (packages is! Map<String, Object?> ||
@@ -208,7 +240,7 @@ final class EvidenceRun {
         };
       }
     }
-    if ([date, host, device, commit, native, logSha].contains(null) ||
+    if ([date, host, device, commit, native].contains(null) ||
         packages is! Map<String, Object?>) {
       return null;
     }
@@ -232,8 +264,9 @@ final class EvidenceRun {
       commit: commit!,
       packages: packages.cast<String, String>(),
       native: native!,
-      logSha256: logSha!,
+      logSha256: logSha,
       logUrl: logUrl as String?,
+      logLocation: logLocation,
       cells: cells,
     );
   }

@@ -3342,9 +3342,10 @@ class LiteRtLmFfiClient {
           if (!controller.isClosed) await controller.close();
           return;
         }
+        final rebuildingStoppedConversation = _virtualConvStopped;
         if (_virtualActiveToken != conversationToken ||
             _virtualConv == null ||
-            _virtualConvStopped) {
+            rebuildingStoppedConversation) {
           // Switching sessions (or first turn, or the turn after a stop): drop
           // the old live conversation and rebuild one replaying this session's
           // history as a preface.
@@ -3380,6 +3381,12 @@ class LiteRtLmFfiClient {
             _virtualConv = conv;
             _virtualActiveToken = conversationToken;
           });
+          if (rebuildingStoppedConversation) {
+            edgeAiLog(
+              '[FfiInferenceModel] rebuilt the conversation after a stopped '
+              'turn or a full context (${history.length} messages replayed)',
+            );
+          }
         }
         // Conversation creation yields to the event loop. A close during that
         // await must still prevent the send and tear down what was just made.

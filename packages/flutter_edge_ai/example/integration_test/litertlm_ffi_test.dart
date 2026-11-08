@@ -1,12 +1,14 @@
 /// Universal FFI integration test for all platforms (macOS, iOS, Android).
 ///
 /// Prerequisites:
-///   macOS:   models in ~/Library/Containers/.../Documents/
+///   macOS:   models in ~/models/ (container Documents fallback)
 ///   Android: adb push models to /data/local/tmp/flutter_gemma_test/
 ///   iOS:     models downloaded via FlutterEdgeAi.installModel()
 ///
 /// Run:
 ///   flutter test integration_test/litertlm_ffi_test.dart -d <device>
+///   flutter test integration_test/litertlm_ffi_test.dart -d <device> \
+///     --dart-define=FFI_GROUPS=npu
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -24,6 +26,11 @@ import 'package:flutter_edge_ai/src/di/service_registry.dart'
     show ServiceRegistry;
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'registry_evidence.dart';
+
+const _ffiGroups = String.fromEnvironment('FFI_GROUPS');
+
+String? get _skipNonNpuGroup =>
+    _ffiGroups == 'npu' ? 'FFI_GROUPS=npu selects only the NPU groups' : null;
 
 // ── Local paths ──
 String get _androidDir => '/data/local/tmp/flutter_gemma_test';
@@ -109,7 +116,10 @@ Future<void> _gemma4Evidence(String check) async {
 /// instead of re-downloading on every test run.
 String? _localPath(String filename) {
   if (Platform.isAndroid) return '$_androidDir/$filename';
-  if (Platform.isMacOS) return '$_macosDir/$filename';
+  if (Platform.isMacOS) {
+    final modelsPath = '${Platform.environment['HOME']}/models/$filename';
+    return File(modelsPath).existsSync() ? modelsPath : '$_macosDir/$filename';
+  }
   if (Platform.isLinux) return '$_linuxDir/$filename';
   if (Platform.isWindows) return '$_windowsDir\\$filename';
   if (Platform.isIOS) {
@@ -323,7 +333,7 @@ void main() {
   // ══════════════════════════════════════════════════════════════════
   // Gemma 4 E2B — multimodal + thinking
   // ══════════════════════════════════════════════════════════════════
-  group('Gemma4-E2B', () {
+  group('Gemma4-E2B', skip: _skipNonNpuGroup, () {
     setUpAll(() async {
       await _installGemma4(_localPath('gemma-4-E2B-it.litertlm'));
     });
@@ -621,7 +631,7 @@ void main() {
   // verify the property end-to-end on the native engine: two sessions keep
   // isolated history, and closing one leaves the other usable. Runs on the
   // shared GPU model — also exercises the GPU sampler path under multiplexing.
-  group('Multi-session', () {
+  group('Multi-session', skip: _skipNonNpuGroup, () {
     tearDownAll(_closeSharedModel);
 
     Future<String> _ask(InferenceModelSession s, String prompt) async {
@@ -1082,7 +1092,7 @@ void main() {
   //
   // Mobile (Android, iOS) skips this group entirely — Documents is
   // sandboxed there and never cloud-synced.
-  group('Desktop storage path (#179)', () {
+  group('Desktop storage path (#179)', skip: _skipNonNpuGroup, () {
     testWidgets('getWriteTargetPath resolves into Application Support', (
       t,
     ) async {
@@ -1176,7 +1186,7 @@ void main() {
   // advance during a forward (it would be frozen for the whole pass). A live
   // counter ⇒ the main isolate kept running ⇒ no UI freeze. This is robust to
   // the GC noise that makes a Timer-gap meter unreliable on emulators.
-  group('Embedding non-blocking (#299)', () {
+  group('Embedding non-blocking (#299)', skip: _skipNonNpuGroup, () {
     const modelName = 'embeddinggemma-300M_seq256_mixed-precision.tflite';
     const tokenizerName = 'sentencepiece.model';
     EmbeddingModel? embModel;

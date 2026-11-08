@@ -14,7 +14,7 @@ Add this package and at least one storage provider:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.0
+  flutter_edge_ai: ^2.6.0
   flutter_edge_ai_rag: ^1.1.2
   flutter_edge_ai_sqlite: ^2.1.1   # all six platforms; needs Flutter 3.47
   # or flutter_edge_ai_qdrant: ^2.1.1 (native only)
@@ -310,3 +310,9 @@ The binding is stored so that every version, old and new, reads it safely:
 "Corrupt" and "newer version" are `VectorStoreException`s. The
 `VectorStoreBinding` dartdoc carries the same table and the one accepted limit
 of the encoding.
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the listing links to your app's Google Play or App Store page.

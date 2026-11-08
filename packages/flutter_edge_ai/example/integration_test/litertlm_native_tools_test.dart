@@ -6,7 +6,8 @@
 // FunctionGemma answered it by calling the same function again, and a test that
 // stopped at "a call was parsed" passed the whole time.
 //
-// Stage the models in the app documents dir (desktop/iOS) or
+// Stage the models in ~/models on macOS (the example's container Documents is
+// the fallback), the app documents dir on other desktop/iOS platforms, or
 // /data/local/tmp/flutter_gemma_test/ (Android):
 //   functiongemma-270M-it.litertlm      sasha-denisov/function-gemma-270M-it
 //   mobile_actions_q8_ekv1024.litertlm  litert-community/functiongemma-270m-ft-mobile-actions
@@ -22,7 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
-import 'voice_test_helpers.dart' show stagedModelPath;
+import 'voice_test_helpers.dart' show macosStagedModelPath, stagedModelPath;
 
 const _backendName = String.fromEnvironment(
   'TOOLS_BACKEND',
@@ -304,6 +305,7 @@ Future<String?> _modelPath(String file) async {
     final path = '$hostDir/$file';
     return File(path).existsSync() ? path : null;
   }
+  if (Platform.isMacOS) return macosStagedModelPath(file);
   return stagedModelPath(file);
 }
 

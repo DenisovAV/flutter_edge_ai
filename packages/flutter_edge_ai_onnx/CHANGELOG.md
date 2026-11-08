@@ -1,3 +1,6 @@
+## 0.9.1
+- Web: closing a model releases its Transformers.js pipeline (#800).
+
 ## 0.9.0
 - `responseFormat` uses ORT-GenAI guidance on macOS arm64 (#195).
 - Web `openSession`/`openChat` are independent; cancelling a stream is turn-scoped (#703).

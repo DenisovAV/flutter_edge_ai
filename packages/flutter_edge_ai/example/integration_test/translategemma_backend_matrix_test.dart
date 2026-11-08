@@ -4,9 +4,8 @@
 // padding (it is) — see translategemma_gpu_probe_test.dart for the narrower
 // "does the GPU path work at all" check.
 //
-// Stage a bundle first (macOS App Sandbox redirects $HOME, so the on-disk
-// location is double-nested while the path below is what the app sees):
-//   ~/Library/Containers/<id>/Data/Library/Containers/<id>/Data/Documents/
+// Stage a bundle in ~/models. Sandboxed builds fall back to the example app's
+// container Documents directory.
 //
 // Run (defaults to the int4 TranslateGemma bundle):
 //   flutter test integration_test/translategemma_backend_matrix_test.dart -d macos
@@ -24,6 +23,8 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 // One bundle per run on purpose: two 2-4 GB loads in a single run is what the
 // OOM killer takes out on a 16 GB machine.
@@ -48,14 +49,7 @@ const _prompt = String.fromEnvironment(
 ModelType get _modelType =>
     ModelType.values.firstWhere((t) => t.name == _modelTypeName);
 
-// Inside the sandbox $HOME is ALREADY the app container, so this single-nested
-// path is what the double-nested on-disk staging location resolves to. Writing
-// the double path here would nest a third time and silently find nothing.
-String get _stagedPath {
-  final home = Platform.environment['HOME'];
-  const id = 'dev.flutterberlin.flutterGemmaExample55';
-  return '$home/Library/Containers/$id/Data/Documents/$_fileName';
-}
+String get _stagedPath => macosStagedFilePath(_fileName)!;
 
 Future<String?> _probe(PreferredBackend backend) async {
   InferenceModel? model;

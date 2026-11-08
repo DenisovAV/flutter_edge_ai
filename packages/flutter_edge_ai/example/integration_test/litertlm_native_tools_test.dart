@@ -23,7 +23,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
-import 'voice_test_helpers.dart' show macosStagedModelPath, stagedModelPath;
+import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _backendName = String.fromEnvironment(
   'TOOLS_BACKEND',
@@ -305,7 +306,7 @@ Future<String?> _modelPath(String file) async {
     final path = '$hostDir/$file';
     return File(path).existsSync() ? path : null;
   }
-  if (Platform.isMacOS) return macosStagedModelPath(file);
+  if (Platform.isMacOS) return macosStagedFilePath(file);
   return stagedModelPath(file);
 }
 

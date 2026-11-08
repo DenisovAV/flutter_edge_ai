@@ -21,10 +21,11 @@ import 'dart:io';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'inference_test_helpers.dart' show registerTestEngines;
 
-const _gemma4Path =
-    '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/gemma-4-E2B-it.litertlm';
+import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
+
+String get _gemma4Path => macosStagedFilePath('gemma-4-E2B-it.litertlm')!;
 
 const _changeColorTool = Tool(
   name: 'change_color',

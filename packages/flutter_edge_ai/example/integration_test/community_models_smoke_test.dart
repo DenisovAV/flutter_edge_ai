@@ -10,7 +10,7 @@
 /// output quality.
 ///
 /// Model dirs (same convention as litertlm_ffi_test.dart):
-///   macOS:   ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/
+///   macOS:   ~/models/ (example container Documents fallback)
 ///   Linux:   ~/models/
 ///   Android: /data/local/tmp/flutter_gemma_test/
 library;
@@ -22,17 +22,17 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 String get _androidDir => '/data/local/tmp/flutter_gemma_test';
-String get _macosDir =>
-    '${Platform.environment['HOME']}/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents';
 String get _linuxDir => '${Platform.environment['HOME']}/models';
 String get _windowsDir => '${Platform.environment['USERPROFILE']}\\models';
 
 String? _localPath(String filename) {
   if (Platform.isAndroid) return '$_androidDir/$filename';
-  if (Platform.isMacOS) return '$_macosDir/$filename';
+  if (Platform.isMacOS) return macosStagedFilePath(filename);
   if (Platform.isLinux) return '$_linuxDir/$filename';
   if (Platform.isWindows) return '$_windowsDir\\$filename';
   return null;
@@ -101,7 +101,7 @@ Future<String> _chat(
 Future<Uint8List> _loadTestImage() async {
   // Prefer the on-disk test image next to the models; fall back to a bundled asset.
   for (final p in [
-    if (Platform.isMacOS) '$_macosDir/test_image.png',
+    if (Platform.isMacOS) macosStagedFilePath('test_image.png')!,
     if (Platform.isLinux) '$_linuxDir/test_image.png',
     if (Platform.isAndroid) '$_androidDir/test_image.png',
   ]) {

@@ -28,7 +28,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
-import 'voice_test_helpers.dart' show macosStagedModelPath, stagedModelPath;
+import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _backendName = String.fromEnvironment(
   'REWIND_BACKEND',
@@ -40,7 +41,7 @@ Future<String> _modelPath() async {
   final home = Platform.environment['HOME'];
   String? path;
   if (Platform.isMacOS) {
-    path = macosStagedModelPath(_modelFile);
+    path = macosStagedFilePath(_modelFile);
   } else if (Platform.isLinux) {
     path = '$home/models/$_modelFile';
   } else if (Platform.isWindows) {

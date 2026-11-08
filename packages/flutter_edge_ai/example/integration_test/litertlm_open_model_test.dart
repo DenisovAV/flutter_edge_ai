@@ -5,8 +5,8 @@
 /// runs next to them, they close in reverse order, and one is opened again.
 ///
 /// Prerequisites: `gemma-4-E2B-it.litertlm` where litertlm_ffi_test.dart
-/// looks for it (macOS: the app container's Documents, double-nested because
-/// of the sandbox), else it is downloaded. For the NPU on Windows Lunar Lake,
+/// looks for it (macOS: ~/models with container Documents fallback), else it
+/// is downloaded. For the NPU on Windows Lunar Lake,
 /// pass the LNL bundle: `--dart-define=NPU_MODEL=C:\...\gemma4_2b_lnl.litertlm`
 /// and add `npu` to ORDER.
 ///
@@ -24,6 +24,8 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'local_model_file_io.dart' show macosStagedFilePath;
+
 const _gemma4File = 'gemma-4-E2B-it.litertlm';
 const _gemma4Url =
     'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/$_gemma4File';
@@ -35,10 +37,7 @@ const _prompt = 'In two sentences, what is a neural processing unit?';
 
 String? _localPath(String filename) {
   final home = Platform.environment['HOME'];
-  if (Platform.isMacOS) {
-    return '$home/Library/Containers/dev.flutterberlin.flutterGemmaExample55/'
-        'Data/Documents/$filename';
-  }
+  if (Platform.isMacOS) return macosStagedFilePath(filename);
   if (Platform.isAndroid) return '/data/local/tmp/flutter_gemma_test/$filename';
   if (Platform.isLinux) return '$home/models/$filename';
   if (Platform.isWindows) {

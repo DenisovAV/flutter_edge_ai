@@ -1,20 +1,20 @@
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
-const _gemma3_1bPath =
-    '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
-const _gemma4Path =
-    '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/gemma-4-E2B-it.litertlm';
-const _gemma3nPath =
-    '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/gemma-3n-E2B-it-int4.litertlm';
+String get _gemma3_1bPath =>
+    macosStagedFilePath('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm')!;
+String get _gemma4Path => macosStagedFilePath('gemma-4-E2B-it.litertlm')!;
+String get _gemma3nPath =>
+    macosStagedFilePath('gemma-3n-E2B-it-int4.litertlm')!;
 
-// Test image path (real PNG from app container)
-const _testImagePath =
-    '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/test_image.png';
+String get _testImagePath => macosStagedFilePath('test_image.png')!;
 
 late Uint8List _testImage;
 
@@ -170,7 +170,7 @@ void main() {
 
     testWidgets('GPU with audio', (tester) async {
       final testAudio = File(
-        '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/test_audio.wav',
+        macosStagedFilePath('test_audio.wav')!,
       ).readAsBytesSync();
       print('[Gemma4 audio] Loaded ${testAudio.length} bytes');
 
@@ -320,7 +320,7 @@ void main() {
 
     testWidgets('CPU with audio', (tester) async {
       final testAudio = File(
-        '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/test_audio.wav',
+        macosStagedFilePath('test_audio.wav')!,
       ).readAsBytesSync();
       print('[Gemma3n audio] Loaded ${testAudio.length} bytes');
 

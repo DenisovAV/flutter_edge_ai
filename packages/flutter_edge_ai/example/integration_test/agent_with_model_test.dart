@@ -35,6 +35,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 // ── Model URL (iOS downloads; macOS/Android/Desktop use local files) ──
 const _gemma4Url =
@@ -45,8 +46,6 @@ const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
 // ── Local model dirs (same layout as litertlm_ffi_test.dart) ──
 String get _androidDir => '/data/local/tmp/flutter_gemma_test';
-String get _macosDir =>
-    '${Platform.environment['HOME']}/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents';
 String get _linuxDir => '${Platform.environment['HOME']}/models';
 String get _windowsDir => '${Platform.environment['USERPROFILE']}\\models';
 
@@ -56,7 +55,7 @@ const _sha1OfHello = 'aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d';
 /// Local path for [filename], or null on iOS (download via network instead).
 String? _localPath(String filename) {
   if (Platform.isAndroid) return '$_androidDir/$filename';
-  if (Platform.isMacOS) return '$_macosDir/$filename';
+  if (Platform.isMacOS) return macosStagedFilePath(filename);
   if (Platform.isLinux) return '$_linuxDir/$filename';
   if (Platform.isWindows) return '$_windowsDir\\$filename';
   return null; // iOS — network download

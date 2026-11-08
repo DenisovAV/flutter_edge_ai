@@ -49,16 +49,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
-import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'local_model_file_io.dart'
+    show macosContainerDocumentsPath, macosStagedFilePath;
 
 const _packsDefine = String.fromEnvironment('DECIDER_PACKS');
 
 /// Where a pack or extra model is staged. On iOS HOME is the app's own
 /// container, whose Documents is `xcrun devicectl device copy to
 /// --domain-type appDataContainer`'s target.
-String _stagedPath(String relativePath) => Platform.isIOS
-    ? '${Platform.environment['HOME']}/Documents/$relativePath'
-    : macosStagedFilePath(relativePath)!;
+String _stagedPath(String relativePath) {
+  if (Platform.isIOS) {
+    return '${Platform.environment['HOME']}/Documents/$relativePath';
+  }
+  if (Platform.isMacOS) return macosStagedFilePath(relativePath)!;
+  return macosContainerDocumentsPath(relativePath);
+}
 
 Directory get _packsDir => Directory(
   _packsDefine.isNotEmpty ? _packsDefine : _stagedPath('decisions'),

@@ -11,9 +11,10 @@ import 'local_model_file_io.dart' show macosStagedFilePath;
 
 /// Resolve a device-local staged model file (no network, no token) — the same
 /// convention [voice_loop_test.dart]'s `_stagedLlmPath` uses, so these tests run
-/// on every platform, not just Android. Desktop/iOS read it from the app
-/// documents dir; Android reads it from `/data/local/tmp/flutter_gemma_test/`
-/// (adb push, or the ddp-device-test skill on a DDP phone). Returns
+/// on every platform, not just Android. macOS prefers `~/models`, with
+/// container Documents fallback; other desktop/iOS targets use app Documents.
+/// Android reads `/data/local/tmp/flutter_gemma_test/` (adb push, or the
+/// ddp-device-test skill on a DDP phone). Returns
 /// null when no staged file is present.
 Future<String?> stagedModelPath(String filename) async {
   if (Platform.isAndroid) {

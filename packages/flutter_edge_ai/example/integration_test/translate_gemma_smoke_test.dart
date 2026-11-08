@@ -2,8 +2,8 @@
 //
 // Exercises `TranslateRunner` end-to-end on the community `.litertlm` int4
 // bundle. The test:
-//   1. Stages the int4 `.litertlm` from the app's documents dir (~2 GB —
-//      see pre-staging notes below).
+//   1. Stages the int4 `.litertlm` from ~/models on macOS, with container
+//      Documents fallback (~2 GB — see pre-staging notes below).
 //   2. Installs it via `FlutterEdgeAi.installModel(...).fromFile(...)`.
 //   3. Builds a `TranslateRunner` using the same XML strategy the example
 //      app uses.
@@ -32,8 +32,8 @@ import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _modelName = 'translategemma-4b-it-int4-generic.litertlm';
 
-/// Resolve a file path in the app documents directory. If absent, copy
-/// from the bundled `assets/test/<name>` (works on every platform).
+/// Resolve a staged file. macOS prefers `~/models`, with container Documents
+/// fallback. If absent, copy from bundled `assets/test/<name>`.
 Future<String> _docsPath(String name) async {
   if (Platform.isMacOS) {
     final staged = macosStagedFilePath(name);

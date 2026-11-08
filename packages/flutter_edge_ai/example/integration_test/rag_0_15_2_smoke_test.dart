@@ -1,7 +1,7 @@
 // 0.15.2 RAG smoke test — both embedding model families.
 //
-// Loads models from local files (~/Downloads/) to skip the download +
-// HuggingFace auth flow and exercise just the embedding inference path.
+// On macOS, prefers local files in ~/models with container Documents fallback
+// to skip downloads and exercise just the embedding inference path.
 //
 // On Android the test pushes the files into the app sandbox via
 // adb-style `getApplicationDocumentsDirectory()` staging, then loads

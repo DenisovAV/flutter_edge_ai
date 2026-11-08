@@ -9,6 +9,17 @@ import 'dart:io' as io;
 const _macosContainerData =
     '/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data';
 
+/// The example app's container Documents path for [fileName].
+///
+/// This remains available to tests that preserve their old off-macOS skip
+/// path, but macOS callers should use [macosStagedFilePath].
+String macosContainerDocumentsPath(String fileName) {
+  final home = io.Platform.environment['HOME'];
+  return home != null && home.endsWith(_macosContainerData)
+      ? '$home/Documents/$fileName'
+      : '$home$_macosContainerData/Documents/$fileName';
+}
+
 /// Path to [fileName] in the macOS staging directory.
 ///
 /// Unsandboxed test apps prefer `~/models`, which avoids macOS TCC denying
@@ -25,9 +36,7 @@ String? macosStagedFilePath(String fileName) {
     return models;
   }
 
-  return home.endsWith(_macosContainerData)
-      ? '$home/Documents/$fileName'
-      : '$home$_macosContainerData/Documents/$fileName';
+  return macosContainerDocumentsPath(fileName);
 }
 
 /// Path to [fileName] in the directory this platform's device tests push models

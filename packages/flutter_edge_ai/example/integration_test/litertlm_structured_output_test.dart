@@ -3,10 +3,10 @@
 // enum schema, while every structured turn must. It also exercises the turn
 // ends and conversation recovery that can silently lose a constraint.
 //
-// Desktop models are read directly from ~/models; iOS uses
-// IOS_TEST_DOCS_DIR or the app's Documents directory. FileSource registers
-// that path and does not copy it into the app container. Run one backend at a
-// time:
+// macOS prefers ~/models with container Documents fallback; other desktops
+// use ~/models, and iOS uses IOS_TEST_DOCS_DIR or app Documents. FileSource
+// registers that path and does not copy it into the app container. Run one
+// backend at a time:
 //   flutter test integration_test/litertlm_structured_output_test.dart -d macos
 //   flutter test integration_test/litertlm_structured_output_test.dart -d macos \
 //     --dart-define=STRUCTURED_BACKEND=gpu
@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'voice_test_helpers.dart' show stagedModelPath;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _modelFile = 'gemma-4-E2B-it.litertlm';
 const _backendName = String.fromEnvironment(
@@ -74,6 +75,7 @@ Future<String> _modelPath() async {
       '$_modelFile is not staged in the iOS Documents directory',
     );
   }
+  if (Platform.isMacOS) return macosStagedFilePath(_modelFile)!;
   final home = Platform.environment['HOME'];
   if (home == null || home.isEmpty) {
     throw StateError('HOME is unavailable; set LITERTLM_STRUCTURED_MODEL');

@@ -4,8 +4,8 @@
 //
 // Model functiongemma-270M-it.litertlm, staged as for
 // install_rule_device_test.dart: Android /data/local/tmp/flutter_gemma_test/,
-// Linux and macOS ~/models (the app container's home on macOS), Windows
-// %USERPROFILE%\models.
+// macOS prefers ~/models with container Documents fallback; Linux uses
+// ~/models and Windows uses %USERPROFILE%\models.
 // Run: flutter test integration_test/uninstall_loaded_model_test.dart -d <id>
 //
 // No setUp/setUpAll: each test prepares itself, so a failure is reported as
@@ -26,6 +26,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as path;
 
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _modelFile = 'functiongemma-270M-it.litertlm';
 
@@ -36,6 +37,7 @@ String get _stagedModel {
   if (Platform.isWindows) {
     return '${Platform.environment['USERPROFILE']}\\models\\$_modelFile';
   }
+  if (Platform.isMacOS) return macosStagedFilePath(_modelFile)!;
   return '${Platform.environment['HOME']}/models/$_modelFile';
 }
 

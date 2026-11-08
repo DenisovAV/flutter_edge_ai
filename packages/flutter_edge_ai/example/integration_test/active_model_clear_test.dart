@@ -29,10 +29,15 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _modelName = 'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
 
 Future<String> _docsPath(String name) async {
+  if (Platform.isMacOS) {
+    final staged = File(macosStagedFilePath(name)!);
+    if (staged.existsSync()) return staged.path;
+  }
   final docs = await getApplicationDocumentsDirectory();
   final f = File('${docs.path}/$name');
   if (f.existsSync()) return f.path;

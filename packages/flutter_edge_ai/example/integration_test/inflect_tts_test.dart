@@ -1,6 +1,6 @@
 // On-device (macOS/desktop): verify the Inflect-Nano-v2 FFI synthesis core
-// byte-matches the reference. The fixture (`inflect_fixture.bin`, staged in the
-// app documents dir) carries, per sentence: the phoneme ids, the reference
+// byte-matches the reference. The fixture (`inflect_fixture.bin`, staged with
+// the model artifacts) carries, per sentence: the phoneme ids, the reference
 // numpy RandomState(7) noise, and the expected fp16 LiteRT waveform. Injecting
 // the reference noise (InflectTtsCore.synthesize's `noiseOverride`) removes the
 // RNG as a variable, so this checks the FFI graphs + host length-regulator +
@@ -9,7 +9,7 @@
 //
 // Stage first:
 //   inflect_{text_encoder,decoder}_fp16.tflite + inflect_fixture.bin
-//   into the app documents dir.
+//   into ~/models (with container Documents fallback).
 // Run: cd packages/flutter_edge_ai/example && \
 //   flutter test integration_test/inflect_tts_test.dart -d macos
 import 'dart:io';
@@ -27,6 +27,12 @@ import 'package:flutter_edge_ai_speech/src/tts/inflect_text_frontend.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
+
+import 'local_model_file_io.dart' show macosStagedFilePath;
+
+Future<String> _stagedPath(String name) async => Platform.isMacOS
+    ? macosStagedFilePath(name)!
+    : '${(await getApplicationDocumentsDirectory()).path}/$name';
 
 double _pearson(Float32List a, Float32List b) {
   final n = math.min(a.length, b.length);
@@ -52,10 +58,9 @@ void main() {
   testWidgets(
     'Inflect FFI synthesis byte-matches the fp16 reference (per sentence)',
     (tester) async {
-      final docs = await getApplicationDocumentsDirectory();
-      final encPath = '${docs.path}/inflect_text_encoder_fp16.tflite';
-      final decPath = '${docs.path}/inflect_decoder_fp16.tflite';
-      final fixPath = '${docs.path}/inflect_fixture.bin';
+      final encPath = await _stagedPath('inflect_text_encoder_fp16.tflite');
+      final decPath = await _stagedPath('inflect_decoder_fp16.tflite');
+      final fixPath = await _stagedPath('inflect_fixture.bin');
       for (final p in [encPath, decPath, fixPath]) {
         expect(
           File(p).existsSync(),
@@ -136,17 +141,19 @@ void main() {
     'Inflect end-to-end: text -> frontend (dict + neural OOV) -> synth -> '
     'non-silent 24 kHz audio',
     (tester) async {
-      final docs = await getApplicationDocumentsDirectory();
-      String p(String f) => '${docs.path}/$f';
       final paths = <String, String>{
-        'inflect_text_encoder_fp16.tflite': p(
+        'inflect_text_encoder_fp16.tflite': await _stagedPath(
           'inflect_text_encoder_fp16.tflite',
         ),
-        'inflect_decoder_fp16.tflite': p('inflect_decoder_fp16.tflite'),
-        'config.json': p('config.json'),
-        'g2p_dict.txt.gz': p('g2p_dict.txt.gz'),
-        'dp_g2p_matcha_fp16.tflite': p('dp_g2p_matcha_fp16.tflite'),
-        'g2p_meta.json': p('g2p_meta.json'),
+        'inflect_decoder_fp16.tflite': await _stagedPath(
+          'inflect_decoder_fp16.tflite',
+        ),
+        'config.json': await _stagedPath('config.json'),
+        'g2p_dict.txt.gz': await _stagedPath('g2p_dict.txt.gz'),
+        'dp_g2p_matcha_fp16.tflite': await _stagedPath(
+          'dp_g2p_matcha_fp16.tflite',
+        ),
+        'g2p_meta.json': await _stagedPath('g2p_meta.json'),
       };
       for (final f in paths.values) {
         expect(

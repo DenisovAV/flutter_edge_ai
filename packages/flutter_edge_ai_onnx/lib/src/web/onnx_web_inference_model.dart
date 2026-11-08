@@ -490,6 +490,16 @@ class OnnxWebInferenceModel extends InferenceModel with CloseNotifier {
       // use it is unsafe. Core's ModelCloseGate bounds a closing model wait
       // at 60 seconds and surfaces its TimeoutException to the next build.
       await Future.wait([for (final session in sessions) session.close()]);
+      // A pipeline still loading is released by _createPipeline when the
+      // load ends; wait for it, so close() returns only once it is gone and
+      // core never builds the next model beside it (#800). A failed load
+      // left nothing to release.
+      final loading = _pipelineCompleter;
+      if (loading != null) {
+        try {
+          await loading.future;
+        } catch (_) {}
+      }
       // Only after every session has closed (so every generation Promise has
       // settled): dropping the reference does not release the ONNX sessions,
       // and each reload then adds the old model's memory on top (#800).

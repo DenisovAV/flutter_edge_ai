@@ -974,14 +974,39 @@ void main() {
     _tf['gate'] = gate.future.toJS;
     final model = _model();
     final open = model.openSession();
+    // Listened to at once: the open fails as soon as the load ends.
+    final openFails = expectLater(open, throwsStateError);
     await pumpEventQueue();
-    await model.close();
+    var closeCompleted = false;
+    final closing = model.close().whenComplete(() => closeCompleted = true);
+    await pumpEventQueue();
+    // close() waits for the load instead of returning with it still running.
+    expect(closeCompleted, isFalse);
+    expect((_tf['disposes']! as JSNumber).toDartInt, 0);
     gate.complete();
-    await expectLater(open, throwsStateError);
-    expect(model.sessions, isEmpty);
-    // The pipeline that finished loading after close() is released, not kept.
+    await closing;
+    // By the time close() returns, the pipeline that finished loading after
+    // it started is released, not kept.
     expect((_tf['pipelines']! as JSNumber).toDartInt, 1);
     expect((_tf['disposes']! as JSNumber).toDartInt, 1);
+    await openFails;
+    expect(model.sessions, isEmpty);
+  });
+
+  test('a model closed while its pipeline load fails still closes, '
+      'releasing nothing', () async {
+    final gate = Completer<void>();
+    _tf['gate'] = gate.future.toJS;
+    _tf['failures'] = 2.toJS; // webgpu, then the wasm retry
+    final model = _model();
+    final openFails = expectLater(model.openSession(), throwsA(anything));
+    await pumpEventQueue();
+    final closing = model.close();
+    gate.complete();
+    await closing;
+    await openFails;
+    expect((_tf['pipelines']! as JSNumber).toDartInt, 2);
+    expect((_tf['disposes']! as JSNumber).toDartInt, 0);
   });
 
   test('a response format is refused on the web, saying why, before any '

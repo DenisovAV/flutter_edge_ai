@@ -276,11 +276,10 @@ void main() {
   setUpAll(() async {
     await registerTestEngines();
 
-    // Load test assets — the bundled fixtures first, whose content the vision
-    // and audio checks assert, then the staged host files when assets/test/
-    // does not ship them. macOS: ~/models (container Documents fallback);
-    // other desktop and iOS: app Documents; Android:
-    // /data/local/tmp/flutter_gemma_test/.
+    // Staged fixture lookup: Android /data/local/tmp/flutter_gemma_test/;
+    // macOS macosStagedFilePath (~/models, then container Documents); Linux
+    // ~/models; Windows %USERPROFILE%\models; then ~/Downloads. iOS has no
+    // staged path and relies on the bundled fixtures.
     try {
       final data = await rootBundle.load('assets/test/test_image.jpg');
       _testImage = data.buffer.asUint8List();

@@ -494,9 +494,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_android_arm64_pixel-11-ddp-cubs-37-tensor-g6-powervr.json",
-        "note": "Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-08_android_arm64_oneplus-cph2653-sm8750-adreno-830-android-16.json",
+        "note": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "ios_arm64": {
@@ -505,9 +505,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
-        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-08_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
+        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "macos_arm64": {
@@ -4347,26 +4347,26 @@
      "cells": {
       "android_arm64": {
        "gpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
-        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-08_android_arm64_oneplus-cph2653-sm8750-adreno-830-android-16.json",
+        "note": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
-        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-08_android_arm64_oneplus-cph2653-sm8750-adreno-830-android-16.json",
+        "note": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "ios_arm64": {
        "gpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
-        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-08_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
+        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
-        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-08_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
+        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "macos_arm64": {
@@ -4649,9 +4649,9 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
-        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-08_android_arm64_oneplus-cph2653-sm8750-adreno-830-android-16.json",
+        "note": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "linux_arm64": {
@@ -5251,9 +5251,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
-        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_speech 0.5.13"
+        "status": "verified",
+        "source": "evidence/2026-11-08_android_arm64_oneplus-cph2653-sm8750-adreno-830-android-16.json",
+        "note": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_speech 0.6.0"
        }
       },
       "ios_arm64": {
@@ -5261,9 +5261,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
-        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_speech 0.5.13"
+        "status": "verified",
+        "source": "evidence/2026-11-08_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
+        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_speech 0.6.0"
        }
       },
       "macos_arm64": {
@@ -5344,9 +5344,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
-        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-10-31, flutter_edge_ai_speech 0.5.13"
+        "status": "verified",
+        "source": "evidence/2026-11-08_android_arm64_oneplus-cph2653-sm8750-adreno-830-android-16.json",
+        "note": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_speech 0.6.0"
        }
       },
       "ios_arm64": {
@@ -5354,9 +5354,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
-        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_speech 0.5.13"
+        "status": "verified",
+        "source": "evidence/2026-11-08_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
+        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_speech 0.6.0"
        }
       },
       "macos_arm64": {

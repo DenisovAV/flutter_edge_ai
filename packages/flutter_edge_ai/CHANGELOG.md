@@ -1,11 +1,8 @@
-## Unreleased
+## 2.6.0
 - `createSession`, `createChat`, `session` and `chat` are deprecated until 3.0.0.
-- Engine SPI: `openEngineSession`, `resolveChatRequest`, `ChatTurnHooks`; `openSession`, `openChat` and chat turns are `@nonVirtual`.
-- `openChat` fills unset values with the model's own, as `createChat` does.
-- On LiteRT-LM and MediaPipe, a chat turn closed by the app keeps its partial reply, then throws `StateError`.
-- A chat's failed token count or session rebuild is the turn's error, not a log line.
-- A chat turn the engine fails commits nothing; `ContextLimitException` marks an input too long for the context.
-- Engine SPI: `readDecisionSection`/`openOptionScorer` move onto `InferenceModel`; `OptionScoringModel` is removed (#769).
+- Engine SPI owns sessions, chat resolution, turn hooks and failed-turn rollback (#770).
+- `ContextLimitException` reports prompts that exceed the context window.
+- Decider reading and scoring move onto `InferenceModel`; remove `OptionScoringModel` (#769).
 - Response formats validate replies; LiteRT-LM constrains qualified native CPU/GPU rows (#195).
 
 ## 2.5.6

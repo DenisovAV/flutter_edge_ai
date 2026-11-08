@@ -14,10 +14,11 @@ Asserted per app, and why each oracle is the one it is:
   `dependencies:` block — not a `grep`, which also matched `dev_dependencies:`
   and `dependency_overrides:`, and missed the equally valid 4-space and flow
   (`{a: ^1, b: ^2}`) spellings, silently skipping every check for that app.
-- Are the JS files the ones the app actually resolves? Compared against THIS
-  app's `.dart_tool/package_config.json` resolution. `web/opfs_helper.js`
-  reached the package only in 1.8.2 (#505), so "the repo's copy" and "the
-  published copy" do diverge, and two apps may pin different versions.
+- Are the JS files the ones the app actually resolves? Hosted-package runs
+  compare against THIS app's `.dart_tool/package_config.json` resolution.
+  PR runs intentionally keep the last published codelab copies while testing
+  local packages, so byte differences are informational in that mode. File
+  presence and every browser-facing contract below remain required.
 - Are the scripts loaded? Matched against live markup only: HTML comments,
   `<template>` and `<noscript>` are removed first, since none of them loads
   anything. `litert_embeddings.js` additionally needs `type="module"` — it is
@@ -45,6 +46,7 @@ continues, so one unreadable file cannot hide the other 22 apps.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -78,11 +80,23 @@ STREAMING_ARG = re.compile(r"webStorageMode:\s*WebStorageMode\s*\.\s*streaming")
 
 errors: list[str] = []
 root = Path.cwd()
+use_local_packages = os.environ.get("CODELAB_USE_LOCAL_PACKAGES") == "1"
 
 
 def fail(message: str) -> None:
     errors.append(message)
     print(f"::error::{message}")
+
+
+def compare_resolved_copy(copy: Path, source: Path) -> None:
+    """Require hosted bytes, but only report intentional local-package drift."""
+    if copy.read_bytes() == source.read_bytes():
+        return
+    message = f"{rel(copy)} differs from the resolved package's {source}"
+    if use_local_packages:
+        print(f"::notice::{message} (informational with local package overrides)")
+    else:
+        fail(message)
 
 
 def rel(path: Path) -> str:
@@ -323,8 +337,8 @@ def check_app(app: Path) -> None:
                     f"{source} is not in the resolved package — "
                     f"cannot compare {rel(copy)}"
                 )
-            elif copy.read_bytes() != source.read_bytes():
-                fail(f"{rel(copy)} differs from the resolved package's {source}")
+            else:
+                compare_resolved_copy(copy, source)
         if not loads_script(html, js):
             fail(f"{rel(index)} does not load {js}")
 
@@ -369,8 +383,8 @@ def check_app(app: Path) -> None:
                         f"{rel(copy)} is missing — litert_embeddings.js imports it; "
                         f"copy it from {source}"
                     )
-                elif copy.read_bytes() != source.read_bytes():
-                    fail(f"{rel(copy)} differs from the resolved package's {source}")
+                else:
+                    compare_resolved_copy(copy, source)
         if not loads_script(html, "litert_embeddings.js", module=True):
             fail(
                 f"{rel(index)} does not load litert_embeddings.js as "

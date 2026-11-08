@@ -56,11 +56,11 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 # pubspec.yaml (your app)
 dependencies:
   genkit: ^1.0.0
-  genkit_flutter_edge_ai: ^0.11.1
-  flutter_edge_ai: ^2.5.5
-  flutter_edge_ai_litertlm: ^1.19.2  # only the engines/backends you actually use
+  genkit_flutter_edge_ai: ^0.12.0
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_litertlm: ^1.20.0  # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.3.2  # the tokenizers an embedding backend needs
-  flutter_edge_ai_mediapipe: ^1.2.6
+  flutter_edge_ai_mediapipe: ^1.3.0
 ```
 
 ```dart
@@ -429,6 +429,12 @@ await router.warmUp(); // the decider and the on-device model, before the first 
   limit included, so keep `RouteRule.inputSize` before the classifier.
 - The route info carries the label, the decider's abstain signal as `score`, the margin, and its
   method, calibration, space id and timings under `details`.
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the listing links to your app's Google Play or App Store page.
 
 ## Known Limitations
 

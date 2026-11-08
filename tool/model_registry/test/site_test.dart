@@ -744,6 +744,29 @@ void main() {
       ]);
     });
 
+    test('an unavailable log hash names where the logs are retained', () {
+      final problems = <Problem>[];
+      final run = EvidenceRun.fromJson('f.json', {
+        ..._run(),
+        'log_sha256': null,
+        'log_location': "Logs retained on Sasha's MacBook",
+      }, (m) => problems.add(Problem('f', '-', m)));
+      expect(problems, isEmpty);
+      expect(run!.logSha256, isNull);
+      expect(run.logLocation, "Logs retained on Sasha's MacBook");
+      expect(run.toJson()['log_sha256'], isNull);
+
+      final missingLocation = <Problem>[];
+      EvidenceRun.fromJson('f.json', {
+        ..._run(),
+        'log_sha256': null,
+      }, (m) => missingLocation.add(Problem('f', '-', m)));
+      expect(
+        missingLocation.map((p) => p.message),
+        contains('log_location is required when log_sha256 is unavailable'),
+      );
+    });
+
     test('a log: lines anywhere in it, logcat prefixes, bad lines named', () {
       final errors = <String>[];
       final lines = parseEvidenceLog(

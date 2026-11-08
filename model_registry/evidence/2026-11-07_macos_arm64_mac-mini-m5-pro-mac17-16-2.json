@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-07",
+  "host": "macos_arm64",
+  "device": "Mac mini (M5 Pro, Mac17,16)",
+  "commit": "e8ef49f10f0ebf1d5519167b46ab0cf789d547c4",
+  "packages": {
+    "flutter_edge_ai": "2.6.0",
+    "flutter_edge_ai_litertlm": "1.20.0",
+    "flutter_edge_ai_speech": "0.6.0"
+  },
+  "native": "42652644fdef056e8989c5fed0df288985e55c71e944c5a1a65a3e82bc92ef93",
+  "log_sha256": "ae5cebe1b55e7f8b60b32c7e08baa9a0eab81b0fc9ee8e4376a352d2bf4e4429",
+  "log_url": null,
+  "cells": {
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "text"
+      ],
+      "gpu": [
+        "text"
+      ]
+    }
+  }
+}

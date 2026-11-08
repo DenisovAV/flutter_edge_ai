@@ -13,9 +13,10 @@ core's existing provider APIs; core does not depend on it or bundle llama.cpp.
 
 ## Try the example
 
-The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.5.x**.
-Version 0.0.6 uses llamadart **0.17.5** with typed overflow reporting (0.0.3 to
-0.0.5 used 0.15.1). Connector CI uses
+The package minimum is Flutter **3.44 / Dart 3.12**, with core **2.6.0+**.
+Version 0.1.0 uses llamadart **0.17.5** with typed overflow reporting and adds
+the 2.6 session and response-format integration (0.0.3 to 0.0.5 used 0.15.1).
+Connector CI uses
 Flutter 3.47.1 for reproducible checks. From the repository root:
 
 ```
@@ -80,10 +81,7 @@ A prompt that does not fit the context is different: it fails with
 
 ### Structured JSON output
 
-**Release availability:** this section describes core 2.6.0 and the next
-`flutter_edge_ai_llama` release, built on `flutter_edge_ai` 2.6.0. The currently
-published 0.0.6 package in the install block below requires core 2.5.x and does
-not expose these structured-output APIs.
+This section requires core 2.6.0 and `flutter_edge_ai_llama` 0.1.0.
 
 `openSession(responseFormat: ...)` and `openChat(responseFormat: ...)` ask
 llamadart's grammar to constrain every reply, and core validates the complete
@@ -127,15 +125,15 @@ if its adapter is missing; Web LoRA execution remains unsupported.
 
 Version 0.0.2 is published with llamadart 0.15.0 (0.0.1 used 0.13.1).
 Version 0.0.3 adds native embeddings with llamadart 0.15.1; 0.0.4 and 0.0.5
-change only the docs; 0.0.6 moves to llamadart 0.17.5:
+change only the docs; 0.0.6 moves to llamadart 0.17.5; 0.1.0 adopts core 2.6:
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.5
-  flutter_edge_ai_llama: ^0.0.6
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_llama: ^0.1.0
 ```
 
-Core 2.5.0+ supplies the embedding SPI and typed tool history.
+Core 2.6.0 supplies the engine session SPI, embedding SPI and typed tool history.
 
 The [package setup guide](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/README.md#add-it-to-your-app)
 shows the dependency YAML. Apple apps use iOS 16.4+ / macOS 14+ and the direct
@@ -170,7 +168,7 @@ See the [workspace setup and qualification scope](https://github.com/DenisovAV/f
 Native EmbeddingGemma 2 GGUF text embeddings register through core's embedding
 SPI as `LlamaEmbeddingBackend` in this same engine package. The dedicated
 `flutter_edge_ai_embeddings` package remains tokenizer-only: GGUF carries its
-own tokenizer. Version 0.0.6 requires core 2.5.x and llamadart
+own tokenizer. Version 0.1.0 requires core 2.6.0+ and llamadart
 0.17.5 (0.0.3 introduced the backend on core 2.5.0's SPI). Use separate GGUF and LiteRT RAG profile IDs; matching dimensions do
 not make their vectors interchangeable.
 See the [embedding design and qualification](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/embeddings.md).
@@ -189,7 +187,7 @@ Media and Web embeddings remain unavailable in the initial profile.
 
 ## Capabilities and qualification
 
-Version 0.0.6 pins llamadart `>=0.17.5 <0.17.6`, Apple companion `0.17.3`,
+Version 0.1.0 pins llamadart `>=0.17.5 <0.17.6`, Apple companion `0.17.3`,
 native artifacts `v0.8.0-1` and Web bridge `v0.1.79`. Full platform
 qualification of these pins is pending; earlier qualification evidence does
 not qualify the updated pair.

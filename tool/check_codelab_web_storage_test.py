@@ -97,9 +97,16 @@ def build(root: Path, core: Path, litertlm: Path) -> Path:
     return app
 
 
-def run(root: Path) -> int:
+def run(root: Path, *, local_packages: bool = False) -> int:
+    env = os.environ.copy()
+    env.pop("CODELAB_USE_LOCAL_PACKAGES", None)
+    if local_packages:
+        env["CODELAB_USE_LOCAL_PACKAGES"] = "1"
     return subprocess.run(
-        [sys.executable, str(CHECKER), str(root)], capture_output=True, text=True
+        [sys.executable, str(CHECKER), str(root)],
+        capture_output=True,
+        text=True,
+        env=env,
     ).returncode
 
 
@@ -295,7 +302,14 @@ def main() -> int:
             if run(root) != 0:
                 failures.append(f"FALSE ALARM: {label}")
 
-    total = len(MUST_FAIL) + len(MUST_PASS)
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        app = build(root, core, litertlm)
+        MUST_FAIL["js differs by a byte"](app)
+        if run(root, local_packages=True) != 0:
+            failures.append("FALSE ALARM: local-package JS byte difference")
+
+    total = len(MUST_FAIL) + len(MUST_PASS) + 1
     for line in failures:
         print(f"::error::web storage guard {line}")
     print(f"Guard mutation tests: {total - len(failures)}/{total} as expected.")

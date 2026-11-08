@@ -42,8 +42,8 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.5.5`,
-`flutter_edge_ai_litertlm: ^1.19.2`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.6.0`,
+`flutter_edge_ai_litertlm: ^1.20.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
@@ -65,7 +65,7 @@ SoC). Every build, and where each has been run:
 [Model Registry](https://flutteredge.ai/docs/registry).
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0, ^2.5.4 since 1.19.0, ^2.5.5 since 1.19.1, `>=2.5.5 <2.6.0` since 1.19.2), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0, ^2.5.4 since 1.19.0, ^2.5.5 since 1.19.1, `>=2.5.5 <2.6.0` for 1.19.2, ^2.6.0 since 1.20.0), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
@@ -96,6 +96,11 @@ final format = ResponseFormat.jsonSchema({
 final refusal = model.refusalFor(format);
 if (refusal != null) throw refusal;
 final session = await model.openSession(responseFormat: format);
+try {
+  // Generate structured replies with session.
+} finally {
+  await session.close();
+}
 ```
 
 The full core dialect is qualified on macOS and iOS arm64 CPU/Metal, Linux x64
@@ -1197,11 +1202,20 @@ await FlutterEdgeAi.initialize(
   inferenceEngines: const [LiteRtLmEngine(thinkingTokenBudget: 512)],
 );
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final chat = await model.openChat(
-  enableThinking: true,
-  maxOutputTokens: 2048,
-  modelType: ModelType.gemma4,
-);
+try {
+  final chat = await model.openChat(
+    enableThinking: true,
+    maxOutputTokens: 2048,
+    modelType: ModelType.gemma4,
+  );
+  try {
+    // Use the thinking chat.
+  } finally {
+    await chat.close();
+  }
+} finally {
+  await model.close();
+}
 ```
 
 - The thinking counts towards `maxOutputTokens`, and the reply, with the
@@ -1672,3 +1686,9 @@ rm -rf ~/.cache/flutter_gemma/native                # Linux
 # Windows: rmdir /s /q "%LOCALAPPDATA%\flutter_gemma\native"
 flutter pub get
 ```
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the listing links to your app's Google Play or App Store page.

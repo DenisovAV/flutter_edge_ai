@@ -18,13 +18,16 @@ RAG can borrow the active core embedder, use an application-provided
 **RagEmbedder**, or run entirely on precomputed vectors. It does not require an
 inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 
-## Custom embedding providers (core 2.5.0)
+## Custom embedding providers (introduced in core 2.5.0)
 
 Core accepts self-contained `.gguf` files without a separate tokenizer. When
 backends are registered, installation checks that one can serve the file; with
 none registered, installation can still proceed. The opt-in
-`LlamaEmbeddingBackend` in `flutter_edge_ai_llama` (since 0.0.3; llamadart 0.17.5
-since 0.0.6) runs native EmbeddingGemma 2 GGUF text embeddings with core 2.5.x. Register it in `FlutterEdgeAi.initialize(embeddingBackends:)`; GGUF needs
+`LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.1.0 (backend added in 0.0.3;
+llamadart 0.17.5 since 0.0.6) runs native EmbeddingGemma 2 GGUF text embeddings
+with core 2.6.0+ (`flutter_edge_ai: ^2.6.0`). The 0.0.x releases are the
+historical core 2.5.x line. Register it in
+`FlutterEdgeAi.initialize(embeddingBackends:)`; GGUF needs
 no external tokenizer. Use separate GGUF and LiteRT RAG vector profile IDs,
 even when dimensions match. See [llama.cpp](/docs/llama).
 `flutter_edge_ai_embeddings` supplies tokenizer implementations only; engine
@@ -50,8 +53,8 @@ larger chunk just because the model file declares a larger context.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.5
-  flutter_edge_ai_litertlm: ^1.19.2
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_litertlm: ^1.20.0
   flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.1.2
   flutter_edge_ai_sqlite: ^2.1.1 # all six platforms, including Web
@@ -146,43 +149,42 @@ final vector = await embedder.embed(
   **EmbeddingInputTooLongException** with the exact **actualTokens** (natively
   from litertlm 1.13.1). The engine counts it by running the whole input, so
   an over-long input costs one full embedding before it is refused.
-- **CPU natively, WebGPU on the Web.** **activeBackend** is
-  **PreferredBackend.cpu** natively and **PreferredBackend.gpu** on the Web.
-- **GPU on Linux x64, when asked (litertlm 1.19.0).**
-  **preferredBackend: PreferredBackend.gpu** runs the text tower on the GPU
-  there (WebGPU over Vulkan). Linux x64 only; Windows x64 is refused on
-  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #744: there
-  **gpu** fails the load with an **EmbeddingLoadException**, and
-  **preferredBackend: cpu** (or none) loads it. Measured on the 270m,
-  2026-10-22: Linux on a Tesla T4 32-64 ms per text vs 232-308 ms on its CPU
-  (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs 83-90 ms), min cos 0.997 to the CPU vectors (0.998 for
-  a ~900-token text; the GPU computes in FP16) and the same distance to
-  Sentence Transformers fp32 as the CPU. A load takes 1.7-3.6 s (0.3-0.6 s on
-  CPU); the very first also builds the GPU caches, 5.9-8.2 s. A GPU LLM and
-  the GPU embedder run together in one process (measured with Gemma 4 E2B).
-  - Only the text tower runs on the GPU. On the 440m and 740m the vision and
-    audio towers run on CPU, so images and audio embed at CPU speed with CPU
-    vectors. Not yet measured on a device for these two bundles.
+- **CPU by default natively, WebGPU on the Web.** `activeBackend` reports the
+  backend that actually loaded.
+- **GPU text tower on Linux x64, Windows x64 and macOS arm64 when asked
+  (LiteRT-LM 0.19 / litertlm 1.20.0).** `preferredBackend:
+  PreferredBackend.gpu` is enabled in code (`native_hosts.dart`) for all three
+  bundles on Linux x64, the 270m on Windows x64, and the 270m and 740m on
+  macOS arm64. Other bundle/host combinations on those three hosts are not
+  enabled and throw as unmeasured.
+  - The Linux rows were measured on an NVIDIA L4, 2026-10-26; the three text
+    towers took 13–14 ms on the GPU versus 84–91 ms on its CPU, with minimum
+    cosine 0.99709 to the CPU vectors ([PR #714](https://github.com/DenisovAV/flutter_edge_ai/pull/714)).
+    The 270m also passed on a GCE Tesla T4, 2026-11-04
+    ([0.19 paid-run report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-l1-paid-runs.md)).
+  - The Windows 270m passed on a Panther Lake Arc B390 and a Lunar Lake Arc
+    140V, 2026-11-04
+    ([0.19 paid-run report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-l1-paid-runs.md)).
+  - The macOS rows were measured on an M5 Pro, 2026-11-04; the 270m and 740m
+    text towers ran on Metal in 24 ms
+    ([0.19 phase-1 report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-phase1.md)).
+  - Only the text tower runs on the GPU. The 440m and 740m vision and audio
+    towers remain on CPU.
   - A GPU that cannot create the engine fails the load, and every GPU load
-    checks one probe embedding; nothing falls back to CPU. A software adapter
-    is not excluded, though: on a Linux box with no GPU driver loaded,
-    Vulkan's llvmpipe ran it, reported as **gpu**, with correct vectors, a
-    37-48 s load and a ~900-token text failing with **DEADLINE_EXCEEDED**.
-    Ask for **gpu** only where a real GPU driver is installed.
-  - The GPU writes its own caches next to the CPU one: about 68 MB of weights
-    and 9 MB of programs. **requireWeightCache** covers them: a cache path
-    too long for the GPU (a file name past 255 bytes; on Windows, once its
-    GPU path is enabled again, also past the 260-character MAX_PATH) is refused before the engine is created, and a
+    checks one probe embedding; nothing falls back to CPU. Ask for **gpu** only
+    where a real GPU driver is installed.
+  - The GPU writes its own caches next to the CPU one. **requireWeightCache**
+    covers them: a cache path too long for the GPU (a file name past 255 bytes;
+    Windows currently also has the 260-character MAX_PATH constraint) is
+    refused before the engine is created, and a
     load that wrote neither file is refused after its probe embedding.
   - A cold load without **preferredBackend** runs on CPU, but a later
     automatic request reuses whatever embedder is loaded, the GPU one
     included.
   - The 270m has no vision or audio encoder. In RAG, a text index and an
     image index can share one 440m or 740m embedder on the GPU.
-  - On macOS, iOS, Android and Linux arm64 **gpu** is not applied: on macOS
-    the Metal path ends the process inside LiteRT at engine create (iOS uses
-    the same accelerator, not run), and Android and Linux arm64 are not
-    measured.
+  - On iOS, Android and Linux arm64, `gpu` is not applied because no GPU row is
+    enabled for those hosts.
   - GPU and CPU vectors are close, not equal: keep one backend per index if
     you need the exact vectors back.
 - The NPU runs the per-SoC bundles
@@ -539,9 +541,10 @@ and load it as above.
 ### EmbeddingGemma 2 on an Intel NPU
 
 Google's `…_Intel_PTL.litertlm` bundles are compiled for the Intel Panther Lake
-NPU. From flutter_edge_ai_litertlm 1.13.2 they load on **Windows x64** (not
-yet run on an Intel NPU) with
-**PreferredBackend.npu**, through the Intel stack (**LiteRtDispatch.dll**,
+NPU. From flutter_edge_ai_litertlm 1.13.2 they load on **Windows x64** with
+**PreferredBackend.npu**; the 270m is enabled in code and was measured on a
+Panther Lake PC, 2026-10-21, as described below. They use the Intel stack
+(**LiteRtDispatch.dll**,
 OpenVINO and TBB) that every Windows x64 build already carries beside the
 executable — no opt-in flag. Install
 `embeddinggemma-2-text-270m_Intel_PTL.litertlm` (or the 440m's or the 740m's,
@@ -552,14 +555,16 @@ pins), and load it as above.
   gets a valid vector, so a PC without an Intel NPU, or one the stack cannot
   drive, gets **EmbeddingLoadException** rather than wrong vectors.
 - **Measured on a Panther Lake PC** (2026-10-21, OpenVINO 2026.4.1): the 270m
-  loads in about 0.9 s (the generic bundle: 0.3 s on the same PC's CPU) and
+  loads in 0.9 s (the generic bundle: 0.3 s on the same PC's CPU) and
   returns 768-dimensional vectors; a matching pair scores cos 0.913 (0.914 on
   the CPU), an unrelated one 0.629 (0.628). These are similarities within
   each backend: how close an NPU vector is to the CPU one is not measured. The
-  440m is not measured.
+  440m and 740m are enabled in code, not measured
+  ([committed source](https://github.com/DenisovAV/flutter_edge_ai/blob/main/AGENTS.md)).
 - **A weight bank in %TEMP%.** The load copies the bundle's weights to
   **litert_ov_bank_&lt;hex&gt;.bin** (74.5 MB for the 270m) and the close deletes
-  it. From 1.17.0 the embedder marks it as its own while it is open, so the
+  it ([committed source](https://github.com/DenisovAV/flutter_edge_ai/blob/main/AGENTS.md)).
+  From 1.17.0 the embedder marks it as its own while it is open, so the
   next Intel NPU load can delete one an app left behind; see
   [Windows NPU](/docs/desktop).
 - The same rules as on Qualcomm: refused without **npu**, refused on any other

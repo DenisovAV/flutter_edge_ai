@@ -285,18 +285,20 @@ final eg2Index = await rag.open(
   before embedding.
 - It runs on CPU natively (`activeBackend` is `PreferredBackend.cpu`) and on
   WebGPU on Web (`PreferredBackend.gpu`), and refuses `PreferredBackend.npu`:
-  the NPU runs the per-SoC bundles (next section). On Linux x64
-  (`flutter_edge_ai_litertlm` 1.19.0) `preferredBackend:
-  PreferredBackend.gpu` runs the text tower on the GPU: on the 270m 32-64 ms
-  per text vs 232-308 ms on CPU (Tesla T4), min cos 0.997 to the CPU vectors;
-  nothing falls back to CPU. Linux x64 only; Windows x64 is refused on
-  native-v0.18.0-h (LiteRT-LM accelerator crash), tracked in #744: there
-  `gpu` throws `EmbeddingLoadException`, so load with
-  `preferredBackend: PreferredBackend.cpu`. On the 440m
-  and 740m the vision and audio towers run on CPU beside it (not yet
-  measured on a device), so one GPU embedder serves a text index and an
-  image index. On macOS, iOS, Android and
-  Linux arm64 `gpu` is not applied (CPU, with core's notice). Web vectors therefore
+  the NPU runs the per-SoC bundles (next section). Native GPU support is
+  enabled in code (`native_hosts.dart`) per host and bundle: Linux x64 for the
+  270m, 440m and 740m; Windows x64 for the 270m; macOS arm64 for the 270m and
+  740m. Other bundle combinations on those GPU hosts throw
+  `EmbeddingLoadException` as unmeasured. The Linux rows were measured on an
+  NVIDIA L4, 2026-10-26 ([PR #714](https://github.com/DenisovAV/flutter_edge_ai/pull/714));
+  the Windows 270m passed on Panther Lake Arc B390 and Lunar Lake Arc 140V,
+  2026-11-04
+  ([0.19 paid-run report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-l1-paid-runs.md));
+  the macOS rows were measured on an M5 Pro, 2026-11-04, at 24 ms
+  ([0.19 phase-1 report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-phase1.md)).
+  Only the text tower runs on GPU; 440m/740m vision and audio towers run on CPU
+  beside it. On iOS, Android and Linux arm64, `gpu` is not applied and the
+  embedder runs on CPU with core's notice. Web vectors therefore
   differ slightly from native ones — measured min cos about 0.995 for text and
   0.998 for images against the native CPU vectors — and retrieval across
   platforms holds: web queries find natively embedded images and native

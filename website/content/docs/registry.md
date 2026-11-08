@@ -147,7 +147,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [gpu](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-gpu.litertlm)<br>2.01&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [web](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-web.litertlm)<br>2.01&nbsp;GB |  |  |  |  |  |  | GPU&nbsp;📝 |
 | [npu-tensor-g5](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G5.litertlm)<br>3.11&nbsp;GB · context&nbsp;4096 | NPU&nbsp;⚪ |  |  |  |  |  |  |
-| [npu-tensor-g6](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm)<br>3.31&nbsp;GB · context&nbsp;4096 | NPU&nbsp;🕓 |  |  |  |  |  |  |
+| [npu-tensor-g6](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm)<br>3.31&nbsp;GB · context&nbsp;4096 | NPU&nbsp;✅ |  |  |  |  |  |  |
 | [npu-lnl](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm)<br>2.96&nbsp;GB · context&nbsp;4096 |  |  |  | NPU&nbsp;✅ |  |  |  |
 | [npu-ptl](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_PTL.litertlm)<br>2.95&nbsp;GB · context&nbsp;4096 |  |  |  | NPU&nbsp;⚪ |  |  |  |
 | [npu-qcs8275](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_qualcomm_qcs8275.litertlm)<br>3.29&nbsp;GB · context&nbsp;4096 | NPU&nbsp;⚪ |  |  |  |  | NPU&nbsp;📝 |  |
@@ -161,7 +161,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 - Documented: [PR #602](https://github.com/DenisovAV/flutter_edge_ai/pull/602), VENTUNO Q run (native-v0.18.0-c, litertlm 1.11.0).
 - Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L250-L251)).
-- Stale on Android: Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), 2026-10-31, flutter_edge_ai_litertlm 1.19.1.
+- Verified on Android: Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), Android 17, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
 
 <a id="gemma-4-e4b-it"></a>
 

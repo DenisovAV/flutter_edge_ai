@@ -44,7 +44,7 @@ silently do the other thing.
    ```bash
    bash tool/skills_review.sh origin/main   # which skills the diff puts in doubt
    dart tool/check_skills.dart              # compiles every block; exit 0 required
-   dart run skills_lint@0.5.1               # file-level rules; exit 0 required
+   dart run skills_lint@0.5.3               # file-level rules; exit 0 required
    ```
 
    The two gates also run in CI (`skills` job), so a rename is caught without
@@ -128,7 +128,7 @@ silently do the other thing.
 [ ] 12b new/changed public API + behavior documented (README + website)  ← SAME PR
 [ ] 12d skills/: `skills_review.sh <last-tag>` run, every flagged skill READ,
         updated where the prose drifted, `dart tool/check_skills.dart` green and
-        `dart run skills_lint@0.5.1` green — backstop: rule 4 means the PRs in
+        `dart run skills_lint@0.5.3` green — backstop: rule 4 means the PRs in
         this release already did it
 [ ] 12e LiteTune version in authored docs matches the latest PyPI release; if it
         moved, the documented prepare/tune/convert/verify/bundle commands were
@@ -923,7 +923,7 @@ cannot tell "this name exists" from "this code is right".
 And the file-level check, Google's linter for the Agent Skills format:
 
 ```bash
-dart run skills_lint@0.5.1     # exit 0 required; config in skills_lint.yaml
+dart run skills_lint@0.5.3     # exit 0 required; config in skills_lint.yaml
 ```
 
 It checks what compilation cannot: frontmatter keys the spec allows (these

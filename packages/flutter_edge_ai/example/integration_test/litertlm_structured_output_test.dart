@@ -3,8 +3,8 @@
 // enum schema, while every structured turn must. It also exercises the turn
 // ends and conversation recovery that can silently lose a constraint.
 //
-// macOS prefers ~/models with container Documents fallback; other desktops
-// use ~/models, and iOS uses IOS_TEST_DOCS_DIR or app Documents. FileSource
+// macOS: ~/models (container Documents fallback); other desktops use ~/models,
+// and iOS uses IOS_TEST_DOCS_DIR or app Documents. FileSource
 // registers that path and does not copy it into the app container. Run one
 // backend at a time:
 //   flutter test integration_test/litertlm_structured_output_test.dart -d macos

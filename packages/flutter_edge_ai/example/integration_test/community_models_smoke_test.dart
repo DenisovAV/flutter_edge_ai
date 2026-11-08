@@ -10,7 +10,7 @@
 /// output quality.
 ///
 /// Model dirs (same convention as litertlm_ffi_test.dart):
-///   macOS:   ~/models/ (example container Documents fallback)
+///   macOS:   ~/models (container Documents fallback)
 ///   Linux:   ~/models/
 ///   Android: /data/local/tmp/flutter_gemma_test/
 library;

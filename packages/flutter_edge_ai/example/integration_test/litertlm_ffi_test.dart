@@ -1,7 +1,7 @@
 /// Universal FFI integration test for all platforms (macOS, iOS, Android).
 ///
 /// Prerequisites:
-///   macOS:   models in ~/models/ (container Documents fallback)
+///   macOS:   models in ~/models (container Documents fallback)
 ///   Android: adb push models to /data/local/tmp/flutter_gemma_test/
 ///   iOS:     models downloaded via FlutterEdgeAi.installModel()
 ///
@@ -27,7 +27,7 @@ import 'package:flutter_edge_ai/src/di/service_registry.dart'
     show ServiceRegistry;
 
 import 'inference_test_helpers.dart' show registerTestEngines;
-import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'local_model_file_io.dart' show macosStagedFilePath, macosStagedRoot;
 import 'registry_evidence.dart';
 
 const _ffiGroups = String.fromEnvironment('FFI_GROUPS');
@@ -277,9 +277,10 @@ void main() {
     await registerTestEngines();
 
     // Load test assets — the bundled fixtures first, whose content the vision
-    // and audio checks assert, then the host files staged next to the models
-    // (Android adb-pushed paths, desktop Documents) when assets/test/ does
-    // not ship.
+    // and audio checks assert, then the staged host files when assets/test/
+    // does not ship them. macOS: ~/models (container Documents fallback);
+    // other desktop and iOS: app Documents; Android:
+    // /data/local/tmp/flutter_gemma_test/.
     try {
       final data = await rootBundle.load('assets/test/test_image.jpg');
       _testImage = data.buffer.asUint8List();
@@ -1188,8 +1189,18 @@ void main() {
     const modelName = 'embeddinggemma-300M_seq256_mixed-precision.tflite';
     const tokenizerName = 'sentencepiece.model';
     EmbeddingModel? embModel;
+    final macosRoot = Platform.isMacOS
+        ? macosStagedRoot([modelName, tokenizerName])!
+        : null;
 
     Future<String> resolveAsset(String name) async {
+      if (macosRoot != null) {
+        final f = File('$macosRoot/$name');
+        if (f.existsSync()) return f.path;
+        final bytes = await rootBundle.load('assets/test/$name');
+        await f.writeAsBytes(bytes.buffer.asUint8List());
+        return f.path;
+      }
       // Host/Android-pushed path first, then bundled asset fallback.
       final local = _localPath(name);
       if (local != null && File(local).existsSync()) return local;

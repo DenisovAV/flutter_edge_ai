@@ -1,7 +1,7 @@
 // 0.15.2 RAG smoke test — both embedding model families.
 //
-// On macOS, prefers local files in ~/models with container Documents fallback
-// to skip downloads and exercise just the embedding inference path.
+// macOS: ~/models (container Documents fallback); other platforms: app
+// Documents.
 //
 // On Android the test pushes the files into the app sandbox via
 // adb-style `getApplicationDocumentsDirectory()` staging, then loads
@@ -20,7 +20,7 @@ import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedRoot;
 
 // Pre-stage these files in the platform sandbox before running:
-//   macOS: ~/models/ (example container Documents fallback)
+//   macOS: ~/models (container Documents fallback)
 //   Android: adb push <file> /data/data/dev.flutterberlin.flutter_gemma_example/app_flutter/
 // The fallback uses `getApplicationDocumentsDirectory()`, so sandboxed macOS
 // and Android runs still read from their application Documents directory.
@@ -47,8 +47,8 @@ double _cosine(List<double> a, List<double> b) {
   return dot / (math.sqrt(na) * math.sqrt(nb));
 }
 
-/// Resolve one complete model + tokenizer set. macOS prefers `~/models`, with
-/// container Documents fallback; other platforms use application Documents.
+/// Resolve one complete model + tokenizer set. macOS: ~/models (container
+/// Documents fallback); other platforms: app Documents.
 Future<(String, String)> _artifactPaths(
   String modelName,
   String tokenizerName,

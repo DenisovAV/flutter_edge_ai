@@ -7,7 +7,7 @@
 //       the NPU, and the screen test then requires backend npu.
 //   --dart-define=TINY_ISLAND_EMBEDDER_FILE=<a local copy of that bundle>
 //       checked against the catalog's SHA-256; on macOS prefer a path under
-//       ~/models. A sandboxed build may use its container Documents directory.
+//       macOS: ~/models (container Documents fallback).
 //       Unset: the bundle is downloaded (ungated).
 
 import 'dart:io';

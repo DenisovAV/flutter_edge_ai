@@ -10,7 +10,7 @@
 //
 // Needs a libLiteRtLm with section 16: a local prebuilt from `build_macos.sh`
 // (`build_ios.sh` on iOS) until a native release carries it. Gemma 4 E2B:
-// macOS from ~/models, falling back to the example's container Documents;
+// macOS: ~/models (container Documents fallback);
 // iOS via `--dart-define=IOS_TEST_DOCS_DIR=<host dir>` on the simulator or the
 // app's Documents on a device; Android in /data/local/tmp/flutter_gemma_test.
 //

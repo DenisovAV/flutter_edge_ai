@@ -25,8 +25,8 @@
 //   how long the native send call holds the calling isolate on a switch, and
 //   memory and turn time over OPEN_SWITCHES switches.
 //
-// Models: macOS in ~/models with the example's container Documents as a
-// fallback, Linux ~/models, Windows %USERPROFILE%\models, Android
+// Models: macOS in ~/models (container Documents fallback), Linux ~/models,
+// Windows %USERPROFILE%\models, Android
 // /data/local/tmp/flutter_gemma_test.
 //
 // Run, one backend at a time:

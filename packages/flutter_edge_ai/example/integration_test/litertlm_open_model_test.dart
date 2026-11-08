@@ -5,7 +5,7 @@
 /// runs next to them, they close in reverse order, and one is opened again.
 ///
 /// Prerequisites: `gemma-4-E2B-it.litertlm` where litertlm_ffi_test.dart
-/// looks for it (macOS: ~/models with container Documents fallback), else it
+/// looks for it (macOS: ~/models (container Documents fallback)), else it
 /// is downloaded. For the NPU on Windows Lunar Lake,
 /// pass the LNL bundle: `--dart-define=NPU_MODEL=C:\...\gemma4_2b_lnl.litertlm`
 /// and add `npu` to ORDER.

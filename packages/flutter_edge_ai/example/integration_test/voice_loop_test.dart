@@ -53,9 +53,9 @@ final _hfToken = _hfTokenStandard.isNotEmpty
     : _hfTokenLegacy;
 
 /// Prefer a device-local staged model file (no network, no token) — the
-/// convention the other integration tests use. macOS prefers `~/models` with
-/// container Documents fallback; the other platforms use their established
-/// staging locations.
+/// convention the other integration tests use. macOS: ~/models (container
+/// Documents fallback); other desktop and iOS: app Documents; Android:
+/// /data/local/tmp/flutter_gemma_test/.
 /// Returns null when no staged file is present (CI → network install).
 Future<String?> _stagedLlmPath() =>
     stagedModelPath('gemma3-1b-it-int4.litertlm');
@@ -114,10 +114,9 @@ void main() {
           reason:
               'No device-local staged LLM and no HuggingFace token, so the '
               'gated network fallback cannot authenticate. Stage the model '
-              '(Android: adb push to '
-              '/data/local/tmp/flutter_gemma_test/gemma3-1b-it-int4.litertlm; '
-              'macOS prefers ~/models, with container Documents fallback; '
-              'other desktop/iOS: app documents dir) or pass '
+              '(macOS: ~/models (container Documents fallback); other '
+              'desktop and iOS: app Documents; Android: '
+              '/data/local/tmp/flutter_gemma_test/) or pass '
               '--dart-define=HUGGINGFACE_TOKEN=...',
         );
         await llm

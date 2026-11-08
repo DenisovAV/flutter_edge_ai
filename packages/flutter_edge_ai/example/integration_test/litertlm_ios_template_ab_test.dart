@@ -26,8 +26,7 @@
 // Sampling is greedy (topK: 1 on both calls), so a difference is the prompt's
 // doing.
 //
-// Stage a bundle in ~/models. Sandboxed builds fall back to the example app's
-// container Documents directory.
+// macOS: ~/models (container Documents fallback).
 //
 // Run:
 //   flutter test integration_test/litertlm_ios_template_ab_test.dart -d macos

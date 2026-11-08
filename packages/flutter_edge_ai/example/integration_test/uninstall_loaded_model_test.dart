@@ -4,8 +4,8 @@
 //
 // Model functiongemma-270M-it.litertlm, staged as for
 // install_rule_device_test.dart: Android /data/local/tmp/flutter_gemma_test/,
-// macOS prefers ~/models with container Documents fallback; Linux uses
-// ~/models and Windows uses %USERPROFILE%\models.
+// macOS: ~/models (container Documents fallback); Linux: ~/models; Windows:
+// %USERPROFILE%\models.
 // Run: flutter test integration_test/uninstall_loaded_model_test.dart -d <id>
 //
 // No setUp/setUpAll: each test prepares itself, so a failure is reported as

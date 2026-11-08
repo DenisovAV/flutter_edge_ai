@@ -9,7 +9,8 @@
 //
 // Stage first:
 //   inflect_{text_encoder,decoder}_fp16.tflite + inflect_fixture.bin
-//   into ~/models (with container Documents fallback).
+//   macOS: ~/models (container Documents fallback); other platforms: app
+//   Documents.
 // Run: cd packages/flutter_edge_ai/example && \
 //   flutter test integration_test/inflect_tts_test.dart -d macos
 import 'dart:io';
@@ -82,8 +83,9 @@ void main() {
           File(p).existsSync(),
           isTrue,
           reason:
-              'stage the complete Inflect reference set at $root; macOS '
-              'prefers ~/models, with container Documents fallback',
+              'stage the complete Inflect reference set at $root; macOS: '
+              '~/models (container Documents fallback); other platforms: '
+              'app Documents.',
         );
       }
 
@@ -168,8 +170,9 @@ void main() {
           File(f).existsSync(),
           isTrue,
           reason:
-              'stage the complete Inflect end-to-end set at $root; macOS '
-              'prefers ~/models, with container Documents fallback',
+              'stage the complete Inflect end-to-end set at $root; macOS: '
+              '~/models (container Documents fallback); other platforms: '
+              'app Documents.',
         );
       }
 

@@ -4,8 +4,7 @@
 // padding (it is) — see translategemma_gpu_probe_test.dart for the narrower
 // "does the GPU path work at all" check.
 //
-// Stage a bundle in ~/models. Sandboxed builds fall back to the example app's
-// container Documents directory.
+// macOS: ~/models (container Documents fallback).
 //
 // Run (defaults to the int4 TranslateGemma bundle):
 //   flutter test integration_test/translategemma_backend_matrix_test.dart -d macos

@@ -15,8 +15,7 @@
 // then apply fixes and confirm they pass.
 //
 // Prerequisites:
-//   Copy a .litertlm model to ~/models. Sandboxed builds fall back to the
-//   example app's container Documents directory.
+//   macOS: ~/models (container Documents fallback).
 //
 // Run:
 //   cd example
@@ -60,7 +59,8 @@ void main() {
     if (!File(modelPath).existsSync()) {
       fail(
         'Model not found: $modelPath\n'
-        'Copy a .litertlm model to ~/models/$_modelFileName',
+        'Stage $_modelFileName; macOS: ~/models '
+        '(container Documents fallback).',
       );
     }
   });

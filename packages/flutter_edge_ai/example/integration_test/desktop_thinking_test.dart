@@ -2,8 +2,7 @@
 // Run with: cd example && flutter test integration_test/desktop_thinking_test.dart -d macos
 //
 // Prerequisites:
-//   Copy gemma-4-E2B-it.litertlm to ~/models. Sandboxed builds fall back to
-//   the example app's container Documents directory.
+//   macOS: ~/models (container Documents fallback).
 
 import 'dart:io';
 

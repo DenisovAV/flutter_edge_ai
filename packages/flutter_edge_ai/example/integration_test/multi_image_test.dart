@@ -6,7 +6,7 @@
 /// - Backward compat: `Message.withImage(single)` still works
 ///
 /// Prerequisites:
-///   macOS:   gemma-4-E2B-it.litertlm in ~/models/ (container fallback)
+///   macOS:   gemma-4-E2B-it.litertlm in ~/models (container Documents fallback)
 ///   Android: adb push gemma-4-E2B-it.litertlm /data/local/tmp/flutter_gemma_test/
 ///   iOS:     downloaded via FlutterEdgeAi.installModel()
 ///

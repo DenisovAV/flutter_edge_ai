@@ -1,3 +1,6 @@
+## 0.6.1
+- README: why the web is unsupported, and where an app can read its WASM memory (#788).
+
 ## 0.6.0
 - Windows: `memorySnapshot()` reads `kernel32`; `gpuMemory()` returns null there (#698).
 

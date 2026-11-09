@@ -88,6 +88,10 @@ The platforms enforce memory differently, and the numbers reflect it:
 - **`MemoryReadException`** means the value should exist and the read failed: a kernel error, a permission or I/O error, or a file that lacks a field it always carries. On Linux this includes a confined app (a Snap under AppArmor) that is refused `/proc/self/smaps_rollup`; on Windows, a `K32GetProcessMemoryInfo` that fails with every struct size, a reply that lacks a field every Windows writes, or one whose private working set is larger than its working set.
 - **`UnsupportedError`** is thrown by `memorySnapshot()` and `gpuMemory()` off Android, iOS, macOS, Linux and Windows, rather than returning empty values.
 
+## Web
+
+On the web both calls throw `UnsupportedError`, because the browser does not expose the memory a model uses. On Chrome, neither `performance.memory` nor `performance.measureUserAgentSpecificMemory()` (which exists only on a cross-origin isolated page) counted a `WebAssembly.Memory` or a WebGPU buffer ([#788](https://github.com/DenisovAV/flutter_edge_ai/issues/788)). An app that holds a `WebAssembly.Memory` can read its `buffer.byteLength`, but that is the size the memory has grown to: it never shrinks, so it does not fall when a model closes, and an engine's own memory is usually inside its module, out of the app's reach. GPU memory is not observable from a page.
+
 ## Platforms
 
 Android, iOS, macOS, Linux and Windows. Everything is read through `dart:io` and `dart:ffi`, so the package has no Kotlin, Swift, Gradle, podspec or CMake, and no dependency on `flutter_edge_ai` itself: it measures the process, whichever engine runs in it.

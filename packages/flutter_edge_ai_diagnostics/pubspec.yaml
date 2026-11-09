@@ -1,6 +1,6 @@
 name: flutter_edge_ai_diagnostics
 description: "Opt-in Android, iOS, macOS, Linux and Windows process memory diagnostics: footprint or commit, its peak, resident file-backed pages and available memory, read from the OS."
-version: 0.6.0
+version: 0.6.1
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_diagnostics
 topics: [memory, diagnostics, gemma, on-device]

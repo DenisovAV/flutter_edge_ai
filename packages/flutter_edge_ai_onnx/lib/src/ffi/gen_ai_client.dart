@@ -936,7 +936,7 @@ String genAiGuidanceSchema(JsonSchemaResponseFormat format) => jsonEncode({
   },
 });
 
-/// Whether ORT-GenAI 0.17.0's archive for [abi], as `hook/build.dart` bundles
+/// Whether ORT-GenAI 0.19.0's archive for [abi], as `hook/build.dart` bundles
 /// it, was built with guidance (llguidance). Read from the archives
 /// themselves: Microsoft's macOS arm64, Linux x64, Windows x64 and Windows
 /// ARM64 builds link llguidance in (its symbols and `GuidanceLogitsProcessor`
@@ -978,7 +978,7 @@ String? guidanceRefusalOf(GenAiClient client, {ffi.Abi? abi}) {
   }
   final host = abi ?? ffi.Abi.current();
   if (!genAiArchiveHasGuidance(host)) {
-    return 'The ORT-GenAI 0.17.0 runtime bundled for $host is built without '
+    return 'The ORT-GenAI runtime bundled for $host is built without '
         'guidance (llguidance), so a format cannot be enforced there. It is '
         'enforced on macOS arm64.';
   }
@@ -1135,13 +1135,13 @@ typedef _WgetenvNative =
 typedef _WgetenvDart =
     ffi.Pointer<ffi.Void> Function(ffi.Pointer<pkg_ffi.Utf16>);
 
-/// The variable ORT-GenAI 0.17.0 reads to turn its Microsoft 1DS telemetry off.
+/// The variable ORT-GenAI (0.17.0 and later) reads to turn its Microsoft 1DS telemetry off.
 const _telemetryVariable = 'ORT_DISABLE_TELEMETRY';
 
 /// Turns ORT-GenAI's telemetry off before its library is opened, unless the
 /// app already set [_telemetryVariable] to something (its value is kept).
 ///
-/// 0.17.0 ships Microsoft's 1DS telemetry on every host, on by default and with
+/// Since 0.17.0 ORT-GenAI ships Microsoft's 1DS telemetry on every host, on by default and with
 /// the OneCollector endpoint compiled in; 0.14.0 had none. For an on-device
 /// package it is off here, and the variable has to be set in the process
 /// environment the C runtime sees: `setenv` on POSIX and, on Windows,

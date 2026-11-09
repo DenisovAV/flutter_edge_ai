@@ -19,6 +19,26 @@ int _argmaxOf(List<double> values) {
   return bestIndex;
 }
 
+/// The direct DFT that [powerSpectrum] replaced (#784), kept verbatim as the
+/// oracle: the Bluestein path must agree with it for the nFft the profiles use
+/// (whisper 400, parakeet 512) and for others. Deliberately the naive
+/// O(nFft^2) loop — an FFT checked against an FFT would prove nothing.
+Float32List _directDftPowerSpectrum(Float32List windowedFrame, int nFft) {
+  final nBins = nFft ~/ 2 + 1;
+  final power = Float32List(nBins);
+  for (var k = 0; k < nBins; k++) {
+    var re = 0.0, im = 0.0;
+    final angleStep = -2 * math.pi * k / nFft;
+    for (var t = 0; t < nFft; t++) {
+      final angle = angleStep * t;
+      re += windowedFrame[t] * math.cos(angle);
+      im += windowedFrame[t] * math.sin(angle);
+    }
+    power[k] = re * re + im * im;
+  }
+  return power;
+}
+
 void main() {
   group('applyHannWindow', () {
     test('endpoints are near zero, center is near one (periodic Hann)', () {
@@ -53,6 +73,64 @@ void main() {
       expect(_argmaxOf(power), 0);
       expect(power[0], greaterThan(power[1] * 100));
     });
+
+    // Sizes no profile uses: n=1 (an FFT of length 1), odd lengths, and powers
+    // of two, where M = 2*nFft is the tightest no-alias size.
+    test('agrees with the direct DFT oracle for other sizes', () {
+      final random = math.Random(815);
+      for (final nFft in [1, 2, 3, 7, 256, 257, 1024]) {
+        for (var frame = 0; frame < 4; frame++) {
+          final samples = Float32List(nFft);
+          for (var i = 0; i < nFft; i++) {
+            samples[i] = random.nextDouble() * 2 - 1;
+          }
+          final expected = _directDftPowerSpectrum(samples, nFft);
+          final actual = powerSpectrum(samples, nFft);
+          expect(actual.length, expected.length, reason: 'nFft=$nFft');
+          for (var k = 0; k < expected.length; k++) {
+            final tolerance = 1e-5 * math.max(expected[k].abs(), 1.0);
+            expect(
+              (actual[k] - expected[k]).abs(),
+              lessThanOrEqualTo(tolerance),
+              reason: 'nFft=$nFft frame=$frame bin=$k',
+            );
+          }
+        }
+      }
+    });
+
+    test('rejects a frame that is not nFft long', () {
+      expect(() => powerSpectrum(Float32List(401), 400), throwsStateError);
+      expect(() => powerSpectrum(Float32List(399), 400), throwsStateError);
+      expect(() => powerSpectrum(Float32List(0), 0), throwsStateError);
+    });
+
+    for (final nFft in [400, 512]) {
+      test('agrees with the direct DFT oracle for nFft=$nFft', () {
+        // Random frames rather than a tone: a tone only lights up two bins, so
+        // it would leave the chirp's leakage and the mirrored kernel untested.
+        final random = math.Random(20261109 + nFft);
+        for (var frame = 0; frame < 32; frame++) {
+          final samples = Float32List(nFft);
+          for (var i = 0; i < nFft; i++) {
+            samples[i] = random.nextDouble() * 2 - 1;
+          }
+          final expected = _directDftPowerSpectrum(samples, nFft);
+          final actual = powerSpectrum(samples, nFft);
+          expect(actual.length, expected.length);
+          for (var k = 0; k < expected.length; k++) {
+            // Relative to the bin's own magnitude; a plain absolute epsilon
+            // would be meaningless at whisper's power scale (~1e3).
+            final tolerance = 1e-5 * math.max(expected[k].abs(), 1.0);
+            expect(
+              (actual[k] - expected[k]).abs(),
+              lessThanOrEqualTo(tolerance),
+              reason: 'nFft=$nFft frame=$frame bin=$k',
+            );
+          }
+        }
+      });
+    }
   });
 
   group('stftFrames', () {
@@ -132,7 +210,7 @@ void main() {
             final diff = (actual[i] - expected[i]).abs();
             if (diff > maxAbsDiff) maxAbsDiff = diff;
           }
-          // Direct DFT vs torch's FFT + float32 vs float64 accumulation over 400
+          // Bluestein vs torch's FFT + float32 vs float64 accumulation over 400
           // terms/bin; normalized values are roughly in [-1, ~1] after whisper's
           // (x+4)/4 scaling, so 1e-2 absolute is generous enough to tolerate
           // implementation-level float noise while still catching a genuinely
@@ -279,7 +357,7 @@ void main() {
         final diff = (actual[i] - expected[i]).abs();
         if (diff > maxAbsDiff) maxAbsDiff = diff;
       }
-      // Direct DFT (Dart) vs numpy's FFT (Python reference) + float32 vs
+      // Bluestein (Dart) vs numpy's FFT (Python reference) + float32 vs
       // float64 accumulation over 257 bins/mel, then divided by a per-bin std
       // (which amplifies small numerator diffs when std is small). The measured
       // float-noise floor for the CORRECT (ddof=1) code vs this golden is
@@ -326,6 +404,148 @@ void main() {
         isTrue,
         reason: 'silence must not produce NaN/inf features',
       );
+    });
+  });
+
+  group('MelFilterSpans', () {
+    // (asset, nBins, non-zero multiplies per frame). The counts are the point:
+    // the bundled filterbanks are ~2.4% dense, which is why the windowed
+    // projection is worth it. If an asset is regenerated, re-derive them.
+    for (final (asset, nBins, multiplies) in [
+      ('whisper_mel_80', 201, 391),
+      ('nemo_mel_80', 257, 500),
+    ]) {
+      test('matches the dense matmul bit for bit ($asset)', () {
+        const nMels = 80;
+        final filters = loadMelFilterAsset(asset);
+        expect(filters.length, nMels * nBins);
+        final spans = MelFilterSpans(filters, nMels: nMels, nBins: nBins);
+        expect(spans.multiplicationCount, multiplies);
+
+        final random = math.Random(4242);
+        for (var frame = 0; frame < 8; frame++) {
+          final power = Float32List(nBins);
+          for (var b = 0; b < nBins; b++) {
+            power[b] = random.nextDouble() * 100;
+          }
+          final actual = Float32List(nMels);
+          spans.apply(power, actual);
+          // A dense reference that stores into float32 exactly as `apply`
+          // does: the two must be the same bits, not merely close.
+          final dense = Float32List(nMels);
+          for (var m = 0; m < nMels; m++) {
+            var sum = 0.0;
+            for (var b = 0; b < nBins; b++) {
+              sum += filters[m * nBins + b] * power[b];
+            }
+            dense[m] = sum;
+          }
+          expect(actual, dense, reason: '$asset frame=$frame');
+        }
+      });
+    }
+
+    // Neither bundled bank has a gap inside a filter, an empty row, or a
+    // non-zero at the first or last bin, so a synthetic one covers those paths.
+    test('matches the dense matmul on gaps, empty rows and edge bins', () {
+      const nMels = 4, nBins = 6;
+      final filters = Float32List.fromList([
+        0.5, 0.0, 0.25, 0.0, 0.0, 0.0, // starts at bin 0, gap inside
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // empty row
+        0.0, 0.0, 0.0, 0.0, 0.75, 1.0, // ends at the last bin
+        0.0, 0.125, 0.0, 0.0, 0.0, 0.5, // gap spanning most of the row
+      ]);
+      final spans = MelFilterSpans(filters, nMels: nMels, nBins: nBins);
+      expect(spans.multiplicationCount, 3 + 0 + 2 + 5);
+      final power = Float32List.fromList([1.5, 2.0, 3.0, 5.0, 7.0, 11.0]);
+      final actual = Float32List(nMels);
+      spans.apply(power, actual);
+      final dense = Float32List(nMels);
+      for (var m = 0; m < nMels; m++) {
+        var sum = 0.0;
+        for (var b = 0; b < nBins; b++) {
+          sum += filters[m * nBins + b] * power[b];
+        }
+        dense[m] = sum;
+      }
+      expect(actual, dense);
+      expect(actual, [0.75 + 0.75, 0.0, 5.25 + 11.0, 0.25 + 5.5]);
+    });
+
+    // StateError, not ArgumentError: the STT worker reports an ArgumentError to
+    // the app as a bad transcribe argument. It also tells these refusals apart
+    // from the IndexError an unchecked read would throw (an ArgumentError).
+    test('rejects a filterbank that is not nMels * nBins', () {
+      final filters = loadMelFilterAsset('nemo_mel_80'); // 80 * 257
+      expect(
+        () => MelFilterSpans(filters, nMels: 80, nBins: 201),
+        throwsStateError,
+      );
+      expect(
+        () => MelFilterSpans(Float32List(0), nMels: 0, nBins: 257),
+        throwsStateError,
+      );
+      expect(
+        () => MelFilterSpans(filters, nMels: 80, nBins: 257),
+        returnsNormally,
+      );
+    });
+
+    test('apply rejects a wrong power length or output positions that do not '
+        'fit, before writing anything', () {
+      final spans = MelFilterSpans(
+        loadMelFilterAsset('nemo_mel_80'),
+        nMels: 80,
+        nBins: 257,
+      );
+      final ones = Float32List(257)..fillRange(0, 257, 1.0);
+      for (final (power, outLength, offset, stride) in [
+        (Float32List(256), 80, 0, 1),
+        (Float32List(258)..fillRange(0, 258, 1.0), 80, 0, 1),
+        (ones, 79, 0, 1),
+        (ones, 80, 1, 1),
+        (ones, 80, -1, 1),
+        (ones, 80, 0, 0),
+      ]) {
+        final out = Float32List(outLength)..fillRange(0, outLength, -1.0);
+        expect(
+          () => spans.apply(power, out, offset: offset, stride: stride),
+          throwsStateError,
+          reason: 'power ${power.length}, out $outLength, $offset/$stride',
+        );
+        expect(
+          out.every((v) => v == -1.0),
+          isTrue,
+          reason: 'nothing written: power ${power.length}, out $outLength',
+        );
+      }
+    });
+  });
+
+  group('window caches', () {
+    test('hannWindowSymmetric is built once per length', () {
+      final first = hannWindowSymmetric(400);
+      expect(identical(hannWindowSymmetric(400), first), isTrue);
+      expect(identical(hannWindowSymmetric(512), first), isFalse);
+    });
+
+    test('the cached hannWindowSymmetric is read-only', () {
+      final window = hannWindowSymmetric(400);
+      final before = window[200];
+      expect(() => window[200] = 0, throwsUnsupportedError);
+      expect(hannWindowSymmetric(400)[200], before);
+    });
+
+    test('applyHannWindow applies the periodic window', () {
+      final frame = Float32List.fromList([
+        for (var i = 0; i < 400; i++) (i % 7) - 3.0,
+      ]);
+      final first = applyHannWindow(frame);
+      expect(applyHannWindow(frame), first);
+      for (var i = 0; i < 400; i++) {
+        final w = 0.5 - 0.5 * math.cos(2 * math.pi * i / 400);
+        expect(first[i], closeTo(frame[i] * w, 1e-6));
+      }
     });
   });
 }

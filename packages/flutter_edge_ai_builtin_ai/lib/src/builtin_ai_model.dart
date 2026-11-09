@@ -49,7 +49,7 @@ void _warnThinkingIgnoredOnce() {
   );
 }
 
-// flutter_local_ai 0.3.0's own `openSession` defaults. It takes no null
+// flutter_local_ai's own `openSession` defaults (0.3.0 and 0.4.0). It takes no null
 // temperature or top-k, so an unset one is sent as these, as built-in AI
 // always has: the OS models' own defaults are out of reach until it does, and
 // an invented top-k could exceed a browser's `maxTopK`, which Chrome 151+ no

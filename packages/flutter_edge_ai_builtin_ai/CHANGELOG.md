@@ -1,3 +1,6 @@
+## 0.4.1
+- Require `flutter_local_ai` ^0.4.0 for context limits and Apple launch fixes.
+
 ## 0.4.0
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and image support.
 - `responseFormat` wired to Apple, Chrome and Windows schemas; each refused until its device run.

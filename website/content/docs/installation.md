@@ -33,7 +33,7 @@ dependencies:
   flutter_edge_ai_sqlite: ^2.1.1            # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
 
   # Optional — on-device speech (STT + TTS):
-  flutter_edge_ai_speech: ^0.6.0               # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
+  flutter_edge_ai_speech: ^0.6.1               # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
 
   # Optional — on-device agent skills:
   flutter_edge_ai_agent: ^0.4.2                # agent skills the model runs itself (text / JS / native-intent / MCP)

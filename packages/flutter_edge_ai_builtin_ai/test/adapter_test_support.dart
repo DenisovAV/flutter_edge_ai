@@ -19,8 +19,9 @@ import 'package:flutter_edge_ai/engine.dart'
         ModelType,
         RuntimeConfig;
 import 'package:flutter_local_ai/flutter_local_ai.dart'
-    show LocalAiAvailability;
+    show LocalAiAvailability, LocalAiGenerationOverrides;
 import 'package:flutter_local_ai/testing.dart' show FakeLocalAiHost;
+import 'package:flutter_test/flutter_test.dart' show pumpEventQueue;
 
 /// The spec the engine is meant to claim. [fileType] is a parameter so a
 /// suite can hand the engine a spec that belongs to another engine.
@@ -119,4 +120,66 @@ class TurnOrderHost extends FakeLocalAiHost {
     for (final call in calls)
       if (call == 'addImage' || call == 'addQueryChunk') call,
   ];
+}
+
+/// A host whose structured calls wait until the test answers them.
+///
+/// [FakeLocalAiHost.generateStructuredResponse] answers at once, so a stop, a
+/// cancel or a close can never land while its turn is running. Like the real
+/// hosts, a stop here only asks: the call settles later, when the test calls
+/// [settleStopped] (Apple fails a cancelled request, Windows fails it as
+/// cancelled, Chrome answers '').
+class PendingStructuredHost extends FakeLocalAiHost {
+  /// The call in flight, completed by the test.
+  Completer<String>? pending;
+
+  /// When set, [stopGeneration] throws it (after recording the call).
+  Object? stopError;
+
+  /// When set, closing a session fails the call in flight first, as an OS
+  /// does with a request on a session it is tearing down.
+  bool failCallOnClose = false;
+
+  @override
+  Future<void> closeSession(int sessionId) async {
+    final call = pending;
+    if (failCallOnClose && call != null && !call.isCompleted) {
+      call.completeError(StateError('session $sessionId was released'));
+      // The failure reaches the adapter before the close returns.
+      await pumpEventQueue();
+    }
+    return super.closeSession(sessionId);
+  }
+
+  @override
+  Future<String> generateStructuredResponse({
+    required int sessionId,
+    required String schemaJson,
+    LocalAiGenerationOverrides? overrides,
+  }) {
+    // Recorded (schema included) through the fake, whose answer is dropped.
+    unawaited(
+      super.generateStructuredResponse(
+        sessionId: sessionId,
+        schemaJson: schemaJson,
+        overrides: overrides,
+      ),
+    );
+    return (pending = Completer<String>()).future;
+  }
+
+  @override
+  Future<void> stopGeneration(int sessionId) async {
+    await super.stopGeneration(sessionId);
+    final error = stopError;
+    if (error != null) throw error;
+  }
+
+  /// Fails the call in flight as a cancelled request, as Apple does once its
+  /// task has unwound.
+  void settleStopped() =>
+      pending!.completeError(StateError('cancelled at the model'));
+
+  /// How many stops reached the host.
+  int get stops => calls.where((call) => call == 'stopGeneration').length;
 }

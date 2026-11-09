@@ -2,8 +2,8 @@
 // bundle ships, read from the file's header and LlmMetadata section (#572). Before
 // flutter_edge_ai 2.2 core always sent `topK: 1` and overrode it.
 //
-// Stage the models in the app documents dir (desktop/iOS) or
-// /data/local/tmp/flutter_gemma_test/ (Android):
+// macOS: ~/models (container Documents fallback); other desktop and iOS: app
+// Documents; Android: /data/local/tmp/flutter_gemma_test/.
 //   Qwen3-0.6B.litertlm       litert-community/Qwen3-0.6B (ships a sampler)
 //   gemma-4-E2B-it.litertlm   litert-community/gemma-4-E2B-it-litert-lm (none)
 //
@@ -28,7 +28,14 @@ const _backendName = String.fromEnvironment(
 Future<FfiInferenceModel> _load(String file, ModelType modelType) async {
   await registerTestEngines();
   final path = await stagedModelPath(file);
-  expect(path, isNotNull, reason: 'stage $file first');
+  expect(
+    path,
+    isNotNull,
+    reason:
+        'stage $file; macOS: ~/models (container Documents fallback); other '
+        'desktop and iOS: app Documents; Android: '
+        '/data/local/tmp/flutter_gemma_test/.',
+  );
   await FlutterEdgeAi.installModel(
     modelType: modelType,
     fileType: ModelFileType.litertlm,
@@ -41,7 +48,7 @@ Future<FfiInferenceModel> _load(String file, ModelType modelType) async {
 }
 
 Future<String> _reply(InferenceModel model) async {
-  final chat = await model.createChat();
+  final chat = await model.openChat();
   await chat.addQueryChunk(
     const Message(text: 'Name one planet. One word.', isUser: true),
   );
@@ -60,7 +67,14 @@ void main() {
   // the read does not need one.
   testWidgets('Qwen3: the bundle sampler is read', (tester) async {
     final path = await stagedModelPath('Qwen3-0.6B.litertlm');
-    expect(path, isNotNull, reason: 'stage Qwen3-0.6B.litertlm first');
+    expect(
+      path,
+      isNotNull,
+      reason:
+          'stage Qwen3-0.6B.litertlm; macOS: ~/models (container Documents '
+          'fallback); other desktop and iOS: app Documents; Android: '
+          '/data/local/tmp/flutter_gemma_test/.',
+    );
     final read = await tryReadBundleSampler(path!);
     expect(read.error, isNull);
     expect(

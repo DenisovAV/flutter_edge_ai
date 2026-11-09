@@ -5,7 +5,7 @@
 // path_provider, a native library or a device. Not exported.
 
 import 'dart:ffi' show Abi;
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_stack_manifest.dart';
 import 'ffi/npu_vendor_host.dart';
+import 'ffi/open_session_backing.dart';
 import 'litert_lm_log_level.dart';
 import 'npu_stacks.dart';
 
@@ -35,17 +36,24 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
   String get abi => '${Abi.current()}';
 
   @override
-  Future<NpuStackCheck> stack(NpuVendor vendor) => _npu.stack(vendor);
+  Future<NpuStackCheck> stack(NpuStack vendor) => _npu.stack(vendor);
 
   /// On Android it opens a vendor library.
   @override
-  String? unreachable(NpuVendor vendor) => _npu.unreachable(vendor);
+  String? unreachable(NpuStack vendor) => _npu.unreachable(vendor);
 
   /// On Android it extracts the vendor's libraries out of the APK when the
   /// installer did not.
   @override
-  Future<String> prepareDispatchDir(NpuVendor vendor) =>
+  Future<String> prepareDispatchDir(NpuStack vendor) =>
       _npu.prepareDispatchDir(vendor);
+
+  /// The GPU family of an Android device, told by the device node its driver
+  /// exposes (`/dev/kgsl-3d0` Adreno, `/dev/mali0` Mali, `/dev/pvr_sync`
+  /// PowerVR); null elsewhere.
+  AndroidGpuFamily? androidGpuFamily() => Platform.isAndroid
+      ? androidGpuFamilyFrom((path) => File(path).existsSync())
+      : null;
 
   /// A client for one backend attempt.
   LiteRtLmFfiClient createClient() => LiteRtLmFfiClient();
@@ -66,6 +74,7 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
     required int? activationDataType,
     required NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
+    required int? thinkingTokenBudget,
   }) => client.initialize(
     modelPath: modelPath,
     backend: backend,
@@ -80,6 +89,7 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
     activationDataType: activationDataType,
     npuDispatch: npuDispatch,
     nativeLogLevel: nativeLogLevel,
+    thinkingTokenBudget: thinkingTokenBudget,
   );
 }
 

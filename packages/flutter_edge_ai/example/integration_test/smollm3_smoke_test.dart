@@ -5,10 +5,13 @@
 library;
 
 import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _file = 'SmolLM3-3B_q4_block32_ekv4096.litertlm';
 const _url =
@@ -16,9 +19,7 @@ const _url =
 
 String? _localPath() {
   if (Platform.isAndroid) return '/data/local/tmp/flutter_gemma_test/$_file';
-  if (Platform.isMacOS) {
-    return '${Platform.environment['HOME']}/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/$_file';
-  }
+  if (Platform.isMacOS) return macosStagedFilePath(_file);
   if (Platform.isLinux) return '${Platform.environment['HOME']}/models/$_file';
   if (Platform.isIOS) {
     const d = String.fromEnvironment('IOS_TEST_DOCS_DIR');
@@ -35,7 +36,7 @@ Future<String> _run(PreferredBackend backend) async {
     maxTokens: 2048,
     preferredBackend: backend,
   );
-  final session = await _model!.createSession(temperature: 0.7, topK: 40);
+  final session = await _model!.openSession(temperature: 0.7, topK: 40);
   await session.addQueryChunk(
     const Message(text: 'Name three primary colors.', isUser: true),
   );

@@ -1,0 +1,105 @@
+import 'dart:async';
+
+import 'package:flutter_edge_ai/engine.dart';
+
+/// [text] as an [EngineTurn] whose `end` says how the turn ended, for a
+/// session that knows when it was stopped or closed.
+///
+/// - [stopped]: the consumer asked during this turn (`stopGeneration()`); a
+///   cancelled subscription is a stop too.
+/// - [closed]: the session or its model was closed during this turn, or the
+///   stream failed with an error [isCloseError] recognises as the close's.
+///
+/// An error that a stop or a close causes is not the turn's error: the text
+/// ends there, cleanly, with what was generated — whether or not the source
+/// ever ends (iOS sends no end after a cancelled generation) — and `end`
+/// says why, so core's chat keeps the partial reply (and raises for a close,
+/// decision H). Any other error stays on the text.
+///
+/// As the session SPI requires (core 2.6.0 design §3), `end` never completes
+/// with an error and completes after the text is done, whether the text
+/// ended normally or with an error, and also when the consumer cancels it.
+/// When neither a stop nor a close ended the turn, `end` is what [completed]
+/// returns, called once the text has ended, so it can read a record the
+/// engine writes at the end of the turn: after an error too (LiteRT-LM: a
+/// turn native ended `context_full` fails with `ContextLimitException`, and
+/// its end is [TurnEnd.contextLimit]).
+EngineTurn reportedEngineTurn(
+  Stream<String> text, {
+  required bool Function() stopped,
+  required bool Function() closed,
+  bool Function(Object error)? isCloseError,
+  required TurnEnd Function() completed,
+}) {
+  final end = Completer<TurnEnd>();
+
+  // A session already closed when the turn starts fails it with its own
+  // error; that is not a close during the turn.
+  final closedAtStart = closed();
+  bool closedNow() => !closedAtStart && closed();
+  var closeSeen = false;
+  TurnEnd how() => stopped()
+      ? TurnEnd.stopped
+      : closeSeen || closedNow()
+      ? TurnEnd.closed
+      : completed();
+
+  StreamSubscription<String>? source;
+  late final StreamController<String> out;
+  var ending = false;
+
+  /// Closes the text, then completes `end` with [how].
+  Future<void> endAs(TurnEnd how) async {
+    if (ending) return;
+    ending = true;
+    try {
+      await out.close();
+    } finally {
+      if (!end.isCompleted) end.complete(how);
+    }
+  }
+
+  out = StreamController<String>(
+    onListen: () {
+      source = text.listen(
+        out.add,
+        onError: (Object error, StackTrace stack) {
+          if (isCloseError?.call(error) ?? false) {
+            closeSeen = true;
+          } else if (!stopped() && !closedNow()) {
+            out.addError(error, stack);
+            return;
+          }
+          // The stop's or the close's own error ends the turn here.
+          unawaited(source?.cancel());
+          unawaited(endAs(how()));
+        },
+        onDone: () => unawaited(endAs(how())),
+      );
+    },
+    onPause: () => source?.pause(),
+    onResume: () => source?.resume(),
+    // Also runs once the text has delivered its done; only a cancel before
+    // that is the consumer's stop.
+    onCancel: () async {
+      final stop = !ending;
+      try {
+        await source?.cancel();
+      } finally {
+        if (stop && !end.isCompleted) end.complete(TurnEnd.stopped);
+      }
+    },
+  );
+  return EngineTurn(text: out.stream, end: end.future);
+}
+
+/// What a LiteRT-LM turn that ran to its end reports when no turn-end record
+/// says how: a placeholder. The web runtime (`@litert-lm/core` 0.18) has no
+/// such record, and natively it is missing only on a libLiteRtLm without
+/// `patch_c_api.sh` section 23, which the release gate refuses. Without it a
+/// natural end cannot be told from `maxOutputTokens`, nor a full context in
+/// decode from either, so a session with a cap reports [TurnEnd.outputLimit]
+/// (the safe side) and one without [TurnEnd.endOfSequence]. An engine whose
+/// ends are guessed keeps `StructuredOutputSupport.none`.
+TurnEnd liteRtLmPlaceholderCompletedEnd(int? maxOutputTokens) =>
+    maxOutputTokens == null ? TurnEnd.endOfSequence : TurnEnd.outputLimit;

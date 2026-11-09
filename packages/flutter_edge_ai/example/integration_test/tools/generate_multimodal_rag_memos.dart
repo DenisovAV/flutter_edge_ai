@@ -8,9 +8,9 @@
 //   Inflect-Nano-v2 take turns, and one of the lines is a question the Live
 //   tab must catch.
 //
-// Step 1 — synthesize on macOS (writes <documents>/knowledge_memos/*.wav at
-// Matcha's own rate, 22.05 kHz; on macOS <documents> is
-// ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents):
+// Step 1 — synthesize on macOS (writes
+// <application Documents>/knowledge_memos/*.wav at Matcha's own rate,
+// 22.05 kHz):
 //
 //   cd packages/flutter_edge_ai/example
 //   flutter test integration_test/tools/generate_knowledge_memos.dart -d macos
@@ -20,7 +20,7 @@
 // encoder and Gemma 4's audio input work at:
 //
 //   python3 -I integration_test/tools/convert_knowledge_memos.py \
-//     ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/knowledge_memos
+//     '<application Documents>/knowledge_memos'
 //
 // Installs Matcha from Hugging Face when it is not installed (a no-op when it
 // is). Matcha samples noise, so a rerun writes different bytes; the committed

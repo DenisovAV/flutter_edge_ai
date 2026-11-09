@@ -1,54 +1,31 @@
-// Standalone library: the MediaPipe-web inference model + session + prompt
-// parts, extracted from core's `flutter_edge_ai_web.dart`. Consumes the shared
-// public web infra that STAYS in core (the web model sources from
-// `engine_web.dart`, `detectImageMimeType` from `engine.dart`) plus the sibling
-// MediaPipe JS interop (`llm_inference_web.dart`).
+// Standalone library: the MediaPipe-web inference model, extracted from core's
+// `flutter_edge_ai_web.dart`. Consumes the shared public web infra that STAYS in
+// core (the web model sources from `engine_web.dart`, `detectImageMimeType`
+// from `engine.dart`) plus the sibling MediaPipe JS interop
+// (`llm_inference_web.dart`). The session and its prompt parts live in
+// `web_model_session.dart` and `web_prompt.dart`.
 import 'dart:async';
-import 'package:flutter_edge_ai/engine.dart';
-import 'package:flutter_edge_ai/engine_web.dart';
-import 'dart:convert';
 import 'dart:js_interop';
-import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-// WebInferenceModel.activeBackend overrides the [InferenceModel] contract, whose
-// type is core's PreferredBackend (from core's platform_types.dart).
+import 'package:flutter_edge_ai/engine.dart';
+import 'package:flutter_edge_ai/engine_web.dart';
 
 import '../mediapipe_sampling.dart';
+import 'llm_inference_backend.dart';
 import 'llm_inference_web.dart';
+import 'task_chat_format.dart';
+import 'web_chat_template.dart';
+import 'web_file_prefix.dart';
+import 'web_model_session.dart';
+import 'web_prompt.dart';
+
+export 'web_model_session.dart' show WebModelSession;
+export 'web_prompt.dart'
+    show AudioPromptPart, ImagePromptPart, PromptPart, TextPromptPart;
 
 /// Whether the "topP is ignored" warning was printed in this isolate.
 bool _topPIgnoredWarned = false;
-
-/// Base class for prompt parts (text, image, audio)
-abstract class PromptPart {}
-
-/// Text prompt part
-class TextPromptPart extends PromptPart {
-  final String text;
-  TextPromptPart(this.text);
-}
-
-/// Image prompt part with data URL
-class ImagePromptPart extends PromptPart {
-  final String dataUrl;
-  ImagePromptPart(this.dataUrl);
-
-  /// Create ImagePromptPart from Uint8List bytes
-  factory ImagePromptPart.fromBytes(Uint8List bytes) {
-    final base64String = base64Encode(bytes);
-    final mimeType = detectImageMimeType(bytes);
-    final dataUrl = 'data:$mimeType;base64,$base64String';
-    return ImagePromptPart(dataUrl);
-  }
-}
-
-/// Audio prompt part with raw audio bytes
-/// For Gemma 3n E4B models - supports PCM audio (16kHz, 16-bit, mono)
-class AudioPromptPart extends PromptPart {
-  final Uint8List audioBytes;
-  AudioPromptPart(this.audioBytes);
-}
 
 class WebInferenceModel extends InferenceModel with CloseNotifier {
   final VoidCallback onClose;
@@ -69,7 +46,18 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
   final bool supportImage; // Enabling image support
   final bool supportAudio; // Enabling audio support (Gemma 3n E4B)
   final int? maxNumImages;
-  Completer<InferenceModelSession>? _initCompleter;
+
+  /// The loaded model. It belongs to the model, not to a session: each
+  /// [createSession] starts a new conversation on it.
+  Future<LlmInference>? _llmFuture;
+
+  /// One per loaded model: it knows when the last call has ended, which a
+  /// session that comes after a stopped one must wait for.
+  LlmInferenceBackend? _backend;
+
+  /// The chat format the loaded file declares, or the one its [modelType]
+  /// implies; null when neither is known.
+  WebChatTemplate? _template;
   @override
   InferenceModelSession? session;
 
@@ -86,11 +74,48 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     this.maxConcurrentSessions,
   });
 
-  /// Cap on concurrent [openSession] sessions; null = unlimited. Accepted
-  /// for API symmetry. The MediaPipe web `.task` path doesn't support
-  /// concurrent sessions yet (openSession inherits the interface's
-  /// UnsupportedError), so this is currently informational.
+  /// Cap on the sessions open at once through [openSession]; null =
+  /// unlimited. The legacy [session] does not count.
   final int? maxConcurrentSessions;
+
+  /// The sessions [openSession] opened and nobody has closed yet.
+  final Set<WebModelSession> _openSessions = {};
+
+  /// Open sessions still waiting for the model to load: they count against
+  /// [maxConcurrentSessions] from the check on, so two calls that overlap
+  /// cannot both pass it.
+  int _openingSessions = 0;
+
+  @override
+  List<InferenceModelSession> get engineSessions => [
+    ?session,
+    ..._openSessions,
+  ];
+
+  /// [openChat]'s unset model type, image and audio support are this
+  /// model's own (D8); the rest keeps core's defaults.
+  @override
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) =>
+      ResolvedChatRequest(
+        modelType: request.modelType ?? modelType,
+        supportImage: request.supportImage ?? supportImage,
+        supportAudio: request.supportAudio ?? supportAudio,
+        supportsFunctionCalls: request.supportsFunctionCalls ?? false,
+        tools: request.tools,
+        maxFunctionBufferLength:
+            request.maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
+        temperature: request.temperature,
+        randomSeed: request.randomSeed,
+        topK: request.topK,
+        topP: request.topP,
+        tokenBuffer: request.tokenBuffer,
+        loraPath: request.loraPath,
+        enableThinking: request.enableThinking,
+        toolChoice: request.toolChoice,
+        systemInstruction: request.systemInstruction,
+        maxOutputTokens: request.maxOutputTokens,
+        responseFormat: request.responseFormat,
+      );
 
   @override
   Future<InferenceModelSession> createSession({
@@ -107,6 +132,77 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
         const [], // Tools wired through chat.dart prompt; SDK tools_json N/A on web
     int? maxOutputTokens,
   }) async {
+    final sampling = _sessionSampling(
+      temperature: temperature,
+      randomSeed: randomSeed,
+      topK: topK,
+      topP: topP,
+      enableVisionModality: enableVisionModality,
+      enableAudioModality: enableAudioModality,
+      enableThinking: enableThinking,
+      maxOutputTokens: maxOutputTokens,
+    );
+
+    // One call at a time from here on. Two calls that arrive during the first
+    // load both continue when it ends; the second would close the session the
+    // first is about to return.
+    final turn = _sessionLane;
+    final done = Completer<void>();
+    _sessionLane = done.future;
+    try {
+      await turn;
+      // Closed before this call's turn came: a load now would build a new
+      // LlmInference that nothing ever closes.
+      _requireOpen();
+      final llm = await _loadModel(
+        sampling,
+        loraPath,
+        explicit: temperature != null || topK != null || randomSeed != null,
+      );
+      // Closed while it loaded: close() has already released what it had, so
+      // a session built now would sit on a model that is gone.
+      if (_isClosed) {
+        throw StateError('The model was closed while it was loading.');
+      }
+
+      // Like the mobile model: a new session closes the one before it and
+      // starts a clean conversation. MediaPipe web keeps nothing between
+      // calls, so the conversation lives in the session, and a session that
+      // outlived its chat would carry that chat into the next one.
+      if (session case final previous?) {
+        await previous.close();
+        // Closed while the previous session closed: close() has already let
+        // go of the backend, so a session now would outlive the model.
+        _requireOpen();
+      }
+      late final WebModelSession created;
+      created = _newSession(
+        llm,
+        systemInstruction: systemInstruction,
+        onClose: () {
+          // A closed session leaves [sessions]; a later one is not touched.
+          if (identical(session, created)) session = null;
+          onClose();
+        },
+      );
+      return session = created;
+    } finally {
+      done.complete();
+    }
+  }
+
+  /// The arguments of a new session: warns about the ones the web path
+  /// ignores, and resolves the sampling, which throws for values it rejects.
+  ResolvedSampling _sessionSampling({
+    required double? temperature,
+    required int? randomSeed,
+    required int? topK,
+    required double? topP,
+    required bool? enableVisionModality,
+    required bool? enableAudioModality,
+    required bool enableThinking,
+    required int? maxOutputTokens,
+  }) {
     // Thinking mode not supported on Web (MediaPipe has no extraContext/channels API)
     if (enableThinking) {
       if (kDebugMode) {
@@ -123,11 +219,16 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
       );
     }
 
-    // TODO: Implement vision modality for web
-    if (enableVisionModality == true) {
+    // Web images work, but through the model's supportImage, which sets
+    // maxNumImages on the LlmInference below; enableVisionModality does not
+    // turn them on. An image sent to a model created without supportImage
+    // throws ArgumentError in addQueryChunk.
+    if (enableVisionModality == true && !supportImage) {
       if (kDebugMode) {
         edgeAiLog(
-          'Warning: Vision modality is not yet implemented for web platform',
+          '[MediaPipe Web] Warning: vision modality requested, but the model '
+          'was created without supportImage: true; an image message will '
+          'throw ArgumentError.',
         );
       }
     }
@@ -143,7 +244,7 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
 
     // Resolved before anything loads: values it rejects must not fetch a
     // model or open its reader. A `.task` file carries no sampler, so an unset
-    // field comes from the family defaults. MediaPipe web 0.10.29 has no topP
+    // field comes from the family defaults. MediaPipe web 0.10.30 has no topP
     // option; it is passed and dropped.
     final sampling = resolveMediaPipeSampling(
       SamplingParams(
@@ -164,76 +265,221 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
         'has no top-p. Shown once.',
       );
     }
+    return sampling;
+  }
 
-    if (_initCompleter case Completer<InferenceModelSession> completer) {
-      return completer.future;
+  WebModelSession _newSession(
+    LlmInference llm, {
+    required String? systemInstruction,
+    required VoidCallback onClose,
+  }) => WebModelSession(
+    backend: _backend ??= LlmInferenceBackend(llm),
+    modelType: modelType,
+    fileType: fileType,
+    supportImage: supportImage, // Enabling image support
+    supportAudio: supportAudio, // Enabling audio support
+    systemInstruction: systemInstruction,
+    template: _template,
+    maxImages: supportImage ? (maxNumImages ?? 1) : null,
+    onClose: onClose,
+  );
+
+  /// A session of its own over the one loaded model: its conversation is its
+  /// own, and each of its turns sends that whole conversation. The sessions
+  /// share the model's `LlmInference`, so their calls run one at a time, in
+  /// the order they were made; a stop or a close ends only this session's
+  /// call. The sampling and LoRA are the model's: the first session that
+  /// loads it sets them, as for [createSession], and a later one that asks
+  /// for others is told once (printed).
+  @override
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    _requireOpen();
+    final cap = maxConcurrentSessions;
+    if (cap != null && _openSessions.length + _openingSessions >= cap) {
+      throw StateError(
+        'Max concurrent sessions ($cap) reached. Close an existing session '
+        'before opening a new one.',
+      );
     }
-    final completer = _initCompleter = Completer<InferenceModelSession>();
+    final sampling = _sessionSampling(
+      temperature: request.temperature,
+      randomSeed: request.randomSeed,
+      topK: request.topK,
+      topP: request.topP,
+      enableVisionModality: request.enableVisionModality,
+      enableAudioModality: request.enableAudioModality,
+      enableThinking: request.enableThinking,
+      maxOutputTokens: request.maxOutputTokens,
+    );
+    final LlmInference llm;
+    _openingSessions++;
     try {
-      // Shared resolver handles activeModel lookup + storage-mode branch.
-      // Used identically by the LiteRT-LM web model in flutter_edge_ai_litertlm.
-      final resolved = await sourceResolver.resolveActiveInferenceModel();
-
-      final fileset = await FilesetResolver.forGenAiTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29/wasm'.toJS,
-      ).toDart;
-
-      // LoRA path comes from the resolver alongside the model source.
-      final loraPathToUse = loraPath ?? resolved.loraPath;
-      final hasLoraParams = loraPathToUse != null && loraRanks != null;
-
-      // MediaPipe consumes either modelAssetPath (Blob URL string) or
-      // modelAssetBuffer (ReadableStreamDefaultReader, for OPFS streaming).
-      final baseOptions = switch (resolved.model) {
-        BlobUrlModelSource(:final url) => LlmInferenceBaseOptions(
-          modelAssetPath: url,
-        ),
-        OpfsStreamModelSource() => LlmInferenceBaseOptions(
-          modelAssetBuffer: await (resolved.model as OpfsStreamModelSource)
-              .openReader(),
-        ),
-      };
-
-      final config = LlmInferenceOptions(
-        baseOptions: baseOptions,
-        maxTokens: maxTokens,
-        randomSeed: sampling.randomSeed,
-        topK: sampling.topK,
-        temperature: sampling.temperature,
-        topP: sampling.topP,
-        supportedLoraRanks: !hasLoraParams
-            ? null
-            : Int32List.fromList(loraRanks!).toJS,
-        loraPath: !hasLoraParams ? null : loraPathToUse,
-        maxNumImages: supportImage ? (maxNumImages ?? 1) : null,
+      llm = await _loadModel(
+        sampling,
+        request.loraPath,
+        explicit:
+            request.temperature != null ||
+            request.topK != null ||
+            request.randomSeed != null,
       );
+    } finally {
+      _openingSessions--;
+    }
+    // Closed while it loaded: close() has already released what it had, so
+    // a session built now would sit on a model that is gone.
+    if (_isClosed) {
+      throw StateError('The model was closed while it was loading.');
+    }
+    late final WebModelSession session;
+    session = _newSession(
+      llm,
+      systemInstruction: request.systemInstruction,
+      onClose: () => _openSessions.remove(session),
+    );
+    _openSessions.add(session);
+    return session;
+  }
 
-      final llmInference = await LlmInference.createFromOptions(
-        fileset,
-        config,
-      ).toDart;
+  /// Ends when the [createSession] call before the current one has returned.
+  Future<void> _sessionLane = Future<void>.value();
 
-      session = WebModelSession(
-        modelType: modelType,
-        fileType: fileType,
-        llmInference: llmInference,
-        supportImage: supportImage, // Enabling image support
-        supportAudio: supportAudio, // Enabling audio support
-        systemInstruction: systemInstruction,
-        onClose: onClose,
-      );
+  void _requireOpen() {
+    if (_isClosed) throw StateError('The model is closed.');
+  }
 
-      completer.complete(session);
-      // `await` so the future stays inside this try. It is already completed
-      // with `session` on the line above, so this changes no behaviour today —
-      // but returning a Future unawaited from a try block means the catch
-      // below would not see an error it carried.
-      return await completer.future;
-    } catch (e, st) {
-      _initCompleter = null;
-      completer.completeError(e, st);
+  /// Loads the model once; callers that arrive while it loads share the load.
+  /// The sampling and LoRA of the first session are the ones the model keeps:
+  /// MediaPipe sets them on the `LlmInference`, which every session shares. A
+  /// later session that asks for others is told once per model.
+  Future<LlmInference> _loadModel(
+    ResolvedSampling sampling,
+    String? loraPath, {
+    required bool explicit,
+  }) async {
+    var pending = _llmFuture;
+    final first = pending == null;
+    if (pending == null) {
+      pending = _llmFuture = _createModel(sampling, loraPath);
+      _loadedWith = (sampling: sampling, explicit: explicit);
+    }
+    final LlmInference llm;
+    try {
+      llm = await pending;
+    } catch (_) {
+      if (identical(_llmFuture, pending)) {
+        _llmFuture = null;
+        _loadedWith = null;
+        _loadedLora = null;
+      }
       rethrow;
     }
+    // After the load: the LoRA it applied is known only then.
+    if (!first) _warnIfIgnored(sampling, loraPath, explicit: explicit);
+    return llm;
+  }
+
+  /// The sampling the loaded model was created with, and whether its caller
+  /// set any of it.
+  ({ResolvedSampling sampling, bool explicit})? _loadedWith;
+
+  /// The LoRA the loaded model applied: the request's or the installed one,
+  /// and only with [loraRanks]; null for none.
+  String? _loadedLora;
+  bool _ignoredWarned = false;
+
+  /// Prints once per model when a later session asks for a sampling or a
+  /// LoRA other than the loaded ones, and the caller chose either side. topP
+  /// is left out: MediaPipe web has none, which is said on its own.
+  void _warnIfIgnored(
+    ResolvedSampling sampling,
+    String? loraPath, {
+    required bool explicit,
+  }) {
+    final loaded = _loadedWith;
+    if (loaded == null || _ignoredWarned) return;
+    String describe(ResolvedSampling s) =>
+        'temperature ${s.temperature}, topK ${s.topK}, randomSeed '
+        '${s.randomSeed}';
+    final asked = <String>[];
+    final kept = <String>[];
+    final other = loaded.sampling;
+    if ((explicit || loaded.explicit) &&
+        (other.temperature != sampling.temperature ||
+            other.topK != sampling.topK ||
+            other.randomSeed != sampling.randomSeed)) {
+      asked.add(describe(sampling));
+      kept.add(describe(other));
+    }
+    final applied = _loadedLora;
+    if (loraPath != null && loraPath != applied) {
+      asked.add('LoRA $loraPath');
+      kept.add(applied == null ? 'no LoRA' : 'LoRA $applied');
+    }
+    if (asked.isEmpty) return;
+    _ignoredWarned = true;
+    // Printed, because a release build is where it gets reported and
+    // edgeAiLog is silent there.
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_mediapipe] WARNING: a session asks for '
+      '${asked.join('; ')}, but every session of this web model shares the '
+      'LlmInference loaded with ${kept.join('; ')}. Close and reload the '
+      'model to change it. Shown once per model.',
+    );
+  }
+
+  Future<LlmInference> _createModel(
+    ResolvedSampling sampling,
+    String? loraPath,
+  ) async {
+    // Shared resolver handles activeModel lookup + storage-mode branch.
+    // Used identically by the LiteRT-LM web model in flutter_edge_ai_litertlm.
+    final resolved = await sourceResolver.resolveActiveInferenceModel();
+
+    _template = await resolveWebChatTemplate(
+      readPrefix: () =>
+          readModelPrefix(resolved.model, taskMetadataPrefixBytes),
+      modelType: modelType,
+    );
+
+    final fileset = await FilesetResolver.forGenAiTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30/wasm'.toJS,
+    ).toDart;
+
+    // LoRA path comes from the resolver alongside the model source.
+    final loraPathToUse = loraPath ?? resolved.loraPath;
+    final hasLoraParams = loraPathToUse != null && loraRanks != null;
+    _loadedLora = hasLoraParams ? loraPathToUse : null;
+
+    // MediaPipe consumes either modelAssetPath (Blob URL string) or
+    // modelAssetBuffer (ReadableStreamDefaultReader, for OPFS streaming).
+    final baseOptions = switch (resolved.model) {
+      BlobUrlModelSource(:final url) => LlmInferenceBaseOptions(
+        modelAssetPath: url,
+      ),
+      OpfsStreamModelSource() => LlmInferenceBaseOptions(
+        modelAssetBuffer: await (resolved.model as OpfsStreamModelSource)
+            .openReader(),
+      ),
+    };
+
+    final config = LlmInferenceOptions(
+      baseOptions: baseOptions,
+      maxTokens: maxTokens,
+      randomSeed: sampling.randomSeed,
+      topK: sampling.topK,
+      temperature: sampling.temperature,
+      topP: sampling.topP,
+      supportedLoraRanks: !hasLoraParams
+          ? null
+          : Int32List.fromList(loraRanks!).toJS,
+      loraPath: !hasLoraParams ? null : loraPathToUse,
+      maxNumImages: supportImage ? (maxNumImages ?? 1) : null,
+    );
+
+    return LlmInference.createFromOptions(fileset, config).toDart;
   }
 
   /// The teardown in progress, shared by every caller of [close]: a second
@@ -256,455 +502,33 @@ class WebInferenceModel extends InferenceModel with CloseNotifier {
     _isClosed = true;
     await session?.close();
     session = null;
-    _initCompleter = null;
-    onClose();
-    fireCloseListeners();
-  }
-}
-
-class WebModelSession extends InferenceModelSession {
-  final ModelType modelType;
-  final ModelFileType fileType;
-  final LlmInference llmInference;
-  final VoidCallback onClose;
-  final bool supportImage; // Enabling image support
-  final bool supportAudio; // Enabling audio support (Gemma 3n E4B)
-  StreamController<String>? _controller;
-  final List<PromptPart> _promptParts = [];
-
-  final String? systemInstruction;
-  bool _systemInstructionSent = false;
-
-  WebModelSession({
-    required this.llmInference,
-    required this.onClose,
-    required this.modelType,
-    this.fileType = ModelFileType.task,
-    this.supportImage = false,
-    this.supportAudio = false,
-    this.systemInstruction,
-  });
-
-  @override
-  Future<int> sizeInTokens(String text) async {
-    final size = llmInference.sizeInTokens(text.toJS);
-    return size.toDartInt;
-  }
-
-  @override
-  Future<void> addQueryChunk(Message message) async {
-    if (kDebugMode) {
-      edgeAiLog(
-        '🟢 WebModelSession.addQueryChunk() called - hasImage: ${message.hasImage}, hasAudio: ${message.hasAudio}, supportImage: $supportImage, supportAudio: $supportAudio',
-      );
+    // A copy: each close removes its session from the set.
+    for (final open in _openSessions.toList()) {
+      await open.close();
     }
-
-    var messageToSend = message;
-    if (message.isUser &&
-        !_systemInstructionSent &&
-        systemInstruction != null &&
-        systemInstruction!.isNotEmpty) {
-      _systemInstructionSent = true;
-      messageToSend = message.copyWith(
-        text: '[System: ${systemInstruction!}]\n\n${message.text}',
-      );
-    }
-
-    final finalPrompt = messageToSend.transformToChatPrompt(
-      type: modelType,
-      fileType: fileType,
-    );
-
-    // Add image parts first, then audio, then text last.
-    if (message.hasImage) {
-      if (!supportImage) {
-        if (kDebugMode) {
-          edgeAiLog('🔴 Model does not support images - throwing exception');
-        }
-        throw ArgumentError('This model does not support images');
-      }
-
-      final images = message.images.isNotEmpty
-          ? message.images
-          : (message.imageBytes != null
-                ? [message.imageBytes!]
-                : const <Uint8List>[]);
-      for (final imageBytes in images) {
-        if (kDebugMode) {
-          edgeAiLog(
-            '🟢 Processing image: ${imageBytes.length} bytes',
-            level: EdgeAiLogLevel.verbose,
-          );
-        }
-        final imagePart = ImagePromptPart.fromBytes(imageBytes);
-        _promptParts.add(imagePart);
-        if (kDebugMode) {
-          edgeAiLog(
-            '🟢 Added image part with dataUrl length: ${imagePart.dataUrl.length}',
-          );
-        }
-      }
-    }
-
-    // Handle audio processing for web (Gemma 3n E4B)
-    if (message.hasAudio && message.audioBytes != null) {
-      if (kDebugMode) {
-        edgeAiLog(
-          '🎵 Processing audio: ${message.audioBytes!.length} bytes',
-          level: EdgeAiLogLevel.verbose,
-        );
-      }
-      if (!supportAudio) {
-        if (kDebugMode) {
-          edgeAiLog('🔴 Model does not support audio - throwing exception');
-        }
-        throw ArgumentError('This model does not support audio');
-      }
-      // Add audio part
-      final audioPart = AudioPromptPart(message.audioBytes!);
-      _promptParts.add(audioPart);
-      if (kDebugMode) {
-        edgeAiLog(
-          '🎵 Added audio part with ${message.audioBytes!.length} bytes',
-        );
-      }
-    }
-
-    // Add text part last so multimodal turns keep image/audio context first.
-    _promptParts.add(TextPromptPart(finalPrompt));
-    if (kDebugMode) {
-      edgeAiLog(
-        '🟢 Added text part: ${finalPrompt.substring(0, math.min(100, finalPrompt.length))}...',
-      );
-    }
-
-    if (kDebugMode) {
-      edgeAiLog(
-        '🟢 Total prompt parts: ${_promptParts.length}',
-        level: EdgeAiLogLevel.verbose,
-      );
-    }
-  }
-
-  /// Convert PromptParts to JavaScript array for MediaPipe
-  JSAny _createPromptArray() {
-    if (kDebugMode) {
-      edgeAiLog(
-        '🔧 _createPromptArray: Starting with ${_promptParts.length} prompt parts',
-      );
-    }
-
-    if (_promptParts.isEmpty) {
-      if (kDebugMode) {
-        edgeAiLog(
-          '📝 _createPromptArray: Empty prompt parts, returning empty string',
-        );
-      }
-      return ''.toJS; // Empty string fallback
-    }
-
-    // If only text parts, join them
-    if (_promptParts.every((part) => part is TextPromptPart)) {
-      final fullText = _promptParts
-          .cast<TextPromptPart>()
-          .map((part) => part.text)
-          .join('');
-      if (kDebugMode) {
-        edgeAiLog(
-          '📝 _createPromptArray: All text parts, returning string of length ${fullText.length}',
-        );
-        edgeAiLog(
-          '📝 _createPromptArray: Text preview: ${fullText.substring(0, math.min(100, fullText.length))}...',
-        );
-      }
-      return fullText.toJS;
-    }
-
-    // Multimodal: create array of parts following MediaPipe documentation format
-    if (kDebugMode) {
-      edgeAiLog(
-        '🎯 _createPromptArray: Multimodal mode - creating array with proper format',
-      );
-    }
-
-    final jsArray = <JSAny>[];
-
-    // Add conversation start token
-    jsArray.add('<ctrl99>user\n'.toJS);
-
-    for (int i = 0; i < _promptParts.length; i++) {
-      final part = _promptParts[i];
-
-      if (part is TextPromptPart) {
-        if (kDebugMode) {
-          edgeAiLog(
-            '📝 _createPromptArray: Adding text part: "${part.text.substring(0, math.min(50, part.text.length))}..."',
-          );
-        }
-        jsArray.add(part.text.toJS);
-      } else if (part is ImagePromptPart) {
-        if (kDebugMode) {
-          edgeAiLog(
-            '🖼️ _createPromptArray: Adding image part with data URL length: ${part.dataUrl.length}',
-          );
-          edgeAiLog(
-            '🖼️ _createPromptArray: Image data URL prefix: ${part.dataUrl.substring(0, math.min(50, part.dataUrl.length))}...',
-          );
-        }
-
-        // Create proper image object for MediaPipe
-        final imageObj = <String, String>{'imageSource': part.dataUrl}.jsify();
-        if (kDebugMode) {
-          edgeAiLog(
-            '🖼️ _createPromptArray: Created image object with jsify()',
-          );
-        }
-        jsArray.add(imageObj as JSAny);
-      } else if (part is AudioPromptPart) {
-        if (kDebugMode) {
-          edgeAiLog(
-            '🎵 _createPromptArray: Adding audio part with ${part.audioBytes.length} bytes',
-          );
-        }
-
-        // Create proper audio object for MediaPipe
-        // Audio is passed as raw PCM bytes (16kHz, 16-bit, mono)
-        final audioObj = <String, Object>{
-          'audioSource': part.audioBytes.buffer.asUint8List(),
-        }.jsify();
-        if (kDebugMode) {
-          edgeAiLog('🎵 _createPromptArray: Created audio object with jsify()');
-        }
-        jsArray.add(audioObj as JSAny);
-      } else {
-        if (kDebugMode) {
-          edgeAiLog(
-            '❌ _createPromptArray: Unsupported prompt part type: ${part.runtimeType}',
-          );
-        }
-        throw Exception('Unsupported prompt part type: $part');
-      }
-    }
-
-    // Add conversation end and model start tokens
-    jsArray.add('<ctrl100>\n<ctrl99>model\n'.toJS);
-
-    if (kDebugMode) {
-      edgeAiLog(
-        '✅ _createPromptArray: Created JS array with ${jsArray.length} elements (including control tokens)',
-      );
-      edgeAiLog('🎯 _createPromptArray: Array structure ready for MediaPipe');
-    }
-
-    return jsArray.toJS;
-  }
-
-  @override
-  Future<String> getResponse() async {
-    if (kDebugMode) {
-      edgeAiLog('🚀 getResponse: Starting response generation');
-    }
-
-    try {
-      final promptArray = _createPromptArray();
-
-      if (kDebugMode) {
-        edgeAiLog(
-          '🎯 getResponse: Prompt array type: ${promptArray.runtimeType}',
-        );
-        edgeAiLog('🎯 getResponse: Is JSString? ${promptArray is JSString}');
-      }
-
-      String response;
-
-      // Use appropriate method based on prompt type
-      if (promptArray is JSString) {
-        if (kDebugMode) {
-          edgeAiLog(
-            '📝 getResponse: Using generateResponse for text-only prompt',
-          );
-        }
-        response =
-            (await llmInference.generateResponse(promptArray, null).toDart)
-                .toDart;
-      } else {
-        if (kDebugMode) {
-          edgeAiLog(
-            '🖼️ getResponse: Using generateResponseMultimodal for multimodal prompt',
-          );
-        }
-        response =
-            (await llmInference
-                    .generateResponseMultimodal(promptArray, null)
-                    .toDart)
-                .toDart;
-      }
-
-      if (kDebugMode) {
-        edgeAiLog(
-          '✅ getResponse: Successfully generated response of length ${response.length}',
-        );
-        edgeAiLog(
-          '✅ getResponse: Response preview: ${response.substring(0, math.min(100, response.length))}...',
-        );
-      }
-
-      // Don't add response back to promptParts - that's handled by InferenceChat
-      return response;
-    } catch (e, stackTrace) {
-      if (kDebugMode) {
-        edgeAiLog('❌ getResponse: Exception caught: $e');
-        edgeAiLog('❌ getResponse: Stack trace: $stackTrace');
-      }
-      _promptParts.clear();
-      rethrow;
-    }
-  }
-
-  @override
-  Stream<String> getResponseAsync() {
-    if (kDebugMode) {
-      edgeAiLog('🌊 getResponseAsync: Starting async response generation');
-    }
-
-    // Close previous controller to prevent leak if called again before completion
-    _controller?.close();
-    _controller = StreamController<String>();
-
-    try {
-      final promptArray = _createPromptArray();
-
-      if (kDebugMode) {
-        edgeAiLog(
-          '🎯 getResponseAsync: Prompt array type: ${promptArray.runtimeType}',
-        );
-        edgeAiLog(
-          '🎯 getResponseAsync: Is JSString? ${promptArray is JSString}',
-        );
-      }
-
-      // Use appropriate method based on prompt type
-      if (promptArray is JSString) {
-        if (kDebugMode) {
-          edgeAiLog(
-            '📝 getResponseAsync: Using generateResponse for text-only prompt',
-          );
-        }
-        llmInference.generateResponse(
-          promptArray,
-          ((JSString partialJs, JSAny completeRaw) {
-            try {
-              final complete = completeRaw.parseBool();
-              final partial = partialJs.toDart;
-              if (kDebugMode) {
-                edgeAiLog(
-                  '📝 getResponseAsync: Received partial (complete: $complete): ${partial.substring(0, math.min(50, partial.length))}...',
-                );
-              }
-              _controller?.add(partial);
-              if (complete) {
-                if (kDebugMode) {
-                  edgeAiLog('✅ getResponseAsync: Text response completed');
-                }
-                _controller?.close();
-              }
-            } catch (e) {
-              if (kDebugMode) {
-                edgeAiLog('❌ getResponseAsync: Error in text callback: $e');
-              }
-              _controller?.addError(e);
-            }
-          }).toJS,
-        );
-      } else {
-        if (kDebugMode) {
-          edgeAiLog(
-            '🖼️ getResponseAsync: Using generateResponseMultimodal for multimodal prompt',
-          );
-        }
-        llmInference.generateResponseMultimodal(
-          promptArray,
-          ((JSString partialJs, JSAny completeRaw) {
-            try {
-              final complete = completeRaw.parseBool();
-              final partial = partialJs.toDart;
-              if (kDebugMode) {
-                edgeAiLog(
-                  '🖼️ getResponseAsync: Received multimodal partial (complete: $complete): ${partial.substring(0, math.min(50, partial.length))}...',
-                );
-              }
-              _controller?.add(partial);
-              if (complete) {
-                if (kDebugMode) {
-                  edgeAiLog(
-                    '✅ getResponseAsync: Multimodal response completed',
-                  );
-                }
-                _controller?.close();
-              }
-            } catch (e) {
-              if (kDebugMode) {
-                edgeAiLog(
-                  '❌ getResponseAsync: Error in multimodal callback: $e',
-                );
-              }
-              _controller?.addError(e);
-            }
-          }).toJS,
-        );
-      }
-    } catch (e, stackTrace) {
-      if (kDebugMode) {
-        edgeAiLog('❌ getResponseAsync: Exception during setup: $e');
-        edgeAiLog('❌ getResponseAsync: Stack trace: $stackTrace');
-      }
-      _controller?.addError(e);
-    }
-
-    return _controller!.stream;
-  }
-
-  @override
-  Future<void> stopGeneration() async {
-    try {
-      llmInference.cancelProcessing();
-    } catch (e) {
-      if (kDebugMode) {
-        edgeAiLog('[WebModelSession] cancelProcessing error: $e');
-      }
-    } finally {
-      _controller?.close();
-      _controller = null;
-      _promptParts.clear();
-    }
-  }
-
-  @override
-  SessionMetrics getSessionMetrics() {
-    // Web MediaPipe implementation doesn't expose detailed token metrics.
-    // Users can estimate using sizeInTokens() before/after generation.
-    return SessionMetrics();
-  }
-
-  @override
-  Future<void> close() async {
     // Cleanup MediaPipe LlmInference WASM resources (important for hot restart)
     // This prevents memory leaks and "memory access out of bounds" errors
     // Note: MediaPipe's close() will also release any OPFS stream readers internally
-    try {
-      llmInference.close();
-      if (kDebugMode) {
-        edgeAiLog('[WebModelSession] Cleaned up LlmInference resources');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        edgeAiLog('[WebModelSession] Warning: Error closing LlmInference: $e');
+    final loading = _llmFuture;
+    _llmFuture = null;
+    // Before the LlmInference closes: a call still queued must not reach it.
+    _backend?.close();
+    _backend = null;
+    if (loading != null) {
+      try {
+        (await loading).close();
+        if (kDebugMode) {
+          edgeAiLog('[WebInferenceModel] Cleaned up LlmInference resources');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          edgeAiLog(
+            '[WebInferenceModel] Warning: Error closing LlmInference: $e',
+          );
+        }
       }
     }
-
-    _promptParts.clear();
-    _controller?.close();
-    _controller = null;
     onClose();
+    fireCloseListeners();
   }
 }

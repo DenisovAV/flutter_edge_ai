@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-08",
+  "host": "android_arm64",
+  "device": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16",
+  "commit": "0143a2a5dd02c46172d0c419f01d2be281bf3e72",
+  "packages": {
+    "flutter_edge_ai": "2.6.0",
+    "flutter_edge_ai_litertlm": "1.20.0",
+    "flutter_edge_ai_speech": "0.6.0"
+  },
+  "native": "3660edae145e82a68b09860f1120d290032945715ccd361302f768cde689b99e",
+  "log_sha256": null,
+  "log_url": null,
+  "log_location": "Logs retained on Sasha's MacBook under /private/tmp/claude-501/-Users-sashadenisov-Work-1-flutter-gemma/44c8be93-6845-46c0-9448-a876536c2db2/scratchpad/and802/",
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "text"
+      ],
+      "gpu": [
+        "text"
+      ]
+    },
+    "gemma-4-e2b-it/npu-sm8750": {
+      "npu": [
+        "deterministic text"
+      ]
+    },
+    "matcha-tts/bundle": {
+      "cpu": [
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

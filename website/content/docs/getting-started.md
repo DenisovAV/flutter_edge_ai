@@ -33,7 +33,8 @@ only the engines, stores and features your app uses — see
 - **Backend Switching:** Choose CPU or GPU where supported, plus NPU for
   `.litertlm` on Qualcomm Android devices, Qualcomm Linux arm64 boards, Google
   Tensor G5/G6 Pixels and MediaTek Android devices (opt-in, see
-  [LiteRT-LM](/docs/litertlm)) and on Intel LunarLake/PantherLake Windows PCs.
+  [LiteRT-LM](/docs/litertlm)) and on Intel LunarLake/PantherLake Windows PCs. Which builds have run where:
+  the [Model Registry](/docs/registry).
 - **LoRA (MediaPipe `.task`):** Efficient fine-tuning and integration of LoRA (Low-Rank Adaptation) weights.
 - **Enhanced Downloads:** Smart retry logic with exponential backoff and automatic restart of interrupted downloads.
 - **Android Foreground Service:** opt in with `foreground: true` for large downloads to bypass the 9-minute timeout.
@@ -42,6 +43,20 @@ only the engines, stores and features your app uses — see
   storage. See [Embeddings & RAG](/docs/embeddings-and-rag).
 - **Web Persistent Caching:** Models persist across browser restarts using the Cache API (Web only).
 
+## What's new in 2.6
+
+- **Typed JSON replies** (`flutter_edge_ai` 2.6.0): `openSession` and
+  `openChat` accept `responseFormat`; engines advertise exact support and core
+  validates every completed reply. See [Structured JSON replies](#structured-json-replies).
+- **Native LiteRT-LM conversations** (`flutter_edge_ai_litertlm` 1.20.0):
+  verified native rows keep one conversation and KV cache per open session.
+- **Engine-owned turn recovery**: failed and refused turns roll back consistently,
+  and `ContextLimitException` distinguishes an input that never fit.
+- **Open APIs are canonical**: `createSession`, `createChat`, `session` and
+  `chat` remain compatible but are deprecated until core 3.0.0.
+- [Add your app to the showcase](/showcase/submit) — submit a shipped Flutter
+  Edge AI app for review.
+
 ## What's new in 2.5
 
 - **Several open models** (`flutter_edge_ai` 2.5.0, `flutter_edge_ai_litertlm`
@@ -49,7 +64,8 @@ only the engines, stores and features your app uses — see
   call, so one file can be open on CPU and GPU, or two files at once. See
   [Desktop](/docs/desktop#several-models-at-once).
 - **Deciders from a language model** (experimental, `flutter_edge_ai` 2.5.0 with
-  `flutter_edge_ai_litertlm` 1.16.0, native, `PreferredBackend.cpu` only):
+  `flutter_edge_ai_litertlm` 1.16.0, native, `PreferredBackend.cpu`; the GPU
+  too from 1.19.1, not the NPU):
   `InferenceModel.createDecider` scores the options on a `.litertlm` trained on
   the decision with LiteTune. See
   [Decisions](/docs/decisions#deciders-from-a-language-model).
@@ -63,6 +79,14 @@ only the engines, stores and features your app uses — see
 - **GGUF embeddings** (`flutter_edge_ai_llama` 0.0.3): `LlamaEmbeddingBackend`
   runs EmbeddingGemma 2 `.gguf` text embeddings natively. See
   [llama.cpp](/docs/llama).
+- **Several ONNX sessions** (`flutter_edge_ai_onnx` 0.8.0): native
+  `openSession`/`openChat` open independent sessions, each with its own
+  generator; at most 2 on Android and iOS unless `maxConcurrentSessions` says
+  otherwise. ORT-GenAI 0.17.0. See [ONNX](/docs/onnx).
+- **Windows memory diagnostics** (`flutter_edge_ai_diagnostics` 0.6.0):
+  `memorySnapshot()` on Windows. See [Diagnostics](/docs/diagnostics).
+- **llama.cpp on llamadart 0.17.5** (`flutter_edge_ai_llama` 0.0.6), with
+  Apple companion 0.17.3. See [llama.cpp](/docs/llama).
 
 ## What's new in 2.4
 
@@ -98,8 +122,8 @@ only the engines, stores and features your app uses — see
 - **Genkit 0.10.0** (`genkit_flutter_edge_ai`): tool `ref`s travel as call ids
   both ways; it requires `flutter_edge_ai` 2.4.0. See
   [Genkit](/docs/genkit#tool-calls).
-- **2.4.1 / `flutter_edge_ai_litertlm` 1.15.0:** Google Tensor G5/G6 NPUs on
-  Pixels, opt-in with `google_tensor_npu: true`; a stopped turn is rewound in
+- **2.4.1 / `flutter_edge_ai_litertlm` 1.15.0:** Google Tensor NPUs on
+  Pixels (run on G6, G5 not run), opt-in with `google_tensor_npu: true`; a stopped turn is rewound in
   place, so the chat keeps earlier images and audio; the Intel NPU on Windows
   loads its model again; a raw Gemma 4 tool call runs with typed arguments or
   not at all. See [LiteRT-LM](/docs/litertlm).
@@ -117,8 +141,8 @@ Upgrading from 2.3: see [Migration](/docs/migration).
   `ModelFileType.gguf` selects the optional [llama.cpp engine](/docs/llama),
   `flutter_edge_ai_llama`, on pub.dev since 0.0.1.
 - **EmbeddingGemma 2 on an Intel NPU** (`flutter_edge_ai_litertlm` 1.13.2): the
-  Panther Lake bundles run on Windows x64 with
-  `preferredBackend: PreferredBackend.npu`. See
+  Panther Lake bundles load on Windows x64 with
+  `preferredBackend: PreferredBackend.npu` (not yet run on an Intel NPU). See
   [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 - **Audio turns** (`flutter_edge_ai_speech` 0.5.7, `flutter_edge_ai_agent`
   0.2.10): `VoiceSession.runAudioTurn` gives the model the recording itself,
@@ -179,8 +203,8 @@ Upgrading from 2.3: see [Migration](/docs/migration).
 
 ## What's new in 2.1
 
-- **`enableThinking` replaces `isThinking`** on `createChat`, `createSession`
-  and `openSession` (breaking); `ModelRuntimeDefaults.isThinking` is
+- **`enableThinking` replaces `isThinking`** on `openChat` and `openSession`
+  (breaking); `ModelRuntimeDefaults.isThinking` is
   `thinkingDeclared`. New `ModelType.qwen35`. See [Migration](/docs/migration).
 - **Qualcomm NPU is opt-in** (`flutter_edge_ai_litertlm` 1.10.0): set
   `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:`,
@@ -332,7 +356,7 @@ final model = await FlutterEdgeAi.getActiveModel(
 );
 
 // Use model
-final chat = await model.createChat();
+final chat = await model.openChat();
 await chat.addQueryChunk(Message.text(
   text: 'Explain quantum computing',
   isUser: true,
@@ -385,7 +409,7 @@ wins, field by field. Pass `topK: 1` or `temperature: 0` for greedy decoding.
 Control model behavior with a system-level instruction:
 
 ```dart
-final chat = await model.createChat(
+final chat = await model.openChat(
   systemInstruction: 'You are a concise assistant. Always respond in bullet points.',
 );
 ```
@@ -448,17 +472,68 @@ On native `.litertlm` (except the NPU) a `maxTokens` below 1024 is clamped up to
 
 </Info>
 
+### Structured JSON replies
+
+Use `responseFormat` only with `openSession` or `openChat`; it is fixed for that
+session and every normally completed reply is checked.
+`ResponseFormat.jsonObject()` accepts any JSON object.
+`ResponseFormat.jsonSchema(...)` supports `type`, `properties`, `required`,
+`additionalProperties: false`, `items`, `enum`, `const`, `minItems`, `maxItems`,
+`minLength`, `maxLength`, `minimum`, `maximum`, plus the annotation-only
+`description`, `title` and `examples`. The root must declare one scalar `type`;
+unions, `$ref`, `$defs`, composition keywords, `pattern` and `format` are outside
+this dialect.
+
+```dart
+final format = ResponseFormat.jsonSchema({
+  'type': 'object',
+  'properties': {'summary': {'type': 'string', 'maxLength': 200}},
+  'required': ['summary'],
+  'additionalProperties': false,
+});
+final refusal = model.refusalFor(format);
+if (refusal != null) throw refusal;
+final chat = await model.openChat(responseFormat: format);
+try {
+  // Use the structured chat.
+} finally {
+  await chat.close();
+}
+```
+
+Read `model.structuredOutputSupport` after loading: it reports the keywords this
+exact engine/platform/backend enforces and `StructuredDelivery.incremental` or
+`.buffered`. `ResponseFormatUnsupportedException` means the format was refused.
+If generation ends cleanly but early with `TurnEnd.outputLimit`, `contextLimit`,
+`stopped` or `closed`, `IncompleteStructuredOutputException` carries that end
+and the partial text; a prompt that never fits fails with
+`ContextLimitException` instead. `NonConformingStructuredOutputException` means
+an engine accepted a format but ended normally with text that was not exactly
+one matching JSON value. Incremental text is emitted before the final validation
+error. Do not combine `responseFormat` with tools or `enableThinking: true`;
+core throws `ArgumentError` before opening the engine session.
+
 ### Concurrent Sessions (`openSession`)
 
 A single loaded model can serve several **independent** dialogues at once.
-`openSession()` returns a session with its own conversation history, detached
-from the legacy `model.session` singleton; `openChat()` is the same for the
-higher-level chat API. ONNX models and MediaPipe on web do not support it:
-`openSession()` throws `UnsupportedError` there.
+`openSession()` returns a session with its own conversation history;
+`openChat()` is the same for the higher-level chat API. Native ONNX has one ORT-GenAI generator per session,
+capped by `maxConcurrentSessions`; on the web each ONNX session keeps its own
+history on the one Transformers.js pipeline. MediaPipe on the web supports it
+too: its sessions share the one loaded model, take turns on it, and share the
+sampling and LoRA of the session that loaded it.
 
 The model weights (the big, expensive part — hundreds of MB to several GB) are
-loaded **once** and shared across every session; each session only adds its own
-lightweight conversation context.
+loaded **once** and shared across every session, but a session is not always
+lightweight. Native `.litertlm` sessions have one conversation and KV cache
+each on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, Qualcomm or
+Google Tensor NPUs on Android, and Intel NPUs on Windows. Linux Vulkan, Windows
+D3D12, iOS, Android CPU/PowerVR/MediaTek, and unverified Linux arm64
+accelerators instead use virtual sessions that replay full messages, including
+media, into one shared conversation. The web runtime is also virtual but
+remains text-only.
+Hybrid models such as LFM2 rebuild from full messages when recovery is needed
+and never rewind.
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
@@ -476,8 +551,8 @@ await chatB.generateChatResponse();
 await chatA.addQueryChunk(Message(text: 'What is my name?', isUser: true));
 print(await chatA.generateChatResponse()); // "Alice"
 
-model.sessions;               // all live sessions (legacy + open)
-await chatA.session.close();  // closing one leaves the others usable
+model.sessions;       // all live sessions
+await chatA.close();  // closing one leaves the others usable
 ```
 
 <Warning>
@@ -490,13 +565,60 @@ parallel on-device inference would contend for the accelerator and risk OOM.
 
 </Warning>
 
-**Memory:** each open session holds its own context (~100–500 MB depending on
-model + `maxTokens`). On phones with large models (Gemma 4 E2B+), several
-concurrent sessions can OOM. Cap the count with `maxConcurrentSessions:` on
-`getActiveModel(...)` — `openSession()` throws `StateError` past the cap.
+**Memory:** what an open session costs depends on the engine. A native
+`.litertlm` session holds its own KV cache: Gemma 4 E2B on an M5 Pro added
+36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the third session
+onward (the first two reused freed memory). A virtual `.litertlm`
+session keeps full message history instead and pays replay time when it becomes
+active. A MediaPipe `.task` session on Android or iOS holds its own KV cache (~100–500 MB depending
+on model + `maxTokens`), so on phones with large models (Gemma 4 E2B+) several
+concurrent sessions can OOM. GGUF sessions share one runtime with no separate
+native KV cache.
+An ONNX session on the web keeps only its history, resent on every turn.
+`.litertlm` on the web and built-in AI are not measured. Cap the count with
+`maxConcurrentSessions:` on `getActiveModel(...)` — `openSession()` throws
+`StateError` past the cap. A MediaPipe web session keeps only its history, in
+Dart, and resends it every turn; one session's turn waits for the other
+sessions' turns, however long they run, unless they are stopped.
 
-If you only ever have one conversation at a time, stick with the simpler
-`createSession()` / `createChat()` singleton API — you don't need this.
+For LiteRT-LM, MediaPipe, ONNX and llama.cpp, the legacy `createSession()` /
+`createChat()` lane does not consume the detached-session cap. Built-in AI
+instead applies the cap to every live underlying `flutter_local_ai` session,
+including its legacy singleton lane.
+
+`createSession()` and `createChat()` are deprecated in 2.6.0 and will be
+removed in 3.0.0. Do not use the legacy lane in new code.
+
+If you only ever have one conversation at a time, open one session or chat,
+keep its handle for that conversation, and close it when done.
+
+### Turn outcomes and chat history
+
+For a core-managed chat turn, a successful exchange stays in
+`chat.fullHistory`. A clean stopped turn also stays after it produced non-empty
+text; if it reaches the chat as stopped before the first non-empty text chunk,
+its staged input is taken back. Cancelling the response subscription directly
+does not itself apply that empty-stop rollback, so do not use cancellation as a
+history-reset operation.
+
+Any engine error on a core-managed turn takes the whole staged turn back,
+including a tool call emitted before the error. A hook-backed engine owns its
+transcript and balancing instead; the shipped llama.cpp hook rolls failed turns
+back, but its current plain stopped or cancelled turn is also rolled back even
+after text. Structured llama.cpp turns use core's guarded path and keep their
+partial reply.
+
+`ContextLimitException` means the engine refused the input because it did not
+fit the remaining context; nothing from that turn was committed. A clean
+`TurnEnd.contextLimit` is different: decoding filled the window, so the partial
+exchange stays. Reporting engines also use `endOfSequence` (natural end),
+`outputLimit` (`maxOutputTokens`), `stopped`, and `closed`; an engine that cannot
+distinguish ends may expose no `EngineTurn.end`.
+
+A reported close keeps partial text, then a plain core-managed chat throws
+`StateError`. A structured session reports every non-`endOfSequence` end with
+`IncompleteStructuredOutputException`, including `outputLimit`, a clean
+`contextLimit`, `stopped`, and `closed`.
 
 ## Managing Installed Models
 
@@ -522,26 +644,39 @@ await FlutterEdgeAi.uninstallStt();
 await FlutterEdgeAi.uninstallTts();
 ```
 
-To delete an inference model, or any model by filename, use `uninstallModel()`
-and clear the active inference identity if you removed the active one:
+Each first closes the model `getActiveEmbedder()`, `getActiveStt()` or
+`getActiveTts()` built from those files, including the one your app holds: a
+request already running finishes, and later calls on it throw. The next
+`getActive*()` call throws until a model is installed again, and then builds a
+new one.
+
+To delete an inference model, or any model by filename, use `uninstallModel()`.
+When the file belongs to the active inference model (the model or its LoRA), it
+also clears the active inference identity: `hasActiveModel()` is false and
+`getActiveModel()` throws `NoActiveModelError` instead of handing out the model
+of a deleted file. A directory model (ORT-GenAI, installed with
+`fromHuggingFace`) is uninstalled by its name, the `spec.name` its install
+returned: every file of it and its directory go.
+
+It first closes the model `getActiveModel()` built from that file, with its
+sessions and chats: a generation running on it stops early, with or without an
+error depending on the engine, and later calls on it throw. Models you opened
+with `openModel()` stay open; close them yourself:
 
 ```dart
-// Free in-memory handles first if the model is loaded.
-await model.close();
-
-// Delete the downloaded file + metadata (a fromFile file stays).
+// Closes the model getActiveModel() built from this file, deletes the
+// downloaded file + metadata (a fromFile file stays) and, if this was the
+// active model, clears the active inference identity.
 await FlutterEdgeAi.uninstallModel('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm');
-
-// Clear the persisted "active model" identity so it isn't auto-restored.
-await FlutterEdgeAi.clearActiveInferenceIdentity();
 ```
 
 <Info>
 
 `clearActiveInferenceIdentity()` wipes both the in-memory active spec and the
-persisted preference. Pair it with `uninstallModel()` only when the deleted model
-was the active one. The `uninstallEmbedder/Stt/Tts` helpers already clear the
-identity for you.
+persisted preference without deleting any file. `uninstallModel()` now does it
+for you when it removes a file of the active model; calling it afterwards, as
+earlier releases required, is still harmless. The `uninstallEmbedder/Stt/Tts`
+helpers clear their identity too.
 
 </Info>
 
@@ -557,7 +692,9 @@ final EmbeddingModelSpec? embedder = FlutterEdgeAi.activeEmbedderSpec;
 final SttModelSpec? stt = FlutterEdgeAi.activeSttSpec;
 final TtsModelSpec? tts = FlutterEdgeAi.activeTtsSpec;
 
-// Absolute on-device path of an installed file (a URL/OPFS handle on web):
+// Where an installed file is read from on the device: your own file for a
+// fromFile install, the app bundle for fromBundled on iOS, else core's copy.
+// On web it returns the file name itself, not a path or a URL.
 final path = await FlutterEdgeAi.getModelPath(
   'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
 );

@@ -152,7 +152,7 @@ void main() {
           RuntimeConfig(maxTokens: 1024, modelPath: modelFile.path),
         );
 
-        final session = await model.createSession(temperature: 0.7);
+        final session = await model.openSession(temperature: 0.7);
         await session.addQueryChunk(const Message(text: 'Hi', isUser: true));
         await session.getResponse();
 
@@ -163,6 +163,38 @@ void main() {
         });
       },
     );
+
+    test('maxConcurrentSessions reaches the model, and an app that sets none '
+        'gets the platform default', () async {
+      File(
+        '${tempDir.path}/genai_config.json',
+      ).writeAsStringSync('{"model": {}}');
+      final modelFile = File('${tempDir.path}/model.onnx')
+        ..writeAsStringSync('not a real model');
+      Future<OnnxInferenceModel> build({int? cap}) async {
+        final engine = OnnxEngine(clientFactory: FakeGenAiClient.new);
+        return await engine.createModel(
+              _spec(ModelFileType.onnx),
+              RuntimeConfig(
+                maxTokens: 1024,
+                modelPath: modelFile.path,
+                maxConcurrentSessions: cap,
+              ),
+            )
+            as OnnxInferenceModel;
+      }
+
+      expect((await build(cap: 3)).maxConcurrentSessions, 3);
+      // Two on a phone, unlimited on a desktop.
+      expect(
+        (await build()).maxConcurrentSessions,
+        OnnxEngine.defaultMaxConcurrentSessions,
+      );
+      expect(
+        OnnxEngine.defaultMaxConcurrentSessions,
+        (Platform.isAndroid || Platform.isIOS) ? 2 : isNull,
+      );
+    });
 
     test('activeBackend is null even when a backend was requested', () async {
       final client = FakeGenAiClient();

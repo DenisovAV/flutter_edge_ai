@@ -1,3 +1,20 @@
+## 1.3.0
+- Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and audio.
+- Android: a streamed reply no longer loses chunks while the UI thread is busy.
+- Failed turns and turns stopped before producing text are removed from session history.
+- Web: `openSession`/`openChat` work (`openChat` with the model's capabilities); a cancelled stream stops its call.
+- Require `flutter_edge_ai` ^2.6.0.
+
+## 1.2.6
+- Require `flutter_edge_ai` >=2.3.0 <2.6.0.
+
+## 1.2.5
+- MediaPipe GenAI 0.10.35 on Android and iOS, 0.10.30 on the web.
+- Web: a multi-turn chat keeps the model's replies; each turn resends the conversation (#705).
+
+## 1.2.4
+- Web: the vision warning appears only for a model created without `supportImage` (#719).
+
 ## 1.2.3
 - README: `flutter_edge_ai_llama` needs iOS 16.4.
 

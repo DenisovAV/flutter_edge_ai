@@ -1,3 +1,12 @@
+## 0.6.1
+- README: why the web is unsupported, and where an app can read its WASM memory (#788).
+
+## 0.6.0
+- Windows: `memorySnapshot()` reads `kernel32`; `gpuMemory()` returns null there (#698).
+
+## 0.5.0
+- Linux: `memorySnapshot()` reads `/proc` as on Android; `gpuMemory()` returns null there.
+
 ## 0.4.0
 - Android (Adreno): experimental `FlutterEdgeAiDiagnostics.gpuMemory()`, the GPU memory mapped into the process.
 

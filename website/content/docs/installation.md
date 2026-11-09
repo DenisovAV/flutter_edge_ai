@@ -15,31 +15,31 @@ formats and features you need.
 
 ```
 dependencies:
-  flutter_edge_ai: latest_version              # Core — always required (no engine on its own)
+  flutter_edge_ai: ^2.6.0                      # Core — always required (no engine on its own)
 
   # Inference engines — add at least one:
-  flutter_edge_ai_litertlm: latest_version     # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: latest_version    # .task / .bin models (MediaPipe; mobile + web)
-  flutter_edge_ai_builtin_ai: latest_version   # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
-  flutter_edge_ai_onnx: latest_version         # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
-  flutter_edge_ai_llama: latest_version        # .gguf models — llama.cpp through llamadart, + LlamaEmbeddingBackend (EmbeddingGemma 2 text, native) (see /docs/llama)
+  flutter_edge_ai_litertlm: ^1.20.0            # .litertlm models (FFI; mobile + desktop + web) + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.3.0            # .task / .bin models (MediaPipe; mobile + web)
+  flutter_edge_ai_builtin_ai: ^0.4.0           # OS system models — Gemini Nano (Android) / Apple FM (iOS 26+/macOS 26+) / Windows AI Foundry / Chrome Prompt API (Web)
+  flutter_edge_ai_onnx: ^0.9.1                 # ONNX models — ORT-GenAI (FFI, native) / Transformers.js (web) + OnnxEmbeddingBackend
+  flutter_edge_ai_llama: ^0.1.0                # .gguf models — llama.cpp through llamadart, + LlamaEmbeddingBackend (EmbeddingGemma 2 text, native) (see /docs/llama)
 
   # Optional — text-embedding tokenizer implementations (.tflite / .onnx models; an EmbeddingGemma 2 .litertlm needs none):
-  flutter_edge_ai_embeddings: latest_version   # embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via embeddingTokenizers: (needs a backend, e.g. LiteRtEmbeddingBackend above)
+  flutter_edge_ai_embeddings: ^2.3.2           # embedding tokenizer implementations (Gemma SentencePiece, BERT WordPiece), registered via embeddingTokenizers: (needs a backend, e.g. LiteRtEmbeddingBackend above)
 
   # Optional — independent RAG orchestration plus one storage provider:
-  flutter_edge_ai_rag: latest_version       # RagIndex, profiles, filters
-  flutter_edge_ai_qdrant: latest_version    # qdrant-edge; fastest on native
-  flutter_edge_ai_sqlite: latest_version    # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
+  flutter_edge_ai_rag: ^1.1.2               # RagIndex, profiles, filters
+  flutter_edge_ai_qdrant: ^2.1.1            # qdrant-edge; fastest on native
+  flutter_edge_ai_sqlite: ^2.1.1            # sqlite-vec / vec0; all platforms incl. web — needs Flutter 3.47
 
   # Optional — on-device speech (STT + TTS):
-  flutter_edge_ai_speech: latest_version       # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
+  flutter_edge_ai_speech: ^0.6.0               # transcribe audio + synthesize speech (on-device STT + TTS; native only) + voice loop
 
   # Optional — on-device agent skills:
-  flutter_edge_ai_agent: latest_version        # agent skills the model runs itself (text / JS / native-intent / MCP)
+  flutter_edge_ai_agent: ^0.4.2                # agent skills the model runs itself (text / JS / native-intent / MCP)
 
-  # Optional — memory diagnostics (Android + iOS + macOS):
-  flutter_edge_ai_diagnostics: latest_version  # what a model costs in memory the OS cannot reclaim, read from the OS
+  # Optional — memory diagnostics (Android + iOS + macOS + Linux + Windows):
+  flutter_edge_ai_diagnostics: ^0.6.1          # what a model costs in memory the OS cannot reclaim, read from the OS
 ```
 
 **Pick by need:**
@@ -61,7 +61,7 @@ dependencies:
 | On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` (Flutter 3.47+) |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
 | Run on-device agent skills the model executes itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
-| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
+| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS + Linux + Windows) | [`flutter_edge_ai_diagnostics`](/docs/diagnostics) |
 
 Core registers **no** AI runtime by itself — wire inference, embedding, and
 speech packages in `FlutterEdgeAi.initialize(...)` below. RAG is independent:
@@ -144,7 +144,7 @@ void main() async {
 | `inferenceEngines: [LlamaEngineProvider()]` | `flutter_edge_ai_llama` | `.gguf` models via llama.cpp, `ModelFileType.gguf` (mobile + desktop + web) — [llama.cpp](/docs/llama) |
 | `embeddingBackends: [LiteRtEmbeddingBackend()]` | `flutter_edge_ai_litertlm` | embeddings: EmbeddingGemma 2 `.litertlm` (text, images, audio; native and WebGPU) and `.tflite` models |
 | `embeddingBackends: [OnnxEmbeddingBackend()]` | `flutter_edge_ai_onnx` | text embeddings from ONNX/ORT models |
-| `embeddingBackends: [LlamaEmbeddingBackend()]` | `flutter_edge_ai_llama` | EmbeddingGemma 2 `.gguf` text embeddings, native only (GPU on Apple, CPU on Android); the GGUF carries its own tokenizer — see [llama.cpp](/docs/llama) |
+| `embeddingBackends: [LlamaEmbeddingBackend()]` | `flutter_edge_ai_llama` | EmbeddingGemma 2 `.gguf` text embeddings, native only (automatic placement: GPU on Apple silicon and iOS devices; CPU on Android, iOS simulators and macOS x64; Linux and Windows the SDK's own choice, Vulkan where available); the GGUF carries its own tokenizer — see [llama.cpp](/docs/llama) |
 | `embeddingTokenizers: [GemmaEmbeddingTokenizers()]` | `flutter_edge_ai_embeddings` | required by `LiteRtEmbeddingBackend` and `OnnxEmbeddingBackend` for `.tflite` and `.onnx` models — on the web for `.onnx` only, since LiteRT.js tokenizes `.tflite` in the browser; an EmbeddingGemma 2 `.litertlm` carries its own tokenizer |
 | `sttBackends: [LiteRtSttBackend()]` | `flutter_edge_ai_speech` | speech-to-text (native only) |
 | `ttsBackends: [LiteRtTtsBackend()]` | `flutter_edge_ai_speech` | text-to-speech (native only) |
@@ -162,7 +162,9 @@ model to the engine that handles its file type. For RAG, register
 - `webStorageMode` **(Web only)**: storage strategy for model files (default: `cacheApi`).
   - `WebStorageMode.cacheApi`: Cache API with Blob URLs (for models <2GB).
   - `WebStorageMode.streaming`: OPFS streaming (for large models >2GB like E4B, 7B).
-  - `WebStorageMode.none`: no caching (ephemeral mode for testing).
+  - `WebStorageMode.none`: no caching (ephemeral mode for testing). Restore
+    notices about model files that are gone stay in the debug log in this
+    mode.
 
 <Info>
 
@@ -197,14 +199,17 @@ its native layer is `flutter_local_ai`, which builds from **iOS 13.0 / macOS
 12.0**. On iOS that changes nothing (core's 15.0 still wins); on **macOS it
 raises the floor from 10.15 to 12.0**, and a lower deployment target fails
 resolution with a message naming the `flutter_local_ai` pod rather than the
-package you added.
+package you added. `flutter_edge_ai_litertlm` (and so speech) needs **macOS
+14.0**, from 1.19.0 by declaration; its companion libraries are built for
+macOS 14.
 
 **Where you set it depends on the dependency manager.** Swift Package Manager is the
 default since Flutter 3.44 (opt-in before that), and an SPM-only app has no `Podfile` at all.
 Flutter 3.47+ creates (and migrates) apps at iOS 15.0; on 3.44.x the template is 13.0 — set **iOS
 Deployment Target** on the Runner target in Xcode, or the build fails with `requires
-minimum platform version 15.0 … but this target supports 13.0`. iOS needs no Podfile
-step; macOS does — see [Desktop → macOS](/docs/desktop#macos).
+minimum platform version 15.0 … but this target supports 13.0`. Neither iOS nor
+macOS needs a Podfile step with Swift Package Manager on; macOS with it off
+does — see [Desktop → macOS](/docs/desktop#macos).
 `flutter_edge_ai_mediapipe` ships no `Package.swift`, so an app using it also gets a
 `Podfile`; set the platform there as well:
 
@@ -329,7 +334,7 @@ generic bundle never runs on the NPU, flag or not. See
 dispatch, built from LiteRT and covered by Google's Tensor SDK terms; the
 runtime it drives is part of the Pixel system image. It runs on a Pixel with
 that Tensor generation and Android 16 or later, except on a build whose ID
-starts with `BP2A`, which LiteRT does not run the NPU on. See [LiteRT-LM](/docs/litertlm).
+starts with `BP2A`, which LiteRT does not run the NPU on. Run so far on Tensor G6 only, with debug builds. See [LiteRT-LM](/docs/litertlm).
 
 **MediaTek NPU (opt-in).** A bundle compiled for a MediaTek SoC
 (`…_MediaTek_MT6991.litertlm`, `…_mt6991.litertlm`) needs `mediatek_npu: true`
@@ -436,7 +441,7 @@ On web, MediaPipe ignores `preferredBackend` and always runs on the GPU
 and `opfs_helper.js` from the `flutter_edge_ai` package's `web/` directory into
 your app's `web/` (find the package directory with
 `grep -A1 '"name": "flutter_edge_ai"' .dart_tool/package_config.json`), then load
-them in `web/index.html`:
+them in `web/index.html` by adding the following within the `<head>` section:
 
 ```
 <script src="cache_api.js"></script>
@@ -449,7 +454,7 @@ Then add the CDN script(s) for the **engine package(s) you use**.
 
 ```
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>
@@ -489,7 +494,7 @@ on onnxruntime-web. Both are readiness-handshake shims, same shape as the
 ```
 <script type="module">
 window.transformersReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1');
   window.transformers = m;
   return m;
 })();
@@ -568,16 +573,14 @@ a packaged app); not on Linux. What
 holds across all of desktop: there is no MediaPipe engine on desktop — `.task` /
 `.bin` models are **NOT compatible** with desktop.
 
-**macOS needs one extra step:** turn Swift Package Manager off for the app
-(`flutter: config: enable-swift-package-manager: false` in `pubspec.yaml`) and
-replace the `post_install` block of the generated `macos/Podfile` (an app that
-already had a `macos/Podfile` keeps Swift Package Manager on and only replaces
-the block) — see
-[Desktop → macOS](/docs/desktop#macos). Without it the build succeeds and the
-first model load fails.
+**macOS:** a deployment target of 14.0. With Swift Package Manager on
+(Flutter's default) that is all, from `flutter_edge_ai_litertlm` 1.19.0. With it
+off (`enable-swift-package-manager: false`), replace the `post_install` block of
+`macos/Podfile` — see [Desktop → macOS](/docs/desktop#macos). Without it the
+build succeeds and the first model load fails.
 
 See [Desktop Support](/docs/desktop) for the full per-platform reference (macOS
-`Podfile` `post_install`, entitlements, Windows DLL loading — no VC++
+companion libraries, entitlements, Windows DLL loading — no VC++
 redistributable needed — Linux Vulkan driver, and known limitations).
 
 ## Platform & architecture support
@@ -656,13 +659,14 @@ To use a gated repo: visit the model page → "Request Access" button.
 
 ## Logging
 
-Flutter Edge AI's internal logs are **silent in release builds** — model output,
-prompts, and conversation history are never written to logcat / syslog. In debug
-builds they're shown according to `FlutterEdgeAi.logLevel`:
+In release builds Flutter Edge AI's internal log prints the start-up notices
+about active models that could not be restored — model output,
+prompts, and conversation history are never written to logcat / syslog. In
+debug builds it's shown according to `FlutterEdgeAi.logLevel`:
 
-| Level | What it prints (debug only) |
+| Level | What it prints (debug builds) |
 |---|---|
-| `EdgeAiLogLevel.none` | Nothing — fully silent. |
+| `EdgeAiLogLevel.none` | Nothing from this log, the restore notices included. |
 | `EdgeAiLogLevel.info` *(default)* | Lifecycle, errors, diagnostics. **No** model output / prompts. |
 | `EdgeAiLogLevel.verbose` | Everything above **plus** model output, prompts, and conversation history. |
 
@@ -672,9 +676,15 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 // See the model's generated tokens and prompts while debugging:
 FlutterEdgeAi.logLevel = EdgeAiLogLevel.verbose;
 
-// Or silence logging entirely:
+// Or silence this log, the restore notices included:
 FlutterEdgeAi.logLevel = EdgeAiLogLevel.none;
 ```
 
-Release builds are always silent regardless of this setting. The level is
+Release builds keep one part of this log, the restore notices, and
+`EdgeAiLogLevel.none` silences them too; under `WebStorageMode.none` the
+notices about model files that are gone stay in the debug log, since no file
+outlives a page load there. Some messages are printed in every build whatever
+`logLevel` says: warnings about failures the app would not otherwise see, and
+a few notices (for example the sampler latch, at most once per engine, and the
+hidden-reasoning note, once per chat). The level is
 process-global and per-isolate; set it once at startup.

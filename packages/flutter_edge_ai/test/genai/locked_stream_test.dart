@@ -4,17 +4,30 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/genai.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../support/noop_session.dart';
+
 /// A no-engine [InferenceChat] whose staging (addQueryChunk) and generation
 /// (generateChatResponseAsync) are driven by the test, so `_lockedStream`'s
 /// mutex/cancel state machine can be exercised deterministically.
 class _FakeChat extends InferenceChat {
-  _FakeChat() : super(sessionCreator: null, maxTokens: 1024);
+  _FakeChat() : this._(_Generations());
+
+  _FakeChat._(this._generations)
+    : super(
+        sessionCreator: null,
+        maxTokens: 1024,
+        turnHooks: ScriptedTurnHooks(_generations.next),
+      ) {
+    session = NoopSession();
+  }
+
+  final _Generations _generations;
+  StreamController<ModelResponse>? get lastGen => _generations.last;
 
   Duration stageDelay = Duration.zero;
   bool throwOnStage = false;
   final staged = <String>[];
   int stopGenerationCalls = 0;
-  StreamController<ModelResponse>? lastGen;
 
   @override
   Future<void> addQueryChunk(
@@ -28,15 +41,19 @@ class _FakeChat extends InferenceChat {
   }
 
   @override
-  Stream<ModelResponse> generateChatResponseAsync() {
-    final c = StreamController<ModelResponse>();
-    lastGen = c;
-    return c.stream;
-  }
-
-  @override
   Future<void> stopGeneration() async {
     stopGenerationCalls++;
+  }
+}
+
+/// Each generation is a stream the test drives through [last].
+class _Generations {
+  StreamController<ModelResponse>? last;
+
+  Stream<ModelResponse> next() {
+    final c = StreamController<ModelResponse>();
+    last = c;
+    return c.stream;
   }
 }
 

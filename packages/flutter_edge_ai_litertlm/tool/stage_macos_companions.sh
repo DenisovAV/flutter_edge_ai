@@ -104,6 +104,15 @@ for base in ${COMPANIONS}; do
     continue
   fi
   fw_dir="${FRAMEWORKS}/${base}.framework"
+  # With Swift Package Manager on, the plugin's Swift package already embedded
+  # this framework, signed with the app's identity (#689). An app that also has
+  # a Podfile runs this script too; replacing that copy with an ad-hoc one
+  # would undo the signing, so leave it.
+  if grep -qs "<string>dev.flutteredge.litertlm.${base}</string>" \
+       "${fw_dir}/Versions/A/Resources/Info.plist"; then
+    echo "[flutter_edge_ai] ${base}.framework came with the Swift package; not staging"
+    continue
+  fi
   mkdir -p "${fw_dir}/Versions/A/Resources"
   cp "${src}" "${fw_dir}/Versions/A/${base}"
   # Set install_name to the @rpath the patched LiteRtLm dlopens.
@@ -146,6 +155,7 @@ done
 # that no file answers to (#457).
 LITERTLM="${FRAMEWORKS}/LiteRtLm.framework/Versions/A/LiteRtLm"
 if [ -f "${LITERTLM}" ]; then
+  repointed=0
   for base in ${COMPANIONS}; do
     [ -d "${FRAMEWORKS}/${base}.framework" ] || continue
     for old in $(otool -L "${LITERTLM}" | awk '{print $1}' \
@@ -154,6 +164,7 @@ if [ -f "${LITERTLM}" ]; then
         "${old}" \
         "@rpath/${base}.framework/Versions/A/${base}" \
         "${LITERTLM}"
+      repointed=1
       echo "[flutter_edge_ai] repointed ${old} -> ${base}.framework"
     done
   done
@@ -172,7 +183,12 @@ if [ -f "${LITERTLM}" ]; then
 
   # install_name_tool above invalidated LiteRtLm's signature; re-sign it, and
   # let a failure fail the build for the same reason as the companions above.
-  codesign --force --sign - "${LITERTLM}"
+  # Only when this script changed it: since #689 the hook points LiteRtLm at the
+  # frameworks before the build signs it, and an ad-hoc signature here would
+  # replace the app's own.
+  if [ "${repointed}" = 1 ]; then
+    codesign --force --sign - "${LITERTLM}"
+  fi
 
   # The load-command check above cannot see the Metal accelerator: LiteRtLm
   # dlopens it by path rather than linking it, and a missing one does not fail

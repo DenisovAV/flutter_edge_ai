@@ -95,14 +95,14 @@ Future<InferenceModel> _ensureModel() async {
 /// `runtimeInjectsToolDeclarations` cannot be derived from the format.
 ///
 /// Every caller MUST close the returned chat. The web model owns ONE session,
-/// so a chat left open poisons the next one: a second `createChat` lands on a
+/// so a chat left open poisons the next one: a second `openChat` reaches a
 /// conversation still in the previous constrained-decoding state and the engine
 /// throws `Invalid token at state 37` / `Task failed with state: 7` rather than
 /// degrading. Measured — cases 2-5 all failed that way until this was added.
 Future<InferenceChat> _openChat(
   InferenceModel model, {
   List<Tool> tools = const [_changeColorTool],
-}) => model.createChat(
+}) => model.openChat(
   tools: tools,
   supportsFunctionCalls: true,
   modelType: ModelType.gemma4,

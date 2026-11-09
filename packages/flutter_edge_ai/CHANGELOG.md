@@ -1,3 +1,28 @@
+## 2.6.0
+- `createSession`, `createChat`, `session` and `chat` are deprecated until 3.0.0.
+- Engine SPI owns sessions, chat resolution, turn hooks and failed-turn rollback (#770).
+- `ContextLimitException` reports prompts that exceed the context window.
+- Decider reading and scoring move onto `InferenceModel`; remove `OptionScoringModel` (#769).
+- Response formats validate replies; LiteRT-LM constrains qualified native CPU/GPU rows (#195).
+
+## 2.5.6
+- `createModel` stays deprecated until 3.0.0, not 2.6.0 (#768).
+- Skills: native ONNX `openSession`/`openChat` (onnx 0.8.0) and memory diagnostics on Windows.
+
+## 2.5.5
+- `uninstallModel` removes a directory (ORT-GenAI) model by its name (#730).
+- `uninstallEmbedder`, `uninstallStt` and `uninstallTts` close the model loaded from those files (#735).
+- Model catalog: `installModelFromCatalog`, `fromCatalog`, and `expectedSize` checks on network installs (#734).
+- `installTts().withProgress` counts bytes across the bundle, not finished files (#751).
+
+## 2.5.4
+- `ModelType.gemma4` on `.bin`/`.tflite`: Gemma 4's own turn markers, not Gemma 3's (#705).
+
+## 2.5.3
+- `uninstallModel` closes the model built from that file; `getModelPath` follows the file's record (#723).
+- Web: no false "image support not implemented" warning for every engine (#719).
+- Skills: thinking budget, EmbeddingGemma 2 dimensions, Linux diagnostics, ONNX on Windows ARM64.
+
 ## 2.5.2
 - `InferenceModel.createDecider` reads LiteTune 0.6.0 files; one scored `fresh_engine` is refused by name.
 

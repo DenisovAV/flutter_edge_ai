@@ -2,22 +2,21 @@
 // Run with: cd example && flutter test integration_test/desktop_thinking_test.dart -d macos
 //
 // Prerequisites:
-//   Copy gemma-4-E2B-it.litertlm to the app sandbox container:
-//   cp ~/Downloads/gemma-4-E2B-it.litertlm \
-//      ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/
+//   macOS: ~/models (container Documents fallback).
 
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _modelFileName = 'gemma-4-E2B-it.litertlm';
 
 String _resolveModelPath() {
-  // Inside macOS sandbox, HOME already points to the container:
-  // ~/Library/Containers/<bundle-id>/Data
+  if (Platform.isMacOS) return macosStagedFilePath(_modelFileName) ?? '';
   final home = Platform.environment['HOME'] ?? '';
   return '$home/Documents/$_modelFileName';
 }
@@ -57,7 +56,7 @@ void main() {
       );
 
       try {
-        final chat = await model.createChat(
+        final chat = await model.openChat(
           temperature: 1.0,
           topK: 64,
           topP: 0.95,
@@ -141,7 +140,7 @@ void main() {
       );
 
       try {
-        final chat = await model.createChat(
+        final chat = await model.openChat(
           temperature: 1.0,
           topK: 64,
           topP: 0.95,

@@ -1,0 +1,75 @@
+{
+  "container_version": "1.4.0",
+  "size": 554467328,
+  "npu_target": "MediaTek/mt6991",
+  "llm_metadata_max_num_tokens": 4096,
+  "kv_cache_length": 4096,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_v_3": [
+        1,
+        1,
+        256,
+        4096
+      ],
+      "kv_cache_k_2": [
+        1,
+        1,
+        4096,
+        256
+      ]
+    },
+    "prefill_128": {
+      "kv_cache_v_3": [
+        1,
+        1,
+        256,
+        4096
+      ],
+      "kv_cache_k_2": [
+        1,
+        1,
+        4096,
+        256
+      ]
+    }
+  },
+  "system_metadata": {
+    "author": "The ODML Authors"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 117
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689072
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 174069040,
+      "items": {
+        "model_type": "TF_LITE_EMBEDDER"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_aux",
+      "length": 96688,
+      "items": {
+        "model_type": "TF_LITE_AUX"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 375542300,
+      "npu_target": "MediaTek/mt6991",
+      "items": {
+        "model_type": "TF_LITE_PREFILL_DECODE"
+      }
+    }
+  ]
+}

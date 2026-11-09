@@ -199,7 +199,10 @@ that applies while a debugger is attached, which is every `flutter run` this
 codelab asks you to do, so leaving it out costs you exactly the runs you are
 about to make.
 
-**macOS** — two entitlements and one build phase. The entitlements go in
+**macOS** — a deployment target, two entitlements and one build phase. The
+deployment target is macOS 14.0, because LiteRT-LM's companion libraries are
+built for macOS 14; the step apps set it on the Runner target and in
+`macos/Podfile`. The entitlements go in
 **both** `macos/Runner/DebugProfile.entitlements` and
 `macos/Runner/Release.entitlements`, beside the keys `flutter create` already
 wrote there:
@@ -214,8 +217,8 @@ wrote there:
 `network.client` is what lets a sandboxed macOS app reach Hugging Face at all.
 `disable-library-validation` does nothing yet: it matters once Hardened Runtime
 is on, which notarizing the app for distribution requires. The build phase below
-signs LiteRT-LM and its companion libraries ad hoc, and library validation
-refuses code not signed by Apple or by your own team. The iOS keys above are
+signs the companion libraries ad hoc, and library validation refuses code not
+signed by Apple or by your own team. The iOS keys above are
 deliberately **not** here: they are iOS entitlements. On macOS a build with no
 signing team fails outright with `"Runner" has entitlements that require signing
 with a development certificate`, and a team-signed build silently drops them — a
@@ -232,17 +235,16 @@ block from any step app's `macos/Podfile` — or from the
 [desktop docs](/docs/desktop), which quote it in full with the reasoning for
 each line; the next build runs `pod install` itself.
 
-One trap, measured. Flutter 3.44+ uses Swift Package Manager by default, and
-an app whose plugins all ship a `Package.swift` — core does, and
-`flutter_edge_ai_litertlm` is not a plugin at all — gets no `macos/Podfile`, so
-nothing runs the block. That is why every step app's `pubspec.yaml` carries
-`flutter: config: enable-swift-package-manager: false`. For an app of your own,
-add the same lines, run `flutter pub get` (it writes `macos/Podfile`), and replace
-its `post_install` block with this one, keeping any lines of your own inside it. A macOS build that succeeds proves nothing here: the app compiles,
-links, signs and launches either way, and the failure —
-`Failed to load dynamic library 'LiteRtLm.framework/LiteRtLm'` … `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib` — arrives at the first model load, which no build log warns you about.
-Prefer the pubspec setting to `flutter config --no-enable-swift-package-manager`:
-that one changes only your machine, not your teammates' or CI.
+The step apps need that block because their `pubspec.yaml` turns Swift Package
+Manager off (`flutter: config: enable-swift-package-manager: false`), and a
+macOS build that succeeds proves nothing there: the app compiles, links, signs
+and launches without the block, and the failure — `LiteRT-LM did not load on
+macOS`, naming the missing library — arrives at the first model load, which no
+build log warns you about. An app of your own can keep Swift Package Manager on,
+Flutter's default since 3.44: from `flutter_edge_ai_litertlm` 1.19.0 its Swift
+package brings the companion libraries and Xcode signs them with your team, so
+it needs only the 14.0 deployment target and `network.client` — no Podfile
+block, no `disable-library-validation`.
 
 **Windows** — nothing in the app, and x86_64 only: there is no Windows arm64
 build of the runtime, so a Snapdragon-X machine is out. Nothing needs installing:
@@ -514,14 +516,15 @@ Two objects stand between you and an answer.
 ```dart
 final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 // ... hand `inference` to the State here, before anything else can throw
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   modelType: widget.model.modelType,
   maxOutputTokens: 256,
 );
 ```
 
-`getActiveModel` loads the installed weights into a runtime. `createChat` opens
-a conversation on top, and it is the chat that remembers what was said.
+`getActiveModel` loads the installed weights into a runtime. `openChat` opens
+a caller-owned conversation on top, and it is the chat that remembers what was
+said. The page's close helper closes that chat before the model in `dispose`.
 
 The elided line is not bookkeeping. `_load` assigns `_inference` the moment
 `getActiveModel` returns, because everything after that can throw and a runtime
@@ -580,8 +583,9 @@ memory to open the weights, a half-written model file. Both entry points get a
 
 ```dart
 } catch (error) {
-  // The chat's own history now holds a user turn the model never answered;
-  // a production app would reset it with `clearHistory`.
+  // Engine errors and ContextLimitException roll the staged turn back. A
+  // clean stop before text does too; a clean stop, output limit, or context
+  // limit after text keeps the partial exchange.
   if (mounted) {
     setState(() => _turns.add(_Turn('⚠️ $error', fromUser: false)));
   }
@@ -602,20 +606,28 @@ on screen to explain it. Anything that can throw between "disable the UI" and
 `_load`'s failure gets a message and a **Try again** button in place of the
 loading bar, because "the model would not open" is a state the user can act on.
 
-One honest limitation, noted in the `catch`: `addQueryChunk` commits your
-message to the chat's history before generation runs, so a failed turn leaves a
-user message the model never answered — in the Dart-side history and in the
-native session both. The chat still works; every later turn is just asked of a
-transcript with a hole in it. An app that cares would call
-`chat.clearHistory(replayHistory: …)` there. This one keeps the screen simple.
+Engine errors and `ContextLimitException` take the whole staged turn back,
+including the user message. A clean stop before non-empty text does the same.
+A clean stop, output limit, or context limit after text keeps the partial
+exchange in history.
 
 Finally, close what you opened. The runtime holds native memory that Dart's
 garbage collector knows nothing about:
 
 ```dart
+Future<void> _closeRuntime() async {
+  final chat = _chat;
+  final inference = _inference;
+  try {
+    await chat?.close();
+  } finally {
+    await inference?.close();
+  }
+}
+
 @override
 void dispose() {
-  _inference?.close().catchError((Object _) {});
+  _closeRuntime().catchError((Object _) {});
   _input.dispose();
   super.dispose();
 }
@@ -744,7 +756,7 @@ one-line re-ask `onInstalled` has used since Step 2. The button's handler:
 ```dart
 Future<void> _removeModel() async {
   try {
-    await _inference?.close();
+    await _closeRuntime();
     // Inside `setState`: dropping the chat has to repaint, or the screen
     // keeps showing an enabled composer over a runtime that is gone.
     if (mounted) {
@@ -830,3 +842,7 @@ them all.
 * [flutter_edge_ai on pub.dev](https://pub.dev/packages/flutter_edge_ai)
 * [Documentation](/docs/getting-started)
 * [Source and this codelab's code](https://github.com/DenisovAV/flutter_edge_ai)
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

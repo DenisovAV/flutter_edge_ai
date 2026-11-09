@@ -9,6 +9,21 @@ builds and then fails at model load, or is killed for memory.
 - [Windows and Linux](#windows-and-linux)
 - [Web](#web)
 
+## Concurrent LiteRT-LM sessions
+
+`openSession` and `openChat` use one native conversation and KV cache per
+session on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, and
+Qualcomm or Google Tensor NPUs on Android and Intel NPUs on Windows. Linux
+Vulkan, Windows D3D12, iOS, Android CPU and PowerVR, MediaTek, unverified Linux
+arm64 accelerators and the web use virtual sessions that replay full messages
+into one shared conversation. Hybrid models such as LFM2 rebuild from full
+messages when recovery is needed and never rewind.
+
+Native sessions consume memory while idle. Gemma 4 E2B on an M5 Pro added
+36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the third session
+onward; the first two reused freed memory. Set
+`maxConcurrentSessions` on `getActiveModel` or `openModel` to bound the count.
+
 ## Android
 
 `android/app/build.gradle.kts` (or `build.gradle`):
@@ -118,24 +133,23 @@ simulator build) and cannot run GPU inference; use CPU there, or a real device.
 ## macOS
 
 Apple Silicon (`arm64`) only: there is no native library for Intel (`x86_64`)
-Macs.
+Macs. The deployment target must be **macOS 14.0**: set Minimum Deployments on
+the Runner target in Xcode (`MACOSX_DEPLOYMENT_TARGET = 14.0`), and
+`platform :osx, '14.0'` in `macos/Podfile` if the app has one. LiteRT-LM's
+companion libraries are built for macOS 14; below it the build fails with
+`requires minimum platform version 14.0` (Swift Package Manager) or `required a
+higher minimum deployment target` (CocoaPods).
 
 Add to both `macos/Runner/DebugProfile.entitlements` and
 `macos/Runner/Release.entitlements`:
 
 ```xml
-<key>com.apple.security.cs.disable-library-validation</key>
-<true/>
 <key>com.apple.security.network.client</key>
 <true/>
 ```
 
-`network.client` lets the sandboxed app download the model.
-`disable-library-validation` matters once Hardened Runtime is on, which
-notarization requires: the build phase below signs LiteRT-LM and its companion
-libraries ad hoc, and library validation refuses code that is not signed by
-Apple or by the app's own team. Add both keys to both files — the debug and
-release builds read different ones.
+`network.client` lets the sandboxed app download the model. Add it to both
+files — the debug and release builds read different ones.
 
 Do not copy the iOS `com.apple.developer.kernel.*` keys into these files; they
 are iOS entitlements. Without a signing team the build fails with `"Runner" has
@@ -143,30 +157,27 @@ entitlements that require signing with a development certificate`, and a
 team-signed build silently drops them. A `.litertlm` model loads on macOS
 without them.
 
-`.litertlm` on macOS also needs a build phase that copies the LiteRT-LM
-companion libraries into the app: the package deliberately keeps them out of
-Native Assets, so nothing else puts them in the bundle.
+`.litertlm` on macOS also needs two companion libraries in the app
+(`GemmaModelConstraintProvider`, `LiteRtLmMetalAccelerator`), which the package
+keeps out of Native Assets. How they get there depends on Swift Package Manager:
 
-With CocoaPods, paste this into `macos/Podfile`, replacing any existing
-`post_install` block; the next build runs `pod install` itself. A green build
-proves nothing: without it the first model load fails with
-`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`. From
-`flutter_edge_ai_litertlm` 1.17.0 that error contains
-`flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names this fix.
+- **On** (the default since Flutter 3.44), with `flutter_edge_ai_litertlm`
+  1.19.0 or later: nothing to add. Its Swift package brings them, and Xcode
+  embeds and signs them with the app's identity. This holds when the app also
+  has a `macos/Podfile` for another plugin.
+- **Off** (`flutter: config: enable-swift-package-manager: false` in
+  `pubspec.yaml`): paste the block below into `macos/Podfile`, replacing any
+  existing `post_install` block; the next build runs `pod install` itself. Also
+  add `com.apple.security.cs.disable-library-validation` to both entitlements
+  files: the build phase signs the libraries ad hoc, and under Hardened Runtime
+  (which notarization requires) library validation refuses them without it.
+  The `flutter_gemma` phase, cache and stamp names in this snippet are
+  intentional compatibility identifiers used by the current package; do not
+  rename them.
 
-**A Swift Package Manager app has no `macos/Podfile` to paste into.** SPM is the
-default since Flutter 3.44, and an app whose plugins all ship a `Package.swift` —
-core does, and `flutter_edge_ai_litertlm` is not a plugin at all — never gets one
-generated. Either turn SPM off for the project in `pubspec.yaml` —
-`flutter: config: enable-swift-package-manager: false`, committed with the app,
-so teammates and CI get it too, unlike the machine-wide
-`flutter config --no-enable-swift-package-manager` — then run `flutter pub get`,
-which writes `macos/Podfile`; or add the same
-step by hand in Xcode: a Run Script phase on the Runner target named
-`[flutter_gemma] Setup LiteRT-LM macOS`, carrying the `shell_script`, input path
-and output path from the block below. The `flutter_gemma` phase, cache and stamp
-names in this snippet are intentional compatibility identifiers used by the
-current package; do not rename them.
+A green build proves nothing: without the libraries the first model load fails
+with an error that contains
+`flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names the fix.
 
 ```ruby
 post_install do |installer|
@@ -235,6 +246,22 @@ end
 
 Without it the build succeeds and the model fails to load at runtime.
 
+**Flutter 3.44 with Xcode 27.** With Swift Package Manager off, the first
+build stops with `The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set
+to 10.15, but the range of supported deployment target versions is 12.0 to
+27.0.x` on the Pods targets, `FlutterMacOS` among them. This is Flutter 3.44.0
+on Xcode 27, not this package: an app with only `shared_preferences` and Swift
+Package Manager off fails the same way. Add one line inside the
+`installer.pods_project.targets.each` loop of the block above, after
+`flutter_additional_macos_build_settings(target)`:
+
+```ruby
+target.build_configurations.each { |c| c.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '14.0' }
+```
+
+Flutter 3.47.8 builds the same Podfile without it (measured on Xcode 27.1,
+2026-10-28).
+
 ## Windows and Linux
 
 Nothing to add to the project. The native libraries — including the Windows GPU
@@ -242,8 +269,8 @@ shader compiler and NPU runtime — are bundled at build time.
 
 - Windows: `x64` only — no Windows on Arm build. End users need no VC++
   redistributable installed. (In the legacy `flutter_gemma_litertlm` package
-  this arrived in 1.7.1.) Measured on `native-v0.18.0-g`:
-  17 of the bundle's 25 DLLs import no C++ runtime; the other eight, the Intel
+  this arrived in 1.7.1.) Measured on `native-v0.19.0-a`:
+  15 of the bundle's 23 DLLs import no C++ runtime; the other eight, the Intel
   NPU stack, import only `msvcp140`, `vcruntime140` and `vcruntime140_1`,
   which every Flutter Windows app already resolves.
 - Windows Intel NPU: a bundle whose NPU blobs carry no weights (Intel's Gemma 4
@@ -257,12 +284,13 @@ shader compiler and NPU runtime — are bundled at build time.
 - Linux: `x64` and `arm64`. Building needs
   `clang cmake ninja-build libgtk-3-dev lld`. GPU needs the vendor Vulkan
   driver; Mesa's `llvmpipe` software fallback cannot run Gemma 4.
-- Linux arm64 NPU (Qualcomm boards: QCS6490, QCS8275, QCS9075, …) uses the same
+- Linux arm64 NPU (Qualcomm boards with a Hexagon V68–V81 DSP; bundles are published for the QCS8275 only) uses the same
   `qualcomm_npu: true` as Android; the build hook reads the QNN runtime out of
   Qualcomm's QAIRT SDK zip (about 32 MB by range request). On the board the
   user must be in group `fastrpc` and `qcom-fastrpc1` must be installed, or
-  the bundle compiled for the SoC (`gemma-4-E2B-it_qualcomm_qcs8275.litertlm`),
-  the one to use, is refused with the reason. A generic bundle never runs on
+  the bundle compiled for the SoC (`LiteRtLmModels.gemma4E2bIt.npuQcs8275`,
+  installed from the catalog: the file left the repository's `main`), the one
+  to use, is refused with the reason. A generic bundle never runs on
   the NPU on any platform: `npu` falls back to GPU, then CPU, for it, because
   it has no NPU graph.
 
@@ -303,7 +331,7 @@ Storage mode, set in `FlutterEdgeAi.initialize(webStorageMode: ...)`:
 
 | `WebStorageMode` | Use for |
 | --- | --- |
-| `cacheApi` (default) | models under about 2 GB |
+| `cacheApi` (default) | files up to 2 GiB (a catalog build over that is refused before it downloads) |
 | `streaming` | larger models — streams through OPFS |
 | `none` | no persistence; downloads every launch |
 

@@ -18,7 +18,7 @@ python3 tool/verify.py device --device <device-id> --model-url <model-url>
 ```
 
 The package gate copies the standalone package, removes workspace resolution,
-and validates hosted core 2.5.0+ without a development override. It does not publish.
+and validates hosted core 2.6.0+ without a development override. It does not publish.
 Required native, packaged-device and Web model lanes inspect Flutter's JSON test
 report and require their real-model test to complete successfully, without skipping.
 
@@ -71,4 +71,4 @@ desktop host. The separate source-qualification workflow covers packaged
 Linux/Windows CPU embeddings and Flutter 3.44 resolution against the workspace core
 and published SDK. Its temporary core path override is source evidence only;
 hosted package and minimum-SDK gates must independently pass against published
-core 2.5.0 without overrides.
+core 2.6.0 without overrides.

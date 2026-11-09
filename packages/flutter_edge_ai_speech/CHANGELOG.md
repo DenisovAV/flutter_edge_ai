@@ -1,3 +1,21 @@
+## 0.6.0
+- Use litertlm 1.20.0 with LiteRT-LM 0.19 / `native-v0.19.0-a`.
+- Require `flutter_edge_ai` ^2.6.0 and `flutter_edge_ai_litertlm` ^1.20.0.
+
+## 0.5.14
+- Require `flutter_edge_ai` >=2.5.5 <2.6.0 and `flutter_edge_ai_litertlm` >=1.19.1 <1.20.0.
+
+## 0.5.13
+- Model catalog: `LiteRtSpeechModels`, every STT and TTS build pinned to its commit (#734).
+- Speech-to-text requests fp32 on the GPU: moonshine no longer returns NaN on Adreno 740 (#747).
+- Require `flutter_edge_ai` ^2.5.5 and `flutter_edge_ai_litertlm` ^1.19.1.
+
+## 0.5.12
+- Docs: on macOS with Swift Package Manager on, no Podfile block from litertlm 1.19.0 (#689).
+
+## 0.5.11
+- A closed recognizer or synthesizer fails through the returned Future (#718).
+
 ## 0.5.10
 - Docs: the macOS app setup STT and TTS need (#689).
 

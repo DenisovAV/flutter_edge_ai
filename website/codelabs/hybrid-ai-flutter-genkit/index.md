@@ -395,25 +395,24 @@ carries them:
 `network.client` is what lets a sandboxed macOS app reach Gemini and Hugging
 Face at all. `disable-library-validation` does nothing yet: it matters once
 Hardened Runtime is on, which notarizing the app for distribution requires. The
-build phase below signs LiteRT-LM and its companion libraries ad hoc, and library
-validation refuses code not signed by Apple or by your own team. The iOS keys
+build phase below signs the companion libraries ad hoc, and library validation
+refuses code not signed by Apple or by your own team. The iOS keys
 above are deliberately **not** here: they are iOS entitlements. On macOS a build
 with no signing team fails outright with `"Runner" has entitlements that require
 signing with a development certificate`, and a team-signed build silently drops
 them. macOS support is Apple Silicon only.
 
 The build phase is the part unique to macOS. Every step app from this one on
-ships a `macos/Podfile` whose `post_install` block stages the runtime's
-companion libraries into the built `.app`. A macOS build that succeeds proves
-nothing here — the app compiles, links, signs and launches without the staging
-too, and the failure arrives at the first model load. One trap, measured:
-Flutter 3.44+ uses Swift Package Manager by default, and an app with no
-CocoaPods plugin gets no `macos/Podfile`, so nothing runs the block. The step
-apps' `pubspec.yaml` sets `flutter: config: enable-swift-package-manager: false`
-for that reason; an app of your own needs the same lines, then
-`flutter pub get` (which writes the Podfile) and the block. Prefer that to
-`flutter config --no-enable-swift-package-manager`, which changes only your
-machine.
+targets macOS 14.0 (LiteRT-LM's companion libraries are built for it), turns
+Swift Package Manager off in `pubspec.yaml`
+(`flutter: config: enable-swift-package-manager: false`), and ships a
+`macos/Podfile` whose `post_install` block stages those libraries into the
+built `.app`. A macOS build that succeeds proves nothing here — the app
+compiles, links, signs and launches without the staging too, and the failure
+arrives at the first model load. An app of your own can keep Swift Package
+Manager on, Flutter's default since 3.44: from `flutter_edge_ai_litertlm` 1.19.0
+its Swift package brings the libraries, and the app needs only the 14.0
+deployment target and `network.client`.
 
 **Windows** — nothing in the app, and x86_64 only: there is no Windows arm64
 build of the runtime. Nothing needs installing: nothing in the bundle needs a C++
@@ -488,11 +487,11 @@ Add `genkit_flutter_edge_ai` and `flutter_edge_ai`:
 
 ```yaml
   # Step 3: On-device AI (LiteRT-LM engine)
-  genkit_flutter_edge_ai: ^0.11.0
-  flutter_edge_ai: ^2.5.0
+  genkit_flutter_edge_ai: ^0.12.0
+  flutter_edge_ai: ^2.6.0
   # flutter_edge_ai registers no engine by default — opt into LiteRT-LM
   # (.litertlm inference) here.
-  flutter_edge_ai_litertlm: ^1.14.0
+  flutter_edge_ai_litertlm: ^1.20.0
   # Step 5 embeds your documents. The engine above runs the forward pass;
   # this package supplies the tokenizers it needs.
   flutter_edge_ai_embeddings: ^2.3.0
@@ -751,7 +750,7 @@ plugins and `flutter_edge_ai_litertlm`) is already in place from Steps 2–3:
 
 ```yaml
   # Hybrid on-device ↔ cloud routing
-  genkit_hybrid: ^0.4.0
+  genkit_hybrid: ^0.5.0
 ```
 
 Run `flutter pub get`.
@@ -1931,3 +1930,7 @@ Gemma 3 1B does not.
 - [genkit_google_genai on pub.dev](https://pub.dev/packages/genkit_google_genai)
 - [flutter_edge_ai on pub.dev](https://pub.dev/packages/flutter_edge_ai)
 - [Genkit Dart documentation](https://genkit.dev)
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

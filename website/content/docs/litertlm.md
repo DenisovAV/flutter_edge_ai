@@ -12,8 +12,8 @@ no engine by default — you opt in by registering `LiteRtLmEngine()`.) It runs
 JVM, no gRPC — and it is the **primary desktop engine** (macOS, Windows, Linux);
 [ONNX Runtime](/docs/onnx) also runs on desktop, and macOS and Windows can additionally
 use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time via
-**Native Assets** (SHA256-verified, from the `native-v0.18.0-g` GitHub release), so
-there's no manual native setup.
+**Native Assets** (SHA256-verified, from the `native-v0.19.0-a` GitHub release,
+containing LiteRT-LM 0.19.0 and C API 1.0), so there is no manual native setup.
 
 The same package also ships **`LiteRtEmbeddingBackend`**: EmbeddingGemma 2 from
 one `.litertlm` bundle (native: text since 1.13.0, images from the 440m and
@@ -51,8 +51,8 @@ engines your app uses:
 
 ```
 dependencies:
-  flutter_edge_ai: latest_version
-  flutter_edge_ai_litertlm: latest_version   # .litertlm inference engine
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_litertlm: ^1.20.0   # .litertlm inference engine
 ```
 
 ```dart
@@ -80,8 +80,7 @@ await FlutterEdgeAi.installModel(
   modelType: ModelType.gemma4,
   fileType: ModelFileType.litertlm,
 ).fromNetwork(
-  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
-  token: 'hf_...',
+  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm',
 ).install();
 
 // Create the model once and keep it for the app's lifetime.
@@ -90,7 +89,7 @@ final model = await FlutterEdgeAi.getActiveModel(
   preferredBackend: PreferredBackend.gpu,
 );
 
-final session = await model.createSession();
+final session = await model.openSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 await for (final chunk in session.getResponseAsync()) {
   print(chunk);
@@ -206,7 +205,7 @@ board, Qualcomm's FastRPC library has to be present (`qcom-fastrpc1` on Ubuntu;
 Qualcomm's images ship it) and the user has to be in group `fastrpc`
 (`sudo usermod -aG fastrpc $USER`, then log in again). Without either, a bundle
 compiled for an NPU is refused with a `BackendInitException` that names what is
-missing. Use the bundle compiled for your SoC, e.g. `gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux
+missing. Use the bundle compiled for your SoC. Google publishes Linux-board bundles for the QCS8275 only (Gemma 4 E2B, EmbeddingGemma 2; see the [Model Registry](/docs/registry)): install `LiteRtLmModels.gemma4E2bIt.npuQcs8275` from the catalog, since the file is no longer on the repository's `main`. The QCS6490 and QCS9075 have the stack but no bundle to run. A Linux
 x64 build ignores the flag.
 
 <Warning>
@@ -214,7 +213,7 @@ x64 build ignores the flag.
 **EmbeddingGemma 2 on the NPU** uses the same flag on Qualcomm Android and
 Linux arm64, with the per-SoC bundles, and never falls back: see
 [Embeddings & RAG](/docs/embeddings-and-rag#embeddinggemma-2-on-a-qualcomm-npu).
-Google Tensor G5/G6 bundles (270m, 440m) take `google_tensor_npu: true` instead
+Google Tensor G5/G6 bundles (270m, 440m, 740m) take `google_tensor_npu: true` instead
 (from 1.15.0): see
 [EmbeddingGemma 2 on a Google Tensor NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-a-google-tensor-npu).
 MediaTek MT6991/MT6993 bundles take `mediatek_npu: true` (from 1.17.0; not run
@@ -223,7 +222,8 @@ On Windows x64 the Intel Panther Lake bundles need no flag (from 1.13.2): see
 [EmbeddingGemma 2 on an Intel NPU](/docs/embeddings-and-rag#embeddinggemma-2-on-an-intel-npu).
 
 **For LLMs, NPU is a Gemma 4 story today.** Our NPU verification runs Gemma 4 bundles, and
-those work on Qualcomm, Intel and Google Tensor G6. Google publishes no Gemma 4
+those work on Qualcomm, Intel and Google Tensor G6 (per build: the
+[Model Registry](/docs/registry#gemma-4-e2b-it)). Google publishes no Gemma 4
 bundle for MediaTek: Gemma 3 1B `…_mt6989` generates on a Dimensity 9300+, and whether it
 keeps its prefill chunks is not measured. Most **Gemma 3** bundles
 do not on Qualcomm or Intel (Tensor not measured), and they fail
@@ -250,9 +250,12 @@ with no error and nothing in the log:
 
 Both are tracked upstream in
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).
-Because the safe context is a property of the compiled bundle, `maxTokens` is
-**not** clamped up to 1024 on the NPU attempt (it is on CPU and GPU — see below),
-so pass the `cache_length` the bundle was compiled for. Only a bundle compiled
+An NPU bundle is compiled for one KV-cache length: 4096 for every Gemma 4 E2B
+NPU build, 1280 for Gemma 3 1B and FastVLM, 4096 for Gemma 3 270M (the
+catalog's `requiredMaxTokens`, and the context the
+[Model Registry](/docs/registry) gives each NPU build). `maxTokens` is **not**
+clamped up to 1024 on the NPU attempt (it is on CPU and GPU — see below); keep
+it at or below that length. Only a bundle compiled
 for an NPU runs on one. A generic bundle is never tried there: it has no NPU
 graph, and LiteRT would try to compile it on the device with a compiler
 plugin, which no NPU stack here ships, and run it on the CPU while reporting
@@ -296,7 +299,9 @@ next to a text model on the GPU or the CPU is refused when it is on
 excludes — the GPU for the published Gemma 4 and Gemma 3n audio encoders,
 which declare cpu — is refused. `model.activeVisionBackend` and
 `model.activeAudioBackend` report the choice (null for a bundle without that
-encoder). A refusal is a `LiteRtLmBundleException` whose `problem`
+encoder). Which encoder backends to pick with the text model on the NPU, with
+measurements, is in
+[Multimodal](/docs/multimodal#vision-and-audio-with-the-text-model-on-the-npu). A refusal is a `LiteRtLmBundleException` whose `problem`
 says why (`incomplete`, `wrongBackend`, `unsupportedNpu` for a bundle of an NPU
 vendor this package does not know, a Qualcomm one on Windows or a Google Tensor
 or MediaTek one off Android), thrown before any engine exists. The device's SoC is not read up front: a bundle built for another
@@ -345,6 +350,15 @@ when the app's output is redirected (`app.exe 2> err.log`), the lines follow
 the redirect from 1.17.0; before that the Flutter runner's `AttachConsole` sent
 them to the parent's console.
 
+### Thinking budget
+
+`LiteRtLmEngine(thinkingTokenBudget: 512)` (1.18.0) caps how many tokens each
+generation with thinking on spends thinking, in every model the engine builds;
+null, the default, sets none. Keep it below `maxOutputTokens` and below what
+the context (`maxTokens`) has left after the prompt and the history, or it is
+never reached. On the GPU it slows decoding; the web engine ignores it. See
+[Thinking mode → Thinking budget](/docs/thinking-mode#thinking-budget).
+
 ### Inspecting a model file
 
 `readLiteRtLmBundleInfo(path)` (native only) returns what the engine reads:
@@ -358,6 +372,32 @@ info.visionEncoder?.npuTarget; // null: the encoder is not compiled
 info.audioEncoder?.backendConstraint; // e.g. ['cpu']
 info.hasMtpDrafter;            // can decode speculatively
 ```
+
+## Response formats
+
+`openSession(responseFormat:)` and `openChat(responseFormat:)` install
+LiteRT-LM 0.19's LLGuidance provider on that conversation and apply the JSON
+schema to every structured send. Decoding is constrained to core's full
+`ResponseFormat` dialect, and core validates the completed reply as a second
+check. Call `model.refusalFor(format)` before opening the session; an unsupported
+row returns a `ResponseFormatUnsupportedException`. If LLGuidance rejects an
+otherwise dialect-valid schema at the first send, that send throws the same
+exception. Formats cannot be combined with tools or thinking.
+
+| Native row | Structured output |
+|---|---|
+| macOS arm64 CPU / Metal | ✅ |
+| Linux x64 CPU / Vulkan | ✅ |
+| Windows x64 CPU / D3D12 | ✅ |
+| Android arm64 CPU | ✅ |
+| Android arm64 Adreno / Mali / PowerVR GPU | ✅ |
+| iOS arm64 CPU / Metal | ✅ |
+| NPU, Web, and every unlisted row | ❌ refused |
+
+The Web `.litertlm` runtime remains on `@litert-lm/core` 0.18 and has no
+constraint API. NPU support is refused per vendor until that exact row passes a
+discriminating device run; support never silently falls back to unconstrained
+decoding.
 
 ## `maxTokens` is the CONTEXT window, not the reply length
 
@@ -374,8 +414,25 @@ To cap **generation length**, use `maxOutputTokens` on the session:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096); // context
-final session = await model.createSession(maxOutputTokens: 100);  // reply cap
+final session = await model.openSession(maxOutputTokens: 100);  // reply cap
 ```
+
+## Open sessions
+
+`openSession()` and `openChat()` share the loaded model but keep independent
+contexts. Each session has a native conversation and KV cache on macOS
+CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, Qualcomm or Google Tensor
+NPUs on Android, and Intel NPUs on Windows. Linux Vulkan, Windows D3D12, iOS,
+Android CPU/PowerVR/MediaTek, and unverified Linux arm64 accelerators use virtual
+sessions that replay full messages, including image and audio parts, into one
+shared conversation. The web runtime is also virtual but remains text-only.
+Generation remains serialized on every backing.
+
+Hybrid models such as LFM2 rebuild from full messages when recovery is needed
+and never rewind. Native sessions cost memory while idle: Gemma 4 E2B on an
+M5 Pro added 36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the
+third session onward (the first two reused freed memory). Set
+`maxConcurrentSessions` on `getActiveModel` or `openModel` to bound the count.
 
 ## Web setup
 

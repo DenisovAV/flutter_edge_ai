@@ -122,9 +122,7 @@ qairtFilesFrom(
   }
   return (
     libraries: libraries,
-    notices: {
-      for (final f in qairtNoticeFiles) f: ?entries[qairtEntryPath(f)],
-    },
+    notices: {for (final f in qairtNoticeFiles) f: ?entries[qairtEntryPath(f)]},
   );
 }
 

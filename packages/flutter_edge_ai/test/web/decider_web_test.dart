@@ -16,11 +16,13 @@
 // alone takes over ten minutes. The release numbers on the Decisions page
 // come from release builds.
 //
-// Not run by tool/test_all.sh or CI, which run on the VM. Model-free, so a
-// local headless Chrome is fine. Run:
+// tool/test_all.sh (and so CI) runs it with `--exclude-tags slow`, which
+// leaves out the linear fits at 50 and 150 options (~3 and ~15 minutes
+// under DDC). Model-free, so a local headless Chrome is fine. Run all of it:
 //   flutter test --platform chrome test/web/decider_web_test.dart
 //   flutter test --platform chrome --wasm test/web/decider_web_test.dart
 @TestOn('browser')
+@Timeout(Duration(minutes: 40))
 library;
 
 import 'dart:async';
@@ -100,6 +102,7 @@ void main() {
       final name =
           '$c options × 10, ${linear ? 'linear' : 'centroid'} + '
           'cross-fit';
+      final tag = linear && c >= 50 ? 'slow' : null;
       test(name, () async {
         final request = fingerprintRequest(c, linear: linear);
         late DeciderFit fit;
@@ -138,7 +141,7 @@ void main() {
             ? time ~/ 20
             : const Duration(milliseconds: 500);
         expect(gap, lessThan(bound));
-      }, timeout: const Timeout(Duration(minutes: 40)));
+      }, tags: tag);
     }
   }
 }

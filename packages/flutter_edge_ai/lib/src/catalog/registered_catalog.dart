@@ -1,0 +1,138 @@
+import 'package:flutter_edge_ai/src/catalog/model_catalog.dart';
+import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
+
+/// The catalogs of [providers] that implement [ModelCatalogSource], as one:
+/// what `FlutterEdgeAi.catalog` returns.
+///
+/// A catalog reached through two providers counts once. A model id offered by
+/// several catalogs is one model whose variants are concatenated in provider
+/// order, so the first registered provider's variants come first; its
+/// display data comes from the first catalog that lists it. Two catalogs that
+/// offer different variants under the same id (`<model>/<slug>`) are a
+/// [StateError]: one of them would otherwise be dropped, and an app would
+/// install the other. The same variant object in both counts once.
+final class RegisteredCatalog extends ModelCatalog {
+  /// The catalog of [providers], in the order they were registered.
+  RegisteredCatalog(Iterable<Object> providers) : models = _merge(providers);
+
+  @override
+  String get name => 'flutter_edge_ai';
+
+  @override
+  final List<CatalogModel> models;
+
+  static List<CatalogModel> _merge(Iterable<Object> providers) {
+    final catalogs = <ModelCatalog>[];
+    for (final provider in providers) {
+      if (provider case final ModelCatalogSource source) {
+        final catalog = source.modelCatalog;
+        if (!catalogs.any((c) => identical(c, catalog))) catalogs.add(catalog);
+      }
+    }
+    final byId = <String, List<CatalogModel>>{};
+    for (final catalog in catalogs) {
+      for (final model in catalog.models) {
+        _checkIds(catalog, model);
+        (byId[model.id] ??= []).add(model);
+      }
+    }
+    return List.unmodifiable([
+      for (final parts in byId.values)
+        parts.length == 1 ? parts.single : _MergedModel(parts),
+    ]);
+  }
+}
+
+/// Each variant of [model] is `<model id>/<slug>`, names [model] as its
+/// model, and is listed once: checked in every catalog, so whether one is
+/// valid does not depend on which other packages are registered.
+void _checkIds(ModelCatalog catalog, CatalogModel model) {
+  // First, so a model with no variants is checked too.
+  if (model.id.isEmpty || model.id.contains('/')) {
+    throw StateError(
+      'catalog ${catalog.name}: the model id "${model.id}" is empty or holds '
+      'a "/"',
+    );
+  }
+  final seen = <String>{};
+  for (final v in model.variants) {
+    final problem = switch (v) {
+      _
+          when !v.id.startsWith('${model.id}/') ||
+              v.id.length == model.id.length + 1 ||
+              v.id.substring(model.id.length + 1).contains('/') =>
+        'its id is not "${model.id}/<slug>"',
+      _ when v.modelId != model.id => 'its modelId is "${v.modelId}"',
+      _ when !seen.add(v.id) => 'it is listed twice',
+      _ => null,
+    };
+    if (problem != null) {
+      throw StateError(
+        'catalog ${catalog.name}: ${v.id} in model ${model.id}: $problem',
+      );
+    }
+  }
+}
+
+/// A model several catalogs offer.
+final class _MergedModel extends CatalogModel {
+  _MergedModel(this._parts)
+    : variants = List.unmodifiable(_variantsOf(_parts)) {
+    final first = _parts.first;
+    for (final other in _parts.skip(1)) {
+      if (other.displayName != first.displayName ||
+          other.license != first.license) {
+        edgeAiLog(
+          '[flutter_edge_ai] catalog: ${first.id} differs between catalogs '
+          '("${first.displayName}", ${first.license} vs '
+          '"${other.displayName}", ${other.license}); the first is shown.',
+        );
+      }
+    }
+  }
+
+  final List<CatalogModel> _parts;
+
+  static List<CatalogVariant> _variantsOf(List<CatalogModel> parts) {
+    final seen = <String, CatalogVariant>{};
+    for (final part in parts) {
+      for (final v in part.variants) {
+        if (seen[v.id] case final first?) {
+          // The same variant object reached through two catalogs (an app's
+          // catalog that reuses a package's variants) is one variant.
+          if (identical(first, v)) continue;
+          throw StateError(
+            'catalog: ${v.id} is offered by ${first.catalogName} and by '
+            '${v.catalogName}; a variant id must be unique across catalogs',
+          );
+        }
+        seen[v.id] = v;
+      }
+    }
+    return seen.values.toList();
+  }
+
+  @override
+  final List<CatalogVariant> variants;
+
+  @override
+  String get id => _parts.first.id;
+
+  @override
+  String get displayName => _parts.first.displayName;
+
+  @override
+  String get family => _parts.first.family;
+
+  @override
+  String get archClass => _parts.first.archClass;
+
+  @override
+  double? get parametersB => _parts.first.parametersB;
+
+  @override
+  String get license => _parts.first.license;
+
+  @override
+  String get licenseUrl => _parts.first.licenseUrl;
+}

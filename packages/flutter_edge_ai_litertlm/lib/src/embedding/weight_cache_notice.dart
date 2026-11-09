@@ -25,7 +25,8 @@ void noticeRequireWeightCacheNotApplied(String why) {
   edgeAiLog(
     'ℹ️  LiteRtEmbeddingBackend(requireWeightCache: true) does not apply to '
     'this load: $why. It applies to EmbeddingGemma 2 .litertlm bundles on '
-    'CPU, and on the NPU to the audio tower of a load with declared audio.',
+    'CPU and on the GPU, and on the NPU to the audio tower of a load with '
+    'declared audio.',
   );
 }
 

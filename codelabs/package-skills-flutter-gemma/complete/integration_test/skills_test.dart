@@ -37,7 +37,7 @@ void main() {
     expect(await FlutterEdgeAi.isModelInstalled(model.fileName), isTrue);
 
     final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-    final chat = await inference.createChat(
+    final chat = await inference.openChat(
       tools: const [ColorTool.declaration],
       supportsFunctionCalls: true,
       modelType: model.modelType,

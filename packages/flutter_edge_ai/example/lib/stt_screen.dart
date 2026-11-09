@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'services/catalog_install.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -74,25 +75,28 @@ class _SttScreenState extends State<SttScreen> {
         token = await AuthTokenService.loadToken();
       }
 
-      await FlutterEdgeAi.installStt()
-          .modelFromNetwork(widget.model.modelUrl, token: token)
-          .tokenizerFromNetwork(widget.model.tokenizerUrl, token: token)
-          .ofType(widget.model.sttModelType)
-          .withModelProgress((percent) {
-            if (!mounted) return;
-            setState(() {
-              _downloadStage = 'model';
-              _downloadPercent = percent;
-            });
-          })
-          .withTokenizerProgress((percent) {
-            if (!mounted) return;
-            setState(() {
-              _downloadStage = 'tokenizer';
-              _downloadPercent = percent;
-            });
-          })
-          .install();
+      final replaced = await installFromCatalogReplacingActive(
+        () => FlutterEdgeAi.installStt()
+            .fromCatalog(widget.model.catalogVariant, token: token)
+            .withProgress((percent) {
+              if (!mounted) return;
+              setState(() {
+                _downloadStage = 'model';
+                _downloadPercent = percent;
+              });
+            })
+            .install(),
+        variant: widget.model.catalogVariant,
+        confirm: (model, bytes) =>
+            askToReplaceActiveModel(context, model, bytes),
+      );
+      if (replaced case final CatalogInstallKept kept) {
+        if (mounted) {
+          setState(() => _isInitializing = false);
+          leaveKeeping(context, kept);
+        }
+        return;
+      }
 
       final recognizer = await FlutterEdgeAi.getActiveStt();
 

@@ -5,6 +5,7 @@ library;
 
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_edge_ai/src/model_management/utils/app_container_path.dart';
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 import 'package:path/path.dart' as path;
@@ -53,7 +54,7 @@ Future<FileIdentity> compareFiles(String a, String b) async {
 /// path inside the app's container is moved into the current container,
 /// which an update or a restore from a backup can relocate.
 Future<String> appFileLocationNow(String recordedPath) async {
-  if (!Platform.isIOS) return recordedPath;
+  if (!(debugAppContainerCanMove ?? Platform.isIOS)) return recordedPath;
   final container = path.dirname(
     (await getApplicationDocumentsDirectory()).path,
   );
@@ -68,9 +69,20 @@ Future<String> appFileLocationNow(String recordedPath) async {
   return now;
 }
 
+/// Stands in for "this run is on iOS" in [appFileLocationNow], so a test on
+/// a desktop host can move the app's container. Null outside tests.
+@visibleForTesting
+bool? debugAppContainerCanMove;
+
 /// Whether a bundled resource is copied into core's model directory (Android
 /// copies it out of the APK) rather than read in place (the iOS bundle).
-bool get bundledResourcesAreCopies => Platform.isAndroid;
+bool get bundledResourcesAreCopies =>
+    debugBundledResourcesAreCopies ?? Platform.isAndroid;
+
+/// Stands in for "this run is on Android" in [bundledResourcesAreCopies], so a
+/// test on a desktop host can take the Android path. Null outside tests.
+@visibleForTesting
+bool? debugBundledResourcesAreCopies;
 
 /// The size and modification time of the file at [filePath], or null when
 /// nothing is there — enough to tell that a file was not replaced since.

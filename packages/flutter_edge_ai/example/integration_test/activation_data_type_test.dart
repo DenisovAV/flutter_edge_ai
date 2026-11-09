@@ -62,7 +62,7 @@
 ///
 /// Prerequisites (otherwise the model is downloaded: E2B 2.59 GB, E4B 3.66 GB,
 /// E2B web 2.01 GB):
-///   macOS:   gemma-4-E2B-it.litertlm in ~/Library/Containers/.../Documents/
+///   macOS:   gemma-4-E2B-it.litertlm in ~/models (container Documents fallback)
 ///   Android: adb push gemma-4-E4B-it.litertlm /data/local/tmp/flutter_gemma_test/
 ///   iOS, web: downloaded via FlutterEdgeAi.installModel()
 ///
@@ -216,11 +216,10 @@ List<({String text, List<String> figures})> _questions(List<_Delivery> log) {
 /// Every figure in [text]: each run of digits joined by `/`, kept when it is a
 /// date or has three digits or more. Whole runs, so `2026/06/233` is not read
 /// as a right `2026/06/23`.
-Iterable<String> _figures(String text) =>
-    RegExp(r'\d+(?:/\d+)*')
-        .allMatches(text)
-        .map((m) => m[0]!)
-        .where((f) => f.contains('/') || f.length >= 3);
+Iterable<String> _figures(String text) => RegExp(r'\d+(?:/\d+)*')
+    .allMatches(text)
+    .map((m) => m[0]!)
+    .where((f) => f.contains('/') || f.length >= 3);
 
 /// What one run of the three questions produced: a line for each answer that
 /// failed, the ones among them that invented a figure (the bug itself, as
@@ -258,7 +257,7 @@ Future<_Run> _askAll(ActivationDataType? type) async {
       );
     }
     for (final q in _questions(log)) {
-      final session = await model.createSession(topK: 1, maxOutputTokens: 512);
+      final session = await model.openSession(topK: 1, maxOutputTokens: 512);
       try {
         final prompt = '$text\n\n${q.text}';
         final tokens = await session.sizeInTokens(prompt);

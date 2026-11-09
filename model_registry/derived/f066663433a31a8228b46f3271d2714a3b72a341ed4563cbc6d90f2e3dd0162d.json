@@ -1,0 +1,37 @@
+{
+  "container_version": "1.7.0",
+  "size": 166007264,
+  "npu_target": "Google/Tensor_G5",
+  "llm_metadata_max_num_tokens": null,
+  "system_metadata": {
+    "uuid": "434d0a05-cfb8-460f-9fc9-c96aba05b2e4",
+    "creation_timestamp": "2026-09-25T08:01:31.867152+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "EmbeddingMetadataProto",
+      "length": 121
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 70257824,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_text_encoder",
+      "length": 91001312,
+      "npu_target": "Google/Tensor_G5",
+      "items": {
+        "model_type": "tf_lite_text_encoder"
+      }
+    }
+  ]
+}

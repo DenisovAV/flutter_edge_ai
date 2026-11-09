@@ -10,7 +10,8 @@ import 'package:flutter_edge_ai/src/sampling.dart';
 import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
 import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
-import 'package:meta/meta.dart' show experimental, internal, nonVirtual;
+import 'package:meta/meta.dart'
+    show experimental, internal, nonVirtual, protected;
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 // Conditional default instance: the mobile/desktop default pulls dart:io;
@@ -21,13 +22,16 @@ import 'decision/decider.dart' show Decider;
 import 'decision/decider_exceptions.dart' show DeciderUnsupportedException;
 import 'decision/decider_method.dart' show InferenceDeciderCalibration;
 import 'decision/inference_decider.dart' show checkInferenceDeciderArguments;
-import 'decision/option_scoring.dart' show OptionScoringModel;
+import 'decision/option_scoring.dart' show OptionScorer;
 import 'decision/option_scoring_decider.dart' show createOptionScoringDecider;
 import 'decision/decider_option.dart' show DeciderOption;
 import 'model_management/cancel_token.dart' show CancelToken;
 import 'model_management/model_specs.dart' show InferenceModelSpec;
 import 'registry/runtime_config.dart' show ActiveModelParams;
 import 'embedding/embedding_model.dart';
+import 'structured/response_format.dart';
+import 'structured/structured_output.dart';
+import 'structured/structured_session.dart';
 
 // Embedding types that used to be declared here; re-exported so the rest of
 // core keeps importing them from the platform interface.
@@ -71,14 +75,14 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   ///
   /// Deprecated: apps call `FlutterEdgeAi.getActiveModel()`, which this
   /// forwards to on mobile and desktop, where [modelType] and [fileType] are
-  /// ignored (the active model's spec decides). Removed in 2.6.0.
+  /// ignored (the active model's spec decides). Removed in 3.0.0.
   ///
   /// [modelType] — model type to create.
   /// [maxTokens] — the model's CONTEXT WINDOW: the total number of tokens
   /// shared by input (system prompt + history + current message) AND the
   /// generated output, i.e. the KV-cache budget. It is NOT the maximum
   /// response length — to cap how much is generated, use `maxOutputTokens`
-  /// on [InferenceModel.createSession]. `.litertlm` models require a context
+  /// on [InferenceModel.openSession]. `.litertlm` models require a context
   /// window of at least 1024 (their baked `kv_cache_max_len`); a smaller
   /// value is clamped up to 1024 to avoid a native tensor-allocation crash
   /// (#318). The default (1024) is safe for every supported model.
@@ -92,7 +96,8 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// [loraRanks] — optional supported LoRA ranks.
   /// [maxNumImages] — maximum number of images (for multimodal models).
   /// [supportImage] — whether the model supports images.
-  /// [supportAudio] — whether the model supports audio (Gemma 3n E4B only).
+  /// [supportAudio] — whether to load the audio encoder (e.g. Gemma 4 or
+  /// Gemma 3n `.litertlm`, E2B and E4B; native only).
   /// [multimodalOrder] — the order of a user message's images, audio and
   /// text; null = [MultimodalOrder.forModelType] of the active model's type.
   /// Honored by the native LiteRT-LM engine.
@@ -109,12 +114,8 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
   /// cannot be created falls back to CPU without an error. The vision and
   /// audio encoders keep the model's own type, and MediaPipe, ONNX, built-in
   /// AI and the web engines ignore the setting.
-  /// [maxConcurrentSessions] — optional cap on the number of sessions open
-  /// at once via [InferenceModel.openSession]. `null` (default) = no cap,
-  /// backward-compatible. When set, the (cap+1)-th [InferenceModel.openSession]
-  /// throws [StateError]. Use this on mobile with large models to guard
-  /// against OOM from multiple concurrent KV caches.
-  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 2.6.0.')
+  /// [maxConcurrentSessions] — as on `FlutterEdgeAi.getActiveModel`.
+  @Deprecated('Use FlutterEdgeAi.getActiveModel(). Removed in 3.0.0.')
   Future<InferenceModel> createModel({
     required ModelType modelType,
     ModelFileType fileType = ModelFileType.task,
@@ -125,7 +126,7 @@ abstract class FlutterEdgeAiPlugin extends PlatformInterface {
     List<int>? loraRanks,
     int? maxNumImages, // Add image support
     bool supportImage = false, // Add image support flag
-    bool supportAudio = false, // Add audio support flag (Gemma 3n E4B)
+    bool supportAudio = false, // e.g. Gemma 4 / Gemma 3n .litertlm, native
     MultimodalOrder? multimodalOrder,
     bool? enableSpeculativeDecoding,
     ActivationDataType? activationDataType,
@@ -260,8 +261,13 @@ abstract class InferenceModel {
   /// For concurrent dialogues on a single loaded model use [openSession]
   /// instead — it returns detached sessions that don't touch this field.
   /// Read [sessions] to enumerate all live sessions (legacy + open).
+  @Deprecated('Keep the session openSession() returns. Removed in 3.0.0.')
   InferenceModelSession? get session;
 
+  /// The single chat created via [createChat].
+  ///
+  /// Keep the value returned by [openChat] instead and close it when done.
+  @Deprecated('Keep the chat openChat() returns. Removed in 3.0.0.')
   InferenceChat? chat;
 
   int get maxTokens;
@@ -305,7 +311,8 @@ abstract class InferenceModel {
   /// values needs the model reloaded.
   /// [loraPath] — optional path to LoRA model.
   /// [enableVisionModality] — enable vision modality for multimodal models.
-  /// [enableAudioModality] — enable audio modality for Gemma 3n E4B models.
+  /// [enableAudioModality] — enable audio modality (e.g. Gemma 4 or Gemma 3n
+  /// `.litertlm`).
   ///
   /// [maxOutputTokens] — optional cap on how many tokens this session
   /// *generates* per response. This is the GENERATION length, distinct from
@@ -317,6 +324,10 @@ abstract class InferenceModel {
   /// below it (#318). Currently honored on the `.litertlm` (FFI) path; the
   /// MediaPipe `.task` path has no session-level output cap and ignores it
   /// (a log line is emitted).
+  @Deprecated(
+    'Use openSession(). It does not close the previous session: '
+    'close each session yourself. Removed in 3.0.0.',
+  )
   Future<InferenceModelSession> createSession({
     double? temperature,
     int? randomSeed,
@@ -324,7 +335,7 @@ abstract class InferenceModel {
     double? topP,
     String? loraPath,
     bool? enableVisionModality, // Add vision modality support
-    bool? enableAudioModality, // Add audio modality support (Gemma 3n E4B)
+    bool? enableAudioModality, // e.g. Gemma 4 / Gemma 3n .litertlm
     String? systemInstruction,
     bool enableThinking =
         false, // Enable thinking mode (Gemma 4 via extraContext)
@@ -339,13 +350,13 @@ abstract class InferenceModel {
   /// dialogues on a single loaded model.
   ///
   /// **Why:** the (expensive) model weights are loaded once and shared across
-  /// every session; each session only adds its own lightweight context. This
+  /// every session; each session adds its own context. This
   /// lets one loaded model back several independent conversations — e.g. a
   /// tabbed chat UI, two different system instructions / roles side by side,
   /// or background summarization alongside an active chat — without reloading
   /// the weights or clearing+rebuilding a single session's history on every
-  /// switch. If you only ever have one conversation at a time, use
-  /// [createSession] / [createChat] instead.
+  /// switch. Keep every returned handle and close it when done, including
+  /// when only one conversation is open.
   ///
   /// Unlike [createSession], this does NOT modify the legacy [session]
   /// field. Concurrent sessions are tracked separately and surface via
@@ -359,29 +370,72 @@ abstract class InferenceModel {
   /// calls do NOT run in parallel. This is intentional (parallel on-device
   /// inference would contend for the accelerator and risk OOM) and is the
   /// same on every backend:
-  /// - `.litertlm` (FFI, all native): the engine allows one live
-  ///   conversation at a time, so sessions multiplex — the active session's
-  ///   history is replayed into the single conversation on switch.
-  /// - `.litertlm` (web, `@litert-lm/core`): separate conversations, but
-  ///   generation is still serialized.
+  /// - `.litertlm` (FFI): each session has a native conversation and KV cache
+  ///   on macOS CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, and
+  ///   Qualcomm or Google Tensor NPUs on Android and Intel NPUs on Windows.
+  ///   Linux Vulkan, Windows D3D12, iOS, Android CPU/PowerVR/MediaTek,
+  ///   and unverified Linux arm64 accelerators use virtual sessions: full
+  ///   messages are replayed into one shared conversation on a switch.
+  /// - `.litertlm` (web, `@litert-lm/core`): virtual sessions replay full
+  ///   messages into the shared conversation; generation is serialized.
   /// - `.task` (MediaPipe, Android/iOS): N real `LlmInferenceSession` live
   ///   at once (each with its own KV cache), generation serialized by a
   ///   mutex.
   ///
-  /// **Memory caveat**: each concurrent session holds its own context
-  /// (~100-500 MB depending on model + maxTokens). On mobile with large
-  /// models (Gemma 4 E2B+), several concurrent sessions can OOM the process.
-  /// Multi-session is most reliable on desktop and on high-end mobile with
-  /// small models (Gemma 3 1B / 270M). For larger models on phones the safer
-  /// pattern is still close+recreate with [InferenceChat]'s built-in history
-  /// replay. Use [maxConcurrentSessions] on `createModel` to cap the count.
+  /// **Memory caveat** — what an open session costs depends on the engine:
+  /// - `.task` (MediaPipe, Android/iOS): its own KV cache (~100-500 MB
+  ///   depending on model + maxTokens). On mobile with large models
+  ///   (Gemma 4 E2B+), several concurrent sessions can OOM the process; for
+  ///   them the safer pattern is still close+recreate with
+  ///   [InferenceChat]'s built-in history replay.
+  /// - `.litertlm` (FFI): a native-backed session keeps its own KV cache.
+  ///   Gemma 4 E2B on an M5 Pro added 36.8 MiB of RSS per idle session at
+  ///   `maxTokens: 4096`, from the third session onward (the first two reused
+  ///   freed memory). A virtual session keeps full message history
+  ///   instead and pays replay time when it becomes active. Hybrid models
+  ///   such as LFM2 rebuild from full messages when recovery is needed and
+  ///   never rewind.
+  /// - GGUF (`flutter_edge_ai_llama`): the sessions share one runtime and
+  ///   allocate no separate native KV caches.
+  /// - ONNX (native, `flutter_edge_ai_onnx` 0.8.0): its own ORT-GenAI
+  ///   generator, whose KV cache (`maxTokens` x the per-token cache size) is
+  ///   allocated at its first turn; capped at 2 on Android and iOS when
+  ///   `maxConcurrentSessions` is unset.
+  /// - `.task` (MediaPipe web): only its history, kept in Dart. The sessions
+  ///   share the model's one `LlmInference`, its sampling and its LoRA, so
+  ///   their calls run one at a time: a turn waits for the other sessions'
+  ///   turns, as long as they run, unless they are stopped. Each turn
+  ///   resends the session's whole conversation.
+  /// - ONNX (web): only its history, resent in full on every turn.
+  /// - `.litertlm` web and built-in AI: not measured.
   ///
-  /// Not yet available on the MediaPipe **web** `.task` path — throws
-  /// [UnsupportedError] there.
+  /// Cap native KV-cache memory and the total session count with
+  /// `maxConcurrentSessions` on
+  /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`. Null sets
+  /// no cap unless the engine applies a platform default: ONNX caps open
+  /// sessions at 2 on Android and iOS.
   ///
-  /// Throws [StateError] if `maxConcurrentSessions` (set on
-  /// [FlutterEdgeAiPlugin.createModel]) is exceeded — close an existing
-  /// session before opening a new one.
+  /// Throws [UnsupportedError] on an engine that does not implement it.
+  ///
+  /// Throws [StateError] when the model's `maxConcurrentSessions` (set on
+  /// `FlutterEdgeAi.getActiveModel` or `FlutterEdgeAi.openModel`) would be
+  /// exceeded — close an existing session before opening a new one.
+  ///
+  /// [responseFormat] — what every reply of the session must be. Core checks
+  /// each reply: a turn that ends before the value is complete (the output
+  /// cap, a full context, a stop, a close) fails the response with
+  /// [IncompleteStructuredOutputException], and a complete reply that is not
+  /// a value of the format with [NonConformingStructuredOutputException],
+  /// after the text has been delivered. The format is refused with
+  /// [ResponseFormatUnsupportedException] before the engine is called when
+  /// this model cannot enforce it (see [refusalFor]), and with
+  /// [ArgumentError] together with [tools] or `enableThinking: true`. The
+  /// returned session is then core's, around the engine's, and that is the
+  /// one [sessions] lists.
+  ///
+  /// Core implements this once for every engine (`@nonVirtual`); an engine
+  /// opens its sessions in [openEngineSession].
+  @nonVirtual
   Future<InferenceModelSession> openSession({
     double? temperature,
     int? randomSeed,
@@ -394,24 +448,133 @@ abstract class InferenceModel {
     bool enableThinking = false,
     List<Tool> tools = const [],
     int? maxOutputTokens,
-  }) async {
-    throw UnsupportedError(
-      'openSession() is not supported for $runtimeType. '
-      'Concurrent sessions are available on `.litertlm` (FFI native + web) '
-      'and `.task` (MediaPipe Android/iOS); the MediaPipe Web `.task` path '
-      'does not support concurrent sessions.',
+    ResponseFormat? responseFormat,
+  }) => _openSession(
+    SessionRequest(
+      temperature: temperature,
+      randomSeed: randomSeed,
+      topK: topK,
+      topP: topP,
+      loraPath: loraPath,
+      enableVisionModality: enableVisionModality,
+      enableAudioModality: enableAudioModality,
+      systemInstruction: systemInstruction,
+      enableThinking: enableThinking,
+      tools: tools,
+      maxOutputTokens: maxOutputTokens,
+      responseFormat: _jsonSchemaFormat(responseFormat),
+    ),
+  );
+
+  /// Core's [openSession], also the session creator of every [openChat]
+  /// chat, so a chat's rebuilt sessions pass the same checks as its first.
+  Future<InferenceModelSession> _openSession(SessionRequest request) async {
+    final format = request.responseFormat;
+    if (format == null) return openEngineSession(request);
+    _checkFormatArguments(
+      tools: request.tools,
+      enableThinking: request.enableThinking,
     );
+    final refusal = refusalFor(format);
+    if (refusal != null) throw refusal;
+    final engineSession = await openEngineSession(request);
+    final structured = StructuredSession(
+      engineSession,
+      format,
+      engine: runtimeType,
+    );
+    _structuredSessions[engineSession] = structured;
+    return structured;
   }
 
-  /// Live sessions owned by this model — union of the legacy [session]
-  /// (if any) and every active [openSession] result. Returns an
-  /// unmodifiable view; mutate via [openSession], `session.close()`, or
-  /// [close].
-  List<InferenceModelSession> get sessions {
-    final legacy = session;
-    return List.unmodifiable([if (legacy != null) legacy]);
+  /// [openSession] and [openChat] refuse a format together with tools or
+  /// thinking: a tool call or a thought is not a value of the format.
+  static void _checkFormatArguments({
+    required List<Tool> tools,
+    required bool enableThinking,
+  }) {
+    if (tools.isNotEmpty) {
+      throw ArgumentError.value(
+        tools.length,
+        'tools',
+        'A responseFormat cannot be combined with tools',
+      );
+    }
+    if (enableThinking) {
+      throw ArgumentError.value(
+        enableThinking,
+        'enableThinking',
+        'A responseFormat cannot be combined with thinking',
+      );
+    }
   }
 
+  /// What formats this model can enforce as loaded: its engine, platform,
+  /// backend, and model. [StructuredOutputSupport.none] carries the reason when
+  /// it enforces none; support must not be inferred from the engine package
+  /// alone.
+  ///
+  /// Core implements this once (`@nonVirtual`); an engine reports its own in
+  /// [engineStructuredOutputSupport], and core throws [StateError] naming the
+  /// engine when that names a keyword outside [ResponseFormat.dialect].
+  @nonVirtual
+  StructuredOutputSupport get structuredOutputSupport =>
+      checkedSupport(engineStructuredOutputSupport, runtimeType);
+
+  /// Why [format] would be refused here, or null if [openSession] would
+  /// accept it. Composes, in order: the engine's support (none → refused
+  /// with its reason), each schema keyword against the engine's keywords
+  /// (the first one missing, with its path; annotations always pass), then
+  /// [engineRefusalFor].
+  @nonVirtual
+  ResponseFormatUnsupportedException? refusalFor(ResponseFormat format) =>
+      composeRefusal(this, format);
+
+  /// What this engine enforces on this model as loaded. Default: nothing.
+  @protected
+  StructuredOutputSupport get engineStructuredOutputSupport =>
+      const StructuredOutputSupport.none(
+        'This engine does not enforce a format.',
+      );
+
+  /// A refusal a keyword set cannot express (for example, built-in AI on
+  /// Apple: a property-less object can only produce `{}`). Called by
+  /// [refusalFor] only after the support and keyword checks passed. Default:
+  /// none.
+  @protected
+  ResponseFormatUnsupportedException? engineRefusalFor(
+    JsonSchemaResponseFormat format,
+  ) => null;
+
+  /// An independent session for [request]. Called by core for [openSession]
+  /// and for every initial or rebuilt [openChat] session, after format checks
+  /// when [SessionRequest.responseFormat] is non-null. Default:
+  /// [UnsupportedError], as the base [openSession] gave before 2.6.0.
+  @protected
+  Future<InferenceModelSession> openEngineSession(SessionRequest request) =>
+      Future.error(
+        UnsupportedError('openSession() is not supported for $runtimeType.'),
+      );
+
+  /// Every live session: the deprecated [session] (if any) and each open
+  /// session, as the caller holds it. Returns an unmodifiable list; mutate
+  /// via [openSession], `session.close()`, or [close]. Engines report theirs
+  /// through [engineSessions].
+  @nonVirtual
+  List<InferenceModelSession> get sessions =>
+      List.unmodifiable(engineSessions.map((s) => _structuredSessions[s] ?? s));
+
+  /// The sessions this engine holds open: the legacy [session] and each
+  /// session [openEngineSession] returned that is not closed yet.
+  @protected
+  List<InferenceModelSession> get engineSessions => [
+    if (session != null) session!,
+  ];
+
+  /// Creates a chat in the legacy singleton lane, closing its prior session.
+  ///
+  /// Use [openChat] and close the returned chat when done.
+  @Deprecated('Use openChat() and close the chat when done. Removed in 3.0.0.')
   Future<InferenceChat> createChat({
     double? temperature,
     int? randomSeed,
@@ -471,10 +634,8 @@ abstract class InferenceModel {
     return chat!;
   }
 
-  /// Same as [createChat], but uses [openSession] internally so the
-  /// resulting chat owns an independent session that does not touch the
-  /// legacy [session] field or other open chats. Use this when you need
-  /// concurrent chats on a single loaded model.
+  /// Opens a chat that owns an independent [openSession] and does not touch
+  /// other open chats. Keep the returned chat and close it when done.
   ///
   /// Each chat's own context-overflow rotation
   /// (`_recreateSessionWithReducedChunks`) creates a fresh sibling
@@ -484,6 +645,24 @@ abstract class InferenceModel {
   /// stored in [chat] — that field tracks only the legacy [createChat]
   /// singleton. Hold the returned chat reference yourself and close it
   /// when done.
+  ///
+  /// An unset value is filled from the model by [resolveChatRequest], so a
+  /// model whose type is not Gemma gets its own parsers here too.
+  ///
+  /// [responseFormat] — what every reply must be, as on [openSession]: every
+  /// session of the chat, its rebuilt ones too, is opened with it. A reply
+  /// that fails the check is kept in the chat's history, then thrown
+  /// ([InferenceChat.generateChatResponse]); a turn stopped before any text
+  /// is taken back instead, its user message included. Checked before the engine is
+  /// asked anything: [ArgumentError] together with [tools] or
+  /// `enableThinking: true` (as the caller passed them), then
+  /// [ResponseFormatUnsupportedException] when [refusalFor] refuses it; only
+  /// then does the engine resolve the request.
+  ///
+  /// Core implements this once for every engine (`@nonVirtual`); an engine
+  /// supplies its defaults in [resolveChatRequest] and its per-turn
+  /// behaviour in [createChatTurnHooks].
+  @nonVirtual
   Future<InferenceChat> openChat({
     double? temperature,
     int? randomSeed,
@@ -501,38 +680,99 @@ abstract class InferenceModel {
     int? maxFunctionBufferLength,
     String? systemInstruction,
     int? maxOutputTokens, // Cap GENERATED tokens (see createSession)
+    ResponseFormat? responseFormat,
   }) async {
-    final independentChat = InferenceChat(
-      sessionCreator: () => openSession(
+    final format = _jsonSchemaFormat(responseFormat);
+    if (format != null) {
+      _checkFormatArguments(tools: tools, enableThinking: enableThinking);
+      final refusal = refusalFor(format);
+      if (refusal != null) throw refusal;
+    }
+    final resolved = resolveChatRequest(
+      ChatRequest(
         temperature: temperature,
         randomSeed: randomSeed,
         topK: topK,
         topP: topP,
+        tokenBuffer: tokenBuffer,
         loraPath: loraPath,
-        enableVisionModality: supportImage ?? false,
-        enableAudioModality: supportAudio ?? false,
-        systemInstruction: systemInstruction,
-        enableThinking: enableThinking,
+        supportImage: supportImage,
+        supportAudio: supportAudio,
         tools: tools,
+        supportsFunctionCalls: supportsFunctionCalls,
+        enableThinking: enableThinking,
+        modelType: modelType,
+        toolChoice: toolChoice,
+        maxFunctionBufferLength: maxFunctionBufferLength,
+        systemInstruction: systemInstruction,
         maxOutputTokens: maxOutputTokens,
+        responseFormat: format,
+      ),
+    );
+    // Core owns the format: an engine that dropped or changed it would turn
+    // the chat into one whose replies nobody checks.
+    if (resolved.responseFormat != format) {
+      throw StateError(
+        '$runtimeType.resolveChatRequest changed the responseFormat '
+        '(${resolved.responseFormat} instead of $format): it must carry '
+        'ChatRequest.responseFormat over unchanged.',
+      );
+    }
+    final independentChat = InferenceChat(
+      sessionCreator: () => _openSession(
+        SessionRequest(
+          temperature: resolved.temperature,
+          randomSeed: resolved.randomSeed,
+          topK: resolved.topK,
+          topP: resolved.topP,
+          loraPath: resolved.loraPath,
+          enableVisionModality: resolved.supportImage,
+          enableAudioModality: resolved.supportAudio,
+          systemInstruction: resolved.systemInstruction,
+          enableThinking: resolved.enableThinking,
+          tools: resolved.tools,
+          maxOutputTokens: resolved.maxOutputTokens,
+          modelType: resolved.modelType,
+          toolChoice: resolved.toolChoice,
+          responseFormat: format,
+        ),
       ),
       maxTokens: maxTokens,
-      tokenBuffer: tokenBuffer,
-      supportImage: supportImage ?? false,
-      supportAudio: supportAudio ?? false,
-      supportsFunctionCalls: supportsFunctionCalls ?? false,
-      maxFunctionBufferLength:
-          maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
-      tools: tools,
-      enableThinking: enableThinking,
-      modelType: modelType ?? ModelType.gemmaIt,
+      tokenBuffer: resolved.tokenBuffer,
+      supportImage: resolved.supportImage,
+      supportAudio: resolved.supportAudio,
+      supportsFunctionCalls: resolved.supportsFunctionCalls,
+      maxFunctionBufferLength: resolved.maxFunctionBufferLength,
+      tools: resolved.tools,
+      enableThinking: resolved.enableThinking,
+      modelType: resolved.modelType,
       fileType: fileType,
-      toolChoice: toolChoice,
-      systemInstruction: systemInstruction,
+      toolChoice: resolved.toolChoice,
+      // false means "not forced": the chat then derives it from the model's
+      // function-call format, which is true for Gemma 4 and FunctionGemma.
+      runtimeInjectsToolDeclarations: resolved.runtimeInjectsToolDeclarations
+          ? true
+          : null,
+      systemInstruction: resolved.systemInstruction,
+      turnHooks: createChatTurnHooks(resolved),
     );
     await independentChat.initSession();
     return independentChat;
   }
+
+  /// Fill [openChat]'s unset values with this model's own and apply its
+  /// rules; throw [ArgumentError] for a request it cannot serve. Default:
+  /// core's rules (modelType [ModelType.gemmaIt], no image or audio,
+  /// supportsFunctionCalls false, [defaultMaxFunctionBufferLength]).
+  @protected
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) =>
+      resolveChatRequestDefaults(request);
+
+  /// Per-turn behaviour of one chat (see [ChatTurnHooks]), created once per
+  /// chat by [openChat]. Default: core's.
+  @protected
+  ChatTurnHooks createChatTurnHooks(ResolvedChatRequest request) =>
+      ChatTurnHooks();
 
   /// Register a callback fired once when this model is closed. The lifecycle
   /// OWNER (core) uses this to reset its singleton bookkeeping for models built
@@ -590,8 +830,8 @@ abstract class InferenceModel {
   /// Fails with `DeciderUnsupportedException` for a model whose engine does
   /// not score options (every model on the web), a model file without a
   /// decision (an ordinary chat model), a decision this release does not
-  /// read, a backend option scoring is not measured on (LiteRT-LM scores on
-  /// the CPU only), a decision whose prompt cannot fit [maxTokens], and an
+  /// read, a backend the engine does not score on (LiteRT-LM: the NPU), a
+  /// decision whose prompt cannot fit [maxTokens], and an
   /// engine that cannot tell how it scores. Each `choose` refuses an input
   /// whose prompt does not fit [maxTokens] with [ArgumentError]: it is never
   /// truncated.
@@ -601,10 +841,18 @@ abstract class InferenceModel {
   /// (`isClosed`), and `choose` fails with [StateError].
   ///
   /// Core implements this once for every engine that extends this class
-  /// (`@nonVirtual`); an engine supplies the scoring through
-  /// `OptionScoringModel` (`package:flutter_edge_ai/engine.dart`), not by
-  /// overriding this. `flutter_edge_ai_litertlm` scores on the CPU from
-  /// 1.16.0, natively (measured on macOS). Use
+  /// (`@nonVirtual`); an engine supplies the scoring by overriding
+  /// [readDecisionSection] and [openOptionScorer], not this.
+  /// `flutter_edge_ai_litertlm` scores natively, on the CPU from 1.16.0 and
+  /// on every GPU from 1.19.1; the NPU is refused. The
+  /// temperature and threshold in the file are fitted on CPU probabilities,
+  /// which the GPU does not reproduce exactly; its self-check checks that
+  /// scores repeat, not that they are right, and runs in debug and profile
+  /// builds only (a release build scores in a fixed mode without it), so
+  /// run the decider once in debug on the hardware you ship to, an
+  /// unmeasured GPU above all. A model loaded without
+  /// `preferredBackend` tries the GPU first. Load it with
+  /// `PreferredBackend.cpu` for the calibration as fitted. Use
   /// `EmbeddingModel.createDecider` for a model that was not trained on the
   /// decision. `implements` does not inherit this body: such a class has to
   /// declare the method, and should fail it with
@@ -625,26 +873,72 @@ abstract class InferenceModel {
       calibration: calibration,
       cancelToken: cancelToken,
     );
-    final self = this;
-    if (self is OptionScoringModel) {
-      return createOptionScoringDecider(
-        self,
-        question: question,
-        options: options,
-        calibration: calibration,
-        cancelToken: cancelToken,
-      );
-    }
-    throw const DeciderUnsupportedException(
-      'This model does not score options: only a model trained on the '
-      'decision, on an engine that scores options (flutter_edge_ai_litertlm, '
-      'natively, on the CPU), does. Create the decider from an EmbeddingModel '
-      'instead: EmbeddingModel.createDecider().',
+    return createOptionScoringDecider(
+      this,
+      question: question,
+      options: options,
+      calibration: calibration,
+      cancelToken: cancelToken,
     );
   }
 
+  /// The decision the model file was trained for: the UTF-8 JSON payload
+  /// litetune writes into it (decision contract version 1), however the
+  /// engine's container carries it — a `litetune.decision` section in a
+  /// `.litertlm`. Null when the file carries none: it is an ordinary chat
+  /// model, and [createDecider] refuses it.
+  ///
+  /// Throws [FormatException] when the file's decision cannot be read: a
+  /// container the engine does not understand, a decision stored twice or
+  /// in another form; core turns it into `DeciderUnsupportedException`. An
+  /// engine that cannot read its file at all may throw that directly.
+  ///
+  /// For engines: core calls it from [createDecider]; an app never does.
+  /// Default: the engine does not score, and fails with
+  /// `DeciderUnsupportedException`.
+  ///
+  /// Experimental: may change in a minor release while the API settles.
+  @protected
+  @experimental
+  Future<String?> readDecisionSection() => Future.error(_noOptionScoring);
+
+  /// The engine's scoring calls, for one decider. Fails with
+  /// `DeciderUnsupportedException` when this model cannot score here — a
+  /// backend the engine does not score on, for one — and with
+  /// [StateError] when the model is closed.
+  ///
+  /// For engines: core calls it from [createDecider]; an app never does.
+  /// Default: the engine does not score, and fails with
+  /// `DeciderUnsupportedException`.
+  ///
+  /// Experimental: may change in a minor release while the API settles.
+  @protected
+  @experimental
+  Future<OptionScorer> openOptionScorer() => Future.error(_noOptionScoring);
+
   Future<void> close();
 }
+
+/// What [InferenceModel.readDecisionSection] and
+/// [InferenceModel.openOptionScorer] fail with on an engine that does not
+/// score options.
+const _noOptionScoring = DeciderUnsupportedException(
+  'This model does not score options: only a model trained on the '
+  'decision, on an engine that scores options (flutter_edge_ai_litertlm, '
+  'natively, on the CPU or GPU), does. Create the decider from an '
+  'EmbeddingModel instead: EmbeddingModel.createDecider().',
+);
+
+/// [InferenceModel.readDecisionSection], for core's decider, which lives in
+/// another library and so cannot call a `@protected` member.
+@internal
+Future<String?> readDecisionSectionOf(InferenceModel model) =>
+    model.readDecisionSection();
+
+/// [InferenceModel.openOptionScorer], for core's decider.
+@internal
+Future<OptionScorer> openOptionScorerOf(InferenceModel model) =>
+    model.openOptionScorer();
 
 /// Session metrics containing token usage and performance statistics.
 class SessionMetrics {
@@ -691,14 +985,21 @@ abstract class InferenceModelSession {
   ///
   /// To stop generating early, prefer [stopGeneration] — it reaches the native
   /// engine and stops it decoding on every engine. `cancel()`ing the
-  /// [StreamSubscription] also stops native decoding on the `.litertlm` FFI
-  /// engine, but on other engines it only detaches the Dart side while native
-  /// keeps decoding, so [stopGeneration] is the portable choice.
+  /// [StreamSubscription] also stops decoding on the `.litertlm` FFI engine
+  /// and on MediaPipe web, but on other engines it only detaches the Dart
+  /// side while native keeps decoding, so [stopGeneration] is the portable
+  /// choice.
   ///
   /// Silently *abandoning* the stream (dropping the subscription without
   /// cancelling, so it is only GC'd) cannot be intercepted on any engine — the
   /// accelerator keeps decoding the whole turn for output no one consumes,
   /// wasting compute and delaying the next turn's teardown.
+  ///
+  /// Closing the session or its model during a turn ends the stream: with a
+  /// [StateError] on the `.litertlm` FFI engine (the reply is incomplete),
+  /// with what was generated so far elsewhere. An [InferenceChat] over a
+  /// LiteRT-LM or MediaPipe session keeps that partial reply and then throws
+  /// [StateError] either way.
   Stream<String> getResponseAsync();
 
   Future<int> sizeInTokens(String text);
@@ -719,6 +1020,348 @@ abstract class InferenceModelSession {
   SessionMetrics getSessionMetrics();
 
   Future<void> close();
+
+  /// One turn over the queued input. An engine that reports how turns end
+  /// overrides this, and then implements [getResponseAsync] as
+  /// `startTurn().text`. (Overriding only [getResponseAsync] that way, and
+  /// not this, recurses: the default calls [getResponseAsync].)
+  @protected
+  EngineTurn startTurn() => EngineTurn(text: getResponseAsync(), end: null);
+}
+
+/// [InferenceModelSession.startTurn] for core's chat, which lives in another
+/// library and so may not call the protected member itself.
+@internal
+EngineTurn startEngineTurn(InferenceModelSession session) =>
+    session.startTurn();
+
+/// How one generation turn ended.
+enum TurnEnd {
+  /// The model ended the reply.
+  endOfSequence,
+
+  /// The turn reached `maxOutputTokens`.
+  outputLimit,
+
+  /// The context window (`maxTokens`) was full. If decoding filled it,
+  /// [EngineTurn.text] completes and the partial turn stays committed. If the
+  /// input did not fit, [EngineTurn.text] fails with [ContextLimitException],
+  /// the engine restores its context to before the turn, and core takes the
+  /// turn back.
+  contextLimit,
+
+  /// The consumer asked: `stopGeneration()`, or cancelled the text
+  /// subscription. A partial reply stays committed; a turn that emitted no
+  /// non-empty text is taken back.
+  stopped,
+
+  /// The session or model was closed mid-turn without the consumer asking to
+  /// stop. When [EngineTurn.text] completes with this end, core keeps any
+  /// partial reply and then fails the chat turn. An error on the text instead
+  /// follows the failed-turn take-back rule.
+  closed,
+}
+
+/// The error an engine puts on a turn's text when it refused an input too
+/// long for what the context window had left, together with `end`
+/// [TurnEnd.contextLimit]. The engine's context is as it was before the
+/// turn, and [InferenceChat] takes the turn's messages back out of its
+/// history.
+final class ContextLimitException implements Exception {
+  const ContextLimitException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'ContextLimitException: $message';
+}
+
+/// One turn, as the engine produces it.
+///
+/// Contract: [end] never completes with an error (a failed turn puts its
+/// error on [text]); it completes after [text] is done, and also when the
+/// consumer cancels [text]. An engine that cannot say how its turns end
+/// passes `end: null` and must keep `StructuredOutputSupport.none`; so must
+/// an engine whose [end] is a guess for some turns (LiteRT-LM 0.18 cannot
+/// tell `endOfSequence` from `outputLimit` or `contextLimit`).
+///
+/// The engine must keep its own context aligned with core's history. A turn
+/// whose text fails commits nothing: restore the engine context to before that
+/// turn, or make the session unusable and report [TurnEnd.closed] if it cannot
+/// be restored. A stopped turn that emitted no non-empty text is also restored;
+/// a stop after text keeps the partial exchange.
+final class EngineTurn {
+  EngineTurn({required this.text, required this.end});
+
+  final Stream<String> text;
+  final Future<TurnEnd>? end;
+}
+
+/// Everything an engine needs to open a session
+/// ([InferenceModel.openEngineSession]). A later option is a new field, not a
+/// new parameter on every engine.
+final class SessionRequest {
+  SessionRequest({
+    this.temperature,
+    this.randomSeed,
+    this.topK,
+    this.topP,
+    this.loraPath,
+    this.enableVisionModality,
+    this.enableAudioModality,
+    this.systemInstruction,
+    this.enableThinking = false,
+    List<Tool> tools = const [],
+    this.maxOutputTokens,
+    this.modelType,
+    this.toolChoice = ToolChoice.auto,
+    this.responseFormat,
+  }) : tools = List.unmodifiable(tools);
+
+  final double? temperature;
+  final int? randomSeed;
+  final int? topK;
+  final double? topP;
+  final String? loraPath;
+
+  /// Null = the model's own default.
+  final bool? enableVisionModality;
+
+  /// Null = the model's own default.
+  final bool? enableAudioModality;
+  final String? systemInstruction;
+  final bool enableThinking;
+
+  /// Unmodifiable.
+  final List<Tool> tools;
+  final int? maxOutputTokens;
+
+  /// From [InferenceModel.openChat]; null = the model's own.
+  final ModelType? modelType;
+
+  /// From [InferenceModel.openChat]; [ToolChoice.auto] from
+  /// [InferenceModel.openSession].
+  final ToolChoice toolChoice;
+
+  /// What every reply must be. Non-null only after core accepted the format
+  /// ([InferenceModel.refusalFor] returned null). The engine must enforce the
+  /// schema during generation for every reply from this session. Core validates
+  /// the completed reply as a guard; that validation is not a substitute for
+  /// constrained generation, and a non-conforming reply is an engine bug.
+  final JsonSchemaResponseFormat? responseFormat;
+}
+
+/// [InferenceModel.openChat]'s arguments as the caller passed them (nulls
+/// unset), for [InferenceModel.resolveChatRequest].
+final class ChatRequest {
+  ChatRequest({
+    this.temperature,
+    this.randomSeed,
+    this.topK,
+    this.topP,
+    this.tokenBuffer = 256,
+    this.loraPath,
+    this.supportImage,
+    this.supportAudio,
+    List<Tool> tools = const [],
+    this.supportsFunctionCalls,
+    this.enableThinking = false,
+    this.modelType,
+    this.toolChoice = ToolChoice.auto,
+    this.maxFunctionBufferLength,
+    this.systemInstruction,
+    this.maxOutputTokens,
+    this.responseFormat,
+  }) : tools = List.unmodifiable(tools);
+
+  final double? temperature;
+  final int? randomSeed;
+  final int? topK;
+  final double? topP;
+  final int tokenBuffer;
+  final String? loraPath;
+  final bool? supportImage;
+  final bool? supportAudio;
+
+  /// Unmodifiable.
+  final List<Tool> tools;
+  final bool? supportsFunctionCalls;
+  final bool enableThinking;
+  final ModelType? modelType;
+  final ToolChoice toolChoice;
+  final int? maxFunctionBufferLength;
+  final String? systemInstruction;
+  final int? maxOutputTokens;
+
+  /// The caller's format; core checks it on every session it opens.
+  final JsonSchemaResponseFormat? responseFormat;
+}
+
+/// A [ChatRequest] with every value set, as the engine resolved it in
+/// [InferenceModel.resolveChatRequest]. Every field but
+/// [runtimeInjectsToolDeclarations] is required, so a value an engine forgets
+/// to carry over is a compile error, not a silent default.
+final class ResolvedChatRequest {
+  const ResolvedChatRequest({
+    required this.modelType,
+    required this.supportImage,
+    required this.supportAudio,
+    required this.supportsFunctionCalls,
+    required this.tools,
+    required this.maxFunctionBufferLength,
+    this.runtimeInjectsToolDeclarations = false,
+    required this.temperature,
+    required this.randomSeed,
+    required this.topK,
+    required this.topP,
+    required this.tokenBuffer,
+    required this.loraPath,
+    required this.enableThinking,
+    required this.toolChoice,
+    required this.systemInstruction,
+    required this.maxOutputTokens,
+    required this.responseFormat,
+  });
+
+  final ModelType modelType;
+  final bool supportImage;
+  final bool supportAudio;
+  final bool supportsFunctionCalls;
+  final List<Tool> tools;
+  final int maxFunctionBufferLength;
+
+  /// True when the runtime renders the tool declarations itself, so the chat
+  /// must not add its own tools prompt. False leaves it to the model's
+  /// function-call format (true for Gemma 4 and FunctionGemma on
+  /// `.litertlm`).
+  final bool runtimeInjectsToolDeclarations;
+  final double? temperature;
+  final int? randomSeed;
+  final int? topK;
+  final double? topP;
+  final int tokenBuffer;
+  final String? loraPath;
+  final bool enableThinking;
+  final ToolChoice toolChoice;
+  final String? systemInstruction;
+  final int? maxOutputTokens;
+
+  /// [ChatRequest.responseFormat], carried over unchanged: core opens the
+  /// chat's sessions with its own, and [InferenceModel.openChat] throws
+  /// [StateError] naming the engine when this differs from it.
+  final JsonSchemaResponseFormat? responseFormat;
+}
+
+/// Core's rules for [InferenceModel.resolveChatRequest]: modelType
+/// [ModelType.gemmaIt], no image or audio, supportsFunctionCalls false,
+/// [defaultMaxFunctionBufferLength].
+@internal
+ResolvedChatRequest resolveChatRequestDefaults(ChatRequest request) =>
+    ResolvedChatRequest(
+      modelType: request.modelType ?? ModelType.gemmaIt,
+      supportImage: request.supportImage ?? false,
+      supportAudio: request.supportAudio ?? false,
+      supportsFunctionCalls: request.supportsFunctionCalls ?? false,
+      tools: request.tools,
+      maxFunctionBufferLength:
+          request.maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
+      temperature: request.temperature,
+      randomSeed: request.randomSeed,
+      topK: request.topK,
+      topP: request.topP,
+      tokenBuffer: request.tokenBuffer,
+      loraPath: request.loraPath,
+      enableThinking: request.enableThinking,
+      toolChoice: request.toolChoice,
+      systemInstruction: request.systemInstruction,
+      maxOutputTokens: request.maxOutputTokens,
+      responseFormat: request.responseFormat,
+    );
+
+/// Core's structured session for each engine session it wrapped, so that
+/// [InferenceModel.sessions] lists what the caller holds.
+final _structuredSessions = Expando<StructuredSession>('structured session');
+
+/// The one [ResponseFormat] kind of this release.
+JsonSchemaResponseFormat? _jsonSchemaFormat(ResponseFormat? format) =>
+    switch (format) {
+      null => null,
+      JsonSchemaResponseFormat() => format,
+      _ => throw StateError('Unknown ResponseFormat ${format.runtimeType}.'),
+    };
+
+/// [InferenceModel.structuredOutputSupport]: the engine's [support], checked
+/// against the dialect.
+@internal
+StructuredOutputSupport checkedSupport(
+  StructuredOutputSupport support,
+  Type engine,
+) {
+  if (!support.isSupported) return support;
+  final outside = support.keywords.difference(ResponseFormat.dialect);
+  if (outside.isNotEmpty) {
+    throw StateError(
+      '$engine reports structured-output keywords outside '
+      'ResponseFormat.dialect: ${outside.join(', ')}.',
+    );
+  }
+  // A copy the caller cannot change, whatever set the engine handed over.
+  return StructuredOutputSupport(
+    keywords: Set.unmodifiable(support.keywords),
+    delivery: support.delivery,
+  );
+}
+
+/// [InferenceModel.refusalFor].
+@internal
+ResponseFormatUnsupportedException? composeRefusal(
+  InferenceModel model,
+  ResponseFormat format,
+) {
+  final support = model.structuredOutputSupport;
+  if (!support.isSupported) {
+    return ResponseFormatUnsupportedException(
+      '${model.runtimeType} refuses every response format: ${support.reason}',
+    );
+  }
+  final schema = _jsonSchemaFormat(format)!;
+  final missing = _firstUnenforcedKeyword(schema.schema, support.keywords, '');
+  if (missing != null) {
+    return ResponseFormatUnsupportedException(
+      '${model.runtimeType} does not enforce the schema keyword '
+      '"${missing.keyword}".',
+      schemaPath: missing.path,
+    );
+  }
+  return model.engineRefusalFor(schema);
+}
+
+/// The first keyword of [schema], depth first in the caller's key order,
+/// that is neither an annotation nor in [keywords].
+({String keyword, String path})? _firstUnenforcedKeyword(
+  Map<String, Object?> schema,
+  Set<String> keywords,
+  String path,
+) {
+  for (final MapEntry(:key, :value) in schema.entries) {
+    if (responseFormatAnnotations.contains(key)) continue;
+    final keyPath = '$path/${jsonPointerToken(key)}';
+    if (!keywords.contains(key)) return (keyword: key, path: keyPath);
+    if (key == 'properties' && value is Map<String, Object?>) {
+      for (final property in value.entries) {
+        final found = _firstUnenforcedKeyword(
+          property.value as Map<String, Object?>,
+          keywords,
+          '$keyPath/${jsonPointerToken(property.key)}',
+        );
+        if (found != null) return found;
+      }
+    } else if (key == 'items' && value is Map<String, Object?>) {
+      final found = _firstUnenforcedKeyword(value, keywords, keyPath);
+      if (found != null) return found;
+    }
+  }
+  return null;
 }
 
 /// Mixin for sessions that surface the SDK's structured raw JSON response

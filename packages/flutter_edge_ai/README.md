@@ -69,7 +69,7 @@ Core registers no engine. Add `flutter_edge_ai` plus what your app needs:
 
 ³ Through llamadart; CI covers the CPU lifecycle — see its [qualification matrix](https://github.com/DenisovAV/flutter_edge_ai/blob/main/packages/flutter_edge_ai_llama/doc/platforms.md).
 
-⁴ iOS 16.4+ and macOS 14+, with Flutter's Swift Package Manager on and the `llamadart_llama_cpp_flutter` companion. The LiteRT-LM macOS setup below (CocoaPods, usually with Swift Package Manager off) is not qualified together with it: use separate apps. See the [`flutter_edge_ai_llama` README](https://pub.dev/packages/flutter_edge_ai_llama).
+⁴ iOS 16.4+ and macOS 14+, with Flutter's Swift Package Manager on and the `llamadart_llama_cpp_flutter` companion. From `flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM needs no Podfile on macOS either, and both libraries load in one Swift Package Manager app; running both engines' models in one app is not qualified. See the [`flutter_edge_ai_llama` README](https://pub.dev/packages/flutter_edge_ai_llama).
 
 LiteRT-LM ships `arm64` on Android, iOS and macOS, `x86_64` on Windows and `x86_64` / `arm64`
 on Linux; on Android, MediaPipe `.task` also runs on `x86_64` / `armeabi-v7a`, and on Linux
@@ -80,8 +80,8 @@ ONNX is `x86_64` only. Details, GPU backends and per-feature limits:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.2
-  flutter_edge_ai_litertlm: ^1.17.0   # or any other engine from the table
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_litertlm: ^1.20.0   # or any other engine from the table
 ```
 
 > **Upgrade every flutter_edge_ai package together.** Minimum versions with
@@ -130,14 +130,14 @@ plugin manifest automatically.
 ### Web
 
 Copy `cache_api.js` and `opfs_helper.js` from this package's `web/` folder into
-your app's `web/` and load them in `index.html`, then add the script for each
-engine you use. For MediaPipe:
+your app's `web/` and load them inside the `<head>` of `index.html`, then add
+the script for each engine you use. For MediaPipe:
 
 ```html
 <script src="cache_api.js"></script>
 <script src="opfs_helper.js"></script>
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>
@@ -149,26 +149,19 @@ LiteRT-LM run on WebGPU; ONNX also runs on CPU (WASM).
 
 ### macOS
 
-macOS needs a build step that stages the LiteRT-LM companion libraries into
-the app ([why](https://flutteredge.ai/docs/desktop)), and it runs from a
-CocoaPods Podfile. Flutter 3.44+ uses Swift Package Manager by default, so a new
-app has no `macos/Podfile`: turn SPM off for the app in `pubspec.yaml`:
+macOS 14 or later: set the app's deployment target to 14.0 (Xcode → Runner
+target → General → Minimum Deployments, and `platform :osx, '14.0'` in
+`macos/Podfile` if the app has one).
 
-```yaml
-flutter:
-  config:
-    enable-swift-package-manager: false
-```
+With Flutter's default Swift Package Manager on, that is all: from
+`flutter_edge_ai_litertlm` 1.19.0 its Swift package brings LiteRT-LM's companion
+libraries into the app ([why](https://flutteredge.ai/docs/desktop#macos)).
 
-Run `flutter pub get` (it writes `macos/Podfile`), then replace that Podfile's
-`post_install` block with the one below, keeping any lines of your own inside
-it; the next build runs `pod install` itself. A green build proves nothing: without the block the first model load
-fails with `Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`; from `flutter_edge_ai_litertlm` 1.17.0
-the error says why and names this fix. If your app already has a `macos/Podfile` (another plugin
-needs CocoaPods), keep SPM on and only replace its `post_install` block. Prefer the pubspec
-setting to `flutter config --no-enable-swift-package-manager`, which changes
-only your machine — not your teammates' or CI. `flutter_edge_ai_llama` needs
-Swift Package Manager on instead (⁴).
+An app with Swift Package Manager off (`enable-swift-package-manager: false`
+under `flutter: config:` in `pubspec.yaml`) gets them from `macos/Podfile`:
+replace its `post_install` block with the one below, keeping any lines of your
+own inside it; the next build runs `pod install` itself. Without it the first
+model load fails with `LiteRT-LM did not load on macOS`.
 
 ```ruby
 post_install do |installer|
@@ -235,14 +228,32 @@ post_install do |installer|
 end
 ```
 
+**Flutter 3.44 with Xcode 27.** With Swift Package Manager off, the first
+build stops with `The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set
+to 10.15, but the range of supported deployment target versions is 12.0 to
+27.0.x` on the Pods targets, `FlutterMacOS` among them. This is Flutter 3.44.0
+on Xcode 27, not this package: an app with only `shared_preferences` and Swift
+Package Manager off fails the same way. Add one line inside the
+`installer.pods_project.targets.each` loop of the block above, after
+`flutter_additional_macos_build_settings(target)`:
+
+```ruby
+target.build_configurations.each { |c| c.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '14.0' }
+```
+
+Flutter 3.47.8 builds the same Podfile without it (measured on Xcode 27.1,
+2026-10-28).
+
 Add to `macos/Runner/DebugProfile.entitlements` and `Release.entitlements`:
 
 ```xml
-<key>com.apple.security.cs.disable-library-validation</key>
-<true/>
 <key>com.apple.security.network.client</key>
 <true/>
 ```
+
+With Swift Package Manager off, also add
+`com.apple.security.cs.disable-library-validation`: the Podfile block signs the
+companion libraries ad hoc, which Hardened Runtime refuses without it.
 
 ### Windows and Linux
 
@@ -281,21 +292,32 @@ Installing a name again from another source replaces it; core never deletes a
 file you installed with `fromFile`.
 
 ```dart
+// A build from the model catalog (2.5.5): model type, file type, a
+// commit-pinned URL, its install name and size come with it.
+await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
+    .withProgress((progress) => print('Downloading: $progress%'))
+    .install();
+
+// Your own file: say which engine runs it.
 await FlutterEdgeAi.installModel(
   modelType: ModelType.gemmaIt,
   fileType: ModelFileType.litertlm, // selects the engine — declare it
 ).fromNetwork(
-  'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
+  'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
 ).withProgress((progress) => print('Downloading: $progress%')).install();
 ```
 
+`FlutterEdgeAi.catalog` lists every build the registered packages offer
+(`LiteRtLmModels`, `LiteRtEmbedders`, `LiteRtSpeechModels`), each pinned to a
+Hugging Face commit; every build and where it has been run is on the
+[Model Registry](https://flutteredge.ai/docs/registry).
 `litert-community/Gemma3-1B-IT` is gated: accept its license on Hugging Face, then pass your token with `--dart-define=HUGGINGFACE_TOKEN=…`.
 
 ### Chat
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
-final chat = await model.createChat();
+final chat = await model.openChat();
 
 await chat.addQueryChunk(Message.text(text: 'Explain quantum computing', isUser: true));
 
@@ -307,6 +329,89 @@ await for (final response in chat.generateChatResponseAsync()) {
 
 await model.close();
 ```
+
+### Structured JSON replies (2.6.0)
+
+A response format is fixed for an independent `openSession` / `openChat`
+session; the legacy `createSession` / `createChat` methods do not take one. Ask
+the loaded model before opening it:
+
+```dart
+final format = ResponseFormat.jsonSchema({
+  'type': 'object',
+  'properties': {
+    'answer': {'type': 'string'},
+    'confidence': {'type': 'number', 'minimum': 0, 'maximum': 1},
+  },
+  'required': ['answer', 'confidence'],
+  'additionalProperties': false,
+});
+
+final refusal = model.refusalFor(format);
+if (refusal != null) throw refusal;
+final chat = await model.openChat(responseFormat: format);
+try {
+  // Use the structured chat.
+} finally {
+  await chat.close();
+}
+```
+
+`model.structuredOutputSupport` reports whether this loaded
+engine/platform/backend enforces a format, the enforced keywords, and whether
+delivery is `incremental` or `buffered`. Core validates the complete reply in
+addition to the engine's constraint: an unsupported format throws
+`ResponseFormatUnsupportedException`; a generation that ends with
+`TurnEnd.outputLimit`, `contextLimit`, `stopped` or `closed` throws
+`IncompleteStructuredOutputException`; a normally ended reply that is not
+exactly one matching JSON value throws
+`NonConformingStructuredOutputException`. Incremental engines deliver their
+text chunks before the final validation error; buffered engines deliver one
+complete chunk. A prompt that never fits the context fails with
+`ContextLimitException` instead. A format cannot be combined with tools or
+`enableThinking: true`.
+
+### Sessions and turn history
+
+`createSession()` and `createChat()` remain available in 2.6.0 but are
+deprecated and will be removed in 3.0.0. They use the model's legacy singleton
+lane: a later create normally closes and replaces the previous session or chat.
+`openSession()` and `openChat()` return detached, independent conversations;
+keep each handle and close it yourself.
+`model.sessions` lists the live legacy and detached sessions.
+
+`maxConcurrentSessions` usually caps detached sessions; built-in AI instead
+applies it to every live underlying session, including the legacy lane. Native
+ONNX defaults the detached cap to 2 on Android and iOS.
+
+Native `.litertlm` sessions have one conversation and KV cache each on macOS
+CPU/Metal, Linux and Windows CPU, Android Adreno/Mali, Qualcomm or Google
+Tensor NPUs on Android, and Intel NPUs on Windows. Linux Vulkan, Windows D3D12,
+iOS, Android CPU/PowerVR/MediaTek, and unverified Linux arm64 accelerators use
+virtual sessions that replay full messages, including image and audio parts,
+into one shared conversation. The web runtime is also virtual but remains
+text-only. Hybrid models such as LFM2 rebuild from full messages when recovery
+is needed and never rewind.
+
+Native-backed sessions cost memory while idle. Gemma 4 E2B on an M5 Pro added
+36.8 MiB of RSS per idle session at `maxTokens: 4096`, from the third session
+onward; the first two reused freed memory. Set `maxConcurrentSessions` on
+`getActiveModel` or `openModel` to bound the count. MediaPipe Web and ONNX Web
+keep independent replayable histories over their shared browser model.
+
+For a core-managed chat turn, any engine error removes the staged turn before
+the error reaches the app. `ContextLimitException` specifically means the input
+was refused and nothing was committed; a clean `TurnEnd.contextLimit` can
+instead mean decoding filled the window, in which case the partial exchange
+stays. A clean stopped turn stays after it produced text and is removed if it
+produced none. Current plain GGUF hook-backed chats own their transcript and
+roll a stopped or cancelled turn back even after text; structured GGUF turns use
+core's guarded path and keep the partial reply.
+
+Engines that can report an end use `TurnEnd.endOfSequence`, `outputLimit`,
+`contextLimit`, `stopped`, or `closed`; `EngineTurn.end` can be null on an engine
+that cannot distinguish them. A structured session reports every
+non-`endOfSequence` end as `IncompleteStructuredOutputException`.
 
 `getActiveModel` returns the same model while the active model and its
 arguments stay the same. Another model, or other arguments, builds a new one
@@ -365,15 +470,15 @@ language-model kind, with answers of the same shape: a small `.litertlm` tuned
 for the decision by LiteTune carries the question, options, temperature and
 threshold in the file; pass the question and the options, with
 `InferenceDeciderCalibration.fromModel()` for the rest. Each option's id is
-scored as the model's reply, on the CPU, natively (`flutter_edge_ai_litertlm`
-1.16.0). It answers Choice, Noul (`answer.noul`, P(yes)) and Score
+scored as the model's reply, natively, on the CPU (`flutter_edge_ai_litertlm`
+1.16.0) or the GPU (1.19.1; not the NPU). It answers Choice, Noul (`answer.noul`, P(yes)) and Score
 (`answer.expectedLevel`) questions.
 
 ## Three things that fail quietly
 
 - **`maxTokens` is the context window**, not the reply length: prompt, history
   and answer together. `.litertlm` needs at least 1024. Cap the reply with
-  `createChat(maxOutputTokens: …)` (`.litertlm`; MediaPipe ignores it).
+  `openChat(maxOutputTokens: …)` (`.litertlm`; MediaPipe ignores it).
 - **`Message.isUser` defaults to `false`.** A user message without
   `isUser: true` gets an empty answer.
 - **`fileType` picks the engine**, not the file name. `installModel` defaults
@@ -429,6 +534,12 @@ other coding assistants this API:
 ```bash
 dart run skills@ get --all
 ```
+
+## Built something with flutter_edge_ai?
+
+See what others ship on the [showcase](https://flutteredge.ai/showcase), and
+[add your app](https://flutteredge.ai/showcase/submit): it takes a couple of
+minutes, and the listing links to your app's Google Play or App Store page.
 
 ## Links
 

@@ -160,7 +160,7 @@ void main() {
         );
 
         try {
-          final chat = await inferenceModel.createChat(
+          final chat = await inferenceModel.openChat(
             temperature: model.temperature,
             topK: model.topK,
             topP: model.topP,
@@ -217,7 +217,7 @@ void main() {
         );
 
         try {
-          final chat = await inferenceModel.createChat(
+          final chat = await inferenceModel.openChat(
             temperature: model.temperature,
             topK: model.topK,
             topP: model.topP,
@@ -269,7 +269,7 @@ void main() {
         );
 
         try {
-          final chat = await inferenceModel.createChat(
+          final chat = await inferenceModel.openChat(
             temperature: model.temperature,
             topK: model.topK,
             topP: model.topP,
@@ -318,7 +318,7 @@ void main() {
         );
 
         try {
-          final chat = await inferenceModel.createChat(
+          final chat = await inferenceModel.openChat(
             temperature: model.temperature,
             topK: model.topK,
             topP: model.topP,
@@ -378,7 +378,7 @@ void main() {
         );
 
         try {
-          final chat = await inferenceModel.createChat(
+          final chat = await inferenceModel.openChat(
             temperature: model.temperature,
             topK: model.topK,
             topP: model.topP,

@@ -1,3 +1,6 @@
+// These tests cover the legacy singleton lane alongside open sessions.
+// ignore_for_file: deprecated_member_use
+
 // The model is where the two flutter_edge_ai session lanes meet flutter_local_ai:
 // `createSession` keeps a singleton (replacing and closing its predecessor)
 // while `openSession` returns detached sessions. Both lanes are newly routed
@@ -8,7 +11,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, debugDefaultTargetPlatformOverride;
-import 'package:flutter_edge_ai/engine.dart' show RuntimeConfig, Tool;
+import 'package:flutter_edge_ai/engine.dart'
+    show ModelType, RuntimeConfig, Tool;
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart'
     show BuiltInAiEngine;
 import 'package:flutter_edge_ai_builtin_ai/src/builtin_ai_model.dart'
@@ -213,6 +217,42 @@ void main() {
       await first.close();
       // The cap is a live count, not a high-water mark.
       await model.openSession();
+    });
+
+    test(
+      'openChat takes the model\'s own type, as createChat does (D8)',
+      () async {
+        final model = await newModel();
+        final chat = await model.openChat();
+        expect(chat.modelType, ModelType.general);
+        expect(chat.supportAudio, isFalse);
+        expect(model.sessions, contains(chat.session));
+        expect(model.session, isNull);
+      },
+    );
+
+    test(
+      'openChat on a model loaded with image support supports images',
+      () async {
+        final model = await newModel(
+          const RuntimeConfig(
+            maxTokens: 4096,
+            modelPath: '',
+            supportImage: true,
+          ),
+        );
+        final chat = await model.openChat();
+        expect(chat.supportImage, isTrue);
+      },
+    );
+
+    test('openChat refuses audio, as createChat does', () async {
+      final model = await newModel();
+      await expectLater(
+        model.openChat(supportAudio: true),
+        throwsArgumentError,
+      );
+      expect(model.sessions, isEmpty);
     });
 
     test('audio is rejected rather than silently dropped', () async {

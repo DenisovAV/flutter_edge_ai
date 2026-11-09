@@ -10,8 +10,6 @@
 // Run: cd packages/flutter_edge_ai/example && \
 //   flutter test integration_test/voice_loop_test.dart -d <device> \
 //     --dart-define=HF_TOKEN=$HF_TOKEN
-import 'dart:io';
-
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -20,7 +18,8 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:path_provider/path_provider.dart';
+
+import 'voice_test_helpers.dart' show stagedModelPath;
 
 // ── STT: moonshine-tiny — same URLs as stt_moonshine_test.dart. Public repos,
 // token is optional there but harmless to pass. ──
@@ -54,27 +53,12 @@ final _hfToken = _hfTokenStandard.isNotEmpty
     : _hfTokenLegacy;
 
 /// Prefer a device-local staged model file (no network, no token) — the
-/// convention the other integration tests use. Desktop and iOS read it from the
-/// app documents dir as `gemma3-1b-it-int4.litertlm`; Android reads it from
-/// `/data/local/tmp/flutter_gemma_test/`.
+/// convention the other integration tests use. macOS: ~/models (container
+/// Documents fallback); other desktop and iOS: app Documents; Android:
+/// /data/local/tmp/flutter_gemma_test/.
 /// Returns null when no staged file is present (CI → network install).
-Future<String?> _stagedLlmPath() async {
-  // Android: the model is staged in /data/local/tmp/flutter_gemma_test/
-  // (adb push, or the ddp-device-test skill on a DDP phone) — no network/token.
-  if (Platform.isAndroid) {
-    const p = '/data/local/tmp/flutter_gemma_test/gemma3-1b-it-int4.litertlm';
-    return File(p).existsSync() ? p : null;
-  }
-  if (!(Platform.isMacOS ||
-      Platform.isLinux ||
-      Platform.isWindows ||
-      Platform.isIOS)) {
-    return null;
-  }
-  final docs = await getApplicationDocumentsDirectory();
-  final path = '${docs.path}/gemma3-1b-it-int4.litertlm';
-  return File(path).existsSync() ? path : null;
-}
+Future<String?> _stagedLlmPath() =>
+    stagedModelPath('gemma3-1b-it-int4.litertlm');
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -130,9 +114,9 @@ void main() {
           reason:
               'No device-local staged LLM and no HuggingFace token, so the '
               'gated network fallback cannot authenticate. Stage the model '
-              '(Android: adb push to '
-              '/data/local/tmp/flutter_gemma_test/gemma3-1b-it-int4.litertlm; '
-              'desktop/iOS: app documents dir) or pass '
+              '(macOS: ~/models (container Documents fallback); other '
+              'desktop and iOS: app Documents; Android: '
+              '/data/local/tmp/flutter_gemma_test/) or pass '
               '--dart-define=HUGGINGFACE_TOKEN=...',
         );
         await llm
@@ -158,7 +142,7 @@ void main() {
         maxTokens: 1024,
         preferredBackend: PreferredBackend.cpu,
       );
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         tokenBuffer: 256,
         tools: const [],
         systemInstruction: 'Reply in one short sentence.',

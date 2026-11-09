@@ -1,3 +1,11 @@
+## 0.12.0
+- An output schema goes to the model as `responseFormat` when it enforces one (#195).
+- The embedder passes Genkit's cancel to `embedAll`.
+- Require `flutter_edge_ai` ^2.6.0 and `genkit_hybrid` ^0.5.0.
+
+## 0.11.1
+- Each request closes its chat before the next one starts (#767).
+
 ## 0.11.0
 - `deciderRouteClassifier` routes genkit_hybrid calls with a Decider; require `flutter_edge_ai` 2.5.x.
 - `DeciderRouteClassifier.load` and `flutterEdgeAi.warmUp` warm the decider and the model up front.

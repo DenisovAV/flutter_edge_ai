@@ -1,3 +1,6 @@
+// This suite covers the legacy singleton lane and its open-session coexistence.
+// ignore_for_file: deprecated_member_use
+
 // Fake-backed unit tests for OnnxInferenceModel — zero dlopen (hardened
 // plan Phase 3, Task 6).
 import 'dart:async';
@@ -116,15 +119,134 @@ void main() {
   });
 
   group('openSession', () {
+    Future<InferenceModelSession> open(OnnxInferenceModel m) => m.openSession();
+
+    test('returns independent sessions, each with its own id', () async {
+      final client = FakeGenAiClient();
+      final model = _model(client);
+      final legacy = await model.createSession();
+      final a = await open(model);
+      final b = await open(model);
+
+      expect(model.session, same(legacy));
+      expect(model.sessions, [legacy, a, b]);
+
+      await a.addQueryChunk(const Message(text: 'A', isUser: true));
+      await a.getResponse();
+      await b.addQueryChunk(const Message(text: 'B', isUser: true));
+      await b.getResponse();
+      await legacy.addQueryChunk(const Message(text: 'L', isUser: true));
+      await legacy.getResponse();
+
+      final ids = client.generateCalls.map((t) => t.sessionId).toList();
+      expect(ids[0], isNotNull);
+      expect(ids[1], isNotNull);
+      expect(ids[0], isNot(ids[1]));
+      expect(ids[2], isNull);
+      // Each session's first turn creates its own generator.
+      expect(client.generateCalls.every((t) => t.isFirstTurn), isTrue);
+    });
+
+    test('metrics are the session\'s own, not another one\'s', () async {
+      final client = FakeGenAiClient(chunksToEmit: const ['x']);
+      final model = _model(client);
+      final a = await open(model);
+      final b = await open(model);
+      await a.addQueryChunk(const Message(text: 'aaaa', isUser: true));
+      await a.getResponse();
+
+      expect(a.getSessionMetrics().outputTokens, 1);
+      expect(b.getSessionMetrics().outputTokens, 0);
+    });
+
     test(
-      'is not supported (v1) — inherits the base UnsupportedError',
+      'closing a session resets its generator only, never the legacy one',
       () async {
         final client = FakeGenAiClient();
         final model = _model(client);
+        final legacy = await model.createSession();
+        final a = await open(model);
+        await a.addQueryChunk(const Message(text: 'A', isUser: true));
+        await a.getResponse();
+        final id = client.generateCalls.single.sessionId;
 
-        expect(() => model.openSession(), throwsUnsupportedError);
+        await a.close();
+
+        expect(client.stoppedSessions, [id]);
+        expect(client.resetSessions, [id]);
+        expect(model.sessions, [legacy]);
       },
     );
+
+    test('maxConcurrentSessions caps open sessions with a StateError, and '
+        'closing one frees a slot', () async {
+      final model = OnnxInferenceModel(
+        client: FakeGenAiClient(),
+        maxTokens: 1024,
+        modelType: ModelType.gemmaIt,
+        activeBackend: PreferredBackend.cpu,
+        maxConcurrentSessions: 2,
+        onClose: () {},
+      );
+      // The legacy session does not count against the cap.
+      await model.createSession();
+      final a = await open(model);
+      await open(model);
+
+      await expectLater(model.openSession(), throwsStateError);
+
+      await a.close();
+      await open(model);
+    });
+
+    test('rejects what the legacy session rejects', () async {
+      final model = _model(FakeGenAiClient());
+      expect(() => model.openSession(loraPath: '/x'), throwsUnsupportedError);
+      expect(
+        () => model.openSession(enableVisionModality: true),
+        throwsUnsupportedError,
+      );
+      await expectLater(model.openSession(topP: 0), throwsArgumentError);
+      expect(model.sessions, isEmpty);
+    });
+
+    test('closing the model closes every open session', () async {
+      final client = FakeGenAiClient();
+      final model = _model(client);
+      await model.createSession();
+      await open(model);
+      await open(model);
+
+      await model.close();
+
+      expect(model.sessions, isEmpty);
+      await expectLater(model.openSession(), throwsStateError);
+    });
+
+    test('openChat takes the model\'s own type, not Gemma\'s (D8)', () async {
+      final model = OnnxInferenceModel(
+        client: FakeGenAiClient(),
+        maxTokens: 1024,
+        modelType: ModelType.phi,
+        activeBackend: PreferredBackend.cpu,
+        onClose: () {},
+      );
+      final chat = await model.openChat();
+      expect(chat.modelType, ModelType.phi);
+      expect(chat.supportImage, isFalse);
+      await chat.close();
+      final asked = await model.openChat(modelType: ModelType.qwen3);
+      expect(asked.modelType, ModelType.qwen3);
+      await asked.close();
+    });
+
+    test('openChat runs on an opened session', () async {
+      final client = FakeGenAiClient();
+      final model = _model(client);
+      final chat = await model.openChat();
+      expect(model.sessions, hasLength(1));
+      await chat.close();
+    });
   });
 
   group('close', () {

@@ -39,7 +39,7 @@ features to support (Phase 3).
 1. `cd packages/genkit_flutter_edge_ai && dart analyze` (repeat for `genkit_hybrid`).
 2. Fix all compilation errors. Files that depend on flutter_edge_ai's API:
    - [ ] `lib/src/flutter_edge_ai_runtime.dart` — `FlutterEdgeAi.getActiveModel()`, `getActiveEmbedder()` signatures
-   - [ ] `lib/src/flutter_edge_ai_model.dart` — `InferenceModel.createChat()` signature, `ModelResponse` pattern matching, `InferenceChat` methods
+   - [ ] `lib/src/flutter_edge_ai_model.dart` — `InferenceModel.openChat()` signature, `ModelResponse` pattern matching, `InferenceChat` methods
    - [ ] `lib/src/flutter_edge_ai_embedder.dart` — `EmbeddingModel.embedAll()`, `PreferredBackend` enum
    - [ ] `lib/src/converters/request_converter.dart` — `Message` constructors (`.withImage`, `.withAudio`, `.toolCall`, `.toolResponse`)
    - [ ] `lib/src/converters/response_converter.dart` — `ModelResponse` subtypes (`TextResponse`, `FunctionCallResponse`, `ParallelFunctionCallResponse`, `ThinkingResponse`)
@@ -52,11 +52,11 @@ features to support (Phase 3).
 
 Based on Phase 1, decide with the user which new APIs to support. Typical integration points:
 
-### New parameter in `createChat()` / `createSession()`
+### New parameter in `openChat()` / `openSession()`
 1. Add field to `$FlutterEdgeAiModelOptions` in `lib/src/flutter_edge_ai_options.dart`
 2. Regenerate `lib/src/flutter_edge_ai_options.g.dart`: `dart pub global run build_runner build --delete-conflicting-outputs` in `PKG_DIR` (see the package `AGENTS.md`; `dart pub global activate build_runner` once). Never hand-edit it.
-3. Extract from config + pass in `lib/src/flutter_edge_ai_model.dart` (`_prepare` validates and converts; `_generate` passes it to `createChat`)
-4. Update `FakeInferenceModel.createChat()` in `test/src/fake_runtime.dart` (add param, store in `last*` field for assertions)
+3. Extract from config + pass in `lib/src/flutter_edge_ai_model.dart` (`_prepare` validates and converts; `_generate` passes it to `openChat`)
+4. Update `FakeInferenceModel.openChat()` in `test/src/fake_runtime.dart` (add param, store in `last*` field for assertions)
 
 ### New enum value (e.g. `ModelFileType`)
 - Update comments in `lib/src/flutter_edge_ai_plugin.dart` (`FlutterEdgeAiModelConfig.fileType`)

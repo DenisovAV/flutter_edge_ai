@@ -6,8 +6,8 @@
 // FunctionGemma answered it by calling the same function again, and a test that
 // stopped at "a call was parsed" passed the whole time.
 //
-// Stage the models in the app documents dir (desktop/iOS) or
-// /data/local/tmp/flutter_gemma_test/ (Android):
+// macOS: ~/models (container Documents fallback); other desktop and iOS: app
+// Documents; Android: /data/local/tmp/flutter_gemma_test/.
 //   functiongemma-270M-it.litertlm      sasha-denisov/function-gemma-270M-it
 //   mobile_actions_q8_ekv1024.litertlm  litert-community/functiongemma-270m-ft-mobile-actions
 //   tiny_garden.litertlm                google/functiongemma-270m-it
@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _backendName = String.fromEnvironment(
@@ -304,6 +305,7 @@ Future<String?> _modelPath(String file) async {
     final path = '$hostDir/$file';
     return File(path).existsSync() ? path : null;
   }
+  if (Platform.isMacOS) return macosStagedFilePath(file);
   return stagedModelPath(file);
 }
 
@@ -318,8 +320,9 @@ Future<InferenceModel> _load(
     path,
     isNotNull,
     reason:
-        'stage $file in the app documents dir (desktop/iOS), in '
-        '/data/local/tmp/flutter_gemma_test/ (Android), or pass its directory '
+        'stage $file; macOS: ~/models (container Documents fallback); other '
+        'desktop and iOS: app Documents; Android: '
+        '/data/local/tmp/flutter_gemma_test/. Or pass its directory '
         'as --dart-define=IOS_TEST_DOCS_DIR on the iOS Simulator',
   );
   await FlutterEdgeAi.installModel(
@@ -367,7 +370,7 @@ void main() {
       ModelType.functionGemma,
     );
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: _codelabTools,
         supportsFunctionCalls: true,
@@ -406,7 +409,7 @@ void main() {
       ModelType.functionGemma,
     );
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: _exampleTools,
         supportsFunctionCalls: true,
@@ -454,7 +457,7 @@ void main() {
       ModelType.functionGemma,
     );
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: _mobileActionsTools,
         supportsFunctionCalls: true,
@@ -489,7 +492,7 @@ void main() {
       // The bundle declares a function-call-only constraint: it answers with
       // calls and nothing else, so there is no text to wait for — only no
       // repeated call.
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: _tinyGardenTools,
         supportsFunctionCalls: true,
@@ -523,7 +526,7 @@ void main() {
       maxTokens: 2048,
     );
     try {
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: 1,
         tools: _codelabTools,
         supportsFunctionCalls: true,

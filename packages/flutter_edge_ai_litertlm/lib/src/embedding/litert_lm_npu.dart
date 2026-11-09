@@ -1,5 +1,6 @@
 // Where an EmbeddingGemma 2 `.litertlm` bundle runs: the generic bundle on
-// CPU, a per-SoC bundle on that SoC's NPU — decided in
+// CPU, or on the GPU when asked for where that is measured
+// ([liteRtLmEmbeddingGpuAbis]), a per-SoC bundle on that SoC's NPU — decided in
 // `LiteRtEmbeddingBackend.describe()`, on the caller's isolate, before any
 // worker or engine exists.
 //
@@ -18,8 +19,8 @@
 //   in 1.13.2 without a run on Intel NPU hardware; a Google Tensor bundle
 //   (`…_Google_Tensor_G5|G6`) on Android arm64, with the app's opt-in Tensor
 //   dispatch (`google_tensor_npu`) on a device LiteRT runs the Tensor NPU on
-//   (Android 16 or later, not a BP2A build) — no EmbeddingGemma 2 run on a
-//   Tensor device yet; anything else is refused, never moved to CPU.
+//   (Android 16 or later, not a BP2A build) — the G6 270m and 440m run on a
+//   Pixel 11, G5 not run; anything else is refused, never moved to CPU.
 // What the bundle IS comes from its own bytes (`readLiteRtLmNpuTarget`), not
 // from its file name.
 
@@ -29,13 +30,18 @@ import 'package:flutter_edge_ai/engine.dart';
 import '../bundle/litertlm_bundle_info.dart' show npuVendorOf;
 import '../ffi/litert_lm_client.dart' show NpuDispatchUnavailableException;
 import '../ffi/npu_vendor_host.dart';
+import '../native_hosts.dart';
 import '../npu_stacks.dart';
 import 'litert_lm_embedding_common.dart';
 import 'litertlm_npu_target.dart';
 
-/// Where the pass will run a bundle: [backend] `cpu` for a generic bundle,
-/// `npu` for a per-SoC one, with its [target] and the [dispatchDir] LiteRT
-/// loads the vendor's dispatch from.
+export '../native_hosts.dart'
+    show liteRtLmEmbeddingGpuAbis, liteRtLmEmbeddingGpuRefusedAbis;
+
+/// Where the pass will run a bundle: [backend] `cpu` for a generic bundle
+/// (`gpu` when asked for on a [liteRtLmEmbeddingGpuAbis] host), `npu` for a
+/// per-SoC one, with its [target] and the [dispatchDir] LiteRT loads the
+/// vendor's dispatch from.
 typedef LiteRtLmEmbeddingPlacement = ({
   PreferredBackend backend,
   LiteRtLmNpuTarget? target,
@@ -48,11 +54,37 @@ typedef LiteRtLmEmbeddingPlacement = ({
 @visibleForTesting
 LiteRtLmNpuHost liteRtLmNpuHost = const LiteRtLmPlatformNpuHost();
 
-/// The per-SoC Qualcomm bundles verified on device. Others are published by
-/// Google (SM8550, SM8750; Tensor G5/G6; MediaTek MT6991/MT6993; Intel PTL)
-/// and not verified here; all of them load: Tensor G5/G6 with
-/// `google_tensor_npu`, MediaTek with `mediatek_npu`.
-const liteRtLmVerifiedNpuSocs = ['SM8850', 'SM8650', 'QCS8275'];
+/// Where each build has run, per platform and backend: the model registry's
+/// page, generated from its recorded runs. A list in an error message goes
+/// stale with the next run; the page does not.
+const liteRtLmRegistryUrl = 'https://flutteredge.ai/docs/registry';
+
+/// Why `preferredBackend: gpu` is refused for [file] on a
+/// [liteRtLmEmbeddingGpuRefusedAbis] host, and what to do instead.
+String liteRtLmEmbeddingGpuRefusal(String file) =>
+    'EmbeddingGemma 2 on the GPU is not supported on this platform with this '
+    "release's native libraries: LiteRT-LM's GPU accelerator ends the process "
+    'at the first GPU load of $file. Load it with preferredBackend: cpu (or '
+    'leave preferredBackend unset) here. Where each build runs: '
+    '$liteRtLmRegistryUrl';
+
+/// Whether this host is one of [liteRtLmEmbeddingGpuAbis], asked of the same
+/// host [placeLiteRtLmEmbedder] places on, so the two never disagree.
+bool liteRtLmEmbeddingGpuHost() =>
+    liteRtLmEmbeddingGpuAbis.contains(liteRtLmNpuHost.abi);
+
+/// This host's ABI and the EmbeddingGemma 2 bundles measured on its GPU
+/// ([liteRtLmEmbeddingGpuMeasured]), asked of the same host
+/// [placeLiteRtLmEmbedder] places on.
+({String abi, Set<LiteRtLmEg2Bundle> bundles})
+liteRtLmEmbeddingGpuBundlesHere() {
+  final abi = liteRtLmNpuHost.abi;
+  return (abi: abi, bundles: liteRtLmEmbeddingGpuMeasured[abi] ?? const {});
+}
+
+/// Whether this host is one of [liteRtLmEmbeddingGpuRefusedAbis].
+bool liteRtLmEmbeddingGpuRefusedHost() =>
+    liteRtLmEmbeddingGpuRefusedAbis.contains(liteRtLmNpuHost.abi);
 
 /// Decides where [file] runs for a [requested] backend, or refuses with an
 /// [EmbeddingLoadException] (engine `LiteRT-LM`). [target] is what the bundle
@@ -62,9 +94,10 @@ const liteRtLmVerifiedNpuSocs = ['SM8850', 'SM8650', 'QCS8275'];
 /// order of the cheapest answer first: the platform, the vendor, the build's
 /// stack, the device, then the dispatch directory (Android extracts the
 /// libraries out of the APK there). Where EmbeddingGemma 2 runs on an NPU is
-/// [NpuVendor.abis]: Qualcomm on Android arm64 and Linux arm64 (VENTUNO Q /
-/// QCS8275), both verified on device; Intel on Windows x64 (Google's Panther
-/// Lake bundles), not yet run on an Intel NPU.
+/// [NpuStack.abis]: Qualcomm on Android arm64 and Linux arm64, Google Tensor
+/// on Android arm64, Intel on Windows x64; a MediaTek bundle is refused in
+/// this release ([mediatekNpuRefused]). Which builds have run where is
+/// [liteRtLmRegistryUrl].
 Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
   required String file,
   required LiteRtLmNpuTarget? target,
@@ -76,12 +109,23 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     if (requested == PreferredBackend.npu) {
       _refuse(liteRtLmGenericOnNpuRefusal(file));
     }
-    return (backend: PreferredBackend.cpu, target: null, dispatchDir: null);
+    if (requested == PreferredBackend.gpu &&
+        liteRtLmEmbeddingGpuRefusedAbis.contains(host.abi)) {
+      _refuse(liteRtLmEmbeddingGpuRefusal(file));
+    }
+    final gpu =
+        requested == PreferredBackend.gpu &&
+        liteRtLmEmbeddingGpuAbis.contains(host.abi);
+    return (
+      backend: gpu ? PreferredBackend.gpu : PreferredBackend.cpu,
+      target: null,
+      dispatchDir: null,
+    );
   }
   if (requested != PreferredBackend.npu) {
     _refuse(liteRtLmNpuBundleWithoutNpuRefusal(file, target));
   }
-  final hostVendors = NpuVendor.forAbi(host.abi);
+  final hostVendors = NpuStack.forAbi(host.abi);
   if (hostVendors.isEmpty) {
     _refuse(
       '$file is compiled for the $target NPU. flutter_edge_ai_litertlm runs '
@@ -95,7 +139,13 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     _refuse(
       '$file is compiled for a ${target.vendor} NPU (${target.soc}). '
       'flutter_edge_ai_litertlm runs EmbeddingGemma 2 NPU bundles on '
-      '${npuSentenceList(NpuVendor.values.map((v) => v.label))} NPUs only. '
+      '${npuSentenceList(offeredNpuStacks.map((v) => v.label))} NPUs only. '
+      'Install the generic EmbeddingGemma 2 bundle to embed on CPU.',
+    );
+  }
+  if (vendor == NpuStack.mediatek && mediatekNpuRefused) {
+    _refuse(
+      '$file is compiled for the $target NPU: $mediatekNpuRefusedReason. '
       'Install the generic EmbeddingGemma 2 bundle to embed on CPU.',
     );
   }
@@ -103,7 +153,8 @@ Future<LiteRtLmEmbeddingPlacement> placeLiteRtLmEmbedder({
     _refuse(
       '$file is compiled for the $target NPU, and on ${host.operatingSystem} '
       '(${host.abi}) flutter_edge_ai_litertlm runs '
-      '${npuSentenceList(hostVendors.map((v) => v.label))} NPU bundles only; '
+      '${npuSentenceList(hostVendors.where(offeredNpuStacks.contains).map((v) => v.label))} '
+      'NPU bundles only; '
       '${vendor.label} ones run on ${npuSentenceList(vendor.abis)}. Install the '
       'generic EmbeddingGemma 2 bundle to embed here on CPU.',
     );
@@ -139,16 +190,16 @@ String liteRtLmGenericOnNpuRefusal(String file) =>
     '$file is the generic EmbeddingGemma 2 bundle: it has no NPU graph and '
     'runs on CPU only. To embed on the NPU, install the bundle compiled for '
     "this device's SoC (litert-community publishes "
-    '${npuSentenceList(NpuVendor.values.map(_bundleNames))} '
-    'beside it; ${liteRtLmVerifiedNpuSocs.join(', ')} are verified) and load '
+    '${npuSentenceList(offeredNpuStacks.map(_bundleNames))} '
+    'beside it; which have run on which device: $liteRtLmRegistryUrl) and load '
     'it with PreferredBackend.npu. To run this bundle, omit preferredBackend.';
 
 /// The file names litert-community gives [vendor]'s EmbeddingGemma 2 bundles.
-String _bundleNames(NpuVendor vendor) => switch (vendor) {
-  NpuVendor.qualcomm => '`<model>_Qualcomm_<SoC>.litertlm`',
-  NpuVendor.googleTensor => '`<model>_Google_Tensor_G5|G6.litertlm`',
-  NpuVendor.mediatek => '`<model>_MediaTek_<SoC>.litertlm`',
-  NpuVendor.intel => '`<model>_Intel_PTL.litertlm`',
+String _bundleNames(NpuStack vendor) => switch (vendor) {
+  NpuStack.qualcomm => '`<model>_Qualcomm_<SoC>.litertlm`',
+  NpuStack.googleTensor => '`<model>_Google_Tensor_G5|G6.litertlm`',
+  NpuStack.mediatek => '`<model>_MediaTek_<SoC>.litertlm`',
+  NpuStack.intel => '`<model>_Intel_PTL.litertlm`',
 };
 
 /// A per-SoC bundle asked to run anywhere but the NPU.

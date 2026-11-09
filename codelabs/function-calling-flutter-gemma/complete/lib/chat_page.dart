@@ -103,7 +103,7 @@ class _ChatPageState extends State<ChatPage> {
         preferredBackend: widget.model.preferredBackend,
         activationDataType: widget.model.activationDataType,
       );
-      // Hold the runtime before opening a chat on it: `createChat` can throw,
+      // Hold the runtime before opening a chat on it: `openChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
       if (!mounted) {
@@ -130,7 +130,7 @@ class _ChatPageState extends State<ChatPage> {
 
   /// The session, with everything that is per-session on it.
   Future<InferenceChat> _openChat(InferenceModel inference) =>
-      inference.createChat(
+      inference.openChat(
         // Which family's call syntax the SDK writes and reads.
         modelType: widget.model.modelType,
         // Four declarations now instead of one. Nothing else in this file
@@ -138,8 +138,8 @@ class _ChatPageState extends State<ChatPage> {
         tools: toolbox,
         supportsFunctionCalls: true,
         // Whether the model may, must, or must not call. On a `.litertlm` the
-        // runtime holds the declarations for both families — `createChat`
-        // forwards `tools` to `createSession` without consulting this — so
+        // runtime holds the declarations for both families — `openChat`
+        // passes `tools` into the underlying session regardless of this — so
         // `none` cannot take them back out. What it switches off is the SDK's
         // suppression of tool-call JSON, which is why a call made under `none`
         // can arrive as raw markup in the bubble. On a `.task` FunctionGemma
@@ -366,7 +366,7 @@ class _ChatPageState extends State<ChatPage> {
   /// open, and deleting it underneath the engine is a crash waiting to happen.
   Future<void> _removeModel() async {
     try {
-      await _inference?.close();
+      await _closeRuntime();
       // Inside `setState`: dropping the chat has to repaint, or the screen
       // keeps showing an enabled composer over a runtime that is gone.
       if (mounted) {
@@ -391,12 +391,22 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  Future<void> _closeRuntime() async {
+    final chat = _chat;
+    final inference = _inference;
+    try {
+      await chat?.close();
+    } finally {
+      await inference?.close();
+    }
+  }
+
   @override
   void dispose() {
     // Sessions and models hold native memory — always close them. `dispose`
     // cannot await, so the future is dropped on purpose, and caught so a
     // failing native teardown does not escape as an unhandled async error.
-    _inference?.close().catchError((Object _) {});
+    _closeRuntime().catchError((Object _) {});
     _input.dispose();
     super.dispose();
   }

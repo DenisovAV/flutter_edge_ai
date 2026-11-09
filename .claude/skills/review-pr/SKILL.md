@@ -59,7 +59,7 @@ From the diff, detect which package(s)/area(s) are affected:
 - `flutter_edge_ai_speech/` — opt-in STT (moonshine / Whisper / Parakeet) + TTS (Matcha / Qwen3 / Inflect) over the LiteRT C API; shares the litertlm bundle
 - `flutter_edge_ai_agent/` — opt-in SKILL.md agent skills over the function-calling loop (no Web)
 - `flutter_edge_ai_builtin_ai/` — OS models: Gemini Nano (Android), Apple Foundation Models (iOS/macOS), Windows AI Foundry, Chrome Prompt API (Web). Pure Dart since 0.3.0: no native sources and no pigeon of its own — it adapts the `flutter_local_ai` plugin, which owns every backend.
-- `flutter_edge_ai_diagnostics/` — memory diagnostics (`MemorySnapshot`) read from the OS on Android, iOS and macOS through `dart:io`/`dart:ffi`. No native sources, no dependency on core. A failed read must throw `MemoryReadException`; null is reserved for a value the platform does not have.
+- `flutter_edge_ai_diagnostics/` — memory diagnostics (`MemorySnapshot`) read from the OS on Android, iOS, macOS, Linux and Windows through `dart:io`/`dart:ffi`. No native sources, no dependency on core. A failed read must throw `MemoryReadException`; null is reserved for a value the platform does not have.
 - `genkit_flutter_edge_ai/`, `genkit_hybrid/` — Genkit integration packages (Dart; no native)
 - `flutter_edge_ai/example/` — example app + `integration_test/` E2E
 
@@ -257,9 +257,14 @@ CHECKLIST
    for large models. macOS must carry NO `com.apple.developer.kernel.*` key — they
    are iOS-only: without a signing team the build fails ("has entitlements that
    require signing with a development certificate"), with a team Xcode drops
-   them. macOS needs `network.client` and `cs.disable-library-validation` in BOTH
-   DebugProfile and Release entitlements; the latter takes effect under Hardened
-   Runtime, because the stager signs LiteRT-LM and its companions ad hoc.
+   them. macOS needs `network.client` in BOTH DebugProfile and Release
+   entitlements, and an app with Swift Package Manager off also
+   `cs.disable-library-validation` (it takes effect under Hardened Runtime,
+   because the Podfile stager signs the companions ad hoc). With it on, the
+   companions come from litertlm's `macos/flutter_edge_ai_litertlm/Package.swift`
+   and Xcode signs them with the app's team (#689); Package.swift and the
+   litertlm podspec declare macOS 14.0, which every app depending on litertlm or
+   speech must match.
 5. No `Podfile post_install` symlink step should be reintroduced: those lib*.dylib
    symlinks caused App Store rejection ITMS-90432 (#245). Any bundled dylib needs
    `vtool` minos 13.0 or the upload is rejected (ITMS-90208).

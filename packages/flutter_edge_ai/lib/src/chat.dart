@@ -11,6 +11,9 @@ import 'package:flutter_edge_ai/src/parsing/sdk_response_parser.dart';
 import 'package:flutter_edge_ai/src/parsing/sdk_text_extractor.dart';
 import 'package:flutter_edge_ai/src/tool.dart';
 import 'package:flutter_edge_ai/src/interface.dart';
+import 'package:flutter_edge_ai/src/structured/response_format.dart';
+import 'package:flutter_edge_ai/src/structured/structured_output.dart';
+import 'package:flutter_edge_ai/src/structured/structured_session.dart';
 import 'package:mutex/mutex.dart';
 
 import 'model.dart';
@@ -19,6 +22,12 @@ import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 /// Default maximum length for function call buffer before flushing as text.
 /// Must accommodate verbose formats (DeepSeek tags, parallel calls).
 const int defaultMaxFunctionBufferLength = 1024;
+
+/// How long a chat turn whose text failed waits for that text to close
+/// before it delivers the error without it; see `_takingBackOnError`. An
+/// engine that keeps the SPI contract ends its text right after an error.
+@visibleForTesting
+Duration chatTurnErrorEndTimeout = const Duration(seconds: 5);
 
 class InferenceChat {
   final Future<InferenceModelSession> Function()? sessionCreator;
@@ -34,7 +43,39 @@ class InferenceChat {
   final bool enableThinking;
   final ModelFileType fileType; // Add fileType parameter
   final ToolChoice toolChoice; // Tool calling mode
-  late InferenceModelSession session;
+
+  /// The session this chat generates on: core's structured session for a
+  /// chat with a [responseFormat], else the engine's. Set by [initSession],
+  /// and again whenever the chat rebuilds its session. [ChatTurnHooks] always
+  /// receive the engine's own.
+  InferenceModelSession get session => _session ?? (throw _NoSessionError());
+  set session(InferenceModelSession value) => _session = value;
+  InferenceModelSession? _session;
+
+  /// [session] — a subclass may override it — or null before there is one.
+  InferenceModelSession? get _sessionIfAny {
+    try {
+      return session;
+    } on _NoSessionError {
+      return null;
+    }
+  }
+
+  /// The format every reply must have, read from [session] (core's structured
+  /// session carries it), so a chat over a session that enforces nothing
+  /// cannot claim one. Null before the chat has a session.
+  ResponseFormat? get responseFormat {
+    final current = _sessionIfAny;
+    return current == null ? null : responseFormatOf(current);
+  }
+
+  /// The engine's own session behind [current], which is what the hooks get.
+  static InferenceModelSession _engine(InferenceModelSession current) =>
+      engineSessionOf(current);
+
+  /// Per-turn behaviour supplied by the engine (or a test); core's own when
+  /// none was given.
+  final ChatTurnHooks _hooks;
   final List<Tool> _tools;
 
   /// Tools available to this chat, fixed for the chat's lifetime. A cached
@@ -87,6 +128,20 @@ class InferenceChat {
   bool _toolsInstructionSent =
       false; // Flag to track if tools instruction was sent
 
+  /// Where the histories stood before the messages staged for the next turn,
+  /// so that a turn the engine fails can take them back. Null once a turn has
+  /// started.
+  ({int full, int model, int prefixes, int tokens, bool toolsInstructionSent})?
+  _stagedFrom;
+
+  /// The turn that just failed was taken back (see [_takingBackOnError]):
+  /// the tool calls it had committed are gone with it, so the tool loop must
+  /// not answer them.
+  bool _lastTurnTakenBack = false;
+
+  /// [stopGeneration] was called during the current core turn.
+  bool _stopAskedThisTurn = false;
+
   /// Determines if model history should be cleared after each turn
   /// FunctionGemma requires single-turn mode (no multi-turn context)
   bool get _isSingleTurnModel => modelType == ModelType.functionGemma;
@@ -111,15 +166,30 @@ class InferenceChat {
     runtimeInjectsToolDeclarations, // engine override; null → derive from format
     String?
     systemInstruction, // kept for API compatibility, forwarded to session via sessionCreator
-  }) : _runtimeInjectsToolDeclarationsOverride = runtimeInjectsToolDeclarations;
+    ChatTurnHooks? turnHooks, // null = core's
+  }) : _runtimeInjectsToolDeclarationsOverride = runtimeInjectsToolDeclarations,
+       _hooks = turnHooks ?? ChatTurnHooks();
 
   /// Every message of this chat, in order: the user's, the model's answers,
   /// its tool calls and their results. A model that writes text before it calls
   /// a tool (Gemma 4 on `.litertlm` does) streams that text, but its history
-  /// entry is the call alone.
-  List<Message> get fullHistory => List.unmodifiable(_fullHistory);
+  /// entry is the call alone. When the engine's session keeps the transcript
+  /// itself ([ChatTurnHooks.history]), this is that transcript.
+  List<Message> get fullHistory {
+    final current = _sessionIfAny;
+    return List.unmodifiable(
+      (current == null ? null : _hooks.history(_engine(current))) ??
+          _fullHistory,
+    );
+  }
 
-  int get currentTokens => _currentTokens;
+  /// Tokens in use: the engine's count when its session keeps one
+  /// ([ChatTurnHooks.tokenCount]), else this chat's.
+  int get currentTokens {
+    final current = _sessionIfAny;
+    return (current == null ? null : _hooks.tokenCount(_engine(current))) ??
+        _currentTokens;
+  }
 
   Future<void> initSession() async {
     session = await sessionCreator!();
@@ -165,6 +235,16 @@ class InferenceChat {
     bool noTool = false,
     bool prefix = false,
   ]) async {
+    _throwIfRebuildFailed();
+    final hooked = _hooks.addQueryChunk(_engine(session), message);
+    if (hooked != null) return hooked;
+    _stagedFrom ??= (
+      full: _fullHistory.length,
+      model: _modelHistory.length,
+      prefixes: _prefixes.length,
+      tokens: _currentTokens,
+      toolsInstructionSent: _toolsInstructionSent,
+    );
     var messageToSend = message;
 
     // Only add tools prompt for the first user text message (not a tool response)
@@ -247,15 +327,216 @@ class InferenceChat {
   /// Runs one generation and returns its answer: text or the tool call(s).
   /// When the model writes text before a call, only the call is returned;
   /// [generateChatResponseAsync] streams the text as well.
+  ///
+  /// In a plain chat, fails with [StateError] when the turn's text completes and
+  /// the session's [InferenceModelSession.startTurn] reports [TurnEnd.closed].
+  /// Any partial text is committed to [fullHistory] first. If the text itself
+  /// fails, the failed-turn take-back rule below applies. An engine whose
+  /// [EngineTurn.end] is null cannot expose the close distinction to core;
+  /// structured chats report it as [IncompleteStructuredOutputException] as
+  /// described below.
+  ///
+  /// A turn the engine fails commits nothing: the messages staged for it, and
+  /// any tool call it had committed, are taken back out of [fullHistory]
+  /// before the error reaches the caller (for an input too long for the
+  /// context window the error is a [ContextLimitException]). A stop is not a
+  /// failure and keeps what was generated; a turn stopped before any text is
+  /// taken back as well. Turns an engine runs through
+  /// [ChatTurnHooks.responses] keep their own history.
+  ///
+  /// In a chat with a [responseFormat] the reply is text, and a reply that
+  /// fails the format's check is committed to [fullHistory], then thrown: a
+  /// [StructuredOutputException] ([IncompleteStructuredOutputException] or
+  /// [NonConformingStructuredOutputException]). Such a turn always runs
+  /// core's path; [ChatTurnHooks.responses] is not called for it.
+  ///
+  /// Core implements this once for every engine (`@nonVirtual`); an engine
+  /// changes a chat's turns through [ChatTurnHooks].
+  @nonVirtual
   Future<ModelResponse> generateChatResponse() async {
+    if (responseFormat != null) {
+      return _collectResponses(_streamStructuredResponse());
+    }
+    final hooked = _hooks.responses(_engine(session), tokenBuffer: tokenBuffer);
+    if (hooked != null) return _collectResponses(hooked);
+    return _generateCoreResponse();
+  }
+
+  /// One whole turn from [ChatTurnHooks.responses], as
+  /// [generateChatResponse] returns it: the call(s) when there are any,
+  /// else the text.
+  static Future<ModelResponse> _collectResponses(
+    Stream<ModelResponse> responses,
+  ) async {
+    final text = StringBuffer();
+    final calls = <FunctionCallResponse>[];
+    await for (final response in responses) {
+      switch (response) {
+        case TextResponse(:final token):
+          text.write(token);
+        case FunctionCallResponse():
+          calls.add(response);
+        case ParallelFunctionCallResponse():
+          calls.addAll(response.calls);
+        case ThinkingResponse():
+          break;
+      }
+    }
+    if (calls.length == 1) return calls.single;
+    if (calls.isNotEmpty) return ParallelFunctionCallResponse(calls: calls);
+    return TextResponse(text.toString());
+  }
+
+  /// [turn]'s text. A turn whose text fails, for any reason, commits nothing:
+  /// the messages staged for it, and whatever the turn committed before the
+  /// error (a tool call), are taken back out of the history, with the token
+  /// count and the tools-prompt flag, before the error reaches the caller.
+  /// An engine that refused the input for the context window
+  /// ([ContextLimitException], end [TurnEnd.contextLimit]) never added it to
+  /// its context; for any other failure the chat's history is the one to
+  /// replay. A stop or a cancelled subscription is not a failure: what was
+  /// generated is kept, as before.
+  ///
+  /// [takesBack] narrows which errors take the turn back (a structured turn's
+  /// own format failures do not); every error ends the turn the same way.
+  Stream<String> _takingBackOnError(
+    EngineTurn turn, {
+    bool Function(Object error)? takesBack,
+  }) {
+    final staged = _stagedFrom;
+    _stagedFrom = null;
+    _lastTurnTakenBack = false;
+    _stopAskedThisTurn = false;
+    late final StreamController<String> out;
+    StreamSubscription<String>? source;
+    (Object, StackTrace)? failure;
+    var sawText = false;
+    var finished = false;
+    Timer? bound;
+
+    void takeBack() {
+      if (staged == null) return;
+      _fullHistory.length = staged.full;
+      _modelHistory.length = staged.model;
+      _prefixes.length = staged.prefixes;
+      _currentTokens = staged.tokens;
+      _toolsInstructionSent = staged.toolsInstructionSent;
+      _lastTurnTakenBack = true;
+    }
+
+    /// Whether a turn that ended without an error was a stop: the chat's own
+    /// [stopGeneration], or the engine saying so (bounded, as below).
+    Future<bool> wasStopped() async {
+      if (_stopAskedThisTurn) return true;
+      final end = turn.end;
+      if (end == null) return false;
+      try {
+        return await end.timeout(chatTurnErrorEndTimeout) == TurnEnd.stopped;
+      } on TimeoutException {
+        return false;
+      }
+    }
+
+    /// Ends the turn once: when the text closes, or, after an error, at the
+    /// latest [chatTurnErrorEndTimeout] later, so an engine whose failed text
+    /// never closes cannot hold the turn. A failed turn is taken back either
+    /// way, and so is a stopped one that produced no text: nothing of it is
+    /// an exchange worth keeping (llama drops it as well).
+    Future<void> finish() async {
+      if (finished) return;
+      finished = true;
+      bound?.cancel();
+      final failed = failure;
+      if (failed != null) {
+        if (takesBack?.call(failed.$1) ?? true) takeBack();
+        out.addError(failed.$1, failed.$2);
+      } else if (!sawText && await wasStopped()) {
+        takeBack();
+      }
+      // Its done ends the consumer's subscription, and onCancel lets the
+      // source go: a failed text that never closes is not held.
+      await out.close();
+    }
+
+    out = StreamController<String>(
+      onListen: () {
+        source = turn.text.listen(
+          (chunk) {
+            if (chunk.isNotEmpty) sawText = true;
+            out.add(chunk);
+          },
+          onError: (Object error, StackTrace stack) {
+            if (failure != null) return;
+            failure = (error, stack);
+            bound = Timer(chatTurnErrorEndTimeout, () => unawaited(finish()));
+          },
+          onDone: () => unawaited(finish()),
+        );
+      },
+      onPause: () => source?.pause(),
+      onResume: () => source?.resume(),
+      // The consumer's cancel before the turn ended is a stop: a failure it
+      // has not seen yet is not delivered, and nothing is taken back. (Through
+      // the chat's stream a cancel arrives at its next chunk, so a turn
+      // cancelled before any text ends as its engine ends it.)
+      onCancel: () {
+        bound?.cancel();
+        return source?.cancel();
+      },
+    );
+    return out.stream;
+  }
+
+  /// How [turn] ended, once its text has: null when the engine does not say,
+  /// or does not say within [chatTurnErrorEndTimeout] (an engine that keeps
+  /// the SPI contract completes it with the text).
+  static Future<TurnEnd?> _endOf(EngineTurn turn) async {
+    final end = turn.end;
+    if (end == null) return null;
+    try {
+      return await end.timeout(chatTurnErrorEndTimeout);
+    } on TimeoutException {
+      return null;
+    }
+  }
+
+  /// Records the model's text reply in the history; an empty one is not a
+  /// turn worth recording (#325).
+  void _commitText(String text) {
+    if (text.isEmpty) return;
+    final chatMessage = Message(text: text, isUser: false);
+    _fullHistory.add(chatMessage);
+    _modelHistory.add(chatMessage);
+  }
+
+  /// Decision H (B90): a plain turn that the session's or model's close ended
+  /// under the consumer is an error, not a reply.
+  static void _throwIfClosed(TurnEnd? end) {
+    if (end == TurnEnd.closed) {
+      throw StateError(
+        'The session was closed during this turn (close(), uninstallModel, '
+        'or a replaced active model); the reply is incomplete.',
+      );
+    }
+  }
+
+  Future<ModelResponse> _generateCoreResponse() async {
     edgeAiLog('InferenceChat: Getting response from native model...');
-    final response = await session.getResponse();
+    final turn = startEngineTurn(session);
+    final response = await _takingBackOnError(turn).join();
+    final end = await _endOf(turn);
     final cleanedResponse = ModelThinkingFilter.cleanResponse(
       response,
       enableThinking: enableThinking,
       modelType: modelType,
       fileType: fileType,
     );
+
+    if (end == TurnEnd.closed) {
+      // Committed before the error, as the streaming path does.
+      _commitText(cleanedResponse);
+      _throwIfClosed(end);
+    }
 
     // SDK-passthrough path (Gemma 4, and FunctionGemma on .litertlm): the SDK
     // already parsed the model's call tokens into structured `tool_calls` JSON.
@@ -334,9 +615,7 @@ class InferenceChat {
     }
 
     // Regular text response
-    final chatMessage = Message(text: cleanedResponse, isUser: false);
-    _fullHistory.add(chatMessage);
-    _modelHistory.add(chatMessage);
+    _commitText(cleanedResponse);
 
     // Clear model history for single-turn models (e.g., FunctionGemma)
     if (_isSingleTurnModel) {
@@ -373,7 +652,143 @@ class InferenceChat {
   /// on this reused chat. [generateChatResponseWithTools] is the reference
   /// implementation that balances all four paths; new consumers should prefer it
   /// over re-driving this stream directly.
-  Stream<ModelResponse> generateChatResponseAsync() async* {
+  ///
+  /// In a plain chat, fails with [StateError] when the turn's text completes and
+  /// the session's [InferenceModelSession.startTurn] reports [TurnEnd.closed].
+  /// Any partial text is committed to [fullHistory] first. If the text itself
+  /// fails, the failed-turn take-back rule below applies. An engine whose
+  /// [EngineTurn.end] is null cannot expose the close distinction to core;
+  /// structured chats report it as [IncompleteStructuredOutputException] as
+  /// described below. A failure to count the reply's tokens or to rebuild the
+  /// session after a full context is the stream's error too, after the reply has
+  /// been committed to [fullHistory].
+  ///
+  /// A turn the engine fails commits nothing: the messages staged for it, and
+  /// any tool call it had committed, are taken back out of [fullHistory]
+  /// before the error reaches the caller (for an input too long for the
+  /// context window the error is a [ContextLimitException]). A stop is not a
+  /// failure and keeps what was generated; a turn stopped before any text is
+  /// taken back as well. Turns an engine runs through
+  /// [ChatTurnHooks.responses] keep their own history.
+  ///
+  /// In a chat with a [responseFormat] the stream yields the reply's text,
+  /// and a reply that fails the format's check is committed to
+  /// [fullHistory], then the stream's error: a [StructuredOutputException].
+  /// Such a turn always runs core's path; [ChatTurnHooks.responses] is not
+  /// called for it. Cancelling the subscription stops the generation.
+  ///
+  /// Core implements this once for every engine (`@nonVirtual`); an engine
+  /// changes a chat's turns through [ChatTurnHooks].
+  @nonVirtual
+  Stream<ModelResponse> generateChatResponseAsync() {
+    _lastTurnTakenBack = false;
+    // Without a session yet, core's stream fails when it is listened to, as
+    // it always has.
+    final current = _sessionIfAny;
+    if (current != null && responseFormatOf(current) != null) {
+      return _streamStructuredResponse();
+    }
+    return (current == null
+            ? null
+            : _hooks.responses(_engine(current), tokenBuffer: tokenBuffer)) ??
+        _streamCoreResponse();
+  }
+
+  /// One turn of a chat with a [responseFormat], over core's structured
+  /// session: text only, no thinking filter and no tool parsing (both are
+  /// refused with a format).
+  ///
+  /// A reply that failed the format's check (incomplete or non-conforming)
+  /// is committed and counted before that failure is thrown, as a plain
+  /// turn's reply is before a close's; a reply cut by a close is not counted
+  /// (the session is gone). A failed count after such a reply is printed,
+  /// never thrown over the format's failure; a failed session rebuild is kept
+  /// and thrown by the next turn ([addQueryChunk], [generateChatResponse],
+  /// [generateChatResponseAsync]) before the closed session is touched, until
+  /// [clearHistory] gets the chat a new session. Any other error — the
+  /// engine's own, a `ResponseFormatUnsupportedException` from an engine that
+  /// refuses the schema at the first send among them — reaches the caller
+  /// unchanged, and the turn is taken back as a plain turn the engine fails
+  /// is: the messages staged for it leave the history. So is a turn stopped
+  /// before any text (its failure is still the incomplete reply), as a plain
+  /// turn stopped before any text is.
+  Stream<ModelResponse> _streamStructuredResponse() async* {
+    _throwIfRebuildFailed();
+    // The same take-back and the same bounded wait after an error as a
+    // plain turn; the format's own failures are not the engine failing.
+    final text = _takingBackOnError(
+      EngineTurn(text: session.getResponseAsync(), end: null),
+      takesBack: (error) => switch (error) {
+        IncompleteStructuredOutputException(
+          end: TurnEnd.stopped,
+          partialText: '',
+        ) =>
+          true,
+        IncompleteStructuredOutputException() ||
+        NonConformingStructuredOutputException() => false,
+        _ => true,
+      },
+    );
+    final buffer = StringBuffer();
+    StructuredOutputException? failure;
+    StackTrace? failureStack;
+    try {
+      await for (final chunk in text) {
+        buffer.write(chunk);
+        yield TextResponse(chunk);
+      }
+    } on IncompleteStructuredOutputException catch (error, stack) {
+      failure = error;
+      failureStack = stack;
+    } on NonConformingStructuredOutputException catch (error, stack) {
+      failure = error;
+      failureStack = stack;
+    }
+    final response = buffer.toString();
+    // A turn stopped before any text was taken back: nothing to keep.
+    if (failure != null && _lastTurnTakenBack) {
+      Error.throwWithStackTrace(failure, failureStack!);
+    }
+    _commitText(response);
+    if (failure == null) {
+      await _accountReply(response, emittedFunctionCall: false);
+      return;
+    }
+    if (failure case IncompleteStructuredOutputException(end: TurnEnd.closed)) {
+      Error.throwWithStackTrace(failure, failureStack!);
+    }
+    try {
+      await _accountReply(
+        response,
+        emittedFunctionCall: false,
+        onRebuildFailed: (error, stack) =>
+            _failedRebuild = (error: error, stack: stack),
+      );
+    } catch (countError) {
+      // The format's failure is what the caller acts on; a release build is
+      // where this shows, and edgeAiLog is silent there.
+      // ignore: avoid_print
+      print(
+        '[flutter_edge_ai] WARNING: after a structured reply that failed its '
+        'check, counting its tokens failed too ($countError).',
+      );
+    }
+    Error.throwWithStackTrace(failure, failureStack!);
+  }
+
+  /// A session rebuild that failed after a structured reply whose own
+  /// failure was that turn's error. The chat still holds the session it
+  /// closed, so every later turn throws this instead of a misleading "session
+  /// is closed", until [clearHistory] gets the chat a new session.
+  ({Object error, StackTrace stack})? _failedRebuild;
+
+  void _throwIfRebuildFailed() {
+    if (_failedRebuild case (:final error, :final stack)) {
+      Error.throwWithStackTrace(error, stack);
+    }
+  }
+
+  Stream<ModelResponse> _streamCoreResponse() async* {
     edgeAiLog('InferenceChat: Starting async stream generation');
     final buffer = StringBuffer();
 
@@ -425,8 +840,8 @@ class InferenceChat {
     // session's own chunks: the thinking filter below may hold back the end of
     // a prose chunk and join it to the next one. It is kept in sdkSwallowed, so
     // a call that cannot be read at end-of-stream still reaches the caller.
-    final originalStream = session
-        .getResponseAsync()
+    final turn = startEngineTurn(session);
+    final originalStream = _takingBackOnError(turn)
         .where((token) {
           if (!sdkPassthrough || !isSdkToolCallChunk(token)) return true;
           sdkSwallowed.write(token);
@@ -524,6 +939,9 @@ class InferenceChat {
                   );
                 }
                 yield TextResponse(message);
+                // The reply is the message, not its JSON: that is what the
+                // history keeps.
+                buffer.write(message);
                 funcBuffer = '';
                 shouldAddToBuffer = false; // Don't add JSON tokens to buffer
                 continue;
@@ -638,6 +1056,7 @@ class InferenceChat {
     }
 
     edgeAiLog('InferenceChat: Native token stream ended');
+    final end = await _endOf(turn);
 
     // The stream ended before we classified this Gemma 4 turn (e.g. a
     // whitespace-only reply) — the probed tokens are plain text, flush them.
@@ -734,6 +1153,8 @@ class InferenceChat {
             level: EdgeAiLogLevel.verbose,
           );
           yield TextResponse(message);
+          _commitText(message);
+          _throwIfClosed(end);
           return;
         }
         try {
@@ -777,75 +1198,75 @@ class InferenceChat {
       }
     }
 
-    try {
-      edgeAiLog('InferenceChat: Calculating response tokens...');
-      final responseTokens = await session.sizeInTokens(response);
-      edgeAiLog('InferenceChat: Response tokens: $responseTokens');
-      _currentTokens += responseTokens;
-      edgeAiLog('InferenceChat: Current total tokens: $_currentTokens');
+    // The reply is committed before anything below can throw (B80, B90), so
+    // the history keeps what the consumer was shown. For function calls it is
+    // already there (added when yielded); an EMPTY text reply is skipped: a
+    // stream stopped before any text token ends with response == '', and
+    // that empty assistant turn would make later short replies come back
+    // empty (#325).
+    if (!emittedFunctionCall) _commitText(response);
+    _throwIfClosed(end);
 
-      if (_currentTokens >= (maxTokens - tokenBuffer)) {
-        edgeAiLog('InferenceChat: Token limit reached, recreating session...');
-        await _recreateSessionWithReducedChunks();
-        edgeAiLog('InferenceChat: Session recreated successfully');
-      }
-    } catch (e) {
-      edgeAiLog('InferenceChat: Error during token calculation: $e');
-    }
-
-    try {
-      edgeAiLog('InferenceChat: Adding message to history...');
-      // For function calls: already added to history when yielded (above)
-      // For text responses: add now since they weren't added during streaming.
-      // Skip an EMPTY response: a cancelled stream (stopGeneration before any
-      // text token) ends with response == '', and writing that empty assistant
-      // turn pollutes _modelHistory so later short replies come back empty
-      // (#325). "No text produced" is not a turn worth recording.
-      if (!emittedFunctionCall && response.isNotEmpty) {
-        final chatMessage = Message(text: response, isUser: false);
-        edgeAiLog(
-          'InferenceChat: Created text message object: ${chatMessage.text}',
-          level: EdgeAiLogLevel.verbose,
-        );
-        _fullHistory.add(chatMessage);
-        edgeAiLog('InferenceChat: Added to full history');
-        _modelHistory.add(chatMessage);
-        edgeAiLog('InferenceChat: Added to model history');
-      } else {
-        edgeAiLog(
-          'InferenceChat: Function call was already added to history when yielded',
-        );
-      }
-      edgeAiLog('InferenceChat: Message added to history successfully');
-
-      // Clear model history for single-turn models (e.g., FunctionGemma)
-      // BUT only if this was NOT a function call - we need context for tool response
-      if (_isSingleTurnModel && !emittedFunctionCall) {
-        edgeAiLog(
-          'InferenceChat: Single-turn model detected (text response), clearing model history...',
-        );
-        _modelHistory.clear();
-        _prefixes.clear();
-        _currentTokens = 0;
-        _toolsInstructionSent = false;
-
-        // Recreate session to clear native state
-        await session.close();
-        session = await sessionCreator!();
-        edgeAiLog('InferenceChat: Model history cleared and session recreated');
-      } else if (_isSingleTurnModel && emittedFunctionCall) {
-        edgeAiLog(
-          'InferenceChat: Single-turn model with function call - keeping history for tool response',
-        );
-      }
-    } catch (e) {
-      edgeAiLog('InferenceChat: Error adding message to history: $e');
-      rethrow;
-    }
+    await _accountReply(response, emittedFunctionCall: emittedFunctionCall);
 
     edgeAiLog(
       'InferenceChat: generateChatResponseAsync completed successfully',
     );
+  }
+
+  /// After a committed reply: counts its tokens, rebuilds the session when
+  /// the context is nearly full, and starts a single-turn model's next turn
+  /// on a fresh session.
+  ///
+  /// With [onRebuildFailed], a failed rebuild goes to it instead of being
+  /// thrown; a failed count is thrown either way.
+  Future<void> _accountReply(
+    String response, {
+    required bool emittedFunctionCall,
+    void Function(Object error, StackTrace stack)? onRebuildFailed,
+  }) async {
+    Future<void> rebuild(Future<void> Function() step) async {
+      if (onRebuildFailed == null) return step();
+      try {
+        await step();
+      } catch (error, stack) {
+        onRebuildFailed(error, stack);
+      }
+    }
+
+    edgeAiLog('InferenceChat: Calculating response tokens...');
+    final responseTokens = await session.sizeInTokens(response);
+    _currentTokens += responseTokens;
+    edgeAiLog('InferenceChat: Current total tokens: $_currentTokens');
+    final used = _hooks.tokenCount(_engine(session)) ?? _currentTokens;
+    if (used >= (maxTokens - tokenBuffer)) {
+      edgeAiLog('InferenceChat: Token limit reached, recreating session...');
+      await rebuild(_recreateSessionWithReducedChunks);
+      edgeAiLog('InferenceChat: Session recreated successfully');
+    }
+
+    // Clear model history for single-turn models (e.g., FunctionGemma)
+    // BUT only if this was NOT a function call - we need context for tool response
+    if (_isSingleTurnModel && !emittedFunctionCall) {
+      edgeAiLog(
+        'InferenceChat: Single-turn model detected (text response), clearing model history...',
+      );
+      _modelHistory.clear();
+      _prefixes.clear();
+      _currentTokens = 0;
+      _toolsInstructionSent = false;
+
+      // Recreate session to clear native state
+      await rebuild(() async {
+        await session.close();
+        session = await sessionCreator!();
+      });
+      edgeAiLog('InferenceChat: Model history cleared and session recreated');
+    } else if (_isSingleTurnModel && emittedFunctionCall) {
+      edgeAiLog(
+        'InferenceChat: Single-turn model with function call - keeping history for tool response',
+      );
+    }
   }
 
   /// Drive flutter_edge_ai's function-calling loop to completion. Stream this
@@ -905,6 +1326,9 @@ class InferenceChat {
         // this reused chat. Answer the collected calls first, then rethrow the
         // ORIGINAL error (the failure still surfaces to the caller — never
         // hidden).
+        // A turn the engine failed was taken back, its calls with it: there
+        // is nothing committed to answer.
+        if (_lastTurnTakenBack) rethrow;
         if (pending.isNotEmpty) {
           edgeAiLog(
             'InferenceChat.generateChatResponseWithTools: generation stream '
@@ -1071,6 +1495,21 @@ class InferenceChat {
   }
 
   Future<void> _recreateSessionWithReducedChunks() async {
+    // A session that keeps the transcript itself is rebuilt from it: the
+    // engine owns what fits its context.
+    final engineHistory = _hooks.history(_engine(session));
+    if (engineHistory != null) {
+      final kept = List.of(engineHistory);
+      await session.close();
+      session = await sessionCreator!();
+      for (final message in kept) {
+        await (_hooks.addQueryChunk(_engine(session), message) ??
+            session.addQueryChunk(message));
+      }
+      await _hooks.replayFinished(_engine(session));
+      return;
+    }
+
     while (_currentTokens >= (maxTokens - tokenBuffer) &&
         _modelHistory.isNotEmpty) {
       final removedMessage = _modelHistory.removeAt(0);
@@ -1098,27 +1537,59 @@ class InferenceChat {
     }
   }
 
-  Future<void> clearHistory({List<Message>? replayHistory}) async {
+  void _resetHistory() {
+    _stagedFrom = null;
     _fullHistory.clear();
     _prefixes.clear();
     _modelHistory.clear();
     _currentTokens = 0;
     _toolsInstructionSent = false;
+  }
+
+  /// Starts the chat over on a new session, replaying [replayHistory] into
+  /// it when given. A replay that throws does not leave a partly staged
+  /// conversation: the chat starts over on another new session, empty, and
+  /// the error is rethrown.
+  Future<void> clearHistory({List<Message>? replayHistory}) async {
+    _resetHistory();
     await session.close();
     session = await sessionCreator!();
-
-    if (replayHistory != null) {
+    _failedRebuild = null;
+    if (replayHistory == null) return;
+    try {
       for (final message in replayHistory) {
         await addQueryChunk(message);
       }
+      await _hooks.replayFinished(_engine(session));
+    } catch (error, stack) {
+      try {
+        _resetHistory();
+        await session.close();
+        session = await sessionCreator!();
+        await _hooks.replayFailed(_engine(session), error);
+      } catch (recoveryError) {
+        // The replay's error is what the caller has to act on; a release
+        // build is where a failed recovery shows, and edgeAiLog is silent
+        // there.
+        // ignore: avoid_print
+        print(
+          '[flutter_edge_ai] WARNING: InferenceChat.clearHistory could not '
+          'start over after a failed replay ($recoveryError); the chat has no '
+          'usable session.',
+        );
+      }
+      Error.throwWithStackTrace(error, stack);
     }
   }
 
   bool get supportsImages => supportImage;
 
-  int get imageMessageCount => _fullHistory.where((msg) => msg.hasImage).length;
+  int get imageMessageCount => fullHistory.where((msg) => msg.hasImage).length;
 
-  Future<void> stopGeneration() => session.stopGeneration();
+  Future<void> stopGeneration() {
+    _stopAskedThisTurn = true;
+    return session.stopGeneration();
+  }
 
   Future<void> close() => session.close();
 
@@ -1411,4 +1882,58 @@ class InferenceChat {
       }
     }
   }
+}
+
+/// What an engine (or a test) changes about one chat's turns: an engine
+/// returns one from `InferenceModel.createChatTurnHooks`, once per chat, and
+/// a test passes one to [InferenceChat]'s constructor.
+///
+/// Core never calls [responses] for a chat with a `responseFormat`: a
+/// structured turn always uses the guarded [InferenceModelSession.startTurn]
+/// path. When [responses] returns non-null it replaces the whole plain turn;
+/// the hook and engine own generation, parsing, history, token accounting,
+/// take-back and overflow rebuild behavior. Core does not append that turn to
+/// its own history.
+///
+/// A `base class` (instantiable) whose defaults are core's behaviour, so a
+/// member added later arrives with its default. Subclasses are `base` or
+/// `final`.
+base class ChatTurnHooks {
+  ChatTurnHooks();
+
+  /// The whole of one turn — generation, parsing, token accounting, the
+  /// history append, the overflow rebuild — or null for core's.
+  Stream<ModelResponse>? responses(
+    InferenceModelSession session, {
+    required int tokenBuffer,
+  }) => null;
+
+  /// The transcript, when the session keeps it itself; null = the chat's.
+  /// When non-null, core's rebuilds replay this list (through
+  /// [addQueryChunk]), and `imageMessageCount` counts it.
+  List<Message>? history(InferenceModelSession session) => null;
+
+  /// Tokens in use, when the session counts them; null = the chat's count.
+  int? tokenCount(InferenceModelSession session) => null;
+
+  /// Queue [message] the engine's way; null = core's (tool prompt, prefix).
+  Future<void>? addQueryChunk(InferenceModelSession session, Message message) =>
+      null;
+
+  /// After `clearHistory(replayHistory:)` replayed every message, and after
+  /// a rebuild replayed [history].
+  Future<void> replayFinished(InferenceModelSession session) async {}
+
+  /// After a replay threw: the chat has already reopened its session; the
+  /// hook may undo engine-side staging. The error is rethrown after it.
+  Future<void> replayFailed(
+    InferenceModelSession session,
+    Object error,
+  ) async {}
+}
+
+/// [InferenceChat.session] read before the chat has one.
+final class _NoSessionError extends StateError {
+  _NoSessionError()
+    : super('This chat has no session yet: call initSession() first.');
 }

@@ -351,7 +351,7 @@ void main() {
         activeBackend: PreferredBackend.cpu,
         onClose: () {},
       );
-      final session = await model.createSession();
+      final session = await model.openSession();
       await model.close();
 
       // The call itself must return: a caller that chains handlers instead

@@ -1,0 +1,81 @@
+diff --git a/runtime/executor/litert/state.cc b/runtime/executor/litert/state.cc
+index b328a8f..04169f8 100644
+--- a/runtime/executor/litert/state.cc
++++ b/runtime/executor/litert/state.cc
+@@ -372,6 +372,22 @@ absl::Status LitertState::Clear() {
+   return absl::OkStatus();
+ }
+ 
++absl::Status LitertState::ClearLinearAttentionState() {
++  for (auto& [_, state_buffer] : bank_1_state_buffers_) {
++    if (state_buffer.type != proto::StateBuffer::TYPE_LINEAR_ATTENTION) continue;
++    LITERT_RETURN_IF_ERROR(state_buffer.buffer.Clear());
++  }
++  if (bank_2_state_buffers_.has_value()) {
++    for (auto& [_, state_buffer] : *bank_2_state_buffers_) {
++      if (state_buffer.type != proto::StateBuffer::TYPE_LINEAR_ATTENTION) {
++        continue;
++      }
++      LITERT_RETURN_IF_ERROR(state_buffer.buffer.Clear());
++    }
++  }
++  return absl::OkStatus();
++}
++
+ absl::Status LitertState::Resize(CompiledModel& compiled_model,
+                                  absl::string_view signature_name,
+                                  int num_entries) {
+diff --git a/runtime/executor/litert/state.h b/runtime/executor/litert/state.h
+index c3d8920..d0456d0 100644
+--- a/runtime/executor/litert/state.h
++++ b/runtime/executor/litert/state.h
+@@ -80,6 +80,8 @@ class LitertState : public StateInterface {
+ 
+   absl::Status Clear() override;
+ 
++  absl::Status ClearLinearAttentionState() override;
++
+   // Returns true if all state buffers are backed by host memory.
+   bool IsHostMemory() const;
+ 
+diff --git a/runtime/executor/llm_litert_compiled_model_executor.cc b/runtime/executor/llm_litert_compiled_model_executor.cc
+index 2b6a46f..ae96b6c 100644
+--- a/runtime/executor/llm_litert_compiled_model_executor.cc
++++ b/runtime/executor/llm_litert_compiled_model_executor.cc
+@@ -2016,6 +2016,19 @@ absl::Status LlmLiteRtCompiledModelExecutorStatic::Prefill(
+   // Reduce the input ids only with one user selected.
+   auto input_length = ids.size() / input_batch_size;
+   ids = ids.subspan(kTokenIndexToReduce * input_length, input_length);
++  // flutter_edge_ai (patch_c_api.sh section 25): a prefill into an empty
++  // context starts the convolution / recurrent state of a hybrid model (LFM2)
++  // from zero. Reset() and a new session only move the step to 0, which is
++  // enough for a KV cache (masked by position) but left the previous
++  // conversation's linear attention state in place: every conversation after
++  // the first on one engine answered differently.
++  if (llm_context_->runtime_state().current_step == 0 &&
++      llm_context_->processed_context().processed_tokens().TokenCount() == 0) {
++    ABSL_RETURN_IF_ERROR(state_->ClearLinearAttentionState());
++    if (decode_state_ != nullptr) {
++      ABSL_RETURN_IF_ERROR(decode_state_->ClearLinearAttentionState());
++    }
++  }
+   int remaining_capacity =
+       state_->GetNumEntries() - llm_context_->runtime_state().current_step;
+ 
+diff --git a/runtime/executor/state_interface.h b/runtime/executor/state_interface.h
+index 880bc3e..b4e0b47 100644
+--- a/runtime/executor/state_interface.h
++++ b/runtime/executor/state_interface.h
+@@ -69,6 +69,12 @@ class StateInterface {
+   // perform the operation asynchronously if the underlying buffers support
+   // asynchronous operations.
+   virtual absl::Status Clear() = 0;
++
++  // flutter_edge_ai (patch_c_api.sh section 25): zeroes out only the linear
++  // attention (convolution / recurrent) state, which a new context must start
++  // from zero, unlike a KV cache, which is masked by position. No-op for a
++  // state that holds none.
++  virtual absl::Status ClearLinearAttentionState() { return absl::OkStatus(); }
+ };
+ 
+ }  // namespace litert::lm

@@ -55,6 +55,9 @@ class OnnxEngine implements InferenceEngineProvider, HuggingFaceResolverSource {
       maxTokens: config.maxTokens,
       modelType: spec.modelType,
       preferredBackend: config.preferredBackend,
+      // No default cap, unlike native phones: an open session holds only its
+      // history, not a KV cache.
+      maxConcurrentSessions: config.maxConcurrentSessions,
       onClose: () {}, // core resets its state via addCloseListener
     );
   }

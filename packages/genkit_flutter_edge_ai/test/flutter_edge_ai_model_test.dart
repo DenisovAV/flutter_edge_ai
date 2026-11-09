@@ -160,7 +160,7 @@ void main() {
         // arguments or the active model change; a handle cached here would miss
         // both.
         expect(runtime.getActiveModelCallCount, 2);
-        expect(fakeModel.createChatCallCount, 2);
+        expect(fakeModel.promptOpenChatCallCount, 2);
       },
     );
 
@@ -217,7 +217,7 @@ void main() {
       expect(fakeChat.receivedMessages[2].text, 'How are you?');
     });
 
-    test('passes toolChoice required to createChat', () async {
+    test('passes toolChoice required to openChat', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -236,7 +236,7 @@ void main() {
       expect(fakeModel.lastToolChoice, gemma.ToolChoice.required);
     });
 
-    test('passes toolChoice none to createChat', () async {
+    test('passes toolChoice none to openChat', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -255,7 +255,7 @@ void main() {
       expect(fakeModel.lastToolChoice, gemma.ToolChoice.none);
     });
 
-    test('native request.toolChoice reaches createChat', () async {
+    test('native request.toolChoice reaches openChat', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -318,7 +318,7 @@ void main() {
       expect(fakeModel.lastToolChoice, gemma.ToolChoice.auto);
     });
 
-    test('passes maxFunctionBufferLength to createChat when set', () async {
+    test('passes maxFunctionBufferLength to openChat when set', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -338,14 +338,17 @@ void main() {
     });
 
     test(
-      'passes null maxFunctionBufferLength to createChat when not set',
+      'uses the openChat maxFunctionBufferLength default when not set',
       () async {
         fakeChat.blockingResponse = const gemma.TextResponse('ok');
         final model = buildModel();
 
         await model(simpleRequest());
 
-        expect(fakeModel.lastMaxFunctionBufferLength, isNull);
+        expect(
+          fakeModel.lastMaxFunctionBufferLength,
+          gemma.defaultMaxFunctionBufferLength,
+        );
       },
     );
 
@@ -763,18 +766,6 @@ void main() {
       expect(parts.where((p) => p.isToolRequest).length, 2);
     });
 
-    test('blocking: returns reasoning for ThinkingResponse', () async {
-      fakeChat.blockingResponse = const gemma.ThinkingResponse('step by step');
-
-      final model = buildModel();
-      final response = await model(simpleRequest());
-
-      final parts = response.message!.content;
-      expect(parts, hasLength(1));
-      expect(parts.first.isReasoning, isTrue);
-      expect(parts.first.reasoning, 'step by step');
-    });
-
     test('streaming: accumulates thinking chunks', () async {
       fakeChat.streamingResponses = [
         const gemma.ThinkingResponse('step 1. '),
@@ -825,7 +816,7 @@ void main() {
       await expectLater(model(null), throwsA(isA<GenkitException>()));
     });
 
-    test('passes systemInstruction from config to createChat', () async {
+    test('passes systemInstruction from config to openChat', () async {
       fakeChat.blockingResponse = const gemma.TextResponse('ok');
       final model = buildModel();
 
@@ -949,7 +940,7 @@ void main() {
         ),
       );
 
-      // System message should be passed via createChat, not prepended to user message.
+      // The system message goes through openChat, not into the user message.
       expect(fakeChat.receivedMessages, hasLength(1));
       expect(fakeChat.receivedMessages[0].text, 'Hello');
     });
@@ -1016,7 +1007,7 @@ void main() {
 
         await first;
         await second;
-        expect(fakeModel.createChatCallCount, 1);
+        expect(fakeModel.promptOpenChatCallCount, 1);
       },
     );
 
@@ -1253,4 +1244,225 @@ void main() {
       await expectLater(call, throwsA(isA<StateError>()));
     });
   });
+
+  group('the chat', () {
+    /// Runs [body], returning what it printed.
+    Future<List<String>> printsOf(Future<void> Function() body) async {
+      final printed = <String>[];
+      await runZoned(
+        body,
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => printed.add(line),
+        ),
+      );
+      return printed;
+    }
+
+    test('a blocking request closes its chat', () async {
+      await buildModel()(simpleRequest());
+
+      expect(fakeChat.closeCallCount, 1);
+    });
+
+    test('a streaming request closes its chat', () async {
+      await buildModel()(simpleRequest(), onChunk: (_) {});
+
+      expect(fakeChat.closeCallCount, 1);
+    });
+
+    test('each request gets its own chat and closes it', () async {
+      fakeModel.chatToReturn = null;
+      final model = buildModel();
+
+      await model(simpleRequest('first'));
+      await model(simpleRequest('second'));
+
+      expect(fakeModel.chats, hasLength(2));
+      expect(identical(fakeModel.chats[0], fakeModel.chats[1]), isFalse);
+      expect(fakeModel.chats.map((c) => c.closeCallCount), [1, 1]);
+    });
+
+    test('the usage is read before the chat is closed', () async {
+      fakeChat.sessionMetrics = gemma.SessionMetrics(
+        inputTokens: 7,
+        outputTokens: 3,
+      );
+
+      final response = await buildModel()(simpleRequest());
+
+      expect(response.usage?.inputTokens, 7);
+      expect(fakeChat.closeCallCount, 1);
+    });
+
+    test(
+      'a failed generation closes its chat and reports its own error',
+      () async {
+        fakeChat.generationError = StateError('generation failed');
+
+        await expectLater(
+          buildModel()(simpleRequest()),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              'generation failed',
+            ),
+          ),
+        );
+        expect(fakeChat.closeCallCount, 1);
+      },
+    );
+
+    test('a failed query closes its chat', () async {
+      fakeChat.addQueryChunkError = ArgumentError('bad message');
+
+      await expectLater(
+        buildModel()(simpleRequest()),
+        throwsA(isA<GenkitException>()),
+      );
+      expect(fakeChat.closeCallCount, 1);
+    });
+
+    test('a cancelled request closes its chat after the stop landed', () async {
+      fakeChat.generationGate = Completer<void>();
+      fakeChat.stopLanding = Completer<void>();
+      final controller = CancellationController();
+
+      final call = buildModel()(simpleRequest(), cancel: controller.token);
+      while (fakeChat.addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      controller.cancel();
+      for (var i = 0; i < 20; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(
+        fakeChat.closeCallCount,
+        0,
+        reason: 'closing under a stop in flight',
+      );
+
+      fakeChat.stopLanding!.complete();
+      await expectLater(call, throwsA(isA<CancelledException>()));
+      expect(fakeChat.closeCallCount, 1);
+    });
+
+    test('the chat is closed before the next request generates', () async {
+      fakeModel.chatToReturn = null;
+      final gate = Completer<void>();
+      int? closedWhenSecondGenerated;
+      fakeModel.newChat = () => switch (fakeModel.chats.length) {
+        0 => FakeInferenceChat()..generationGate = gate,
+        _ =>
+          FakeInferenceChat()
+            ..onGenerate = () {
+              closedWhenSecondGenerated = fakeModel.chats[0].closeCallCount;
+            },
+      };
+      final model = buildModel();
+
+      final first = model(simpleRequest('first'));
+      while (fakeModel.chats.isEmpty ||
+          fakeModel.chats[0].addQueryChunkCallCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final second = model(simpleRequest('second'));
+      gate.complete();
+      await Future.wait([first, second]);
+
+      expect(closedWhenSecondGenerated, 1);
+      expect(fakeModel.chats.map((c) => c.closeCallCount), [1, 1]);
+    });
+
+    test(
+      'a failed close after an answer keeps the answer and is printed',
+      () async {
+        fakeChat.blockingResponse = const gemma.TextResponse('the answer');
+        fakeChat.closeError = const _CloseFailure();
+        ModelResponse? response;
+
+        final printed = await printsOf(() async {
+          response = await buildModel()(simpleRequest());
+        });
+
+        expect(response!.message!.content.first.text, 'the answer');
+        expect(printed, [
+          allOf(
+            contains('closing the chat of a request threw'),
+            contains('_CloseFailure'),
+            contains('fake_runtime.dart'),
+          ),
+        ]);
+      },
+    );
+
+    test(
+      'a failed close after a failed generation reports the generation',
+      () async {
+        final generationFailure = GenkitException(
+          'engine gone',
+          status: StatusCode.unavailable,
+        );
+        fakeChat.generationError = generationFailure;
+        fakeChat.closeError = const _CloseFailure();
+        Object? thrown;
+
+        final printed = await printsOf(() async {
+          try {
+            await buildModel()(simpleRequest());
+          } catch (e) {
+            thrown = e;
+          }
+        });
+
+        expect(
+          thrown,
+          isA<GenkitException>()
+              .having((e) => e.cause, 'cause', same(generationFailure))
+              .having((e) => e.status, 'status', StatusCode.unavailable)
+              .having(
+                (e) => e.message,
+                'message',
+                'engine gone; closing the chat also failed: _CloseFailure: close failed',
+              ),
+        );
+        expect(printed, [contains('_CloseFailure')]);
+      },
+    );
+
+    test(
+      'a failed close after a cancel keeps the CancelledException',
+      () async {
+        fakeChat.generationGate = Completer<void>();
+        fakeChat.closeError = const _CloseFailure();
+        final controller = CancellationController();
+        Object? thrown;
+
+        final printed = await printsOf(() async {
+          final call = buildModel()(simpleRequest(), cancel: controller.token);
+          while (fakeChat.addQueryChunkCallCount == 0) {
+            await Future<void>.delayed(Duration.zero);
+          }
+          controller.cancel();
+          try {
+            await call;
+          } catch (e) {
+            thrown = e;
+          }
+        });
+
+        expect(thrown, isA<CancelledException>());
+        expect(printed, [contains('_CloseFailure')]);
+      },
+    );
+  });
+}
+
+/// What a fake chat's close throws: a type no request failure has, so a
+/// test can tell the two apart.
+class _CloseFailure implements Exception {
+  const _CloseFailure();
+
+  @override
+  String toString() => '_CloseFailure: close failed';
 }

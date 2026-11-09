@@ -20,7 +20,7 @@ Genkit Dart plugin for [flutter_edge_ai](https://pub.dev/packages/flutter_edge_a
 - Multimodal input — several images and one audio clip per user message, from `data:` URIs, `file://` paths, absolute paths or `http(s)://` URLs (each download at most 20 MiB, 30 s for all of a request's downloads; a cancel aborts them). A part without a `contentType` is typed from its URI, the served Content-Type, its extension or its bytes; a part the model cannot take, media outside a user message included, is refused with `INVALID_ARGUMENT`, never dropped
 - Function calling / tool use with `toolChoice` control (`auto`, `required`, `none`) — honors Genkit's native top-level `toolChoice`
 - Parallel tool calls — several calls in one response, each with a `ref` that no other call of the turn has, so Genkit pairs every tool response with its request; the refs stay in the history as call ids
-- Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt and Genkit parses `response.output`
+- Structured JSON output — pass an `outputSchema`; the plugin writes the schema into the prompt, sends it as flutter_edge_ai's `responseFormat` when the loaded model enforces it, and Genkit parses `response.output`
 - Context-window trimmer middleware (`trimContext`) — drops oldest turns to fit the on-device KV budget
 - On-device routing decisions — `DeciderRouteClassifier.load` (or `deciderRouteClassifier` over a decider you keep) turns a flutter_edge_ai `Decider` into a `genkit_hybrid` router classifier, and `flutterEdgeAi.warmUp` loads the model before the first request
 - Thinking mode on models that support it
@@ -56,11 +56,11 @@ register their providers in `await FlutterEdgeAi.initialize()`.
 # pubspec.yaml (your app)
 dependencies:
   genkit: ^1.0.0
-  genkit_flutter_edge_ai: ^0.11.0
-  flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_litertlm: ^1.16.0  # only the engines/backends you actually use
+  genkit_flutter_edge_ai: ^0.12.0
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_litertlm: ^1.20.0  # only the engines/backends you actually use
   flutter_edge_ai_embeddings: ^2.3.2  # the tokenizers an embedding backend needs
-  flutter_edge_ai_mediapipe: ^1.2.3
+  flutter_edge_ai_mediapipe: ^1.3.0
 ```
 
 ```dart
@@ -158,7 +158,7 @@ final response = await ai.generate(
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `maxTokens` | `int?` | 1024 | **Context window** (input + output), not reply length — it goes straight into `getActiveModel(maxTokens:)`; lowering it shrinks the KV cache. Cap the reply with `maxOutputTokens`. |
-| `maxOutputTokens` | `int?` | null | Cap on the tokens generated for one reply (`createChat(maxOutputTokens:)`). `.litertlm` honours it; MediaPipe ignores it. |
+| `maxOutputTokens` | `int?` | null | Cap on the tokens generated for one reply (`openChat(maxOutputTokens:)`). `.litertlm` honours it; MediaPipe ignores it. |
 | `temperature` | `double?` | model's own | Sampling temperature |
 | `topK` | `int?` | model's own | Top-K sampling; `1` is greedy |
 | `topP` | `double?` | model's own | Top-P (nucleus) sampling |
@@ -227,13 +227,27 @@ Write it as `toolChoice: .none`: genkit 1.0 and `flutter_edge_ai` both export a
 ## Structured Output
 
 The plugin advertises `output: ['text', 'json']`. Genkit asks for constrained
-output whenever you pass an `outputSchema` (a `schemantic` type). No on-device
-engine can constrain decoding to a schema, so the plugin writes the schema into
-the prompt as instructions, the way Genkit's `simulateConstrainedGeneration()`
-middleware does (adding the middleware as well is harmless: the schema is
-written once). It returns the raw model text and Genkit's `extractJson`
-populates `response.output`. Pass `outputConstrained: false` to leave the
-prompt alone.
+output whenever you pass an `outputSchema` (a `schemantic` type). The plugin
+always writes the schema into the prompt as instructions, the way Genkit's
+`simulateConstrainedGeneration()` middleware does (adding the middleware as
+well is harmless: the schema is written once, and the middleware turns the
+native path below off). Pass `outputConstrained: false` to leave the prompt
+alone.
+
+When the request has no tools and no `enableThinking`, and the loaded model
+accepts the schema (`InferenceModel.refusalFor` returns null), the schema is
+also sent to flutter_edge_ai as the chat's `responseFormat`: the engine
+constrains decoding to it and flutter_edge_ai checks the model's reply text.
+Whether the loaded model enforces a format, and which schema keywords, is its
+`structuredOutputSupport`. A schema the model refuses, one outside
+flutter_edge_ai's dialect (a type union, a recursive type, `format`,
+`oneOf`/`anyOf`, an `additionalProperties` schema), or one the engine rejects at
+the first send, is not an error: the request runs prompt-only, as it did
+before any engine could enforce a schema. Genkit's references to a type's
+definitions (`$ref`, `$defs`, and the single `allOf` schemantic writes for a
+field with a description) are inlined first. A structured request opens a
+session of its own, so it counts against the model's `maxConcurrentSessions`;
+a prompt-only one does not.
 
 ```dart
 final response = await ai.generate(
@@ -245,8 +259,31 @@ final response = await ai.generate(
 final Recipe? recipe = response.output;
 ```
 
-Genkit does not check the reply against the schema, so validate
-`response.output` yourself. What you get depends on the reply:
+A structured turn that does not end in a value of the schema fails with a
+`GenkitException` (inside `ai.generate`, a result with
+`FinishReason.failed`) whose `cause` is flutter_edge_ai's exception, carrying
+the partial or non-conforming text. None of these statuses sends the request
+to another model through `genkit_hybrid`'s router. A reply that failed its
+schema would fail the same way again, and whether the prompt may go to the
+cloud is the app's decision.
+
+| flutter_edge_ai | Status |
+|---|---|
+| `IncompleteStructuredOutputException`, `end: outputLimit` (raise `maxOutputTokens`) or `end: contextLimit` (the context window) | `OUT_OF_RANGE` |
+| `ContextLimitException`: the input did not fit what the context window had left (on any request, structured or not; the chat is as before the turn) | `OUT_OF_RANGE` |
+| `… end: closed` (model closed or replaced mid-turn) or `end: stopped`, not by your cancel | `ABORTED` |
+| your cancel | `CancelledException` |
+| `NonConformingStructuredOutputException` (an engine bug), or an engine whose `structuredOutputSupport` lists keywords outside the dialect | `FAILED_PRECONDITION` |
+
+Core's check covers the model's text, not `response.output`: Genkit's `json`
+format reads the value with `extractJson`, which prefers a fenced block inside
+the text and never parses the whole text first. A checked object whose string
+field holds a Markdown code block printing 42 comes back as the number `42`.
+So validate `response.output` on this path too, or decode the checked text in
+`response.text` yourself.
+
+On the prompt-only path Genkit does not check the reply against the schema,
+so validate `response.output` yourself. What you get depends on the reply:
 
 - **No JSON at all** (or an object cut off mid-way): the result still finishes
   with `FinishReason.stop`, `response.output` is null and `response.error` says
@@ -395,9 +432,10 @@ await router.warmUp(); // the decider and the on-device model, before the first 
 
 ## Known Limitations
 
+- **Abandoned streams**: Genkit 1.0 does not tell a model action when a stream consumer goes away. Cancel through a `CancellationToken`, or cap the reply with `maxOutputTokens`; otherwise the generation finishes on its own and then closes its chat.
 - **Engine registration**: In the current `flutter_edge_ai` architecture, inference engines and embedding backends are opt-in. The host app must add the relevant packages (`flutter_edge_ai_litertlm` for `.litertlm`, `flutter_edge_ai_mediapipe` for `.task`/`.bin`, `flutter_edge_ai_onnx` for ONNX, `flutter_edge_ai_llama` for `.gguf`, `flutter_edge_ai_builtin_ai` for the OS's own model, `flutter_edge_ai_embeddings` plus a backend such as `flutter_edge_ai_litertlm`'s `LiteRtEmbeddingBackend` for embeddings) and register their providers in `await FlutterEdgeAi.initialize()` before using the plugin. This split first shipped as `flutter_gemma` 1.0.0.
 - **Model installation**: The plugin does NOT manage model installation. The host app must install models via `FlutterEdgeAi.installModel()` and embedders via `FlutterEdgeAi.installEmbedder()` before using the plugin. Without one, a request fails with `UNAVAILABLE`.
 - **Model names are labels**: every configured `FlutterEdgeAiModelConfig` runs the model that is active in flutter_edge_ai, the one installed or selected last; `modelType` tells the plugin how to talk to it. The names share one queue, so generations run one at a time in the order they arrive. Each request asks flutter_edge_ai for the active model, which reuses the loaded one while nothing changed; a newly installed model, or other runtime arguments, give the next request a new one. Set `supportsTools: false` or `supportsMedia: false` on a config whose model takes no tools or media: its `supports` metadata says so, and a request that needs them fails with `UNIMPLEMENTED` instead of reaching a model that would ignore them.
-- **System role**: System messages are passed natively via `createChat(systemInstruction:)`. Only text content is supported in system messages. The capability first shipped under the old package name in `flutter_gemma` 0.13.0.
+- **System role**: System messages are passed natively via `openChat(systemInstruction:)`. Only text content is supported in system messages. The capability first shipped under the old package name in `flutter_gemma` 0.13.0.
 - **Web**: media from `file://` URIs and paths is `UNIMPLEMENTED`, a `blob:` URL is refused, and `http(s)` media needs CORS headers on its server. The web engines report no token counts, so `response.usage` carries the media counts only.
 - **Thinking mode**: DeepSeek `.task` exposes thinking on Android/iOS; Gemma 4 exposes it through `.litertlm` engines, native and Web. Qwen3's emitted `<think>` tags are parsed by core platform-independently, including Web. MediaPipe Web has no thinking API, ONNX Web ignores `enableThinking`, and the catalog has no DeepSeek Web entry.

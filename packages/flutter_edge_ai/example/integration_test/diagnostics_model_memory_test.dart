@@ -78,7 +78,7 @@ void main() {
         expect(model.activeBackend, requested);
         await _record(label, 'after_load');
 
-        final session = await model.createSession(
+        final session = await model.openSession(
           maxOutputTokens: 16,
           temperature: 0.8,
           topK: 1,

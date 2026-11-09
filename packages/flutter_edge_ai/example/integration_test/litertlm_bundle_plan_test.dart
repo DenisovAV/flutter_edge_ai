@@ -9,8 +9,8 @@
 /// - the generic Gemma 4 E2B loads on the GPU with its encoders on the CPU,
 ///   and says so in `activeVisionBackend` / `activeAudioBackend`.
 ///
-/// Prerequisites, macOS (the example's container, as for the other suites):
-///   gemma-4-E2B-it.litertlm in ~/Library/Containers/.../Documents/
+/// Prerequisites, macOS (`~/models`, with the example container as fallback):
+///   gemma-4-E2B-it.litertlm in that staging directory.
 ///   For the NPU case, a bundle compiled for a Qualcomm NPU there too, named
 ///   by --dart-define=NPU_BUNDLE=<file name>; without it that test skips.
 ///
@@ -167,7 +167,7 @@ void main() {
     expect(model.activeBackend, PreferredBackend.gpu);
     expect(model.activeVisionBackend, PreferredBackend.cpu);
     expect(model.activeAudioBackend, PreferredBackend.cpu);
-    final session = await model.createSession(maxOutputTokens: 16);
+    final session = await model.openSession(maxOutputTokens: 16);
     await session.addQueryChunk(
       const Message(text: 'Say the word hello.', isUser: true),
     );

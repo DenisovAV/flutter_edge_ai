@@ -18,7 +18,9 @@
 // worker blocked for good.
 //
 // Engine configuration — the `modelDir` passed to `GenAiFfiClient.load` —
-// is JSON when the test needs it (anything else means the defaults):
+// is JSON when the test needs it, or a directory whose `fake_config.json`
+// holds that JSON (a directory the test can also put a `tokenizer.json` in);
+// anything else means the defaults:
 //   {"log": "/tmp/x.log", "failLoad": true, "throwOnClose": true}
 // - `log`: the engine appends one line per call (`load`, `generate`,
 //   `count`, `reset`, `close`, `tail` for a turn's last call, and how an
@@ -50,6 +52,9 @@
 //   sent FIRST, echoing what the worker received on [GenAiTurn.isFirstTurn]
 //   — lets a test assert the client-observable effect of `resetSession()`
 //   without reaching into worker-private state.
+// - `echoSession`: when true, a marker chunk `[session=<id> turn=<n>]` is sent
+//   first: the session the turn ran on and how many turns that session has had
+//   since its generator was last reset (the fake's per-session "KV cache").
 // - `gate`: blocks on the gate before the first chunk — a prompt's prefill,
 //   one native call nothing can interrupt.
 // - `gateAtTail`: once the chunks are done, logs `tail` and blocks on the
@@ -67,11 +72,25 @@
 // - `throw`: when true, the turn throws — a native call that failed.
 // - `throwUnprintable`: the turn throws an error whose `toString` throws, so
 //   serving it fails and the serving loop itself throws.
+// - `end`: the name of the [TurnEnd] a turn that ran its chunks reports
+//   (default `endOfSequence`); a turn a stop cut short reports `stopped`.
+// - `contextFull`: the turn throws [GenAiContextFullException] before its
+//   first chunk — a prompt that does not fit.
+// After every turn the worker settles it (unless it is closing): with
+// `logSettle: true` in the engine configuration the engine logs
+// `settle:<session>:<keep|keepStopped|keepCut|rewind>`. A rewind takes the
+// turn back off the session's turn count (`echoSession`), while keepCut, like
+// keep, leaves it on, and keepStopped does unless the turn emitted no chunk; a turn that threw before its "prefill" (`contextFull`) counts
+// as not run.
+// A guided turn whose session has no "generator" yet (its first turn, or the
+// first after a reset) logs `guidance:<session>:<schema>`: the schema the
+// generator would be created with.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:flutter_edge_ai/engine.dart' show TurnEnd;
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_client.dart';
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_protocol.dart';
 import 'package:flutter_edge_ai_onnx/src/ffi/gen_ai_worker.dart';
@@ -97,9 +116,19 @@ class _UnprintableError {
 }
 
 class _ScriptedEngine implements GenAiWorkerEngine {
-  _ScriptedEngine(String modelDir) : _config = _objectOrNull(modelDir) ?? {};
+  _ScriptedEngine(String modelDir) : _config = _configOf(modelDir);
+
+  static Map<String, dynamic> _configOf(String modelDir) {
+    final file = File('$modelDir/fake_config.json');
+    if (file.existsSync()) return _objectOrNull(file.readAsStringSync()) ?? {};
+    return _objectOrNull(modelDir) ?? {};
+  }
 
   final Map<String, dynamic> _config;
+
+  /// Turns each session has had since its generator was last reset; the
+  /// stand-in for a per-session KV cache.
+  final Map<int?, int> _turns = {};
 
   String? get _logPath => _config['log'] as String?;
 
@@ -139,12 +168,23 @@ class _ScriptedEngine implements GenAiWorkerEngine {
   }
 
   @override
-  Future<GenAiGenerationStats> generate(
+  Future<GenAiTurnResult> generate(
     GenAiTurn turn, {
+    String? guidance,
+    List<Map<String, String>>? seedHistory,
     required void Function(String piece) emit,
     required bool Function() stopRequested,
   }) async {
-    _log('generate');
+    _log(turn.sessionId == null ? 'generate' : 'generate:${turn.sessionId}');
+    if (turn.isFirstTurn) {
+      _turns.remove(turn.sessionId);
+      _generators.remove(turn.sessionId);
+    }
+    if (_generators.add(turn.sessionId) && guidance != null) {
+      _log('guidance:${turn.sessionId}:$guidance');
+    }
+    final turnNumber = _turns[turn.sessionId] =
+        (_turns[turn.sessionId] ?? 0) + 1;
     final script = _objectOrNull(turn.userContent);
     if (script != null && script['kill'] == true) {
       // Simulate an unexpected native crash: the isolate dies while a
@@ -153,10 +193,9 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       Isolate.current.kill(priority: Isolate.immediate);
       // Unreachable in practice — kill() terminates before this returns —
       // but the function must still return on every path.
-      return const GenAiGenerationStats(
-        promptTokens: 0,
-        generatedTokens: 0,
-        decodeMs: 0,
+      return const GenAiTurnResult(
+        GenAiGenerationStats(promptTokens: 0, generatedTokens: 0, decodeMs: 0),
+        TurnEnd.closed,
       );
     }
     final chunks = script == null
@@ -169,16 +208,35 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       throw StateError('fake generation failed');
     }
     if (script?['throwUnprintable'] == true) throw _UnprintableError();
+    if (script?['contextFull'] == true) {
+      // Nothing reached the "generator": undo the count this turn took.
+      final turns = _turns[turn.sessionId]! - 1;
+      if (turns == 0) {
+        _turns.remove(turn.sessionId);
+      } else {
+        _turns[turn.sessionId] = turns;
+      }
+      throw const GenAiContextFullException('fake prompt does not fit');
+    }
+    _ran[turn.sessionId] = true;
+    _emitted[turn.sessionId] = 0;
     if (script?['crash'] == true) {
       scheduleMicrotask(() => throw StateError('fake native crash'));
     }
 
     var generated = 0;
+    if (script?['echoSession'] == true) {
+      // A generator per session: the count is how many turns this session has
+      // had since its last reset, so it shows whose context a turn ran on.
+      emit('[session=${turn.sessionId} turn=$turnNumber]');
+      generated++;
+    }
     if (script?['echoIsFirstTurn'] == true) {
       emit('[isFirstTurn=${turn.isFirstTurn}]');
       generated++;
     }
 
+    var stopped = false;
     for (final chunk in chunks) {
       if (delayMs > 0) {
         await Future<void>.delayed(Duration(milliseconds: delayMs));
@@ -187,8 +245,12 @@ class _ScriptedEngine implements GenAiWorkerEngine {
         // interleave, same shape as the real engine's `await Future(() {})`.
         await Future<void>(() {});
       }
-      if (stopRequested()) break;
+      if (stopRequested()) {
+        stopped = true;
+        break;
+      }
       emit(chunk);
+      _emitted[turn.sessionId] = (_emitted[turn.sessionId] ?? 0) + 1;
       generated++;
     }
 
@@ -197,7 +259,8 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       while (!stopRequested() && DateTime.now().isBefore(deadline)) {
         await Future<void>(() {});
       }
-      _log(stopRequested() ? 'stopped' : 'deadline');
+      stopped = stopRequested();
+      _log(stopped ? 'stopped' : 'deadline');
     }
 
     if (script?['gateAtTail'] == true) {
@@ -205,12 +268,49 @@ class _ScriptedEngine implements GenAiWorkerEngine {
       _blockUntilReleased();
     }
 
-    return GenAiGenerationStats(
-      promptTokens: chunks.length,
-      generatedTokens: generated,
-      decodeMs: generated,
+    final scriptedEnd = script?['end'];
+    return GenAiTurnResult(
+      GenAiGenerationStats(
+        promptTokens: chunks.length,
+        generatedTokens: generated,
+        decodeMs: generated,
+      ),
+      stopped
+          ? TurnEnd.stopped
+          : scriptedEnd is String
+          ? TurnEnd.values.byName(scriptedEnd)
+          : TurnEnd.endOfSequence,
     );
   }
+
+  @override
+  bool endTurn({int? sessionId, required AfterTurn how}) {
+    if (_config['logSettle'] == true) _log('settle:$sessionId:${how.name}');
+    final ran = _ran.remove(sessionId) ?? false;
+    final emitted = _emitted.remove(sessionId) ?? 0;
+    final turns = _turns[sessionId];
+    // As the real engine: a stop that streamed no text is rewound.
+    final rewound =
+        how == AfterTurn.rewind ||
+        (how == AfterTurn.keepStopped && emitted == 0);
+    if (rewound && ran && turns != null) {
+      if (turns <= 1) {
+        _turns.remove(sessionId);
+      } else {
+        _turns[sessionId] = turns - 1;
+      }
+    }
+    return true;
+  }
+
+  /// Chunks the last turn of each session emitted.
+  final Map<int?, int> _emitted = {};
+
+  /// Sessions with a "generator": created by a turn, gone at a reset.
+  final Set<int?> _generators = {};
+
+  /// Sessions whose last turn got past its "prefill".
+  final Map<int?, bool> _ran = {};
 
   @override
   int countTokens(String text) {
@@ -221,8 +321,10 @@ class _ScriptedEngine implements GenAiWorkerEngine {
   }
 
   @override
-  void resetGenerator() {
-    _log('reset');
+  void resetGenerator({int? sessionId}) {
+    _turns.remove(sessionId);
+    _generators.remove(sessionId);
+    _log(sessionId == null ? 'reset' : 'reset:$sessionId');
     if (_config['gateReset'] == true) _blockUntilReleased();
     if (_config['killOnReset'] == true) {
       Isolate.current.kill(priority: Isolate.immediate);

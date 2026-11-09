@@ -36,12 +36,14 @@ export 'manifest_fetch_types.dart' show ManifestFetch, ManifestFetchException;
 ///     .fromNetwork(r.url) // r.url honours this resolver's [revision] pin
 ///     .install();
 /// final model = await FlutterEdgeAi.getActiveModel(defaults: r.runtime);
-/// final session = await model.createSession(
+/// final session = await model.openSession(
 ///   enableThinking: r.runtime.thinkingDeclared ?? false,
 ///   // minOutputTokens is a FLOOR, not a cap: keep the app's own budget
 ///   // unless the manifest asks for more (`max` from dart:math).
 ///   maxOutputTokens: max(1024, r.runtime.minOutputTokens ?? 0),
 /// );
+/// // Close the session when the conversation is done.
+/// await session.close();
 /// ```
 ///
 /// Throws [ManifestFetchException] when the repo does not ship a manifest

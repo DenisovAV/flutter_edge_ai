@@ -60,6 +60,15 @@ native platforms).
 | **Audio** | ✅ Native | — | — | — |
 | **Function calling** | ✅ Native/Prompt | ✅ Prompt | ✅ Prompt | ✅ Prompt |
 | **Thinking** | ✅ Full | ✅ Tags | ✅ Tags | — |
+| **Structured output (`responseFormat`)** | ✅ qualified native CPU/GPU rows | ❌ refused | ✅ native macOS arm64 only | ❌ no qualified platform yet |
+
+`flutter_edge_ai_llama` also supports response formats on macOS arm64 CPU/Metal
+and in Chrome on macOS with dart2wasm + WebGPU; other GGUF hosts/backends are
+refused until qualified. ONNX requires native macOS arm64 and a model directory
+containing `tokenizer.json`; ONNX Web refuses formats. LiteRT-LM currently
+enforces the whole dialect on macOS and iOS arm64 CPU/Metal, Linux x64
+CPU/Vulkan, Windows x64 CPU/D3D12, and Android arm64 CPU plus
+Adreno/Mali/PowerVR GPU. NPU, Web, and every unlisted row are refused.
 
 - **Function calling.** *Native*: the engine hands the tools to the runtime.
   LiteRT-LM does this for Gemma 4 and FunctionGemma, and on native platforms
@@ -110,15 +119,30 @@ final availability = await BuiltInAi.availability();
 final caps = await LocalAi.capabilities();
 final nativeTools = caps.supportsToolCalling;
 
+final format = ResponseFormat.jsonObject();
+final support = model.structuredOutputSupport;
+final refusal = model.refusalFor(format);
+if (support.isSupported && refusal == null) {
+  final session = await model.openSession(responseFormat: format);
+  try {
+    // Use the structured session.
+  } finally {
+    await session.close();
+  }
+}
+
 // Vector stores: can a registered provider open this store on this platform?
 // (rag: a FlutterEdgeAiRag instance)
 final canOpen = rag.canOpen(spec);
 ```
 
+`LocalAi.capabilities()` describes the underlying OS API; it does not bypass
+`flutter_edge_ai`'s per-platform qualification gate.
+
 **Model features are flags you set**: `supportImage` and `supportAudio` on
-`getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `createChat`
+`getActiveModel`, `supportsFunctionCalls` and `enableThinking` on `openChat`
 (a MediaPipe chat on Android or iOS also needs `supportImage: true` on
-`createChat`, or the image is dropped).
+`openChat`, or the image is dropped).
 ONNX and Built-in AI, and LiteRT-LM on web, throw `UnsupportedError` for image
 or audio input they cannot take.
 

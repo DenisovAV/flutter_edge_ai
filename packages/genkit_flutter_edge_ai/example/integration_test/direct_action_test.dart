@@ -3,7 +3,8 @@
 // Integration test: direct plugin/action level access (bypassing Genkit.generate).
 // Run: flutter test integration_test/direct_action_test.dart -d <device>
 
-import 'package:flutter_edge_ai/flutter_edge_ai.dart' hide Message, ModelResponse;
+import 'package:flutter_edge_ai/flutter_edge_ai.dart'
+    hide Message, ModelResponse;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:genkit/genkit.dart';
 import 'package:genkit_flutter_edge_ai/genkit_flutter_edge_ai.dart';

@@ -52,7 +52,7 @@ void main() {
       );
       expect(loaded, isA<LlamaInferenceModel>());
       expect(loaded.activeBackend, edge.PreferredBackend.cpu);
-      final chat = await loaded.createChat(
+      final chat = await loaded.openChat(
         systemInstruction: 'Follow instructions. Keep your answers short.',
         temperature: 0,
         maxOutputTokens: 64,
@@ -79,7 +79,7 @@ void main() {
       expect(metrics.outputTokens, greaterThan(0));
       expect(metrics.totalTokens, metrics.inputTokens + metrics.outputTokens);
 
-      final cancellable = await loaded.createSession(
+      final cancellable = await loaded.openSession(
         temperature: 0,
         maxOutputTokens: 256,
       );
@@ -140,7 +140,7 @@ void main() {
       );
       expect(reloaded, isNot(same(loaded)));
       loaded = reloaded;
-      final fresh = await reloaded.createSession(
+      final fresh = await reloaded.openSession(
         temperature: 0,
         maxOutputTokens: 32,
       );

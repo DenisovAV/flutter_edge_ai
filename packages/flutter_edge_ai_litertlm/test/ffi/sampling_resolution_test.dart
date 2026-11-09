@@ -1,3 +1,6 @@
+// These tests verify sampling on the legacy native-conversation lane.
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 
 import 'package:flutter_edge_ai/engine.dart';
@@ -14,6 +17,10 @@ class _CapturingClient extends LiteRtLmFfiClient {
   ResolvedSampling? sampling;
   bool? samplingExplicit;
 
+  /// Whether the virtual turn was sent with thinking on, which decides if it
+  /// carries the engine's thinking token budget.
+  bool? thinking;
+
   @override
   SamplingParams get bundleSampler => _bundle;
 
@@ -26,6 +33,7 @@ class _CapturingClient extends LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     required MultimodalOrder multimodalOrder,
+    String? jsonSchema,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;
@@ -42,10 +50,13 @@ class _CapturingClient extends LiteRtLmFfiClient {
     required ResolvedSampling sampling,
     required bool samplingExplicit,
     String? extraContext,
+    required bool thinking,
     int? maxOutputTokens,
+    String? jsonSchema,
   }) {
     this.sampling = sampling;
     this.samplingExplicit = samplingExplicit;
+    this.thinking = thinking;
     return Stream.error(const _Captured());
   }
 }
@@ -172,6 +183,20 @@ void main() {
       ),
     );
     expect(client.samplingExplicit, isTrue);
+  });
+
+  test('an openSession turn tells the client whether it thinks, which decides '
+      'if it carries the thinking token budget', () async {
+    for (final enableThinking in [true, false]) {
+      final client = _CapturingClient(const SamplingParams());
+      final session = await _model(
+        client,
+        ModelType.gemma4,
+      ).openSession(enableThinking: enableThinking);
+      await session.addQueryChunk(const Message(text: 'hi', isUser: true));
+      await expectLater(session.getResponse(), throwsA(isA<_Captured>()));
+      expect(client.thinking, enableThinking);
+    }
   });
 
   group('bundleSamplerFrom', () {

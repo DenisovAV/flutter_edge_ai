@@ -6,7 +6,8 @@
 //
 // The packs are private, so they are not in the repository. Stage each in a
 // directory of its own holding `model.litertlm` and `golden.json`:
-//   macOS: <the example's container Documents>/decisions/<pack>/
+//   macOS: ~/models/decisions/<pack>/ (container Documents fallback)
+//   iOS:   the app's Documents/decisions/<pack>/
 // or name the parent with --dart-define=DECIDER_PACKS=<dir>. A float32 twin
 // of a pack's model, staged beside it as `twin.litertlm`, is checked against
 // the reference to 1e-3 nats per token: the method alone, with no
@@ -14,7 +15,7 @@
 // method is checked only through the int8 bounds below. The refusal tests also
 // need FunctionGemma 270M (`functiongemma-270M-it.litertlm`, a chat model
 // without a decision) and, for the self-check on another template,
-// `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` in the container Documents.
+// `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` in the staging directory.
 //
 // What is asserted per row, on this machine: the rendered prompt and its
 // token ids are the golden ones; the decider's top option is the argmax of
@@ -27,11 +28,17 @@
 // every token is within 2.0 nats of the reference; a target scored alone
 // equals the same target scored after a rewind. The gap to the golden engine
 // scores is printed, not asserted: it measures this CPU's int8 arithmetic
-// against the one litetune ran on.
+// against the one litetune ran on. Each pack also runs on the GPU: the
+// self-check must pass there and pick the golden mode, and a repeated
+// decision must give the same probabilities; agreement with the golden top
+// options is printed, not asserted.
 //
-// Run (CPU; one model at a time):
+// Run (one model at a time):
 //   flutter test integration_test/litertlm_inference_decider_test.dart -d macos
-// ignore_for_file: experimental_member_use
+//
+// readDecisionSection and openOptionScorer are @protected (core's decider
+// calls them); these tests call them directly.
+// ignore_for_file: experimental_member_use, invalid_use_of_protected_member
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -42,15 +49,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart'
+    show macosContainerDocumentsPath, macosStagedFilePath;
 
 const _packsDefine = String.fromEnvironment('DECIDER_PACKS');
 
-String get _documents =>
-    '${Platform.environment['HOME']}/Library/Containers/'
-    'dev.flutterberlin.flutterGemmaExample55/Data/Documents';
+/// Where a pack or extra model is staged. On iOS HOME is the app's own
+/// container, whose Documents is `xcrun devicectl device copy to
+/// --domain-type appDataContainer`'s target.
+String _stagedPath(String relativePath) {
+  if (Platform.isIOS) {
+    return '${Platform.environment['HOME']}/Documents/$relativePath';
+  }
+  if (Platform.isMacOS) return macosStagedFilePath(relativePath)!;
+  return macosContainerDocumentsPath(relativePath);
+}
 
-Directory get _packsDir =>
-    Directory(_packsDefine.isNotEmpty ? _packsDefine : '$_documents/decisions');
+Directory get _packsDir => Directory(
+  _packsDefine.isNotEmpty ? _packsDefine : _stagedPath('decisions'),
+);
 
 /// A per-token bound that holds on both CPUs measured: 1.4272 nats on
 /// litetune's Xeon, 1.8833 on an Apple M4 Pro (2026-10-18). Wrong scoring
@@ -125,10 +142,12 @@ Future<InferenceModel> _load(
   );
 }
 
-/// The scoring mode the model's self-check picked (`LiteRtLmScoringMode`,
-/// internal to flutter_edge_ai_litertlm).
-String? _modeOf(InferenceModel model) =>
-    ((model as dynamic).scoringMode as Enum?)?.name;
+/// Whether the model's scoring self-check passed (`scoringChecked`, internal
+/// to flutter_edge_ai_litertlm). LiteRT-LM 0.19 scores right after the
+/// prefill (#3561 fixed); a pack's `provenance.mode` is how litetune scored it
+/// (`once`, on 0.18), which gives the same scores.
+bool _checked(InferenceModel model) =>
+    (model as dynamic).scoringChecked as bool;
 
 List<Directory> _packs() {
   final dir = _packsDir;
@@ -158,7 +177,7 @@ Future<String> _secondTurn(
   InferenceModel model, {
   Future<void> Function()? between,
 }) async {
-  final chat = await model.createChat(topK: 1, maxOutputTokens: 24);
+  final chat = await model.openChat(topK: 1, maxOutputTokens: 24);
   try {
     Future<String> turn(String text) async {
       await chat.addQueryChunk(Message(text: text, isUser: true));
@@ -216,10 +235,9 @@ void main() {
       final payload = section['payload'] as Map<String, Object?>;
       final type = payload['type'] as String;
       final model = await _load('${pack.path}/model.litertlm');
-      final engine = model as OptionScoringModel;
 
       // The section, exactly as the file carries it.
-      final read = await engine.readDecisionSection();
+      final read = await model.readDecisionSection();
       expect(read, section['payload_text']);
       expect(jsonDecode(read!), payload);
 
@@ -242,18 +260,18 @@ void main() {
         calibration: const InferenceDeciderCalibration.fromModel(),
       );
       created.stop();
-      final mode = _modeOf(model);
       // ignore: avoid_print
       print(
         '[decider] ${_name(pack)}: $type, ${listed.length} options, '
-        'created in ${created.elapsedMilliseconds} ms, mode $mode '
-        '(golden ${provenance['mode']})',
+        'created in ${created.elapsedMilliseconds} ms, self-check '
+        '${_checked(model) ? 'passed' : 'not run'} (golden scored in mode '
+        '${provenance['mode']})',
       );
-      expect(mode, provenance['mode']);
+      expect(_checked(model), isTrue);
       expect(decider.capabilities.questionType.name, type);
       expect(decider.options.map((o) => o.id), listed);
 
-      final scorer = await engine.openOptionScorer();
+      final scorer = await model.openOptionScorer();
       final fullTargets = [for (final id in listed) '$id$terminator'];
       var maxToReference = 0.0;
       var maxToGoldenEngine = 0.0;
@@ -490,7 +508,7 @@ void main() {
           if (payload['none_option'] case final String none) none,
         ];
         final model = await _load(twin.path);
-        final scorer = await (model as OptionScoringModel).openOptionScorer();
+        final scorer = await model.openOptionScorer();
         var worst = 0.0;
         for (final row in (golden['rows'] as List).cast<Map>()) {
           final rendered = await scorer.renderUserMessage(
@@ -519,6 +537,52 @@ void main() {
                 'int8 bounds',
       timeout: const Timeout(Duration(minutes: 20)),
     );
+  }
+
+  // The GPU computes in other arithmetic than the CPU litetune measured, so
+  // its scores are not the golden ones: printed, not asserted. What is
+  // asserted is that the self-check passes there (its repeats bit-identical,
+  // its rewinds exact), and that a decision repeated gives the same
+  // probabilities, bit for bit.
+  for (final pack in packs) {
+    test('${_name(pack)}: on the GPU', () async {
+      final golden = _goldenOf(pack);
+      final payload = _payloadOf(golden);
+      final model = await _load(
+        '${pack.path}/model.litertlm',
+        backend: PreferredBackend.gpu,
+      );
+      expect(model.activeBackend, PreferredBackend.gpu);
+      final decider = await model.createDecider(
+        question: payload['question'] as String,
+        options: _trainedOptions(payload),
+        calibration: const InferenceDeciderCalibration.fromModel(),
+      );
+      expect(_checked(model), isTrue);
+      final rows = (golden['rows'] as List).cast<Map<String, Object?>>();
+      var engineAgree = 0;
+      var referenceAgree = 0;
+      for (final row in rows) {
+        final input = DeciderInput(EmbeddingInput.text(row['state'] as String));
+        final first = await decider.choose(input);
+        final again = await decider.choose(input);
+        expect(
+          again.probabilities,
+          first.probabilities,
+          reason: 'row ${row['index']}: a repeated decision on the GPU',
+        );
+        final top = first.ranked.first.id;
+        if (top == row['engine_argmax']) engineAgree++;
+        if (top == row['reference_argmax']) referenceAgree++;
+      }
+      // ignore: avoid_print
+      print(
+        '[decider] ${_name(pack)} on the GPU: self-check passed; top '
+        'option = golden CPU engine on $engineAgree/${rows.length} rows, '
+        '= reference on $referenceAgree/${rows.length}',
+      );
+      await decider.close();
+    }, timeout: const Timeout(Duration(minutes: 20)));
   }
 
   group('refusals, coexistence and stopping, on the first choice pack', () {
@@ -739,7 +803,7 @@ void main() {
       final m = await model();
       final d = await decider(m);
       final before = await d.choose(input);
-      final chat = await m.createChat(topK: 1, maxOutputTokens: 16);
+      final chat = await m.openChat(topK: 1, maxOutputTokens: 16);
       try {
         await chat.addQueryChunk(
           const Message(text: 'Say hello.', isUser: true),
@@ -759,7 +823,7 @@ void main() {
 
     test('a cancel stops a long scoring run between targets', () async {
       final m = await model();
-      final scorer = await (m as OptionScoringModel).openOptionScorer();
+      final scorer = await m.openOptionScorer();
       final targets = [
         for (final o in _listedOptions(trained))
           '${o.id}${trained['terminator']}',
@@ -789,7 +853,7 @@ void main() {
       'closing the scorer stops its long run and frees the engine',
       () async {
         final m = await model();
-        final scorer = await (m as OptionScoringModel).openOptionScorer();
+        final scorer = await m.openOptionScorer();
         final targets = [
           for (final o in _listedOptions(trained))
             '${o.id}${trained['terminator']}',
@@ -832,7 +896,7 @@ void main() {
       for (final delay in const [Duration.zero, Duration(milliseconds: 30)]) {
         // A fresh model, so that its self-check has not run yet.
         await (await model()).close();
-        final m = await model() as OptionScoringModel;
+        final m = await model();
         final a = await m.openOptionScorer();
         final b = await m.openOptionScorer();
         final aPrepared = expectLater(
@@ -847,21 +911,21 @@ void main() {
         // ignore: avoid_print
         print(
           '[decider] scorer closed at ${delay.inMilliseconds} ms during the '
-          'self-check: the other one got mode ${_modeOf(m as InferenceModel)}',
+          'self-check: the other one passed it: ${_checked(m)}',
         );
-        expect(_modeOf(m as InferenceModel), 'once');
+        expect(_checked(m), isTrue);
         await b.close();
       }
     }, skip: skip);
 
     test('a model without a decision section is refused', () async {
-      final path = '$_documents/functiongemma-270M-it.litertlm';
+      final path = _stagedPath('functiongemma-270M-it.litertlm');
       if (!File(path).existsSync()) {
         markTestSkipped('FunctionGemma 270M is not staged at $path');
         return;
       }
       final m = await _load(path, modelType: ModelType.functionGemma);
-      expect(await (m as OptionScoringModel).readDecisionSection(), isNull);
+      expect(await m.readDecisionSection(), isNull);
       await expectLater(
         m.createDecider(
           question: question,
@@ -878,50 +942,28 @@ void main() {
       );
     }, skip: skip);
 
-    test(
-      'the self-check also tells the mode on another chat template',
-      () async {
-        final path = '$_documents/Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm';
-        if (!File(path).existsSync()) {
-          markTestSkipped('Qwen3 0.6B is not staged at $path');
-          return;
-        }
-        final m = await _load(path, modelType: ModelType.qwen3);
-        final scorer = await (m as OptionScoringModel).openOptionScorer();
-        await scorer.prepare([
-          'yes<|im_end|>',
-          'no<|im_end|>',
-          'maybe<|im_end|>',
-        ]);
-        // ignore: avoid_print
-        print('[decider] Qwen3 0.6B self-check: ${_modeOf(m)}');
-        expect(_modeOf(m), 'once');
-        await scorer.close();
-      },
-      skip: skip,
-    );
-
-    test('a model on the GPU is refused: only the CPU is measured', () async {
-      final m = await _load(
-        '${pack!.path}/model.litertlm',
-        backend: PreferredBackend.gpu,
-      );
-      expect(m.activeBackend, PreferredBackend.gpu);
-      await expectLater(
-        decider(m),
-        throwsA(
-          isA<DeciderUnsupportedException>().having(
-            (e) => e.message,
-            'message',
-            contains('CPU'),
-          ),
-        ),
-      );
+    test('the self-check also passes on another chat template', () async {
+      final path = _stagedPath('Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm');
+      if (!File(path).existsSync()) {
+        markTestSkipped('Qwen3 0.6B is not staged at $path');
+        return;
+      }
+      final m = await _load(path, modelType: ModelType.qwen3);
+      final scorer = await m.openOptionScorer();
+      await scorer.prepare([
+        'yes<|im_end|>',
+        'no<|im_end|>',
+        'maybe<|im_end|>',
+      ]);
+      // ignore: avoid_print
+      print('[decider] Qwen3 0.6B self-check passed: ${_checked(m)}');
+      expect(_checked(m), isTrue);
+      await scorer.close();
     }, skip: skip);
 
     test('closing the model stops a long scoring run', () async {
       final m = await model();
-      final scorer = await (m as OptionScoringModel).openOptionScorer();
+      final scorer = await m.openOptionScorer();
       final targets = [
         for (final o in _listedOptions(trained))
           '${o.id}${trained['terminator']}',

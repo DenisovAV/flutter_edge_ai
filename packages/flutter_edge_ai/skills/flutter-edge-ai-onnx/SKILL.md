@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-onnx
-description: Use when running ONNX models with flutter_edge_ai_onnx (ModelFileType.onnx) — ORT-GenAI text generation (e.g. Phi-3.5-mini) or ONNX embeddings — on macOS arm64, Linux x64, Windows x64, Android arm64, iOS arm64, or in the browser through Transformers.js. Also use when an ONNX install is routed to the wrong engine, genai_config.json is missing, or getActiveModel throws "No inference engine can handle this model" on another platform. For .litertlm models use flutter-edge-ai-inference; for .task, flutter-edge-ai-mediapipe.
+description: Use when running ONNX models with flutter_edge_ai_onnx (ModelFileType.onnx) — ORT-GenAI text generation (e.g. Phi-3.5-mini) or ONNX embeddings — on macOS arm64, Linux x64, Windows x64 and ARM64, Android arm64, iOS arm64, or in the browser through Transformers.js. Also use when an ONNX install is routed to the wrong engine, genai_config.json is missing, or getActiveModel throws "No inference engine can handle this model" on another platform. For .litertlm models use flutter-edge-ai-inference; for .task, flutter-edge-ai-mediapipe.
 ---
 
 # The ONNX engine
@@ -14,6 +14,7 @@ description: Use when running ONNX models with flutter_edge_ai_onnx (ModelFileTy
 5. Android needs `minSdk 24` — the build hook fails the build below it. Phi-3.5-mini peaks near 3.7 GB of RAM, so target devices with 6 GB of RAM or more.
 6. Text only: no images, no audio, no LoRA.
 7. Sampling follows the model's own config — `genai_config.json` natively, `generation_config.json` on web — which is greedy unless it sets `do_sample`. A `temperature`, `topK` or `topP` you pass overrides it and switches sampling on; `temperature: 0` or `topK: 1` keeps it greedy, natively, a `temperature` or `topP` without `topK` over a config with `top_k: 1` also gets a top-k (the family's, else 40); on web the seed is not applied yet and `topP` is ignored (Transformers.js samples with top-k only). On native `activeBackend` is `null` — ORT-GenAI picks the execution provider from `genai_config.json`, which the engine does not read; on web it reports the backend that loaded.
+8. Response formats are enabled only on native macOS arm64 and only when the model directory has `tokenizer.json`. Linux and Windows archives contain llguidance but stay refused until their host runs pass; Android, iOS and Web have no enabled constrained-decoding path.
 
 ## Setup
 
@@ -51,7 +52,18 @@ await FlutterEdgeAi.installModel(
 ).fromFile('$path/genai_config.json').install();
 ```
 
-Sessions, chats and streaming work as in the flutter-edge-ai-inference skill, except `openSession` / `openChat`, which throw `UnsupportedError` here — one conversation at a time. `FlutterEdgeAi.openModel` is not supported either (`UnsupportedError` before anything loads; on a host outside ONNX's platforms no engine claims the spec, so `StateError`): use `getActiveModel`. Pass `modelType` to `createChat` for function calling; ONNX falls back to `ModelType.gemmaIt`.
+Sessions, chats and streaming work as in the flutter-edge-ai-inference skill. `openSession` / `openChat` are available natively since `flutter_edge_ai_onnx` 0.8.0 and on Web since 0.9.0. On web, each session keeps its own history on the shared Transformers.js pipeline, holds no KV cache and is uncapped unless `maxConcurrentSessions` is set. Natively, each opened session has its own generator, whose KV cache is `maxTokens` × 2 × layers × KV heads × head size × dtype size once it has had a turn (0.75 MiB per token for Phi-3.5-mini int4); exceeding `maxConcurrentSessions` throws `StateError` (unset: 2 on Android and iOS, unlimited on desktop). `FlutterEdgeAi.openModel` remains unsupported (`UnsupportedError` on a supported host; `StateError` where no ONNX engine claims the spec), so use `getActiveModel`.
+
+## Structured output
+
+Call `model.refusalFor(format)` before
+`openSession(responseFormat: format)` or `openChat(responseFormat: format)`. A
+supported ONNX model advertises the whole core dialect and
+`StructuredDelivery.incremental`; generated chunks arrive before an
+`IncompleteStructuredOutputException` or
+`NonConformingStructuredOutputException`. A prompt that does not fit fails with
+`ContextLimitException` and is not kept. Never put the format on `createSession`
+/ `createChat`, and never combine it with tools or thinking.
 
 ## Web
 
@@ -64,14 +76,14 @@ await FlutterEdgeAi.installModel(
 ).fromNetwork('https://huggingface.co/onnx-community/Qwen2.5-0.5B-Instruct').install();
 ```
 
-The repo must be in Transformers.js layout, as the `onnx-community` ones are. ORT-GenAI repos such as `microsoft/Phi-3.5-mini-instruct-onnx` do not run in the browser. `fromFile` and `fromAsset` install on web without complaint and then throw `UnsupportedError` from the first `createSession` — on web the model identity has to be a repo, not a file. `fromBundled('<id>')` serves one from the app's own origin. `PreferredBackend.cpu` forces WASM; anything else tries WebGPU first.
+The repo must be in Transformers.js layout, as the `onnx-community` ones are. ORT-GenAI repos such as `microsoft/Phi-3.5-mini-instruct-onnx` do not run in the browser. `fromFile` and `fromAsset` install on web without complaint and then throw `UnsupportedError` from the first `openSession` — on web the model identity has to be a repo, not a file. `fromBundled('<id>')` serves one from the app's own origin. `PreferredBackend.cpu` forces WASM; anything else tries WebGPU first.
 
 Add to `web/index.html` `<head>`, before Flutter boots — the first script for generation, the second for embeddings:
 
 ```html
 <script type="module">
 window.transformersReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1');
   window.transformers = m;
   return m;
 })();

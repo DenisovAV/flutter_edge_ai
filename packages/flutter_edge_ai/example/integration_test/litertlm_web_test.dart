@@ -113,7 +113,7 @@ void main() {
       tester,
     ) async {
       final model = await _ensureModel();
-      final session = await model.createSession(topK: _topK);
+      final session = await model.openSession(topK: _topK);
       try {
         await session.addQueryChunk(
           const Message(text: 'Say hello in one word.', isUser: true),
@@ -138,10 +138,7 @@ void main() {
           'List every planet in the solar system with a sentence '
           'about each.';
 
-      final capped = await model.createSession(
-        topK: _topK,
-        maxOutputTokens: 16,
-      );
+      final capped = await model.openSession(topK: _topK, maxOutputTokens: 16);
       final String cappedText;
       try {
         await capped.addQueryChunk(const Message(text: prompt, isUser: true));
@@ -150,7 +147,7 @@ void main() {
         await capped.close();
       }
 
-      final uncapped = await model.createSession(topK: _topK);
+      final uncapped = await model.openSession(topK: _topK);
       final String uncappedText;
       try {
         await uncapped.addQueryChunk(const Message(text: prompt, isUser: true));
@@ -171,7 +168,7 @@ void main() {
 
     testWidgets('streaming yields at least one chunk', (tester) async {
       final model = await _ensureModel();
-      final session = await model.createSession(topK: _topK);
+      final session = await model.openSession(topK: _topK);
       try {
         await session.addQueryChunk(
           const Message(text: 'Count from one to three.', isUser: true),
@@ -193,59 +190,65 @@ void main() {
       tester,
     ) async {
       final model = await _ensureModel();
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: _topK,
         modelType: ModelType.gemma4,
       );
+      try {
+        await chat.addQueryChunk(
+          const Message(text: 'My favourite color is blue.', isUser: true),
+        );
+        await chat.generateChatResponse();
 
-      await chat.addQueryChunk(
-        const Message(text: 'My favourite color is blue.', isUser: true),
-      );
-      await chat.generateChatResponse();
-
-      await chat.addQueryChunk(
-        const Message(text: 'What is my favourite color?', isUser: true),
-      );
-      final response = await chat.generateChatResponse();
-      expect(response.toString().toLowerCase(), contains('blue'));
+        await chat.addQueryChunk(
+          const Message(text: 'What is my favourite color?', isUser: true),
+        );
+        final response = await chat.generateChatResponse();
+        expect(response.toString().toLowerCase(), contains('blue'));
+      } finally {
+        await chat.close();
+      }
     });
 
     testWidgets('chat: clearHistory wipes context', (tester) async {
       final model = await _ensureModel();
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         topK: _topK,
         modelType: ModelType.gemma4,
       );
+      try {
+        await chat.addQueryChunk(
+          const Message(text: 'Remember the number 42.', isUser: true),
+        );
+        await chat.generateChatResponse();
 
-      await chat.addQueryChunk(
-        const Message(text: 'Remember the number 42.', isUser: true),
-      );
-      await chat.generateChatResponse();
+        await chat.clearHistory();
 
-      await chat.clearHistory();
-
-      await chat.addQueryChunk(
-        const Message(
-          text: 'What number did I ask you to remember?',
-          isUser: true,
-        ),
-      );
-      final response = (await chat.generateChatResponse())
-          .toString()
-          .toLowerCase();
-      // After clearHistory the assistant should NOT recall "42" verbatim.
-      expect(
-        response.contains('42'),
-        isFalse,
-        reason: 'clearHistory should drop the prior context.',
-      );
+        await chat.addQueryChunk(
+          const Message(
+            text: 'What number did I ask you to remember?',
+            isUser: true,
+          ),
+        );
+        final response = (await chat.generateChatResponse())
+            .toString()
+            .toLowerCase();
+        // After clearHistory the assistant should NOT recall "42" verbatim.
+        expect(
+          response.contains('42'),
+          isFalse,
+          reason: 'clearHistory should drop the prior context.',
+        );
+      } finally {
+        await chat.close();
+      }
     });
 
     testWidgets('session: sizeInTokens returns a non-negative integer', (
       tester,
     ) async {
       final model = await _ensureModel();
-      final session = await model.createSession(topK: _topK);
+      final session = await model.openSession(topK: _topK);
       try {
         final n = await session.sizeInTokens('Hello world');
         expect(n, greaterThan(0));
@@ -254,11 +257,11 @@ void main() {
       }
     });
 
-    testWidgets('multiple createSession on the same model', (tester) async {
+    testWidgets('multiple openSession calls on the same model', (tester) async {
       final model = await _ensureModel();
-      final s1 = await model.createSession(topK: _topK);
+      final s1 = await model.openSession(topK: _topK);
       await s1.close();
-      final s2 = await model.createSession(topK: _topK);
+      final s2 = await model.openSession(topK: _topK);
       await s2.addQueryChunk(const Message(text: 'Hi.', isUser: true));
       final r = await s2.getResponse();
       expect(r, isNotEmpty);

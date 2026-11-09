@@ -241,8 +241,11 @@ void main() {
     test('an uninstalled fromFile model is not restored', () async {
       final model = userFile('picked-model.task', _modelBytes);
       await installTask(model);
-      // Drops the record and keeps the app's file; the identity stays.
+      // Drops the record and keeps the app's file.
       await FlutterEdgeAi.uninstallModel('picked-model.task');
+      // Releases up to 2.5.2 kept the identity: the missing record alone
+      // keeps the model from being restored.
+      await writeInferenceIdentity('picked-model.task', FileSource(model.path));
 
       expect((await restart()).activeInferenceModel, isNull);
       expect(model.existsSync(), isTrue);
@@ -256,6 +259,8 @@ void main() {
         final model = await coreDirFile('staged.task', _modelBytes);
         await installTask(model);
         await FlutterEdgeAi.uninstallModel('staged.task');
+        // The identity an older release kept, as above.
+        await writeInferenceIdentity('staged.task', FileSource(model.path));
 
         expect((await restart()).activeInferenceModel, isNull);
         expect(model.existsSync(), isTrue);

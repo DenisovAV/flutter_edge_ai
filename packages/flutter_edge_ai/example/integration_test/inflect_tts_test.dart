@@ -1,6 +1,6 @@
 // On-device (macOS/desktop): verify the Inflect-Nano-v2 FFI synthesis core
-// byte-matches the reference. The fixture (`inflect_fixture.bin`, staged in the
-// app documents dir) carries, per sentence: the phoneme ids, the reference
+// byte-matches the reference. The fixture (`inflect_fixture.bin`, staged with
+// the model artifacts) carries, per sentence: the phoneme ids, the reference
 // numpy RandomState(7) noise, and the expected fp16 LiteRT waveform. Injecting
 // the reference noise (InflectTtsCore.synthesize's `noiseOverride`) removes the
 // RNG as a variable, so this checks the FFI graphs + host length-regulator +
@@ -9,7 +9,8 @@
 //
 // Stage first:
 //   inflect_{text_encoder,decoder}_fp16.tflite + inflect_fixture.bin
-//   into the app documents dir.
+//   macOS: ~/models (container Documents fallback); other platforms: app
+//   Documents.
 // Run: cd packages/flutter_edge_ai/example && \
 //   flutter test integration_test/inflect_tts_test.dart -d macos
 import 'dart:io';
@@ -27,6 +28,27 @@ import 'package:flutter_edge_ai_speech/src/tts/inflect_text_frontend.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
+
+import 'local_model_file_io.dart' show macosStagedRoot;
+
+const _referenceFiles = [
+  'inflect_text_encoder_fp16.tflite',
+  'inflect_decoder_fp16.tflite',
+  'inflect_fixture.bin',
+];
+
+const _endToEndFiles = [
+  'inflect_text_encoder_fp16.tflite',
+  'inflect_decoder_fp16.tflite',
+  'config.json',
+  'g2p_dict.txt.gz',
+  'dp_g2p_matcha_fp16.tflite',
+  'g2p_meta.json',
+];
+
+Future<String> _stagedRoot(List<String> requiredFiles) async => Platform.isMacOS
+    ? macosStagedRoot(requiredFiles)!
+    : (await getApplicationDocumentsDirectory()).path;
 
 double _pearson(Float32List a, Float32List b) {
   final n = math.min(a.length, b.length);
@@ -52,15 +74,18 @@ void main() {
   testWidgets(
     'Inflect FFI synthesis byte-matches the fp16 reference (per sentence)',
     (tester) async {
-      final docs = await getApplicationDocumentsDirectory();
-      final encPath = '${docs.path}/inflect_text_encoder_fp16.tflite';
-      final decPath = '${docs.path}/inflect_decoder_fp16.tflite';
-      final fixPath = '${docs.path}/inflect_fixture.bin';
+      final root = await _stagedRoot(_referenceFiles);
+      final encPath = '$root/${_referenceFiles[0]}';
+      final decPath = '$root/${_referenceFiles[1]}';
+      final fixPath = '$root/${_referenceFiles[2]}';
       for (final p in [encPath, decPath, fixPath]) {
         expect(
           File(p).existsSync(),
           isTrue,
-          reason: 'stage $p (models + inflect_fixture.bin) in app documents',
+          reason:
+              'stage the complete Inflect reference set at $root; macOS: '
+              '~/models (container Documents fallback); other platforms: '
+              'app Documents.',
         );
       }
 
@@ -136,23 +161,18 @@ void main() {
     'Inflect end-to-end: text -> frontend (dict + neural OOV) -> synth -> '
     'non-silent 24 kHz audio',
     (tester) async {
-      final docs = await getApplicationDocumentsDirectory();
-      String p(String f) => '${docs.path}/$f';
+      final root = await _stagedRoot(_endToEndFiles);
       final paths = <String, String>{
-        'inflect_text_encoder_fp16.tflite': p(
-          'inflect_text_encoder_fp16.tflite',
-        ),
-        'inflect_decoder_fp16.tflite': p('inflect_decoder_fp16.tflite'),
-        'config.json': p('config.json'),
-        'g2p_dict.txt.gz': p('g2p_dict.txt.gz'),
-        'dp_g2p_matcha_fp16.tflite': p('dp_g2p_matcha_fp16.tflite'),
-        'g2p_meta.json': p('g2p_meta.json'),
+        for (final fileName in _endToEndFiles) fileName: '$root/$fileName',
       };
       for (final f in paths.values) {
         expect(
           File(f).existsSync(),
           isTrue,
-          reason: 'stage $f in app documents',
+          reason:
+              'stage the complete Inflect end-to-end set at $root; macOS: '
+              '~/models (container Documents fallback); other platforms: '
+              'app Documents.',
         );
       }
 

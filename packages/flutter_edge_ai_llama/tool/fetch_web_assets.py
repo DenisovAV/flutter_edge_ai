@@ -10,8 +10,8 @@ import subprocess
 import tempfile
 
 PACKAGE = Path(__file__).resolve().parents[1]
-TAG = "v0.1.65"
-MANIFEST_SHA256 = "185cfc060fb90b7c8d240b23e7eeb85ef402eb3ef52e8acb1a5590cd5da56328"
+TAG = "v0.1.79"
+MANIFEST_SHA256 = "66ffee7a1c2c54c187526ba6a27957141b77438fed9a0f2a5afcfa2736682e9c"
 BASE = f"https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@{TAG}"
 OUT = PACKAGE / "example/web/webgpu_bridge"
 FILES = (

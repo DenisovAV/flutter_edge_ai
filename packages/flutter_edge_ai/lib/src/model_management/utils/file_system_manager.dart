@@ -305,14 +305,26 @@ class ModelFileSystemManager {
   /// registry, which releases up to 2.2.0 left behind after every uninstall.
   static Future<void> deleteModelFile(String filename) async {
     try {
-      final source = (await ServiceRegistry.instance.modelRepository.loadModel(
+      final record = await ServiceRegistry.instance.modelRepository.loadModel(
         filename,
-      ))?.source;
-      if (source is FileSource) {
-        edgeAiLog('Kept $filename: the app installed it with fromFile');
+      );
+      final String? filePath;
+      switch (record?.source) {
+        case FileSource():
+          edgeAiLog('Kept $filename: the app installed it with fromFile');
+          return;
+        case BundledSource():
+          // Core's copy: Android's is under the resource's name, which a
+          // namespaced record id is not; the iOS bundle's resource is read in
+          // place and is not core's.
+          filePath = await coreCopyLocation(record!);
+        default:
+          filePath = await getModelFilePath(filename);
+      }
+      if (filePath == null) {
+        edgeAiLog('Kept $filename: the iOS app bundle serves it in place');
         return;
       }
-      final filePath = await getModelFilePath(filename);
       final file = File(filePath);
 
       if (await file.exists()) {

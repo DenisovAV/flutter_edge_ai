@@ -106,6 +106,7 @@ ai-edge-gallery/
 # fetch from there at `pub get` time. Not tracked in git to keep clones
 # lean (each set is ~350 MB across all platforms).
 **/native/litert_lm/prebuilt/
+**/native/onnx_genai/prebuilt/
 **/native/sqlite_vec/prebuilt/
 
 # Local chromedriver (puppeteer browsers install) — used by web integration tests
@@ -122,3 +123,8 @@ __pycache__/
 # Flutter crash reports — one got committed into a package and shipped to
 # pub.dev inside flutter_gemma_litertlm 1.8.0.
 flutter_*.log
+
+
+# FVM: machine-local SDK links; the pinned version lives in .fvmrc.
+.fvm/
+

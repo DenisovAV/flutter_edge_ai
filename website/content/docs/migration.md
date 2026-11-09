@@ -1,10 +1,105 @@
 ---
 title: Migration
-description: Upgrade to Flutter Edge AI 2.5 (openModel, createModel deprecated, members deprecated for 2.5 removed), flutter_edge_ai_litertlm 1.16 (openModel) and 1.15 (npu on a generic bundle runs on the GPU, opt-in Google Tensor NPU), flutter_edge_ai_agent 0.4 (notifications are opt-in), Flutter Edge AI 2.4 (backends follow the .litertlm file, Gemma 4 audio after the text, agent 0.3), 2.3 (the embedding API, EmbeddingGemma 2, RAG 1.1), 2.2 (sampling defaults from the model), 2.1 (enableThinking, opt-in Qualcomm NPU) and 2.0 (RAG moves to flutter_edge_ai_rag), move from flutter_gemma to flutter_edge_ai, and from the 0.16.x monolith to the modular packages.
+description: Upgrade to Flutter Edge AI 2.6 (engine session/chat/turn SPI, decider SPI on InferenceModel, typed responses and failed-turn rollback), 2.5 (openModel and embedding providers), and earlier releases.
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
 ---
+
+## flutter_edge_ai 2.6.0: engine SPI
+
+Engine packages continue to import `package:flutter_edge_ai/engine.dart`. Core
+now owns `openSession`, `openChat`, `sessions` and both `InferenceChat`
+generation methods (`@nonVirtual`). Move an `openSession` override to
+`openEngineSession(SessionRequest)`, an `openChat` override's defaults and
+validation to `resolveChatRequest(ChatRequest)`, per-chat turn behavior to
+`createChatTurnHooks(ResolvedChatRequest)`, and a `sessions` override to
+`engineSessions`.
+
+`openEngineSession` serves both direct sessions and every initial or rebuilt
+chat session. If `SessionRequest.responseFormat` is non-null, core has accepted
+it and the engine must enforce it during every generation.
+`resolveChatRequest` fills only values the caller left unset, preserves caller
+values, and carries `responseFormat` over unchanged; core throws `StateError` if
+it changes.
+
+A session that can report turn endings overrides `startTurn()` and returns
+`EngineTurn(text:, end:)`; `end` never fails and completes after the text,
+including cancellation. Use `end: null` only when the engine cannot report a
+reliable end, and then keep `StructuredOutputSupport.none`. On core's turn path
+a failed turn commits nothing to core history, and the engine must mirror that
+take-back in its own context. Restore the engine context after any text error
+and after a stop that emitted no non-empty text; a refused too-long input is
+`ContextLimitException` with `TurnEnd.contextLimit`. A stop after text,
+`outputLimit`, and a decode that reaches `contextLimit` keep the partial
+exchange.
+
+`ChatTurnHooks.responses` replaces the whole plain turn, including generation,
+parsing, history, token accounting, take-back and overflow rebuilds. Core never
+calls it for a structured chat; those turns always use `startTurn` and core's
+validation path.
+
+### `implements InferenceModel`
+
+An implementation adds `openEngineSession`, `resolveChatRequest`,
+`createChatTurnHooks`, `engineSessions`, `structuredOutputSupport`, `refusalFor`,
+`engineStructuredOutputSupport`, `engineRefusalFor`, `readDecisionSection` and
+`openOptionScorer`, and updates `openSession`/`openChat` for
+`ResponseFormat? responseFormat`. If it does not support independent sessions,
+option scoring or formats, implement the same refusing behavior as
+`InferenceModel`'s defaults. A class that `extends InferenceModel` inherits
+those defaults. The removed `OptionScoringModel` mixin becomes overrides of
+`readDecisionSection` and `openOptionScorer` on the model.
+
+### `implements InferenceModelSession`
+
+Add `startTurn()`. If the engine cannot report a reliable ending, return
+`EngineTurn(text: getResponseAsync(), end: null)`; a class that extends
+`InferenceModelSession` inherits that default.
+
+## flutter_edge_ai 2.6.0: typed responses
+
+`openSession` and `openChat` accept `responseFormat:`; `createSession` and
+`createChat` do not. Keep and close the independent session/chat returned by
+`open*`. Before opening it, inspect `model.structuredOutputSupport` and
+`model.refusalFor(format)`, because support is specific to the loaded engine,
+platform and backend.
+
+`ResponseFormatUnsupportedException` means the format was refused. If a
+structured generation's text closes normally with `TurnEnd.outputLimit`,
+`contextLimit`, `stopped` or `closed`, `IncompleteStructuredOutputException`
+carries that end and the partial text; a refused input that never fit the
+context fails with `ContextLimitException` instead.
+`NonConformingStructuredOutputException` means an engine accepted a format but
+ended normally with text that was not exactly one matching JSON value.
+Incremental engines emit their text before the final validation error; buffered
+engines emit one complete chunk. A format cannot be combined with tools or
+`enableThinking: true`.
+
+### Open sessions and chats
+
+`createSession`, `createChat`, `session` and `chat` are deprecated and will be
+removed in 3.0.0. Keep the handle returned by `openSession` or `openChat`, and
+close it when done:
+
+```dart
+final session = await model.openSession();
+try {
+  await session.addQueryChunk(Message(text: prompt, isUser: true));
+  final reply = await session.getResponse();
+} finally {
+  await session.close();
+}
+```
+
+## Stuck on core 2.5.x after upgrading?
+
+The old package lines below require `flutter_edge_ai <2.6.0`: litertlm 1.19.x,
+mediapipe 1.2.x, builtin_ai 0.3.x, ONNX 0.8.x, llama 0.0.x, speech 0.5.x and
+genkit_flutter_edge_ai 0.11.x. Upgrade every installed package in this
+compatibility set with core 2.6.0; the 2.6-compatible lines are litertlm 1.20.0,
+mediapipe 1.3.0, builtin_ai 0.4.0, ONNX 0.9.0, llama 0.1.0, speech 0.6.0 and
+genkit_flutter_edge_ai 0.12.0.
 
 ## flutter_edge_ai 2.5.0: several open models, removed and deprecated members, embedding providers
 
@@ -29,7 +124,7 @@ the `ModelSource` that matches the URL: `ModelSource.network(url)` for
 ### `FlutterEdgeAiPlugin.createModel` is deprecated
 
 `FlutterEdgeAiPlugin.instance.createModel(modelType:, fileType:, …)` is
-deprecated and removed in 2.6.0. On Android, iOS and desktop it ignored
+deprecated and removed in 3.0.0. On Android, iOS and desktop it ignored
 `modelType` and `fileType` and returned the active model, which is what
 `FlutterEdgeAi.getActiveModel()` returns. The two ways to get a model are on
 `FlutterEdgeAi`:
@@ -88,8 +183,9 @@ dependencies:
   then the CPU, with a notice; with `LiteRtLmEngine(backendFallback: false)`
   it is refused with a `LiteRtLmBundleException` (`wrongBackend`). To run on
   the NPU, install the bundle compiled for it.
-- Google Tensor G5/G6 bundles run on the NPU of a Pixel with that Tensor
-  generation and Android 16 or later (not a `BP2A` build). It is opt-in, as
+- Google Tensor G5/G6 bundles load on the NPU of a Pixel with that Tensor
+  generation and Android 16 or later (not a `BP2A` build); run so far on G6
+  only. It is opt-in, as
   Qualcomm's is:
   `google_tensor_npu: true` in the same `user_defines` block. Without it such
   a bundle fails with a `BackendInitException` that says how to enable it.
@@ -424,8 +520,9 @@ fails instead, with a `BackendInitException` whose one attempt says the stack
 is not enabled. See [LiteRT-LM](/docs/litertlm).
 
 **Linux arm64 (`flutter_edge_ai_litertlm` 1.11.0).** The same flag also bundles
-the Qualcomm NPU stack into Linux arm64 builds — Qualcomm Linux boards such as
-the QCS6490, QCS8275 or QCS9075. The hook reads the QNN runtime out of
+the Qualcomm NPU stack into Linux arm64 builds — a Qualcomm Linux board with a
+Hexagon V68–V81 DSP; Google publishes bundles for the QCS8275 (Arduino VENTUNO
+Q) only. The hook reads the QNN runtime out of
 Qualcomm's public QAIRT SDK zip (about 32 MB of it, by range request);
 `qualcomm_npu_qairt_zip` points it at a local copy. On the board the user must
 be in group `fastrpc`. A Linux x64 build ignores the flag.
@@ -621,13 +718,13 @@ dependencies:
   flutter_gemma: ^0.16.3
 ```
 
-**After (current 2.5 set):**
+**After (current 2.6 set):**
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.2                 # core — always required
-  flutter_edge_ai_litertlm: ^1.17.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
-  flutter_edge_ai_mediapipe: ^1.2.3       # add if you run .task / .bin models
+  flutter_edge_ai: ^2.6.0                 # core — always required
+  flutter_edge_ai_litertlm: ^1.20.0       # add if you run .litertlm models (also provides LiteRtEmbeddingBackend)
+  flutter_edge_ai_mediapipe: ^1.3.0       # add if you run .task / .bin models
   flutter_edge_ai_embeddings: ^2.3.2      # add if you compute embeddings with a tokenizer file (needs a backend, see above)
   flutter_edge_ai_rag: ^1.1.2             # add for on-device RAG (RagIndex) + one store below
   flutter_edge_ai_qdrant: ^2.1.1          # native on-device RAG store (qdrant)
@@ -979,7 +1076,7 @@ await FlutterEdgeAi.installModel(
     modelType: ModelType.gemma4, fileType: ModelFileType.litertlm)
     .fromNetwork(url, token: token).install();
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 2048);
-final chat  = await model.createChat();
+final chat  = await model.openChat();
 await chat.addQueryChunk(Message.text(text: 'Hello', isUser: true));
 await for (final r in chat.generateChatResponseAsync()) { /* r is a ModelResponse */ }
 

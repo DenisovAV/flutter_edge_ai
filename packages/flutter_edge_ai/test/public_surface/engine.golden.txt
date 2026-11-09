@@ -8,7 +8,12 @@ AssetSource class final
 BundledSource class final
 CancelToken class
 CanceledError class final
+CatalogModel class abstract base
+CatalogVariant class sealed
+ChatRequest class final
+ChatTurnHooks class base
 CloseNotifier mixin
+ContextLimitException class final
 CorruptionAction enum
 CorruptionDetectionResult class
 Decider class abstract base experimental
@@ -33,6 +38,7 @@ DownloadProgress class
 EdgeAiLogLevel enum
 EmbedderCloseTimeoutException class final
 EmbedderClosedException class final
+EmbedderVariant class abstract base
 EmbeddingBackendProvider class abstract base
 EmbeddingCancelledException class final
 EmbeddingDeciderCalibration class final experimental
@@ -57,6 +63,7 @@ EmbeddingTokenizerFactory typedef
 EmbeddingTokenizerProvider class abstract
 EmbeddingTokenizerRegistry class
 EncodedMediaFormat class final
+EngineTurn class final
 ErrorHandlingResult class
 ErrorType enum
 EstimatedDimensions class
@@ -78,6 +85,7 @@ ImageProcessingException class
 ImageProcessor class
 ImageTokenizationException class
 ImageTokenizer class
+IncompleteStructuredOutputException class final
 InferenceChat class
 InferenceDeciderCalibration class final experimental
 InferenceEngineProvider class abstract
@@ -86,10 +94,15 @@ InferenceInstallationBuilder class
 InferenceModel class abstract
 InferenceModelSession class abstract
 InferenceModelSpec class
+InferenceVariant class abstract base
+JsonSchemaResponseFormat class final
 MediaPosition enum
 Message class
 MessageExtension extension
 MessageType enum
+ModelArtifact class final
+ModelCatalog class abstract base
+ModelCatalogSource class abstract interface
 ModelFile class abstract
 ModelFileManager class abstract
 ModelFileType enum
@@ -102,6 +115,7 @@ ModelSpec class abstract
 ModelStorageException class
 ModelThinkingFilter class
 ModelType enum
+ModelValidationException class
 MultiModelEngine class abstract interface
 MultimodalImageHandler class
 MultimodalImageResult class
@@ -109,9 +123,11 @@ MultimodalOrder class final
 NetworkError class final
 NetworkSource class final
 NoActiveModelError class
+NonConformingStructuredOutputException class final
 NotFoundError class final
+NpuTarget class abstract base
+NpuVendor class final
 OptionScorer class abstract base experimental
-OptionScoringModel mixin base experimental
 OptionScoringRun class final experimental
 OrphanedFileInfo class
 ParallelFunctionCallResponse class
@@ -120,10 +136,13 @@ ProcessedImage class
 RankedOption class final experimental
 RateLimitedError class final
 RawSdkResponseSession mixin
+ResolvedChatRequest class final
 ResolvedHfFile class
 ResolvedHfModel class
 ResolvedSampling class final
 ResponseAction enum
+ResponseFormat class abstract final
+ResponseFormatUnsupportedException class final
 ResponseValidationResult class
 RuntimeConfig class
 SamplingParams class final
@@ -132,16 +151,21 @@ SdkResponseParser class
 SdkTextExtractor class
 ServerError class final
 SessionMetrics class
+SessionRequest class final
 SkillExecutorProvider class abstract
 SkillExecutorRegistry class
 SpeechRecognizer class abstract
 SpeechSynthesizer class abstract
 StorageStats class
+StructuredDelivery enum
+StructuredOutputException class sealed
+StructuredOutputSupport class final
 SttBackendProvider class abstract
 SttInstallation class
 SttInstallationBuilder class
 SttModelSpec class
 SttModelType enum
+SttVariant class abstract base
 TaskType enum
 TextResponse class
 ThinkingResponse class
@@ -156,6 +180,8 @@ TtsInstallationBuilder class
 TtsModelSpec class
 TtsModelType enum
 TtsModelTypeManifest extension
+TtsVariant class abstract base
+TurnEnd enum
 UnauthorizedError class final
 UnknownError class final
 UnsupportedEmbeddingCombinationException class final

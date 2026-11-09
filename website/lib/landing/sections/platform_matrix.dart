@@ -53,9 +53,12 @@ class PlatformMatrix extends StatelessComponent {
           ]),
           p(classes: 'matrix-note', [
             Component.text(
-              'NPU: Qualcomm on Android and on Linux arm64 and Google Tensor '
-              'G5/G6 on Android (the app opts in with qualcomm_npu / '
-              'google_tensor_npu), Intel Lunar Lake / Panther Lake on Windows. '
+              'NPU: Qualcomm on Android and on the Linux arm64 QCS8275 (the '
+              'app opts in with qualcomm_npu), Google Tensor G6 on Android '
+              '(google_tensor_npu), and Intel Lunar Lake on Windows. The '
+              'Panther Lake NPU is enabled in code and was measured on a '
+              'Panther Lake PC, 2026-10-21. Tensor G5 is enabled in code, not '
+              'measured. '
               'iOS GPU runs on Metal on device; the Simulator is CPU-only '
               '(256 MB Metal allocation cap).',
             ),

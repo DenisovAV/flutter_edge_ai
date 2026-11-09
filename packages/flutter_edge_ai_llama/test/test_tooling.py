@@ -465,21 +465,21 @@ class ToolingTests(unittest.TestCase):
 
     def test_simulator_startup_retry_is_bounded_and_preserves_failures(self):
         arguments = ["verify.py", "device", "--device", "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "--model-url", "https://example.test/chat.gguf", "--simulator-retry"]
-        timeout = subprocess.TimeoutExpired(["flutter"], 600, output="loading test")
+        timeout = subprocess.TimeoutExpired(["flutter"], 1200, output="loading test")
         with patch.object(sys, "argv", arguments), patch.object(sys, "platform", "darwin"), \
              patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \
              patch.object(package_verify.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run, \
              patch.object(package_verify, "run_smoke", side_effect=[timeout, None]) as smoke:
             package_verify.main()
         self.assertEqual(smoke.call_count, 2)
-        self.assertEqual([call.kwargs["timeout"] for call in smoke.call_args_list], [600, 600])
+        self.assertEqual([call.kwargs["timeout"] for call in smoke.call_args_list], [1200, 1200])
         controls = [call.args[0][2] for call in run.call_args_list if call.args[0][:2] == ["xcrun", "simctl"]]
         self.assertEqual(controls, ["shutdown", "boot", "bootstatus"])
         shutdown = next(call for call in run.call_args_list if call.args[0][:3] == ["xcrun", "simctl", "shutdown"])
         self.assertFalse(shutdown.kwargs["check"])
         failures = [subprocess.CalledProcessError(1, ["flutter"], output="assertion failed"),
-                    subprocess.TimeoutExpired(["flutter"], 600, output='{"type":"testStart","test":{"name":"packaged native runtime installs"}}'),
-                    subprocess.TimeoutExpired(["flutter"], 600, output='{"type":"testStart","test":{"name":"iOS picker import"}}')]
+                    subprocess.TimeoutExpired(["flutter"], 1200, output='{"type":"testStart","test":{"name":"packaged native runtime installs"}}'),
+                    subprocess.TimeoutExpired(["flutter"], 1200, output='{"type":"testStart","test":{"name":"iOS picker import"}}')]
         for error in failures:
             with patch.object(sys, "argv", arguments), patch.object(sys, "platform", "darwin"), \
                  patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.1"}'), \

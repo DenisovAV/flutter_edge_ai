@@ -1,9 +1,22 @@
 import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform, visibleForTesting;
+    show
+        kIsWeb,
+        defaultTargetPlatform,
+        listEquals,
+        TargetPlatform,
+        visibleForTesting;
 import 'package:flutter_edge_ai/src/api/inference_installation_builder.dart';
 import 'package:flutter_edge_ai/src/api/embedding_installation_builder.dart';
 import 'package:flutter_edge_ai/src/model_management/active_embedding_identity.dart'
     show noActiveEmbedderError;
+import 'package:flutter_edge_ai/src/embedding/embedder_cache.dart'
+    show embedderCacheOf;
+import 'package:flutter_edge_ai/src/lifecycle/speech_model_cache.dart'
+    show sttRemovalOf, ttsRemovalOf;
+import 'package:flutter_edge_ai/src/lifecycle/inference_model_cache.dart'
+    show inferenceModelCacheOf;
+import 'package:flutter_edge_ai/src/model_management/install_rule.dart'
+    show coreCopyLocation, recordedFileLocation;
 import 'package:flutter_edge_ai/src/api/stt_installation_builder.dart';
 import 'package:flutter_edge_ai/src/api/tts_installation_builder.dart';
 import 'package:flutter_edge_ai/src/di/service_registry.dart';
@@ -38,6 +51,8 @@ import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
 import 'package:flutter_edge_ai/src/domain/multimodal_order.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart';
 import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
+import 'package:flutter_edge_ai/src/catalog/model_catalog.dart';
+import 'package:flutter_edge_ai/src/catalog/registered_catalog.dart';
 
 /// Modern API facade for Flutter Edge AI
 ///
@@ -94,16 +109,27 @@ import 'package:flutter_edge_ai/src/domain/no_active_model_error.dart';
 /// ```dart
 /// // Get active model after installation
 /// final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-/// final session = await model.createSession();
-/// final response = await session.getResponse();
+/// final session = await model.openSession();
+/// try {
+///   final response = await session.getResponse();
+/// } finally {
+///   await session.close();
+/// }
 /// ```
 class FlutterEdgeAi {
   /// Controls flutter_edge_ai's internal log verbosity.
   ///
-  /// Debug builds only -- release builds are always silent regardless of this
-  /// value (no model output / prompts leak into logcat/syslog). Default
-  /// [EdgeAiLogLevel.info]. Use [EdgeAiLogLevel.verbose] to see model output and
-  /// prompts while debugging, or [EdgeAiLogLevel.none] to silence the plugin.
+  /// Of the log this value controls, release builds print the start-up
+  /// notices about active models that could not be restored (no model output
+  /// or prompts reach logcat/syslog); debug builds print according to this
+  /// value. Default [EdgeAiLogLevel.info]. Use [EdgeAiLogLevel.verbose] to see
+  /// model output and prompts while debugging. [EdgeAiLogLevel.none]
+  /// silences this log, those notices included.
+  ///
+  /// Some messages are printed in every build whatever logLevel says:
+  /// warnings about failures the app would not otherwise see, and a few
+  /// notices (for example the sampler latch, at most once per engine, and the
+  /// hidden-reasoning note, once per chat).
   ///
   /// Note: this is a process-global, per-isolate setting; set it once at
   /// startup. Background isolates snapshot the value at spawn time.
@@ -339,6 +365,92 @@ class FlutterEdgeAi {
     return TtsInstallationBuilder();
   }
 
+  /// The models the packages passed to [initialize] offer, as one catalog.
+  ///
+  /// Each engine or backend that implements [ModelCatalogSource] adds its
+  /// catalog, so only models a registered package can run are listed. A model
+  /// two packages offer is one model; the variants of the package registered
+  /// first come first. Choose a variant with [CatalogModel.variantFor] and
+  /// install it with [installModelFromCatalog] (an LLM) or `fromCatalog` on
+  /// [installEmbedder], [installStt] or [installTts].
+  ///
+  /// Throws [StateError] before [initialize] and after [dispose], when two
+  /// packages offer the same variant id, and when a registered catalog breaks
+  /// the id rules (a variant id that is not `<model id>/<slug>`, a model id
+  /// with a `/`, a variant listed twice): one faulty catalog makes the whole
+  /// getter throw, rather than leave a variant no id finds.
+  static ModelCatalog get catalog {
+    // Throws the not-initialized StateError.
+    final registry = ServiceRegistry.instance;
+    final providers = [
+      ...EngineRegistry.instance.registered,
+      ...EmbeddingRegistry.instance.registered,
+      ...SttRegistry.instance.registered,
+      ...TtsRegistry.instance.registered,
+    ];
+    // Built once for the registered providers (in their order): a getter an
+    // app reads from build() does not merge the catalogs again.
+    if (_catalog case (
+      final r,
+      final p,
+      final c,
+    ) when identical(r, registry) && listEquals(p, providers)) {
+      return c;
+    }
+    final built = RegisteredCatalog(providers);
+    _catalog = (registry, providers, built);
+    return built;
+  }
+
+  static (ServiceRegistry, List<Object>, ModelCatalog)? _catalog;
+
+  /// An installation builder for the LLM [variant]: its model type and file
+  /// type, its pinned URL, the name the file is installed under and its
+  /// size, which is checked before the model becomes active (not on the web,
+  /// where the browser keeps the file). On the web a file over 2 GiB is
+  /// refused before it downloads in every storage mode but
+  /// `WebStorageMode.streaming`, the one that holds it.
+  ///
+  /// [token] is used for the download; without it, the token passed to
+  /// [initialize] is used for huggingface.co. [foreground] is
+  /// `InferenceInstallationBuilder.fromNetwork(foreground:)`.
+  ///
+  /// `install()` throws [UnsupportedError], before anything downloads, for a
+  /// variant whose [CatalogVariant.backendsHere] is empty (its package does
+  /// not run it in this runtime). That is a check of the runtime and its
+  /// processor architecture only: whether this device has the NPU a build
+  /// was compiled for, and whether the app bundled that vendor's stack, is
+  /// known at load.
+  ///
+  /// The catalog pins each file to a revision: a model installed earlier
+  /// from a `/resolve/main/` URL (or an older pin) is another source under
+  /// the same name, and its first install from the catalog downloads the
+  /// file again. When an active model of any kind reads a file of that name,
+  /// `install()` throws [StateError] before the download instead of writing
+  /// over it (not on the web), naming that model and the call that
+  /// uninstalls it: uninstall it first, then install.
+  ///
+  /// ```dart
+  /// final variant = FlutterEdgeAi.catalog
+  ///     .byId('gemma-4-e2b-it')!
+  ///     .variantFor(backend: PreferredBackend.gpu)! as InferenceVariant;
+  /// await FlutterEdgeAi.installModelFromCatalog(variant)
+  ///     .withProgress((p) => print('$p%'))
+  ///     .install();
+  /// final model = await FlutterEdgeAi.getActiveModel(
+  ///   defaults: variant.runtimeDefaults,
+  /// );
+  /// ```
+  static InferenceInstallationBuilder installModelFromCatalog(
+    InferenceVariant variant, {
+    String? token,
+    bool? foreground,
+  }) => inferenceBuilderFromCatalog(
+    variant,
+    token: token,
+    foreground: foreground,
+  );
+
   /// Check if a model is installed
   ///
   /// Parameters:
@@ -371,7 +483,8 @@ class FlutterEdgeAi {
   /// - [preferredAudioBackend]: audio-encoder backend override; null as for
   /// [preferredVisionBackend] (optional)
   /// - [supportImage]: Enable multimodal image support (default: false)
-  /// - [supportAudio]: Enable audio input support for Gemma 3n E4B (default: false)
+  /// - [supportAudio]: Enable audio input, for a model with an audio encoder,
+  ///   e.g. Gemma 4 or Gemma 3n `.litertlm` (E2B, E4B); native only (default: false)
   /// - [maxNumImages]: Maximum number of images if supportImage is true
   /// - [multimodalOrder]: the order in which a user message's images, audio
   ///   and text reach the model. Null picks the order of the active model's
@@ -390,6 +503,16 @@ class FlutterEdgeAi {
   ///   more GPU memory, and a GPU engine that cannot be created falls back to
   ///   CPU silently, so check `activeBackend` afterwards. MediaPipe, ONNX,
   ///   built-in AI and the web engines ignore it (optional)
+  /// - [maxConcurrentSessions]: cap on the sessions open at once through
+  ///   `InferenceModel.openSession`. Null (the default) sets no cap, except on
+  ///   native ONNX, which caps at 2 on Android and iOS. When
+  ///   set, an `openSession` that would exceed it throws [StateError]. The
+  ///   engines count the sessions `openSession` opened, except built-in AI,
+  ///   which counts every session of the OS model, the `createSession` one
+  ///   included, and there `createSession` throws too. It has no effect
+  ///   where `openSession` is unsupported (an engine that does not implement
+  ///   it)
+  ///   (optional)
   /// - [defaults]: overridable runtime defaults from a HF manifest (see
   ///   [resolveHuggingFace] / [ResolvedHfModel.runtime]). Each explicit argument
   ///   above wins over the matching field here, which in turn wins over the SDK
@@ -423,7 +546,7 @@ class FlutterEdgeAi {
   ///   preferredBackend: PreferredBackend.gpu,
   /// );
   ///
-  /// // Create with audio support (Gemma 3n E4B only)
+  /// // Create with audio support (e.g. Gemma 4 or Gemma 3n .litertlm, native)
   /// final audioModel = await FlutterEdgeAi.getActiveModel(
   ///   supportAudio: true,
   /// );
@@ -676,7 +799,7 @@ class FlutterEdgeAi {
   /// // minOutputTokens is a FLOOR, not a cap — leave maxOutputTokens unset (or
   /// // keep it >= r.runtime.minOutputTokens); passing the floor AS the cap
   /// // would truncate a reasoning model mid-thought.
-  /// final session = await model.createSession(
+  /// final session = await model.openSession(
   ///   enableThinking: r.runtime.thinkingDeclared ?? false,
   /// );
   /// ```
@@ -808,8 +931,11 @@ class FlutterEdgeAi {
   /// );
   ///
   /// // Where the backend matters, ask — do not assume the argument took.
-  /// // Native answers PreferredBackend.cpu (npu for an NPU bundle); on web
-  /// // EmbeddingGemma 2 answers gpu and other embedders null.
+  /// // Native answers PreferredBackend.cpu (npu for an NPU bundle; gpu for
+  /// // EmbeddingGemma 2 asked for with gpu on Linux x64 — Linux x64 only;
+  /// // Windows x64 is refused on native-v0.18.0-h (LiteRT-LM accelerator
+  /// // crash), tracked in #744); on web EmbeddingGemma 2 answers gpu and
+  /// // other embedders null.
   /// debugPrint('embedding on ${embedder.activeBackend}');
   /// ```
   static Future<EmbeddingModel> getActiveEmbedder({
@@ -1045,24 +1171,41 @@ class FlutterEdgeAi {
     return null;
   }
 
-  /// Absolute on-device read path for an installed model file, keyed by its
-  /// [fileName] (the file's basename, e.g. `gemma-4-E2B-it.litertlm`). On web
-  /// this resolves to a URL/OPFS handle, not a filesystem path. The path is
-  /// computed, not stat-ed — it is returned even if nothing is installed there.
+  /// Absolute on-device path an installed model file is read from, keyed by
+  /// the [fileName] it is installed under (e.g. `gemma-4-E2B-it.litertlm`),
+  /// as the file's install record says — where the engines open it:
+  ///
+  /// - installed with `fromFile`: the app's own file, where it is now (on iOS
+  ///   in the app's current container, which an update or a restore from a
+  ///   backup can move);
+  /// - installed with `fromBundled`: in the app bundle on iOS, core's copy of
+  ///   it on Android;
+  /// - any other source: core's copy, in core's model directory.
+  ///
+  /// A name with no install record gives what an older release registered
+  /// for it, else its place in core's model directory. The path is computed,
+  /// not stat-ed — it is returned even if nothing is there — except that a
+  /// bundled resource the iOS app bundle does not hold throws, as loading it
+  /// does.
+  ///
+  /// On web this returns [fileName] itself, not a path or a URL: a model there
+  /// lives in the browser's storage, and the engines look it up by that name.
   static Future<String> getModelPath(String fileName) async {
-    // A FileSource install references the file in place (not copied) and
-    // registers it under its (possibly namespaced) filename -> its original
-    // path. Resolve that first so getModelPath returns where the file ACTUALLY
-    // is; otherwise fall back to the managed read path (downloaded/asset
-    // installs land in the managed dir under their filename). Without this, a
-    // namespaced companion (e.g. `<model>__tokenizer.json`) whose FileSource
-    // file lives elsewhere would resolve to a non-existent managed path.
-    final external = await ServiceRegistry.instance.protectedFilesRegistry
-        .getExternalPath(fileName);
-    if (external != null) return external;
-    return ServiceRegistry.instance.fileSystemService.getReadTargetPath(
+    final registry = ServiceRegistry.instance;
+    if (!kIsWeb) {
+      // The file's own record, not the registry of the app's files: that one
+      // keeps the path an install was given, so on iOS it can name a
+      // container that has since moved, and older releases left names in it
+      // that a download has taken over since.
+      final record = await registry.modelRepository.loadModel(fileName);
+      if (record != null) return recordedFileLocation(record);
+    }
+    // No record — an install from before every file had one, or none.
+    final external = await registry.protectedFilesRegistry.getExternalPath(
       fileName,
     );
+    if (external != null) return external;
+    return registry.fileSystemService.getReadTargetPath(fileName);
   }
 
   /// Clears the active inference identity (in-memory spec + persisted prefs).
@@ -1086,75 +1229,242 @@ class FlutterEdgeAi {
   /// Removes the model's metadata and core's copy of its file. A file the app
   /// installed with `fromFile` is the app's own and stays where it is.
   ///
+  /// When the file is one of the active inference model's (the model or its
+  /// LoRA), the active inference identity is cleared too, in memory and
+  /// persisted, as [clearActiveInferenceIdentity] does: [getActiveModel] then
+  /// throws [NoActiveModelError] instead of loading a file that is gone.
+  ///
+  /// The model [getActiveModel] built from the file is closed first, with its
+  /// sessions and chats: a generation running on it stops early, with or
+  /// without an error depending on the engine, and a later call on it throws.
+  /// A [getActiveModel] call whose build of that model is still running gets
+  /// it, closed right after; one made once the uninstall has started closing
+  /// waits for the uninstall to end. A model built from other files stays
+  /// open, and so do the models [openModel] opened: they are the caller's to
+  /// close. When that close is still running after 60 seconds, the uninstall
+  /// throws `TimeoutException` before anything is deleted, and can be retried.
+  ///
+  /// A directory model (ORT-GenAI, installed with `fromHuggingFace`) is
+  /// uninstalled by its name, the `spec.name` its install returned: every
+  /// file of it and its directory go.
+  ///
   /// Parameters:
-  /// - [modelId]: Model filename to uninstall
+  /// - [modelId]: Model filename to uninstall, or a directory model's name
   static Future<void> uninstallModel(String modelId) async {
     final registry = ServiceRegistry.instance;
     final repository = registry.modelRepository;
     final fileSystem = registry.fileSystemService;
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    // The active model is restored at start; it is known once that is done.
+    await manager.ensureInitialized();
 
     // Get model info
     final modelInfo = await repository.loadModel(modelId);
     if (modelInfo == null) {
-      throw Exception('Model not found: $modelId');
+      // A directory (ORT-GenAI) model has no record of its own: each of its
+      // files is recorded as `<modelId>/<file>`.
+      final directory = await _installedDirectoryModel(modelId);
+      if (directory == null) throw Exception('Model not found: $modelId');
+      return _uninstallDirectoryModel(directory);
     }
 
-    // Delete files first (if not external/protected) so a file-delete failure
-    // leaves the metadata intact and the uninstall retryable — mirrors the
-    // safe order used by uninstallEmbedder/Stt/Tts (delete then clear).
-    if (modelInfo.source is! FileSource) {
-      final targetPath = await fileSystem.getReadTargetPath(modelId);
-      await fileSystem.deleteFile(targetPath);
+    Future<void> remove() async {
+      // Delete files first (if not external/protected) so a file-delete
+      // failure leaves the metadata intact and the uninstall retryable —
+      // mirrors the safe order used by uninstallEmbedder/Stt/Tts (delete then
+      // clear).
+      final copy = switch (modelInfo.source) {
+        FileSource() => null,
+        // Core's copy, not a file named after the record: the iOS bundle's
+        // resource is read in place, and Android copies one under its
+        // resource name, which a namespaced LoRA or tokenizer record id is
+        // not.
+        BundledSource() => await coreCopyLocation(modelInfo),
+        _ => await fileSystem.getReadTargetPath(modelId),
+      };
+      if (copy != null) await fileSystem.deleteFile(copy);
+
+      // Forget what a fromFile install registered — or what an older release
+      // left registered after an uninstall — while the record still exists,
+      // so a failure here leaves the uninstall retryable.
+      await registry.protectedFilesRegistry.unprotect(modelId);
+      await registry.protectedFilesRegistry.unregisterExternalPath(modelId);
+
+      // The active model cannot load without this file. Cleared once the
+      // file is gone, and while the record still exists: a failure up to
+      // here leaves both the identity and a retryable uninstall.
+      final active = manager.activeInferenceModel;
+      if (active != null && active.files.any((f) => f.filename == modelId)) {
+        await manager.clearActiveInferenceIdentity();
+      }
+
+      // Delete metadata last.
+      await repository.deleteModel(modelId);
     }
 
-    // Forget what a fromFile install registered — or what an older release
-    // left registered after an uninstall — while the record still exists, so
-    // a failure here leaves the uninstall retryable.
-    await registry.protectedFilesRegistry.unprotect(modelId);
-    await registry.protectedFilesRegistry.unregisterExternalPath(modelId);
+    // Closed before the file goes: left open, the model keeps answering from
+    // a file that is gone (measured on macOS and Windows).
+    final cache = inferenceModelCacheOf(FlutterEdgeAiPlugin.instance);
+    if (cache == null) return remove();
+    return cache.closeForRemoval(modelId, remove);
+  }
 
-    // Delete metadata last.
-    await repository.deleteModel(modelId);
+  /// The directory model [modelId] as its install records describe it, or
+  /// null when no file is recorded under `<modelId>/`.
+  static Future<InferenceModelSpec?> _installedDirectoryModel(
+    String modelId,
+  ) async {
+    final members = [
+      for (final record
+          in await ServiceRegistry.instance.modelRepository.listInstalled())
+        if (record.id.startsWith('$modelId/')) record,
+    ];
+    if (members.isEmpty) return null;
+    // Only the file names matter for the removal; which member is the
+    // primary does not.
+    final primary = members.first.id.substring(modelId.length + 1);
+    final files = [
+      for (final m in members)
+        DirectoryBundleFile.member(
+          modelId: modelId,
+          bareName: m.id.substring(modelId.length + 1),
+          primaryName: primary,
+          source: m.source,
+        ),
+    ];
+    // The records keep no model type, and nothing loads this spec.
+    return InferenceModelSpec(
+      name: modelId,
+      modelSource: files.first.source,
+      modelType: ModelType.general,
+      fileType: ModelFileType.onnx,
+      directoryFiles: files,
+    );
+  }
+
+  /// Uninstalls every file of the directory model [spec], as [uninstallModel]
+  /// does one file: the model built from it is closed first, the active
+  /// identity is cleared when it is this model, and the manager deletes each
+  /// file before its record, then the emptied directory.
+  static Future<void> _uninstallDirectoryModel(InferenceModelSpec spec) async {
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final names = {for (final f in spec.files) f.filename};
+
+    Future<void> remove() async {
+      // Cleared before the records go: a delete that fails part-way leaves
+      // the remaining members recorded, so the uninstall can be retried by
+      // the same name, while a model with some of its files gone is no
+      // longer the active one.
+      final active = manager.activeInferenceModel;
+      if (active != null &&
+          active.files.any((f) => names.contains(f.filename))) {
+        await manager.clearActiveInferenceIdentity();
+      }
+      await manager.deleteModel(spec);
+    }
+
+    final cache = inferenceModelCacheOf(FlutterEdgeAiPlugin.instance);
+    if (cache == null) return remove();
+    // Any member names the model built from the directory.
+    return cache.closeForRemoval(spec.files.first.filename, remove);
   }
 
   /// Uninstall the active embedding model — uninstalls ALL its files (model +
   /// tokenizer) and clears the active-embedder identity. No-op if none active.
   /// Core's copies are deleted; a file installed with `fromFile` is the app's
   /// own and stays where it is.
+  ///
+  /// The embedder [getActiveEmbedder] built from those files is closed
+  /// first, including the handle the app holds: a later call on it throws
+  /// [EmbedderClosedException], and the next [getActiveEmbedder] throws
+  /// [NoActiveModelError] until an embedder is installed again, which then
+  /// gets a new embedder. A request already running finishes; the queued
+  /// ones fail with [EmbedderClosedException]. A [getActiveEmbedder] call
+  /// made meanwhile waits for the uninstall to end. When that close is still
+  /// running after 60 seconds, the uninstall throws
+  /// [EmbedderCloseTimeoutException] before anything is deleted, and can be
+  /// retried.
   static Future<void> uninstallEmbedder() async {
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final plugin = FlutterEdgeAiPlugin.instance;
+    final manager = plugin.modelManager;
     final spec = manager.activeEmbeddingModel;
     if (spec == null) return;
-    // The manager deletes every artifact in the spec. Clear only after the
-    // whole delete succeeds, so a partial storage failure leaves the identity
-    // available for a retry. The facade is the sole owner of this clear: one
-    // awaited tombstone, regardless of which platform manager is installed.
-    await manager.deleteModel(spec);
-    await manager.clearActiveEmbeddingIdentity();
+    Future<void> remove() async {
+      // The manager deletes every artifact in the spec. Clear only after the
+      // whole delete succeeds, so a partial storage failure leaves the
+      // identity available for a retry. The facade is the sole owner of this
+      // clear: one awaited tombstone, regardless of which platform manager is
+      // installed.
+      await manager.deleteModel(spec);
+      await manager.clearActiveEmbeddingIdentity();
+    }
+
+    // Closed before the files go: left open, the embedder keeps answering
+    // from files that are gone and stays resident (measured on macOS).
+    final cache = embedderCacheOf(plugin);
+    if (cache == null) return remove();
+    final paths = {...?(await manager.getModelFilePaths(spec))?.values};
+    return cache.closeForRemoval(
+      (params) =>
+          paths.contains(params.modelPath) ||
+          paths.contains(params.tokenizerPath),
+      remove,
+      label: spec.name,
+    );
   }
 
   /// Uninstall the active STT model — uninstalls ALL its files and clears
   /// the active-STT identity. No-op if none active. Core's copies are
   /// deleted; a file installed with `fromFile` is the app's own and stays
   /// where it is.
+  ///
+  /// The recognizer [getActiveStt] built from those files is closed first,
+  /// including the handle the app holds: a later call on it throws, and the
+  /// next [getActiveStt] throws until a model is installed again, which then
+  /// gets a new recognizer. A transcription already running finishes first.
+  /// A [getActiveStt] call made meanwhile waits for the uninstall to end.
+  /// When that close is still running after 60 seconds, the uninstall throws
+  /// `TimeoutException` before anything is deleted, and can be retried.
   static Future<void> uninstallStt() async {
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final plugin = FlutterEdgeAiPlugin.instance;
+    final manager = plugin.modelManager;
     final spec = manager.activeSttModel;
     if (spec == null) return;
-    await manager.deleteModel(spec);
-    await manager.clearActiveSttIdentity();
+    Future<void> remove() async {
+      await manager.deleteModel(spec);
+      await manager.clearActiveSttIdentity();
+    }
+
+    final removal = sttRemovalOf(plugin);
+    if (removal == null) return remove();
+    return removal({for (final file in spec.files) file.filename}, remove);
   }
 
   /// Uninstall the active TTS model — uninstalls ALL its files and clears
   /// the active-TTS identity. No-op if none active. Core's copies are
   /// deleted; a file installed with `fromFile` is the app's own and stays
   /// where it is.
+  ///
+  /// The synthesizer [getActiveTts] built from those files is closed first,
+  /// including the handle the app holds: a later call on it throws, and the
+  /// next [getActiveTts] throws until a model is installed again, which then
+  /// gets a new synthesizer. A synthesis already running finishes first. A
+  /// [getActiveTts] call made meanwhile waits for the uninstall to end. When
+  /// that close is still running after 60 seconds, the uninstall throws
+  /// `TimeoutException` before anything is deleted, and can be retried.
   static Future<void> uninstallTts() async {
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final plugin = FlutterEdgeAiPlugin.instance;
+    final manager = plugin.modelManager;
     final spec = manager.activeTtsModel;
     if (spec == null) return;
-    await manager.deleteModel(spec);
-    await manager.clearActiveTtsIdentity();
+    Future<void> remove() async {
+      await manager.deleteModel(spec);
+      await manager.clearActiveTtsIdentity();
+    }
+
+    final removal = ttsRemovalOf(plugin);
+    if (removal == null) return remove();
+    return removal({for (final file in spec.files) file.filename}, remove);
   }
 
   /// Delete orphaned files and stale metadata left by interrupted installs.
@@ -1243,6 +1553,7 @@ class FlutterEdgeAi {
   }
 
   static void _resetCoreState() {
+    _catalog = null;
     ServiceRegistry.reset();
     EngineRegistry.instance.reset();
     EmbeddingRegistry.instance.reset();

@@ -19,7 +19,7 @@ library;
 export 'ffi/gen_ai_client.dart'
     show GenAiClient, GenAiFfiClient, GenAiTurn, GenAiGenerationStats;
 export 'onnx_inference_model.dart';
-export 'onnx_session.dart';
+export 'onnx_session.dart' show OnnxSession;
 export 'embedding/onnx_embedding_pass.dart'
     show OnnxEmbeddingConfig, OnnxEmbeddingPass;
 export 'embedding/ort_client.dart';

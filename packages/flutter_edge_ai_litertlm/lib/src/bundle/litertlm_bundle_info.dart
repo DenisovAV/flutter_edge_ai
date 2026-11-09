@@ -9,11 +9,16 @@
 
 import 'dart:typed_data';
 
+import 'package:flutter_edge_ai/engine.dart' show NpuTarget, NpuVendor;
+
 import '../litertlm_flatbuffer.dart';
-import '../npu_stacks.dart' show NpuVendor;
+import '../npu_stacks.dart' show NpuStack;
 
 /// The SoC a `.litertlm` bundle's compiled sections target.
-final class LiteRtLmNpuTarget {
+///
+/// It is the core [NpuTarget] of a catalog variant compiled for an NPU, with
+/// the vendor and SoC spelled as the compiler stamped them.
+final class LiteRtLmNpuTarget extends NpuTarget {
   const LiteRtLmNpuTarget({required this.vendor, required this.soc});
 
   /// The SoC manufacturer as the compiler stamped it: `Qualcomm`, `Google`,
@@ -24,13 +29,30 @@ final class LiteRtLmNpuTarget {
   /// `PTL`, `Tensor_G5`.
   final String soc;
 
-  bool get isQualcomm => npuVendorOf(this) == NpuVendor.qualcomm;
+  /// The vendor by core's name, through the one table of stamps
+  /// ([NpuStack]); null for a stamp this package has no stack for.
+  @override
+  NpuVendor? get npuVendor => switch (NpuStack.forStamp(vendor)) {
+    NpuStack.qualcomm => NpuVendor.qualcomm,
+    NpuStack.googleTensor => NpuVendor.googleTensor,
+    NpuStack.mediatek => NpuVendor.mediatek,
+    NpuStack.intel => NpuVendor.intel,
+    null => null,
+  };
+
+  /// [soc], as the compiler stamped it.
+  @override
+  String get socModel => soc;
+
+  bool get isQualcomm => npuVendorOf(this) == NpuStack.qualcomm;
 
   /// Compiled by LiteRT's OpenVINO plugin for an Intel NPU: Google's
   /// `…_Intel_PTL` bundles are stamped `IntelOpenVINO` / `PTL` (read from the
   /// published 270m, 440m and 740m, revisions 9be6e8b9, e301f74d, 24d962e9).
-  bool get isIntel => npuVendorOf(this) == NpuVendor.intel;
+  bool get isIntel => npuVendorOf(this) == NpuStack.intel;
 
+  /// The same stamp as written. [sameSoc] is the comparison that ignores
+  /// case (a stamp's case is the compiler's, not the SoC's).
   @override
   bool operator ==(Object other) =>
       other is LiteRtLmNpuTarget && other.vendor == vendor && other.soc == soc;
@@ -44,9 +66,9 @@ final class LiteRtLmNpuTarget {
 
 /// The vendor this package dispatches a bundle stamped [target] to, or null
 /// when it has no dispatch for that vendor. Internal: not in the package's
-/// `show` list, so [NpuVendor] stays out of the public API.
-NpuVendor? npuVendorOf(LiteRtLmNpuTarget target) =>
-    NpuVendor.forStamp(target.vendor);
+/// `show` list, so [NpuStack] stays out of the public API.
+NpuStack? npuVendorOf(LiteRtLmNpuTarget target) =>
+    NpuStack.forStamp(target.vendor);
 
 /// One section of a `.litertlm` container.
 final class LiteRtLmSection {

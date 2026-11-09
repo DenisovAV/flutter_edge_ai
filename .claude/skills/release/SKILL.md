@@ -44,7 +44,7 @@ silently do the other thing.
    ```bash
    bash tool/skills_review.sh origin/main   # which skills the diff puts in doubt
    dart tool/check_skills.dart              # compiles every block; exit 0 required
-   dart run skills_lint@0.5.1               # file-level rules; exit 0 required
+   dart run skills_lint@0.5.3               # file-level rules; exit 0 required
    ```
 
    The two gates also run in CI (`skills` job), so a rename is caught without
@@ -88,13 +88,13 @@ silently do the other thing.
         references/platform-setup.md; the script prints the count, do not hardcode
         one here) — RUN it, do not eyeball
 [ ] 1f-ter  litertlm or speech in the release → macOS SwiftPM gate (#689), else N/A:
-        a fresh `flutter create` app on litertlm's Flutter floor (3.44.0) and on
-        current stable, RUN, not just built. SwiftPM default → the error contains
-        `LiteRT-LM did not load on macOS` and names the companions; SwiftPM off +
-        the desktop.md post_install block → STT, embeddings, LLM on GPU and one
-        tool call work. Paste the result rows into the PR body. If
-        flutter#193978 / #193975 have dated the removal of the SwiftPM opt-out,
-        reopen the #689 bridge decision first
+        a fresh `flutter create` app (deployment target 14.0) on litertlm's
+        Flutter floor (3.44.0) and on current stable, RUN, not just built, with
+        no `macos/flutter_edge_ai_litertlm/Artifacts/` in the package (so
+        Package.swift fetches the release zips). SwiftPM default, no Podfile →
+        STT, embeddings, LLM on GPU and one tool call work; SwiftPM off + the
+        desktop.md post_install block → the same. Paste the result rows into the
+        PR body
 [ ] 1g  each changed satellite's flutter_edge_ai: floor >= the core version it now needs
 [ ] 2   versions bumped: pubspec + podspec (if any) + AGENTS.md Current-Version line
 [ ] 7   CHANGELOG: one short line per package, every published package
@@ -104,6 +104,22 @@ silently do the other thing.
         "0 warnings" with no SKILL.md in the archive (#578)
 [ ] 8b  native bundle moved? → litertlm_native_tools_test.dart green on every
         platform in the release (the smoke suite never passes a tool), else N/A
+[ ] 8c  litertlm or speech in the release? → MANDATORY, else N/A. NO PUBLISH of
+        either package without a green release-check AT THIS HEAD:
+        after steps 2 and 7 (the pubspec version bumped, `## Unreleased`
+        renamed to it: until the freeze `check` reports that version's
+        snapshot missing, which freeze, generate, evidence and release-check
+        let pass), run the release-gate tests (litertlm_ffi_test,
+        embeddinggemma2_test, stt_moonshine_test, tts_smoke_test in
+        example/integration_test, on every host release_critical.yaml lists;
+        they print FEA_EVIDENCE lines), then in tool/model_registry
+        `dart run bin/registry.dart evidence --device … <log>` per host,
+        `dart run bin/registry.dart freeze <package>`, `generate`, and commit
+        the evidence, the snapshot and the generated files together. Then
+        `dart run bin/registry.dart release-check <package>` must print
+        "<package> <version>: ready to publish" on that commit, with nothing
+        uncommitted. Nothing enforces this but this step: run it again after
+        any later commit, and never skip it
 [ ] 10b  after publishing: pub.dev actually SERVES the new versions (its API
         lags minutes behind the upload); if a package's web/ changed
         (flutter_edge_ai_litertlm or flutter_edge_ai), sync every codelab copy to
@@ -112,7 +128,7 @@ silently do the other thing.
 [ ] 12b new/changed public API + behavior documented (README + website)  ← SAME PR
 [ ] 12d skills/: `skills_review.sh <last-tag>` run, every flagged skill READ,
         updated where the prose drifted, `dart tool/check_skills.dart` green and
-        `dart run skills_lint@0.5.1` green — backstop: rule 4 means the PRs in
+        `dart run skills_lint@0.5.3` green — backstop: rule 4 means the PRs in
         this release already did it
 [ ] 12e LiteTune version in authored docs matches the latest PyPI release; if it
         moved, the documented prepare/tune/convert/verify/bundle commands were
@@ -294,8 +310,9 @@ Shared-code hotspots to sweep, per fix type:
   ```
   Why this one bites harder than the others: `pod install` freezes the block
   into every app's `project.pbxproj`, and upgrading `flutter_edge_ai_litertlm`
-  does NOT re-run `pod install` (the package declares no macOS plugin, so
-  Flutter's tracked plugin set never changes). A fix landed in one copy never
+  never rewrites it. Only apps with Swift Package Manager off need it since
+  #689; an app with it on gets the companions from the package's
+  `macos/flutter_edge_ai_litertlm/Package.swift`. A fix landed in one copy never
   reaches users who pasted another. When the check was added the copies had
   already split into three vintages — the genkit example predated all of the
   #300/#368 fixes, and the README copy was missing `input_paths`, so every app
@@ -324,6 +341,14 @@ the code needs a *higher* one. A pub.dev consumer who pins an older core alongsi
 the new satellite then gets a resolve that **fails to compile** (calls a
 method/param that core version lacks). This is a manual step; nothing automated
 catches it.
+
+**The model catalog (#734) is such a case, open until its release PR:** litertlm
+and speech use the catalog types (`ModelCatalogSource`, `NpuTarget`, …) that
+first ship in **core 2.5.5**, and speech uses `LiteRtLmNpuTarget extends NpuTarget`
+from the **next litertlm** (after 1.19.0). In that release PR set litertlm's
+`flutter_edge_ai: ^2.5.5`, speech's `flutter_edge_ai: ^2.5.5` and
+`flutter_edge_ai_litertlm: ^<that litertlm>`, fix the comments above those lines,
+and publish core first, then litertlm, then speech.
 
 **A floor naming an UNPUBLISHED core forces a publish ORDER — and dry-run is blind
 to it.** `dart pub publish --dry-run` only checks that a constraint is satisfiable in
@@ -532,6 +557,20 @@ gh release create "$RELEASE" "$DIST"/litertlm-*.tar.gz "$DIST"/checksums_litertl
   --target main
 ```
 
+Then the macOS Swift Package Manager companions (#689), built from the macOS
+tarball just published — the same bytes the hook pins — and uploaded to the
+same tag:
+```bash
+bash packages/flutter_edge_ai_litertlm/native/litert_lm/package_macos_spm_companions.sh \
+  "$DIST"/litertlm-macos_arm64.tar.gz "$DIST"/spm
+gh release upload "$RELEASE" "$DIST"/spm/*.xcframework.zip "$DIST"/spm/checksums_spm_macos.txt
+```
+In the same PR as the hook's `version:` bump, set `nativeTag` and both
+checksums in `packages/flutter_edge_ai_litertlm/macos/flutter_edge_ai_litertlm/Package.swift`
+from `checksums_spm_macos.txt`; `test/macos_spm_companions_test.dart` fails
+while the tag disagrees with the hook. The script is deterministic: a rerun on
+the same tarball prints the same checksums.
+
 Verify each URL returns HTTP 200 + sha256 matches:
 ```bash
 for f in "$DIST"/litertlm-*.tar.gz; do
@@ -686,7 +725,19 @@ git status --short                    # clean tree
 ```
 
 Only once `HEAD == origin/main`, the version on `main` is the one you intend to
-publish, and the tree is clean, proceed:
+publish, and the tree is clean, proceed.
+
+**`flutter_edge_ai_litertlm` or `flutter_edge_ai_speech`: no publish without a
+green `release-check` at this HEAD** (checklist 8c). Run it here, on the commit
+being published, right before the publish, and stop on anything but
+"ready to publish":
+
+```bash
+(cd tool/model_registry && dart run bin/registry.dart release-check <name>)
+# → <name> <version>: ready to publish
+```
+
+Then:
 
 ```bash
 # Run from the package dir so the guard-release-docs hook can resolve which
@@ -872,7 +923,7 @@ cannot tell "this name exists" from "this code is right".
 And the file-level check, Google's linter for the Agent Skills format:
 
 ```bash
-dart run skills_lint@0.5.1     # exit 0 required; config in skills_lint.yaml
+dart run skills_lint@0.5.3     # exit 0 required; config in skills_lint.yaml
 ```
 
 It checks what compilation cannot: frontmatter keys the spec allows (these

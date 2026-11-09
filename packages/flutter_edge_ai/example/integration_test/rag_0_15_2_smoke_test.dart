@@ -1,7 +1,7 @@
 // 0.15.2 RAG smoke test — both embedding model families.
 //
-// Loads models from local files (~/Downloads/) to skip the download +
-// HuggingFace auth flow and exercise just the embedding inference path.
+// macOS: ~/models (container Documents fallback); other platforms: app
+// Documents.
 //
 // On Android the test pushes the files into the app sandbox via
 // adb-style `getApplicationDocumentsDirectory()` staging, then loads
@@ -15,13 +15,15 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedRoot;
 
 // Pre-stage these files in the platform sandbox before running:
-//   macOS: ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/
+//   macOS: ~/models (container Documents fallback)
 //   Android: adb push <file> /data/data/dev.flutterberlin.flutter_gemma_example/app_flutter/
-// On both platforms `getApplicationDocumentsDirectory()` resolves to that
-// location, so the test reads from there directly via fromFile().
+// The fallback uses `getApplicationDocumentsDirectory()`, so sandboxed macOS
+// and Android runs still read from their application Documents directory.
 const _geckoModelName = 'Gecko_64_quant.tflite';
 const _geckoTokenizerName = 'gecko_sentencepiece.model';
 const _gemmaModelName = 'embeddinggemma-300M_seq256_mixed-precision.tflite';
@@ -45,11 +47,24 @@ double _cosine(List<double> a, List<double> b) {
   return dot / (math.sqrt(na) * math.sqrt(nb));
 }
 
-/// Resolve a file path in the app documents directory. If absent, copy
-/// from the bundled `assets/test/<name>` (works on every platform).
-Future<String> _docsPath(String name) async {
-  final docs = await getApplicationDocumentsDirectory();
-  final f = File('${docs.path}/$name');
+/// Resolve one complete model + tokenizer set. macOS: ~/models (container
+/// Documents fallback); other platforms: app Documents.
+Future<(String, String)> _artifactPaths(
+  String modelName,
+  String tokenizerName,
+) async {
+  final root = Platform.isMacOS
+      ? macosStagedRoot([modelName, tokenizerName])!
+      : (await getApplicationDocumentsDirectory()).path;
+  return (
+    await _pathInRoot(root, modelName),
+    await _pathInRoot(root, tokenizerName),
+  );
+}
+
+/// Return [name] from [root], copying its bundled fixture there if absent.
+Future<String> _pathInRoot(String root, String name) async {
+  final f = File('$root/$name');
   if (f.existsSync()) return f.path;
   final bytes = await rootBundle.load('assets/test/$name');
   await f.writeAsBytes(bytes.buffer.asUint8List());
@@ -146,9 +161,13 @@ void main() {
 
   testWidgets('Gecko 110M — full RAG flow', (_) async {
     await registerTestEngines();
+    final (modelPath, tokenizerPath) = await _artifactPaths(
+      _geckoModelName,
+      _geckoTokenizerName,
+    );
     await FlutterEdgeAi.installEmbedder()
-        .modelFromFile(await _docsPath(_geckoModelName))
-        .tokenizerFromFile(await _docsPath(_geckoTokenizerName))
+        .modelFromFile(modelPath)
+        .tokenizerFromFile(tokenizerPath)
         .install();
     final model = await FlutterEdgeAi.getActiveEmbedder();
     try {
@@ -160,9 +179,13 @@ void main() {
 
   testWidgets('EmbeddingGemma 256 — full RAG flow', (_) async {
     await registerTestEngines();
+    final (modelPath, tokenizerPath) = await _artifactPaths(
+      _gemmaModelName,
+      _gemmaTokenizerName,
+    );
     await FlutterEdgeAi.installEmbedder()
-        .modelFromFile(await _docsPath(_gemmaModelName))
-        .tokenizerFromFile(await _docsPath(_gemmaTokenizerName))
+        .modelFromFile(modelPath)
+        .tokenizerFromFile(tokenizerPath)
         .install();
     final model = await FlutterEdgeAi.getActiveEmbedder();
     try {

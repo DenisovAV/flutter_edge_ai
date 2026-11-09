@@ -27,62 +27,60 @@ const _wavHeaderBytes = 44;
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    'whisper transcribes the bundled clip via the public STT API',
-    (_) async {
-      await FlutterEdgeAi.initialize(
-        huggingFaceToken: _token.isEmpty ? null : _token,
-        sttBackends: const [LiteRtSttBackend()],
-      );
+  testWidgets('whisper transcribes the bundled clip via the public STT API', (
+    _,
+  ) async {
+    await FlutterEdgeAi.initialize(
+      huggingFaceToken: _token.isEmpty ? null : _token,
+      sttBackends: const [LiteRtSttBackend()],
+    );
 
-      await FlutterEdgeAi.installStt()
-          .modelFromNetwork(_modelUrl, token: _token.isEmpty ? null : _token)
-          .tokenizerFromNetwork(
-            _tokenizerUrl,
-            token: _token.isEmpty ? null : _token,
-          )
-          .ofType(SttModelType.whisper)
-          .install();
+    await FlutterEdgeAi.installStt()
+        .modelFromNetwork(_modelUrl, token: _token.isEmpty ? null : _token)
+        .tokenizerFromNetwork(
+          _tokenizerUrl,
+          token: _token.isEmpty ? null : _token,
+        )
+        .ofType(SttModelType.whisper)
+        .install();
 
-      final recognizer = await FlutterEdgeAi.getActiveStt();
+    final recognizer = await FlutterEdgeAi.getActiveStt();
 
-      // Bundled 16 kHz mono 16-bit PCM WAV (2.9 s -- well under whisper's
-      // 30 s window; zero-padded by SttCore.padOrTrimToWindow).
-      final wav = await rootBundle.load('assets/test/test_audio.wav');
-      final pcm = Uint8List.sublistView(
-        wav.buffer.asUint8List(),
-        _wavHeaderBytes,
-      );
+    // Bundled 16 kHz mono 16-bit PCM WAV (2.9 s -- well under whisper's
+    // 30 s window; zero-padded by SttCore.padOrTrimToWindow).
+    final wav = await rootBundle.load('assets/test/test_audio.wav');
+    final pcm = Uint8List.sublistView(
+      wav.buffer.asUint8List(),
+      _wavHeaderBytes,
+    );
 
-      final transcript = await recognizer.transcribe(pcm);
-      debugPrint('STT-TEST-TRANSCRIPT<<<$transcript>>>');
+    final transcript = await recognizer.transcribe(pcm);
+    debugPrint('STT-TEST-TRANSCRIPT<<<$transcript>>>');
 
-      final low = transcript.toLowerCase();
-      // Ground truth: "She had your dark suit in greasy wash water all
-      // year." Greedy decode (no beam search) on a 39M-param model; the
-      // Phase 0 on-device spike (causal mask + suppression) produced "She
-      // had Jedak Su in greasy wash for all year." -- hitting "she"/"year"
-      // and misreading "watch" as the phonetically close "wash". Assert
-      // stable content words rather than exact wording, tolerating that
-      // known confusion.
-      expect(transcript.trim(), isNotEmpty, reason: 'got: "$transcript"');
-      expect(
-        low.split(RegExp(r'\s+')).length,
-        greaterThanOrEqualTo(5),
-        reason: 'expected a full sentence, got: "$transcript"',
-      );
-      const groundTruthWords = ['she', 'watch', 'wash', 'year'];
-      final hits = groundTruthWords.where(low.contains).length;
-      expect(
-        hits,
-        greaterThanOrEqualTo(2),
-        reason:
-            'expected at least 2 of $groundTruthWords in transcript, '
-            'got: "$transcript"',
-      );
+    final low = transcript.toLowerCase();
+    // Ground truth: "She had your dark suit in greasy wash water all
+    // year." Greedy decode (no beam search) on a 39M-param model; the
+    // Phase 0 on-device spike (causal mask + suppression) produced "She
+    // had Jedak Su in greasy wash for all year." -- hitting "she"/"year"
+    // and misreading "watch" as the phonetically close "wash". Assert
+    // stable content words rather than exact wording, tolerating that
+    // known confusion.
+    expect(transcript.trim(), isNotEmpty, reason: 'got: "$transcript"');
+    expect(
+      low.split(RegExp(r'\s+')).length,
+      greaterThanOrEqualTo(5),
+      reason: 'expected a full sentence, got: "$transcript"',
+    );
+    const groundTruthWords = ['she', 'watch', 'wash', 'year'];
+    final hits = groundTruthWords.where(low.contains).length;
+    expect(
+      hits,
+      greaterThanOrEqualTo(2),
+      reason:
+          'expected at least 2 of $groundTruthWords in transcript, '
+          'got: "$transcript"',
+    );
 
-      await recognizer.close();
-    },
-    timeout: const Timeout(Duration(minutes: 10)),
-  );
+    await recognizer.close();
+  }, timeout: const Timeout(Duration(minutes: 10)));
 }

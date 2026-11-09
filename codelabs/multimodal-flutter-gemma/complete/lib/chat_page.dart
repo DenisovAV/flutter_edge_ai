@@ -119,7 +119,7 @@ class _ChatPageState extends State<ChatPage> {
         supportImage: _imageCapability.available,
         supportAudio: _audioCapability.available,
       );
-      // Hold the runtime before opening a chat on it: `createChat` can throw,
+      // Hold the runtime before opening a chat on it: `openChat` can throw,
       // and a model this page never stored is a model `dispose` can never
       // close. A page that is already gone holds nothing, so it closes it here.
       if (!mounted) {
@@ -128,7 +128,7 @@ class _ChatPageState extends State<ChatPage> {
       }
       setState(() => _inference = inference);
 
-      final chat = await inference.createChat(
+      final chat = await inference.openChat(
         modelType: widget.model.modelType,
         // Still two session flags on one model — but no longer hard-coded
         // `true`. Each is the AND of both answers: what the weights accept
@@ -396,7 +396,7 @@ class _ChatPageState extends State<ChatPage> {
   /// to happen.
   Future<void> _removeModel() async {
     try {
-      await _inference?.close();
+      await _closeRuntime();
       // Inside `setState`: dropping the chat has to repaint, or the screen
       // keeps showing an enabled composer over a runtime that is gone.
       if (mounted) {
@@ -432,6 +432,16 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Future<void> _closeRuntime() async {
+    final chat = _chat;
+    final inference = _inference;
+    try {
+      await chat?.close();
+    } finally {
+      await inference?.close();
+    }
+  }
+
   @override
   void dispose() {
     // Sessions and models hold native memory — always close them. `dispose`
@@ -442,7 +452,7 @@ class _ChatPageState extends State<ChatPage> {
     // The recorder holds a microphone the OS will not give to anyone else
     // until it is released.
     _recorder.dispose().catchError((Object _) {});
-    _inference?.close().catchError((Object _) {});
+    _closeRuntime().catchError((Object _) {});
     _input.dispose();
     super.dispose();
   }

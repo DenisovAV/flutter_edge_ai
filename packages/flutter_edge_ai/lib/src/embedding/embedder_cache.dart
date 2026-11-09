@@ -411,6 +411,37 @@ class EmbedderCache {
     }
   }
 
+  /// Closes the cached embedder when [builtFrom] says its files are the ones
+  /// being removed, then runs [remove] — all in the [serialize] lane, so a
+  /// build in flight ends first and no build starts until [remove] has ended.
+  ///
+  /// For an uninstall: left open, the embedder keeps answering from files
+  /// that are gone and stays resident (measured on macOS, B89). A close of
+  /// that embedder still running at the deadline throws
+  /// [EmbedderCloseTimeoutException] before [remove] runs, so the removal can
+  /// be retried. An embedder built from other files stays open. Not
+  /// reentrant: a [remove] that calls the shell's entry point waits for
+  /// itself.
+  Future<void> closeForRemoval(
+    bool Function(ActiveEmbedderParams params) builtFrom,
+    Future<void> Function() remove, {
+    required String label,
+  }) => serialize(() async {
+    // A close this cache started or joined for these files: waited for, so
+    // the files are not deleted under a teardown still reading them.
+    if (_pendingClose case final pending? when builtFrom(pending.params)) {
+      await _awaitPendingClose(label);
+    }
+    final cached = _cached;
+    if (cached != null && builtFrom(cached.params)) {
+      // Dropped before the close is awaited, as for a rebuild.
+      _cached = null;
+      edgeAiLog('🗑️  Closing the embedder of $label before its files go');
+      await _closeAndWait(cached, label);
+    }
+    await remove();
+  });
+
   /// Forgets the cached embedder without closing it.
   ///
   /// For a build that failed: there is nothing to close, and leaving the
@@ -445,3 +476,17 @@ class _CachedEmbedder {
   final ActiveEmbedderParams params;
   final PreferredBackend? requestedBackend;
 }
+
+/// Each shell's [EmbedderCache], for `FlutterEdgeAi.uninstallEmbedder`, which
+/// reaches a shell only as a `FlutterEdgeAiPlugin`. A side table rather than a
+/// member, so no shell's public API grows one.
+final _shellEmbedderCaches = Expando<EmbedderCache>('EmbedderCache');
+
+/// Records [cache] as [shell]'s embedder cache.
+void attachEmbedderCache(Object shell, EmbedderCache cache) {
+  _shellEmbedderCaches[shell] = cache;
+}
+
+/// The cache [attachEmbedderCache] recorded for [shell], or null: a plugin
+/// that is not one of core's shells caches no embedder here.
+EmbedderCache? embedderCacheOf(Object shell) => _shellEmbedderCaches[shell];

@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// section: header, zero padding, proto. See fixtures/README.md.
 const _qwen3 = 'test/ffi/fixtures/qwen3_0_6b_prefix.litertlm';
 const _gemma3 = 'test/ffi/fixtures/gemma3_1b_prefix.litertlm';
+const _qwen3Dynamic = 'test/ffi/fixtures/qwen3_0_6b_dynamic_prefix.litertlm';
 
 List<int> _varint(int v) {
   final out = <int>[];
@@ -62,6 +63,52 @@ void main() {
       expect((await readBundleSampler(_gemma3)).isEmpty, isTrue);
     });
   });
+
+  group(
+    'whether a bundle declares a channel, which the thinking budget caps',
+    () {
+      test('the catalog Qwen3-0.6B declares one; the older Qwen3-0.6B and '
+          'Gemma3-1B none', () async {
+        expect(
+          (await tryReadBundleSampler(_qwen3Dynamic)).declaresChannel,
+          isTrue,
+        );
+        expect((await tryReadBundleSampler(_qwen3)).declaresChannel, isFalse);
+        expect((await tryReadBundleSampler(_gemma3)).declaresChannel, isFalse);
+      });
+
+      test('a bundle with no LlmMetadata section declares none', () async {
+        // An EmbeddingGemma 2 header: sections, but no LlmMetadata.
+        final read = await tryReadBundleSampler(
+          'test/ffi/fixtures/embeddinggemma2_270m_header.litertlm',
+        );
+        expect(read.error, isNull);
+        expect(read.declaresChannel, isFalse);
+      });
+
+      test('LlmMetadata.channels (field 8), and nothing else, counts', () {
+        expect(
+          llmMetadataDeclaresChannel(
+            Uint8List.fromList([
+              ..._bytes(1, 'unrelated'.codeUnits),
+              ..._bytes(8, _bytes(1, 'thought'.codeUnits)),
+            ]),
+          ),
+          isTrue,
+        );
+        expect(llmMetadataDeclaresChannel(_llmMetadata(_int(1, 2))), isFalse);
+      });
+
+      test('a failed read does not say', () async {
+        expect(
+          (await tryReadBundleSampler(
+            '/nonexistent/model.litertlm',
+          )).declaresChannel,
+          isNull,
+        );
+      });
+    },
+  );
 
   group('tryReadBundleSampler reports a file it cannot read', () {
     test('wrong magic', () async {

@@ -26,7 +26,7 @@ Future<void> main() async {
 
   // Create a model + session and generate.
   final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-  final session = await model.createSession();
+  final session = await model.openSession();
   await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
   final reply = await session.getResponse();
   print(reply);

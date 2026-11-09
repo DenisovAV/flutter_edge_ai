@@ -41,7 +41,7 @@ answer out of its parts.
 ## Text
 
 ```dart
-final chat = await model.createChat();
+final chat = await model.openChat();
 
 final reply = await chat.sendMessage(
   ChatMessage.user('Say hello in one word.'),
@@ -73,7 +73,7 @@ the chat with the capability the model needs, or the send throws rather than
 silently dropping the media.
 
 ```dart
-final chat = await model.createChat(supportImage: true);
+final chat = await model.openChat(supportImage: true);
 
 final reply = await chat.sendMessage(
   ChatMessage.user(
@@ -95,7 +95,7 @@ Create the chat with `enableThinking: true`. The model turn comes back with its
 reasoning in a `ThinkingPart` alongside the answer's `TextPart`:
 
 ```dart
-final chat = await model.createChat(enableThinking: true);
+final chat = await model.openChat(enableThinking: true);
 
 final reply = await chat.sendMessage(
   ChatMessage.user('Why is the sky blue?'),
@@ -115,7 +115,7 @@ Create the chat with your tools, then read tool calls out of the reply's
 `ToolPart`s and send the result back as a `ToolPart.result`:
 
 ```dart
-final chat = await model.createChat(
+final chat = await model.openChat(
   supportsFunctionCalls: true,
   tools: const [getWeatherTool],
   modelType: ModelType.gemma4,
@@ -168,7 +168,7 @@ final reply = await chat.generateContent([
 - A `ThinkingPart` on a **user** message throws (thoughts are model output); on
   a **model** turn it is stripped as history.
 - A `system`-role message throws — set the system prompt via
-  `createChat(systemInstruction: ...)` instead.
+  `openChat(systemInstruction: ...)` instead.
 - Missing capability throws: sending an image to a chat created without
   `supportImage`, audio without `supportAudio`, or a tool part without
   `supportsFunctionCalls` fails loudly rather than dropping the content.

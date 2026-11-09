@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_edge_ai_example/services/catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 import 'package:flutter_edge_ai_example/chat_screen.dart';
@@ -13,7 +14,6 @@ import 'package:flutter_edge_ai_example/services/model_download_service.dart';
 import 'package:flutter_edge_ai_example/services/embedding_download_service.dart';
 import 'package:flutter_edge_ai_example/translate_screen.dart';
 import 'package:flutter_edge_ai_example/utils/gated_model_access_dialog.dart';
-import 'package:flutter_edge_ai_example/utils/storage_quota_dialog.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class UniversalDownloadScreen extends StatefulWidget {
@@ -27,11 +27,17 @@ class UniversalDownloadScreen extends StatefulWidget {
   /// `context` is this screen's, so the callback can pushReplacement onto it.
   final void Function(BuildContext context)? onReady;
 
+  /// Replaces the service the screen builds for an inference [model]; for
+  /// tests.
+  @visibleForTesting
+  final ModelDownloadService? inferenceDownloadService;
+
   const UniversalDownloadScreen({
     super.key,
     required this.model,
     this.selectedBackend,
     this.onReady,
+    this.inferenceDownloadService,
   });
 
   @override
@@ -85,18 +91,22 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
           licenseUrl: t.licenseUrl ?? '',
           modelType: t.modelType,
           fileType: t.fileType,
+          catalogVariant: t.catalogVariant,
         );
         break;
       case ModelKind.inference:
         final inferenceModel = widget.model as Model;
-        _inferenceDownloadService = ModelDownloadService(
-          modelUrl: widget.model.url,
-          modelFilename: widget.model.filename,
-          licenseUrl: widget.model.licenseUrl ?? '',
-          modelType: inferenceModel.modelType,
-          fileType: inferenceModel.fileType,
-          foreground: inferenceModel.foreground,
-        );
+        _inferenceDownloadService =
+            widget.inferenceDownloadService ??
+            ModelDownloadService(
+              modelUrl: widget.model.url,
+              modelFilename: widget.model.filename,
+              licenseUrl: widget.model.licenseUrl ?? '',
+              modelType: inferenceModel.modelType,
+              fileType: inferenceModel.fileType,
+              foreground: inferenceModel.foreground,
+              catalogVariant: inferenceModel.catalogVariant,
+            );
         break;
     }
   }
@@ -114,6 +124,8 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
       _token = await _inferenceDownloadService!.loadToken() ?? '';
     }
 
+    // The controller is disposed with the screen.
+    if (!mounted) return;
     _tokenController.text = _token;
     await _checkModelExistence();
   }
@@ -127,6 +139,7 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
       exists = await _inferenceDownloadService!.checkModelExistence(_token);
     }
 
+    if (!mounted) return;
     setState(() {
       needToDownload = !exists;
     });
@@ -150,20 +163,27 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
         fileType: ModelFileType.builtIn,
       ).fromBundled(model.filename).install();
       await BuiltInAi.ensureReady(
-        onProgress: (p) => setState(() => _progress = p.toDouble()),
+        onProgress: (p) {
+          if (mounted) setState(() => _progress = p.toDouble());
+        },
       );
+      if (!mounted) return;
       setState(() {
         needToDownload = false;
         _progress = 100.0;
       });
-    } on BuiltInAiUnavailableException catch (e) {
-      if (mounted) _showErrorDialog(e.message);
+    } on BuiltInAiUnavailableException catch (e, stack) {
+      if (!mounted) {
+        logInstallFailure(e, stack);
+        return;
+      }
+      _showErrorDialog(e.message);
       setState(() {
         needToDownload = true;
         _progress = 0.0;
       });
-    } catch (e) {
-      await _handleDownloadError(e);
+    } catch (e, stack) {
+      await _handleDownloadError(e, stack);
       if (mounted) setState(() => _progress = 0.0);
     }
   }
@@ -195,38 +215,55 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
 
     try {
       if (widget.model.kind == ModelKind.embedding) {
-        await _embeddingDownloadService!.downloadModel(
+        final replaced = await _embeddingDownloadService!.downloadModel(
           widget.model.needsAuth ? _token : '',
           (modelProg, tokenizerProg) {
+            if (!mounted) return;
             setState(() {
               _modelProgress = modelProg;
               _tokenizerProgress = tokenizerProg;
               _progress = modelProg;
             });
           },
+          confirmReplace: (model, bytes) =>
+              // A screen already gone asks nobody: the old model is kept.
+              mounted
+              ? askToReplaceActiveModel(context, model, bytes)
+              : Future.value(false),
         );
 
+        if (replaced case final CatalogInstallKept kept) {
+          _showKept(kept);
+          return;
+        }
         debugPrint('[UI] Embedding download completed');
-
-        setState(() {
-          needToDownload = false;
-        });
       } else {
-        await _inferenceDownloadService!.downloadModel(
+        final replaced = await _inferenceDownloadService!.downloadModel(
           token: widget.model.needsAuth ? _token : '',
           onProgress: (progress) {
+            if (!mounted) return;
             setState(() {
               _progress = progress;
             });
           },
+          confirmReplace: (model, bytes) =>
+              // A screen already gone asks nobody: the old model is kept.
+              mounted
+              ? askToReplaceActiveModel(context, model, bytes)
+              : Future.value(false),
         );
+        if (replaced case final CatalogInstallKept kept) {
+          _showKept(kept);
+          return;
+        }
       }
 
+      if (!mounted) return;
       setState(() {
         needToDownload = false;
       });
-    } catch (e) {
-      await _handleDownloadError(e);
+    } catch (e, stack) {
+      await _handleDownloadError(e, stack);
     }
   }
 
@@ -238,38 +275,63 @@ class _UniversalDownloadScreenState extends State<UniversalDownloadScreen> {
         await _inferenceDownloadService!.deleteModel();
       }
 
+      if (!mounted) return;
       setState(() {
         needToDownload = true;
         _progress = 0.0;
         _modelProgress = 0.0;
         _tokenizerProgress = 0.0;
       });
-    } catch (e) {
-      await _handleDownloadError(e);
+    } catch (e, stack) {
+      // Deleting, not downloading: its own title; logged when the screen is
+      // gone.
+      if (!mounted) {
+        debugPrint('Model delete failed: $e\n$stack');
+        return;
+      }
+      await _showErrorDialog('$e', title: 'Delete error');
     }
   }
 
-  Future<void> _handleDownloadError(Object error) async {
+  /// The user kept the installed model: not an error, nothing downloaded.
+  void _showKept(CatalogInstallKept kept) {
     if (!mounted) return;
-    if (isGatedAccessError(error)) {
-      await showGatedModelAccessDialog(
+    setState(() => _progress = 0.0);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(kept.message)));
+  }
+
+  Future<void> _handleDownloadError(Object error, StackTrace stack) async {
+    // A failed replace first says the old model is gone, then the dialog its
+    // cause needs. State.context throws once the screen is gone: then the
+    // failure is only logged.
+    if (!mounted) {
+      logInstallFailure(error, stack);
+      return;
+    }
+    await showInstallErrors(
+      context,
+      error,
+      stack,
+      fallback: error.toString(),
+      gated: (cause) => showGatedModelAccessDialog(
         context: context,
         modelUrl: widget.model.url,
         licenseUrl: widget.model.licenseUrl,
-        error: error,
-      );
-    } else if (isStorageQuotaError(error)) {
-      await showStorageFullDialog(context);
-    } else {
-      _showErrorDialog(error.toString());
-    }
+        error: cause,
+      ),
+    );
   }
 
-  void _showErrorDialog(String error) {
-    showDialog(
+  Future<void> _showErrorDialog(
+    String error, {
+    String title = 'Download error',
+  }) {
+    return showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Download Error'),
+        title: Text(title),
         content: Text(error),
         actions: [
           TextButton(

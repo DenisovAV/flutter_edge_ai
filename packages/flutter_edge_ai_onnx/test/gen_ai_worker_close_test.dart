@@ -11,6 +11,9 @@
 // log, written inside the worker, to see what actually ran there. A call the
 // test must hold blocks on a gate the test opens (see the fake's header), so
 // no test depends on how fast the machine is.
+// Remaining deprecated calls exercise worker death during legacy replacement.
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -743,11 +746,16 @@ void main() {
           listenerCalls++;
           if (!listened.isCompleted) listened.complete();
         });
+        await model.openSession();
+        expect(model.sessions, hasLength(1));
         await listened.future.timeout(const Duration(seconds: 10));
       });
 
       expect(listenerCalls, 1);
       expect(onCloseCalls, 1);
+      // An opened session does not outlive the worker that served it.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(model.sessions, isEmpty);
       await expectLater(
         model.createSession(),
         throwsA(

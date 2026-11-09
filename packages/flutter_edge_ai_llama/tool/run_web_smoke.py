@@ -95,6 +95,8 @@ def main():
     parser.add_argument("--chrome", default=os.environ.get("CHROME_EXECUTABLE") or shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser") or "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
     parser.add_argument("--model-url", required=True)
     parser.add_argument("--storage-helper-url")
+    parser.add_argument("--structured-gpu", action="store_true",
+                        help="Also run the discriminating structured output check on WebGPU")
     args = parser.parse_args()
     if os.name == "nt":
         parser.error("The isolation-header proxy runner requires a POSIX host; run this lane on Linux or macOS.")
@@ -114,11 +116,16 @@ def main():
                        f"--dart-define=GGUF_WEB_MODEL_URL={args.model_url}"]
             if args.storage_helper_url:
                 command.append(f"--dart-define=GGUF_WEB_STORAGE_HELPER_URL={args.storage_helper_url}")
+            if args.structured_gpu:
+                command.append("--dart-define=GGUF_WEB_STRUCTURED_GPU=true")
             result = subprocess.run(command, cwd=PACKAGE,
                                     env={**os.environ, "CHROME_EXECUTABLE": str(wrapper)}, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             print(result.stdout, flush=True)
             if result.returncode == 0:
                 require_smoke_success(result.stdout, "real browser facade installs a URL")
+                if args.structured_gpu and "WEB_SMOKE: structured output on WebGPU conforms" not in result.stdout:
+                    print("The structured WebGPU check did not run.", flush=True)
+                    return 1
             return result.returncode
     finally:
         proxy.shutdown()

@@ -52,7 +52,8 @@ import '../model/stt_model_profile.dart';
 import '../tokenizer/stt_special_tokens.dart'
     show ResolvedSuppression, SttSpecialTokenResolver;
 import '../tokenizer/stt_tokenizer.dart' show SttTokenizer;
-import 'litert_graph.dart' show acceleratorFor;
+import 'litert_graph.dart'
+    show acceleratorFor, configureSpeechAccelerator, takeCompiledModel;
 import 'log_mel_frontend.dart' show computeLogMelSpectrogram, computeNemoLogMel;
 import 'mel_filter_assets.dart' show loadMelFilterAsset;
 
@@ -188,6 +189,78 @@ void applySuppression(
       if (id < logitsRow.length) logitsRow[id] = double.negativeInfinity;
     }
   }
+}
+
+/// One greedy seq2seq decode step over [rowLogits], a COPY of the decoder's
+/// output row: the argmax after [applySuppression], or null when the row holds
+/// a NaN anywhere.
+///
+/// A NaN means the backend produced invalid output (a GPU/accelerator failure,
+/// cf. #214, #747). The whole row is scanned, as [ctcGreedyDecode] scans a
+/// frame: [argmax]'s `>` skips a NaN away from the winner, and checking only
+/// the winner would let a row like that pass with a plausible token. It is
+/// scanned before suppression, which overwrites ids with -inf.
+int? greedyDecodeStep(
+  Float32List rowLogits, {
+  required int step,
+  required ResolvedSuppression? suppression,
+}) {
+  if (rowLogits.any((v) => v.isNaN)) return null;
+  applySuppression(rowLogits, step: step, suppression: suppression);
+  return argmax(rowLogits);
+}
+
+/// The greedy seq2seq decode loop. [decoderRow] runs one decoder step on the
+/// tokens so far and returns a copy of its output row for the next token, its
+/// buffers already released. The step number, counted from 0 at the first
+/// token after [promptIds], is computed here only: each row goes through
+/// [greedyDecodeStep] (NaN check, [suppression] at that step, argmax) and
+/// [acceptDecodedToken], and the pick is appended. Stops at [eosId] or at
+/// [maxTokens] tokens, prompt included.
+///
+/// Pure: [SttCore]'s decoder passes the native step, tests pass rows.
+List<int> runGreedyDecode({
+  required List<int> promptIds,
+  required int maxTokens,
+  required int eosId,
+  required ResolvedSuppression? suppression,
+  required Float32List Function(List<int> generated) decoderRow,
+}) {
+  final generated = List<int>.from(promptIds);
+  while (true) {
+    final step = generated.length - promptIds.length;
+    final next = greedyDecodeStep(
+      decoderRow(generated),
+      step: step,
+      suppression: suppression,
+    );
+    final bestId = acceptDecodedToken(next, step: step);
+    generated.add(bestId);
+    if (shouldStopDecoding(bestId, generated.length, maxTokens, eosId: eosId)) {
+      if (bestId != eosId && generated.length >= maxTokens) {
+        edgeAiLog(
+          '[SttCore] decode hit the $maxTokens-token cap without EOS — '
+          'transcript may be truncated.',
+        );
+      }
+      return generated;
+    }
+  }
+}
+
+/// The token a seq2seq decode step picked: [next] from [greedyDecodeStep], or
+/// a [StateError] when it is null (the row held a NaN). [step] names the
+/// step, counted from 0 at the first token after the decoder prompt.
+///
+/// Called after the step's tensor buffers are released, so the error never
+/// leaves a buffer locked.
+int acceptDecodedToken(int? next, {required int step}) {
+  if (next != null) return next;
+  throw StateError(
+    'STT decode produced NaN logits at step $step — the model backend '
+    'returned invalid output; transcription aborted rather than silently '
+    'returning an empty result.',
+  );
 }
 
 /// Build the decoder seed prompt for one transcription.
@@ -421,16 +494,27 @@ class SttCore {
       bindings.createOptions(optsPtr).check('LiteRtCreateOptions');
       options = optsPtr.value;
       calloc.free(optsPtr);
-      bindings
-          .setOptionsHardwareAccelerators(options, acceleratorFor(backend))
-          .check('LiteRtSetOptionsHardwareAccelerators');
+      configureSpeechAccelerator(
+        bindings,
+        options,
+        acceleratorFor(backend),
+        context: modelPath,
+        fp32OnGpu: true,
+      );
 
       final compiledPtr = calloc<LiteRtCompiledModel>();
-      bindings
-          .createCompiledModel(environment, model, options, compiledPtr)
-          .check('LiteRtCreateCompiledModel');
-      compiled = compiledPtr.value;
-      calloc.free(compiledPtr);
+      final status = bindings.createCompiledModel(
+        environment,
+        model,
+        options,
+        compiledPtr,
+      );
+      compiled = takeCompiledModel(
+        compiledPtr,
+        status,
+        path: modelPath,
+        accelerator: acceleratorFor(backend),
+      );
 
       edgeAiLog('[SttCore] loaded: backend=$backend');
 
@@ -732,182 +816,167 @@ class SttCore {
         maxTokens * maxTokens,
       );
 
-      final generated = List<int>.from(promptIds);
-      while (true) {
-        final len = generated.length;
+      return runGreedyDecode(
+        promptIds: promptIds,
+        maxTokens: maxTokens,
+        eosId: _eosId,
+        suppression: _resolvedSuppression,
+        decoderRow: (generated) {
+          final len = generated.length;
 
-        // decode_args_1: i32[1, maxTokens] — token ids so far, right-padded
-        // with 0.
-        for (var i = 0; i < maxTokens; i++) {
-          tokensHost[i] = i < len ? generated[i] : 0;
-        }
-
-        // decode_args_2: f32[1,1,maxTokens,maxTokens] — mask convention per
-        // `_profile.decoderMaskConvention` (moonshine: `paddingOnly`,
-        // verified recipe convention C; whisper: `causal`, per the Phase 0
-        // spike). Do not change moonshine's convention — see the recipe's
-        // "What NOT to do".
-        writeDecoderMask(
-          maskHost,
-          maxTokens: maxTokens,
-          len: len,
-          convention: _profile.decoderMaskConvention,
-        );
-
-        final tokType = LiteRtRankedTensorTypeView.calloc()
-          ..elementType = kLiteRtElementTypeInt32
-          ..rank = 2
-          ..setDimension(0, 1)
-          ..setDimension(1, maxTokens);
-        final maskType = LiteRtRankedTensorTypeView.calloc()
-          ..elementType = kLiteRtElementTypeFloat32
-          ..rank = 4
-          ..setDimension(0, 1)
-          ..setDimension(1, 1)
-          ..setDimension(2, maxTokens)
-          ..setDimension(3, maxTokens);
-        final outType = LiteRtRankedTensorTypeView.calloc()
-          ..elementType = kLiteRtElementTypeFloat32
-          ..rank = 3
-          ..setDimension(0, 1)
-          ..setDimension(1, maxTokens)
-          ..setDimension(2, vocabSize);
-
-        final tokBufPtr = calloc<LiteRtTensorBuffer>();
-        final maskBufPtr = calloc<LiteRtTensorBuffer>();
-        final outBufPtr = calloc<LiteRtTensorBuffer>();
-        var tokCreated = false, maskCreated = false, outCreated = false;
-        int bestId;
-        var nanLogit = false;
-
-        try {
-          _bindings
-              .createTensorBufferFromHostMemory(
-                tokType.pointer,
-                tokensAlloc.aligned.cast(),
-                maxTokens * 4,
-                nullptr,
-                tokBufPtr,
-              )
-              .check('CreateTensorBufferFromHostMemory(decode tokens)');
-          tokCreated = true;
-
-          _bindings
-              .createTensorBufferFromHostMemory(
-                maskType.pointer,
-                maskAlloc.aligned.cast(),
-                maxTokens * maxTokens * 4,
-                nullptr,
-                maskBufPtr,
-              )
-              .check('CreateTensorBufferFromHostMemory(decode mask)');
-          maskCreated = true;
-
-          _bindings
-              .createTensorBufferFromHostMemory(
-                outType.pointer,
-                decodeOutAlloc.aligned.cast(),
-                maxTokens * vocabSize * 4,
-                nullptr,
-                outBufPtr,
-              )
-              .check('CreateTensorBufferFromHostMemory(decode out)');
-          outCreated = true;
-
-          // Exact input order: decode_args_0 (hidden), decode_args_1
-          // (tokens), decode_args_2 (mask).
-          final inputs = calloc<LiteRtTensorBuffer>(3);
-          inputs[0] = hiddenBufPtr.value;
-          inputs[1] = tokBufPtr.value;
-          inputs[2] = maskBufPtr.value;
-          try {
-            _bindings
-                .runCompiledModel(_compiledModel, 1, 3, inputs, 1, outBufPtr)
-                .check('LiteRtRunCompiledModel(decode)');
-          } finally {
-            calloc.free(inputs);
+          // decode_args_1: i32[1, maxTokens] — token ids so far, right-padded
+          // with 0.
+          for (var i = 0; i < maxTokens; i++) {
+            tokensHost[i] = i < len ? generated[i] : 0;
           }
 
-          final lockedPtr = calloc<Pointer<Void>>();
-          try {
-            _bindings
-                .lockTensorBuffer(
-                  outBufPtr.value,
-                  lockedPtr,
-                  kLiteRtTensorBufferLockModeRead,
-                )
-                .check('LiteRtLockTensorBuffer(decode out)');
-            // Argmax is taken at tensor row `len - 1` (0-indexed) — the
-            // position of the token that was just written into the padded
-            // sequence, NOT row 0 and NOT the last row.
-            final row = len - 1;
-            final logits = lockedPtr.value.cast<Float>().asTypedList(
-              maxTokens * vocabSize,
-            );
-            final rowLogits = logits.sublist(
-              row * vocabSize,
-              (row + 1) * vocabSize,
-            );
-            applySuppression(
-              rowLogits,
-              step: len - promptIds.length,
-              suppression: _resolvedSuppression,
-            );
-            bestId = argmax(rowLogits);
-            // A NaN top logit means the backend produced invalid output (e.g.
-            // a GPU/accelerator failure, cf. #214). argmax then collapses to
-            // id 0 (<unk>), which detokenizes to '' and would be returned as a
-            // "successful" empty transcript indistinguishable from a silent
-            // clip. Flag it here and fail loudly after cleanup instead.
-            nanLogit = rowLogits[bestId].isNaN;
-            _bindings
-                .unlockTensorBuffer(outBufPtr.value)
-                .check('LiteRtUnlockTensorBuffer(decode out)');
-          } finally {
-            calloc.free(lockedPtr);
-          }
-        } finally {
-          if (tokCreated) _bindings.destroyTensorBuffer(tokBufPtr.value);
-          if (maskCreated) _bindings.destroyTensorBuffer(maskBufPtr.value);
-          if (outCreated) _bindings.destroyTensorBuffer(outBufPtr.value);
-          calloc.free(tokBufPtr);
-          calloc.free(maskBufPtr);
-          calloc.free(outBufPtr);
-          tokType.free();
-          maskType.free();
-          outType.free();
-        }
-
-        if (nanLogit) {
-          throw StateError(
-            'STT decode produced NaN logits at step $len — the model backend '
-            'returned invalid output; transcription aborted rather than '
-            'silently returning an empty result.',
+          // decode_args_2: f32[1,1,maxTokens,maxTokens] — mask convention per
+          // `_profile.decoderMaskConvention` (moonshine: `paddingOnly`,
+          // verified recipe convention C; whisper: `causal`, per the Phase 0
+          // spike). Do not change moonshine's convention — see the recipe's
+          // "What NOT to do".
+          writeDecoderMask(
+            maskHost,
+            maxTokens: maxTokens,
+            len: len,
+            convention: _profile.decoderMaskConvention,
           );
-        }
 
-        generated.add(bestId);
-        if (shouldStopDecoding(
-          bestId,
-          generated.length,
-          maxTokens,
-          eosId: _eosId,
-        )) {
-          if (bestId != _eosId && generated.length >= maxTokens) {
-            edgeAiLog(
-              '[SttCore] decode hit the $maxTokens-token cap without EOS — '
-              'transcript may be truncated.',
+          final tokType = LiteRtRankedTensorTypeView.calloc()
+            ..elementType = kLiteRtElementTypeInt32
+            ..rank = 2
+            ..setDimension(0, 1)
+            ..setDimension(1, maxTokens);
+          final maskType = LiteRtRankedTensorTypeView.calloc()
+            ..elementType = kLiteRtElementTypeFloat32
+            ..rank = 4
+            ..setDimension(0, 1)
+            ..setDimension(1, 1)
+            ..setDimension(2, maxTokens)
+            ..setDimension(3, maxTokens);
+          final outType = LiteRtRankedTensorTypeView.calloc()
+            ..elementType = kLiteRtElementTypeFloat32
+            ..rank = 3
+            ..setDimension(0, 1)
+            ..setDimension(1, maxTokens)
+            ..setDimension(2, vocabSize);
+
+          final tokBufPtr = calloc<LiteRtTensorBuffer>();
+          final maskBufPtr = calloc<LiteRtTensorBuffer>();
+          final outBufPtr = calloc<LiteRtTensorBuffer>();
+          var tokCreated = false, maskCreated = false, outCreated = false;
+
+          try {
+            _bindings
+                .createTensorBufferFromHostMemory(
+                  tokType.pointer,
+                  tokensAlloc.aligned.cast(),
+                  maxTokens * 4,
+                  nullptr,
+                  tokBufPtr,
+                )
+                .check('CreateTensorBufferFromHostMemory(decode tokens)');
+            tokCreated = true;
+
+            _bindings
+                .createTensorBufferFromHostMemory(
+                  maskType.pointer,
+                  maskAlloc.aligned.cast(),
+                  maxTokens * maxTokens * 4,
+                  nullptr,
+                  maskBufPtr,
+                )
+                .check('CreateTensorBufferFromHostMemory(decode mask)');
+            maskCreated = true;
+
+            _bindings
+                .createTensorBufferFromHostMemory(
+                  outType.pointer,
+                  decodeOutAlloc.aligned.cast(),
+                  maxTokens * vocabSize * 4,
+                  nullptr,
+                  outBufPtr,
+                )
+                .check('CreateTensorBufferFromHostMemory(decode out)');
+            outCreated = true;
+
+            // Exact input order: decode_args_0 (hidden), decode_args_1
+            // (tokens), decode_args_2 (mask).
+            final inputs = calloc<LiteRtTensorBuffer>(3);
+            inputs[0] = hiddenBufPtr.value;
+            inputs[1] = tokBufPtr.value;
+            inputs[2] = maskBufPtr.value;
+            try {
+              _bindings
+                  .runCompiledModel(_compiledModel, 1, 3, inputs, 1, outBufPtr)
+                  .check('LiteRtRunCompiledModel(decode)');
+            } finally {
+              calloc.free(inputs);
+            }
+
+            // The next token is picked (in runGreedyDecode) from tensor row
+            // `len - 1` (0-indexed) — the position of the token that was just
+            // written into the padded sequence, NOT row 0 and NOT the last
+            // row. Returned as a copy; the finally below releases the step's
+            // buffers before runGreedyDecode reads it.
+            return _readDecoderRow(
+              outBufPtr.value,
+              row: len - 1,
+              maxTokens: maxTokens,
+              vocabSize: vocabSize,
             );
+          } finally {
+            if (tokCreated) _bindings.destroyTensorBuffer(tokBufPtr.value);
+            if (maskCreated) _bindings.destroyTensorBuffer(maskBufPtr.value);
+            if (outCreated) _bindings.destroyTensorBuffer(outBufPtr.value);
+            calloc.free(tokBufPtr);
+            calloc.free(maskBufPtr);
+            calloc.free(outBufPtr);
+            tokType.free();
+            maskType.free();
+            outType.free();
           }
-          return generated;
-        }
-      }
+        },
+      );
     } finally {
       _bindings.destroyTensorBuffer(hiddenBufPtr.value);
       calloc.free(hiddenBufPtr);
       calloc.free(tokensAlloc.raw);
       calloc.free(maskAlloc.raw);
       calloc.free(decodeOutAlloc.raw);
+    }
+  }
+
+  /// A copy of decoder output [row] of [buffer], read under a read lock. The
+  /// buffer is unlocked on every path, a failed copy included, before it is
+  /// destroyed by the caller.
+  Float32List _readDecoderRow(
+    LiteRtTensorBuffer buffer, {
+    required int row,
+    required int maxTokens,
+    required int vocabSize,
+  }) {
+    final lockedPtr = calloc<Pointer<Void>>();
+    try {
+      _bindings
+          .lockTensorBuffer(buffer, lockedPtr, kLiteRtTensorBufferLockModeRead)
+          .check('LiteRtLockTensorBuffer(decode out)');
+      final Float32List copied;
+      try {
+        final logits = lockedPtr.value.cast<Float>().asTypedList(
+          maxTokens * vocabSize,
+        );
+        copied = logits.sublist(row * vocabSize, (row + 1) * vocabSize);
+      } catch (_) {
+        _bindings.unlockTensorBuffer(buffer);
+        rethrow;
+      }
+      _bindings
+          .unlockTensorBuffer(buffer)
+          .check('LiteRtUnlockTensorBuffer(decode out)');
+      return copied;
+    } finally {
+      calloc.free(lockedPtr);
     }
   }
 

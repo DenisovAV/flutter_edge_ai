@@ -8,6 +8,7 @@ import 'package:ffi/ffi.dart';
 String? nativeEmbeddingGpuRefusal({
   bool? isAndroid,
   bool? isIOS,
+  bool? isMacosX64,
   String? Function(String)? readVariable,
 }) {
   if (isAndroid ?? Platform.isAndroid) {
@@ -18,8 +19,25 @@ String? nativeEmbeddingGpuRefusal({
           false)) {
     return 'GPU GGUF embeddings are unavailable on iOS simulators; use CPU.';
   }
+  if (isMacosX64 ?? Abi.current() == Abi.macosX64) {
+    return 'GPU GGUF embeddings are unavailable on macOS x64/Rosetta; use CPU.';
+  }
   return null;
 }
+
+/// Whether llamadart intentionally selects CPU for automatic placement.
+/// macOS x64 includes Rosetta; this policy is independent of GPU refusal.
+bool nativeEmbeddingAutoUsesCpu({
+  bool? isAndroid,
+  bool? isIOS,
+  bool? isMacosX64,
+  String? Function(String)? readVariable,
+}) =>
+    (isMacosX64 ?? Abi.current() == Abi.macosX64) ||
+    (isAndroid ?? Platform.isAndroid) ||
+    ((isIOS ?? Platform.isIOS) &&
+        ((readVariable ?? _environmentVariable)('SIMULATOR_UDID')?.isNotEmpty ??
+            false));
 
 typedef _Getenv = Pointer<Utf8> Function(Pointer<Utf8>);
 

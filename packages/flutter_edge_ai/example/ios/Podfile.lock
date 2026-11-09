@@ -1,9 +1,9 @@
 PODS:
   - Flutter (1.0.0)
-  - flutter_edge_ai_mediapipe (1.2.2):
+  - flutter_edge_ai_mediapipe (1.2.4):
     - Flutter
-    - MediaPipeTasksGenAI (= 0.10.33)
-    - MediaPipeTasksGenAIC (= 0.10.33)
+    - MediaPipeTasksGenAI (= 0.10.35)
+    - MediaPipeTasksGenAIC (= 0.10.35)
   - flutter_inappwebview_ios (0.0.1):
     - Flutter
     - flutter_inappwebview_ios/Core (= 0.0.1)
@@ -11,9 +11,9 @@ PODS:
   - flutter_inappwebview_ios/Core (0.0.1):
     - Flutter
     - OrderedSet (~> 6.0.3)
-  - MediaPipeTasksGenAI (0.10.33):
-    - MediaPipeTasksGenAIC (= 0.10.33)
-  - MediaPipeTasksGenAIC (0.10.33)
+  - MediaPipeTasksGenAI (0.10.35):
+    - MediaPipeTasksGenAIC (= 0.10.35)
+  - MediaPipeTasksGenAIC (0.10.35)
   - OrderedSet (6.0.3)
 
 DEPENDENCIES:
@@ -37,12 +37,12 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
-  flutter_edge_ai_mediapipe: 116edc58f1d2565463e3ac63250841cc4fa737ca
+  flutter_edge_ai_mediapipe: 0bfbaed29fdfea222a64102c24bf84485456ab72
   flutter_inappwebview_ios: b89ba3482b96fb25e00c967aae065701b66e9b99
-  MediaPipeTasksGenAI: 8eed8e6d03fe26d30c4205cb5295ec7b394432ad
-  MediaPipeTasksGenAIC: cb098ecea44e248efe8fe7e2f62b4cb0df781802
+  MediaPipeTasksGenAI: e311d919ab79b2e615e381b65ad271b2c2617312
+  MediaPipeTasksGenAIC: fee4ffd93e57fd2022287bcce0340b3c68b537be
   OrderedSet: e539b66b644ff081c73a262d24ad552a69be3a94
 
 PODFILE CHECKSUM: b9a8b2ef627faec4d104ff6fe16fc69c3bd87359
 
-COCOAPODS: 1.16.2
+COCOAPODS: 1.17.0

@@ -52,9 +52,9 @@ Add the package and register whichever arm(s) you use at startup:
 
 ```
 dependencies:
-  flutter_edge_ai: latest_version
-  flutter_edge_ai_onnx: latest_version         # ONNX Runtime engines
-  flutter_edge_ai_embeddings: latest_version   # tokenizers, for embeddings
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_onnx: ^0.9.1         # ONNX Runtime engines
+  flutter_edge_ai_embeddings: ^2.3.2   # tokenizers, for embeddings
 ```
 
 ```dart
@@ -118,14 +118,27 @@ From here the code is identical to any other engine:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final session = await model.createSession();
+final session = await model.openSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
+await session.close();
 ```
 
 ## Generation — `OnnxEngine`
 
-Text-only, one session at a time (v1): no vision, no audio, no LoRA. Sampling
+Text-only (v1): no vision, no audio, no LoRA. `openSession` / `openChat` open independent sessions on the
+same loaded model, natively since 0.8.0 and on Web since 0.9.0. On Web each
+keeps its own history on the one Transformers.js pipeline, holds no KV cache
+and is not capped unless you set `maxConcurrentSessions`.
+Natively each session has its own generator and so its own context; turns of different sessions run one at a time and nothing is
+replayed. A generator allocates its whole KV cache at its first turn,
+`maxTokens` × the cache size per token (2 × layers × KV heads × head size ×
+dtype size; 0.75 MiB for Phi-3.5-mini int4, on Linux CPU 771 MiB at 1024, 3077
+at 4096), so opening more than `maxConcurrentSessions` throws a `StateError`;
+unset, that is 2 on Android and iOS and unlimited on desktop. Pass a larger
+`maxConcurrentSessions` to allow more on a phone. Windows gives a closed
+session's memory back (commit −383 MiB at 512, −768 MiB at 1024); on Linux the RSS did not
+fall at 512 to 2048. Sampling
 follows the model's own config (`genai_config.json` natively,
 `generation_config.json` on Web), which is greedy unless it sets `do_sample`;
 the `temperature`, `topK` and `topP` you pass override it, and `temperature: 0`
@@ -144,6 +157,43 @@ ORT with no provider appended, which is CPU, and the embedder reports `cpu`.
 
 `PreferredBackend.cpu` pins WASM on Web; anything else tries WebGPU first and
 falls back to WASM.
+
+## Structured JSON output
+
+This section requires core 2.6.0 and `flutter_edge_ai_onnx` 0.9.0.
+
+Native ORT-GenAI can apply llguidance to each independent generator opened by
+`openSession(responseFormat: ...)` or `openChat(responseFormat: ...)`. In that
+release it is enabled only on macOS arm64, after its host run passed, and only
+when the model directory contains `tokenizer.json`. Linux x64, Windows
+x64/ARM64, Android, iOS and ONNX Web return a reason from
+`structuredOutputSupport` and throw `ResponseFormatUnsupportedException` if a
+format is requested; the desktop Linux/Windows archives containing guidance are
+still disabled until their own runs pass.
+
+```dart
+final format = ResponseFormat.jsonSchema({
+  'type': 'object',
+  'properties': {'answer': {'type': 'string'}},
+  'required': ['answer'],
+  'additionalProperties': false,
+});
+final refusal = model.refusalFor(format);
+if (refusal != null) throw refusal;
+final session = await model.openSession(responseFormat: format);
+try {
+  // Use the structured session.
+} finally {
+  await session.close();
+}
+```
+
+ONNX advertises the whole core dialect and delivers structured text
+incrementally. Core validates the completed reply. A turn cut during generation
+therefore emits any generated chunks and then throws
+`IncompleteStructuredOutputException`; a normally completed non-matching value
+throws `NonConformingStructuredOutputException`. A prompt that does not fit the
+remaining context fails with `ContextLimitException` and is not kept.
 
 ## Embeddings — `OnnxEmbeddingBackend`
 
@@ -189,7 +239,7 @@ whichever arm(s) you register, in `<head>`, ahead of `flutter_bootstrap.js`:
 <!-- Transformers.js v4 — OnnxEngine web generation. -->
 <script type="module">
 window.transformersReady = (async () => {
-  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+  const m = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1');
   window.transformers = m;
   return m;
 })();

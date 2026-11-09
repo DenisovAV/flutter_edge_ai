@@ -47,7 +47,8 @@ class ModelChoice {
   String get sizeLabel => kIsWeb ? webSize : nativeSize;
 }
 
-/// The model this step runs.
+/// The model Steps 1 and 2 run: Step 1 opens it as a text chat, Step 2 opens
+/// the same file with vision switched on.
 ///
 /// The repository is ungated, so nothing here needs a Hugging Face token and
 /// no run needs `--dart-define`.
@@ -67,7 +68,7 @@ abstract final class Models {
   /// a microphone, says yes.
   /// Run on macOS 2026-09-07: installs (0.36 GB) and answers "RED" to a
   /// 16x16 red square, with `supportImage` set on both `getActiveModel` and
-  /// `createChat`. Nothing in CI runs a model, so this line is the only
+  /// `openChat`. Nothing in CI runs a model, so this line is the only
   /// evidence these weights were ever executed.
   static const smolVlm2 = ModelChoice(
     nativeLabel: 'SmolVLM2 500M',

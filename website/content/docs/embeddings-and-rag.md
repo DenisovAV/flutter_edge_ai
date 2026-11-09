@@ -18,14 +18,16 @@ RAG can borrow the active core embedder, use an application-provided
 **RagEmbedder**, or run entirely on precomputed vectors. It does not require an
 inference model and is not initialized through **FlutterEdgeAi.initialize()**.
 
-## Custom embedding providers (core 2.5.0)
+## Custom embedding providers (introduced in core 2.5.0)
 
 Core accepts self-contained `.gguf` files without a separate tokenizer. When
 backends are registered, installation checks that one can serve the file; with
 none registered, installation can still proceed. The opt-in
-`LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3
-runs native EmbeddingGemma 2 GGUF text embeddings with core 2.5.0 and llamadart
-0.15.1. Register it in `FlutterEdgeAi.initialize(embeddingBackends:)`; GGUF needs
+`LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.1.0 (backend added in 0.0.3;
+llamadart 0.17.5 since 0.0.6) runs native EmbeddingGemma 2 GGUF text embeddings
+with core 2.6.0+ (`flutter_edge_ai: ^2.6.0`). The 0.0.x releases are the
+historical core 2.5.x line. Register it in
+`FlutterEdgeAi.initialize(embeddingBackends:)`; GGUF needs
 no external tokenizer. Use separate GGUF and LiteRT RAG vector profile IDs,
 even when dimensions match. See [llama.cpp](/docs/llama).
 `flutter_edge_ai_embeddings` supplies tokenizer implementations only; engine
@@ -51,8 +53,8 @@ larger chunk just because the model file declares a larger context.
 
 ```
 dependencies:
-  flutter_edge_ai: ^2.5.2
-  flutter_edge_ai_litertlm: ^1.17.0
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_litertlm: ^1.20.0
   flutter_edge_ai_embeddings: ^2.3.2 # tokenizers for .tflite / .onnx models
   flutter_edge_ai_rag: ^1.1.2
   flutter_edge_ai_sqlite: ^2.1.1 # all six platforms, including Web
@@ -79,15 +81,16 @@ LiteRT.js loader and **rag/sqlite3.wasm**; EmbeddingGemma 2 needs only the
 
 | Model | Files | Platforms | Tokenizer | Longest input |
 |---|---|---|---|---|
-| EmbeddingGemma 2 (text, images, audio) | one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web on WebGPU; per-SoC bundles on Qualcomm NPUs, on Google Tensor G5/G6 (Android, opt-in), on MediaTek MT6991/MT6993 (Android, opt-in, not run on such a phone yet), and on Intel Panther Lake NPUs on Windows | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 (text, images, audio) | one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web on WebGPU; per-SoC bundles on Qualcomm NPUs, on Google Tensor G5/G6 (Android, opt-in; G5 not run), on MediaTek MT6991/MT6993 (Android, opt-in, not run on such a phone yet), and on Intel Panther Lake NPUs on Windows | inside the bundle | 1024 tokens |
 | EmbeddingGemma 2 GGUF (text) | one `.gguf` | native (macOS CPU/Metal, Linux and Windows CPU measured; Android and iOS not qualified); no Web | inside the file | 1024 tokens |
 | EmbeddingGemma 1, Gecko | `.tflite` + tokenizer file | Android, iOS, macOS, Linux, Windows, Web | `flutter_edge_ai_embeddings` | the model's sequence length |
 | MiniLM, EmbeddingGemma ONNX | `.onnx` + `tokenizer.json` | native via **flutter_edge_ai_onnx**; Web for WordPiece models | `flutter_edge_ai_embeddings` | the graph's static length, or none |
 
 The `.litertlm` and `.tflite` models run on **LiteRtEmbeddingBackend** from
 **flutter_edge_ai_litertlm**, the GGUF one on **LlamaEmbeddingBackend** from
-**flutter_edge_ai_llama** (on macOS, LiteRT-LM's CocoaPods recipe and
-llama.cpp's Swift Package Manager companion are not qualified in one app), the
+**flutter_edge_ai_llama** (on macOS both load in one Swift Package Manager app
+from `flutter_edge_ai_litertlm` 1.19.0; running both engines' models in one app
+is not qualified), the
 ONNX ones on **OnnxEmbeddingBackend** from **flutter_edge_ai_onnx**. LiteRT
 EmbeddingGemma (1 and 2) and Gecko produce 768-dimensional vectors;
 all-MiniLM-L6-v2 produces 384. A number such as 256 in an artifact name is the
@@ -146,9 +149,45 @@ final vector = await embedder.embed(
   **EmbeddingInputTooLongException** with the exact **actualTokens** (natively
   from litertlm 1.13.1). The engine counts it by running the whole input, so
   an over-long input costs one full embedding before it is refused.
-- **CPU natively, WebGPU on the Web.** **activeBackend** is
-  **PreferredBackend.cpu** natively and **PreferredBackend.gpu** on the Web.
-  The NPU runs the per-SoC bundles
+- **CPU by default natively, WebGPU on the Web.** `activeBackend` reports the
+  backend that actually loaded.
+- **GPU text tower on Linux x64, Windows x64 and macOS arm64 when asked
+  (LiteRT-LM 0.19 / litertlm 1.20.0).** `preferredBackend:
+  PreferredBackend.gpu` is enabled in code (`native_hosts.dart`) for all three
+  bundles on Linux x64, the 270m on Windows x64, and the 270m and 740m on
+  macOS arm64. Other bundle/host combinations on those three hosts are not
+  enabled and throw as unmeasured.
+  - The Linux rows were measured on an NVIDIA L4, 2026-10-26; the three text
+    towers took 13–14 ms on the GPU versus 84–91 ms on its CPU, with minimum
+    cosine 0.99709 to the CPU vectors ([PR #714](https://github.com/DenisovAV/flutter_edge_ai/pull/714)).
+    The 270m also passed on a GCE Tesla T4, 2026-11-04
+    ([0.19 paid-run report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-l1-paid-runs.md)).
+  - The Windows 270m passed on a Panther Lake Arc B390 and a Lunar Lake Arc
+    140V, 2026-11-04
+    ([0.19 paid-run report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-l1-paid-runs.md)).
+  - The macOS rows were measured on an M5 Pro, 2026-11-04; the 270m and 740m
+    text towers ran on Metal in 24 ms
+    ([0.19 phase-1 report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-phase1.md)).
+  - Only the text tower runs on the GPU. The 440m and 740m vision and audio
+    towers remain on CPU.
+  - A GPU that cannot create the engine fails the load, and every GPU load
+    checks one probe embedding; nothing falls back to CPU. Ask for **gpu** only
+    where a real GPU driver is installed.
+  - The GPU writes its own caches next to the CPU one. **requireWeightCache**
+    covers them: a cache path too long for the GPU (a file name past 255 bytes;
+    Windows currently also has the 260-character MAX_PATH constraint) is
+    refused before the engine is created, and a
+    load that wrote neither file is refused after its probe embedding.
+  - A cold load without **preferredBackend** runs on CPU, but a later
+    automatic request reuses whatever embedder is loaded, the GPU one
+    included.
+  - The 270m has no vision or audio encoder. In RAG, a text index and an
+    image index can share one 440m or 740m embedder on the GPU.
+  - On iOS, Android and Linux arm64, `gpu` is not applied because no GPU row is
+    enabled for those hosts.
+  - GPU and CPU vectors are close, not equal: keep one backend per index if
+    you need the exact vectors back.
+- The NPU runs the per-SoC bundles
   ([below](#embeddinggemma-2-on-a-qualcomm-npu)); this bundle refuses
   **PreferredBackend.npu**. The Web has no CPU path for these bundles — the
   CPU (WebAssembly) backend of `@litert-lm/core` 0.18.0 cannot read their
@@ -178,7 +217,10 @@ final vector = await embedder.embed(
   **EmbeddingLoadException** naming the cache directory, the length of the
   cache file path and the likely causes, and no engine is left running. One
   tower's cache missing beside the others stays a printed warning. It applies
-  on CPU, and on the NPU only with declared audio, whose tower runs on CPU;
+  on CPU, on the GPU (ML Drift's weight and program caches, one of the two
+  missing stays a warning; and the CPU caches of the 440m/740m vision and
+  audio towers), and on the NPU only with declared audio, whose
+  tower runs on CPU;
   the Web and a **.tflite** embedder (EmbeddingGemma 1, Gecko) accept it and
   ignore it, and a debug build says so once in the log. The warning is a **print**, which a
   Windows release build started from Explorer shows nowhere (it has no
@@ -189,6 +231,52 @@ final vector = await embedder.embed(
   before it refuses.
 - EmbeddingGemma 1 and 2 are different embedding spaces with the same
   dimension: give each its own vector-store location and profile.
+
+### EmbeddingGemma 2 at fewer dimensions
+
+EmbeddingGemma 2 is trained with Matryoshka representation learning: the first
+128, 256 or 512 values of its 768-d text vector, normalized again, are an
+embedding of their own: smaller indexes, faster search. The package has no
+option for it, and needs none. Cut the vector the embedder returns and
+normalize it:
+
+```dart
+import 'dart:math' as math;
+
+List<double> truncateEmbedding(List<double> vector, int dimension) {
+  final head = vector.sublist(0, dimension);
+  final norm = math.sqrt(head.fold(0.0, (sum, x) => sum + x * x));
+  return [for (final x in head) x / norm];
+}
+
+final full = await embedder.embed(
+  EmbeddingInput.text('Flutter runs on six platforms.'),
+  taskType: TaskType.retrievalDocument,
+);
+final small = truncateEmbedding(full, 256);
+```
+
+Measured on 2026-10-22 on the 270m bundle on CPU, over the ten golden texts:
+
+| Dimensions | Same as LiteRT-LM's own **output_size**? | Query ranks its document first | Min cos to Sentence Transformers fp32, cut to the same size |
+|---|---|---|---|
+| 128 | yes, cos 1.000000 | 5/5 | 0.986 |
+| 256 | yes, cos 1.000000 | 5/5 | 0.979 |
+| 512 | yes, cos 1.000000 | 5/5 | 0.976 |
+| 768 (full) | — | 5/5 | 0.977 |
+
+Images and audio were not measured: keep truncation to text. Only a
+Matryoshka-trained model keeps its quality this way. EmbeddingGemma 1, Gecko,
+MiniLM and the GGUF build of EmbeddingGemma 2 were not measured here.
+
+A truncated vector is another embedding space. In RAG, implement
+**RagEmbedder** around **FlutterEdgeAiActiveEmbedder**: return the smaller
+dimension and a profile id that names the size (for example
+**'<your id>-mrl256'**) from **resolveProfile**, and truncate in
+**embedDocument** and **embedQuery**. A full-size id would let 256-d and
+768-d vectors share a location, and **forActiveModel** ids come from file
+names alone, so they cannot tell the sizes apart (see
+[Independent text RAG](#independent-text-rag) for the interface).
 
 ### EmbeddingGemma 2 images
 
@@ -393,15 +481,16 @@ print(embedder.activeBackend); // PreferredBackend.npu
 - **The app opts in to Qualcomm's stack** with the flag the LLM NPU path uses,
   **qualcomm_npu: true** under **hooks: user_defines: flutter_edge_ai_litertlm:**
   ([LiteRT-LM](/docs/litertlm)).
-- **Use the bundle for the device's SoC.** Verified on device: SM8850
+- **Use the bundle for the device's SoC.** Run on device: SM8850
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
   VENTUNO Q). Google also publishes SM8550, SM8750, Google Tensor G5/G6,
-  MediaTek MT6991/MT6993 and Intel PTL builds: the Qualcomm ones load but are
-  not verified by us, Tensor G5/G6 runs on matching Pixels
+  MediaTek MT6991/MT6993 and Intel PTL builds: the Qualcomm ones load but have
+  not been run by us, Tensor G6 runs on a Pixel 11 and G5 is not run
   ([below](#embeddinggemma-2-on-a-google-tensor-npu)), Intel PTL runs on Windows
   ([below](#embeddinggemma-2-on-an-intel-npu)), and MediaTek MT6991/MT6993 are
   accepted in apps built with **mediatek_npu: true** but not run on an
-  MT6991/MT6993 phone yet. The
+  MT6991/MT6993 phone yet. Every build and where it has been run: the
+  [Model Registry](/docs/registry). The
   package reads what a bundle is compiled for from the bundle, not from its
   file name.
 - **Fast, and close to the CPU vectors, not equal to them.** On an SM8650
@@ -431,45 +520,51 @@ print(embedder.activeBackend); // PreferredBackend.npu
 ### EmbeddingGemma 2 on a Google Tensor NPU
 
 Google's `…_Google_Tensor_G5.litertlm` and `…_Google_Tensor_G6.litertlm`
-bundles (270m, 440m) run from flutter_edge_ai_litertlm 1.15.0 on a **Pixel with
+bundles (270m, 440m, 740m) load from flutter_edge_ai_litertlm 1.15.0 on a **Pixel with
 that Tensor generation and Android 16 or later** (not a BP2A build), with
 **PreferredBackend.npu**, in an app whose pubspec sets **google_tensor_npu:
 true** under **hooks: user_defines: flutter_edge_ai_litertlm:**
-([LiteRT-LM](/docs/litertlm)). Install the bundle from the same repository and
-revision as above, and load it as above.
+([LiteRT-LM](/docs/litertlm)). Install the bundle from its model's repository at
+the revision the [Model Registry](/docs/registry) pins (each size has its own),
+and load it as above.
 
 - Run on a Pixel 11 (Tensor G6) with a debug build: the 270m embeds text and
-  the 440m images on the NPU. A Tensor G5 and a release-signed build are not run
-  yet.
+  the 440m images on the NPU. A Tensor G5, the 740m and a release-signed build
+  are not run yet.
 - The same rules as on Qualcomm: refused without **npu**, off Android, without
   the flag, or on a device outside LiteRT's rule; LiteRT refuses the other
   Tensor generation's bundle when the engine is created. Never moved to CPU.
 - **Its own profile id**: the CPU text id plus **-npu-tensor_g6** (and
-  **…-vis140** for an image index), shared by the 270m and the 440m, whose text
-  towers are byte-identical.
+  **…-vis140** for an image index), shared by the 270m, the 440m and the 740m,
+  whose text towers are byte-identical.
 
 ### EmbeddingGemma 2 on an Intel NPU
 
 Google's `…_Intel_PTL.litertlm` bundles are compiled for the Intel Panther Lake
-NPU. From flutter_edge_ai_litertlm 1.13.2 they run on **Windows x64** with
-**PreferredBackend.npu**, through the Intel stack (**LiteRtDispatch.dll**,
+NPU. From flutter_edge_ai_litertlm 1.13.2 they load on **Windows x64** with
+**PreferredBackend.npu**; the 270m is enabled in code and was measured on a
+Panther Lake PC, 2026-10-21, as described below. They use the Intel stack
+(**LiteRtDispatch.dll**,
 OpenVINO and TBB) that every Windows x64 build already carries beside the
 executable — no opt-in flag. Install
-`embeddinggemma-2-text-270m_Intel_PTL.litertlm` (or the 440m's) from the same
-repository and revision as above, and load it as above.
+`embeddinggemma-2-text-270m_Intel_PTL.litertlm` (or the 440m's or the 740m's,
+each from its own repository at the revision the [Model Registry](/docs/registry)
+pins), and load it as above.
 
 - **The load checks the NPU.** It embeds one test text and refuses unless it
   gets a valid vector, so a PC without an Intel NPU, or one the stack cannot
   drive, gets **EmbeddingLoadException** rather than wrong vectors.
 - **Measured on a Panther Lake PC** (2026-10-21, OpenVINO 2026.4.1): the 270m
-  loads in about 0.9 s (the generic bundle: 0.3 s on the same PC's CPU) and
+  loads in 0.9 s (the generic bundle: 0.3 s on the same PC's CPU) and
   returns 768-dimensional vectors; a matching pair scores cos 0.913 (0.914 on
   the CPU), an unrelated one 0.629 (0.628). These are similarities within
   each backend: how close an NPU vector is to the CPU one is not measured. The
-  440m is not measured.
+  440m and 740m are enabled in code, not measured
+  ([committed source](https://github.com/DenisovAV/flutter_edge_ai/blob/main/AGENTS.md)).
 - **A weight bank in %TEMP%.** The load copies the bundle's weights to
   **litert_ov_bank_&lt;hex&gt;.bin** (74.5 MB for the 270m) and the close deletes
-  it. From 1.17.0 the embedder marks it as its own while it is open, so the
+  it ([committed source](https://github.com/DenisovAV/flutter_edge_ai/blob/main/AGENTS.md)).
+  From 1.17.0 the embedder marks it as its own while it is open, so the
   next Intel NPU load can delete one an app left behind; see
   [Windows NPU](/docs/desktop).
 - The same rules as on Qualcomm: refused without **npu**, refused on any other
@@ -477,8 +572,8 @@ repository and revision as above, and load it as above.
   refused with the reason when **LiteRtDispatch.dll** is not beside the
   executable, and never moved to CPU.
 - **Its own profile id**: the CPU text id plus **-npu-ptl** (and **…-vis140**
-  for an image index), shared by the 270m and the 440m, whose text towers are
-  byte-identical.
+  for an image index), shared by the 270m, the 440m and the 740m, whose text
+  towers are byte-identical.
 
 ## EmbeddingGemma 1 (`.tflite` + tokenizer)
 

@@ -40,7 +40,7 @@ void main() {
     expect(FlutterEdgeAi.hasActiveModel(), isTrue);
 
     final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-    final chat = await inference.createChat(
+    final chat = await inference.openChat(
       modelType: model.modelType,
       maxOutputTokens: 64,
     );
@@ -60,6 +60,10 @@ void main() {
     debugPrint('[quickstart] reply: ${buffer.toString().trim()}');
     expect(buffer.toString().trim(), isNotEmpty);
 
-    await inference.close();
+    try {
+      await chat.close();
+    } finally {
+      await inference.close();
+    }
   }, timeout: const Timeout(Duration(minutes: 30)));
 }

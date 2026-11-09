@@ -82,7 +82,7 @@ void main() {
     final model = await FlutterEdgeAi.getActiveModel(defaults: defaults);
 
     try {
-      final session = await model.createSession();
+      final session = await model.openSession();
       String response;
       try {
         await session.addQueryChunk(

@@ -74,8 +74,12 @@ bool _alignedInThisIsolate = false;
 /// here (a later plain open of one already loaded changes nothing): a library
 /// that loads first keeps the handles it copied. The alignment only moves
 /// where the native log goes, so a failure in it is printed and the library
-/// opens anyway.
-DynamicLibrary openBundledWindowsLibrary(String name) {
+/// opens anyway. [preload] gets [name] after the alignment and before the
+/// open.
+DynamicLibrary openBundledWindowsLibrary(
+  String name, {
+  void Function(String name)? preload,
+}) {
   if (!_alignedInThisIsolate) {
     _alignedInThisIsolate = true;
     try {
@@ -100,6 +104,7 @@ DynamicLibrary openBundledWindowsLibrary(String name) {
       );
     }
   }
+  preload?.call(name);
   return DynamicLibrary.open(name);
 }
 

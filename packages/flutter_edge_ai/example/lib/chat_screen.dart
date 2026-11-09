@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'services/catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 import 'package:flutter_edge_ai_example/chat_widget.dart';
@@ -96,8 +99,23 @@ class ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _isInitializing = false; // Reset initialization flag
     _isModelInitialized = false; // Reset model flag
+    final currentChat = chat;
+    if (currentChat != null) {
+      unawaited(
+        currentChat.close().catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[ChatScreen] ❌ Failed to close chat: $error');
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stackTrace,
+              library: 'flutter_edge_ai example',
+              context: ErrorDescription('while closing the chat screen'),
+            ),
+          );
+        }),
+      );
+    }
     super.dispose();
-    // No need to call deleteModel - model cleanup handled by model.close() callback
   }
 
   Future<void> _initializeModel() async {
@@ -132,7 +150,31 @@ class ChatScreenState extends State<ChatScreen> {
       // `hfRepo`; everything else keeps the fromNetwork branch below.
       ModelRuntimeDefaults? hfDefaults;
 
-      if (widget.model.hfRepo != null) {
+      if (widget.model.catalogVariant case final variant?) {
+        // A model registry build: installModelFromCatalog takes the model
+        // type, file type, pinned URL and install name from it and checks the
+        // file's size.
+        final token = variant.file.gated
+            ? await AuthTokenService.loadToken()
+            : null;
+        final replaced = await installFromCatalogReplacingActive(
+          () => FlutterEdgeAi.installModelFromCatalog(variant, token: token)
+              .withProgress((percent) {
+                if (!mounted) return;
+                setState(() => _downloadPercent = percent);
+              })
+              .install(),
+          variant: variant,
+          confirm: (model, bytes) =>
+              askToReplaceActiveModel(context, model, bytes),
+        );
+        if (replaced case final CatalogInstallKept kept) {
+          if (mounted) {
+            leaveKeeping(context, kept);
+          }
+          return;
+        }
+      } else if (widget.model.hfRepo != null) {
         final installation = await installer
             .fromHuggingFace(widget.model.hfRepo!)
             .withProgress((percent) {
@@ -194,7 +236,7 @@ class ChatScreenState extends State<ChatScreen> {
 
       // Step 3: Create chat
       debugPrint('[ChatScreen] Step 3: Creating chat...');
-      chat = await model.createChat(
+      chat = await model.openChat(
         temperature: widget.model.temperature,
         randomSeed: 1,
         topK: widget.model.topK,

@@ -9,7 +9,7 @@
 //   .task     → gemma-3n-E2B-it-int4.task   (MediaPipe, Dart-level prepend)
 //   .litertlm → gemma-4-E2B-it.litertlm     (LiteRT-LM, native systemInstruction)
 //
-// For each engine, tests both createChat() and createSession() paths.
+// For each engine, tests both openChat() and openSession() paths.
 
 import 'dart:io';
 
@@ -18,6 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _androidModelDir = '/data/local/tmp/flutter_gemma_test';
 
@@ -39,10 +40,9 @@ List<({String path, ModelFileType fileType, String label})> _testConfigs() {
         ),
       ];
     case TargetPlatform.macOS:
-      final home = Platform.environment['HOME']!;
       final candidates = [
-        '$home/Documents/gemma-4-E2B-it.litertlm',
-        '$home/Documents/gemma-3n-E2B-it-int4.litertlm',
+        macosStagedFilePath('gemma-4-E2B-it.litertlm')!,
+        macosStagedFilePath('gemma-3n-E2B-it-int4.litertlm')!,
       ];
       final path = candidates.firstWhere(
         (p) => File(p).existsSync(),
@@ -85,144 +85,128 @@ void _runTests(String path, ModelFileType fileType, String label) {
       print('[Test] Model: $path');
     });
 
-    // ── createChat tests ─────────────────────────────────────────────────────
+    // ── openChat tests ───────────────────────────────────────────────────────
 
-    testWidgets(
-      'chat: systemInstruction is applied',
-      (tester) async {
-        final model = await _createModel(path, fileType);
-        try {
-          final chat = await model.createChat(
-            systemInstruction:
-                'You are a pirate. Always start your response with "Arrr!".',
-          );
-          await chat.addQueryChunk(const Message(text: 'Hello', isUser: true));
+    testWidgets('chat: systemInstruction is applied', (tester) async {
+      final model = await _createModel(path, fileType);
+      try {
+        final chat = await model.openChat(
+          systemInstruction:
+              'You are a pirate. Always start your response with "Arrr!".',
+        );
+        await chat.addQueryChunk(const Message(text: 'Hello', isUser: true));
 
-          final chunks = <String>[];
-          await tester.runAsync(() async {
-            await for (final r in chat.generateChatResponseAsync()) {
-              if (r is TextResponse) chunks.add(r.token);
-            }
-          });
+        final chunks = <String>[];
+        await tester.runAsync(() async {
+          await for (final r in chat.generateChatResponseAsync()) {
+            if (r is TextResponse) chunks.add(r.token);
+          }
+        });
 
-          final response = chunks.join();
-          print('[$label / chat / instruction] "$response"');
-          expect(response, isNotEmpty);
-          // The pirate instruction should influence the response
-          expect(
-            response.toLowerCase(),
-            anyOf(
-              contains('arr'),
-              contains('pirate'),
-              contains('ye'),
-              contains('matey'),
-              contains('ship'),
-              contains('ahoy'),
-            ),
-          );
-        } finally {
-          await model.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+        final response = chunks.join();
+        print('[$label / chat / instruction] "$response"');
+        expect(response, isNotEmpty);
+        // The pirate instruction should influence the response
+        expect(
+          response.toLowerCase(),
+          anyOf(
+            contains('arr'),
+            contains('pirate'),
+            contains('ye'),
+            contains('matey'),
+            contains('ship'),
+            contains('ahoy'),
+          ),
+        );
+      } finally {
+        await model.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-    testWidgets(
-      'chat: no systemInstruction — no regression',
-      (tester) async {
-        final model = await _createModel(path, fileType);
-        try {
-          final chat = await model.createChat();
-          await chat.addQueryChunk(
-            const Message(text: 'What is 2+2?', isUser: true),
-          );
+    testWidgets('chat: no systemInstruction — no regression', (tester) async {
+      final model = await _createModel(path, fileType);
+      try {
+        final chat = await model.openChat();
+        await chat.addQueryChunk(
+          const Message(text: 'What is 2+2?', isUser: true),
+        );
 
-          final chunks = <String>[];
-          await tester.runAsync(() async {
-            await for (final r in chat.generateChatResponseAsync()) {
-              if (r is TextResponse) chunks.add(r.token);
-            }
-          });
+        final chunks = <String>[];
+        await tester.runAsync(() async {
+          await for (final r in chat.generateChatResponseAsync()) {
+            if (r is TextResponse) chunks.add(r.token);
+          }
+        });
 
-          final response = chunks.join();
-          print('[$label / chat / no-instruction] "$response"');
-          expect(response, isNotEmpty);
-        } finally {
-          await model.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+        final response = chunks.join();
+        print('[$label / chat / no-instruction] "$response"');
+        expect(response, isNotEmpty);
+      } finally {
+        await model.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-    // ── createSession tests ───────────────────────────────────────────────────
+    // ── openSession tests ─────────────────────────────────────────────────────
 
-    testWidgets(
-      'session: systemInstruction is applied',
-      (tester) async {
-        final model = await _createModel(path, fileType);
-        try {
-          final session = await model.createSession(
-            systemInstruction:
-                'You are a pirate. Always start your response with "Arrr!".',
-          );
-          await session.addQueryChunk(
-            const Message(text: 'Hello', isUser: true),
-          );
+    testWidgets('session: systemInstruction is applied', (tester) async {
+      final model = await _createModel(path, fileType);
+      try {
+        final session = await model.openSession(
+          systemInstruction:
+              'You are a pirate. Always start your response with "Arrr!".',
+        );
+        await session.addQueryChunk(const Message(text: 'Hello', isUser: true));
 
-          final chunks = <String>[];
-          await tester.runAsync(() async {
-            await for (final token in session.getResponseAsync()) {
-              chunks.add(token);
-            }
-          });
+        final chunks = <String>[];
+        await tester.runAsync(() async {
+          await for (final token in session.getResponseAsync()) {
+            chunks.add(token);
+          }
+        });
 
-          final response = chunks.join();
-          print('[$label / session / instruction] "$response"');
-          expect(response, isNotEmpty);
-          expect(
-            response.toLowerCase(),
-            anyOf(
-              contains('arr'),
-              contains('pirate'),
-              contains('ye'),
-              contains('matey'),
-              contains('ship'),
-              contains('ahoy'),
-            ),
-          );
-        } finally {
-          await model.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+        final response = chunks.join();
+        print('[$label / session / instruction] "$response"');
+        expect(response, isNotEmpty);
+        expect(
+          response.toLowerCase(),
+          anyOf(
+            contains('arr'),
+            contains('pirate'),
+            contains('ye'),
+            contains('matey'),
+            contains('ship'),
+            contains('ahoy'),
+          ),
+        );
+      } finally {
+        await model.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-    testWidgets(
-      'session: no systemInstruction — no regression',
-      (tester) async {
-        final model = await _createModel(path, fileType);
-        try {
-          final session = await model.createSession();
-          await session.addQueryChunk(
-            const Message(text: 'What is 2+2?', isUser: true),
-          );
+    testWidgets('session: no systemInstruction — no regression', (
+      tester,
+    ) async {
+      final model = await _createModel(path, fileType);
+      try {
+        final session = await model.openSession();
+        await session.addQueryChunk(
+          const Message(text: 'What is 2+2?', isUser: true),
+        );
 
-          final chunks = <String>[];
-          await tester.runAsync(() async {
-            await for (final token in session.getResponseAsync()) {
-              chunks.add(token);
-            }
-          });
+        final chunks = <String>[];
+        await tester.runAsync(() async {
+          await for (final token in session.getResponseAsync()) {
+            chunks.add(token);
+          }
+        });
 
-          final response = chunks.join();
-          print('[$label / session / no-instruction] "$response"');
-          expect(response, isNotEmpty);
-        } finally {
-          await model.close();
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+        final response = chunks.join();
+        print('[$label / session / no-instruction] "$response"');
+        expect(response, isNotEmpty);
+      } finally {
+        await model.close();
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
   });
 }
 

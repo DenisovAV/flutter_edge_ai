@@ -1,3 +1,33 @@
+## 1.20.0
+- Enforce response formats with native LiteRT-LM constrained decoding.
+- Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and media.
+- Native: a turn cut short by closing its session or model ends with a `StateError`.
+- `openSession` sessions are native conversations where verified: media, stop rewind, full-context recovery.
+- LiteRT-LM 0.19 / `native-v0.19.0-a` uses the status-returning C API 1.0.
+- Require `flutter_edge_ai` ^2.6.0.
+
+## 1.19.2
+- Android GPU: the #364 prefill flush is set on Adreno only; other GPUs use the engine default (#763).
+- Require `flutter_edge_ai` >=2.5.5 <2.6.0.
+
+## 1.19.1
+- The native library loads and engine settings are made off the calling isolate (#756).
+- Model catalog: `LiteRtLmModels` and `LiteRtEmbedders`, every LiteRT build pinned to its commit (#734).
+- `LiteRtBindings` binds the opaque-options calls the speech-to-text GPU options use (#747).
+- The option-scoring self-check runs in debug and profile builds only.
+- `InferenceModel.createDecider` scores on the GPU too; the NPU stays refused.
+- Require `flutter_edge_ai` ^2.5.5.
+
+## 1.19.0
+- EmbeddingGemma 2 text on the GPU on Linux x64; image and audio towers stay on CPU.
+- Windows: Gemma 4 12B on an Intel GPU answers prompts under 512 tokens (`native-v0.18.0-h`, LiteRT-LM#4083).
+- macOS: apps with Swift Package Manager on need no Podfile block; requires macOS 14 (#689).
+- Require `flutter_edge_ai` ^2.5.4.
+
+## 1.18.0
+- `LiteRtLmEngine(thinkingTokenBudget:)` caps the thinking of each generation with thinking on (native).
+- Another package's libLiteRtLm in the app is refused at load with the cause and the fix (#722).
+
 ## 1.17.0
 - MediaTek NPU on Android, opt-in with `mediatek_npu: true`; run on a Dimensity 9300+ (MT6989).
 - Windows Intel NPU on OpenVINO 2026.4.1 (`native-v0.18.0-g`): Intel's 12B loads; stale `%TEMP%` banks are deleted.

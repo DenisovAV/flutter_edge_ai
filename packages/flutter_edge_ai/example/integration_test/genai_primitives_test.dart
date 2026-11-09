@@ -17,7 +17,9 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/genai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _gemma4Url =
     'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
@@ -25,8 +27,6 @@ const _gemma4Url =
 const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
 String get _androidDir => '/data/local/tmp/flutter_gemma_test';
-String get _macosDir =>
-    '${Platform.environment['HOME']}/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents';
 String get _linuxDir => '${Platform.environment['HOME']}/models';
 String get _windowsDir => '${Platform.environment['USERPROFILE']}\\models';
 
@@ -47,7 +47,7 @@ const _getWeatherTool = Tool(
 
 String? _localPath(String filename) {
   if (Platform.isAndroid) return '$_androidDir/$filename';
-  if (Platform.isMacOS) return '$_macosDir/$filename';
+  if (Platform.isMacOS) return macosStagedFilePath(filename);
   if (Platform.isLinux) return '$_linuxDir/$filename';
   if (Platform.isWindows) return '$_windowsDir\\$filename';
   if (Platform.isIOS) {
@@ -109,7 +109,7 @@ void main() {
 
     for (final path in [
       '$_androidDir/test_image.jpg',
-      '$_macosDir/test_image.jpg',
+      if (Platform.isMacOS) macosStagedFilePath('test_image.jpg')!,
       if (Platform.isLinux) '$_linuxDir/test_image.jpg',
       if (Platform.isWindows) '$_windowsDir\\test_image.jpg',
       '${Platform.environment['HOME']}/Downloads/test_image.jpg',
@@ -130,7 +130,7 @@ void main() {
 
     for (final path in [
       '$_androidDir/test_audio.wav',
-      '$_macosDir/test_audio.wav',
+      if (Platform.isMacOS) macosStagedFilePath('test_audio.wav')!,
       if (Platform.isLinux) '$_linuxDir/test_audio.wav',
       if (Platform.isWindows) '$_windowsDir\\test_audio.wav',
     ]) {
@@ -155,7 +155,7 @@ void main() {
 
   testWidgets('sendMessage — text', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
     final reply = await chat.sendMessage(
       ChatMessage.user('Say hello in one word.'),
     );
@@ -169,7 +169,7 @@ void main() {
 
   testWidgets('sendMessageStream — text', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
     final chunks = <ChatMessage>[];
     await for (final c in chat.sendMessageStream(
       ChatMessage.user('Count to three.'),
@@ -187,7 +187,7 @@ void main() {
       return;
     }
     final model = await _ensureModel(4096);
-    final chat = await model.createChat(supportImage: true);
+    final chat = await model.openChat(supportImage: true);
     final reply = await chat.sendMessage(
       ChatMessage.user(
         '',
@@ -211,7 +211,7 @@ void main() {
       return;
     }
     final model = await _ensureModel(4096);
-    final chat = await model.createChat(supportAudio: true);
+    final chat = await model.openChat(supportAudio: true);
     final reply = await chat.sendMessage(
       ChatMessage.user(
         '',
@@ -231,7 +231,7 @@ void main() {
 
   testWidgets('sendMessage — thinking', (tester) async {
     final model = await _ensureModel(4096);
-    final chat = await model.createChat(enableThinking: true);
+    final chat = await model.openChat(enableThinking: true);
     final reply = await chat.sendMessage(
       ChatMessage.user('Why is the sky blue?'),
     );
@@ -251,7 +251,7 @@ void main() {
 
   testWidgets('sendMessage — tool call round-trip', (tester) async {
     final model = await _ensureModel(4096);
-    final chat = await model.createChat(
+    final chat = await model.openChat(
       supportsFunctionCalls: true,
       tools: const [_getWeatherTool],
       modelType: ModelType.gemma4,
@@ -315,7 +315,7 @@ void main() {
 
   testWidgets('generateContent — single user message', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
     final reply = await chat.generateContent([ChatMessage.user('Say hello.')]);
     expect(reply.role, ChatMessageRole.model);
     expect(
@@ -327,7 +327,7 @@ void main() {
 
   testWidgets('generateContentStream — single user message', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
     final chunks = <ChatMessage>[];
     await for (final c in chat.generateContentStream([
       ChatMessage.user('Say hello.'),
@@ -341,7 +341,7 @@ void main() {
 
   testWidgets('generateContent — multi-turn list', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
     final reply = await chat.generateContent([
       ChatMessage.user('My name is Sasha.'),
       ChatMessage.model('Nice to meet you, Sasha.'),
@@ -356,7 +356,7 @@ void main() {
 
   testWidgets('sendMessage — multi-turn history retained', (tester) async {
     final model = await _ensureModel(1024);
-    final chat = await model.createChat();
+    final chat = await model.openChat();
 
     final r1 = await chat.sendMessage(ChatMessage.user('My name is Sasha.'));
     expect(

@@ -21,8 +21,10 @@ class StatusBanner extends StatelessWidget {
       color: theme.colorScheme.errorContainer,
       child: Row(
         children: [
-          Icon(Icons.warning_amber_rounded,
-              color: theme.colorScheme.onErrorContainer),
+          Icon(
+            Icons.warning_amber_rounded,
+            color: theme.colorScheme.onErrorContainer,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -31,10 +33,7 @@ class StatusBanner extends StatelessWidget {
             ),
           ),
           if (onAction != null)
-            TextButton(
-              onPressed: onAction,
-              child: Text(actionLabel),
-            ),
+            TextButton(onPressed: onAction, child: Text(actionLabel)),
         ],
       ),
     );

@@ -80,7 +80,7 @@ Future<void> _loadOnGpu(String file, ModelFileType fileType) async {
   }
   await _mem('$file after load');
   try {
-    final session = await model.createSession();
+    final session = await model.openSession();
     try {
       await session.addQueryChunk(
         const Message(text: 'Write one sentence about the sea.', isUser: true),

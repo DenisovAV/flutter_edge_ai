@@ -1,5 +1,19 @@
+## 0.9.1
+- Web: closing a model releases its Transformers.js pipeline (#800).
+
+## 0.9.0
+- `responseFormat` uses ORT-GenAI guidance on macOS arm64 (#195).
+- Web `openSession`/`openChat` are independent; cancelling a stream is turn-scoped (#703).
+- Require `flutter_edge_ai` ^2.6.0.
+
+## 0.8.0
+- Native `openSession` / `openChat` open independent sessions, capped at 2 on phones; **breaking** for `GenAiClient` implementers (#703).
+- Bundle ORT-GenAI 0.17.0 (was 0.14.0) on every host, with its telemetry switched off (#704).
+- Require `flutter_edge_ai` >=2.3.0 <2.6.0.
+
 ## 0.6.0
 - Windows ARM64: bundle ORT and ORT-GenAI archives for both engines (#326).
+- A closed GenAI client fails through the returned Future (#718).
 
 ## 0.5.10
 - README: what `activeBackend` reports, natively and on the web.

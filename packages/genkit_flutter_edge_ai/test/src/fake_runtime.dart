@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter_edge_ai/engine.dart'
+    show ChatTurnHooks, EngineTurn, ResolvedChatRequest, SessionRequest;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as gemma;
 import 'package:genkit_flutter_edge_ai/src/flutter_edge_ai_runtime.dart';
 
@@ -64,11 +66,20 @@ class FakeRuntime implements FlutterEdgeAiRuntime {
   }
 }
 
-/// Fake inference model that returns a [FakeInferenceChat] from [createChat].
+/// Fake inference model that backs each prompt-only [openChat] with a
+/// [FakeInferenceChat].
 class FakeInferenceModel extends gemma.InferenceModel {
   int _maxTokens = 1024;
   FakeInferenceChat? chatToReturn;
-  int createChatCallCount = 0;
+  int promptOpenChatCallCount = 0;
+
+  /// Without [chatToReturn], each prompt-only [openChat] gets a fresh fake
+  /// chat from this (a plain one when unset) and records it in [chats].
+  FakeInferenceChat Function()? newChat;
+
+  /// The fake chats backing prompt-only [openChat] calls, in order.
+  final List<FakeInferenceChat> chats = [];
+  final List<FakeInferenceChat> _pendingPlainChats = [];
 
   @override
   int get maxTokens => _maxTokens;
@@ -102,37 +113,73 @@ class FakeInferenceModel extends gemma.InferenceModel {
   lastSampling;
 
   @override
-  Future<gemma.InferenceChat> createChat({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    int tokenBuffer = 256,
-    String? loraPath,
-    bool? supportImage,
-    bool? supportAudio,
-    List<gemma.Tool> tools = const [],
-    bool? supportsFunctionCalls,
-    bool enableThinking = false,
-    gemma.ModelType? modelType,
-    gemma.ToolChoice toolChoice = gemma.ToolChoice.auto,
-    String? systemInstruction,
-    int? maxFunctionBufferLength,
-    int? maxOutputTokens,
-  }) async {
-    createChatCallCount++;
-    lastToolChoice = toolChoice;
-    lastSystemInstruction = systemInstruction;
-    lastMaxFunctionBufferLength = maxFunctionBufferLength;
-    lastMaxOutputTokens = maxOutputTokens;
+  ChatTurnHooks createChatTurnHooks(ResolvedChatRequest request) {
+    if (request.responseFormat != null) {
+      return super.createChatTurnHooks(request);
+    }
+    promptOpenChatCallCount++;
+    lastToolChoice = request.toolChoice;
+    lastSystemInstruction = request.systemInstruction;
+    lastMaxFunctionBufferLength = request.maxFunctionBufferLength;
+    lastMaxOutputTokens = request.maxOutputTokens;
     lastSampling = (
-      temperature: temperature,
-      topK: topK,
-      topP: topP,
-      randomSeed: randomSeed,
+      temperature: request.temperature,
+      topK: request.topK,
+      topP: request.topP,
+      randomSeed: request.randomSeed,
     );
-    return chatToReturn ?? FakeInferenceChat();
+    final chat = chatToReturn ?? newChat?.call() ?? FakeInferenceChat();
+    chats.add(chat);
+    _pendingPlainChats.add(chat);
+    return chat._turns;
   }
+
+  /// What the model enforces; null = core's default, which refuses every
+  /// format.
+  gemma.StructuredOutputSupport? structuredSupport;
+
+  @override
+  gemma.StructuredOutputSupport get engineStructuredOutputSupport =>
+      structuredSupport ?? super.engineStructuredOutputSupport;
+
+  /// The engine's own refusal, by call (1 for the first): core asks once in
+  /// `refusalFor` and again in `openChat`.
+  gemma.ResponseFormatUnsupportedException? Function(int call)? refusal;
+  int refusalCalls = 0;
+
+  @override
+  gemma.ResponseFormatUnsupportedException? engineRefusalFor(
+    gemma.JsonSchemaResponseFormat format,
+  ) => refusal?.call(++refusalCalls);
+
+  /// What core's `openChat` asked the engine for, one per session it opened.
+  final List<SessionRequest> sessionRequests = [];
+
+  /// The sessions core's `openChat` opened, in order.
+  final List<FakeStructuredSession> openedSessions = [];
+
+  /// Each session core's `openChat` opens comes from this (a session that
+  /// answers `{}` when unset).
+  FakeStructuredSession Function()? newSession;
+
+  @override
+  Future<gemma.InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    if (request.responseFormat == null && _pendingPlainChats.isNotEmpty) {
+      return _FakeChatSession(_pendingPlainChats.removeAt(0));
+    }
+    sessionRequests.add(request);
+    final session = newSession?.call() ?? FakeStructuredSession();
+    openedSessions.add(session);
+    return session;
+  }
+
+  @override
+  List<gemma.InferenceModelSession> get engineSessions => [
+    for (final session in openedSessions)
+      if (!session.closed) session,
+  ];
 
   @override
   Future<gemma.InferenceModelSession> createSession({
@@ -164,19 +211,46 @@ class FakeInferenceModel extends gemma.InferenceModel {
 }
 
 /// Fake chat that returns preconfigured responses.
+///
+/// Core runs both generation paths through one [ChatTurnHooks.responses], so
+/// whichever of [blockingResponse] and [streamingResponses] a test assigned
+/// last is what every turn produces; [generateChatResponse] collects it.
 class FakeInferenceChat extends gemma.InferenceChat {
-  FakeInferenceChat() : super(sessionCreator: null, maxTokens: 1024);
+  FakeInferenceChat() : this._(_FakeTurns());
 
-  /// Response returned by [generateChatResponse].
-  gemma.ModelResponse blockingResponse = const gemma.TextResponse(
+  FakeInferenceChat._(this._turns)
+    : super(sessionCreator: null, maxTokens: 1024, turnHooks: _turns) {
+    _turns.chat = this;
+  }
+
+  final _FakeTurns _turns;
+
+  /// The turn when a test scripted it as one response, as a blocking call
+  /// returns it.
+  gemma.ModelResponse get blockingResponse => _blockingResponse;
+  set blockingResponse(gemma.ModelResponse response) {
+    _blockingResponse = response;
+    _streamed = false;
+  }
+
+  gemma.ModelResponse _blockingResponse = const gemma.TextResponse(
     'fake response',
   );
 
-  /// Responses yielded by [generateChatResponseAsync].
-  List<gemma.ModelResponse> streamingResponses = [
+  /// The turn when a test scripted it as chunks, as a stream yields them.
+  List<gemma.ModelResponse> get streamingResponses => _streamingResponses;
+  set streamingResponses(List<gemma.ModelResponse> responses) {
+    _streamingResponses = responses;
+    _streamed = true;
+  }
+
+  List<gemma.ModelResponse> _streamingResponses = [
     const gemma.TextResponse('fake '),
     const gemma.TextResponse('response'),
   ];
+
+  /// Which script was assigned last; the defaults read the same either way.
+  bool _streamed = false;
 
   /// Messages received via [addQueryChunk].
   final List<gemma.Message> receivedMessages = [];
@@ -184,14 +258,13 @@ class FakeInferenceChat extends gemma.InferenceChat {
   int addQueryChunkCallCount = 0;
 
   /// What the chat's session reports after a generation; without it the
-  /// session is unset, as on an engine that reports nothing.
+  /// session is unset, as on an engine that reports nothing. A closed chat
+  /// has no session either.
   gemma.SessionMetrics? sessionMetrics;
 
   @override
-  gemma.InferenceModelSession get session => switch (sessionMetrics) {
-    final metrics? => _MetricsSession(metrics),
-    null => throw StateError('FakeInferenceChat has no session'),
-  };
+  gemma.InferenceModelSession get session =>
+      _MetricsSession(sessionMetrics, closed: closeCallCount > 0);
 
   @override
   Future<void> initSession() async {
@@ -227,18 +300,26 @@ class FakeInferenceChat extends gemma.InferenceChat {
   /// When set, the next [generateChatResponse] fails with it (once).
   Object? generationError;
 
-  /// Called as [generateChatResponse] starts.
+  /// Called as a turn scripted with [blockingResponse] starts.
   void Function()? onGenerate;
 
-  @override
-  Future<gemma.ModelResponse> generateChatResponse() async {
+  Stream<gemma.ModelResponse> _turn() async* {
+    if (_streamed) {
+      for (final (index, response) in streamingResponses.indexed) {
+        yield response;
+        // With a gate, the stream pauses after its first chunk until the
+        // gate opens, so a test can cancel mid-stream.
+        if (index == 0) await generationGate?.future;
+      }
+      return;
+    }
     onGenerate?.call();
     await generationGate?.future;
     if (generationError case final error?) {
       generationError = null;
       throw error;
     }
-    return blockingResponse;
+    yield blockingResponse;
   }
 
   /// When true, [stopGeneration] throws before returning its future.
@@ -260,18 +341,169 @@ class FakeInferenceChat extends gemma.InferenceChat {
     if (stopError case final error?) throw error;
   }
 
+  /// Closes that have completed, failed ones included. A close completes a
+  /// turn of the event loop after it is called, so a caller that does not
+  /// await it is caught counting zero.
+  int closeCallCount = 0;
+
+  /// When set, [close] fails with it.
+  Object? closeError;
+
   @override
-  Stream<gemma.ModelResponse> generateChatResponseAsync() async* {
-    for (final (index, response) in streamingResponses.indexed) {
-      yield response;
-      // With a gate, the stream pauses after its first chunk until the gate
-      // opens, so a test can cancel mid-stream.
-      if (index == 0) await generationGate?.future;
+  Future<void> close() async {
+    await Future<void>.delayed(Duration.zero);
+    closeCallCount++;
+    if (closeError case final error?) throw error;
+  }
+}
+
+/// The engine session under a prompt-only core [gemma.InferenceModel.openChat].
+/// Its turn hooks use [chat] for replies; the remaining operations delegate so
+/// existing tests can script and inspect the same fake chat.
+final class _FakeChatSession extends gemma.InferenceModelSession {
+  _FakeChatSession(this.chat);
+
+  final FakeInferenceChat chat;
+
+  @override
+  EngineTurn startTurn() =>
+      throw StateError('The fake chat supplies responses');
+
+  @override
+  Stream<String> getResponseAsync() =>
+      throw StateError('The fake chat supplies responses');
+
+  @override
+  Future<String> getResponse() =>
+      throw StateError('The fake chat supplies responses');
+
+  @override
+  Future<int> sizeInTokens(String text) async => text.length;
+
+  @override
+  Future<void> addQueryChunk(gemma.Message message) =>
+      chat.addQueryChunk(message);
+
+  @override
+  Future<void> stopGeneration() => chat.stopGeneration();
+
+  @override
+  gemma.SessionMetrics getSessionMetrics() =>
+      chat.sessionMetrics ?? gemma.SessionMetrics();
+
+  @override
+  Future<void> close() => chat.close();
+}
+
+/// An engine session for core's `openChat`: each turn streams [tokens] and
+/// ends with [end], as an engine that reports how its turns end does.
+final class FakeStructuredSession extends gemma.InferenceModelSession {
+  FakeStructuredSession({
+    this.tokens = const ['{}'],
+    this.end = gemma.TurnEnd.endOfSequence,
+  });
+
+  List<String> tokens;
+  gemma.TurnEnd end;
+
+  /// When set, a turn pauses after its first token until it completes;
+  /// [stopGeneration] completes it and ends the turn as stopped.
+  Completer<void>? gate;
+
+  final List<gemma.Message> received = [];
+  int turns = 0;
+  int stops = 0;
+  bool closed = false;
+
+  /// When set, the next turn fails with it before any text.
+  Object? startError;
+
+  /// When set, a turn's text fails with it before any token, as an engine
+  /// that refused the input does.
+  Object? errorBeforeText;
+
+  /// When set, a turn fails with it after its first token.
+  Object? errorAfterFirst;
+
+  /// When true, a stopped turn still ends with [end], as an engine whose
+  /// stop raced another end reports it.
+  bool endIgnoresStop = false;
+
+  @override
+  EngineTurn startTurn() {
+    if (startError case final error?) {
+      startError = null;
+      throw error;
     }
+    turns++;
+    final ended = Completer<gemma.TurnEnd>();
+    Stream<String> text() async* {
+      try {
+        if (errorBeforeText case final error?) throw error;
+        for (final (index, token) in tokens.indexed) {
+          yield token;
+          if (index == 0) {
+            await gate?.future;
+            if (errorAfterFirst case final error?) throw error;
+          }
+          if (stops > 0) break;
+        }
+      } finally {
+        // At the end of the text, also when the consumer cancels it.
+        if (!ended.isCompleted) {
+          ended.complete(
+            stops > 0 && !endIgnoresStop ? gemma.TurnEnd.stopped : end,
+          );
+        }
+      }
+    }
+
+    return EngineTurn(text: text(), end: ended.future);
   }
 
   @override
-  Future<void> close() async {}
+  Stream<String> getResponseAsync() => startTurn().text;
+
+  @override
+  Future<String> getResponse() => getResponseAsync().join();
+
+  @override
+  Future<int> sizeInTokens(String text) async => text.length;
+
+  @override
+  Future<void> addQueryChunk(gemma.Message message) async =>
+      received.add(message);
+
+  @override
+  Future<void> stopGeneration() async {
+    stops++;
+    final gate = this.gate;
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
+
+  @override
+  gemma.SessionMetrics getSessionMetrics() =>
+      gemma.SessionMetrics(outputTokens: tokens.length);
+
+  @override
+  Future<void> close() async => closed = true;
+}
+
+/// The turns of a [FakeInferenceChat], as core's chat asks for them.
+final class _FakeTurns extends ChatTurnHooks {
+  late final FakeInferenceChat chat;
+
+  @override
+  Stream<gemma.ModelResponse> responses(
+    gemma.InferenceModelSession session, {
+    required int tokenBuffer,
+  }) => chat._turn();
+
+  @override
+  Future<void>? addQueryChunk(
+    gemma.InferenceModelSession session,
+    gemma.Message message,
+  ) => chat.addQueryChunk(message);
 }
 
 /// Fake embedding model in the shape core 2.3 requires of a fake: a `final
@@ -292,6 +524,10 @@ final class FakeEmbeddingModel extends gemma.EmbeddingModel {
   Object? failWith;
 
   int embedAllCallCount = 0;
+  gemma.CancelToken? lastCancelToken;
+
+  /// Called as [embedAll] starts, before anything else.
+  void Function()? onEmbedAll;
   List<String> lastTexts = [];
   gemma.TaskType? lastTaskType;
   bool closed = false;
@@ -325,6 +561,8 @@ final class FakeEmbeddingModel extends gemma.EmbeddingModel {
     gemma.CancelToken? cancelToken,
   }) async {
     embedAllCallCount++;
+    onEmbedAll?.call();
+    lastCancelToken = cancelToken;
     lastTexts = [for (final input in inputs) input.text ?? ''];
     lastTaskType = taskType;
     _refuseIfUnusable();
@@ -358,14 +596,22 @@ final class FakeEmbeddingModel extends gemma.EmbeddingModel {
   }
 }
 
-/// A session that only reports its metrics.
+/// A session that only reports its metrics, and fails to when it has none,
+/// as on an engine that reports nothing.
 class _MetricsSession implements gemma.InferenceModelSession {
-  _MetricsSession(this.metrics);
+  _MetricsSession(this.metrics, {required this.closed});
 
-  final gemma.SessionMetrics metrics;
+  final gemma.SessionMetrics? metrics;
+
+  /// The chat was closed: a closed session reports nothing.
+  final bool closed;
 
   @override
-  gemma.SessionMetrics getSessionMetrics() => metrics;
+  gemma.SessionMetrics getSessionMetrics() {
+    if (closed) throw StateError('FakeInferenceChat is closed');
+    return metrics ??
+        (throw StateError('FakeInferenceChat has no session metrics'));
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

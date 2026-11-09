@@ -80,6 +80,52 @@ void main() {
     });
   });
 
+  group('the media towers are the two keys LiteRT-LM builds an executor for '
+      '(kTfLiteVisionEncoder, kTfLiteAudioEncoderHw)', () {
+    test('on the real headers: the 440m and the 740m carry exactly those keys '
+        'beside their adapters and end-of markers', () {
+      final t440 = readLitertlmModelTypes(_header440m);
+      final t740 = readLitertlmModelTypes(_header740m);
+      expect(t440, containsAll(['tf_lite_vision_encoder']));
+      expect(
+        t740,
+        containsAll(['tf_lite_vision_encoder', 'tf_lite_audio_encoder_hw']),
+      );
+      expect(litertlmHasVisionTower(t440), isTrue);
+      expect(litertlmHasAudioTower(t440), isFalse);
+      expect(litertlmHasVisionTower(t740), isTrue);
+      expect(litertlmHasAudioTower(t740), isTrue);
+      final t270 = readLitertlmModelTypes(_header270m);
+      expect(litertlmHasVisionTower(t270), isFalse);
+      expect(litertlmHasAudioTower(t270), isFalse);
+    });
+
+    test('an adapter or an end-of marker alone is no tower: upstream builds '
+        'no executor for it, and naming its backend would fail create', () {
+      for (final types in [
+        ['tf_lite_end_of_vision'],
+        ['tf_lite_vision_adapter'],
+        ['tf_lite_end_of_vision', 'tf_lite_vision_adapter'],
+        ['tf_lite_vision_encoder_v2'],
+        ['tf_lite_end_of_audio', 'tf_lite_end_of_vision'],
+      ]) {
+        expect(litertlmHasVisionTower(types), isFalse, reason: '$types');
+      }
+      for (final types in [
+        ['tf_lite_end_of_audio'],
+        ['tf_lite_audio_adapter'],
+        ['tf_lite_audio_encoder'],
+        ['tf_lite_audio_frontend', 'tf_lite_end_of_vision'],
+      ]) {
+        expect(litertlmHasAudioTower(types), isFalse, reason: '$types');
+      }
+      expect(litertlmHasVisionTower(['tf_lite_vision_encoder']), isTrue);
+      expect(litertlmHasAudioTower(['tf_lite_audio_encoder_hw']), isTrue);
+      expect(litertlmHasVisionTower(['tf_lite_audio_encoder_hw']), isFalse);
+      expect(litertlmHasAudioTower(['tf_lite_vision_encoder']), isFalse);
+    });
+  });
+
   test('a model_type whose value is not a string is not read as one', () {
     // Byte 1539 of the 740m header is the union discriminator (value_type)
     // of the audio encoder section's model_type pair: 9, StringValue. As 5

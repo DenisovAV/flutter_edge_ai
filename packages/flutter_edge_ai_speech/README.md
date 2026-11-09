@@ -18,7 +18,8 @@ native bundle and exposes the LiteRT C API bindings (`LiteRtBindings`) used here
   and **Parakeet** (log-mel) via `LiteRtSttBackend`.
 - **TTS** works end-to-end for **Matcha** (`litert-community/Matcha-TTS`, 22050 Hz
   — a 3-graph LiteRT pipeline: encoder → CFM decoder → HiFi-GAN vocoder,
-  producing 16-bit PCM), **Qwen3-TTS** and **Inflect-Nano-v2** (both 24000 Hz) via
+  producing 16-bit PCM, plus a neural G2P graph for words missing from its
+  dictionary), **Qwen3-TTS** and **Inflect-Nano-v2** (both 24000 Hz) via
   `LiteRtTtsBackend`; `kokoro`/`supertonic` are follow-ons.
 
 Both backends are pure factories (`canHandle` always `true`) — the *model* is
@@ -43,10 +44,9 @@ await FlutterEdgeAi.initialize(
   ttsBackends: [LiteRtTtsBackend()],
 );
 
-// Text-to-speech (Matcha): install the bundle once, then synthesize.
-await FlutterEdgeAi.installTts()
-    .fromNetwork('https://huggingface.co/litert-community/Matcha-TTS/resolve/main/')
-    .ofType(TtsModelType.matcha)
+// Text-to-speech (Matcha): install the registry's bundle once (pinned to a
+// Hugging Face commit), then synthesize.
+await FlutterEdgeAi.installTts().fromCatalog(LiteRtSpeechModels.matchaTts.bundle)
     .install();
 
 final synth = await FlutterEdgeAi.getActiveTts();
@@ -67,20 +67,61 @@ A voice can also ship with the app: `fromAsset(directory)` and
 `<type>__<file>` (`matcha__config.json`). See
 [Voice files shipped with the app](https://flutteredge.ai/docs/speech#voice-files-shipped-with-the-app).
 
-Speech-to-text installs a model and a tokenizer:
+Speech-to-text installs a model and a tokenizer; a catalog build carries both:
 
 ```dart
-await FlutterEdgeAi.installStt()
-    .modelFromNetwork('https://huggingface.co/litert-community/whisper-tiny/resolve/main/whisper_tiny_30s_f32.tflite')
-    .tokenizerFromNetwork('https://huggingface.co/openai/whisper-tiny/resolve/main/tokenizer.json')
-    .ofType(SttModelType.whisper)
+await FlutterEdgeAi.installStt().fromCatalog(LiteRtSpeechModels.whisperTiny.f32)
     .install();
 ```
+
+`LiteRtSpeechModels` (with `flutter_edge_ai` 2.5.5) lists every
+speech-to-text and text-to-speech build, each pinned to a Hugging Face commit;
+`installStt().fromCatalog(…)` and `installTts().fromCatalog(…)` install one,
+and their other sources still install your own files. Every build, and where each has
+been run: [Model Registry](https://flutteredge.ai/docs/registry).
 
 `transcribe` takes raw 16 kHz mono 16-bit little-endian PCM (`Uint8List`), not a
 WAV file. Each model has a fixed window — 5 s for moonshine and Parakeet, 30 s
 for Whisper; shorter audio is zero-padded and longer audio is silently
 truncated.
+
+### Speech-to-text models on phones
+
+Measured on a Galaxy S23 (Snapdragon 8 Gen 2, Adreno 740, 8 GB), one 5 s
+window, steady state over repeated transcriptions
+([#747](https://github.com/DenisovAV/flutter_edge_ai/issues/747)):
+
+| File | Backend | Per window | Anonymous memory |
+|------|---------|------------|------------------|
+| `moonshine_tiny_5s_f32.tflite` | GPU | ~0.25 s | ~0.44–0.68 GB |
+| `moonshine_tiny_5s_f32.tflite` | CPU | ~0.8 s | ~0.36 GB |
+| `parakeet_ctc_0.6b_5s_i8.tflite` | CPU | ~1.5 s | ~0.83 GB |
+| `parakeet_ctc_0.6b_5s_f32.tflite` | CPU | ~2.4 s | ~2.4 GB |
+| `parakeet_ctc_0.6b_5s_f32.tflite` | GPU | does not load | — |
+
+- Parakeet f32 does not load on the GPU of that phone: the system kills the
+  app during `getActiveStt`, before the first transcription. Use the int8 file
+  from the same repository, `parakeet_ctc_0.6b_5s_i8.tflite`, on the CPU: it
+  transcribed the same text as the f32 file.
+- On the GPU, speech-to-text asks LiteRT for fp32; text-to-speech keeps
+  LiteRT's defaults. At LiteRT's default (fp16), moonshine f32 returned NaN
+  logits at its first decode step on Adreno 740; with the fp32 request it
+  transcribes the same text as on the CPU, about three times faster. Whisper
+  tiny gave the same text in both modes, with no NaN: 4.6–5.0 s per 30 s window
+  with the request over two runs, ~4.7 s without it in one run on an
+  experimental build. Measured on Adreno 740 only, not on Mali, Metal or
+  WebGPU.
+- On Adreno 740 the int8 (`_i8`) files did not compile on the GPU without
+  constant tensor sharing, which speech leaves off: set together with four
+  other GPU options, it made moonshine f32 abort inside LiteRT
+  ([LiteRT-LM#3685](https://github.com/google-ai-edge/LiteRT-LM/issues/3685)).
+  Their GPU load fails with an error naming the file; run them on the CPU.
+- Matcha TTS does not load on the GPU of that phone: its neural G2P graph
+  (`dp_g2p_matcha_fp16.tflite`, the fallback for words missing from its
+  dictionary) is compiled when the voice loads and fails to compile there
+  (LiteRT status 504), as it did before #747, so the load fails whatever the
+  text. Run Matcha on the CPU: 6.9–8.0 s for a sentence of 3.4 s over three
+  runs.
 
 ### Speech-to-text output language (Whisper)
 
@@ -117,8 +158,11 @@ tools-enabled chat arrives without a handler. Use `VoiceSession.custom` for an
 ```dart
 final recognizer = await FlutterEdgeAi.getActiveStt();
 final synthesizer = await FlutterEdgeAi.getActiveTts();
-final chat = await (await FlutterEdgeAi.getActiveModel(maxTokens: 1024))
-    .createChat(tokenBuffer: 256, maxOutputTokens: 128); // no tools, short replies
+final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+final chat = await model.openChat(
+  tokenBuffer: 256,
+  maxOutputTokens: 128,
+); // no tools, short replies
 
 final session = VoiceSession.fromChat(
   recognizer: recognizer, chat: chat, synthesizer: synthesizer);
@@ -133,7 +177,15 @@ await for (final event in session.runTurn(pcm16kMono)) {
   }
 }
 // Barge-in: await session.interrupt();
+
+await chat.close();
+await model.close();
+await recognizer.close();
+await synthesizer.close();
 ```
+
+`VoiceSession` does not own these handles; run this cleanup from the feature's
+async teardown.
 
 `VoiceSession` owns no microphone or player — the app captures PCM
 (`package:record`) and plays the reply (the example's own
@@ -142,7 +194,7 @@ await for (final event in session.runTurn(pcm16kMono)) {
 
 ### Audio turns: the model hears the recording
 
-A model with an audio encoder (Gemma 4 E2B/E4B) can take the recording itself.
+A model with an audio encoder (Gemma 4 or Gemma 3n E2B/E4B, as `.litertlm`) can take the recording itself.
 `runAudioTurn` skips speech-to-text: it wraps the PCM in a WAV header,
 `fromChat` sends that to the chat, and the reply is spoken as in `runTurn`. Load the
 model and create the chat with `supportAudio: true`:
@@ -152,13 +204,18 @@ final model = await FlutterEdgeAi.getActiveModel(
   maxTokens: 4096,
   supportAudio: true, // loads the audio encoder
 );
-final chat = await model.createChat(supportAudio: true, maxOutputTokens: 128);
+final chat = await model.openChat(supportAudio: true, maxOutputTokens: 128);
 final session = VoiceSession.fromChat(
   recognizer: recognizer, chat: chat, synthesizer: synthesizer);
 
 await for (final event in session.runAudioTurn(pcm16kMono)) {
   // the events of runTurn, without VoiceTranscriptEvent
 }
+
+await chat.close();
+await model.close();
+await recognizer.close();
+await synthesizer.close();
 ```
 
 Barge-in and the one-turn-at-a-time rule work as in `runTurn`; the complete and
@@ -166,7 +223,7 @@ interrupted events carry an empty transcript, and a recording under 2 bytes (a
 push-to-talk tap) completes without asking the model. After a barge-in a
 `.litertlm` chat keeps what was said in earlier audio turns with
 `flutter_edge_ai_litertlm` 1.15.0 and later; with 1.14.0 and earlier, and
-on the NPU, it rebuilds its conversation from text and forgets it. `createChat` takes
+on the NPU, it rebuilds its conversation from text and forgets it. `openChat` takes
 `supportAudio` from the model unless you pass it on native `.litertlm`, MediaPipe
 Android/iOS and `flutter_edge_ai_llama` models; other engines default it to
 false. On a chat whose
@@ -181,14 +238,18 @@ Audio input is native-only.
 |----------|-----|-----|
 | Android / iOS | ✅ FFI (Android: `arm64-v8a`, `minSdk 30`) | ✅ FFI (Android: `arm64-v8a`, `minSdk 30`) |
 | macOS / Linux / Windows | ✅ FFI | ✅ FFI |
-| Web | 🚧 stub `UnsupportedError` | 🚧 stub `UnsupportedError` |
+| Web | ❌ stub `UnsupportedError` | ❌ stub `UnsupportedError` |
 
-On macOS the app needs the same setup as every LiteRT-LM feature: Swift Package
-Manager turned off for the app in `pubspec.yaml` and the `post_install` block in
-`macos/Podfile` (an app that already has a `macos/Podfile` keeps Swift Package
-Manager on and only needs the block), see [Desktop → macOS](https://flutteredge.ai/docs/desktop#macos).
-Without it STT and TTS fail to load, and since `flutter_edge_ai_litertlm` 1.17.0
-the error says so ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
+The grid is where the package runs, not where each model has been run:
+Parakeet CTC (2.35 GB) is documented on desktop only and Qwen3-TTS on macOS
+only. Per build and platform: https://flutteredge.ai/docs/registry.
+
+On macOS the app needs the same setup as every LiteRT-LM feature, see
+[Desktop → macOS](https://flutteredge.ai/docs/desktop#macos): a macOS 14.0
+deployment target, and with Swift Package Manager off the `post_install` block
+in `macos/Podfile` (with it on, from `flutter_edge_ai_litertlm` 1.19.0, nothing
+more). Without the companion libraries STT and TTS fail to load, and the error
+says so ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)).
 
 No `hook/build.dart` of its own — the native library is bundled by
 `flutter_edge_ai_litertlm`'s Native Assets hook and shared transitively.

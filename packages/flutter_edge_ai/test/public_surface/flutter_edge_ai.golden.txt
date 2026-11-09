@@ -8,6 +8,9 @@ AssetSource class final
 BundledSource class final
 CancelToken class
 CanceledError class final
+CatalogModel class abstract base
+CatalogVariant class sealed
+ContextLimitException class final
 CorruptionAction enum
 CorruptionDetectionResult class
 Decider class abstract base experimental
@@ -32,6 +35,7 @@ DownloadProgress class
 EdgeAiLogLevel enum
 EmbedderCloseTimeoutException class final
 EmbedderClosedException class final
+EmbedderVariant class abstract base
 EmbeddingBackendProvider class abstract base
 EmbeddingCancelledException class final
 EmbeddingDeciderCalibration class final experimental
@@ -68,6 +72,7 @@ ImageProcessingException class
 ImageProcessor class
 ImageTokenizationException class
 ImageTokenizer class
+IncompleteStructuredOutputException class final
 InferenceChat class
 InferenceDeciderCalibration class final experimental
 InferenceEngineProvider class abstract
@@ -76,9 +81,14 @@ InferenceInstallationBuilder class
 InferenceModel class abstract
 InferenceModelSession class abstract
 InferenceModelSpec class
+InferenceVariant class abstract base
+JsonSchemaResponseFormat class final
 MediaPosition enum
 Message class
 MessageType enum
+ModelArtifact class final
+ModelCatalog class abstract base
+ModelCatalogSource class abstract interface
 ModelFile class abstract
 ModelFileManager class abstract
 ModelFileType enum
@@ -91,13 +101,17 @@ ModelSpec class abstract
 ModelStorageException class
 ModelThinkingFilter class
 ModelType enum
+ModelValidationException class
 MultimodalImageHandler class
 MultimodalImageResult class
 MultimodalOrder class final
 NetworkError class final
 NetworkSource class final
 NoActiveModelError class
+NonConformingStructuredOutputException class final
 NotFoundError class final
+NpuTarget class abstract base
+NpuVendor class final
 OrphanedFileInfo class
 ParallelFunctionCallResponse class
 PreferredBackend enum
@@ -109,6 +123,8 @@ ResolvedHfFile class
 ResolvedHfModel class
 ResolvedSampling class final
 ResponseAction enum
+ResponseFormat class abstract final
+ResponseFormatUnsupportedException class final
 ResponseValidationResult class
 SamplingParams class final
 ScoreKind class final experimental
@@ -118,11 +134,15 @@ SkillExecutorProvider class abstract
 SpeechRecognizer class abstract
 SpeechSynthesizer class abstract
 StorageStats class
+StructuredDelivery enum
+StructuredOutputException class sealed
+StructuredOutputSupport class final
 SttBackendProvider class abstract
 SttInstallation class
 SttInstallationBuilder class
 SttModelSpec class
 SttModelType enum
+SttVariant class abstract base
 TaskType enum
 TextResponse class
 ThinkingResponse class
@@ -133,6 +153,8 @@ TtsInstallation class
 TtsInstallationBuilder class
 TtsModelSpec class
 TtsModelType enum
+TtsVariant class abstract base
+TurnEnd enum
 UnauthorizedError class final
 UnknownError class final
 UnsupportedEmbeddingCombinationException class final

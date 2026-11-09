@@ -1,5 +1,163 @@
 # Migration guide
 
+## flutter_edge_ai 2.6.0
+
+### Typed responses
+
+`openSession` and `openChat` now take `responseFormat:`. `createSession` and
+`createChat` do not: move a conversation that needs constrained JSON to
+`openSession` / `openChat`, keep the returned session/chat, and close it
+yourself. Check the loaded model with `structuredOutputSupport` and
+`refusalFor(format)` first; support depends on the engine, platform and active
+backend.
+
+A refused format throws `ResponseFormatUnsupportedException`. If a structured
+generation's text closes normally but its `TurnEnd` is `outputLimit`,
+`contextLimit`, `stopped` or `closed`, `IncompleteStructuredOutputException`
+carries that end and `partialText`; a refused input that never fit the context
+fails with `ContextLimitException` instead. A normally ended reply that is not
+exactly one JSON value matching the schema throws
+`NonConformingStructuredOutputException`. On an incremental engine the text
+chunks arrive before the final validation error;
+`StructuredOutputSupport.delivery == StructuredDelivery.buffered` means one
+complete chunk. Formats cannot be combined with tools or
+`enableThinking: true`.
+
+### Open sessions and chats
+
+`createSession`, `createChat`, `session` and `chat` are deprecated and will be
+removed in 3.0.0. Keep the handle returned by `openSession` or `openChat`, and
+close it when done.
+
+Before:
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel();
+final session = await model.createSession();
+await session.addQueryChunk(Message(text: prompt, isUser: true));
+final reply = await session.getResponse();
+// A later createSession() closed this session implicitly.
+```
+
+After:
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel();
+final session = await model.openSession();
+try {
+  await session.addQueryChunk(Message(text: prompt, isUser: true));
+  final reply = await session.getResponse();
+} finally {
+  await session.close();
+}
+```
+
+For a chat, make the same ownership explicit:
+
+```dart
+final chat = await model.openChat();
+try {
+  await chat.addQueryChunk(Message(text: prompt, isUser: true));
+  final reply = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}
+```
+
+The behavior differs intentionally: `createSession` closed the previous
+singleton session, while `openSession` does not close any prior session. Every
+open session remains live and counts against `maxConcurrentSessions` until it
+or its model is closed. Do not rename a per-turn `createSession` call to
+`openSession` without retaining and closing the returned handle; that leaks one
+session per turn and eventually reaches the concurrency cap (or exhausts
+memory). The same ownership rule applies to `openChat`.
+
+### `implements InferenceModel`
+
+A class that `implements InferenceModel` declares two new members,
+`readDecisionSection` and `openOptionScorer`: fail both with
+`DeciderUnsupportedException`. A class that `extends InferenceModel` inherits
+defaults that do. An engine that mixed in `OptionScoringModel`, which is
+removed, drops the mixin and keeps its two overrides.
+
+A class that `implements InferenceModel` also declares four new members, all in
+`package:flutter_edge_ai/engine.dart`: `openEngineSession(SessionRequest)` (fail
+it with `UnsupportedError` if the class opens no independent sessions),
+`resolveChatRequest(ChatRequest)`,
+`createChatTurnHooks(ResolvedChatRequest)` (return `ChatTurnHooks()` for core
+behavior), and `engineSessions`. `openEngineSession` serves both `openSession`
+and every initial or rebuilt `openChat` session. `resolveChatRequest` fills only
+unset values, preserves caller-set values, and must carry `responseFormat`
+unchanged. `engineSessions` returns the legacy session plus every still-open
+independent engine session. A class that `extends InferenceModel` inherits
+core's defaults. Move overrides of `openSession`, `openChat`, and `sessions` to
+those SPI members.
+
+For typed responses it also declares `structuredOutputSupport` and
+`refusalFor(ResponseFormat)`, which core implements once for every class that
+`extends InferenceModel`, and the engine SPI behind them,
+`engineStructuredOutputSupport` and `engineRefusalFor(JsonSchemaResponseFormat)`;
+its `openSession` and `openChat` take `ResponseFormat? responseFormat`. Such a
+class gets none of core's format checks, so it should refuse every format:
+`StructuredOutputSupport.none(reason)`, and from `refusalFor` a
+`ResponseFormatUnsupportedException`, which `openSession` and `openChat`
+throw when a format is passed.
+
+### `implements InferenceModelSession`
+
+A class that `implements InferenceModelSession` declares `startTurn()`,
+returning an `EngineTurn` (from `package:flutter_edge_ai/engine.dart`):
+`EngineTurn(text: getResponseAsync(), end: null)` when it cannot say how a
+turn ended. A class that `extends InferenceModelSession` inherits that.
+
+### Chat turns
+
+`InferenceChat.generateChatResponse` and `generateChatResponseAsync` are
+`@nonVirtual`: a subclass that overrides them, an app's test fake among
+them, gets an `invalid_override_of_non_virtual_member` warning. Script the
+turns through `InferenceChat(turnHooks:)` instead, with a `ChatTurnHooks`
+subclass whose `responses` returns the turn's stream, and give a chat built
+with `sessionCreator: null` a session (`chat.session = …`), which the hooks
+receive.
+
+### A failed chat turn commits nothing
+
+When the engine fails a turn of an `InferenceChat` (its text ends with an
+error), the messages staged for that turn, and any tool call the turn had
+committed, are taken back out of `fullHistory` before the error reaches the
+caller; up to 2.5.x they stayed. `generateChatResponseWithTools` then answers
+no tool call of that turn. Both hold for core's turns; an engine that runs
+its turns through `ChatTurnHooks.responses` (llama) keeps its own history
+and its committed calls are answered as before. A stop or a cancelled
+subscription is not a failure and keeps what was generated, except a stop
+before any text: such a turn is taken back as well.
+
+`ContextLimitException` has one precise meaning: the input did not fit what
+remained of the context window, so neither the input nor a reply was committed.
+Its `EngineTurn.end` is `TurnEnd.contextLimit`; resend a shorter input or start
+the chat over. A turn may also end cleanly with `TurnEnd.contextLimit` when
+generation fills the context during decoding. That case has no stream error and
+keeps its input and partial reply. With a `responseFormat`, the clean cut is
+reported as
+`IncompleteStructuredOutputException(end: TurnEnd.contextLimit, partialText: ...)`.
+
+The engine session must mirror the same take-back. After any error on a turn's
+text, restore its context to before the turn, or make the session unusable if it
+cannot be restored. Do the same for a stopped turn that emitted no non-empty
+text. A stop after text, `outputLimit`, and a decode that reaches `contextLimit`
+keep the partial exchange; a refused input fails with `ContextLimitException`
+plus `TurnEnd.contextLimit` and commits nothing.
+
+## flutter_edge_ai 2.5.x: engines that keep core below 2.6.0
+
+> These versions require `flutter_edge_ai` `<2.6.0`, so `flutter pub upgrade` keeps
+> core on 2.5.x until each engine moves to its next line:
+> `flutter_edge_ai_litertlm` 1.19.2 · `flutter_edge_ai_mediapipe` 1.2.6 ·
+> `flutter_edge_ai_builtin_ai` 0.3.8 · `flutter_edge_ai_onnx` 0.8.0 ·
+> `flutter_edge_ai_llama` 0.0.6 · `flutter_edge_ai_speech` 0.5.14 (also
+> `flutter_edge_ai_litertlm` `<1.20.0`) · `genkit_flutter_edge_ai` 0.11.0+.
+> App code does not change.
+
 ## flutter_edge_ai 2.5.0: several open models, removed and deprecated members, embedding providers
 
 ### Removed members
@@ -23,7 +181,7 @@ the `ModelSource` that matches the URL: `ModelSource.network(url)` for
 ### `FlutterEdgeAiPlugin.createModel` is deprecated
 
 `FlutterEdgeAiPlugin.instance.createModel(modelType:, fileType:, …)` is
-deprecated and removed in 2.6.0. On Android, iOS and desktop it ignored
+deprecated and removed in 3.0.0. On Android, iOS and desktop it ignored
 `modelType` and `fileType` and returned the active model, which is what
 `FlutterEdgeAi.getActiveModel()` returns. The two ways to get a model are on
 `FlutterEdgeAi`:
@@ -663,9 +821,9 @@ dependencies:
 **Current equivalents (2.5):**
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.1                 # core — always required
-  flutter_edge_ai_litertlm: ^1.17.0       # .litertlm + LiteRtEmbeddingBackend
-  flutter_edge_ai_mediapipe: ^1.2.3       # .task / .bin
+  flutter_edge_ai: ^2.5.5                 # core — always required
+  flutter_edge_ai_litertlm: ^1.19.2       # .litertlm + LiteRtEmbeddingBackend
+  flutter_edge_ai_mediapipe: ^1.2.6       # .task / .bin
   flutter_edge_ai_embeddings: ^2.3.2      # tokenizer providers
   flutter_edge_ai_rag: ^1.1.2             # RAG orchestration + contracts
   flutter_edge_ai_qdrant: ^2.1.1          # native qdrant provider

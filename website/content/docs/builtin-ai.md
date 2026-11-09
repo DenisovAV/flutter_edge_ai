@@ -42,8 +42,8 @@ engines your app uses:
 
 ```
 dependencies:
-  flutter_edge_ai: latest_version
-  flutter_edge_ai_builtin_ai: latest_version   # OS/browser built-in AI
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_builtin_ai: ^0.4.0   # OS/browser built-in AI
 ```
 
 ```dart
@@ -156,12 +156,18 @@ if (builtInReady) {
 
 // From here the code is identical regardless of which engine backs the model:
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final session = await model.createSession();
+final session = await model.openSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
+await session.close();
 ```
 
 ## Capabilities & limits
+
+The structured-output behavior below requires core 2.6.0 and
+`flutter_edge_ai_builtin_ai` 0.4.0. Response formats are wired, but every
+built-in platform remains refused until its qualification run passes, as
+listed below.
 
 | Feature | Android (Gemini Nano) | iOS / macOS (Apple FM) | Windows (Phi Silica) | Web (Chrome Prompt API) |
 |---------|------------------------|-------------------------|----------------------|--------------------------|
@@ -173,13 +179,32 @@ final response = await session.getResponse();
 | `maxOutputTokens` | ✅ | ✅ | ❌ ignored | ❌ ignored (warns once) |
 
 - **Function calling is prompt-based** — tool definitions are woven into the
-  prompt by core `InferenceChat`, on every platform. Apple's native tool calling
-  and schema-constrained output are reachable only through the `@experimental`
-  `BuiltInAiModel.localAiModel` / `BuiltInAiSession.localAiSession`, which may
-  change with `flutter_local_ai`'s next major release. On Web, Chrome's native Prompt-API tool use is experimental
-  and not production-usable (Chrome 151), so it too goes through the prompt-based
-  path. Gemini Nano handles single-turn calls; multi-turn agent chaining is not
+  prompt by core `InferenceChat` on every platform. Apple's native tool calling
+  remains available through the experimental `BuiltInAiModel.localAiModel` /
+  `BuiltInAiSession.localAiSession` escape hatch. On Web, Chrome's native
+  Prompt-API tool use is still experimental, so it also uses the prompt path.
+  Gemini Nano handles single-turn calls; multi-turn agent chaining is not
   supported on Web (see [Agent Skills](/docs/agent)).
+- **Response formats are wired but not enabled on any built-in platform.** Read
+  `model.structuredOutputSupport` or call
+  `model.refusalFor(format)` before opening a session. Apple Foundation Models,
+  Chrome's Prompt API and Phi Silica all return
+  `StructuredOutputSupport.none(...)` until their own qualification run passes.
+  Android always refuses because ML Kit GenAI exposes schemas only as
+  compile-time types. Consequently `openSession` /
+  `openChat(responseFormat: ...)` currently throw
+  `ResponseFormatUnsupportedException` on every built-in platform. Structured
+  APIs exposed directly by `flutter_local_ai` remain reachable through the
+  experimental escape hatch.
+
+Where a platform is eventually enabled, replies use
+`StructuredDelivery.buffered` (one complete chunk) and enforce `type`,
+`properties`, `required`, `items`, `minItems`, `maxItems` and string `enum`
+values. `model.refusalFor(format)` can still reject a non-string enum, `null`, an
+array without `items`, or (on Apple) an object with no properties. Apple also
+refuses `responseFormat` together with `maxOutputTokens`;
+`refusalFor(format)` cannot report that pair because it does not receive the
+output cap.
 - **`sizeInTokens` on Apple needs two things at once.**
   `SystemLanguageModel.tokenCount` is `@available(iOS 26.4, macOS 26.4)`, so the
   declaration is missing from earlier SDKs entirely — a build on Xcode 26.1

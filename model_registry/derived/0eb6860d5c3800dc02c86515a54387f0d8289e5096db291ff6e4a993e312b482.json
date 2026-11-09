@@ -1,0 +1,96 @@
+{
+  "container_version": "1.5.0",
+  "size": 942374912,
+  "npu_target": "Qualcomm/SM8850",
+  "llm_metadata_max_num_tokens": 1280,
+  "kv_cache_length": 1280,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_v_3": [
+        1,
+        2,
+        64,
+        1280
+      ],
+      "kv_cache_k_2": [
+        1,
+        2,
+        1280,
+        64
+      ]
+    },
+    "prefill_128": {
+      "kv_cache_v_3": [
+        1,
+        2,
+        64,
+        1280
+      ],
+      "kv_cache_k_2": [
+        1,
+        2,
+        1280,
+        64
+      ]
+    }
+  },
+  "system_metadata": {
+    "Authors": "ODML team",
+    "uuid": "f76bd5dd-bb38-407d-a3a4-4b9890f5b65f",
+    "creation_timestamp": "2026-04-29T19:40:57.452830+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 171
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 139785304,
+      "items": {
+        "model_type": "tf_lite_embedder",
+        "model_version": "1.0.1"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_aux",
+      "length": 230000,
+      "npu_target": "Qualcomm/SM8850",
+      "items": {
+        "model_type": "tf_lite_aux"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_adapter",
+      "length": 14230512,
+      "items": {
+        "model_type": "tf_lite_vision_adapter"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_vision_encoder",
+      "length": 269981264,
+      "npu_target": "Qualcomm/SM8850",
+      "items": {
+        "model_type": "tf_lite_vision_encoder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 515413936,
+      "npu_target": "Qualcomm/SM8850",
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 2647644
+    }
+  ]
+}

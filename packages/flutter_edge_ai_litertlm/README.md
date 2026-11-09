@@ -42,13 +42,30 @@ await FlutterEdgeAi.initialize(
 other engines (e.g. `MediaPipeEngine` from `flutter_edge_ai_mediapipe`) if your app
 uses both formats.
 
-Depend on both packages (`flutter_edge_ai: ^2.5.1`,
-`flutter_edge_ai_litertlm: ^1.17.0`) and install `.litertlm` files with
+Depend on both packages (`flutter_edge_ai: ^2.6.0`,
+`flutter_edge_ai_litertlm: ^1.20.0`) and install `.litertlm` files with
 `fileType: ModelFileType.litertlm`: `installModel` defaults to
 `ModelFileType.task`, which routes the file to MediaPipe.
 
+**The model catalog.** Every LiteRT build this package offers is
+listed as `LiteRtLmModels` (language models) and `LiteRtEmbedders`, each pinned
+to a Hugging Face commit with its size and install file name, and installs by
+name with its model type and file type:
+
+```dart
+await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
+    .withProgress((percent) => print('downloading: $percent%'))
+    .install();
+```
+
+`FlutterEdgeAi.catalog` lists them once `LiteRtLmEngine` and
+`LiteRtEmbeddingBackend` are registered, and `variantFor` picks a build this
+runtime runs (by platform and processor; for an NPU build the app names the
+SoC). Every build, and where each has been run:
+[Model Registry](https://flutteredge.ai/docs/registry).
+
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0, ^2.5.4 since 1.19.0, ^2.5.5 since 1.19.1, `>=2.5.5 <2.6.0` for 1.19.2, ^2.6.0 since 1.20.0), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
@@ -60,10 +77,41 @@ Depend on both packages (`flutter_edge_ai: ^2.5.1`,
 > [migration guide](https://flutteredge.ai/docs/migration) lists the API
 > changes.
 
+## Structured output
+
+Pass a `ResponseFormat` to `openSession` or `openChat` to enforce JSON with
+LiteRT-LM 0.19 constrained decoding. The constraint provider belongs to that
+conversation and the schema is applied on every send; core validates the final
+reply too.
+
+```dart
+final format = ResponseFormat.jsonSchema({
+  'type': 'object',
+  'properties': {
+    'answer': {'type': 'string', 'enum': ['yes', 'no']},
+  },
+  'required': ['answer'],
+  'additionalProperties': false,
+});
+final refusal = model.refusalFor(format);
+if (refusal != null) throw refusal;
+final session = await model.openSession(responseFormat: format);
+try {
+  // Generate structured replies with session.
+} finally {
+  await session.close();
+}
+```
+
+The full core dialect is qualified on macOS and iOS arm64 CPU/Metal, Linux x64
+CPU/Vulkan, Windows x64 CPU/D3D12, and Android arm64 CPU plus
+Adreno/Mali/PowerVR GPU. NPU, Web, and every unlisted row are refused rather
+than decoded without a constraint.
+
 ## Sampling
 
-Leave `temperature`, `topK`, `topP` and `randomSeed` unset on `createSession`
-or `createChat` and each comes from the sampler the `.litertlm` file ships,
+Leave `temperature`, `topK`, `topP` and `randomSeed` unset on `openSession`
+or `openChat` and each comes from the sampler the `.litertlm` file ships,
 else from the model family's defaults (`SamplingParams.forModelType`), else
 `temperature: 0.8, topK: 40, topP: 0.95, randomSeed: 1`; a value you pass wins,
 field by field. `topK: 1` or `temperature: 0` decodes greedily. Before core
@@ -86,7 +134,115 @@ field by field. `topK: 1` or `temperature: 0` decodes greedily. Before core
 and reply — not the reply length. On CPU and GPU a value below 1024 is raised
 to 1024, because the published bundles fail to allocate below it; on the NPU it
 is passed through, so use the context size the bundle was compiled for. Cap the
-reply with `createSession(maxOutputTokens:)`.
+reply with `openSession(maxOutputTokens:)`.
+
+### The usable window
+
+On CPU and GPU, LiteRT-LM prefills an input with the bundle's prefill
+signatures, and drops every signature longer than the room the window has
+left. Once none fits, any input is refused, however short. So the last
+*smallest prefill signature* positions of the window never take a new message:
+the usable window is `maxTokens` minus that length. A reply can still be
+decoded into them. The smallest prefill signature of each catalog bundle, as
+read from the files (LiteRT-LM 0.19):
+
+| Model | Bundle | Smallest prefill | Usable at 1024 | Usable at 4096 |
+|---|---|---|---|---|
+| Gemma 4 E2B, E4B | generic | 128 | 896 | 3968 |
+| Gemma 3 1B | q4-ekv4096 | 32 | 992 | 4064 |
+| Gemma 3 270M | q8 | 32 | 992 | 4064 |
+| Gemma 3n E2B, E4B | generic | 16 | 1008 | 4080 |
+| FunctionGemma 270M | generic, flutter-demo | 256 | 768 | 3840 |
+| TranslateGemma 4B | int4, int8 | 1024 | 0 | 3072 |
+| TranslateGemma 4B | int4-multimodal | 128 | 896 | 3968 |
+| Qwen3 0.6B | standard, dynamic-int4 | 128 | 896 | 3968 |
+| Qwen3 0.6B | mixed-int4 | 256 | 768 | 3840 |
+| Qwen2.5 1.5B, DeepSeek R1 Distill 1.5B, Phi-4 mini | ekv4096 builds | 32 | 992 | 4064 |
+| Phi-4 mini reasoning | generic | 128 | 896 | 3968 |
+| SmolLM3 3B | both | 16 | 1008 | 4080 |
+| LFM2.5 230M | int4, int8 | 1 | 1023 | 4095 |
+| FastVLM 0.5B, SmolVLM2 500M, LLaVA-OneVision 0.5B, Qwen2-VL 2B | generic | 128 | 896 | 3968 |
+
+The usable columns assume the bundle's KV cache is at least that large (the
+`ekv` in a file name is its size). TranslateGemma's int4 and int8 bundles
+prefill 1024 positions at a time: in a 1024 window only the first message of
+a conversation fits, and `InferenceChat`'s `tokenBuffer` rotation never
+triggers before that, so give them a larger `maxTokens`.
+Not in the table: the Gemma 4 `-gpu` and `-web` bundles, whose decoder carries
+no prefill signatures to read; the Gemma 3n `-Web` files, plain TFLite files
+for the web rather than `.litertlm` containers; and NPU bundles, which prefill
+in their own context groups and have one compiled window (Gemma 3 1B: 1280,
+Gemma 3 270M: 4096, Gemma 3n E2B: 2048, Gemma 4 E2B: 4096, FastVLM: 1280,
+Qwen3 0.6B: 4096).
+
+When an input does not fit what the window has left, the turn fails with the
+public `ContextLimitException` and `TurnEnd.contextLimit`,
+before the model has seen the input. LiteRT-LM restores the conversation to
+before that turn, and an `InferenceChat` takes the refused message back out
+of its history, so a shorter message can follow. When even a short message is
+refused, the window has no room for any input left: close the session and
+open a new one (`InferenceChat.clearHistory()` for a chat). Nothing of the
+history is dropped behind your back. `InferenceChat`'s `tokenBuffer` rotation
+counts replies and images, not your own messages, so it does not prevent a
+long message from being refused. On the NPU the window is the one the bundle
+was compiled for; when it differs from `maxTokens`, the first turn prints it.
+
+## Open sessions
+
+`openSession()` sessions share the model's engine. Where several live
+conversations on one engine were verified, each session is a LiteRT-LM
+conversation of its own, and a stopped turn is normally rewound in place.
+Elsewhere each session keeps its history in Dart and replays the full messages,
+including images and audio, into one shared conversation when the sessions
+take turns. The model decides this when it loads; there is no setting.
+
+| Backend | Own conversation per session | Measured on (LiteRT-LM 0.19) |
+|---|---|---|
+| CPU | macOS arm64, Linux x86_64, Linux arm64, Windows x86_64 | three interleaved conversations, each recalling its own fact |
+| GPU | macOS (Metal), Android Adreno and Mali | the same, on M5 Pro, Adreno 830, Mali-G715 |
+| NPU | Qualcomm and Google Tensor on Android, Intel on Windows | the same, past the first context group |
+
+Replayed as full messages: iOS, Android CPU, Android GPUs other than Adreno and
+Mali (two greedy conversations diverged on a PowerVR GPU), MediaTek, Linux
+arm64 GPU and NPU, Linux Vulkan, Windows D3D12, and the web. Linux Vulkan and
+Windows D3D12 ran correctly on a Tesla T4 and Intel Arc respectively, but the
+load cannot tell which GPU it got, so no desktop GPU vendor is given native
+conversations on that evidence. MediaTek NPU models are currently refused at
+load; if that backend becomes available, its session backing remains virtual
+until it passes the native-conversation campaign.
+
+After a stopped turn, or a turn whose input did not fit, the next turn
+rewinds the conversation to before it: a stopped turn is put back, partial
+reply included, and one stopped before it produced anything, or refused for
+the window, is left out, as `InferenceChat` leaves it out of its history. A
+turn that failed otherwise is left out too: the conversation is rebuilt
+without it. On the NPU, which rolls back one token at most, and on a
+model with linear attention state (LFM2.5), which a rewind cannot restore,
+the conversation is rebuilt from its full message history instead. A stopped
+audio turn is also rebuilt this way on CPU/GPU because LiteRT-LM 0.19 can lose
+its audio while reporting that the rewind succeeded. The same rebuild holds
+for an `openSession` session when the model file could not be read to tell;
+that is printed when the model loads.
+
+Every idle native-backed session keeps a copy of its KV cache, so it costs
+memory while it is open, and the cost grows with `maxTokens`. Measured on
+macOS (M5 Pro) with Gemma 4 E2B, as RSS: 36.8 MiB more per idle
+session at `maxTokens: 4096` and about 9.6 MiB at 1024, on the CPU and on
+Metal (from the third session on; the first two reuse freed memory). Over
+turns alternating between two sessions, resident memory moved by 1-4 MiB on
+Metal and by 2-72 MiB on the CPU across runs of 20 to 300 turns, with no
+steady growth. On Linux, Windows and Android GPUs the copies may be kept in
+GPU memory, and phones and the other backends are not measured yet. There is
+no default cap on the number of sessions; `maxConcurrentSessions` on
+`getActiveModel` sets one.
+
+On native backing, a send to another session than the one the engine ran last
+first saves the previous session's KV cache and restores this one, inside the
+native send call. That call then runs on a spawned isolate, so the isolate that
+sends (the UI isolate in an app) is not held by the copy: measured on macOS with
+Gemma 4 E2B at `maxTokens: 4096`, it held the calling isolate under 1 ms
+while the copy took about 147 ms on Metal and 1.4 ms on the CPU. The copy
+still delays that turn's first token.
 
 ## Multimodal order
 
@@ -127,7 +283,7 @@ the chat had tools:
 |---|---|---|---|
 | Gemma 4 E2B, Galaxy S24, GPU, chat with two tools | 56 | 44 | 50 |
 | Gemma 4 E2B, Galaxy S24, GPU, plain chat | 32 | 29 | 29 |
-| Gemma 4 E2B, Galaxy S24, NPU (SM8650), plain chat | 32 | 29 | 32 |
+| Gemma 4 E2B, Galaxy S24, generic bundle with `npu` requested (no SM8650 build exists; it did not run on the NPU), plain chat | 32 | 29 | 32 |
 | Gemma 4 E4B, Galaxy S25 Ultra, GPU, chat with two tools | 56 | 45 | 53 |
 | Gemma 4 E4B, Galaxy S25 Ultra, GPU, plain chat | 32 | 29 | 32 |
 | Gemma 3n E2B, Galaxy S24, GPU, plain chat | 32 | 32 | 32 |
@@ -155,7 +311,7 @@ carries that decision in a `litetune.decision` section, and
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(
-  preferredBackend: PreferredBackend.cpu,
+  preferredBackend: PreferredBackend.cpu, // or PreferredBackend.gpu
 );
 final decider = await model.createDecider(
   question: 'Which emotion does the text express?',
@@ -172,13 +328,34 @@ option's shortest unique prefix as the model's reply through LiteRT-LM's
 session API (`run_text_scoring`, with a checkpoint and a rewind between
 options), on a background isolate and in turn with any chat on the same
 engine; a cancel stops it between two options, and so does closing the model.
-Native platforms, CPU only: the web, a model loaded on the GPU or the NPU, and
-a file without the section are refused with `DeciderUnsupportedException`; an
-input whose prompt does not fit `maxTokens` with `ArgumentError`. Measured on
-an Apple M4 Pro CPU with LiteTune's golden packs (google/gemma-3-270m-it,
-int8): 120–190 ms per decision, and the same top option as LiteTune's PyTorch
-reference on every row but near-ties. Android, iOS, Linux and Windows use the
-same C calls and are not measured yet. The answers, Noul and Score included:
+Native platforms, on the CPU or the GPU: the web, a model loaded on the NPU
+(its executor rolls back one token only, and a decision rewinds between
+options), and a file without the section are refused with
+`DeciderUnsupportedException`; an input whose prompt does not fit `maxTokens`
+with `ArgumentError`. Measured on an Apple M4 Pro CPU with LiteTune's golden
+packs (google/gemma-3-270m-it, int8): 120–190 ms per decision, and the same
+top option as LiteTune's PyTorch reference on every row but near-ties.
+
+The GPU does not compute the CPU's scores exactly, and the temperature and
+threshold in the file were fitted on CPU probabilities. In a debug or profile
+build the first `createDecider` runs a scoring self-check (LiteRT-LM #3561: how
+this LiteRT-LM scores after a prefill; scores must repeat bit for bit and
+survive a rewind) on the GPU as on the CPU, and it passed on the GPUs measured.
+A release build skips it and scores in the mode it picked everywhere measured
+(`once`), so run the decider once in debug on the hardware you ship to, an
+unmeasured GPU above all. On a long-dialogue Noul decision (Gemma 3 270M on 300
+rows, Qwen3 1.7B and Gemma 4 E2B on 60 each), the GPU's top option was the same
+device's CPU one on 291/300, 59/60 and 59/60 rows on an iPhone 17 Pro (Metal),
+292/300, 59/60 and 59/60 on a Galaxy S25 Ultra (Adreno 830) and 293/300, 59/60
+and 60/60 on a Mac mini M5 Pro (Metal); balanced accuracy moved by at most
+0.017 either way. All of it is Noul, which never abstains: a threshold fitted
+on the CPU is not checked against GPU probabilities. Not measured: Mali GPUs,
+Linux (Vulkan) and Windows (DirectX 12) GPUs, Linux and Windows CPUs, and the
+NPU. Every GPU is allowed, and a model loaded without `preferredBackend` tries
+the GPU first, so on those devices a decider scores on an unmeasured GPU. The
+self-check catches scores that do not repeat, not scores that repeat and are
+wrong. For the calibration as fitted, load with `preferredBackend:
+PreferredBackend.cpu`. The answers, Noul and Score included:
 [Decisions](https://flutteredge.ai/docs/decisions#deciders-from-a-language-model).
 
 ## Install from a Hugging Face repo (`litertlm_manifest.json`)
@@ -210,12 +387,13 @@ await FlutterEdgeAi.installModel(
     .fromNetwork(r.url) // authoritative: carries the resolver's revision pin
     .install();
 final model = await FlutterEdgeAi.getActiveModel(defaults: r.runtime);
-final session = await model.createSession(
+final session = await model.openSession(
   enableThinking: r.runtime.thinkingDeclared ?? false,
   // minOutputTokens is a floor, not a cap: keep the app's own budget unless
   // the manifest asks for more.
   maxOutputTokens: max(1024, r.runtime.minOutputTokens ?? 0),
 );
+await session.close();
 ```
 
 Everything the manifest returns is an overridable default (explicit argument >
@@ -235,7 +413,7 @@ on every install, because the variant's filename is only known after the fetch.
 
 | Model file | Platforms | Tokenizer | Longest input |
 |---|---|---|---|
-| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in), MediaTek MT6991/MT6993 (Android, opt-in, not run on device yet) and Intel Panther Lake NPUs (Windows x64) | inside the bundle | 1024 tokens |
+| EmbeddingGemma 2 text, images and audio, one `.litertlm` | Android, iOS, macOS, Linux, Windows; Web via `@litert-lm/core` (WebGPU); per-SoC bundles on Qualcomm NPUs (Android, Linux arm64), Google Tensor G5/G6 (Android, opt-in; G5 not run) and Intel Panther Lake NPUs (Windows x64); MediaTek MT6991/MT6993 refused in this release | inside the bundle | 1024 tokens |
 | EmbeddingGemma 1, Gecko: `.tflite` + a tokenizer file | Android, iOS, macOS, Linux, Windows; Web via LiteRT.js | `flutter_edge_ai_embeddings` | the model's sequence length (256 for a `seq256` file) |
 
 ```dart
@@ -303,12 +481,12 @@ final vector = await embedder.embed(
 );
 ```
 
-- **Android, iOS, macOS, Linux and Windows, and the web (1.13.1).** On the web
+- **Android, iOS, macOS, Linux and Windows (1.13.0), and the web (1.13.1).** On the web
   the bundle runs through `@litert-lm/core`'s `EmbeddingEngine` on WebGPU,
   which needs one more line in `web/index.html` — see
   [Web setup](#web-setup-early-preview) — and a browser with WebGPU.
 - **Text on every bundle; images on the 440m and the 740m; audio on the
-  740m.** Natively all from 1.13.1; on the web text and images from 1.13.1,
+  740m.** Natively text from 1.13.0, images and audio from 1.13.1; on the web text and images from 1.13.1,
   audio and combined inputs from 1.13.2. On the 270m,
   `getActiveEmbedder(supportImage: true)` fails with `EmbeddingLoadException`
   naming the 440m bundle — natively from the bundle's ModelInfo before any
@@ -326,11 +504,67 @@ final vector = await embedder.embed(
   averages them instead of truncating; the averaged vector is never returned).
   Either way an over-long input costs a full embedding before it is refused.
   Split before embedding.
-- **CPU natively, WebGPU on the web.** `activeBackend` is
-  `PreferredBackend.cpu` on Android, iOS and desktop and
-  `PreferredBackend.gpu` on the web; `preferredBackend` is not applied — except
-  `npu`, which this bundle refuses: the NPU runs the per-SoC bundles
-  ([below](#embeddinggemma-2-on-a-qualcomm-npu)). The web has no CPU path for
+- **CPU natively, WebGPU on the web, GPU on Linux x64, Windows x64 and
+  macOS when asked.** `activeBackend` is `PreferredBackend.cpu` natively and
+  `PreferredBackend.gpu` on the web. On Linux x64 (1.19.0), Windows x64 and
+  macOS (LiteRT-LM 0.19, `native-v0.19.0-a`),
+  `preferredBackend: PreferredBackend.gpu` runs the text tower of a generic
+  bundle on the GPU (LiteRT-LM's GPU executor over WebGPU on Vulkan and DX12,
+  over Metal on macOS). Windows x64 was refused on native-v0.18.0-h, whose
+  accelerator ended the process at the first load (#744); on 0.19 the 270m
+  runs on the GPU on Panther Lake (Arc B390) and Lunar Lake (Arc 140V), and
+  the 270m and 740m text towers on Metal (24 ms per text, C probe,
+  2026-11-04). iOS, Android and Linux arm64 are not measured: there `gpu` is
+  not applied.
+  Measured on the 270m, 2026-10-22: Linux on a Tesla T4 32-64 ms per text vs
+  232-308 ms on its CPU (Windows on Lunar Lake, on native-v0.18.0-g: 22 ms vs
+  83-90 ms); min cos 0.997 to the
+  CPU vectors (0.998 for a ~900-token text: the GPU runs FP16 activations),
+  and the CPU's distance to Sentence Transformers fp32. A load takes 1.7-3.6 s
+  against 0.3-0.6 s on CPU; the very first also builds the GPU caches (8.2 s
+  on the T4; 5.9 s on Lunar Lake on native-v0.18.0-g). Measured in one process with a GPU LLM
+  (Gemma 4 E2B), the embedder loaded before and after it.
+  - Only the text tower runs on the GPU. On the 440m and 740m the vision and
+    audio towers run on CPU (each named `cpu` at create, declared or not), so
+    images and audio embed at CPU speed and with CPU vectors. A text-only
+    GPU load of these bundles still compiles those towers at create, with
+    their memory and the same XNNPack caches a CPU load writes for them. Not
+    yet measured on a device for these two bundles.
+  - No fallback: LiteRT runs the GPU graph without a CPU accelerator, so a
+    GPU that cannot create the engine fails the load, and every GPU load
+    embeds one probe text and refuses a non-finite or zero vector. The
+    adapter is Dawn's choice, and a software one is not excluded: on a Linux
+    box whose NVIDIA driver was not loaded, Vulkan offered only Mesa's
+    llvmpipe and `gpu` ran there, reported as `gpu`, with correct vectors
+    (min cos 0.997 to CPU), a 37-48 s load, and a ~900-token text failed
+    with `DEADLINE_EXCEEDED` (measured 2026-10-22). Ask for `gpu` only where
+    a real GPU driver is installed.
+  - The GPU writes its own caches beside the CPU's: ML Drift's
+    `…_mldrift_weight_cache.bin` (68 MB) and `…_mldrift_program_cache.bin`
+    (9 MB) for the text tower. `requireWeightCache` covers them (1.19.0):
+    a path the GPU cannot create them at (a file name past 255 UTF-8 bytes;
+    on Windows, once its GPU path is enabled again, also the 260-character
+    MAX_PATH, which the accelerator cannot exceed, and a cache directory with characters
+    outside ASCII, unless the process's ANSI code page is UTF-8: the
+    accelerator opens its caches through the UCRT `_open`, which reads the
+    path in the ANSI code page, then `CreateFileW`) is refused before the
+    engine is created, and neither file written by the end of the load's probe
+    embedding is refused after it; without the flag each is one printed
+    warning. The 440m/740m vision and audio towers beside it are checked as
+    on CPU. A cache directory outside ASCII is not measured: from LiteRT-LM's
+    source the engine create then likely fails on every backend, CPU
+    included, because it checks the cache directory through the ANSI code
+    page too.
+  - A cold load without `preferredBackend` runs on CPU; a later automatic
+    request reuses whatever embedder is loaded, the GPU one included.
+  - The 270m has no vision or audio encoder. A text index and an image index
+    can share one 440m or 740m embedder on the GPU.
+  - Elsewhere `gpu` is not applied (CPU, with core's notice): on macOS the
+    Metal accelerator ends the process in LiteRT's external weight loader at
+    engine create (iOS ships the same accelerator, not run), and Android and
+    Linux arm64 are not measured. `npu` is refused
+    for this bundle: the NPU runs the per-SoC bundles
+    ([below](#embeddinggemma-2-on-a-qualcomm-npu)). The web has no CPU path for
   these bundles: the CPU (WebAssembly) backend of `@litert-lm/core` 0.18.0
   cannot read their external weights, so a browser without WebGPU (no
   `navigator.gpu`, or no GPU adapter) fails `getActiveEmbedder()` with an
@@ -361,8 +595,10 @@ final vector = await embedder.embed(
   then throws an `EmbeddingLoadException` naming the cache directory, the
   length of the cache file path and the likely causes, and no engine is left
   running. One tower's cache missing beside the others stays a printed
-  warning. It applies on CPU, and on the NPU only to a load with declared
-  audio, whose tower runs on CPU. For a `.tflite` embedder and on the web it
+  warning. It applies on CPU, on the GPU (ML Drift's weight and program
+  caches, one of the two missing stays a warning; and the CPU caches of the
+  440m/740m vision and audio towers), and on the NPU only to a
+  load with declared audio, whose tower runs on CPU. For a `.tflite` embedder and on the web it
   is accepted and ignored, which a debug build says once. It takes effect
   when an embedder is loaded: one already loaded is kept.
   - **The warning is invisible on Windows release builds.** It is a `print`,
@@ -562,8 +798,9 @@ final note = await embedder.embed(
 Tensor NPU ([below](#google-tensor-npu-on-android-opt-in)), MediaTek NPU
 ([below](#mediatek-npu-on-android-opt-in)), Qualcomm NPU
 ([below](#embeddinggemma-2-on-a-qualcomm-npu)), or Intel NPU
-([below](#embeddinggemma-2-on-an-intel-npu-windows)); any other
-`preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
+([below](#embeddinggemma-2-on-an-intel-npu-windows)), and `gpu` for the
+EmbeddingGemma 2 asked for with `gpu` on Linux x64 (1.19.0), Windows x64 and
+macOS (LiteRT-LM 0.19); any other `preferredBackend` is not applied. For EmbeddingGemma 1 on the web it is `null` and LiteRT.js
 picks: `window.getLiteRtEmbeddingAccelerator()` names where
 the output buffer lived after the first embedding, and
 `window.getLiteRtEmbeddingFullyAccelerated()` says whether the graph landed
@@ -597,17 +834,17 @@ assert(embedder.activeBackend == PreferredBackend.npu);
 - **Opt in to the Qualcomm stack**, as for the LLM NPU path:
   `qualcomm_npu: true` under `hooks: user_defines: flutter_edge_ai_litertlm:`
   ([Qualcomm NPU](#qualcomm-npu-on-android-and-linux-arm64-opt-in)).
-- **Pick the bundle for the device's SoC.** Verified on device: SM8850
+- **Pick the bundle for the device's SoC.** Run on device: SM8850
   (Snapdragon 8 Elite Gen 5), SM8650 (Snapdragon 8 Gen 3) and QCS8275 (Arduino
   VENTUNO Q). Google also publishes SM8550, SM8750, Tensor G5/G6, MediaTek
   MT6991/MT6993 and Intel PTL builds; the Qualcomm ones load here but are not
   verified by us, Tensor G5/G6 runs on matching Pixels in apps built with
   `google_tensor_npu` ([below](#google-tensor-npu-on-android-opt-in)), the
-  G6 270m and 440m run on a Pixel 11, Intel PTL runs on Windows
+  G6 270m and 440m run on a Pixel 11 (G5 not run), Intel PTL runs on Windows
   ([below](#embeddinggemma-2-on-an-intel-npu-windows)), and MediaTek
-  MT6991/MT6993 are accepted in apps built with `mediatek_npu`
-  ([below](#mediatek-npu-on-android-opt-in)) but not run on such a device
-  yet.
+  MT6991/MT6993 are refused in this release
+  ([below](#mediatek-npu-on-android-opt-in)). Per build:
+  https://flutteredge.ai/docs/registry.
   What a bundle is compiled for is read from the bundle itself, not from its
   name.
 - **Fast, and close to — not equal to — the CPU vectors.** Measured on an
@@ -642,7 +879,8 @@ assert(embedder.activeBackend == PreferredBackend.npu);
 ### EmbeddingGemma 2 on an Intel NPU (Windows)
 
 Google's `…_Intel_PTL.litertlm` bundles are compiled for the Intel Panther Lake
-NPU. From 1.13.2 this package runs them on **Windows x64** with
+NPU. From 1.13.2 this package loads them on **Windows x64** (not yet run on
+Intel NPU hardware) with
 `PreferredBackend.npu`, through the Intel stack (`LiteRtDispatch.dll`, OpenVINO
 and TBB) that every Windows x64 build already carries beside the executable — no
 opt-in flag:
@@ -744,7 +982,7 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 LiteRtWebRuntime.wasmPath = '/wasm/';
 ```
 
-Those files come from `@litertjs/core` — `npm i @litertjs/core@2.5.3` in a
+Those files come from `@litertjs/core` — `npm i @litertjs/core@2.6.0` in a
 scratch directory, then copy its `wasm/`.
 
 Set the prefix before the first `getActiveEmbedder()` — the runtime is loaded once and
@@ -777,7 +1015,7 @@ Native embeddings need no web files; the platform setup under
 model's web export (`gemma-4-E2B-it-web.litertlm`, not `gemma-4-E2B-it.litertlm`).
 It is text-only: an image or audio message throws `UnsupportedError`, because
 the JS API creates the LLM engine with no vision or audio executor, and
-`loraPath` throws too. `createSession(maxOutputTokens:)` is honoured here as it
+`loraPath` throws too. `openSession(maxOutputTokens:)` is honoured here as it
 is on native.
 Add the handshake below to your app's `web/index.html` `<head>` — the ESM doesn't
 assign window globals and module scripts are deferred, so Dart awaits
@@ -819,17 +1057,18 @@ Native platforms need no web setup.
 
 | Platform | Support |
 |----------|---------|
-| Android  | ✅ FFI (GPU via OpenCL; NPU on Qualcomm, Google Tensor G5/G6 or MediaTek — each opt-in, below) |
+| Android  | ✅ FFI (GPU via OpenCL; NPU on Qualcomm or Google Tensor G5/G6 — each opt-in, below; MediaTek refused in this release) |
 | iOS      | ✅ FFI (GPU via Metal on device; CPU on simulator) |
 | macOS / Linux | ✅ FFI (GPU via Metal / Vulkan; NPU on Qualcomm Linux arm64 — opt-in, below) |
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
 | Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
-The native library (`native-v0.18.0-g`, LiteRT-LM v0.18.0) is fetched at build
+The native library (`native-v0.19.0-a`, LiteRT-LM v0.19.0) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
-entitlements, and on macOS a `post_install` block in `macos/Podfile`, with Swift
-Package Manager turned off for an app that had no Podfile ([Desktop → macOS](https://flutteredge.ai/docs/desktop#macos)).
+entitlements, and macOS 14.0. On macOS the companion libraries come from this
+package's Swift package with Swift Package Manager on (since 1.19.0), and from
+a `post_install` block in `macos/Podfile` with it off ([Desktop → macOS](https://flutteredge.ai/docs/desktop#macos)).
 Without them the first model load fails; the error contains
 `flutter_edge_ai_litertlm: LiteRT-LM did not load on macOS` and names the fix
 ([#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689)). See
@@ -837,11 +1076,10 @@ Without them the first model load fails; the error contains
 
 `PreferredBackend.npu` is attempted only for a bundle compiled for an NPU, and
 only on Windows, on Google Tensor G5/G6 Pixels with Android 16 or later (not a
-`BP2A` build), on MediaTek Android devices (Android 12 or later) whose
-NeuroPilot adapters open in the app, on
+`BP2A` build), on
 Android devices with Qualcomm FastRPC (`libcdsprpc.so`), and on Qualcomm Linux
-arm64 boards; the Tensor, MediaTek and Qualcomm paths only in apps that opted
-in (below). A
+arm64 boards; the Tensor and Qualcomm paths only in apps that opted in
+(below). MediaTek is refused in this release. A
 generic bundle falls back to GPU, then CPU, and prints why; a bundle compiled
 for an NPU is refused elsewhere ([Where a model runs](#where-a-model-runs)).
 Windows has no device probe: a bundle compiled for the Intel NPU is not refused
@@ -952,6 +1190,74 @@ file on CPU and GPU. Each holds its own weights and KV cache, and the app
 closes it. Engine creations run one at a time. Measured on macOS only; see
 [Desktop → Several models at once](https://flutteredge.ai/docs/desktop#several-models-at-once).
 
+**Thinking budget.** `LiteRtLmEngine(thinkingTokenBudget: 512)` (1.18.0)
+caps how many tokens each generation with `enableThinking: true` spends
+thinking, in every model the engine builds, on the CPU, the GPU and the NPU;
+null (the default) sets none. At the budget LiteRT-LM closes the thought
+channel and the model goes on to the answer or the tool call. Without one, a
+model can think until `maxOutputTokens` and end the turn with an empty answer.
+
+```dart
+await FlutterEdgeAi.initialize(
+  inferenceEngines: const [LiteRtLmEngine(thinkingTokenBudget: 512)],
+);
+final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
+try {
+  final chat = await model.openChat(
+    enableThinking: true,
+    maxOutputTokens: 2048,
+    modelType: ModelType.gemma4,
+  );
+  try {
+    // Use the thinking chat.
+  } finally {
+    await chat.close();
+  }
+} finally {
+  await model.close();
+}
+```
+
+- The thinking counts towards `maxOutputTokens`, and the reply, with the
+  prompt and the history, towards the context (`maxTokens`, 1024 by default):
+  keep the budget below `maxOutputTokens` and below what the context has left,
+  with room for the answer, or the budget is never reached.
+- It applies only with thinking on. A model that reasons with
+  `enableThinking: false` too, such as Qwen3 4B Thinking 2507, is not capped
+  then.
+- It is per generation: every send with thinking on carries it, so in a tool
+  loop a generation after a tool result has its own budget. Gemma 4 E2B did not
+  think again after a tool result in the measured runs, so only the first
+  generation of such a turn was seen capped.
+- LiteRT-LM caps the first channel the bundle declares (measured on Gemma 4 E2B
+  and `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`). A bundle that declares none
+  is not capped, and loading one with a budget prints a warning.
+- It is fixed when the engine is registered. To change it, close the model,
+  call `FlutterEdgeAi.reset()` (it drops every registration, not only the
+  engine), `initialize` again with every provider the app uses, then install
+  and load the model again.
+- A value outside 1..0x7fffffff throws `ArgumentError` when a model loads.
+- On the GPU it slows decoding for the whole generation, after the budget is
+  reached too, by about a fifth on an M5 Pro and about 40% on an NVIDIA L4; on
+  the CPU no cost was measured.
+- The web engine accepts it and ignores it.
+
+Measured on macOS (M5 Pro), Gemma 4 E2B, greedy, `maxTokens` 2048,
+`maxOutputTokens` 1536:
+
+| | CPU | GPU |
+|---|---|---|
+| Thinking: no budget → budget 64 | 1724 → 198 characters | 1465 → 198 characters |
+| Decode: no budget / budget 1200, never reached (same output) | 55.0–55.1 / 55.0–55.7 tok/s | 117.2–118.4 / 87.4–97.2 tok/s |
+| A tool turn with thinking on, budget 64 | the call and the answer | the call and the answer |
+
+On Linux (NVIDIA L4), the same test: decode 14.4 tok/s on the CPU either way,
+and on the GPU 111 tok/s without a budget, 68 with one it never reached.
+
+`Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm` on the CPU: without a budget it
+thought for 4507 characters and answered nothing; with a budget of 32 it thought
+for 107, then answered.
+
 **Native log level.** `LiteRtLmEngine(nativeLogLevel: LiteRtLmLogLevel.verbose)`
 sets the minimum severity of LiteRT-LM's own native log before each engine
 is created (`litert_lm_set_min_log_level`). The level is
@@ -1020,6 +1326,14 @@ Tensor G5 and a release-signed build. On one Pixel the EdgeTPU service logged
 that the app is not on its allowlist; that did not stop the debug run.
 
 ### MediaTek NPU on Android (opt-in)
+
+**Refused in this release.** LiteRT-LM 0.19's LiteRT loads an NPU dispatch
+only through `LiteRtDispatchQueryInterface`, which Google's
+`litert-npu-runtime-mediatek` dispatch (2.3.0, 2.3.2) does not export, and on
+the MediaTek NPU measured (MT6989) a conversation's second message comes back
+empty (LiteRT-LM #4256). `mediatek_npu: true` fails the build with that
+reason, and a MediaTek bundle on the NPU is refused at load.
+flutter_edge_ai_litertlm 1.19.x runs the MediaTek NPU as described below.
 
 A bundle compiled ahead of time for a MediaTek SoC (`…_mt6991.litertlm`,
 `…_MediaTek_MT6991.litertlm`; its `LiteRtStamp` names `MediaTek` and the SoC,
@@ -1115,8 +1429,11 @@ S24). So `npu` falls back to
 GPU, then CPU, for it, and the log says why.
 
 **Linux arm64.** The same flag bundles the stack into Linux arm64 builds, for
-Qualcomm Linux boards with a Hexagon V68–V81 compute DSP (QCS6490, QCS8275,
-QCS9075, …). Qualcomm publishes no Maven artifact for Linux, so the hook reads
+Qualcomm Linux boards with a Hexagon V68–V81 compute DSP. That is the stack,
+not model support: a model needs a bundle compiled for the board's SoC, and
+the registry lists such bundles for the QCS8275 only
+(https://flutteredge.ai/docs/registry). Qualcomm publishes no Maven artifact
+for Linux, so the hook reads
 the fourteen libraries it needs (libQnnHtp, libQnnSystem and a Stub/Skel pair
 per Hexagon version) out of Qualcomm's public QAIRT 2.50 SDK zip with HTTP range
 requests — about 32 MB of a 2.6 GB archive — checks each against a pinned
@@ -1136,8 +1453,10 @@ Ubuntu; Qualcomm's images ship it) and the user must be in group `fastrpc`
 (`sudo usermod -aG fastrpc $USER`, then log in again). If either is missing, a
 bundle compiled for an NPU is refused with a `BackendInitException` that names
 what to fix. Use the model compiled for your SoC, e.g.
-`gemma-4-E2B-it_qualcomm_qcs8275.litertlm`. A Linux x64 build ignores the
-flag.
+`LiteRtLmModels.gemma4E2bIt.npuQcs8275` from the catalog: Google removed the
+Gemma 4 E2B Qualcomm bundles from the repository's `main` on 2026-10-19, and
+the catalog installs them from the commit that has them. A Linux x64 build
+ignores the flag.
 
 **Embeddings.** The same flag runs EmbeddingGemma 2 per-SoC bundles on the NPU
 ([EmbeddingGemma 2 on a Qualcomm NPU](#embeddinggemma-2-on-a-qualcomm-npu));

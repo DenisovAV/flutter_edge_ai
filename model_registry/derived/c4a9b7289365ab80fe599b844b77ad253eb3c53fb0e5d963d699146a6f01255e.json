@@ -1,0 +1,102 @@
+{
+  "container_version": "1.7.0",
+  "size": 1597922856,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": 4096,
+  "kv_cache_length": 4096,
+  "prefill_decode_signatures": {
+    "decode": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        128
+      ]
+    },
+    "prefill_128": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        128
+      ]
+    },
+    "prefill_1280": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        128
+      ]
+    },
+    "prefill_32": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        128
+      ]
+    },
+    "prefill_512": {
+      "kv_cache_k_0": [
+        1,
+        2,
+        4096,
+        128
+      ],
+      "kv_cache_k_1": [
+        1,
+        2,
+        4096,
+        128
+      ]
+    }
+  },
+  "system_metadata": {
+    "author": "The ODML Authors",
+    "uuid": "8b00986d-6bce-42b4-ab7d-4847aeea48d7",
+    "creation_timestamp": "2026-10-09T16:37:02.726087+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 3206
+    },
+    {
+      "data_type": "HF_Tokenizer_Zlib",
+      "length": 1968066
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_prefill_decode",
+      "length": 1595907624,
+      "items": {
+        "model_type": "tf_lite_prefill_decode"
+      }
+    }
+  ]
+}

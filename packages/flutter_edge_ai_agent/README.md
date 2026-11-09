@@ -118,9 +118,9 @@ which provides `LiteRtLmEngine`:
 
 ```yaml
 dependencies:
-  flutter_edge_ai: ^2.5.0
-  flutter_edge_ai_agent: ^0.4.1
-  flutter_edge_ai_litertlm: ^1.16.0
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_agent: ^0.4.2
+  flutter_edge_ai_litertlm: ^1.20.0
 ```
 
 ```dart
@@ -163,6 +163,15 @@ final session = await AgentSession.fromModel(
 // 4. Mount the chat view.
 //   AgentChatView(session: session)
 // e.g. "Calculate the hash of hello" or "Show Paris on interactive map".
+```
+
+`AgentSession.fromModel` owns a detached chat. In the owning widget or service's
+async teardown, close the session, then close the model when no feature still
+uses it:
+
+```dart
+await session.close();
+await model.close();
 ```
 
 See `packages/flutter_edge_ai/example` (the **Agent Skills** screen) for a

@@ -1,0 +1,71 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: qwen3-0.6b
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: Qwen3 0.6B
+family: qwen3
+arch_class: dense
+license: apache-2.0
+license_url: https://huggingface.co/Qwen/Qwen3-0.6B/blob/main/LICENSE
+model_type: qwen3
+capabilities:
+  image: false
+  audio: false
+  function_calls: true
+  thinking: true
+runtime:
+  max_tokens: 4096
+  preferred_backend: gpu
+variants:
+- slug: dynamic-int4
+  file_type: litertlm
+  file:
+    repo: litert-community/Qwen3-0.6B
+    revision: e6687177e00897731e7716267eebd4eba0dde7c2
+    path: Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm
+    sha256: 03e7da1eb1108b50dffaa9bb52cc7bcbad2eb0c66ca990267f480c1e545d2856
+    size: 344671744
+    install_filename: Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm
+  example:
+  - qwen3_0_6B
+- slug: standard
+  file_type: litertlm
+  file:
+    repo: litert-community/Qwen3-0.6B
+    revision: e6687177e00897731e7716267eebd4eba0dde7c2
+    path: Qwen3-0.6B.litertlm
+    sha256: c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
+    size: 613722264
+    install_filename: Qwen3-0.6B.litertlm
+  withhold:
+    reason: The catalog offers the dynamic INT4 build. This file failed to load from flutter_edge_ai_litertlm
+      1.7.0 until the repo replaced its tokenizer on 2026-10-13; the bytes pinned here are the replacement,
+      which loads on macOS (litertlm 1.15.0) and has not been run elsewhere. A copy downloaded before
+      2026-10-13 still fails.
+    issue: https://github.com/DenisovAV/flutter_edge_ai/issues/659
+- slug: mixed-int4
+  file_type: litertlm
+  file:
+    repo: litert-community/Qwen3-0.6B
+    revision: e6687177e00897731e7716267eebd4eba0dde7c2
+    path: qwen3_0_6b_mixed_int4.litertlm
+    sha256: 7900eb4e7362d88c58782c6f9999bb7a129e03544aa98b8f338ea0cc5d8c22c1
+    size: 497516544
+    install_filename: qwen3_0_6b_mixed_int4.litertlm
+- slug: npu-mt6993
+  file_type: litertlm
+  file:
+    repo: litert-community/Qwen3-0.6B
+    revision: e6687177e00897731e7716267eebd4eba0dde7c2
+    path: Qwen3-0.6B.mediatek.mt6993.litertlm
+    sha256: cc87c8a3df6eb680266a385c22fc3e867824495ff676583716ebe77e6ddd6c97
+    size: 1202913280
+    install_filename: Qwen3-0.6B.mediatek.mt6993.litertlm
+  npu:
+    vendor: mediatek
+    soc: mt6993
+  fixed_max_tokens: 4096
+  runtime:
+    preferred_backend: npu

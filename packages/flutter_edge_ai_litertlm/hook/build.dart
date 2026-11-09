@@ -166,7 +166,7 @@ class _NativeBundle {
     if (os == OS.android) {
       // Every vendor stack that runs on Android, from the table (Qualcomm's is
       // androidExtraLibs).
-      for (final vendor in NpuVendor.values) {
+      for (final vendor in NpuStack.values) {
         if (!vendor.abis.any((abi) => abi.startsWith('android_'))) continue;
         for (final name in npuStackLibs(vendor, 'android')) {
           yield _dylibFileName(os, name);
@@ -223,7 +223,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 final _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.18.0-g',
+  version: '0.19.0-a',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -234,6 +234,26 @@ final _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.19.0-a: LiteRT-LM v0.19.0 (771b06e1, LiteRT dcb657e8), C API 1.0 and
+  // patch_c_api.sh sections 17-25; StreamProxy exports stream_proxy_create_v1
+  // only. Android no longer ships the separate OpenCL accelerator and sampler,
+  // Linux and Windows no TopK WebGPU sampler (both linked or dropped, see
+  // verify_tarball_manifest.sh).
+  // 0.18.0-h changes the Windows archive and nothing else: both copies of
+  // libLiteRtWebGpuAccelerator.dll are Google's prebuilt from LiteRT-LM
+  // 5f973f57, which contains LiteRT #11120 — on an Intel GPU it turns off the
+  // dp4a int8 FC/conv path, whose output was corrupt on D3D12, so Gemma 4 12B
+  // returned no text for a prompt under 512 tokens (LiteRT-LM #4083). The
+  // accelerator imports nothing from libLiteRt.dll, and its Dawn imports
+  // resolve against the shipped webgpu_dawn.dll, byte-identical at both refs.
+  // Measured on Panther Lake (Arc B390): the 12B's prefill takes about 45%
+  // longer (7271 tokens: 21.4-22.7 s -> 31.3-32.2 s), its decode 3-4% less
+  // time; E2B and EmbeddingGemma 2 unchanged. The other 23 Windows files and
+  // the six other archives are byte-identical to 0.18.0-g.
+  // The release also carries the two macOS SwiftPM companion zips
+  // (macos/flutter_edge_ai_litertlm/Package.swift), packaged for this tag from
+  // the same macOS archive.
+  //
   // 0.18.0-g changes the Windows archive and nothing else: the Intel NPU
   // stack moves from OpenVINO 2026.3.1 to 2026.4.1 (LiteRT 991d15588a,
   // patches/litert_openvino_2026_4_1.patch) — Intel's Gemma 4 12B for Panther
@@ -321,19 +341,19 @@ final _litertlmBundle = _NativeBundle(
   // while debugging a mismatch (#316).
   checksums: {
     'litertlm-linux_x86_64.tar.gz':
-        '3b6dbdbd8b9aaace4769c686b4f63a7d43cf65fb28fec891d24291e105627e84',
+        '29e0aea5213a1ceeb1d7372d47cc1a1a19c42ab94376fd15f8948f6cbf98bda7',
     'litertlm-linux_arm64.tar.gz':
-        'd437293a4a83a6502e393c99b17f8962eb66d4579361d3bab9c863d4a4724698',
+        'ed4ac17f47edddb28ae3498c8d6f347356cae3e2408c2b06a7addd5848ec4f4d',
     'litertlm-windows_x86_64.tar.gz':
-        '218eb6c006d53f2e4db26527e279601d97f087a0307f7a7e08347fc5df8a20e6',
+        '2aca72970136b81087b4b6d6327d10f7c7f649b53285d90b1c070ef9f388d43d',
     'litertlm-macos_arm64.tar.gz':
-        'f95b27723324217f41a5b0b7aa04a24755e237f75b64ed37d852da8c249bfb67',
+        '42652644fdef056e8989c5fed0df288985e55c71e944c5a1a65a3e82bc92ef93',
     'litertlm-ios_arm64.tar.gz':
-        '5d673601ef4691da74adee13e09230969399f41f7983aab9e305014663faaed1',
+        '07eb20095da6d01588dfd7392a61ed412b87abce7ca14da3d6bb1c881a21f90d',
     'litertlm-ios_sim_arm64.tar.gz':
-        '739ca01a86b369b6542dba29c7003d6a51374c356032cce8aa2633001365e3f5',
+        '96fd3b46fd18124705fb6a72b622fc183307f72013af76e07a291a83b37499fa',
     'litertlm-android_arm64.tar.gz':
-        'd7ed14f761905cfe50bc06e3693e9abf934a96584c869410a78dfaef26080e62',
+        '3660edae145e82a68b09860f1120d290032945715ccd361302f768cde689b99e',
   },
   companions: [
     'GemmaModelConstraintProvider',
@@ -341,15 +361,21 @@ final _litertlmBundle = _NativeBundle(
     // flutter_litert ships a framework under the upstream name, and an app
     // bundle holds only one (see patch_c_api.sh §10).
     'LiteRtLmMetalAccelerator',
-    'LiteRtTopKMetalSampler', // macOS + iOS device GPU sampler (Metal)
-    'LiteRtOpenClAccelerator', // Android GPU (OpenCL)
     'LiteRtWebGpuAccelerator', // Linux/Windows GPU (WebGPU → Vulkan/DX12)
-    'LiteRtTopKOpenClSampler', // Android OpenCL GPU sampler — honors seed
-    'LiteRtTopKWebGpuSampler', // Linux/Windows GPU sampler
     'LiteRt', // Linux/Windows core runtime
     'webgpu_dawn', // Linux/Windows Dawn WebGPU (split to a shared lib in v0.14.0)
   ],
   legacyFileNames: [
+    // Not shipped since native-v0.19.0-a: libLiteRtLm.so links Android's
+    // OpenCL accelerator and sampler in (patch_c_api.sh section 19).
+    'LiteRtOpenClAccelerator',
+    'LiteRtTopKOpenClSampler',
+    // Not shipped since native-v0.19.0-a: Linux and Windows build no GPU
+    // sampler (section 20, CPU sampling), and Apple links its sampler into
+    // libLiteRtLm. A stale 0.18 copy in the cache is deleted, never bundled.
+    'LiteRtTopKWebGpuSampler',
+    'libLiteRtTopKWebGpuSampler',
+    'LiteRtTopKMetalSampler',
     // Not shipped on any platform since native-v0.18.0: on Android it needs
     // Dawn, which no bundle carries.
     'LiteRtGpuAccelerator',
@@ -361,19 +387,19 @@ final _litertlmBundle = _NativeBundle(
   // bundling (#247). The companion dylibs Google ships in
   // `prebuilt/macos_arm64/` (`libGemmaModelConstraintProvider.dylib`,
   // `libLiteRtMetalAccelerator.dylib`, shipped as `libLiteRtLmMetalAccelerator`;
-  // the Metal sampler is not shipped at
-  // all) were linked without `-Wl,-headerpad_max_install_names`, leaving only
-  // 32 bytes of slack in the load-commands area. Dart Native Assets'
-  // JIT path (`dart run`, `dart build_runner`, `flutter test` on a pure
-  // Dart library) calls `install_name_tool -id <absolute_path>` with paths
-  // 80–110 chars long, which doesn't fit and aborts the whole bundling
-  // step. By dropping these from the asset list, Native Assets never
-  // touches them — instead `example/macos/Podfile` post_install copies
-  // each dylib into `App.app/Contents/Frameworks/<X>.framework/` itself
-  // and patches LiteRtLm.dylib's `LC_LOAD_DYLIB` reference to the new
-  // framework path. iOS / Linux / Windows / Android are unaffected: their
-  // Native Assets paths (Xcode build phases on iOS, no install_name_tool
-  // on Linux/Windows/Android) don't trigger the bug.
+  // the Metal sampler is not shipped at all) were linked without
+  // `-Wl,-headerpad_max_install_names`, leaving 64 and 56 bytes of slack in
+  // the load-commands area (native-v0.18.0-g). That fits the app's
+  // `@rpath/<X>.framework/<X>`, but not the absolute path `flutter test` gives
+  // every code asset, and a failed rewrite aborts the whole bundling step. So
+  // Native Assets never touches them: the app gets them as frameworks from
+  // this package's macOS Swift package (`macos/flutter_edge_ai_litertlm/
+  // Package.swift`, #689), or, with Swift Package Manager off, from the
+  // macos/Podfile block (`tool/stage_macos_companions.sh`), and
+  // [_stagePointedAtCompanionFrameworks] points LiteRtLm at them. iOS / Linux /
+  // Windows / Android are unaffected: their Native Assets paths (Xcode build
+  // phases on iOS, no install_name_tool on Linux/Windows/Android) don't
+  // trigger the bug.
   skipCompanionsOn: {OS.macOS},
   // Windows: LiteRtLm.dll references companion DLLs by their original
   // Google filenames with "lib" prefix (libLiteRt.dll etc.) via PE imports.
@@ -385,13 +411,12 @@ final _litertlmBundle = _NativeBundle(
   windowsExtraLibs: [
     'libGemmaModelConstraintProvider',
     'libLiteRt',
-    'libLiteRtTopKWebGpuSampler',
     'libLiteRtWebGpuAccelerator',
     'libwebgpu_dawn', // lib-prefixed for the accelerator's PE import (v0.14.0)
     // DXC runtime
     'dxil',
     'dxcompiler',
-    // Intel NPU stack (NpuVendor.intel), in every Windows x64 build. ONE SET
+    // Intel NPU stack (NpuStack.intel), in every Windows x64 build. ONE SET
     // WITH THE WINDOWS WORKFLOW'S `$ovWanted`: see intelNpuLibs.
     ...intelNpuLibs,
   ],
@@ -943,12 +968,26 @@ Future<void> _processBundle({
     return destUri;
   }
 
+  // macOS: the companions reach the app as frameworks (#689), from the
+  // plugin's Swift package or from the Podfile block, so LiteRtLm is pointed at
+  // them here, before Flutter copies it into the app and Xcode signs it.
+  final Uri mainStaged;
+  if (os == OS.macOS && bundle.skipCompanionsOn.contains(os)) {
+    consumed.add(mainFileUri);
+    mainStaged = _stagePointedAtCompanionFrameworks(
+      mainFileUri,
+      input.outputDirectory,
+      bundle.companions,
+    );
+  } else {
+    mainStaged = stage(mainFileUri);
+  }
   output.assets.code.add(
     CodeAsset(
       package: _packageName,
       name: 'src/native/${bundle.mainLibName}',
       linkMode: DynamicLoadingBundled(),
-      file: stage(mainFileUri),
+      file: mainStaged,
     ),
   );
 
@@ -1004,7 +1043,7 @@ Future<void> _processBundle({
     }
   }
 
-  // The NPU stack of each vendor of this target (NpuVendor.abis), the same
+  // The NPU stack of each vendor of this target (NpuStack.abis), the same
   // table the runtime chooses a vendor from. The ABI string is Abi.current()'s
   // spelling, which code_assets' OS and Architecture names share.
   //
@@ -1015,7 +1054,7 @@ Future<void> _processBundle({
   // and make NativeAssetsManifest.json, which the runtime gate reads, claim a
   // stack the developer never enabled.
   final targetAbi = '${os.name}_${input.config.code.targetArchitecture.name}';
-  for (final vendor in NpuVendor.values) {
+  for (final vendor in NpuStack.values) {
     if (!vendor.abis.any((abi) => abi.startsWith('${os.name}_'))) continue;
     final define = npuUserDefine(vendor);
     if (define != null &&
@@ -1034,7 +1073,7 @@ Future<void> _processBundle({
       continue;
     }
     switch (vendor) {
-      case NpuVendor.qualcomm when os == OS.android:
+      case NpuStack.qualcomm when os == OS.android:
         if (bundle.androidExtraLibs.isEmpty) break;
         await _registerQualcommNpu(
           input: input,
@@ -1042,7 +1081,7 @@ Future<void> _processBundle({
           prebuiltDir: prebuiltDir,
           stage: stage,
         );
-      case NpuVendor.qualcomm when os == OS.linux:
+      case NpuStack.qualcomm when os == OS.linux:
         if (bundle.linuxExtraLibs.isEmpty) break;
         await _registerQualcommNpuLinux(
           input: input,
@@ -1050,25 +1089,25 @@ Future<void> _processBundle({
           prebuiltDir: prebuiltDir,
           stage: stage,
         );
-      case NpuVendor.qualcomm:
-        throw StateError('NpuVendor.qualcomm has no stack for $targetAbi');
-      case NpuVendor.googleTensor when os == OS.android:
+      case NpuStack.qualcomm:
+        throw StateError('NpuStack.qualcomm has no stack for $targetAbi');
+      case NpuStack.googleTensor when os == OS.android:
         _registerBundledNpuStack(
           vendor: vendor,
           output: output,
           prebuiltDir: prebuiltDir,
           stage: stage,
         );
-      case NpuVendor.googleTensor:
-        throw StateError('NpuVendor.googleTensor has no stack for $targetAbi');
+      case NpuStack.googleTensor:
+        throw StateError('NpuStack.googleTensor has no stack for $targetAbi');
       // Not from the native bundle: Google's AAR, fetched (see
       // mediatek_runtime.dart for why).
-      case NpuVendor.mediatek when os == OS.android:
+      case NpuStack.mediatek when os == OS.android:
         await _registerMediatekNpu(input: input, output: output, stage: stage);
-      case NpuVendor.mediatek:
-        throw StateError('NpuVendor.mediatek has no stack for $targetAbi');
+      case NpuStack.mediatek:
+        throw StateError('NpuStack.mediatek has no stack for $targetAbi');
       // In every Windows x64 build, through windowsExtraLibs above.
-      case NpuVendor.intel:
+      case NpuStack.intel:
         break;
     }
   }
@@ -1113,7 +1152,7 @@ Future<void> _processBundle({
 /// archive. A file missing there is a native release that does not carry the
 /// stack yet: the build fails rather than ship a flag that does nothing.
 void _registerBundledNpuStack({
-  required NpuVendor vendor,
+  required NpuStack vendor,
   required BuildOutputBuilder output,
   required Uri prebuiltDir,
   required Uri Function(Uri) stage,
@@ -1157,7 +1196,9 @@ Future<void> _registerMediatekNpu({
   required BuildOutputBuilder output,
   required Uri Function(Uri) stage,
 }) async {
-  if (npuDispatchInNativeTarball(NpuVendor.mediatek)) {
+  final refusal = mediatekNpuBuildRefusal(_packageName);
+  if (refusal != null) throw StateError(refusal);
+  if (npuDispatchInNativeTarball(NpuStack.mediatek)) {
     throw StateError(
       'MediaTek: its dispatch is in the native bundle, not fetched',
     );
@@ -1562,12 +1603,10 @@ typedef _StagedScript = ({Uri source, Uri destination});
 
 /// Copy `tool/[_stagerFileName]` next to the dylibs it stages.
 ///
-/// The app's Xcode build phase cannot locate a file inside this package:
-/// `flutter_edge_ai_litertlm` declares no macOS plugin, so Flutter creates no
-/// `.symlinks/plugins/` entry for it, and the pub-cache path is not knowable
-/// from a Podfile. The flat native cache dir is the one location the phase
-/// already resolves — it reads the companion dylibs from there — so the script
-/// travels with them.
+/// The app's Xcode build phase reads the companion dylibs from the flat native
+/// cache dir, so the script travels with them. The phase predates this
+/// package's macOS plugin (#689), and blocks pasted into Podfiles before it
+/// look only there.
 ///
 /// Returns null when the script is absent (a consumer on an older plugin
 /// version), leaving the phase to report the missing file itself.
@@ -1607,4 +1646,64 @@ Directory _watchableAncestor(Directory dir) {
     d = parent;
   }
   return d;
+}
+
+/// Copies the macOS [src] LiteRtLm into [outDir] with its references to the
+/// [companions] pointed at their frameworks: `@rpath/lib<X>.dylib` becomes
+/// `@rpath/<X>.framework/Versions/A/<X>`, the install name the plugin's
+/// Swift package and `tool/stage_macos_companions.sh` both give them. The copy
+/// is then signed ad hoc; the app's build signs it again with its own identity.
+///
+/// libLiteRtLm is built with `-headerpad_max_install_names`, so the longer
+/// names fit. A `<name>.source-sha256` file beside the copy records which
+/// source, patched by which version of this step, it was made from, so an
+/// unchanged source is not patched again: a fresh copy on every run would
+/// change the file Flutter embeds each time.
+Uri _stagePointedAtCompanionFrameworks(
+  Uri src,
+  Uri outDir,
+  List<String> companions,
+) {
+  final source = File.fromUri(src);
+  final dest = File.fromUri(outDir.resolve(src.pathSegments.last));
+  final marker = File('${dest.path}.source-sha256');
+  final sourceSum =
+      '${sha256.convert(source.readAsBytesSync())} framework-refs-1';
+  if (dest.existsSync() &&
+      marker.existsSync() &&
+      marker.readAsStringSync() == sourceSum) {
+    return dest.uri;
+  }
+  dest.parent.createSync(recursive: true);
+  source.copySync(dest.path);
+
+  final listing = _run('otool', ['-L', dest.path]);
+  final args = <String>[];
+  for (final line in listing.split('\n').skip(1)) {
+    final ref = line.trim().split(' ').first;
+    for (final name in companions) {
+      if (ref.endsWith('/lib$name.dylib')) {
+        args.addAll([
+          '-change',
+          ref,
+          '@rpath/$name.framework/Versions/A/$name',
+        ]);
+      }
+    }
+  }
+  if (args.isNotEmpty) {
+    _run('install_name_tool', [...args, dest.path]);
+    _run('codesign', ['--force', '--sign', '-', dest.path]);
+  }
+  marker.writeAsStringSync(sourceSum);
+  return dest.uri;
+}
+
+/// Runs [executable] and returns its stdout; a non-zero exit fails the build.
+String _run(String executable, List<String> args) {
+  final r = Process.runSync(executable, args);
+  if (r.exitCode != 0) {
+    throw StateError('$executable ${args.join(' ')} failed: ${r.stderr}');
+  }
+  return r.stdout as String;
 }

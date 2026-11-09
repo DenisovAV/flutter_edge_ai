@@ -7,6 +7,9 @@ import 'package:mutex/mutex.dart';
 
 import 'package:flutter_edge_ai_mediapipe/pigeon.g.dart';
 
+import '../reported_engine_turn.dart';
+import 'native_turn_log.dart';
+
 /// Shared MediaPipe pigeon client. Library-level (non-private) so the engine
 /// (`mediapipe_engine.dart`) and both session classes use the SAME channel
 /// instance — its own `flutter_edge_ai`-domain pigeon channel, distinct from
@@ -23,6 +26,16 @@ class MobileInferenceModelSession extends InferenceModelSession {
   final bool supportImage;
   final bool supportAudio; // Enabling audio support (Gemma 3n E4B)
   bool _isClosed = false;
+
+  /// [stopGeneration] was called during the current turn.
+  bool _stopAsked = false;
+
+  /// What the native session holds, so a turn can be taken back (rule A).
+  final NativeTurnLog _log = NativeTurnLog();
+
+  /// Builds the native session again, as the model first built it. Null in
+  /// a session made for a test without one: a take-back then only forgets.
+  final Future<void> Function()? recreateNative;
 
   Completer<void>? _responseCompleter;
   StreamController<String>? _asyncResponseController;
@@ -46,12 +59,23 @@ class MobileInferenceModelSession extends InferenceModelSession {
     this.supportImage = false,
     this.supportAudio = false,
     this.systemInstruction,
+    this.recreateNative,
   });
 
   void _assertNotClosed() {
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
+      );
+    }
+    _assertRebuilt();
+  }
+
+  void _assertRebuilt() {
+    if (_rebuildFailure case final failure?) {
+      throw StateError(
+        'This session could not be rebuilt after a turn was taken back '
+        '($failure); create a new session.',
       );
     }
   }
@@ -67,6 +91,7 @@ class MobileInferenceModelSession extends InferenceModelSession {
 
   @override
   Future<void> addQueryChunk(Message message) async {
+    _assertRebuilt();
     var messageToSend = message;
     if (message.isUser &&
         !_systemInstructionSent &&
@@ -74,6 +99,7 @@ class MobileInferenceModelSession extends InferenceModelSession {
         systemInstruction!.isNotEmpty &&
         !_isNativeSystemInstruction) {
       _systemInstructionSent = true;
+      _log.stagedSystemInstruction();
       messageToSend = message.copyWith(
         text: '[System: ${systemInstruction!}]\n\n${message.text}',
       );
@@ -104,7 +130,46 @@ class MobileInferenceModelSession extends InferenceModelSession {
       await _addAudio(message.audioBytes!);
     }
     await platformService.addQueryChunk(finalPrompt);
+    _log.stage(NativeText(finalPrompt));
   }
+
+  /// The model's reply as a prompt chunk, for a replay.
+  String _replyChunk(String text) => Message(
+    text: text,
+  ).transformToChatPrompt(type: modelType, fileType: fileType);
+
+  /// Records how a turn ended in [_log]: kept with what the model wrote, or
+  /// taken back when it failed or was stopped before any text. A take-back
+  /// builds the native session again and replays what it held before the
+  /// turn: MediaPipe cannot drop queued input.
+  Future<void> _endTurn(String text, {required bool failed}) async {
+    if (_isClosed) return;
+    final takeBack = failed && !_stopAsked || _stopAsked && text.isEmpty;
+    if (!takeBack) {
+      _log.kept(text.isEmpty ? null : _replyChunk(text));
+      return;
+    }
+    final before = _log.takeBack();
+    if (before == null) return;
+    if (before.systemInstruction) _systemInstructionSent = false;
+    final recreate = recreateNative;
+    if (recreate == null) return;
+    _rebuildFailure = await rebuildNativeSession(
+      before: before.before,
+      recreate: recreate,
+      closeRebuilt: platformService.closeSession,
+      isClosed: () => _isClosed,
+      send: (input) => switch (input) {
+        NativeText(:final prompt) => platformService.addQueryChunk(prompt),
+        NativeImage(:final bytes) => platformService.addImage(bytes),
+        NativeAudio(:final bytes) => platformService.addAudio(bytes),
+      },
+    );
+  }
+
+  /// Why the native session could not be rebuilt after a take-back; the
+  /// session refuses every call from then on.
+  Object? _rebuildFailure;
 
   Future<void> _addImage(Uint8List imageBytes) async {
     _assertNotClosed();
@@ -112,6 +177,7 @@ class MobileInferenceModelSession extends InferenceModelSession {
       throw ArgumentError('This model does not support images');
     }
     await platformService.addImage(imageBytes);
+    _log.stage(NativeImage(imageBytes));
   }
 
   Future<void> _addAudio(Uint8List audioBytes) async {
@@ -120,18 +186,28 @@ class MobileInferenceModelSession extends InferenceModelSession {
       throw ArgumentError('This model does not support audio');
     }
     await platformService.addAudio(audioBytes);
+    _log.stage(NativeAudio(audioBytes));
   }
 
   @override
   Future<String> getResponse({Message? message}) async {
     _assertNotClosed();
+    _stopAsked = false;
     await _awaitLastResponse();
     final completer = _responseCompleter = Completer<void>();
     try {
       if (message != null) {
         await addQueryChunk(message);
       }
-      return await platformService.generateResponse();
+      final String reply;
+      try {
+        reply = await platformService.generateResponse();
+      } catch (_) {
+        await _endTurn('', failed: true);
+        rethrow;
+      }
+      await _endTurn(reply, failed: false);
+      return reply;
     } finally {
       completer.complete();
     }
@@ -140,6 +216,8 @@ class MobileInferenceModelSession extends InferenceModelSession {
   @override
   Stream<String> getResponseAsync({Message? message}) async* {
     _assertNotClosed();
+    // A stop while it waits for the previous turn still counts.
+    _stopAsked = false;
     await _awaitLastResponse();
     final completer = _responseCompleter = Completer<void>();
     try {
@@ -160,6 +238,8 @@ class MobileInferenceModelSession extends InferenceModelSession {
               controller.addError(
                 Exception(event['message'] ?? 'Unknown async error occurred'),
               );
+              // A failed generation is over: no end follows it.
+              controller.close();
             } else if (event is Map && event.containsKey('partialResult')) {
               final partial = event['partialResult'] as String;
               controller.add(partial);
@@ -171,6 +251,9 @@ class MobileInferenceModelSession extends InferenceModelSession {
         onError: (error, st) {
           if (!controller.isClosed) {
             controller.addError(error, st);
+            // A failed or cancelled generation is over: neither Android's
+            // error path nor an older iOS plugin sends an end after it.
+            controller.close();
           }
         },
         onDone: () {
@@ -183,17 +266,60 @@ class MobileInferenceModelSession extends InferenceModelSession {
       if (message != null) {
         await addQueryChunk(message);
       }
-      unawaited(platformService.generateResponseAsync());
+      // A start the native side refuses (a previous generation still
+      // running, no session) fails this turn; unheard, the turn would wait
+      // forever for events that never come.
+      unawaited(
+        platformService.generateResponseAsync().then<void>(
+          (_) {},
+          onError: (Object e, StackTrace st) {
+            if (controller.isClosed) return;
+            controller.addError(e, st);
+            controller.close();
+          },
+        ),
+      );
 
-      yield* controller.stream;
+      final text = StringBuffer();
+      var ended = false;
+      try {
+        await for (final chunk in controller.stream) {
+          text.write(chunk);
+          yield chunk;
+        }
+      } catch (_) {
+        ended = true;
+        await _endTurn(text.toString(), failed: true);
+        rethrow;
+      } finally {
+        // Run to its end, or cancelled by the consumer, which this async*
+        // stream sees only at a chunk: a turn with text is kept either way.
+        if (!ended) await _endTurn(text.toString(), failed: false);
+      }
     } finally {
       completer.complete();
       _asyncResponseController = null;
     }
   }
 
+  /// How the turn ended, for core's chat: a stop is [TurnEnd.stopped] (the
+  /// cancel's own error, iOS's among them, is not the turn's), a close the
+  /// consumer did not ask for [TurnEnd.closed], so the chat keeps the
+  /// partial reply (decision H). MediaPipe has no output cap here.
+  @override
+  EngineTurn startTurn() {
+    _stopAsked = false;
+    return reportedEngineTurn(
+      getResponseAsync(),
+      stopped: () => _stopAsked,
+      closed: () => _isClosed,
+      completed: () => TurnEnd.endOfSequence,
+    );
+  }
+
   @override
   Future<void> stopGeneration() async {
+    _stopAsked = true;
     try {
       await platformService.stopGeneration();
     } catch (e) {
@@ -285,6 +411,20 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
   bool _isClosed = false;
   bool _systemInstructionSent = false;
 
+  /// [stopGeneration] was called during the current turn.
+  bool _stopAsked = false;
+
+  /// Ends the turn that is running, if any; [close] calls it.
+  void Function()? _endRunningTurn;
+
+  /// What the native session holds, so a turn can be taken back (rule A).
+  final NativeTurnLog _log = NativeTurnLog();
+
+  /// Builds this native session again (same id), as the model first built
+  /// it. Null in a session made for a test without one: a take-back then
+  /// only forgets.
+  final Future<void> Function()? recreateNative;
+
   MultiSessionMobileInferenceModelSession({
     required this.sessionId,
     required this.modelType,
@@ -294,11 +434,18 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
     required this.generationMutex,
     required this.onClose,
     this.systemInstruction,
+    this.recreateNative,
   });
 
   void _assertNotClosed() {
     if (_isClosed) {
       throw StateError('Session is closed');
+    }
+    if (_rebuildFailure case final failure?) {
+      throw StateError(
+        'This session could not be rebuilt after a turn was taken back '
+        '($failure); open a new session.',
+      );
     }
   }
 
@@ -315,6 +462,7 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
         systemInstruction != null &&
         systemInstruction!.isNotEmpty) {
       _systemInstructionSent = true;
+      _log.stagedSystemInstruction();
       messageToSend = message.copyWith(
         text: '[System: ${systemInstruction!}]\n\n${message.text}',
       );
@@ -331,28 +479,85 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
                 : const <Uint8List>[]);
       for (final image in images) {
         await platformService.addImageToSession(sessionId, image);
+        _log.stage(NativeImage(image));
       }
     }
     if (message.hasAudio && message.audioBytes != null && supportAudio) {
       await platformService.addAudioToSession(sessionId, message.audioBytes!);
+      _log.stage(NativeAudio(message.audioBytes!));
     }
     await platformService.addQueryChunkToSession(sessionId, finalPrompt);
+    _log.stage(NativeText(finalPrompt));
   }
+
+  /// See [MobileInferenceModelSession._endTurn].
+  Future<void> _endTurn(String text, {required bool failed}) async {
+    if (_isClosed) return;
+    final takeBack = failed && !_stopAsked || _stopAsked && text.isEmpty;
+    if (!takeBack) {
+      _log.kept(
+        text.isEmpty
+            ? null
+            : Message(
+                text: text,
+              ).transformToChatPrompt(type: modelType, fileType: fileType),
+      );
+      return;
+    }
+    final before = _log.takeBack();
+    if (before == null) return;
+    if (before.systemInstruction) _systemInstructionSent = false;
+    final recreate = recreateNative;
+    if (recreate == null) return;
+    _rebuildFailure = await rebuildNativeSession(
+      before: before.before,
+      recreate: recreate,
+      closeRebuilt: () => platformService.closeSessionId(sessionId),
+      isClosed: () => _isClosed,
+      send: (input) => switch (input) {
+        NativeText(:final prompt) => platformService.addQueryChunkToSession(
+          sessionId,
+          prompt,
+        ),
+        NativeImage(:final bytes) => platformService.addImageToSession(
+          sessionId,
+          bytes,
+        ),
+        NativeAudio(:final bytes) => platformService.addAudioToSession(
+          sessionId,
+          bytes,
+        ),
+      },
+    );
+  }
+
+  /// See [MobileInferenceModelSession._rebuildFailure].
+  Object? _rebuildFailure;
 
   @override
   Future<String> getResponse({Message? message}) async {
     _assertNotClosed();
+    _stopAsked = false;
     if (message != null) await addQueryChunk(message);
     // Serialize generation across sessions (mobile can't afford parallel
     // generations; also keeps the shared event channel unambiguous).
-    return generationMutex.protect(
-      () => platformService.generateResponseForSession(sessionId),
-    );
+    return generationMutex.protect(() async {
+      final String reply;
+      try {
+        reply = await platformService.generateResponseForSession(sessionId);
+      } catch (_) {
+        await _endTurn('', failed: true);
+        rethrow;
+      }
+      await _endTurn(reply, failed: false);
+      return reply;
+    });
   }
 
   @override
   Stream<String> getResponseAsync({Message? message}) {
     _assertNotClosed();
+    _stopAsked = false;
 
     // StreamController (not async*/yield*) so the mutex release is tied to the
     // controller lifecycle — it fires on done, error, AND consumer cancel /
@@ -363,83 +568,124 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
     StreamSubscription? subscription;
     var mutexHeld = false;
     var finished = false;
+    final text = StringBuffer();
 
-    Future<void> cleanup() async {
+    /// Ends the turn once: records it in [_log] (kept, or taken back from the
+    /// native session) before the generation lock goes, then delivers
+    /// [error], if any, and the end.
+    Future<void> endTurn({
+      (Object, StackTrace)? error,
+      bool cancelled = false,
+    }) async {
       if (finished) return;
       finished = true;
       await subscription?.cancel();
-      if (mutexHeld) {
-        mutexHeld = false;
-        generationMutex.release();
+      if (cancelled) _stopAsked = true;
+      try {
+        // Never throws: a failed rebuild is kept by the session, and the turn
+        // keeps the engine's own error.
+        await _endTurn(text.toString(), failed: error != null);
+      } finally {
+        if (mutexHeld) {
+          mutexHeld = false;
+          generationMutex.release();
+        }
+        if (error != null && !controller.isClosed) {
+          controller.addError(error.$1, error.$2);
+        }
+        if (!controller.isClosed) await controller.close();
       }
     }
+
+    // A close ends this turn: the native session it ran on is gone, and no
+    // tagged done will come.
+    _endRunningTurn = () => unawaited(endTurn());
 
     controller.onListen = () async {
       try {
         if (message != null) await addQueryChunk(message);
         await generationMutex.acquire();
+        // Closed or cancelled while it waited: the turn has ended already and
+        // would not release a lock taken after it.
+        if (finished) {
+          generationMutex.release();
+          return;
+        }
         mutexHeld = true;
         subscription = eventChannel.receiveBroadcastStream().listen(
           (event) {
             if (event is! Map) return;
             // Only consume events tagged for THIS session.
             if (event['sessionId'] != sessionId) return;
-            if (controller.isClosed) return;
+            if (finished) return;
             // Native emits generation errors as a TAGGED DATA event
             // {code: ERROR, sessionId, message} (not an EventChannel error,
             // which would be broadcast to every session and lose the id).
             if (event['code'] == 'ERROR') {
-              controller.addError(
-                Exception(event['message'] ?? 'Unknown async error occurred'),
+              unawaited(
+                endTurn(
+                  error: (
+                    Exception(
+                      event['message'] ?? 'Unknown async error occurred',
+                    ),
+                    StackTrace.current,
+                  ),
+                ),
               );
-              cleanup();
-              controller.close();
               return;
             }
             final partial = event['partialResult'] as String? ?? '';
-            if (partial.isNotEmpty) controller.add(partial);
+            if (partial.isNotEmpty) {
+              text.write(partial);
+              controller.add(partial);
+            }
             // Tagged completion (native sends done:true with our sessionId
             // rather than closing the whole channel via endOfStream).
-            if (event['done'] == true) {
-              cleanup();
-              controller.close();
-            }
+            if (event['done'] == true) unawaited(endTurn());
           },
-          onError: (error, st) {
-            if (!controller.isClosed) controller.addError(error, st);
-            cleanup();
-            if (!controller.isClosed) controller.close();
-          },
+          onError: (Object error, StackTrace st) =>
+              unawaited(endTurn(error: (error, st))),
         );
         unawaited(
-          platformService.generateResponseAsyncForSession(sessionId).catchError((
-            Object e,
-            StackTrace st,
-          ) {
-            // A synchronous native failure (before any event) must surface and
-            // release the mutex, not hang the controller.
-            if (!controller.isClosed) controller.addError(e, st);
-            cleanup();
-            if (!controller.isClosed) controller.close();
-          }),
+          platformService
+              .generateResponseAsyncForSession(sessionId)
+              .then<void>(
+                (_) {},
+                // A synchronous native failure (before any event) must surface
+                // and release the mutex, not hang the controller.
+                onError: (Object e, StackTrace st) =>
+                    unawaited(endTurn(error: (e, st))),
+              ),
         );
       } catch (e, st) {
-        if (!controller.isClosed) controller.addError(e, st);
-        await cleanup();
-        if (!controller.isClosed) await controller.close();
+        await endTurn(error: (e, st));
       }
     };
 
-    // Consumer cancelled / abandoned the stream — release the mutex.
-    controller.onCancel = () async {
-      await cleanup();
-    };
+    // Consumer cancelled / abandoned the stream: a stop. The mutex goes.
+    controller.onCancel = () => endTurn(cancelled: true);
 
     return controller.stream;
   }
 
+  /// How the turn ended, for core's chat: a stop is [TurnEnd.stopped] (the
+  /// cancel's own error, iOS's among them, is not the turn's), a close the
+  /// consumer did not ask for [TurnEnd.closed], so the chat keeps the
+  /// partial reply (decision H). MediaPipe has no output cap here.
+  @override
+  EngineTurn startTurn() {
+    _stopAsked = false;
+    return reportedEngineTurn(
+      getResponseAsync(),
+      stopped: () => _stopAsked,
+      closed: () => _isClosed,
+      completed: () => TurnEnd.endOfSequence,
+    );
+  }
+
   @override
   Future<void> stopGeneration() async {
+    _stopAsked = true;
     await platformService.stopGenerationForSession(sessionId);
   }
 
@@ -450,6 +696,8 @@ class MultiSessionMobileInferenceModelSession extends InferenceModelSession {
   Future<void> close() async {
     if (_isClosed) return;
     _isClosed = true;
+    _endRunningTurn?.call();
+    _endRunningTurn = null;
     onClose();
     await platformService.closeSessionId(sessionId);
   }

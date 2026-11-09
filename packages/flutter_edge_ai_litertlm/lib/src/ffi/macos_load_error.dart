@@ -2,9 +2,10 @@
 // it (#689).
 //
 // dyld's own error names the cause, but in words that do not say what to do:
-// "Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib" is what a
-// Swift Package Manager app shows, because nothing copies LiteRT-LM's
-// companion libraries into it. The LLM and EmbeddingGemma 2 paths open the
+// "Library not loaded: @rpath/GemmaModelConstraintProvider.framework/…" is
+// what an app shows when LiteRT-LM's companion libraries are not in it (with
+// Swift Package Manager off, the macos/Podfile block copies them; with it on,
+// the plugin's Swift package does). The LLM and EmbeddingGemma 2 paths open the
 // framework with [openMacOSLiteRtLm], the `.tflite` path (embeddings, speech)
 // with [openMacOSLiteRtLmForTflite]. Both build their message here, so every
 // path says the same thing, and dyld's text is kept.
@@ -74,17 +75,14 @@ MacOSLoadCause diagnoseMacOSLoadError(String dyldText) {
 String macOSLoadErrorMessage(String dyldText) {
   final String fix = switch (diagnoseMacOSLoadError(dyldText)) {
     MacOSLoadCause.missingCompanion =>
-      'Flutter 3.44 and later build macOS apps with Swift Package Manager, '
-          "and nothing copied LiteRT-LM's companion libraries into the app "
-          '(https://github.com/DenisovAV/flutter_edge_ai/issues/689). Until '
-          'that is fixed, set `enable-swift-package-manager: false` under '
-          "`flutter: config:` in the app's pubspec.yaml, run `flutter pub get`, "
-          'and replace the post_install block in macos/Podfile with the one '
-          'from https://flutteredge.ai/docs/desktop#macos, keeping any lines of '
-          'your own inside it. An app that already '
-          'had a macos/Podfile keeps Swift Package Manager on and only needs '
-          'that block. If the block is already there, run `flutter clean` and '
-          'build again.',
+      "LiteRT-LM's companion libraries are not in the app. With Swift Package "
+          "Manager on (Flutter's default), flutter_edge_ai_litertlm's Swift "
+          'package embeds them: run `flutter clean` and build again. With '
+          '`enable-swift-package-manager: false`, the post_install block in '
+          'macos/Podfile copies them: replace the post_install block with the '
+          'one from https://flutteredge.ai/docs/desktop#macos, keeping any '
+          'lines of your own inside it, then run `flutter clean` and build '
+          'again.',
     MacOSLoadCause.wrongArchitecture =>
       'LiteRT-LM ships for Apple silicon (arm64) only; it does not run on an '
           'Intel Mac or in an x86_64 (Rosetta) process.',
@@ -141,6 +139,11 @@ DynamicLibrary openMacOSLiteRtLm({DynamicLibrary Function(String path)? open}) {
 /// Outside one (the macOS host test suites) the copies [devCandidates] names
 /// are tried next, the build hook's cache among them.
 ///
+/// A dev copy that loads but fails [isOwnBuild] is skipped like one that does
+/// not load, and named in the failure. The framework is returned without it:
+/// the caller refuses a foreign framework itself, so it is never skipped for
+/// a dev copy.
+///
 /// A failure is an [UnsupportedError]: inside an app its message is
 /// [macOSLoadErrorMessage]; outside one it names each copy that exists with
 /// dyld's reason, because there the framework is never present and its error
@@ -148,6 +151,7 @@ DynamicLibrary openMacOSLiteRtLm({DynamicLibrary Function(String path)? open}) {
 /// [open] and [exists] are for tests.
 DynamicLibrary openMacOSLiteRtLmForTflite({
   required List<String> Function() devCandidates,
+  bool Function(DynamicLibrary library)? isOwnBuild,
   String? executable,
   DynamicLibrary Function(String path)? open,
   bool Function(String path)? exists,
@@ -175,14 +179,24 @@ DynamicLibrary openMacOSLiteRtLmForTflite({
       missing.add(path);
       continue;
     }
+    final DynamicLibrary library;
     try {
-      return opener(path);
+      library = opener(path);
     } on ArgumentError catch (error) {
       // Keep going: a copy that exists but does not load (wrong arch, a
       // missing companion, a stale build) must not hide a later one that
       // does, the build hook's cache included.
       failed.add('$path: ${dyldErrorText(error)}');
+      continue;
     }
+    if (isOwnBuild != null && !isOwnBuild(library)) {
+      failed.add(
+        '$path: loads, but is not a flutter_edge_ai_litertlm build on '
+        'LiteRT-LM C API 1.x',
+      );
+      continue;
+    }
+    return library;
   }
   throw UnsupportedError(
     'flutter_edge_ai_litertlm: LiteRT-LM did not load. Outside an app it is '

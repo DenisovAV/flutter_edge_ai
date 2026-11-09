@@ -40,13 +40,12 @@ const _models = [
   _ModelData(
     name: 'Gemma3n E2B/E4B',
     bestFor: 'Multimodal chat — image & audio; function calling on E4B .litertlm',
-    size: '3.1–4.9 GB',
-    fc: true,
+    size: '3.0–4.9 GB',
     vision: true,
   ),
   _ModelData(
     name: 'FastVLM 0.5B',
-    bestFor: 'Fast vision-language on desktop',
+    bestFor: 'Fast vision-language — desktop documented, phones untested',
     size: '1.2 GB',
     vision: true,
   ),
@@ -59,7 +58,7 @@ const _models = [
   _ModelData(
     name: 'DeepSeek R1',
     bestFor: 'Reasoning & code generation',
-    size: '1.7 GB',
+    size: '1.8–1.9 GB',
     fc: true,
     thinking: true,
   ),
@@ -79,7 +78,7 @@ const _models = [
   _ModelData(
     name: 'Gemma 3 1B',
     bestFor: 'Balanced text — all platforms',
-    size: '0.5 GB',
+    size: '0.6 GB',
   ),
   _ModelData(
     name: 'Gemma 3 270M',

@@ -27,7 +27,7 @@ depend on it. Apps ship only the runtimes and vector stores they use.
 | **`flutter_edge_ai_sqlite`** | SQLite + `sqlite-vec` provider for `flutter_edge_ai_rag`. Exact + portable. | All (incl. Web) |
 | **`flutter_edge_ai_agent`** | On-device [agent skills](/docs/agent) — SKILL.md catalog + tool-calling loop (text / JS / native-intent / MCP). | Native, no Web (JS skills: no Linux) |
 | **`flutter_edge_ai_speech`** | On-device [speech](/docs/speech) — speech-to-text + text-to-speech + a `VoiceSession` voice loop (moonshine/Whisper/Parakeet STT + Matcha/Qwen3/Inflect TTS) via the LiteRT C API + `dart:ffi`. | Native (no Web) |
-| **`flutter_edge_ai_diagnostics`** | [Memory diagnostics](/docs/diagnostics) — the anonymous footprint (the memory the OS cannot reclaim) and the memory still available, read from the OS. No native code, no dependency on core. | Android + iOS + macOS |
+| **`flutter_edge_ai_diagnostics`** | [Memory diagnostics](/docs/diagnostics) — the anonymous footprint (the memory the OS cannot reclaim) and the memory still available, read from the OS. No native code, no dependency on core. | Android + iOS + macOS + Linux + Windows |
 
 Which runtime gives you text generation, embeddings and speech on each platform
 is on the [Capabilities](/docs/capabilities) page.
@@ -52,6 +52,16 @@ is on the [Capabilities](/docs/capabilities) page.
   `flutter_edge_ai_speech` has no hook of its own and consumes that bundle
   transitively. `flutter_edge_ai_embeddings` touches no native library at all. `flutter_edge_ai_onnx` owns its own separate ORT / ORT-GenAI
   native archives.
+- **LiteRT-LM open sessions.** `openSession` / `openChat` use one native
+  conversation and KV cache per session on macOS CPU/Metal, Linux and Windows
+  CPU, Android Adreno/Mali, Qualcomm or Google Tensor NPUs on Android, and Intel
+  NPUs on Windows. Linux Vulkan, Windows D3D12, iOS, Android
+  CPU/PowerVR/MediaTek, unverified Linux arm64 accelerators and the web use
+  virtual replay.
+  Hybrid models such as LFM2 rebuild from full messages when recovery is needed
+  and never rewind. At `maxTokens: 4096`, Gemma 4 E2B measured 36.8 MiB of
+  RSS per idle native session from the third session onward on an M5 Pro; use
+  `maxConcurrentSessions` to bound the count.
 
 ## Choosing packages
 
@@ -72,7 +82,7 @@ is on the [Capabilities](/docs/capabilities) page.
 | On-device RAG on web, or a portable/exact store on any platform | `flutter_edge_ai_rag` + `flutter_edge_ai_sqlite` |
 | On-device agent skills the model runs itself (text / JS / native-intent / MCP) | `flutter_edge_ai_agent` |
 | Transcribe audio, synthesize speech, or run a voice loop on-device (STT + TTS + voice) | `flutter_edge_ai_speech` |
-| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS) | `flutter_edge_ai_diagnostics` |
+| Measure what a model costs in memory the OS cannot reclaim (Android + iOS + macOS + Linux + Windows) | `flutter_edge_ai_diagnostics` |
 
 <Info>
 
@@ -101,8 +111,9 @@ can be registered on its own:
 
 - **`OnnxEngine`** — text generation via [ORT-GenAI](https://github.com/microsoft/onnxruntime-genai)
   on native, [Transformers.js](https://huggingface.co/docs/transformers.js) on
-  Web. Text-only, one session at a time in v1 — no vision, no audio, no LoRA
-  yet.
+  Web. Text-only; independent `openSession` sessions on both (native: a
+  generator each; web: each keeps its own history on the shared pipeline) —
+  no vision, no audio, no LoRA yet.
 - **`OnnxEmbeddingBackend`** — embeddings via plain ONNX Runtime
   (WordPiece/BERT-style and SentencePiece models) on native, onnxruntime-web
   on Web, priority 10 over `LiteRtEmbeddingBackend`'s catch-all priority 0.

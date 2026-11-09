@@ -22,8 +22,8 @@ import 'embedding_decider.dart' show chooseAllWithSharedEmbeddings;
 ///
 /// Get one from a model: `EmbeddingModel.createDecider` (every embedding
 /// backend) or `InferenceModel.createDecider` (a model trained on the
-/// decision, whose engine scores options: `.litertlm` on the CPU). A decider
-/// BORROWS its model and never closes it.
+/// decision, whose engine scores options: `.litertlm` on the CPU or GPU). A
+/// decider BORROWS its model and never closes it.
 ///
 /// `abstract base`: outside core it can be extended (by a `base`, `final` or
 /// `sealed` class) but not implemented, so a member added here in a later

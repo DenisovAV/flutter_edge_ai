@@ -20,7 +20,7 @@ Future<String> _run(PreferredBackend backend) async {
     maxTokens: 2048,
     preferredBackend: backend,
   );
-  final session = await _model!.createSession(temperature: 0.7, topK: 40);
+  final session = await _model!.openSession(temperature: 0.7, topK: 40);
   await session.addQueryChunk(
     const Message(text: 'Name three primary colors.', isUser: true),
   );
@@ -42,20 +42,16 @@ void main() {
     print('Platform: ${Platform.operatingSystem}');
   });
 
-  testWidgets(
-    'Qwen2.5-1.5B install + text (CPU + GPU)',
-    (t) async {
-      await FlutterEdgeAi.installModel(
-        modelType: ModelType.general,
-        fileType: ModelFileType.litertlm,
-      ).fromNetwork(_url).install();
-      final cpu = await _run(PreferredBackend.cpu);
-      print('[Qwen2.5 CPU] $cpu');
-      expect(cpu.trim(), isNotEmpty);
-      final gpu = await _run(PreferredBackend.gpu);
-      print('[Qwen2.5 GPU] $gpu');
-      expect(gpu.trim(), isNotEmpty);
-    },
-    timeout: const Timeout(Duration(minutes: 40)),
-  );
+  testWidgets('Qwen2.5-1.5B install + text (CPU + GPU)', (t) async {
+    await FlutterEdgeAi.installModel(
+      modelType: ModelType.general,
+      fileType: ModelFileType.litertlm,
+    ).fromNetwork(_url).install();
+    final cpu = await _run(PreferredBackend.cpu);
+    print('[Qwen2.5 CPU] $cpu');
+    expect(cpu.trim(), isNotEmpty);
+    final gpu = await _run(PreferredBackend.gpu);
+    print('[Qwen2.5 GPU] $gpu');
+    expect(gpu.trim(), isNotEmpty);
+  }, timeout: const Timeout(Duration(minutes: 40)));
 }

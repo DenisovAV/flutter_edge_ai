@@ -15,11 +15,13 @@ import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show LiteRtLmFfiClient;
+import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
+import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart'
     show NpuDispatch;
-import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuVendor;
+import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuStack;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'litertlm_container_fixture.dart';
@@ -43,7 +45,7 @@ class _FakeHost extends LiteRtLmEngineHost {
   final String os;
   final String abiName;
   final NpuStackCheck stackCheck;
-  final Map<NpuVendor, NpuStackCheck> stacks;
+  final Map<NpuStack, NpuStackCheck> stacks;
   final bool npuShips;
 
   /// The error each backend's create throws; a backend not here succeeds.
@@ -54,14 +56,17 @@ class _FakeHost extends LiteRtLmEngineHost {
   int npuProbes = 0;
 
   /// Every vendor whose stack or device was asked about, in order.
-  final askedVendors = <NpuVendor>[];
+  final askedVendors = <NpuStack>[];
 
   /// The vendor whose dispatch directory each NPU attempt prepared.
-  final preparedFor = <NpuVendor>[];
+  final preparedFor = <NpuStack>[];
 
   /// The NPU dispatch handed to each attempt, in order (null for gpu/cpu).
   final npuDispatches = <NpuDispatch?>[];
   final nativeLogLevels = <LiteRtLmLogLevel?>[];
+
+  /// The client's thinking budget at each attempt.
+  final thinkingBudgets = <int?>[];
 
   /// Creates running at this moment, and the most there ever were.
   int creating = 0;
@@ -70,6 +75,12 @@ class _FakeHost extends LiteRtLmEngineHost {
   @override
   Future<String> cacheDir() async => Directory.systemTemp.path;
 
+  /// What the device's GPU family probe answers.
+  AndroidGpuFamily? gpuFamily;
+
+  @override
+  AndroidGpuFamily? androidGpuFamily() => gpuFamily;
+
   @override
   String get operatingSystem => os;
 
@@ -77,21 +88,21 @@ class _FakeHost extends LiteRtLmEngineHost {
   String get abi => abiName;
 
   @override
-  Future<NpuStackCheck> stack(NpuVendor vendor) async {
+  Future<NpuStackCheck> stack(NpuStack vendor) async {
     stackChecks++;
     askedVendors.add(vendor);
     return stacks[vendor] ?? stackCheck;
   }
 
   @override
-  String? unreachable(NpuVendor vendor) {
+  String? unreachable(NpuStack vendor) {
     npuProbes++;
     askedVendors.add(vendor);
     return npuShips ? null : 'the fake host has no NPU';
   }
 
   @override
-  Future<String> prepareDispatchDir(NpuVendor vendor) async {
+  Future<String> prepareDispatchDir(NpuStack vendor) async {
     preparedFor.add(vendor);
     return '/fake/npu/${vendor.name}';
   }
@@ -112,8 +123,10 @@ class _FakeHost extends LiteRtLmEngineHost {
     required int? activationDataType,
     required NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
+    required int? thinkingTokenBudget,
   }) async {
     nativeLogLevels.add(nativeLogLevel);
+    thinkingBudgets.add(thinkingTokenBudget);
     mostCreatingAtOnce = max(mostCreatingAtOnce, ++creating);
     // A create takes time; another one started meanwhile would overlap it.
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -125,6 +138,33 @@ class _FakeHost extends LiteRtLmEngineHost {
     ));
     npuDispatches.add(npuDispatch);
     if (failures[backend] case final error?) throw error;
+  }
+}
+
+/// Records what [LiteRtLmFfiClient.initialize] is given; creates no engine.
+class _InitCapturingClient extends LiteRtLmFfiClient {
+  LiteRtLmLogLevel? nativeLogLevel;
+  int? budget;
+
+  @override
+  Future<void> initialize({
+    required String modelPath,
+    String backend = 'gpu',
+    int maxTokens = 2048,
+    String? cacheDir,
+    bool enableVision = false,
+    String visionBackend = 'cpu',
+    int maxNumImages = 0,
+    bool enableAudio = false,
+    String audioBackend = 'cpu',
+    bool? enableSpeculativeDecoding,
+    int? activationDataType,
+    NpuDispatch? npuDispatch,
+    LiteRtLmLogLevel? nativeLogLevel,
+    int? thinkingTokenBudget,
+  }) async {
+    this.nativeLogLevel = nativeLogLevel;
+    budget = thinkingTokenBudget;
   }
 }
 
@@ -211,10 +251,12 @@ void main() {
     bool supportAudio = false,
     bool backendFallback = true,
     LiteRtLmLogLevel? nativeLogLevel,
+    int? thinkingTokenBudget,
   }) =>
       LiteRtLmEngine(
         backendFallback: backendFallback,
         nativeLogLevel: nativeLogLevel,
+        thinkingTokenBudget: thinkingTokenBudget,
       ).createModel(
         InferenceModelSpec(
           name: 'test',
@@ -276,6 +318,63 @@ void main() {
     await plain.close();
   });
 
+  test('thinkingTokenBudget reaches the client of every attempt, a fallback '
+      'included; unset stays null', () async {
+    final path = write('gpu.litertlm', _bundle(text: 'gpu,cpu'));
+    host = _FakeHost(
+      failures: const {'gpu': LiteRtLmEngineCreateException('no GPU')},
+    );
+    debugLiteRtLmEngineHost = host;
+    final budgeted = await load(path, thinkingTokenBudget: 2048);
+    final plain = await load(path);
+    expect(host.attempts.map((a) => a.backend), ['gpu', 'cpu', 'gpu', 'cpu']);
+    expect(host.thinkingBudgets, [2048, 2048, null, null]);
+    await budgeted.close();
+    await plain.close();
+  });
+
+  test('the real host hands the client the budget and the log level', () async {
+    final client = _InitCapturingClient();
+    await const LiteRtLmEngineHost().initializeClient(
+      client,
+      modelPath: 'm',
+      backend: 'cpu',
+      maxTokens: 1024,
+      cacheDir: 'c',
+      enableVision: false,
+      visionBackend: 'cpu',
+      maxNumImages: 0,
+      enableAudio: false,
+      audioBackend: 'cpu',
+      enableSpeculativeDecoding: null,
+      activationDataType: null,
+      npuDispatch: null,
+      nativeLogLevel: LiteRtLmLogLevel.silent,
+      thinkingTokenBudget: 2048,
+    );
+    expect(client.nativeLogLevel, LiteRtLmLogLevel.silent);
+    expect(client.budget, 2048);
+  });
+
+  test('a thinkingTokenBudget LiteRT-LM cannot take is refused before any '
+      'engine', () async {
+    final path = write('gpu.litertlm', _bundle(text: 'gpu,cpu'));
+    // Above 0x7fffffff the C int would wrap: 1 << 32 would arrive as 0.
+    for (final budget in [0, -1, 0x80000000, 1 << 32]) {
+      await expectLater(
+        load(path, thinkingTokenBudget: budget),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.name,
+            'name',
+            'thinkingTokenBudget',
+          ),
+        ),
+      );
+    }
+    expect(host.attempts, isEmpty);
+  });
+
   test(
     "the plan's text backends are the ones the client is asked for",
     () async {
@@ -297,8 +396,8 @@ void main() {
         write('sm8750.litertlm', _bundle(textStamp: ('Qualcomm', 'SM8750'))),
       );
       expect(host.attempts.map((a) => a.backend), ['npu']);
-      expect(host.askedVendors, [NpuVendor.qualcomm, NpuVendor.qualcomm]);
-      expect(host.preparedFor, [NpuVendor.qualcomm]);
+      expect(host.askedVendors, [NpuStack.qualcomm, NpuStack.qualcomm]);
+      expect(host.preparedFor, [NpuStack.qualcomm]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/qualcomm',
         disableHwMasking: false,
@@ -313,7 +412,7 @@ void main() {
         preferredBackend: PreferredBackend.npu,
       );
       expect(host.attempts.map((a) => a.backend), ['npu']);
-      expect(host.preparedFor, [NpuVendor.qualcomm]);
+      expect(host.preparedFor, [NpuStack.qualcomm]);
       await unread.close();
     },
   );
@@ -344,10 +443,10 @@ void main() {
         );
         expect(host.attempts.map((a) => a.backend), ['npu'], reason: soc);
         expect(host.askedVendors, [
-          NpuVendor.googleTensor,
-          NpuVendor.googleTensor,
+          NpuStack.googleTensor,
+          NpuStack.googleTensor,
         ], reason: soc);
-        expect(host.preparedFor, [NpuVendor.googleTensor], reason: soc);
+        expect(host.preparedFor, [NpuStack.googleTensor], reason: soc);
         expect(host.npuDispatches.single, (
           dir: '/fake/npu/googleTensor',
           disableHwMasking: false,
@@ -383,8 +482,8 @@ void main() {
         ),
       );
       expect(host.attempts.map((a) => a.backend), ['npu']);
-      expect(host.askedVendors, [NpuVendor.mediatek, NpuVendor.mediatek]);
-      expect(host.preparedFor, [NpuVendor.mediatek]);
+      expect(host.askedVendors, [NpuStack.mediatek, NpuStack.mediatek]);
+      expect(host.preparedFor, [NpuStack.mediatek]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/mediatek',
         disableHwMasking: false,
@@ -401,7 +500,7 @@ void main() {
     final path = writeUnread('unread.task');
     final model = await load(path, preferredBackend: PreferredBackend.npu);
     expect(host.attempts.map((a) => a.backend), ['npu']);
-    expect(host.askedVendors, [NpuVendor.intel, NpuVendor.intel]);
+    expect(host.askedVendors, [NpuStack.intel, NpuStack.intel]);
     expect(host.npuDispatches.single, (
       dir: '/fake/npu/intel',
       disableHwMasking: true,
@@ -439,7 +538,7 @@ void main() {
       npuShips: true,
       stack: const NpuStackCheck.missing(notEnabled),
       stacks: const {
-        NpuVendor.googleTensor: NpuStackCheck.missing(
+        NpuStack.googleTensor: NpuStackCheck.missing(
           'this app was built without the Google Tensor NPU bridge',
         ),
       },
@@ -848,6 +947,93 @@ void main() {
           'gpu create failed',
         ),
       ),
+    );
+  });
+
+  group('open sessions at load', () {
+    test('an Adreno GPU load gets native open sessions; the same load that '
+        'fell back to the CPU is judged on the CPU, which is virtual on '
+        'Android', () async {
+      host = _FakeHost(os: 'android', abiName: 'android_arm64')
+        ..gpuFamily = AndroidGpuFamily.adreno;
+      debugLiteRtLmEngineHost = host;
+      final path = write('generic.litertlm', _bundle());
+      final gpu =
+          await load(path, preferredBackend: PreferredBackend.gpu)
+              as FfiInferenceModel;
+      expect(gpu.activeBackend, PreferredBackend.gpu);
+      expect(gpu.openSessionBacking, OpenSessionBacking.native);
+      await gpu.close();
+
+      host = _FakeHost(
+        os: 'android',
+        abiName: 'android_arm64',
+        failures: {'gpu': Exception('no OpenCL')},
+      )..gpuFamily = AndroidGpuFamily.adreno;
+      debugLiteRtLmEngineHost = host;
+      final cpu =
+          await load(path, preferredBackend: PreferredBackend.gpu)
+              as FfiInferenceModel;
+      expect(cpu.activeBackend, PreferredBackend.cpu);
+      expect(cpu.openSessionBacking, OpenSessionBacking.virtual);
+      await cpu.close();
+    });
+
+    test('a file whose model inputs are read: linear attention state false; '
+        'one that cannot be read: unknown, said once in release builds, '
+        'createSession still rewinds and open sessions are rebuilt', () async {
+      final read =
+          await load(write('generic.litertlm', _bundle())) as FfiInferenceModel;
+      expect(read.linearAttentionState, isFalse);
+      expect(read.openSessionNoRewindReason, isNull);
+      await read.close();
+
+      final printed = <String>[];
+      final unread = await runZoned(
+        () async => await load(writeUnread('model.task')) as FfiInferenceModel,
+        zoneSpecification: ZoneSpecification(
+          print: (self, parent, zone, line) => printed.add(line),
+        ),
+      );
+      expect(unread.linearAttentionState, isNull);
+      expect(unread.noRewindReason, isNull, reason: 'createSession rewinds');
+      expect(unread.openSessionNoRewindReason, contains('could not be read'));
+      expect(
+        printed.where(
+          (l) =>
+              l.startsWith('[flutter_edge_ai_litertlm] could not read whether'),
+        ),
+        hasLength(1),
+      );
+      await unread.close();
+    });
+
+    test(
+      'a load that asked for the NPU and fell back to the CPU on Android '
+      'is judged on the CPU (virtual), not on the NPU it asked for',
+      () async {
+        host = _FakeHost(
+          os: 'android',
+          abiName: 'android_arm64',
+          npuShips: true,
+          stacks: {NpuStack.qualcomm: const NpuStackCheck.missing('off')},
+          failures: {
+            'npu': Exception('no dispatch'),
+            'gpu': Exception('no OpenCL'),
+          },
+        );
+        debugLiteRtLmEngineHost = host;
+        final model =
+            await load(
+                  writeUnread('model.task'),
+                  preferredBackend: PreferredBackend.npu,
+                )
+                as FfiInferenceModel;
+        expect(host.attempts.map((a) => a.backend), contains('npu'));
+        expect(model.activeBackend, PreferredBackend.cpu);
+        expect(model.openSessionBacking, OpenSessionBacking.virtual);
+        await model.close();
+      },
     );
   });
 }

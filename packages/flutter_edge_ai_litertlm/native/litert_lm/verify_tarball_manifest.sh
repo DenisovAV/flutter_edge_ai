@@ -45,6 +45,19 @@ INTENTIONAL_DROPS=(
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
   "android_arm64:libLiteRtTopKWebGpuSampler.so"
+  # native-v0.19.0-a: patch_c_api.sh section 20 builds no GPU sampler on Linux
+  # and Windows (the fused WebGPU sampler crashed GPU engine create there);
+  # LiteRT-LM samples on the CPU and the logits stay on the GPU. The sampler
+  # library would never be loaded.
+  "linux_x86_64:libLiteRtTopKWebGpuSampler.so"
+  "linux_arm64:libLiteRtTopKWebGpuSampler.so"
+  "windows_x86_64:LiteRtTopKWebGpuSampler.dll"
+  "windows_x86_64:libLiteRtTopKWebGpuSampler.dll"
+  # native-v0.19.0-a: libLiteRtLm.so links the OpenCL accelerator and sampler
+  # in (section 19); Adreno 830 and Mali-G715 run the GPU without the separate
+  # libraries with the same results (DDP, 2026-11-04).
+  "android_arm64:libLiteRtOpenClAccelerator.so"
+  "android_arm64:libLiteRtTopKOpenClSampler.so"
   # native-v0.18.0: the QNN runtime left the bundle. Qualcomm licenses it for
   # redistribution only inside an application, so an app opts in with
   # `qualcomm_npu: true` and its build hook fetches com.qualcomm.qti:qnn-runtime
@@ -256,12 +269,25 @@ FORBIDDEN=(
   "linux_arm64:libQnn*"
   # Built against MediaTek's NeuroPilot SDK, whose licence allows it only
   # inside an application: apps fetch Google's build through `mediatek_npu`.
+  # Our adapter for LiteRT-LM v0.19.0's versioned dispatch ABI
+  # (mediatek_dispatch_compat.c) has the same name and does not ship either:
+  # the MediaTek NPU is refused in core 2.6.0 (design decision K, 2026-11-03);
+  # build_android.sh builds it only with BUILD_MEDIATEK_ADAPTER=1.
   "android_arm64:libLiteRtDispatch_MediaTek.so"
   "android_arm64:libLiteRtCompilerPlugin_MediaTek*"
+  # Linked into libLiteRtLm.so since native-v0.19.0-a (section 19): a separate
+  # copy would be a second OpenCL accelerator in the process.
+  "android_arm64:libLiteRtOpenClAccelerator.so"
+  "android_arm64:libLiteRtTopKOpenClSampler.so"
   # Need libwebgpu_dawn.so, which no Android bundle carries (native-v0.18.0).
   "android_arm64:libLiteRtGpuAccelerator.so"
   "android_arm64:libLiteRtWebGpuAccelerator.so"
   "android_arm64:libLiteRtTopKWebGpuSampler.so"
+  # Our build of ML Drift's TopK WebGPU sampler crashed the first GPU decode
+  # on Linux and Windows (patch_c_api.sh section 20): CPU sampling there.
+  "linux_x86_64:libLiteRtTopKWebGpuSampler.so"
+  "linux_arm64:libLiteRtTopKWebGpuSampler.so"
+  "windows_x86_64:libLiteRtTopKWebGpuSampler.dll"
   # Upstream's name, which flutter_litert's framework also uses (native-v0.18.0).
   "ios_arm64:libLiteRtMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtMetalAccelerator.dylib"
@@ -276,7 +302,7 @@ REQUIRED=(
   # libcdsprpc.so shim the QNN Stubs need (build_qualcomm_dispatch.sh).
   "linux_arm64:libLiteRtDispatch_Qualcomm.so"
   "linux_arm64:libcdsprpc.so"
-  # Intel's dispatch (NpuVendor.intel), in every Windows x64 build: rebuilt
+  # Intel's dispatch (NpuStack.intel), in every Windows x64 build: rebuilt
   # from the pin every release, never carried forward unchecked.
   "windows_x86_64:LiteRtDispatch.dll"
   # OpenVINO 2026.4: the NPU plugin loads it by name for blobs that run on
@@ -287,6 +313,10 @@ REQUIRED=(
   "ios_arm64:libLiteRtLmMetalAccelerator.dylib"
   "ios_sim_arm64:libLiteRtLmMetalAccelerator.dylib"
   "macos_arm64:libLiteRtLmMetalAccelerator.dylib"
+  # From LiteRT-LM v0.19.0 libLiteRtLm links a static GPU accelerator (section
+  # 19: Metal on Apple). The Apple framework above stays until an iPhone and a
+  # macOS run without it: shipping one by mistake costs a few MB, dropping one
+  # by mistake costs a native cut.
 )
 echo
 echo "==> Checking files that must, and must not, ship"
@@ -415,13 +445,15 @@ for d in "$align_tmp"/litertlm-android_*; do
 done
 
 echo
-echo "==> Checking every libLiteRtLm exports the EmbeddingEngine C API"
-# flutter_edge_ai_litertlm's EmbeddingGemma 2 pass binds the EmbeddingEngine,
-# ModelInfo and error-reporter functions out of libLiteRtLm (R5 §4.11). They
-# leave the library through visibility attributes, not the Windows .def in
-# patch_c_api.sh, and no LLM test calls them — so a rebuild that drops one
-# would ship an embedder that fails at load on that platform alone. The list
-# is the pass's own (check_embedding_exports.py; a VM test keeps them equal).
+echo "==> Checking every bundle exports the C functions the Dart code binds"
+# check_embedding_exports.py holds each bundle to the functions the code looks
+# up, and a VM test keeps every list equal to the code: out of libLiteRtLm the
+# EmbeddingGemma 2 pass (EmbeddingEngine, ModelInfo, error reporter, R5 §4.11),
+# option scoring, the thinking token budget and the own-build symbol; out of
+# the library LiteRtBindings opens (libLiteRtLm on Apple and Android,
+# libLiteRt.so on Linux, LiteRt.dll on Windows) every LiteRT C function it
+# looks up, among them the speech-to-text GPU options (#747). A rebuild that
+# drops one ships a feature that fails at load on that platform alone.
 emb_fail=0
 for d in "$align_tmp"/litertlm-*; do
   [[ -d "$d" ]] || continue
@@ -431,9 +463,11 @@ for d in "$align_tmp"/litertlm-*; do
 done
 if [[ $emb_fail -eq 1 ]]; then
   echo
-  echo "❌ EMBEDDING EXPORTS CHECK FAILED — EmbeddingGemma 2 cannot load on that"
-  echo "   platform. Export the missing functions (Windows: they need"
-  echo "   LITERT_LM_C_API_EXPORT or a .def entry) and rebuild."
+  echo "❌ EXPORTS CHECK FAILED — a function the Dart code binds is missing on that"
+  echo "   platform (the [FAIL] lines above name it and the library). Export it"
+  echo "   (libLiteRtLm on Windows: LITERT_LM_C_API_EXPORT or a .def entry; the"
+  echo "   LiteRT C functions come from libLiteRt.so / LiteRt.dll as shipped by"
+  echo "   Google on Linux and Windows) and rebuild."
   exit 1
 fi
 

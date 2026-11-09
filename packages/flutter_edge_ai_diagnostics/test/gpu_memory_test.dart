@@ -306,14 +306,4 @@ void main() {
       expect(make().toString(), contains('inFileBackedBytes: 2'));
     });
   });
-
-  group('gpuMemory', skip: Platform.isMacOS, () {
-    test('throws off Android, iOS and macOS like memorySnapshot', () {
-      expect(
-        // ignore: experimental_member_use
-        FlutterEdgeAiDiagnostics.gpuMemory(),
-        throwsA(isA<UnsupportedError>()),
-      );
-    });
-  });
 }

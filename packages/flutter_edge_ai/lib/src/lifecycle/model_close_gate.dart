@@ -30,14 +30,32 @@ class ModelCloseGate {
   /// Whether a close is running that a build must wait for.
   bool get isClosing => _pending != null;
 
+  /// Whether the close running is one whose `tag` [test] accepts.
+  bool isClosingWhere(bool Function(Object? tag) test) {
+    final pending = _pending;
+    return pending != null && test(pending.tag);
+  }
+
   /// Closes [model] and waits for its teardown — joining it if one is
   /// already running, since `close()` hands every caller the teardown in
-  /// progress. [label] names [model]. A close that fails is reported, not
-  /// passed on: the caller asked for a new model, and the old one's error
-  /// names neither.
-  Future<void> closeAndWait(InferenceModel model, {required String label}) {
-    final pending = _PendingClose(label);
-    pending.done = Future.sync(model.close).then<void>(
+  /// progress. [label] names [model]; [tag] says what it was built from, for
+  /// [isClosingWhere]. A close that fails is reported, not passed on: the
+  /// caller asked for a new model, and the old one's error names neither.
+  Future<void> closeAndWait(
+    InferenceModel model, {
+    required String label,
+    Object? tag,
+  }) => closeWith(model.close, label: label, tag: tag);
+
+  /// [closeAndWait] for a model that is not an [InferenceModel]: [close]
+  /// starts its teardown, or returns the one already running.
+  Future<void> closeWith(
+    Future<void> Function() close, {
+    required String label,
+    Object? tag,
+  }) {
+    final pending = _PendingClose(label, tag);
+    pending.done = Future.sync(close).then<void>(
       (_) {},
       onError: (Object e, StackTrace st) {
         // `print`, not `edgeAiLog`, as in `EmbedderCache`: edgeAiLog is
@@ -98,9 +116,10 @@ String _seconds(Duration d) =>
     '${(d.inMilliseconds / 1000).toStringAsFixed(1)} s';
 
 class _PendingClose {
-  _PendingClose(this.label);
+  _PendingClose(this.label, this.tag);
 
   final String label;
+  final Object? tag;
   final Stopwatch _clock = Stopwatch()..start();
   late final Future<void> done;
 

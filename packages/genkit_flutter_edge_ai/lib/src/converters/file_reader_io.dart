@@ -10,7 +10,9 @@ Future<Uint8List> readFileBytes(String path) async {
   try {
     return await File(path).readAsBytes();
   } on FileSystemException catch (e) {
-    final status = e.osError?.errorCode == 2 // ENOENT
+    final status =
+        e.osError?.errorCode ==
+            2 // ENOENT
         ? StatusCode.notFound
         : StatusCode.internal;
     throw GenkitException(

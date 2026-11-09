@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'; // For EmbeddingModelSpec
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
     as example_embedding_model;
@@ -70,15 +71,46 @@ class EmbeddingModelDownloadService {
   /// Downloads both model and tokenizer with progress tracking using Modern API.
   ///
   /// [onProgress] callback receives (modelProgress, tokenizerProgress) as doubles 0-100
-  Future<void> downloadModel(
+  /// [confirmReplace] is asked before an active model in the way of a
+  /// catalog install is uninstalled (see `installFromCatalogReplacingActive`).
+  Future<CatalogInstallResult> downloadModel(
     String token,
-    void Function(double modelProgress, double tokenizerProgress) onProgress,
-  ) async {
+    void Function(double modelProgress, double tokenizerProgress) onProgress, {
+    required Future<bool> Function(ActiveModelInTheWay model, int bytes)
+    confirmReplace,
+  }) async {
     try {
       double modelProgress = 0;
       double tokenizerProgress = 0;
 
       final authToken = token.isEmpty ? null : token;
+      if (model.catalogVariant case final variant?) {
+        // A model registry build: fromCatalog installs the model and its
+        // tokenizer under their fixed names and checks their sizes.
+        final hasTokenizer = variant.tokenizer != null;
+        final replaced = await installFromCatalogReplacingActive(
+          () => FlutterEdgeAi.installEmbedder()
+              .fromCatalog(variant, token: authToken)
+              .withModelProgress((progress) {
+                modelProgress = progress.toDouble();
+                onProgress(
+                  modelProgress,
+                  hasTokenizer ? tokenizerProgress : modelProgress,
+                );
+              })
+              .withTokenizerProgress((progress) {
+                tokenizerProgress = progress.toDouble();
+                onProgress(modelProgress, tokenizerProgress);
+              })
+              .install(),
+          variant: variant,
+          confirm: confirmReplace,
+        );
+        if (replaced is CatalogInstalled) {
+          await persistVerifiedEmbeddingCatalogSelection(model);
+        }
+        return replaced;
+      }
       final builder = withCatalogEmbedderSources(
         FlutterEdgeAi.installEmbedder(),
         model,
@@ -97,6 +129,7 @@ class EmbeddingModelDownloadService {
           })
           .install();
       await persistVerifiedEmbeddingCatalogSelection(model);
+      return const CatalogInstalled();
     } catch (e) {
       if (kDebugMode) {
         debugPrint('Error downloading embedding model: $e');

@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-inference
-description: Use when adding on-device LLM inference to a Flutter app with flutter_edge_ai — offline chat, running an LLM locally, installing a model from Hugging Face (gated repos included), streaming replies, a system prompt, thinking or reasoning output, image or audio prompts, picking a CPU, GPU or NPU backend, stopping generation — or setting up the recommended .litertlm engine (ModelFileType.litertlm) on Android, iOS, macOS, Windows, Linux or web, including the Android minSdk and internet permission, the Apple entitlements and Podfile, and the web index.html script tags. Also use when a reply comes back empty, the model answers identically every time, maxTokens does not shorten replies, FlutterEdgeAi is an undefined name, getActiveModel throws "No inference engine can handle this model", a session throws "Session is closed", numbers come back wrong on the GPU, or .litertlm fails to load on Android. For .task or .bin models (ModelFileType.task or ModelFileType.binary), use flutter-edge-ai-mediapipe.
+description: Use when adding on-device LLM inference with flutter_edge_ai — offline chat, local models, Hugging Face installs, streaming, system prompts, thinking, structured JSON output, ResponseFormat or a schema-constrained reply, image/audio prompts, CPU/GPU/NPU selection, stopping generation, or setting up the recommended .litertlm engine on Android, iOS, macOS, Windows, Linux or web. Also use when a reply is empty or deterministic, maxTokens does not shorten replies, FlutterEdgeAi is undefined, getActiveModel reports no engine, a session is closed, GPU numbers are wrong, or .litertlm fails on Android. For .task or .bin models, use flutter-edge-ai-mediapipe.
 ---
 
 # Running a model with flutter_edge_ai
@@ -12,7 +12,7 @@ description: Use when adding on-device LLM inference to a Flutter app with flutt
 3. Declare `fileType` on `installModel`. It defaults to `ModelFileType.task`, and the declaration — never the file name — picks the engine.
 4. `maxTokens` is the context window. Cap the reply with `maxOutputTokens` on the session or chat.
 5. Pass `isUser: true` on every user `Message`.
-6. Close a session or chat when its conversation ends. Keep the model while the feature is in use, and close it when the app no longer needs it.
+6. Use `openSession` / `openChat`; `createSession`, `createChat`, `model.session` and `model.chat` are deprecated and will be removed in 3.0.0. Close each returned session or chat when its conversation ends, keep the model while the feature is in use, and close it when the app no longer needs it.
 7. Keep Hugging Face tokens out of source: read them with `String.fromEnvironment`. That keeps a token out of git, not out of the app — it is compiled into the binary, and on web into `main.dart.js`. A shipped app should download from a repo that needs no token.
 8. On Android, set `minSdk 30` for anything built on `.litertlm` — inference, embeddings, speech.
 9. Read [references/platform-setup.md](references/platform-setup.md) before the first build on a platform: without those entries the model fails to load or the app is killed for memory.
@@ -32,20 +32,18 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 WidgetsFlutterBinding.ensureInitialized();
 await FlutterEdgeAi.initialize(inferenceEngines: [LiteRtLmEngine()]);
 
-await FlutterEdgeAi.installModel(
-  modelType: ModelType.gemma4,
-  fileType: ModelFileType.litertlm,
-)
-    .fromNetwork(
-      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
-    )
+// A registry build: model type, file type, a commit-pinned URL, install name
+// and size come with it; the size is checked before the model is active (not
+// on the web): a file of another size is deleted and install() throws
+// ModelValidationException.
+await FlutterEdgeAi.installModelFromCatalog(LiteRtLmModels.gemma4E2bIt.generic)
     .withProgress((int percent) => print('downloading: $percent%'))
     .install();
 
 final InferenceModel model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 ```
 
-Gemma 4 E2B is 2.6 GB and needs no token. On web use `gemma-4-E2B-it-web.litertlm` from the same repo (2.0 GB).
+Gemma 4 E2B is 2.6 GB and needs no token. On web install `LiteRtLmModels.gemma4E2bIt.web` (2.0 GB). `installModelFromCatalog` needs `flutter_edge_ai` 2.5.5; `FlutterEdgeAi.catalog` lists every build the registered engines offer, and `CatalogModel.variantFor` picks one this runtime runs (by platform and processor; for an NPU build the app names the SoC). On web, a file over 2 GiB needs `initialize(webStorageMode: WebStorageMode.streaming)`. Every build and where it has been run: https://flutteredge.ai/docs/registry. For your own file, `FlutterEdgeAi.installModel(modelType:, fileType:)` with `fromNetwork`, `fromAsset` or `fromFile`.
 
 Supported models, their file types and engines: https://flutteredge.ai/docs/models.
 
@@ -95,7 +93,7 @@ Other sources on the same builder: `.fromAsset(path)` for a model bundled in the
 
 **After upgrading to 2.5**
 - Symptom: `The method 'fromLegacyUrl' isn't defined for the type 'InferenceModelSpec'`, `generateEmbedding`/`generateEmbeddings`/`getDimension` undefined, or a deprecation warning on `FlutterEdgeAiPlugin.instance.createModel`.
-- Fix: build the spec as `InferenceModelSpec(name:, modelSource: ModelSource.network(url) /.asset/.bundled/.file, modelType:)`; `fromLegacyUrl` defaulted to `ModelType.general`, so pass a model type explicitly. Replace `createModel(...)` (removed in 2.6.0) with `FlutterEdgeAi.getActiveModel(...)` — on Android, iOS and desktop it ignored `modelType` and `fileType` and returned the active model anyway — or with `FlutterEdgeAi.openModel` for several models. Embeddings: `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)`, `embedAll`, `dimension` (see the flutter-edge-ai-rag skill and core's MIGRATION.md).
+- Fix: build the spec as `InferenceModelSpec(name:, modelSource: ModelSource.network(url) /.asset/.bundled/.file, modelType:)`; `fromLegacyUrl` defaulted to `ModelType.general`, so pass a model type explicitly. Replace `createModel(...)` (deprecated, removed in 3.0.0) with `FlutterEdgeAi.getActiveModel(...)` — on Android, iOS and desktop it ignored `modelType` and `fileType` and returned the active model anyway — or with `FlutterEdgeAi.openModel` for several models. Embeddings: `embed(EmbeddingInput.text(t), taskType: TaskType.retrievalQuery)`, `embedAll`, `dimension` (see the flutter-edge-ai-rag skill and core's MIGRATION.md).
 
 **No engine registered**
 - Symptom: `StateError: No inference engine can handle this model (ModelFileType.litertlm). Add the engine package to pubspec.yaml and pass it in inferenceEngines: of FlutterEdgeAi.initialize(...)`
@@ -109,12 +107,17 @@ Other sources on the same builder: `.fromAsset(path)` for a model bundled in the
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 100);
 ```
 
-- Symptom: replies are as long as ever. On native `.litertlm` the value is raised to 1024, the smallest context those models support, and only a debug-mode log says so. The web `.litertlm` engine does not take the value at all; on MediaPipe it is the real limit.
+- Symptom: replies are as long as ever. On native `.litertlm` CPU/GPU attempts the value is raised to 1024, the smallest context those models support, and only a debug-mode log says so. NPU attempts are not clamped: keep `maxTokens` at or below that catalog variant's `requiredMaxTokens` / compiled cache length, preferably by passing its `runtimeDefaults`. The web `.litertlm` engine does not take the value at all; on MediaPipe it is the real limit.
 - Fix:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-final session = await model.createSession(maxOutputTokens: 100);
+final session = await model.openSession(maxOutputTokens: 100);
+try {
+  // Use session for this conversation.
+} finally {
+  await session.close();
+}
 ```
 
 Use 4096 or more with images or audio — one image costs hundreds of tokens.
@@ -129,16 +132,16 @@ Use 4096 or more with images or audio — one image costs hundreds of tokens.
 - Fix: leave `temperature`, `topK` and `topP` unset to get the model's own sampler or its family's defaults (`SamplingParams.forModelType`), or pass a `temperature` — with no `topK`, a greedy family or bundle then contributes no `topK: 1`. Set them on the first session after `getActiveModel`: on `.litertlm` the sampler of the first generation stays in effect for later sessions (a one-time warning says so when a later session asks for other values), and its random state carries on, so a new chat already gets a new answer. MediaPipe starts each session from its seed: vary `randomSeed` there for a different answer to the same prompt.
 - Exception: decoding stays greedy whatever you pass on `.litertlm` running on the NPU (`activeBackend == PreferredBackend.npu`); a one-time warning says so when you set any of them. ONNX follows the model's `genai_config.json`, which is greedy unless it sets `do_sample`; values you pass override it.
 
-**`Session is closed`**
-- Symptom: `StateError: Session is closed` from a session or chat that is still in use.
-- Cause: `createSession` and `createChat` fill one slot per model; creating another closes the one before.
-- Fix: one conversation at a time, or `openSession` / `openChat` for several (below). On the web `.litertlm` engine a second `createSession` hands back the session that is already open, history and all, rather than a fresh one — close the current chat before creating the next.
+**Too many open sessions**
+- Symptom: `StateError` says the model reached `maxConcurrentSessions`.
+- Cause: every `openSession` and `openChat` stays live until it is closed.
+- Fix: keep and reuse the handle for a conversation, and close it in `finally` or widget/service teardown.
 
 ## Generate
 
 ```dart
 // Sampling left unset: the model's own sampler, else its family's defaults.
-final InferenceModelSession session = await model.createSession(
+final InferenceModelSession session = await model.openSession(
   maxOutputTokens: 256,
 );
 try {
@@ -159,12 +162,42 @@ await for (final token in session.getResponseAsync()) {
 }
 ```
 
-To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()` on a chat. Cancelling the stream subscription detaches Dart but does not stop native decoding on every engine. On `.litertlm` on Android, iOS and desktop the chat keeps working after a stop — whether the app called `stopGeneration()` or cancelled its subscription. With `flutter_edge_ai_litertlm` 1.15.0 and later it is rewound to before the stopped turn, which is put back with its partial reply, so the model still sees images and audio from earlier turns. With 1.14.0 and earlier, and on the NPU, it is rebuilt from text instead, and those are gone — re-send an image there if the next question is about it. The legacy `flutter_gemma_litertlm` package needs 1.8.1 or later for a stopped chat to answer again at all.
+To stop early, call `await session.stopGeneration()` — `chat.stopGeneration()` on a chat. Cancelling the stream subscription detaches Dart but does not stop native decoding on every engine. On current `.litertlm` Android, iOS and desktop sessions, a stopped turn that produced text stays in the chat with its partial reply; a stop before any text is taken back. Rewind-capable native conversations rewind and reinsert that exchange. NPU, linear-attention and other non-rewind paths rebuild from full message history, including image and audio parts, so earlier media is preserved. The legacy `flutter_gemma_litertlm` package needs 1.8.1 or later for a stopped chat to answer again at all.
+
+## Structured JSON output
+
+Use only `openSession(responseFormat:)` or `openChat(responseFormat:)`;
+`createSession` and `createChat` have no format argument. Build
+`ResponseFormat.jsonObject()` or `ResponseFormat.jsonSchema(...)`, then call
+`model.refusalFor(format)`. Do not open the session when it returns a
+`ResponseFormatUnsupportedException`. `model.structuredOutputSupport` reports
+the enforced keywords and `delivery` (`incremental` or `buffered`).
+
+Core's dialect is `type`, `properties`, `required`,
+`additionalProperties: false`, `items`, `enum`, `const`, the min/max item,
+string and numeric bounds, plus `description`, `title`, `examples`. The root
+needs one scalar `type`; do not use unions, `$ref`, `$defs`, composition,
+`pattern` or `format`.
+
+Handle all three structured failures: `ResponseFormatUnsupportedException`;
+`IncompleteStructuredOutputException` (`end`, `partialText`);
+`NonConformingStructuredOutputException` (`text`, optional `schemaPath`).
+Incremental engines stream text before the final validation error. A prompt that
+never fits the context fails with `ContextLimitException` instead. Never combine
+a format with tools or `enableThinking: true`.
+
+Current support: LiteRT-LM enforces the whole dialect on macOS and iOS arm64
+CPU/Metal, Linux x64 CPU/Vulkan, Windows x64 CPU/D3D12, and Android arm64 CPU
+plus Adreno/Mali/PowerVR GPU. Every NPU, Web, and unlisted row is refused.
+MediaPipe refuses every format. ONNX accepts
+only native macOS arm64 with `tokenizer.json`; a qualified GGUF runtime accepts
+macOS arm64 CPU/Metal and Chrome on macOS with dart2wasm + WebGPU, subject to
+`refusalFor`; built-in AI has no qualified platform yet.
 
 ## Multi-turn chat
 
 ```dart
-final InferenceChat chat = await model.createChat(
+final InferenceChat chat = await model.openChat(
   systemInstruction: 'You are a concise assistant.',
   maxOutputTokens: 512,
 );
@@ -186,11 +219,42 @@ try {
 
 The chat keeps the history: add the next user message and generate again. `generateChatResponse()` returns the whole reply as one sealed `ModelResponse` — `TextResponse`, `FunctionCallResponse`, `ParallelFunctionCallResponse` or `ThinkingResponse` — and a `switch` over it must cover all four.
 
+For a core-managed turn, any engine error removes the entire staged turn before
+the error reaches the app. A hook-backed chat owns that policy itself; the
+shipped llama.cpp hook also rolls failed turns back. Catch
+`ContextLimitException` as a refused input: nothing from that turn was
+committed, so shorten it or reopen with less history. Do not treat every
+`TurnEnd.contextLimit` as a refusal—a turn can fill the window during decoding
+and end cleanly after producing text, in which case the partial exchange is
+kept.
+
 ## Two conversations at once
 
-`createSession` and `createChat` fill a single slot on the model, so a second one closes the first. For concurrent conversations use `openSession` / `openChat`, and close each one.
+Every `openSession` and `openChat` owns a conversation and counts against `maxConcurrentSessions`. Keep each returned handle and close it when done.
 
-They live only on the base class, so — unlike `createChat` — they inherit nothing from the installed model: pass `modelType:` (and `supportImage:` / `supportAudio:` if the chat sends images or audio) explicitly, or the chat runs as `ModelType.gemmaIt` with images and audio off. They work on `.litertlm` (native and web), on MediaPipe Android and iOS, on built-in AI, and on `flutter_edge_ai_llama`, whose `openChat` does take the installed model's type and image/audio support, as its `createChat` does; everywhere else — ONNX and MediaPipe web — they throw `UnsupportedError`.
+An argument you leave out of `openChat` is filled by the engine. Native
+`.litertlm` takes the installed model's type and media flags. Its native FFI
+sessions accept declared image and audio input on both native and virtual
+backings. Each session has its own conversation and KV cache on macOS CPU/Metal,
+Linux and Windows CPU, Android Adreno/Mali, Qualcomm or Google Tensor NPUs on
+Android, and Intel NPUs on Windows. Linux Vulkan, Windows D3D12, iOS, Android
+CPU/PowerVR/MediaTek, and unverified Linux arm64 accelerators use virtual
+sessions that replay full messages, including media, into one shared
+conversation. The `.litertlm` web engine is also virtual but text-only and uses
+core's defaults, so pass `modelType:` for a non-Gemma model. Hybrid models such
+as LFM2 rebuild from full messages when recovery is needed and never rewind.
+Native sessions cost memory while idle: Gemma 4 E2B on an M5 Pro added 36.8 MiB
+of RSS per idle session at `maxTokens: 4096`, from the third session onward. Set
+`maxConcurrentSessions` on `getActiveModel` or `openModel` to bound the count.
+
+`flutter_edge_ai_llama` and MediaPipe on the web take the installed type and
+media support. MediaPipe on Android and iOS takes the type and audio support,
+with images off unless you pass `supportImage: true`. Built-in AI takes the type
+and image support and refuses `supportAudio: true`. Native and web ONNX take the
+installed type but remain text-only. Detached sessions work on native/web
+`.litertlm`, MediaPipe Android/iOS/Web, `flutter_edge_ai_onnx` natively since
+0.8.0 and on Web since 0.9.0, built-in AI and llama.cpp; close every detached
+session yourself.
 
 ```dart
 final summariser = await model.openChat(modelType: ModelType.gemma4);
@@ -208,7 +272,7 @@ try {
 
 Gemma 4, Qwen3, DeepSeek R1 and `.litertlm` bundles with a thought channel
 (e.g. SmolLM3, Phi-4 Mini Reasoning) can emit reasoning on their supported engines.
-Pass `enableThinking: true` to `createChat`. Reasoning arrives as
+Pass `enableThinking: true` to `openChat`. Reasoning arrives as
 `ThinkingResponse` only from `generateChatResponseAsync()`;
 `generateChatResponse()` strips it. On a native `.litertlm`, reasoning that a
 bundle streams on its thought channel arrives as `ThinkingResponse` whatever
@@ -222,8 +286,25 @@ core also parses Qwen3's emitted `<think>` tags there. MediaPipe Web has no
 thinking API, ONNX Web ignores `enableThinking`, and DeepSeek R1 thinks on
 Android and iOS only — it ships as a mobile `.task` build.
 
+A model that thinks until `maxOutputTokens` ends the turn with an empty answer.
+On `.litertlm` (native, `flutter_edge_ai_litertlm` 1.18.0+) cap the thinking
+with `LiteRtLmEngine(thinkingTokenBudget: 512)` in `initialize`: each
+generation with `enableThinking: true` then stops thinking at the budget and
+answers, and in a tool loop a generation after a tool result has its own
+budget. Keep the budget below `maxOutputTokens` and below what the context
+(`maxTokens`, 1024 by default) has left after the prompt and the history, or it
+is never reached. It does nothing with `enableThinking: false`, even on a model
+that reasons anyway (Qwen3 4B Thinking 2507). LiteRT-LM caps the bundle's first
+declared channel (measured on Gemma 4 E2B and
+`Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`); a bundle that declares none is not
+capped, and loading one with a budget prints a warning. It is set per engine,
+not per chat, and fixed when the engine is registered; the web engine ignores
+it. On the GPU it slows decoding for the whole generation (Gemma 4 E2B: about a
+fifth on an M5 Pro, about 40% on an NVIDIA L4); on the CPU no cost was
+measured.
+
 ```dart
-final chat = await model.createChat(enableThinking: true, modelType: ModelType.qwen3);
+final chat = await model.openChat(enableThinking: true, modelType: ModelType.qwen3);
 final answer = StringBuffer();
 await chat.addQueryChunk(Message(text: question, isUser: true));
 await for (final r in chat.generateChatResponseAsync()) {
@@ -243,10 +324,15 @@ await chat.close();
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096, supportImage: true);
-final chat = await model.createChat(supportImage: true);
-await chat.addQueryChunk(
-  Message(text: 'What is in this photo?', isUser: true, imageBytes: bytes),
-);
+final chat = await model.openChat(supportImage: true);
+try {
+  await chat.addQueryChunk(
+    Message(text: 'What is in this photo?', isUser: true, imageBytes: bytes),
+  );
+  final response = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}
 ```
 
 On web, images need a MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` (same Hugging Face repo as the `.litertlm`, `ModelFileType.task`, the flutter-edge-ai-mediapipe skill). On that build Gemma 4 has no thinking, and its tools never reach the model. The `.litertlm` web engine is text-only: `supportImage: true` loads without error, but `addQueryChunk` with an image throws `UnsupportedError`.
@@ -255,10 +341,15 @@ On web, images need a MediaPipe `.task` build such as `gemma-4-E2B-it-web.task` 
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096, supportAudio: true);
-final chat = await model.createChat(supportAudio: true);
-await chat.addQueryChunk(
-  Message(text: 'What is said in this recording?', isUser: true, audioBytes: bytes),
-);
+final chat = await model.openChat(supportAudio: true);
+try {
+  await chat.addQueryChunk(
+    Message(text: 'What is said in this recording?', isUser: true, audioBytes: bytes),
+  );
+  final response = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}
 ```
 
 `audioBytes` is a whole WAV file — 16 kHz mono, header included. The speech package is the opposite: `transcribe` takes raw PCM with no header. Audio input needs Gemma 4 or Gemma 3n, on Android, iOS or desktop (VibeVoice-ASR also takes audio, for transcription only; measured on Android and macOS); on the `.litertlm` web engine an audio message throws `UnsupportedError`.
@@ -269,7 +360,7 @@ The `.litertlm` engine sends a Gemma 4 message as images, text, then audio, as t
 
 `getActiveModel` returns one model per process. Calling it again with the same arguments returns that model, on every platform (web since 2.2.1). Different runtime arguments, or another active model, rebuild it and close the previous one — a handle still held stops working; `model.isClosed` says so from the moment `close()` starts, and a `getActiveModel` call made meanwhile waits for the close to finish before it builds the next model. With no model installed it throws `NoActiveModelError`, a `StateError`. Load it once, then create and close sessions per conversation.
 
-For several models loaded at once (one file on CPU and GPU, or two files), use `FlutterEdgeAi.openModel(spec, …)` (2.5.0, mobile and desktop) with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0); other engines throw `UnsupportedError`. Install the file with `install(activate: false)` and pass the returned `spec`. Every call builds a new model that the app closes: it is never cached, a `getActiveModel` rebuild leaves it open, and the plugin has no memory policy (on iOS a process past its memory limit is killed, not thrown at). An `activate: false` install that would replace the active model's file throws `StateError`, and `openModel` refuses a spec that is not the installed one. Its parameters mean what they do on `getActiveModel`; a model's sampler is fixed by its first generation, so sessions sharing one model use the same sampling; uninstalling a model does not close the models opened on it. Measured on macOS (CPU and GPU engines on one file, two GPU engines) and on Windows Lunar Lake (CPU, GPU and NPU engines together). Not measured: Android, iOS, Linux, and two GPU engines on Windows, where a second one can fail with `wgpu::Instance already set` (https://flutteredge.ai/docs/desktop).
+For several models loaded at once (one file on CPU and GPU, or two files), use `FlutterEdgeAi.openModel(spec, …)` (2.5.0, mobile and desktop) with `LiteRtLmEngine` (`flutter_edge_ai_litertlm` 1.16.0); other engines throw `UnsupportedError`. Install the file with `install(activate: false)` and pass the returned `spec`. Every call builds a new model that the app closes: it is never cached, a `getActiveModel` rebuild leaves it open, and the plugin has no memory policy (on iOS a process past its memory limit is killed, not thrown at). An `activate: false` install that would replace the active model's file throws `StateError`, and `openModel` refuses a spec that is not the installed one. Its parameters mean what they do on `getActiveModel`; a model's sampler is fixed by its first generation, so sessions sharing one model use the same sampling; uninstalling a model does not close the models opened on it (`uninstallModel` closes only the model `getActiveModel` built from that file). Measured on macOS (CPU and GPU engines on one file, two GPU engines) and on Windows Lunar Lake (CPU, GPU and NPU engines together). Not measured: Android, iOS, Linux, and two GPU engines on Windows, where a second one can fail with `wgpu::Instance already set` (https://flutteredge.ai/docs/desktop).
 
 ```dart
 final spec = (await FlutterEdgeAi.installModel(
@@ -303,7 +394,7 @@ print(model.activeBackend); // what actually loaded
 
 The rows are for a generic bundle. A text model that declares `backend_constraint` is tried only on the backends it allows (with `null`, GPU then CPU, each only if it allows it). With `LiteRtLmEngine(backendFallback: false)` (`flutter_edge_ai_litertlm` 1.14.0) only the first backend of a row is tried, and a failure throws `BackendInitException` with LiteRT-LM's own reason.
 
-Read `activeBackend` rather than assuming the requested one loaded; the web `.litertlm` engine reports `null`. `PreferredBackend.npu` needs a Snapdragon (Android), a Qualcomm Linux arm64 board, a Google Tensor G5/G6 Pixel (Android 16 or later, not a BP2A build), a MediaTek Android 12+ device whose NeuroPilot runtime opens in the app (`flutter_edge_ai_litertlm` 1.17.0), or Intel Lunar/Panther Lake (Windows), and a model compiled for that NPU; the Intel NPU needs `flutter_edge_ai_litertlm` 1.15.0 — 1.14.0, like every release since `native-v0.17.0`, fails its load or ends the process (`0xC0000409`); `PreferredBackend.cpu` never falls back. Intel's Gemma 4 12B for Panther Lake needs 1.17.0 (OpenVINO 2026.4.1; 2026.3 refuses its metadata-2.7 blobs), and each load writes a 5.55 GB weight bank to `%TEMP%`: keep that much free on the system drive and `close()` the model before the app exits. The iOS Simulator is CPU-only. On an iOS device a MediaPipe `.task` on the GPU is killed for memory while loading, before any fallback can run: pass `PreferredBackend.cpu` for it (flutter-edge-ai-mediapipe). On web, MediaPipe is GPU-only.
+Read `activeBackend` rather than assuming the requested one loaded; the web `.litertlm` engine reports `null`. `PreferredBackend.npu` needs a Snapdragon (Android), a Qualcomm Linux arm64 board, a Google Tensor G5/G6 Pixel (Android 16 or later, not a BP2A build; run on G6 only), a MediaTek Android 12+ device whose NeuroPilot runtime opens in the app (`flutter_edge_ai_litertlm` 1.17.0), or Intel Lunar/Panther Lake (Windows), and a model compiled for that NPU — an NPU build is compiled for one context (`requiredMaxTokens` on its catalog variant), so keep `maxTokens` at or below it; the Intel NPU needs `flutter_edge_ai_litertlm` 1.15.0 — 1.14.0, like every release since `native-v0.17.0`, fails its load or ends the process (`0xC0000409`); `PreferredBackend.cpu` never falls back. Intel's Gemma 4 12B for Panther Lake needs 1.17.0 (OpenVINO 2026.4.1; 2026.3 refuses its metadata-2.7 blobs), and each load writes a 5.55 GB weight bank to `%TEMP%`: keep that much free on the system drive and `close()` the model before the app exits. The iOS Simulator is CPU-only. On an iOS device a MediaPipe `.task` on the GPU is killed for memory while loading, before any fallback can run: pass `PreferredBackend.cpu` for it (flutter-edge-ai-mediapipe). On web, MediaPipe is GPU-only.
 
 On NPU, run a **Gemma 4** bundle (none is published for MediaTek: there Gemma 3 1B `…_mt6989` ran on a Galaxy Tab S10+, and whether it keeps its prefill chunks is not measured). Most Gemma 3 bundles on the Qualcomm or the Intel NPU (Google Tensor and MediaTek not measured) drop every prefill chunk after the first — no error, no log line, and a fluent reply that answers from the opening of the prompt and ignores the rest (LiteRT-LM#3508; of the published Qualcomm 1B files only `…_sm8850` keeps them). `maxTokens` is also not clamped up to 1024 on the NPU attempt the way it is on CPU and GPU, because the safe context is baked into the compiled bundle: pass the `cache_length` it was built for. A bundle compiled for no NPU never runs on one, whatever its `backend_constraint` says: it has no NPU graph, and LiteRT would try to compile it on the device with a compiler plugin, which no NPU stack here ships, and run it on the CPU while reporting `npu` — so `PreferredBackend.npu` falls back to GPU, then CPU, for it (refused with `backendFallback: false`), and the floor applies to those attempts. A bundle compiled for an NPU (`…_qualcomm_sm8750.litertlm`, read from the file before any engine exists) runs on the NPU only: it is the default when `preferredBackend` is unset, `gpu`/`cpu` throw `LiteRtLmBundleException`, and an unreachable NPU throws `BackendInitException` at once. Unset `preferredVisionBackend`/`preferredAudioBackend` follow the file (the encoder's declared `backend_constraint`, the CPU when it allows the CPU; else the NPU it is compiled for; else CPU): Gemma 4 vision and audio run on the CPU, Gemma 3n vision on the GPU, because its section allows gpu only. Set one only where the section allows it (the published Gemma 4 and Gemma 3n audio encoders declare cpu, so `gpu` is refused; `preferredVisionBackend: cpu` is refused on Gemma 3n), or the load throws `LiteRtLmBundleException`; read `activeVisionBackend`/`activeAudioBackend` (filled by `flutter_edge_ai_litertlm` 1.14.0, null when the model has no such encoder). Its `problem` is `wrongBackend` for a backend the file rules out, `incomplete` for a download that stopped early, and `unsupportedNpu` for a text model, or an encoder that is on, compiled for an NPU this package has no dispatch for here (a Qualcomm bundle on Windows, a Google Tensor or MediaTek bundle off Android), for sections the load turns on that are compiled for two different NPUs, or for an NPU encoder next to a text model that is not on the NPU. `LiteRtLmEngine(backendFallback: false)` (1.14.0) makes one attempt and reports LiteRT-LM's reason (`LiteRtLmEngineCreateException.nativeMessage`); `readLiteRtLmBundleInfo(path)` (1.14.0) shows what the file declares. The NPU candidate is attempted only for a bundle compiled for an NPU, and only on Windows, on Android phones with Qualcomm FastRPC, on Qualcomm Linux arm64 boards with `/dev/fastrpc-cdsp`, and on Google Tensor G5/G6 Pixels with Android 16 or later (not a BP2A build; LiteRT itself refuses a bundle of the other Tensor generation when the engine is created), and on MediaTek Android 12+ devices whose NeuroPilot adapters open in the app (NeuroPilot refuses a bundle compiled for another MediaTek SoC when the engine is created), the last four only when the app sets `qualcomm_npu`, `google_tensor_npu` or `mediatek_npu`; on other Android phones, macOS, other Linux machines and iOS it is skipped, because nothing there can run it — and on macOS the native runtime was measured accepting `npu` anyway, which made `activeBackend` report an NPU the machine does not have. Windows has no device probe: a bundle compiled for the Intel NPU is not refused on a PC without one, and what LiteRT does then is not measured.
 
@@ -322,4 +413,6 @@ Prefill gets slower (about 3× on a Snapdragon 8 Elite and an iPhone 11, under 1
 
 ## Platform setup
 
-Android needs `minSdk 30` and the internet permission in release builds, and ships `arm64-v8a` only. iOS needs Podfile or Xcode settings and memory entitlements; macOS needs entitlements and a Podfile build phase; web needs script tags in `web/index.html`. Read [references/platform-setup.md](references/platform-setup.md) before building for any of them — without those entries the model fails to load or the app runs out of memory.
+Android needs `minSdk 30` and the internet permission in release builds, and ships `arm64-v8a` only. iOS needs Podfile or Xcode settings and memory entitlements; macOS needs a 14.0 deployment target, entitlements, and with Swift Package Manager off a Podfile build phase; web needs script tags in `web/index.html`. Read [references/platform-setup.md](references/platform-setup.md) before building for any of them — without those entries the model fails to load or the app runs out of memory.
+
+Finished an app with flutter_edge_ai? See the [showcase](https://flutteredge.ai/showcase) and [submit it](https://flutteredge.ai/showcase/submit).

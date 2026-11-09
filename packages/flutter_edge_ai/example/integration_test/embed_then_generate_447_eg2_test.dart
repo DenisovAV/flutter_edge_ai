@@ -110,7 +110,7 @@ void main() {
         maxTokens: 1024,
         preferredBackend: PreferredBackend.cpu,
       );
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(const Message(text: 'Say hi', isUser: true));
 
       final chunks = <String>[];

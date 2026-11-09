@@ -85,7 +85,7 @@ void main() {
       final image = await _asset('assets/test/test_image.jpg');
       // supportImage: true is what a cross-platform app passes; the chat must
       // still open, because a text-only conversation is valid on web.
-      final chat = await model.createChat(
+      final chat = await model.openChat(
         modelType: ModelType.gemma4,
         supportImage: true,
       );
@@ -125,7 +125,7 @@ void main() {
     ) async {
       final model = await _ensureModel();
       final audio = await _asset('assets/test/test_audio.wav');
-      final session = await model.createSession(enableAudioModality: true);
+      final session = await model.openSession(enableAudioModality: true);
       try {
         await expectLater(
           session.addQueryChunk(

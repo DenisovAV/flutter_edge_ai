@@ -191,6 +191,29 @@ void main() {
     );
   });
 
+  test('after uninstallEmbedder the adapter refuses with the pinned-model '
+      'error, on a closed embedder (B89)', () async {
+    await initializeAndInstall('removed.litertlm');
+    final embedder = FlutterEdgeAiActiveEmbedder(profileId: 'removed-v1');
+    await embedder.embedDocument(EmbeddingInput.text('before'));
+    final model = FlutterEdgeAiPlugin.instance.initializedEmbeddingModel!;
+
+    await FlutterEdgeAi.uninstallEmbedder();
+
+    expect(model.isClosed, isTrue);
+    expect(FlutterEdgeAiPlugin.instance.initializedEmbeddingModel, isNull);
+    await expectLater(
+      embedder.embedDocument(EmbeddingInput.text('after')),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('active embedding model changed'),
+        ),
+      ),
+    );
+  });
+
   test('forActiveModel without an active model is a StateError', () async {
     await FlutterEdgeAi.initialize(embeddingBackends: [backend]);
     expect(

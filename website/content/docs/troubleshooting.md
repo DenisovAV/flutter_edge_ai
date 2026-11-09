@@ -56,9 +56,9 @@ Auth errors (401/403/404) fail fast after one attempt — they are not retried. 
 - **iOS:** ensure `Runner.entitlements` contains the memory entitlements and the deployment target is at least 15.0 (16.0 with `flutter_edge_ai_mediapipe`, 16.4 with `flutter_edge_ai_llama`) — in Xcode on the Runner target under SPM, or in the `Podfile` when one exists. See [Installation → iOS](/docs/installation#ios).
 - **iOS, MediaPipe `.task` on GPU:** the app is terminated while the model loads, with the entitlements present and no crash report. Run `.task` models on `PreferredBackend.cpu` on iOS, or use the `.litertlm` build. See [MediaPipe → Backends](/docs/mediapipe#backends).
 - Reduce `maxTokens` if you hit memory pressure — but **keep it at 1024 or higher for `.litertlm` models** (see "maxTokens vs maxOutputTokens" below). To shorten replies, use `maxOutputTokens`, not a smaller `maxTokens`.
-- Use smaller models (1B-2B parameters) for devices with <6GB RAM. Multimodal models (Gemma 4, Gemma3n) need 8GB+.
+- Use smaller models (1B-2B parameters) for devices with <6GB RAM. Gemma 4 E2B needs 6 GB or more (a 4 GB phone is killed while it loads); the larger Gemma 4 E4B and Gemma 3n files have no measured floor.
 - Close sessions and models when not needed; monitor usage with `sizeInTokens()`.
-- To see what a model actually costs, measure the memory the OS cannot reclaim before and after loading it with [`flutter_edge_ai_diagnostics`](/docs/diagnostics) (Android + iOS + macOS). The RSS a profiler shows also counts mmapped weights the OS can drop, so it does not show that cost.
+- To see what a model actually costs, measure the memory the OS cannot reclaim before and after loading it with [`flutter_edge_ai_diagnostics`](/docs/diagnostics) (Android + iOS + macOS + Linux + Windows). The RSS a profiler shows also counts mmapped weights the OS can drop, so it does not show that cost.
 
 ## maxTokens vs maxOutputTokens
 
@@ -66,11 +66,11 @@ Auth errors (401/403/404) fail fast after one attempt — they are not retried. 
 
 `.litertlm` models require a context window of at least **1024**. Passing a smaller `maxTokens` (e.g. `100`) used to crash with `DYNAMIC_UPDATE_SLICE failed to prepare` / `Failed to allocate tensors` (even on CPU — the failure is at graph compile, before the backend runs). As of **`flutter_gemma_litertlm` 1.0.2** a too-small `maxTokens` is clamped up to 1024 automatically with a log warning — except on `PreferredBackend.npu`, where the context is baked into the compiled bundle (see [NPU](#npu)).
 
-To limit how many tokens the model **generates**, use `maxOutputTokens` on `createSession`/`openSession`/`createChat`/`openChat` instead:
+To limit how many tokens the model **generates**, use `maxOutputTokens` on `openSession` or `openChat` instead:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024); // context window
-final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
+final chat = await model.openChat(maxOutputTokens: 100);        // reply cap
 ```
 
 (`maxOutputTokens` is honored on `.litertlm` and ONNX; the MediaPipe `.task` path has no session-level output cap and ignores it.)
@@ -82,8 +82,9 @@ final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
 
 ## macOS
 
-- **`Library not loaded: @rpath/libGemmaModelConstraintProvider.dylib`** (from `flutter_edge_ai_litertlm` 1.17.0 inside an error that says `LiteRT-LM did not load on macOS` and names this cause): the app is built with Swift Package Manager, the default since Flutter 3.44, so nothing copied LiteRT-LM's companion libraries into it. Every LiteRT feature fails to load (LLM, embeddings, speech), on every backend, and the build itself succeeds. Turn Swift Package Manager off for the app in `pubspec.yaml` and replace the `post_install` block of `macos/Podfile` with ours (an app that already has a `macos/Podfile` keeps Swift Package Manager on and only needs the block), see [Desktop → macOS](/docs/desktop#macos). If the block is already there, run `flutter clean` and build again. A route without a Podfile is tracked in [#689](https://github.com/DenisovAV/flutter_edge_ai/issues/689).
-- **Flutter 3.44 with Xcode 27: `The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set to 10.15, but the range of supported deployment target versions is 12.0 to …`.** Flutter 3.44's template targets macOS 10.15, which Xcode 27 refuses, for any app. Raise the Runner target to 12.0 in Xcode and `platform :osx, '12.0'` in `macos/Podfile`; with a Podfile, also add `target.build_configurations.each { |c| c.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '12.0' }` inside the `installer.pods_project.targets.each` loop of `post_install`, because 3.44 raises pods only to 10.15. Flutter 3.47's template needs neither (measured on Xcode 27.1, 2026-10-21).
+- **`Library not loaded: @rpath/GemmaModelConstraintProvider.framework/…`** (or `@rpath/libGemmaModelConstraintProvider.dylib` before `flutter_edge_ai_litertlm` 1.19.0; inside an error that says `LiteRT-LM did not load on macOS` and names this cause): LiteRT-LM's companion libraries are not in the app. Every LiteRT feature fails to load (LLM, embeddings, speech), on every backend, and the build itself succeeds. With Swift Package Manager on, `flutter_edge_ai_litertlm` 1.19.0 and later bring them through its Swift package: upgrade, then run `flutter clean` and build again. With it off, replace the `post_install` block of `macos/Podfile` with ours, see [Desktop → macOS](/docs/desktop#macos); if the block is already there, run `flutter clean` and build again.
+- **`The package product 'flutter-edge-ai-litertlm-product' requires minimum platform version 14.0 for the macOS platform`**, or CocoaPods' `required a higher minimum deployment target` naming `flutter_edge_ai_litertlm`: raise the Runner target's macOS deployment target to 14.0 in Xcode, and `platform :osx, '14.0'` in `macos/Podfile` if the app has one. LiteRT-LM's companion libraries are built for macOS 14.
+- **Flutter 3.44 with Xcode 27: `The macOS deployment target 'MACOSX_DEPLOYMENT_TARGET' is set to 10.15, but the range of supported deployment target versions is 12.0 to …`.** Flutter 3.44's template targets macOS 10.15, which Xcode 27 refuses, for any app. Raise the Runner target to 12.0 in Xcode and `platform :osx, '12.0'` in `macos/Podfile`; with a Podfile, also add `target.build_configurations.each { |c| c.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '12.0' }` inside the `installer.pods_project.targets.each` loop of `post_install`, because 3.44 raises pods only to 10.15. Flutter 3.47's template needs neither (measured on Xcode 27.1, 2026-10-21). With `flutter_edge_ai_litertlm` use 14.0 in all three places instead, because its companion libraries are built for macOS 14 ([Desktop → macOS](/docs/desktop#macos)).
 - **`incompatible architecture (have 'arm64', need 'x86_64')`:** LiteRT-LM ships for Apple silicon only. It does not run on an Intel Mac or in an x86_64 (Rosetta) process.
 - **`library load disallowed by system policy`:** macOS refused a quarantined or un-notarized library. Notarize the app; for a local test build, remove the quarantine attribute with `xattr -dr com.apple.quarantine` on the app.
 - **`have different Team IDs`:** macOS library validation refused a library. Sign the app and its frameworks with the same team, or add the `com.apple.security.cs.disable-library-validation` entitlement.
@@ -93,6 +94,7 @@ final chat = await model.createChat(maxOutputTokens: 100);        // reply cap
 - **`.litertlm` models require minSdk 30.** `libLiteRtLm.so` depends on API 30+ Bionic syscalls (`pthread_cond_clockwait`, `sem_clockwait`) that can't be shimmed on older devices. MediaPipe `.task` models work on lower API levels.
 - **`.litertlm` / embeddings / vision are `arm64-v8a` only.** MediaPipe text inference (`.task` / `.bin`) also runs on `x86_64` and `armeabi-v7a`. If you only use arm64-only features, add `ndk { abiFilters 'arm64-v8a' }` (in `build.gradle.kts`: `ndk { abiFilters += listOf("arm64-v8a") }`) so the Play Store doesn't offer broken APKs. See [Installation → Android architecture](/docs/installation#android-architecture-support).
 - **GPU:** nothing to add — the OpenCL `<uses-native-library>` entries come from the core plugin's own manifest (`flutter_gemma` 1.2.0+) through the manifest merger. If the GPU backend still falls back, check that the merged manifest contains `libvndksupport.so` and `libOpenCL.so`. See [Installation → Android](/docs/installation#android).
+- **Which GPU flush ran (`kernel_batch_size`).** On an Adreno GPU (`/dev/kgsl-3d0` exists) the GPU load asks LiteRT-LM to flush every 2 kernels, so the UI keeps drawing during a long prefill ([#364](https://github.com/DenisovAV/flutter_edge_ai/issues/364)); on every other Android GPU it sets nothing and the engine's default applies, which is faster on Mali ([#763](https://github.com/DenisovAV/flutter_edge_ai/issues/763)). Debug builds log the choice (`[LiteRtLmFfi] Android GPU (Adreno): hint_kernel_batch_size=2`). In a release build, create the engine with `LiteRtLmEngine(nativeLogLevel: LiteRtLmLogLevel.verbose)` and look in logcat for the engine's `kernel_batch_size` line at load: `-1` is the engine default (no flush), as reported in #763.
 - **Google Play rejects the release: "Your app does not support 16 KB memory page sizes".** Fixed in `flutter_gemma_litertlm` 1.8.0; every `flutter_edge_ai_litertlm` release includes the fix. Nothing fails at build or run time — the rejection happens at submission. The Qualcomm Hexagon DSP blobs of the NPU path (`libQnnHtpV{73,75,79,81}Skel.so`) come from Qualcomm with a 4 KB `p_align`, and Play scans `lib/**/*.so` without caring that a Hexagon image is loaded by the DSP rather than mapped by the kernel. Since 1.10.0 they ship only in apps that set `qualcomm_npu: true`, and the build hook raises them to 16 KB. Check your own build with Google’s `check_elf_alignment.sh` against the APK. See [#529](https://github.com/DenisovAV/flutter_edge_ai/issues/529).
 - **GPU backend crashes at `engine_create` on Mali GPUs (`SIGSEGV`, `pc 0` in `libLiteRtOpenClAccelerator.so`).** Fixed in `flutter_gemma_litertlm` 1.8.2; every `flutter_edge_ai_litertlm` release includes the fix. In 1.7.0–1.8.1 the OpenCL and GPU accelerators called `AHardwareBuffer_allocate` without declaring `libandroid.so`, so Android bound the call to address 0; only Mali GPUs (Samsung A-series, MediaTek, Google Tensor) take that path, so CPU and Adreno were unaffected. See [#545](https://github.com/DenisovAV/flutter_edge_ai/issues/545).
 - **Zero chunks and `Stream error: <U+FFFD>`, then `SIGABRT`.** Fixed in `flutter_gemma_litertlm` 1.5.2; every `flutter_edge_ai_litertlm` release includes the fix. On Android the first `dlopen` of `libLiteRtLm` decides for the whole process whether its symbols are reachable from the default search scope, and bionic never promotes it afterwards — so an app that embedded or transcribed anything before its first generation left the stream-callback ABI probe blind and the wrong callback shape was registered. If your own or third-party code loads `libLiteRtLm` first, load it with `RTLD_GLOBAL` — the package cannot repair that case, but it raises a `StateError` naming it rather than generating corrupt text. See [#447](https://github.com/DenisovAV/flutter_edge_ai/issues/447).
@@ -260,8 +262,9 @@ with a `LiteRtLmBundleException`. Upstream:
 [LiteRT-LM#3508](https://github.com/google-ai-edge/LiteRT-LM/issues/3508).
 
 Note that `maxTokens` is **not** clamped up to 1024 on the NPU attempt the way
-it is on CPU and GPU — the safe context is baked into the compiled bundle, so
-pass the `cache_length` it was built for. A generic bundle is never tried on
+it is on CPU and GPU — the context is baked into the compiled bundle (4096 for
+the Gemma 4 E2B NPU builds, 1280 for Gemma 3 1B and FastVLM, 4096 for Gemma 3
+270M; the catalog's `requiredMaxTokens`), so keep `maxTokens` at or below it. A generic bundle is never tried on
 the NPU (it has no NPU graph: LiteRT-LM would run it on the CPU and report
 `npu`), and a bundle compiled for an NPU never runs on the GPU or CPU, so the
 floor applies only to the GPU and CPU attempts of a generic bundle.
@@ -355,7 +358,7 @@ if you hit it.
 ## Multimodal
 
 - Ensure the model has a vision (or audio) encoder — see [Multimodal](/docs/multimodal) and [Models](/docs/models).
-- Set `supportImage: true` (and `supportAudio: true` for audio) when creating the model. On MediaPipe (Android and iOS), pass `supportImage: true` to `createChat` as well, or the image is dropped.
+- Set `supportImage: true` (and `supportAudio: true` for audio) when creating the model. On MediaPipe (Android and iOS), pass `supportImage: true` to `openChat` as well, or the image is dropped.
 - Check device memory — multimodal models require more RAM.
 - **Image input crashes at model load on a GPU text backend (older releases).**
   On Metal (iOS/macOS) and WebGPU (Windows/Linux) the vision encoder's ops can't
@@ -404,6 +407,33 @@ build for a platform, then cache it under `~/.cache/flutter_gemma/native/`
   pinned release. `flutter_edge_ai_sqlite` says so on stderr when it takes that
   path; `flutter_edge_ai_litertlm` and `flutter_edge_ai_onnx` take it silently. If a
   new release "did not take", look for that directory first.
+
+## Another package bundles its own LiteRT-LM
+
+**`The LiteRT-LM library at … is not the one flutter_edge_ai_litertlm ships (it
+lacks litert_lm_engine_settings_set_kernel_batch_size)`** — a `StateError` (an
+`EmbeddingLoadException` for an embedder) when a `.litertlm` model, an embedder
+or speech loads. Another package in the app ships its own LiteRT-LM under the
+same library name — `llamadart` before 0.12.0 does by default (from 0.12.0 its
+build hook leaves it out next to `flutter_edge_ai_litertlm`), and
+`llamadart_litert_lm_flutter` links one through Swift Package Manager. On iOS
+and macOS that app still builds: depending on the order of the app's
+dependencies, Flutter renames our framework to `LiteRtLm1.framework`, and
+`LiteRtLm.framework` is the other package's build, which
+flutter_edge_ai_litertlm refuses rather than binds. On Android, Linux and
+Windows the build fails instead.
+
+For llamadart, upgrade it to 0.12.0 or later, or leave its LiteRT-LM runtime
+out in the app's `pubspec.yaml` (the workspace root's, if the app is a workspace
+member) and remove `llamadart_litert_lm_flutter` if the app depends on it; then
+run `flutter clean` once:
+
+```
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
+```
 
 ## Embeddings
 

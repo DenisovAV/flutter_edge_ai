@@ -7,6 +7,8 @@
 # 4. gpu_registry.cc dlopen rewrite for App-Store-safe framework paths (Apple)
 # 16. litert_lm_conversation_rewind_cancelled_turn: a stopped turn is rewound
 #     instead of leaving the conversation poisoned
+# 17. SentencePiece loads a BPE vocabulary with a NUL-byte piece (#659); on
+#     v0.19.0 a second patch on top of upstream's, which accepts only "\0"
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -67,7 +69,7 @@ LDSEOF
   # that lost section 14 fails the Windows link instead of shipping without.
   # The three stream-chunk accessors are named for the same reason: the Dart
   # client resolves them with GetProcAddress on this DLL and hands them to
-  # stream_proxy_create2, which refuses to build a proxy without all three, so a
+  # stream_proxy_create_v1, which refuses to build a proxy without all three, so a
   # tree that stopped exporting them should fail the link, not ship a client that
   # throws on the first send. Section 16's rewind is named for the same reason.
   cat > "$DIR/c/windows_exports.def" << 'DEFEOF'
@@ -94,6 +96,7 @@ EXPORTS
   litert_lm_conversation_create
   litert_lm_conversation_delete
   litert_lm_conversation_get_benchmark_info
+  litert_lm_conversation_get_last_turn_end
   litert_lm_conversation_rewind_cancelled_turn
   litert_lm_conversation_send_message
   litert_lm_conversation_send_message_stream
@@ -192,7 +195,7 @@ if ! grep -q "set_use_hw_masking_for_npu" "$DIR/c/engine.h"; then
 // crash because the NPU HW mask update path is not fully supported.\
 // Pass false to force CPU/SIMD mask update fallback.\
 LITERT_LM_C_API_EXPORT\
-void litert_lm_engine_settings_set_use_hw_masking_for_npu(\
+LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_masking_for_npu(\
     LiteRtLmEngineSettings* settings, bool value);\
 ' "$DIR/c/engine.h"
   rm -f "$DIR/c/engine.h.bak"
@@ -202,22 +205,30 @@ else
 fi
 
 if ! grep -q "set_use_hw_masking_for_npu" "$DIR/c/engine.cc"; then
-  sed -i.bak '/void litert_lm_engine_settings_set_activation_data_type/i\
-void litert_lm_engine_settings_set_use_hw_masking_for_npu(\
+  sed -i.bak '/^LiteRtLmStatusCode litert_lm_engine_settings_set_activation_data_type(/i\
+LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_masking_for_npu(\
     LiteRtLmEngineSettings* settings, bool value) {\
-  if (settings \&\& settings->settings) {\
-    auto\& exec = settings->settings->GetMutableMainExecutorSettings();\
-    litert::lm::NpuConfig config;\
-    auto current = exec.GetBackendConfig<litert::lm::NpuConfig>();\
-    if (current.ok()) {\
-      config = *current;\
-    }\
-    config.use_hw_masking_for_npu = value;\
-    exec.SetBackendConfig(config);\
+  if (!IsValidEngineSettings(settings)) {\
+    return kLiteRtLmStatusInvalidArgument;\
   }\
+  auto\& exec = settings->settings->GetMutableMainExecutorSettings();\
+  litert::lm::NpuConfig config;\
+  auto current = exec.GetBackendConfig<litert::lm::NpuConfig>();\
+  if (current.ok()) {\
+    config = *current;\
+  }\
+  config.use_hw_masking_for_npu = value;\
+  exec.SetBackendConfig(config);\
+  return kLiteRtLmStatusOk;\
 }\
+\
 ' "$DIR/c/engine.cc"
   rm -f "$DIR/c/engine.cc.bak"
+  grep -q '^LiteRtLmStatusCode litert_lm_engine_settings_set_use_hw_masking_for_npu(' \
+    "$DIR/c/engine.cc" || {
+    echo "  ERROR: section 4b: the set_activation_data_type anchor moved; no impl" >&2
+    exit 1
+  }
   echo "  OK: Added set_use_hw_masking_for_npu impl to c/engine.cc"
 else
   echo "  SKIP: c/engine.cc already has set_use_hw_masking_for_npu"
@@ -238,13 +249,13 @@ if ! grep -q "set_gpu_context_low_priority" "$DIR/c/engine.h"; then
 // prefill/decode does not starve the host UI compositor (#364). GPU-only;\
 // a no-op on backends whose delegate ignores context priority.\
 LITERT_LM_C_API_EXPORT\
-void litert_lm_engine_settings_set_gpu_context_low_priority(\
+LiteRtLmStatusCode litert_lm_engine_settings_set_gpu_context_low_priority(\
     LiteRtLmEngineSettings* settings, bool value);\
 \
 // Hints a GPU kernel batch size so the delegate periodically flushes, giving\
 // the UI compositor scheduling windows during long GPU work (#364).\
 LITERT_LM_C_API_EXPORT\
-void litert_lm_engine_settings_set_kernel_batch_size(\
+LiteRtLmStatusCode litert_lm_engine_settings_set_kernel_batch_size(\
     LiteRtLmEngineSettings* settings, int kernel_batch_size);\
 ' "$DIR/c/engine.h"
   rm -f "$DIR/c/engine.h.bak"
@@ -254,30 +265,41 @@ else
 fi
 
 if ! grep -q "set_gpu_context_low_priority" "$DIR/c/engine.cc"; then
-  sed -i.bak '/void litert_lm_engine_settings_set_activation_data_type/i\
-void litert_lm_engine_settings_set_gpu_context_low_priority(\
+  sed -i.bak '/^LiteRtLmStatusCode litert_lm_engine_settings_set_activation_data_type(/i\
+LiteRtLmStatusCode litert_lm_engine_settings_set_gpu_context_low_priority(\
     LiteRtLmEngineSettings* settings, bool value) {\
-  if (settings \&\& settings->settings) {\
-    auto\& main_settings = settings->settings->GetMutableMainExecutorSettings();\
-    auto advanced_settings = main_settings.GetAdvancedSettings().value_or(\
-        litert::lm::AdvancedSettings());\
-    advanced_settings.gpu_context_low_priority = value;\
-    main_settings.SetAdvancedSettings(advanced_settings);\
+  if (!IsValidEngineSettings(settings)) {\
+    return kLiteRtLmStatusInvalidArgument;\
   }\
+  auto\& main_settings = settings->settings->GetMutableMainExecutorSettings();\
+  auto advanced_settings = main_settings.GetAdvancedSettings().value_or(\
+      litert::lm::AdvancedSettings());\
+  advanced_settings.gpu_context_low_priority = value;\
+  main_settings.SetAdvancedSettings(advanced_settings);\
+  return kLiteRtLmStatusOk;\
 }\
 \
-void litert_lm_engine_settings_set_kernel_batch_size(\
+LiteRtLmStatusCode litert_lm_engine_settings_set_kernel_batch_size(\
     LiteRtLmEngineSettings* settings, int kernel_batch_size) {\
-  if (settings \&\& settings->settings) {\
-    auto\& main_settings = settings->settings->GetMutableMainExecutorSettings();\
-    auto advanced_settings = main_settings.GetAdvancedSettings().value_or(\
-        litert::lm::AdvancedSettings());\
-    advanced_settings.hint_kernel_batch_size = kernel_batch_size;\
-    main_settings.SetAdvancedSettings(advanced_settings);\
+  if (!IsValidEngineSettings(settings)) {\
+    return kLiteRtLmStatusInvalidArgument;\
   }\
+  auto\& main_settings = settings->settings->GetMutableMainExecutorSettings();\
+  auto advanced_settings = main_settings.GetAdvancedSettings().value_or(\
+      litert::lm::AdvancedSettings());\
+  advanced_settings.hint_kernel_batch_size = kernel_batch_size;\
+  main_settings.SetAdvancedSettings(advanced_settings);\
+  return kLiteRtLmStatusOk;\
 }\
+\
 ' "$DIR/c/engine.cc"
   rm -f "$DIR/c/engine.cc.bak"
+  for fn in set_gpu_context_low_priority set_kernel_batch_size; do
+    grep -q "^LiteRtLmStatusCode litert_lm_engine_settings_${fn}(" "$DIR/c/engine.cc" || {
+      echo "  ERROR: section 4c: the set_activation_data_type anchor moved; no $fn" >&2
+      exit 1
+    }
+  done
   echo "  OK: Added GPU smooth-UI knob impls to c/engine.cc"
 else
   echo "  SKIP: c/engine.cc already has set_gpu_context_low_priority"
@@ -382,19 +404,15 @@ else:
     # shell below). Bazel applies `patches` BEFORE `patch_cmds`, and fails the
     # fetch when a hunk does not apply — the loud failure a moved upstream
     # line has to produce. The macro it uses is defined by the awk above.
-    # patches/litert_openvino_2026_4_1.patch is upstream LiteRT 991d15588a
-    # verbatim: the OpenVINO SDK the Windows Intel dispatch builds against and
-    # ships with moves from 2026.3.1 to 2026.4.1. Intel's Gemma 4 12B bundle
-    # for Panther Lake carries blob metadata 2.7, which the 2026.3 NPU plugin
-    # refuses ("Imported blob metadata version: 2.7 but the current version
-    # is: 2.6"). Drop the patch once the LiteRT pin contains 991d15588a.
+    # OpenVINO 2026.4.1 (which Intel's Gemma 4 12B for Panther Lake needs) is
+    # in the LiteRT pin since v0.19.0 (dcb657e8 contains 991d15588a), so the
+    # backport patch is gone.
     content = content.replace(
         '    name = "litert",\n',
         '    name = "litert",\n'
         '    patches = [\n'
         '        "//:flutter_gemma_litert_gpu_registry.patch",\n'
         '        "//:flutter_gemma_litert_google_tensor_dispatch_oss.patch",\n'
-        '        "//:flutter_gemma_litert_openvino_2026_4_1.patch",\n'
         '    ],\n'
         '    patch_args = ["-p1"],\n', 1)
     if 'flutter_gemma_litert_gpu_registry.patch' not in content:
@@ -404,14 +422,11 @@ else:
     print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
     print("  OK: litert archive applies patches/litert_gpu_registry_apple.patch")
     print("  OK: LiteRT Google Tensor dispatch drops its unused internal hooks dependency")
-    print("  OK: LiteRT pins OpenVINO 2026.4.1 (upstream 991d15588a)")
 PYEOF
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
     "$DIR/flutter_gemma_litert_gpu_registry.patch"
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
     "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
-  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_openvino_2026_4_1.patch" \
-    "$DIR/flutter_gemma_litert_openvino_2026_4_1.patch"
 else
   if [ -f "$WORKSPACE_FILE" ]; then
     # A tree patched by an older patch_c_api.sh has the sed but not the diff:
@@ -431,16 +446,8 @@ else
     fi
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
       "$DIR/flutter_gemma_litert_gpu_registry.patch"
-    if ! grep -q "flutter_gemma_litert_openvino_2026_4_1.patch" \
-        "$WORKSPACE_FILE"; then
-      echo "  ERROR: $WORKSPACE_FILE has no OpenVINO 2026.4.1 patch;" \
-        "start from a fresh LiteRT-LM tree" >&2
-      exit 1
-    fi
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
       "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
-    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_openvino_2026_4_1.patch" \
-      "$DIR/flutter_gemma_litert_openvino_2026_4_1.patch"
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
     echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2
@@ -546,6 +553,12 @@ PYEOF
 # patch rests on: a moved upstream line fails the build here, not a user's
 # engine_create.
 PATHW_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+# LITERTLM_SKIP_PATH_WEIGHTS=1 builds without this section: the v0.19.0
+# migration's check of whether 0.18.1's EmbeddingGemma 2 ABI fix made it
+# unnecessary.
+if [ "${LITERTLM_SKIP_PATH_WEIGHTS:-0}" = "1" ]; then
+  echo "  SKIP: section 13 (LITERTLM_SKIP_PATH_WEIGHTS=1)"
+else
 for f in external_weights_by_path.h external_weights_by_path.cc \
     external_weights_by_path_test.cc; do
   cp "$PATHW_SRC_DIR/$f" "$DIR/runtime/components/$f"
@@ -568,7 +581,11 @@ pathw_fail() {
 }
 PATHW_UTILS="$DIR/runtime/executor/litert_compiled_model_executor_utils.cc"
 # The group name the rewrite looks for is the one upstream gives the section.
-grep -qF 'external_weights.sections["tflite_weights"]' "$PATHW_UTILS" ||
+# v0.19.0 also lets a model reference another model's weights as
+# "tflite_weights:<model type>" (tied embeddings deduplicated across models,
+# 90aac9c); this section rewrites only a model's own group, so such a bundle
+# still fails on Linux and Windows.
+grep -qF 'kModelWeightGroupName = "tflite_weights";' "$PATHW_UTILS" ||
   pathw_fail "GetExternalWeightResources no longer names the group \"tflite_weights\""
 # NotFound from GetWeightsSectionOffset must still mean "no scoped file".
 grep -qF 'absl::IsNotFound(section_offset.status())' "$PATHW_UTILS" ||
@@ -588,6 +605,7 @@ if grep -q 'GetWeightInMemoryMap' "$DIR/runtime/components/model_resources_liter
   pathw_fail "ModelResourcesLitertLm now provides an in-memory weight map"
 fi
 echo "  OK: section 13 anchors hold"
+fi
 
 # ── 14. EmbeddingEngine response lengths (EmbeddingGemma 2) ──
 # EmbeddingEngineImpl fills EmbeddingResponse.input_length and
@@ -664,7 +682,7 @@ echo "  OK: section 15 anchors hold"
 #   failed), numbered so a late callback of an older send cannot overwrite it;
 # - adds litert_lm_conversation_rewind_cancelled_turn (LITERT_LM_C_API_EXPORT,
 #   and section 1's Windows .def): cancel whatever still runs, wait until every
-#   task has ended (Conversation::WaitUntilDone, backported from upstream main),
+#   task has ended (Conversation::WaitUntilDone, upstream since v0.19.0),
 #   and only then decide — completed: nothing to do; cancelled: rewind to the
 #   checkpoint and prefill the stopped exchange without decoding; anything
 #   else: the caller deletes the conversation. Deciding before the wait read a
@@ -716,5 +734,354 @@ grep -qF 'session_lookup_.at(session_id)->active_tasks.empty();' \
 grep -qF 'absl::Status LlmLiteRtCompiledModelExecutorBase::SetCurrentStep(int new_step) {' \
   "$DIR/runtime/executor/llm_litert_compiled_model_executor.cc" ||
   rewind_fail "the compiled-model executor's SetCurrentStep moved"
+
+# ── 17. SentencePiece: a NUL byte in a BPE piece ──
+# SentencePiece 0.2.2 (the WORKSPACE pin since LiteRT-LM v0.17.0) refuses any
+# vocabulary piece containing '\0' ("piece must not include null character").
+# Byte-level BPE vocabularies converted to SP_Tokenizer without byte_fallback
+# carry byte 0x00 as a NORMAL piece (Qwen3-0.6B.litertlm before HF e6687177,
+# FastVLM-0.5B.litertlm: id 188), so engine_create fails on them, while
+# LiteRT-LM's own pip wheel, which links Google's internal SentencePiece,
+# loads and answers them (LiteRT-LM #3865). Upstream SentencePiece's own fix
+# (867f4ae8, #1308) only covers models with byte_fallback.
+# The check guards Darts, which throws on a NUL byte in a key. A BPE model
+# builds no trie over its pieces (a hash map, InitializePieces(false)); only
+# its USER_DEFINED pieces reach one (the prefix matcher). The patch keeps the
+# refusal there and for every other model type (Unigram's trie holds all its
+# pieces) and drops it for the rest of a BPE vocabulary.
+# A Bazel `patches=` on the sentencepiece archive: Bazel applies it before
+# the archive's patch_cmds (still under src/) and fails the fetch when the
+# hunk no longer applies, which is what a SentencePiece bump has to produce.
+# support/tokenizer:sentencepiece_nul_piece_test pins both halves.
+SP_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+sp_fail() {
+  echo "  ERROR: section 17: $1" >&2
+  exit 1
+}
+SP_PATCH_CHOICE_FILE="$(mktemp)"
+if ! grep -q "flutter_gemma_sentencepiece_nul_piece.patch" "$WORKSPACE_FILE"; then
+  SP_PATCH_CHOICE="$SP_PATCH_CHOICE_FILE" python3 << 'PYEOF' || exit 1
+import os
+ws = os.environ['WORKSPACE_FILE']
+content = open(ws).read()
+anchor = '    name = "sentencepiece",\n'
+if content.count(anchor) != 1:
+    raise SystemExit("  ERROR: section 17: the sentencepiece http_archive is not in WORKSPACE")
+start = content.index(anchor)
+end = content.find('\n)', start)
+block = content[start:end]
+# The patch is a diff against this release; a moved pin needs a new one.
+if 'strip_prefix = "sentencepiece-0.2.2"' not in block:
+    raise SystemExit("  ERROR: section 17: sentencepiece is no longer 0.2.2 — "
+                     "re-check the NUL-piece refusal and re-create the patch")
+if 'patches' in block:
+    # LiteRT-LM v0.19.0 carries its own (third_party/sentencepiece/
+    # sentencepiece.patch): it accepts exactly the one-byte piece "\0" when it
+    # is NORMAL in a BPE model without byte_fallback — enough for Qwen3-0.6B
+    # and FastVLM-0.5B, not for Phi-4-mini-instruct, whose vocabulary also
+    # holds the merge "\0\0" (id 156344; "piece must not include null
+    # character" on our v0.19.0 build). Ours goes second, against the
+    # upstream-patched file and in its -p0 form (patch_args apply to both).
+    upstream = 'patches = ["@//third_party/sentencepiece:sentencepiece.patch"]'
+    if block.count(upstream) != 1:
+        raise SystemExit("  ERROR: section 17: the sentencepiece archive has "
+                         "patches other than upstream's NUL-piece one")
+    if 'patch_args' in block:
+        raise SystemExit("  ERROR: section 17: the sentencepiece archive sets "
+                         "patch_args; re-create the on-upstream patch for it")
+    content = content.replace(
+        upstream,
+        'patches = ["@//third_party/sentencepiece:sentencepiece.patch", '
+        '"//:flutter_gemma_sentencepiece_nul_piece.patch"]', 1)
+    open(ws, 'w').write(content)
+    open(os.environ['SP_PATCH_CHOICE'], 'w').write('on_upstream')
+    print("  OK: sentencepiece archive applies upstream's patch, then "
+          "patches/sentencepiece_nul_piece_on_upstream.patch")
+    raise SystemExit(0)
+open(os.environ['SP_PATCH_CHOICE'], 'w').write('plain')
+content = content.replace(
+    anchor,
+    anchor +
+    '    patches = ["//:flutter_gemma_sentencepiece_nul_piece.patch"],\n'
+    '    patch_args = ["-p1"],\n', 1)
+open(ws, 'w').write(content)
+print("  OK: sentencepiece archive applies patches/sentencepiece_nul_piece.patch")
+PYEOF
+else
+  echo "  SKIP: sentencepiece NUL-piece patch already in WORKSPACE"
+fi
+# Which file the WORKSPACE entry names: against upstream's patch (v0.19.0
+# on) or against the bare 0.2.2 source. A WORKSPACE patched by an earlier run
+# keeps its choice, read back from the entry.
+sp_choice="$(cat "$SP_PATCH_CHOICE_FILE")"
+rm -f "$SP_PATCH_CHOICE_FILE"
+if [ -z "$sp_choice" ]; then
+  if grep -q 'sentencepiece.patch", "//:flutter_gemma_sentencepiece_nul_piece.patch"' "$WORKSPACE_FILE"; then
+    sp_choice=on_upstream
+  else
+    sp_choice=plain
+  fi
+fi
+if [ "$sp_choice" = on_upstream ]; then
+  cp "$SP_SRC_DIR/patches/sentencepiece_nul_piece_on_upstream.patch" \
+    "$DIR/flutter_gemma_sentencepiece_nul_piece.patch"
+else
+  cp "$SP_SRC_DIR/patches/sentencepiece_nul_piece.patch" \
+    "$DIR/flutter_gemma_sentencepiece_nul_piece.patch"
+fi
+cp "$SP_SRC_DIR/sentencepiece_nul_piece_test.cc" \
+  "$DIR/support/tokenizer/sentencepiece_nul_piece_test.cc"
+SP_TOKENIZER_BUILD="$DIR/support/tokenizer/BUILD"
+grep -q 'name = "sentencepiece_tokenizer",' "$SP_TOKENIZER_BUILD" ||
+  sp_fail "support/tokenizer:sentencepiece_tokenizer moved"
+grep -qF 'CreateFromProto(' "$DIR/support/tokenizer/sentencepiece_tokenizer.h" ||
+  sp_fail "SentencePieceTokenizer::CreateFromProto is gone"
+if ! grep -q '"sentencepiece_nul_piece_test"' "$SP_TOKENIZER_BUILD"; then
+  cat >> "$SP_TOKENIZER_BUILD" << 'BUILDEOF'
+
+cc_test(
+    name = "sentencepiece_nul_piece_test",
+    srcs = ["sentencepiece_nul_piece_test.cc"],
+    deps = [
+        ":sentencepiece_tokenizer",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+        "@sentencepiece//:sentencepiece_model_cc_proto",
+    ],
+)
+BUILDEOF
+fi
+echo "  OK: section 17 test target in support/tokenizer"
+
+# ── 18. Rewind bookkeeping (upstream PR #4197: LiteRT-LM #3947, #4195) ──
+# 0.19.0's RollBackProcessedTokens turns the token before a rewind target into
+# a pending token with no embedding, and on a model that takes embeddings
+# (Gemma 4 E2B) the next prefill writes its id into the embedding input: one
+# KV cell is wrong after every section 16 rewind (measured 2026-10-28,
+# -1.152 vs -0.792). The same PR restores last_prefill_token_id on rewind
+# (#4195). Upstream's diff verbatim; drop it once the pin contains it.
+REWIND4197_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/rewind_bookkeeping_4197.patch"
+if git -C "$DIR" apply --check "$REWIND4197_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$REWIND4197_PATCH"
+  echo "  OK: rewind restores embeddings and the last prefill token (#4197)"
+elif git -C "$DIR" apply --reverse --check "$REWIND4197_PATCH" 2>/dev/null; then
+  echo "  SKIP: rewind bookkeeping (#4197) already applied"
+else
+  echo "  ERROR: $REWIND4197_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
+# ── 19. Android: the statically linked GPU accelerator is OpenCL only ──
+# From v0.19.0 libLiteRtLm links runtime/executor:default_static_gpu_accelerator
+# on Apple and Android. On Android that is LiteRT's combined ML Drift
+# accelerator, whose WebGPU delegate makes libLiteRtLm NEED
+# libwebgpu_dawn.so — which this bundle does not carry (Android GPU is
+# OpenCL only, see build_android.sh). LiteRT's ml_drift_cl_accelerator is the
+# same accelerator without WebGPU.
+ANDROID_CL_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/android_static_gpu_opencl.patch"
+if grep -q 'name = "default_static_gpu_accelerator"' "$DIR/runtime/executor/BUILD"; then
+  if git -C "$DIR" apply --check "$ANDROID_CL_PATCH" 2>/dev/null; then
+    git -C "$DIR" apply "$ANDROID_CL_PATCH"
+    echo "  OK: Android links the OpenCL-only GPU accelerator"
+  elif git -C "$DIR" apply --reverse --check "$ANDROID_CL_PATCH" 2>/dev/null; then
+    echo "  SKIP: Android OpenCL-only accelerator already applied"
+  else
+    echo "  ERROR: $ANDROID_CL_PATCH does not apply to this LiteRT-LM revision" >&2
+    exit 1
+  fi
+fi
+
+# ── 20. Linux and Windows: no fused GPU sampler ──
+# From v0.19.0 the TopK GPU samplers are compiled from ML Drift source
+# (upstream 47d7ba6, 7ea259d, 43b79e8) and runtime/components:
+# default_static_gpu_samplers links the WebGPU one into libLiteRtLm on every
+# non-Apple, non-Android target, including the dynamic-link mode Linux and
+# Windows use (litert_runtime_link_mode=dynamic), where the accelerator itself
+# stays out (it is Google's prebuilt libLiteRtWebGpuAccelerator). Our
+# libstdc++/MSVC build of the sampler then crashed the first GPU decode:
+# SIGSEGV in TopKWebGpuSampler::SampleToIdAndScoreBuffer on a T4,
+# 0xC0000409 in LiteRtLm.dll on Arc B390 and Arc 140V. This leaves the
+# sampler out in dynamic-link mode, as the accelerator already is; with no
+# sampler library shipped either, the sampler factory samples on the CPU and
+# the logits stay on the GPU.
+DESKTOP_SAMPLER_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/desktop_no_static_gpu_sampler.patch"
+if grep -q 'name = "default_static_gpu_samplers"' "$DIR/runtime/components/BUILD"; then
+  if git -C "$DIR" apply --check "$DESKTOP_SAMPLER_PATCH" 2>/dev/null; then
+    git -C "$DIR" apply "$DESKTOP_SAMPLER_PATCH"
+    echo "  OK: no fused GPU sampler in dynamic-link builds (Linux, Windows)"
+  elif git -C "$DIR" apply --reverse --check "$DESKTOP_SAMPLER_PATCH" 2>/dev/null; then
+    echo "  SKIP: no fused GPU sampler already applied"
+  else
+    echo "  ERROR: $DESKTOP_SAMPLER_PATCH does not apply to this LiteRT-LM revision" >&2
+    exit 1
+  fi
+fi
+
+# ── 21. XNNPACK: no pf32 SME2 GEMM / x32 SME2 LHS packing on Apple ──
+# On SME2 CPUs (Apple M4/M5) XNNPACK's KleidiAI pf32 SME2 f32 GEMM gives
+# thread-count-dependent results: up to 2.5 nat per token between sessions at
+# 4 threads, a repeated wrong answer at other counts, 1 thread off on some
+# models (google/XNNPACK#11789; doc/research/macos-cpu-nondeterminism-0.19.md
+# on research/macos-cpu-nondeterminism-0.19). patches/
+# xnnpack_pf32_sme2_apple.patch skips only those three SME2 branches when
+# XNN_PLATFORM_MAC or XNN_PLATFORM_IOS; elsewhere it compiles to the same code.
+# TensorFlow defines the XNNPACK repository this build uses (it comes before
+# LiteRT's, which Bazel then skips), so the hook is a second patch on the
+# org_tensorflow archive that adds our file to that tf_http_archive's
+# patch_file. Both apply at fetch time without fuzz: a TensorFlow that moves
+# the XNNPACK pin, or an XNNPACK whose config lines moved, fails the build
+# until the patch is re-checked. Drop both when #11789 is fixed.
+XNN_SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+if ! grep -q "flutter_gemma_tensorflow_xnnpack_patch_file.patch" "$WORKSPACE_FILE"; then
+  python3 << 'PYEOF' || exit 1
+import os
+ws = os.environ['WORKSPACE_FILE']
+content = open(ws).read()
+anchor = '    name = "org_tensorflow",\n'
+if content.count(anchor) != 1:
+    raise SystemExit("  ERROR: section 21: the org_tensorflow http_archive is not in WORKSPACE")
+start = content.index(anchor)
+end = content.find('\n)', start)
+block = content[start:end]
+upstream = 'patches = ["@//third_party/tensorflow:tensorflow.patch"]'
+if block.count(upstream) != 1:
+    raise SystemExit("  ERROR: section 21: org_tensorflow's patches are not upstream's one "
+                     "tensorflow.patch; re-check how the XNNPACK patch is hooked in")
+if 'patch_args' in block:
+    raise SystemExit("  ERROR: section 21: org_tensorflow sets patch_args; the TensorFlow "
+                     "patch is written for the default -p0")
+new_block = block.replace(
+    upstream,
+    'patches = ["@//third_party/tensorflow:tensorflow.patch", '
+    '"//:flutter_gemma_tensorflow_xnnpack_patch_file.patch"]', 1)
+open(ws, 'w').write(content[:start] + new_block + content[end:])
+print("  OK: org_tensorflow applies patches/tensorflow_xnnpack_patch_file.patch "
+      "(XNNPACK gets patches/xnnpack_pf32_sme2_apple.patch)")
+PYEOF
+else
+  echo "  SKIP: XNNPACK SME2 patch already hooked into org_tensorflow"
+fi
+cp "$XNN_SRC_DIR/patches/tensorflow_xnnpack_patch_file.patch" \
+  "$DIR/flutter_gemma_tensorflow_xnnpack_patch_file.patch"
+cp "$XNN_SRC_DIR/patches/xnnpack_pf32_sme2_apple.patch" \
+  "$DIR/flutter_gemma_xnnpack_pf32_sme2_apple.patch"
+
+# ── 22. NPU executor: save every KV cache buffer of a conversation ──
+# LiteRT-LM keeps several conversations on one engine by saving the active
+# one (CloneContext) and restoring the next (RestoreContext). The NPU
+# executor saved only the KV buffers its prefill signature takes; a layer
+# only the decode signature reads (Gemma 4 E2B on the Qualcomm SM8750
+# bundle: kv_cache_k_14 and kv_cache_v_14 of 30) kept the previous
+# conversation's values, measured on a DDP Galaxy S25 Ultra 2026-11-02 (N1,
+# doc/research/npu-0.19.md): every conversation then answered with the last
+# one's fact. Saving every buffer in input_kv_cache_buffers covers them;
+# RestoreContext already restores whatever was saved.
+NPU_SAVE_ALL_KV_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/npu_context_save_all_kv.patch"
+if git -C "$DIR" apply --check "$NPU_SAVE_ALL_KV_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$NPU_SAVE_ALL_KV_PATCH"
+  echo "  OK: NPU CloneContext saves every KV cache buffer"
+elif git -C "$DIR" apply --reverse --check "$NPU_SAVE_ALL_KV_PATCH" 2>/dev/null; then
+  echo "  SKIP: NPU CloneContext already saves every KV cache buffer"
+else
+  echo "  ERROR: $NPU_SAVE_ALL_KV_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
+# ── 23. How a turn ended: the turn-end record ──
+# A streamed reply ends with the same final chunk whether the model ended it
+# (stop token), it reached max_output_tokens (Tasks::Decode returns kDone for
+# both), or its decode filled the context window (kMaxNumTokensReached, a
+# normal completion while return_error_on_max_tokens_reached is off, which no C
+# setter reaches). An input that does not fit ends with RESOURCE_EXHAUSTED (or,
+# longer than the whole window, INVALID_ARGUMENT) and leaves the session failed:
+# its failed prefill stays a dependency of every later task (measured on
+# v0.19.0, macOS CPU and Metal). Section 16 read it as "failed, delete".
+# Decode now marks a stop by max_output_tokens on its kDone Responses (a field,
+# not a new TaskState, so every kDone consumer is unchanged); the conversation
+# records how its last decode ended before the callback that reports it; the C
+# wrapper turns that and the status into the LiteRtLmTurnEnd it keeps per send
+# (section 16), with the absl code, behind
+# litert_lm_conversation_get_last_turn_end. The over-long input is reported as
+# RESOURCE_EXHAUSTED too, and rewind_cancelled_turn rewinds a conversation
+# whose input did not fit to that turn's checkpoint, which makes it usable;
+# after a turn that hit max_output_tokens or the window in its decode it
+# changes nothing. A CPU/GPU executor refuses a prefill when every prefill
+# signature is longer than the positions left (Gemma 4 E2B: 125 left, CPU and
+# Metal; FunctionGemma 270M on Metal: 249), however short the input, which
+# tasks.cc's own check lets through; upstream says FAILED_PRECONDITION, so the
+# window reads as an error. Both such refusals in
+# GetOptimizedPrefillWorkGroups say RESOURCE_EXHAUSTED: the turn ends
+# context_full and is rewound like the others. Only these window checks (the
+# two in tasks.cc, the two in GetOptimizedPrefillWorkGroups, and the
+# conversation's own error for a prefill into a window a decode filled) mark
+# their RESOURCE_EXHAUSTED with the payload kContextWindowFullPayload; a
+# RESOURCE_EXHAUSTED without it (a failed allocation) ends the turn failed and
+# is not rewound, and the C wrapper strips the payload from the error text the
+# caller sees (probe commands turnend and exhausted, the latter on a build with
+# a probe-only fault hook; mutations of each marking caught, 2026-11-04). A
+# prefill or decode that fails
+# after its benchmark turn started never ended that turn, so every later turn
+# of the session failed with "Prefill turn prefill:N already started" (the
+# Dart client always enables benchmark); tasks.cc forgets an unended turn's
+# start on every exit. A send refused before it starts (a NULL argument, a
+# message that is not JSON) is reported as kLiteRtLmTurnEndRefused with its
+# status code instead of the end of the send before it; rewind_cancelled_turn
+# still decides by the last send that started. Needs sections 16 and 18.
+TURN_END_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/conversation_turn_end_record.patch"
+if git -C "$DIR" apply --check "$TURN_END_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$TURN_END_PATCH"
+  echo "  OK: conversations record how each turn ended"
+elif git -C "$DIR" apply --reverse --check "$TURN_END_PATCH" 2>/dev/null; then
+  echo "  SKIP: turn-end record already applied"
+else
+  echo "  ERROR: $TURN_END_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
+# ── 24. A prefill that reuses the KV positions a rewind left keeps its step ──
+# After a rewind (section 16, or upstream's own rewind_to_checkpoint) the
+# executor's step is back at the checkpoint, but its processed tokens still
+# hold what the stopped send prefilled and decoded. The resource manager's
+# prefill drops the input tokens that match them and, when they all match
+# (the stopped exchange of a stopped reply usually does: it ends with the
+# reply's last token, which the executor holds as its pending token), calls
+# the executor with the step after them in the prefill params only. The
+# executor takes its step from SetCurrentStep, so the rest of the input was
+# prefilled from the checkpoint's step and the matched tokens were lost:
+# Gemma 4 E2B rewound with "The salt-laced wind was Elara's" held 5 tokens
+# instead of 34 and forgot the conversation (macOS CPU and Metal, 2026-11-04,
+# probe command convrewind). The other branch already sets the step.
+MATCHED_STEP_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/resource_manager_matched_step.patch"
+if git -C "$DIR" apply --check "$MATCHED_STEP_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$MATCHED_STEP_PATCH"
+  echo "  OK: a prefill after a rewind keeps the matched tokens' step"
+elif git -C "$DIR" apply --reverse --check "$MATCHED_STEP_PATCH" 2>/dev/null; then
+  echo "  SKIP: matched-step fix already applied"
+else
+  echo "  ERROR: $MATCHED_STEP_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
+# ── 25. A new context starts a hybrid model's linear attention state at zero ──
+# LFM2 keeps a convolution state (kv_cache_c_) beside its attention KV cache.
+# Reset() and a new session only move the step to 0: enough for a KV cache,
+# which is masked by position, but the convolution state of the previous
+# conversation stayed, so every conversation after the first on one engine
+# answered differently (LFM2.5-230M int8, macOS CPU and Metal, 2026-11-04,
+# probe command xsession; a fresh engine always gave the first answer). The
+# state was only cleared when its buffers were created. A prefill into an
+# empty context (step 0, no processed tokens) now clears the buffers of type
+# TYPE_LINEAR_ATTENTION in both states; attention-only models have none.
+LINEAR_STATE_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/linear_attention_state_clear.patch"
+if git -C "$DIR" apply --check "$LINEAR_STATE_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$LINEAR_STATE_PATCH"
+  echo "  OK: a new context clears the linear attention state"
+elif git -C "$DIR" apply --reverse --check "$LINEAR_STATE_PATCH" 2>/dev/null; then
+  echo "  SKIP: linear attention state clear already applied"
+else
+  echo "  ERROR: $LINEAR_STATE_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
 
 echo "Patch complete."

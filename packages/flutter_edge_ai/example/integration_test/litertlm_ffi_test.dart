@@ -1,58 +1,112 @@
 /// Universal FFI integration test for all platforms (macOS, iOS, Android).
 ///
 /// Prerequisites:
-///   macOS:   models in ~/Library/Containers/.../Documents/
+///   macOS:   models in ~/models (container Documents fallback)
 ///   Android: adb push models to /data/local/tmp/flutter_gemma_test/
 ///   iOS:     models downloaded via FlutterEdgeAi.installModel()
 ///
 /// Run:
 ///   flutter test integration_test/litertlm_ffi_test.dart -d <device>
+///   flutter test integration_test/litertlm_ffi_test.dart -d <device> \
+///     --dart-define=FFI_GROUPS=npu
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
+    show LiteRtLmModels;
 // ignore: implementation_imports — reads core's file-system service to check install paths
 import 'package:flutter_edge_ai/src/di/service_registry.dart'
     show ServiceRegistry;
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath, macosStagedRoot;
+import 'registry_evidence.dart';
 
-// ── Model URLs (for iOS download, macOS/Android use local files) ──
-const _gemma4Url =
-    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
+const _ffiGroups = String.fromEnvironment('FFI_GROUPS');
 
-const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
+String? get _skipNonNpuGroup =>
+    _ffiGroups == 'npu' ? 'FFI_GROUPS=npu selects only the NPU groups' : null;
 
 // ── Local paths ──
 String get _androidDir => '/data/local/tmp/flutter_gemma_test';
-String get _macosDir =>
-    '${Platform.environment['HOME']}/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents';
 String get _linuxDir => '${Platform.environment['HOME']}/models';
 String get _windowsDir => '${Platform.environment['USERPROFILE']}\\models';
 
 Uint8List _testImage = Uint8List(0);
 Uint8List _testAudio = Uint8List(0);
 
-/// Install model: from file on macOS/Android, from network on iOS.
-Future<void> _install({
-  required String? localPath,
-  required String networkUrl,
-}) async {
+/// Whether the media are the example's bundled fixtures, whose content the
+/// checks below know: a black puppy on boards, and a woman saying "She had
+/// your dark suit in greasy wash water all year". A staged file of unknown
+/// content still runs the check, but records no registry evidence.
+bool _imageIsFixture = false;
+bool _audioIsFixture = false;
+
+/// [check]'s answer names what the bundled fixture holds: at least [least]
+/// of [words], without regard to case.
+void _expectNames(String answer, List<String> words, {int least = 1}) {
+  final low = answer.toLowerCase();
+  final hits = words.where(low.contains).length;
+  expect(
+    hits,
+    greaterThanOrEqualTo(least),
+    reason: 'expected $least of $words, got: "$answer"',
+  );
+}
+
+/// The Gemma 4 E2B file the group installed, or null when it installed the
+/// registry build from Hugging Face.
+String? _gemma4Path;
+
+/// Install Gemma 4 E2B: a staged file on macOS/Android/desktop, otherwise the
+/// registry's generic build (pinned to its Hugging Face commit).
+Future<void> _installGemma4(String? localPath) async {
   if (localPath != null && File(localPath).existsSync()) {
     await FlutterEdgeAi.installModel(
       modelType: ModelType.gemmaIt,
       fileType: ModelFileType.litertlm,
     ).fromFile(localPath).install();
+    _gemma4Path = localPath;
   } else {
-    await FlutterEdgeAi.installModel(
-      modelType: ModelType.gemmaIt,
-      fileType: ModelFileType.litertlm,
-    ).fromNetwork(networkUrl, token: _token).install();
+    // Gemma 4 is not gated.
+    await FlutterEdgeAi.installModelFromCatalog(
+      LiteRtLmModels.gemma4E2bIt.generic,
+    ).install();
+    _gemma4Path = null;
+  }
+}
+
+/// Registry evidence that [check] passed on the shared Gemma 4 E2B model, on
+/// the backend that ran it: the vision or audio encoder's own backend for
+/// those checks (Gemma 4's audio encoder is constrained to the CPU, so a GPU
+/// run's audio is not GPU audio), the text model's for the others.
+Future<void> _gemma4Evidence(String check) async {
+  final model = _sharedModel;
+  final backend = switch (check) {
+    'vision' => model?.activeVisionBackend,
+    'audio' => model?.activeAudioBackend,
+    _ => model?.activeBackend,
+  };
+  if (backend == null) {
+    fail('$check passed, but the model reports no backend for it');
+  }
+  final path = _gemma4Path;
+  if (path != null) {
+    await recordEvidence(path: path, backend: backend, check: check);
+  } else {
+    await recordCatalogEvidence(
+      LiteRtLmModels.gemma4E2bIt.generic,
+      backend: backend,
+      check: check,
+    );
   }
 }
 
@@ -63,7 +117,7 @@ Future<void> _install({
 /// instead of re-downloading on every test run.
 String? _localPath(String filename) {
   if (Platform.isAndroid) return '$_androidDir/$filename';
-  if (Platform.isMacOS) return '$_macosDir/$filename';
+  if (Platform.isMacOS) return macosStagedFilePath(filename);
   if (Platform.isLinux) return '$_linuxDir/$filename';
   if (Platform.isWindows) return '$_windowsDir\\$filename';
   if (Platform.isIOS) {
@@ -192,7 +246,7 @@ Future<String> _chat(
   Uint8List? audio,
 }) async {
   final model = await _ensureModel(backend, maxTokens);
-  final session = await model.createSession(
+  final session = await model.openSession(
     temperature: 0.8,
     topK: 1,
     enableVisionModality: supportImage,
@@ -222,63 +276,64 @@ void main() {
   setUpAll(() async {
     await registerTestEngines();
 
-    // Load test assets — try filesystem first (host paths on macOS/Linux/Windows
-    // and Android adb-pushed paths), then fall back to bundled Flutter assets
-    // (works on iOS device + simulator + any platform where assets/test/ ships).
+    // Staged fixture lookup: Android /data/local/tmp/flutter_gemma_test/;
+    // macOS macosStagedFilePath (~/models, then container Documents); Linux
+    // ~/models; Windows %USERPROFILE%\models; then ~/Downloads. iOS has no
+    // staged path and relies on the bundled fixtures.
+    try {
+      final data = await rootBundle.load('assets/test/test_image.jpg');
+      _testImage = data.buffer.asUint8List();
+      _imageIsFixture = true;
+    } catch (_) {
+      /* asset not bundled — try the staged files */
+    }
     for (final path in [
       '$_androidDir/test_image.jpg',
-      '$_macosDir/test_image.png',
+      if (Platform.isMacOS) macosStagedFilePath('test_image.png')!,
       if (Platform.isLinux) '$_linuxDir/test_image.png',
       if (Platform.isLinux) '$_linuxDir/test_image.jpg',
       if (Platform.isWindows) '$_windowsDir\\test_image.png',
       if (Platform.isWindows) '$_windowsDir\\test_image.jpg',
       '${Platform.environment['HOME']}/Downloads/test_image.jpg',
     ]) {
+      if (_testImage.isNotEmpty) break;
       if (File(path).existsSync()) {
         _testImage = File(path).readAsBytesSync();
         break;
       }
     }
-    if (_testImage.isEmpty) {
-      try {
-        final data = await rootBundle.load('assets/test/test_image.jpg');
-        _testImage = data.buffer.asUint8List();
-      } catch (_) {
-        /* asset not bundled — leave empty */
-      }
+    try {
+      final data = await rootBundle.load('assets/test/test_audio.wav');
+      _testAudio = data.buffer.asUint8List();
+      _audioIsFixture = true;
+    } catch (_) {
+      /* asset not bundled — try the staged files */
     }
     for (final path in [
       '$_androidDir/test_audio.wav',
-      '$_macosDir/test_audio.wav',
+      if (Platform.isMacOS) macosStagedFilePath('test_audio.wav')!,
       if (Platform.isLinux) '$_linuxDir/test_audio.wav',
       if (Platform.isWindows) '$_windowsDir\\test_audio.wav',
     ]) {
+      if (_testAudio.isNotEmpty) break;
       if (File(path).existsSync()) {
         _testAudio = File(path).readAsBytesSync();
         break;
       }
     }
-    if (_testAudio.isEmpty) {
-      try {
-        final data = await rootBundle.load('assets/test/test_audio.wav');
-        _testAudio = data.buffer.asUint8List();
-      } catch (_) {
-        /* asset not bundled — leave empty */
-      }
-    }
     print('Platform: ${Platform.operatingSystem}');
-    print('Assets: image=${_testImage.length}B, audio=${_testAudio.length}B');
+    print(
+      'Assets: image=${_testImage.length}B (fixture: $_imageIsFixture), '
+      'audio=${_testAudio.length}B (fixture: $_audioIsFixture)',
+    );
   });
 
   // ══════════════════════════════════════════════════════════════════
   // Gemma 4 E2B — multimodal + thinking
   // ══════════════════════════════════════════════════════════════════
-  group('Gemma4-E2B', () {
+  group('Gemma4-E2B', skip: _skipNonNpuGroup, () {
     setUpAll(() async {
-      await _install(
-        localPath: _localPath('gemma-4-E2B-it.litertlm'),
-        networkUrl: _gemma4Url,
-      );
+      await _installGemma4(_localPath('gemma-4-E2B-it.litertlm'));
     });
 
     tearDownAll(_closeSharedModel);
@@ -287,12 +342,14 @@ void main() {
       final r = await _chat(PreferredBackend.cpu, 4096, 'Say hi');
       print('[Gemma4 CPU] $r');
       expect(r, isNotEmpty);
+      await _gemma4Evidence('text');
     });
 
     testWidgets('GPU text', (t) async {
       final r = await _chat(PreferredBackend.gpu, 4096, 'What is 2+2?');
       print('[Gemma4 GPU] $r');
       expect(r, isNotEmpty);
+      await _gemma4Evidence('text');
     });
 
     testWidgets('GPU streaming', (t) async {
@@ -315,6 +372,12 @@ void main() {
       );
       print('[Gemma4 vision] $r');
       expect(r, isNotEmpty);
+      if (!_imageIsFixture) {
+        print('[Gemma4 vision] staged image of unknown content: no evidence');
+        return;
+      }
+      _expectNames(r, const ['dog', 'puppy', 'pup', 'labrador']);
+      await _gemma4Evidence('vision');
     });
 
     testWidgets('GPU audio', (t) async {
@@ -325,12 +388,25 @@ void main() {
       final r = await _chat(
         PreferredBackend.gpu,
         4096,
-        'What did you hear?',
+        'Transcribe this audio.',
         supportAudio: true,
         audio: _testAudio,
       );
       print('[Gemma4 audio] $r');
       expect(r, isNotEmpty);
+      if (!_audioIsFixture) {
+        print('[Gemma4 audio] staged audio of unknown content: no evidence');
+        return;
+      }
+      _expectNames(r, const [
+        'dark',
+        'suit',
+        'greasy',
+        'wash',
+        'water',
+        'year',
+      ], least: 3);
+      await _gemma4Evidence('audio');
     });
 
     testWidgets('GPU thinking', (t) async {
@@ -351,7 +427,7 @@ void main() {
 
     testWidgets('chat generateChatResponse (sync)', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final chat = await model.createChat(temperature: 0.8, topK: 1);
+      final chat = await model.openChat(temperature: 0.8, topK: 1);
       await chat.addQueryChunk(Message(text: 'Say hi', isUser: true));
       final r = await chat.generateChatResponse();
       print('[Gemma4 chat sync] ${r.runtimeType}: $r');
@@ -361,7 +437,7 @@ void main() {
 
     testWidgets('chat generateChatResponseAsync (stream)', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final chat = await model.createChat(temperature: 0.8, topK: 1);
+      final chat = await model.openChat(temperature: 0.8, topK: 1);
       await chat.addQueryChunk(Message(text: 'Say hi', isUser: true));
       final chunks = <String>[];
       await for (final r in chat.generateChatResponseAsync()) {
@@ -374,7 +450,7 @@ void main() {
 
     testWidgets('chat multi-turn (history retained)', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final chat = await model.createChat(temperature: 0.8, topK: 1);
+      final chat = await model.openChat(temperature: 0.8, topK: 1);
 
       await chat.addQueryChunk(
         Message(text: 'My favourite colour is purple.', isUser: true),
@@ -397,7 +473,7 @@ void main() {
 
     testWidgets('chat clearHistory resets conversation', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final chat = await model.createChat(temperature: 0.8, topK: 1);
+      final chat = await model.openChat(temperature: 0.8, topK: 1);
 
       await chat.addQueryChunk(
         Message(text: 'Remember the secret word: BANANA.', isUser: true),
@@ -420,7 +496,7 @@ void main() {
 
     testWidgets('chat stopGeneration interrupts stream', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final chat = await model.createChat(temperature: 0.8, topK: 1);
+      final chat = await model.openChat(temperature: 0.8, topK: 1);
       await chat.addQueryChunk(
         Message(text: 'Write a 1000-word essay about Berlin.', isUser: true),
       );
@@ -453,7 +529,7 @@ void main() {
       // the shared GPU model to avoid destroying the engine (which on
       // Linux/Vulkan triggers the upstream wgpu::Instance singleton issue).
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       final n = await session.sizeInTokens('Hello, how many tokens am I?');
       print('[Gemma4 sizeInTokens] $n');
       expect(n, greaterThan(0));
@@ -462,7 +538,7 @@ void main() {
 
     testWidgets('session stopGeneration (low-level)', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         Message(
           text: 'Write a 1000-word essay about the Berlin Wall.',
@@ -495,7 +571,7 @@ void main() {
       t,
     ) async {
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         Message(text: 'Write a 1000-word essay about Paris.', isUser: true),
       );
@@ -523,13 +599,13 @@ void main() {
       await session.close();
     });
 
-    testWidgets('multiple createSession on same model', (t) async {
+    testWidgets('multiple openSession calls on same model', (t) async {
       // FfiInferenceModel is single-session at a time — this test verifies
       // we can sequentially create + close sessions without leaking the engine.
       final model = await _ensureModel(PreferredBackend.gpu, 4096);
 
       for (var i = 0; i < 3; i++) {
-        final session = await model.createSession(temperature: 0.8, topK: 1);
+        final session = await model.openSession(temperature: 0.8, topK: 1);
         await session.addQueryChunk(
           Message(text: 'Iteration $i: hi', isUser: true),
         );
@@ -546,14 +622,14 @@ void main() {
 
   // ── Multi-session (#226): concurrent openSession() dialogues ──────
   //
-  // The LiteRT-LM engine allows only ONE live conversation at a time, so
-  // openSession() sessions multiplex — each keeps its history in Dart and
-  // replays it (messages_json preface) into the single shared conversation
-  // on switch. Logically concurrent contexts, serialized inference. These
+  // On a backend whose live conversations were verified (LiteRT-LM 0.19,
+  // L3) each openSession() session is its own native conversation; elsewhere
+  // sessions multiplex — each keeps its history in Dart and replays it
+  // (messages_json preface) into one shared conversation on switch. These
   // verify the property end-to-end on the native engine: two sessions keep
   // isolated history, and closing one leaves the other usable. Runs on the
   // shared GPU model — also exercises the GPU sampler path under multiplexing.
-  group('Multi-session', () {
+  group('Multi-session', skip: _skipNonNpuGroup, () {
     tearDownAll(_closeSharedModel);
 
     Future<String> _ask(InferenceModelSession s, String prompt) async {
@@ -635,11 +711,31 @@ void main() {
       await a.addQueryChunk(
         const Message(text: 'Count slowly to twenty.', isUser: true),
       );
-      final sub = a.getResponseAsync().listen((_) {});
-      await Future<void>.delayed(const Duration(milliseconds: 200));
-      // Close A while its turn is (likely) still streaming.
+      final firstChunk = Completer<void>();
+      final ended = Completer<Object?>();
+      a.getResponseAsync().listen(
+        (_) {
+          if (!firstChunk.isCompleted) firstChunk.complete();
+        },
+        // A turn the close ends is a StateError, not a reply (B90): the
+        // virtual session's close goes through NativeTurns.cancelForClose.
+        onError: (Object e) {
+          if (!ended.isCompleted) ended.complete(e);
+        },
+        onDone: () {
+          if (!ended.isCompleted) ended.complete(null);
+        },
+      );
+      // Close A once its turn is surely streaming, then wait for the stream's
+      // own end: cancelling first would hide how it ended.
+      await firstChunk.future.timeout(const Duration(seconds: 60));
       await a.close();
-      await sub.cancel();
+      final end = await ended.future.timeout(const Duration(seconds: 60));
+      expect(
+        end,
+        isA<StateError>(),
+        reason: 'a 20-count closed after its first chunk ends with the close',
+      );
 
       final rb = await _ask(b, 'Say hi in one word.');
       print('[multi-session C5] B after A.close-mid-gen = "$rb"');
@@ -647,20 +743,23 @@ void main() {
       await b.close();
     });
 
-    // Media on a virtual (openSession) .litertlm session is rejected loudly,
-    // not silently dropped — history is replayed text-only on switch.
-    testWidgets('openSession rejects image/audio loudly', (t) async {
+    // Media parity: a native open session keeps the media in its own
+    // conversation, while a virtual one keeps it in Dart and replays the full
+    // message when sessions switch. Both accept the same input.
+    testWidgets('openSession takes image on every backing', (t) async {
       final model = await _ensureModel(PreferredBackend.gpu, 1024);
       final a = await model.openSession(temperature: 0.0, topK: 1);
       try {
         await a.addQueryChunk(
-          Message(
-            text: 'describe',
+          Message.withImage(
+            text: 'What is in the picture? One word.',
             isUser: true,
-            imageBytes: Uint8List.fromList(List<int>.filled(16, 0)),
+            imageBytes: _testImage,
           ),
         );
-        await expectLater(a.getResponse(), throwsA(isA<UnsupportedError>()));
+        final reply = await a.getResponse();
+        print('[multi-session media] "$reply"');
+        expect(reply.trim(), isNotEmpty);
       } finally {
         await a.close();
       }
@@ -687,6 +786,9 @@ void main() {
   group('Gemma4-E2B NPU', () {
     tearDownAll(_closeSharedModel);
 
+    /// The NPU bundle the group staged, for the registry evidence.
+    String? npuPath;
+
     // Real NPU tests need a model precompiled for the target NPU (Intel
     // LunarLake / PantherLake or Qualcomm QNN). Generic Gemma 4 from HF
     // doesn't carry NPU executor sections. Whether `engine_create` rejects it
@@ -706,7 +808,15 @@ void main() {
           '$_androidDir/gemma-4-E2B-it_qualcomm_sm8750.litertlm',
         if (Platform.isAndroid)
           '$_androidDir/gemma-4-E2B-it_qualcomm_sm8850.litertlm',
-        // Windows (Intel NPU): LunarLake/PantherLake-compiled model.
+        // Android (Google Tensor G6, opt-in google_tensor_npu): Google's G6
+        // bundle from the same repo. LiteRT refuses it on another Tensor.
+        if (Platform.isAndroid)
+          '$_androidDir/gemma-4-E2B-it_Google_Tensor_G6.litertlm',
+        // Windows (Intel NPU): Google's Lunar Lake bundle from the same repo
+        // first — the registry build, so the run counts as its evidence —
+        // then a locally compiled one.
+        if (Platform.isWindows)
+          '$_windowsDir\\gemma-4-E2B-it_intel_LNL.litertlm',
         if (Platform.isWindows)
           '${Platform.environment['USERPROFILE']}\\dev-gemma4-2b-lnl\\gemma4_2b_lnl.litertlm',
         // Linux arm64 (Qualcomm QNN): the SoC's bundle staged in ~/models.
@@ -728,6 +838,7 @@ void main() {
 
     Future<InferenceModel?> _installAndGetNpu() async {
       final npuModelPath = _findNpuModel();
+      npuPath = npuModelPath;
       if (npuModelPath == null) {
         // A skip the report shows as one, not a pass: a bare `return` from the
         // test read as PASSED, which is how a missing model looked green.
@@ -777,7 +888,7 @@ void main() {
     ) async {
       final model = await _installAndGetNpu();
       if (model == null) return;
-      final session = await model.createSession(
+      final session = await model.openSession(
         // Non-default sampler params — these MUST be ignored on NPU.
         temperature: 0.5,
         topK: 20,
@@ -804,14 +915,14 @@ void main() {
     ) async {
       final model = await _installAndGetNpu();
       if (model == null) return;
-      final s1 = await model.createSession(temperature: 0.8, randomSeed: 1);
+      final s1 = await model.openSession(temperature: 0.8, randomSeed: 1);
       await s1.addQueryChunk(
         const Message(text: 'List three colors', isUser: true),
       );
       final r1 = await s1.getResponse();
       await s1.close();
 
-      final s2 = await model.createSession(temperature: 0.8, randomSeed: 99999);
+      final s2 = await model.openSession(temperature: 0.8, randomSeed: 99999);
       await s2.addQueryChunk(
         const Message(text: 'List three colors', isUser: true),
       );
@@ -828,6 +939,12 @@ void main() {
         r1,
         equals(r2),
         reason: 'NPU should ignore seed and produce deterministic output',
+      );
+      // _installAndGetNpu asserted that the NPU ran.
+      await recordEvidence(
+        path: npuPath!,
+        backend: PreferredBackend.npu,
+        check: 'deterministic text',
       );
     });
 
@@ -884,7 +1001,7 @@ void main() {
     testWidgets('NPU vision (towers on CPU)', (t) async {
       final model = await installAndGetNpuMedia();
       if (model == null) return;
-      final session = await model.createSession(enableVisionModality: true);
+      final session = await model.openSession(enableVisionModality: true);
       await session.addQueryChunk(
         Message(
           text: 'What colour is this image? Answer in one word.',
@@ -901,7 +1018,7 @@ void main() {
     testWidgets('NPU audio (towers on CPU)', (t) async {
       final model = await installAndGetNpuMedia();
       if (model == null) return;
-      final session = await model.createSession(enableAudioModality: true);
+      final session = await model.openSession(enableAudioModality: true);
       await session.addQueryChunk(
         Message(
           text: 'Describe this sound in one sentence.',
@@ -924,7 +1041,7 @@ void main() {
     testWidgets('NPU decode rate (printed)', (t) async {
       final model = await _installAndGetNpu();
       if (model == null) return;
-      final session = await model.createSession(maxOutputTokens: 128);
+      final session = await model.openSession(maxOutputTokens: 128);
       await session.addQueryChunk(
         const Message(
           text:
@@ -973,7 +1090,7 @@ void main() {
   //
   // Mobile (Android, iOS) skips this group entirely — Documents is
   // sandboxed there and never cloud-synced.
-  group('Desktop storage path (#179)', () {
+  group('Desktop storage path (#179)', skip: _skipNonNpuGroup, () {
     testWidgets('getWriteTargetPath resolves into Application Support', (
       t,
     ) async {
@@ -1067,12 +1184,22 @@ void main() {
   // advance during a forward (it would be frozen for the whole pass). A live
   // counter ⇒ the main isolate kept running ⇒ no UI freeze. This is robust to
   // the GC noise that makes a Timer-gap meter unreliable on emulators.
-  group('Embedding non-blocking (#299)', () {
+  group('Embedding non-blocking (#299)', skip: _skipNonNpuGroup, () {
     const modelName = 'embeddinggemma-300M_seq256_mixed-precision.tflite';
     const tokenizerName = 'sentencepiece.model';
     EmbeddingModel? embModel;
+    final macosRoot = Platform.isMacOS
+        ? macosStagedRoot([modelName, tokenizerName])!
+        : null;
 
     Future<String> resolveAsset(String name) async {
+      if (macosRoot != null) {
+        final f = File('$macosRoot/$name');
+        if (f.existsSync()) return f.path;
+        final bytes = await rootBundle.load('assets/test/$name');
+        await f.writeAsBytes(bytes.buffer.asUint8List());
+        return f.path;
+      }
       // Host/Android-pushed path first, then bundled asset fallback.
       final local = _localPath(name);
       if (local != null && File(local).existsSync()) return local;

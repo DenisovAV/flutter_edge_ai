@@ -19,6 +19,7 @@ import 'package:flutter_edge_ai/src/lifecycle/close_notifier.dart';
 import 'package:flutter_edge_ai/src/model_management/managers/web_model_manager.dart';
 import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
 import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
+import 'package:flutter_edge_ai/src/services/model_repository.dart' as repo;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai/src/web/flutter_edge_ai_web.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -177,6 +178,31 @@ void main() {
 
     expect(engine.builds, 2);
     expect(second, isNot(same(first)));
+  });
+
+  test('uninstalling the file closes the model built from it', () async {
+    // The uninstall reads the install record.
+    await ServiceRegistry.initialize();
+    final model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
+    await ServiceRegistry.instance.modelRepository.saveModel(
+      repo.ModelInfo(
+        id: 'model-a.litertlm',
+        source: ModelSource.network('https://x/model-a.litertlm'),
+        installedAt: DateTime.now(),
+        sizeBytes: 1,
+        type: repo.ModelType.inference,
+        hasLoraWeights: false,
+      ),
+    );
+
+    await FlutterEdgeAi.uninstallModel('model-a.litertlm');
+
+    expect((model as _FakeModel).isClosed, isTrue);
+    expect(FlutterEdgeAiPlugin.instance.initializedModel, isNull);
+    await expectLater(
+      FlutterEdgeAi.getActiveModel(maxTokens: 1024),
+      throwsA(isA<NoActiveModelError>()),
+    );
   });
 }
 

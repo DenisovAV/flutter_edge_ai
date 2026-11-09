@@ -1,0 +1,32 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: phi-4-mini-instruct
+kind: llm
+package: flutter_edge_ai_litertlm
+display_name: Phi-4 Mini Instruct
+family: phi4
+arch_class: dense
+license: mit
+license_url: https://opensource.org/license/mit
+model_type: phi
+capabilities:
+  image: false
+  audio: false
+  function_calls: true
+  thinking: false
+runtime:
+  max_tokens: 4096
+  preferred_backend: gpu
+variants:
+- slug: q8-ekv4096
+  file_type: litertlm
+  file:
+    repo: litert-community/Phi-4-mini-instruct
+    revision: edafb1440931b748aeb7d0ae767109903d3d6d8d
+    path: Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm
+    sha256: 7764d4deb53800578307be33039476b38a6c370fff71bedb3c0552563e23ab02
+    size: 3910090752
+    install_filename: Phi-4-mini-instruct_multi-prefill-seq_q8_ekv4096.litertlm
+  example:
+  - phi4_mini

@@ -48,6 +48,7 @@ void main() {
     test(
       'runs on CPU for every request but npu, asking the host nothing',
       () async {
+        // The fake host is android_arm64, where the GPU is not measured.
         for (final requested in [
           null,
           PreferredBackend.cpu,
@@ -62,6 +63,73 @@ void main() {
       },
     );
 
+    test('the GPU hosts are Linux x64, Windows x64 and macOS arm64 on '
+        'native-v0.19.0-a, and none is refused', () {
+      expect(liteRtLmEmbeddingGpuAbis, {
+        'linux_x64',
+        'windows_x64',
+        'macos_arm64',
+      });
+      expect(liteRtLmEmbeddingGpuRefusedAbis, isEmpty);
+    });
+
+    test('the refusal for a host whose GPU path ends the process names the '
+        'file, preferredBackend: cpu and the registry', () {
+      expect(
+        liteRtLmEmbeddingGpuRefusal('eg2.litertlm'),
+        allOf(
+          contains('eg2.litertlm'),
+          contains('preferredBackend: cpu'),
+          contains(liteRtLmRegistryUrl),
+        ),
+      );
+    });
+
+    for (final abi in liteRtLmEmbeddingGpuAbis) {
+      test(
+        'with gpu on $abi runs on the GPU; null and cpu stay on CPU',
+        () async {
+          host
+            ..abi = abi
+            ..operatingSystem = abi.split('_').first;
+          expect(
+            (await place(
+              target: null,
+              requested: PreferredBackend.gpu,
+            )).backend,
+            PreferredBackend.gpu,
+          );
+          for (final requested in [null, PreferredBackend.cpu]) {
+            expect(
+              (await place(target: null, requested: requested)).backend,
+              PreferredBackend.cpu,
+              reason: '$requested',
+            );
+          }
+          expect(host.asked, isEmpty);
+        },
+      );
+    }
+
+    for (final abi in [
+      'ios_arm64',
+      'android_arm64',
+      'linux_arm64',
+      'windows_arm64',
+    ]) {
+      test(
+        'with gpu on $abi stays on CPU: the GPU is not measured there',
+        () async {
+          host.abi = abi;
+          final placement = await place(
+            target: null,
+            requested: PreferredBackend.gpu,
+          );
+          expect(placement.backend, PreferredBackend.cpu);
+        },
+      );
+    }
+
     test(
       'with npu is refused, naming the per-SoC bundles — never run on CPU',
       () async {
@@ -74,7 +142,7 @@ void main() {
               contains('_Qualcomm_<SoC>.litertlm'),
               contains('<model>_Google_Tensor_G5|G6.litertlm'),
               contains('<model>_Intel_PTL.litertlm'),
-              contains('SM8850, SM8650, QCS8275 are verified'),
+              contains('https://flutteredge.ai/docs/registry'),
               contains('omit preferredBackend'),
             ),
           ),
@@ -114,7 +182,7 @@ void main() {
       expect(placement.target, _sm8850);
       expect(placement.dispatchDir, '/data/app/code_cache/npu');
       expect(host.asked, ['stack:qualcomm', 'reaches', 'dispatchDir']);
-      expect(host.vendors, {NpuVendor.qualcomm}, reason: 'one vendor asked');
+      expect(host.vendors, {NpuStack.qualcomm}, reason: 'one vendor asked');
     });
 
     test('with npu on Qualcomm Linux arm64 too', () async {
@@ -142,7 +210,7 @@ void main() {
               allOf(
                 contains(
                   'Qualcomm Android and Qualcomm Linux arm64, and on Google '
-                  'Tensor G5/G6 Android devices, and on MediaTek Dimensity Android devices, and on Intel NPUs with '
+                  'Tensor G5/G6 Android devices, and on Intel NPUs with '
                   'Windows x64, only',
                 ),
                 contains('this is $os ($abi)'),
@@ -175,9 +243,7 @@ void main() {
             _refusal(
               allOf(
                 contains('compiled for a ${target.vendor} NPU (${target.soc})'),
-                contains(
-                  'Qualcomm, Google Tensor, MediaTek and Intel NPUs only',
-                ),
+                contains('Qualcomm, Google Tensor and Intel NPUs only'),
               ),
             ),
             reason: '$abi $target',
@@ -193,16 +259,25 @@ void main() {
       expect(placement.backend, PreferredBackend.npu);
       expect(placement.target, tensor);
       expect(host.asked, ['stack:googleTensor', 'reaches', 'dispatchDir']);
-      expect(host.vendors, {NpuVendor.googleTensor});
+      expect(host.vendors, {NpuStack.googleTensor});
     });
 
-    test('a MediaTek bundle selects only the MediaTek dispatch', () async {
+    test('a MediaTek bundle is refused before anything is asked, naming why '
+        'and the release that runs it (decision K)', () async {
       const mediatek = LiteRtLmNpuTarget(vendor: 'MediaTek', soc: 'mt6991');
-      final placement = await place(target: mediatek);
-      expect(placement.backend, PreferredBackend.npu);
-      expect(placement.target, mediatek);
-      expect(host.asked, ['stack:mediatek', 'reaches', 'dispatchDir']);
-      expect(host.vendors, {NpuVendor.mediatek});
+      await expectLater(
+        place(target: mediatek),
+        _refusal(
+          allOf(
+            contains('compiled for the MediaTek mt6991 NPU'),
+            contains(mediatekNpuRefusedReason),
+            contains('1.19.x'),
+            contains('#4256'),
+            contains('generic EmbeddingGemma 2 bundle'),
+          ),
+        ),
+      );
+      expect(host.asked, isEmpty);
     });
 
     test('compiled for Qualcomm is refused on Windows x64, which runs Intel '
@@ -310,7 +385,7 @@ void main() {
       expect(placement.target!.isIntel, isTrue);
       expect(placement.dispatchDir, r'C:\Apps\demo');
       expect(host.asked, ['stack:intel', 'reaches', 'dispatchDir']);
-      expect(host.vendors, {NpuVendor.intel});
+      expect(host.vendors, {NpuStack.intel});
     });
 
     test('without npu is refused like any per-SoC bundle', () async {
@@ -342,7 +417,7 @@ void main() {
               contains('compiled for the IntelOpenVINO PTL NPU'),
               contains(
                 'on $os ($abi) flutter_edge_ai_litertlm runs '
-                '${os == 'android' ? 'Qualcomm, Google Tensor and MediaTek' : 'Qualcomm'} '
+                '${os == 'android' ? 'Qualcomm and Google Tensor' : 'Qualcomm'} '
                 'NPU bundles only; Intel ones run on windows_x64',
               ),
             ),
@@ -383,8 +458,8 @@ void main() {
     expect(
       liteRtLmWebNpuRefusal,
       'EmbeddingGemma 2 runs on the NPU on Qualcomm Android and Qualcomm Linux '
-      'arm64, and on Google Tensor G5/G6 Android devices, and on MediaTek '
-      'Dimensity Android devices, and on Intel NPUs with Windows x64, only, '
+      'arm64, and on Google Tensor G5/G6 Android devices, and on Intel NPUs '
+      'with Windows x64, only, '
       'not on the web. Omit preferredBackend here.',
     );
   });
@@ -438,19 +513,14 @@ void main() {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
       expect(windowsNpuDispatchDir, exeDir);
       // No test runner ships LiteRtDispatch.dll beside itself.
-      final check = await const LiteRtLmPlatformNpuHost().stack(
-        NpuVendor.intel,
-      );
+      final check = await const LiteRtLmPlatformNpuHost().stack(NpuStack.intel);
       expect(check.bundled, isFalse);
       expect(check.reason, contains('($exeDir)'));
     });
 
     test('Windows hands LiteRT the executable\'s directory', () async {
       expect(
-        await prepareNpuDispatchDir(
-          NpuVendor.intel,
-          operatingSystem: 'windows',
-        ),
+        await prepareNpuDispatchDir(NpuStack.intel, operatingSystem: 'windows'),
         windowsNpuDispatchDir,
       );
     });
@@ -482,29 +552,29 @@ final class _FakeHost implements LiteRtLmNpuHost {
   final asked = <String>[];
 
   /// Every vendor a question named.
-  final vendors = <NpuVendor>{};
+  final vendors = <NpuStack>{};
 
   @override
-  Future<NpuStackCheck> stack(NpuVendor vendor) async {
+  Future<NpuStackCheck> stack(NpuStack vendor) async {
     asked.add('stack:${vendor.name}');
     vendors.add(vendor);
     return switch (vendor) {
-      NpuVendor.qualcomm => qualcomm,
-      NpuVendor.googleTensor => googleTensor,
-      NpuVendor.mediatek => mediatek,
-      NpuVendor.intel => intel,
+      NpuStack.qualcomm => qualcomm,
+      NpuStack.googleTensor => googleTensor,
+      NpuStack.mediatek => mediatek,
+      NpuStack.intel => intel,
     };
   }
 
   @override
-  String? unreachable(NpuVendor vendor) {
+  String? unreachable(NpuStack vendor) {
     asked.add('reaches');
     vendors.add(vendor);
     return reachable ? null : noNpuReason;
   }
 
   @override
-  Future<String> prepareDispatchDir(NpuVendor vendor) async {
+  Future<String> prepareDispatchDir(NpuStack vendor) async {
     asked.add('dispatchDir');
     vendors.add(vendor);
     final error = dispatchError;

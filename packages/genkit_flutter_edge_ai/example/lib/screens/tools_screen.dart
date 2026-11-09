@@ -46,8 +46,10 @@ class _ToolsScreenState extends State<ToolsScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  Text('Available Tools',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    'Available Tools',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   Card(
                     child: Padding(
@@ -55,18 +57,18 @@ class _ToolsScreenState extends State<ToolsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('get_weather',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
-                                  ?.copyWith(fontFamily: 'monospace')),
+                          Text(
+                            'get_weather',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontFamily: 'monospace'),
+                          ),
                           const Text('Get current weather for a city'),
                           const Divider(),
-                          Text('calculate',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
-                                  ?.copyWith(fontFamily: 'monospace')),
+                          Text(
+                            'calculate',
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontFamily: 'monospace'),
+                          ),
                           const Text('Calculate a mathematical expression'),
                         ],
                       ),
@@ -94,7 +96,8 @@ class _ToolsScreenState extends State<ToolsScreen> {
                   ),
                   const SizedBox(height: 12),
                   FilledButton(
-                    onPressed: state.inferenceInstalled && !state.isToolGenerating
+                    onPressed:
+                        state.inferenceInstalled && !state.isToolGenerating
                         ? () => state.generateWithTools(_promptController.text)
                         : null,
                     child: state.isToolGenerating
@@ -102,14 +105,18 @@ class _ToolsScreenState extends State<ToolsScreen> {
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Text('Generate with Tools'),
                   ),
                   const SizedBox(height: 24),
                   if (state.lastToolResult != null) ...[
-                    Text('Result:',
-                        style: Theme.of(context).textTheme.titleSmall),
+                    Text(
+                      'Result:',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
                     const SizedBox(height: 8),
                     Card(
                       child: Padding(

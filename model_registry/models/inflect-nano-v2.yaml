@@ -1,0 +1,53 @@
+# Model registry entry. Schema and rules: model_registry/README.md.
+# Seeded on 2026-10-19 from the example app's catalog and the Hugging Face API;
+# edited by hand from here on. `tool/model_registry` checks it.
+id: inflect-nano-v2
+kind: tts
+package: flutter_edge_ai_speech
+display_name: Inflect-Nano-v2
+family: inflect
+arch_class: speech-synthesis
+license: apache-2.0
+license_url: https://www.apache.org/licenses/LICENSE-2.0
+tts_type: inflect
+variants:
+- slug: bundle
+  files:
+  - repo: sasha-denisov/inflect-nano-v2-litert
+    revision: 4f03cf68b5447ab22cdfa8bd052a78c6c9763891
+    path: inflect_text_encoder_fp16.tflite
+    sha256: c778f516b8557c69734f4d4308084c411b8d3a4575566385d163209bf504f083
+    size: 1782268
+    install_filename: inflect_text_encoder_fp16.tflite
+  - repo: sasha-denisov/inflect-nano-v2-litert
+    revision: 4f03cf68b5447ab22cdfa8bd052a78c6c9763891
+    path: inflect_decoder_fp16.tflite
+    sha256: 155d5072f104248983015e82d1b90968ab2e87bd7f96c4016928fc83231efbd0
+    size: 6375948
+    install_filename: inflect_decoder_fp16.tflite
+  - repo: litert-community/Matcha-TTS
+    revision: ee32148115e2dd25913f70b1d71b587c73e0866e
+    path: config.json
+    sha256: 7363e9e4dda1613aebff7005f2e8c0c76d9b0a1cac31de0f3483bef3089c6906
+    size: 2071
+    install_filename: config.json
+  - repo: litert-community/Matcha-TTS
+    revision: ee32148115e2dd25913f70b1d71b587c73e0866e
+    path: g2p_dict.txt.gz
+    sha256: 5b3493a8cd4d20b72c7b91415afaf3f32335ebd81f349698e1cedc898c59f979
+    size: 1762038
+    install_filename: g2p_dict.txt.gz
+  - repo: litert-community/Matcha-TTS
+    revision: ee32148115e2dd25913f70b1d71b587c73e0866e
+    path: dp_g2p_matcha_fp16.tflite
+    sha256: 6e4b481f6874dfabc32ce73bf6f0ea1ba6ab5986ee6f76a27779364be8a53c73
+    size: 25785872
+    install_filename: dp_g2p_matcha_fp16.tflite
+  - repo: litert-community/Matcha-TTS
+    revision: ee32148115e2dd25913f70b1d71b587c73e0866e
+    path: g2p_meta.json
+    sha256: 7b87bfeaaa072be236e8491d771b0cb97cc92c3e5d83e3558fff8849868810f5
+    size: 1904
+    install_filename: g2p_meta.json
+  example:
+  - inflect

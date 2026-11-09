@@ -24,6 +24,8 @@ import 'components/clicker.dart';
 import 'contributors/contributors_page.dart';
 import 'landing/landing_page.dart';
 import 'seo.dart';
+import 'showcase/showcase_page.dart';
+import 'showcase/submit/submit_page.dart';
 import 'theme/brand.dart';
 
 // This file is generated automatically by Jaspr, do not remove or edit.
@@ -70,6 +72,24 @@ const Map<String, Object?> _contributorsPageSchema = {
   'description': _contributorsDescription,
   'url': '$kSiteOrigin/contributors',
 };
+
+const String _showcaseDescription =
+    'Apps on Google Play and the App Store that run AI on-device with '
+    'flutter_edge_ai or flutter_gemma.';
+
+/// JSON-LD for `/showcase`, for the same reason as
+/// [_codelabsCollectionSchema].
+const Map<String, Object?> _showcaseCollectionSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'CollectionPage',
+  'name': 'Built with Flutter Edge AI',
+  'description': _showcaseDescription,
+  'url': '$kSiteOrigin/showcase',
+};
+
+const String _showcaseSubmitDescription =
+    'Add an app that runs AI on-device with flutter_edge_ai or flutter_gemma '
+    'to the Flutter Edge AI showcase.';
 
 void main() {
   // Initializes the server environment with the generated default options.
@@ -152,6 +172,7 @@ void main() {
                     SidebarLink(text: 'Getting Started', href: '/docs/getting-started'),
                     SidebarLink(text: 'Installation', href: '/docs/installation'),
                     SidebarLink(text: 'Models', href: '/docs/models'),
+                    SidebarLink(text: 'Model Registry', href: '/docs/registry'),
                   ],
                 ),
                 SidebarGroup(
@@ -193,6 +214,13 @@ void main() {
                     SidebarLink(text: 'Desktop Support', href: '/docs/desktop'),
                     SidebarLink(text: 'Migration', href: '/docs/migration'),
                     SidebarLink(text: 'Troubleshooting', href: '/docs/troubleshooting'),
+                  ],
+                ),
+                SidebarGroup(
+                  title: 'Community',
+                  links: [
+                    SidebarLink(text: 'Showcase', href: '/showcase'),
+                    SidebarLink(text: 'Add your app', href: '/showcase/submit'),
                   ],
                 ),
               ],
@@ -284,6 +312,35 @@ void main() {
                 structuredData: _contributorsPageSchema,
               ),
               body: const ContributorsPage(),
+            ),
+          ),
+          Route(
+            path: '/showcase',
+            builder: (context, state) => Document(
+              title: 'Showcase — Flutter Edge AI',
+              lang: 'en',
+              meta: const {'description': _showcaseDescription},
+              head: seoHead(
+                title: 'Showcase — Flutter Edge AI',
+                description: _showcaseDescription,
+                path: '/showcase',
+                structuredData: _showcaseCollectionSchema,
+              ),
+              body: const ShowcasePage(),
+            ),
+          ),
+          Route(
+            path: '/showcase/submit',
+            builder: (context, state) => Document(
+              title: 'Add your app — Flutter Edge AI',
+              lang: 'en',
+              meta: const {'description': _showcaseSubmitDescription},
+              head: seoHead(
+                title: 'Add your app — Flutter Edge AI',
+                description: _showcaseSubmitDescription,
+                path: '/showcase/submit',
+              ),
+              body: const ShowcaseSubmitPage(),
             ),
           ),
           for (final group in routes) ...group,

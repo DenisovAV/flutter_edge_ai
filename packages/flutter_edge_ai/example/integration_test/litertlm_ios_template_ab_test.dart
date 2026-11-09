@@ -26,9 +26,7 @@
 // Sampling is greedy (topK: 1 on both calls), so a difference is the prompt's
 // doing.
 //
-// Stage a bundle (macOS App Sandbox redirects $HOME, so the on-disk location is
-// double-nested while the path computed below is what the app sees):
-//   ~/Library/Containers/<id>/Data/Library/Containers/<id>/Data/Documents/
+// macOS: ~/models (container Documents fallback).
 //
 // Run:
 //   flutter test integration_test/litertlm_ios_template_ab_test.dart -d macos
@@ -47,6 +45,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _bundle = String.fromEnvironment(
   'AB_BUNDLE',
@@ -64,11 +63,7 @@ const _prompt = String.fromEnvironment(
 ModelType get _modelType =>
     ModelType.values.firstWhere((t) => t.name == _modelTypeName);
 
-String get _stagedPath {
-  final home = Platform.environment['HOME'];
-  const id = 'dev.flutterberlin.flutterGemmaExample55';
-  return '$home/Library/Containers/$id/Data/Documents/$_bundle';
-}
+String get _stagedPath => macosStagedFilePath(_bundle)!;
 
 const _markers = [
   '<start_of_turn>',
@@ -101,7 +96,7 @@ Future<void> _variant(InferenceModel model, {required bool asIOS}) async {
 
     InferenceModelSession? session;
     try {
-      session = await model.createSession(topK: 1);
+      session = await model.openSession(topK: 1);
       await session.addQueryChunk(message);
       final raw = await session.getResponse();
       final counts = _markerCounts(raw);
@@ -115,7 +110,7 @@ Future<void> _variant(InferenceModel model, {required bool asIOS}) async {
 
     InferenceChat? chat;
     try {
-      chat = await model.createChat(topK: 1);
+      chat = await model.openChat(topK: 1);
       await chat.addQueryChunk(message);
       final response = await chat.generateChatResponse();
       final visible = response is TextResponse ? response.token : '$response';

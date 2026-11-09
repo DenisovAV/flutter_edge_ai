@@ -94,21 +94,26 @@ class _EmbeddingsScreenState extends State<EmbeddingsScreen> {
                   ),
                   const SizedBox(height: 16),
                   FilledButton(
-                    onPressed:
-                        state.embedderInstalled && !_computing ? _compute : null,
+                    onPressed: state.embedderInstalled && !_computing
+                        ? _compute
+                        : null,
                     child: _computing
                         ? const SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Text('Compute Similarity'),
                   ),
                   const SizedBox(height: 24),
                   if (state.embeddingResults.isNotEmpty) ...[
-                    Text('Results (cosine similarity to query):',
-                        style: Theme.of(context).textTheme.titleSmall),
+                    Text(
+                      'Results (cosine similarity to query):',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
                     const SizedBox(height: 8),
                     for (final result in state.embeddingResults)
                       _buildResultCard(context, result),
@@ -126,17 +131,13 @@ class _EmbeddingsScreenState extends State<EmbeddingsScreen> {
     final color = result.similarity > 0.7
         ? Colors.green
         : result.similarity > 0.4
-            ? Colors.orange
-            : Colors.red;
+        ? Colors.orange
+        : Colors.red;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        title: Text(
-          result.label,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(result.label, maxLines: 2, overflow: TextOverflow.ellipsis),
         trailing: Text(
           result.similarity.toStringAsFixed(4),
           style: TextStyle(

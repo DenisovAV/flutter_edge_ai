@@ -13,6 +13,7 @@
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_web.dart' show resolveWebModelUrl;
 
+import '../catalog/litert_catalog.dart' show LiteRtEmbedders;
 import 'litert_lm_embedding_common.dart';
 import 'vision_budget.dart';
 import 'weight_cache_notice.dart';
@@ -29,7 +30,14 @@ import 'web/litert_web_embeddings.dart'
 /// refused with `EmbeddingLoadException`, as there is no CPU path for these
 /// bundles in `@litert-lm/core` 0.18.0 — and EmbeddingGemma 1 `.tflite`
 /// through LiteRT.js.
-final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider {
+final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
+    implements ModelCatalogSource {
+  /// The embedding models this backend runs, pinned to Hugging Face
+  /// commits: [LiteRtEmbedders.catalog]. `FlutterEdgeAi.catalog` includes it
+  /// once the backend is passed to `initialize`.
+  @override
+  ModelCatalog get modelCatalog => LiteRtEmbedders.catalog;
+
   /// [visionTokensPerImage] is how many vision tokens an EmbeddingGemma 2
   /// image gets: 140 (the default) or 70; any other value is refused with
   /// `EmbeddingLoadException` when a model loads. The same parameter as the

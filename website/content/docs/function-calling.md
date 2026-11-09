@@ -31,8 +31,9 @@ A call takes one of two paths, chosen from `modelType` and the file type:
   - **FunctionGemma 270M** as a MediaPipe `.task`.
   - **DeepSeek R1** — function calling + thinking mode.
   - **Qwen 2.5 0.5B / 1.5B** (`.task`) and **Qwen3 0.6B** (`.litertlm` — use
-    `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`, or `Qwen3-0.6B.litertlm`
-    downloaded after 2026-10-13, 15:53 UTC, [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659)).
+    `Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm`; `Qwen3-0.6B.litertlm`
+    downloaded after 2026-10-13, 15:53 UTC loads on macOS, other platforms not
+    run, [#659](https://github.com/DenisovAV/flutter_edge_ai/issues/659)).
   - **Phi-4 Mini**.
   - The [Built-in AI](#built-in-ai-os-models) OS models.
 
@@ -60,7 +61,7 @@ Gemma 4 and FunctionGemma on a `.litertlm` are the exception: there the
 declarations still reach LiteRT-LM, though the chat still does not parse the
 calls. A `.gguf` model is the other: its tools are on unless
 `supportsFunctionCalls` is `false`, and `false` drops them with no warning.
-Pass `supportsFunctionCalls: true` to `createChat` / `openChat` for models that
+Pass `supportsFunctionCalls: true` to `openChat` for models that
 support it.
 
 </Info>
@@ -78,12 +79,22 @@ agent chaining is **not** supported on Web.
 ## Declaring tools
 
 Describe each function as a `Tool` — a `name`, a `description`, and a
-JSON-Schema `parameters` map — then pass the list to `createChat` (or
-`openChat`) together with `supportsFunctionCalls: true`. `createSession` also
+JSON-Schema `parameters` map — then pass the list to `openChat` (or
+`openChat`) together with `supportsFunctionCalls: true`. `openSession` also
 takes `tools:`, and the two passthrough families read them there, through the
 runtime's own tool path: Gemma 4, and FunctionGemma on a `.litertlm`. For every
 other model it is the chat that puts the tools into the prompt and parses the
 calls back out, so use the chat API:
+
+<Warning>
+
+A tool chat cannot also have `responseFormat`.
+`openChat(tools: ..., responseFormat: ...)` throws `ArgumentError` before the
+engine is called, because a tool call is not a value of the requested response
+format. Use separate chats/sessions for the tool phase and the final typed JSON
+phase, or request JSON in the prompt and validate it in the app.
+
+</Warning>
 
 ```dart
 final tools = [
@@ -100,7 +111,7 @@ final tools = [
   ),
 ];
 
-final chat = await model.createChat(
+final chat = await model.openChat(
   tools: tools,
   supportsFunctionCalls: true,
   toolChoice: ToolChoice.auto,
@@ -147,7 +158,7 @@ your code still receives a `FunctionCallResponse`.
 
 Two consequences worth knowing:
 
-- Nothing in your code changes. `createChat(tools: ..., supportsFunctionCalls: true)`
+- Nothing in your code changes. `openChat(tools: ..., supportsFunctionCalls: true)`
   and the loop stay the same; the wire format is chosen from `modelType` and the
   file type together.
 - `ToolChoice.none` cannot take the declarations back out, because the runtime

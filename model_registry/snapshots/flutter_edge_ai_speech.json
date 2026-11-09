@@ -1,0 +1,824 @@
+{
+  "package": "flutter_edge_ai_speech",
+  "backends_here": {
+    "moonshine-tiny/f32": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "moonshine-tiny/i8": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt6877": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt6878": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt6879": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt6897": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt6983": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt6985": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt6989": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt6991": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt6993": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt8171": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt8188": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-mt8189": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-sa8255": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-sa8295": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-sm8450": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-sm8550": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-sm8650": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-sm8750": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "moonshine-tiny/f32-npu-sm8850": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/i8": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6877": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6878": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6879": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6897": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6983": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6985": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6989": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6991": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt6993": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt8171": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt8188": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-mt8189": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-sa8255": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-sa8295": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-sm8450": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-sm8550": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-sm8650": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-sm8750": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-sm8850": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "parakeet-ctc-0.6b/f32-npu-tensor-g3": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-base/f32": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "whisper-base/i8": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "whisper-tiny/f32": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "whisper-tiny/i8": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt6877": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt6878": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt6879": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt6897": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt6983": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt6985": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt6989": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt6991": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt6993": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt8171": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt8188": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-mt8189": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-sa8255": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-sa8295": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-sm8450": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-sm8550": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-sm8650": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-sm8750": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "whisper-tiny/f32-npu-sm8850": {
+      "android_arm64": [],
+      "ios_arm64": [],
+      "macos_arm64": [],
+      "linux_x64": [],
+      "linux_arm64": [],
+      "windows_x64": [],
+      "web": []
+    },
+    "inflect-nano-v2/bundle": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "matcha-tts/bundle": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    },
+    "qwen3-tts-0.6b/bundle": {
+      "android_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "ios_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "macos_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "linux_arm64": [
+        "cpu",
+        "gpu"
+      ],
+      "windows_x64": [
+        "cpu",
+        "gpu"
+      ],
+      "web": []
+    }
+  }
+}

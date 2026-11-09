@@ -4,20 +4,21 @@
 /// Run: cd example && flutter test integration_test/desktop_full_test.dart -d macos
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'inference_test_helpers.dart' show registerTestEngines;
 
-// Models in the app sandbox container
-const _containerDir =
-    '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents';
-const _gemma3_1bPath =
-    '$_containerDir/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
-const _gemma4Path = '$_containerDir/gemma-4-E2B-it.litertlm';
-const _gemma3nPath = '$_containerDir/gemma-3n-E2B-it-int4.litertlm';
-const _testImagePath = '$_containerDir/test_image.png';
-const _testAudioPath = '$_containerDir/test_audio.wav';
+import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
+
+String get _gemma3_1bPath =>
+    macosStagedFilePath('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm')!;
+String get _gemma4Path => macosStagedFilePath('gemma-4-E2B-it.litertlm')!;
+String get _gemma3nPath =>
+    macosStagedFilePath('gemma-3n-E2B-it-int4.litertlm')!;
+String get _testImagePath => macosStagedFilePath('test_image.png')!;
+String get _testAudioPath => macosStagedFilePath('test_audio.wav')!;
 
 late Uint8List _testImage;
 late Uint8List _testAudio;
@@ -48,7 +49,7 @@ void main() {
         maxTokens: 512,
         preferredBackend: PreferredBackend.cpu,
       );
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(const Message(text: 'Say hi', isUser: true));
       final r = await session.getResponse();
       print('[g3-1b cpu sync] $r');
@@ -63,7 +64,7 @@ void main() {
         maxTokens: 512,
         preferredBackend: PreferredBackend.gpu,
       );
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         const Message(text: 'Say hello', isUser: true),
       );
@@ -87,7 +88,7 @@ void main() {
         maxTokens: 512,
         preferredBackend: PreferredBackend.gpu,
       );
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         const Message(text: 'What is 2+2?', isUser: true),
       );
@@ -104,7 +105,7 @@ void main() {
         maxTokens: 512,
         preferredBackend: PreferredBackend.gpu,
       );
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         const Message(text: 'Say hello', isUser: true),
       );
@@ -126,7 +127,7 @@ void main() {
         supportImage: true,
         maxNumImages: 1,
       );
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 0.8,
         topK: 1,
         enableVisionModality: true,
@@ -152,7 +153,7 @@ void main() {
         preferredBackend: PreferredBackend.gpu,
         supportAudio: true,
       );
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 0.8,
         topK: 1,
         enableAudioModality: true,
@@ -177,7 +178,7 @@ void main() {
         maxTokens: 2048,
         preferredBackend: PreferredBackend.gpu,
       );
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 0.8,
         topK: 1,
         enableThinking: true,
@@ -220,7 +221,7 @@ void main() {
         maxTokens: 512,
         preferredBackend: PreferredBackend.cpu,
       );
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(const Message(text: 'Say hi', isUser: true));
       final r = await session.getResponse();
       print('[g3n cpu sync] $r');
@@ -235,7 +236,7 @@ void main() {
         maxTokens: 512,
         preferredBackend: PreferredBackend.gpu,
       );
-      final session = await model.createSession(temperature: 0.8, topK: 1);
+      final session = await model.openSession(temperature: 0.8, topK: 1);
       await session.addQueryChunk(
         const Message(text: 'Say hello', isUser: true),
       );
@@ -257,7 +258,7 @@ void main() {
         supportImage: true,
         maxNumImages: 1,
       );
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 0.8,
         topK: 1,
         enableVisionModality: true,
@@ -283,7 +284,7 @@ void main() {
         preferredBackend: PreferredBackend.cpu,
         supportAudio: true,
       );
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 0.8,
         topK: 1,
         enableAudioModality: true,
@@ -309,7 +310,7 @@ void main() {
         preferredBackend: PreferredBackend.gpu,
         supportAudio: true,
       );
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 0.8,
         topK: 1,
         enableAudioModality: true,

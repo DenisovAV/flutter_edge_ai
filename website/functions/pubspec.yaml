@@ -1,0 +1,19 @@
+name: showcase_functions
+description: Cloud Functions behind flutteredge.ai's showcase submissions.
+publish_to: none
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  firebase_admin_sdk: ^0.5.6
+  firebase_functions: ^0.8.0
+  google_cloud_firestore: ^0.5.5
+  http: ^1.2.0
+  yaml: ^3.1.0
+
+dev_dependencies:
+  # Runs the SDK's spec builder, which writes functions.yaml for the deploy.
+  build_runner: ^2.10.5
+  lints: ^5.0.0
+  test: ^1.25.0

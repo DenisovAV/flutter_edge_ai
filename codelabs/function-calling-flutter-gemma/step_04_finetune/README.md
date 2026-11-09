@@ -9,11 +9,17 @@ tools.json    the four declarations, the same ones lib/tools.dart holds
 raw.jsonl     90 prompt -> tool-call rows to train and score on
 ```
 
-The commands below are checked against **litetune 0.5.1**: run end to end on
-2026-10-12 with 0.4.1, and every option and value they use is accepted by 0.5.1
-(checked against its `--help` on 2026-10-20). It pins LiteRT-LM 0.18.0 for
+The commands below are checked against **litetune 0.7.2**: run end to end on
+2026-10-12 with 0.4.1, and every option and value they use is accepted by 0.7.2
+(checked against its `--help` on 2026-10-31). It pins LiteRT-LM 0.18.0 for
 verification and the matching 0.18.0 builder for conversion. The project source
 is also available on [GitHub](https://github.com/DenisovAV/litetune).
+
+This verification pipeline deliberately stays on litetune's measured LiteRT-LM
+0.18 verifier and matching builder. The completed Flutter app uses
+`flutter_edge_ai_litertlm` 1.20.0 and runs LiteRT-LM 0.19; the verifier
+version is not the app runtime. Do not change the commands to 0.19 without
+re-running and replacing the measurements below.
 
 Converted with litetune 0.3.0 on Python 3.10 or 3.11? Convert again: with a
 relative `--output-dir`, as below, that version wrote a bundle without its GPU

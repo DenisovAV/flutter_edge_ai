@@ -1,0 +1,37 @@
+{
+  "container_version": "1.6.0",
+  "size": 316715544,
+  "npu_target": "IntelOpenVINO/PTL",
+  "llm_metadata_max_num_tokens": null,
+  "system_metadata": {
+    "uuid": "04d5384f-1957-4f7b-9847-33e1d5282789",
+    "creation_timestamp": "2026-10-02T11:13:55.295766+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "EmbeddingMetadataProto",
+      "length": 62
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_embedder",
+      "length": 70257824,
+      "items": {
+        "model_type": "tf_lite_embedder"
+      }
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_text_encoder",
+      "length": 241709592,
+      "npu_target": "IntelOpenVINO/PTL",
+      "items": {
+        "model_type": "tf_lite_text_encoder"
+      }
+    }
+  ]
+}

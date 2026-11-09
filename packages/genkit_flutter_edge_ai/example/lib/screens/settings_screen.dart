@@ -21,12 +21,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _tokenController = TextEditingController(text: widget.appState.hfToken);
-    _inferenceUrlController =
-        TextEditingController(text: widget.appState.inferenceUrl);
-    _embedderModelUrlController =
-        TextEditingController(text: widget.appState.embedderModelUrl);
-    _embedderTokenizerUrlController =
-        TextEditingController(text: widget.appState.embedderTokenizerUrl);
+    _inferenceUrlController = TextEditingController(
+      text: widget.appState.inferenceUrl,
+    );
+    _embedderModelUrlController = TextEditingController(
+      text: widget.appState.embedderModelUrl,
+    );
+    _embedderTokenizerUrlController = TextEditingController(
+      text: widget.appState.embedderTokenizerUrl,
+    );
   }
 
   @override
@@ -48,8 +51,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             // HuggingFace Token
-            Text('HuggingFace Token',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'HuggingFace Token',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             TextField(
               controller: _tokenController,
@@ -65,8 +70,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
 
             // Inference Model
-            Text('Inference Model',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Inference Model',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             TextField(
               controller: _inferenceUrlController,
@@ -88,8 +95,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
 
             // Embedder Model
-            Text('Embedder Model',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Embedder Model',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             TextField(
               controller: _embedderModelUrlController,
@@ -121,8 +130,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 24),
 
             // Model Config
-            Text('Model Config',
-                style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Model Config',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -141,8 +152,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 SizedBox(
                   width: 48,
-                  child: Text(state.maxTokens.toString(),
-                      textAlign: TextAlign.end),
+                  child: Text(
+                    state.maxTokens.toString(),
+                    textAlign: TextAlign.end,
+                  ),
                 ),
               ],
             ),

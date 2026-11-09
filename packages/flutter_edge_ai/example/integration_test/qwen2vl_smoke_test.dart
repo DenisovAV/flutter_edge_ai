@@ -11,7 +11,9 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _file = 'Qwen2-VL-2B.litertlm';
 const _url =
@@ -19,15 +21,13 @@ const _url =
 
 String _docsDir() {
   if (Platform.isAndroid) return '/data/local/tmp/flutter_gemma_test';
-  if (Platform.isMacOS) {
-    return '${Platform.environment['HOME']}/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents';
-  }
   if (Platform.isLinux) return '${Platform.environment['HOME']}/models';
   if (Platform.isIOS) return const String.fromEnvironment('IOS_TEST_DOCS_DIR');
   return '';
 }
 
 String? _localPath() {
+  if (Platform.isMacOS) return macosStagedFilePath(_file);
   final d = _docsDir();
   if (d.isEmpty) return null;
   final p = '$d/$_file';
@@ -35,9 +35,10 @@ String? _localPath() {
 }
 
 Future<Uint8List> _testImage() async {
-  final p = '${_docsDir()}/test_image.png';
-  if (_docsDir().isNotEmpty && File(p).existsSync())
-    return File(p).readAsBytes();
+  final p = Platform.isMacOS
+      ? macosStagedFilePath('test_image.png')
+      : '${_docsDir()}/test_image.png';
+  if (p != null && File(p).existsSync()) return File(p).readAsBytes();
   final b = await rootBundle.load('assets/test/test_image.jpg');
   return b.buffer.asUint8List();
 }
@@ -75,7 +76,7 @@ void main() {
       supportImage: true,
       maxNumImages: 1,
     );
-    final session = await _model!.createSession(
+    final session = await _model!.openSession(
       temperature: 0.7,
       topK: 40,
       enableVisionModality: true,

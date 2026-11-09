@@ -14,6 +14,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// truncate-at-the-first-`}` bug stayed hidden behind green tests. These drive
 /// `generateChatResponseAsync()` end to end.
 class _ScriptedSession implements InferenceModelSession {
+  @override
+  EngineTurn startTurn() => EngineTurn(text: getResponseAsync(), end: null);
+
   _ScriptedSession(this.tokens);
 
   final List<String> tokens;

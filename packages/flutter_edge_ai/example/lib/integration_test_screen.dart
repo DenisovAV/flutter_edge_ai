@@ -781,7 +781,7 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
     final initDuration = DateTime.now().difference(startInit);
     _log('✅ Model initialized in ${initDuration.inMilliseconds}ms');
 
-    final session = await inferenceModel.createSession();
+    final session = await inferenceModel.openSession();
     _log('✅ Session created');
     _log('');
 
@@ -1222,7 +1222,7 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
       );
       _log('  ✅ Model created');
       _log('  🔧 Creating session...');
-      final session1 = await inferenceModel1.createSession();
+      final session1 = await inferenceModel1.openSession();
       _log('  ✅ Session created');
       _log('  📤 Adding query: "What is the capital of France?"');
       await session1.addQueryChunk(
@@ -1276,7 +1276,7 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
       );
       _log('  ✅ Model ready');
       _log('  🔧 Creating session...');
-      final session2 = await inferenceModel2.createSession();
+      final session2 = await inferenceModel2.openSession();
       await session2.addQueryChunk(
         const legacy.Message(
           text: 'What is the capital of France?',
@@ -1447,7 +1447,7 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
         final inferenceModel3 = await legacy.FlutterEdgeAi.getActiveModel(
           maxTokens: 512,
         );
-        final session3 = await inferenceModel3.createSession();
+        final session3 = await inferenceModel3.openSession();
         await session3.addQueryChunk(
           const legacy.Message(
             text: 'What is the capital of France?',
@@ -1491,7 +1491,7 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
         );
         _log('  ✅ Model ready');
         _log('  🔧 Creating session...');
-        final session4 = await inferenceModel4.createSession();
+        final session4 = await inferenceModel4.openSession();
         await session4.addQueryChunk(
           const legacy.Message(
             text: 'What is the capital of France?',
@@ -1617,7 +1617,7 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
       final inferenceModel5 = await legacy.FlutterEdgeAi.getActiveModel(
         maxTokens: 512,
       );
-      final session5 = await inferenceModel5.createSession();
+      final session5 = await inferenceModel5.openSession();
       await session5.addQueryChunk(
         const legacy.Message(
           text: 'What is the capital of France?',
@@ -1658,7 +1658,7 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
       );
       _log('  ✅ Model ready');
       _log('  🔧 Creating session...');
-      final session6 = await inferenceModel6.createSession();
+      final session6 = await inferenceModel6.openSession();
       await session6.addQueryChunk(
         const legacy.Message(
           text: 'What is the capital of France?',
@@ -1799,7 +1799,7 @@ class _IntegrationTestScreenState extends State<IntegrationTestScreen> {
         );
         _log('  ✅ Model ready');
         _log('  🔧 Creating session...');
-        final session8 = await inferenceModel8.createSession();
+        final session8 = await inferenceModel8.openSession();
         await session8.addQueryChunk(
           const legacy.Message(
             text: 'What is the capital of France?',

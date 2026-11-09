@@ -1,6 +1,6 @@
 name: flutter_edge_ai_onnx
 description: "ONNX Runtime engine for flutter_edge_ai: GenAI inference and embeddings on 5 native platforms; web via Transformers.js and onnxruntime-web."
-version: 0.6.0
+version: 0.9.1
 homepage: https://flutteredge.ai
 repository: https://github.com/DenisovAV/flutter_edge_ai/tree/main/packages/flutter_edge_ai_onnx
 topics: [gemma, llm, onnx, onnxruntime, on-device]
@@ -32,7 +32,8 @@ dependencies:
   # `EmbeddingPassDescriptor`, `TokenEmbeddingPass`), none of which exists
   # before 2.3.0, on top of 2.2.0's nullable sampling values. An older core
   # resolves and then fails to compile — better here than there.
-  flutter_edge_ai: ^2.3.0
+  # 2.6.0 supplies the engine-owned session and chat SPI this version uses.
+  flutter_edge_ai: ^2.6.0
   ffi: ^2.1.0
   mutex: ^3.1.0
   hooks: ^2.0.0

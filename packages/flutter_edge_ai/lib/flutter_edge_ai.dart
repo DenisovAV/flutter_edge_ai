@@ -12,6 +12,7 @@ library;
 
 export 'src/interface.dart'
     show
+        ContextLimitException,
         FlutterEdgeAiPlugin,
         InferenceModel,
         InferenceModelSession,
@@ -19,9 +20,22 @@ export 'src/interface.dart'
         SessionMetrics,
         SpeechRecognizer,
         SpeechSynthesizer,
+        TurnEnd,
         supportedLoraRanks;
 export 'src/model_file_manager_interface.dart'
     show ModelFileManager, ModelReplacePolicy;
+
+// Typed responses: openSession/openChat(responseFormat:) and what they throw.
+export 'src/structured/response_format.dart'
+    show JsonSchemaResponseFormat, ResponseFormat;
+export 'src/structured/structured_output.dart'
+    show
+        IncompleteStructuredOutputException,
+        NonConformingStructuredOutputException,
+        ResponseFormatUnsupportedException,
+        StructuredDelivery,
+        StructuredOutputException,
+        StructuredOutputSupport;
 
 // Public parameter types that exported APIs require.
 export 'src/domain/model_source.dart'
@@ -159,6 +173,20 @@ export 'src/api/stt_installation_builder.dart'
 export 'src/api/tts_installation_builder.dart'
     show TtsInstallation, TtsInstallationBuilder;
 
+// Model catalog: the models the registered packages offer, pinned files.
+export 'src/catalog/model_artifact.dart' show ModelArtifact;
+export 'src/catalog/npu_target.dart' show NpuTarget, NpuVendor;
+export 'src/catalog/model_catalog.dart'
+    show
+        CatalogModel,
+        CatalogVariant,
+        EmbedderVariant,
+        InferenceVariant,
+        ModelCatalog,
+        ModelCatalogSource,
+        SttVariant,
+        TtsVariant;
+
 // Web storage mode.
 export 'src/domain/web_storage_mode.dart' show WebStorageMode;
 
@@ -199,7 +227,8 @@ export 'src/model_management/model_specs.dart'
         // Model management types
         ModelManagementType,
         // Exceptions
-        ModelStorageException;
+        ModelStorageException,
+        ModelValidationException;
 
 // Desktop implementation (conditionally — only on non-web platforms). The
 // pubspec's `dartPluginClass: FlutterEdgeAiDesktop` resolves through this

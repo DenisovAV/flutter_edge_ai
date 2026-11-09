@@ -1,58 +1,66 @@
+diff --git a/c/embedding_engine.cc b/c/embedding_engine.cc
+index 3131ef7..1188501 100644
 --- a/c/embedding_engine.cc
 +++ b/c/embedding_engine.cc
-@@ -369,6 +369,24 @@ const float* litert_lm_embedding_response_get_values(
-   return response->response.embedding.data();
+@@ -473,6 +473,24 @@ LiteRtLmStatusCode litert_lm_embedding_response_get_values(
+   return kLiteRtLmStatusOk;
  }
  
-+// flutter_gemma patch section 14.
-+int litert_lm_embedding_response_get_input_length(
-+    const LiteRtLmEmbeddingResponse* response) {
-+  if (!response) {
-+    return -1;
-+  }
-+  return response->response.input_length;
++// flutter_edge_ai patch section 14.
++LiteRtLmStatusCode litert_lm_embedding_response_get_input_length(
++    const LiteRtLmEmbeddingResponse* response, int* out_input_length) {
++  LITERT_LM_C_RETURN_IF_NULL(out_input_length);
++  LITERT_LM_C_RETURN_IF_NULL(response);
++  *out_input_length = response->response.input_length;
++  return kLiteRtLmStatusOk;
 +}
 +
-+// flutter_gemma patch section 14.
-+int litert_lm_embedding_response_get_truncated_length(
-+    const LiteRtLmEmbeddingResponse* response) {
-+  if (!response) {
-+    return -1;
-+  }
-+  return response->response.truncated_length.value_or(0);
++// flutter_edge_ai patch section 14.
++LiteRtLmStatusCode litert_lm_embedding_response_get_truncated_length(
++    const LiteRtLmEmbeddingResponse* response, int* out_truncated_length) {
++  LITERT_LM_C_RETURN_IF_NULL(out_truncated_length);
++  LITERT_LM_C_RETURN_IF_NULL(response);
++  *out_truncated_length = response->response.truncated_length.value_or(0);
++  return kLiteRtLmStatusOk;
 +}
 +
  void litert_lm_embedding_responses_delete(
      LiteRtLmEmbeddingResponses* responses) {
    delete responses;
+diff --git a/c/embedding_engine.h b/c/embedding_engine.h
+index 2e06e91..721fbd5 100644
 --- a/c/embedding_engine.h
 +++ b/c/embedding_engine.h
-@@ -352,6 +352,29 @@ LITERT_LM_C_API_EXPORT
- const float* litert_lm_embedding_response_get_values(
-     const LiteRtLmEmbeddingResponse* response);
+@@ -478,6 +478,33 @@ LITERT_LM_C_API_EXPORT
+ LiteRtLmStatusCode litert_lm_embedding_response_get_values(
+     const LiteRtLmEmbeddingResponse* response, const float** out_values);
  
-+// Returns the number of tokens of the input that produced `response`, as the
-+// engine tokenized it and before any truncation.
++// Gets the number of tokens of the input that produced `response`, as the
++// engine tokenized it and before any truncation, media tokens included.
 +//
 +// @param response The response to inspect.
-+// @return The input length in tokens, or -1 if `response` is NULL.
++// @param out_input_length On success, receives the input length in tokens.
++// @return kLiteRtLmStatusOk on success, or kLiteRtLmStatusInvalidArgument if
++//   `response` or `out_input_length` is NULL.
 +//
-+// Added by flutter_gemma patch section 14.
++// Added by flutter_edge_ai patch section 14.
 +LITERT_LM_C_API_EXPORT
-+int litert_lm_embedding_response_get_input_length(
-+    const LiteRtLmEmbeddingResponse* response);
++LiteRtLmStatusCode litert_lm_embedding_response_get_input_length(
++    const LiteRtLmEmbeddingResponse* response, int* out_input_length);
 +
-+// Returns the length the input was truncated to, when the input overflow
++// Gets the length the input was truncated to, when the input overflow
 +// strategy truncated it.
 +//
 +// @param response The response to inspect.
-+// @return The truncated length in tokens, 0 if the whole input was embedded,
-+//   or -1 if `response` is NULL.
++// @param out_truncated_length On success, receives the truncated length in
++//   tokens, or 0 if the whole input was embedded.
++// @return kLiteRtLmStatusOk on success, or kLiteRtLmStatusInvalidArgument if
++//   `response` or `out_truncated_length` is NULL.
 +//
-+// Added by flutter_gemma patch section 14.
++// Added by flutter_edge_ai patch section 14.
 +LITERT_LM_C_API_EXPORT
-+int litert_lm_embedding_response_get_truncated_length(
-+    const LiteRtLmEmbeddingResponse* response);
++LiteRtLmStatusCode litert_lm_embedding_response_get_truncated_length(
++    const LiteRtLmEmbeddingResponse* response, int* out_truncated_length);
 +
  // Destroys a collection of LiteRT LM Embedding Responses.
  //

@@ -12,7 +12,7 @@ description: Use when running .task or .bin models (MediaPipe GenAI, ModelFileTy
 3. An app that includes this package needs iOS 16.0.
 4. There is no desktop support.
 5. `maxTokens` is the real context limit — small values are not raised as they are on `.litertlm`. `maxOutputTokens` is ignored; stop generation with `session.stopGeneration()`.
-6. On Android and iOS, `createChat` inherits the model's audio support but **not** its image support — pass `supportImage: true` to the chat as well, or the image is dropped.
+6. On Android and iOS, `openChat` inherits the model's audio support but **not** its image support — pass `supportImage: true` to the chat as well, or the image is dropped.
 7. Upstream MediaPipe LLM Inference is maintenance-only; prefer a `.litertlm` model (flutter-edge-ai-inference) for new work.
 8. On iOS, do not load a `.task` model with `PreferredBackend.gpu`: Gemma 3 1B reaches the app's memory limit while loading and iOS kills the app with no crash report. Use `.litertlm`, or `PreferredBackend.cpu`.
 
@@ -36,7 +36,13 @@ await FlutterEdgeAi.installModel(
 final InferenceModel model = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
 ```
 
-Sessions, chats, streaming and the common traps work as in the flutter-edge-ai-inference skill — except that `openSession` / `openChat` (its concurrent-conversation pattern) work on Android and iOS only; on web they throw `UnsupportedError`.
+Sessions, chats, streaming and the common traps work as in the flutter-edge-ai-inference skill — except that on web the `openSession` / `openChat` sessions (its concurrent-conversation pattern) share the one loaded model (MediaPipe's JS LlmInference object): their turns run one at a time (a turn waits for the other sessions' turns as long as they run, unless they are stopped), each resends that session's whole conversation, and the sampling and LoRA are the ones the first session loaded the model with (a later session that asks for others gets a one-time printed warning).
+
+Response formats are the exception: MediaPipe does not enforce them on mobile
+or Web. `model.structuredOutputSupport` is `none`, `refusalFor(format)` returns a
+`ResponseFormatUnsupportedException`, and
+`openSession` / `openChat(responseFormat: format)` throw it before opening the
+MediaPipe session.
 
 ## iOS
 
@@ -59,10 +65,15 @@ Run `.task` models on `PreferredBackend.cpu` on iOS: on the GPU even Gemma 3 1B 
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096, supportImage: true);
-final chat = await model.createChat(supportImage: true);
-await chat.addQueryChunk(
-  Message(text: 'Describe this image.', isUser: true, imageBytes: bytes),
-);
+final chat = await model.openChat(supportImage: true);
+try {
+  await chat.addQueryChunk(
+    Message(text: 'Describe this image.', isUser: true, imageBytes: bytes),
+  );
+  final response = await chat.generateChatResponse();
+} finally {
+  await chat.close();
+}
 ```
 
 On Android and iOS, a chat without `supportImage: true` drops the image and the model answers the text alone. On web the chat follows the model: an image sent to a model loaded without `supportImage: true` throws `ArgumentError`.
@@ -72,7 +83,7 @@ Audio input works on Android and iOS only with a `.task` that carries an audio e
 ## Bounding output
 
 ```dart
-final session = await model.createSession();
+final session = await model.openSession();
 await session.addQueryChunk(Message(text: prompt, isUser: true));
 final reply = StringBuffer();
 var produced = 0;
@@ -94,7 +105,7 @@ Add to `web/index.html` `<head>`, before Flutter boots:
 
 ```html
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>

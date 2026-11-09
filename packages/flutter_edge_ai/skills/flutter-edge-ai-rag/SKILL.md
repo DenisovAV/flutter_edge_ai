@@ -58,9 +58,10 @@ from the installed file names (`'<namespace>@<files joined by +>'`, with `%`,
 installing a model under different file names changes the id and the old
 location refuses to open instead of mixing two embedding spaces. EmbeddingGemma
 1 and 2 are both 768-dimensional: the id is the only thing that tells them
-apart. The id follows file NAMES, not bytes: install with revision-qualified
-`filename:`s, as below, so new weights under the same download name get a new
-id too.
+apart. The id follows file NAMES, not bytes: install the registry build, as
+below — its file names carry the revision — so new weights under the same
+download name get a new id too. An app that installed under other names keeps
+them: its id follows those.
 
 ```dart
 import 'package:flutter/foundation.dart';
@@ -72,9 +73,6 @@ import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-const revision = '29888fcee3216acadc7e844906e5fe0d79a61875';
-const modelBase =
-    'https://huggingface.co/litert-community/embeddinggemma-300m/resolve/$revision';
 // EmbeddingGemma is gated: build with --dart-define=HUGGINGFACE_TOKEN=hf_...
 const hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
@@ -83,15 +81,8 @@ await FlutterEdgeAi.initialize(
   embeddingTokenizers: const [GemmaEmbeddingTokenizers()],
   huggingFaceToken: hfToken.isEmpty ? null : hfToken,
 );
-await FlutterEdgeAi.installEmbedder()
-    .modelFromNetwork(
-      '$modelBase/embeddinggemma-300M_seq256_mixed-precision.tflite',
-      filename: 'embeddinggemma-300m-seq256-mp__rev-29888fcee321.tflite',
-    )
-    .tokenizerFromNetwork(
-      '$modelBase/sentencepiece.model',
-      filename: 'embeddinggemma-300m__sentencepiece__rev-29888fcee321.model',
-    )
+// The registry build: commit 29888fce, revision-qualified file names.
+await FlutterEdgeAi.installEmbedder().fromCatalog(LiteRtEmbedders.embeddinggemma300m.seq256)
     .install();
 
 final rag = FlutterEdgeAiRag(
@@ -142,22 +133,26 @@ replaced the model before it ran (`EmbedderClosedException`) is retried once.
 Queries over text documents use `TaskType.retrievalQuery`; pass `queryTask:`
 for another task, e.g. `TaskType.questionAnswering`.
 
-## GGUF embeddings (`flutter_edge_ai_llama` 0.0.3)
+## GGUF embeddings (`flutter_edge_ai_llama` 0.0.3+)
 
 `LlamaEmbeddingBackend` in `flutter_edge_ai_llama` 0.0.3 (core 2.5.0, llamadart
-0.15.1) runs EmbeddingGemma 2 GGUF text embeddings natively: measured on macOS
-CPU/Metal and Linux/Windows CPU; Android (CPU only) and iOS are not qualified,
-and only the Q8_0 file below is numerically qualified. A `.gguf` carries its own
+0.15.1) runs EmbeddingGemma 2 GGUF text embeddings natively. 0.0.6 moves to
+llamadart 0.17.5: measured there on macOS CPU/Metal (#764); Linux/Windows CPU were
+measured on 0.15.1 only; Android (CPU only) and iOS are not qualified, and only
+the Q8_0 file below is numerically qualified. An explicit GPU request on
+Android, iOS simulators and, from 0.0.6, macOS x64 loads on the CPU, or fails
+with `backendFallback: false`. A `.gguf` carries its own
 tokenizer: a `tokenizerFrom…()` makes `install()` throw `ArgumentError`.
 
 App setup (that package's README, *Add it to your app*, and `doc/platforms.md`):
 `hooks: user_defines: llamadart: llamadart_native_runtimes: [llama_cpp]` in the
 app's pubspec, or the workspace root's; on iOS/macOS also
-`llamadart_llama_cpp_flutter: 0.15.0` in the app's own dependencies,
+`llamadart_llama_cpp_flutter: 0.17.3` (0.15.0 before 0.0.6) in the app's own dependencies,
 `flutter config --enable-swift-package-manager`, and iOS 16.4 / macOS 14
-deployment targets; on Android arm64-v8a and x86_64 only. LiteRT-LM's macOS
-CocoaPods recipe turns Swift Package Manager off, so GGUF and LiteRT-LM in one
-macOS app are not qualified.
+deployment targets; on Android arm64-v8a and x86_64 only. From
+`flutter_edge_ai_litertlm` 1.19.0 LiteRT-LM keeps Swift Package Manager on too,
+and both native libraries load in one macOS app; running both engines' models
+in one app is not qualified.
 
 ```dart
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -176,8 +171,8 @@ final embedder = await FlutterEdgeAi.getActiveEmbedder();
 ```
 
 - Text only: `supportImage`, `supportAudio` and `PreferredBackend.npu` throw
-  `EmbeddingLoadException`. On Android (every device) and iOS simulators an
-  explicit `gpu` falls back to CPU with a warning, or throws with
+  `EmbeddingLoadException`. On Android (every device), iOS simulators and, from
+  0.0.6, macOS x64/Rosetta an explicit `gpu` falls back to CPU with a warning, or throws with
   `LlamaEmbeddingBackend(backendFallback: false)`; `activeBackend` reports what
   loaded.
 - Only a mean-pooled `gemma-embedding2` GGUF loads; any other architecture or
@@ -290,7 +285,20 @@ final eg2Index = await rag.open(
   before embedding.
 - It runs on CPU natively (`activeBackend` is `PreferredBackend.cpu`) and on
   WebGPU on Web (`PreferredBackend.gpu`), and refuses `PreferredBackend.npu`:
-  the NPU runs the per-SoC bundles (next section). Web vectors therefore
+  the NPU runs the per-SoC bundles (next section). Native GPU support is
+  enabled in code (`native_hosts.dart`) per host and bundle: Linux x64 for the
+  270m, 440m and 740m; Windows x64 for the 270m; macOS arm64 for the 270m and
+  740m. Other bundle combinations on those GPU hosts throw
+  `EmbeddingLoadException` as unmeasured. The Linux rows were measured on an
+  NVIDIA L4, 2026-10-26 ([PR #714](https://github.com/DenisovAV/flutter_edge_ai/pull/714));
+  the Windows 270m passed on Panther Lake Arc B390 and Lunar Lake Arc 140V,
+  2026-11-04
+  ([0.19 paid-run report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-l1-paid-runs.md));
+  the macOS rows were measured on an M5 Pro, 2026-11-04, at 24 ms
+  ([0.19 phase-1 report](https://github.com/DenisovAV/flutter_edge_ai/blob/main/doc/research/litertlm-0.19-phase1.md)).
+  Only the text tower runs on GPU; 440m/740m vision and audio towers run on CPU
+  beside it. On iOS, Android and Linux arm64, `gpu` is not applied and the
+  embedder runs on CPU with core's notice. Web vectors therefore
   differ slightly from native ones — measured min cos about 0.995 for text and
   0.998 for images against the native CPU vectors — and retrieval across
   platforms holds: web queries find natively embedded images and native
@@ -312,6 +320,95 @@ final eg2Index = await rag.open(
   cannot tell them apart. `FlutterEdgeAiActiveEmbedder.forActiveModel` already
   gives them different ids (different file names); the explicit id above is for
   one text store shared by the three EmbeddingGemma 2 bundles.
+
+### EmbeddingGemma 2 at 128, 256 or 512 dimensions (Matryoshka)
+
+EmbeddingGemma 2 is trained with Matryoshka representation learning: the first
+128, 256 or 512 values of its 768-d text vector, L2-normalized again, are an
+embedding of their own. There is no API for it, and none is needed: take the
+first N values of the vector the embedder returns and normalize them.
+Measured 2026-10-22 on the 270m bundle (CPU, the ten golden texts): this is
+the same vector LiteRT-LM's own `output_size` option returns (cos 1.000000 at
+128, 256 and 512), each query still ranks its document first (5/5), and the
+minimum cosine to Sentence Transformers fp32 cut to the same size is 0.976
+(512) to 0.986 (128), against 0.977 at the full 768.
+Images and audio were not measured; keep truncation to text.
+
+```dart
+import 'dart:math' as math;
+
+import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+
+List<double> truncateEmbedding(List<double> vector, int dimension) {
+  final head = vector.sublist(0, dimension);
+  final norm = math.sqrt(head.fold(0.0, (sum, x) => sum + x * x));
+  return [for (final x in head) x / norm];
+}
+
+final embedder = await FlutterEdgeAi.getActiveEmbedder();
+final full = await embedder.embed(
+  EmbeddingInput.text('Flutter runs on six platforms.'),
+  taskType: TaskType.retrievalDocument,
+);
+final small = truncateEmbedding(full, 256); // 256 values, unit length
+```
+
+A truncated vector is another embedding space. In RAG, wrap the embedder so
+the index gets the smaller dimension and its own profile id: an id without
+the size would let 256-d and 768-d vectors share a location.
+`FlutterEdgeAiActiveEmbedder.forActiveModel` builds ids from file names only,
+so it cannot tell the sizes apart either.
+
+```text
+final class MatryoshkaEmbedder implements RagEmbedder {
+  MatryoshkaEmbedder(this.inner, {required this.dimension, required this.profileId});
+
+  final RagEmbedder inner;
+  final int dimension;
+  final String profileId; // a new space: never the full-size id
+
+  @override
+  Future<EmbeddingProfile> resolveProfile() async {
+    final full = await inner.resolveProfile();
+    if (dimension > full.dimension) {
+      throw ArgumentError.value(dimension, 'dimension', 'exceeds ${full.dimension}');
+    }
+    return EmbeddingProfile(id: profileId, dimension: dimension);
+  }
+
+  @override
+  Set<EmbeddingModality> get modalities => const {EmbeddingModality.text};
+
+  @override
+  Future<List<double>> embedDocument(EmbeddingInput document) async =>
+      truncateEmbedding(await inner.embedDocument(document), dimension);
+
+  @override
+  Future<List<double>> embedQuery(
+    EmbeddingInput query, {
+    required EmbeddingModality documentModality,
+  }) async => truncateEmbedding(
+    await inner.embedQuery(query, documentModality: documentModality),
+    dimension,
+  );
+}
+
+final index = await rag.open(
+  spec: VectorStoreSpec(
+    providerId: SqliteVectorStoreProvider.providerId,
+    location: databasePath,
+  ),
+  embedder: MatryoshkaEmbedder(
+    FlutterEdgeAiActiveEmbedder(profileId: eg2ProfileId),
+    dimension: 256,
+    profileId: '$eg2ProfileId-mrl256',
+  ),
+);
+```
+
+Only Matryoshka-trained models keep their quality this way. EmbeddingGemma 1,
+Gecko, MiniLM and the GGUF EmbeddingGemma 2 were not measured here; do not
+truncate a model without measuring it.
 
 ### EmbeddingGemma 2 on a Qualcomm NPU (`flutter_edge_ai_litertlm` 1.13.1)
 
@@ -359,11 +456,11 @@ final npuIndex = await rag.open(
 );
 ```
 
-- Verified SoCs: SM8850, SM8650 and QCS8275. Google also publishes SM8550,
-  SM8750 (load, not verified by us), Intel PTL (Windows, below), Tensor G5/G6
-  (below) and
-  MediaTek MT6991/MT6993 (below). What a bundle targets is read from the
-  bundle.
+- Run on device: SM8850, SM8650 and QCS8275. Google also publishes SM8550,
+  SM8750 (accepted by the loader, not run by us), Intel PTL (Windows, below),
+  Tensor G5/G6 (below; G6 run, G5 not) and MediaTek MT6991/MT6993 (below).
+  Per build: https://flutteredge.ai/docs/registry. What a bundle targets is
+  read from the bundle.
 - Its vectors are close to the CPU bundle's, not equal (SM8650: cosine
   0.79–0.86 for a few words, 0.99 from about 200 words; images 0.86–0.88), so
   never compare NPU vectors with CPU ones; within the NPU space retrieval
@@ -382,11 +479,12 @@ final npuIndex = await rag.open(
 - Give an NPU index its own profile id (above); never open a CPU index with an
   NPU embedder or the reverse. `FlutterEdgeAiActiveEmbedder.forActiveModel`
   keys on the file name, so it separates them by itself.
-- **Intel Panther Lake (Windows x64, `flutter_edge_ai_litertlm` 1.13.2).** `…_Intel_PTL.litertlm` (270m, 440m) loads the
+- **Intel Panther Lake (Windows x64, `flutter_edge_ai_litertlm` 1.13.2).** `…_Intel_PTL.litertlm` (270m, 440m, 740m) loads the
   same way with `preferredBackend: PreferredBackend.npu`, with no opt-in flag:
   every Windows x64 build carries the Intel stack (LiteRtDispatch.dll,
   OpenVINO, TBB) beside the executable, and its absence is refused by name.
-  Profile id: the CPU text id plus `-npu-ptl`, shared by the 270m and the 440m.
+  Profile id: the CPU text id plus `-npu-ptl`, shared by the 270m, the 440m and
+  the 740m.
   An Intel bundle on Android or Linux is refused. The 270m was measured on a
   Panther Lake PC (2026-10-21, OpenVINO 2026.4.1, the stack of
   `flutter_edge_ai_litertlm` 1.17.0): 768-dimensional vectors, load about

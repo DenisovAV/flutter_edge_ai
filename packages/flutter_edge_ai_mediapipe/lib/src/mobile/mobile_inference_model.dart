@@ -1,3 +1,6 @@
+// This implementation keeps the deprecated singleton chat API until 3.0.
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -48,6 +51,31 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     modelType: modelType,
     thinking: thinking,
   );
+
+  /// [openChat]'s unset values are this model's own, as [createChat] fills
+  /// them.
+  @override
+  ResolvedChatRequest resolveChatRequest(ChatRequest request) =>
+      ResolvedChatRequest(
+        modelType: request.modelType ?? modelType,
+        supportImage: request.supportImage ?? false,
+        supportAudio: request.supportAudio ?? supportAudio,
+        supportsFunctionCalls: request.supportsFunctionCalls ?? false,
+        tools: request.tools,
+        maxFunctionBufferLength:
+            request.maxFunctionBufferLength ?? defaultMaxFunctionBufferLength,
+        temperature: request.temperature,
+        randomSeed: request.randomSeed,
+        topK: request.topK,
+        topP: request.topP,
+        tokenBuffer: request.tokenBuffer,
+        loraPath: request.loraPath,
+        enableThinking: request.enableThinking,
+        toolChoice: request.toolChoice,
+        systemInstruction: request.systemInstruction,
+        maxOutputTokens: request.maxOutputTokens,
+        responseFormat: request.responseFormat,
+      );
 
   @override
   Future<InferenceChat> createChat({
@@ -139,9 +167,16 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
   @override
   InferenceModelSession? get session => _session;
 
+  /// Open sessions still being created natively: they count against
+  /// [maxConcurrentSessions] from the check on, so two calls that overlap
+  /// cannot both pass it.
+  int _openingSessions = 0;
+
   @override
-  List<InferenceModelSession> get sessions =>
-      List.unmodifiable([if (_session != null) _session!, ..._openSessions]);
+  List<InferenceModelSession> get engineSessions => [
+    if (_session != null) _session!,
+    ..._openSessions,
+  ];
 
   @override
   Future<InferenceModelSession> createSession({
@@ -191,6 +226,9 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     }
     final completer = _createCompleter = Completer<InferenceModelSession>();
     try {
+      // A take-back rebuilding the live session finishes first: one native
+      // createSession at a time.
+      if (_rebuilding case final rebuilding?) await rebuilding;
       // Resolved first: values it rejects must not cost the live session. A
       // `.task` file carries no sampler, so an unset field comes from the
       // family defaults rather than MediaPipe's own (topK 40, temperature 0.8).
@@ -216,7 +254,7 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
       // LoRA support is fully integrated via Modern API (InferenceInstallationBuilder)
       final resolvedLoraPath = loraPath;
 
-      await platformService.createSession(
+      Future<void> createNative() => platformService.createSession(
         randomSeed: sampling.randomSeed,
         temperature: sampling.temperature,
         topK: sampling.topK,
@@ -229,6 +267,7 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
         systemInstruction: systemInstruction,
         enableThinking: enableThinking,
       );
+      await createNative();
 
       late final MobileInferenceModelSession session;
       session = MobileInferenceModelSession(
@@ -237,6 +276,10 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
         supportImage: enableVisionModality ?? supportImage,
         supportAudio: enableAudioModality ?? supportAudio,
         systemInstruction: systemInstruction,
+        // The native createSession replaces the one native session: a
+        // take-back rebuilds it, in this model's createSession lane, and
+        // replays what it held.
+        recreateNative: () => _rebuildSession(session, createNative),
         // Identity-guarded so a late close of a superseded session can't
         // null a newer `_session`. Does NOT touch `_createCompleter` —
         // that is owned by the `finally` below, not by session teardown.
@@ -266,27 +309,59 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
     return completer.future;
   }
 
+  /// The rebuild of the live session after a take-back, while it runs.
+  Future<void>? _rebuilding;
+
+  /// Builds [session]'s native session again ([createNative]) in the
+  /// createSession lane: after a createSession in flight, which replaces
+  /// [session] (it is closed then, and nothing is rebuilt), and before any
+  /// that starts meanwhile.
+  Future<void> _rebuildSession(
+    MobileInferenceModelSession session,
+    Future<void> Function() createNative,
+  ) async {
+    for (
+      var pending = _createCompleter;
+      pending != null;
+      pending = _createCompleter
+    ) {
+      await pending.future.then<void>((_) {}, onError: (Object _) {});
+    }
+    if (_isClosed || !identical(_session, session)) {
+      throw StateError('The session was replaced while it was rebuilt');
+    }
+    final done = Completer<void>();
+    _rebuilding = done.future;
+    try {
+      await createNative();
+    } finally {
+      _rebuilding = null;
+      done.complete();
+    }
+  }
+
   @override
-  Future<InferenceModelSession> openSession({
-    double? temperature,
-    int? randomSeed,
-    int? topK,
-    double? topP,
-    String? loraPath,
-    bool? enableVisionModality,
-    bool? enableAudioModality,
-    String? systemInstruction,
-    bool enableThinking = false,
-    List<Tool> tools = const [],
-    int? maxOutputTokens,
-  }) async {
+  Future<InferenceModelSession> openEngineSession(
+    SessionRequest request,
+  ) async {
+    final SessionRequest(
+      :temperature,
+      :randomSeed,
+      :topK,
+      :topP,
+      :loraPath,
+      :enableVisionModality,
+      :enableAudioModality,
+      :systemInstruction,
+      :enableThinking,
+    ) = request;
     if (_isClosed) {
       throw StateError(
         'Model is closed. Create a new instance to use it again',
       );
     }
     final cap = maxConcurrentSessions;
-    if (cap != null && _openSessions.length >= cap) {
+    if (cap != null && _openSessions.length + _openingSessions >= cap) {
       throw StateError(
         'Max concurrent sessions ($cap) reached. Close an existing session '
         'before opening a new one.',
@@ -305,7 +380,10 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
       randomSeed: randomSeed,
       thinking: enableThinking,
     );
-    await platformService.createSessionForId(
+    // Counted from the cap check until the session is in [_openSessions]:
+    // the native call below would otherwise let a second call pass the check.
+    _openingSessions++;
+    Future<void> createNative() => platformService.createSessionForId(
       sessionId: id,
       randomSeed: sampling.randomSeed,
       temperature: sampling.temperature,
@@ -317,6 +395,17 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
       systemInstruction: systemInstruction,
       enableThinking: enableThinking,
     );
+    try {
+      await createNative();
+    } finally {
+      _openingSessions--;
+    }
+    // Closed while the native session was being created: it would outlive
+    // the model.
+    if (_isClosed) {
+      await platformService.closeSessionId(id);
+      throw StateError('Model was closed while opening a session');
+    }
 
     late final MultiSessionMobileInferenceModelSession session;
     session = MultiSessionMobileInferenceModelSession(
@@ -327,6 +416,11 @@ class MobileInferenceModel extends InferenceModel with CloseNotifier {
       supportAudio: enableAudioModality ?? supportAudio,
       systemInstruction: systemInstruction,
       generationMutex: _generationMutex,
+      // A take-back closes this native session and builds it again, same id.
+      recreateNative: () async {
+        await platformService.closeSessionId(id);
+        await createNative();
+      },
       onClose: () => _openSessions.remove(session),
     );
     _openSessions.add(session);

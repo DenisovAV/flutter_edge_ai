@@ -24,7 +24,7 @@ Future<Uint8List> _testImage() async {
 }
 
 Future<String> _chat(String prompt, {Uint8List? image}) async {
-  final session = await _model!.createSession(
+  final session = await _model!.openSession(
     temperature: 0.7,
     topK: 40,
     enableVisionModality: image != null,

@@ -1,3 +1,6 @@
+## 0.4.2
+- `AgentSession.fromModel` opens its owned chat through `openChat`.
+
 ## 0.4.1
 - README: each intent's platforms; desktop calendar events open a Google Calendar page.
 

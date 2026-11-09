@@ -1,0 +1,15 @@
+TensorFlow defines the XNNPACK repository this build uses (LiteRT's own
+definition is skipped: TensorFlow's comes first). This adds our XNNPACK patch
+to it (patch_c_api.sh section 21). The hunk names the pinned archive, so a
+TensorFlow that moves XNNPACK fails the fetch until the XNNPACK patch is
+re-checked. Strip 0, like third_party/tensorflow/tensorflow.patch.
+
+--- third_party/xla/third_party/xnnpack/workspace.bzl	2026-11-02 08:45:31
++++ third_party/xla/third_party/xnnpack/workspace.bzl	2026-11-02 08:45:31
+@@ -24,5 +24,6 @@
+         sha256 = "b1d4ab092cd92b1241c1d14f440b5ed725530757b540fe4fb88a20b07577e8a8",
+         strip_prefix = "XNNPACK-28d1fc6d908bc4d80920be989177b7eb1a4aebc8",
+         urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/28d1fc6d908bc4d80920be989177b7eb1a4aebc8.zip"),
++        patch_file = ["@//:flutter_gemma_xnnpack_pf32_sme2_apple.patch"],
+     )
+     # LINT.ThenChange(//tensorflow/lite/tools/cmake/modules/xnnpack.cmake)

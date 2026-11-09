@@ -14,8 +14,7 @@
 //
 //   cd packages/flutter_edge_ai/example
 //   dart run integration_test/tools/generate_island_voice_clips.dart <out-dir>
-//   mkdir -p ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/island_voice
-//   cp <out-dir>/* ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/island_voice/
+//   Copy <out-dir> into the example app's Documents/island_voice directory.
 //
 // A clip's file name ends in a hash of its voice and text, so a rerun into the
 // same directory keeps the clips it already has and makes only the new ones.

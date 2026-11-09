@@ -1,0 +1,38 @@
+# The cells a release must have verified: for each package that ships a
+# generated catalog, the builds and hosts a broken native or catalog change
+# would hurt most. `registry.dart release-check <package>`, which the release
+# skill requires before a publish, refuses while any of
+# them is not verified on the native build the package ships, that is, has no
+# run under evidence/ since the native archive or the package's minor version
+# last moved. A patch release on the same native build keeps its evidence.
+#
+# Web is left out: the evidence helper runs where dart:io does, and the web
+# tests do not print evidence yet.
+
+flutter_edge_ai_litertlm:
+  - what: Gemma 4 E2B, the default model, on every native host
+    variants: [gemma-4-e2b-it/generic]
+    hosts: [android_arm64, ios_arm64, macos_arm64, windows_x64, linux_x64]
+    backends: [cpu, gpu]
+  - what: Gemma 4 E2B on the NPUs the package ships a stack for
+    variants: [gemma-4-e2b-it/npu-sm8750]
+    hosts: [android_arm64]
+    backends: [npu]
+  - what: Gemma 4 E2B on the Intel Lunar Lake NPU
+    variants: [gemma-4-e2b-it/npu-lnl]
+    hosts: [windows_x64]
+    backends: [npu]
+  - what: Gemma 4 E2B on the Google Tensor G6 NPU
+    variants: [gemma-4-e2b-it/npu-tensor-g6]
+    hosts: [android_arm64]
+    backends: [npu]
+  - what: EmbeddingGemma 2, the default embedder
+    variants: [embeddinggemma-2-text-270m/generic]
+    hosts: [android_arm64, ios_arm64, macos_arm64, windows_x64, linux_x64]
+    backends: [cpu]
+
+flutter_edge_ai_speech:
+  - what: Moonshine Tiny and Matcha, the default speech pair
+    variants: [moonshine-tiny/f32, matcha-tts/bundle]
+    hosts: [android_arm64, ios_arm64, macos_arm64, windows_x64, linux_x64]
+    backends: [cpu]

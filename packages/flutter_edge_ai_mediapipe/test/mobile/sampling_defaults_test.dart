@@ -1,3 +1,6 @@
+// These tests verify the deprecated singleton lane's native sampling options.
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter_edge_ai/engine.dart' show ModelType;
 import 'package:flutter_edge_ai_mediapipe/pigeon.g.dart';
 import 'package:flutter_edge_ai_mediapipe/src/mobile/mobile_inference_model.dart';

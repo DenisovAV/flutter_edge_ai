@@ -40,16 +40,20 @@ void main() {
     print('[Reuse] Response 2: "${response2.text}"');
   }, timeout: const Timeout(kInferenceTimeout));
 
-  testWidgets('Caching: model recreation — different maxTokens',
-      (tester) async {
+  testWidgets('Caching: model recreation — different maxTokens', (
+    tester,
+  ) async {
     // First call with large maxTokens.
     final response1 = await ai.generate(
       model: testModelRef,
       prompt: 'Say hello.',
       config: FlutterEdgeAiModelOptions(maxTokens: 1024),
     );
-    expect(response1.text, isNotEmpty,
-        reason: 'Call with maxTokens=1024 should succeed');
+    expect(
+      response1.text,
+      isNotEmpty,
+      reason: 'Call with maxTokens=1024 should succeed',
+    );
     print('[Recreation] Response 1 (1024): "${response1.text}"');
 
     // Second call with smaller maxTokens — forces model recreation.
@@ -58,8 +62,11 @@ void main() {
       prompt: 'Say goodbye.',
       config: FlutterEdgeAiModelOptions(maxTokens: 512),
     );
-    expect(response2.text, isNotEmpty,
-        reason: 'Call with maxTokens=512 should succeed after recreation');
+    expect(
+      response2.text,
+      isNotEmpty,
+      reason: 'Call with maxTokens=512 should succeed after recreation',
+    );
     print('[Recreation] Response 2 (512): "${response2.text}"');
   }, timeout: const Timeout(kInferenceTimeout));
 }

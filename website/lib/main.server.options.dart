@@ -8,6 +8,8 @@ import 'package:jaspr/server.dart';
 import 'package:fluttergemma_website/codelabs/codelabs_page.dart'
     as _codelabs_page;
 import 'package:fluttergemma_website/components/clicker.dart' as _clicker;
+import 'package:fluttergemma_website/components/play_when_visible.dart'
+    as _play_when_visible;
 import 'package:fluttergemma_website/contributors/contributors_page.dart'
     as _contributors_page;
 import 'package:fluttergemma_website/landing/sections/cta_section.dart'
@@ -34,6 +36,14 @@ import 'package:fluttergemma_website/landing/sections/why_on_device.dart'
     as _why_on_device;
 import 'package:fluttergemma_website/landing/landing_page.dart'
     as _landing_page;
+import 'package:fluttergemma_website/showcase/submit/submit_form.dart'
+    as _submit_form;
+import 'package:fluttergemma_website/showcase/submit/submit_page.dart'
+    as _submit_page;
+import 'package:fluttergemma_website/showcase/showcase_browser.dart'
+    as _showcase_browser;
+import 'package:fluttergemma_website/showcase/showcase_page.dart'
+    as _showcase_page;
 import 'package:fluttergemma_website/theme/docs_fixes.dart' as _docs_fixes;
 import 'package:jaspr_content/components/_internal/code_block_copy_button.dart'
     as _code_block_copy_button;
@@ -67,6 +77,13 @@ ServerOptions get defaultServerOptions => ServerOptions(
   clientId: 'main.client.dart.js',
   clients: {
     _clicker.Clicker: ClientTarget<_clicker.Clicker>('clicker'),
+    _play_when_visible.PlayWhenVisible:
+        ClientTarget<_play_when_visible.PlayWhenVisible>('play_when_visible'),
+    _nav_bar.NavBar: ClientTarget<_nav_bar.NavBar>('nav_bar'),
+    _showcase_browser.ShowcaseBrowser:
+        ClientTarget<_showcase_browser.ShowcaseBrowser>('showcase_browser'),
+    _submit_form.ShowcaseSubmitForm:
+        ClientTarget<_submit_form.ShowcaseSubmitForm>('submit_form'),
     _code_block_copy_button.CodeBlockCopyButton:
         ClientTarget<_code_block_copy_button.CodeBlockCopyButton>(
           'jaspr_content:code_block_copy_button',
@@ -98,13 +115,17 @@ ServerOptions get defaultServerOptions => ServerOptions(
     ..._features.Features.styles,
     ..._hero.Hero.styles,
     ..._models_gallery.ModelsGallery.styles,
-    ..._nav_bar.NavBar.styles,
+    ..._nav_bar.NavBarState.styles,
     ..._platform_matrix.PlatformMatrix.styles,
     ..._quick_start.QuickStart.styles,
     ..._renamed_bar.RenamedBar.styles,
     ..._site_footer.SiteFooter.styles,
     ..._trust_bar.TrustBar.styles,
     ..._why_on_device.WhyOnDevice.styles,
+    ..._showcase_browser.ShowcaseBrowserState.styles,
+    ..._showcase_page.ShowcasePage.styles,
+    ..._submit_form.ShowcaseSubmitFormState.styles,
+    ..._submit_page.ShowcaseSubmitPage.styles,
     ..._callout.Callout.styles,
     ..._code_block.CodeBlock.styles,
     ..._github_button.GitHubButton.styles,

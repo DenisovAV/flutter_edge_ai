@@ -59,10 +59,11 @@ void main() {
 
   // LiteRT-LM#3508: an NPU bundle is compiled for one cache_length, and a
   // Gemma 3 npu_export build for the Qualcomm NPU keeps every prefill chunk
-  // only up to 896 — below the #318 floor. LiteRT-LM's NPU executor would lower
-  // a clamped 1024 back to the compiled limit, so skipping the clamp is not what
-  // keeps such a bundle working: the #318 floor is a CPU/GPU fact, and the
-  // caller's number passes through.
+  // only up to 896 — below the #318 floor. LiteRT-LM's NPU executor lowers a
+  // larger value to the bundle's LlmMetadata.max_num_tokens, and to the cache
+  // length only when the metadata has none (LiteRT-LM#4184), so a clamped 1024
+  // is safe only on a bundle whose metadata matches its cache. The #318 floor
+  // is a CPU/GPU fact, and the caller's number passes through.
   group('clampLitertlmContextTokens leaves NPU alone (LiteRT-LM#3508)', () {
     test('896 — the measured Gemma 3 Qualcomm value — is passed through', () {
       expect(
@@ -84,11 +85,14 @@ void main() {
     });
 
     // The trap this pins: `PreferredBackend.npu` does not mean the NPU runs.
-    // `ffiBackendFallbackOrder` retries npu -> gpu -> cpu, so an NPU-sized
-    // context below the floor must NOT survive into the attempts that follow —
-    // those are the CPU/GPU engines the #318 floor exists for. Resolving the
-    // clamp once from the REQUESTED backend (rather than per attempt) is
-    // exactly the regression, and it is invisible on a device that has an NPU.
+    // A generic bundle is never tried on the NPU, and a file the load plan
+    // cannot read is tried npu -> gpu -> cpu (`ffiBackendFallbackOrder`), so an
+    // NPU-sized context below the floor must NOT survive into the GPU and CPU
+    // attempts — those are the engines the #318 floor exists for. A bundle
+    // compiled for an NPU is tried on the NPU alone (`planLiteRtLmLoad`).
+    // Resolving the clamp once from the REQUESTED backend (rather than per
+    // attempt) is exactly the regression, and it is invisible on a device that
+    // has an NPU.
     test(
       'a fallback from NPU re-applies the floor to the backends after it',
       () {

@@ -7,13 +7,14 @@ meta:
 ---
 
 flutter_edge_ai supports **text + image** input (vision) and **audio** input with
-the right models. Multimodal models require more memory and are recommended for
-devices with 8GB+ RAM.
+the right models. Gemma 4 E2B needs a phone with 6 GB of RAM or more: on a 4 GB
+phone the OS kills the app while the model loads. The larger Gemma 4 E4B and
+Gemma 3n files have no measured floor.
 
 ## Vision (image input)
 
 Vision needs a model with a vision encoder — e.g. **Gemma 4 E2B/E4B**, **Gemma 3n
-E2B/E4B** and **FastVLM 0.5B** (desktop); [Models](/docs/models) lists which
+E2B/E4B** and **FastVLM 0.5B** (every native platform; run on desktop only, see the [Model Registry](/docs/registry#fastvlm-0.5b)); [Models](/docs/models) lists which
 models take images. The OS built-in model takes images on Android (Gemini Nano —
 see [Built-in AI](/docs/builtin-ai)). **Gemma 4** vision runs on all
 four platforms (Android, iOS, Desktop, and Web with the MediaPipe `-web.task`
@@ -52,7 +53,7 @@ declares, and a backend it excludes is refused before the model loads;
 ### Sending an image
 
 The flag goes in **two** places: on `getActiveModel` it loads the vision encoder,
-on `createChat` the session declares it will send images. `.litertlm` inherits the
+on `openChat` the session declares it will send images. `.litertlm` inherits the
 model's flag, but MediaPipe `.task` does not — on Android and iOS a chat created
 without it **drops the image and answers about the text alone**, with no error and
 no log in a release build. On web the chat follows the model instead: an image sent
@@ -70,7 +71,7 @@ final message = Message.withImages(
 // Image only
 final imageMessage = Message.imagesOnly(imageBytes: [imageBytes], isUser: true);
 
-final chat = await model.createChat(supportImage: true);
+final chat = await model.openChat(supportImage: true);
 await chat.addQueryChunk(message);
 final response = await chat.generateChatResponse();
 
@@ -120,7 +121,7 @@ Sending audio is `Message.withAudio` — and `audioBytes` is a whole WAV file,
 `transcribe` takes raw PCM):
 
 ```dart
-final chat = await model.createChat(supportAudio: true);
+final chat = await model.openChat(supportAudio: true);
 await chat.addQueryChunk(Message.withAudio(
   text: 'What is said in this recording?',
   audioBytes: wavBytes,
@@ -184,6 +185,49 @@ every order.
 
 Only the native `.litertlm` engine reads it. The measurements are in the
 [`flutter_edge_ai_litertlm` README](https://pub.dev/packages/flutter_edge_ai_litertlm#multimodal-order).
+
+## Vision and audio with the text model on the NPU
+
+`preferredBackend: PreferredBackend.npu` moves only the text decoder (see
+[NPU](/docs/litertlm) for the opt-in and the context size). The encoders keep
+their own settings. The public Qualcomm Gemma 4 bundles compile only the text
+model for the NPU, so left unset both encoders run on the CPU
+([where a model runs](/docs/litertlm#where-a-model-runs)). On Android you can
+do better for images. Measured on a Galaxy S25 Ultra (Snapdragon 8 Elite) with
+the public `gemma-4-E2B-it_qualcomm_sm8750.litertlm`, text on the NPU, encoder
+time for one image or one audio clip after the first:
+
+| Vision / audio encoder | Image | Audio clip |
+|---|---|---|
+| unset (CPU / CPU, the default) | 2.8 s | 0.13 s |
+| **GPU** / CPU | **1.7 s** | 0.18 s |
+| GPU / GPU | fails when the chat is created | — |
+
+```dart
+final model = await FlutterEdgeAi.getActiveModel(
+  maxTokens: 1024,                               // measured with this bundle
+  preferredBackend: PreferredBackend.npu,        // text decoder
+  preferredVisionBackend: PreferredBackend.gpu,  // images ~1.7x faster than CPU
+  supportImage: true,
+  supportAudio: true,                            // audio encoder stays on CPU
+);
+```
+
+- **Keep the audio encoder on CPU.** The SM8750 bundle declares no
+  `backend_constraint`, so the GPU is not refused at load: the model loads,
+  then creating a chat fails with `Failed to create conversation`, because the
+  GPU delegate does not support the 5-D `ADD` ops of its audio encoder. The
+  `…_qualcomm_qcs8275` bundle declares cpu for its audio encoder, so there the
+  GPU is refused before the model loads.
+- **`PreferredBackend.npu` for an encoder these bundles do not compile for the
+  NPU is refused** before the model loads (`LiteRtLmBundleException`,
+  `wrongBackend`).
+- **A bundle whose encoders are compiled for the NPU** runs them on the NPU
+  and refuses any other backend for them.
+- The GPU vision encoder with the text on the NPU is measured on Android with
+  the SM8750 bundle only; Linux arm64 and Windows NPU machines are not.
+  `model.activeVisionBackend` and `model.activeAudioBackend` say where the
+  encoders run.
 
 ## Web limitations
 

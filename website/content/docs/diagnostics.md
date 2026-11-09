@@ -1,6 +1,6 @@
 ---
 title: Memory Diagnostics
-description: "Read process memory diagnostics on Android, iOS and macOS: footprint, resident clean pages and available memory, with flutter_edge_ai_diagnostics."
+description: "Read process memory diagnostics on Android, iOS, macOS, Linux and Windows: footprint or commit, resident file-backed pages and available memory, with flutter_edge_ai_diagnostics."
 meta:
   - property: og:image
     content: https://flutteredge.ai/images/og-image.png
@@ -8,7 +8,7 @@ meta:
 
 `flutter_edge_ai_diagnostics` helps explain what an on-device model costs in
 memory. It reads process memory counters and available memory from the OS on
-**Android, iOS and macOS**, returning a `MemorySnapshot`. It has no native code and no
+**Android, iOS, macOS, Linux and Windows**, returning a `MemorySnapshot`. It has no native code and no
 dependency on `flutter_edge_ai` — it measures the process, whichever engine runs
 in it.
 
@@ -44,10 +44,10 @@ its per-app limit on the footprint rather than RSS.
 
 So this package does not report RSS. It reports:
 
-- **`anonymousBytes`** — the platform's footprint or `Private_Dirty + SwapPss`;
-- **`fileBackedBytes`** (Android) — resident clean pages: mapped files on a CPU backend, and GPU driver buffers too on some GPU backends. Not read on iOS or macOS yet, so null there;
-- **`anonymousPeakBytes`** (iOS and macOS) — the highest footprint since the process started. Null on Android;
-- **`availableBytes`** — headroom on iOS, a device-wide estimate on Android, null on macOS.
+- **`anonymousBytes`** — the platform's footprint, the Windows commit charge, or `Private_Dirty + SwapPss`;
+- **`fileBackedBytes`** (Android, Linux and Windows) — on Android and Linux resident clean pages: mapped files on a CPU backend, and GPU driver buffers too on some GPU backends; on Windows the shareable working set, modified shared pages included. Not read on iOS or macOS yet, so null there;
+- **`anonymousPeakBytes`** (iOS, macOS and Windows) — the highest footprint (commit on Windows) since the process started. Null on Android and Linux;
+- **`availableBytes`** — headroom on iOS, a machine-wide estimate on Android, Linux and Windows, null on macOS.
 
 Take readings before loading, after loading, and during generation. Their
 changes help explain the model's memory cost, with the limits below.
@@ -56,10 +56,11 @@ changes help explain the model's memory cost, with the limits below.
 
 ```
 dependencies:
-  flutter_edge_ai_diagnostics: ^0.4.0
+  flutter_edge_ai_diagnostics: ^0.6.1
 ```
 
-This page describes 0.4.0, which adds the experimental `gpuMemory()`; 0.3.0
+This page describes 0.6.0, which adds Windows; 0.5.0 added Linux; 0.4.0 added the experimental
+`gpuMemory()`; 0.3.0
 added macOS and `anonymousPeakBytes`, and 0.2.2 read Android and iOS without
 the peak.
 
@@ -79,14 +80,22 @@ if (FlutterEdgeAiDiagnostics.isSupported) {
 
 ## What each field means
 
-| Field | iOS and macOS | Android |
-|---|---|---|
-| `anonymousBytes` | `phys_footprint` from `task_info(TASK_VM_INFO)`: on iOS the value jetsam enforces, including IOKit/GPU (Metal) allocations and compressed memory; on macOS the figure Activity Monitor calls "Memory", with no kill limit behind it | `Private_Dirty + SwapPss` from `/proc/self/smaps_rollup`. GPU memory (KGSL, Mali, dmabuf) is mostly outside it; on Adreno most of it is in `fileBackedBytes` instead |
-| `fileBackedBytes` | null: not read on iOS or macOS yet | `Private_Clean + Shared_Clean` from `/proc/self/smaps_rollup`: resident clean pages (mapped files on a CPU backend, plus GPU driver buffers on some GPU backends, see below). Counts shared pages in full |
-| `anonymousPeakBytes` | `ledger_phys_footprint_peak` from the same `task_info` reply: the highest `phys_footprint` since the process started (a lifetime mark, never reset) | null: the kernel keeps no anonymous-only peak |
-| `availableBytes` | iOS: `os_proc_available_memory()`, headroom before **this app** hits its limit; null on macOS, which has no per-app limit | `MemAvailable` from `/proc/meminfo`: available on **the whole device**, an optimistic upper bound |
+| Field | iOS and macOS | Android and Linux | Windows |
+|---|---|---|---|
+| `anonymousBytes` | `phys_footprint` from `task_info(TASK_VM_INFO)`: on iOS the value jetsam enforces, including IOKit/GPU (Metal) allocations and compressed memory; on macOS the figure Activity Monitor calls "Memory", with no kill limit behind it | `Private_Dirty + SwapPss` from `/proc/self/smaps_rollup`. GPU memory (KGSL, Mali, dmabuf) is mostly outside it; on Adreno most of it is in `fileBackedBytes` instead. On desktop Linux GPU memory is in neither field (see below) | `PagefileUsage` of `K32GetProcessMemoryInfo`, the commit charge (Microsoft documents it as `PrivateUsage`): private memory the process owns, resident, compressed or paged out. Counted when allocated, not when touched, so it reads higher than the other platforms' figures (see below) |
+| `fileBackedBytes` | null: not read on iOS or macOS yet | `Private_Clean + Shared_Clean` from `/proc/self/smaps_rollup`: resident clean pages (mapped files on a CPU backend, plus GPU driver buffers on some GPU backends, see below). Counts shared pages in full | `WorkingSetSize − PrivateWorkingSetSize`: the shareable working set, every resident page that is not private: mapped files and DLL pages, and modified shared pages too. Null on a Windows that does not fill the extended struct |
+| `anonymousPeakBytes` | `ledger_phys_footprint_peak` from the same `task_info` reply: the highest `phys_footprint` since the process started (a lifetime mark, never reset) | null: the kernel keeps no anonymous-only peak | `PeakPagefileUsage`: the highest commit since the process started (a lifetime mark, never reset) |
+| `availableBytes` | iOS: `os_proc_available_memory()`, headroom before **this app** hits its limit; null on macOS, which has no per-app limit | `MemAvailable` from `/proc/meminfo`: available on **the whole device or machine**, an optimistic upper bound. On Linux it ignores a cgroup `memory.max` | `ullAvailPhys` from `GlobalMemoryStatusEx`: physical memory available on **the whole machine**, not this app's headroom: Windows does not kill for low memory, and an allocation fails at the commit limit instead (see below) |
 
-On Android, clean does not mean exclusively file-backed. `Private_Clean` can include anonymous pages read back from zram and not written since, and `MADV_FREE` pages. On zram's skip-swapcache path, a page can lose its swap slot and leave `SwapPss`. Loading a model under memory pressure can therefore move cold heap memory from `anonymousBytes` into `fileBackedBytes`; the delta is not an exact count of mapped weights.
+On Android and Linux, clean does not mean exclusively file-backed. `Private_Clean` can include anonymous pages read back from swap (zram on Android) and not written since, and `MADV_FREE` pages. On zram's skip-swapcache path, a page can lose its swap slot and leave `SwapPss`. Loading a model under memory pressure can therefore move cold heap memory from `anonymousBytes` into `fileBackedBytes`; the delta is not an exact count of mapped weights. On Linux 7.0, 512 MiB swapped out and read back showed as 512 MiB of `Private_Clean` with `Swap` 0.
+
+**Windows commit.** `anonymousBytes` is the commit charge: memory is counted when it is allocated, not when it is touched, so it reads higher than the resident figure and is not comparable with the other platforms. On one machine (i5-12450H, Windows 11 build 26200, debug build of the example) a FunctionGemma 270M `.litertlm` (284 MB) on the CPU raised commit by 389 to 392 MiB at load and 527 to 531 MiB after the first prompt (three fresh processes each), while the private working set rose by 102 to 105 and 225 to 229 MiB. About three quarters of the commit therefore arrives at load. The resident figures are the other way round: slightly more than half of the private working set (about 55%) arrives with the first prompt, and on the CPU the weights are mapped at load (`fileBackedBytes` 113 MiB before the load, 138 MiB after it) and faulted in by the prompt (402 MiB after the prompt). ORT-GenAI's weights landed in the private working set instead (Phi-3.5-mini after a prompt: 3,302 MiB private working set and 194 MiB file-backed, absolute values). On the GPU (RTX 3050) the load raised commit by 1,075 to 1,083 MiB.
+
+**Windows commit after a GPU model is closed.** It falls with a delay. On the RTX 3050 machine (FunctionGemma 270M, debug build, two runs of four load/close cycles per process; [#749](https://github.com/DenisovAV/flutter_edge_ai/issues/749)), commit stayed about 360 MiB above its start for about 2 s after `close()` returned and stopped falling by about 8 s, leaving about 65 MiB after the first cycle in a process and at most about 16 MiB after later cycles. That machine settled by 8 s; elsewhere, read it until it stops falling before you compare. Trimming the working set (`EmptyWorkingSet`) emptied the private working set but left commit unchanged, and minimizing the window changed nothing without memory pressure; what it does under pressure is not measured.
+
+**Windows GPU memory.** How much of a GPU model's memory the snapshot holds is not measured: the GPU load raised commit by about 1,080 MiB against about 390 on the CPU, so part of it may be in `anonymousBytes`. `gpuMemory()` returns null on Windows: DXGI `QueryVideoMemoryInfo` is not read yet. The RTX 3050 run above peaked at 505 to 511 MiB of per-adapter `\GPU Process Memory`, which includes the app window's own.
+
+**Linux GPU memory.** On desktop Linux, GPU memory is in neither field. On an integrated GPU it is still system RAM that the snapshot does not show: FunctionGemma 270M cost 700 to 835 MiB of Intel `drm-resident-system0` (from `/proc/self/fdinfo`) while its device mappings were 0 MiB. `gpuMemory()` returns null on Linux.
 
 **GPU backends.** On a GPU backend on Adreno, the driver's buffers are mapped through `/dev/kgsl-3d0` and are mostly clean pages, so they are counted here too. In one run on the vivo 1933 (Adreno 616, kernel 4.9) a Gemma 4 E2B GPU load raised that mapping from 6 to 981 MiB (988 after one prompt), matching `dumpsys meminfo`'s Gfx dev (989 MiB); about 115 MiB of it was dirty, which is in `anonymousBytes`, and all file mappings together (model, libraries, others) were about 260 MiB (Pss). With a GPU backend `fileBackedBytes` is therefore not a model-file figure: compare with a run of the same app on CPU, or subtract `GpuMemoryReading.inFileBackedBytes` from `FlutterEdgeAiDiagnostics.gpuMemory()` (experimental, see below). One device and one run each; other GPU drivers (Mali) were not measured.
 
@@ -103,11 +112,21 @@ The platforms enforce memory differently, and the numbers reflect it:
   `anonymousBytes` is what the app holds, not a kill threshold — and a model on
   the GPU backend looks cheaper than it is, because GPU memory is mostly not in
   it.
+- **Linux** has no per-app limit either; the OOM killer acts on machine-wide
+  (or cgroup) pressure. `anonymousBytes` is what the app holds, not a kill
+  threshold.
+- **Windows** does not kill a process when RAM runs low. An allocation fails
+  once the machine's commit reaches the commit limit (RAM plus the page files),
+  not when RAM runs out. `anonymousBytes` is what the app has committed.
+  `availableBytes` is machine-wide physical memory, not that headroom: the
+  headroom is `ullAvailPageFile` of the same call, "the maximum amount of memory
+  the current process can commit" per Microsoft, which this package does not
+  read.
 
 ## Measure what a model costs
 
 Take a snapshot before loading, after loading, and a few times during
-generation. On Android, neither process counter alone measures the model's
+generation. On Android and Linux, neither process counter alone measures the model's
 entire memory cost.
 
 ```dart
@@ -135,7 +154,8 @@ Future<InferenceModel> loadAndMeasure() async {
 On Android a snapshot walks the process's page tables: the reads are
 asynchronous, so they do not block the isolate, but one costs about 150 ms on a
 low-end device (and before Linux 5.10 it stalls the process's mmap calls). On iOS
-it is a microsecond Mach call. Either way, sample during generation on a timer
+it is a Mach call that takes microseconds, and on Windows two `kernel32` calls
+(not timed: no measurement is recorded). Either way, sample during generation on a timer
 (at most once a second) rather than every so many chunks, and never on every
 frame.
 
@@ -151,14 +171,14 @@ you support and treat `availableBytes` as a best case.
 ## Null versus an exception
 
 - **A null field** means the value is not reported on this platform or OS version:
-  - `anonymousBytes` and `fileBackedBytes` on an Android kernel without
+  - `anonymousBytes` and `fileBackedBytes` on an Android or Linux kernel without
     `/proc/self/smaps_rollup`. Mainline Linux added it in 4.14, but vendor
     kernels may backport it;
-  - `fileBackedBytes` on iOS and macOS: the package does not read a corresponding value yet;
-  - `anonymousPeakBytes` on Android, always (the kernel keeps no anonymous-only
+  - `fileBackedBytes` on iOS and macOS: the package does not read a corresponding value yet, and on a Windows that does not fill `PrivateWorkingSetSize` (the extended struct; not tested on one);
+  - `anonymousPeakBytes` on Android and Linux, always (the kernel keeps no anonymous-only
     peak), and on an iOS or macOS version whose `task_info` reply predates the
     field;
-  - `gpuMemory()` returns null when the device has no reader: always on iOS and macOS, and on an Android phone with no `/dev/kgsl-3d0` (a Mali GPU, for one; not measured; see GPU memory). On an Adreno phone it returns zeros before the process has used the GPU;
+  - `gpuMemory()` returns null when the device has no reader: always on iOS, macOS, Linux and Windows, and on an Android phone with no `/dev/kgsl-3d0` (a Mali GPU, for one; not measured; see GPU memory). On an Adreno phone it returns zeros before the process has used the GPU;
   - `availableBytes` on macOS, always: it has no per-app limit;
   - `availableBytes` on iOS when the call returns 0. Apple returns 0 both when
     no limit applies (the simulator) and when the limit is already exceeded, and
@@ -166,23 +186,45 @@ you support and treat `availableBytes` as a best case.
 - **`MemoryReadException`** means the value should exist and the read failed: a
   kernel error, a permission or I/O error, or a file that lacks a field it
   always carries (for `gpuMemory()`, a missing or unparseable
-  `/proc/self/smaps`). Do not turn it into zeros.
-- **`UnsupportedError`** is thrown by `memorySnapshot()` and `gpuMemory()` off Android, iOS and macOS,
+  `/proc/self/smaps`). On Linux this includes a confined app (a Snap under
+  AppArmor) that is refused `/proc/self/smaps_rollup`; on Windows, a
+  `K32GetProcessMemoryInfo` that fails with every struct size, a reply that
+  lacks a field every Windows writes, or one whose private working set is
+  larger than its working set. Do not turn it into zeros.
+- **`UnsupportedError`** is thrown by `memorySnapshot()` and `gpuMemory()` off Android, iOS, macOS, Linux and Windows,
   rather than returning empty values. Check `FlutterEdgeAiDiagnostics.isSupported`
   first.
 
+## Web
+
+On the web both calls throw `UnsupportedError`, because the browser does not
+expose the memory a model uses. On Chrome, neither `performance.memory`
+nor `performance.measureUserAgentSpecificMemory()` (which exists only on a
+cross-origin isolated page) counted a `WebAssembly.Memory` or a WebGPU buffer
+([#788](https://github.com/DenisovAV/flutter_edge_ai/issues/788)). An app that
+holds a `WebAssembly.Memory` can read its `buffer.byteLength`, but that is the
+size the memory has grown to: it never shrinks, so it does not fall when a model
+closes, and an engine's own memory is usually inside its module, out of the app's
+reach. GPU memory is not observable from a page.
+
 ## Platforms
 
-Android, iOS and macOS. Everything is read through `dart:io` and `dart:ffi`, so the
-package has no Kotlin, Swift, Gradle or podspec.
+Android, iOS, macOS, Linux and Windows. Everything is read through `dart:io` and `dart:ffi`, so the
+package has no Kotlin, Swift, Gradle, podspec or CMake.
 
 Verified by writing 256 MiB and checking that `anonymousBytes` moves by that
 amount: vivo 1933 (Android 11), Pixel 8a (Android 15), Galaxy A34 (Android 16)
 and the iPhone 17 Pro simulator (iOS 26.5). These are earlier allocation checks.
 The Linux host test writes and flushes a 64 MiB file on the checkout's
 filesystem, then maps and reads it: `fileBackedBytes` rises without a comparable
-rise in `anonymousBytes`. The Android integration test checks the field is
-positive.
+rise in `anonymousBytes`. The Android and Linux integration tests check the field is
+positive. The Windows tests decode hand-built replies on every host (the
+sentinel that tells a field the OS did not write from a small value, the
+fallback from the extended struct to the basic one, a failed call), and on a
+`windows-latest` runner a host group reads `kernel32`, checks that commit
+follows an allocation that is not touched and that the peak stays up after a
+commit is released, and asserts `fileBackedBytes` is not null. The example
+app's integration test asserts the field is positive on Windows too.
 
 With version 0.2.2 on vivo 1933 (Android 11, kernel 4.9), the opt-in Gemma 4 E2B test measured `fileBackedBytes` in MiB:
 
@@ -193,7 +235,7 @@ With version 0.2.2 on vivo 1933 (Android 11, kernel 4.9), the opt-in Gemma 4 E2B
 
 At load and after the prompt, `Private_Clean + Shared_Clean − (Rss − Anonymous)` was negative on both backends. This gives no positive lower bound for clean anonymous pages in this run; it does not establish their absence. Values depend on the device and what pages were already resident.
 
-`gpuMemory()` is experimental and Adreno-only; a Mali reading, GPU memory on iOS and macOS, and `fileBackedBytes` on iOS from `TASK_VM_INFO.external`, are not done.
+`gpuMemory()` is experimental and Adreno-only; a Mali reading, GPU memory on iOS, macOS, Linux and Windows (DXGI `QueryVideoMemoryInfo`), and `fileBackedBytes` on iOS from `TASK_VM_INFO.external`, are not done.
 
 ## GPU memory (experimental)
 
@@ -206,7 +248,7 @@ At load and after the prompt, `Private_Clean + Shared_Clean − (Rss − Anonymo
 | `outsideSnapshotBytes` | GPU memory held for the process without a mapping in it. Always null in this version: the per-process counters under `/sys/class/kgsl` are closed to an app on the two devices tried (a vivo 1933 and a Galaxy S26+), and `page_alloc` there counts the whole device |
 
 - **What it covers.** Only the Adreno memory that is mapped into the process. On a vivo 1933 with FunctionGemma 270M on the GPU, `dumpsys meminfo` listed Gfx dev 363,080 kB, GL mtrack 365,960 kB and Graphics 749,592 kB, and the reading was 363,080 kB (340,736 dirty + 22,344 clean): about half of Graphics. A leak in GPU buffers the process never maps would not show here. Whether GL mtrack counts the same pages again was not determined.
-- **When it is null.** The device has no reader: iOS and macOS always (not read yet: `task_vm_info.ledger_tag_graphics_footprint` and `MTLDevice.currentAllocatedSize` exist, and Apple's GPU memory is already inside `phys_footprint`), and an Android phone with no `/dev/kgsl-3d0` (a Mali GPU, for one; `File('/dev/mali0').existsSync()` is false on the Adreno phones tried, a Mali phone was not tried). On an Adreno phone it is never null: a process that has not used the GPU yet (a headless engine, a background isolate, a read before the first frame) gets zeros, because `File('/dev/kgsl-3d0').existsSync()` is true from an app on a vivo 1933 and a Galaxy S26+ (`typeSync` and `statSync` say not found, so the code uses `existsSync`). Off Android, iOS and macOS it throws `UnsupportedError`.
+- **When it is null.** The device has no reader: iOS, macOS, Linux and Windows always (Windows not read yet: DXGI `QueryVideoMemoryInfo` is the follow-up; iOS and macOS not read yet: `task_vm_info.ledger_tag_graphics_footprint` and `MTLDevice.currentAllocatedSize` exist, and Apple's GPU memory is already inside `phys_footprint`), and an Android phone with no `/dev/kgsl-3d0` (a Mali GPU, for one; `File('/dev/mali0').existsSync()` is false on the Adreno phones tried, a Mali phone was not tried). On an Adreno phone it is never null: a process that has not used the GPU yet (a headless engine, a background isolate, a read before the first frame) gets zeros, because `File('/dev/kgsl-3d0').existsSync()` is true from an app on a vivo 1933 and a Galaxy S26+ (`typeSync` and `statSync` say not found, so the code uses `existsSync`). Off Android, iOS, macOS, Linux and Windows it throws `UnsupportedError`; on Linux and Windows it returns null and the kgsl reader is never enabled.
 - **How it is read.** `/proc/self/smaps`, matching `kgsl-3d0` anywhere in a mapping's name, as AOSP's libmeminfo does, so the `/kgsl-3d0` name that some kernels may use is covered (AOSP added it for kernel 6.6); a 6.12 Galaxy S26+ still uses `/dev/kgsl-3d0`, and no device with the shorter name was tried. The file is read as Latin-1, and malformed input, or a missing `smaps` (it exists on every Android kernel), throws `MemoryReadException` instead of giving a number.
 - **Cost.** The kernel builds per-mapping `smaps` mapping by mapping while holding the process's `mmap_lock`, so it can stall the process's other `mmap` calls, on every kernel; do not call it per frame or per token. On the vivo it took about 0.2 s before a model was loaded and 0.3 to 0.4 s with one on the GPU (3,300 and 4,200 mappings, screen on). The file is read asynchronously, but decoding and scanning it run on the calling isolate.
 - **A reading, not a delta.** It includes what the app's own rendering maps (about 6 MiB in a Flutter app). Take one before loading a model and subtract.

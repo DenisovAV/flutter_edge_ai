@@ -1,0 +1,23 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-08",
+  "host": "android_arm64",
+  "device": "Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), Android 17",
+  "commit": "a47c791a5c5809330a51f5b9664cf69a5964b22d",
+  "packages": {
+    "flutter_edge_ai": "2.6.0",
+    "flutter_edge_ai_litertlm": "1.20.0",
+    "flutter_edge_ai_speech": "0.6.0"
+  },
+  "native": "3660edae145e82a68b09860f1120d290032945715ccd361302f768cde689b99e",
+  "log_sha256": null,
+  "log_url": null,
+  "log_location": "DDP report retained at /Users/sasha/.bb/thread-storage/thr_edy6b6bk9u/camp-final-ddp-4/report.md; raw logs were under /Users/sasha/Work/.scratch/fea-final-ddp3",
+  "cells": {
+    "gemma-4-e2b-it/npu-tensor-g6": {
+      "npu": [
+        "deterministic text"
+      ]
+    }
+  }
+}

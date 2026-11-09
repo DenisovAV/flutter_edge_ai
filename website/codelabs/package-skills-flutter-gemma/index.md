@@ -121,12 +121,13 @@ It shows one line of text and nothing else. That is the whole app:
   They are here so that when the assistant's code fails, it is the code — not a
   missing entitlement that looks the same from outside.
 
-One macOS caveat carries over from Getting Started: Flutter 3.44+ uses Swift
-Package Manager by default, an app with no CocoaPods plugin gets no
-`macos/Podfile`, the `post_install` block never runs, and the first model load
-fails. The starter's `pubspec.yaml` already sets
-`flutter: config: enable-swift-package-manager: false`; if your assistant
-scaffolds a fresh app, make sure it keeps those lines and the Podfile block.
+One macOS caveat carries over from Getting Started: the starter turns Swift
+Package Manager off in `pubspec.yaml`
+(`flutter: config: enable-swift-package-manager: false`), so it needs the
+`post_install` block in `macos/Podfile`, or the first model load fails. If your
+assistant scaffolds a fresh app instead, it can keep Swift Package Manager on:
+from `flutter_edge_ai_litertlm` 1.19.0 that app needs only a macOS 14.0
+deployment target, no Podfile block.
 
 A clean run on your platform is all this step asks for.
 
@@ -364,7 +365,7 @@ handle this model"*: the only engine you registered does not handle `.task`.
 
 ```dart
 final inference = await FlutterEdgeAi.getActiveModel(maxTokens: 1024);
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   modelType: widget.model.modelType,
   maxOutputTokens: 256,
 );
@@ -424,7 +425,7 @@ mauvish"* — because item 4 below is about what happens then.
 **1. The chat is told it may call functions.**
 
 ```dart
-final chat = await inference.createChat(
+final chat = await inference.openChat(
   tools: const [ColorTool.declaration],
   supportsFunctionCalls: true,
   modelType: widget.model.modelType,
@@ -573,7 +574,7 @@ works for each:
 * **transcribe and speak** — `flutter-edge-ai-speech`
 * **use the model the OS already has** — `flutter-edge-ai-builtin-ai`
 * **pick one of N options, or say "none of these"** — `flutter-edge-ai-decisions`
-* **measure process memory on Android, iOS and macOS** — `flutter-edge-ai-diagnostics`
+* **measure process memory on Android, iOS, macOS, Linux and Windows** — `flutter-edge-ai-diagnostics`
 * **run `.task` or ONNX models** — `flutter-edge-ai-mediapipe`,
   `flutter-edge-ai-onnx`
 
@@ -584,3 +585,7 @@ works for each:
   command
 * [The Agent Skills format](https://agentskills.io)
 * [This codelab's code](https://github.com/DenisovAV/flutter_edge_ai/tree/main/codelabs/package-skills-flutter-gemma)
+
+## Share what you built
+
+Finished the codelab or turned it into something of your own? [Submit your project to the Flutter Edge AI showcase](https://flutteredge.ai/showcase/submit) so the community can discover it.

@@ -4,4 +4,6 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- tool/verify_embeddings.py: loopback HTTP for the host-served fixture. -->
+    <application android:networkSecurityConfig="@xml/network_security_config"/>
 </manifest>

@@ -3,12 +3,11 @@
 Start with the [chat quick start](../README.md). This guide
 covers model-specific features and session behavior.
 
-`createSession`/`createChat` replace and close the previous legacy session.
 `openSession`/`openChat` keep independent conversations over the same weights.
 Inference and tokenization share one serialized runtime queue; sessions do not
 run inference in parallel or allocate separate native KV caches.
-`maxConcurrentSessions` limits detached sessions. Closing a model closes all
-of its sessions.
+`maxConcurrentSessions` limits live sessions. Close every returned handle;
+closing a model closes all of its sessions.
 
 The chat examples below assume an already loaded `model`, as in the quick start.
 Keep it open while using a chat and close it when your feature ends.
@@ -62,10 +61,66 @@ Calls commit before being delivered; all
 calls must be answered before the next generation.
 
 Thinking deltas become `ThinkingResponse` only when `enableThinking` is true.
-The model can ignore the thinking switch; hidden reasoning still consumes
-runtime/output budget. The low-level String session methods return answer text
-and JSON tool calls; use the chat `generateChatResponseAsync()` API for typed thinking and tools. The synchronous chat response follows Edge AI's
+String session methods omit typed reasoning with either flag value; use chat
+`generateChatResponseAsync()` for typed thinking and tools. With thinking off,
+the connector hides SDK reasoning-channel deltas. From 0.0.6
+(llamadart 0.17.5), the SDK can classify new `<think>` blocks as content after a
+prompt-ending empty thought. For affected Hermes, DeepSeek V3 and Qwen3 Coder XML
+templates, the adapter also hides consecutive leading thought blocks across
+stream chunks, preserving the earlier thinking-off behavior. Templates without
+that empty-thought ending are unaffected. Later literal tags and structured
+tool arguments remain unchanged. Unmarked reasoning cannot be detected, and
+the model can ignore the switch; hidden reasoning still consumes runtime/output
+budget. Thinking off therefore does not guarantee reasoning-free content.
+The synchronous chat response follows Edge AI's
 single-response API: it returns a call group when present, otherwise joined text.
+
+## Response formats
+
+`openSession(responseFormat:)` and `openChat(responseFormat:)` make every reply
+a JSON value of a core `ResponseFormat`. The connector sends the schema to
+llamadart as a strict `json_schema` (with the format's `name`, if any), whose
+grammar constrains decoding, with thinking off; core then checks each reply and
+throws `IncompleteStructuredOutputException` or
+`NonConformingStructuredOutputException`. A format is enforced only where a
+discriminating run passed: macOS arm64 on CPU and Metal, and Chrome on macOS
+running a dart2wasm build on WebGPU (not llama.cpp's WebAssembly CPU runtime, a
+dart2js build, another browser or another operating system).
+Elsewhere, and on a model whose device the runtime does not report,
+`structuredOutputSupport` is `none` and `openSession` throws
+`ResponseFormatUnsupportedException`.
+
+Within core's dialect, llamadart 0.17.5's converter refuses `minimum`/`maximum`
+on a `number`, a one-sided integer bound it cannot build (`minimum: 105`), a
+length or item bound above 2000, an `enum` or `const` beside another assertion,
+and an `enum`/`const` value of another type than `type`. `refusalFor` returns
+these with the keyword's JSON Pointer before a session opens.
+
+```dart
+final chat = await model.openChat(
+  responseFormat: ResponseFormat.jsonSchema({
+    'type': 'object',
+    'properties': {
+      'city': {'type': 'string'},
+      'days': {'type': 'integer', 'minimum': 1, 'maximum': 7},
+    },
+    'required': ['city', 'days'],
+    'additionalProperties': false,
+  }, name: 'forecast_request'),
+);
+```
+
+A structured turn that streamed a reply is recorded in the session's history
+whatever its end, as core records the reply before it checks it: a turn cut by
+`maxOutputTokens`, the context, a stop or a close ends with that reply in the
+history. A turn with no reply (stopped before its first token) is not
+recorded. An input that does not fit the context fails the turn with a
+`ContextLimitException`, on plain and structured sessions alike, and nothing of
+that turn is kept. A chat's structured turns drop
+the oldest turns for `tokenBuffer` before the turn, as plain ones do, and
+again after the reply until the kept history is under `maxTokens -
+tokenBuffer`, so the chat does not rebuild its session every turn once the
+context is full.
 
 ## Images, audio and LoRA
 
@@ -103,7 +158,8 @@ Installed and per-session Web adapters are rejected explicitly.
 Core restores the model and its paired LoRA after restart. If the adapter is
 missing, it restores neither rather than silently loading the base model.
 GGUF adapter filenames use `model__adapter.gguf`. Typed tool history was added
-in core 2.4.0; this connector now requires core 2.5.0 for its embedding SPI.
+in core 2.4.0 and the embedding SPI in 2.5.0; connector 0.1.0 requires core
+2.6.0 for response formats and the session SPI.
 
 ## Compatibility boundaries
 
@@ -174,11 +230,11 @@ replacement cancels that turn; an invalid tool declaration leaves it usable. GLM
 subset; schemas requiring richer constraints fail explicitly for those grammars.
 Other formats retain the full schema. If any tool cannot be represented as typed
 parameters, the entire set omits that typed view so shared XML grammars do not
-lose argument names. The adapter keeps its schema bridge: llamadart 0.15.1's
-`ToolDefinition.fromJsonSchema` supports a
-narrower set of formats and would reject XML tools. XML nullable-string decoding is a separate SDK limitation; nullable
-string arguments can come back as text instead of calls. Use scalar string
-properties for those models until the SDK parser is fixed.
+lose argument names. The adapter keeps its schema bridge: llamadart 0.17.5's
+`ToolDefinition.fromJsonSchema` supports a narrower set of formats and rejects
+formats such as Qwen3 Coder XML. XML nullable-string decoding is a separate SDK
+limitation; nullable string arguments can come back as text instead of calls.
+Use scalar string properties for those models until the SDK parser is fixed.
 
 The connector rejects a loaded context smaller than requested; request a smaller
 `maxTokens` explicitly rather than relying on a silent Web fallback. A fatal SDK

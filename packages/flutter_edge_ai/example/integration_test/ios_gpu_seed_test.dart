@@ -39,7 +39,7 @@ void main() {
     );
 
     Future<String> runOnce(int seed) async {
-      final session = await model.createSession(
+      final session = await model.openSession(
         temperature: 1.0,
         topK: 50,
         topP: 0.95,

@@ -1,6 +1,8 @@
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 
+import 'catalog/litert_catalog.dart' show LiteRtLmModels;
+
 import 'dart:async';
 import 'dart:io' show FileSystemException;
 
@@ -12,10 +14,13 @@ import 'ffi/ffi_inference_model.dart';
 import 'litertlm_decision_section.dart';
 import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_vendor_host.dart';
+import 'ffi/open_session_backing.dart';
+import 'ffi/structured_output_support.dart';
 import 'litert_lm_engine_host.dart';
 import 'litert_lm_log_level.dart';
 import 'litertlm_bundle_activation.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
+import 'thinking_token_budget.dart';
 
 /// Minimum context window (`max_num_tokens`) for `.litertlm` models.
 ///
@@ -45,17 +50,25 @@ const int kMinLitertlmContextTokens = 1024;
 /// dropped — the model answers from chunk 0 alone, with no error. With 4
 /// attention heads per KV head that puts the largest working `cache_length` at
 /// prefill 128 at **896** (LiteRT-LM#3508). That limit is set when the bundle
-/// is built, not by `maxTokens`: LiteRT-LM's NPU executor (v0.18.0,
+/// is built, not by `maxTokens`. LiteRT-LM's NPU executor (v0.18.0,
 /// `DetermineMaxSequenceLengthStaticModel`) lowers a larger value to the
-/// compiled limit of a bundle with a static KV cache, with a warning, so
-/// raising 896 to 1024 would not break it. Garbled Qwen3 output on the NPU is
-/// a different bug (LiteRT-LM#3846). The floor is skipped on NPU because it is
-/// a CPU/GPU fact: the caller's number is passed through untouched, since the
-/// context is a property of the bundle and only the caller knows it.
+/// bundle's `LlmMetadata.max_num_tokens` when it sets one, and to the KV-cache
+/// length read from the graph only when it does not; nothing compares the two
+/// (LiteRT-LM#4184). So a value above the cache is lowered to it only when the
+/// metadata says the cache length or nothing, which litert-torch writes by
+/// default; with metadata above the cache, a context past the cache fails at
+/// the KV-cache update or is not checked (from the code, not run on a device).
+/// Garbled Qwen3 output on the NPU is a different bug (LiteRT-LM#3846). The
+/// floor is skipped on NPU because it is a CPU/GPU fact: the caller's number
+/// is passed through untouched, since the context is a property of the bundle
+/// and only the caller knows it.
 ///
-/// Pass the backend of the ATTEMPT, not the one the caller asked for. A
-/// requested NPU falls back npu -> gpu -> cpu, and the floor still has to apply
-/// to the two that follow.
+/// Pass the backend of the ATTEMPT, not the one the caller asked for. The load
+/// plan (`planLiteRtLmLoad`) tries a bundle compiled for an NPU on the NPU
+/// alone and a generic bundle never on the NPU, so a requested NPU becomes GPU
+/// and CPU attempts for a generic bundle, and npu -> gpu -> cpu only for a
+/// file the plan cannot read (a `.task`, a newer container); the floor has to
+/// apply to every GPU and CPU attempt.
 @visibleForTesting
 int clampLitertlmContextTokens(
   int maxTokens, {
@@ -128,11 +141,17 @@ class LiteRtLmEngine
     implements
         InferenceEngineProvider,
         HuggingFaceResolverSource,
+        ModelCatalogSource,
         MultiModelEngine {
-  const LiteRtLmEngine({this.backendFallback = true, this.nativeLogLevel});
+  const LiteRtLmEngine({
+    this.backendFallback = true,
+    this.nativeLogLevel,
+    this.thinkingTokenBudget,
+  });
 
   /// Whether a model that fails to load on its backend is tried on the next
-  /// one: npu → gpu → cpu, gpu → cpu (the default).
+  /// one the model file allows: npu → gpu → cpu, gpu → cpu (the default). A
+  /// generic bundle is never tried on the NPU, so `npu` starts at the GPU.
   ///
   /// With false, a load makes exactly one attempt — on `preferredBackend`, or
   /// on the GPU when none is given — and a failure throws a
@@ -157,6 +176,37 @@ class LiteRtLmEngine
   /// failed create names the backend a model requires.
   final LiteRtLmLogLevel? nativeLogLevel;
 
+  /// The most tokens one generation may spend thinking, in every model this
+  /// engine builds, on the CPU, the GPU and the NPU alike; null (the default)
+  /// sets no budget. It applies only with thinking on (`enableThinking:
+  /// true`): when the thinking reaches the budget, LiteRT-LM closes the
+  /// thought channel and the model goes on to the answer or the tool call.
+  /// Without one, a model can think until `maxOutputTokens` and end the turn
+  /// with an empty answer. A model that reasons with thinking off too (Qwen3
+  /// 4B Thinking 2507) is not capped then: LiteRT-LM applies a budget only to
+  /// a generation with thinking on.
+  ///
+  /// The budget is per generation: every send with thinking on carries it,
+  /// so in a tool loop a generation after a tool result has its own. The
+  /// thinking counts towards `maxOutputTokens`, and the reply, with the
+  /// prompt and the history, towards the context (`maxTokens`, 1024 by
+  /// default), so a budget that can act is below both, with room left for
+  /// the answer. LiteRT-LM caps the first channel the bundle declares
+  /// (`thought` on the Gemma 4 bundles); a bundle that declares none is not
+  /// capped, and loading one with a budget prints a warning. On the GPU it
+  /// slows the decoding of the whole generation (Gemma 4 E2B: about a fifth
+  /// on an M5 Pro, about 40% on an NVIDIA L4); on the CPU no cost was
+  /// measured.
+  ///
+  /// It is fixed when the engine is registered: a second `LiteRtLmEngine`
+  /// with another budget does not replace the first. To change it, close the
+  /// model, call `FlutterEdgeAi.reset()`, which drops every registration, and
+  /// `initialize` again with every provider the app uses. Between 1 and
+  /// 0x7fffffff: a value outside throws [ArgumentError] when a model loads.
+  /// The web engine accepts it and ignores it: its runtime has no such
+  /// setting.
+  final int? thinkingTokenBudget;
+
   @override
   String get name => 'LiteRT-LM';
 
@@ -166,6 +216,12 @@ class LiteRtLmEngine
   @override
   bool canHandle(InferenceModelSpec spec) =>
       spec.fileType == ModelFileType.litertlm;
+
+  /// The LLMs this engine runs, pinned to Hugging Face commits:
+  /// [LiteRtLmModels.catalog]. `FlutterEdgeAi.catalog` includes it once the
+  /// engine is passed to `initialize`.
+  @override
+  ModelCatalog get modelCatalog => LiteRtLmModels.catalog;
 
   /// The engine's own Hugging Face resolver: reads a repo's
   /// `litertlm_manifest.json`. Auto-registered by
@@ -182,6 +238,7 @@ class LiteRtLmEngine
     InferenceModelSpec spec,
     RuntimeConfig config,
   ) async {
+    checkThinkingTokenBudget(thinkingTokenBudget);
     final host = liteRtLmEngineHost;
     final cacheDir = await host.cacheDir();
 
@@ -306,11 +363,12 @@ class LiteRtLmEngine
           visionBackend: plan.visionBackend,
           audioBackend: plan.audioBackend,
         );
-        // Per ATTEMPT, not per request: a requested NPU falls back npu -> gpu
-        // -> cpu (`ffiBackendFallbackOrder`), and the floor this skips exists
-        // for the two it falls back to. Computing it once from the REQUESTED
-        // backend would hand an unclamped NPU-sized context to the CPU engine
-        // that follows, which is the #318 crash.
+        // Per ATTEMPT, not per request: a requested NPU runs as GPU and CPU
+        // attempts for a generic bundle, and as npu -> gpu -> cpu for a file
+        // the plan cannot read (`plan.textBackends`), and the floor this
+        // skips exists for those. Computing it once from the REQUESTED
+        // backend would hand an unclamped NPU-sized context to a CPU engine,
+        // which is the #318 crash.
         final maxTokens = clampLitertlmContextTokens(
           config.maxTokens,
           preferredBackend: backend,
@@ -346,6 +404,7 @@ class LiteRtLmEngine
             activationDataType: args.activationDataType,
             npuDispatch: npuDispatch,
             nativeLogLevel: nativeLogLevel,
+            thinkingTokenBudget: thinkingTokenBudget,
           );
         } on LiteRtLmEngineCreateException catch (e, stackTrace) {
           final target = plan.npuTarget;
@@ -383,6 +442,32 @@ class LiteRtLmEngine
     // Read with the model, so that a decider reads the file the engine
     // loaded; a file without a decision costs one header read.
     final decisionRead = await LitetuneDecisionRead.read(config.modelPath);
+    final linearAttentionState = await _readLinearAttentionState(
+      config.modelPath,
+    );
+    final openSessionBacking = liteRtLmOpenSessionBacking(
+      abi: host.abi,
+      backend: ffiRuntime.activeBackend,
+      npuVendor: switch (npu) {
+        NpuChosen(:final vendor) => vendor,
+        _ => null,
+      },
+      androidGpu: ffiRuntime.activeBackend == PreferredBackend.gpu
+          ? host.androidGpuFamily()
+          : null,
+    );
+    final npuVendor = switch (npu) {
+      NpuChosen(:final vendor) => vendor,
+      _ => null,
+    };
+    final androidGpu = ffiRuntime.activeBackend == PreferredBackend.gpu
+        ? host.androidGpuFamily()
+        : null;
+    edgeAiLog(
+      '[LiteRtLmEngine] open sessions: ${openSessionBacking.name} '
+      'conversations on ${ffiRuntime.activeBackend.name} (${host.abi})'
+      '; linear attention state: ${linearAttentionState ?? 'unread'}',
+    );
     return FfiInferenceModel(
       ffiClient: ffiRuntime.client,
       decisionRead: decisionRead,
@@ -402,8 +487,40 @@ class LiteRtLmEngine
       supportAudio: config.supportAudio,
       multimodalOrder: config.multimodalOrder,
       maxConcurrentSessions: config.maxConcurrentSessions,
+      openSessionBacking: openSessionBacking,
+      linearAttentionState: linearAttentionState,
+      structuredOutput: liteRtLmStructuredOutputSupport(
+        abi: host.abi,
+        backend: ffiRuntime.activeBackend,
+        npuVendor: npuVendor,
+        androidGpu: androidGpu,
+      ),
       onClose: () {}, // no-op: core resets its own state via addCloseListener
     );
+  }
+
+  /// Whether the model at [path] keeps linear attention state
+  /// ([readLiteRtLmHasLinearAttentionState]), or null when the file cannot be
+  /// read to tell. Then `createSession` rewinds as before and `openSession`
+  /// sessions are rebuilt from full messages, and the cause is printed once
+  /// per load:
+  /// it changes how a stopped turn is recovered.
+  static Future<bool?> _readLinearAttentionState(String path) async {
+    Object cause;
+    try {
+      return await readLiteRtLmHasLinearAttentionState(path);
+    } on LiteRtLmBundleException catch (e) {
+      cause = e;
+    } on FileSystemException catch (e) {
+      cause = e;
+    }
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] could not read whether this model keeps '
+      'linear attention state ($cause): its openSession sessions are rebuilt '
+      'from full messages after a stop or a full context, never rewound.',
+    );
+    return null;
   }
 
   /// [path]'s bundle info, or null when the file is not one this package

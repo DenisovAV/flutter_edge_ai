@@ -45,8 +45,8 @@ engines your app uses:
 
 ```
 dependencies:
-  flutter_edge_ai: latest_version
-  flutter_edge_ai_mediapipe: latest_version   # MediaPipe .task engine
+  flutter_edge_ai: ^2.6.0
+  flutter_edge_ai_mediapipe: ^1.3.0   # MediaPipe .task engine
 ```
 
 ```dart
@@ -80,9 +80,10 @@ await FlutterEdgeAi.installModel(
 ).fromNetwork('https://.../gemma3-1b-it.task').install();
 
 final model = await FlutterEdgeAi.getActiveModel(maxTokens: 4096);
-final session = await model.createSession();
+final session = await model.openSession();
 await session.addQueryChunk(const Message(text: 'Hello!', isUser: true));
 final response = await session.getResponse();
+await session.close();
 ```
 
 Models can also come from an asset, a bundled file, or a local path — see
@@ -96,18 +97,34 @@ bootstrap), exposing the symbols on `window`:
 
 ```
 <script type="module">
-import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.29';
+import { FilesetResolver, LlmInference } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-genai@0.10.30';
 window.FilesetResolver = FilesetResolver;
 window.LlmInference = LlmInference;
 </script>
 ```
 
-The pinned version is **`@mediapipe/tasks-genai@0.10.29`**. Web runs **GPU-only**:
+The pinned version is **`@mediapipe/tasks-genai@0.10.30`**. Web runs **GPU-only**:
 the web engine ignores `preferredBackend` and always runs on the browser's GPU
 (WebGPU). The model storage helpers (`cache_api.js`, `opfs_helper.js`) are
 needed as well — see [Installation → Web](/docs/installation#web).
 **Vision** works on Web with Gemma 4's `.task` web build; thinking mode
 (`extraContext`) is not available through MediaPipe on Web.
+
+MediaPipe on Web keeps nothing between calls, so the session sends the whole
+conversation, the model's replies included, with every turn. Each answer
+re-reads the history, so its time grows with the chat, and `maxNumImages`
+counts every image of the conversation. A turn that would exceed it fails with
+an error naming `maxNumImages`; nothing is dropped. Each `openSession` or
+`openChat` starts an independent conversation; close every returned handle.
+
+`openSession` and `openChat` work on Web too. Each session keeps its own
+conversation; they share the one loaded model and take turns on it, so a
+session's turn waits for the other sessions' turns for as long as they run,
+unless they are stopped (a wait past 30 s prints a warning once). They also
+share its sampling and LoRA: those of the session that loaded the model apply
+to every session, and a later session that asks for others gets a one-time
+warning. A stop, a close or a cancelled response stream ends only that
+session's turn.
 
 ## Backends
 
@@ -122,8 +139,10 @@ needed as well — see [Installation → Web](/docs/installation#web).
 > iPhone's 6655 MB per-process memory limit while loading (memory entitlements
 > present), and iOS terminated the app without a crash report;
 > `gemma-3n-E2B-it-int4.task` failed to initialize the GPU delegate. The same
-> Gemma 3 1B `.task` runs on CPU, and `gemma3-1b-it-int4.litertlm` runs on the
-> iPhone GPU through LiteRT-LM in under 1 GB.
+> Gemma 3 1B `.task` runs on CPU, and the same model as `.litertlm` runs on the
+> iPhone GPU through LiteRT-LM in under 1 GB (measured with
+> `gemma3-1b-it-int4.litertlm`, byte-identical to the registry's
+> [`Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm`](/docs/registry#gemma-3-1b-it)).
 
 Pass the backend when you open the model:
 

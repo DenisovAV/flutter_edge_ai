@@ -43,7 +43,7 @@ Future<String> _chat(
     maxNumImages: supportImage ? 1 : null,
     supportAudio: supportAudio,
   );
-  final session = await model.createSession(
+  final session = await model.openSession(
     temperature: 0.8,
     topK: 1,
     enableVisionModality: supportImage,

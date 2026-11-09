@@ -1,0 +1,34 @@
+{
+  "container_version": "1.6.0",
+  "size": 2969059328,
+  "npu_target": null,
+  "llm_metadata_max_num_tokens": null,
+  "system_metadata": {
+    "author": "The ODML Authors",
+    "uuid": "169deff4-c6be-4fbb-b484-f1ed05e285db",
+    "creation_timestamp": "2026-08-06T00:40:13.970685+00:00"
+  },
+  "sections": [
+    {
+      "data_type": "LlmMetadataProto",
+      "length": 12356
+    },
+    {
+      "data_type": "SP_Tokenizer",
+      "length": 4689013
+    },
+    {
+      "data_type": "TFLiteModel",
+      "model_type": "tf_lite_artisan_text_decoder",
+      "backend_constraint": [
+        "gpu_artisan"
+      ],
+      "length": 2964324352,
+      "items": {
+        "model_type": "tf_lite_artisan_text_decoder",
+        "backend_constraint": "gpu_artisan",
+        "gpu_artisan_weights_version": "0.0"
+      }
+    }
+  ]
+}

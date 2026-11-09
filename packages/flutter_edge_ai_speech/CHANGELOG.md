@@ -1,4 +1,4 @@
-## Unreleased
+## 0.6.1
 - Whisper/Parakeet log-mel: FFT replaces the direct DFT, ~35x faster; Moonshine unchanged (#784).
 
 ## 0.6.0

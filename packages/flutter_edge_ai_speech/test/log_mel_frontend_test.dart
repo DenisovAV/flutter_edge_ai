@@ -20,9 +20,9 @@ int _argmaxOf(List<double> values) {
 }
 
 /// The direct DFT that [powerSpectrum] replaced (#784), kept verbatim as the
-/// oracle: the Bluestein path must agree with it for every nFft the profiles
-/// use (whisper 400, parakeet 512). Deliberately the naive O(nFft^2) loop —
-/// an FFT checked against an FFT would prove nothing.
+/// oracle: the Bluestein path must agree with it for the nFft the profiles use
+/// (whisper 400, parakeet 512) and for others. Deliberately the naive
+/// O(nFft^2) loop — an FFT checked against an FFT would prove nothing.
 Float32List _directDftPowerSpectrum(Float32List windowedFrame, int nFft) {
   final nBins = nFft ~/ 2 + 1;
   final power = Float32List(nBins);
@@ -100,9 +100,9 @@ void main() {
     });
 
     test('rejects a frame that is not nFft long', () {
-      expect(() => powerSpectrum(Float32List(401), 400), throwsArgumentError);
-      expect(() => powerSpectrum(Float32List(399), 400), throwsArgumentError);
-      expect(() => powerSpectrum(Float32List(0), 0), throwsArgumentError);
+      expect(() => powerSpectrum(Float32List(401), 400), throwsStateError);
+      expect(() => powerSpectrum(Float32List(399), 400), throwsStateError);
+      expect(() => powerSpectrum(Float32List(0), 0), throwsStateError);
     });
 
     for (final nFft in [400, 512]) {
@@ -472,11 +472,18 @@ void main() {
       expect(actual, [0.75 + 0.75, 0.0, 5.25 + 11.0, 0.25 + 5.5]);
     });
 
+    // StateError, not ArgumentError: the STT worker reports an ArgumentError to
+    // the app as a bad transcribe argument. It also tells these refusals apart
+    // from the IndexError an unchecked read would throw (an ArgumentError).
     test('rejects a filterbank that is not nMels * nBins', () {
       final filters = loadMelFilterAsset('nemo_mel_80'); // 80 * 257
       expect(
         () => MelFilterSpans(filters, nMels: 80, nBins: 201),
-        throwsArgumentError,
+        throwsStateError,
+      );
+      expect(
+        () => MelFilterSpans(Float32List(0), nMels: 0, nBins: 257),
+        throwsStateError,
       );
       expect(
         () => MelFilterSpans(filters, nMels: 80, nBins: 257),
@@ -484,27 +491,35 @@ void main() {
       );
     });
 
-    test(
-      'apply rejects a wrong power length or an output that is too short',
-      () {
-        final spans = MelFilterSpans(
-          loadMelFilterAsset('nemo_mel_80'),
-          nMels: 80,
-          nBins: 257,
-        );
-        final out = Float32List(80);
-        expect(() => spans.apply(Float32List(256), out), throwsArgumentError);
+    test('apply rejects a wrong power length or output positions that do not '
+        'fit, before writing anything', () {
+      final spans = MelFilterSpans(
+        loadMelFilterAsset('nemo_mel_80'),
+        nMels: 80,
+        nBins: 257,
+      );
+      final ones = Float32List(257)..fillRange(0, 257, 1.0);
+      for (final (power, outLength, offset, stride) in [
+        (Float32List(256), 80, 0, 1),
+        (Float32List(258)..fillRange(0, 258, 1.0), 80, 0, 1),
+        (ones, 79, 0, 1),
+        (ones, 80, 1, 1),
+        (ones, 80, -1, 1),
+        (ones, 80, 0, 0),
+      ]) {
+        final out = Float32List(outLength)..fillRange(0, outLength, -1.0);
         expect(
-          () => spans.apply(Float32List(257), Float32List(79)),
-          throwsRangeError,
+          () => spans.apply(power, out, offset: offset, stride: stride),
+          throwsStateError,
+          reason: 'power ${power.length}, out $outLength, $offset/$stride',
         );
         expect(
-          () => spans.apply(Float32List(257), out, offset: 1),
-          throwsRangeError,
+          out.every((v) => v == -1.0),
+          isTrue,
+          reason: 'nothing written: power ${power.length}, out $outLength',
         );
-        expect(out.every((v) => v == 0.0), isTrue, reason: 'nothing written');
-      },
-    );
+      }
+    });
   });
 
   group('window caches', () {

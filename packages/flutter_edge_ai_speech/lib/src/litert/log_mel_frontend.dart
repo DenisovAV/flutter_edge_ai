@@ -13,7 +13,7 @@
 // because the profile zero-pads to a fixed 30 s window. See `powerSpectrum`'s
 // doc comment for the after numbers. The direct DFT now lives on only as the
 // oracle in test/log_mel_frontend_test.dart, which holds the FFT to it for
-// nFft in {400, 512}.
+// the profiles' 400 and 512 and for sizes no profile uses (1 to 1024).
 library;
 
 import 'dart:math' as math;
@@ -25,14 +25,14 @@ import 'dart:typed_data';
 ///
 /// The window is identical for every frame of a clip, so it is built once per
 /// length and cached: whisper's 3000 frames used to evaluate 1.2M cosines here.
-/// The cached list is shared, so it is read-only: a write throws instead of
-/// corrupting every later frame in the isolate.
+/// The cached list is shared and private: only [applyHannWindow] reads it, and
+/// nothing writes it.
 Float32List _periodicHann(int n) => _periodicHannWindows.putIfAbsent(n, () {
   final w = Float32List(n);
   for (var i = 0; i < n; i++) {
     w[i] = 0.5 - 0.5 * math.cos(2 * math.pi * i / n);
   }
-  return w.asUnmodifiableView();
+  return w;
 });
 
 final _periodicHannWindows = <int, Float32List>{};
@@ -62,10 +62,13 @@ Float32List applyHannWindow(Float32List frame) {
 /// (3000 frames, nFft=400) went from 5.2-5.6 s to 134-166 ms (about 35x);
 /// parakeet (500 frames, nFft=512) from 1.4-1.6 s to 23-29 ms (about 58x).
 Float32List powerSpectrum(Float32List windowedFrame, int nFft) {
+  // A StateError, not an ArgumentError, here and in MelFilterSpans: every size
+  // comes from the profile, never from transcribe's caller, and the STT worker
+  // reports an ArgumentError to the app as a bad transcribe argument.
   if (nFft < 1 || windowedFrame.length != nFft) {
-    throw ArgumentError(
-      'frame has ${windowedFrame.length} samples, expected nFft = $nFft',
-      'windowedFrame',
+    throw StateError(
+      'log-mel frontend: frame has ${windowedFrame.length} samples, '
+      'expected nFft = $nFft',
     );
   }
   final plan = _bluesteinPlanFor(nFft);
@@ -313,7 +316,7 @@ Float32List _applyNormalization(
 /// left-to-right order: for finite power, [apply] is bit-identical to the
 /// dense `nBins` loop.
 final class MelFilterSpans {
-  /// Throws [ArgumentError] unless [melFilters] is exactly `[nMels, nBins]`:
+  /// Throws [StateError] unless [melFilters] is exactly `[nMels, nBins]`:
   /// a filterbank built for another nFft would otherwise be read with the
   /// wrong row stride and give a plausible but wrong spectrogram.
   factory MelFilterSpans(
@@ -321,10 +324,16 @@ final class MelFilterSpans {
     required int nMels,
     required int nBins,
   }) {
-    if (nMels < 1 || nBins < 1 || melFilters.length != nMels * nBins) {
-      throw ArgumentError(
-        'mel filterbank has ${melFilters.length} entries, expected '
-        'nMels * nBins = $nMels * $nBins',
+    if (nMels < 1 || nBins < 1) {
+      throw StateError(
+        'log-mel frontend: nMels ($nMels) and nBins ($nBins) must be at '
+        'least 1',
+      );
+    }
+    if (melFilters.length != nMels * nBins) {
+      throw StateError(
+        'log-mel frontend: mel filterbank has ${melFilters.length} entries, '
+        'expected nMels * nBins = $nMels * $nBins',
       );
     }
     final starts = Int32List(nMels);
@@ -378,9 +387,9 @@ final class MelFilterSpans {
   int get multiplicationCount => _coefficients.length;
 
   /// Writes `sum_b melFilters[m][b] * power[b]` for every `m` into
-  /// `out[offset + m * stride]`. Throws [ArgumentError] when [power] is not
-  /// `nBins` long, and [RangeError] before writing anything when the output
-  /// positions do not fit [out].
+  /// `out[offset + m * stride]`. Throws [StateError] when [power] is not
+  /// `nBins` long, and before writing anything when the output positions do
+  /// not fit [out].
   void apply(
     Float32List power,
     Float32List out, {
@@ -388,17 +397,16 @@ final class MelFilterSpans {
     int stride = 1,
   }) {
     if (power.length != nBins) {
-      throw ArgumentError(
-        'power has ${power.length} bins, expected $nBins',
-        'power',
+      throw StateError(
+        'log-mel frontend: power has ${power.length} bins, expected $nBins',
       );
     }
     if (offset < 0 ||
         stride < 1 ||
         offset + (nMels - 1) * stride >= out.length) {
-      throw RangeError(
-        'mel outputs at $offset + m * $stride for m < $nMels do not fit '
-        'an output of ${out.length}',
+      throw StateError(
+        'log-mel frontend: mel outputs at $offset + m * $stride for '
+        'm < $nMels do not fit an output of ${out.length}',
       );
     }
     for (var m = 0; m < nMels; m++) {

@@ -56,7 +56,7 @@ changes help explain the model's memory cost, with the limits below.
 
 ```
 dependencies:
-  flutter_edge_ai_diagnostics: ^0.6.0
+  flutter_edge_ai_diagnostics: ^0.6.1
 ```
 
 This page describes 0.6.0, which adds Windows; 0.5.0 added Linux; 0.4.0 added the experimental

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Builds ORT-GenAI v0.17.0 for Android arm64 WITHOUT telemetry, and packs it the
-# way hook/build.dart fetches it: onnxruntime-genai-android-0.17.0-a.zip with
+# Builds ORT-GenAI v0.19.0 for Android arm64 WITHOUT telemetry, and packs it the
+# way hook/build.dart fetches it: onnxruntime-genai-android-0.19.0-a.zip with
 # jni/arm64-v8a/libonnxruntime-genai.so.
 #
-# Why not Microsoft's AAR: its 0.17.0 libonnxruntime-genai.so lists libmat.so
+# Why not Microsoft's AAR: its libonnxruntime-genai.so (0.17.0 and 0.19.0) lists libmat.so
 # (the 1DS telemetry SDK) in DT_NEEDED, and libmat.so is 4 KB-aligned, which
 # Google Play rejects (API 35+) and a 16 KB-page device cannot load. With
 # ENABLE_TELEMETRY=OFF the library needs only liblog/libm/libdl/libc.
@@ -12,8 +12,9 @@
 # ninja or make, unzip, zip, curl, sha256sum, readelf (on macOS the
 # NDK's llvm-readelf, linked or aliased as readelf on PATH), and an Android
 # NDK >= r28 (16 KB-aligned by default). No Rust: guidance is not built.
-# The output is not byte-reproducible across machines: the NDK version, the
-# build directory (in __FILE__ strings) and the zip entry times change it.
+# The output is not byte-reproducible across machines: the NDK version and the
+# zip entry times change it. The build directory is mapped out of __FILE__
+# strings (-ffile-prefix-map).
 #
 #   NDK=$HOME/Android/Sdk/ndk/28.2.13676358 \
 #   ANDROID_HOME=$HOME/Android/Sdk \
@@ -30,9 +31,7 @@
 # fails the second. The old `strings | grep -q` form missed Microsoft's
 # library (pipe status 141).
 #
-# TODO(next rebuild): build with --android_api=24, the package's minSdk (this
-# build used 27), and keep the build directory out of the library's debug
-# strings (__FILE__).
+# Built for API 24, the package's minSdk (0.17.0-a was built for 27).
 set -euo pipefail
 
 # The three properties the hook and the review depend on. Each tool's output
@@ -55,12 +54,16 @@ if [ "${1:-}" = --check ]; then
   check_lib "${2:?--check LIB}" && echo "$2: ok"; exit
 fi
 
-GENAI_TAG=v0.17.0
-GENAI_COMMIT=1d67be30e5b1ed0c264f6f41c598f85157e8288b
+GENAI_TAG=v0.19.0
+GENAI_COMMIT=d01b2441a72d4e3223415b9b08474c6e65fbc028
+ZIP=onnxruntime-genai-android-0.19.0-a.zip
 ORT_AAR_URL=https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.27.0/onnxruntime-android-1.27.0.aar
 ORT_AAR_SHA256=077dec5e2d821234c7dc0aba584bec8f999854b546c754cab93a90741c56fbeb
 
 WORK=${1:-$PWD/genai-android-build}
+# Compile jobs: one per core can need 1-2 GB each and exhaust a 16 GB machine
+# (measured: the OOM killer took the terminal at 12 jobs). JOBS=8 on a bigger one.
+JOBS=${JOBS:-4}
 : "${NDK:?set NDK to an Android NDK >= r28}"
 : "${ANDROID_HOME:?set ANDROID_HOME to the Android SDK}"
 mkdir -p "$WORK" && cd "$WORK"
@@ -77,11 +80,14 @@ if [ ! -f ort/jni/arm64-v8a/libonnxruntime.so ]; then
   (cd ort && unzip -qo ort.aar 'headers/*' 'jni/arm64-v8a/*')
 fi
 
-(cd src && python3 build.py --android --android_api=27 \
+(cd src && CMAKE_BUILD_PARALLEL_LEVEL="$JOBS" python3 build.py --android --android_api=24 \
   --android_home="$ANDROID_HOME" --android_ndk_path="$NDK" \
-  --android_abi=arm64-v8a --config=Release --parallel \
+  --android_abi=arm64-v8a --config=Release \
   --skip_wheel --skip_examples --ort_home="$WORK/ort" \
-  --cmake_extra_defines ENABLE_TELEMETRY=OFF --update --build)
+  --cmake_extra_defines ENABLE_TELEMETRY=OFF \
+    "CMAKE_C_FLAGS=-ffile-prefix-map=$WORK=." \
+    "CMAKE_CXX_FLAGS=-ffile-prefix-map=$WORK=." \
+  --update --build)
 
 LIB=src/build/Android/Release/libonnxruntime-genai.so
 
@@ -89,6 +95,9 @@ check_lib "$LIB"
 
 rm -rf stage && mkdir -p stage/jni/arm64-v8a
 cp "$LIB" stage/jni/arm64-v8a/
-rm -f onnxruntime-genai-android-0.17.0-a.zip
-(cd stage && zip -qXr ../onnxruntime-genai-android-0.17.0-a.zip jni)
-sha256sum onnxruntime-genai-android-0.17.0-a.zip
+if grep -aq "$WORK" "$LIB"; then
+  echo "the build directory is still in $LIB" >&2; exit 1; fi
+
+rm -f "$ZIP"
+(cd stage && zip -qXr "../$ZIP" jni)
+sha256sum "$ZIP"

@@ -123,9 +123,9 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     if (arch != Architecture.arm64) return null;
     const url =
         'https://github.com/microsoft/onnxruntime-genai/releases/'
-        'download/v0.17.0/onnxruntime-genai-ios-0.17.0.zip';
+        'download/v0.19.0/onnxruntime-genai-ios-0.19.0.zip';
     const sha256Hex =
-        '699697a1cf0699978083478a028857c188814f027a41b100dad1116cf45ce6cb';
+        '7081273f221b1738b02137f0d56aa75799f5e72e712ca0d8b1dd23d05a6f4a2b';
     if (iOSSdk == IOSSdk.iPhoneSimulator) {
       return const _OrtBundle(
         dirName: 'ios_sim_arm64',
@@ -173,11 +173,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.17.0/onnxruntime-genai-0.17.0-osx-arm64.tar.gz',
+            'download/v0.19.0/onnxruntime-genai-0.19.0-osx-arm64.tar.gz',
         sha256:
-            'be267c676885305267c2a416324a4a5fe522d04b3efb0386d13e40a675aa7df0',
+            '3171d0ae98bcd364d861693f72d531e2b26399299d1003c3cc950830565c519b',
         extractedLibPath:
-            'onnxruntime-genai-0.17.0-osx-arm64/lib/libonnxruntime-genai.dylib',
+            'onnxruntime-genai-0.19.0-osx-arm64/lib/libonnxruntime-genai.dylib',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -198,11 +198,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.17.0/onnxruntime-genai-0.17.0-linux-x64.tar.gz',
+            'download/v0.19.0/onnxruntime-genai-0.19.0-linux-x64.tar.gz',
         sha256:
-            '482a17113556ff76c53820b801f391cdcbaac0b6c4089065182683c03fdbc8d9',
+            'cc4efa65d90fa43104519cd6a67e321a85645a238c5cfcabf42a128b274083c0',
         extractedLibPath:
-            'onnxruntime-genai-0.17.0-linux-x64/lib/libonnxruntime-genai.so',
+            'onnxruntime-genai-0.19.0-linux-x64/lib/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -222,11 +222,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.17.0/onnxruntime-genai-0.17.0-win-x64.zip',
+            'download/v0.19.0/onnxruntime-genai-0.19.0-win-x64.zip',
         sha256:
-            '0bc5c187f9d6bd91582b7a0439fd47474a2a3cbc67941e6144eb11e0d09bb0b3',
+            'af2659792d15fb97e35f71075427fed9f3138b58975c621adb01868dcf7f6861',
         extractedLibPath:
-            'onnxruntime-genai-0.17.0-win-x64/lib/onnxruntime-genai.dll',
+            'onnxruntime-genai-0.19.0-win-x64/lib/onnxruntime-genai.dll',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -246,11 +246,11 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.17.0/onnxruntime-genai-0.17.0-win-arm64.zip',
+            'download/v0.19.0/onnxruntime-genai-0.19.0-win-arm64.zip',
         sha256:
-            'fab16090987daf17e5bb9763f70b7249116674a05cd81d625bc11075a098341e',
+            '1cb17096c30ecf9d4a2208eb7cef38e13f02fa058363acf637a4b0b6e42c609d',
         extractedLibPath:
-            'onnxruntime-genai-0.17.0-win-arm64/lib/onnxruntime-genai.dll',
+            'onnxruntime-genai-0.19.0-win-arm64/lib/onnxruntime-genai.dll',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -336,10 +336,10 @@ class _OrtBundle {
 
   /// Cache-invalidation key — bump whenever either archive's URL/sha changes.
   String get version => ort == null
-      ? 'genai-0.17.0'
+      ? 'genai-0.19.0'
       : dirName.startsWith('android')
       ? 'ort-1.27.0_genai-0.17.0-a.fe491a77'
-      : 'ort-1.27.0_genai-0.17.0';
+      : 'ort-1.27.0_genai-0.19.0';
 
   List<_Archive> get archives => [?ort, genai];
 }

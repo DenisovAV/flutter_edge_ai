@@ -1,3 +1,6 @@
+## 0.10.0
+- Bundle ORT-GenAI 0.19.0 (was 0.17.0) on every host (#810).
+
 ## 0.9.1
 - Web: closing a model releases its Transformers.js pipeline (#800).
 

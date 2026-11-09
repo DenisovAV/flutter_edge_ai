@@ -149,7 +149,7 @@ by ORT-GenAI's guidance (llguidance): the session's JSON schema is set on its
 own generator, so every complete reply is a value of the format, and core
 checks each one. The whole `ResponseFormat.dialect` is enforced on macOS arm64, for a
 model directory with a `tokenizer.json` (guidance reads it). Linux x64,
-Windows x64 and Windows ARM64 also ship an ORT-GenAI 0.17.0 build with
+Windows x64 and Windows ARM64 also ship an ORT-GenAI 0.19.0 build with
 guidance, and each is enabled once its run has passed; until then they refuse
 a format, saying so. Android (this repository's ORT-GenAI build), iOS
 (Microsoft's) and the web have no guidance and refuse it with
@@ -278,12 +278,12 @@ entirely — see `test/onnx_generation_host_smoke_test.dart`.
 
 ### Telemetry is off, and the Windows runtime
 
-ORT-GenAI 0.17.0 ships Microsoft's usage telemetry on every native host, on by
-default (0.14.0 had none). `GenAiFfiClient` sets `ORT_DISABLE_TELEMETRY=1` in
+ORT-GenAI ships Microsoft's usage telemetry on every native host since 0.17.0,
+on by default (0.14.0 had none). `GenAiFfiClient` sets `ORT_DISABLE_TELEMETRY=1` in
 the process before it opens the library, and keeps a value your app already
 set; to turn it on, set `ORT_DISABLE_TELEMETRY=0` before the first model loads.
 
-The 0.17.0 Windows DLLs import `MSVCP140_ATOMIC_WAIT.dll`, which the Visual C++
+The ORT-GenAI Windows DLLs import `MSVCP140_ATOMIC_WAIT.dll`, which the Visual C++
 2015-2022 redistributable provides. An app that ships the CRT app-local has to
 include that file too.
 

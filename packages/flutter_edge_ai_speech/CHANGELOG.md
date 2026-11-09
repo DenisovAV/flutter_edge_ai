@@ -1,3 +1,6 @@
+## Unreleased
+- Whisper/Parakeet log-mel: FFT replaces the direct DFT, ~35x faster; Moonshine unchanged (#784).
+
 ## 0.6.0
 - Use litertlm 1.20.0 with LiteRT-LM 0.19 / `native-v0.19.0-a`.
 - Require `flutter_edge_ai` ^2.6.0 and `flutter_edge_ai_litertlm` ^1.20.0.

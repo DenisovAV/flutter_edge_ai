@@ -6,7 +6,7 @@
 /// - Backward compat: `Message.withImage(single)` still works
 ///
 /// Prerequisites:
-///   macOS:   gemma-4-E2B-it.litertlm in ~/Library/Containers/.../Documents/
+///   macOS:   gemma-4-E2B-it.litertlm in ~/models (container Documents fallback)
 ///   Android: adb push gemma-4-E2B-it.litertlm /data/local/tmp/flutter_gemma_test/
 ///   iOS:     downloaded via FlutterEdgeAi.installModel()
 ///
@@ -19,21 +19,21 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _gemma4Url =
     'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
 const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
 String get _androidDir => '/data/local/tmp/flutter_gemma_test';
-String get _macosDir =>
-    '${Platform.environment['HOME']}/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents';
 String get _linuxDir => '${Platform.environment['HOME']}/models';
 String get _windowsDir => '${Platform.environment['USERPROFILE']}\\models';
 
 String? _localPath(String filename) {
   if (Platform.isAndroid) return '$_androidDir/$filename';
-  if (Platform.isMacOS) return '$_macosDir/$filename';
+  if (Platform.isMacOS) return macosStagedFilePath(filename);
   if (Platform.isLinux) return '$_linuxDir/$filename';
   if (Platform.isWindows) return '$_windowsDir\\$filename';
   return null;

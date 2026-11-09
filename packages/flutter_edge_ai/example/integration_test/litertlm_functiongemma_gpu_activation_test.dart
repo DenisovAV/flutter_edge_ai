@@ -4,8 +4,8 @@
 // (LiteRT-LM#3280); the engine builds its GPU attempt at FP32 for it. Each case
 // is a separate engine, because the precision is set per engine.
 //
-// Stage the model in /data/local/tmp/flutter_gemma_test/ (Android), or the app
-// documents dir (desktop/iOS):
+// macOS: ~/models (container Documents fallback); other desktop and iOS: app
+// Documents; Android: /data/local/tmp/flutter_gemma_test/.
 //   functiongemma-270M-it.litertlm      sasha-denisov/function-gemma-270M-it
 //   (sha256 680fead1…; its header declares no prefer_activation_type)
 //
@@ -45,7 +45,14 @@ const _multiply = Tool(
 Future<InferenceModel> _load({ActivationDataType? activationDataType}) async {
   await registerTestEngines();
   final path = await stagedModelPath(_file);
-  expect(path, isNotNull, reason: 'stage $_file, see the header of this file');
+  expect(
+    path,
+    isNotNull,
+    reason:
+        'stage $_file; macOS: ~/models (container Documents fallback); other '
+        'desktop and iOS: app Documents; Android: '
+        '/data/local/tmp/flutter_gemma_test/.',
+  );
   await FlutterEdgeAi.installModel(
     modelType: ModelType.functionGemma,
     fileType: ModelFileType.litertlm,

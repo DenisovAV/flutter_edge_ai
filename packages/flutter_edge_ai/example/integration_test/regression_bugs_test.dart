@@ -15,26 +15,27 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _gemma4Url =
     'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
 const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
-String get _macosDir =>
-    '${Platform.environment['HOME']}/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents';
 String get _linuxDir => '${Platform.environment['HOME']}/models';
 String get _windowsDir => '${Platform.environment['USERPROFILE']}\\models';
 const String _androidDir = '/data/local/tmp/flutter_gemma_test';
 
 Future<void> _installGemma4() async {
   final candidates = [
-    '$_macosDir/gemma-4-E2B-it.litertlm',
+    macosStagedFilePath('gemma-4-E2B-it.litertlm'),
     '$_linuxDir/gemma-4-E2B-it.litertlm',
     '$_windowsDir\\gemma-4-E2B-it.litertlm',
     '$_androidDir/gemma-4-E2B-it.litertlm',
   ];
   for (final path in candidates) {
+    if (path == null) continue;
     if (File(path).existsSync()) {
       await FlutterEdgeAi.installModel(
         modelType: ModelType.gemmaIt,

@@ -25,6 +25,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'local_model_file_io.dart' show macosStagedFilePath;
+
 const _sampling = ResolvedSampling(
   temperature: 0.6,
   topK: 40,
@@ -32,8 +34,7 @@ const _sampling = ResolvedSampling(
   randomSeed: 42,
 );
 
-const _gemma4Path =
-    '/Users/sashadenisov/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/gemma-4-E2B-it.litertlm';
+String get _gemma4Path => macosStagedFilePath('gemma-4-E2B-it.litertlm')!;
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();

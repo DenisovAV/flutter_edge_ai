@@ -20,6 +20,7 @@
 library;
 
 import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
 
 /// `window.transformersReady` — a Promise that resolves once
 /// `window.transformers` is set (see `example/web/index.html`'s ESM shim).
@@ -104,6 +105,18 @@ extension type InterruptableStoppingCriteria._(JSObject _) implements JSObject {
 extension type TransformersPipeline._(JSObject _) implements JSObject {
   /// `pipe.tokenizer`.
   external TransformersTokenizer get tokenizer;
+
+  /// `pipe.dispose()` — releases the model's ONNX sessions. Dropping the
+  /// reference does not: the WASM runtime keeps them until the page goes.
+  /// Present in `@huggingface/transformers` 4.3.1; see [disposeIfAvailable].
+  external JSPromise<JSAny?> dispose();
+
+  /// Calls [dispose] when this pipeline has it (a build without it stays
+  /// quiet instead of throwing at every model close).
+  Future<void> disposeIfAvailable() async {
+    if (!hasProperty('dispose'.toJS).toDart) return;
+    await dispose().toDart;
+  }
 
   /// `pipe(messages, options)` — resolves once generation finishes; chunks
   /// arrive earlier through the `streamer` in [options].

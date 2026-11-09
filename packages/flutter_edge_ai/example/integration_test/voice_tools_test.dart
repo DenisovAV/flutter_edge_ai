@@ -46,8 +46,9 @@ void main() {
       llmPath,
       isNotNull,
       reason:
-          'stage $_llmFileName to the app documents dir (desktop/iOS) or '
-          '/data/local/tmp/flutter_gemma_test/ (Android)',
+          'stage $_llmFileName; macOS: ~/models (container Documents '
+          'fallback); other desktop and iOS: app Documents; Android: '
+          '/data/local/tmp/flutter_gemma_test/.',
     );
     await FlutterEdgeAi.installModel(
       modelType: ModelType.gemmaIt,

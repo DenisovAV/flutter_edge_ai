@@ -25,14 +25,15 @@
 library;
 
 import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
-import 'inference_test_helpers.dart' show registerTestEngines;
 
-String get _macosDir =>
-    '${Platform.environment['HOME']}/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents';
-String get _model => '$_macosDir/gemma-4-E2B-it.litertlm';
+import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
+
+String get _model => macosStagedFilePath('gemma-4-E2B-it.litertlm')!;
 
 const _prompt =
     'Invent a name for a cosy coffee shop. Answer with the name only.';

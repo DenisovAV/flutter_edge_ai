@@ -1,7 +1,7 @@
 /// Universal FFI integration test for all platforms (macOS, iOS, Android).
 ///
 /// Prerequisites:
-///   macOS:   models in ~/models/ (container Documents fallback)
+///   macOS:   models in ~/models (container Documents fallback)
 ///   Android: adb push models to /data/local/tmp/flutter_gemma_test/
 ///   iOS:     models downloaded via FlutterEdgeAi.installModel()
 ///
@@ -14,6 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -24,7 +25,9 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
 // ignore: implementation_imports — reads core's file-system service to check install paths
 import 'package:flutter_edge_ai/src/di/service_registry.dart'
     show ServiceRegistry;
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath, macosStagedRoot;
 import 'registry_evidence.dart';
 
 const _ffiGroups = String.fromEnvironment('FFI_GROUPS');
@@ -34,8 +37,6 @@ String? get _skipNonNpuGroup =>
 
 // ── Local paths ──
 String get _androidDir => '/data/local/tmp/flutter_gemma_test';
-String get _macosDir =>
-    '${Platform.environment['HOME']}/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents';
 String get _linuxDir => '${Platform.environment['HOME']}/models';
 String get _windowsDir => '${Platform.environment['USERPROFILE']}\\models';
 
@@ -116,10 +117,7 @@ Future<void> _gemma4Evidence(String check) async {
 /// instead of re-downloading on every test run.
 String? _localPath(String filename) {
   if (Platform.isAndroid) return '$_androidDir/$filename';
-  if (Platform.isMacOS) {
-    final modelsPath = '${Platform.environment['HOME']}/models/$filename';
-    return File(modelsPath).existsSync() ? modelsPath : '$_macosDir/$filename';
-  }
+  if (Platform.isMacOS) return macosStagedFilePath(filename);
   if (Platform.isLinux) return '$_linuxDir/$filename';
   if (Platform.isWindows) return '$_windowsDir\\$filename';
   if (Platform.isIOS) {
@@ -278,10 +276,10 @@ void main() {
   setUpAll(() async {
     await registerTestEngines();
 
-    // Load test assets — the bundled fixtures first, whose content the vision
-    // and audio checks assert, then the host files staged next to the models
-    // (Android adb-pushed paths, desktop Documents) when assets/test/ does
-    // not ship.
+    // Staged fixture lookup: Android /data/local/tmp/flutter_gemma_test/;
+    // macOS macosStagedFilePath (~/models, then container Documents); Linux
+    // ~/models; Windows %USERPROFILE%\models; then ~/Downloads. iOS has no
+    // staged path and relies on the bundled fixtures.
     try {
       final data = await rootBundle.load('assets/test/test_image.jpg');
       _testImage = data.buffer.asUint8List();
@@ -291,7 +289,7 @@ void main() {
     }
     for (final path in [
       '$_androidDir/test_image.jpg',
-      '$_macosDir/test_image.png',
+      if (Platform.isMacOS) macosStagedFilePath('test_image.png')!,
       if (Platform.isLinux) '$_linuxDir/test_image.png',
       if (Platform.isLinux) '$_linuxDir/test_image.jpg',
       if (Platform.isWindows) '$_windowsDir\\test_image.png',
@@ -313,7 +311,7 @@ void main() {
     }
     for (final path in [
       '$_androidDir/test_audio.wav',
-      '$_macosDir/test_audio.wav',
+      if (Platform.isMacOS) macosStagedFilePath('test_audio.wav')!,
       if (Platform.isLinux) '$_linuxDir/test_audio.wav',
       if (Platform.isWindows) '$_windowsDir\\test_audio.wav',
     ]) {
@@ -1190,8 +1188,18 @@ void main() {
     const modelName = 'embeddinggemma-300M_seq256_mixed-precision.tflite';
     const tokenizerName = 'sentencepiece.model';
     EmbeddingModel? embModel;
+    final macosRoot = Platform.isMacOS
+        ? macosStagedRoot([modelName, tokenizerName])!
+        : null;
 
     Future<String> resolveAsset(String name) async {
+      if (macosRoot != null) {
+        final f = File('$macosRoot/$name');
+        if (f.existsSync()) return f.path;
+        final bytes = await rootBundle.load('assets/test/$name');
+        await f.writeAsBytes(bytes.buffer.asUint8List());
+        return f.path;
+      }
       // Host/Android-pushed path first, then bundled asset fallback.
       final local = _localPath(name);
       if (local != null && File(local).existsSync()) return local;

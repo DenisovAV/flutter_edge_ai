@@ -15,9 +15,7 @@
 // then apply fixes and confirm they pass.
 //
 // Prerequisites:
-//   Copy a .litertlm model to the app sandbox container:
-//   cp ~/Downloads/gemma-3n-E2B-it-int4.litertlm \
-//      ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/
+//   macOS: ~/models (container Documents fallback).
 //
 // Run:
 //   cd example
@@ -30,7 +28,9 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 // Default model for groups A/B. Must be pre-installed in the sandbox.
 const _modelFileName = 'gemma-3n-E2B-it-int4.litertlm';
@@ -41,8 +41,7 @@ const _qwenModelFileName =
     'Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm';
 
 String _resolveModelPath([String? fileName]) {
-  final home = Platform.environment['HOME'] ?? '';
-  return '$home/Documents/${fileName ?? _modelFileName}';
+  return macosStagedFilePath(fileName ?? _modelFileName) ?? '';
 }
 
 void main() {
@@ -60,9 +59,8 @@ void main() {
     if (!File(modelPath).existsSync()) {
       fail(
         'Model not found: $modelPath\n'
-        'Copy a .litertlm model to the sandbox:\n'
-        '  cp ~/Downloads/$_modelFileName \\\n'
-        '     ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/',
+        'Stage $_modelFileName; macOS: ~/models '
+        '(container Documents fallback).',
       );
     }
   });
@@ -360,7 +358,7 @@ void main() {
           'Qwen model not found: $qwenModelPath\n'
           'Download from HuggingFace:\n'
           '  curl -L "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/$_qwenModelFileName" \\\n'
-          '    -o ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/$_qwenModelFileName',
+          '    -o ~/models/$_qwenModelFileName',
         );
       }
     });

@@ -33,6 +33,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _modelFile = 'functiongemma-270M-it.litertlm';
 
@@ -43,6 +44,7 @@ String get _stagedModel {
   if (Platform.isWindows) {
     return '${Platform.environment['USERPROFILE']}\\models\\$_modelFile';
   }
+  if (Platform.isMacOS) return macosStagedFilePath(_modelFile)!;
   return '${Platform.environment['HOME']}/models/$_modelFile';
 }
 

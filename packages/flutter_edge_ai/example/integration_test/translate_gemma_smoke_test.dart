@@ -2,19 +2,19 @@
 //
 // Exercises `TranslateRunner` end-to-end on the community `.litertlm` int4
 // bundle. The test:
-//   1. Stages the int4 `.litertlm` from the app's documents dir (~2 GB —
-//      see pre-staging notes below).
+//   1. Stages the int4 `.litertlm`; macOS: ~/models (container Documents
+//      fallback) (~2 GB — see pre-staging notes below).
 //   2. Installs it via `FlutterEdgeAi.installModel(...).fromFile(...)`.
 //   3. Builds a `TranslateRunner` using the same XML strategy the example
 //      app uses.
 //   4. Runs three language pairs (en→fr, en→es, ja→en) and asserts the
 //      output is non-empty and contains expected keywords.
 //
-// Pre-stage the model file in the platform sandbox before running:
-//   macOS:   ~/Library/Containers/dev.flutterberlin.flutterGemmaExample55/Data/Documents/
+// Pre-stage the model file before running:
+//   macOS:   ~/models (container Documents fallback)
 //   Android: adb push <file> /data/data/dev.flutterberlin.flutter_gemma_example/app_flutter/
-// On both platforms `getApplicationDocumentsDirectory()` resolves to that
-// location, so the test reads it via `fromFile()`.
+// The fallback uses `getApplicationDocumentsDirectory()`, so sandboxed macOS
+// and Android runs still read from their application Documents directory.
 
 import 'dart:io';
 
@@ -26,13 +26,19 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter_edge_ai_example/translation/translate_gemma_xml_strategy.dart';
 import 'package:flutter_edge_ai_example/translation/translate_runner.dart';
+
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'local_model_file_io.dart' show macosStagedFilePath;
 
 const _modelName = 'translategemma-4b-it-int4-generic.litertlm';
 
-/// Resolve a file path in the app documents directory. If absent, copy
-/// from the bundled `assets/test/<name>` (works on every platform).
+/// Resolve a staged file. macOS: ~/models (container Documents fallback);
+/// other platforms: app Documents. If absent, copy from a bundled fixture.
 Future<String> _docsPath(String name) async {
+  if (Platform.isMacOS) {
+    final staged = macosStagedFilePath(name);
+    if (staged != null && File(staged).existsSync()) return staged;
+  }
   final docs = await getApplicationDocumentsDirectory();
   final f = File('${docs.path}/$name');
   if (f.existsSync()) return f.path;

@@ -25,13 +25,14 @@ import 'dart:typed_data';
 ///
 /// The window is identical for every frame of a clip, so it is built once per
 /// length and cached: whisper's 3000 frames used to evaluate 1.2M cosines here.
-/// The returned list is shared — callers must not mutate it.
+/// The cached list is shared, so it is read-only: a write throws instead of
+/// corrupting every later frame in the isolate.
 Float32List _periodicHann(int n) => _periodicHannWindows.putIfAbsent(n, () {
   final w = Float32List(n);
   for (var i = 0; i < n; i++) {
     w[i] = 0.5 - 0.5 * math.cos(2 * math.pi * i / n);
   }
-  return w;
+  return w.asUnmodifiableView();
 });
 
 final _periodicHannWindows = <int, Float32List>{};
@@ -61,6 +62,12 @@ Float32List applyHannWindow(Float32List frame) {
 /// (3000 frames, nFft=400) went from 5.2-5.6 s to 134-166 ms (about 35x);
 /// parakeet (500 frames, nFft=512) from 1.4-1.6 s to 23-29 ms (about 58x).
 Float32List powerSpectrum(Float32List windowedFrame, int nFft) {
+  if (nFft < 1 || windowedFrame.length != nFft) {
+    throw ArgumentError(
+      'frame has ${windowedFrame.length} samples, expected nFft = $nFft',
+      'windowedFrame',
+    );
+  }
   final plan = _bluesteinPlanFor(nFft);
   final m = plan.m;
   final re = plan.scratchRe;
@@ -102,8 +109,9 @@ int _nextPowerOfTwo(int value) {
 }
 
 /// Iterative radix-2 Cooley-Tukey FFT over a precomputed twiddle table of
-/// `n/2` entries. [inverse] conjugates the twiddles; the `1/n` scale is the
-/// caller's.
+/// `n/2` entries holding `exp(-2*pi*i*j/n)`: the forward pass uses them as
+/// they are (`exp(-...)`, the DFT's sign), [inverse] conjugates them. The
+/// `1/n` scale is the caller's.
 void _radix2Fft(
   Float64List re,
   Float64List im,
@@ -134,7 +142,7 @@ void _radix2Fft(
       for (var j = 0; j < half; j++) {
         final wr = twiddleCos[j * step];
         final ws = twiddleSin[j * step];
-        final wi = inverse ? ws : -ws;
+        final wi = inverse ? -ws : ws;
         final ar = re[base + j + half], ai = im[base + j + half];
         final tr = ar * wr - ai * wi;
         final ti = ar * wi + ai * wr;
@@ -148,29 +156,31 @@ void _radix2Fft(
   }
 }
 
-/// One nFft's Bluestein plan, built once and reused by every frame: the chirp,
-/// the kernel's FFT and the twiddles are all `O(M log M)`, so rebuilding them
-/// per frame would cost more than the transform they feed.
+/// One nFft's Bluestein plan, built once and reused by every frame: the
+/// kernel's FFT alone is `O(M log M)`, so rebuilding the plan per frame would
+/// cost more than the transform it feeds.
 ///
 /// [scratchRe]/[scratchIm] are shared by every [powerSpectrum] call. That is
-/// safe because the frontend is synchronous — a clip never interleaves its own
-/// frames — and an isolate holds its own copy of these statics.
+/// safe only while [powerSpectrum] is synchronous and never hands out a view
+/// of them: nothing else can run between filling the scratch and reading it,
+/// and an isolate holds its own copy of these statics.
 final class _BluesteinPlan {
   _BluesteinPlan(int nFft) : this._(nFft, _nextPowerOfTwo(2 * nFft - 1));
 
   _BluesteinPlan._(int nFft, this.m)
     : nBins = nFft ~/ 2 + 1,
-      chirpRe = Float64List(2 * nFft - 1),
-      chirpIm = Float64List(2 * nFft - 1),
+      chirpRe = Float64List(nFft),
+      chirpIm = Float64List(nFft),
       kernelRe = Float64List(m),
       kernelIm = Float64List(m),
       twiddleCos = Float64List(m ~/ 2),
       twiddleSin = Float64List(m ~/ 2),
       scratchRe = Float64List(m),
       scratchIm = Float64List(m) {
-    // w_i = exp(-i*pi*i^2/nFft). i^2 is reduced modulo 2*nFft first: the angle
-    // has that period, and the raw square would lose precision for large i.
-    for (var i = 0; i < 2 * nFft - 1; i++) {
+    // w_i = exp(-i*pi*i^2/nFft) for i < nFft, the only indices the input, the
+    // kernel and the output read. i^2 is reduced modulo 2*nFft first: the
+    // angle has that period, so the reduction keeps it small and exact.
+    for (var i = 0; i < nFft; i++) {
       final angle = -math.pi * ((i * i) % (2 * nFft)) / nFft;
       chirpRe[i] = math.cos(angle);
       chirpIm[i] = math.sin(angle);
@@ -205,8 +215,8 @@ final class _BluesteinPlan {
   final Float64List scratchIm;
 }
 
-/// Plans are keyed by `nFft`; a process asks for one or two sizes (whisper's
-/// 400, parakeet's 512), so this holds a couple of entries at most.
+/// Plans are keyed by `nFft`, per isolate; a recognizer asks for one size
+/// (whisper's 400, parakeet's 512), so this holds a couple of entries at most.
 final _bluesteinPlans = <int, _BluesteinPlan>{};
 
 _BluesteinPlan _bluesteinPlanFor(int nFft) =>
@@ -300,14 +310,25 @@ Float32List _applyNormalization(
 /// contiguous. Summing only inside the span therefore drops ~97% of the
 /// multiplies. The skipped terms are exactly `0.0 * power`, and adding 0.0 does
 /// not change a running sum, while the surviving terms keep their
-/// left-to-right order: [apply] is bit-identical to the dense `nBins` loop.
+/// left-to-right order: for finite power, [apply] is bit-identical to the
+/// dense `nBins` loop.
 final class MelFilterSpans {
-  MelFilterSpans(
+  /// Throws [ArgumentError] unless [melFilters] is exactly `[nMels, nBins]`:
+  /// a filterbank built for another nFft would otherwise be read with the
+  /// wrong row stride and give a plausible but wrong spectrogram.
+  factory MelFilterSpans(
     Float32List melFilters, {
-    required this.nMels,
+    required int nMels,
     required int nBins,
-  }) : _starts = Int32List(nMels),
-       _offsets = Int32List(nMels + 1) {
+  }) {
+    if (nMels < 1 || nBins < 1 || melFilters.length != nMels * nBins) {
+      throw ArgumentError(
+        'mel filterbank has ${melFilters.length} entries, expected '
+        'nMels * nBins = $nMels * $nBins',
+      );
+    }
+    final starts = Int32List(nMels);
+    final offsets = Int32List(nMels + 1);
     final coefficients = <double>[];
     for (var m = 0; m < nMels; m++) {
       final base = m * nBins;
@@ -317,39 +338,69 @@ final class MelFilterSpans {
       }
       if (first == nBins) {
         // An all-zero filter row contributes 0.0 and leaves the sum at 0.0.
-        _starts[m] = 0;
-        _offsets[m + 1] = coefficients.length;
+        offsets[m + 1] = coefficients.length;
         continue;
       }
       var last = nBins - 1;
       while (last > first && melFilters[base + last] == 0.0) {
         last--;
       }
-      _starts[m] = first;
+      starts[m] = first;
       for (var b = first; b <= last; b++) {
         coefficients.add(melFilters[base + b]);
       }
-      _offsets[m + 1] = coefficients.length;
+      offsets[m + 1] = coefficients.length;
     }
-    _coefficients = Float32List.fromList(coefficients);
+    return MelFilterSpans._(
+      nMels,
+      nBins,
+      starts,
+      offsets,
+      Float32List.fromList(coefficients),
+    );
   }
 
+  MelFilterSpans._(
+    this.nMels,
+    this.nBins,
+    this._starts,
+    this._offsets,
+    this._coefficients,
+  );
+
   final int nMels;
+  final int nBins;
   final Int32List _starts;
   final Int32List _offsets;
-  late final Float32List _coefficients;
+  final Float32List _coefficients;
 
   /// Number of multiplies [apply] performs for one frame.
   int get multiplicationCount => _coefficients.length;
 
   /// Writes `sum_b melFilters[m][b] * power[b]` for every `m` into
-  /// `out[offset + m * stride]`.
+  /// `out[offset + m * stride]`. Throws [ArgumentError] when [power] is not
+  /// `nBins` long, and [RangeError] before writing anything when the output
+  /// positions do not fit [out].
   void apply(
     Float32List power,
     Float32List out, {
     int offset = 0,
     int stride = 1,
   }) {
+    if (power.length != nBins) {
+      throw ArgumentError(
+        'power has ${power.length} bins, expected $nBins',
+        'power',
+      );
+    }
+    if (offset < 0 ||
+        stride < 1 ||
+        offset + (nMels - 1) * stride >= out.length) {
+      throw RangeError(
+        'mel outputs at $offset + m * $stride for m < $nMels do not fit '
+        'an output of ${out.length}',
+      );
+    }
     for (var m = 0; m < nMels; m++) {
       final coefficientsEnd = _offsets[m + 1];
       var coefficient = _offsets[m];
@@ -404,16 +455,17 @@ Float32List computeLogMelSpectrogram(
 /// (whisper's periodic=True convention, `.../n` not `.../(n-1)`) -- NeMo/
 /// parakeet's frontend uses this symmetric variant.
 ///
-/// Built once per [n] and cached across calls. The returned list is shared —
-/// callers must not mutate it (NeMo's caller only copies it into the
-/// zero-padded buffer via [centerWindowInBuffer]).
+/// Built once per [n] and cached across calls. The returned list is shared,
+/// so it is read-only: a write throws [UnsupportedError] instead of corrupting
+/// every later spectrogram in the isolate. NeMo's caller only copies it into
+/// the zero-padded buffer via [centerWindowInBuffer].
 Float32List hannWindowSymmetric(int n) =>
     _symmetricHannWindows.putIfAbsent(n, () {
       final w = Float32List(n);
       for (var i = 0; i < n; i++) {
         w[i] = 0.5 - 0.5 * math.cos(2 * math.pi * i / (n - 1));
       }
-      return w;
+      return w.asUnmodifiableView();
     });
 
 final _symmetricHannWindows = <int, Float32List>{};

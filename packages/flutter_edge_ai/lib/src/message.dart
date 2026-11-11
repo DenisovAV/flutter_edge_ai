@@ -224,26 +224,60 @@ class Message {
     return other is Message &&
         other.text == text &&
         other.isUser == isUser &&
-        _listEquals(other.imageBytes, imageBytes) &&
-        _listEquals(other.images, images) &&
-        _listEquals(other.audioBytes, audioBytes) &&
+        _bytesEqual(other.imageBytes, imageBytes) &&
+        _imagesEqual(other.images, images) &&
+        _bytesEqual(other.audioBytes, audioBytes) &&
         other.type == type &&
         other.toolName == toolName &&
         _listEquals(other.toolCalls, toolCalls) &&
         other.toolCallId == toolCallId;
   }
 
+  /// Media is hashed by content, as `==` compares it, so two messages built
+  /// from the same bytes in different buffers hash alike (#823).
   @override
   int get hashCode =>
       text.hashCode ^
       isUser.hashCode ^
-      imageBytes.hashCode ^
-      Object.hashAll(images) ^
-      audioBytes.hashCode ^
+      _bytesHash(imageBytes) ^
+      Object.hashAll(images.map(_bytesHash)) ^
+      _bytesHash(audioBytes) ^
       type.hashCode ^
       toolName.hashCode ^
       Object.hashAll(toolCalls) ^
       toolCallId.hashCode;
+
+  static bool _bytesEqual(Uint8List? a, Uint8List? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null || a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  static bool _imagesEqual(List<Uint8List> a, List<Uint8List> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_bytesEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  /// The length and up to 32 bytes from each end: equal bytes always give an
+  /// equal hash, without reading a whole image or clip on every call.
+  static int _bytesHash(Uint8List? bytes) {
+    if (bytes == null) return null.hashCode;
+    const edge = 32;
+    if (bytes.length <= 2 * edge) {
+      return Object.hash(bytes.length, Object.hashAll(bytes));
+    }
+    return Object.hash(
+      bytes.length,
+      Object.hashAll(Uint8List.sublistView(bytes, 0, edge)),
+      Object.hashAll(Uint8List.sublistView(bytes, bytes.length - edge)),
+    );
+  }
 
   bool _listEquals<T>(List<T>? a, List<T>? b) {
     if (a == null) return b == null;

@@ -2580,6 +2580,10 @@ class LiteRtLmFfiClient {
   ///
   /// [multimodalOrder] is where the handle's messages put their media around
   /// the text — the model's own, resolved by the model layer too.
+  ///
+  /// [filterChannelContent] is false when the model cannot rewind more than
+  /// one token (the NPU, linear attention state), which the model layer knows:
+  /// see [_setChannelContentFilter].
   Future<LiteRtLmConversationHandle> createConversationHandle({
     String? systemMessage,
     String? toolsJson,
@@ -2589,6 +2593,7 @@ class LiteRtLmFfiClient {
     int? maxOutputTokens,
     required MultimodalOrder multimodalOrder,
     String? jsonSchema,
+    required bool filterChannelContent,
   }) {
     // The handle must be registered before the guard lifts: otherwise shutdown()
     // can clear _handles between the create and the add, leaving a live
@@ -2611,6 +2616,7 @@ class LiteRtLmFfiClient {
           samplingExplicit: samplingExplicit,
           maxOutputTokens: maxOutputTokens,
           jsonSchema: jsonSchema,
+          filterChannelContent: filterChannelContent,
         ),
       );
       edgeAiLog('[LiteRtLmFfi] Conversation created');
@@ -2640,6 +2646,7 @@ class LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     String? jsonSchema,
+    required bool filterChannelContent,
   }) async {
     final testCreate = structuredCreateForTest;
     if (testCreate == null) _assertInitialized();
@@ -2843,6 +2850,7 @@ class LiteRtLmFfiClient {
     final ({int address, int code, String? message}) created;
     try {
       _setConstraintProvider(convConfig, jsonSchema);
+      _setChannelContentFilter(convConfig, filter: filterChannelContent);
       if (testCreate != null) {
         conv = await testCreate(messagesJson, jsonSchema);
         created = (address: conv.address, code: 0, message: null);
@@ -2911,6 +2919,36 @@ class LiteRtLmFfiClient {
         config,
         LiteRtLmConstraintProviderType
             .kLiteRtLmConstraintProviderTypeLlGuidance,
+      ),
+      b.lastError,
+    );
+  }
+
+  /// Turns off LiteRT-LM's channel filter when [filter] is false; when true
+  /// the native default (on) is left alone.
+  ///
+  /// With the filter on (the default, `conversation.h`), LiteRT-LM 0.19 rewinds
+  /// the session to the checkpoint taken before a reply as soon as a reply
+  /// that carries a channel (a thought, Gemma 4 26B's even with thinking off)
+  /// completes, and prefills the reply again without it
+  /// (`Conversation::RewindAndGetInputDataVector`). That rewind spans the
+  /// whole reply, and the NPU executor rolls back one token at most
+  /// (`LlmLiteRtNpuCompiledModelExecutor::SetCurrentStep`: "only supports
+  /// rolling back one token at the end of decode"), so on the NPU the first
+  /// such reply failed with INVALID_ARGUMENT; a model with linear attention
+  /// state cannot be rewound either. Unfiltered, the channel content stays in
+  /// the KV cache.
+  void _setChannelContentFilter(
+    Pointer<LiteRtLmConversationConfig> config, {
+    required bool filter,
+  }) {
+    if (filter) return;
+    final b = _bindings!;
+    checkLiteRtLmSetter(
+      'litert_lm_conversation_config_set_filter_channel_content_from_kv_cache',
+      b.litert_lm_conversation_config_set_filter_channel_content_from_kv_cache(
+        config,
+        false,
       ),
       b.lastError,
     );
@@ -2986,6 +3024,9 @@ class LiteRtLmFfiClient {
       sampling: sampling,
       samplingExplicit: true,
       multimodalOrder: MultimodalOrder.imagesAudioText,
+      // This raw path has no model layer to read linear attention state from;
+      // the NPU is the one case the client itself knows.
+      filterChannelContent: _backend != 'npu',
     );
     // A shutdown that landed while we were suspended already closed this handle
     // (it was registered in _handles inside the guard). Publishing it would
@@ -3197,6 +3238,7 @@ class LiteRtLmFfiClient {
     required bool thinking,
     int? maxOutputTokens,
     String? jsonSchema,
+    required bool filterChannelContent,
   }) {
     // StreamController (not async*) so the mutex release is tied to the native
     // turn's end — done, error, or a cancel that native has finished — and not
@@ -3377,6 +3419,7 @@ class LiteRtLmFfiClient {
                     samplingExplicit: samplingExplicit,
                     maxOutputTokens: maxOutputTokens,
                     jsonSchema: jsonSchema,
+                    filterChannelContent: filterChannelContent,
                   );
             _virtualConv = conv;
             _virtualActiveToken = conversationToken;

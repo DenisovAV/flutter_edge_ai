@@ -132,6 +132,13 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
             'restore'
       : null;
 
+  /// Whether LiteRT-LM may strip a completed reply's channel content (a
+  /// thought) from the KV cache, which it does by rewinding over the whole
+  /// reply: only where a conversation can be rewound ([noRewindReason]).
+  /// The same for every conversation of this model, native or virtual.
+  @visibleForTesting
+  bool get filterChannelContent => _noRewindReason == null;
+
   /// The same for an [openSession] conversation: also rebuilt when whether
   /// the model keeps linear attention state could not be read.
   @visibleForTesting
@@ -375,6 +382,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
             samplingExplicit: !explicit.isEmpty,
             maxOutputTokens: maxOutputTokens,
             multimodalOrder: multimodalOrder,
+            filterChannelContent: filterChannelContent,
           );
       final handle = RecoveringConversationHandle(
         await open(),
@@ -497,6 +505,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
               maxOutputTokens: maxOutputTokens,
               multimodalOrder: multimodalOrder,
               jsonSchema: jsonSchema,
+              filterChannelContent: filterChannelContent,
             );
         _openSessionsPending++;
         final LiteRtLmConversationHandle first;
@@ -531,6 +540,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           maxOutputTokens: maxOutputTokens,
           multimodalOrder: multimodalOrder,
           jsonSchema: jsonSchema,
+          filterChannelContent: filterChannelContent,
         );
     }
 
@@ -1660,6 +1670,7 @@ class _VirtualConversationHandle implements ConversationHandle {
     required this.sampling,
     required this.samplingExplicit,
     required this.multimodalOrder,
+    required this.filterChannelContent,
     this.maxOutputTokens,
     this.jsonSchema,
   });
@@ -1672,6 +1683,7 @@ class _VirtualConversationHandle implements ConversationHandle {
   final MultimodalOrder multimodalOrder;
   final int? maxOutputTokens;
   final String? jsonSchema;
+  final bool filterChannelContent;
 
   /// The tokenizer belongs to the engine, not to a conversation, so a virtual
   /// session answers this as accurately as a live one.
@@ -1753,6 +1765,7 @@ class _VirtualConversationHandle implements ConversationHandle {
         thinking: enableThinking,
         maxOutputTokens: maxOutputTokens,
         jsonSchema: jsonSchema,
+        filterChannelContent: filterChannelContent,
       )) {
         final chunkText = LiteRtLmFfiClient.extractTextFromResponse(rawChunk);
         assistantText.write(chunkText);

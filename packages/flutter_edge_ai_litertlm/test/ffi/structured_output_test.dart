@@ -334,6 +334,7 @@ void main() {
             samplingExplicit: false,
             thinking: false,
             jsonSchema: jsonSchema,
+            filterChannelContent: true,
           )
           .toList();
       await pumpEventQueue();

@@ -2,6 +2,7 @@
 // without regard to case, and names a file it cannot read instead of
 // throwing.
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -106,6 +107,74 @@ void main() {
     await expectLater(
       recordEvidence(path: path, backend: PreferredBackend.cpu, check: 'x'),
       throwsStateError,
+    );
+  });
+
+  test(
+    'a model that reports no backend is a skip, before the catalog',
+    () async {
+      // The catalog is not initialized here: reading it would throw.
+      final path = (File(
+        '${dir.path}/m.bin',
+      )..writeAsBytesSync([0, 0, 0])).path;
+      final lines = <String>[];
+      await runZoned(
+        () => recordEvidence(path: path, backend: null, check: 'x'),
+        zoneSpecification: ZoneSpecification(
+          print: (_, _, _, line) => lines.add(line),
+        ),
+      );
+      expect(lines, hasLength(1));
+      expect(lines.single, startsWith('FEA_EVIDENCE_SKIP '));
+      expect(lines.single, contains('the model reports no backend'));
+    },
+  );
+
+  group('companions', () {
+    // Gecko: a .tflite and its tokenizer.
+    final gecko = LiteRtEmbedders.gecko110mEn.variants.first;
+    final tokenizer = gecko.files[1].sha256;
+    Future<String> hash(String path) async => switch (path) {
+      'tokenizer' => tokenizer.toUpperCase(),
+      'other' => _zeros3,
+      _ => throw FileSystemException('no such file', path),
+    };
+
+    test('a one-file variant needs none and ignores any', () async {
+      final variant = LiteRtLmModels.gemma4E2bIt.generic;
+      expect(variant.files, hasLength(1));
+      expect(await companionProblem(variant, const []), isNull);
+      expect(
+        await companionProblem(variant, const ['other'], hash: hash),
+        isNull,
+      );
+    });
+
+    test('every other file pinned, in any order: records', () async {
+      expect(gecko.files, hasLength(2));
+      expect(
+        await companionProblem(gecko, const ['other', 'tokenizer'], hash: hash),
+        isNull,
+      );
+    });
+
+    test(
+      'a companion with other bytes, or none: a reason naming the file',
+      () async {
+        for (final companions in const [
+          <String>[],
+          ['other'],
+          ['missing'],
+        ]) {
+          final reason = await companionProblem(gecko, companions, hash: hash);
+          expect(reason, contains(gecko.files[1].path), reason: '$companions');
+          expect(reason, contains(gecko.id), reason: '$companions');
+        }
+        expect(
+          await companionProblem(gecko, const ['missing'], hash: hash),
+          contains('cannot read it'),
+        );
+      },
     );
   });
 }

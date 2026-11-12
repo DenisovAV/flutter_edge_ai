@@ -9,11 +9,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
+const _file = 'Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm';
 const _url =
-    'https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm';
+    'https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/$_file';
 
 InferenceModel? _model;
+
+/// The backend the last [_run] ran on.
+PreferredBackend? _ranOn;
 
 Future<String> _run(PreferredBackend backend) async {
   _model = await FlutterEdgeAi.getActiveModel(
@@ -29,6 +34,7 @@ Future<String> _run(PreferredBackend backend) async {
     chunks.add(c);
   }
   await session.close();
+  _ranOn = _model!.activeBackend;
   await _model!.close();
   _model = null;
   return chunks.join();
@@ -50,8 +56,18 @@ void main() {
     final cpu = await _run(PreferredBackend.cpu);
     print('[Qwen2.5 CPU] $cpu');
     expect(cpu.trim(), isNotEmpty);
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath(_file),
+      backend: _ranOn,
+      check: 'text',
+    );
     final gpu = await _run(PreferredBackend.gpu);
     print('[Qwen2.5 GPU] $gpu');
     expect(gpu.trim(), isNotEmpty);
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath(_file),
+      backend: _ranOn,
+      check: 'text',
+    );
   }, timeout: const Timeout(Duration(minutes: 40)));
 }

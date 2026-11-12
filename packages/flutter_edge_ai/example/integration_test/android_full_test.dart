@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 const _dir = '/data/local/tmp/flutter_gemma_test';
 const _gemma3_1b = '$_dir/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
@@ -25,6 +26,9 @@ Future<void> _install(String path) async {
     fileType: ModelFileType.litertlm,
   ).fromFile(path).install();
 }
+
+/// The backend the last [_chat] ran on.
+PreferredBackend? _ranOn;
 
 Future<String> _chat(
   PreferredBackend backend,
@@ -55,6 +59,7 @@ Future<String> _chat(
   );
   final r = await session.getResponse();
   await session.close();
+  _ranOn = model.activeBackend;
   await model.close();
   return r;
 }
@@ -81,11 +86,13 @@ void main() {
       final r = await _chat(PreferredBackend.cpu, 4096, 'Say hi');
       print('[G3-1B CPU] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(path: _gemma3_1b, backend: _ranOn, check: 'text');
     });
     testWidgets('GPU', (t) async {
       final r = await _chat(PreferredBackend.gpu, 4096, 'What is 2+2?');
       print('[G3-1B GPU] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(path: _gemma3_1b, backend: _ranOn, check: 'text');
     });
   });
 
@@ -97,11 +104,13 @@ void main() {
       final r = await _chat(PreferredBackend.cpu, 4096, 'Say hi');
       print('[Qwen CPU] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(path: _qwen3_06, backend: _ranOn, check: 'text');
     });
     testWidgets('GPU', (t) async {
       final r = await _chat(PreferredBackend.gpu, 4096, 'What is 2+2?');
       print('[Qwen GPU] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(path: _qwen3_06, backend: _ranOn, check: 'text');
     });
   });
 
@@ -113,11 +122,13 @@ void main() {
       final r = await _chat(PreferredBackend.cpu, 4096, 'Say hi');
       print('[G3n CPU] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(path: _gemma3n, backend: _ranOn, check: 'text');
     });
     testWidgets('GPU', (t) async {
       final r = await _chat(PreferredBackend.gpu, 4096, 'What is 2+2?');
       print('[G3n GPU] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(path: _gemma3n, backend: _ranOn, check: 'text');
     });
     testWidgets('vision', (t) async {
       if (_testImage.isEmpty) {
@@ -159,11 +170,13 @@ void main() {
       final r = await _chat(PreferredBackend.cpu, 4096, 'Say hi');
       print('[G4 CPU] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(path: _gemma4, backend: _ranOn, check: 'text');
     });
     testWidgets('GPU', (t) async {
       final r = await _chat(PreferredBackend.gpu, 4096, 'What is 2+2?');
       print('[G4 GPU] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(path: _gemma4, backend: _ranOn, check: 'text');
     });
     testWidgets('vision', (t) async {
       if (_testImage.isEmpty) {

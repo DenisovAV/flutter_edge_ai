@@ -16,12 +16,15 @@ import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'registry_evidence.dart';
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
     'Inflect public path: install (2-repo) -> getActiveTts -> synthesize',
     (tester) async {
+      final speechBackend = speechBackendFromDefine();
       await FlutterEdgeAi.initialize(
         ttsBackends: const [LiteRtTtsBackend()],
         inferenceEngines: const [LiteRtLmEngine()],
@@ -38,7 +41,9 @@ void main() {
           .ofType(TtsModelType.inflect)
           .install();
 
-      final synth = await FlutterEdgeAi.getActiveTts();
+      final synth = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
+      );
       addTearDown(synth.close);
 
       final pcm = await synth.synthesize(
@@ -58,6 +63,15 @@ void main() {
       }
       debugPrint('[inflect-public] $n samples ($nonZero non-zero)');
       expect(nonZero, greaterThan(n ~/ 4), reason: 'reply audio is silence');
+      // Speech ran on SPEECH_BACKEND: it fails rather than fall back.
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(
+          'inflect__inflect_text_encoder_fp16.tflite',
+        ),
+        backend: speechBackend,
+        check: 'synthesizes non-silent audio',
+        companions: await installedFilePaths(FlutterEdgeAi.activeTtsSpec),
+      );
     },
     timeout: const Timeout(Duration(minutes: 10)),
   );

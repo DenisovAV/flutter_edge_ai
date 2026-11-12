@@ -51,6 +51,7 @@ import 'package:integration_test/integration_test.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart'
     show macosContainerDocumentsPath, macosStagedFilePath;
+import 'registry_evidence.dart';
 
 const _packsDefine = String.fromEnvironment('DECIDER_PACKS');
 
@@ -958,6 +959,11 @@ void main() {
       // ignore: avoid_print
       print('[decider] Qwen3 0.6B self-check passed: ${_checked(m)}');
       expect(_checked(m), isTrue);
+      await recordEvidence(
+        path: path,
+        backend: m.activeBackend,
+        check: 'option scoring',
+      );
       await scorer.close();
     }, skip: skip);
 

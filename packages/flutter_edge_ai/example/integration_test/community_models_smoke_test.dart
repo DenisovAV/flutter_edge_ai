@@ -25,6 +25,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 String get _androidDir => '/data/local/tmp/flutter_gemma_test';
 String get _linuxDir => '${Platform.environment['HOME']}/models';
@@ -53,6 +54,24 @@ Future<void> _install({
       fileType: ModelFileType.litertlm,
     ).fromNetwork(networkUrl).install();
   }
+}
+
+/// Registry evidence that [check] passed on the file [_install] installed
+/// from the same arguments, on the backend that ran.
+Future<void> _evidence({
+  required String? localPath,
+  required String networkUrl,
+  required String check,
+}) async {
+  await recordEvidence(
+    path: localPath != null && File(localPath).existsSync()
+        ? localPath
+        : await FlutterEdgeAi.getModelPath(
+            Uri.parse(networkUrl).pathSegments.last,
+          ),
+    backend: _model?.activeBackend,
+    check: check,
+  );
 }
 
 InferenceModel? _model;
@@ -135,6 +154,12 @@ void main() {
       final r = await _chat('Name three primary colors.');
       print('[SmolLM3] $r');
       expect(r.trim(), isNotEmpty);
+      await _evidence(
+        localPath: _localPath('SmolLM3-3B_q4_block32_ekv4096.litertlm'),
+        networkUrl:
+            'https://huggingface.co/litert-community/SmolLM3-3B/resolve/main/SmolLM3-3B_q4_block32_ekv4096.litertlm',
+        check: 'text',
+      );
     });
   });
 
@@ -156,6 +181,12 @@ void main() {
       );
       print('[Phi-4-reasoning] $r');
       expect(r.trim(), isNotEmpty);
+      await _evidence(
+        localPath: _localPath('Phi-4-mini-reasoning.litertlm'),
+        networkUrl:
+            'https://huggingface.co/litert-community/Phi-4-mini-reasoning/resolve/main/model.litertlm',
+        check: 'text',
+      );
     });
   });
 

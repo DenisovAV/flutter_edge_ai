@@ -18,6 +18,8 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
     show LiteRtTtsBackend;
 
+import 'registry_evidence.dart';
+
 const _modelUrl =
     'https://huggingface.co/litert-community/Matcha-TTS/resolve/main/';
 
@@ -27,6 +29,7 @@ void main() {
   testWidgets(
     'Matcha synthesizes "Hello world." byte-identical to the golden PCM',
     (_) async {
+      final speechBackend = speechBackendFromDefine();
       await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
       await FlutterEdgeAi.installTts()
@@ -34,7 +37,9 @@ void main() {
           .ofType(TtsModelType.matcha)
           .install();
 
-      final synth = await FlutterEdgeAi.getActiveTts();
+      final synth = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
+      );
 
       try {
         final pcm = await synth.synthesize('Hello world.');
@@ -73,6 +78,15 @@ void main() {
           reason: 'PCM length diverged from golden',
         );
         expect(pcm, orderedEquals(goldenBytes));
+        // Speech ran on SPEECH_BACKEND: it fails rather than fall back.
+        await recordEvidence(
+          path: await FlutterEdgeAi.getModelPath(
+            'matcha__matcha_textenc_fp16.tflite',
+          ),
+          backend: speechBackend,
+          check: 'synthesizes the golden pcm',
+          companions: await installedFilePaths(FlutterEdgeAi.activeTtsSpec),
+        );
       } finally {
         await synth.close();
       }

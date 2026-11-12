@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 const _url =
     'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
@@ -34,6 +35,11 @@ void main() {
     final r = await session.getResponse();
     print('[Gemma3-1B GPU] $r');
     expect(r, isNotEmpty);
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath(Uri.parse(_url).pathSegments.last),
+      backend: model.activeBackend,
+      check: 'text',
+    );
 
     await session.close();
     await model.close();

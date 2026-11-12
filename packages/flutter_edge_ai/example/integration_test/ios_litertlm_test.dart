@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'inference_test_helpers.dart';
+import 'registry_evidence.dart';
 
 const _litertlmUrl =
     'https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/resolve/main/gemma-3n-E2B-it-int4.litertlm';
@@ -56,6 +57,13 @@ void main() {
         '[Text/litertlm] Response: "${text.length > 150 ? text.substring(0, 150) : text}"',
       );
       expect(text, isNotEmpty);
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(
+          Uri.parse(_litertlmUrl).pathSegments.last,
+        ),
+        backend: model.activeBackend,
+        check: 'text',
+      );
     } finally {
       await model.close();
     }

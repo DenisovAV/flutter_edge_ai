@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 // EmbeddingGemma 300M seq256 — good semantic quality, already in example assets
 const _modelPath =
@@ -98,6 +99,12 @@ void main() {
       expect(batch[1].length, equals(768));
 
       print('All embedding tests passed!');
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(_modelFilename),
+        backend: model.activeBackend,
+        check: 'embeds',
+        companions: await installedFilePaths(FlutterEdgeAi.activeEmbedderSpec),
+      );
     } finally {
       await model.close();
     }

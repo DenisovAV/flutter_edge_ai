@@ -17,6 +17,7 @@ import 'package:flutter_edge_ai_example/translation/translate_gemma_xml_strategy
 import 'package:flutter_edge_ai_example/translation/translate_runner.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 const _modelName = 'translategemma-4b-it-int4-generic.litertlm';
 
@@ -63,6 +64,11 @@ void main() {
       print('[GPU probe] en→fr in ${sw.elapsedMilliseconds}ms: "$fr"');
       expect(fr.trim(), isNotEmpty);
       expect(fr.toLowerCase(), contains('bonjour'));
+      await recordEvidence(
+        path: modelPath,
+        backend: model.activeBackend,
+        check: 'translates',
+      );
     } finally {
       await model.close();
     }

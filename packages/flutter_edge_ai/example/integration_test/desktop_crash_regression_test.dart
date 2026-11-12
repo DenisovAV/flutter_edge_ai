@@ -31,6 +31,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 // Default model for groups A/B. Must be pre-installed in the sandbox.
 const _modelFileName = 'gemma-3n-E2B-it-int4.litertlm';
@@ -117,6 +118,11 @@ void main() {
             reason:
                 'First message must produce a response. '
                 'SIGSEGV here = Metal accelerator missing (Bug A).',
+          );
+          await recordEvidence(
+            path: modelPath,
+            backend: model.activeBackend,
+            check: 'text',
           );
         } finally {
           await model.close();
@@ -408,6 +414,11 @@ void main() {
               'First message on Qwen 2.5 must complete without SIGSEGV. '
               'Original crash: jni_CallVoidMethodV → nativeSendMessageAsync '
               '→ Tasks::Decode. See issue #219.',
+        );
+        await recordEvidence(
+          path: qwenModelPath,
+          backend: model.activeBackend,
+          check: 'text',
         );
       } finally {
         await model.close();

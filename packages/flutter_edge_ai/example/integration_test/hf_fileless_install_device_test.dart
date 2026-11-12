@@ -31,6 +31,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 const _repo = 'litert-community/LFM2.5-230M';
 const _hfToken = String.fromEnvironment('HUGGINGFACE_TOKEN');
@@ -107,6 +108,13 @@ void main() {
         '${defaults.preferredBackend}) / maxTokens=${defaults.maxTokens} / '
         'install ${installMs}ms / OK, no manual override\n'
         '[HF-FILELESS] reply: "${response.trim()}"\n',
+      );
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(
+          install.spec.files.first.filename,
+        ),
+        backend: model.activeBackend,
+        check: 'text',
       );
     } finally {
       await model.close();

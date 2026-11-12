@@ -25,6 +25,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 const _gemma4File = 'gemma-4-E2B-it.litertlm';
 const _gemma4Url =
@@ -171,6 +172,14 @@ void main() {
       everything.addAll(again);
       await _generate('${order.first} reopened', again.first);
       await _generate('${order.last} reopened', again.last);
+      for (final (name, model) in opened) {
+        final spec = name == 'npu' ? npuSpec! : e2b;
+        await recordEvidence(
+          path: await FlutterEdgeAi.getModelPath(spec.files.first.filename),
+          backend: model.activeBackend,
+          check: 'text',
+        );
+      }
     } finally {
       for (final model in everything.reversed) {
         await model.close();

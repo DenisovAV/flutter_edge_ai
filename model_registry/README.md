@@ -172,10 +172,53 @@ the CPU in a GPU run). v1 lines recorded the text model's backend there, so
 `vision` or `audio` check. The vision and audio checks assert what the
 bundled fixtures hold and record nothing for a staged file of unknown content.
 
-Today: `litertlm_ffi_test.dart` (Gemma 4 E2B text on CPU and GPU, vision and
-audio on the backend their encoder ran on, and the staged NPU bundle), `embeddinggemma2_test.dart`,
-`stt_moonshine_test.dart` and `tts_smoke_test.dart`. Turn a run's log into an
-evidence file at the commit that ran, then generate:
+Today, every native suite whose expectations show a `.litertlm` or `.tflite`
+model working records each check it passed, on the backend the model reports.
+A build of several files (a `.tflite` embedder or speech model and its
+tokenizer, a TTS bundle) counts only when every file the test loaded is pinned.
+Speech reports no backend; its suites run on `--dart-define=SPEECH_BACKEND=cpu|gpu`
+(default `cpu`), which it uses or fails, and record that:
+
+- Gemma 4 E2B, FunctionGemma and Gemma 3 1B: `litertlm_ffi_test.dart` (text on
+  CPU and GPU, vision and audio on the backend their encoder ran on, and the
+  staged NPU bundle), `agent_with_model_test.dart`,
+  `desktop_chat_test.dart`, `desktop_thinking_test.dart`,
+  `embed_then_generate_447_test.dart`, `embed_then_generate_447_eg2_test.dart`,
+  `gemma4_function_calling_test.dart`, `genai_primitives_test.dart`,
+  `generate_with_tools_test.dart`, `hf_fileless_install_device_test.dart`,
+  `issue318_maxtokens_test.dart`,
+  `litertlm_functiongemma_gpu_activation_test.dart`,
+  `litertlm_native_tools_test.dart`, `litertlm_open_model_test.dart`,
+  `litertlm_open_sessions_test.dart`, `litertlm_stop_rewind_test.dart`,
+  `litertlm_structured_output_test.dart`, `litertlm_thinking_budget_test.dart`,
+  `sequential_gemma4_test.dart`, `system_instruction_test.dart`,
+  `thinking_mode_test.dart`, `voice_agent_test.dart` and `voice_tools_test.dart`;
+- other LLMs (Gemma 3n, Qwen3, Qwen2.5, SmolLM3, Phi-4, FastVLM,
+  TranslateGemma): `android_full_test.dart`, `community_models_smoke_test.dart`,
+  `desktop_crash_regression_test.dart`, `desktop_full_test.dart`,
+  `desktop_thinking_all_models_test.dart`, `desktop_thinking_qwen3_test.dart`,
+  `ffi_test.dart`, `ios_01_gpu_gemma3_1b.dart`, `ios_device_test.dart`,
+  `ios_engine_test.dart`, `ios_gpu_seed_test.dart`, `ios_litertlm_test.dart`,
+  `litertlm_inference_decider_test.dart` (Qwen3 option scoring),
+  `phi4_smoke_test.dart`, `qwen25_smoke_test.dart`,
+  `sentencepiece_nul_piece_test.dart`, `sequential_litertlm_test.dart`,
+  `smollm3_smoke_test.dart`, `translate_gemma_smoke_test.dart` and
+  `translategemma_gpu_probe_test.dart`;
+- embedders: `embeddinggemma2_test.dart`, `embeddinggemma2_audio_test.dart`,
+  `embeddinggemma2_gpu_test.dart`, `embeddinggemma2_gpu_towers_test.dart`,
+  `embeddinggemma2_npu_test.dart`, `desktop_embedding_test.dart`,
+  `embedding_dual_model_test.dart`, `embedding_golden_test.dart`,
+  `embedding_score_comparison_test.dart`, `embedding_stability_test.dart` and
+  `rag_0_15_2_smoke_test.dart`;
+- speech: `stt_moonshine_test.dart`, `parakeet_ctc_test.dart`,
+  `stt_int8_test.dart`, `whisper_tiny_test.dart`, `whisper_language_test.dart`,
+  `voice_loop_test.dart`, `tts_smoke_test.dart`, `tts_matcha_test.dart`,
+  `tts_robustness_test.dart`, `inflect_public_test.dart` and
+  `qwen3_tts_test.dart`.
+
+A vision or audio check that only asserts a non-empty answer records nothing,
+nor do benchmarks, memory and lifecycle suites, MediaPipe, ONNX and web runs.
+Turn a run's log into an evidence file at the commit that ran, then generate:
 
 ```sh
 cd packages/flutter_edge_ai/example

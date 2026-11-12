@@ -54,6 +54,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'goldens/eg2_image_golden.dart';
 import 'goldens/eg2_text_golden.dart';
+import 'registry_evidence.dart';
 
 const _socDefine = String.fromEnvironment('EG2_NPU_SOC');
 const _dirDefine = String.fromEnvironment('EG2_NPU_DIR');
@@ -189,6 +190,19 @@ Future<void> _ensureGeneric() async {
   }
   await builder.install();
 }
+
+/// Registry evidence that [check] passed on the staged [bundle] of the SoC
+/// under test (picked by `_ensureNpu270m`, which every check runs first), on
+/// the backend [model] ran.
+Future<void> _evidence(
+  String Function(String soc) bundle,
+  EmbeddingModel model,
+  String check,
+) => recordEvidence(
+  path: bundle(_soc!),
+  backend: model.activeBackend,
+  check: check,
+);
 
 /// The active embedder on the NPU.
 Future<EmbeddingModel> _npu({bool images = false}) =>
@@ -388,6 +402,7 @@ void main() {
       final best = scores.indexOf(scores.reduce(math.max));
       expect(best, i, reason: 'q$i ranks d$best first: $scores');
     }
+    await _evidence(_bundle270m, model, 'golden text ranking');
   }, timeout: const Timeout(Duration(minutes: 10)));
 
   testWidgets('refusals: the NPU bundle without npu, the generic bundle with '
@@ -524,6 +539,7 @@ void main() {
     }
     _log('soc=$_soc text→image top-1 $top1/10 $misses');
     expect(top1, 10, reason: '$misses');
+    await _evidence(_bundle440m, model, 'text to image retrieval');
     await model.close();
   }, timeout: const Timeout(Duration(minutes: 20)));
 }

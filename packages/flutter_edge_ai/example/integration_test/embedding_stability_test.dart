@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 /// Integration test for embedding model stability.
 ///
@@ -74,6 +75,14 @@ void main() {
       final diffSimilarity = cosineSimilarity(queryEmb, diffEmb);
       print('diffSimilarity: $diffSimilarity');
       expect(diffSimilarity, lessThan(0.3));
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(
+          'embeddinggemma-300M_seq256_mixed-precision.tflite',
+        ),
+        backend: model.activeBackend,
+        check: 'embeds',
+        companions: await installedFilePaths(FlutterEdgeAi.activeEmbedderSpec),
+      );
     } finally {
       await model.close();
     }

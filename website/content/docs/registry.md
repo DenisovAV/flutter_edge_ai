@@ -70,9 +70,10 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [generic](https://huggingface.co/sasha-denisov/function-gemma-270M-it/blob/5576af584d75618cdf0cd07b5e79c6fd9ac0ace5/functiongemma-270M-it.litertlm)<br>284&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [generic](https://huggingface.co/sasha-denisov/function-gemma-270M-it/blob/5576af584d75618cdf0cd07b5e79c6fd9ac0ace5/functiongemma-270M-it.litertlm)<br>284&nbsp;MB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L261)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 
 <a id="gemma-3-1b-it"></a>
 
@@ -82,7 +83,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [q4-ekv4096](https://huggingface.co/litert-community/Gemma3-1B-IT/blob/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm)<br>584&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [q4-ekv4096](https://huggingface.co/litert-community/Gemma3-1B-IT/blob/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm)<br>584&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [npu-mt6989](https://huggingface.co/litert-community/Gemma3-1B-IT/blob/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_q4_ekv1280_mt6989.litertlm)<br>1.03&nbsp;GB · context&nbsp;1280 | NPU&nbsp;⏸️ |  |  |  |  |  |  |
 | [npu-mt6991](https://huggingface.co/litert-community/Gemma3-1B-IT/blob/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_q4_ekv1280_mt6991.litertlm)<br>1.03&nbsp;GB · context&nbsp;1280 | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [npu-mt6993](https://huggingface.co/litert-community/Gemma3-1B-IT/blob/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_q4_ekv1280_mt6993.litertlm)<br>1.02&nbsp;GB · context&nbsp;1280 | NPU&nbsp;⛔ |  |  |  |  |  |  |
@@ -90,6 +91,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [npu-tensor-g5](https://huggingface.co/litert-community/Gemma3-1B-IT/blob/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_q8_ekv1280_Google_Tensor_G5.litertlm)<br>1.68&nbsp;GB · context&nbsp;1280 | NPU&nbsp;⚪ |  |  |  |  |  |  |
 | [npu-tensor-g6](https://huggingface.co/litert-community/Gemma3-1B-IT/blob/d448835d84411a08f577e25f3afebe528402d73b/Gemma3-1B-IT_q8_ekv1280_Google_Tensor_G6.litertlm)<br>2.04&nbsp;GB · context&nbsp;1280 | NPU&nbsp;⚪ |  |  |  |  |  |  |
 
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L259-L260)).
 - Withheld: MediaTek NPU is refused from flutter_edge_ai_litertlm 1.20.0 on LiteRT-LM 0.19 because the vendor dispatch does not export LiteRtDispatchQueryInterface and an MT6989 conversation returned an empty second message (decision K). Version 1.19.x ran this build. [Issue](https://github.com/google-ai-edge/LiteRT-LM/issues/4256).
 - Documented: [PR #701](https://github.com/DenisovAV/flutter_edge_ai/pull/701), Gemma 3 NPU prefill chunks (LiteRT-LM#3508).
@@ -116,11 +118,12 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [generic](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/blob/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4.litertlm)<br>3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [generic](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/blob/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4.litertlm)<br>3.66&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [web](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/blob/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4-Web.litertlm)<br>3.04&nbsp;GB |  |  |  |  |  |  | GPU&nbsp;📝 |
 | [npu-mt6993](https://huggingface.co/google/gemma-3n-E2B-it-litert-lm/blob/c03b6f60b8da6c5400b6838a2cf26420f80c0a01/gemma-3n-E2B-it-int4.mediatek.mt6993.litertlm)<br>4.33&nbsp;GB · context&nbsp;2048 | NPU&nbsp;⛔ |  |  |  |  |  |  |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L252-L253)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 
 <a id="gemma-3n-e4b-it"></a>
 
@@ -155,7 +158,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 - Verified on Android: OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
 - Verified on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
-- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_litertlm 1.20.0.
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 - Verified on Windows x64: Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-07, flutter_edge_ai_litertlm 1.20.0.
 - Verified on Linux x64: GCE flutter-gemma-linux (Tesla T4), 2026-11-07, flutter_edge_ai_litertlm 1.20.0.
 - Documented: [PR #602](https://github.com/DenisovAV/flutter_edge_ai/pull/602), VENTUNO Q run (native-v0.18.0-c, litertlm 1.11.0).
@@ -223,9 +226,10 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [generic](https://huggingface.co/litert-community/Phi-4-mini-reasoning/blob/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm)<br>2.78&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [generic](https://huggingface.co/litert-community/Phi-4-mini-reasoning/blob/62a183af7b3d3d46f8df17dde9bf8381988bbf68/model.litertlm)<br>2.78&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;✅ CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L269)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 
 <a id="qwen2-vl-2b"></a>
 
@@ -247,9 +251,10 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [q8-ekv4096](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/blob/5068b3fd9788a4ed5633dc868687f778143b73f3/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm)<br>1.60&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [q8-ekv4096](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/blob/5068b3fd9788a4ed5633dc868687f778143b73f3/Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm)<br>1.60&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [f32-ekv4096](https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/blob/5068b3fd9788a4ed5633dc868687f778143b73f3/Qwen2.5-1.5B-Instruct_multi-prefill-seq_f32_ekv4096.litertlm)<br>6.18&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L263)).
 
 <a id="qwen3-0.6b"></a>
@@ -276,10 +281,11 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [q4-block32-ekv4096](https://huggingface.co/litert-community/SmolLM3-3B/blob/7621a4f099a00b0518e0a6e7c5628af08ab4184e/SmolLM3-3B_q4_block32_ekv4096.litertlm)<br>2.00&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [q4-block32-ekv4096](https://huggingface.co/litert-community/SmolLM3-3B/blob/7621a4f099a00b0518e0a6e7c5628af08ab4184e/SmolLM3-3B_q4_block32_ekv4096.litertlm)<br>2.00&nbsp;GB | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;📝 CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [standard](https://huggingface.co/litert-community/SmolLM3-3B/blob/7621a4f099a00b0518e0a6e7c5628af08ab4184e/SmolLM3-3B.litertlm)<br>3.13&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L266-L267)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 
 <a id="smolvlm2-500m"></a>
 
@@ -301,12 +307,13 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [int4](https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized/blob/a45b06a66177e5cbc6d95babe2f89c1df75c0219/artifacts/int4-generic/translategemma-4b-it-int4-generic.litertlm)<br>2.01&nbsp;GB | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;⚪ |  |
+| [int4](https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized/blob/a45b06a66177e5cbc6d95babe2f89c1df75c0219/artifacts/int4-generic/translategemma-4b-it-int4-generic.litertlm)<br>2.01&nbsp;GB | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;✅ | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;⚪ |  |
 | [int8](https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized/blob/a45b06a66177e5cbc6d95babe2f89c1df75c0219/artifacts/dynamic_int8-generic/translategemma-4b-it-dynamic_int8-generic.litertlm)<br>3.92&nbsp;GB | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;📝 | GPU&nbsp;❌ CPU&nbsp;⚪ |  |
 | [int4-multimodal](https://huggingface.co/barakplasma/translategemma-4b-it-android-task-quantized/blob/a45b06a66177e5cbc6d95babe2f89c1df75c0219/artifacts/int4-multimodal/translategemma-4b-it-int4-multimodal.litertlm)<br>2.76&nbsp;GB | GPU&nbsp;❌ CPU&nbsp;⚪ | GPU&nbsp;❌ CPU&nbsp;⚪ | GPU&nbsp;❌ CPU&nbsp;⚪ | GPU&nbsp;❌ CPU&nbsp;⚪ | GPU&nbsp;❌ CPU&nbsp;⚪ | GPU&nbsp;❌ CPU&nbsp;⚪ |  |
 
 - Broken: On GPU the model emits only &lt;pad&gt; tokens. [Issue](https://github.com/google-ai-edge/LiteRT-LM/issues/1748).
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L271)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 
 ## Embedding models
 
@@ -318,7 +325,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [generic](https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/blob/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m.litertlm)<br>485&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;📝 |
+| [generic](https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/blob/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m.litertlm)<br>485&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;📝 |
 | [npu-mt6991](https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/blob/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m_MediaTek_MT6991.litertlm)<br>895&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [npu-mt6993](https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/blob/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m_MediaTek_MT6993.litertlm)<br>865&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [npu-ptl](https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/blob/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m_Intel_PTL.litertlm)<br>856&nbsp;MB |  |  |  | NPU&nbsp;⚪ |  |  |  |
@@ -331,6 +338,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [npu-tensor-g6](https://huggingface.co/litert-community/embeddinggemma-2-740m-litert-lm/blob/24d962e906c7d332c6428e71c9676855024569e2/embeddinggemma-2-740m_Google_Tensor_G6.litertlm)<br>616&nbsp;MB | NPU&nbsp;⚪ |  |  |  |  |  |  |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L546)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L544-L546)).
 - Documented: the Embeddings & RAG page ([at da9a3cb](https://github.com/DenisovAV/flutter_edge_ai/blob/da9a3cb1f5803a9c766407bcb8681d9d03affa6f/website/content/docs/embeddings-and-rag.md#L417-L419)).
 
@@ -356,7 +364,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 - Verified on Android: OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
 - Verified on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
-- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_litertlm 1.20.0.
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 - Verified on Windows x64: Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-07, flutter_edge_ai_litertlm 1.20.0.
 - Verified on Linux x64: GCE flutter-gemma-linux (Tesla T4), 2026-11-07, flutter_edge_ai_litertlm 1.20.0.
 - Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).
@@ -373,7 +381,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [generic](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m.litertlm)<br>388&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;🕓 | GPU&nbsp;⛔ CPU&nbsp;🕓 | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;🕓 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;📝 |
+| [generic](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m.litertlm)<br>388&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;🕓 | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;🕓 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;📝 |
 | [npu-mt6991](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_MediaTek_MT6991.litertlm)<br>798&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [npu-mt6993](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_MediaTek_MT6993.litertlm)<br>768&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [npu-ptl](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Intel_PTL.litertlm)<br>752&nbsp;MB |  |  |  | NPU&nbsp;⚪ |  |  |  |
@@ -387,7 +395,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 - Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).
 - Stale on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1.
-- Stale on macOS: Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1.
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 - Verified on Windows x64: Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-07, flutter_edge_ai_litertlm 1.20.0.
 - Stale on Linux x64: GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1.
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L544-L546)).
@@ -402,7 +410,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [seq256](https://huggingface.co/litert-community/embeddinggemma-300m/blob/29888fcee3216acadc7e844906e5fe0d79a61875/embeddinggemma-300M_seq256_mixed-precision.tflite)<br>179&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |
+| [seq256](https://huggingface.co/litert-community/embeddinggemma-300m/blob/29888fcee3216acadc7e844906e5fe0d79a61875/embeddinggemma-300M_seq256_mixed-precision.tflite)<br>179&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |
 | [seq256-npu-mt6991](https://huggingface.co/litert-community/embeddinggemma-300m/blob/459f1d37fec9635eb1730ebdbc219bfc3226c8e7/embeddinggemma-300M_seq256_mixed-precision.mediatek.mt6991.tflite)<br>188&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [seq256-npu-mt6993](https://huggingface.co/litert-community/embeddinggemma-300m/blob/459f1d37fec9635eb1730ebdbc219bfc3226c8e7/embeddinggemma-300M_seq256_mixed-precision.mediatek.mt6993.tflite)<br>176&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [seq256-npu-sm8550](https://huggingface.co/litert-community/embeddinggemma-300m/blob/459f1d37fec9635eb1730ebdbc219bfc3226c8e7/embeddinggemma-300M_seq256_mixed-precision.qualcomm.sm8550.tflite)<br>184&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  | NPU&nbsp;⛔ |  |
@@ -440,6 +448,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [seq2048-npu-tensor-g6](https://huggingface.co/litert-community/embeddinggemma-300m/blob/459f1d37fec9635eb1730ebdbc219bfc3226c8e7/embeddinggemma-300M_seq2048_mixed-precision.google.tensor_g6.tflite)<br>252&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L547-L553)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 
 <a id="gecko-110m-en"></a>
 
@@ -449,7 +458,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [seq64-quant](https://huggingface.co/litert-community/Gecko-110m-en/blob/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/Gecko_64_quant.tflite)<br>112&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |
+| [seq64-quant](https://huggingface.co/litert-community/Gecko-110m-en/blob/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/Gecko_64_quant.tflite)<br>112&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |
 | [seq256-quant](https://huggingface.co/litert-community/Gecko-110m-en/blob/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/Gecko_256_quant.tflite)<br>114&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |
 | [seq512-quant](https://huggingface.co/litert-community/Gecko-110m-en/blob/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/Gecko_512_quant.tflite)<br>120&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |
 | [seq1024-quant](https://huggingface.co/litert-community/Gecko-110m-en/blob/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/Gecko_1024_quant.tflite)<br>146&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |
@@ -459,6 +468,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [seq1024-f32](https://huggingface.co/litert-community/Gecko-110m-en/blob/61a0d0c2cdc9b4f2c1727e63acb7ad86e68508c2/Gecko_1024_f32.tflite)<br>475&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⛔ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L547-L553)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0.
 
 ## Speech to text
 
@@ -471,7 +481,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | [f32](https://huggingface.co/litert-community/moonshine-tiny/blob/eb73d789d7eebcd4d3d5f1a851692923a8e76763/moonshine_tiny_5s_f32.tflite)<br>109&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;📝 |  |
-| [i8](https://huggingface.co/litert-community/moonshine-tiny/blob/eb73d789d7eebcd4d3d5f1a851692923a8e76763/moonshine_tiny_5s_i8.tflite)<br>52&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [i8](https://huggingface.co/litert-community/moonshine-tiny/blob/eb73d789d7eebcd4d3d5f1a851692923a8e76763/moonshine_tiny_5s_i8.tflite)<br>52&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [f32-npu-mt6877](https://huggingface.co/litert-community/moonshine-tiny/blob/eb73d789d7eebcd4d3d5f1a851692923a8e76763/moonshine_tiny_5s_f32_MediaTek_MT6877.tflite)<br>102&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [f32-npu-mt6878](https://huggingface.co/litert-community/moonshine-tiny/blob/eb73d789d7eebcd4d3d5f1a851692923a8e76763/moonshine_tiny_5s_f32_MediaTek_MT6878.tflite)<br>98&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [f32-npu-mt6879](https://huggingface.co/litert-community/moonshine-tiny/blob/eb73d789d7eebcd4d3d5f1a851692923a8e76763/moonshine_tiny_5s_f32_MediaTek_MT6879.tflite)<br>102&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
@@ -494,7 +504,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 - Verified on Android: OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_speech 0.6.0.
 - Verified on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_speech 0.6.0.
-- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_speech 0.6.0.
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1.
 - Verified on Windows x64: Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-07, flutter_edge_ai_speech 0.6.0.
 - Verified on Linux x64: GCE flutter-gemma-linux (Tesla T4), 2026-11-07, flutter_edge_ai_speech 0.6.0.
 - Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).
@@ -508,7 +518,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [f32](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32.tflite)<br>2.35&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [f32](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32.tflite)<br>2.35&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [i8](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_i8.tflite)<br>596&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [f32-npu-mt6877](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32_MediaTek_MT6877.tflite)<br>1.20&nbsp;GB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [f32-npu-mt6878](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32_MediaTek_MT6878.tflite)<br>1.18&nbsp;GB | NPU&nbsp;⛔ |  |  |  |  |  |  |
@@ -532,6 +542,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [f32-npu-tensor-g3](https://huggingface.co/litert-community/parakeet-ctc-0.6b/blob/e3c5b655c0159f79bc90be2d6769fa7cc6386856/parakeet_ctc_0.6b_5s_f32_Google_Tensor_G3.tflite)<br>2&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 
 - Documented: [PR #752](https://github.com/DenisovAV/flutter_edge_ai/pull/752), Galaxy S23 (Snapdragon 8 Gen 2), one 5 s window.
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1.
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L497)).
 
 <a id="whisper-base"></a>
@@ -543,9 +554,10 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | [f32](https://huggingface.co/litert-community/whisper-base/blob/ba2c613646edc2b72f5a51fa0b5b0b322e436101/whisper_base_30s_f32.tflite)<br>290&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
-| [i8](https://huggingface.co/litert-community/whisper-base/blob/ba2c613646edc2b72f5a51fa0b5b0b322e436101/whisper_base_30s_i8.tflite)<br>77&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [i8](https://huggingface.co/litert-community/whisper-base/blob/ba2c613646edc2b72f5a51fa0b5b0b322e436101/whisper_base_30s_i8.tflite)<br>77&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L495-L496)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1.
 
 <a id="whisper-tiny"></a>
 
@@ -555,8 +567,8 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [f32](https://huggingface.co/litert-community/whisper-tiny/blob/d0662bbcb13106e6f740632b9ff961c8e22f7a13/whisper_tiny_30s_f32.tflite)<br>151&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
-| [i8](https://huggingface.co/litert-community/whisper-tiny/blob/d0662bbcb13106e6f740632b9ff961c8e22f7a13/whisper_tiny_30s_i8.tflite)<br>41&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [f32](https://huggingface.co/litert-community/whisper-tiny/blob/d0662bbcb13106e6f740632b9ff961c8e22f7a13/whisper_tiny_30s_f32.tflite)<br>151&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [i8](https://huggingface.co/litert-community/whisper-tiny/blob/d0662bbcb13106e6f740632b9ff961c8e22f7a13/whisper_tiny_30s_i8.tflite)<br>41&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 | [f32-npu-mt6877](https://huggingface.co/litert-community/whisper-tiny/blob/d0662bbcb13106e6f740632b9ff961c8e22f7a13/whisper_tiny_30s_f32_MediaTek_MT6877.tflite)<br>158&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [f32-npu-mt6878](https://huggingface.co/litert-community/whisper-tiny/blob/d0662bbcb13106e6f740632b9ff961c8e22f7a13/whisper_tiny_30s_f32_MediaTek_MT6878.tflite)<br>156&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [f32-npu-mt6879](https://huggingface.co/litert-community/whisper-tiny/blob/d0662bbcb13106e6f740632b9ff961c8e22f7a13/whisper_tiny_30s_f32_MediaTek_MT6879.tflite)<br>158&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
@@ -578,6 +590,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [f32-npu-sm8850](https://huggingface.co/litert-community/whisper-tiny/blob/d0662bbcb13106e6f740632b9ff961c8e22f7a13/whisper_tiny_30s_f32_Qualcomm_SM8850.tflite)<br>120&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  | NPU&nbsp;⛔ |  |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L495-L496)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1.
 
 ## Text to speech
 
@@ -589,9 +602,10 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [bundle](https://huggingface.co/sasha-denisov/inflect-nano-v2-litert/tree/4f03cf68b5447ab22cdfa8bd052a78c6c9763891)<br>36&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [bundle](https://huggingface.co/sasha-denisov/inflect-nano-v2-litert/tree/4f03cf68b5447ab22cdfa8bd052a78c6c9763891)<br>36&nbsp;MB | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L531)).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1.
 
 <a id="matcha-tts"></a>
 
@@ -605,7 +619,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 - Verified on Android: OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_speech 0.6.0.
 - Verified on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_speech 0.6.0.
-- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_speech 0.6.0.
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1.
 - Verified on Windows x64: Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-07, flutter_edge_ai_speech 0.6.0.
 - Verified on Linux x64: GCE flutter-gemma-linux (Tesla T4), 2026-11-07, flutter_edge_ai_speech 0.6.0.
 - Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).
@@ -618,7 +632,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [bundle](https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/tree/5ad41057956abe19b6a3b78e677a0356ea606663)<br>1.89&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;📝 | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
+| [bundle](https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/tree/5ad41057956abe19b6a3b78e677a0356ea606663)<br>1.89&nbsp;GB | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ | GPU&nbsp;⚪ CPU&nbsp;⚪ |  |
 
-- Documented: [PR #695](https://github.com/DenisovAV/flutter_edge_ai/pull/695) (2026-10-19).
+- Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1.
 

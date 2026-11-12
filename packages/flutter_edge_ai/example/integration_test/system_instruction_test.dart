@@ -19,6 +19,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 const _androidModelDir = '/data/local/tmp/flutter_gemma_test';
 
@@ -76,6 +77,18 @@ Future<InferenceModel> _createModel(String path, ModelFileType fileType) async {
   );
 }
 
+/// Registry evidence that [check] passed on the file at [path]; the registry
+/// has `.litertlm` builds only, so a MediaPipe `.task` records nothing.
+Future<void> _evidence(
+  String path,
+  ModelFileType fileType,
+  InferenceModel model,
+  String check,
+) async {
+  if (fileType != ModelFileType.litertlm) return;
+  await recordEvidence(path: path, backend: model.activeBackend, check: check);
+}
+
 void _runTests(String path, ModelFileType fileType, String label) {
   group('systemInstruction [$label]', () {
     setUpAll(() {
@@ -118,6 +131,7 @@ void _runTests(String path, ModelFileType fileType, String label) {
             contains('ahoy'),
           ),
         );
+        await _evidence(path, fileType, model, 'system instruction');
       } finally {
         await model.close();
       }
@@ -141,6 +155,7 @@ void _runTests(String path, ModelFileType fileType, String label) {
         final response = chunks.join();
         print('[$label / chat / no-instruction] "$response"');
         expect(response, isNotEmpty);
+        await _evidence(path, fileType, model, 'text');
       } finally {
         await model.close();
       }
@@ -178,6 +193,7 @@ void _runTests(String path, ModelFileType fileType, String label) {
             contains('ahoy'),
           ),
         );
+        await _evidence(path, fileType, model, 'system instruction');
       } finally {
         await model.close();
       }

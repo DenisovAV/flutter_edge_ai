@@ -24,6 +24,7 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'registry_evidence.dart';
 import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _modelFileName = 'gemma-4-E2B-it.litertlm';
@@ -66,6 +67,7 @@ typedef _Turn = ({
   String answer,
   int outputTokens,
   double? tokensPerSecond,
+  PreferredBackend? backend,
 });
 
 /// The active model, built by an engine with [budget].
@@ -126,6 +128,7 @@ Future<_Turn> _turn(
       answer: answer.toString(),
       outputTokens: metrics.outputTokens,
       tokensPerSecond: metrics.tokensPerSecond,
+      backend: model.activeBackend,
     );
     // ignore: avoid_print
     print(
@@ -162,6 +165,11 @@ void main() {
     expect(free.thinking.startsWith(capped.thinking.trimRight()), isTrue);
     expect(capped.outputTokens, lessThan(free.outputTokens));
     expect(capped.answer.trim(), isNotEmpty);
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath(_modelFileName),
+      backend: free.backend,
+      check: 'thinking',
+    );
   }, timeout: const Timeout(Duration(minutes: 15)));
 
   testWidgets('a budget the turn never reaches changes nothing; decode speed '
@@ -259,6 +267,11 @@ void main() {
       expect(calls.single.name, 'multiply');
       expect(calls.single.args, {'a': 1234, 'b': 5678});
       expect(text.toString().replaceAll(',', ''), contains('7006652'));
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(_modelFileName),
+        backend: model.activeBackend,
+        check: 'tool call',
+      );
     } finally {
       await model.close();
     }

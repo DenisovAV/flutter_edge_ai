@@ -67,6 +67,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'goldens/eg2_audio_golden.dart';
 import 'goldens/eg2_text_golden.dart';
+import 'registry_evidence.dart';
 
 const _eg2Audio = catalog.EmbeddingModel.embeddingGemma2TextVisionAudio740m;
 const _audioUrlOverride = String.fromEnvironment('EG2_740M_MODEL_URL');
@@ -232,6 +233,20 @@ Future<Map<String, String>> _cacheTree() async {
           ? '${entry.lengthSync()} ${entry.lastModifiedSync()}'
           : 'dir',
   };
+}
+
+/// Registry evidence that [check] passed on [model]'s installed bundle, on
+/// the backend that ran.
+Future<void> _evidence(
+  catalog.EmbeddingModel model,
+  EmbeddingModel embedder,
+  String check,
+) async {
+  await recordEvidence(
+    path: await FlutterEdgeAi.getModelPath(model.filename),
+    backend: embedder.activeBackend,
+    check: check,
+  );
 }
 
 /// The cached embedder, closed, so the next `getActiveEmbedder()` builds.
@@ -409,6 +424,7 @@ void main() {
         ]),
         reason: 'the audio cache is written at create, into the pass dir',
       );
+      await _evidence(_eg2Audio, model, 'golden audio vectors');
     }, timeout: const Timeout(Duration(minutes: 30)));
 
     testWidgets('text → audio: every spoken sentence is found by its query, '
@@ -449,6 +465,7 @@ void main() {
       );
       expect(raw.top1, names.length, reason: '${raw.misses}');
       expect(query.top1, names.length, reason: '${query.misses}');
+      await _evidence(_eg2Audio, model, 'text to audio retrieval');
     }, timeout: const Timeout(Duration(minutes: 20)));
 
     testWidgets('containers: FLAC, 44.1 kHz stereo WAV and MP3 decode; M4A '
@@ -627,6 +644,7 @@ void main() {
         expect(value, greaterThanOrEqualTo(bound), reason: key);
         expect(toWheel[key], greaterThanOrEqualTo(_minWheel), reason: key);
       }
+      await _evidence(_eg2Audio, model, 'combined inputs');
     }, timeout: const Timeout(Duration(minutes: 20)));
 
     testWidgets('a RAG audio index: add the clips, find each by text', (

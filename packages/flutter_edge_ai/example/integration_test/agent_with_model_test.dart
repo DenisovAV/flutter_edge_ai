@@ -36,6 +36,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 // ── Model URL (iOS downloads; macOS/Android/Desktop use local files) ──
 const _gemma4Url =
@@ -84,6 +85,22 @@ Future<void> _installGemma4() async {
 /// same wiring the example's bootstrap uses).
 late AssetSkillSource _assetSource;
 
+/// The model the last [_session] runs on.
+InferenceModel? _model;
+
+/// Registry evidence that [check] passed on the active model's file, on the
+/// backend it ran. `_installGemma4` keeps an active model it finds, so the
+/// file is the active model's, not necessarily Gemma 4's.
+Future<void> _evidence(String check) async {
+  await recordEvidence(
+    path: await FlutterEdgeAi.getModelPath(
+      FlutterEdgeAi.activeModelSpec!.files.first.filename,
+    ),
+    backend: _model?.activeBackend,
+    check: check,
+  );
+}
+
 /// Build an AgentSession over the active Gemma 4 model with [registry] and an
 /// explicit executor list (text / JS / native-intent), bypassing the global
 /// registry so the test is self-contained. [maxIterations] is overridable for
@@ -93,7 +110,7 @@ Future<AgentSession> _session(
   int maxIterations = 10,
   List<SkillExecutor>? executors,
 }) async {
-  final model = await FlutterEdgeAi.getActiveModel(
+  final model = _model = await FlutterEdgeAi.getActiveModel(
     maxTokens: 4096,
     preferredBackend: PreferredBackend.gpu,
   );
@@ -177,6 +194,7 @@ void main() {
               'expected SHA-1 $_sha1OfHello in tool results '
               '${texts.map((r) => r.text)} or final answer "${_finalText(events)}"',
         );
+        await _evidence('tool call');
       } finally {
         await session.close();
       }
@@ -196,6 +214,7 @@ void main() {
           reason: 'expected a WebviewResult in the transcript',
         );
         expect(webviews.first.url, contains('maps.google.com'));
+        await _evidence('tool call');
       } finally {
         await session.close();
       }
@@ -219,6 +238,7 @@ void main() {
           reason: 'no skill should be loaded for plain arithmetic',
         );
         expect(_finalText(events), contains('4'));
+        await _evidence('text');
       } finally {
         await session.close();
       }
@@ -240,6 +260,7 @@ void main() {
               'two-stage discovery requires a loadSkill("calculate-hash") '
               'before the skill runs; got ${loaded.map((e) => e.skillName)}',
         );
+        await _evidence('tool call');
       } finally {
         await session.close();
       }

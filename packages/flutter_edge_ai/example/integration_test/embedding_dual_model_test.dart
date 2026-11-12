@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 /// Integration test verifying both tokenizer types via public API.
 ///
@@ -96,6 +97,14 @@ void main() {
     var model = await FlutterEdgeAi.getActiveEmbedder();
     try {
       await verifyEmbeddings(model, 'EmbeddingGemma-BPE');
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(
+          'embeddinggemma-300M_seq256_mixed-precision.tflite',
+        ),
+        backend: model.activeBackend,
+        check: 'embeds',
+        companions: await installedFilePaths(FlutterEdgeAi.activeEmbedderSpec),
+      );
     } finally {
       await model.close();
     }
@@ -113,6 +122,12 @@ void main() {
         'Gecko64-Unigram',
         minSimThreshold: 0.3,
         maxDiffThreshold: 0.7,
+      );
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath('Gecko_64_quant.tflite'),
+        backend: model.activeBackend,
+        check: 'embeds',
+        companions: await installedFilePaths(FlutterEdgeAi.activeEmbedderSpec),
       );
     } finally {
       await model.close();

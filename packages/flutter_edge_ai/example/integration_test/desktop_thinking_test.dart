@@ -12,6 +12,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 const _modelFileName = 'gemma-4-E2B-it.litertlm';
 
@@ -121,6 +122,11 @@ void main() {
         }
 
         print('[Gemma 4 E2B Desktop] thinking_stream PASSED');
+        await recordEvidence(
+          path: modelPath,
+          backend: model.activeBackend,
+          check: 'thinking',
+        );
       } finally {
         await model.close();
       }
@@ -179,6 +185,11 @@ void main() {
         );
 
         print('[Gemma 4 E2B Desktop] no_thinking PASSED');
+        await recordEvidence(
+          path: modelPath,
+          backend: model.activeBackend,
+          check: 'text',
+        );
       } finally {
         await model.close();
       }

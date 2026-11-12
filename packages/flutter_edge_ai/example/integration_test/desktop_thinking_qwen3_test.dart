@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 /// Regression test for issue #224: Qwen3-0.6B generates <think> blocks by default
 /// even when isThinking is false. Verify that thinking tags are stripped from output.
@@ -56,6 +57,11 @@ void main() {
         text.trim(),
         isNotEmpty,
         reason: 'Response should not be empty after stripping',
+      );
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath('Qwen3-0.6B.litertlm'),
+        backend: model.activeBackend,
+        check: 'text',
       );
 
       await chat.close();
@@ -115,6 +121,11 @@ void main() {
         textContent,
         isNot(contains('<think>')),
         reason: 'TextResponse tokens should not contain raw think tags',
+      );
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath('Qwen3-0.6B.litertlm'),
+        backend: model.activeBackend,
+        check: 'thinking',
       );
 
       await chat.close();

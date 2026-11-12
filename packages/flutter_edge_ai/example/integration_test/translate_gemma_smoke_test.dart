@@ -29,6 +29,7 @@ import 'package:flutter_edge_ai_example/translation/translate_runner.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 const _modelName = 'translategemma-4b-it-int4-generic.litertlm';
 
@@ -104,6 +105,11 @@ void main() {
       print('[TranslateGemma] ja→en: $enFromJa');
       expect(enFromJa.trim(), isNotEmpty);
       expect(enFromJa.toLowerCase(), contains('thank'));
+      await recordEvidence(
+        path: modelPath,
+        backend: model.activeBackend,
+        check: 'translates',
+      );
     } finally {
       await model.close();
     }

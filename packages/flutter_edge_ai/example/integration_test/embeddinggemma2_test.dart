@@ -910,6 +910,7 @@ void main() {
         '${self.reduce(math.min).toStringAsFixed(4)}',
       );
       expect(dup.top1, 10, reason: '${dup.misses}');
+      await _evidence(_eg2Vision, model, 'image to image retrieval');
     }, timeout: const Timeout(Duration(minutes: 20)));
 
     testWidgets('GIF and BMP decode; WebP, TIFF and HEIC are refused on the '

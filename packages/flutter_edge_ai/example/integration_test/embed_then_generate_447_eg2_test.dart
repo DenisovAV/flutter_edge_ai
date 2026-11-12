@@ -26,6 +26,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'loader_order_447_support.dart';
+import 'registry_evidence.dart';
 
 String _p(String name) => '/data/local/tmp/flutter_gemma_test/$name';
 
@@ -132,6 +133,11 @@ void main() {
         chunks.join(),
         isNot(contains('�')),
         reason: 'the stream carried replacement characters — #447 corruption',
+      );
+      await recordEvidence(
+        path: _p('gemma-4-E2B-it.litertlm'),
+        backend: model.activeBackend,
+        check: 'text',
       );
 
       await session.close();

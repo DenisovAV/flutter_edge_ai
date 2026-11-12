@@ -1,0 +1,178 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-12",
+  "host": "macos_arm64",
+  "device": "Mac mini (M5 Pro, Mac17,16)",
+  "commit": "87e0828b01dc285d392550dbb7ba3f14cf544370",
+  "packages": {
+    "flutter_edge_ai": "2.6.0",
+    "flutter_edge_ai_litertlm": "1.20.0",
+    "flutter_edge_ai_speech": "0.6.1"
+  },
+  "native": "42652644fdef056e8989c5fed0df288985e55c71e944c5a1a65a3e82bc92ef93",
+  "log_sha256": "d28fcdbe3dd77298c9f6923801cd0bbcb1ae6de39e439d97a09251f12eb6d789",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-740m/generic": {
+      "cpu": [
+        "combined inputs",
+        "golden audio vectors",
+        "text to audio retrieval"
+      ]
+    },
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "cpu": [
+        "image to image retrieval",
+        "text to image retrieval"
+      ]
+    },
+    "embeddinggemma-300m/seq256": {
+      "cpu": [
+        "embeds"
+      ]
+    },
+    "functiongemma-270m-it/generic": {
+      "gpu": [
+        "tool call"
+      ],
+      "cpu": [
+        "tool call"
+      ]
+    },
+    "gecko-110m-en/seq64-quant": {
+      "cpu": [
+        "embeds"
+      ]
+    },
+    "gemma-3-1b-it/q4-ekv4096": {
+      "cpu": [
+        "text",
+        "tool call"
+      ],
+      "gpu": [
+        "text"
+      ]
+    },
+    "gemma-3n-e2b-it/generic": {
+      "gpu": [
+        "text"
+      ],
+      "cpu": [
+        "text"
+      ]
+    },
+    "gemma-4-e2b-it/generic": {
+      "gpu": [
+        "parallel tool calls",
+        "streamed tool call",
+        "structured output",
+        "system instruction",
+        "text",
+        "thinking",
+        "tool call",
+        "tool call across sessions",
+        "tool round trip"
+      ],
+      "cpu": [
+        "audio",
+        "structured output",
+        "text",
+        "thinking",
+        "tool call",
+        "tool call across sessions",
+        "vision"
+      ]
+    },
+    "inflect-nano-v2/bundle": {
+      "cpu": [
+        "synthesizes",
+        "synthesizes non-silent audio"
+      ]
+    },
+    "matcha-tts/bundle": {
+      "cpu": [
+        "skips a non-speech clause",
+        "synthesizes numbers",
+        "synthesizes oov words",
+        "synthesizes punctuation",
+        "synthesizes several clauses",
+        "synthesizes within the golden tolerance"
+      ]
+    },
+    "moonshine-tiny/f32": {
+      "cpu": [
+        "transcribes",
+        "transcribes the bundled clip"
+      ]
+    },
+    "moonshine-tiny/i8": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    },
+    "parakeet-ctc-0.6b/f32": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ],
+      "gpu": [
+        "transcribes the bundled clip"
+      ]
+    },
+    "phi-4-mini-reasoning/generic": {
+      "gpu": [
+        "text"
+      ]
+    },
+    "qwen2.5-1.5b-instruct/q8-ekv4096": {
+      "gpu": [
+        "text"
+      ],
+      "cpu": [
+        "text"
+      ]
+    },
+    "qwen3-tts-0.6b/bundle": {
+      "cpu": [
+        "synthesizes"
+      ]
+    },
+    "smollm3-3b/q4-block32-ekv4096": {
+      "gpu": [
+        "text"
+      ],
+      "cpu": [
+        "text"
+      ]
+    },
+    "translategemma-4b-it/int4": {
+      "cpu": [
+        "translates"
+      ]
+    },
+    "whisper-base/i8": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    },
+    "whisper-tiny/f32": {
+      "cpu": [
+        "transcribes per-call language",
+        "transcribes the bundled clip"
+      ],
+      "gpu": [
+        "transcribes per-call language",
+        "transcribes the bundled clip"
+      ]
+    },
+    "whisper-tiny/i8": {
+      "cpu": [
+        "transcribes the bundled clip"
+      ]
+    }
+  }
+}

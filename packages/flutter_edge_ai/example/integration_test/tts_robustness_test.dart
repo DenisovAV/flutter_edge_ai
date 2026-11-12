@@ -19,9 +19,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'
-    show FlutterEdgeAi, TtsModelType;
+    show FlutterEdgeAi, PreferredBackend, TtsModelType;
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
     show LiteRtTtsBackend;
+
+import 'registry_evidence.dart';
 
 const _modelUrl =
     'https://huggingface.co/litert-community/Matcha-TTS/resolve/main/';
@@ -35,12 +37,26 @@ double _rms(Uint8List pcm) {
   return math.sqrt(sumSquares / samples.length);
 }
 
+/// Registry evidence that [check] passed on the installed Matcha bundle.
+Future<void> _evidence(String check, PreferredBackend speechBackend) async {
+  // Speech ran on SPEECH_BACKEND: it fails rather than fall back.
+  await recordEvidence(
+    path: await FlutterEdgeAi.getModelPath(
+      'matcha__matcha_textenc_fp16.tflite',
+    ),
+    backend: speechBackend,
+    check: check,
+    companions: await installedFilePaths(FlutterEdgeAi.activeTtsSpec),
+  );
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
     'punctuation: "Sure, I can help with that." synthesizes without throwing (non-silent)',
     (_) async {
+      final speechBackend = speechBackendFromDefine();
       await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
       await FlutterEdgeAi.installTts()
@@ -48,7 +64,9 @@ void main() {
           .ofType(TtsModelType.matcha)
           .install();
 
-      final synth = await FlutterEdgeAi.getActiveTts();
+      final synth = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
+      );
 
       try {
         final pcm = await synth.synthesize('Sure, I can help with that.');
@@ -64,6 +82,7 @@ void main() {
           greaterThan(0.02),
           reason: 'RMS too close to silence: $rms',
         );
+        await _evidence('synthesizes punctuation', speechBackend);
       } finally {
         await synth.close();
       }
@@ -74,6 +93,7 @@ void main() {
   testWidgets(
     'number: "Meet in 2023." synthesizes without throwing (non-silent, verifies number normalization)',
     (_) async {
+      final speechBackend = speechBackendFromDefine();
       await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
       await FlutterEdgeAi.installTts()
@@ -81,7 +101,9 @@ void main() {
           .ofType(TtsModelType.matcha)
           .install();
 
-      final synth = await FlutterEdgeAi.getActiveTts();
+      final synth = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
+      );
 
       try {
         final pcm = await synth.synthesize('Meet in 2023.');
@@ -97,6 +119,7 @@ void main() {
           greaterThan(0.02),
           reason: 'RMS too close to silence: $rms',
         );
+        await _evidence('synthesizes numbers', speechBackend);
       } finally {
         await synth.close();
       }
@@ -107,6 +130,7 @@ void main() {
   testWidgets(
     'OOV via neural: "Chomsky syntax." synthesizes without throwing (non-silent, routes through dp_g2p)',
     (_) async {
+      final speechBackend = speechBackendFromDefine();
       await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
       await FlutterEdgeAi.installTts()
@@ -114,7 +138,9 @@ void main() {
           .ofType(TtsModelType.matcha)
           .install();
 
-      final synth = await FlutterEdgeAi.getActiveTts();
+      final synth = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
+      );
 
       try {
         final pcm = await synth.synthesize('Chomsky syntax.');
@@ -130,6 +156,7 @@ void main() {
           greaterThan(0.02),
           reason: 'RMS too close to silence: $rms',
         );
+        await _evidence('synthesizes oov words', speechBackend);
       } finally {
         await synth.close();
       }
@@ -140,6 +167,7 @@ void main() {
   testWidgets(
     'chunking: "One. Two. Three." (3 clauses) synthesizes without throwing and is longer than a one-clause clip',
     (_) async {
+      final speechBackend = speechBackendFromDefine();
       await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
       await FlutterEdgeAi.installTts()
@@ -147,7 +175,9 @@ void main() {
           .ofType(TtsModelType.matcha)
           .install();
 
-      final synth = await FlutterEdgeAi.getActiveTts();
+      final synth = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
+      );
 
       try {
         // Baseline: a single clause, for a loose "multi-clause is longer"
@@ -179,6 +209,7 @@ void main() {
               'Multi-clause audio ($sampleCount samples) shorter than a single-clause '
               'baseline ($baselineSamples samples) — clause concatenation looks broken',
         );
+        await _evidence('synthesizes several clauses', speechBackend);
       } finally {
         await synth.close();
       }
@@ -189,6 +220,7 @@ void main() {
   testWidgets(
     'non-speech clause: "Sounds good! 👍" skips the emoji clause and still speaks the rest',
     (_) async {
+      final speechBackend = speechBackendFromDefine();
       await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
       await FlutterEdgeAi.installTts()
@@ -196,7 +228,9 @@ void main() {
           .ofType(TtsModelType.matcha)
           .install();
 
-      final synth = await FlutterEdgeAi.getActiveTts();
+      final synth = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
+      );
 
       try {
         // The "👍" clause maps to zero symbols; the fix skips it instead of
@@ -214,6 +248,7 @@ void main() {
           greaterThan(0.02),
           reason: 'RMS too close to silence: $rms',
         );
+        await _evidence('skips a non-speech clause', speechBackend);
       } finally {
         await synth.close();
       }

@@ -19,6 +19,7 @@ import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'registry_evidence.dart';
 import 'voice_test_helpers.dart' show stagedModelPath;
 
 // ── STT: moonshine-tiny — same URLs as stt_moonshine_test.dart. Public repos,
@@ -66,6 +67,7 @@ void main() {
   testWidgets(
     'voice loop: bundled clip -> STT -> LLM -> TTS produces spoken reply',
     (tester) async {
+      final speechBackend = speechBackendFromDefine();
       // 1. Register the STT/TTS/inference backends and install + activate
       //    STT (moonshine), a small no-tools LLM (Gemma 3 1B), and TTS
       //    (Inflect).
@@ -132,8 +134,12 @@ void main() {
           .ofType(TtsModelType.inflect)
           .install();
 
-      final recognizer = await FlutterEdgeAi.getActiveStt();
-      final synthesizer = await FlutterEdgeAi.getActiveTts();
+      final recognizer = await FlutterEdgeAi.getActiveStt(
+        preferredBackend: speechBackend,
+      );
+      final synthesizer = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
+      );
       // CPU LLM: the voice path loads the Inflect TTS graphs (Metal) alongside
       // the LLM; a concurrent GPU (Metal) engine_create dies mid-weight-convert
       // on macOS. Same CPU pin as voice_tools/voice_agent. Android/desktop GPU
@@ -221,6 +227,30 @@ void main() {
         reason: 'reply PCM is all-silence',
       );
       expect(complete.replyText, replyText);
+      // Speech ran on SPEECH_BACKEND: it fails rather than fall back.
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath('moonshine_tiny_5s_f32.tflite'),
+        backend: speechBackend,
+        check: 'transcribes',
+        companions: await installedFilePaths(FlutterEdgeAi.activeSttSpec),
+      );
+      await recordEvidence(
+        path:
+            llmLocalPath ??
+            await FlutterEdgeAi.getModelPath(
+              Uri.parse(_llmModelUrl).pathSegments.last,
+            ),
+        backend: model.activeBackend,
+        check: 'text',
+      );
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(
+          '${TtsModelType.inflect.name}__inflect_text_encoder_fp16.tflite',
+        ),
+        backend: speechBackend,
+        check: 'synthesizes',
+        companions: await installedFilePaths(FlutterEdgeAi.activeTtsSpec),
+      );
 
       await chat.session.close();
       await model.close();

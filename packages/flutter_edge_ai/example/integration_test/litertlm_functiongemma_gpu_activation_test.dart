@@ -23,6 +23,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'platform_helper.dart' show isIosSimulator;
+import 'registry_evidence.dart';
 import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _file = 'functiongemma-270M-it.litertlm';
@@ -153,6 +154,11 @@ void main() {
             'this pass does not show that float32 fixed anything.',
           );
         }
+        await recordEvidence(
+          path: await FlutterEdgeAi.getModelPath(_file),
+          backend: model.activeBackend,
+          check: 'tool call',
+        );
       } finally {
         await model.close();
       }
@@ -172,6 +178,11 @@ void main() {
       debugPrint(_describe('float32', model, answer));
       expect(answer.calls, isNotEmpty);
       expect(answer.calls.first.name, 'multiply');
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(_file),
+        backend: model.activeBackend,
+        check: 'tool call',
+      );
     } finally {
       await model.close();
     }

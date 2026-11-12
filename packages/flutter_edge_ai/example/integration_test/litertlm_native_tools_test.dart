@@ -23,6 +23,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _backendName = String.fromEnvironment(
@@ -335,6 +336,16 @@ Future<InferenceModel> _load(
   );
 }
 
+/// Registry evidence that [check] passed on the installed [file], on the
+/// backend that ran.
+Future<void> _evidence(InferenceModel model, String file, String check) async {
+  await recordEvidence(
+    path: await FlutterEdgeAi.getModelPath(file),
+    backend: model.activeBackend,
+    check: check,
+  );
+}
+
 /// One user question through [InferenceChat.generateChatResponseWithTools],
 /// answering every call with [answer].
 Future<({List<FunctionCallResponse> calls, String text, bool capped})> _round(
@@ -396,6 +407,7 @@ void main() {
       expect(round.calls.single.name, 'multiply');
       expect(round.calls.single.args, {'a': 12, 'b': 12});
       expect(round.text, contains('144'));
+      await _evidence(model, 'functiongemma-270M-it.litertlm', 'tool call');
     } finally {
       await model.close();
     }
@@ -444,6 +456,7 @@ void main() {
         reason: 'the model called again instead of answering: $second',
       );
       expect((second as TextResponse).token.toLowerCase(), contains('blue'));
+      await _evidence(model, 'functiongemma-270M-it.litertlm', 'tool call');
     } finally {
       await model.close();
     }
@@ -479,6 +492,7 @@ void main() {
         'title': 'Team Sync Meeting',
       });
       expect(round.text, contains('Team Sync Meeting'));
+      await _evidence(model, 'mobile_actions_q8_ekv1024.litertlm', 'tool call');
     } finally {
       await model.close();
     }
@@ -512,6 +526,7 @@ void main() {
         'seed': 'sunflower',
         'plots': [1, 2, 3],
       });
+      await _evidence(model, 'tiny_garden.litertlm', 'tool call');
     } finally {
       await model.close();
     }
@@ -543,6 +558,7 @@ void main() {
       expect(round.calls.single.name, 'multiply');
       expect(round.calls.single.args, {'a': 1234, 'b': 5678});
       expect(round.text.replaceAll(',', ''), contains('7006652'));
+      await _evidence(model, 'gemma-4-E2B-it.litertlm', 'tool call');
     } finally {
       await model.close();
     }
@@ -594,6 +610,11 @@ void main() {
       );
       final recalled = await a.getResponse();
       expect(recalled.replaceAll(RegExp(r'[^0-9]'), ''), contains('7006652'));
+      await _evidence(
+        model,
+        'gemma-4-E2B-it.litertlm',
+        'tool call across sessions',
+      );
 
       await a.close();
       await b.close();

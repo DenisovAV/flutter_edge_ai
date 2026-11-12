@@ -22,6 +22,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 
+import 'registry_evidence.dart';
+
 const _token = String.fromEnvironment('HUGGINGFACE_TOKEN');
 
 /// WAV data chunk starts after the 44-byte canonical PCM header.
@@ -83,6 +85,7 @@ void main() {
       '${testCase.label} transcribes the bundled clip via the public STT '
       'API',
       (_) async {
+        final speechBackend = speechBackendFromDefine();
         await FlutterEdgeAi.initialize(
           huggingFaceToken: _token.isEmpty ? null : _token,
           sttBackends: const [LiteRtSttBackend()],
@@ -100,7 +103,9 @@ void main() {
             .ofType(testCase.sttModelType)
             .install();
 
-        final recognizer = await FlutterEdgeAi.getActiveStt();
+        final recognizer = await FlutterEdgeAi.getActiveStt(
+          preferredBackend: speechBackend,
+        );
 
         // Bundled 16 kHz mono 16-bit PCM WAV.
         final wav = await rootBundle.load('assets/test/test_audio.wav');
@@ -129,6 +134,15 @@ void main() {
           reason:
               'expected at least 2 of $_groundTruthWords in transcript, '
               'got: "$transcript"',
+        );
+        // Speech ran on SPEECH_BACKEND: it fails rather than fall back.
+        await recordEvidence(
+          path: await FlutterEdgeAi.getModelPath(
+            Uri.parse(testCase.modelUrl).pathSegments.last,
+          ),
+          backend: speechBackend,
+          check: 'transcribes the bundled clip',
+          companions: await installedFilePaths(FlutterEdgeAi.activeSttSpec),
         );
 
         await recognizer.close();

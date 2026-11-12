@@ -24,6 +24,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 String get _gemma4Path => macosStagedFilePath('gemma-4-E2B-it.litertlm')!;
 
@@ -118,6 +119,11 @@ void main() {
       );
       // ignore: avoid_print
       print('[1] single tool call OK: ${fc.name} args=${fc.args}');
+      await recordEvidence(
+        path: _gemma4Path,
+        backend: model.activeBackend,
+        check: 'tool call',
+      );
     } finally {
       await model.close();
     }
@@ -178,6 +184,11 @@ void main() {
         // ignore: avoid_print
         print(
           '[2] parallel/multi tool calls OK: ${calls.map((c) => "${c.name}(${c.args})").join(", ")}',
+        );
+        await recordEvidence(
+          path: _gemma4Path,
+          backend: model.activeBackend,
+          check: 'parallel tool calls',
         );
       } finally {
         await model.close();
@@ -244,6 +255,11 @@ void main() {
         print(
           '[3] streaming OK: ${events.length} events, ${fnEvents.length} function call(s)',
         );
+        await recordEvidence(
+          path: _gemma4Path,
+          backend: model.activeBackend,
+          check: 'streamed tool call',
+        );
       } finally {
         await model.close();
       }
@@ -277,6 +293,11 @@ void main() {
         expect(text.contains('<|"|>'), isFalse);
         // ignore: avoid_print
         print('[4] plain-text control OK: "${text.trim()}"');
+        await recordEvidence(
+          path: _gemma4Path,
+          backend: model.activeBackend,
+          check: 'text',
+        );
       } finally {
         await model.close();
       }
@@ -335,6 +356,11 @@ void main() {
           '${replyResponse.runtimeType}',
         );
       }
+      await recordEvidence(
+        path: _gemma4Path,
+        backend: model.activeBackend,
+        check: 'tool round trip',
+      );
     } finally {
       await model.close();
     }

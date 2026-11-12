@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 const _backendName = String.fromEnvironment('BACKEND', defaultValue: 'cpu');
 const _baseUrl = String.fromEnvironment('MODEL_BASE_URL');
@@ -148,6 +149,17 @@ void main() {
         _expectClean(answer);
         expect(answer.toLowerCase(), contains(keyword));
       }
+      final path = await FlutterEdgeAi.getModelPath('FastVLM-0.5B.litertlm');
+      await recordEvidence(
+        path: path,
+        backend: model.activeBackend,
+        check: 'text',
+      );
+      await recordEvidence(
+        path: path,
+        backend: model.activeVisionBackend,
+        check: 'vision',
+      );
     } finally {
       await model.close();
     }
@@ -171,6 +183,13 @@ void main() {
         _report(name, prompt, null, answer);
         _expectClean(answer);
         expect(answer, contains('5'));
+        await recordEvidence(
+          path: await FlutterEdgeAi.getModelPath(
+            Uri.parse(resolved).pathSegments.last,
+          ),
+          backend: model.activeBackend,
+          check: 'text',
+        );
       } finally {
         await model.close();
         await FlutterEdgeAi.uninstallModel(

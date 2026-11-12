@@ -6,6 +6,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 /// Comprehensive thinking mode test for all available models.
 /// Verifies that <think> tags are handled correctly for every ModelType.
@@ -110,6 +111,11 @@ void main() {
           isNot(contains('</think>')),
           reason: '$name: </think> tags should be stripped',
         );
+        await recordEvidence(
+          path: config.path,
+          backend: model.activeBackend,
+          check: 'text',
+        );
 
         await chat.close();
       } finally {
@@ -192,6 +198,13 @@ void main() {
           isNot(contains('</think>')),
           reason: '$name: TextResponse should not contain raw </think>',
         );
+        if (config.generatesThinking) {
+          await recordEvidence(
+            path: config.path,
+            backend: model.activeBackend,
+            check: 'thinking',
+          );
+        }
 
         await chat.close();
       } finally {

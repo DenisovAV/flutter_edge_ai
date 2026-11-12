@@ -35,6 +35,7 @@ void main() {
   testWidgets('moonshine transcribes the bundled clip via the public STT API', (
     _,
   ) async {
+    final speechBackend = speechBackendFromDefine();
     await FlutterEdgeAi.initialize(
       huggingFaceToken: _token.isEmpty ? null : _token,
       sttBackends: const [LiteRtSttBackend()],
@@ -51,7 +52,9 @@ void main() {
       await FlutterEdgeAi.installStt().fromCatalog(variant).install();
     }
 
-    final recognizer = await FlutterEdgeAi.getActiveStt();
+    final recognizer = await FlutterEdgeAi.getActiveStt(
+      preferredBackend: speechBackend,
+    );
 
     // Bundled 16 kHz mono 16-bit PCM WAV.
     final wav = await rootBundle.load('assets/test/test_audio.wav');
@@ -75,17 +78,18 @@ void main() {
     expect(low, contains('she'), reason: 'got: "$transcript"');
     expect(low, contains('watch'), reason: 'got: "$transcript"');
     expect(low, contains('year'), reason: 'got: "$transcript"');
-    // No preferredBackend: the recognizer runs on the CPU.
+    // Speech ran on SPEECH_BACKEND: it fails rather than fall back.
     if (_modelFile.isNotEmpty) {
       await recordEvidence(
         path: _modelFile,
-        backend: PreferredBackend.cpu,
+        backend: speechBackend,
         check: 'transcribes the bundled clip',
+        companions: [_tokenizerFile],
       );
     } else {
       await recordCatalogEvidence(
         variant,
-        backend: PreferredBackend.cpu,
+        backend: speechBackend,
         check: 'transcribes the bundled clip',
       );
     }

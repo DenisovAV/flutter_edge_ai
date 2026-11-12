@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 const _modelPath = '/data/local/tmp/flutter_gemma_test/gemma-4-E2B-it.litertlm';
 
@@ -69,6 +70,11 @@ void main() {
       final text2 = (r2 as TextResponse).token;
       print('[Gemma4] Second response: "$text2"');
       expect(text2, isNotEmpty);
+      await recordEvidence(
+        path: _modelPath,
+        backend: model.activeBackend,
+        check: 'multi-turn text',
+      );
     } finally {
       await model.close();
     }

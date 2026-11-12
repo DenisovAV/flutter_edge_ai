@@ -11,6 +11,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 String get _gemma3_1bPath =>
     macosStagedFilePath('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm')!;
@@ -54,6 +55,11 @@ void main() {
       final r = await session.getResponse();
       print('[g3-1b cpu sync] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(
+        path: _gemma3_1bPath,
+        backend: model.activeBackend,
+        check: 'text',
+      );
       await session.close();
       await model.close();
     });
@@ -74,6 +80,11 @@ void main() {
       }
       print('[g3-1b gpu stream] ${chunks.length} chunks: ${chunks.join()}');
       expect(chunks, isNotEmpty);
+      await recordEvidence(
+        path: _gemma3_1bPath,
+        backend: model.activeBackend,
+        check: 'text',
+      );
       await session.close();
       await model.close();
     });
@@ -95,6 +106,11 @@ void main() {
       final r = await session.getResponse();
       print('[g4 gpu sync] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(
+        path: _gemma4Path,
+        backend: model.activeBackend,
+        check: 'text',
+      );
       await session.close();
       await model.close();
     });
@@ -115,6 +131,11 @@ void main() {
       }
       print('[g4 gpu stream] ${chunks.length} chunks: ${chunks.join()}');
       expect(chunks, isNotEmpty);
+      await recordEvidence(
+        path: _gemma4Path,
+        backend: model.activeBackend,
+        check: 'text',
+      );
       await session.close();
       await model.close();
     });
@@ -207,6 +228,11 @@ void main() {
       expect(chunks, isNotEmpty);
       expect(hasThinking, true, reason: 'Should have thinking chunks');
       expect(hasText, true, reason: 'Should have text chunks');
+      await recordEvidence(
+        path: _gemma4Path,
+        backend: model.activeBackend,
+        check: 'thinking',
+      );
       await session.close();
       await model.close();
     });
@@ -226,6 +252,11 @@ void main() {
       final r = await session.getResponse();
       print('[g3n cpu sync] $r');
       expect(r, isNotEmpty);
+      await recordEvidence(
+        path: _gemma3nPath,
+        backend: model.activeBackend,
+        check: 'text',
+      );
       await session.close();
       await model.close();
     });
@@ -246,6 +277,11 @@ void main() {
       }
       print('[g3n gpu stream] ${chunks.length} chunks: ${chunks.join()}');
       expect(chunks, isNotEmpty);
+      await recordEvidence(
+        path: _gemma3nPath,
+        backend: model.activeBackend,
+        check: 'text',
+      );
       await session.close();
       await model.close();
     });

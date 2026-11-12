@@ -28,6 +28,8 @@ import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'registry_evidence.dart';
+
 const _modelUrl =
     'https://huggingface.co/litert-community/whisper-tiny/resolve/main/whisper_tiny_30s_f32.tflite';
 const _tokenizerUrl =
@@ -41,6 +43,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('the output language is per-call and needs no reload', (_) async {
+    final speechBackend = speechBackendFromDefine();
     // Everything that can throw lives in the test body, never in setUp: under
     // some runners a throwing setUp is reported as a pass.
     await FlutterEdgeAi.initialize(
@@ -63,7 +66,9 @@ void main() {
       _wavHeaderBytes,
     );
 
-    final recognizer = await FlutterEdgeAi.getActiveStt();
+    final recognizer = await FlutterEdgeAi.getActiveStt(
+      preferredBackend: speechBackend,
+    );
     try {
       final english = await recognizer.transcribe(pcm);
       debugPrint('STT-LANG<<<en|$english>>>');
@@ -84,7 +89,10 @@ void main() {
 
       // The second `getActiveStt` is where the shipped bug lived: it returned
       // the recognizer built for the first language and said nothing.
-      final retargeted = await FlutterEdgeAi.getActiveStt(language: 'de');
+      final retargeted = await FlutterEdgeAi.getActiveStt(
+        preferredBackend: speechBackend,
+        language: 'de',
+      );
       expect(
         identical(retargeted, recognizer),
         isTrue,
@@ -107,6 +115,13 @@ void main() {
       await expectLater(
         recognizer.transcribe(pcm, language: 'zz'),
         throwsArgumentError,
+      );
+      // Speech ran on SPEECH_BACKEND: it fails rather than fall back.
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath('whisper_tiny_30s_f32.tflite'),
+        backend: speechBackend,
+        check: 'transcribes per-call language',
+        companions: await installedFilePaths(FlutterEdgeAi.activeSttSpec),
       );
     } finally {
       await recognizer.close();

@@ -12,6 +12,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 const _file = 'SmolLM3-3B_q4_block32_ekv4096.litertlm';
 const _url =
@@ -31,6 +32,9 @@ String? _localPath() {
 
 InferenceModel? _model;
 
+/// The backend the last [_run] ran on.
+PreferredBackend? _ranOn;
+
 Future<String> _run(PreferredBackend backend) async {
   _model = await FlutterEdgeAi.getActiveModel(
     maxTokens: 2048,
@@ -45,6 +49,7 @@ Future<String> _run(PreferredBackend backend) async {
     chunks.add(c);
   }
   await session.close();
+  _ranOn = _model!.activeBackend;
   await _model!.close();
   _model = null;
   return chunks.join();
@@ -74,11 +79,21 @@ void main() {
     final r = await _run(PreferredBackend.cpu);
     print('[SmolLM3 CPU] $r');
     expect(r.trim(), isNotEmpty);
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath(_file),
+      backend: _ranOn,
+      check: 'text',
+    );
   }, timeout: const Timeout(Duration(minutes: 15)));
 
   testWidgets('SmolLM3 GPU text', (t) async {
     final r = await _run(PreferredBackend.gpu);
     print('[SmolLM3 GPU] $r');
     expect(r.trim(), isNotEmpty);
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath(_file),
+      backend: _ranOn,
+      check: 'text',
+    );
   }, timeout: const Timeout(Duration(minutes: 15)));
 }

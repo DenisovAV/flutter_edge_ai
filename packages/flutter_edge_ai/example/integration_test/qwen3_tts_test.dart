@@ -31,6 +31,8 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
     show LiteRtTtsBackend;
 
+import 'registry_evidence.dart';
+
 const _modelUrl =
     // Pinned: upstream moved these files under legacy/ on 2026-10-16.
     'https://huggingface.co/litert-community/Qwen3-TTS-12Hz-0.6B-Base/resolve/5ad41057956abe19b6a3b78e677a0356ea606663/';
@@ -62,6 +64,7 @@ void main() {
     'Qwen3-TTS installs from HF, synthesizes plausible english audio, and '
     'german differs from english',
     (_) async {
+      final speechBackend = speechBackendFromDefine();
       await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
       await FlutterEdgeAi.installTts()
@@ -70,6 +73,7 @@ void main() {
           .install();
 
       final englishSynth = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
         language: 'english',
       );
       Uint8List englishPcm;
@@ -109,7 +113,10 @@ void main() {
         await englishSynth.close();
       }
 
-      final germanSynth = await FlutterEdgeAi.getActiveTts(language: 'german');
+      final germanSynth = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
+        language: 'german',
+      );
       try {
         final germanPcm = await germanSynth.synthesize(_text);
 
@@ -150,6 +157,13 @@ void main() {
               'german synthesis produced byte-identical audio to english '
               '(pcmBytes=${germanPcm.length} vs ${englishPcm.length}) — '
               'language selection had no effect',
+        );
+        // Speech ran on SPEECH_BACKEND: it fails rather than fall back.
+        await recordEvidence(
+          path: await FlutterEdgeAi.getModelPath('qwen3__talker_int4.tflite'),
+          backend: speechBackend,
+          check: 'synthesizes',
+          companions: await installedFilePaths(FlutterEdgeAi.activeTtsSpec),
         );
       } finally {
         await germanSynth.close();

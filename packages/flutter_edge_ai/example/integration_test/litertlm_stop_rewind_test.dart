@@ -29,6 +29,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _backendName = String.fromEnvironment(
@@ -235,6 +236,12 @@ void main() {
     await model?.close();
   });
 
+  /// Registry evidence that [check] passed on the staged model, run on
+  /// [ran]: the encoder's backend for an image or audio check.
+  Future<void> evidence(String check, PreferredBackend? ran) async {
+    await recordEvidence(path: await _modelPath(), backend: ran, check: check);
+  }
+
   /// Every one of [stops] stops was recovered by a rewind, none by a rebuild.
   void expectRewoundOnly(int stops) {
     final rewound = _log.where((l) => l.contains('rewound the conversation'));
@@ -294,6 +301,7 @@ void main() {
       expect(recalled.error, isNull);
       expect(recalled.reply.toLowerCase(), contains('zorblax'));
       expectRewoundOnly(1);
+      await evidence('text', model?.activeBackend);
     } finally {
       await chat.close();
     }
@@ -326,6 +334,7 @@ void main() {
       expect(shape.error, isNull);
       expect(shape.reply.toLowerCase(), contains('circle'));
       expectRewoundOnly(1);
+      await evidence('vision', model?.activeVisionBackend);
     } finally {
       await chat.close();
     }
@@ -388,6 +397,7 @@ void main() {
       expect(city.error, isNull);
       expect(city.reply.toLowerCase(), contains('paris'));
       expectRewoundOnly(1);
+      await evidence('audio', model?.activeAudioBackend);
     } finally {
       await chat.close();
     }

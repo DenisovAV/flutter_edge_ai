@@ -18,6 +18,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedRoot;
+import 'registry_evidence.dart';
 
 // Pre-stage these files in the platform sandbox before running:
 //   macOS: ~/models (container Documents fallback)
@@ -172,6 +173,12 @@ void main() {
     final model = await FlutterEdgeAi.getActiveEmbedder();
     try {
       await _exercise('Gecko64', model);
+      await recordEvidence(
+        path: modelPath,
+        backend: model.activeBackend,
+        check: 'embeds',
+        companions: await installedFilePaths(FlutterEdgeAi.activeEmbedderSpec),
+      );
     } finally {
       await model.close();
     }
@@ -190,6 +197,12 @@ void main() {
     final model = await FlutterEdgeAi.getActiveEmbedder();
     try {
       await _exercise('EmbeddingGemma256', model);
+      await recordEvidence(
+        path: modelPath,
+        backend: model.activeBackend,
+        check: 'embeds',
+        companions: await installedFilePaths(FlutterEdgeAi.activeEmbedderSpec),
+      );
     } finally {
       await model.close();
     }

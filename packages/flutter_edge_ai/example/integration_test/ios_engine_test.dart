@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +39,13 @@ void main() {
     final response = await session.getResponse();
     print('Response: $response');
     expect(response, isNotEmpty);
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath(
+        'Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm',
+      ),
+      backend: model.activeBackend,
+      check: 'text',
+    );
 
     await session.close();
     await model.close();

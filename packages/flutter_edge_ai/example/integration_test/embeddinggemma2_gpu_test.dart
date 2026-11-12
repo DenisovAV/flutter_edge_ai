@@ -50,6 +50,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'goldens/eg2_text_golden.dart';
+import 'registry_evidence.dart';
 
 const _eg2 = catalog.EmbeddingModel.embeddingGemma2Text270m;
 const _urlOverride = String.fromEnvironment('EG2_MODEL_URL');
@@ -306,6 +307,11 @@ void main() {
         same(model),
       );
       expect(await FlutterEdgeAi.getActiveEmbedder(), same(model));
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(_eg2.filename),
+        backend: model.activeBackend,
+        check: 'golden text vectors and ranking',
+      );
     },
     skip: !_gpuHost,
   );

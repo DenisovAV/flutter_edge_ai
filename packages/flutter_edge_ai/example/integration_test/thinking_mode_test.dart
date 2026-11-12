@@ -17,8 +17,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 const _deviceModelDir = '/data/local/tmp/flutter_gemma_test';
+
+/// Registry evidence that [check] passed on [model], run on [ran]; the
+/// registry has `.litertlm` builds only, so a MediaPipe `.task` records
+/// nothing.
+Future<void> _evidence(
+  ThinkingTestModel model,
+  PreferredBackend? ran,
+  String check,
+) async {
+  if (model.fileType != ModelFileType.litertlm) return;
+  await recordEvidence(path: model.filePath, backend: ran, check: check);
+}
 
 /// Test model configuration for thinking mode tests.
 class ThinkingTestModel {
@@ -171,6 +184,7 @@ void main() {
           }
 
           print('[${model.name}] thinking_stream PASSED');
+          await _evidence(model, inferenceModel.activeBackend, 'thinking');
         } finally {
           await inferenceModel.close();
         }
@@ -228,6 +242,7 @@ void main() {
           );
 
           print('[${model.name}] no_thinking PASSED');
+          await _evidence(model, inferenceModel.activeBackend, 'text');
         } finally {
           await inferenceModel.close();
         }

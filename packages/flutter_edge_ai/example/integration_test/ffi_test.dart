@@ -7,6 +7,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 String get _gemma3_1bPath =>
     macosStagedFilePath('Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm')!;
@@ -44,6 +45,11 @@ void main() {
       final response = await session.getResponse();
       print('[Gemma3-1B CPU] Response: $response');
       expect(response, isNotEmpty);
+      await recordEvidence(
+        path: _gemma3_1bPath,
+        backend: model.activeBackend,
+        check: 'text',
+      );
 
       await session.close();
       await model.close();
@@ -72,6 +78,11 @@ void main() {
       }
       print('[Gemma3-1B GPU stream] ${chunks.length} chunks: ${chunks.join()}');
       expect(chunks, isNotEmpty);
+      await recordEvidence(
+        path: _gemma3_1bPath,
+        backend: model.activeBackend,
+        check: 'text',
+      );
 
       await session.close();
       await model.close();
@@ -98,6 +109,11 @@ void main() {
       final response = await session.getResponse();
       print('[Gemma4 GPU text] Response: $response');
       expect(response, isNotEmpty);
+      await recordEvidence(
+        path: _gemma4Path,
+        backend: model.activeBackend,
+        check: 'text',
+      );
 
       await session.close();
       await model.close();
@@ -126,6 +142,11 @@ void main() {
       }
       print('[Gemma4 GPU stream] ${chunks.length} chunks: ${chunks.join()}');
       expect(chunks, isNotEmpty);
+      await recordEvidence(
+        path: _gemma4Path,
+        backend: model.activeBackend,
+        check: 'text',
+      );
 
       await session.close();
       await model.close();
@@ -226,6 +247,11 @@ void main() {
       final response = await session.getResponse();
       print('[Gemma3n CPU text] Response: $response');
       expect(response, isNotEmpty);
+      await recordEvidence(
+        path: _gemma3nPath,
+        backend: model.activeBackend,
+        check: 'text',
+      );
 
       await session.close();
       await model.close();
@@ -250,6 +276,11 @@ void main() {
       final response = await session.getResponse();
       print('[Gemma3n GPU text] Response: $response');
       expect(response, isNotEmpty);
+      await recordEvidence(
+        path: _gemma3nPath,
+        backend: model.activeBackend,
+        check: 'text',
+      );
 
       await session.close();
       await model.close();
@@ -276,6 +307,11 @@ void main() {
       }
       print('[Gemma3n GPU stream] ${chunks.length} chunks: ${chunks.join()}');
       expect(chunks, isNotEmpty);
+      await recordEvidence(
+        path: _gemma3nPath,
+        backend: model.activeBackend,
+        check: 'text',
+      );
 
       await session.close();
       await model.close();

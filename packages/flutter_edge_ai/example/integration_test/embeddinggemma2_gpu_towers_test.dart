@@ -41,6 +41,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'goldens/eg2_text_golden.dart';
+import 'registry_evidence.dart';
 
 const _file440m = String.fromEnvironment('EG2_440M_MODEL_FILE');
 const _file740m = String.fromEnvironment('EG2_740M_MODEL_FILE');
@@ -252,6 +253,13 @@ Future<void> _compare(
       expect(c, greaterThanOrEqualTo(0.99), reason: clip);
     }
   }
+  // The text check only: the image and audio checks compare against this
+  // bundle's own CPU vectors, not the fixtures' known content.
+  await recordEvidence(
+    path: await FlutterEdgeAi.getModelPath(model.filename),
+    backend: again.activeBackend,
+    check: 'golden text ranking',
+  );
 }
 
 void main() {

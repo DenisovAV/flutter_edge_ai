@@ -11,6 +11,7 @@ import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'registry_evidence.dart';
 import 'voice_test_helpers.dart';
 
 const _llmFileName = 'gemma3-1b-it-int4.litertlm';
@@ -37,6 +38,7 @@ void main() {
   testWidgets('voice + tools: fixed transcript -> tool runs -> spoken reply', (
     tester,
   ) async {
+    final speechBackend = speechBackendFromDefine();
     await FlutterEdgeAi.initialize(
       ttsBackends: const [LiteRtTtsBackend()],
       inferenceEngines: const [LiteRtLmEngine()],
@@ -59,7 +61,9 @@ void main() {
         .ofType(TtsModelType.inflect)
         .install();
 
-    final synth = await FlutterEdgeAi.getActiveTts();
+    final synth = await FlutterEdgeAi.getActiveTts(
+      preferredBackend: speechBackend,
+    );
     // CPU: this gate exercises the tool-calling LOOP, not GPU perf. On desktop
     // the litertlm default is GPU (Metal/Dawn), which is flaky for concurrent
     // model loads (a documented desktop-voice caveat) — pin CPU for a
@@ -105,6 +109,20 @@ void main() {
     final audio = events.whereType<VoiceReplyAudioEvent>().toList();
     expect(audio, isNotEmpty);
     expect(audio.single.pcm.any((b) => b != 0), isTrue, reason: 'silent reply');
+    await recordEvidence(
+      path: llmPath,
+      backend: model.activeBackend,
+      check: 'tool call',
+    );
+    // Speech ran on SPEECH_BACKEND: it fails rather than fall back.
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath(
+        '${TtsModelType.inflect.name}__inflect_text_encoder_fp16.tflite',
+      ),
+      backend: speechBackend,
+      check: 'synthesizes',
+      companions: await installedFilePaths(FlutterEdgeAi.activeTtsSpec),
+    );
 
     await chat.session.close();
     await model.close();

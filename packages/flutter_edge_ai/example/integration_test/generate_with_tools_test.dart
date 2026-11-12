@@ -8,6 +8,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 import 'voice_test_helpers.dart' show stagedModelPath;
 
 // .litertlm (not .task): desktop/iOS run the litertlm FFI engine; MediaPipe has
@@ -88,6 +89,11 @@ void main() {
     debugPrint(
       '[gwt] final text: '
       '"${out.whereType<TextResponse>().map((t) => t.token).join()}"',
+    );
+    await recordEvidence(
+      path: llmPath,
+      backend: model.activeBackend,
+      check: 'tool call',
     );
     await model.close();
   }, timeout: const Timeout(Duration(minutes: 10)));

@@ -19,7 +19,7 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'
-    show FlutterEdgeAi, PreferredBackend, TtsModelType;
+    show FlutterEdgeAi, TtsModelType;
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart'
     show LiteRtSpeechModels, LiteRtTtsBackend;
 
@@ -41,6 +41,7 @@ void main() {
   testWidgets(
     'cross-platform smoke: install -> getActiveTts -> synthesize (tolerance oracle)',
     (_) async {
+      final speechBackend = speechBackendFromDefine();
       await FlutterEdgeAi.initialize(ttsBackends: const [LiteRtTtsBackend()]);
 
       final variant = LiteRtSpeechModels.matchaTts.bundle;
@@ -53,7 +54,9 @@ void main() {
         await FlutterEdgeAi.installTts().fromCatalog(variant).install();
       }
 
-      final synth = await FlutterEdgeAi.getActiveTts();
+      final synth = await FlutterEdgeAi.getActiveTts(
+        preferredBackend: speechBackend,
+      );
 
       try {
         final pcm = await synth.synthesize('Hello world.');
@@ -123,17 +126,18 @@ void main() {
           closeTo(_goldenRms, 0.02),
           reason: 'RMS out of ±0.02 tolerance vs golden ($_goldenRms)',
         );
-        // No preferredBackend: the synthesizer runs on the CPU.
+        // Speech ran on SPEECH_BACKEND: it fails rather than fall back.
         if (_bundleDir.isNotEmpty) {
           await recordEvidence(
             path: '$_bundleDir/${variant.files.first.installFilename}',
-            backend: PreferredBackend.cpu,
+            backend: speechBackend,
             check: 'synthesizes within the golden tolerance',
+            companions: await installedFilePaths(FlutterEdgeAi.activeTtsSpec),
           );
         } else {
           await recordCatalogEvidence(
             variant,
-            backend: PreferredBackend.cpu,
+            backend: speechBackend,
             check: 'synthesizes within the golden tolerance',
           );
         }

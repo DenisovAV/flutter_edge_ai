@@ -23,6 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 const _gemma4Url =
     'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
@@ -56,8 +57,10 @@ Future<void> _install() async {
 /// Run a text-only prompt with the user's #318 config. The fix should make
 /// `maxTokens` below 1024 auto-clamp (no crash), and `maxOutputTokens` cap the
 /// generated length without touching the context window.
-/// Returns (ok, response, error). Never throws — a crash is captured.
-Future<({bool ok, String response, String error})> _runUserConfig({
+/// Returns (ok, response, error) and the backend that ran. Never throws — a
+/// crash is captured.
+Future<({bool ok, String response, String error, PreferredBackend? backend})>
+_runUserConfig({
   required int maxTokens,
   int? maxOutputTokens,
   PreferredBackend backend = PreferredBackend.cpu,
@@ -90,13 +93,13 @@ Future<({bool ok, String response, String error})> _runUserConfig({
       '[#318] maxTokens=$maxTokens maxOutputTokens=$maxOutputTokens '
       'OK, response="$text"',
     );
-    return (ok: true, response: text, error: '');
+    return (ok: true, response: text, error: '', backend: model.activeBackend);
   } catch (e) {
     debugPrint(
       '[#318] maxTokens=$maxTokens maxOutputTokens=$maxOutputTokens '
       'CRASHED: $e',
     );
-    return (ok: false, response: '', error: e.toString());
+    return (ok: false, response: '', error: e.toString(), backend: null);
   } finally {
     try {
       await model?.close();
@@ -133,6 +136,11 @@ void main() {
         contains('paris'),
         reason: 'should produce a coherent answer after clamping',
       );
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath('gemma-4-E2B-it.litertlm'),
+        backend: r.backend,
+        check: 'text',
+      );
     },
     timeout: const Timeout(Duration(minutes: 8)),
   );
@@ -154,6 +162,11 @@ void main() {
       reason: 'maxOutputTokens should not crash: ${r.error}',
     );
     expect(r.response.trim(), isNotEmpty, reason: 'should produce output');
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath('gemma-4-E2B-it.litertlm'),
+      backend: r.backend,
+      check: 'text',
+    );
   }, timeout: const Timeout(Duration(minutes: 8)));
 
   // FIX CHECK 3 — GPU coverage. The clamp runs in the engine BEFORE the
@@ -181,6 +194,11 @@ void main() {
       r.response.toLowerCase(),
       contains('paris'),
       reason: 'GPU should produce a coherent answer after clamping',
+    );
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath('gemma-4-E2B-it.litertlm'),
+      backend: r.backend,
+      check: 'text',
     );
   }, timeout: const Timeout(Duration(minutes: 8)));
 }

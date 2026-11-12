@@ -42,49 +42,136 @@ CatalogVariant? variantWithSha256(String hex, Iterable<CatalogModel> models) {
 
 /// Records that [check] passed on the model file at [path], run on
 /// [backend] — the backend that ran (`activeBackend`), not the one asked for.
+/// A null [backend] (the model does not say) prints FEA_EVIDENCE_SKIP.
+///
+/// [path] names the build: the variant whose first file has its bytes. A
+/// variant of several files (a `.tflite` embedder and its tokenizer, a
+/// speech model and its tokenizer, a TTS bundle) counts only when
+/// [companions], the paths of the other files the test loaded, hold the
+/// pinned bytes of every other file of it; otherwise FEA_EVIDENCE_SKIP names
+/// the file that is missing or not pinned.
 Future<void> recordEvidence({
   required String path,
-  required PreferredBackend backend,
+  required PreferredBackend? backend,
   required String check,
+  List<String> companions = const [],
 }) async {
   final name = path.split(Platform.pathSeparator).last;
+  void skip(String reason) => print(
+    'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': reason})}',
+  );
+  if (backend == null) {
+    skip('the model reports no backend');
+    return;
+  }
   // Only the hash is caught: a file it cannot read, or the worker isolate's
   // own failure, is a skip. The catalog's own errors (not initialized, ids
   // that clash) fail the test, as they should.
-  final String hex;
-  try {
-    hex = await fileSha256(path);
-  } on FileSystemException catch (e) {
-    print(
-      'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'cannot read it: ${e.message}'})}',
-    );
-    return;
-  } catch (e) {
-    print(
-      'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'cannot hash it: $e'})}',
-    );
+  final hex = await _hashOrReason(path);
+  if (hex.reason case final reason?) {
+    skip(reason);
     return;
   }
-  final variant = variantWithSha256(hex, FlutterEdgeAi.catalog.models);
+  final variant = variantWithSha256(hex.sha256!, FlutterEdgeAi.catalog.models);
   if (variant == null) {
-    print(
-      'FEA_EVIDENCE_SKIP ${jsonEncode({'file': name, 'check': check, 'reason': 'not a registry build'})}',
-    );
+    skip('not a registry build');
+    return;
+  }
+  if (await companionProblem(variant, companions) case final reason?) {
+    skip(reason);
     return;
   }
   _printEvidence(variant, backend: backend, check: check);
 }
 
+/// Where core reads every file of [spec] (`FlutterEdgeAi.activeEmbedderSpec`,
+/// `activeSttSpec`, `activeTtsSpec`): the companions of a record for a model
+/// installed from several files. None for a null [spec].
+Future<List<String>> installedFilePaths(ModelSpec? spec) async => [
+  for (final file in spec?.files ?? const <ModelFile>[])
+    await FlutterEdgeAi.getModelPath(file.filename),
+];
+
+/// Why [companions] are not the pinned bytes of every file of [variant]
+/// after its first, or null when they are (always for a one-file variant).
+/// The reason names the first file no companion holds. [hash] replaces
+/// [fileSha256] in tests.
+Future<String?> companionProblem(
+  CatalogVariant variant,
+  List<String> companions, {
+  Future<String> Function(String path) hash = fileSha256,
+}) async {
+  if (variant.files.length < 2) return null;
+  final held = <String>{};
+  final unread = <String>[];
+  for (final path in companions) {
+    final hex = await _hashOrReason(path, hash: hash);
+    if (hex.sha256 case final sha?) {
+      held.add(sha);
+    } else {
+      unread.add('${path.split(Platform.pathSeparator).last}: ${hex.reason}');
+    }
+  }
+  for (final file in variant.files.skip(1)) {
+    if (!held.contains(file.sha256.toLowerCase())) {
+      return 'no companion file holds the pinned bytes of ${file.path} of '
+          '${variant.id}'
+          '${unread.isEmpty ? '' : ' (${unread.join('; ')})'}';
+    }
+  }
+  return null;
+}
+
+/// The lower-case sha256 of the file at [path], or why it has none: a file
+/// it cannot read, or the hash's own failure.
+Future<({String? sha256, String? reason})> _hashOrReason(
+  String path, {
+  Future<String> Function(String path) hash = fileSha256,
+}) async {
+  try {
+    return (sha256: (await hash(path)).toLowerCase(), reason: null);
+  } on FileSystemException catch (e) {
+    return (sha256: null, reason: 'cannot read it: ${e.message}');
+  } catch (e) {
+    return (sha256: null, reason: 'cannot hash it: $e');
+  }
+}
+
+/// The backend a speech suite asks for, from
+/// `--dart-define=SPEECH_BACKEND=cpu|gpu` (default cpu). Speech compiles its
+/// graphs for exactly that LiteRT accelerator and fails rather than fall back
+/// (`acceleratorFor` in flutter_edge_ai_speech), so it is also the backend
+/// that ran. Any other value throws, failing the test that reads it.
+PreferredBackend speechBackendFromDefine() =>
+    switch (const String.fromEnvironment(
+      'SPEECH_BACKEND',
+      defaultValue: 'cpu',
+    )) {
+      'cpu' => PreferredBackend.cpu,
+      'gpu' => PreferredBackend.gpu,
+      final other => throw ArgumentError.value(
+        other,
+        'SPEECH_BACKEND',
+        'expected cpu or gpu',
+      ),
+    };
+
 /// Records that [check] passed on [variant], installed from the catalog
 /// (`installModelFromCatalog` or `fromCatalog`), run on [backend]. Every
 /// installed file of it is hashed, off the UI isolate: a file that is not
 /// there, or not the pinned bytes, prints FEA_EVIDENCE_SKIP and counts for
-/// nothing.
+/// nothing, as does a null [backend].
 Future<void> recordCatalogEvidence(
   CatalogVariant variant, {
-  required PreferredBackend backend,
+  required PreferredBackend? backend,
   required String check,
 }) async {
+  if (backend == null) {
+    print(
+      'FEA_EVIDENCE_SKIP ${jsonEncode({'variant': variant.id, 'check': check, 'reason': 'the model reports no backend'})}',
+    );
+    return;
+  }
   for (final (name, file) in installedNamesOf(variant)) {
     // Where core reads the file; returned even when nothing is there.
     final path = await FlutterEdgeAi.getModelPath(name);

@@ -20,6 +20,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 const _gemma4Url =
     'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm';
@@ -163,6 +164,11 @@ void main() {
     expect(
       reply.parts.whereType<TextPart>().map((p) => p.text).join(),
       isNotEmpty,
+    );
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath('gemma-4-E2B-it.litertlm'),
+      backend: model.activeBackend,
+      check: 'text',
     );
     await chat.session.close();
   });

@@ -19,6 +19,7 @@ import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'registry_evidence.dart';
 import 'voice_test_helpers.dart';
 
 const _llmFileName = 'gemma-4-E2B-it.litertlm';
@@ -94,7 +95,9 @@ void main() {
         JsSkillExecutor(sourceFor: assetSource.jsSkillSourceFor),
       ],
     );
-    final synth = await FlutterEdgeAi.getActiveTts();
+    final synth = await FlutterEdgeAi.getActiveTts(
+      preferredBackend: speechBackendFromDefine(),
+    );
 
     final session = VoiceSession.custom(
       recognizer: FixedTranscriptRecognizer('Calculate the hash of hello'),
@@ -114,6 +117,11 @@ void main() {
       reason: "the skill's SHA-1 did not reach the spoken reply",
     );
     expect(events.whereType<VoiceReplyAudioEvent>(), isNotEmpty);
+    await recordEvidence(
+      path: llmPath,
+      backend: model.activeBackend,
+      check: 'tool call',
+    );
 
     await agent.close();
     await model.close();

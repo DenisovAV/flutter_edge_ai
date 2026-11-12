@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 const _url =
     'https://huggingface.co/litert-community/Gemma3-1B-IT/resolve/main/Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm';
@@ -79,6 +80,11 @@ void main() {
           'Different seeds (42 vs 99) must yield different output. '
           'Identical = sampler ignores seed.\n'
           'seed42=$seed42a\nseed99=$seed99',
+    );
+    await recordEvidence(
+      path: await FlutterEdgeAi.getModelPath(Uri.parse(_url).pathSegments.last),
+      backend: model.activeBackend,
+      check: 'seeded sampling',
     );
 
     await model.close();

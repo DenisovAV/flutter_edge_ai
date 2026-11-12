@@ -51,6 +51,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'inference_test_helpers.dart' show registerTestEngines;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 import 'voice_test_helpers.dart' show stagedModelPath;
 
 const _backendName = String.fromEnvironment(
@@ -195,6 +196,12 @@ void main() {
   Future<InferenceModelSession> open() =>
       ensureModel().then((m) => m.openSession(topK: 1));
 
+  /// Registry evidence that [check] passed on the staged model, run on
+  /// [ran]: the encoder's backend for an image or audio check.
+  Future<void> evidence(String check, PreferredBackend? ran) async {
+    await recordEvidence(path: await _modelPath(), backend: ran, check: check);
+  }
+
   final printer = debugPrint;
   setUpAll(() {
     debugPrint = (String? message, {int? wrapWidth}) {
@@ -245,6 +252,7 @@ void main() {
       }
       _result('multiconv=$passed/${words.length}');
       expect(passed, words.length);
+      await evidence('text', model?.activeBackend);
     } finally {
       for (final s in sessions) {
         await s.close();
@@ -306,6 +314,7 @@ void main() {
       retained: (_, recall) => recall.toLowerCase().contains('circle'),
       expectation: 'expected the recalled image to contain "circle"',
     );
+    await evidence('vision', model?.activeVisionBackend);
   });
 
   testWidgets('an audio clip stays in its session across a turn on another', (
@@ -363,6 +372,7 @@ void main() {
         );
       },
     );
+    await evidence('audio', model?.activeAudioBackend);
   });
 
   testWidgets('a stop in one session, a turn on another, and the stopped '

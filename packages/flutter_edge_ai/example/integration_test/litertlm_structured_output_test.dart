@@ -22,6 +22,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'voice_test_helpers.dart' show stagedModelPath;
 import 'local_model_file_io.dart' show macosStagedFilePath;
+import 'registry_evidence.dart';
 
 const _modelFile = 'gemma-4-E2B-it.litertlm';
 const _backendName = String.fromEnvironment(
@@ -149,6 +150,11 @@ void main() {
     );
     debugPrint('[litertlm structured] constrained: $constrained');
     expect(_isCode(constrained), isTrue);
+    await recordEvidence(
+      path: await _modelPath(),
+      backend: m.activeBackend,
+      check: 'structured output',
+    );
   }, timeout: const Timeout(Duration(minutes: 10)));
 
   test('multi-turn structured chat and an interleaved plain session', () async {

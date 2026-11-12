@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'inference_test_helpers.dart' show registerTestEngines;
+import 'registry_evidence.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -47,6 +48,14 @@ void main() {
 
       expect(responseText, isNotEmpty);
       expect(responseText.length, greaterThan(1));
+      // The model is whichever one the app left active (checked above).
+      await recordEvidence(
+        path: await FlutterEdgeAi.getModelPath(
+          FlutterEdgeAi.activeModelSpec!.files.first.filename,
+        ),
+        backend: model.activeBackend,
+        check: 'text',
+      );
     } finally {
       await model.close();
     }

@@ -1,0 +1,191 @@
+diff --git a/runtime/components/constrained_decoding/BUILD b/runtime/components/constrained_decoding/BUILD
+index 63e981dc..8e210f89 100644
+--- a/runtime/components/constrained_decoding/BUILD
++++ b/runtime/components/constrained_decoding/BUILD
+@@ -640,9 +640,11 @@ cc_test(
+         ":logit_mask",
+         ":thinking_budget_constraint",
+         "@com_google_googletest//:gtest_main",
++        "@com_google_absl//absl/status",
+         "@com_google_absl//absl/status:statusor",
+         "@com_google_absl//absl/strings:string_view",
+         "@com_google_absl//absl/types:span",
++        "@litert//tflite/types:half",
+         "//runtime/util:test_utils",
+         "//support/tokenizer",
+     ],
+diff --git a/runtime/components/constrained_decoding/thinking_budget_constraint.cc b/runtime/components/constrained_decoding/thinking_budget_constraint.cc
+index 48eb2427..3992ad30 100644
+--- a/runtime/components/constrained_decoding/thinking_budget_constraint.cc
++++ b/runtime/components/constrained_decoding/thinking_budget_constraint.cc
+@@ -207,15 +207,17 @@ ThinkingBudgetConstraint::ComputeMask(const Constraint::State& state) const {
+         << "Start token out of vocabulary range: " << start_token;
+     ABSL_ASSIGN_OR_RETURN(auto user_mask,
+                           user_constraint_->ComputeMask(*s.user_state));
+-    if (user_mask->GetType() != MaskType::kBitmap) {
+-      return std::make_unique<OverlayTokenLogitMask>(std::move(user_mask),
+-                                                     start_token);
+-    }
+-    const auto& bitmap = static_cast<const BitmapLogitMask&>(*user_mask);
+-    RET_CHECK_EQ(bitmap.vocab_size(), vocab_size_);
+-    std::vector<uint64_t> words(bitmap.words().begin(), bitmap.words().end());
+-    words[start_token / 64] |= (uint64_t{1} << (start_token % 64));
+-    return std::make_unique<BitmapLogitMask>(vocab_size_, std::move(words));
++    // flutter_edge_ai: the user mask is used only through its virtual Apply,
++    // never by reading its members, even when it reports kBitmap. The user
++    // constraint can come from a prebuilt provider built against another C++
++    // standard library (the Gemma provider on Windows: Google's libc++, while
++    // this runtime is MSVC), whose BitmapLogitMask lays out its vector of
++    // words differently; copying words() inline here read libc++'s element
++    // count as MSVC's end pointer and threw std::length_error, which aborted
++    // the process on the first decode step of every thinking turn with a
++    // Gemma tool constraint. The overlay keeps the same tokens allowed.
++    return std::make_unique<OverlayTokenLogitMask>(std::move(user_mask),
++                                                   start_token);
+   }
+ 
+   // Suspend user constraint during thinking.
+diff --git a/runtime/components/constrained_decoding/thinking_budget_constraint_test.cc b/runtime/components/constrained_decoding/thinking_budget_constraint_test.cc
+index eda87c27..6309f8a9 100644
+--- a/runtime/components/constrained_decoding/thinking_budget_constraint_test.cc
++++ b/runtime/components/constrained_decoding/thinking_budget_constraint_test.cc
+@@ -14,6 +14,7 @@
+ 
+ #include "runtime/components/constrained_decoding/thinking_budget_constraint.h"
+ 
++#include <cstdint>
+ #include <limits>
+ #include <memory>
+ #include <string>
+@@ -21,6 +22,7 @@
+ 
+ #include <gmock/gmock.h>
+ #include <gtest/gtest.h>
++#include "absl/status/status.h"  // from @com_google_absl
+ #include "absl/status/statusor.h"  // from @com_google_absl
+ #include "absl/strings/string_view.h"  // from @com_google_absl
+ #include "absl/types/span.h"  // from @com_google_absl
+@@ -33,6 +35,7 @@
+ #include "runtime/components/constrained_decoding/logit_mask.h"
+ #include "runtime/util/test_utils.h"  // IWYU pragma: keep
+ #include "support/tokenizer/tokenizer.h"
++#include "tflite/types/half.h"  // from @litert
+ 
+ namespace litert::lm {
+ namespace {
+@@ -53,13 +56,16 @@ std::vector<int> AllowedTokens(const ThinkingBudgetConstraint& constraint,
+     ADD_FAILURE() << "ComputeMask failed: " << mask.status();
+     return allowed;
+   }
+-  if ((*mask)->GetType() != MaskType::kBitmap) {
+-    ADD_FAILURE() << "Expected a bitmap mask.";
++  // Through Apply, which every mask type implements: the step-0 mask is an
++  // overlay over the user mask, not a bitmap (flutter_edge_ai).
++  std::vector<float> logits(constraint.GetVocabularySize(), 0.0f);
++  auto status = (*mask)->Apply(absl::MakeSpan(logits));
++  if (!status.ok()) {
++    ADD_FAILURE() << "Apply failed: " << status;
+     return allowed;
+   }
+-  const auto& bitmap_mask = static_cast<const BitmapLogitMask&>(**mask);
+   for (int token = 0; token < constraint.GetVocabularySize(); ++token) {
+-    if (bitmap_mask.IsAllowed(token)) {
++    if (logits[token] != -std::numeric_limits<float>::infinity()) {
+       allowed.push_back(token);
+     }
+   }
+@@ -301,12 +307,11 @@ TEST(ThinkingBudgetConstraintTest, TestComputeMask) {
+   // plus whatever the user constraint allows, and nothing else.
+   ASSERT_OK_AND_ASSIGN(auto mask, constraint.ComputeMask(*state));
+   ASSERT_NE(mask, nullptr);
+-  EXPECT_EQ(mask->GetType(), MaskType::kBitmap);
+-  auto* bitmap_mask = static_cast<BitmapLogitMask*>(mask.get());
+-  EXPECT_TRUE(bitmap_mask->IsAllowed(10));
+-  EXPECT_TRUE(bitmap_mask->IsAllowed(20));
+-  EXPECT_FALSE(bitmap_mask->IsAllowed(11));
+-  EXPECT_FALSE(bitmap_mask->IsAllowed(50));
++  // An overlay over the user mask, applied through its virtual Apply
++  // (flutter_edge_ai), not a bitmap copied from it.
++  EXPECT_EQ(mask->GetType(), MaskType::kCustom);
++  EXPECT_THAT(AllowedTokens(constraint, *state), ElementsAre(10, 20));
++  BitmapLogitMask* bitmap_mask = nullptr;
+   ASSERT_OK_AND_ASSIGN(auto bitmap, constraint.ComputeBitmap(*state));
+   EXPECT_TRUE(bitmap->Get(10));
+   EXPECT_TRUE(bitmap->Get(20));
+@@ -381,6 +386,76 @@ TEST(ThinkingBudgetConstraintTest, TestStepZeroWithNonBitmapUserMask) {
+   EXPECT_THAT(logits, ElementsAre(kNegInf, kNegInf, 1.5f, kNegInf, kNegInf));
+ }
+ 
++// A mask that reports kBitmap but is not this runtime's BitmapLogitMask, as a
++// prebuilt provider's mask is when the provider was built against another C++
++// standard library (flutter_edge_ai, patch_c_api.sh section 26). Its members
++// must not be read; only its virtual Apply may be called.
++class ForeignBitmapMask : public LogitMask {
++ public:
++  explicit ForeignBitmapMask(int allowed_token) : allowed_token_(allowed_token) {}
++  MaskType GetType() const override { return MaskType::kBitmap; }
++  absl::Status Apply(absl::Span<float> logits) const override {
++    return ApplyImpl(logits, -std::numeric_limits<float>::infinity());
++  }
++  absl::Status Apply(absl::Span<tflite::half> logits) const override {
++    return ApplyImpl(logits, tflite::half::min());
++  }
++
++ private:
++  template <typename T>
++  absl::Status ApplyImpl(absl::Span<T> logits, T disallowed) const {
++    for (int i = 0; i < static_cast<int>(logits.size()); ++i) {
++      if (i != allowed_token_) logits[i] = disallowed;
++    }
++    return absl::OkStatus();
++  }
++
++  // Deliberately not BitmapLogitMask's layout: a static_cast reading its
++  // vocab_size() or words() reads these bytes instead.
++  const int allowed_token_;
++  const uint64_t not_a_word_vector_[3] = {0, 0x2003, 0x2003};
++};
++
++class ForeignBitmapConstraint : public FakeConstraint {
++ public:
++  ForeignBitmapConstraint(int allowed_token, int vocabulary_size)
++      : FakeConstraint(/*token_ids=*/{allowed_token, 1}, vocabulary_size),
++        allowed_token_(allowed_token) {}
++  absl::StatusOr<std::unique_ptr<LogitMask>> ComputeMask(
++      const State&) const override {
++    return std::make_unique<ForeignBitmapMask>(allowed_token_);
++  }
++
++ private:
++  const int allowed_token_;
++};
++
++TEST(ThinkingBudgetConstraintTest, TestStepZeroUsesUserBitmapMaskOnlyByApply) {
++  ForeignBitmapConstraint user_constraint(/*allowed_token=*/7,
++                                          /*vocabulary_size=*/16);
++  ThinkingBudgetConstraint constraint(&user_constraint, /*budget=*/5,
++                                      /*start_token_ids=*/{2, 3},
++                                      /*end_token_ids=*/{4},
++                                      /*vocab_size=*/16);
++
++  auto state = constraint.Start();
++  ASSERT_OK_AND_ASSIGN(auto mask, constraint.ComputeMask(*state));
++  EXPECT_EQ(mask->GetType(), MaskType::kCustom);
++  EXPECT_THAT(AllowedTokens(constraint, *state), ElementsAre(2, 7));
++
++  std::vector<tflite::half> half_logits(16, static_cast<tflite::half>(1.0f));
++  ASSERT_OK(mask->Apply(absl::MakeSpan(half_logits)));
++  for (int i = 0; i < 16; ++i) {
++    if (i == 2 || i == 7) {
++      EXPECT_FLOAT_EQ(static_cast<float>(half_logits[i]), 1.0f) << i;
++    } else {
++      EXPECT_FLOAT_EQ(static_cast<float>(half_logits[i]),
++                      static_cast<float>(tflite::half::min()))
++          << i;
++    }
++  }
++}
++
+ TEST(ThinkingBudgetConstraintTest, TestMismatchAfterPartialStartMatchFails) {
+   ThinkingBudgetConstraint constraint(nullptr, 5, {10, 11}, {12, 13}, 100);
+   auto state = constraint.Start();

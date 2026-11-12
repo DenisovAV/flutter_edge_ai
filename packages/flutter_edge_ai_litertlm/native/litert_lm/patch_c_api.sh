@@ -9,6 +9,8 @@
 #     instead of leaving the conversation poisoned
 # 17. SentencePiece loads a BPE vocabulary with a NUL-byte piece (#659); on
 #     v0.19.0 a second patch on top of upstream's, which accepts only "\0"
+# 26. ThinkingBudgetConstraint uses a user mask only through its virtual
+#     Apply (Windows: the Gemma provider's mask is libc++, the runtime MSVC)
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -1101,6 +1103,42 @@ elif git -C "$DIR" apply --reverse --check "$LINEAR_STATE_PATCH" 2>/dev/null; th
   echo "  SKIP: linear attention state clear already applied"
 else
   echo "  ERROR: $LINEAR_STATE_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
+# ── 26. The thinking constraint reads a user mask only through Apply ──
+# With thinking on, Tasks::Decode wraps the user constraint (the Gemma tool
+# constraint, whenever a session has tools) in ThinkingBudgetConstraint. On
+# the first decode step of a turn its ComputeMask static_casts the user mask
+# to BitmapLogitMask and copies words() inline. On Windows the mask comes from
+# Google's prebuilt libGemmaModelConstraintProvider.dll, built against libc++
+# ({begin, size, capacity}), while LiteRtLm.dll is MSVC STL ({first, last,
+# end}): the element count was read as the end pointer, the copy threw
+# std::length_error, and the process aborted (0xc0000409, fast-fail 7) on the
+# first token of every thinking turn with tools (Intel's Gemma 4 12B on the
+# Panther Lake NPU, 2026-11-12; by the code every Windows backend). Step 0 now
+# always returns upstream's OverlayTokenLogitMask, which calls the user mask's
+# own virtual Apply and keeps the start-of-thought token's logit, so the same
+# tokens stay allowed; the mask runner applies that one step on the host. It
+# matters on Windows, whose provider names std::__u (Linux has section 12's
+# bridge; the Apple and Android providers name std::__1 and std::__ndk1, the
+# runtime's own libc++), and is applied on every target to keep one source
+# tree. The patch also moves upstream's
+# thinking_budget_constraint_test off the bitmap cast and adds a case whose
+# user mask reports kBitmap but is not our class.
+THINKING_MASK_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/thinking_budget_user_mask_by_apply.patch"
+if git -C "$DIR" apply --check "$THINKING_MASK_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$THINKING_MASK_PATCH"
+  echo "  OK: the thinking constraint applies a user mask only through Apply"
+elif git -C "$DIR" apply --reverse --check "$THINKING_MASK_PATCH" 2>/dev/null; then
+  echo "  SKIP: thinking constraint user-mask fix already applied"
+else
+  echo "  ERROR: $THINKING_MASK_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+if grep -q 'static_cast<const BitmapLogitMask&>' \
+    "$DIR/runtime/components/constrained_decoding/thinking_budget_constraint.cc"; then
+  echo "  ERROR: section 26: thinking_budget_constraint.cc still casts a user mask to BitmapLogitMask" >&2
   exit 1
 fi
 

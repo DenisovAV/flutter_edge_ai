@@ -1,0 +1,1548 @@
+diff --git a/litert/vendors/intel_openvino/compiler/global_graph.cc b/litert/vendors/intel_openvino/compiler/global_graph.cc
+index a10c9665..694fb138 100644
+--- a/litert/vendors/intel_openvino/compiler/global_graph.cc
++++ b/litert/vendors/intel_openvino/compiler/global_graph.cc
+@@ -140,6 +140,7 @@ std::string OpenVinoGlobalGraph::Serialize() const {
+     PutU32(out, static_cast<uint32_t>(subgraph.name.size()));
+     out.append(subgraph.name);
+     out.push_back(static_cast<char>(subgraph.device));
++    PutU64(out, static_cast<uint64_t>(subgraph.kv_tier));
+     PutU32(out, static_cast<uint32_t>(subgraph.const_map.size()));
+     for (const auto& [const_name, buffer_id] : subgraph.const_map) {
+       PutU32(out, static_cast<uint32_t>(const_name.size()));
+@@ -163,7 +164,7 @@ litert::Expected<OpenVinoGlobalGraph> OpenVinoGlobalGraph::Parse(
+   OpenVinoGlobalGraph graph;
+ 
+   const uint16_t version = reader.U16();
+-  if (!reader.ok || version != kVersion) {
++  if (!reader.ok || version < 2 || version > kVersion) {
+     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                          "OpenVinoGlobalGraph: unsupported container version");
+   }
+@@ -223,6 +224,7 @@ litert::Expected<OpenVinoGlobalGraph> OpenVinoGlobalGraph::Parse(
+     uint8_t dev = 0;
+     reader.Bytes(&dev, 1);
+     subgraph.device = dev;
++    if (version >= 3) subgraph.kv_tier = static_cast<int64_t>(reader.U64());
+     const uint32_t cm_len = reader.U32();
+     for (uint32_t j = 0; j < cm_len && reader.ok; ++j) {
+       const uint32_t const_name_len = reader.U32();
+diff --git a/litert/vendors/intel_openvino/compiler/global_graph.h b/litert/vendors/intel_openvino/compiler/global_graph.h
+index 6bca822e..cdcaeb94 100644
+--- a/litert/vendors/intel_openvino/compiler/global_graph.h
++++ b/litert/vendors/intel_openvino/compiler/global_graph.h
+@@ -48,11 +48,15 @@ namespace litert::openvino {
+ //   [pool_size bytes]                       (CONTIGUOUS deduplicated pool)
+ //   uint32 num_subgraphs
+ //     repeat: uint32 name_len, [name], uint8 device_enum,
++//             int64 kv_tier                                  (v3+)
+ //             uint32 const_map_len,
+ //               repeat: uint32 name_len, [name], uint32 buffer_id  (const_map)
+ //             uint64 payload_len, [payload bytes]             (OV exported
+ //             blob)
+ //
++// v3 over v2: each subgraph records its KV tier (see Subgraph::kv_tier).
++// Parse() still reads v2 blobs, with kv_tier = 0.
++//
+ // v2 over v1: the pool is stored CONTIGUOUSLY (directory of {id, pool_offset,
+ // size} then all bytes back-to-back) rather than interleaved {id, size, bytes},
+ // so the NPU weightless path can stage it as a byte-for-byte copy of the
+@@ -71,8 +75,8 @@ class OpenVinoGlobalGraph {
+  public:
+   // Container format version, written right after the magic. Bump on any
+   // layout change so Parse() can reject blobs it does not understand rather
+-  // than misparsing. v2 = contiguous pool + directory (see layout above).
+-  static constexpr uint16_t kVersion = 2;
++  // than misparsing. v3 = v2 + per-subgraph kv_tier (see layout above).
++  static constexpr uint16_t kVersion = 3;
+ 
+   // One deduplicated weight buffer in the contiguous pool. |bytes| aliases the
+   // pool source (the container blob at dispatch, or WeightBank at compile).
+@@ -87,6 +91,10 @@ class OpenVinoGlobalGraph {
+   struct Subgraph {
+     std::string name;    // e.g. "Partition_0"
+     uint8_t device = 0;  // LiteRtIntelOpenVinoGraphBackend
++    // KV sequence length the partition was compiled for (its context tier in
++    // a multi-context model): the largest static extent over its "kv_cache"
++    // inputs. 0 = no KV inputs.
++    int64_t kv_tier = 0;
+     std::map<std::string, uint32_t> const_map;  // friendly_name -> buffer_id
+     absl::Span<const uint8_t> payload;          // OV exported blob (aliased)
+   };
+diff --git a/litert/vendors/intel_openvino/compiler/global_graph_test.cc b/litert/vendors/intel_openvino/compiler/global_graph_test.cc
+index 30d6e386..f8cea23b 100644
+--- a/litert/vendors/intel_openvino/compiler/global_graph_test.cc
++++ b/litert/vendors/intel_openvino/compiler/global_graph_test.cc
+@@ -52,6 +52,7 @@ struct Sample {
+     OpenVinoGlobalGraph::Subgraph prefill;
+     prefill.name = "Partition_0";
+     prefill.device = 2;  // e.g. GPU enum
++    prefill.kv_tier = 8192;
+     prefill.const_map = {{"weight_a", 0u}, {"weight_b", 7u}};
+     prefill.payload = AsBytes(payload0);
+     graph.subgraphs["Partition_0"] = prefill;
+@@ -59,6 +60,7 @@ struct Sample {
+     OpenVinoGlobalGraph::Subgraph decode;
+     decode.name = "Partition_1";
+     decode.device = 2;
++    decode.kv_tier = 16383;
+     decode.const_map = {{"weight_a", 7u}};
+     decode.payload = AsBytes(payload1);
+     graph.subgraphs["Partition_1"] = decode;
+@@ -116,6 +118,7 @@ TEST(GlobalGraphTest, RoundTrip) {
+     const auto& out_sg = out.subgraphs.at(name);
+     EXPECT_EQ(out_sg.name, in_sg.name);
+     EXPECT_EQ(out_sg.device, in_sg.device);
++    EXPECT_EQ(out_sg.kv_tier, in_sg.kv_tier);
+     EXPECT_EQ(out_sg.const_map, in_sg.const_map);
+     const std::string got(reinterpret_cast<const char*>(out_sg.payload.data()),
+                           out_sg.payload.size());
+diff --git a/litert/vendors/intel_openvino/compiler/openvino_compiler_plugin.cc b/litert/vendors/intel_openvino/compiler/openvino_compiler_plugin.cc
+index 6c98ebea..8db93ac0 100644
+--- a/litert/vendors/intel_openvino/compiler/openvino_compiler_plugin.cc
++++ b/litert/vendors/intel_openvino/compiler/openvino_compiler_plugin.cc
+@@ -12,6 +12,7 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
++#include <algorithm>
+ #include <cstddef>
+ #include <cstdint>
+ #include <cstring>
+@@ -31,7 +32,10 @@
+ #include "openvino/core/except.hpp"
+ #include "openvino/frontend/tensorflow_lite/frontend.hpp"
+ #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
++#include "openvino/op/parameter.hpp"
++#include "openvino/openvino.hpp"  // NOLINT
+ #include "openvino/runtime/core.hpp"
++#include "absl/strings/match.h"  // from @com_google_absl
+ #include "absl/strings/str_cat.h"  // from @com_google_absl
+ #include "absl/types/span.h"  // from @com_google_absl
+ #include "litert/c/internal/litert_logging.h"
+@@ -642,6 +646,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
+         auto input_model = tflite_fe->load(graph_delegate);
+         LITERT_LOG(LITERT_INFO, "Model loaded");
+         auto ov_model = tflite_fe->convert(input_model);
++        input_model.reset();  // frontend model + its tflite weights unused
++                              // after convert
+ 
+         // Run NPU-specific optimization passes.
+         const auto optimize_result = context.OptimizeModel(ov_model);
+@@ -672,13 +678,38 @@ LiteRtStatus LiteRtCompilerPluginCompile(
+           }
+         }
+ 
++        // KV tier: the largest static extent over this partition's
++        // "kv_cache" inputs, i.e. the context length it was compiled for.
++        // Recorded in the GlobalGraph so the dispatch can tell a multi-context
++        // model's tiers apart without guessing from port shapes.
++        auto pname = [](const std::shared_ptr<ov::op::v0::Parameter>& p) {
++          const auto& names = p->get_output_tensor(0).get_names();
++          return names.empty() ? p->get_friendly_name() : *names.begin();
++        };
++        auto extent = [](const std::shared_ptr<ov::op::v0::Parameter>& p) {
++          int64_t m = 0;
++          const auto& ps = p->get_partial_shape();
++          if (ps.rank().is_dynamic()) return m;
++          for (const auto& d : ps) {
++            if (d.is_static()) m = std::max<int64_t>(m, d.get_length());
++          }
++          return m;
++        };
++        int64_t kv_tier = 0;
++        for (const auto& p : ov_model->get_parameters()) {
++          if (!absl::StrContains(pname(p), "kv_cache")) continue;
++          kv_tier = std::max(kv_tier, extent(p));
++        }
++
+         // Compile using the per-partition device and properties.
+-        litert::openvino::LogOpenVINOVersionInfoOnce(
+-            "OpenVINO Compiler", context.Device().c_str());
++        litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Compiler",
++                                                     context.Device().c_str());
+         LITERT_LOG(LITERT_INFO, "Compiling partition %d for device %s",
+                    partition_idx, context.Device().c_str());
+         auto compiled_model =
+             core.compile_model(ov_model, context.Device(), configs);
++        ov_model.reset();  // graph unused after compile; free before export +
++                           // aggregation
+ 
+         CustomOStreamBuf obuf;
+         std::ostream oss(&obuf);
+@@ -712,6 +743,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
+           litert::openvino::OpenVinoGlobalGraph::Subgraph subgraph;
+           subgraph.name = graph_name;
+           subgraph.device = static_cast<uint8_t>(graph_backend_enum);
++          subgraph.kv_tier = kv_tier;
+           subgraph.const_map = std::move(const_map);
+           subgraph.payload = absl::MakeConstSpan(
+               reinterpret_cast<const uint8_t*>(held.data()), held.size());
+diff --git a/litert/vendors/intel_openvino/dispatch/BUILD b/litert/vendors/intel_openvino/dispatch/BUILD
+index f477b6aa..2541bcfa 100644
+--- a/litert/vendors/intel_openvino/dispatch/BUILD
++++ b/litert/vendors/intel_openvino/dispatch/BUILD
+@@ -28,14 +28,20 @@ litert_dynamic_lib(
+         "device_context.cc",
+         "dispatch_api.cc",
+         "invocation_context.cc",
++        "npu_kv_cache_policy.cc",
+         "openvino_shared_core.cc",
+         "openvino_tensor_buffer.cc",
+         "weight_bank_runtime.cc",
+-    ],
++    ] + select({
++        "@platforms//os:windows": ["mapped_pages_win.cc"],
++        "//conditions:default": ["mapped_pages_linux.cc"],
++    }),
+     hdrs = [
+         "device_context.h",
+         "invocation_context.h",
++        "mapped_pages.h",
+         "npu_hal_wrapper.h",
++        "npu_kv_cache_policy.h",
+         "openvino_shared_core.h",
+         "openvino_tensor_buffer.h",
+         "weight_bank_runtime.h",
+@@ -114,10 +120,14 @@ litert_bin(
+         "device_context.cc",
+         "dispatch_api.cc",
+         "invocation_context.cc",
++        "npu_kv_cache_policy.cc",
+         "openvino_shared_core.cc",
+         "openvino_tensor_buffer.cc",
+         "weight_bank_runtime.cc",
+-    ],
++    ] + select({
++        "@platforms//os:windows": ["mapped_pages_win.cc"],
++        "//conditions:default": ["mapped_pages_linux.cc"],
++    }),
+     copts = ["-fexceptions"] + select({
+         "//litert/runtime/dispatch:windows_msvc": [
+             "/DLITERT_COMPILE_LIBRARY",
+@@ -178,7 +188,9 @@ litert_lib(
+     hdrs = [
+         "device_context.h",
+         "invocation_context.h",
++        "mapped_pages.h",
+         "npu_hal_wrapper.h",
++        "npu_kv_cache_policy.h",
+         "openvino_shared_core.h",
+         "openvino_tensor_buffer.h",
+         "weight_bank_runtime.h",
+diff --git a/litert/vendors/intel_openvino/dispatch/device_context.cc b/litert/vendors/intel_openvino/dispatch/device_context.cc
+index 1123d473..0921be60 100644
+--- a/litert/vendors/intel_openvino/dispatch/device_context.cc
++++ b/litert/vendors/intel_openvino/dispatch/device_context.cc
+@@ -16,7 +16,7 @@
+ #include "litert/vendors/intel_openvino/dispatch/device_context.h"
+ 
+ #include "litert/c/internal/litert_runtime_context.h"
+-#include "litert/c/litert_tensor_buffer.h"
++#include "litert/c/litert_tensor_buffer.h"  // NOLINT
+ #include "litert/c/litert_tensor_buffer_types.h"
+ #if __ANDROID__
+ #include <android/hardware_buffer.h>
+@@ -24,29 +24,38 @@
+ 
+ #include <string.h>
+ 
++#include <algorithm>
+ #include <cstdint>
++#include <cstdlib>
+ #include <vector>
+ 
++#include "litert/c/internal/litert_logging.h"
++#include "litert/c/litert_custom_tensor_buffer.h"
+ #include "litert/c/litert_layout.h"
++#include "litert/cc/litert_expected.h"
++#include "litert/cc/litert_macros.h"
++#include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
++#include "litert/vendors/intel_openvino/dispatch/npu_kv_cache_policy.h"
+ 
+ #if LITERT_HAS_AHWB_SUPPORT
+ #include <sys/socket.h>
+ #include <unistd.h>
+ #endif  // LITERT_HAS_AHWB_SUPPORT
+ 
+-#include <openvino/runtime/intel_npu/level_zero/level_zero.hpp>
+-#include <openvino/runtime/remote_context.hpp>
++#include <openvino/runtime/intel_npu/level_zero/level_zero.hpp>  // NOLINT
++#include <openvino/runtime/remote_context.hpp>                   // NOLINT
+ 
+-#include "absl/cleanup/cleanup.h"  // from @com_google_absl
++#include "absl/cleanup/cleanup.h"  // from @com_google_absl  // NOLINT
+ #include "absl/synchronization/mutex.h"  // from @com_google_absl
+ #include "litert/c/litert_common.h"
+-#include "litert/c/litert_model.h"
++#include "litert/c/litert_model.h"  // NOLINT
+ #include "litert/c/litert_model_types.h"
+ #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
+-#include "litert/vendors/intel_openvino/utils.h"
++#include "litert/vendors/intel_openvino/utils.h"  // NOLINT
+ 
+ #if LITERT_HAS_AHWB_SUPPORT || LITERT_HAS_DMABUF_SUPPORT
+ #include <limits>
++
+ #include "openvino/core/type/element_type.hpp"
+ #endif
+ 
+@@ -353,7 +362,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
+ 
+ litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
+     LiteRtTensorBufferHandle tensor_buffer_handle) {
+-  absl::MutexLock lock(&tensor_handle_mutex_);
++  absl::MutexLock lock(tensor_handle_mutex_);
+   auto it = tensor_handle_map_.find(tensor_buffer_handle);
+   if (it != tensor_handle_map_.end()) {
+     tensor_handle_map_.erase(tensor_buffer_handle);
+@@ -364,3 +373,66 @@ litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
+ 
+   return {};
+ }
++
++// --- Deferred-import eviction ---------------------------------------------
++
++void LiteRtDispatchDeviceContextT::RegisterInvocationContext(
++    LiteRtDispatchInvocationContextT* context) {
++  absl::MutexLock lock(invocation_contexts_mutex_);
++  invocation_contexts_.push_back(context);
++}
++
++void LiteRtDispatchDeviceContextT::UnregisterInvocationContext(
++    LiteRtDispatchInvocationContextT* context) {
++  absl::MutexLock lock(invocation_contexts_mutex_);
++  invocation_contexts_.erase(std::remove(invocation_contexts_.begin(),
++                                         invocation_contexts_.end(), context),
++                             invocation_contexts_.end());
++}
++
++void LiteRtDispatchDeviceContextT::ReleaseOthersForImport(
++    LiteRtDispatchInvocationContextT* incoming) {
++  const int64_t incoming_tier = incoming != nullptr ? incoming->KvTier() : 0;
++  if (incoming_tier <= 0) return;
++  active_tier_.store(incoming_tier);
++  // Released under the registry lock, so no context can be destroyed
++  // mid-release. That is safe only because TryReleaseImported never waits.
++  absl::MutexLock lock(invocation_contexts_mutex_);
++  for (auto* ctx : invocation_contexts_) {
++    if (ctx == incoming || ctx == nullptr) continue;
++    if (!ctx->IsImported()) continue;
++    const int64_t tier = ctx->KvTier();
++    if (!litert::openvino::npu_kv_cache::ShouldRelease(incoming_tier, tier))
++      continue;
++    const bool released = ctx->TryReleaseImported();
++    LITERT_LOG(
++        LITERT_INFO, "EVICT '%s' (tier %lld) %s for '%s' (tier %lld)",
++        ctx->FunctionName().empty() ? "<unnamed>" : ctx->FunctionName().c_str(),
++        static_cast<long long>(tier),
++        released ? "released to make room" : "busy, kept",
++        incoming->FunctionName().empty() ? "<unnamed>"
++                                         : incoming->FunctionName().c_str(),
++        static_cast<long long>(incoming_tier));
++  }
++}
++
++void LiteRtDispatchDeviceContextT::PrefetchSameTier(
++    LiteRtDispatchInvocationContextT* imported) {
++  if (imported == nullptr) return;
++  const int64_t tier = imported->KvTier();
++  if (tier <= 0) return;
++  // Started under the registry lock, like the release: starting one only
++  // spawns the thread, and no context can be destroyed meanwhile.
++  absl::MutexLock lock(invocation_contexts_mutex_);
++  for (auto* ctx : invocation_contexts_) {
++    if (ctx == imported || ctx == nullptr || ctx->IsImported()) continue;
++    if (ctx->KvTier() != tier) continue;
++    LITERT_LOG(
++        LITERT_INFO, "PREFETCH '%s' (tier %lld) after '%s' imported",
++        ctx->FunctionName().empty() ? "<unnamed>" : ctx->FunctionName().c_str(),
++        static_cast<long long>(tier),
++        imported->FunctionName().empty() ? "<unnamed>"
++                                         : imported->FunctionName().c_str());
++    ctx->StartBackgroundImport();
++  }
++}
+diff --git a/litert/vendors/intel_openvino/dispatch/device_context.h b/litert/vendors/intel_openvino/dispatch/device_context.h
+index 20f097df..2e9a3471 100644
+--- a/litert/vendors/intel_openvino/dispatch/device_context.h
++++ b/litert/vendors/intel_openvino/dispatch/device_context.h
+@@ -16,11 +16,14 @@
+ #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
+ #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
+ 
++#include <atomic>
++#include <cstddef>  // NOLINT
+ #include <cstdint>
+ #include <functional>
+ #include <memory>
+ #include <unordered_map>
+ #include <utility>
++#include <vector>
+ 
+ #include "openvino/runtime/tensor.hpp"
+ #include "absl/base/thread_annotations.h"  // from @com_google_absl
+@@ -31,16 +34,18 @@
+ #endif
+ 
+ #include "openvino/runtime/core.hpp"
+-#include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
++#include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"  // NOLINT
+ #include "openvino/runtime/remote_context.hpp"
+ #include "litert/c/internal/litert_runtime_context.h"
+-#include "litert/c/litert_tensor_buffer.h"
++#include "litert/c/litert_tensor_buffer.h"  // NOLINT
+ #include "litert/cc/litert_expected.h"
+-#include "litert/cc/litert_macros.h"
++#include "litert/cc/litert_macros.h"  // NOLINT
+ #include "litert/vendors/c/litert_dispatch.h"
+ #include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
+ #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
+ 
++class LiteRtDispatchInvocationContextT;
++
+ class LiteRtDispatchDeviceContextT {
+  public:
+   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
+@@ -75,6 +80,44 @@ class LiteRtDispatchDeviceContextT {
+     return runtime_context_;
+   }
+ 
++  // --- Deferred-import eviction -------------------------------------------
++  //
++  // Every dispatch node imports its own blob on first use and can drop it
++  // again (LiteRtDispatchInvocationContextT::EnsureImported /
++  // ReleaseImported). The device context is the only place that sees all of a
++  // model's nodes at once, so the release decision lives here.
++  //
++  // The case this exists for: a multi-context bundle crosses from its 4096
++  // tier to its 16383 tier. The 4096 tier's nodes are never used again, but
++  // nothing says so -- the executor just stops invoking them, and no detach or
++  // unregister reaches the delegate.
++  //
++  // The rule is therefore the simplest one that needs no such signal: a node
++  // about to import takes the slot, and the nodes of other tiers give theirs
++  // up. No recency, no thresholds, no bookkeeping -- "release the others" is
++  // decided entirely by the import that is already happening.
++  //
++  // A node that is busy -- running, or mid-import -- is skipped and stays
++  // imported: the release never waits for it.
++  void RegisterInvocationContext(LiteRtDispatchInvocationContextT* context);
++  void UnregisterInvocationContext(LiteRtDispatchInvocationContextT* context);
++
++  // Releases the imported models of every other tier's nodes. Called from
++  // EnsureImported BEFORE the import, because the host peak is set while the
++  // old tier's blob and the new one are both resident -- a release that runs
++  // after the fact cannot lower it. Must NOT be called while holding an
++  // invocation context's import lock.
++  void ReleaseOthersForImport(LiteRtDispatchInvocationContextT* incoming);
++
++  // After `imported` finished importing, start background imports of the
++  // other not-yet-imported nodes of the SAME tier.
++  void PrefetchSameTier(LiteRtDispatchInvocationContextT* imported);
++
++  // The tier of the last foreground import (0 before any). A background import
++  // that finishes for another tier releases itself: the crossing that moved
++  // away from its tier skipped it while it was busy importing.
++  int64_t ActiveTier() const { return active_tier_.load(); }
++
+  private:
+   class CleanupAction {
+    public:
+@@ -139,6 +182,14 @@ class LiteRtDispatchDeviceContextT {
+   litert::openvino::GpuSharedBank gpu_shared_bank_;
+   litert::openvino::NpuSharedBank npu_shared_bank_;
+ 
++  // Every invocation context created against this device context, so a node
++  // about to import can see the others. Raw pointers: the contexts unregister
++  // themselves in their destructor.
++  std::atomic<int64_t> active_tier_{0};
++  mutable absl::Mutex invocation_contexts_mutex_;
++  std::vector<LiteRtDispatchInvocationContextT*> invocation_contexts_
++      ABSL_GUARDED_BY(invocation_contexts_mutex_);
++
+  public:
+   // Bound at dispatch by the invocation context; see GpuSharedBank::Bind and
+   // NpuSharedBank::EnsureOnDisk.
+diff --git a/litert/vendors/intel_openvino/dispatch/dispatch_api.cc b/litert/vendors/intel_openvino/dispatch/dispatch_api.cc
+index 2f28bcf6..4aa504ad 100644
+--- a/litert/vendors/intel_openvino/dispatch/dispatch_api.cc
++++ b/litert/vendors/intel_openvino/dispatch/dispatch_api.cc
+@@ -119,11 +119,9 @@ LiteRtStatus ImportOpenVinoTensorBuffer(
+ }
+ 
+ LiteRtStatus DestroyOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+-  OpenVinoTensorBuffer* custom_tensor_buffer =
+-      reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
+-  if (custom_tensor_buffer->GetTensorData()) {
+-    delete custom_tensor_buffer;
+-  }
++  // Always delete: the buffer may never have been touched (see
++  // OpenVinoTensorBuffer), and asking for its data here would create it.
++  delete reinterpret_cast<OpenVinoTensorBuffer*>(hw_memory_info->memory_handle);
+   delete hw_memory_info;
+   return kLiteRtStatusOk;
+ }
+@@ -132,6 +130,18 @@ LiteRtStatus UnlockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+   return kLiteRtStatusOk;
+ }
+ 
++LiteRtStatus ClearOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
++  auto result = reinterpret_cast<OpenVinoTensorBuffer*>(
++                    hw_memory_info->memory_handle)
++                    ->Clear();
++  if (!result) {
++    LITERT_LOG(LITERT_ERROR, "Failed to clear tensor buffer: %s",
++               result.Error().Message().c_str());
++    return kLiteRtStatusErrorRuntimeFailure;
++  }
++  return kLiteRtStatusOk;
++}
++
+ LiteRtStatus LockOpenVinoTensorBuffer(HwMemoryInfoPtr hw_memory_info,
+                                       LiteRtTensorBufferLockMode mode,
+                                       void** host_memory_ptr) {
+@@ -523,7 +533,7 @@ static const LiteRtCustomTensorBufferHandlersDef_V1 TheTensorBufferHandlers = {
+     .destroy_func = litert::openvino::DestroyOpenVinoTensorBuffer,
+     .lock_func = litert::openvino::LockOpenVinoTensorBuffer,
+     .unlock_func = litert::openvino::UnlockOpenVinoTensorBuffer,
+-    .clear_func = nullptr,
++    .clear_func = litert::openvino::ClearOpenVinoTensorBuffer,
+     .import_func = litert::openvino::ImportOpenVinoTensorBuffer,
+     .device_tag = kLiteRtEnvOptionTagNull,
+     .queue_tag = kLiteRtEnvOptionTagNull,
+diff --git a/litert/vendors/intel_openvino/dispatch/invocation_context.cc b/litert/vendors/intel_openvino/dispatch/invocation_context.cc
+index 9b0295b7..1692995b 100644
+--- a/litert/vendors/intel_openvino/dispatch/invocation_context.cc
++++ b/litert/vendors/intel_openvino/dispatch/invocation_context.cc
+@@ -16,35 +16,43 @@
+ #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
+ 
+ #include <algorithm>
++#include <atomic>
+ #include <chrono>  // NOLINT
+ #include <cstddef>
+ #include <cstdint>
+ #include <cstring>
+ #include <exception>
++#include <future>  // NOLINT
+ #include <ios>
+ #include <istream>
+ #include <map>
++#include <memory>
+ #include <optional>
++#include <ratio>  // NOLINT
+ #include <streambuf>
+ #include <string>
+ #include <utility>
+-#include <memory>
+ #include <vector>
+ 
+ #include "openvino/core/any.hpp"
+ #include "openvino/runtime/compiled_model.hpp"
++#include "openvino/runtime/intel_npu/properties.hpp"  // NOLINT
++#include "openvino/runtime/properties.hpp"            // NOLINT
+ #include "openvino/runtime/tensor.hpp"
++#include "absl/synchronization/mutex.h"  // from @com_google_absl
+ #if defined(__ANDROID__)
+ #include <unistd.h>
++
+ #include "litert/vendors/intel_openvino/dispatch/npu_hal_wrapper.h"
+ #endif
+ 
+ #include "litert/c/internal/litert_logging.h"
+ #include "litert/c/internal/litert_runtime_context.h"
+ #include "litert/c/litert_common.h"
+-#include "litert/c/litert_model.h"
+-#include "litert/c/litert_tensor_buffer.h"
+-#include "litert/c/litert_tensor_buffer_requirements.h"
++#include "litert/c/litert_model.h"  // NOLINT
++#include "litert/c/litert_model_types.h"
++#include "litert/c/litert_tensor_buffer.h"  // NOLINT
++#include "litert/c/litert_tensor_buffer_requirements.h"  // NOLINT
+ #include "litert/c/litert_tensor_buffer_types.h"
+ #include "litert/c/options/litert_intel_openvino_options.h"
+ #include "litert/cc/litert_expected.h"
+@@ -53,6 +61,7 @@
+ #include "litert/vendors/c/litert_dispatch.h"
+ #include "litert/vendors/intel_openvino/bytecode_header.h"
+ #include "litert/vendors/intel_openvino/compiler/global_graph.h"
++#include "litert/vendors/intel_openvino/dispatch/mapped_pages.h"
+ #include "litert/vendors/intel_openvino/dispatch/weight_bank_runtime.h"
+ #include "litert/vendors/intel_openvino/openvino_version_info.h"
+ 
+@@ -146,6 +155,150 @@ LiteRtDispatchInvocationContextT::Create(
+     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
+     int num_inputs, int num_outputs,
+     const IntelOpenVinoOptions* intel_openvino_opts) {
++  // Create() records WHAT to import and returns; the import itself happens in
++  // EnsureImported() on first real use. A multi-context bundle delegates every
++  // tier's signatures, and a session that never leaves its first tier must
++  // never pay for the others' blobs.
++  //
++  // Nothing import-related is pre-resolved here: holding derived state between
++  // Create() and the import is what makes a deferred object complicated. The
++  // whole job, container parse included, runs in one piece at import time.
++  // Consequence to be aware of: a bad container, an absent device or an
++  // out-of-bounds pool span is now reported on first use rather than at model
++  // load.
++  if (exec_bytecode_buffer == nullptr) {
++    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
++                         "Null bytecode buffer");
++  }
++  LITERT_LOG(
++      LITERT_INFO, "Openvino InvocationContext created, import deferred ('%s')",
++      (function_name != nullptr && function_name[0] != '\0') ? function_name
++                                                             : "<unnamed>");
++  // The one thing read here: the node's KV tier, an immutable field of its
++  // subgraph record that release and prefetch need before any import.
++  int64_t kv_tier = 0;
++  const auto* bytes =
++      static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
++      exec_bytecode_buffer->offset;
++  if (function_name != nullptr &&
++      litert::openvino::OpenVinoGlobalGraph::HasMagic(
++          bytes, exec_bytecode_buffer->size)) {
++    // A parse error is left for the import to report.
++    if (auto graph = litert::openvino::OpenVinoGlobalGraph::Parse(
++            bytes, exec_bytecode_buffer->size)) {
++      auto it = graph->subgraphs.find(function_name);
++      if (it != graph->subgraphs.end()) kv_tier = it->second.kv_tier;
++    }
++  }
++  Ptr context(new LiteRtDispatchInvocationContextT(
++      device_context, *exec_bytecode_buffer,
++      function_name != nullptr ? std::string(function_name) : std::string(),
++      kv_tier, num_inputs, num_outputs));
++  device_context.RegisterInvocationContext(context.get());
++  return context;
++}
++
++LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
++  // Unregister first, so no new prefetch can start; then wait for one still
++  // running, which would otherwise touch a freed context.
++  device_context_.UnregisterInvocationContext(this);
++  absl::MutexLock lock(prefetch_mutex_);
++  if (prefetch_.valid()) prefetch_.wait();
++}
++
++bool LiteRtDispatchInvocationContextT::TryReleaseImported() {
++  if (!use_mutex_.try_lock()) return false;
++  const bool locked = import_mutex_.try_lock();
++  if (locked) {
++    ReleaseImportedLocked();
++    import_mutex_.unlock();
++  }
++  use_mutex_.unlock();
++  return locked;
++}
++
++void LiteRtDispatchInvocationContextT::ReleaseImportedLocked() {
++  if (!imported_) return;
++  // Dropping the infer request drops the last reference to this node's
++  // ov::CompiledModel. bound_weights_ are views the request borrowed, so they
++  // go with it. attached_inputs_/attached_outputs_ are kept on purpose.
++  infer_request_ = {};
++  bound_weights_.clear();
++  imported_ = false;
++  LITERT_LOG(LITERT_INFO,
++             "EVICT released imported model for '%s' (%zu byte payload); it "
++             "will re-import on next use",
++             function_name_.empty() ? "<unnamed>" : function_name_.c_str(),
++             imported_bytes_);
++  imported_bytes_ = 0;
++}
++
++litert::Expected<void> LiteRtDispatchInvocationContextT::EnsureImported() {
++  return EnsureImported(/*foreground=*/true);
++}
++
++litert::Expected<void> LiteRtDispatchInvocationContextT::EnsureImported(
++    bool foreground) {
++  // Make room BEFORE importing, not after. The host peak is set at the moment
++  // a tier crossing holds the old tier's blob and the new one at once, so an
++  // eviction that runs afterwards -- however correct -- cannot lower it.
++  // Outside the import lock, so a node never holds its own while trying
++  // others'. Only for the foreground: a background import of a tier the
++  // foreground has already left must not evict the tier it moved to.
++  if (foreground && !imported_.load(std::memory_order_relaxed)) {
++    device_context_.ReleaseOthersForImport(this);
++  }
++
++  {
++    absl::MutexLock lock(import_mutex_);
++    if (imported_) return {};
++    LITERT_RETURN_IF_ERROR(ImportLocked());
++    imported_ = true;
++
++    // Re-bind this node's buffers from our record. Needed after a release: the
++    // kernel attaches a node's buffers only on its first run and will not
++    // attach them again for the re-import.
++    for (const auto& [index, handle] : attached_inputs_) {
++      LITERT_RETURN_IF_ERROR(BindInput(index, handle));
++    }
++    for (const auto& [index, handle] : attached_outputs_) {
++      LITERT_RETURN_IF_ERROR(BindOutput(index, handle));
++    }
++  }
++  // Outside the lock: start importing this tier's other nodes in the
++  // background, so e.g. the decode partition is ready by the time prefill
++  // ends instead of importing inside the first decode step.
++  if (foreground) device_context_.PrefetchSameTier(this);
++  return {};
++}
++
++void LiteRtDispatchInvocationContextT::StartBackgroundImport() {
++  absl::MutexLock lock(prefetch_mutex_);
++  if (prefetch_.valid() || imported_.load(std::memory_order_relaxed)) return;
++  // EnsureImported takes this node's import lock, so a foreground use that
++  // arrives mid-import waits for it instead of importing twice.
++  prefetch_ = std::async(std::launch::async, [this]() {
++    const auto t0 = std::chrono::steady_clock::now();
++    auto status = EnsureImported(/*foreground=*/false);
++    // The foreground left this tier while we were importing; its release
++    // skipped us as busy, so release now.
++    if (status && KvTier() != device_context_.ActiveTier()) {
++      TryReleaseImported();
++    }
++    LITERT_LOG(status ? LITERT_INFO : LITERT_WARNING,
++               "PREFETCH '%s' background import %s in %.1f ms",
++               function_name_.empty() ? "<unnamed>" : function_name_.c_str(),
++               status ? "done" : "FAILED",
++               std::chrono::duration<double, std::milli>(
++                   std::chrono::steady_clock::now() - t0)
++                   .count());
++  });
++}
++
++litert::Expected<void> LiteRtDispatchInvocationContextT::ImportLocked() {
++  const LiteRtMemBuffer* exec_bytecode_buffer = &exec_bytecode_buffer_;
++  const char* function_name =
++      function_name_.empty() ? nullptr : function_name_.c_str();
+   const void* exec_bytecode_ptr =
+       static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
+       exec_bytecode_buffer->offset;
+@@ -170,7 +323,6 @@ LiteRtDispatchInvocationContextT::Create(
+   std::optional<litert::openvino::OpenVinoGlobalGraph> global_graph;
+   std::map<std::string, uint32_t> selected_const_map;
+   std::optional<LiteRtIntelOpenVinoGraphBackend> selected_device;
+-  std::vector<uint8_t> selected_payload;
+   // Zero-copy view of the contiguous weight pool (aliases exec_bytecode_buffer,
+   // which outlives this function). Used by the NPU arm to stage the pool.
+   const uint8_t* pool_ptr = nullptr;
+@@ -219,12 +371,11 @@ LiteRtDispatchInvocationContextT::Create(
+     selected_const_map = selected->const_map;
+     selected_device =
+         static_cast<LiteRtIntelOpenVinoGraphBackend>(selected->device);
+-    // Copy the selected (weightless-on-NPU / Parameters-on-GPU) payload into an
+-    // owned buffer; we import from it below. This is small -- the large pool is
+-    // NOT copied here.
+-    selected_payload.assign(selected->payload.begin(), selected->payload.end());
+-    exec_bytecode_ptr = selected_payload.data();
+-    exec_bytecode_size = selected_payload.size();
++    // Import straight from the selected (weightless-on-NPU /
++    // Parameters-on-GPU) payload: it aliases exec_bytecode_buffer, which
++    // outlives this function, so no copy is needed.
++    exec_bytecode_ptr = selected->payload.data();
++    exec_bytecode_size = selected->payload.size();
+   }
+ 
+   // If the compiler embedded a self-describing header, honor the device
+@@ -259,7 +410,7 @@ LiteRtDispatchInvocationContextT::Create(
+ 
+   // Validate that the requested device is actually available on this system
+   // before setting the device.
+-  auto core = device_context.getCore();
++  auto core = device_context_.getCore();
+   if (!core) {
+     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to get OpenVINO core from device context");
+@@ -292,7 +443,7 @@ LiteRtDispatchInvocationContextT::Create(
+   }
+   const char* partition_name =
+       function_name != nullptr && function_name[0] != '\0' ? function_name
+-                                                            : "(unnamed)";
++                                                           : "(unnamed)";
+   LITERT_LOG(LITERT_INFO, "OpenVINO partition '%s' using device: %s",
+              partition_name, device.c_str());
+ 
+@@ -303,14 +454,6 @@ LiteRtDispatchInvocationContextT::Create(
+                          "Empty bytecode buffer");
+   }
+ 
+-  SharedStreamBuffer membuf(static_cast<const char*>(exec_bytecode_ptr),
+-                            exec_bytecode_size);
+-  std::istream model_stream(&membuf);
+-  if (!model_stream) {
+-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+-                         "Failed to open model bytecode stream");
+-  }
+-
+   // Resolve a GlobalGraph subgraph's weights against the shared pool. Two
+   // consumption strategies over one container format:
+   //   - GPU: weights are Parameters imported plainly, then bound to views into
+@@ -346,6 +489,14 @@ LiteRtDispatchInvocationContextT::Create(
+     }
+   }
+ 
++  SharedStreamBuffer membuf(static_cast<const char*>(exec_bytecode_ptr),
++                            exec_bytecode_size);
++  std::istream model_stream(&membuf);
++  if (!model_stream) {
++    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
++                         "Failed to open model bytecode stream");
++  }
++
+   ov::CompiledModel compiled_model;
+   try {
+     litert::openvino::LogOpenVINOVersionInfoOnce("OpenVINO Dispatch",
+@@ -353,12 +504,14 @@ LiteRtDispatchInvocationContextT::Create(
+     if (npu_shared) {
+       // Stage the deduplicated pool to a temp file once per model, then hand it
+       // to NPUW. The temp file is a byte-for-byte copy of the contiguous pool
+-      // span, starting at byte 0, so bin_offset resolves directly. When the
+-      // model is file-backed (fd >= 0) the bank reads the pool through
+-      // short-lived per-chunk mappings of the model file at the pool's absolute
+-      // file offset, so the pool is never faulted into the model's long-lived
+-      // mapping; otherwise it writes from the in-memory view (logged by the
+-      // bank).
++      // span, starting at byte 0, so bin_offset resolves directly. The bank is
++      // owned by this device context, i.e. by the CompiledModel, and shared by
++      // all of its partitions: one CompiledModel per model stages it once.
++      // When the model is file-backed (fd >= 0) the bank reads the pool
++      // through short-lived per-chunk mappings of the model file at the pool's
++      // absolute file offset, so the pool is never faulted into the model's
++      // long-lived mapping; otherwise it writes from the in-memory view (logged
++      // by the bank).
+       litert::openvino::PoolSource pool_source;
+       pool_source.data = pool_ptr;
+       pool_source.size = pool_size;
+@@ -372,7 +525,7 @@ LiteRtDispatchInvocationContextT::Create(
+             static_cast<uint64_t>(pool_ptr - buf_base);
+       }
+       const std::string bank_path =
+-          device_context.NpuBank().EnsureOnDisk(pool_source);
++          device_context_.NpuBank().EnsureOnDisk(pool_source);
+       if (bank_path.empty()) {
+         return litert::Error(
+             kLiteRtStatusErrorRuntimeFailure,
+@@ -397,36 +550,42 @@ LiteRtDispatchInvocationContextT::Create(
+   } catch (const std::exception& e) {
+     return litert::Error(kLiteRtStatusErrorRuntimeFailure, e.what());
+   }
++  // The payload has been consumed; its pages need not stay resident.
++  litert::openvino::ReleaseMappedPagesFromWorkingSet(exec_bytecode_ptr,
++                                                     exec_bytecode_size);
+ 
+-  auto infer_request = compiled_model.create_infer_request();
++  infer_request_ = compiled_model.create_infer_request();
+ 
+   // Bind the shared weights onto the infer request and hold the views for its
+   // lifetime (set_input_tensor does not take ownership). GPU only: NPU weights
+   // are resolved inside NPUW from the mmapped temp file, so nothing to bind.
+-  std::vector<ov::Tensor> bound_weights;
++  bound_weights_.clear();
+   if (gpu_shared) {
+     // Reuse the graph parsed above (its buffer spans alias
+-    // exec_bytecode_buffer, which outlives this function) -- no second parse,
++    // exec_bytecode_buffer, which outlives this context) -- no second parse,
+     // no pool copy. The GPU bank resolves each const_map buffer_id to its pool
+     // bytes via the graph's ascending-id BufferEntry list.
+     LITERT_ASSIGN_OR_RETURN(
+         std::vector<litert::openvino::BoundWeight> bound,
+-        device_context.GpuBank().Bind(*core, *global_graph, compiled_model,
+-                                      selected_const_map));
+-    bound_weights.reserve(bound.size());
++        device_context_.GpuBank().Bind(*core, *global_graph, compiled_model,
++                                       selected_const_map));
++    bound_weights_.reserve(bound.size());
+     for (auto& b : bound) {
+-      infer_request.set_input_tensor(b.input_index, b.view);
+-      bound_weights.push_back(std::move(b.view));
++      infer_request_.set_input_tensor(b.input_index, b.view);
++      bound_weights_.push_back(std::move(b.view));
+     }
+     LITERT_LOG(LITERT_INFO, "GlobalGraph: bound %zu shared weights on GPU",
+-               bound_weights.size());
++               bound_weights_.size());
+   }
+ 
+-  LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
++  imported_bytes_ = exec_bytecode_size;
++
++  LITERT_LOG(LITERT_INFO, "Openvino InvocationContext import SUCCESS ('%s')",
++             (function_name != nullptr && function_name[0] != '\0')
++                 ? function_name
++                 : "<unnamed>");
+   // TODO: add support for loading cached model
+-  return Ptr(new LiteRtDispatchInvocationContextT(infer_request, device_context,
+-                                                  num_inputs, num_outputs,
+-                                                  std::move(bound_weights)));
++  return {};
+ }
+ 
+ litert::Expected<LiteRtTensorBufferRequirements>
+@@ -474,6 +633,17 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
+ 
+ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
+     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
++  // AttachInput/AttachOutput fire in the same Eval as the first Invoke, so
++  // this is the natural materialization point: a signature that is never run
++  // is never attached either, and so never imports.
++  absl::ReaderMutexLock use(use_mutex_);
++  LITERT_RETURN_IF_ERROR(EnsureImported());
++  attached_inputs_.emplace_back(graph_input_index, tensor_buffer_handle);
++  return BindInput(graph_input_index, tensor_buffer_handle);
++}
++
++litert::Expected<void> LiteRtDispatchInvocationContextT::BindInput(
++    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
+                           device_context_.getOVTensor(tensor_buffer_handle));
+   // TODO: visit this if need to maintain graph indices for inputs and outputs
+@@ -484,6 +654,14 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
+ 
+ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
+     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
++  absl::ReaderMutexLock use(use_mutex_);
++  LITERT_RETURN_IF_ERROR(EnsureImported());
++  attached_outputs_.emplace_back(graph_output_index, tensor_buffer_handle);
++  return BindOutput(graph_output_index, tensor_buffer_handle);
++}
++
++litert::Expected<void> LiteRtDispatchInvocationContextT::BindOutput(
++    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
+                           device_context_.getOVTensor(tensor_buffer_handle));
+   // TODO: visit this if need to maintain graph indices for inputs and outputs
+@@ -497,6 +675,10 @@ struct ov_infer_request_wrapper {
+ };
+ 
+ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
++  // Normally a no-op: AttachInput/AttachOutput already imported. Kept so a
++  // graph with no attachable I/O still works.
++  absl::ReaderMutexLock use(use_mutex_);
++  LITERT_RETURN_IF_ERROR(EnsureImported());
+ #if defined(__ANDROID__)
+   const LiteRtSchedulingInfo* scheduling_info = GetSchedulingInfo();
+   const bool has_job_priority =
+diff --git a/litert/vendors/intel_openvino/dispatch/invocation_context.h b/litert/vendors/intel_openvino/dispatch/invocation_context.h
+index ed778123..66ef1082 100644
+--- a/litert/vendors/intel_openvino/dispatch/invocation_context.h
++++ b/litert/vendors/intel_openvino/dispatch/invocation_context.h
+@@ -16,12 +16,20 @@
+ #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
+ #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
+ 
++#include <atomic>
++#include <cstddef>
++#include <cstdint>
++#include <future>  // NOLINT
++#include <memory>
+ #include <optional>
++#include <string>
+ #include <utility>
+ #include <vector>
+ 
+ #include "openvino/runtime/infer_request.hpp"
+ #include "openvino/runtime/tensor.hpp"
++#include "absl/base/thread_annotations.h"  // from @com_google_absl
++#include "absl/synchronization/mutex.h"  // from @com_google_absl
+ #include "litert/c/internal/litert_scheduling_info.h"
+ #include "litert/c/litert_common.h"
+ #include "litert/c/litert_model_types.h"
+@@ -37,7 +45,7 @@ class LiteRtDispatchInvocationContextT {
+   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
+   using IntelOpenVinoOptions = ::litert::intel_openvino::IntelOpenVinoOptions;
+ 
+-  ~LiteRtDispatchInvocationContextT() = default;
++  ~LiteRtDispatchInvocationContextT();
+ 
+   static litert::Expected<Ptr> Create(
+       LiteRtDispatchDeviceContextT& device_context,
+@@ -72,6 +80,44 @@ class LiteRtDispatchInvocationContextT {
+ 
+   litert::Expected<void> Invoke();
+ 
++  // Performs the deferred OpenVINO import (weights-bank staging +
++  // core->import_model() + create_infer_request() + GPU weight binding) if it
++  // has not happened yet, then replays any buffer attachments recorded before
++  // the import. Idempotent and safe to call from any of the entry points that
++  // need real OV state.
++  //
++  // Import is deferred out of Create() so that delegating a signature costs
++  // nothing until that signature actually runs: a multi-context bundle
++  // delegates every tier's signatures, but a session that never crosses its
++  // first tier must never pay for the other tiers' blob imports.
++  litert::Expected<void> EnsureImported();
++
++  // Runs EnsureImported() on a background thread (once). Used to import a
++  // tier's remaining nodes while its first node is already running.
++  void StartBackgroundImport();
++
++  // Drops the imported model: the infer request holds the only reference to
++  // this node's ov::CompiledModel, so releasing it frees the imported blob and
++  // its device-side state. The recorded buffer attachments are deliberately
++  // KEPT -- the next EnsureImported() replays them onto the new infer request,
++  // which is what makes a release transparent to the caller.
++  //
++  // The shared weights bank is unaffected: it is a per-model file mapping
++  // owned by the device context, not by any one node.
++  //
++  // Never waits: returns false, and leaves the node imported, if it is busy --
++  // in AttachInput/AttachOutput/Invoke on another thread (use_mutex_), or
++  // mid-import (import_mutex_). Returns true if the node is not imported
++  // afterwards, including when it never was.
++  bool TryReleaseImported();
++
++  bool IsImported() const { return imported_; }
++  const std::string& FunctionName() const { return function_name_; }
++  // KV sequence length this node was compiled for (its context tier), as
++  // recorded by the compiler in the GlobalGraph. 0 if none (no KV inputs, or
++  // not a GlobalGraph container).
++  int64_t KvTier() const { return kv_tier_; }
++
+   void SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
+     if (scheduling_info == nullptr) {
+       scheduling_info_ = std::nullopt;
+@@ -85,19 +131,75 @@ class LiteRtDispatchInvocationContextT {
+   }
+ 
+  private:
+-  LiteRtDispatchInvocationContextT(ov::InferRequest& infer_request,
+-                                   LiteRtDispatchDeviceContextT& device_context,
+-                                   int num_inputs, int num_outputs,
+-                                   std::vector<ov::Tensor> bound_weights = {})
++  LiteRtDispatchInvocationContextT(LiteRtDispatchDeviceContextT& device_context,
++                                   const LiteRtMemBuffer& exec_bytecode_buffer,
++                                   std::string function_name, int64_t kv_tier,
++                                   int num_inputs, int num_outputs)
+       : device_context_(device_context),
+-        infer_request_(infer_request),
+-        bound_weights_(std::move(bound_weights)) {}
++        kv_tier_(kv_tier),
++        exec_bytecode_buffer_(exec_bytecode_buffer),
++        function_name_(std::move(function_name)) {}
++
++  // `foreground` = called by the kernel (AttachInput/AttachOutput/Invoke),
++  // not by a background prefetch: only the foreground releases other tiers and
++  // starts prefetches.
++  litert::Expected<void> EnsureImported(bool foreground);
++
++  // Must be called with |import_mutex_| held.
++  litert::Expected<void> ImportLocked()
++      ABSL_EXCLUSIVE_LOCKS_REQUIRED(import_mutex_);
++  void ReleaseImportedLocked() ABSL_EXCLUSIVE_LOCKS_REQUIRED(import_mutex_);
++
++  // Bind one already-resolved buffer handle onto the live infer request.
++  // Requires the import to have happened; takes no lock.
++  litert::Expected<void> BindInput(
++      int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
++  litert::Expected<void> BindOutput(
++      int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
++
+   LiteRtDispatchDeviceContextT& device_context_;
++  // See KvTier(); fixed at Create().
++  const int64_t kv_tier_;
+   ov::InferRequest infer_request_;
+   // Views into the shared usm-host weight buffer bound to weight-Parameter
+   // inputs; held for the infer request's lifetime (set_input_tensor does not
+   // take ownership).
+   std::vector<ov::Tensor> bound_weights_;
++
++  // The import inputs, kept verbatim so EnsureImported() can do the whole job
++  // later. Nothing derived from them is cached: the container parse and device
++  // resolution are cheap next to the import itself, and re-deriving them at
++  // import time is what keeps this class from accumulating a second,
++  // half-initialized copy of the model's description.
++  //
++  // LIFETIME: |exec_bytecode_buffer_.base_addr| points into the model
++  // allocation (LiteRtCompiledModelT::model_buf_ / fb_model_, or the
++  // caller-owned LiteRtModelT it points into). That is declared BEFORE interp_
++  // in LiteRtCompiledModelT, so the interpreter -- and with it every
++  // invocation context -- is destroyed first. Referencing it past Create() is
++  // therefore safe, but it does mean the owning litert Model must stay alive
++  // for the session; do not relax that.
++  LiteRtMemBuffer exec_bytecode_buffer_;
++  std::string function_name_;
++  // Written under import_mutex_; also read without it, as a cheap hint.
++  std::atomic<bool> imported_{false};
++  size_t imported_bytes_ ABSL_GUARDED_BY(import_mutex_) = 0;
++  absl::Mutex import_mutex_;
++  // Held shared while the infer request is in use (AttachInput, AttachOutput,
++  // Invoke), so another thread's tier crossing cannot release it mid-use.
++  absl::Mutex use_mutex_;
++  // Background import started by StartBackgroundImport(); waited on in the
++  // destructor.
++  absl::Mutex prefetch_mutex_;
++  std::future<void> prefetch_ ABSL_GUARDED_BY(prefetch_mutex_);
++  // Every buffer the kernel attached to this node. LiteRT's
++  // DispatchDelegateKernel attaches a node's buffers only once, on the node's
++  // first run. If the node is later released to free memory and imported
++  // again, the kernel will not attach them a second time, so we re-bind them
++  // from this record.
++  std::vector<std::pair<int, LiteRtTensorBufferHandle>> attached_inputs_;
++  std::vector<std::pair<int, LiteRtTensorBufferHandle>> attached_outputs_;
++
+   // Timeout is in milliseconds
+   static constexpr int kInferRequestTimeoutMs = 10000;
+ 
+diff --git a/litert/vendors/intel_openvino/dispatch/mapped_pages.h b/litert/vendors/intel_openvino/dispatch/mapped_pages.h
+new file mode 100644
+index 00000000..c35fdbdf
+--- /dev/null
++++ b/litert/vendors/intel_openvino/dispatch/mapped_pages.h
+@@ -0,0 +1,37 @@
++// Copyright (C) 2025 Intel Corporation
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++#ifndef ODML_LITERT_LITERT_VENDORS_INTEL_OPENVINO_DISPATCH_MAPPED_PAGES_H_
++#define ODML_LITERT_LITERT_VENDORS_INTEL_OPENVINO_DISPATCH_MAPPED_PAGES_H_
++
++#include <cstddef>
++
++namespace litert::openvino {
++
++// Lets the OS drop [data, data + size) -- part of a read-only view of a file --
++// from this process's working set. Nothing is discarded: if the range is read
++// again, the pages come back from the file (or the OS file cache).
++//
++// Used for a dispatch node's payload, which import_model reads once from the
++// memory-mapped model and never touches again; otherwise its pages stay
++// resident (on the gemma4-12b 4-tier bundle every payload stayed 100%
++// resident, ~0.8 GB after three tier crossings).
++//
++// One implementation per OS: mapped_pages_win.cc, mapped_pages_linux.cc.
++void ReleaseMappedPagesFromWorkingSet(const void* data, size_t size);
++
++}  // namespace litert::openvino
++
++#endif  // ODML_LITERT_LITERT_VENDORS_INTEL_OPENVINO_DISPATCH_MAPPED_PAGES_H_
+diff --git a/litert/vendors/intel_openvino/dispatch/mapped_pages_linux.cc b/litert/vendors/intel_openvino/dispatch/mapped_pages_linux.cc
+new file mode 100644
+index 00000000..c35673f7
+--- /dev/null
++++ b/litert/vendors/intel_openvino/dispatch/mapped_pages_linux.cc
+@@ -0,0 +1,45 @@
++// Copyright (C) 2025 Intel Corporation
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++#include <sys/mman.h>
++#include <unistd.h>
++
++#include <cstddef>
++#include <cstdint>  // NOLINT
++
++#include "litert/vendors/intel_openvino/dispatch/mapped_pages.h"
++
++namespace litert::openvino {
++
++void ReleaseMappedPagesFromWorkingSet(const void* data, size_t size) {
++#if defined(MADV_PAGEOUT)
++  // Whole pages strictly inside the range. MADV_PAGEOUT reclaims without
++  // discarding (unlike MADV_DONTNEED on a private mapping), so it is safe
++  // whatever kind of memory the range lives in.
++  const uintptr_t page = static_cast<uintptr_t>(sysconf(_SC_PAGESIZE));
++  const uintptr_t begin =
++      (reinterpret_cast<uintptr_t>(data) + page - 1) & ~(page - 1);
++  const uintptr_t end =
++      (reinterpret_cast<uintptr_t>(data) + size) & ~(page - 1);
++  if (end > begin) {
++    madvise(reinterpret_cast<void*>(begin), end - begin, MADV_PAGEOUT);
++  }
++#else
++  (void)data;
++  (void)size;
++#endif
++}
++
++}  // namespace litert::openvino
+diff --git a/litert/vendors/intel_openvino/dispatch/mapped_pages_win.cc b/litert/vendors/intel_openvino/dispatch/mapped_pages_win.cc
+new file mode 100644
+index 00000000..fe6454ab
+--- /dev/null
++++ b/litert/vendors/intel_openvino/dispatch/mapped_pages_win.cc
+@@ -0,0 +1,42 @@
++// Copyright (C) 2025 Intel Corporation
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++#include <cstddef>
++
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#include <windows.h>
++
++#include "litert/vendors/intel_openvino/dispatch/mapped_pages.h"
++
++namespace litert::openvino {
++
++void ReleaseMappedPagesFromWorkingSet(const void* data, size_t size) {
++  // Only for a view of a file. VirtualUnlock on pages that are not locked
++  // removes them from the working set to the standby list (it then reports
++  // ERROR_NOT_LOCKED, which is expected); on private memory it would push
++  // them toward the page file instead, so skip anything else.
++  MEMORY_BASIC_INFORMATION mbi;
++  if (VirtualQuery(data, &mbi, sizeof(mbi)) == sizeof(mbi) &&
++      mbi.Type == MEM_MAPPED) {
++    VirtualUnlock(const_cast<void*>(data), size);
++  }
++}
++
++}  // namespace litert::openvino
+diff --git a/litert/vendors/intel_openvino/dispatch/npu_kv_cache_policy.cc b/litert/vendors/intel_openvino/dispatch/npu_kv_cache_policy.cc
+new file mode 100644
+index 00000000..69487db8
+--- /dev/null
++++ b/litert/vendors/intel_openvino/dispatch/npu_kv_cache_policy.cc
+@@ -0,0 +1,28 @@
++// Copyright (C) 2025 Intel Corporation
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++#include "litert/vendors/intel_openvino/dispatch/npu_kv_cache_policy.h"
++
++#include <cstddef>  // NOLINT
++#include <cstdint>
++
++namespace litert::openvino::npu_kv_cache {
++
++bool ShouldRelease(int64_t incoming_tier, int64_t candidate_tier) {
++  return incoming_tier > 0 && candidate_tier > 0 &&
++         candidate_tier != incoming_tier;
++}
++
++}  // namespace litert::openvino::npu_kv_cache
+diff --git a/litert/vendors/intel_openvino/dispatch/npu_kv_cache_policy.h b/litert/vendors/intel_openvino/dispatch/npu_kv_cache_policy.h
+new file mode 100644
+index 00000000..31f5bcfe
+--- /dev/null
++++ b/litert/vendors/intel_openvino/dispatch/npu_kv_cache_policy.h
+@@ -0,0 +1,37 @@
++// Copyright (C) 2025 Intel Corporation
++// SPDX-License-Identifier: Apache-2.0
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++#ifndef ODML_LITERT_LITERT_VENDORS_INTEL_OPENVINO_DISPATCH_NPU_KV_CACHE_POLICY_H_
++#define ODML_LITERT_LITERT_VENDORS_INTEL_OPENVINO_DISPATCH_NPU_KV_CACHE_POLICY_H_
++
++// Policy for multi-context (tiered) NPU KV caches. Everything model- or
++// tuning-specific is here; the device and invocation contexts only provide the
++// mechanism and ask this file what to do.
++
++#include <cstddef>  // NOLINT
++#include <cstdint>
++
++namespace litert::openvino::npu_kv_cache {
++
++// --- Release -----------------------------------------------------------------
++
++// Release an imported node of `candidate_tier` when a node of `incoming_tier`
++// imports: only across tiers (prefill and decode of one tier never evict each
++// other), and never for an unknown tier.
++bool ShouldRelease(int64_t incoming_tier, int64_t candidate_tier);
++
++}  // namespace litert::openvino::npu_kv_cache
++
++#endif  // ODML_LITERT_LITERT_VENDORS_INTEL_OPENVINO_DISPATCH_NPU_KV_CACHE_POLICY_H_
+diff --git a/litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.cc b/litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.cc
+index 67c929d2..56f3a2d8 100644
+--- a/litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.cc
++++ b/litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.cc
+@@ -14,14 +14,18 @@
+ 
+ #include "litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h"
+ 
++#include <atomic>
+ #include <cstddef>
+ #include <cstdint>
++#include <cstring>
+ #include <string>
+ #include <vector>
+ 
+ #include "openvino/core/except.hpp"
+ #include "openvino/core/shape.hpp"
+ #include "openvino/core/type/element_type.hpp"
++#include "absl/synchronization/mutex.h"  // from @com_google_absl
++#include "litert/c/internal/litert_logging.h"
+ #include "litert/c/litert_common.h"
+ #include "litert/c/litert_layout.h"
+ #include "litert/c/litert_model_types.h"
+@@ -74,41 +78,25 @@ litert::Expected<ov::element::Type> ToOvElementType(
+ 
+ litert::Expected<void> OpenVinoTensorBuffer::Alloc(
+     const LiteRtRankedTensorType& tensor_type, size_t size) {
++  absl::MutexLock lock(mutex_);
+   if (allocated_) {
+     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                               "The OpenVino tensor has been allocated.");
+   }
+-
+-  // TODO:: Release the shared OpenVINO Core.
+-  std::string device = OpenVINOSharedCore::GetInstance()->GetDevice();
+-  LITERT_ASSIGN_OR_RETURN(ov::element::Type ov_element_type,
+-                          ToOvElementType(tensor_type));
+-  LITERT_ASSIGN_OR_RETURN(ov::Shape ov_shape, ToOvShape(tensor_type));
+-
+-  // This is reached from C callbacks, so don't let OpenVINO exceptions escape.
+-  try {
+-    if (device == "NPU" || device == "GPU") {
+-      auto context = OpenVINOSharedCore::GetInstance()->GetRemoteContext();
+-      ov_tensor_ = context.create_host_tensor(ov_element_type, ov_shape);
+-    } else if (device == "CPU") {
+-      ov_tensor_ = ov::Tensor(ov_element_type, ov_shape);
+-    } else {
+-      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+-                                "Unsupported OpenVINO device: " + device);
+-    }
+-  } catch (const ov::Exception& e) {
+-    ov_tensor_ = ov::Tensor();
+-    return litert::Unexpected(
+-        kLiteRtStatusErrorRuntimeFailure,
+-        std::string("Failed to allocate OpenVINO tensor: ") + e.what());
++  const std::string device = OpenVINOSharedCore::GetInstance()->GetDevice();
++  if (device != "NPU" && device != "GPU" && device != "CPU") {
++    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
++                              "Unsupported OpenVINO device: " + device);
+   }
++  LITERT_ASSIGN_OR_RETURN(element_type_, ToOvElementType(tensor_type));
++  LITERT_ASSIGN_OR_RETURN(shape_, ToOvShape(tensor_type));
+   allocated_ = true;
+-
+   return {};
+ }
+ 
+ litert::Expected<void> OpenVinoTensorBuffer::Wrap(
+     const LiteRtRankedTensorType& tensor_type, void* host_memory, size_t size) {
++  absl::MutexLock lock(mutex_);
+   if (allocated_) {
+     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                               "The OpenVino tensor has been allocated.");
+@@ -118,15 +106,14 @@ litert::Expected<void> OpenVinoTensorBuffer::Wrap(
+                               "Cannot wrap null host memory.");
+   }
+ 
+-  LITERT_ASSIGN_OR_RETURN(ov::element::Type ov_element_type,
+-                          ToOvElementType(tensor_type));
+-  LITERT_ASSIGN_OR_RETURN(ov::Shape ov_shape, ToOvShape(tensor_type));
++  LITERT_ASSIGN_OR_RETURN(element_type_, ToOvElementType(tensor_type));
++  LITERT_ASSIGN_OR_RETURN(shape_, ToOvShape(tensor_type));
+ 
+   // ov::Tensor over an external pointer never frees it, so destroying this
+   // wrapper leaves the owner's memory intact. This is reached from C
+   // callbacks, so don't let OpenVINO exceptions escape.
+   try {
+-    ov_tensor_ = ov::Tensor(ov_element_type, ov_shape, host_memory);
++    ov_tensor_ = ov::Tensor(element_type_, shape_, host_memory);
+   } catch (const ov::Exception& e) {
+     ov_tensor_ = ov::Tensor();
+     return litert::Unexpected(
+@@ -140,21 +127,64 @@ litert::Expected<void> OpenVinoTensorBuffer::Wrap(
+                               "Wrapped memory is smaller than the tensor.");
+   }
+   allocated_ = true;
++  wrapped_ = true;
++  AnyWrappedFlag().store(true);
+   return {};
+ }
+ 
+-litert::Expected<void*> OpenVinoTensorBuffer::GetTensorData() {
++bool OpenVinoTensorBuffer::AnyWrapped() { return AnyWrappedFlag().load(); }
++
++std::atomic<bool>& OpenVinoTensorBuffer::AnyWrappedFlag() {
++  static std::atomic<bool> any_wrapped{false};
++  return any_wrapped;
++}
++
++litert::Expected<void> OpenVinoTensorBuffer::Materialize(const char* why) {
+   if (!allocated_) {
+     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                               "The tensor didn't allocate.");
+   }
++  if (ov_tensor_) return {};
++  // TODO:: Release the shared OpenVINO Core.
++  const std::string device = OpenVINOSharedCore::GetInstance()->GetDevice();
++  // This is reached from C callbacks, so don't let OpenVINO exceptions escape.
++  try {
++    if (device == "NPU" || device == "GPU") {
++      auto context = OpenVINOSharedCore::GetInstance()->GetRemoteContext();
++      ov_tensor_ = context.create_host_tensor(element_type_, shape_);
++    } else {
++      ov_tensor_ = ov::Tensor(element_type_, shape_);
++    }
++  } catch (const ov::Exception& e) {
++    ov_tensor_ = ov::Tensor();
++    return litert::Unexpected(
++        kLiteRtStatusErrorRuntimeFailure,
++        std::string("Failed to allocate OpenVINO tensor: ") + e.what());
++  }
++  std::memset(ov_tensor_.data(), 0, ov_tensor_.get_byte_size());
++  LITERT_LOG(LITERT_VERBOSE, "OV buffer %s created on %s (%zu B)",
++             shape_.to_string().c_str(), why, ov_tensor_.get_byte_size());
++  return {};
++}
++
++litert::Expected<void*> OpenVinoTensorBuffer::GetTensorData() {
++  absl::MutexLock lock(mutex_);
++  LITERT_RETURN_IF_ERROR(Materialize("lock"));
+   return ov_tensor_.data();
+ }
+ 
+-litert::Expected<ov::Tensor> OpenVinoTensorBuffer::GetOVTensor() {
++litert::Expected<void> OpenVinoTensorBuffer::Clear() {
++  absl::MutexLock lock(mutex_);
+   if (!allocated_) {
+     return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+-                              "Failed to get tensor.");
++                              "The tensor didn't allocate.");
+   }
++  if (ov_tensor_) std::memset(ov_tensor_.data(), 0, ov_tensor_.get_byte_size());
++  return {};
++}
++
++litert::Expected<ov::Tensor> OpenVinoTensorBuffer::GetOVTensor() {
++  absl::MutexLock lock(mutex_);
++  LITERT_RETURN_IF_ERROR(Materialize("register"));
+   return ov_tensor_;
+ }
+diff --git a/litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h b/litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h
+index 9337764e..ced9e552 100644
+--- a/litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h
++++ b/litert/vendors/intel_openvino/dispatch/openvino_tensor_buffer.h
+@@ -15,20 +15,40 @@
+ #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_TENSOR_BUFFER_H_
+ #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_TENSOR_BUFFER_H_
+ 
++#include <atomic>
+ #include <cstddef>
+ 
++#include "openvino/core/shape.hpp"
++#include "openvino/core/type/element_type.hpp"
+ #include "openvino/runtime/tensor.hpp"
++#include "absl/base/thread_annotations.h"  // from @com_google_absl
++#include "absl/synchronization/mutex.h"  // from @com_google_absl
+ #include "litert/c/litert_model_types.h"
+ #include "litert/cc/litert_expected.h"
+ 
++// One LiteRT tensor buffer of type kLiteRtTensorBufferTypeOpenVINOTensorBuffer:
++// an ov::Tensor in host memory shared with the device (zero-copy on NPU/GPU).
++//
++// Memory is created lazily. Alloc() records only the element type and shape;
++// the host tensor is created, zero-filled, on first use: a Lock()
++// (GetTensorData) or a dispatch node using the buffer (GetOVTensor). A
++// multi-context model creates every tier's I/O buffers at init, so a tier a
++// session never reaches costs nothing.
++//
++// Clear() zeroes the buffer. On a buffer not created yet it does nothing: a new
++// buffer starts zeroed anyway.
++//
++// Wrap() makes the buffer a non-owning view of memory owned elsewhere (a
++// smaller tier's KV-cache alias onto the largest tier's buffer). It exists from
++// the start and is never created or freed here.
++//
++// All methods are thread-safe (one mutex per buffer).
+ class OpenVinoTensorBuffer {
+  public:
+   OpenVinoTensorBuffer(const OpenVinoTensorBuffer&) = delete;
+   OpenVinoTensorBuffer& operator=(const OpenVinoTensorBuffer&) = delete;
+-  OpenVinoTensorBuffer(OpenVinoTensorBuffer&&) = default;
+-  OpenVinoTensorBuffer& operator=(OpenVinoTensorBuffer&&) = default;
+ 
+-  OpenVinoTensorBuffer() : ov_tensor_(), allocated_(false) {};
++  OpenVinoTensorBuffer() = default;
+   ~OpenVinoTensorBuffer() = default;
+ 
+   litert::Expected<void> Alloc(const LiteRtRankedTensorType& tensor_type,
+@@ -43,13 +63,29 @@ class OpenVinoTensorBuffer {
+   litert::Expected<void> Wrap(const LiteRtRankedTensorType& tensor_type,
+                               void* host_memory, size_t size);
+ 
++  // Whether any buffer in this process has been Wrap()ed, i.e. some buffers
++  // alias memory owned by others.
++  static bool AnyWrapped();
++
+   litert::Expected<void*> GetTensorData();
+ 
+   litert::Expected<ov::Tensor> GetOVTensor();
+ 
++  // Zero the buffer (the LiteRT custom-buffer clear hook).
++  litert::Expected<void> Clear();
++
+  private:
+-  ov::Tensor ov_tensor_;
+-  bool allocated_;
++  // Creates ov_tensor_ if it does not exist yet. `why` is for the log.
++  litert::Expected<void> Materialize(const char* why)
++      ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
++  static std::atomic<bool>& AnyWrappedFlag();
++
++  absl::Mutex mutex_;
++  bool allocated_ ABSL_GUARDED_BY(mutex_) = false;  // Alloc() has run
++  ov::element::Type element_type_ ABSL_GUARDED_BY(mutex_);
++  ov::Shape shape_ ABSL_GUARDED_BY(mutex_);
++  ov::Tensor ov_tensor_ ABSL_GUARDED_BY(mutex_);  // empty until Materialize()
++  bool wrapped_ ABSL_GUARDED_BY(mutex_) = false;  // Wrap(): external memory
+ };
+ 
+ #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_OPENVINO_TENSOR_BUFFER_H_

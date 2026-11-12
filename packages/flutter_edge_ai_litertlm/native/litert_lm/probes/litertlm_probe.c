@@ -1811,7 +1811,8 @@ static int CmdTools(P engine) {
 // constraint wrapped in ThinkingBudgetConstraint, whose first decode step used
 // to copy the provider's mask inline. On Windows that aborted the process
 // (libc++ provider, MSVC runtime). PROBE_THINK_BUDGET sets the budget (512).
-static int CmdToolsThink(P engine) {
+// `think` is the same turn without tools or constraint, as its control.
+static int CmdToolsThink(P engine, bool with_tools) {
   const char* tools =
       "[{\"type\":\"function\",\"function\":{\"name\":\"get_weather\","
       "\"description\":\"Gets the current weather for a city.\","
@@ -1821,7 +1822,8 @@ static int CmdToolsThink(P engine) {
   int budget = getenv("PROBE_THINK_BUDGET") ? atoi(getenv("PROBE_THINK_BUDGET"))
                                             : 512;
   Status s;
-  P conv = NewConversation(engine, tools, true, false, budget + 128);
+  P conv = NewConversation(engine, with_tools ? tools : NULL, with_tools, false,
+                           budget + 128);
   P args = NULL, think = NULL;
   CHECK(litert_lm_conversation_optional_args_create(&args));
   CHECK(litert_lm_thinking_config_create(&think));
@@ -1832,15 +1834,18 @@ static int CmdToolsThink(P engine) {
   char* r = Send(conv, "What is the weather in Paris right now?", args, &s);
   litert_lm_conversation_optional_args_delete(args);
   if (!r) {
-    printf("RESULT toolsthink FAIL status=%d err=%s\n", s,
+    printf("RESULT %s FAIL status=%d err=%s\n",
+           with_tools ? "toolsthink" : "think", s,
            litert_lm_get_last_error_message());
     litert_lm_conversation_delete(conv);
     return 1;
   }
-  bool called = strstr(r, "tool_calls") && strstr(r, "get_weather") &&
-                strstr(r, "Paris");
-  printf("RESULT toolsthink %s budget=%d response=%s\n",
-         called ? "PASS" : "FAIL", budget, r);
+  bool called = with_tools ? strstr(r, "tool_calls") && strstr(r, "get_weather") &&
+                                 strstr(r, "Paris")
+                           : strstr(r, "\"content\"") != NULL;
+  printf("RESULT %s %s budget=%d response=%s\n",
+         with_tools ? "toolsthink" : "think", called ? "PASS" : "FAIL", budget,
+         r);
   free(r);
   litert_lm_conversation_delete(conv);
   return called ? 0 : 1;
@@ -1984,7 +1989,7 @@ int main(int argc, char** argv) {
   if (argc < 5) {
     fprintf(stderr,
             "usage: %s <libLiteRtLm> <multiconv|constrained|rewind|scoring|"
-            "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|toolsthink|longprompt|determinism|"
+            "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|toolsthink|think|longprompt|determinism|"
             "turnend|exhausted|prefillroom|convrewind [image]|deleteduring|xsession|chat [image]|ctxgroup|eg2> "
             "<model> <cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS, "
             "PROBE_DISPATCH_DIR\n",
@@ -2041,7 +2046,8 @@ int main(int argc, char** argv) {
   else if (!strcmp(cmd, "scoring")) rc = CmdScoring(engine);
   else if (mode) rc = CmdMtp(engine, mode);
   else if (!strcmp(cmd, "tools")) rc = CmdTools(engine);
-  else if (!strcmp(cmd, "toolsthink")) rc = CmdToolsThink(engine);
+  else if (!strcmp(cmd, "toolsthink")) rc = CmdToolsThink(engine, true);
+  else if (!strcmp(cmd, "think")) rc = CmdToolsThink(engine, false);
   else if (!strcmp(cmd, "longprompt")) rc = CmdLongPrompt(engine);
   else if (!strcmp(cmd, "determinism")) rc = CmdDeterminism(engine);
   else if (!strcmp(cmd, "turnend")) rc = CmdTurnEnd(engine);

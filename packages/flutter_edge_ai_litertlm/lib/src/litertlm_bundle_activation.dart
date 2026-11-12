@@ -133,7 +133,7 @@ enum GpuActivationReason {
 /// The activation type a GPU attempt gets when the caller set none, or null to
 /// leave the engine's choice alone, with the reason it was chosen.
 ///
-/// FP32 is a pure win where FP16 is broken, and two cases are where it is:
+/// FP32 is worth its cost where FP16 is broken, and two cases are where it is:
 ///
 /// - FunctionGemma without the key: in litetune, on a Galaxy S24, a fine-tune
 ///   without it flooded `<pad>` on 14 of 20 prompts at FP16 and on none at
@@ -145,9 +145,13 @@ enum GpuActivationReason {
 ///   #1343), so a long prompt degrades on every GPU backend. On Windows,
 ///   Intel Panther Lake (D3D12), Gemma 4 E2B with a ~4,875-token agent prompt
 ///   made 0 tool calls at FP16 and 13 at FP32, at 46 against 50 tok/s decode
-///   and a first token after 1.5 against 3.8 s. The context, not the prompt,
-///   decides, because the prompt is not known at load: a conversation fills
-///   the window turn by turn.
+///   and a first token after 1.5 against 3.8 s. On an M5 Pro (Metal) the same
+///   model recalled 0 of 6 dates from a 4,862-token prompt at FP16 and 5 of 6
+///   at FP32 (first token 0.62 against 1.08 s, decode 118 against 108 tok/s,
+///   peak footprint 1.24 against 1.88 GB); from a 1,768-token prompt it
+///   recalled all at both, from a 2,541-token one none at FP16. The context,
+///   not the prompt, decides, because the prompt is not known at load: a
+///   conversation fills the window turn by turn.
 ///
 /// Gemma 3 1B answers correctly at the GPU default and is left alone, as is
 /// Gemma 4 with a context of 2,048 tokens or less. Every Gemma 3 270M bundle

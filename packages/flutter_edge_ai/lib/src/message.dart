@@ -233,19 +233,27 @@ class Message {
         other.toolCallId == toolCallId;
   }
 
-  /// Media is hashed by content, as `==` compares it, so two messages built
-  /// from the same bytes in different buffers hash alike (#823).
+  /// Media is hashed by content, as `==` compares it: two messages with the
+  /// same bytes in different buffers, or in views at different offsets, are
+  /// equal and hash alike (#823). The hash reads every byte and is not
+  /// cached.
+  ///
+  /// A message keeps the caller's buffers ([copyWith] and the factories do
+  /// not copy the bytes), so its `==` and [hashCode] change when they are
+  /// mutated: do not change a message's media while it is a `Set` member or
+  /// a `Map` key.
   @override
-  int get hashCode =>
-      text.hashCode ^
-      isUser.hashCode ^
-      _bytesHash(imageBytes) ^
-      Object.hashAll(images.map(_bytesHash)) ^
-      _bytesHash(audioBytes) ^
-      type.hashCode ^
-      toolName.hashCode ^
-      Object.hashAll(toolCalls) ^
-      toolCallId.hashCode;
+  int get hashCode => Object.hash(
+    text,
+    isUser,
+    _bytesHash(imageBytes),
+    Object.hashAll(images.map(_bytesHash)),
+    _bytesHash(audioBytes),
+    type,
+    toolName,
+    Object.hashAll(toolCalls),
+    toolCallId,
+  );
 
   static bool _bytesEqual(Uint8List? a, Uint8List? b) {
     if (identical(a, b)) return true;
@@ -264,20 +272,10 @@ class Message {
     return true;
   }
 
-  /// The length and up to 32 bytes from each end: equal bytes always give an
-  /// equal hash, without reading a whole image or clip on every call.
-  static int _bytesHash(Uint8List? bytes) {
-    if (bytes == null) return null.hashCode;
-    const edge = 32;
-    if (bytes.length <= 2 * edge) {
-      return Object.hash(bytes.length, Object.hashAll(bytes));
-    }
-    return Object.hash(
-      bytes.length,
-      Object.hashAll(Uint8List.sublistView(bytes, 0, edge)),
-      Object.hashAll(Uint8List.sublistView(bytes, bytes.length - edge)),
-    );
-  }
+  /// Every visible byte, read through the view, so a view at an offset hashes
+  /// like a copy of the same bytes.
+  static int _bytesHash(Uint8List? bytes) =>
+      bytes == null ? null.hashCode : Object.hashAll(bytes);
 
   bool _listEquals<T>(List<T>? a, List<T>? b) {
     if (a == null) return b == null;

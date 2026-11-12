@@ -21,4 +21,3 @@ analyzer:
     asset_directory_does_not_exist: info
   exclude:
     - build/**
-    - macos/**

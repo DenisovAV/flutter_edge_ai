@@ -224,6 +224,13 @@ its audio while reporting that the rewind succeeded. The same rebuild holds
 for an `openSession` session when the model file could not be read to tell;
 that is printed when the model loads.
 
+LiteRT-LM strips a reply's thought from its KV cache by rewinding over the
+reply, so where a conversation does not rewind (the NPU, linear attention
+state, or a file that could not be read to tell) the thought stays there
+(1.20.1): a long chat fills its context faster than its history suggests,
+and a conversation rebuilt after a stop or a full context resumes without
+the earlier thoughts.
+
 Every idle native-backed session keeps a copy of its KV cache, so it costs
 memory while it is open, and the cost grows with `maxTokens`. Measured on
 macOS (M5 Pro) with Gemma 4 E2B, as RSS: 36.8 MiB more per idle

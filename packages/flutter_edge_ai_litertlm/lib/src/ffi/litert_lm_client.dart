@@ -11,9 +11,14 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:mutex/mutex.dart';
 
+import '../bundle/litertlm_bundle_info.dart' show LiteRtLmBundleException;
 import '../bundle/litertlm_bundle_reader.dart'
-    show liteRtLmPrefillFits, readLiteRtLmPrefillSignatureLengths;
+    show
+        liteRtLmPrefillFits,
+        readLiteRtLmHasLinearAttentionState,
+        readLiteRtLmPrefillSignatureLengths;
 import 'litert_default_scope.dart';
+import 'channel_content_filter.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
 import 'litert_lm_runtime_check.dart';
@@ -1624,6 +1629,24 @@ class LiteRtLmFfiClient {
   /// The loaded bundle's prefill lengths, read on first use.
   Future<List<int>>? _prefillLengths;
 
+  /// The loaded bundle's linear attention state, read on first use by the
+  /// legacy [createConversation].
+  Future<bool?>? _linearAttentionState;
+
+  /// Reads whether the model at a path keeps linear attention state; a test
+  /// seam.
+  @visibleForTesting
+  Future<bool> Function(String path) linearAttentionStateReader =
+      readLiteRtLmHasLinearAttentionState;
+
+  /// Test seam: the backend and file of a loaded engine, without one.
+  @visibleForTesting
+  void loadedModelForTest({required String backend, String? modelPath}) {
+    _backend = backend;
+    _modelPath = modelPath;
+    _linearAttentionState = null;
+  }
+
   /// The thinking token budget each send with thinking on carries
   /// (`LiteRtLmEngine.thinkingTokenBudget`), set by [initialize]; null sends
   /// none.
@@ -2506,6 +2529,7 @@ class LiteRtLmFfiClient {
     edgeAiLog('[LiteRtLmFfi] Engine initialized successfully');
     _modelPath = modelPath;
     _maxTokens = maxTokens;
+    _linearAttentionState = null;
 
     // Auto-dump the SDK's stderr log after successful engine_create so
     // users can see what happens inside the native call (model load time,
@@ -2581,9 +2605,8 @@ class LiteRtLmFfiClient {
   /// [multimodalOrder] is where the handle's messages put their media around
   /// the text — the model's own, resolved by the model layer too.
   ///
-  /// [filterChannelContent] is false when the model cannot rewind more than
-  /// one token (the NPU, linear attention state), which the model layer knows:
-  /// see [_setChannelContentFilter].
+  /// [filterChannelContent] is false unless the model is known to rewind
+  /// ([liteRtLmFiltersChannelContent]), which the model layer knows.
   Future<LiteRtLmConversationHandle> createConversationHandle({
     String? systemMessage,
     String? toolsJson,
@@ -2925,19 +2948,8 @@ class LiteRtLmFfiClient {
   }
 
   /// Turns off LiteRT-LM's channel filter when [filter] is false; when true
-  /// the native default (on) is left alone.
-  ///
-  /// With the filter on (the default, `conversation.h`), LiteRT-LM 0.19 rewinds
-  /// the session to the checkpoint taken before a reply as soon as a reply
-  /// that carries a channel (a thought, Gemma 4 26B's even with thinking off)
-  /// completes, and prefills the reply again without it
-  /// (`Conversation::RewindAndGetInputDataVector`). That rewind spans the
-  /// whole reply, and the NPU executor rolls back one token at most
-  /// (`LlmLiteRtNpuCompiledModelExecutor::SetCurrentStep`: "only supports
-  /// rolling back one token at the end of decode"), so on the NPU the first
-  /// such reply failed with INVALID_ARGUMENT; a model with linear attention
-  /// state cannot be rewound either. Unfiltered, the channel content stays in
-  /// the KV cache.
+  /// the native default (on) is left alone. Why, and what it costs:
+  /// [liteRtLmFiltersChannelContent].
   void _setChannelContentFilter(
     Pointer<LiteRtLmConversationConfig> config, {
     required bool filter,
@@ -3008,6 +3020,23 @@ class LiteRtLmFfiClient {
     }
   }
 
+  /// Whether the loaded model keeps linear attention state, read from its file
+  /// on first use; null when there is no model or the file could not be read.
+  Future<bool?> _loadedLinearAttentionState() {
+    final path = _modelPath;
+    if (path == null) return Future.value();
+    return _linearAttentionState ??= () async {
+      try {
+        return await linearAttentionStateReader(path);
+      } on LiteRtLmBundleException catch (e) {
+        edgeAiLog('[LiteRtLmFfi] linear attention state of $path unread: $e');
+      } on FileSystemException catch (e) {
+        edgeAiLog('[LiteRtLmFfi] linear attention state of $path unread: $e');
+      }
+      return null;
+    }();
+  }
+
   /// Legacy single-conversation create. Closes the previous legacy
   /// conversation (if any) and opens a fresh one stored in [_legacyHandle].
   /// Kept for backward compat — new code should use
@@ -3024,9 +3053,12 @@ class LiteRtLmFfiClient {
       sampling: sampling,
       samplingExplicit: true,
       multimodalOrder: MultimodalOrder.imagesAudioText,
-      // This raw path has no model layer to read linear attention state from;
-      // the NPU is the one case the client itself knows.
-      filterChannelContent: _backend != 'npu',
+      // This raw path has no model layer, so the client reads the loaded
+      // bundle itself.
+      filterChannelContent: liteRtLmFiltersChannelContent(
+        npu: _backend == 'npu',
+        linearAttentionState: await _loadedLinearAttentionState(),
+      ),
     );
     // A shutdown that landed while we were suspended already closed this handle
     // (it was registered in _handles inside the guard). Publishing it would
@@ -4499,6 +4531,7 @@ class LiteRtLmFfiClient {
     _modelPath = null;
     _maxTokens = null;
     _prefillLengths = null;
+    _linearAttentionState = null;
     _npuWindowRead = false;
     _samplerLatch.reset();
     _warnedNpuSampling = false;

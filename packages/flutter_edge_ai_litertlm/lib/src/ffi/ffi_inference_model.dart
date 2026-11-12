@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 
 import '../litertlm_decision_section.dart';
 import '../option_scoring_self_check.dart';
+import 'channel_content_filter.dart';
 import 'litert_lm_client.dart';
 import 'open_session_backing.dart';
 import '../reported_engine_turn.dart';
@@ -134,10 +135,16 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
 
   /// Whether LiteRT-LM may strip a completed reply's channel content (a
   /// thought) from the KV cache, which it does by rewinding over the whole
-  /// reply: only where a conversation can be rewound ([noRewindReason]).
-  /// The same for every conversation of this model, native or virtual.
+  /// reply ([liteRtLmFiltersChannelContent], where the trade-off is
+  /// described): only where every conversation is known to rewind, the rule
+  /// of [openSessionNoRewindReason], since the native rewind runs before Dart
+  /// could rebuild instead. The same for every conversation of this model,
+  /// native or virtual.
   @visibleForTesting
-  bool get filterChannelContent => _noRewindReason == null;
+  bool get filterChannelContent => liteRtLmFiltersChannelContent(
+    npu: activeBackend == PreferredBackend.npu,
+    linearAttentionState: linearAttentionState,
+  );
 
   /// The same for an [openSession] conversation: also rebuilt when whether
   /// the model keeps linear attention state could not be read.

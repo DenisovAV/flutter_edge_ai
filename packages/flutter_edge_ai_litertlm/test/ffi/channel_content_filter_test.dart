@@ -4,8 +4,8 @@
 // that every conversation of a model that cannot rewind turns the filter off,
 // and that a model that can leaves the native default alone.
 
-import 'dart:async';
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
@@ -24,7 +24,8 @@ void main() {
       (PreferredBackend.gpu, true, false),
       (PreferredBackend.cpu, false, true),
       (PreferredBackend.gpu, false, true),
-      (PreferredBackend.cpu, null, true),
+      (PreferredBackend.cpu, null, false),
+      (PreferredBackend.gpu, null, false),
       (null, false, true),
     ]) {
       test('${backend?.name}, linear attention state $linear: $expected', () {
@@ -36,8 +37,8 @@ void main() {
         expect(model.filterChannelContent, expected);
         expect(
           model.filterChannelContent,
-          model.noRewindReason == null,
-          reason: 'the same rule as the rewind',
+          model.openSessionNoRewindReason == null,
+          reason: 'on only where every conversation is known to rewind',
         );
       });
     }
@@ -47,6 +48,7 @@ void main() {
     for (final (backend, linear, calls) in [
       (PreferredBackend.npu, false, [false]),
       (PreferredBackend.cpu, true, [false]),
+      (PreferredBackend.cpu, null, [false]),
       (PreferredBackend.cpu, false, <bool>[]),
       (PreferredBackend.gpu, false, <bool>[]),
     ]) {
@@ -113,6 +115,52 @@ void main() {
         await model.close();
       });
     }
+  });
+  group('legacy createConversation', () {
+    final sampling = SamplingParams.resolve(
+      const SamplingParams(),
+      modelType: ModelType.gemmaIt,
+    );
+    for (final (backend, Future<bool> Function(String) read, calls) in [
+      ('npu', (_) async => false, [false]),
+      ('cpu', (_) async => true, [false]),
+      ('gpu', (_) async => true, [false]),
+      (
+        'cpu',
+        (String path) async =>
+            throw PathNotFoundException(path, const OSError('missing')),
+        [false],
+      ),
+      ('cpu', (_) async => false, <bool>[]),
+      ('gpu', (_) async => false, <bool>[]),
+    ]) {
+      test('$backend, filter calls $calls', () async {
+        final client = _RecordingClient()
+          ..loadedModelForTest(backend: backend, modelPath: 'model.litertlm')
+          ..linearAttentionStateReader = read;
+        await client.createConversation(sampling: sampling);
+        expect(client.recorder.filterCalls, calls);
+      });
+    }
+
+    test('reads the file once per load', () async {
+      var reads = 0;
+      final client = _RecordingClient()
+        ..loadedModelForTest(backend: 'cpu', modelPath: 'model.litertlm')
+        ..linearAttentionStateReader = (_) async {
+          reads++;
+          return false;
+        };
+      await client.createConversation(sampling: sampling);
+      await client.createConversation(sampling: sampling);
+      expect(reads, 1);
+    });
+
+    test('no loaded model counts as cannot rewind', () async {
+      final client = _RecordingClient()..loadedModelForTest(backend: 'cpu');
+      await client.createConversation(sampling: sampling);
+      expect(client.recorder.filterCalls, [false]);
+    });
   });
 }
 

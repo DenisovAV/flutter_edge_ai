@@ -166,8 +166,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:546"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -516,8 +517,8 @@
        },
        "cpu": {
         "status": "verified",
-        "source": "evidence/2026-11-07_macos_arm64_mac-mini-m5-pro-mac17-16.json",
-        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_litertlm 1.20.0"
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -871,9 +872,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_macos_arm64_mac17-16-apple-m5-pro.json",
-        "note": "Mac17,16 (Apple M5 Pro), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -1236,8 +1237,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:547-553"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -2989,11 +2991,14 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:261"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "untested"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -3082,8 +3087,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:547-553"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -3766,11 +3772,14 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:259-260"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "untested"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -4136,11 +4145,14 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:252-253"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "untested"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -4372,13 +4384,13 @@
       "macos_arm64": {
        "gpu": {
         "status": "verified",
-        "source": "evidence/2026-11-07_macos_arm64_mac-mini-m5-pro-mac17-16-2.json",
-        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_litertlm 1.20.0"
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
         "status": "verified",
-        "source": "evidence/2026-11-07_macos_arm64_mac-mini-m5-pro-mac17-16-2.json",
-        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_litertlm 1.20.0"
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -4912,8 +4924,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:531"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        }
       },
       "windows_x64": {
@@ -5272,8 +5285,8 @@
        },
        "cpu": {
         "status": "verified",
-        "source": "evidence/2026-11-07_macos_arm64_mac-mini-m5-pro-mac17-16.json",
-        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_speech 0.6.0"
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        }
       },
       "windows_x64": {
@@ -5365,8 +5378,8 @@
        },
        "cpu": {
         "status": "verified",
-        "source": "evidence/2026-11-07_macos_arm64_mac-mini-m5-pro-mac17-16.json",
-        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-07, flutter_edge_ai_speech 0.6.0"
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        }
       },
       "windows_x64": {
@@ -5443,8 +5456,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:495-496"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        }
       },
       "windows_x64": {
@@ -6176,11 +6190,14 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "untested"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:497"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        }
       },
       "windows_x64": {
@@ -7085,8 +7102,9 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:269"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
         "status": "untested"
@@ -7241,11 +7259,14 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "untested"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:263"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -7701,8 +7722,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #695 (2026-10-19)"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        }
       },
       "windows_x64": {
@@ -7775,11 +7797,14 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:266-267"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        },
        "cpu": {
-        "status": "untested"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -8004,8 +8029,9 @@
         "issue": "https://github.com/google-ai-edge/LiteRT-LM/issues/1748"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:271"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_litertlm 1.20.0"
        }
       },
       "windows_x64": {
@@ -8320,8 +8346,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:495-496"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        }
       },
       "windows_x64": {
@@ -8404,11 +8431,14 @@
       },
       "macos_arm64": {
        "gpu": {
-        "status": "untested"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:495-496"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        }
       },
       "windows_x64": {
@@ -8482,8 +8512,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "documented",
-        "source": "website/content/docs/models.md@0c626b2995555fdd76e920b2a51697215c80976b:495-496"
+        "status": "verified",
+        "source": "evidence/2026-11-12_macos_arm64_mac-mini-m5-pro-mac17-16.json",
+        "note": "Mac mini (M5 Pro, Mac17,16), 2026-11-12, flutter_edge_ai_speech 0.6.1"
        }
       },
       "windows_x64": {

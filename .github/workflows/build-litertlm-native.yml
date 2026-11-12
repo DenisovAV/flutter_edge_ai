@@ -266,13 +266,12 @@ jobs:
             --test_output=errors \
             '//runtime/components:external_weights_by_path_test'
 
-      - name: Test the thinking constraint's user mask (patch_c_api.sh section 26)
-        # With thinking on, the first decode step of a turn with tools used to
-        # copy the Gemma provider's mask as our BitmapLogitMask; on Windows the
-        # provider is libc++ and the copy aborted the process. Section 26
-        # applies the user mask only through its virtual Apply; this is
-        # upstream's test, patched to check that through Apply, plus a mask
-        # that reports kBitmap but is not our class.
+      - name: Test the thinking constraint's user bitmap copy (patch_c_api.sh section 26)
+        # With thinking on, the first decode step of a turn with tools copies
+        # the Gemma provider's bitmap; on Windows the provider is libc++ and
+        # reading its vector's end() aborted the process. Section 26 copies
+        # the words the vocabulary needs from data(); upstream's test plus a
+        # bitmap holding more words than its vocabulary needs.
         run: |
           cd /tmp/LiteRT-LM
           bazelisk test -c opt --strip=always \

@@ -1,3 +1,6 @@
+## 1.20.1
+- Fix tool calls and thinking on NPU failing with a multi-token rollback error.
+
 ## 1.20.0
 - Enforce response formats with native LiteRT-LM constrained decoding.
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and media.

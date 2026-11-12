@@ -162,8 +162,12 @@ limitations](/docs/desktop#known-limitations).
 **Gemma 4 copies digits wrongly out of a long prompt on some GPUs**, the same
 way on every run: asked when a delivery arrived (`2026/06/23`), it answers
 `20226/12/17`. It shows from about 2,000 prompt tokens, on Metal and on Adreno.
-The published Gemma 4 `.litertlm` files ask for half-precision activations;
-ask for full precision instead:
+The published Gemma 4 `.litertlm` files ask for half-precision activations,
+and at half precision the rotary positions past about 2,048 tokens stop being
+distinct ([#827](https://github.com/DenisovAV/flutter_edge_ai/issues/827)).
+Since `flutter_edge_ai_litertlm` 1.21.0 a Gemma 4 model loaded with `maxTokens`
+above 2,048 and no `activationDataType` gets full precision on its GPU attempt
+by itself; with an older version, or a smaller `maxTokens`, ask for it:
 
 ```dart
 final model = await FlutterEdgeAi.getActiveModel(

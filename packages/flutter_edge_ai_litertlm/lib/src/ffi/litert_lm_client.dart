@@ -2839,13 +2839,6 @@ class LiteRtLmFfiClient {
                 toolsPtr.cast(),
               ),
             );
-            check(
-              'litert_lm_conversation_config_set_enable_constrained_decoding',
-              b.litert_lm_conversation_config_set_enable_constrained_decoding(
-                convConfig,
-                true,
-              ),
-            );
           }
           if (messagesPtr != null) {
             check(
@@ -2874,6 +2867,7 @@ class LiteRtLmFfiClient {
     try {
       _setConstraintProvider(convConfig, jsonSchema);
       _setChannelContentFilter(convConfig, filter: filterChannelContent);
+      _setToolConstrainedDecoding(convConfig, hasTools: toolsJson != null);
       if (testCreate != null) {
         conv = await testCreate(messagesJson, jsonSchema);
         created = (address: conv.address, code: 0, message: null);
@@ -2961,6 +2955,31 @@ class LiteRtLmFfiClient {
       b.litert_lm_conversation_config_set_filter_channel_content_from_kv_cache(
         config,
         false,
+      ),
+      b.lastError,
+    );
+  }
+
+  /// Turns on LiteRT-LM's constrained decoding of tool calls for a
+  /// conversation with tools, except on the NPU.
+  ///
+  /// EXPERIMENT for the Intel NPU crash (0xc0000409 in LiteRtLm.dll right
+  /// after the first prefill, once the Gemma constraint FST is built): v0.19
+  /// runs the tool-call constraint through a LiteRT logit-mask runner, and the
+  /// NPU reaches it via `ConstrainedDecoder::CreateForHost`
+  /// (`GetHwAcceleratorForBackend` has no NPU case). Not a fix: tool calls on
+  /// the NPU are unconstrained here. Response formats are untouched.
+  void _setToolConstrainedDecoding(
+    Pointer<LiteRtLmConversationConfig> config, {
+    required bool hasTools,
+  }) {
+    if (!hasTools || _backend == 'npu') return;
+    final b = _bindings!;
+    checkLiteRtLmSetter(
+      'litert_lm_conversation_config_set_enable_constrained_decoding',
+      b.litert_lm_conversation_config_set_enable_constrained_decoding(
+        config,
+        true,
       ),
       b.lastError,
     );

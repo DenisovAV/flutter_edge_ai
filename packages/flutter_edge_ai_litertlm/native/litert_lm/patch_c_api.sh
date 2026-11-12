@@ -407,12 +407,21 @@ else:
     # OpenVINO 2026.4.1 (which Intel's Gemma 4 12B for Panther Lake needs) is
     # in the LiteRT pin since v0.19.0 (dcb657e8 contains 991d15588a), so the
     # backport patch is gone.
+    # Intel's public Gemma 4 12B for Panther Lake carries an OpenVINO
+    # GlobalGraph container v3, which the pin's dispatch refuses ("unsupported
+    # container version"). patches/litert_intel_globalgraph_v3.patch is
+    # upstream LiteRT PR #10843 (merge 1f3f61d0), confined to
+    # litert/vendors/intel_openvino/: the v3 parser (still reads v2) and the
+    # dispatch's multi-context KV-tier changes. It is exactly
+    # `git diff dcb657e8 1f3f61d0 -- litert/vendors/intel_openvino`; drop it
+    # once the LiteRT pin contains 1f3f61d0.
     content = content.replace(
         '    name = "litert",\n',
         '    name = "litert",\n'
         '    patches = [\n'
         '        "//:flutter_gemma_litert_gpu_registry.patch",\n'
         '        "//:flutter_gemma_litert_google_tensor_dispatch_oss.patch",\n'
+        '        "//:flutter_gemma_litert_intel_globalgraph_v3.patch",\n'
         '    ],\n'
         '    patch_args = ["-p1"],\n', 1)
     if 'flutter_gemma_litert_gpu_registry.patch' not in content:
@@ -422,11 +431,14 @@ else:
     print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
     print("  OK: litert archive applies patches/litert_gpu_registry_apple.patch")
     print("  OK: LiteRT Google Tensor dispatch drops its unused internal hooks dependency")
+    print("  OK: LiteRT Intel OpenVINO dispatch reads GlobalGraph v3 (PR #10843 backport)")
 PYEOF
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
     "$DIR/flutter_gemma_litert_gpu_registry.patch"
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
     "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
+  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_intel_globalgraph_v3.patch" \
+    "$DIR/flutter_gemma_litert_intel_globalgraph_v3.patch"
 else
   if [ -f "$WORKSPACE_FILE" ]; then
     # A tree patched by an older patch_c_api.sh has the sed but not the diff:
@@ -444,10 +456,18 @@ else
         "start from a fresh LiteRT-LM tree" >&2
       exit 1
     fi
+    if ! grep -q "flutter_gemma_litert_intel_globalgraph_v3.patch" \
+        "$WORKSPACE_FILE"; then
+      echo "  ERROR: $WORKSPACE_FILE has no Intel GlobalGraph v3 patch;" \
+        "start from a fresh LiteRT-LM tree" >&2
+      exit 1
+    fi
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
       "$DIR/flutter_gemma_litert_gpu_registry.patch"
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
       "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
+    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_intel_globalgraph_v3.patch" \
+      "$DIR/flutter_gemma_litert_intel_globalgraph_v3.patch"
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
     echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2

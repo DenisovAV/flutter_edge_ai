@@ -1,3 +1,7 @@
+# R8 ran without optimization while this build used proguard-android.txt,
+# which AGP 9 refuses. Kept until a device run qualifies an optimized build.
+-dontoptimize
+
 # Flutter
 -keep class io.flutter.app.** { *; }
 -keep class io.flutter.plugin.**  { *; }

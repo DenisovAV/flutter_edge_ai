@@ -26,8 +26,10 @@ import 'litert_lm_status.dart';
 import 'macos_load_error.dart';
 import 'native_turns.dart';
 import 'stream_start_failure.dart';
+import 'engine_create_failure.dart';
 import 'npu_vendor_host.dart';
 import 'option_scoring_ffi.dart';
+import '../litertlm_bundle_activation.dart' show GpuActivationReason;
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'intel_weight_banks.dart';
@@ -2314,6 +2316,7 @@ class LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? activationDataType,
+    GpuActivationReason? gpuActivationReason,
     NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
@@ -2485,8 +2488,11 @@ class LiteRtLmFfiClient {
       _dumpNativeLog();
       final nativeCode = engineAddr.code == 0 ? null : engineAddr.code;
       final nativeMessage = engineAddr.message;
-      final because = nativeMessage == null ? '' : ': $nativeMessage';
-      if (constraint != null && constraint != backend) {
+      // A GPU-artisan build fails the same way on every backend, so it is
+      // named before a backend constraint it may also declare.
+      if (constraint != null &&
+          constraint != backend &&
+          !isGpuArtisanRefusal(nativeMessage)) {
         throw LiteRtLmEngineCreateException(
           'This .litertlm model requires the "$constraint" backend — it '
           'declares section_backend_constraint: $constraint, but the '
@@ -2496,17 +2502,14 @@ class LiteRtLmFfiClient {
           nativeMessage: nativeMessage,
         );
       }
-      // Only the GPU executor reads the activation type, so only a float32
-      // GPU attempt can have failed because of it.
-      final float32OnGpu = activationDataType == 0 && backend == 'gpu';
       throw LiteRtLmEngineCreateException(
-        'Failed to create engine on $backend$because. Model: $modelPath'
-        '${float32OnGpu ? ' (float32 activations need more GPU memory than '
-                  'the default. If you set activationDataType, try without '
-                  'it; if you did not, the engine chose float32 for a '
-                  'FunctionGemma bundle that declares no '
-                  'prefer_activation_type, and ActivationDataType.float16 '
-                  'asks for the default instead)' : ''}',
+        engineCreateFailureMessage(
+          backend: backend,
+          modelPath: modelPath,
+          nativeMessage: nativeMessage,
+          activationDataType: activationDataType,
+          gpuActivationReason: gpuActivationReason,
+        ),
         nativeCode: nativeCode,
         nativeMessage: nativeMessage,
       );

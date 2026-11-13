@@ -299,6 +299,7 @@ class LiteRtLmEngine
     // (LiteRT-LM #4001). The header is read only when the answer can depend on it (see
     // `activationHeaderMatters`).
     ActivationDataType? gpuDefaultActivation;
+    GpuActivationReason? gpuDefaultReason;
     if (config.activationDataType == null) {
       BundleActivationRead? read;
       if (activationHeaderMatters(
@@ -333,6 +334,7 @@ class LiteRtLmEngine
         maxTokens: config.maxTokens,
       );
       gpuDefaultActivation = chosen.type;
+      gpuDefaultReason = chosen.reason;
       switch (chosen.reason) {
         case GpuActivationReason.functionGemmaWithoutKey:
           edgeAiLog(
@@ -426,6 +428,11 @@ class LiteRtLmEngine
             audioBackend: args.audioBackend,
             enableSpeculativeDecoding: config.enableSpeculativeDecoding,
             activationDataType: args.activationDataType,
+            // Why the engine chose that type, for a failed create's message;
+            // only a GPU attempt gets the engine's choice (encoderInitArgs).
+            gpuActivationReason: backend == PreferredBackend.gpu
+                ? gpuDefaultReason
+                : null,
             npuDispatch: npuDispatch,
             nativeLogLevel: nativeLogLevel,
             thinkingTokenBudget: thinkingTokenBudget,

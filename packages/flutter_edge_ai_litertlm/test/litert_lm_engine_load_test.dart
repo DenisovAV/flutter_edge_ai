@@ -19,6 +19,8 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/ffi_inference_model.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/open_session_backing.dart';
 import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
+import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_activation.dart'
+    show GpuActivationReason;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart'
     show NpuDispatch;
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuStack;
@@ -70,6 +72,7 @@ class _FakeHost extends LiteRtLmEngineHost {
 
   /// The activation type (wire value) handed to each attempt.
   final activationDataTypes = <int?>[];
+  final gpuActivationReasons = <GpuActivationReason?>[];
 
   /// Creates running at this moment, and the most there ever were.
   int creating = 0;
@@ -124,10 +127,12 @@ class _FakeHost extends LiteRtLmEngineHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
+    GpuActivationReason? gpuActivationReason,
     required NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
     required int? thinkingTokenBudget,
   }) async {
+    gpuActivationReasons.add(gpuActivationReason);
     nativeLogLevels.add(nativeLogLevel);
     thinkingBudgets.add(thinkingTokenBudget);
     activationDataTypes.add(activationDataType);
@@ -148,6 +153,7 @@ class _FakeHost extends LiteRtLmEngineHost {
 /// Records what [LiteRtLmFfiClient.initialize] is given; creates no engine.
 class _InitCapturingClient extends LiteRtLmFfiClient {
   LiteRtLmLogLevel? nativeLogLevel;
+  GpuActivationReason? gpuActivationReason;
   int? budget;
 
   @override
@@ -163,10 +169,12 @@ class _InitCapturingClient extends LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? activationDataType,
+    GpuActivationReason? gpuActivationReason,
     NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
   }) async {
+    this.gpuActivationReason = gpuActivationReason;
     this.nativeLogLevel = nativeLogLevel;
     budget = thinkingTokenBudget;
   }
@@ -382,6 +390,15 @@ void main() {
       ...[null, null],
       null,
     ]);
+    // Why, for a failed create's message: only the GPU attempt that took the
+    // engine's float32 carries a reason; a caller's float16 carries none.
+    expect(host.gpuActivationReasons, [
+      ...[GpuActivationReason.gemma4LongContext, null],
+      ...[null, null],
+      ...[null, null],
+      ...[null, null],
+      null,
+    ]);
     for (final model in [long, short, pinned, otherFamily, onCpu]) {
       await model.close();
     }
@@ -401,10 +418,15 @@ void main() {
       enableAudio: false,
       audioBackend: 'cpu',
       enableSpeculativeDecoding: null,
-      activationDataType: null,
+      activationDataType: 0,
+      gpuActivationReason: GpuActivationReason.functionGemmaWithoutKey,
       npuDispatch: null,
       nativeLogLevel: LiteRtLmLogLevel.silent,
       thinkingTokenBudget: 2048,
+    );
+    expect(
+      client.gpuActivationReason,
+      GpuActivationReason.functionGemmaWithoutKey,
     );
     expect(client.nativeLogLevel, LiteRtLmLogLevel.silent);
     expect(client.budget, 2048);

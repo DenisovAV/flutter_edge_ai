@@ -25,7 +25,9 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          # AGP 9.3's lint calls java.util.List.removeLast() (Java 21) and
+          # crashes on 17 in lintVitalAnalyzeRelease.
+          java-version: '21'
           cache: 'gradle'
 
       - name: Get version from tag

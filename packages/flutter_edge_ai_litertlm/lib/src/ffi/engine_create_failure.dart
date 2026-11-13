@@ -37,9 +37,10 @@ String engineCreateFailureMessage({
     return 'This .litertlm file is a GPU-artisan build (LiteRT-LM: "no '
         'available engine for backend GPU_ARTISAN"). It needs LiteRT-LM\'s GPU '
         'artisan engine, which the open-source LiteRT-LM runtime, and so this '
-        'plugin, cannot load on any native platform. Use the generic '
-        '.litertlm of the same model instead (litert-community publishes it '
-        'beside the "-gpu" file). Model: $modelPath';
+        'plugin, cannot load on any native platform. Use a .litertlm built '
+        'for the CPU/GPU CompiledModel backends instead: for the '
+        'litert-community "-gpu" files, that is the generic file beside them. '
+        'Model: $modelPath';
   }
   final because = nativeMessage == null ? '' : ': $nativeMessage';
   // Only the GPU executor reads the activation type, so only a float32 GPU

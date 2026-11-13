@@ -160,7 +160,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 - Verified on Linux x64: GCE flutter-gemma-linux (Tesla T4), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 - Documented: [PR #602](https://github.com/DenisovAV/flutter_edge_ai/pull/602), VENTUNO Q run (native-v0.18.0-c, litertlm 1.11.0).
 - Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).
-- Withheld: A GPU-artisan build, for LiteRT-LM's Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite, kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the generic variant. [Issue](https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L208-L212).
+- Withheld: A GPU-artisan build, for LiteRT-LM's Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite, kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the generic variant. [Issue](https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L209-L212).
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L250-L251)).
 - Stale on Android: Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), Android 17, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
 - Stale on Windows x64: Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-07, flutter_edge_ai_litertlm 1.20.0.
@@ -178,7 +178,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [web](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/blob/2eee7ac325f20eb8c9ac1d0e972f7c84663062da/gemma-4-E4B-it-web.litertlm)<br>2.97&nbsp;GB |  |  |  |  |  |  | GPU&nbsp;📝 |
 
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L251)).
-- Withheld: A GPU-artisan build, for LiteRT-LM's Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite, kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the generic variant. [Issue](https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L208-L212).
+- Withheld: A GPU-artisan build, for LiteRT-LM's Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite, kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the generic variant. [Issue](https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L209-L212).
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L250-L251)).
 
 <a id="lfm2.5-230m"></a>

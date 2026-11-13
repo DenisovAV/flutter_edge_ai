@@ -959,7 +959,7 @@ final class LiteRtLmGemma4E2bIt extends LiteRtLmModel {
 
   /// `gemma-4-E2B-it-gpu.litertlm`, 2.01 GB.
   @Deprecated(
-    'Withheld: A GPU-artisan build, for LiteRT-LM\'s Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite, kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the generic variant. (https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L208-L212) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
+    'Withheld: A GPU-artisan build, for LiteRT-LM\'s Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite, kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the generic variant. (https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L209-L212) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
   )
   LiteRtLmVariant get gpu => _gemma4E2bIt$gpu;
 
@@ -1254,7 +1254,7 @@ final class LiteRtLmGemma4E4bIt extends LiteRtLmModel {
 
   /// `gemma-4-E4B-it-gpu.litertlm`, 2.97 GB.
   @Deprecated(
-    'Withheld: A GPU-artisan build, for LiteRT-LM\'s Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite, kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the generic variant. (https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L208-L212) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
+    'Withheld: A GPU-artisan build, for LiteRT-LM\'s Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite, kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the generic variant. (https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L209-L212) It runs nowhere (backendsHere is empty); kept so code that names it still compiles.',
   )
   LiteRtLmVariant get gpu => _gemma4E4bIt$gpu;
 

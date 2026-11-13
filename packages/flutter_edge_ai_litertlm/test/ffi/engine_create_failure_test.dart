@@ -24,12 +24,13 @@ String _message({
 
 void main() {
   group('GPU-artisan build', () {
-    test('is named, with the generic .litertlm as the way out', () {
+    test('is named, with a CompiledModel build as the way out', () {
       final message = _message(nativeMessage: _artisanRefusal);
       expect(message, contains('GPU-artisan build'));
       expect(message, contains('open-source LiteRT-LM runtime'));
       expect(message, contains('any native platform'));
-      expect(message, contains('generic .litertlm of the same model'));
+      expect(message, contains('CPU/GPU CompiledModel backends'));
+      expect(message, contains('the generic file beside them'));
       expect(message, contains('/m/model.litertlm'));
       expect(message, isNot(startsWith('Failed to create engine')));
     });

@@ -11,6 +11,7 @@ import 'dart:math' show max;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
@@ -22,7 +23,7 @@ import 'package:flutter_edge_ai_litertlm/src/litert_lm_engine_host.dart';
 import 'package:flutter_edge_ai_litertlm/src/litertlm_bundle_activation.dart'
     show GpuActivationReason;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart'
-    show NpuDispatch;
+    show NpuDispatch, debugIntelBrokenNpuMaskAux;
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart' show NpuStack;
 import 'package:flutter_test/flutter_test.dart';
 
@@ -248,6 +249,7 @@ void main() {
 
   tearDown(() {
     debugLiteRtLmEngineHost = null;
+    debugIntelBrokenNpuMaskAux = null;
     root.deleteSync(recursive: true);
   });
 
@@ -572,30 +574,65 @@ void main() {
     },
   );
 
-  test('Windows x64: a Panther Lake bundle whose tf_lite_aux mask graphs are '
-      'compiled for the NPU turns the HW mask update path on; one whose '
-      'masks run on the CPU, and a Lunar Lake bundle, keep it off', () async {
+  test('Windows x64: the HW mask update path is turned on only for a bundle '
+      'whose PTL-stamped tf_lite_aux is listed by length and sha256; another '
+      'PTL aux, one whose masks run on the CPU, and a Lunar Lake bundle keep '
+      'it off', () async {
     const ptl = ('IntelOpenVINO', 'PTL');
     const lnl = ('IntelOpenVINO', 'LNL');
-    for (final (name, bytes, expected) in [
+    // The aux section the container fixture writes for a PTL stamp.
+    final ptlAux = tfliteModel({'LiteRtStamp': liteRtStamp(ptl.$1, ptl.$2)});
+    final listed = [
+      (
+        length: ptlAux.length,
+        sha256: sha256.convert(ptlAux).toString(),
+        file: 'ptl_npu_aux.litertlm',
+        issue: 'its masks are wrong past ~2,048 tokens',
+      ),
+    ];
+    final sameLengthOtherHash = [
+      (
+        length: ptlAux.length,
+        sha256: '0' * 64,
+        file: 'ptl_npu_aux.litertlm',
+        issue: 'its masks are wrong past ~2,048 tokens',
+      ),
+    ];
+    for (final (name, bytes, broken, expected) in [
       (
         'ptl_npu_aux.litertlm',
         _bundle(textStamp: ptl, auxStamp: ptl, encoders: false),
+        listed,
         true,
+      ),
+      (
+        'ptl_npu_aux_other_hash.litertlm',
+        _bundle(textStamp: ptl, auxStamp: ptl, encoders: false),
+        sameLengthOtherHash,
+        false,
+      ),
+      (
+        'ptl_npu_aux_shipped_list.litertlm',
+        _bundle(textStamp: ptl, auxStamp: ptl, encoders: false),
+        null,
+        false,
       ),
       (
         'ptl_cpu_aux.litertlm',
         _bundle(textStamp: ptl, aux: true, encoders: false),
+        listed,
         false,
       ),
       (
         'lnl.litertlm',
         _bundle(textStamp: lnl, auxStamp: lnl, encoders: false),
+        listed,
         false,
       ),
     ]) {
       host = _FakeHost(os: 'windows', abiName: 'windows_x64', npuShips: true);
       debugLiteRtLmEngineHost = host;
+      debugIntelBrokenNpuMaskAux = broken;
       late InferenceModel model;
       final printed = await printedBy(() async {
         model = await load(write(name, bytes));
@@ -609,7 +646,7 @@ void main() {
       expect(
         printed.any((line) => line.contains('wrong past ~2,048 tokens')),
         expected,
-        reason: '$name: the log names why the masks move to the runtime',
+        reason: "$name: the log names the file's known issue",
       );
       await model.close();
     }

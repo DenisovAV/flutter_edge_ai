@@ -1591,8 +1591,8 @@ final class LiteRtLmEmbeddingPass extends EmbeddingPass {
         // its own settings. Upstream skips a tower the bundle lacks.
         //
         // Intel (Windows): the LLM path also sets `use_hw_masking_for_npu`
-        // false there (true for a Panther Lake bundle with NPU-compiled mask
-        // graphs, `npuHwMasking`), because the kWH mask method failed a CFG
+        // false there (true for Intel's public Gemma 4 26B for Panther Lake,
+        // whose NPU-compiled mask graphs are wrong, `npuHwMasking`), because the kWH mask method failed a CFG
         // check (0xc0000409) on Intel's preview NPUs. LiteRT-LM's embedding
         // engine never reads that flag (only the LLM NPU executor does), and
         // EmbeddingGemma 2 270m `_Intel_PTL` runs without it (Panther Lake,

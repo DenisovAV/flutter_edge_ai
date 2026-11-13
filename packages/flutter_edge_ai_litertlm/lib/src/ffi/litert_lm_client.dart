@@ -2378,8 +2378,8 @@ class LiteRtLmFfiClient {
     }
 
     // The vendor and the bundle decide (`npuHwMasking`): Intel turns the HW
-    // mask update path off, except for a Panther Lake bundle whose mask
-    // graphs are compiled for the NPU.
+    // mask update path off, except for a bundle whose NPU-compiled mask graphs
+    // are known to be wrong (Intel's public Gemma 4 26B for Panther Lake).
     final useHwMasking = backend == 'npu' ? npuDispatch!.useHwMasking : null;
     if (useHwMasking != null) {
       edgeAiLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=$useHwMasking');

@@ -10,6 +10,8 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:crypto/crypto.dart' show sha256;
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/engine.dart' show edgeAiLog;
 
@@ -151,44 +153,141 @@ typedef NpuDispatch = ({
 });
 
 /// What an LLM engine on [vendor]'s NPU sets `use_hw_masking_for_npu` to for
-/// [bundle] (null when the file could not be read); null leaves LiteRT-LM's
-/// default (true on v0.19.x), which Qualcomm, Tensor and MediaTek run on.
+/// the bundle at [path] ([bundle]: null when the file could not be read); null
+/// leaves LiteRT-LM's default (true on v0.19.x), which Qualcomm, Tensor and
+/// MediaTek run on.
 ///
 /// Intel: off (false), because with it on LiteRT sets up the kWH HW mask
 /// method, which Intel preview NPUs (LunarLake/PantherLake) did not fully
 /// support → CFG check failure 0xc0000409 (per Matt Kreileder's Intel NPU
-/// pipeline instructions). On, explicitly, for a Panther Lake bundle whose
-/// mask graphs are compiled for the NPU ([intelPtlNpuCompiledMasks]).
-bool? npuHwMasking(NpuStack vendor, LiteRtLmBundleInfo? bundle) =>
-    switch (vendor) {
-      NpuStack.qualcomm => null,
-      NpuStack.googleTensor => null,
-      NpuStack.mediatek => null,
-      NpuStack.intel => intelPtlNpuCompiledMasks(bundle),
-    };
+/// pipeline instructions). On, explicitly, for a bundle whose `tf_lite_aux`
+/// section is one of [intelBrokenNpuMaskAux] (Intel's public Gemma 4 26B A4B
+/// for Panther Lake), whose NPU-compiled mask graphs are wrong: the masks are
+/// then computed by the runtime. Every other Intel bundle, including the
+/// Panther Lake ones whose mask graphs are compiled for the NPU and right
+/// (Intel's 12Bs, Google's E2B `_intel_PTL`), stays off.
+///
+/// Only an aux section stamped for the Panther Lake NPU, of a listed length,
+/// is hashed ([sha256OfRange], off the calling isolate by default); a hash
+/// that cannot be read is logged and counts as unlisted.
+Future<bool?> npuHwMasking(
+  NpuStack vendor,
+  LiteRtLmBundleInfo? bundle, {
+  required String path,
+  List<BrokenNpuMaskAux> broken = intelBrokenNpuMaskAux,
+  Future<String> Function(String path, int begin, int end) sha256OfRange =
+      sha256OfFileRange,
+}) async => switch (vendor) {
+  NpuStack.qualcomm => null,
+  NpuStack.googleTensor => null,
+  NpuStack.mediatek => null,
+  NpuStack.intel => await _intelBrokenNpuMasks(
+    bundle,
+    path: path,
+    broken: broken,
+    sha256OfRange: sha256OfRange,
+  ),
+};
 
-/// Whether [bundle]'s `tf_lite_aux` section, the attention-mask graphs
-/// (`prefill_mask_*`, `decode_mask`), is compiled for the Intel Panther Lake
-/// NPU (its `LiteRtStamp` is `IntelOpenVINO` / `PTL`). Those graphs compute
-/// the sliding-window mask positions in FP16, which holds integers exactly
-/// only up to 2,048: measured 2026-11-13 on a Panther Lake PC
-/// (native-v0.19.1-b) with Intel's public Gemma 4 26B A4B
-/// `…-Intel_PTL_NPU.litertlm`, text identical to a build with CPU masks up to
-/// position ~2,048 and wrong after it (Intel's own CLI reproduces it with
-/// `--use_hw_masking_for_npu=false`); with masks computed in the runtime (kWH)
-/// the same file was exact at 4,919 tokens and engine create did not crash.
-/// An aux section with no stamp runs on the CPU in FP32 and stays as it is,
-/// as does every Lunar Lake bundle.
-bool intelPtlNpuCompiledMasks(LiteRtLmBundleInfo? bundle) {
-  final aux = bundle?.sectionOf('tf_lite_aux')?.npuTarget;
-  return aux != null && aux.isIntel && aux.soc.toUpperCase() == 'PTL';
+Future<bool> _intelBrokenNpuMasks(
+  LiteRtLmBundleInfo? bundle, {
+  required String path,
+  required List<BrokenNpuMaskAux> broken,
+  required Future<String> Function(String path, int begin, int end)
+  sha256OfRange,
+}) async {
+  final aux = bundle?.sectionOf('tf_lite_aux');
+  final stamp = aux?.npuTarget;
+  if (aux == null ||
+      stamp == null ||
+      !stamp.isIntel ||
+      stamp.soc.toUpperCase() != 'PTL' ||
+      !broken.any((b) => b.length == aux.length)) {
+    return false;
+  }
+  final String digest;
+  try {
+    digest = await sha256OfRange(path, aux.begin, aux.end);
+  } on FileSystemException catch (e) {
+    edgeAiLog(
+      '[LiteRtLmEngine] NPU: could not hash the tf_lite_aux section of $path '
+      '($e); use_hw_masking_for_npu stays false',
+    );
+    return false;
+  }
+  for (final b in broken) {
+    if (b.length == aux.length && b.sha256 == digest) {
+      edgeAiLog('[LiteRtLmEngine] NPU: ${b.file}: ${b.issue}');
+      return true;
+    }
+  }
+  return false;
 }
 
-/// Why [npuHwMasking] turns the HW mask update path on, for the log.
-const intelPtlHwMaskingReason =
-    'its tf_lite_aux attention-mask graphs are compiled for the Panther Lake '
-    'NPU, whose FP16 masks are wrong past ~2,048 tokens; the masks are '
-    'computed by the runtime instead (use_hw_masking_for_npu=true)';
+/// A `tf_lite_aux` section known to carry broken NPU-compiled attention-mask
+/// graphs, by its length and the sha256 of its bytes.
+typedef BrokenNpuMaskAux = ({
+  int length,
+  String sha256,
+  String file,
+  String issue,
+});
+
+/// The `tf_lite_aux` sections whose NPU-compiled mask graphs are wrong, so
+/// [npuHwMasking] has the runtime compute the masks for them.
+///
+/// Hugging Face `litert-community/gemma-4-26B-A4B-it-litert-lm`,
+/// `gemma4-26B-A4B-it-Intel_PTL_NPU.litertlm` (whole file sha256
+/// `fc61159b…6c93`, created 2026-10-30): its aux mask graphs
+/// (`prefill_mask_1024`, `decode_mask`) are compiled to NPU DISPATCH_OPs in
+/// FP16, which holds the sliding-window positions exactly only up to 2,048.
+/// Measured 2026-11-13 on a Panther Lake PC (native-v0.19.1-b): text identical
+/// to a build with CPU masks up to position ~2,048 and wrong after it; with
+/// `use_hw_masking_for_npu=true` the same file was exact at 4,919 tokens and
+/// engine create did not crash. The aux sections of Intel's public and
+/// private Gemma 4 12B, Intel's private 26B and Google's Gemma 4 E2B
+/// `_intel_PTL` hash otherwise and run right without it.
+const List<BrokenNpuMaskAux> intelBrokenNpuMaskAux = [
+  (
+    length: 5806310,
+    sha256: '17accf36c4da07fcdf50abdcc43bd00f6b05d9f2eaee95fa18aaf73e67ebfe28',
+    file: 'gemma4-26B-A4B-it-Intel_PTL_NPU.litertlm',
+    issue:
+        'its tf_lite_aux attention masks are compiled for the NPU in FP16 and '
+        'are wrong past ~2,048 tokens; the runtime computes them instead '
+        '(use_hw_masking_for_npu=true)',
+  ),
+];
+
+List<BrokenNpuMaskAux> _brokenNpuMaskAuxInUse = intelBrokenNpuMaskAux;
+
+/// The list the engine's loads check: [intelBrokenNpuMaskAux], unless a test
+/// replaced it ([debugIntelBrokenNpuMaskAux]).
+List<BrokenNpuMaskAux> get brokenNpuMaskAuxInUse => _brokenNpuMaskAuxInUse;
+
+/// Replaces [brokenNpuMaskAuxInUse]; null restores [intelBrokenNpuMaskAux].
+@visibleForTesting
+set debugIntelBrokenNpuMaskAux(List<BrokenNpuMaskAux>? list) =>
+    _brokenNpuMaskAuxInUse = list ?? intelBrokenNpuMaskAux;
+
+/// The sha256 of bytes `[begin, end)` of the file at [path], read and hashed
+/// on a spawned isolate (a 5.8 MB section is milliseconds, but not on the UI
+/// isolate). Throws [FileSystemException] when the file cannot be read or ends
+/// before [end].
+Future<String> sha256OfFileRange(String path, int begin, int end) =>
+    Isolate.run(() {
+      final file = File(path).openSync();
+      try {
+        file.setPositionSync(begin);
+        final bytes = file.readSync(end - begin);
+        if (bytes.length != end - begin) {
+          throw FileSystemException('the file ends before byte $end', path);
+        }
+        return sha256.convert(bytes).toString();
+      } finally {
+        file.closeSync();
+      }
+    });
 
 /// Whether a load on [vendor]'s NPU writes weight banks to the temp directory
 /// that its process must claim (intel_weight_banks.dart). Intel: the Windows

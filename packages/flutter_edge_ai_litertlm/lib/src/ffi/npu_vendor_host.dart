@@ -209,9 +209,12 @@ Future<bool> _intelBrokenNpuMasks(
   try {
     digest = await sha256OfRange(path, aux.begin, aux.end);
   } on FileSystemException catch (e) {
-    edgeAiLog(
-      '[LiteRtLmEngine] NPU: could not hash the tf_lite_aux section of $path '
-      '($e); use_hw_masking_for_npu stays false',
+    // Printed in release builds too: a listed bundle that goes unrecognised
+    // runs its broken masks and degrades past ~2,048 tokens.
+    // ignore: avoid_print
+    print(
+      '[flutter_edge_ai_litertlm] NPU: could not hash the tf_lite_aux '
+      'section of $path ($e); use_hw_masking_for_npu stays false',
     );
     return false;
   }
@@ -279,9 +282,17 @@ Future<String> sha256OfFileRange(String path, int begin, int end) =>
       final file = File(path).openSync();
       try {
         file.setPositionSync(begin);
-        final bytes = file.readSync(end - begin);
-        if (bytes.length != end - begin) {
-          throw FileSystemException('the file ends before byte $end', path);
+        // readIntoSync may return fewer bytes than asked before the end of
+        // the file (network and virtual file systems), so read until the
+        // range is consumed; only an empty read is the end of the file.
+        final bytes = Uint8List(end - begin);
+        var read = 0;
+        while (read < bytes.length) {
+          final n = file.readIntoSync(bytes, read);
+          if (n == 0) {
+            throw FileSystemException('the file ends before byte $end', path);
+          }
+          read += n;
         }
         return sha256.convert(bytes).toString();
       } finally {

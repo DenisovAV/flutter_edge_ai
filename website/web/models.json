@@ -525,8 +525,8 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-2.json",
+        "status": "verified",
+        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-4.json",
         "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
@@ -883,8 +883,8 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-2.json",
+        "status": "verified",
+        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-4.json",
         "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
@@ -4384,13 +4384,13 @@
       },
       "windows_x64": {
        "gpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu.json",
+        "status": "verified",
+        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-3.json",
         "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu.json",
+        "status": "verified",
+        "source": "evidence/2026-11-13_windows_x64_intel-panther-lake-core-ultra-x7-358h-arc-b390-npu-3.json",
         "note": "Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },

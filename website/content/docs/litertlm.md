@@ -121,7 +121,10 @@ copies digits wrongly on some GPUs (seen on Adreno and Metal). `activationDataTy
 `getActiveModel` fixes it at the cost of a slower prefill; left unset, the model
 file decides, except that a FunctionGemma bundle declaring no
 `prefer_activation_type` gets `float32` on its GPU attempt (litertlm 1.14.0),
-because at half precision it answers with nothing. It applies to the text decoder of `.litertlm` models on Android,
+because at half precision it answers with nothing, and so does Gemma 4 loaded
+with `maxTokens` above 2,048 (litertlm 1.21.0,
+[#827](https://github.com/DenisovAV/flutter_edge_ai/issues/827)); pass
+`ActivationDataType.float16` to keep half precision. It applies to the text decoder of `.litertlm` models on Android,
 iOS and desktop — not on web, and not to the vision or audio encoders, which
 keep what the model file asks for. `float32` also needs more GPU memory, and a
 GPU engine that cannot be created falls back to CPU with only a WARNING line in

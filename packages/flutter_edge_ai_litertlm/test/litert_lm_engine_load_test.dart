@@ -68,6 +68,9 @@ class _FakeHost extends LiteRtLmEngineHost {
   /// The client's thinking budget at each attempt.
   final thinkingBudgets = <int?>[];
 
+  /// The activation type (wire value) handed to each attempt.
+  final activationDataTypes = <int?>[];
+
   /// Creates running at this moment, and the most there ever were.
   int creating = 0;
   int mostCreatingAtOnce = 0;
@@ -127,6 +130,7 @@ class _FakeHost extends LiteRtLmEngineHost {
   }) async {
     nativeLogLevels.add(nativeLogLevel);
     thinkingBudgets.add(thinkingTokenBudget);
+    activationDataTypes.add(activationDataType);
     mostCreatingAtOnce = max(mostCreatingAtOnce, ++creating);
     // A create takes time; another one started meanwhile would overlap it.
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -252,6 +256,9 @@ void main() {
     bool backendFallback = true,
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
+    ModelType modelType = ModelType.gemmaIt,
+    int maxTokens = 1024,
+    ActivationDataType? activationDataType,
   }) =>
       LiteRtLmEngine(
         backendFallback: backendFallback,
@@ -261,12 +268,13 @@ void main() {
         InferenceModelSpec(
           name: 'test',
           modelSource: FileSource(path),
-          modelType: ModelType.gemmaIt,
+          modelType: modelType,
           fileType: ModelFileType.litertlm,
         ),
         RuntimeConfig(
-          maxTokens: 1024,
+          maxTokens: maxTokens,
           modelPath: path,
+          activationDataType: activationDataType,
           preferredBackend: preferredBackend,
           supportImage: supportImage,
           supportAudio: supportAudio,
@@ -331,6 +339,52 @@ void main() {
     expect(host.thinkingBudgets, [2048, 2048, null, null]);
     await budgeted.close();
     await plain.close();
+  });
+
+  test('Gemma 4: maxTokens reaches the activation default, and only the GPU '
+      'attempt takes it (#827)', () async {
+    final path = write('g4.litertlm', _bundle(text: 'gpu,cpu'));
+    host = _FakeHost(
+      failures: const {'gpu': LiteRtLmEngineCreateException('no GPU')},
+    );
+    debugLiteRtLmEngineHost = host;
+    final long = await load(path, modelType: ModelType.gemma4, maxTokens: 4096);
+    final short = await load(
+      path,
+      modelType: ModelType.gemma4,
+      maxTokens: 2048,
+    );
+    final pinned = await load(
+      path,
+      modelType: ModelType.gemma4,
+      maxTokens: 4096,
+      activationDataType: ActivationDataType.float16,
+    );
+    final otherFamily = await load(path, maxTokens: 4096);
+    final onCpu = await load(
+      path,
+      modelType: ModelType.gemma4,
+      maxTokens: 4096,
+      preferredBackend: PreferredBackend.cpu,
+    );
+    expect(host.attempts.map((a) => a.backend), [
+      ...['gpu', 'cpu'],
+      ...['gpu', 'cpu'],
+      ...['gpu', 'cpu'],
+      ...['gpu', 'cpu'],
+      'cpu',
+    ]);
+    // float32 = 0, float16 = 1 (`activationDataTypeWireValue`).
+    expect(host.activationDataTypes, [
+      ...[0, null],
+      ...[null, null],
+      ...[1, 1],
+      ...[null, null],
+      null,
+    ]);
+    for (final model in [long, short, pinned, otherFamily, onCpu]) {
+      await model.close();
+    }
   });
 
   test('the real host hands the client the budget and the log level', () async {
@@ -958,9 +1012,10 @@ void main() {
         ..gpuFamily = AndroidGpuFamily.adreno;
       debugLiteRtLmEngineHost = host;
       final path = write('generic.litertlm', _bundle());
-      final gpu =
-          await load(path, preferredBackend: PreferredBackend.gpu)
-              as FfiInferenceModel;
+      final gpu = await load(
+        path,
+        preferredBackend: PreferredBackend.gpu,
+      ) as FfiInferenceModel;
       expect(gpu.activeBackend, PreferredBackend.gpu);
       expect(gpu.openSessionBacking, OpenSessionBacking.native);
       await gpu.close();
@@ -971,9 +1026,10 @@ void main() {
         failures: {'gpu': Exception('no OpenCL')},
       )..gpuFamily = AndroidGpuFamily.adreno;
       debugLiteRtLmEngineHost = host;
-      final cpu =
-          await load(path, preferredBackend: PreferredBackend.gpu)
-              as FfiInferenceModel;
+      final cpu = await load(
+        path,
+        preferredBackend: PreferredBackend.gpu,
+      ) as FfiInferenceModel;
       expect(cpu.activeBackend, PreferredBackend.cpu);
       expect(cpu.openSessionBacking, OpenSessionBacking.virtual);
       await cpu.close();
@@ -1023,12 +1079,10 @@ void main() {
           },
         );
         debugLiteRtLmEngineHost = host;
-        final model =
-            await load(
-                  writeUnread('model.task'),
-                  preferredBackend: PreferredBackend.npu,
-                )
-                as FfiInferenceModel;
+        final model = await load(
+          writeUnread('model.task'),
+          preferredBackend: PreferredBackend.npu,
+        ) as FfiInferenceModel;
         expect(host.attempts.map((a) => a.backend), contains('npu'));
         expect(model.activeBackend, PreferredBackend.cpu);
         expect(model.openSessionBacking, OpenSessionBacking.virtual);

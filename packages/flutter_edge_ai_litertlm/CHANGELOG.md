@@ -1,3 +1,6 @@
+## 1.21.0
+- Gemma 4 on the GPU defaults to FP32 activations above a 2,048-token context (#827).
+
 ## 1.20.1
 - Fix tool calls and thinking on NPU failing with a multi-token rollback error.
 

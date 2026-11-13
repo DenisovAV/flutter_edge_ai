@@ -1521,10 +1521,21 @@ larger Gemma bundles (Gemma 3 1B, Gemma 4) are not affected.
 ### Wrong digits from a long prompt on GPU
 
 Gemma 4 can copy numbers wrongly out of a prompt of about 2,000 tokens or more
-on Metal and Adreno, the same way on every run. The published Gemma 4
-`.litertlm` files ask for half-precision activations; pass
-`activationDataType: ActivationDataType.float32` to `getActiveModel` for full
-precision.
+on Metal and Adreno, the same way on every run, and on Intel D3D12 an agent
+with a ~4,875-token prompt made no tool calls at all. The published Gemma 4
+`.litertlm` files ask for half-precision activations, and at FP16 the rotary
+positions past about 2,048 tokens stop being distinct
+([#827](https://github.com/DenisovAV/flutter_edge_ai/issues/827)).
+
+Since 1.21.0, a Gemma 4 model (`ModelType.gemma4`) loaded with `maxTokens`
+above 2,048 and no `activationDataType` runs its GPU attempt at
+`ActivationDataType.float32`; the log line saying so is printed in debug builds
+only. The CPU and NPU attempts are left alone, and so is a value you pass:
+`activationDataType: ActivationDataType.float16` keeps the file's half
+precision, at the cost above. With `maxTokens` of 2,048 or less nothing
+changes. FP32 costs first-token time (1.5 s against 3.8 s on that Intel
+prompt) and GPU memory; on older versions pass
+`activationDataType: ActivationDataType.float32` to `getActiveModel` yourself.
 
 ### `Qwen3-0.6B.litertlm` fails to load
 

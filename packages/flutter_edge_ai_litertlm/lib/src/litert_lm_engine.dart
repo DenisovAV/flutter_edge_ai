@@ -291,46 +291,70 @@ class LiteRtLmEngine
       _ => npuNoVendorReason(host.abi),
     };
 
-    // FunctionGemma bundles converted before litetune 0.1.4 declare no
-    // activation type and, at the FP16 a GPU defaults to, answer with `<pad>`
-    // or nothing. The header is read only when the answer can matter (see
+    // What a GPU attempt runs at when the caller set no activation type
+    // (`gpuActivationDefault`): FP32 for a FunctionGemma bundle converted
+    // before litetune 0.1.4, which declares no activation type and at the
+    // GPU's FP16 answers with `<pad>` or nothing, and for Gemma 4 with a
+    // context above 2,048 tokens, whose FP16 rotary positions break there
+    // (#827). The header is read only when the answer can depend on it (see
     // `activationHeaderMatters`).
     ActivationDataType? gpuDefaultActivation;
-    if (activationHeaderMatters(
-      requested: config.activationDataType,
-      preferredBackend: config.preferredBackend,
-      modelType: spec.modelType,
-    )) {
-      final read = await tryReadBundleActivationDeclaration(config.modelPath);
-      final error = read.error;
-      if (error != null) {
-        // A failed read leaves the GPU attempt at FP16, where this bundle can
-        // answer with nothing. A release build is where that gets reported and
-        // edgeAiLog is silent there, so it is printed, once per load.
-        // ignore: avoid_print
-        print(
-          '[flutter_edge_ai_litertlm] WARNING: could not read which activation '
-          'type this FunctionGemma .litertlm declares, so a GPU attempt runs '
-          'at the engine default (float16), where a bundle without one can '
-          'answer with nothing. Pass '
-          'activationDataType: ActivationDataType.float32 to be sure. '
-          '${error.split('\n').first}',
-        );
-      }
-      gpuDefaultActivation = gpuActivationDefault(
+    if (config.activationDataType == null) {
+      BundleActivationRead? read;
+      if (activationHeaderMatters(
         requested: null,
         preferredBackend: config.preferredBackend,
         modelType: spec.modelType,
-        declaresKey: read.declaresKey,
+        maxTokens: config.maxTokens,
+      )) {
+        read = await tryReadBundleActivationDeclaration(config.modelPath);
+        final error = read.error;
+        if (error != null) {
+          // A failed read leaves the GPU attempt at FP16, where this bundle
+          // can answer with nothing. A release build is where that gets
+          // reported and edgeAiLog is silent there, so it is printed, once per
+          // load.
+          // ignore: avoid_print
+          print(
+            '[flutter_edge_ai_litertlm] WARNING: could not read which '
+            'activation type this FunctionGemma .litertlm declares, so a GPU '
+            'attempt runs at the engine default (float16), where a bundle '
+            'without one can answer with nothing. Pass '
+            'activationDataType: ActivationDataType.float32 to be sure. '
+            '${error.split('\n').first}',
+          );
+        }
+      }
+      final chosen = gpuActivationDefault(
+        requested: null,
+        preferredBackend: config.preferredBackend,
+        modelType: spec.modelType,
+        declaresKey: read?.declaresKey,
+        maxTokens: config.maxTokens,
       );
-      if (gpuDefaultActivation != null) {
-        edgeAiLog(
-          '[LiteRtLmEngine] this FunctionGemma bundle declares no '
-          'prefer_activation_type, and at the GPU default of float16 such a '
-          'bundle answers with <pad> only: a GPU attempt uses '
-          '${gpuDefaultActivation.name}. Pass '
-          'activationDataType: ActivationDataType.float16 to keep the default.',
-        );
+      gpuDefaultActivation = chosen.type;
+      switch (chosen.reason) {
+        case GpuActivationReason.functionGemmaWithoutKey:
+          edgeAiLog(
+            '[LiteRtLmEngine] this FunctionGemma bundle declares no '
+            'prefer_activation_type, and at the GPU default of float16 such '
+            'a bundle answers with <pad> only: a GPU attempt uses '
+            '${chosen.type?.name}. Pass '
+            'activationDataType: ActivationDataType.float16 to keep the '
+            'default.',
+          );
+        case GpuActivationReason.gemma4LongContext:
+          edgeAiLog(
+            '[LiteRtLmEngine] Gemma 4 with maxTokens ${config.maxTokens}, '
+            'above $gemma4Fp16MaxContextTokens: at float16 its rotary '
+            'positions past ~2,048 tokens stop being distinct and a long '
+            'prompt degrades (#827), so a GPU attempt uses '
+            '${chosen.type?.name}. Pass '
+            'activationDataType: ActivationDataType.float16 to keep the '
+            'bundle\'s float16.',
+          );
+        case null:
+          break;
       }
     }
 

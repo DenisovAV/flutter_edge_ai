@@ -152,8 +152,14 @@ Core has NO pigeon (dropped at the 1.0 cut; its value types are hand-written in 
   release whose web `flush()` awaits an in-flight write batch, requires `hooks ^2.2.0` →
   `record_use` → `meta ^1.19.0`, and every Flutter 3.44.x pins `meta` to 1.18.0 exactly.
   Under the old name, consumers on 3.44 resolve to flutter_gemma_rag_sqlite 1.3.2;
-  `flutter_edge_ai_sqlite` has no release below 3.47. The **workspace dev floor is
-  therefore 3.47** (`.fvmrc`, and the two `flutter-version`-pinned website workflows)
+  `flutter_edge_ai_sqlite` has no release below 3.47. These are CONSUMER floors.
+  The **workspace dev toolchain is Flutter 3.50.0** (`.fvmrc`, and the two
+  `flutter-version`-pinned website workflows; CI's other jobs take `channel: stable`):
+  its `flutter_test` needs analyzer 13 (core's dev dependency, pigeon 27), and its
+  Gradle plugin refuses Gradle < 9.3.1, AGP < 9.1.1 and KGP < 2.4.10, so every
+  Android app in the repo (examples, codelabs) is on its template's Gradle 9.5.0,
+  AGP 9.3.1 (the hybrid codelab 9.4.0, Gradle 9.7.1) and KGP 2.4.20. The llama
+  connector keeps its own pinned CI SDK (3.47.1, `.github/actions/setup-flutter-llama`)
 - **Dart SDK**: `>=3.12.0 <4.0.0`
 - **iOS**: Minimum 15.0; **16.0 only with `flutter_edge_ai_mediapipe`** (MediaPipe GenAI). Core, litertlm, built-in AI and embeddings build from 15 (#441). `flutter_edge_ai_llama` requires iOS 16.4 / macOS 14
 - **macOS**: 14.0 with `flutter_edge_ai_litertlm` (and so speech), declared since #689; 12.0 with `flutter_edge_ai_builtin_ai` (`flutter_local_ai`)

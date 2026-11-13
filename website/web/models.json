@@ -4594,8 +4594,8 @@
      "cells": {
       "windows_x64": {
        "npu": {
-        "status": "stale",
-        "source": "evidence/2026-11-13_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu.json",
+        "status": "verified",
+        "source": "evidence/2026-11-13_windows_x64_intel-lunar-lake-core-ultra-7-258v-arc-140v-npu-2.json",
         "note": "Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       }

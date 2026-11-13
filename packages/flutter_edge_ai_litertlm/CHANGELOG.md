@@ -1,6 +1,7 @@
 ## 1.20.1
 - Fix tool calls and thinking on NPU failing with a multi-token rollback error.
-- Fix a Windows crash on thinking turns with tools (native-v0.19.1-a, LiteRT-LM v0.19.1).
+- Fix a Windows crash on thinking turns with tools (native-v0.19.1-b, LiteRT-LM v0.19.1).
+- Load Intel's public Gemma 4 NPU bundles for Panther Lake on Windows.
 - Gemma 4 on the GPU defaults to FP32 activations above a 2,048-token context (LiteRT-LM #4001).
 - GPU-artisan `-gpu.litertlm` builds fail natively with a clear error; the catalog withholds them.
 

@@ -148,7 +148,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [web](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-web.litertlm)<br>2.01&nbsp;GB |  |  |  |  |  |  | GPU&nbsp;📝 |
 | [npu-tensor-g5](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G5.litertlm)<br>3.11&nbsp;GB · context&nbsp;4096 | NPU&nbsp;⚪ |  |  |  |  |  |  |
 | [npu-tensor-g6](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm)<br>3.31&nbsp;GB · context&nbsp;4096 | NPU&nbsp;✅ |  |  |  |  |  |  |
-| [npu-lnl](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm)<br>2.96&nbsp;GB · context&nbsp;4096 |  |  |  | NPU&nbsp;🕓 |  |  |  |
+| [npu-lnl](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm)<br>2.96&nbsp;GB · context&nbsp;4096 |  |  |  | NPU&nbsp;✅ |  |  |  |
 | [npu-ptl](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_PTL.litertlm)<br>2.95&nbsp;GB · context&nbsp;4096 |  |  |  | NPU&nbsp;⚪ |  |  |  |
 | [npu-qcs8275](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_qualcomm_qcs8275.litertlm)<br>3.29&nbsp;GB · context&nbsp;4096 | NPU&nbsp;⚪ |  |  |  |  | NPU&nbsp;📝 |  |
 | [npu-sm8750](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_qualcomm_sm8750.litertlm)<br>3.02&nbsp;GB · context&nbsp;4096 | NPU&nbsp;✅ |  |  |  |  | NPU&nbsp;⚪ |  |
@@ -163,7 +163,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 - Withheld: A GPU-artisan build, for LiteRT-LM's Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite, kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the generic variant. [Issue](https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L209-L212).
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L250-L251)).
 - Verified on Android: Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), Android 17, 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
-- Stale on Windows x64: Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
+- Verified on Windows x64: Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 
 <a id="gemma-4-e4b-it"></a>
 

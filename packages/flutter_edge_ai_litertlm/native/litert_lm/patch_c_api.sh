@@ -11,6 +11,8 @@
 #     v0.19.0 a second patch on top of upstream's, which accepts only "\0"
 # 26. ThinkingBudgetConstraint copies a user bitmap by data() and vocabulary
 #     size (Windows: the Gemma provider's vector is libc++, the runtime MSVC)
+# 27. The NPU executor aliases a multi-signature KV cache held in a custom
+#     tensor buffer (Intel OpenVINO) instead of refusing it (upstream 3db1cfd0ab)
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -1141,6 +1143,39 @@ fi
 if grep -q 'words().end()' \
     "$DIR/runtime/components/constrained_decoding/thinking_budget_constraint.cc"; then
   echo "  ERROR: section 26: thinking_budget_constraint.cc still reads a user mask's words().end()" >&2
+  exit 1
+fi
+
+# ── 27. A multi-signature NPU KV cache in an OpenVINO buffer is aliased ──
+# Backport of LiteRT-LM 3db1cfd0ab ("Alias multi-signature NPU KV caches on
+# Intel OpenVINO tensor buffers", 2026-10-27, after v0.19.1). When a bundle's
+# signatures declare KV caches of different lengths, the NPU executor creates
+# one buffer per cache and aliases it for the other signatures
+# (CreateAliasBuffer). Only host memory, AHWB, dma-buf and ION buffers could be
+# aliased, so a cache the Intel dispatch allocates as an OpenVINO tensor
+# buffer (kLiteRtTensorBufferTypeOpenVINOTensorBuffer = 100, the first user
+# custom type) failed engine_create with "Unsupported tensor buffer type for
+# cross-platform aliasing: 100": Intel's public
+# gemma4-12B-it-Intel_PTL_NPU.litertlm (OpenVINO GlobalGraph container v3,
+# read since section 10b's litert_intel_globalgraph_v3.patch) on
+# native-v0.19.1-a on Panther Lake. A custom buffer type now gets a
+# view of the same type from the source's custom handle, through the import
+# handler the type registered (the Intel dispatch registers one at the LiteRT
+# pin). Only a custom buffer type takes the branch, so it matters on Windows
+# (Intel NPU) and is applied on every target to keep one source tree.
+NPU_ALIAS_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/npu_alias_custom_tensor_buffers.patch"
+if git -C "$DIR" apply --check "$NPU_ALIAS_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$NPU_ALIAS_PATCH"
+  echo "  OK: the NPU executor aliases KV caches in custom tensor buffers"
+elif git -C "$DIR" apply --reverse --check "$NPU_ALIAS_PATCH" 2>/dev/null; then
+  echo "  SKIP: NPU custom-buffer alias already applied"
+else
+  echo "  ERROR: $NPU_ALIAS_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+if ! grep -q 'IsUserCustomBuffer' \
+    "$DIR/runtime/executor/npu/llm_litert_npu_compiled_model_executor_utils.cc"; then
+  echo "  ERROR: section 27: CreateAliasBuffer has no custom-buffer branch" >&2
   exit 1
 fi
 

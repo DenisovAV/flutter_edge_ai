@@ -1070,7 +1070,7 @@ Native platforms need no web setup.
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
 | Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
-The native library (`native-v0.19.0-a`, LiteRT-LM v0.19.0) is fetched at build
+The native library (`native-v0.19.1-a`, LiteRT-LM v0.19.1) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and macOS 14.0. On macOS the companion libraries come from this
@@ -1525,7 +1525,7 @@ on Metal and Adreno, the same way on every run, and on Intel D3D12 an agent
 with a ~4,875-token prompt made no tool calls at all. The published Gemma 4
 `.litertlm` files ask for half-precision activations, and at FP16 the rotary
 positions past about 2,048 tokens stop being distinct
-([#827](https://github.com/DenisovAV/flutter_edge_ai/issues/827)).
+([LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)).
 
 Since 1.21.0, a Gemma 4 model (`ModelType.gemma4`) loaded with `maxTokens`
 above 2,048 and no `activationDataType` runs its GPU attempt at

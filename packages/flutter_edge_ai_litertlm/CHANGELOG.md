@@ -1,8 +1,7 @@
-## 1.21.0
-- Gemma 4 on the GPU defaults to FP32 activations above a 2,048-token context (#827).
-
 ## 1.20.1
 - Fix tool calls and thinking on NPU failing with a multi-token rollback error.
+- Fix a Windows crash on thinking turns with tools (native-v0.19.1-a, LiteRT-LM v0.19.1).
+- Gemma 4 on the GPU defaults to FP32 activations above a 2,048-token context (LiteRT-LM #4001).
 
 ## 1.20.0
 - Enforce response formats with native LiteRT-LM constrained decoding.

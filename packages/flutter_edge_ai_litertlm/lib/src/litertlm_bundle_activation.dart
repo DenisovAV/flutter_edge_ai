@@ -11,7 +11,7 @@
 // way as the sampler: LiteRT-LM's own loader would copy sections into the heap.
 //
 // Gemma 4 declares the key, and is still given FP32 on the GPU above a 2,048
-// token context, where its FP16 rotary positions break (#827): see
+// token context, where its FP16 rotary positions break (LiteRT-LM #4001): see
 // `gpuActivationDefault`.
 
 import 'dart:io';
@@ -117,7 +117,7 @@ Future<Uint8List> _readExactly(
 }
 
 /// The largest context Gemma 4 keeps at the GPU's FP16 default: above it a
-/// GPU attempt runs at FP32 (#827).
+/// GPU attempt runs at FP32 (LiteRT-LM #4001).
 const gemma4Fp16MaxContextTokens = 2048;
 
 /// Why [gpuActivationDefault] chose FP32 for a GPU attempt, for the engine's
@@ -138,7 +138,7 @@ enum GpuActivationReason {
 /// - FunctionGemma without the key: in litetune, on a Galaxy S24, a fine-tune
 ///   without it flooded `<pad>` on 14 of 20 prompts at FP16 and on none at
 ///   FP32, at 1.4 s a prompt against 2.5 s on its CPU.
-/// - Gemma 4 with [maxTokens] above [gemma4Fp16MaxContextTokens] (#827), even
+/// - Gemma 4 with [maxTokens] above [gemma4Fp16MaxContextTokens] (LiteRT-LM #4001), even
 ///   though its bundles declare `prefer_activation_type: fp16`. In FP16 the
 ///   exported graph's rotary positions stop being distinct past about 2,048
 ///   tokens and step by 4 past 4,096 (LiteRT-LM #3913, #4001; litert-torch

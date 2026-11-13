@@ -342,7 +342,7 @@ void main() {
   });
 
   test('Gemma 4: maxTokens reaches the activation default, and only the GPU '
-      'attempt takes it (#827)', () async {
+      'attempt takes it (LiteRT-LM #4001)', () async {
     final path = write('g4.litertlm', _bundle(text: 'gpu,cpu'));
     host = _FakeHost(
       failures: const {'gpu': LiteRtLmEngineCreateException('no GPU')},
@@ -1012,10 +1012,9 @@ void main() {
         ..gpuFamily = AndroidGpuFamily.adreno;
       debugLiteRtLmEngineHost = host;
       final path = write('generic.litertlm', _bundle());
-      final gpu = await load(
-        path,
-        preferredBackend: PreferredBackend.gpu,
-      ) as FfiInferenceModel;
+      final gpu =
+          await load(path, preferredBackend: PreferredBackend.gpu)
+              as FfiInferenceModel;
       expect(gpu.activeBackend, PreferredBackend.gpu);
       expect(gpu.openSessionBacking, OpenSessionBacking.native);
       await gpu.close();
@@ -1026,10 +1025,9 @@ void main() {
         failures: {'gpu': Exception('no OpenCL')},
       )..gpuFamily = AndroidGpuFamily.adreno;
       debugLiteRtLmEngineHost = host;
-      final cpu = await load(
-        path,
-        preferredBackend: PreferredBackend.gpu,
-      ) as FfiInferenceModel;
+      final cpu =
+          await load(path, preferredBackend: PreferredBackend.gpu)
+              as FfiInferenceModel;
       expect(cpu.activeBackend, PreferredBackend.cpu);
       expect(cpu.openSessionBacking, OpenSessionBacking.virtual);
       await cpu.close();
@@ -1079,10 +1077,12 @@ void main() {
           },
         );
         debugLiteRtLmEngineHost = host;
-        final model = await load(
-          writeUnread('model.task'),
-          preferredBackend: PreferredBackend.npu,
-        ) as FfiInferenceModel;
+        final model =
+            await load(
+                  writeUnread('model.task'),
+                  preferredBackend: PreferredBackend.npu,
+                )
+                as FfiInferenceModel;
         expect(host.attempts.map((a) => a.backend), contains('npu'));
         expect(model.activeBackend, PreferredBackend.cpu);
         expect(model.openSessionBacking, OpenSessionBacking.virtual);

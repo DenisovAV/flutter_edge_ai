@@ -296,7 +296,7 @@ class LiteRtLmEngine
     // before litetune 0.1.4, which declares no activation type and at the
     // GPU's FP16 answers with `<pad>` or nothing, and for Gemma 4 with a
     // context above 2,048 tokens, whose FP16 rotary positions break there
-    // (#827). The header is read only when the answer can depend on it (see
+    // (LiteRT-LM #4001). The header is read only when the answer can depend on it (see
     // `activationHeaderMatters`).
     ActivationDataType? gpuDefaultActivation;
     if (config.activationDataType == null) {
@@ -348,7 +348,7 @@ class LiteRtLmEngine
             '[LiteRtLmEngine] Gemma 4 with maxTokens ${config.maxTokens}, '
             'above $gemma4Fp16MaxContextTokens: at float16 its rotary '
             'positions past ~2,048 tokens stop being distinct and a long '
-            'prompt degrades (#827), so a GPU attempt uses '
+            'prompt degrades (LiteRT-LM #4001), so a GPU attempt uses '
             '${chosen.type?.name}. Pass '
             'activationDataType: ActivationDataType.float16 to keep the '
             'bundle\'s float16.',

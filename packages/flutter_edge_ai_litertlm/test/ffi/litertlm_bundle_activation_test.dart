@@ -190,7 +190,7 @@ void main() {
       }
     });
 
-    group('Gemma 4 (#827)', () {
+    group('Gemma 4 (LiteRT-LM #4001)', () {
       test('a context of 2,048 keeps the default; 2,049 gets float32', () {
         for (final declares in <bool?>[true, false, null]) {
           expect(

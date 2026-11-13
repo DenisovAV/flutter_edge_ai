@@ -289,6 +289,8 @@ void main() {
         // Same LiteRT pin; the Qualcomm dispatch is byte-identical to 0.19.0-a
         // (QAIRT 2.50.0, checked by build_qualcomm_dispatch.sh).
         '0.19.1-a': '2.50.0',
+        // Android archive byte-identical to 0.19.1-a.
+        '0.19.1-b': '2.50.0',
       };
       final hook = File('hook/build.dart').readAsStringSync();
       final bundle = RegExp(

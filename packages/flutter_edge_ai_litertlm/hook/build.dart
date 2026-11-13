@@ -223,7 +223,7 @@ class _NativeBundle {
 /// Android: `-Wl,-z,max-page-size=16384` (Google Play 16KB).
 final _litertlmBundle = _NativeBundle(
   namespace: 'litertlm',
-  version: '0.19.1-a',
+  version: '0.19.1-b',
   releaseTagPrefix: 'native-v',
   archivePrefix: 'litertlm',
   mainLibName: 'LiteRtLm',
@@ -234,6 +234,15 @@ final _litertlmBundle = _NativeBundle(
   // in a dedicated PR (tracked: roadmap entry in CHANGELOG for 0.16.0).
   useFlatLayout: true,
   markerFileName: '.flutter_gemma_native_version',
+  // 0.19.1-b changes the Windows archive and nothing else: patch_c_api.sh
+  // section 27 backports LiteRT-LM 3db1cfd0ab, which aliases multi-signature
+  // NPU KV caches on OpenVINO custom tensor buffers (Intel's GlobalGraph-v3
+  // bundles failed with "Unsupported tensor buffer type for cross-platform
+  // aliasing: 100"). LiteRtLm.dll changes; LiteRtDispatch.dll and
+  // StreamProxy.dll differ in link stamps only (CI run 43348456089); the
+  // other 20 Windows files and the six other archives are byte-identical to
+  // 0.19.1-a.
+  //
   // 0.19.1-a: LiteRT-LM v0.19.1 (7a03724c; LiteRT dcb657e8 unchanged)
   // rebuilt on all seven targets with patch_c_api.sh section 26: with
   // thinking on, the first decode step of a turn with tools copies the Gemma
@@ -357,7 +366,7 @@ final _litertlmBundle = _NativeBundle(
     'litertlm-linux_arm64.tar.gz':
         '812b465e77cd30ce6c1ca144e48158eb364e08b5af4aca546052c42b391f4750',
     'litertlm-windows_x86_64.tar.gz':
-        'd318b723411ff94fe05973fa4da76015af57c9500ee05262980c9b80678a9a6b',
+        'c114569468a5bbe8a68ca48ba1c5ff31a5c96d635042b71ab84cf56ed3c3a1dc',
     'litertlm-macos_arm64.tar.gz':
         '698c48bcc01633a49640af5c51c85a2ee850bed81789a91c24efc8926080d170',
     'litertlm-ios_arm64.tar.gz':

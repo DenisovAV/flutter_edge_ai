@@ -16,7 +16,7 @@
 import Foundation
 import PackageDescription
 
-let nativeTag = "native-v0.19.1-a"
+let nativeTag = "native-v0.19.1-b"
 
 let companions: [(name: String, checksum: String)] = [
     ("GemmaModelConstraintProvider", "873bc2397cd99f44ab51da48330fb81fb09a1db93c727400df3bcaa7aa8a0a41"),

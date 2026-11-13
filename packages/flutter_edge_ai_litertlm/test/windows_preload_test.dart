@@ -19,9 +19,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// must equal it: a native bump that changes the Windows archive fails here
 /// until this list is taken again from the new archive.
 const _windowsArchiveSha256 =
-    'd318b723411ff94fe05973fa4da76015af57c9500ee05262980c9b80678a9a6b';
+    'c114569468a5bbe8a68ca48ba1c5ff31a5c96d635042b71ab84cf56ed3c3a1dc';
 
-/// `tar -tzf litertlm-windows_x86_64.tar.gz` of native-v0.19.1-a, the archive
+/// `tar -tzf litertlm-windows_x86_64.tar.gz` of native-v0.19.1-b, the archive
 /// of [_windowsArchiveSha256].
 const _windowsArchive = {
   'GemmaModelConstraintProvider.dll',

@@ -20,9 +20,13 @@ jobs:
       - name: Set up Flutter (bundles Dart)
         uses: subosito/flutter-action@v2
         with:
-          # The workspace dev toolchain (.fvmrc). The packages' consumer
-          # floors stay lower (3.44; 3.47 for flutter_edge_ai_sqlite).
-          flutter-version: '3.50.0'
+          # Not the workspace dev toolchain (.fvmrc, 3.50.0): the site's jaspr
+          # 0.23.x needs analyzer 12, and on Dart 3.14 build_web_compilers
+          # needs analyzer 13, so the site does not resolve on Flutter 3.50.
+          # Only jaspr 0.24.0-beta.0 supports analyzer 13. Move this pin together
+          # with the jaspr bump. 3.47 is also flutter_edge_ai_sqlite's floor,
+          # and this job builds the example that depends on it.
+          flutter-version: '3.47.0'
           channel: stable
           cache: true
 

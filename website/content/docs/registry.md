@@ -143,17 +143,17 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [generic](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm)<br>2.59&nbsp;GB | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;📝 CPU&nbsp;📝 |  |
+| [generic](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it.litertlm)<br>2.59&nbsp;GB | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;🕓 CPU&nbsp;🕓 | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;✅ CPU&nbsp;✅ | GPU&nbsp;📝 CPU&nbsp;📝 |  |
 | [gpu](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-gpu.litertlm)<br>2.01&nbsp;GB | GPU&nbsp;⏸️ CPU&nbsp;⏸️ | GPU&nbsp;⏸️ CPU&nbsp;⏸️ | GPU&nbsp;⏸️ CPU&nbsp;⏸️ | GPU&nbsp;⏸️ CPU&nbsp;⏸️ | GPU&nbsp;⏸️ CPU&nbsp;⏸️ | GPU&nbsp;⏸️ CPU&nbsp;⏸️ |  |
 | [web](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it-web.litertlm)<br>2.01&nbsp;GB |  |  |  |  |  |  | GPU&nbsp;📝 |
 | [npu-tensor-g5](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G5.litertlm)<br>3.11&nbsp;GB · context&nbsp;4096 | NPU&nbsp;⚪ |  |  |  |  |  |  |
-| [npu-tensor-g6](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm)<br>3.31&nbsp;GB · context&nbsp;4096 | NPU&nbsp;🕓 |  |  |  |  |  |  |
+| [npu-tensor-g6](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_Google_Tensor_G6.litertlm)<br>3.31&nbsp;GB · context&nbsp;4096 | NPU&nbsp;✅ |  |  |  |  |  |  |
 | [npu-lnl](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_LNL.litertlm)<br>2.96&nbsp;GB · context&nbsp;4096 |  |  |  | NPU&nbsp;✅ |  |  |  |
 | [npu-ptl](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_intel_PTL.litertlm)<br>2.95&nbsp;GB · context&nbsp;4096 |  |  |  | NPU&nbsp;⚪ |  |  |  |
 | [npu-qcs8275](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_qualcomm_qcs8275.litertlm)<br>3.29&nbsp;GB · context&nbsp;4096 | NPU&nbsp;⚪ |  |  |  |  | NPU&nbsp;📝 |  |
-| [npu-sm8750](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_qualcomm_sm8750.litertlm)<br>3.02&nbsp;GB · context&nbsp;4096 | NPU&nbsp;🕓 |  |  |  |  | NPU&nbsp;⚪ |  |
+| [npu-sm8750](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/blob/b3ca0d2f076785a8f4b2219ddbd2bdb99954eae1/gemma-4-E2B-it_qualcomm_sm8750.litertlm)<br>3.02&nbsp;GB · context&nbsp;4096 | NPU&nbsp;✅ |  |  |  |  | NPU&nbsp;⚪ |  |
 
-- Stale on Android: OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
+- Verified on Android: Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 - Stale on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
 - Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 - Verified on Windows x64: Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
@@ -162,7 +162,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 - Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).
 - Withheld: A GPU-artisan build, for LiteRT-LM's Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite, kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the generic variant. [Issue](https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L209-L212).
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L250-L251)).
-- Stale on Android: Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), Android 17, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
+- Verified on Android: Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), Android 17, 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 - Verified on Windows x64: Intel Lunar Lake Core Ultra 7 258V (Arc 140V, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 
 <a id="gemma-4-e4b-it"></a>
@@ -345,7 +345,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [generic](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m.litertlm)<br>165&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;🕓 | GPU&nbsp;⛔ CPU&nbsp;🕓 | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;📝 |
+| [generic](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m.litertlm)<br>165&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;🕓 | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;📝 |
 | [npu-mt6991](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_MediaTek_MT6991.litertlm)<br>416&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [npu-mt6993](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_MediaTek_MT6993.litertlm)<br>386&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [npu-ptl](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Intel_PTL.litertlm)<br>317&nbsp;MB |  |  |  | NPU&nbsp;📝 |  |  |  |
@@ -357,7 +357,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [npu-tensor-g5](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Google_Tensor_G5.litertlm)<br>166&nbsp;MB | NPU&nbsp;⚪ |  |  |  |  |  |  |
 | [npu-tensor-g6](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/blob/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m_Google_Tensor_G6.litertlm)<br>200&nbsp;MB | NPU&nbsp;📝 |  |  |  |  |  |  |
 
-- Stale on Android: OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
+- Verified on Android: Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 - Stale on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_litertlm 1.20.0.
 - Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 - Verified on Windows x64: Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
@@ -376,7 +376,7 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 
 | Build | Android | iOS | macOS | Windows x64 | Linux x64 | Linux arm64 | Web |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| [generic](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m.litertlm)<br>388&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;⛔ CPU&nbsp;🕓 | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;📝 |
+| [generic](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m.litertlm)<br>388&nbsp;MB | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;🕓 | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;✅ | GPU&nbsp;⚪ CPU&nbsp;✅ | GPU&nbsp;⛔ CPU&nbsp;📝 | GPU&nbsp;📝 |
 | [npu-mt6991](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_MediaTek_MT6991.litertlm)<br>798&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [npu-mt6993](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_MediaTek_MT6993.litertlm)<br>768&nbsp;MB | NPU&nbsp;⛔ |  |  |  |  |  |  |
 | [npu-ptl](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Intel_PTL.litertlm)<br>752&nbsp;MB |  |  |  | NPU&nbsp;⚪ |  |  |  |
@@ -388,11 +388,12 @@ A blank cell is a combination that does not exist: a build compiled for one NPU 
 | [npu-tensor-g5](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Google_Tensor_G5.litertlm)<br>559&nbsp;MB | NPU&nbsp;⚪ |  |  |  |  |  |  |
 | [npu-tensor-g6](https://huggingface.co/litert-community/embeddinggemma-2-text-vision-440m-litert-lm/blob/e301f74d5551b0c2641bd5cb4652a76239d5c5f8/embeddinggemma-2-text-vision-440m_Google_Tensor_G6.litertlm)<br>513&nbsp;MB | NPU&nbsp;📝 |  |  |  |  |  |  |
 
-- Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).
+- Verified on Android: Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 - Stale on iOS: iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1.
 - Verified on macOS: Mac mini (M5 Pro, Mac17,16), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 - Verified on Windows x64: Intel Panther Lake, Core Ultra X7 358H (Arc B390, NPU), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
 - Verified on Linux x64: GCE flutter-gemma-linux (Tesla T4), 2026-11-13, flutter_edge_ai_litertlm 1.20.1.
+- Documented: [PR #688](https://github.com/DenisovAV/flutter_edge_ai/pull/688), device matrix (native-v0.18.0-f).
 - Documented: the Models page ([at 0c626b2](https://github.com/DenisovAV/flutter_edge_ai/blob/0c626b2995555fdd76e920b2a51697215c80976b/website/content/docs/models.md#L544-L546)).
 - Documented: the Embeddings & RAG page ([at da9a3cb](https://github.com/DenisovAV/flutter_edge_ai/blob/da9a3cb1f5803a9c766407bcb8681d9d03affa6f/website/content/docs/embeddings-and-rag.md#L389-L390)).
 - Documented: the Embeddings & RAG page ([at da9a3cb](https://github.com/DenisovAV/flutter_edge_ai/blob/da9a3cb1f5803a9c766407bcb8681d9d03affa6f/website/content/docs/embeddings-and-rag.md#L388-L389)).

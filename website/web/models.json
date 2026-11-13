@@ -494,9 +494,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-08_android_arm64_oneplus-cph2653-sm8750-adreno-830-android-16.json",
-        "note": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-13_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
+        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "ios_arm64": {
@@ -850,8 +850,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "documented",
-        "source": "PR #688, device matrix (native-v0.18.0-f)"
+        "status": "verified",
+        "source": "evidence/2026-11-13_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
+        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "ios_arm64": {
@@ -4347,14 +4348,14 @@
      "cells": {
       "android_arm64": {
        "gpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-08_android_arm64_oneplus-cph2653-sm8750-adreno-830-android-16.json",
-        "note": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-13_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
+        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-08_android_arm64_oneplus-cph2653-sm8750-adreno-830-android-16.json",
-        "note": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-13_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
+        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "ios_arm64": {
@@ -4567,9 +4568,9 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "stale",
-        "source": "evidence/2026-11-08_android_arm64_pixel-11-ddp-cubs-37-tensor-g6-powervr-android-17.json",
-        "note": "Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), Android 17, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-13_android_arm64_pixel-11-ddp-cubs-37-tensor-g6-powervr-android-17.json",
+        "note": "Pixel 11 (DDP cubs-37, Tensor G6, PowerVR), Android 17, 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       }
      }
@@ -4673,9 +4674,9 @@
      "cells": {
       "android_arm64": {
        "npu": {
-        "status": "stale",
-        "source": "evidence/2026-11-08_android_arm64_oneplus-cph2653-sm8750-adreno-830-android-16.json",
-        "note": "OnePlus CPH2653 (SM8750, Adreno 830), Android 16, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-13_android_arm64_galaxy-s25-ultra-ddp-pa3q-35-sm8750-adreno-830.json",
+        "note": "Galaxy S25 Ultra (DDP pa3q-35, SM8750, Adreno 830), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "linux_arm64": {

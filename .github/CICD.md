@@ -199,7 +199,7 @@ Update Java version for Android builds:
 uses: actions/setup-java@v4
 with:
   distribution: 'zulu'
-  java-version: '17'  # Update this
+  java-version: '21'  # AGP 9.3 lint needs Java 21
 ```
 
 ### Retention Days

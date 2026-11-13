@@ -4,6 +4,7 @@
 - Load Intel's public Gemma 4 12B NPU bundle for Panther Lake on Windows.
 - Gemma 4 on the GPU defaults to FP32 activations above a 2,048-token context (LiteRT-LM #4001).
 - GPU-artisan `-gpu.litertlm` builds fail natively with a clear error; the catalog withholds them.
+- Compute attention masks in the runtime for Panther Lake bundles whose NPU-compiled masks break past 2,048 tokens.
 
 ## 1.20.0
 - Enforce response formats with native LiteRT-LM constrained decoding.

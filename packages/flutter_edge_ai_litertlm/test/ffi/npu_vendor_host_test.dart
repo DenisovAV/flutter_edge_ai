@@ -3,7 +3,7 @@
 // every answer it gives is a property of a device a test host is not.
 
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
-    show LiteRtLmNpuTarget;
+    show LiteRtLmBundleInfo, LiteRtLmNpuTarget, LiteRtLmSection;
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show NpuDispatchUnavailableException;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
@@ -162,11 +162,121 @@ void main() {
     );
   });
 
-  test('each vendor says whether it turns the HW mask update path off', () {
-    expect(npuDisablesHwMasking(NpuStack.qualcomm), isFalse);
-    expect(npuDisablesHwMasking(NpuStack.googleTensor), isFalse);
-    expect(npuDisablesHwMasking(NpuStack.mediatek), isFalse);
-    expect(npuDisablesHwMasking(NpuStack.intel), isTrue);
+  group('npuHwMasking', () {
+    // The stamps read from the files on the Panther Lake PC (2026-11-13):
+    // Intel's public 26B A4B and 12B, the private 12B and Google's E2B
+    // `_intel_PTL` stamp tf_lite_aux IntelOpenVINO/PTL; the private 26B's aux
+    // carries no stamp (CPU); E2B `_intel_LNL` stamps IntelOpenVINO/LNL.
+    const ptl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'PTL');
+    const lnl = LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'LNL');
+
+    LiteRtLmBundleInfo bundle({
+      LiteRtLmNpuTarget? text,
+      LiteRtLmNpuTarget? aux,
+      bool hasAux = true,
+    }) => LiteRtLmBundleInfo(
+      majorVersion: 1,
+      minorVersion: 5,
+      patchVersion: 0,
+      systemMetadata: const {},
+      sections: [
+        LiteRtLmSection(
+          dataType: 'TFLiteModel',
+          begin: 32,
+          end: 64,
+          items: const {'model_type': 'tf_lite_prefill_decode'},
+          npuTarget: text,
+        ),
+        if (hasAux)
+          LiteRtLmSection(
+            dataType: 'TFLiteModel',
+            begin: 64,
+            end: 96,
+            items: const {'model_type': 'tf_lite_aux'},
+            npuTarget: aux,
+          ),
+      ],
+      fileLength: 96,
+    );
+
+    test('Intel, a Panther Lake bundle with NPU-compiled mask graphs: on, '
+        'explicitly', () {
+      expect(npuHwMasking(NpuStack.intel, bundle(text: ptl, aux: ptl)), isTrue);
+      // The stamp's case is the compiler's.
+      expect(
+        npuHwMasking(
+          NpuStack.intel,
+          bundle(
+            aux: const LiteRtLmNpuTarget(vendor: 'IntelOpenVINO', soc: 'ptl'),
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('Intel, a Panther Lake bundle whose mask graphs run on the CPU: '
+        'off, as before', () {
+      expect(npuHwMasking(NpuStack.intel, bundle(text: ptl)), isFalse);
+      expect(
+        npuHwMasking(NpuStack.intel, bundle(text: ptl, hasAux: false)),
+        isFalse,
+      );
+    });
+
+    test('Intel, a Lunar Lake bundle: off, as before', () {
+      expect(
+        npuHwMasking(NpuStack.intel, bundle(text: lnl, aux: lnl)),
+        isFalse,
+      );
+    });
+
+    test('Intel, a file that could not be read: off, as before', () {
+      expect(npuHwMasking(NpuStack.intel, null), isFalse);
+    });
+
+    test('the other vendors leave LiteRT-LM\'s default, whatever the file '
+        'says', () {
+      for (final vendor in [
+        NpuStack.qualcomm,
+        NpuStack.googleTensor,
+        NpuStack.mediatek,
+      ]) {
+        expect(npuHwMasking(vendor, null), isNull, reason: vendor.name);
+        expect(
+          npuHwMasking(
+            vendor,
+            bundle(
+              aux: const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'SM8850'),
+            ),
+          ),
+          isNull,
+          reason: vendor.name,
+        );
+        // A stamp the vendor does not run cannot reach it (the reader and the
+        // vendor choice refuse it first); even so it changes nothing.
+        expect(
+          npuHwMasking(vendor, bundle(aux: ptl)),
+          isNull,
+          reason: vendor.name,
+        );
+      }
+    });
+
+    test('only an Intel PTL stamp on tf_lite_aux counts', () {
+      expect(intelPtlNpuCompiledMasks(bundle(text: ptl, aux: ptl)), isTrue);
+      expect(intelPtlNpuCompiledMasks(bundle(text: ptl)), isFalse);
+      expect(intelPtlNpuCompiledMasks(bundle(aux: lnl)), isFalse);
+      expect(
+        intelPtlNpuCompiledMasks(
+          bundle(
+            aux: const LiteRtLmNpuTarget(vendor: 'Qualcomm', soc: 'PTL'),
+          ),
+        ),
+        isFalse,
+        reason: 'the SoC name alone is not Intel',
+      );
+      expect(intelPtlNpuCompiledMasks(null), isFalse);
+    });
   });
 }
 

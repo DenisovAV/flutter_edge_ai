@@ -1108,7 +1108,7 @@ class EngineCreateRequest {
     this.activationDataType,
     this.nativeLogLevel,
     this.dispatchLibDir,
-    this.disableHwMaskingForNpu = false,
+    this.useHwMaskingForNpu,
     this.kernelBatchSize,
     this.blockSigprof = false,
     this.listWeightBanks = false,
@@ -1149,8 +1149,9 @@ class EngineCreateRequest {
   /// Where LiteRT loads the NPU dispatch from; null off the NPU.
   final String? dispatchLibDir;
 
-  /// Turns the HW mask update path off (the NPU vendor decides).
-  final bool disableHwMaskingForNpu;
+  /// What `use_hw_masking_for_npu` is set to (`npuHwMasking` decides); null
+  /// leaves LiteRT-LM's default.
+  final bool? useHwMaskingForNpu;
 
   /// Flushes the GPU command queue every N ops (#364); null leaves the
   /// engine's default.
@@ -1341,12 +1342,13 @@ EngineCreateResult createEngineWith(
         );
       }
 
-      if (r.disableHwMaskingForNpu) {
+      final useHwMasking = r.useHwMaskingForNpu;
+      if (useHwMasking != null) {
         setter(
           'litert_lm_engine_settings_set_use_hw_masking_for_npu',
           b.litert_lm_engine_settings_set_use_hw_masking_for_npu(
             settings,
-            false,
+            useHwMasking,
           ),
         );
       }
@@ -2375,11 +2377,12 @@ class LiteRtLmFfiClient {
       );
     }
 
-    // The vendor decides (`npuDisablesHwMasking`): Intel turns the HW mask
-    // update path off.
-    final disableHwMasking = backend == 'npu' && npuDispatch!.disableHwMasking;
-    if (disableHwMasking) {
-      edgeAiLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=false');
+    // The vendor and the bundle decide (`npuHwMasking`): Intel turns the HW
+    // mask update path off, except for a Panther Lake bundle whose mask
+    // graphs are compiled for the NPU.
+    final useHwMasking = backend == 'npu' ? npuDispatch!.useHwMasking : null;
+    if (useHwMasking != null) {
+      edgeAiLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=$useHwMasking');
     }
 
     if (npuDispatchDir != null) {
@@ -2443,7 +2446,7 @@ class LiteRtLmFfiClient {
         activationDataType: activationDataType,
         nativeLogLevel: nativeLogLevel,
         dispatchLibDir: npuDispatchDir,
-        disableHwMaskingForNpu: disableHwMasking,
+        useHwMaskingForNpu: useHwMasking,
         kernelBatchSize: kernelBatchSize,
         // The QNN backend's init fails under the debug VM's SIGPROF sampling
         // on Linux (see withSigprofBlocked); Android's FastRPC client

@@ -191,6 +191,7 @@ Uint8List _bundle({
   String? audio,
   bool encoders = true,
   bool aux = false,
+  (String, String)? auxStamp,
 }) => litertlmContainer(
   [
     (
@@ -216,11 +217,14 @@ Uint8List _bundle({
         bytes: tfliteModel({}),
       ),
     ],
-    if (aux)
+    if (aux || auxStamp != null)
       (
         type: sectionTfliteModel,
         modelType: 'tf_lite_aux',
-        bytes: tfliteModel({}),
+        bytes: tfliteModel({
+          if (auxStamp != null)
+            'LiteRtStamp': liteRtStamp(auxStamp.$1, auxStamp.$2),
+        }),
       ),
   ],
   items: {
@@ -476,7 +480,7 @@ void main() {
       expect(host.preparedFor, [NpuStack.qualcomm]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/qualcomm',
-        disableHwMasking: false,
+        useHwMasking: null,
         stagesWeightBanks: false,
       ));
       await stamped.close();
@@ -525,7 +529,7 @@ void main() {
         expect(host.preparedFor, [NpuStack.googleTensor], reason: soc);
         expect(host.npuDispatches.single, (
           dir: '/fake/npu/googleTensor',
-          disableHwMasking: false,
+          useHwMasking: null,
           stagesWeightBanks: false,
         ));
       }
@@ -562,11 +566,54 @@ void main() {
       expect(host.preparedFor, [NpuStack.mediatek]);
       expect(host.npuDispatches.single, (
         dir: '/fake/npu/mediatek',
-        disableHwMasking: false,
+        useHwMasking: null,
         stagesWeightBanks: false,
       ));
     },
   );
+
+  test('Windows x64: a Panther Lake bundle whose tf_lite_aux mask graphs are '
+      'compiled for the NPU turns the HW mask update path on; one whose '
+      'masks run on the CPU, and a Lunar Lake bundle, keep it off', () async {
+    const ptl = ('IntelOpenVINO', 'PTL');
+    const lnl = ('IntelOpenVINO', 'LNL');
+    for (final (name, bytes, expected) in [
+      (
+        'ptl_npu_aux.litertlm',
+        _bundle(textStamp: ptl, auxStamp: ptl, encoders: false),
+        true,
+      ),
+      (
+        'ptl_cpu_aux.litertlm',
+        _bundle(textStamp: ptl, aux: true, encoders: false),
+        false,
+      ),
+      (
+        'lnl.litertlm',
+        _bundle(textStamp: lnl, auxStamp: lnl, encoders: false),
+        false,
+      ),
+    ]) {
+      host = _FakeHost(os: 'windows', abiName: 'windows_x64', npuShips: true);
+      debugLiteRtLmEngineHost = host;
+      late InferenceModel model;
+      final printed = await printedBy(() async {
+        model = await load(write(name, bytes));
+      });
+      expect(host.attempts.map((a) => a.backend), ['npu'], reason: name);
+      expect(host.npuDispatches.single, (
+        dir: '/fake/npu/intel',
+        useHwMasking: expected,
+        stagesWeightBanks: true,
+      ), reason: name);
+      expect(
+        printed.any((line) => line.contains('wrong past ~2,048 tokens')),
+        expected,
+        reason: '$name: the log names why the masks move to the runtime',
+      );
+      await model.close();
+    }
+  });
 
   test('Windows x64: the Intel stack is checked before the NPU is tried, and '
       'an Intel attempt turns the HW mask update path off and claims its '
@@ -579,7 +626,7 @@ void main() {
     expect(host.askedVendors, [NpuStack.intel, NpuStack.intel]);
     expect(host.npuDispatches.single, (
       dir: '/fake/npu/intel',
-      disableHwMasking: true,
+      useHwMasking: false,
       stagesWeightBanks: true,
     ));
     await model.close();

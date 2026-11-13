@@ -14,7 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/engine.dart' show edgeAiLog;
 
 import '../bundle/litertlm_bundle_info.dart'
-    show LiteRtLmNpuTarget, npuVendorOf;
+    show LiteRtLmBundleInfo, LiteRtLmNpuTarget, npuVendorOf;
 import '../litert_lm_load_errors.dart' show NpuDispatchUnavailableException;
 import '../npu_stacks.dart';
 import 'backend_preference.dart'
@@ -141,24 +141,54 @@ Future<NpuChoice> chooseNpuVendor({
 }
 
 /// What an NPU attempt hands LiteRT-LM: the `dispatch_lib_dir` its vendor
-/// prepared, whether to turn LiteRT's HW mask update path off, and whether
-/// the load's weight banks are to be claimed ([npuStagesWeightBanks]).
+/// prepared, what to set `use_hw_masking_for_npu` to ([npuHwMasking]; null
+/// leaves LiteRT-LM's default), and whether the load's weight banks are to be
+/// claimed ([npuStagesWeightBanks]).
 typedef NpuDispatch = ({
   String dir,
-  bool disableHwMasking,
+  bool? useHwMasking,
   bool stagesWeightBanks,
 });
 
-/// Whether an LLM engine on [vendor]'s NPU turns `use_hw_masking_for_npu`
-/// off. Intel: with it on, LiteRT sets up the kWH HW mask method, which Intel
-/// preview NPUs (LunarLake/PantherLake) do not fully support → CFG check
-/// failure 0xc0000409 (per Matt Kreileder's Intel NPU pipeline instructions).
-bool npuDisablesHwMasking(NpuStack vendor) => switch (vendor) {
-  NpuStack.qualcomm => false,
-  NpuStack.googleTensor => false,
-  NpuStack.mediatek => false,
-  NpuStack.intel => true,
-};
+/// What an LLM engine on [vendor]'s NPU sets `use_hw_masking_for_npu` to for
+/// [bundle] (null when the file could not be read); null leaves LiteRT-LM's
+/// default (true on v0.19.x), which Qualcomm, Tensor and MediaTek run on.
+///
+/// Intel: off (false), because with it on LiteRT sets up the kWH HW mask
+/// method, which Intel preview NPUs (LunarLake/PantherLake) did not fully
+/// support → CFG check failure 0xc0000409 (per Matt Kreileder's Intel NPU
+/// pipeline instructions). On, explicitly, for a Panther Lake bundle whose
+/// mask graphs are compiled for the NPU ([intelPtlNpuCompiledMasks]).
+bool? npuHwMasking(NpuStack vendor, LiteRtLmBundleInfo? bundle) =>
+    switch (vendor) {
+      NpuStack.qualcomm => null,
+      NpuStack.googleTensor => null,
+      NpuStack.mediatek => null,
+      NpuStack.intel => intelPtlNpuCompiledMasks(bundle),
+    };
+
+/// Whether [bundle]'s `tf_lite_aux` section, the attention-mask graphs
+/// (`prefill_mask_*`, `decode_mask`), is compiled for the Intel Panther Lake
+/// NPU (its `LiteRtStamp` is `IntelOpenVINO` / `PTL`). Those graphs compute
+/// the sliding-window mask positions in FP16, which holds integers exactly
+/// only up to 2,048: measured 2026-11-13 on a Panther Lake PC
+/// (native-v0.19.1-b) with Intel's public Gemma 4 26B A4B
+/// `…-Intel_PTL_NPU.litertlm`, text identical to a build with CPU masks up to
+/// position ~2,048 and wrong after it (Intel's own CLI reproduces it with
+/// `--use_hw_masking_for_npu=false`); with masks computed in the runtime (kWH)
+/// the same file was exact at 4,919 tokens and engine create did not crash.
+/// An aux section with no stamp runs on the CPU in FP32 and stays as it is,
+/// as does every Lunar Lake bundle.
+bool intelPtlNpuCompiledMasks(LiteRtLmBundleInfo? bundle) {
+  final aux = bundle?.sectionOf('tf_lite_aux')?.npuTarget;
+  return aux != null && aux.isIntel && aux.soc.toUpperCase() == 'PTL';
+}
+
+/// Why [npuHwMasking] turns the HW mask update path on, for the log.
+const intelPtlHwMaskingReason =
+    'its tf_lite_aux attention-mask graphs are compiled for the Panther Lake '
+    'NPU, whose FP16 masks are wrong past ~2,048 tokens; the masks are '
+    'computed by the runtime instead (use_hw_masking_for_npu=true)';
 
 /// Whether a load on [vendor]'s NPU writes weight banks to the temp directory
 /// that its process must claim (intel_weight_banks.dart). Intel: the Windows

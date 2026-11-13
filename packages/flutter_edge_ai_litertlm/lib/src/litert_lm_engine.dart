@@ -20,6 +20,7 @@ import 'litert_lm_engine_host.dart';
 import 'litert_lm_log_level.dart';
 import 'litertlm_bundle_activation.dart';
 import 'manifest/litertlm_manifest_resolver.dart' show LitertlmManifestResolver;
+import 'npu_stacks.dart' show NpuStack;
 import 'thinking_token_budget.dart';
 
 /// Minimum context window (`max_num_tokens`) for `.litertlm` models.
@@ -407,7 +408,7 @@ class LiteRtLmEngine
             : switch (npu) {
                 NpuChosen(:final vendor) => (
                   dir: await host.prepareDispatchDir(vendor),
-                  disableHwMasking: npuDisablesHwMasking(vendor),
+                  useHwMasking: _npuHwMasking(vendor, bundle),
                   stagesWeightBanks: npuStagesWeightBanks(vendor),
                 ),
                 _ => throw StateError(
@@ -586,4 +587,14 @@ class LiteRtLmEngine
     _createTail = done.future;
     return previous.then((_) => body()).whenComplete(done.complete);
   }
+}
+
+/// [npuHwMasking] for an NPU attempt on [vendor], said in the log when it
+/// turns the HW mask update path on for a Panther Lake bundle.
+bool? _npuHwMasking(NpuStack vendor, LiteRtLmBundleInfo? bundle) {
+  final useHwMasking = npuHwMasking(vendor, bundle);
+  if (useHwMasking == true) {
+    edgeAiLog('[LiteRtLmEngine] NPU: $intelPtlHwMaskingReason');
+  }
+  return useHwMasking;
 }

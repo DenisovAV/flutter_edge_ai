@@ -535,9 +535,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-07_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
-        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-07, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-13_linux_x64_gce-flutter-gemma-linux-tesla-t4-2.json",
+        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "linux_arm64": {
@@ -892,9 +892,9 @@
         "status": "untested"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
-        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-13_linux_x64_gce-flutter-gemma-linux-tesla-t4-2.json",
+        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "linux_arm64": {
@@ -4395,14 +4395,14 @@
       },
       "linux_x64": {
        "gpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-07_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
-        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-07, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-13_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
+        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-07_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
-        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-07, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-13_linux_x64_gce-flutter-gemma-linux-tesla-t4.json",
+        "note": "GCE flutter-gemma-linux (Tesla T4), 2026-11-13, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "linux_arm64": {

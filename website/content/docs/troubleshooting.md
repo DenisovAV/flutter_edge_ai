@@ -165,7 +165,7 @@ way on every run: asked when a delivery arrived (`2026/06/23`), it answers
 The published Gemma 4 `.litertlm` files ask for half-precision activations,
 and at half precision the rotary positions past about 2,048 tokens stop being
 distinct ([LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)).
-Since `flutter_edge_ai_litertlm` 1.21.0 a Gemma 4 model loaded with `maxTokens`
+Since `flutter_edge_ai_litertlm` 1.20.1 a Gemma 4 model loaded with `maxTokens`
 above 2,048 and no `activationDataType` gets full precision on its GPU attempt
 by itself; with an older version, or a smaller `maxTokens`, ask for it:
 

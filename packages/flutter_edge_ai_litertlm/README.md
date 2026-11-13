@@ -1527,7 +1527,7 @@ with a ~4,875-token prompt made no tool calls at all. The published Gemma 4
 positions past about 2,048 tokens stop being distinct
 ([LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)).
 
-Since 1.21.0, a Gemma 4 model (`ModelType.gemma4`) loaded with `maxTokens`
+Since 1.20.1, a Gemma 4 model (`ModelType.gemma4`) loaded with `maxTokens`
 above 2,048 and no `activationDataType` runs its GPU attempt at
 `ActivationDataType.float32`; the log line saying so is printed in debug builds
 only. The CPU and NPU attempts are left alone, and so is a value you pass:

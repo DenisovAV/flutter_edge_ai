@@ -13,7 +13,7 @@ JVM, no gRPC — and it is the **primary desktop engine** (macOS, Windows, Linux
 [ONNX Runtime](/docs/onnx) also runs on desktop, and macOS and Windows can additionally
 use [Built-in AI](/docs/builtin-ai). The native library is fetched at build time via
 **Native Assets** (SHA256-verified, from the `native-v0.19.1-a` GitHub release,
-containing LiteRT-LM 0.19.0 and C API 1.0), so there is no manual native setup.
+containing LiteRT-LM 0.19.1 and C API 1.0), so there is no manual native setup.
 
 The same package also ships **`LiteRtEmbeddingBackend`**: EmbeddingGemma 2 from
 one `.litertlm` bundle (native: text since 1.13.0, images from the 440m and
@@ -122,7 +122,7 @@ copies digits wrongly on some GPUs (seen on Adreno and Metal). `activationDataTy
 file decides, except that a FunctionGemma bundle declaring no
 `prefer_activation_type` gets `float32` on its GPU attempt (litertlm 1.14.0),
 because at half precision it answers with nothing, and so does Gemma 4 loaded
-with `maxTokens` above 2,048 (litertlm 1.21.0,
+with `maxTokens` above 2,048 (litertlm 1.20.1,
 [LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)); pass
 `ActivationDataType.float16` to keep half precision. It applies to the text decoder of `.litertlm` models on Android,
 iOS and desktop — not on web, and not to the vision or audio encoders, which

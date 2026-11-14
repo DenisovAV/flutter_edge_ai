@@ -109,65 +109,69 @@ class _SkillTesterViewState extends State<SkillTesterView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final executorName = _executor?.name ?? 'none';
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.skill.name, style: theme.textTheme.titleLarge),
-          Text(
-            'Type: ${widget.skill.type.name} • Executor: $executorName',
-            style: theme.textTheme.bodySmall,
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _dataController,
-            minLines: 3,
-            maxLines: 8,
-            style: const TextStyle(fontFamily: 'monospace'),
-            decoration: const InputDecoration(
-              labelText: 'Input data (JSON)',
-              border: OutlineInputBorder(),
-              alignLabelWithHint: true,
+    // Its own Material: see SkillManagerView.
+    return Material(
+      type: MaterialType.transparency,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.skill.name, style: theme.textTheme.titleLarge),
+            Text(
+              'Type: ${widget.skill.type.name} • Executor: $executorName',
+              style: theme.textTheme.bodySmall,
             ),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _running ? null : _run,
-              icon: _running
-                  ? const SizedBox(
-                      height: 16,
-                      width: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.play_arrow),
-              label: Text(_running ? 'Running…' : 'Run'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _dataController,
+              minLines: 3,
+              maxLines: 8,
+              style: const TextStyle(fontFamily: 'monospace'),
+              decoration: const InputDecoration(
+                labelText: 'Input data (JSON)',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Text('Result', style: theme.textTheme.labelLarge),
-          const SizedBox(height: 4),
-          Expanded(
-            child: Container(
+            const SizedBox(height: 12),
+            SizedBox(
               width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                border: Border.all(color: theme.colorScheme.outlineVariant),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: SingleChildScrollView(
-                child: _result == null
-                    ? Text(
-                        'Run the skill to see its result.',
-                        style: theme.textTheme.bodySmall,
+              child: FilledButton.icon(
+                onPressed: _running ? null : _run,
+                icon: _running
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : SkillResultView(result: _result!),
+                    : const Icon(Icons.play_arrow),
+                label: Text(_running ? 'Running…' : 'Run'),
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            Text('Result', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 4),
+            Expanded(
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: SingleChildScrollView(
+                  child: _result == null
+                      ? Text(
+                          'Run the skill to see its result.',
+                          style: theme.textTheme.bodySmall,
+                        )
+                      : SkillResultView(result: _result!),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

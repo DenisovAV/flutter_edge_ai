@@ -7,7 +7,7 @@ import 'package:jaspr/dom.dart';
 /// when the library is imported.
 @css
 List<StyleRule> get docsFixes => [
-  // jaspr_content 0.5.2 sets the page description under the title to
+  // jaspr_content (0.5.2 and 0.6.0-beta.0) sets the page description under the title to
   // `font-size: 1.25rem; line-height: 1.25rem` — a line height of 1.0, so a
   // description that wraps has its lines touching. Its selector is (0,4,3);
   // the leading `html` makes this one (0,4,4), so it wins whatever order the

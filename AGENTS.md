@@ -157,8 +157,9 @@ Core has NO pigeon (dropped at the 1.0 cut; its value types are hand-written in 
   Under the old name, consumers on 3.44 resolve to flutter_gemma_rag_sqlite 1.3.2;
   `flutter_edge_ai_sqlite` has no release below 3.47. These are CONSUMER floors.
   The **workspace dev toolchain is Flutter 3.50.0** (`.fvmrc`; CI's jobs take
-  `channel: stable`, except the two website workflows, which stay on 3.47.0 until the site
-  moves off jaspr 0.23, since jaspr 0.23 needs analyzer 12 and does not resolve on Dart 3.14):
+  `channel: stable`; the two website workflows pin 3.50.0 with jaspr 0.24.0-beta.1 —
+  jaspr 0.24, in beta, is the first whose builder takes analyzer 13 — and the site's
+  inline CSS is nested, which needs Chrome 120, Safari 17.2 or Firefox 117):
   its `flutter_test` needs analyzer 13 (core's dev dependency, pigeon 27), and its
   Gradle plugin refuses Gradle < 9.3.1, AGP < 9.1.1 and KGP < 2.4.10, so every
   Android app in the repo (examples, codelabs) is on its template's Gradle 9.5.0,

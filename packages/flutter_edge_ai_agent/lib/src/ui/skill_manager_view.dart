@@ -5,6 +5,7 @@ import '../skill.dart';
 import '../skill_registry.dart';
 import 'add_skill_disclaimer.dart';
 import 'secret_editor_dialog.dart';
+import 'show_ui_error.dart';
 
 /// A featured skill the user can add from a curated list (Gallery's
 /// "featured skills"). The [add] callback fetches + parses the skill (the host
@@ -144,14 +145,15 @@ class _SkillManagerViewState extends State<SkillManagerView> {
   Future<void> _runAdd(Future<Skill?> Function() add) async {
     try {
       final skill = await add();
-      if (skill == null || !mounted) return;
+      if (skill == null) return;
+      // The registry outlives the view: a skill that arrives after the view
+      // closed is still added.
       widget.registry.add(skill, selected: true);
-      _notify();
+      if (mounted) setState(() {});
+      widget.onChanged?.call();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Could not add skill: $e')));
+        showUiError(context, 'Could not add skill: $e');
       }
     }
   }
@@ -209,61 +211,67 @@ class _SkillManagerViewState extends State<SkillManagerView> {
   @override
   Widget build(BuildContext context) {
     final skills = widget.registry.all;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _AddBar(
-          onAddFromUrl: widget.onAddFromUrl != null ? _addFromUrl : null,
-          onImport: widget.onImport != null ? _import : null,
-          onFeatured: widget.featured.isNotEmpty ? _pickFeatured : null,
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: skills.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'No skills yet. Add one from a URL, import a folder, '
-                      'or pick a featured skill.',
-                      textAlign: TextAlign.center,
+    // Its own Material, so the tiles and switches have one in an app whose
+    // Scaffold is package:material_ui's, a type they do not recognise.
+    return Material(
+      type: MaterialType.transparency,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _AddBar(
+            onAddFromUrl: widget.onAddFromUrl != null ? _addFromUrl : null,
+            onImport: widget.onImport != null ? _import : null,
+            onFeatured: widget.featured.isNotEmpty ? _pickFeatured : null,
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: skills.isEmpty
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'No skills yet. Add one from a URL, import a folder, '
+                        'or pick a featured skill.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: skills.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, i) => _SkillTile(
+                      skill: skills[i],
+                      selected: widget.registry.isSelected(skills[i].name),
+                      hasSecret:
+                          widget.secretStore?.has(skills[i].name) ?? false,
+                      onToggle: (on) {
+                        if (on) {
+                          widget.registry.select(skills[i].name);
+                        } else {
+                          widget.registry.unselect(skills[i].name);
+                        }
+                        _notify();
+                      },
+                      onRemove: () {
+                        widget.registry.remove(skills[i].name);
+                        widget.secretStore?.remove(skills[i].name);
+                        _notify();
+                      },
+                      onEditSecret: widget.secretStore == null
+                          ? null
+                          : () async {
+                              await SecretEditorDialog.show(
+                                context,
+                                skill: skills[i],
+                                store: widget.secretStore!,
+                              );
+                              if (mounted) _notify();
+                            },
                     ),
                   ),
-                )
-              : ListView.separated(
-                  itemCount: skills.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, i) => _SkillTile(
-                    skill: skills[i],
-                    selected: widget.registry.isSelected(skills[i].name),
-                    hasSecret: widget.secretStore?.has(skills[i].name) ?? false,
-                    onToggle: (on) {
-                      if (on) {
-                        widget.registry.select(skills[i].name);
-                      } else {
-                        widget.registry.unselect(skills[i].name);
-                      }
-                      _notify();
-                    },
-                    onRemove: () {
-                      widget.registry.remove(skills[i].name);
-                      widget.secretStore?.remove(skills[i].name);
-                      _notify();
-                    },
-                    onEditSecret: widget.secretStore == null
-                        ? null
-                        : () async {
-                            await SecretEditorDialog.show(
-                              context,
-                              skill: skills[i],
-                              store: widget.secretStore!,
-                            );
-                            if (mounted) _notify();
-                          },
-                  ),
-                ),
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }

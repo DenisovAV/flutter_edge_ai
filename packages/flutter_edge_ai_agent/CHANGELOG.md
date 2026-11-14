@@ -1,3 +1,7 @@
+## Unreleased
+- The UI widgets work in a `package:material_ui` app under `MaterialUiCompatibilityBridge`.
+- `McpManagerView` no longer throws on "Add server" without a `clientFactory`.
+
 ## 0.4.2
 - `AgentSession.fromModel` opens its owned chat through `openChat`.
 

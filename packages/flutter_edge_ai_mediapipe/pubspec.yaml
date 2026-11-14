@@ -25,7 +25,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  pigeon: ^26.0.0
+  # 27.3.1 is the first pigeon on analyzer 13, which core's dev dependency
+  # needs. lib/pigeon.g.dart is still the v26.3.4 output.
+  pigeon: ^27.3.1
 
 flutter:
   plugin:

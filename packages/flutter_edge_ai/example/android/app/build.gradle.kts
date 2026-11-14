@@ -68,7 +68,9 @@ android {
             // Enable minification but with basic rules only
             isMinifyEnabled = true
             isShrinkResources = false  // Disable resource shrinking to avoid MediaPipe issues
-            proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro")
+            // AGP 9 refuses proguard-android.txt; the optimize file plus the
+            // -dontoptimize in proguard-rules.pro keeps R8's behaviour as before.
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 }

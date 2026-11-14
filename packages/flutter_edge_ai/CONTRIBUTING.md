@@ -34,8 +34,8 @@ If you experience or witness unacceptable behavior, please open an issue or cont
 ### Prerequisites
 
 **Required:**
-- Flutter **3.47.0** or higher to work on the monorepo (apps can use 3.44)
-- Dart **3.12.0** or higher
+- Flutter **3.50.0** (`.fvmrc`) to work on the monorepo (apps can use 3.44; 3.47 with `flutter_edge_ai_sqlite`)
+- Dart **3.14.0**, which Flutter 3.50.0 bundles
 - Platform-specific toolchains:
   - **Android**: Android Studio / Android SDK
   - **iOS**: current Xcode, CocoaPods 1.11+

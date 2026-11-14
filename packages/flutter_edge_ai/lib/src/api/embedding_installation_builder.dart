@@ -55,6 +55,13 @@ class EmbeddingInstallationBuilder {
   /// The catalog variant this builder installs ([fromCatalog]).
   EmbedderVariant? _catalogVariant;
 
+  // Deferred Hugging Face resolution ([fromHuggingFace]): resolved in
+  // [install], which is async. Every other source setter clears [_hfRepo], and
+  // [fromHuggingFace] clears every other source, so the last call wins.
+  String? _hfRepo;
+  ModelFileType? _hfFileType;
+  String? _hfToken;
+
   /// Install a model registry build: its pinned model and tokenizer URLs,
   /// install names and sizes, and the profile its vectors belong to. The
   /// sizes are checked before the model becomes active (not on the web),
@@ -100,6 +107,54 @@ class EmbeddingInstallationBuilder {
     return this;
   }
 
+  /// Install the embedder a Hugging Face repo's deployment metadata names,
+  /// through the embedding resolver registered for [fileType]
+  /// (`FlutterEdgeAi.resolveHuggingFace(repo, type:
+  /// ModelManagementType.embedding, fileType: fileType)`), at [install]:
+  /// resolution is asynchronous.
+  ///
+  /// The resolver's model file, and its tokenizer when it names one
+  /// (`ResolvedHfModel.tokenizerFile`), are downloaded from its pinned URLs
+  /// under the names the resolver gives them (`ResolvedHfFile.name`; the leaf
+  /// of `ResolvedHfModel.file` for a single file), which a resolver keeps
+  /// unique per model: two models installed under one name are one file. Its
+  /// runtime defaults come back on
+  /// [EmbeddingInstallation.runtime]: pass them as
+  /// `getActiveEmbedder(defaults:)`.
+  ///
+  /// [install] throws [StateError] when no embedding resolver handles
+  /// [fileType], or when the resolver names a model family (embedders have
+  /// none), and [UnsupportedError] for a resolution that is a model
+  /// directory (`ResolvedHfModel.directoryName`, or files beyond the model
+  /// and its tokenizer): embedder directories are not supported yet. A
+  /// cancel token set with [withCancelToken] cannot interrupt the resolution
+  /// itself; it is checked right after it, before anything downloads.
+  ///
+  /// [token] is used for the resolution and both downloads; without it, the
+  /// token passed to `FlutterEdgeAi.initialize` is used for huggingface.co.
+  /// This clears every source set before, a [fromCatalog] variant included,
+  /// and any later source setter clears it.
+  EmbeddingInstallationBuilder fromHuggingFace(
+    String repo, {
+    required ModelFileType fileType,
+    String? token,
+  }) {
+    if (repo.trim().isEmpty) {
+      throw ArgumentError.value(repo, 'repo', 'must be a non-empty "org/name"');
+    }
+    _modelSource = null;
+    _modelFilename = null;
+    _modelExpected = const FileExpectation();
+    _tokenizerSource = null;
+    _tokenizerFilename = null;
+    _tokenizerExpected = const FileExpectation();
+    _catalogVariant = null;
+    _hfRepo = repo;
+    _hfFileType = fileType;
+    _hfToken = token;
+    return this;
+  }
+
   // === Model source setters ===
 
   /// Set model source from network URL (HTTP/HTTPS).
@@ -127,6 +182,7 @@ class EmbeddingInstallationBuilder {
     final name = _validateFilename(filename);
     _modelSource = ModelSource.network(url, authToken: token);
     _catalogVariant = null;
+    _hfRepo = null;
     _modelFilename = name;
     _modelExpected = expected;
     return this;
@@ -137,6 +193,7 @@ class EmbeddingInstallationBuilder {
     final name = _validateFilename(filename);
     _modelSource = ModelSource.asset(path);
     _catalogVariant = null;
+    _hfRepo = null;
     _modelExpected = const FileExpectation();
     _modelFilename = name;
     return this;
@@ -150,6 +207,7 @@ class EmbeddingInstallationBuilder {
     final name = _validateFilename(filename);
     _modelSource = ModelSource.bundled(resourceName);
     _catalogVariant = null;
+    _hfRepo = null;
     _modelExpected = const FileExpectation();
     _modelFilename = name;
     return this;
@@ -160,6 +218,7 @@ class EmbeddingInstallationBuilder {
     final name = _validateFilename(filename);
     _modelSource = ModelSource.file(path);
     _catalogVariant = null;
+    _hfRepo = null;
     _modelExpected = const FileExpectation();
     _modelFilename = name;
     return this;
@@ -190,6 +249,7 @@ class EmbeddingInstallationBuilder {
     final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.network(url, authToken: token);
     _catalogVariant = null;
+    _hfRepo = null;
     _tokenizerFilename = name;
     _tokenizerExpected = expected;
     return this;
@@ -203,6 +263,7 @@ class EmbeddingInstallationBuilder {
     final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.asset(path);
     _catalogVariant = null;
+    _hfRepo = null;
     _tokenizerExpected = const FileExpectation();
     _tokenizerFilename = name;
     return this;
@@ -216,6 +277,7 @@ class EmbeddingInstallationBuilder {
     final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.bundled(resourceName);
     _catalogVariant = null;
+    _hfRepo = null;
     _tokenizerExpected = const FileExpectation();
     _tokenizerFilename = name;
     return this;
@@ -229,6 +291,7 @@ class EmbeddingInstallationBuilder {
     final name = _validateFilename(filename);
     _tokenizerSource = ModelSource.file(path);
     _catalogVariant = null;
+    _hfRepo = null;
     _tokenizerExpected = const FileExpectation();
     _tokenizerFilename = name;
     return this;
@@ -310,6 +373,10 @@ class EmbeddingInstallationBuilder {
   ///   backend registered yet the install goes ahead (the app may register
   ///   one later) and says so once in the debug log.
   ///
+  /// - for [fromHuggingFace]: [StateError] when no embedding resolver
+  ///   handles the repo or it names a model family, and [UnsupportedError]
+  ///   for a model directory (the resolution needs the network, and comes
+  ///   before the other checks)
   /// - [UnsupportedError] for a [fromCatalog] variant that does not run here,
   ///   and on the web for a file over 2 GiB unless the app uses
   ///   `WebStorageMode.streaming`
@@ -336,18 +403,47 @@ class EmbeddingInstallationBuilder {
     _cancelToken?.throwIfCancelled();
     if (_catalogVariant case final variant?) checkCatalogVariant(variant);
 
-    final modelSource = _modelSource;
+    // install() only READS builder state: a Hugging Face resolution goes into
+    // these locals, never back into the fields.
+    var modelSource = _modelSource;
+    var modelFilename = _modelFilename;
+    var tokenizerSource = _tokenizerSource;
+    var tokenizerFilename = _tokenizerFilename;
+    ModelRuntimeDefaults? runtime;
+    if (_hfRepo case final repo?) {
+      final r = await FlutterEdgeAi.resolveHuggingFace(
+        repo,
+        type: ModelManagementType.embedding,
+        fileType: _hfFileType,
+        token: _hfToken,
+      );
+      // The resolution itself takes no cancel token: stop before downloading.
+      _cancelToken?.throwIfCancelled();
+      final flat = _flatEmbedderFiles(repo, r);
+      modelSource = ModelSource.network(flat.model.url, authToken: _hfToken);
+      modelFilename = _validateFilename(flat.model.name);
+      tokenizerSource = switch (flat.tokenizer) {
+        final t? => ModelSource.network(t.url, authToken: _hfToken),
+        null => null,
+      };
+      tokenizerFilename = _validateFilename(flat.tokenizer?.name);
+      runtime = r.runtime;
+      for (final note in r.notes) {
+        edgeAiLog('ℹ️  Hugging Face ($repo): $note');
+      }
+    }
+
     if (modelSource == null) {
       throw StateError(
         'A model source is required. Use modelFromNetwork() (or '
         'modelFromAsset(), modelFromBundled(), modelFromFile()).',
       );
     }
-    final modelFile = _modelFilename == null
+    final modelFile = modelFilename == null
         ? EmbeddingModelFile.fromSource(modelSource)
-        : EmbeddingModelFile(source: modelSource, filename: _modelFilename!);
+        : EmbeddingModelFile(source: modelSource, filename: modelFilename);
     if (!isSelfContainedEmbeddingFilename(modelFile.filename) &&
-        _tokenizerSource == null) {
+        tokenizerSource == null) {
       throw StateError(
         'Both model and tokenizer required. Use modelFromNetwork() and tokenizerFromNetwork().',
       );
@@ -357,9 +453,9 @@ class EmbeddingInstallationBuilder {
     final spec = EmbeddingModelSpec(
       name: FileNameUtils.getBaseName(modelFile.filename),
       modelSource: modelSource,
-      tokenizerSource: _tokenizerSource,
-      modelFilename: _modelFilename,
-      tokenizerFilename: _tokenizerFilename,
+      tokenizerSource: tokenizerSource,
+      modelFilename: modelFilename,
+      tokenizerFilename: tokenizerFilename,
       replacePolicy: ModelReplacePolicy.keep,
     );
     _requireABackendThatCanRun(spec);
@@ -416,7 +512,54 @@ class EmbeddingInstallationBuilder {
 
     edgeAiLog('✅ Embedding model installed and set as active: ${spec.name}');
 
-    return EmbeddingInstallation(spec: spec);
+    return EmbeddingInstallation(spec: spec, runtime: runtime);
+  }
+
+  /// The model file and the optional tokenizer file of the embedder [r]
+  /// resolved for [repo], each with its download URL and the leaf name it is
+  /// installed under. Throws [UnsupportedError] for a model directory and
+  /// [StateError] for a result an embedder cannot take.
+  static ({ResolvedHfFile model, ResolvedHfFile? tokenizer}) _flatEmbedderFiles(
+    String repo,
+    ResolvedHfModel r,
+  ) {
+    if (r.family case final family?) {
+      throw StateError(
+        'The Hugging Face resolver for "$repo" returned the family $family '
+        '(${family.runtimeType}); embedders have no family type, so an '
+        'embedding resolver resolves to null.',
+      );
+    }
+    final files = r.files;
+    if (r.directoryName != null ||
+        (files != null &&
+            files.any((f) => f.name != r.file && f.name != r.tokenizerFile))) {
+      throw UnsupportedError(
+        'The Hugging Face resolver resolved "$repo" to a model directory '
+        '(${files?.length ?? 0} files under '
+        '"${r.directoryName ?? r.file}"); embedder directories are not '
+        'supported yet. Only a model file, with its tokenizer file when it '
+        'needs one, installs as an embedder.',
+      );
+    }
+    if (files == null) {
+      // A single file: the URL's own name, as fromNetwork would derive it.
+      return (
+        model: ResolvedHfFile(name: r.file.split('/').last, url: r.url),
+        tokenizer: null,
+      );
+    }
+    final model = files.where((f) => f.name == r.file).firstOrNull;
+    if (model == null) {
+      throw StateError(
+        'The Hugging Face resolver resolved "$repo" without its model file '
+        '"${r.file}" among its files.',
+      );
+    }
+    return (
+      model: model,
+      tokenizer: files.where((f) => f.name == r.tokenizerFile).firstOrNull,
+    );
   }
 
   /// The install pre-check (R5 §5.3, D13): when embedding backends are
@@ -455,7 +598,12 @@ class EmbeddingInstallationBuilder {
 class EmbeddingInstallation {
   final EmbeddingModelSpec spec;
 
-  EmbeddingInstallation({required this.spec});
+  /// Overridable runtime defaults from the Hugging Face resolver when
+  /// installed with `fromHuggingFace`; null for every other source. Pass
+  /// them as `FlutterEdgeAi.getActiveEmbedder(defaults:)`. Not persisted.
+  final ModelRuntimeDefaults? runtime;
+
+  EmbeddingInstallation({required this.spec, this.runtime});
 
   /// Model ID (filename without extension)
   String get modelId => spec.name;

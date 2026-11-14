@@ -357,7 +357,13 @@ class SttInstallationBuilder {
 class SttInstallation {
   final SttModelSpec spec;
 
-  SttInstallation({required this.spec});
+  /// Overridable runtime defaults from the source the model was installed
+  /// from, to pass as `FlutterEdgeAi.getActiveStt(defaults:)`. Null today: no
+  /// installation source of this kind carries any yet (a catalog variant's
+  /// are on its `runtimeDefaults`). Not persisted.
+  final ModelRuntimeDefaults? runtime;
+
+  SttInstallation({required this.spec, this.runtime});
 
   /// Model ID (filename without extension)
   String get modelId => spec.name;

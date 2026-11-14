@@ -99,7 +99,7 @@ void main() {
           file: 'model.litertlm',
           url: pinnedUrl,
           fileType: ModelFileType.litertlm,
-          modelType: ModelType.qwen3,
+          family: ModelType.qwen3,
           runtime: ModelRuntimeDefaults(
             maxTokens: 4096,
             thinkingDeclared: true,
@@ -143,7 +143,7 @@ void main() {
               url:
                   'https://huggingface.co/org/repo/resolve/main/model.litertlm',
               fileType: ModelFileType.litertlm,
-              // modelType omitted → resolver could not determine it
+              // family omitted → resolver could not determine it
             ),
           ),
         ]);
@@ -171,7 +171,7 @@ void main() {
             file: 'model.litertlm',
             url: 'https://huggingface.co/org/repo/resolve/main/model.litertlm',
             fileType: ModelFileType.litertlm,
-            modelType: ModelType.qwen3, // manifest disagrees with the caller
+            family: ModelType.qwen3, // manifest disagrees with the caller
             notes: ['base note'],
           ),
         ),
@@ -264,20 +264,423 @@ void main() {
       expect(install.spec.modelType, ModelType.gemmaIt);
     });
   });
+
+  group('resolver roles', () {
+    test('an inference and an embedding resolver both claiming onnx: each '
+        'builder and resolveHuggingFace(type:) reach only their own', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      final llm = _ScriptedResolver(
+        name: 'llm',
+        forFileType: ModelFileType.onnx,
+        throwError: StateError('llm resolver reached'),
+      );
+      final embedder = _ScriptedResolver(
+        name: 'embedder',
+        type: ModelManagementType.embedding,
+        forFileType: ModelFileType.onnx,
+        result: const ResolvedHfModel(
+          file: 'model.onnx',
+          url: 'https://huggingface.co/o/e/resolve/abc/model.onnx',
+          fileType: ModelFileType.onnx,
+          files: [
+            ResolvedHfFile(
+              name: 'model.onnx',
+              url: 'https://huggingface.co/o/e/resolve/abc/model.onnx',
+            ),
+            ResolvedHfFile(
+              name: 'tokenizer.json',
+              url: 'https://huggingface.co/o/e/resolve/abc/tokenizer.json',
+            ),
+          ],
+          tokenizerFile: 'tokenizer.json',
+        ),
+      );
+      // The embedding resolver registered FIRST: were the role ignored, it
+      // would win the inference tie too.
+      HuggingFaceResolverRegistry.instance.registerAll([embedder, llm]);
+
+      final asEmbedder = await FlutterEdgeAi.resolveHuggingFace(
+        'o/e',
+        type: ModelManagementType.embedding,
+        fileType: ModelFileType.onnx,
+      );
+      expect(asEmbedder.file, 'model.onnx');
+      expect(embedder.resolveCalls, 1);
+      expect(llm.resolveCalls, 0);
+
+      await expectLater(
+        FlutterEdgeAi.resolveHuggingFace('o/m', fileType: ModelFileType.onnx),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            'llm resolver reached',
+          ),
+        ),
+      );
+      expect(llm.resolveCalls, 1);
+      expect(embedder.resolveCalls, 1);
+
+      await expectLater(
+        FlutterEdgeAi.installModel(
+          modelType: ModelType.general,
+          fileType: ModelFileType.onnx,
+        ).fromHuggingFace('o/m').install(),
+        throwsA(isA<StateError>()),
+      );
+      expect(llm.resolveCalls, 2);
+      expect(embedder.resolveCalls, 1);
+
+      await FlutterEdgeAi.installEmbedder()
+          .fromHuggingFace('o/e', fileType: ModelFileType.onnx)
+          .install();
+      expect(embedder.resolveCalls, 2);
+      expect(llm.resolveCalls, 2);
+    });
+
+    test('within a role the first-registered resolver wins the tie', () async {
+      final first = _ScriptedResolver(
+        name: 'first',
+        type: ModelManagementType.embedding,
+        forFileType: ModelFileType.onnx,
+      );
+      final second = _ScriptedResolver(
+        name: 'second',
+        type: ModelManagementType.embedding,
+        forFileType: ModelFileType.onnx,
+      );
+      HuggingFaceResolverRegistry.instance.registerAll([first, second]);
+      expect(
+        HuggingFaceResolverRegistry.instance.findFor(
+          'o/e',
+          type: ModelManagementType.embedding,
+          fileType: ModelFileType.onnx,
+        ),
+        same(first),
+      );
+      expect(
+        HuggingFaceResolverRegistry.instance.findFor(
+          'o/e',
+          type: ModelManagementType.inference,
+          fileType: ModelFileType.onnx,
+        ),
+        isNull,
+      );
+    });
+
+    test('a tokenizerFile that is not among the files is refused', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      HuggingFaceResolverRegistry.instance.registerAll([
+        _ScriptedResolver(
+          type: ModelManagementType.embedding,
+          forFileType: ModelFileType.onnx,
+          result: const ResolvedHfModel(
+            file: 'model.onnx',
+            url: 'https://huggingface.co/o/e/resolve/abc/model.onnx',
+            fileType: ModelFileType.onnx,
+            tokenizerFile: 'tokenizer.json',
+          ),
+        ),
+      ]);
+      await expectLater(
+        FlutterEdgeAi.resolveHuggingFace(
+          'o/e',
+          type: ModelManagementType.embedding,
+          fileType: ModelFileType.onnx,
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('tokenizerFile "tokenizer.json"'),
+          ),
+        ),
+      );
+    });
+  });
+
+  group('family', () {
+    test('the inference installer refuses a family that is not a ModelType, '
+        'before any download', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      HuggingFaceResolverRegistry.instance.registerAll([
+        _ScriptedResolver(
+          forFileType: ModelFileType.litertlm,
+          result: const ResolvedHfModel(
+            file: 'model.litertlm',
+            url: 'https://huggingface.co/o/r/resolve/main/model.litertlm',
+            fileType: ModelFileType.litertlm,
+            family: SttModelType.whisper,
+          ),
+        ),
+      ]);
+      await expectLater(
+        FlutterEdgeAi.installModel(
+          modelType: ModelType.general,
+          fileType: ModelFileType.litertlm,
+        ).fromHuggingFace('o/r').install(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('whisper'),
+          ),
+        ),
+      );
+      expect(download.requestedUrls, isEmpty);
+    });
+  });
+
+  group('installEmbedder().fromHuggingFace', () {
+    test('installs the model and its tokenizer from the resolver URLs, under '
+        'their own names, and returns the runtime defaults', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      HuggingFaceResolverRegistry.instance.registerAll([
+        _ScriptedResolver(
+          type: ModelManagementType.embedding,
+          forFileType: ModelFileType.onnx,
+          result: const ResolvedHfModel(
+            file: 'minilm-model.onnx',
+            url: 'https://huggingface.co/o/e/resolve/abc/onnx/model.onnx',
+            fileType: ModelFileType.onnx,
+            files: [
+              ResolvedHfFile(
+                name: 'minilm-model.onnx',
+                url: 'https://huggingface.co/o/e/resolve/abc/onnx/model.onnx',
+              ),
+              ResolvedHfFile(
+                name: 'minilm-tokenizer.json',
+                url: 'https://huggingface.co/o/e/resolve/abc/tokenizer.json',
+              ),
+            ],
+            tokenizerFile: 'minilm-tokenizer.json',
+            runtime: ModelRuntimeDefaults(
+              preferredBackend: PreferredBackend.cpu,
+            ),
+          ),
+        ),
+      ]);
+
+      final install = await FlutterEdgeAi.installEmbedder()
+          .fromHuggingFace('o/e', fileType: ModelFileType.onnx, token: 'hf_e')
+          .install();
+
+      expect(download.requestedUrls, [
+        'https://huggingface.co/o/e/resolve/abc/onnx/model.onnx',
+        'https://huggingface.co/o/e/resolve/abc/tokenizer.json',
+      ]);
+      expect(install.spec.files.map((f) => f.filename), [
+        'minilm-model.onnx',
+        'minilm-tokenizer.json',
+      ]);
+      expect(install.runtime?.preferredBackend, PreferredBackend.cpu);
+      expect(FlutterEdgeAi.activeEmbedderSpec?.name, install.spec.name);
+    });
+
+    test('a single-file resolution installs that file under its leaf name, '
+        'with no tokenizer', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      HuggingFaceResolverRegistry.instance.registerAll([
+        _ScriptedResolver(
+          type: ModelManagementType.embedding,
+          forFileType: ModelFileType.litertlm,
+          result: const ResolvedHfModel(
+            file: 'sub/eg2.litertlm',
+            url: 'https://huggingface.co/o/e/resolve/abc/sub/eg2.litertlm',
+            fileType: ModelFileType.litertlm,
+          ),
+        ),
+      ]);
+      final install = await FlutterEdgeAi.installEmbedder()
+          .fromHuggingFace('o/e', fileType: ModelFileType.litertlm)
+          .install();
+      expect(install.spec.files.map((f) => f.filename), ['eg2.litertlm']);
+      expect(download.requestedUrls, [
+        'https://huggingface.co/o/e/resolve/abc/sub/eg2.litertlm',
+      ]);
+      expect(install.runtime, isNotNull);
+    });
+
+    test('a directory resolution is refused with UnsupportedError before any '
+        'download', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      HuggingFaceResolverRegistry.instance.registerAll([
+        _ScriptedResolver(
+          type: ModelManagementType.embedding,
+          forFileType: ModelFileType.onnx,
+          result: const ResolvedHfModel(
+            file: 'model.onnx',
+            url: 'https://huggingface.co/o/e/resolve/abc/model.onnx',
+            fileType: ModelFileType.onnx,
+            files: [
+              ResolvedHfFile(
+                name: 'model.onnx',
+                url: 'https://huggingface.co/o/e/resolve/abc/model.onnx',
+              ),
+            ],
+            directoryName: 'o__e',
+          ),
+        ),
+      ]);
+      await expectLater(
+        FlutterEdgeAi.installEmbedder()
+            .fromHuggingFace('o/e', fileType: ModelFileType.onnx)
+            .install(),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (e) => e.message,
+            'message',
+            contains('embedder directories are not supported yet'),
+          ),
+        ),
+      );
+      expect(download.requestedUrls, isEmpty);
+    });
+
+    test(
+      'files beyond the model and its tokenizer are a directory too',
+      () async {
+        await ServiceRegistry.initialize(downloadService: download);
+        HuggingFaceResolverRegistry.instance.registerAll([
+          _ScriptedResolver(
+            type: ModelManagementType.embedding,
+            forFileType: ModelFileType.onnx,
+            result: const ResolvedHfModel(
+              file: 'model.onnx',
+              url: 'https://huggingface.co/o/e/resolve/abc/model.onnx',
+              fileType: ModelFileType.onnx,
+              files: [
+                ResolvedHfFile(name: 'model.onnx', url: 'u1'),
+                ResolvedHfFile(name: 'model.onnx_data', url: 'u2'),
+              ],
+            ),
+          ),
+        ]);
+        await expectLater(
+          FlutterEdgeAi.installEmbedder()
+              .fromHuggingFace('o/e', fileType: ModelFileType.onnx)
+              .install(),
+          throwsA(isA<UnsupportedError>()),
+        );
+        expect(download.requestedUrls, isEmpty);
+      },
+    );
+
+    test('a resolution with a model family is refused before any '
+        'download', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      HuggingFaceResolverRegistry.instance.registerAll([
+        _ScriptedResolver(
+          type: ModelManagementType.embedding,
+          forFileType: ModelFileType.litertlm,
+          result: const ResolvedHfModel(
+            file: 'eg2.litertlm',
+            url: 'https://huggingface.co/o/e/resolve/abc/eg2.litertlm',
+            fileType: ModelFileType.litertlm,
+            family: ModelType.gemmaIt,
+          ),
+        ),
+      ]);
+      await expectLater(
+        FlutterEdgeAi.installEmbedder()
+            .fromHuggingFace('o/e', fileType: ModelFileType.litertlm)
+            .install(),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('embedders have no family type'),
+          ),
+        ),
+      );
+      expect(download.requestedUrls, isEmpty);
+    });
+
+    test('a cancel during the resolution stops the install before the '
+        'resolved files are checked', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      final resolver = _ScriptedResolver(
+        type: ModelManagementType.embedding,
+        forFileType: ModelFileType.onnx,
+        // A model with no tokenizer: checking it would throw StateError.
+        result: const ResolvedHfModel(
+          file: 'model.onnx',
+          url: 'https://huggingface.co/o/e/resolve/abc/model.onnx',
+          fileType: ModelFileType.onnx,
+        ),
+      );
+      HuggingFaceResolverRegistry.instance.registerAll([resolver]);
+      final token = CancelToken();
+      resolver.onResolve = () => token.cancel('stop');
+      await expectLater(
+        FlutterEdgeAi.installEmbedder()
+            .fromHuggingFace('o/e', fileType: ModelFileType.onnx)
+            .withCancelToken(token)
+            .install(),
+        throwsA(isA<DownloadCancelledException>()),
+      );
+    });
+
+    test('a later source setter clears it; it clears an earlier source; '
+        'cancel is checked right after the resolution', () async {
+      await ServiceRegistry.initialize(downloadService: download);
+      final resolver = _ScriptedResolver(
+        type: ModelManagementType.embedding,
+        forFileType: ModelFileType.litertlm,
+        result: const ResolvedHfModel(
+          file: 'eg2.litertlm',
+          url: 'https://huggingface.co/o/e/resolve/abc/eg2.litertlm',
+          fileType: ModelFileType.litertlm,
+        ),
+      );
+      HuggingFaceResolverRegistry.instance.registerAll([resolver]);
+
+      final local = File(p.join(sourceDir.path, 'local.litertlm'));
+      await local.writeAsBytes(_fakeModelBytes);
+      final viaFile = await FlutterEdgeAi.installEmbedder()
+          .fromHuggingFace('o/e', fileType: ModelFileType.litertlm)
+          .modelFromFile(local.path)
+          .install();
+      expect(resolver.resolveCalls, 0);
+      expect(viaFile.runtime, isNull);
+
+      final token = CancelToken();
+      final cancelled = FlutterEdgeAi.installEmbedder()
+          .modelFromNetwork('https://example.com/other.litertlm')
+          .fromHuggingFace('o/e', fileType: ModelFileType.litertlm)
+          .withCancelToken(token);
+      resolver.onResolve = () => token.cancel('stop');
+      await expectLater(
+        cancelled.install(),
+        throwsA(isA<DownloadCancelledException>()),
+      );
+      expect(resolver.resolveCalls, 1);
+      expect(download.requestedUrls, isEmpty);
+    });
+  });
 }
 
 /// Scripted resolver: claims exactly [forFileType]; [resolve] returns [result]
 /// or throws [throwError]. Records call count + the token it was handed.
 class _ScriptedResolver implements HuggingFaceResolver {
-  _ScriptedResolver({required this.forFileType, this.result, this.throwError});
+  _ScriptedResolver({
+    required this.forFileType,
+    this.result,
+    this.throwError,
+    this.type = ModelManagementType.inference,
+    this.name = 'scripted',
+  });
   final ModelFileType forFileType;
+  @override
+  final ModelManagementType type;
+  @override
+  final String name;
   final ResolvedHfModel? result;
   final Object? throwError;
   int resolveCalls = 0;
   String? lastToken;
+  void Function()? onResolve;
 
-  @override
-  String get name => 'scripted';
   @override
   int get priority => 0;
   @override
@@ -292,6 +695,7 @@ class _ScriptedResolver implements HuggingFaceResolver {
   }) async {
     resolveCalls++;
     lastToken = token;
+    onResolve?.call();
     if (throwError != null) throw throwError!;
     return result!;
   }

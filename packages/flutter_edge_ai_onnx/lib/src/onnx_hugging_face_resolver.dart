@@ -4,6 +4,7 @@ import 'package:flutter_edge_ai/engine.dart'
     show
         HuggingFaceResolver,
         ModelFileType,
+        ModelManagementType,
         PreferredBackend,
         ResolvedHfFile,
         ResolvedHfModel,
@@ -66,6 +67,10 @@ class OnnxHuggingFaceResolver implements HuggingFaceResolver {
 
   @override
   int get priority => 0;
+
+  /// Resolves language models only (`installModel(...).fromHuggingFace`).
+  @override
+  ModelManagementType get type => ModelManagementType.inference;
 
   @override
   bool canResolve(String repo, {ModelFileType? fileType}) =>

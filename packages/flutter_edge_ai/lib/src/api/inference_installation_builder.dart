@@ -372,7 +372,18 @@ class InferenceInstallationBuilder {
       // (explicit > manifest, matching `mergeRuntimeDefault`). A real
       // disagreement is surfaced in a RELEASE-visible note — `gemmaLog` is
       // debug-only, so it can't be the only channel.
-      final manifestType = r.modelType;
+      // The installer of LLMs takes a language-model family only: a speech
+      // family here means the resolver answered for another role.
+      final manifestType = switch (r.family) {
+        null => null,
+        final ModelType type => type,
+        final other => throw StateError(
+          'The Hugging Face resolver for "$_hfRepo" returned the family '
+          '$other (${other.runtimeType}); installModel needs a ModelType, '
+          'or null. A resolver of type ModelManagementType.inference must '
+          'resolve to a language model.',
+        ),
+      };
       if (_modelType == ModelType.general) {
         resolvedModelType = manifestType; // may be null → stays general
         resolvedNotes = r.notes;
@@ -713,12 +724,23 @@ class InferenceInstallationBuilder {
     // streams within it, so the bar keeps moving during the multi-GB
     // model.onnx download instead of freezing between files. Held at 99, as
     // for a single file, until the model is installed and active.
+    // Each member with a size from the resolver is checked once installed.
+    final expected = directoryMemberExpectations(modelId, ordered);
+    refuseTooLargeForWebCache(expected);
+    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    final steps = _keepingActiveModel(
+      await planInstall(spec.files),
+      activate: activate,
+    );
+    final activeBefore = activeModelsOf(manager);
+    refuseReplacingActive(steps, expected, activeBefore);
+
     final total = spec.files.length;
     final onProgress = _onProgress;
     void report(double fraction) =>
         onProgress?.call((fraction * 100).round().clamp(0, 99));
     final release = await installPlanned(
-      _keepingActiveModel(await planInstall(spec.files), activate: activate),
+      steps,
       modelType: repo.ModelType.inference,
       cancelToken: _cancelToken,
       progress: [
@@ -728,7 +750,9 @@ class InferenceInstallationBuilder {
       onFileDone: (i) => report((i + 1) / total),
     );
 
-    final manager = FlutterEdgeAiPlugin.instance.modelManager;
+    _cancelToken?.throwIfCancelled();
+    await verifyInstalledFiles(spec, expected, active: activeBefore);
+    _cancelToken?.throwIfCancelled();
     if (activate) {
       await activateInstalledModel(manager, spec);
       await release.run(manager, spec);

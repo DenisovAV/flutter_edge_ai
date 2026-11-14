@@ -131,6 +131,8 @@ class _ScriptedResolver implements HuggingFaceResolver {
   @override
   int get priority => 0;
   @override
+  ModelManagementType get type => ModelManagementType.inference;
+  @override
   bool canResolve(String repo, {ModelFileType? fileType}) =>
       fileType == ModelFileType.onnx;
   @override

@@ -4,7 +4,13 @@ part of '../model_specs.dart';
 /// [matcha], [qwen3] and [inflect] have shipped [TtsModelProfile]/pipelines
 /// (`flutter_edge_ai_speech`); [kokoro]/[supertonic] are documented follow-ons
 /// (fail-loud until wired).
-enum TtsModelType { matcha, supertonic, kokoro, qwen3, inflect }
+enum TtsModelType implements ModelFamily {
+  matcha,
+  supertonic,
+  kokoro,
+  qwen3,
+  inflect,
+}
 
 /// [TtsModelType.qwen3]'s 4 embedding-table bundle members — the SINGLE
 /// source of truth for which manifest basenames live under the HF repo's

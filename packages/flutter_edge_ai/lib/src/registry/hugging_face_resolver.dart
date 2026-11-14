@@ -1,13 +1,20 @@
 import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
-import 'package:flutter_edge_ai/src/model.dart' show ModelFileType, ModelType;
+import 'package:flutter_edge_ai/src/model.dart'
+    show ModelFamily, ModelFileType, ModelType;
+import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
+    show ModelManagementType, SttModelType, TtsModelType;
 
 /// Runtime defaults resolved from a Hugging Face repo's deployment metadata
-/// (e.g. a `litertlm_manifest.json`), in flutter_edge_ai's own runtime vocabulary.
+/// (e.g. a `litertlm_manifest.json`) or listed by a catalog variant, in
+/// flutter_edge_ai's own runtime vocabulary.
 ///
-/// Every field is nullable: `null` means "the manifest is silent — use the SDK
-/// default". These are the *how-to-run* knobs the app passes to
-/// [FlutterEdgeAi.getActiveModel] / `createSession`, NOT install-time identity.
+/// Every field is nullable: `null` means "the source is silent — use the SDK
+/// default". These are the *how-to-run* knobs the app passes as `defaults:`
+/// to `FlutterEdgeAi.getActiveModel` / `openModel` (inference),
+/// `getActiveEmbedder`, `getActiveStt` and `getActiveTts`, NOT install-time
+/// identity. One class serves every role: each call reads the fields its
+/// role uses (named on each field) and ignores the rest.
 /// They are **overridable defaults**, never authoritative config baked into the
 /// model — an explicit argument at the call site always wins over the field
 /// here, which in turn wins over the SDK default.
@@ -19,21 +26,30 @@ import 'package:flutter_edge_ai/src/model.dart' show ModelFileType, ModelType;
 class ModelRuntimeDefaults {
   /// Context-window size (`maxTokens`), if the manifest declares one
   /// (`model.context_length`). Still clamped by the engine downstream — a
-  /// manifest cannot set a value the engine rejects.
+  /// manifest cannot set a value the engine rejects. Read by: inference.
   final int? maxTokens;
 
-  /// Recommended text/decoder backend for this device.
+  /// Recommended backend for this device (for an LLM, its text decoder).
+  /// Read by: inference, embedding, stt, tts.
   final PreferredBackend? preferredBackend;
 
-  /// Declared vision capability (`capabilities.vision`).
+  /// Declared vision capability (`capabilities.vision`). Read by: inference,
+  /// embedding.
   final bool? supportImage;
 
-  /// Declared audio capability (`capabilities.audio`).
+  /// Declared audio capability (`capabilities.audio`). Read by: inference,
+  /// embedding.
   final bool? supportAudio;
+
+  /// The language to transcribe into (speech-to-text) or to speak
+  /// (text-to-speech), in the form `getActiveStt(language:)` /
+  /// `getActiveTts(language:)` take. Read by: stt, tts.
+  final String? language;
 
   /// Whether the manifest declares a thinking channel
   /// (`capabilities.thinking.declared`): what the bundle carries, not a
   /// request. A hint for `createChat`'s / `createSession`'s `enableThinking`.
+  /// Read by: inference (forwarded by the app; see `getActiveModel`).
   final bool? thinkingDeclared;
 
   /// The **minimum** output-token budget the model needs
@@ -41,7 +57,8 @@ class ModelRuntimeDefaults {
   /// off mid-`<think>` below this. This is a FLOOR, not a cap: when you set
   /// `createSession(maxOutputTokens:)`, keep it at or above this value (or leave
   /// the cap unset). Do NOT assume it is itself the cap to apply blindly —
-  /// passing a floor into a smaller cap would truncate output.
+  /// passing a floor into a smaller cap would truncate output. Read by:
+  /// inference (forwarded by the app; see `getActiveModel`).
   final int? minOutputTokens;
 
   const ModelRuntimeDefaults({
@@ -51,6 +68,7 @@ class ModelRuntimeDefaults {
     this.supportAudio,
     this.thinkingDeclared,
     this.minOutputTokens,
+    this.language,
   });
 }
 
@@ -63,8 +81,10 @@ class ModelRuntimeDefaults {
 /// bare name, and the native loader is handed the directory). It MUST be a
 /// single path segment — no path separators and no `.`/`..` — or the installer
 /// rejects it (a `../…` name would otherwise escape the model directory). [url]
-/// is the pinned download URL. [sha256]/[sizeBytes] are advisory (carried, not
-/// yet verified — see [ResolvedHfModel.sha256]).
+/// is the pinned download URL. [sizeBytes], when set, is checked after the
+/// download for a member of a DIRECTORY model (a file of another size is
+/// deleted with its record and the install fails); a single-file model's
+/// size is not checked. [sha256] is advisory (carried, not yet verified).
 class ResolvedHfFile {
   final String name;
   final String url;
@@ -93,11 +113,12 @@ class ResolvedHfFile {
 /// A model resolved from a Hugging Face repo's deployment metadata into
 /// flutter_edge_ai's install + runtime vocabulary.
 ///
-/// Install identity — [modelType] / [fileType] for
-/// [FlutterEdgeAi.installModel], and [url] for the download (install from [url]
-/// via `fromNetwork` so the resolver's revision is honoured; see [url]) — is
-/// kept apart from [runtime], the overridable defaults the app applies at
-/// `getActiveModel` / `createSession`. That split mirrors how Hugging Face
+/// Install identity — [family] / [fileType] for the installer, and [url] for
+/// the download (install from [url] via `fromNetwork` so the resolver's
+/// revision is honoured; see [url]) — is kept apart from [runtime], the
+/// overridable defaults the app applies at `getActiveModel` /
+/// `getActiveEmbedder` / `createSession`. Fields a role does not use (an
+/// embedder's [family], a single-file model's [files]) are null. That split mirrors how Hugging Face
 /// ships model identity (`config.json`) and generation defaults
 /// (`generation_config.json`) as separate files.
 class ResolvedHfModel {
@@ -117,12 +138,16 @@ class ResolvedHfModel {
   /// How to install/route the model.
   final ModelFileType fileType;
 
-  /// The model family (`gemmaIt`/`gemma4`/`qwen3`/…), if the resolver can map
-  /// the repo's declared architecture to one. Pass to [FlutterEdgeAi.installModel]'s
-  /// required `modelType`. Null when the resolver can't determine it — the app
-  /// must then supply it. Not cosmetic: `ModelType` drives runtime branching
+  /// The model family, if the resolver can map the repo's declared
+  /// architecture to one: a [ModelType] (`gemmaIt`/`gemma4`/`qwen3`/…) for a
+  /// language model, an [SttModelType] or a [TtsModelType] for a speech
+  /// model. Null when the resolver can't determine it — the app must then
+  /// supply it — and for an embedder, which has no family type. Each
+  /// installer accepts only its own family type and refuses another (the
+  /// inference installer throws [StateError] for a family that is not a
+  /// [ModelType]). Not cosmetic: [ModelType] drives runtime branching
   /// (tool-call format, thinking-tag handling).
-  final ModelType? modelType;
+  final ModelFamily? family;
 
   /// Manifest-declared integrity metadata (`sha256` / `size_bytes`).
   ///
@@ -141,6 +166,13 @@ class ResolvedHfModel {
   /// engine loads from (for ORT-GenAI: `genai_config.json`) and that entry must
   /// also appear in this list.
   final List<ResolvedHfFile>? files;
+
+  /// The BARE leaf name, among [files], of the model's tokenizer when it is a
+  /// file of its own (e.g. `tokenizer.json` beside an embedder's `.onnx`);
+  /// null when the model carries its tokenizer or none is needed. When set
+  /// it MUST name a member of [files]: `FlutterEdgeAi.resolveHuggingFace`
+  /// refuses a result whose [tokenizerFile] is not there.
+  final String? tokenizerFile;
 
   /// For a DIRECTORY model: the single filesystem-safe subdirectory name the
   /// files install into. REQUIRED whenever [files] is non-null (the installer
@@ -161,10 +193,11 @@ class ResolvedHfModel {
     required this.file,
     required this.url,
     required this.fileType,
-    this.modelType,
+    this.family,
     this.sha256,
     this.sizeBytes,
     this.files,
+    this.tokenizerFile,
     this.directoryName,
     this.runtime = const ModelRuntimeDefaults(),
     this.notes = const [],
@@ -174,9 +207,19 @@ class ResolvedHfModel {
 /// A pluggable resolver that turns a Hugging Face repo id into a
 /// [ResolvedHfModel] by reading that repo's deployment metadata.
 ///
-/// Implemented in an engine package — e.g. `flutter_edge_ai_litertlm` reads
-/// `litertlm_manifest.json` — and passed to `FlutterEdgeAi.initialize` via
-/// `huggingFaceResolvers:`. Core selects one via the same probe-chain shape as
+/// Implemented in an engine or backend package — e.g.
+/// `flutter_edge_ai_litertlm` reads `litertlm_manifest.json` — and either
+/// carried by its provider (`HuggingFaceResolverSource`) or passed to
+/// `FlutterEdgeAi.initialize` via `huggingFaceResolvers:`.
+///
+/// A resolver serves one role, its [type]: an inference resolver answers
+/// `installModel(...).fromHuggingFace`, an embedding resolver
+/// `installEmbedder().fromHuggingFace`, and
+/// `FlutterEdgeAi.resolveHuggingFace(type:)` reaches only the resolvers of
+/// the role it is asked for. So one file type (`onnx`, `litertlm`) can have
+/// a language-model resolver and an embedder resolver side by side.
+///
+/// Within a role, core selects one via the same probe-chain shape as
 /// [InferenceEngineProvider] (highest [priority], first-registered breaks
 /// ties), but the discriminator differs: an engine's `canHandle` inspects an
 /// already-resolved [InferenceModelSpec], whereas a resolver has only a bare
@@ -193,6 +236,13 @@ abstract class HuggingFaceResolver {
   /// Selection precedence on overlap. Core-adjacent resolvers use 0; a third
   /// party raises this to take precedence for a repo both could handle.
   int get priority => 0;
+
+  /// The role this resolver serves: [ModelManagementType.inference] for a
+  /// language model, [ModelManagementType.embedding] for an embedder, and
+  /// so on. Only the installer and the `resolveHuggingFace(type:)` call of
+  /// that role reach it, and `FlutterEdgeAi.initialize` refuses a provider
+  /// whose resolver's role is not the role of the list it was passed in.
+  ModelManagementType get type;
 
   /// Whether this resolver handles a repo whose model is declared as [fileType].
   ///

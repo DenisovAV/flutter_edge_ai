@@ -1,3 +1,6 @@
+## Unreleased
+- `LitertlmManifestResolver` declares the `inference` role and returns `family`.
+
 ## 1.20.0
 - Enforce response formats with native LiteRT-LM constrained decoding.
 - Sessions open through core's `openEngineSession`; `openChat` takes the model's own type and media.

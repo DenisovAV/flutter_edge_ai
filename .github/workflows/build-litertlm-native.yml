@@ -12,7 +12,7 @@ on:
         description: 'LiteRT-LM ref (tag, branch, or commit SHA)'
         required: true
       prebuilt_ref:
-        description: 'Upstream ref to take prebuilt companion libs from (default: the exact v0.19.0 source SHA)'
+        description: 'Upstream ref to take prebuilt companion libs from (default: the exact v0.19.1 source SHA)'
         required: false
       publish_release:
         description: 'Publish to GitHub Release'
@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 60
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '771b06e1a2c7f70a399a718599109facf37e38fd' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -182,7 +182,7 @@ jobs:
     timeout-minutes: 60
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '771b06e1a2c7f70a399a718599109facf37e38fd' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -265,6 +265,19 @@ jobs:
             --define=litert_runtime_link_mode=dynamic \
             --test_output=errors \
             '//runtime/components:external_weights_by_path_test'
+
+      - name: Test the thinking constraint's user bitmap copy (patch_c_api.sh section 26)
+        # With thinking on, the first decode step of a turn with tools copies
+        # the Gemma provider's bitmap; on Windows the provider is libc++ and
+        # reading its vector's end() aborted the process. Section 26 copies
+        # the words the vocabulary needs from data(); upstream's test plus a
+        # bitmap holding more words than its vocabulary needs.
+        run: |
+          cd /tmp/LiteRT-LM
+          bazelisk test -c opt --strip=always \
+            --define=litert_runtime_link_mode=dynamic \
+            --test_output=errors \
+            '//runtime/components/constrained_decoding:thinking_budget_constraint_test'
 
       - name: Build libStreamProxy.so
         run: |
@@ -349,7 +362,7 @@ jobs:
         shell: pwsh
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '771b06e1a2c7f70a399a718599109facf37e38fd' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
       # The WebGPU accelerator override (5f973f57, LiteRT #11120) is gone: the
       # v0.19.0 tag's own prebuilt is newer and its LiteRT pin contains #11120.
       ANDROID_NDK_HOME: ''
@@ -862,7 +875,7 @@ jobs:
       contents: write
     env:
       LITERTLM_VERSION: ${{ inputs.litertlm_version }}
-      PREBUILT_REF: ${{ inputs.prebuilt_ref || '771b06e1a2c7f70a399a718599109facf37e38fd' }}
+      PREBUILT_REF: ${{ inputs.prebuilt_ref || '7a03724cece417f1724c923b3d527b4319730841' }}
     steps:
       - name: Refuse to overwrite published native assets
         env:

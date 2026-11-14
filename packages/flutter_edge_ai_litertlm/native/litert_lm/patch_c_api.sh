@@ -9,6 +9,10 @@
 #     instead of leaving the conversation poisoned
 # 17. SentencePiece loads a BPE vocabulary with a NUL-byte piece (#659); on
 #     v0.19.0 a second patch on top of upstream's, which accepts only "\0"
+# 26. ThinkingBudgetConstraint copies a user bitmap by data() and vocabulary
+#     size (Windows: the Gemma provider's vector is libc++, the runtime MSVC)
+# 27. The NPU executor aliases a multi-signature KV cache held in a custom
+#     tensor buffer (Intel OpenVINO) instead of refusing it (upstream 3db1cfd0ab)
 #
 # v0.17.0 migration: section 11 (minizip/zlib mirror) was deleted — upstream's
 # WORKSPACE now ships `urls = [tensorflow mirror, mirror.bazel.build,
@@ -407,12 +411,21 @@ else:
     # OpenVINO 2026.4.1 (which Intel's Gemma 4 12B for Panther Lake needs) is
     # in the LiteRT pin since v0.19.0 (dcb657e8 contains 991d15588a), so the
     # backport patch is gone.
+    # Intel's public Gemma 4 12B for Panther Lake carries an OpenVINO
+    # GlobalGraph container v3, which the pin's dispatch refuses ("unsupported
+    # container version"). patches/litert_intel_globalgraph_v3.patch is
+    # upstream LiteRT PR #10843 (merge 1f3f61d0), confined to
+    # litert/vendors/intel_openvino/: the v3 parser (still reads v2) and the
+    # dispatch's multi-context KV-tier changes. It is exactly
+    # `git diff dcb657e8 1f3f61d0 -- litert/vendors/intel_openvino`; drop it
+    # once the LiteRT pin contains 1f3f61d0.
     content = content.replace(
         '    name = "litert",\n',
         '    name = "litert",\n'
         '    patches = [\n'
         '        "//:flutter_gemma_litert_gpu_registry.patch",\n'
         '        "//:flutter_gemma_litert_google_tensor_dispatch_oss.patch",\n'
+        '        "//:flutter_gemma_litert_intel_globalgraph_v3.patch",\n'
         '    ],\n'
         '    patch_args = ["-p1"],\n', 1)
     if 'flutter_gemma_litert_gpu_registry.patch' not in content:
@@ -422,11 +435,14 @@ else:
     print("  OK: Patched WORKSPACE litert.patch_cmds with gpu_registry.cc dlopen rewrite")
     print("  OK: litert archive applies patches/litert_gpu_registry_apple.patch")
     print("  OK: LiteRT Google Tensor dispatch drops its unused internal hooks dependency")
+    print("  OK: LiteRT Intel OpenVINO dispatch reads GlobalGraph v3 (PR #10843 backport)")
 PYEOF
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
     "$DIR/flutter_gemma_litert_gpu_registry.patch"
   cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
     "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
+  cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_intel_globalgraph_v3.patch" \
+    "$DIR/flutter_gemma_litert_intel_globalgraph_v3.patch"
 else
   if [ -f "$WORKSPACE_FILE" ]; then
     # A tree patched by an older patch_c_api.sh has the sed but not the diff:
@@ -444,10 +460,18 @@ else
         "start from a fresh LiteRT-LM tree" >&2
       exit 1
     fi
+    if ! grep -q "flutter_gemma_litert_intel_globalgraph_v3.patch" \
+        "$WORKSPACE_FILE"; then
+      echo "  ERROR: $WORKSPACE_FILE has no Intel GlobalGraph v3 patch;" \
+        "start from a fresh LiteRT-LM tree" >&2
+      exit 1
+    fi
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_gpu_registry_apple.patch" \
       "$DIR/flutter_gemma_litert_gpu_registry.patch"
     cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_google_tensor_dispatch_oss.patch" \
       "$DIR/flutter_gemma_litert_google_tensor_dispatch_oss.patch"
+    cp "$(cd "$(dirname "$0")" && pwd)/patches/litert_intel_globalgraph_v3.patch" \
+      "$DIR/flutter_gemma_litert_intel_globalgraph_v3.patch"
     echo "  SKIP: WORKSPACE already has FLUTTER_GEMMA_GPU_REGISTRY_PATCH"
   else
     echo "  ERROR: $WORKSPACE_FILE not found; section 10b cannot apply" >&2
@@ -1081,6 +1105,77 @@ elif git -C "$DIR" apply --reverse --check "$LINEAR_STATE_PATCH" 2>/dev/null; th
   echo "  SKIP: linear attention state clear already applied"
 else
   echo "  ERROR: $LINEAR_STATE_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+
+# ── 26. The thinking constraint copies a user bitmap without its end() ──
+# With thinking on, Tasks::Decode wraps the user constraint (the Gemma tool
+# constraint, whenever a session has tools) in ThinkingBudgetConstraint. On
+# the first decode step of a turn its ComputeMask copies the user mask's
+# words(), begin() to end(), to add the start-of-thought token. On Windows the
+# mask comes from Google's prebuilt libGemmaModelConstraintProvider.dll, whose
+# vector is libc++'s {begin, size, capacity} (std::__u), while LiteRtLm.dll is
+# MSVC STL ({first, last, end}): the element count was read as the end
+# pointer, the copy threw std::length_error, and the process aborted
+# (0xc0000409, fast-fail 7) on the first token of every thinking turn with
+# tools (Intel's Gemma 4 12B on the Panther Lake NPU, 2026-11-12; by the code
+# every Windows backend). The copy now takes (vocab_size + 63) / 64 words from
+# words().data(): the begin pointer and vocab_size sit at the same offsets in
+# both layouts, and they are all CompositeLogitMask and the mask runner read.
+# The mask's own virtual Apply is no alternative: the provider returns
+# absl::Status in a register (Google's trivial_abi absl, no LTS namespace) and
+# this runtime reads it from memory, which crashed in StatusRep::CloneAndUnref
+# on macOS (measured with that variant of this section, 2026-11-12). It
+# matters on Windows (Linux has section 12's bridge; the Apple and Android
+# providers name std::__1 and std::__ndk1, the runtime's own libc++) and is
+# applied on every target to keep one source tree. The patch adds a test whose
+# user bitmap holds more words than its vocabulary needs.
+THINKING_MASK_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/thinking_budget_user_bitmap_words.patch"
+if git -C "$DIR" apply --check "$THINKING_MASK_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$THINKING_MASK_PATCH"
+  echo "  OK: the thinking constraint copies a user bitmap by data() and vocab size"
+elif git -C "$DIR" apply --reverse --check "$THINKING_MASK_PATCH" 2>/dev/null; then
+  echo "  SKIP: thinking constraint user-bitmap fix already applied"
+else
+  echo "  ERROR: $THINKING_MASK_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+if grep -q 'words().end()' \
+    "$DIR/runtime/components/constrained_decoding/thinking_budget_constraint.cc"; then
+  echo "  ERROR: section 26: thinking_budget_constraint.cc still reads a user mask's words().end()" >&2
+  exit 1
+fi
+
+# ── 27. A multi-signature NPU KV cache in an OpenVINO buffer is aliased ──
+# Backport of LiteRT-LM 3db1cfd0ab ("Alias multi-signature NPU KV caches on
+# Intel OpenVINO tensor buffers", 2026-10-27, after v0.19.1). When a bundle's
+# signatures declare KV caches of different lengths, the NPU executor creates
+# one buffer per cache and aliases it for the other signatures
+# (CreateAliasBuffer). Only host memory, AHWB, dma-buf and ION buffers could be
+# aliased, so a cache the Intel dispatch allocates as an OpenVINO tensor
+# buffer (kLiteRtTensorBufferTypeOpenVINOTensorBuffer = 100, the first user
+# custom type) failed engine_create with "Unsupported tensor buffer type for
+# cross-platform aliasing: 100": Intel's public
+# gemma4-12B-it-Intel_PTL_NPU.litertlm (OpenVINO GlobalGraph container v3,
+# read since section 10b's litert_intel_globalgraph_v3.patch) on
+# native-v0.19.1-a on Panther Lake. A custom buffer type now gets a
+# view of the same type from the source's custom handle, through the import
+# handler the type registered (the Intel dispatch registers one at the LiteRT
+# pin). Only a custom buffer type takes the branch, so it matters on Windows
+# (Intel NPU) and is applied on every target to keep one source tree.
+NPU_ALIAS_PATCH="$(cd "$(dirname "$0")" && pwd)/patches/npu_alias_custom_tensor_buffers.patch"
+if git -C "$DIR" apply --check "$NPU_ALIAS_PATCH" 2>/dev/null; then
+  git -C "$DIR" apply "$NPU_ALIAS_PATCH"
+  echo "  OK: the NPU executor aliases KV caches in custom tensor buffers"
+elif git -C "$DIR" apply --reverse --check "$NPU_ALIAS_PATCH" 2>/dev/null; then
+  echo "  SKIP: NPU custom-buffer alias already applied"
+else
+  echo "  ERROR: $NPU_ALIAS_PATCH does not apply to this LiteRT-LM revision" >&2
+  exit 1
+fi
+if ! grep -q 'IsUserCustomBuffer' \
+    "$DIR/runtime/executor/npu/llm_litert_npu_compiled_model_executor_utils.cc"; then
+  echo "  ERROR: section 27: CreateAliasBuffer has no custom-buffer branch" >&2
   exit 1
 fi
 

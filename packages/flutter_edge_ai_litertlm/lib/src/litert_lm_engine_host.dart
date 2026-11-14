@@ -15,6 +15,7 @@ import 'ffi/npu_stack_manifest.dart';
 import 'ffi/npu_vendor_host.dart';
 import 'ffi/open_session_backing.dart';
 import 'litert_lm_log_level.dart';
+import 'litertlm_bundle_activation.dart' show GpuActivationReason;
 import 'npu_stacks.dart';
 
 /// What a native `.litertlm` LLM load reaches outside Dart. Its NPU answers
@@ -72,6 +73,7 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
     required String audioBackend,
     required bool? enableSpeculativeDecoding,
     required int? activationDataType,
+    GpuActivationReason? gpuActivationReason,
     required NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
     required int? thinkingTokenBudget,
@@ -87,6 +89,7 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
     audioBackend: audioBackend,
     enableSpeculativeDecoding: enableSpeculativeDecoding,
     activationDataType: activationDataType,
+    gpuActivationReason: gpuActivationReason,
     npuDispatch: npuDispatch,
     nativeLogLevel: nativeLogLevel,
     thinkingTokenBudget: thinkingTokenBudget,

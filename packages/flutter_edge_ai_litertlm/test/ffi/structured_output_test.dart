@@ -334,6 +334,7 @@ void main() {
             samplingExplicit: false,
             thinking: false,
             jsonSchema: jsonSchema,
+            filterChannelContent: true,
           )
           .toList();
       await pumpEventQueue();
@@ -671,6 +672,17 @@ class _ConstraintRecorder {
           return 0;
         }, exceptionalReturn: 1),
       ),
+      // A model whose linear attention state is unread keeps channel content
+      // (channel_content_filter.dart), so its conversations set the filter.
+      'litert_lm_conversation_config_set_filter_channel_content_from_kv_cache':
+          _retain(
+            NativeCallable<
+              UnsignedInt Function(Pointer<LiteRtLmConversationConfig>, Bool)
+            >.isolateLocal(
+              (Pointer<LiteRtLmConversationConfig> _, bool _) => 0,
+              exceptionalReturn: 1,
+            ),
+          ),
       'litert_lm_conversation_delete': _retain(
         NativeCallable<
           Void Function(Pointer<LiteRtLmConversation>)

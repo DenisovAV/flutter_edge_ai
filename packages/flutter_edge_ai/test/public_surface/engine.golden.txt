@@ -99,6 +99,10 @@ JsonSchemaResponseFormat class final
 MediaPosition enum
 Message class
 MessageExtension extension
+MessageMediaKind enum
+MessageMediaReader typedef
+MessageMediaWriter typedef
+MessageTranscriptCodec class final
 MessageType enum
 ModelArtifact class final
 ModelCatalog class abstract base

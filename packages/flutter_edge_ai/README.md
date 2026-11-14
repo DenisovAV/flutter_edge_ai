@@ -433,6 +433,30 @@ else `topK: 40`. Pass `topK: 1` for greedy decoding. What each engine reads,
 and why `.litertlm` keeps the first session's values:
 [Sampling](https://flutteredge.ai/docs/getting-started#sampling).
 
+### Saving a conversation
+
+`MessageTranscriptCodec` writes a list of messages, such as `chat.fullHistory`,
+as versioned JSON and reads it back; a decoded message is `==` to the one saved
+when its tool-call arguments are JSON values. It saves the messages only, not
+the chat's system instruction, tools or response format: open the chat with
+your own configuration and replay the messages. The model's context is rebuilt
+from them, not restored.
+
+```dart
+import 'dart:convert';
+
+const codec = MessageTranscriptCodec();
+final json = jsonEncode(await codec.encode(chat.fullHistory));
+// later, on a chat opened with the same system instruction and tools:
+final messages = await codec.decode(jsonDecode(json) as Map<String, Object?>);
+await chat.clearHistory(replayHistory: messages);
+```
+
+Media is written inline as base64, which makes the JSON about a third larger
+than the media. Pass `writeMedia` to store each buffer yourself and write a
+reference instead, and `readMedia` to resolve it on decode. Decoding is strict:
+another format version, a missing or an extra key is a `FormatException`.
+
 ### Decide (experimental)
 
 Pick one of N options — an intent, an action, a screen, a tool — for an input,

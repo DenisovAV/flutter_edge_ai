@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/chat_message.dart';
 import 'package:flutter_edge_ai_example/services/gemma_service.dart';
 import 'package:flutter_edge_ai_example/thinking_widget.dart';
+import 'package:material_ui/material_ui.dart';
 
 class GemmaInputField extends StatefulWidget {
   const GemmaInputField({

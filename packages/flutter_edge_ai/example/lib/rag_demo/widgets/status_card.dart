@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:material_ui/material_ui.dart';
 
 class StatusCard extends StatelessWidget {
   final bool hasEmbeddingModel;

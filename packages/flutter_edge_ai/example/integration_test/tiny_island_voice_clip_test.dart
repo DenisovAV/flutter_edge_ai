@@ -30,7 +30,6 @@
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_voice.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_voice_recorder.dart';
@@ -38,6 +37,7 @@ import 'package:flutter_edge_ai_example/tiny_island/tiny_island_app_dependencies
 import 'package:flutter_edge_ai_example/tiny_island_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'tiny_island_support.dart';

@@ -13,7 +13,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_catalog.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_decider_preparation.dart';
@@ -32,6 +31,7 @@ import 'package:flutter_edge_ai_example/tiny_island/tiny_island_platform.dart';
 import 'package:flutter_edge_ai_example/tiny_island/tiny_island_view_model.dart';
 import 'package:flutter_edge_ai_example/utils/audio_converter.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'tiny_island_fakes.dart';
 

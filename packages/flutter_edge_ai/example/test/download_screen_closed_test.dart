@@ -6,7 +6,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/model_download_screen.dart';
 import 'package:flutter_edge_ai_example/models/model.dart';
@@ -14,6 +13,7 @@ import 'package:flutter_edge_ai_example/services/catalog_install.dart';
 import 'package:flutter_edge_ai_example/services/model_download_service.dart';
 import 'package:flutter_edge_ai_example/universal_download_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// A service whose download waits for [result], and asks to replace a model
 /// first when [askFirst] is set.

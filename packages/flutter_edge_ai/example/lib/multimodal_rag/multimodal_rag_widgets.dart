@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'multimodal_rag_dependencies.dart' show MultimodalRagSetup;
 import 'multimodal_rag_audio.dart';

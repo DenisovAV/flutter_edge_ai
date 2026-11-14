@@ -1,3 +1,6 @@
+## Unreleased
+- `Message.hashCode` hashes media by content like `==`, which now compares `images` by content too (#823).
+
 ## 2.6.0
 - `createSession`, `createChat`, `session` and `chat` are deprecated until 3.0.0.
 - Engine SPI owns sessions, chat resolution, turn hooks and failed-turn rollback (#770).

@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  material_ui: ^1.1.0
   flutter_edge_ai_llama:
     path: ..
   flutter_edge_ai: ^2.5.0

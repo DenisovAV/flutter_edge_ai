@@ -1,9 +1,9 @@
 import 'package:builtin_ai_codelab/main.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
 import 'package:flutter_local_ai/flutter_local_ai.dart' show debugLocalAiHost;
 import 'package:flutter_local_ai/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() {
   late FakeLocalAiHost host;

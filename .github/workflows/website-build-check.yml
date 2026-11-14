@@ -20,17 +20,17 @@ jobs:
       - name: Set up Flutter (bundles Dart)
         uses: subosito/flutter-action@v2
         with:
-          # The workspace floor: flutter_edge_ai_sqlite needs 3.47 for
-          # sqlite3 3.6.0, and this job builds the example that depends on it.
-          flutter-version: '3.47.0'
+          # The workspace dev toolchain (.fvmrc). On Dart 3.14
+          # build_web_compilers needs analyzer 13, which only jaspr 0.24 (beta)
+          # supports; move this pin together with the jaspr version.
+          flutter-version: '3.50.0'
           channel: stable
           cache: true
 
       - name: Install Jaspr CLI
-        # Pin to 0.23.1 — jaspr_cli 0.23.2 fails with "Failed to start build
-        # daemon, port file is missing" (build-daemon regression). Matches the
-        # `jaspr: ^0.23.1` pin in website/pubspec.yaml. Bump deliberately.
-        run: dart pub global activate jaspr_cli 0.23.1
+        # Matches the `jaspr: ^0.24.0-beta.1` pin in website/pubspec.yaml.
+        # Bump deliberately.
+        run: dart pub global activate jaspr_cli 0.24.0-beta.1
 
       - name: Build Jaspr site (SSG)
         working-directory: website

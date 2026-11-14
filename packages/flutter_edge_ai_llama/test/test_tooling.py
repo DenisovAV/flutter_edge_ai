@@ -269,7 +269,7 @@ class ToolingTests(unittest.TestCase):
 
     def test_workspace_sdk_can_run_hosted_package_gate(self):
         with patch.object(sys, "argv", ["verify.py", "package"]), \
-             patch.object(package_verify.subprocess, "check_output", return_value='{"frameworkVersion":"3.47.0"}'), \
+             patch.object(package_verify.subprocess, "check_output", return_value=json.dumps({"frameworkVersion": package_verify.workspace_flutter()})), \
              patch.object(package_verify.subprocess, "run", side_effect=[
                  subprocess.CompletedProcess([], 0, stdout=""),
                  subprocess.CompletedProcess([], 0, stdout="Validating package...\n"),

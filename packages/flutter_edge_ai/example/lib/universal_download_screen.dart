@@ -1,5 +1,4 @@
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/services/catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
@@ -14,6 +13,7 @@ import 'package:flutter_edge_ai_example/services/model_download_service.dart';
 import 'package:flutter_edge_ai_example/services/embedding_download_service.dart';
 import 'package:flutter_edge_ai_example/translate_screen.dart';
 import 'package:flutter_edge_ai_example/utils/gated_model_access_dialog.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class UniversalDownloadScreen extends StatefulWidget {

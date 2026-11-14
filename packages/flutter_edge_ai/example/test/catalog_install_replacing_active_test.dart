@@ -8,11 +8,11 @@
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/services/catalog_install.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Core's refusal, as `activeFileRefusal` writes it.
 StateError refusal(String kind, String name, String call) => StateError(

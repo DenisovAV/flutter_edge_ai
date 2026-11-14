@@ -11,6 +11,19 @@ enum MessageType {
   thinking, // For thinking mode content
 }
 
+/// One message of a conversation: text, media, or a tool call or result.
+///
+/// Equality is structural: `==` and [hashCode] compare every field, and the
+/// media by content, so two messages built from the same bytes in different
+/// buffers are equal. [imageBytes] and [images] are compared as separate
+/// fields. Both read every media byte on each call and cache nothing, so key
+/// widgets by an id of your own or by `ObjectKey(message)`, not by
+/// `ValueKey(message)`.
+///
+/// A message keeps what it is given: [copyWith] and the factories do not copy
+/// the media bytes, and the constructor keeps the caller's [images] and
+/// [toolCalls] lists. Do not change them while the message is a `Set` member
+/// or a `Map` key.
 class Message {
   const Message({
     required this.text,
@@ -224,26 +237,52 @@ class Message {
     return other is Message &&
         other.text == text &&
         other.isUser == isUser &&
-        _listEquals(other.imageBytes, imageBytes) &&
-        _listEquals(other.images, images) &&
-        _listEquals(other.audioBytes, audioBytes) &&
+        _bytesEqual(other.imageBytes, imageBytes) &&
+        _imagesEqual(other.images, images) &&
+        _bytesEqual(other.audioBytes, audioBytes) &&
         other.type == type &&
         other.toolName == toolName &&
         _listEquals(other.toolCalls, toolCalls) &&
         other.toolCallId == toolCallId;
   }
 
+  /// Media is hashed by content, as `==` compares it: the same bytes in
+  /// different buffers, or in views at different offsets, hash alike (#823).
+  /// See [Message] for the cost and for mutation.
   @override
-  int get hashCode =>
-      text.hashCode ^
-      isUser.hashCode ^
-      imageBytes.hashCode ^
-      Object.hashAll(images) ^
-      audioBytes.hashCode ^
-      type.hashCode ^
-      toolName.hashCode ^
-      Object.hashAll(toolCalls) ^
-      toolCallId.hashCode;
+  int get hashCode => Object.hash(
+    text,
+    isUser,
+    _bytesHash(imageBytes),
+    Object.hashAll(images.map(_bytesHash)),
+    _bytesHash(audioBytes),
+    type,
+    toolName,
+    Object.hashAll(toolCalls),
+    toolCallId,
+  );
+
+  static bool _bytesEqual(Uint8List? a, Uint8List? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null || a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  static bool _imagesEqual(List<Uint8List> a, List<Uint8List> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_bytesEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+
+  /// Every visible byte, read through the view, so a view at an offset hashes
+  /// like a copy of the same bytes.
+  static int _bytesHash(Uint8List? bytes) =>
+      bytes == null ? null.hashCode : Object.hashAll(bytes);
 
   bool _listEquals<T>(List<T>? a, List<T>? b) {
     if (a == null) return b == null;

@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/model_selection_screen.dart';
 import 'package:flutter_edge_ai_example/models/model.dart';
 import 'package:flutter_edge_ai_example/models/stt_model.dart';
@@ -6,6 +5,7 @@ import 'package:flutter_edge_ai_example/models/tts_model.dart';
 import 'package:flutter_edge_ai_example/stt_models_screen.dart';
 import 'package:flutter_edge_ai_example/tts_models_screen.dart';
 import 'package:flutter_edge_ai_example/voice_screen.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Voice Loop setup — pick the model for each of the three pipeline steps
 /// (STT -> LLM -> TTS) via the standard per-modality list screens, then start

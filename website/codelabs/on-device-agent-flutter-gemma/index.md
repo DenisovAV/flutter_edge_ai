@@ -868,6 +868,12 @@ Duration: 2
 
 * `AgentChatView(session: session)` is a ready-made version of the chat page
   you wrote, and `SkillManagerView` lets the user switch skills on and off.
+  These widgets, and Step 5's `McpToolCallPermissionDialog` and
+  `McpManagerView`, are built on `package:flutter/material.dart`, while this
+  app imports `package:material_ui`. The
+  [material_ui README](https://pub.dev/packages/material_ui) says to wrap
+  such widgets in `MaterialUiCompatibilityBridge`, which carries the app's
+  theme and Material localizations over to them.
 * The package bundles more skills: `query-wikipedia` (needs the network),
   `interactive-map` (answers with a webview) and `kitchen-adventure`, a
   text-only persona.

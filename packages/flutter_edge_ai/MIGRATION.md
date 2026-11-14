@@ -19,6 +19,12 @@
   omitted argument takes the `defaults:` value, then `false` as before. A
   subclass of `EmbedderVariant`, `SttVariant` or `TtsVariant` inherits a
   `runtimeDefaults` it may override.
+- A language-model directory install (`installModel(...).fromHuggingFace`)
+  checks each member's size when the resolver gives one, as catalog and
+  embedder installs do, and then also refuses to write over the files of the
+  active model: close and `uninstallModel` the active model before installing
+  another revision into the same directory. The ONNX resolver gives no sizes
+  yet, so its installs are unchanged.
 
 ## flutter_edge_ai 2.6.0
 

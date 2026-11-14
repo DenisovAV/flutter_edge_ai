@@ -1,6 +1,6 @@
 ---
 name: flutter-edge-ai-inference
-description: Use when adding on-device LLM inference with flutter_edge_ai — offline chat, local models, Hugging Face installs, streaming, system prompts, thinking, structured JSON output, ResponseFormat or a schema-constrained reply, image/audio prompts, CPU/GPU/NPU selection, stopping generation, or setting up the recommended .litertlm engine on Android, iOS, macOS, Windows, Linux or web. Also use when a reply is empty or deterministic, maxTokens does not shorten replies, FlutterEdgeAi is undefined, getActiveModel reports no engine, a session is closed, GPU numbers are wrong, or .litertlm fails on Android. For .task or .bin models, use flutter-edge-ai-mediapipe.
+description: Use when adding on-device LLM inference with flutter_edge_ai — offline chat, local models, Hugging Face installs, streaming, system prompts, thinking, structured JSON output, ResponseFormat or a schema-constrained reply, image/audio prompts, CPU/GPU/NPU selection, stopping generation, saving and restoring a chat history, or setting up the recommended .litertlm engine on Android, iOS, macOS, Windows, Linux or web. Also use when a reply is empty or deterministic, maxTokens does not shorten replies, FlutterEdgeAi is undefined, getActiveModel reports no engine, a session is closed, GPU numbers are wrong, or .litertlm fails on Android. For .task or .bin models, use flutter-edge-ai-mediapipe.
 ---
 
 # Running a model with flutter_edge_ai
@@ -227,6 +227,22 @@ committed, so shorten it or reopen with less history. Do not treat every
 `TurnEnd.contextLimit` as a refusal—a turn can fill the window during decoding
 and end cleanly after producing text, in which case the partial exchange is
 kept.
+
+## Saving a conversation
+
+`MessageTranscriptCodec` turns `chat.fullHistory` into versioned JSON and back; decoded messages are `==` to the saved ones when tool-call arguments are JSON values. It does not save the system instruction, tools or response format: reopen the chat with the app's own configuration and pass the decoded list to `clearHistory(replayHistory:)`.
+
+```dart
+import 'dart:convert';
+
+const codec = MessageTranscriptCodec();
+final json = jsonEncode(await codec.encode(chat.fullHistory));
+// later, on a chat opened with the same system instruction and tools:
+final messages = await codec.decode(jsonDecode(json));
+await chat.clearHistory(replayHistory: messages);
+```
+
+Replay what `fullHistory` returned, not a display list: `systemInfo` and `thinking` messages are not model input, and llama refuses `systemInfo`. Numbers come back as JSON numbers (on the web `1.0` reads as `1`; integers past 2^53 lose precision). Media goes inline as base64 unless `writeMedia` stores it and returns a reference unique across saves (`readMedia` resolves it on decode; both get a `path` such as `messages[3].images[0]`). Decoding is strict: another version, a missing or an extra key throws `FormatException`. `encode` throws `ArgumentError` for a tool-call argument JSON cannot hold (a `BigInt`, `DateTime`, NaN, a non-string key or a cycle).
 
 ## Two conversations at once
 

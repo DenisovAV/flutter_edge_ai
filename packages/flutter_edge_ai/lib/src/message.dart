@@ -203,7 +203,7 @@ class Message {
           FunctionCallResponse(
             name: call.name,
             args: Map<String, dynamic>.unmodifiable({
-              for (final e in call.args.entries) e.key: _frozen(e.value),
+              for (final e in call.args.entries) e.key: frozenCopy(e.value),
             }),
             id: call.id,
           ),
@@ -295,12 +295,14 @@ class Message {
 }
 
 /// A deep copy that cannot be changed: a history keeps the arguments the call
-/// had, whatever the app later does to the map it received.
-Object? _frozen(Object? value) => switch (value) {
+/// had, whatever the app later does to the map it received. Also used by
+/// `MessageTranscriptCodec.decode`; not exported (the library's `show` list
+/// names `Message` and `MessageType` only).
+Object? frozenCopy(Object? value) => switch (value) {
   Map() => Map<Object?, Object?>.unmodifiable({
-    for (final e in value.entries) e.key: _frozen(e.value),
+    for (final e in value.entries) e.key: frozenCopy(e.value),
   }),
-  List() => List<Object?>.unmodifiable([for (final v in value) _frozen(v)]),
+  List() => List<Object?>.unmodifiable([for (final v in value) frozenCopy(v)]),
   _ => value,
 };
 

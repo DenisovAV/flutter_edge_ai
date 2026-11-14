@@ -85,6 +85,12 @@ InferenceVariant class abstract base
 JsonSchemaResponseFormat class final
 MediaPosition enum
 Message class
+MessageMedia class final
+MessageMediaKind enum
+MessageMediaReader typedef
+MessageMediaReference class final
+MessageMediaWriter typedef
+MessageTranscriptCodec class final
 MessageType enum
 ModelArtifact class final
 ModelCatalog class abstract base

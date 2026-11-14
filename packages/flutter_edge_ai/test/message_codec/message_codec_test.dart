@@ -295,27 +295,23 @@ void main() {
     });
   });
 
-  test(
-    'the encoder writes a key for every field of Message',
-    () async {
-      // Read from Message itself, so a field added later fails here until the
-      // codec writes it (and the format gets a new version).
-      final names = await exportNamespace('flutter_edge_ai.dart');
-      final message = names['Message']! as InterfaceElement;
-      final fields = {
-        for (final field in message.fields)
-          if (!field.isStatic && field.isOriginDeclaration && field.isPublic)
-            field.name!,
-      };
-      final encoded = await const MessageTranscriptCodec().encode([
-        const Message(text: ''),
-      ]);
-      final keys = ((encoded['messages']! as List).single as Map).keys.toSet();
-      expect(keys, fields);
-      expect(fields, hasLength(9));
-    },
-    timeout: const Timeout(Duration(minutes: 2)),
-  );
+  test('the encoder writes a key for every field of Message', () async {
+    // Read from Message itself, so a field added later fails here until the
+    // codec writes it (and the format gets a new version).
+    final names = await exportNamespace('flutter_edge_ai.dart');
+    final message = names['Message']! as InterfaceElement;
+    final fields = {
+      for (final field in message.fields)
+        if (!field.isStatic && field.isOriginDeclaration && field.isPublic)
+          field.name!,
+    };
+    final encoded = await const MessageTranscriptCodec().encode([
+      const Message(text: ''),
+    ]);
+    final keys = ((encoded['messages']! as List).single as Map).keys.toSet();
+    expect(keys, fields);
+    expect(fields, hasLength(9));
+  }, timeout: const Timeout(Duration(minutes: 2)));
 
   group('decode refuses', () {
     Future<void> refuses(Object? json, String detail) => expectLater(

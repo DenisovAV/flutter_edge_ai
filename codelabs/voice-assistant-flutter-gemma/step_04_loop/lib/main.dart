@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_speech/flutter_edge_ai_speech.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'chat_page.dart';
 import 'download_page.dart';

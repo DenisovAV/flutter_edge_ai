@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show Color;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:material_ui/material_ui.dart' show Color;
 
 /// What a tool actually is, on the app's side: a Dart function from the
 /// arguments the model wrote to the map the model will be shown.

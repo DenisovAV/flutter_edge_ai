@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:genkit/genkit.dart';
 import 'package:genkit_hybrid/genkit_hybrid.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../models/message_model.dart';
 import '../services/ai_engine.dart';

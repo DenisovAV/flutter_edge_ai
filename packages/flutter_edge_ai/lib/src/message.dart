@@ -11,6 +11,19 @@ enum MessageType {
   thinking, // For thinking mode content
 }
 
+/// One message of a conversation: text, media, or a tool call or result.
+///
+/// Equality is structural: `==` and [hashCode] compare every field, and the
+/// media by content, so two messages built from the same bytes in different
+/// buffers are equal. [imageBytes] and [images] are compared as separate
+/// fields. Both read every media byte on each call and cache nothing, so key
+/// widgets by an id of your own or by `ObjectKey(message)`, not by
+/// `ValueKey(message)`.
+///
+/// A message keeps what it is given: [copyWith] and the factories do not copy
+/// the media bytes, and the constructor keeps the caller's [images] and
+/// [toolCalls] lists. Do not change them while the message is a `Set` member
+/// or a `Map` key.
 class Message {
   const Message({
     required this.text,
@@ -233,15 +246,9 @@ class Message {
         other.toolCallId == toolCallId;
   }
 
-  /// Media is hashed by content, as `==` compares it: two messages with the
-  /// same bytes in different buffers, or in views at different offsets, are
-  /// equal and hash alike (#823). The hash reads every byte and is not
-  /// cached.
-  ///
-  /// A message keeps the caller's buffers ([copyWith] and the factories do
-  /// not copy the bytes), so its `==` and [hashCode] change when they are
-  /// mutated: do not change a message's media while it is a `Set` member or
-  /// a `Map` key.
+  /// Media is hashed by content, as `==` compares it: the same bytes in
+  /// different buffers, or in views at different offsets, hash alike (#823).
+  /// See [Message] for the cost and for mutation.
   @override
   int get hashCode => Object.hash(
     text,

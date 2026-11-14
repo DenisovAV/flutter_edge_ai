@@ -1,5 +1,5 @@
-## 2.6.1
-- `Message` equality and `hashCode` compare images and audio by content (#823).
+## Unreleased
+- `Message.hashCode` hashes media by content like `==`, which now compares `images` by content too (#823).
 
 ## 2.6.0
 - `createSession`, `createChat`, `session` and `chat` are deprecated until 3.0.0.

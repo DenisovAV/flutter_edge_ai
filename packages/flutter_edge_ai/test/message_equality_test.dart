@@ -50,6 +50,18 @@ void main() {
     });
   }
 
+  test('no media and empty media are not equal', () {
+    const none = Message(text: 'x', isUser: true);
+    expect(
+      none,
+      isNot(Message(text: 'x', isUser: true, imageBytes: bytes([]))),
+    );
+    expect(
+      none,
+      isNot(Message(text: 'x', isUser: true, audioBytes: bytes([]))),
+    );
+  });
+
   group('images', () {
     test('several images in the same order are equal and hash alike', () {
       expectEqualAndSameHash(

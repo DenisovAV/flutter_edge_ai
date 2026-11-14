@@ -14,6 +14,7 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show NpuDispatchUnavailableException;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
+import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -511,17 +512,21 @@ void main() {
 
     test('the platform host looks beside the running executable', () async {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
-      expect(windowsNpuDispatchDir, exeDir);
+      expect(const FlutterNpuPlatform().executableDir, exeDir);
       // No test runner ships LiteRtDispatch.dll beside itself.
-      final check = await const LiteRtLmPlatformNpuHost().stack(NpuStack.intel);
+      final check = await flutterNpuHost.stack(NpuStack.intel);
       expect(check.bundled, isFalse);
       expect(check.reason, contains('($exeDir)'));
     });
 
     test('Windows hands LiteRT the executable\'s directory', () async {
       expect(
-        await prepareNpuDispatchDir(NpuStack.intel, operatingSystem: 'windows'),
-        windowsNpuDispatchDir,
+        await prepareNpuDispatchDir(
+          NpuStack.intel,
+          const FlutterNpuPlatform(),
+          operatingSystem: 'windows',
+        ),
+        File(Platform.resolvedExecutable).parent.path,
       );
     });
   });

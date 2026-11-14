@@ -2,8 +2,6 @@ import 'dart:convert';
 import 'dart:ffi' show Abi;
 import 'dart:io' show Platform;
 
-import 'package:flutter/services.dart' show rootBundle;
-
 import '../npu_stacks.dart';
 
 /// Whether this build carries a vendor's NPU stack ([NpuStack]) where LiteRT
@@ -37,11 +35,9 @@ final class NpuStackCheck {
   final String? reason;
 }
 
-/// Reads `flutter_assets/NativeAssetsManifest.json`.
+/// Reads `flutter_assets/NativeAssetsManifest.json`; in a Flutter app,
+/// `FlutterNpuPlatform.readNativeAssetsManifest` (`rootBundle`).
 typedef NativeAssetsManifestReader = Future<String> Function();
-
-Future<String> _readFromBundle() =>
-    rootBundle.loadString('NativeAssetsManifest.json', cache: false);
 
 final _cached = <NpuStack, NpuStackCheck>{};
 
@@ -54,11 +50,15 @@ final _cached = <NpuStack, NpuStackCheck>{};
 /// presence is not an answer — on Windows stale DLLs outlive a rebuild, and
 /// on Android a Play install keeps the libraries in a config split.
 ///
-/// Only a successful read is cached. A failed read is not an answer about the
-/// build either, so it is [NpuStackCheck.unknown], not "not enabled".
+/// [read] supplies the manifest's text. With [cache] (the platform host's
+/// read: the manifest of the running build), an answer is kept per vendor for
+/// the isolate and reused without reading again. Only a successful read is
+/// cached. A failed read is not an answer about the build either, so it is
+/// [NpuStackCheck.unknown], not "not enabled".
 Future<NpuStackCheck> checkNpuStackInManifest(
   NpuStack vendor, {
-  NativeAssetsManifestReader? read,
+  required NativeAssetsManifestReader read,
+  bool cache = false,
   String? abi,
   String? operatingSystem,
 }) async {
@@ -66,10 +66,10 @@ Future<NpuStackCheck> checkNpuStackInManifest(
     vendor,
     operatingSystem ?? Platform.operatingSystem,
   );
-  if (read == null && _cached[vendor] != null) return _cached[vendor]!;
+  if (cache && _cached[vendor] != null) return _cached[vendor]!;
   final String text;
   try {
-    text = await (read ?? _readFromBundle)();
+    text = await read();
   } on Object catch (e) {
     return NpuStackCheck.unknown(
       'NativeAssetsManifest.json could not be read ($e), so whether this '
@@ -102,7 +102,7 @@ Future<NpuStackCheck> checkNpuStackInManifest(
       'unknown',
     );
   }
-  if (read == null) _cached[vendor] = result;
+  if (cache) _cached[vendor] = result;
   return result;
 }
 

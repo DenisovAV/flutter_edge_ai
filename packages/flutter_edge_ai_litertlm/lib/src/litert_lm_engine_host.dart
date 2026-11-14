@@ -14,20 +14,36 @@ import 'ffi/litert_lm_client.dart';
 import 'ffi/npu_stack_manifest.dart';
 import 'ffi/npu_vendor_host.dart';
 import 'ffi/open_session_backing.dart';
+import 'flutter_npu_platform.dart';
 import 'litert_lm_log_level.dart';
 import 'npu_stacks.dart';
+
+/// The app's support directory (path_provider): the default
+/// [LiteRtLmEngineHost.cacheDir].
+Future<String> applicationSupportDirectoryPath() async =>
+    (await getApplicationSupportDirectory()).path;
 
 /// What a native `.litertlm` LLM load reaches outside Dart. Its NPU answers
 /// are the same [LiteRtLmNpuHost] the EmbeddingGemma 2 placement asks, so
 /// [chooseNpuVendor] runs over either.
+///
+/// The Flutter-bound answers are injected: [cacheDirectory] (the app's
+/// support directory by default) and [npu] ([flutterNpuHost] by default), so
+/// the client and the NPU code below them take plain values.
 class LiteRtLmEngineHost implements LiteRtLmNpuHost {
-  const LiteRtLmEngineHost();
+  const LiteRtLmEngineHost({
+    this.cacheDirectory = applicationSupportDirectoryPath,
+    this.npu = flutterNpuHost,
+  });
 
-  static const _npu = LiteRtLmPlatformNpuHost();
+  /// Where [cacheDir] comes from.
+  final Future<String> Function() cacheDirectory;
+
+  /// What the NPU questions below are answered by.
+  final LiteRtLmNpuHost npu;
 
   /// The directory LiteRT-LM keeps its caches in.
-  Future<String> cacheDir() async =>
-      (await getApplicationSupportDirectory()).path;
+  Future<String> cacheDir() async => cacheDirectory();
 
   @override
   String get operatingSystem => Platform.operatingSystem;
@@ -36,17 +52,17 @@ class LiteRtLmEngineHost implements LiteRtLmNpuHost {
   String get abi => '${Abi.current()}';
 
   @override
-  Future<NpuStackCheck> stack(NpuStack vendor) => _npu.stack(vendor);
+  Future<NpuStackCheck> stack(NpuStack vendor) => npu.stack(vendor);
 
   /// On Android it opens a vendor library.
   @override
-  String? unreachable(NpuStack vendor) => _npu.unreachable(vendor);
+  String? unreachable(NpuStack vendor) => npu.unreachable(vendor);
 
   /// On Android it extracts the vendor's libraries out of the APK when the
   /// installer did not.
   @override
   Future<String> prepareDispatchDir(NpuStack vendor) =>
-      _npu.prepareDispatchDir(vendor);
+      npu.prepareDispatchDir(vendor);
 
   /// The GPU family of an Android device, told by the device node its driver
   /// exposes (`/dev/kgsl-3d0` Adreno, `/dev/mali0` Mali, `/dev/pvr_sync`

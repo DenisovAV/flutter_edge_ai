@@ -12,6 +12,8 @@ import 'package:flutter/foundation.dart';
 
 import '../litertlm_decision_section.dart';
 import '../option_scoring_self_check.dart';
+import '../runtime/build_mode.dart';
+import '../runtime/runtime_log.dart';
 import 'litert_lm_client.dart';
 import 'open_session_backing.dart';
 import '../reported_engine_turn.dart';
@@ -19,10 +21,10 @@ import 'native_turns.dart'
     show LiteRtLmTurnCancelledException, LiteRtLmTurnClosedException;
 
 /// Whether the scoring self-check is skipped as in a release build:
-/// [kReleaseMode] (`dart.vm.product`, a compile-time constant), set by tests,
+/// [isReleaseBuild] (`dart.vm.product`, a compile-time constant), set by tests,
 /// which never run in release.
 @visibleForTesting
-bool liteRtLmScoringReleaseMode = kReleaseMode;
+bool liteRtLmScoringReleaseMode = isReleaseBuild;
 
 /// FFI implementation of InferenceModel using dart:ffi → LiteRT-LM C API.
 /// Shared between desktop and mobile (iOS) for .litertlm models.
@@ -213,7 +215,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
             '${run.tokenScores[i].length} tokens.',
           ),
     ];
-    // kReleaseMode is `dart.vm.product`, a compile-time constant: true in a
+    // isReleaseBuild is `dart.vm.product`, a compile-time constant: true in a
     // release build only (profile builds keep the check), and the check's
     // code is tree-shaken out of a release build.
     final check = liteRtLmScoringChecked(
@@ -381,7 +383,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
         reopen: (messagesJson) => open(messagesJson: messagesJson),
         noRewindReason: _noRewindReason,
       ).._multimodalOrder = multimodalOrder;
-      edgeAiLog(
+      runtimeLog(
         '[FfiInferenceModel/perf] createConversation (FFI): ${sessionSw.elapsedMilliseconds - beforeConv}ms',
       );
 
@@ -412,7 +414,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       _session = session;
 
       completer.complete(session);
-      edgeAiLog(
+      runtimeLog(
         '[FfiInferenceModel/perf] createSession total: ${sessionSw.elapsedMilliseconds}ms',
       );
     } catch (e, st) {
@@ -892,7 +894,7 @@ class FfiInferenceModelSession extends InferenceModelSession
       )) {
         if (firstChunkMs == null) {
           firstChunkMs = genSw.elapsedMilliseconds;
-          edgeAiLog(
+          runtimeLog(
             '[FfiInferenceModelSession/perf] time-to-first-chunk (prefill): ${firstChunkMs}ms',
           );
         }
@@ -917,7 +919,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     )) {
       if (firstChunkMs == null) {
         firstChunkMs = genSw.elapsedMilliseconds;
-        edgeAiLog(
+        runtimeLog(
           '[FfiInferenceModelSession/perf] time-to-first-chunk (prefill): ${firstChunkMs}ms',
         );
       }
@@ -931,7 +933,7 @@ class FfiInferenceModelSession extends InferenceModelSession
   void _logGenerationStats(Stopwatch sw, int? firstChunkMs, int chunks) {
     final total = sw.elapsedMilliseconds;
     if (firstChunkMs == null || chunks == 0) {
-      edgeAiLog(
+      runtimeLog(
         '[FfiInferenceModelSession/perf] generation total: ${total}ms (no chunks emitted)',
       );
       return;
@@ -940,7 +942,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     final decodeRate = chunks > 1 && decodeMs > 0
         ? ((chunks - 1) * 1000.0 / decodeMs).toStringAsFixed(1)
         : 'n/a';
-    edgeAiLog(
+    runtimeLog(
       '[FfiInferenceModelSession/perf] generation total: ${total}ms '
       '(prefill ${firstChunkMs}ms + decode ${decodeMs}ms over $chunks chunks, '
       '~$decodeRate chunks/sec)',
@@ -971,7 +973,7 @@ class FfiInferenceModelSession extends InferenceModelSession
       )) {
         if (firstChunkMs == null) {
           firstChunkMs = genSw.elapsedMilliseconds;
-          edgeAiLog(
+          runtimeLog(
             '[FfiInferenceModelSession/perf] (async) time-to-first-chunk (prefill): ${firstChunkMs}ms',
           );
         }
@@ -995,7 +997,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     )) {
       if (firstChunkMs == null) {
         firstChunkMs = genSw.elapsedMilliseconds;
-        edgeAiLog(
+        runtimeLog(
           '[FfiInferenceModelSession/perf] (async) time-to-first-chunk (prefill): ${firstChunkMs}ms',
         );
       }
@@ -1065,7 +1067,7 @@ class FfiInferenceModelSession extends InferenceModelSession
     // under-counts.
     if (!_tokenFallbackWarned) {
       _tokenFallbackWarned = true;
-      edgeAiLog(
+      runtimeLog(
         '[LiteRtLmFfi] sizeInTokens: native tokenizer unavailable; estimating '
         'conservatively at 2 chars/token for the rest of this session. '
         'Context budgeting will over-count, trimming history earlier than '
@@ -1285,7 +1287,7 @@ class RecoveringConversationHandle implements ConversationHandle {
       _live.close();
       throw StateError('Conversation handle is closed');
     }
-    edgeAiLog(
+    runtimeLog(
       '[FfiInferenceModel] rebuilt the conversation after a stopped turn or '
       'a full context (${_history.length} messages replayed)',
     );
@@ -1326,14 +1328,14 @@ class RecoveringConversationHandle implements ConversationHandle {
         switch (result) {
           case StoppedTurnRewind.rewound:
             _stopped = false;
-            edgeAiLog(
+            runtimeLog(
               '[FfiInferenceModel] rewound the conversation after a stopped '
               'turn or a full context',
             );
             return;
           case StoppedTurnRewind.notCancelled when !takeBack:
             _stopped = false;
-            edgeAiLog(
+            runtimeLog(
               '[FfiInferenceModel] the stopped turn had ended natively before '
               'the stop; the conversation is kept as it is',
             );
@@ -1404,7 +1406,7 @@ class RecoveringConversationHandle implements ConversationHandle {
           windDownTimeout,
           onTimeout: () {
             if (!_stopRequested) {
-              edgeAiLog(
+              runtimeLog(
                 '[FfiInferenceModel] the previous turn is still generating '
                 'after ${windDownTimeout.inSeconds}s; this one waits for it',
               );
@@ -1415,7 +1417,7 @@ class RecoveringConversationHandle implements ConversationHandle {
             _rebuildBecause =
                 'the previous turn did not wind down within '
                 '${windDownTimeout.inSeconds}s';
-            edgeAiLog(
+            runtimeLog(
               '[FfiInferenceModel] a stopped turn did not wind down within '
               '${windDownTimeout.inSeconds}s (is its stream paused?); '
               'rebuilding without it',

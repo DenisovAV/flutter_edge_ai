@@ -17,7 +17,8 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
-import 'package:flutter_edge_ai/engine.dart';
+
+import '../runtime/runtime_log.dart';
 
 const stdOutputHandle = 0xFFFFFFF5; // (DWORD)-11
 const stdErrorHandle = 0xFFFFFFF4; // (DWORD)-12
@@ -86,7 +87,7 @@ DynamicLibrary openBundledWindowsLibrary(
       final calls = win32StdHandleCalls();
       if (calls != null) {
         for (final which in alignStdHandles(calls)) {
-          edgeAiLog(
+          runtimeLog(
             '[flutter_edge_ai_litertlm] Windows: '
             '${which == stdErrorHandle ? 'STD_ERROR_HANDLE' : 'STD_OUTPUT_HANDLE'} '
             "was the parent's console while the app's "

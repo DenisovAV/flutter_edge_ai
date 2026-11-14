@@ -8,6 +8,7 @@ import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart'
     show NpuDispatchUnavailableException;
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_stack_manifest.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/npu_vendor_host.dart';
+import 'package:flutter_edge_ai_litertlm/src/flutter_npu_platform.dart';
 import 'package:flutter_edge_ai_litertlm/src/npu_stacks.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -149,9 +150,11 @@ void main() {
     // No binding here, as in a background isolate without
     // BackgroundIsolateBinaryMessenger: the channel throws an Error.
     await expectLater(
-      prepareAndroidNpuDispatchDir(const [
-        'LiteRtDispatch_Qualcomm',
-      ], NpuStack.qualcomm),
+      prepareAndroidNpuDispatchDir(
+        const ['LiteRtDispatch_Qualcomm'],
+        NpuStack.qualcomm,
+        const FlutterNpuPlatform(),
+      ),
       throwsA(
         isA<NpuDispatchUnavailableException>().having(
           (e) => e.message,

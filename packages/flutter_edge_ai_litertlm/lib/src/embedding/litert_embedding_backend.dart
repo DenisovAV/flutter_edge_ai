@@ -18,9 +18,9 @@
 import 'dart:io' show FileSystemException, Platform;
 
 import 'package:flutter_edge_ai/engine.dart';
-import 'package:path_provider/path_provider.dart';
 
 import '../catalog/litert_catalog.dart' show LiteRtEmbedders;
+import 'embedding_cache_dir.dart';
 import 'litert_embedding_pass.dart';
 import 'litert_lm_embedding_pass.dart';
 import 'litert_lm_npu.dart';
@@ -167,6 +167,7 @@ final class LiteRtEmbeddingBackend extends EmbeddingBackendProvider
         file,
         _visionTokensPerImage,
         requireWeightCache: _requireWeightCache,
+        cacheDirectory: liteRtEmbeddingCacheDirectory,
       );
     }
     final descriptor = _describeTflite(spec, file, config);
@@ -191,12 +192,14 @@ const _liteRtLm = liteRtLmEngineTag;
 /// ModelInfo at load (the 270m has none). Where it runs — CPU, or the NPU it
 /// was compiled for — is decided here too, from the bundle's own bytes
 /// ([readLiteRtLmNpuTarget], [placeLiteRtLmEmbedder]). Both refusals come
-/// before any isolate or engine exists.
+/// before any isolate or engine exists. [cacheDirectory] is the platform
+/// cache directory ([liteRtEmbeddingCacheDirectory]), asked for after them.
 Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   RuntimeConfig config,
   String file,
   int visionTokensPerImage, {
   required bool requireWeightCache,
+  required Future<String> Function() cacheDirectory,
 }) async {
   if (config.supportAudio) requireLiteRtLmAudioEncoder(config.modelPath);
   final LiteRtLmNpuTarget? target;
@@ -270,7 +273,7 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   // which a 71-385 MB weight cache would break. If the OS purges the cache,
   // the next engine create rebuilds it. Resolved here: the pass runs in core's
   // worker isolate, which has no platform channels.
-  final cache = (await getApplicationCacheDirectory()).path;
+  final cache = await cacheDirectory();
   final sep = Platform.pathSeparator;
   return EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>(
     engineTag: _liteRtLm,

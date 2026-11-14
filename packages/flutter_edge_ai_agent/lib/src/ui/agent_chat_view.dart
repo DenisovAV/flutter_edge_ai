@@ -196,31 +196,36 @@ class _AgentChatViewState extends State<AgentChatView> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: _turns.isEmpty
-              ? Center(child: widget.emptyState ?? const _DefaultEmptyState())
-              : ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(12),
-                  itemCount: _turns.length,
-                  itemBuilder: (context, i) => _AgentTurnBubble(
-                    turn: _turns[i],
-                    // Show the spinner on the last (model) turn while busy.
-                    isStreaming:
-                        _busy && i == _turns.length - 1 && !_turns[i].isUser,
+    // Its own Material, so the text field and buttons have one in an app whose
+    // Scaffold is package:material_ui's, a type they do not recognise.
+    return Material(
+      type: MaterialType.transparency,
+      child: Column(
+        children: [
+          Expanded(
+            child: _turns.isEmpty
+                ? Center(child: widget.emptyState ?? const _DefaultEmptyState())
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(12),
+                    itemCount: _turns.length,
+                    itemBuilder: (context, i) => _AgentTurnBubble(
+                      turn: _turns[i],
+                      // Show the spinner on the last (model) turn while busy.
+                      isStreaming:
+                          _busy && i == _turns.length - 1 && !_turns[i].isUser,
+                    ),
                   ),
-                ),
-        ),
-        const Divider(height: 1),
-        _Composer(
-          controller: _inputController,
-          hintText: widget.hintText,
-          busy: _busy,
-          onSend: _send,
-        ),
-      ],
+          ),
+          const Divider(height: 1),
+          _Composer(
+            controller: _inputController,
+            hintText: widget.hintText,
+            busy: _busy,
+            onSend: _send,
+          ),
+        ],
+      ),
     );
   }
 }

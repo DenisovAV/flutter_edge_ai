@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../mcp/mcp_client.dart';
 import '../mcp/mcp_server_config.dart';
 import 'add_skill_disclaimer.dart';
+import 'show_ui_error.dart';
 
 /// Manage the configured MCP servers and their tools.
 ///
@@ -94,7 +95,10 @@ class _McpManagerViewState extends State<McpManagerView> {
     if (entered == null || !mounted) return;
 
     setState(() => _connecting = true);
-    final client = (widget.clientFactory ?? McpClient.new)(entered);
+    final factory = widget.clientFactory;
+    final client = factory != null
+        ? factory(entered)
+        : McpClient(config: entered);
     try {
       final connected = await client.connect();
       _servers = [..._servers, connected];
@@ -104,9 +108,7 @@ class _McpManagerViewState extends State<McpManagerView> {
       _servers = [..._servers, entered];
       _commit();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Added but could not connect: $e')),
-        );
+        showUiError(context, 'Added but could not connect: $e');
       }
     } finally {
       client.close();

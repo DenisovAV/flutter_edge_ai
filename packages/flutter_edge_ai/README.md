@@ -448,13 +448,21 @@ import 'dart:convert';
 const codec = MessageTranscriptCodec();
 final json = jsonEncode(await codec.encode(chat.fullHistory));
 // later, on a chat opened with the same system instruction and tools:
-final messages = await codec.decode(jsonDecode(json) as Map<String, Object?>);
+final messages = await codec.decode(jsonDecode(json));
 await chat.clearHistory(replayHistory: messages);
 ```
 
+Replay what `fullHistory` returned, not a display list: `systemInfo` and
+`thinking` messages are not model input, and the llama engine refuses
+`systemInfo`. Numbers come back as JSON numbers: on the web `1.0` reads as `1`,
+and integers past 2^53 lose precision. `encode` throws `ArgumentError` for a
+tool-call argument JSON cannot hold (a `BigInt`, a `DateTime`, NaN, a
+non-string key, a cycle).
+
 Media is written inline as base64, which makes the JSON about a third larger
-than the media. Pass `writeMedia` to store each buffer yourself and write a
-reference instead, and `readMedia` to resolve it on decode. Decoding is strict:
+than the media. Pass `writeMedia` to store each buffer yourself and return a
+reference, unique across saves, and `readMedia` to resolve it on decode; both
+get the field's path, such as `messages[3].images[0]`. Decoding is strict:
 another format version, a missing or an extra key is a `FormatException`.
 
 ### Decide (experimental)

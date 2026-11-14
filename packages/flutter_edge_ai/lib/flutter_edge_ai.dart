@@ -116,8 +116,10 @@ export 'src/media/encoded_media_format.dart'
 export 'src/message.dart' show Message, MessageType;
 export 'src/message_codec.dart'
     show
+        MessageMedia,
         MessageMediaKind,
         MessageMediaReader,
+        MessageMediaReference,
         MessageMediaWriter,
         MessageTranscriptCodec;
 export 'src/model.dart' show ModelFileType, ModelType;

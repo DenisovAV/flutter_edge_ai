@@ -16,7 +16,7 @@ Future<List<Message>> _roundTrip(
   MessageTranscriptCodec codec = const MessageTranscriptCodec(),
 ]) async {
   final text = jsonEncode(await codec.encode(messages));
-  return codec.decode(jsonDecode(text) as Map<String, Object?>);
+  return codec.decode(jsonDecode(text));
 }
 
 Message _call(Map<String, dynamic> args) => Message.toolCall(
@@ -57,15 +57,17 @@ void main() {
 
     final store = <String, Uint8List>{};
     final codec = MessageTranscriptCodec(
-      writeMedia: (bytes, kind) async {
+      writeMedia: (media) async {
         final ref = 'r${store.length}';
-        store[ref] = Uint8List.fromList(bytes);
+        store[ref] = Uint8List.fromList(media.bytes);
         return ref;
       },
-      readMedia: (ref, kind) async => store[ref]!,
+      readMedia: (ref) async => store[ref.reference]!,
     );
     expect(await _roundTrip(messages, codec), messages);
-    expect(store, hasLength(4));
+    // withImages shares the first image between imageBytes and images[0]:
+    // written once.
+    expect(store, hasLength(3));
   });
 
   test('an integral double reads back as an int, and integers past 2^53 '
@@ -78,7 +80,7 @@ void main() {
       ]),
     ).replaceFirst('"BIG"', '9007199254740993');
     final args = (await codec.decode(
-      jsonDecode(text) as Map<String, Object?>,
+      jsonDecode(text),
     )).single.toolCalls.single.args;
     expect(args['d'], isA<int>());
     expect(args['d'], 1);

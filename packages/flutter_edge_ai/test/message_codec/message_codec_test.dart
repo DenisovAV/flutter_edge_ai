@@ -129,7 +129,7 @@ Future<List<Message>> _roundTrip(
   MessageTranscriptCodec codec = const MessageTranscriptCodec(),
 ]) async {
   final text = jsonEncode(await codec.encode(messages));
-  return codec.decode(jsonDecode(text) as Map<String, Object?>);
+  return codec.decode(jsonDecode(text));
 }
 
 void main() {
@@ -145,35 +145,103 @@ void main() {
       'every kind of message, media through a writer and a reader',
       () async {
         final store = <String, Uint8List>{};
-        final written = <(int, MessageMediaKind)>[];
+        final written = <String>[];
+        final read = <String>[];
         final codec = MessageTranscriptCodec(
-          writeMedia: (bytes, kind) async {
+          writeMedia: (media) async {
             final ref = 'm${store.length}';
-            store[ref] = Uint8List.fromList(bytes);
-            written.add((bytes.length, kind));
+            store[ref] = Uint8List.fromList(media.bytes);
+            written.add('${media.path} ${media.kind.name}');
             return ref;
           },
-          readMedia: (ref, kind) async => store[ref]!,
+          readMedia: (ref) async {
+            read.add('${ref.path} ${ref.kind.name} ${ref.reference}');
+            return store[ref.reference]!;
+          },
         );
         final messages = _everyKind();
         final encoded = await codec.encode(messages);
         expect(jsonEncode(encoded), isNot(contains('base64')));
-        final decoded = await codec.decode(
-          jsonDecode(jsonEncode(encoded)) as Map<String, Object?>,
-        );
+        final decoded = await codec.decode(jsonDecode(jsonEncode(encoded)));
         expect(decoded, messages);
         _expectSameFields(decoded, messages);
 
-        // Message.withImage keeps the buffer in imageBytes and images: written
-        // twice, field for field. Order: imageBytes, images, audioBytes.
-        expect(written.take(2), [
-          (3, MessageMediaKind.image),
-          (3, MessageMediaKind.image),
+        // Message order, then imageBytes, images, audioBytes. The factories'
+        // shared first image (messages[2], [3], [4]) is written once; an
+        // empty buffer still is.
+        const order = [
+          'messages[2].imageBytes image',
+          'messages[3].imageBytes image',
+          'messages[3].images[1] image',
+          'messages[4].imageBytes image',
+          'messages[6].audioBytes audio',
+          'messages[7].audioBytes audio',
+          'messages[14].imageBytes image',
+          'messages[14].images[0] image',
+          'messages[14].images[1] image',
+          'messages[14].audioBytes audio',
+          'messages[16].imageBytes image',
+        ];
+        expect(written, order);
+        expect(read, [
+          for (var i = 0; i < order.length; i++) '${order[i]} m$i',
         ]);
-        final all = messages.last;
-        expect(all.imageBytes, isNotNull);
-        final audio = written.where((w) => w.$2 == MessageMediaKind.audio);
-        expect(audio.map((w) => w.$1), [2, 0, 1]);
+      },
+    );
+
+    test('one buffer in imageBytes and images[0] comes back as one buffer, '
+        'written once', () async {
+      final photo = Message.withImage(
+        text: 'photo',
+        imageBytes: _bytes([1, 2, 3]),
+        isUser: true,
+      );
+      expect(identical(photo.imageBytes, photo.images.first), isTrue);
+
+      // Inline: written field for field, one buffer after decode.
+      final inline = (await _roundTrip([photo])).single;
+      expect(identical(inline.imageBytes, inline.images.single), isTrue);
+
+      // Through a writer: one write, the reference repeated, one read.
+      final store = <String, Uint8List>{};
+      var reads = 0;
+      final codec = MessageTranscriptCodec(
+        writeMedia: (media) async {
+          store[media.path] = Uint8List.fromList(media.bytes);
+          return media.path;
+        },
+        readMedia: (ref) async {
+          reads++;
+          return store[ref.reference]!;
+        },
+      );
+      final encoded = await codec.encode([photo]);
+      final message = (encoded['messages']! as List).single as Map;
+      expect(message['imageBytes'], {'ref': 'messages[0].imageBytes'});
+      expect(message['images'], [
+        {'ref': 'messages[0].imageBytes'},
+      ]);
+      expect(store, hasLength(1));
+      final decoded = (await codec.decode(encoded)).single;
+      expect(reads, 1);
+      expect(identical(decoded.imageBytes, decoded.images.single), isTrue);
+      expect(decoded, photo);
+    });
+
+    test(
+      'different bytes in imageBytes and images[0] stay two buffers',
+      () async {
+        final decoded = (await _roundTrip([
+          Message(
+            text: 'two',
+            imageBytes: _bytes([1]),
+            images: [
+              _bytes([2]),
+            ],
+          ),
+        ])).single;
+        expect(decoded.imageBytes, [1]);
+        expect(decoded.images.single, [2]);
       },
     );
 
@@ -181,7 +249,7 @@ void main() {
       final messages = _everyKind();
       final encoded = await const MessageTranscriptCodec().encode(messages);
       final decoded = await MessageTranscriptCodec(
-        readMedia: (ref, kind) => fail('no reference was written'),
+        readMedia: (ref) => fail('no reference was written'),
       ).decode(encoded);
       expect(decoded, messages);
     });
@@ -288,11 +356,50 @@ void main() {
 
     test('the committed v1 golden decodes to the fixed messages', () async {
       final decoded = await const MessageTranscriptCodec().decode(
-        jsonDecode(golden.readAsStringSync()) as Map<String, Object?>,
+        jsonDecode(golden.readAsStringSync()),
       );
       expect(decoded, fixed());
       _expectSameFields(decoded, fixed());
     });
+
+    final refsGolden = File(
+      'test/message_codec/transcript_v1_refs.golden.json',
+    );
+    final store = <String, Uint8List>{};
+    final byPath = MessageTranscriptCodec(
+      writeMedia: (media) async {
+        store[media.path] = Uint8List.fromList(media.bytes);
+        return media.path;
+      },
+      readMedia: (ref) async => store[ref.reference]!,
+    );
+
+    test(
+      'with a writer, the encoder writes the committed v1 refs golden',
+      () async {
+        final encoded = await byPath.encode(fixed());
+        expectGolden(
+          refsGolden,
+          '${const JsonEncoder.withIndent('  ').convert(encoded)}\n',
+          (expected, actual) =>
+              'transcript v1 (refs) changed. A change to the written format '
+              'needs a new version.\n'
+              '${describeLineDrift('golden', expected, actual)}',
+        );
+      },
+    );
+
+    test(
+      'the committed v1 refs golden decodes to the fixed messages',
+      () async {
+        await byPath.encode(fixed());
+        final decoded = await byPath.decode(
+          jsonDecode(refsGolden.readAsStringSync()),
+        );
+        expect(decoded, fixed());
+        _expectSameFields(decoded, fixed());
+      },
+    );
   });
 
   test('the encoder writes a key for every field of Message', () async {
@@ -311,11 +418,44 @@ void main() {
     final keys = ((encoded['messages']! as List).single as Map).keys.toSet();
     expect(keys, fields);
     expect(fields, hasLength(9));
+
+    final call = names['FunctionCallResponse']! as InterfaceElement;
+    final callFields = {
+      for (final field in call.fields)
+        if (!field.isStatic && field.isOriginDeclaration && field.isPublic)
+          field.name!,
+    };
+    final withCall = await const MessageTranscriptCodec().encode([
+      const Message(
+        text: '',
+        toolCalls: [FunctionCallResponse(name: 'f', args: {})],
+      ),
+    ]);
+    final callKeys =
+        ((((withCall['messages']! as List).single as Map)['toolCalls']! as List)
+                    .single
+                as Map)
+            .keys
+            .toSet();
+    expect(callKeys, callFields);
+    expect(callFields, hasLength(3));
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('MessageType has the v1 values', () {
+    // v1 writes the type by name. A new value would be written as version 1
+    // and refused by every older build: it needs a new version.
+    expect(MessageType.values.map((t) => t.name), [
+      'text',
+      'toolResponse',
+      'toolCall',
+      'systemInfo',
+      'thinking',
+    ]);
+  });
 
   group('decode refuses', () {
     Future<void> refuses(Object? json, String detail) => expectLater(
-      const MessageTranscriptCodec().decode(json! as Map<String, Object?>),
+      const MessageTranscriptCodec().decode(json),
       throwsA(
         isA<FormatException>().having(
           (e) => e.message,
@@ -431,15 +571,72 @@ void main() {
 
     test('a media reference without a reader', () async {
       final encoded =
-          await MessageTranscriptCodec(
-            writeMedia: (bytes, kind) async => 'r',
-          ).encode([
-            Message.withImage(text: 'x', imageBytes: _bytes([1])),
-          ]);
+          await MessageTranscriptCodec(writeMedia: (media) async => 'r').encode(
+            [
+              Message.withImage(text: 'x', imageBytes: _bytes([1])),
+            ],
+          );
       await refuses(
         encoded,
         'messages[0].imageBytes.ref: a media reference '
         'needs a readMedia callback',
+      );
+    });
+    test('a top level that is not an object', () async {
+      await refuses([], 'transcript: expected an object, found a List');
+    });
+
+    for (final (what, data) in [
+      ('the URL-safe alphabet', '-_8='),
+      ('%3D padding', 'AQ%3D%3D'),
+      ('no padding', 'AQ'),
+    ]) {
+      test('base64 with $what', () async {
+        final json = await valid();
+        final second = (json['messages']! as List)[1] as Map;
+        second['imageBytes'] = {'base64': data};
+        await expectLater(
+          const MessageTranscriptCodec().decode(json),
+          throwsA(
+            isA<FormatException>()
+                .having(
+                  (e) => e.message,
+                  'message',
+                  'messages[1].imageBytes.base64: expected standard base64 '
+                      'with padding',
+                )
+                .having((e) => e.source, 'source', data),
+          ),
+        );
+      });
+    }
+
+    test('a cycle in arguments passed to decode', () async {
+      final json = await valid();
+      final args =
+          ((first(json)['toolCalls']! as List).single as Map)['args'] as Map;
+      args['self'] = args;
+      await refuses(
+        json,
+        'messages[0].toolCalls[0].args.self: a collection that contains '
+        'itself',
+      );
+    });
+
+    test('a malformed file, before reading any media', () async {
+      final encoded =
+          await MessageTranscriptCodec(
+            writeMedia: (media) async => media.path,
+          ).encode([
+            Message.withImage(text: 'x', imageBytes: _bytes([1])),
+            Message.text(text: 'y'),
+          ]);
+      ((encoded['messages']! as List)[1] as Map)['isUser'] = 'no';
+      await expectLater(
+        MessageTranscriptCodec(
+          readMedia: (ref) => fail('read before the file was checked'),
+        ).decode(encoded),
+        throwsA(isA<FormatException>()),
       );
     });
   });
@@ -488,5 +685,146 @@ void main() {
         );
       });
     }
+  });
+
+  group('encode', () {
+    test('checks every argument before writing any media', () async {
+      await expectLater(
+        MessageTranscriptCodec(
+          writeMedia: (media) => fail('media written before the check'),
+        ).encode([
+          Message.withImage(text: 'x', imageBytes: _bytes([1])),
+          Message.toolCall(
+            text: 'x',
+            calls: [
+              FunctionCallResponse(name: 'f', args: {'n': BigInt.one}),
+            ],
+          ),
+        ]),
+        throwsArgumentError,
+      );
+    });
+
+    test('refuses a cycle, allows a repeated value', () async {
+      final args = <String, dynamic>{};
+      args['self'] = args;
+      await expectLater(
+        const MessageTranscriptCodec().encode([
+          // The plain constructor: the factories would copy the cycle first.
+          Message(
+            text: 'x',
+            type: MessageType.toolCall,
+            toolCalls: [FunctionCallResponse(name: 'f', args: args)],
+          ),
+        ]),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            'messages[0].toolCalls[0].args.self: a collection that contains '
+                'itself is not a JSON value',
+          ),
+        ),
+      );
+
+      final shared = [1, 2];
+      final decoded = (await _roundTrip([
+        Message(
+          text: 'x',
+          type: MessageType.toolCall,
+          toolCalls: [
+            FunctionCallResponse(
+              name: 'f',
+              args: {
+                'a': shared,
+                'b': {'c': shared},
+              },
+            ),
+          ],
+        ),
+      ])).single;
+      expect(decoded.toolCalls.single.args, {
+        'a': [1, 2],
+        'b': {
+          'c': [1, 2],
+        },
+      });
+    });
+
+    test('quotes a key that is not an identifier in the path', () async {
+      Future<String> pathOf(Map<String, dynamic> args) async {
+        try {
+          await const MessageTranscriptCodec().encode([
+            Message(
+              text: 'x',
+              type: MessageType.toolCall,
+              toolCalls: [FunctionCallResponse(name: 'f', args: args)],
+            ),
+          ]);
+        } on ArgumentError catch (e) {
+          return (e.message as String).split(':').first;
+        }
+        return fail('not refused');
+      }
+
+      final dotted = await pathOf({'a.b': double.nan});
+      final nested = await pathOf({
+        'a': {'b': double.nan},
+      });
+      expect(dotted, 'messages[0].toolCalls[0].args["a.b"]');
+      expect(nested, 'messages[0].toolCalls[0].args.a.b');
+    });
+
+    test('returns a copy of the arguments', () async {
+      final args = <String, dynamic>{'n': 1};
+      final encoded = await const MessageTranscriptCodec().encode([
+        Message(
+          text: 'x',
+          type: MessageType.toolCall,
+          toolCalls: [FunctionCallResponse(name: 'f', args: args)],
+        ),
+      ]);
+      args['n'] = 2;
+      expect(jsonEncode(encoded), contains('"args":{"n":1}'));
+    });
+
+    test(
+      'refuses a writer that returns one reference for different bytes',
+      () async {
+        await expectLater(
+          MessageTranscriptCodec(writeMedia: (media) async => 'same').encode([
+            Message.withImage(text: 'x', imageBytes: _bytes([1])),
+            Message.withAudio(text: 'y', audioBytes: _bytes([2])),
+          ]),
+          throwsA(
+            isA<StateError>().having(
+              (e) => e.message,
+              'message',
+              'messages[1].audioBytes: writeMedia returned "same", already '
+                  'returned for different bytes at messages[0].imageBytes',
+            ),
+          ),
+        );
+      },
+    );
+
+    test('allows one reference for the same bytes in two buffers', () async {
+      // A content-addressed writer.
+      final store = <String, Uint8List>{};
+      final codec = MessageTranscriptCodec(
+        writeMedia: (media) async {
+          final ref = base64Encode(media.bytes);
+          store[ref] = Uint8List.fromList(media.bytes);
+          return ref;
+        },
+        readMedia: (ref) async => store[ref.reference]!,
+      );
+      final messages = [
+        Message.withImage(text: 'x', imageBytes: _bytes([1, 2])),
+        Message.withImage(text: 'y', imageBytes: _bytes([1, 2])),
+      ];
+      expect(await _roundTrip(messages, codec), messages);
+      expect(store, hasLength(1));
+    });
   });
 }

@@ -5,6 +5,9 @@
 /// `ResolvedHfModel.family` carries one: each installer accepts only its own
 /// family type and refuses another with an error. Embedders have no family
 /// type yet (their backends read what they need from the file).
+///
+/// Implemented by core's family enums ([ModelType], `SttModelType`,
+/// `TtsModelType`); an installer recognises only those.
 abstract interface class ModelFamily {}
 
 /// The language-model families.

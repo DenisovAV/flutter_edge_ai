@@ -206,7 +206,9 @@ abstract base class EmbedderVariant extends CatalogVariant {
 
   /// What to open the model with: pass it as `defaults:` to
   /// `FlutterEdgeAi.getActiveEmbedder`. By default [preferredBackend] and
-  /// nothing else; a subclass may say more.
+  /// nothing else; a subclass may say more. To change the backend, override
+  /// [preferredBackend], not the backend inside this getter, so the two
+  /// never disagree.
   ModelRuntimeDefaults get runtimeDefaults =>
       ModelRuntimeDefaults(preferredBackend: preferredBackend);
 

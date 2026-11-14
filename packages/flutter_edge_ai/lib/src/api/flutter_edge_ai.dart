@@ -862,9 +862,11 @@ class FlutterEdgeAi {
   /// [token] defaults to the token passed to [initialize]. Throws [StateError]
   /// if no registered resolver of role [type] handles [repo] — add the engine
   /// or backend package that provides one (e.g. flutter_edge_ai_litertlm for
-  /// `.litertlm` manifests) — and when the resolver's result names a
-  /// [ResolvedHfModel.tokenizerFile] that is not among its
-  /// [ResolvedHfModel.files].
+  /// `.litertlm` manifests); the message names any resolver of another role
+  /// that claims [repo] and [fileType]. Also throws [StateError] when the
+  /// resolver's result names a [ResolvedHfModel.tokenizerFile] that is not
+  /// among its [ResolvedHfModel.files], or that is its
+  /// [ResolvedHfModel.file].
   static Future<ResolvedHfModel> resolveHuggingFace(
     String repo, {
     ModelManagementType type = ModelManagementType.inference,
@@ -878,9 +880,19 @@ class FlutterEdgeAi {
       fileType: fileType,
     );
     if (resolver == null) {
+      // A resolver of another role that claims this repo is the likeliest
+      // mistake (a resolver declaring the wrong `type`): name it.
+      final otherRoles = [
+        for (final r in HuggingFaceResolverRegistry.instance.registered)
+          if (r.type != type && r.canResolve(repo, fileType: fileType))
+            '"${r.name}" claims ${fileType?.name ?? 'this repo'} but serves '
+                '${r.type.name}; check its `type`',
+      ];
       throw StateError(
         'No ${type.name} Hugging Face resolver registered for "$repo" '
-        '(fileType: $fileType). Register the engine or backend that provides '
+        '(fileType: $fileType). '
+        '${otherRoles.isEmpty ? '' : '${otherRoles.join('. ')}. '}'
+        'Register the engine or backend that provides '
         'one — its resolver auto-registers via HuggingFaceResolverSource (e.g. '
         'LiteRtLmEngine ships the litertlm manifest resolver) — or pass one '
         'explicitly to FlutterEdgeAi.initialize(huggingFaceResolvers: [...]).',
@@ -892,6 +904,16 @@ class FlutterEdgeAi {
       platform: _currentPlatformKey(),
       preferredBackend: preferredBackend,
     );
+    if (resolved.tokenizerFile case final tokenizer?
+        when tokenizer == resolved.file ||
+            tokenizer == resolved.file.split('/').last) {
+      throw StateError(
+        'The Hugging Face resolver "${resolver.name}" resolved "$repo" with '
+        'tokenizerFile "$tokenizer", which is its model file "${resolved.file}" '
+        'itself; a tokenizer file is a separate file, and a model that '
+        'carries its own tokenizer has tokenizerFile null.',
+      );
+    }
     if (resolved.tokenizerFile case final tokenizer?
         when !(resolved.files?.any((f) => f.name == tokenizer) ?? false)) {
       throw StateError(
@@ -981,7 +1003,10 @@ class FlutterEdgeAi {
   ///   Its `preferredBackend`, `supportImage` and `supportAudio` apply where
   ///   the matching argument above is not given (explicit argument > default
   ///   > SDK default: no backend preference, no images, no audio); its other
-  ///   fields are not read here.
+  ///   fields are not read here. Only this call reads them: RAG's
+  ///   `FlutterEdgeAiActiveEmbedder` and genkit's runtime load the active
+  ///   embedder without `defaults`, so pass the same `preferredBackend`
+  ///   (and media flags) to them yourself.
   ///
   /// Fails (as a failed future) with:
   /// - [StateError] if no active embedding model is set

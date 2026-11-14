@@ -539,7 +539,7 @@ final embedder = await FlutterEdgeAi.getActiveEmbedder(
 );
 ```
 
-It installs the model file and, when the resolver names one (`r.tokenizerFile`), its tokenizer; a resolution that is a model directory is refused with `UnsupportedError` for now. `getActiveEmbedder`, `getActiveStt` and `getActiveTts` take `defaults:` like `getActiveModel` — an explicit argument wins over a default, which wins over the SDK's — and each reads only the fields of its role (`ModelRuntimeDefaults.language` for speech).
+It installs the model file and, when the resolver names one (`r.tokenizerFile`), its tokenizer, and checks the sizes the resolver gives before the model becomes active; a resolution that is a model directory is refused with `UnsupportedError` for now. `getActiveEmbedder`, `getActiveStt` and `getActiveTts` take `defaults:` like `getActiveModel` — an explicit argument wins over a default, which wins over the SDK's — and each reads only the fields of its role (`ModelRuntimeDefaults.language` for speech).
 
 ### Source capabilities
 

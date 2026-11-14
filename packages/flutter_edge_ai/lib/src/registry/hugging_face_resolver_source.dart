@@ -17,7 +17,10 @@ import 'package:flutter_edge_ai/src/registry/hugging_face_resolver.dart'
 /// ([HuggingFaceResolver.type]: `inference` for an engine, `embedding` for an
 /// embedding backend, `stt`, `tts`): `initialize` throws [StateError] naming
 /// the provider otherwise. A package with resolvers for two roles carries
-/// each on the provider of that role.
+/// each on the provider of that role. A provider carries one resolver, so one
+/// provider object passed in two role lists (say, as an inference engine and
+/// as an embedding backend) fails `initialize` for the list whose role its
+/// resolver does not serve.
 ///
 /// Kept SEPARATE from the provider interfaces on purpose (Interface
 /// Segregation): putting this getter on a base provider would force every

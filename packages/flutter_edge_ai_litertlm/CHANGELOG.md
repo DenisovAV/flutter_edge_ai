@@ -1,5 +1,6 @@
 ## Unreleased
 - `LitertlmManifestResolver` declares the `inference` role and returns `family`.
+- Native: a message sends `images` when non-empty, else `imageBytes`; no duplicate photo.
 
 ## 1.20.1
 - Fix tool calls and thinking on NPU failing with a multi-token rollback error.

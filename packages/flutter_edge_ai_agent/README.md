@@ -73,7 +73,7 @@ WebView), verified on hardware. On web the skill runs in a sandboxed `<iframe>`.
 - Cross-platform UI: `AgentChatView`, adaptive `SkillManagerView` /
   `McpManagerView`, `McpToolCallPermissionDialog`, `SecretEditorDialog`,
   `SkillTesterView`, and the add-skill disclaimer (in a `package:material_ui`
-  app, see [Setup](#setup)).
+  app, see [In a material_ui app](#in-a-material_ui-app)).
 - **Bundled starter skills** (seven ported from Gallery, Apache-2.0, some
   modified, plus `get-current-time`, written here) — see below.
 
@@ -613,6 +613,13 @@ MaterialApp(
   home: const HomePage(),
 );
 ```
+
+The bridge's default localization delegates cover every locale of
+`flutter_localizations`; an app with one language can pass its own
+`delegates:` (on the web the full set adds about 250 KB).
+
+In such an app a failed add in `SkillManagerView` or `McpManagerView` is shown
+in a dialog rather than a snack bar.
 
 ## Third-party attribution
 

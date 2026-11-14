@@ -145,9 +145,12 @@ class _SkillManagerViewState extends State<SkillManagerView> {
   Future<void> _runAdd(Future<Skill?> Function() add) async {
     try {
       final skill = await add();
-      if (skill == null || !mounted) return;
+      if (skill == null) return;
+      // The registry outlives the view: a skill that arrives after the view
+      // closed is still added.
       widget.registry.add(skill, selected: true);
-      _notify();
+      if (mounted) setState(() {});
+      widget.onChanged?.call();
     } catch (e) {
       if (mounted) {
         showUiError(context, 'Could not add skill: $e');

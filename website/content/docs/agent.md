@@ -135,21 +135,6 @@ a deployment that does not serve `assets/packages/flutter_edge_ai_agent/` causes
 The package also ships an adaptive UI: `AgentChatView`, `SkillManagerView`,
 `McpManagerView`, `SecretEditorDialog`, and `SkillTesterView`.
 
-In an app built on `package:material_ui` (Flutter 3.50 deprecates
-`package:flutter/material.dart`), the package's UI widgets, which are still
-built on `package:flutter/material.dart`, need its `Theme` and
-`MaterialLocalizations`:
-put `MaterialUiCompatibilityBridge` in `MaterialApp.builder`, above the
-Navigator, so the dialogs and bottom sheets they open get them too:
-
-```dart
-MaterialApp(
-  // ignore: deprecated_member_use
-  builder: (context, child) => MaterialUiCompatibilityBridge(child: child!),
-  home: const HomePage(),
-);
-```
-
 ## Asking about a photo
 
 `ask` takes an optional image, so the model can pick a skill from what it saw

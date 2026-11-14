@@ -79,8 +79,10 @@ class _McpManagerViewState extends State<McpManagerView> {
   late List<McpServerConfig> _servers = List.of(widget.servers);
   bool _connecting = false;
 
+  /// Reports the list to the host even when the view was closed while a
+  /// server connected, so an added server is never lost.
   void _commit() {
-    setState(() {});
+    if (mounted) setState(() {});
     widget.onChanged(List.of(_servers));
   }
 
@@ -96,10 +98,9 @@ class _McpManagerViewState extends State<McpManagerView> {
 
     setState(() => _connecting = true);
     final factory = widget.clientFactory;
-    final client = factory != null
-        ? factory(entered)
-        : McpClient(config: entered);
+    McpClient? client;
     try {
+      client = factory != null ? factory(entered) : McpClient(config: entered);
       final connected = await client.connect();
       _servers = [..._servers, connected];
       _commit();
@@ -111,7 +112,7 @@ class _McpManagerViewState extends State<McpManagerView> {
         showUiError(context, 'Added but could not connect: $e');
       }
     } finally {
-      client.close();
+      client?.close();
       if (mounted) setState(() => _connecting = false);
     }
   }

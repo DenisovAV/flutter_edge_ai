@@ -116,6 +116,46 @@ void main() {
     await other.close();
   });
 
+  test('a virtual session replays one image for a message whose imageBytes '
+      'and images hold equal copies', () async {
+    await session.addQueryChunk(
+      Message(
+        text: 'remember this',
+        isUser: true,
+        imageBytes: Uint8List.fromList([1, 2]),
+        images: [
+          Uint8List.fromList([1, 2]),
+        ],
+      ),
+    );
+    final firstReply = session.getResponseAsync().join();
+    await pumpEventQueue();
+    sends.last
+      ..chunk('{"role":"assistant","content":[{"type":"text","text":"ok"}]}')
+      ..finished();
+    await firstReply;
+
+    final other = await model.openSession();
+    await other.addQueryChunk(const Message(text: 'switch', isUser: true));
+    final otherReply = other.getResponseAsync().join();
+    await pumpEventQueue();
+    sends.last.finished();
+    await otherReply;
+
+    await session.addQueryChunk(const Message(text: 'recall it', isUser: true));
+    final recalled = session.getResponseAsync().join();
+    await pumpEventQueue();
+    sends.last.finished();
+    await recalled;
+
+    final replay = jsonDecode(seeds.last!) as List<dynamic>;
+    expect((replay.first as Map)['content'], [
+      {'type': 'image', 'blob': 'AQI='},
+      {'type': 'text', 'text': 'remember this'},
+    ]);
+    await other.close();
+  });
+
   test('a stopped virtual audio turn is rewound with its exact exchange '
       'instead of rebuilt through the media preface', () async {
     final rewinds = <String?>[];

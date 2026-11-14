@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 // AgentChatView's TextField is package:flutter/material.dart's, which asserts
 // a Material ancestor of that package's own type; material_ui's Scaffold does
-// not count. Remove with the bridge in main.dart.
+// not count. Remove once the agent package moves to material_ui. The library
+// is deprecated from Flutter 3.50.
 // ignore: deprecated_member_use
 import 'package:flutter/material.dart' as legacy show Material, MaterialType;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';

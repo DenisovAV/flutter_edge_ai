@@ -853,6 +853,20 @@ skips the prompt for good is the tool's `alwaysAllow` flag in the server's
 `McpServerConfig`, and `McpManagerView` is a ready-made screen where the user
 connects servers and switches that flag per tool.
 
+`McpToolCallPermissionDialog` is built on `package:flutter/material.dart`,
+while this app imports `package:material_ui`, and the two have separate
+`Theme` and `MaterialLocalizations` types. A dialog opened from this app finds
+neither and fails with "No MaterialLocalizations found". Give it both with
+material_ui's `MaterialUiCompatibilityBridge`, in `MaterialApp.builder` so
+the dialog's route sits below it. Add this argument to the app's
+`MaterialApp` in `lib/main.dart`:
+
+```dart
+      // material_ui deprecates the bridge as a migration aid.
+      // ignore: deprecated_member_use
+      builder: (context, child) => MaterialUiCompatibilityBridge(child: child!),
+```
+
 ## What's next
 Duration: 2
 
@@ -868,12 +882,16 @@ Duration: 2
 
 * `AgentChatView(session: session)` is a ready-made version of the chat page
   you wrote, and `SkillManagerView` lets the user switch skills on and off.
-  These widgets, and Step 5's `McpToolCallPermissionDialog` and
-  `McpManagerView`, are built on `package:flutter/material.dart`, while this
-  app imports `package:material_ui`. The
-  [material_ui README](https://pub.dev/packages/material_ui) says to wrap
-  such widgets in `MaterialUiCompatibilityBridge`, which carries the app's
-  theme and Material localizations over to them.
+  Like Step 5's dialog, these widgets and `McpManagerView` are built on
+  `package:flutter/material.dart`, so they need the same bridge in
+  `MaterialApp.builder`. `AgentChatView` also needs a `Material` ancestor of
+  that package's own type, which material_ui's `Scaffold` is not: wrap it in
+  `legacy.Material(type: legacy.MaterialType.transparency, child: ...)`, with
+  `import 'package:flutter/material.dart' as legacy show Material, MaterialType;`.
+  When adding a skill or a server fails, `SkillManagerView` and
+  `McpManagerView` report it through that package's `ScaffoldMessenger`,
+  which the bridge does not provide, so in this app the failure throws
+  instead of showing a message.
 * The package bundles more skills: `query-wikipedia` (needs the network),
   `interactive-map` (answers with a webview) and `kitchen-adventure`, a
   text-only persona.

@@ -37,7 +37,9 @@ class ChatApp extends StatelessWidget {
       // on package:flutter/material.dart, whose Theme and MaterialLocalizations
       // are separate types from material_ui's. The bridge gives them both, here
       // above the Navigator so the agent's dialogs and bottom sheets see them
-      // too. Remove it once the agent package moves to material_ui.
+      // too. flutter_markdown (chat replies) is built on it as well and takes
+      // its heading, link and list styles from that Theme. Remove the bridge
+      // only once neither depends on package:flutter/material.dart.
       // ignore: deprecated_member_use
       builder: (context, child) => MaterialUiCompatibilityBridge(child: child!),
       home: const SafeArea(child: HomeScreen()),

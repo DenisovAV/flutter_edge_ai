@@ -90,11 +90,11 @@ import 'package:flutter_edge_ai_example/image_search/photo_preparation.dart';
 import 'package:flutter_edge_ai_example/image_search_screen.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart' as catalog;
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
-import 'package:material_ui/material_ui.dart';
 // ignore: implementation_imports — the CPU record and the minInputLength measurement build the web pass with a backend and a setting the public backend does not offer
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'goldens/eg2_image_golden.dart';
 import 'goldens/eg2_text_golden_web.dart';

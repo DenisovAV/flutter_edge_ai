@@ -209,6 +209,7 @@ In `pubspec.yaml`, uncomment the Genkit dependencies:
 dependencies:
   flutter:
     sdk: flutter
+  material_ui: ^1.1.0
   cupertino_icons: ^1.0.8
 
   # Step 2: Cloud AI

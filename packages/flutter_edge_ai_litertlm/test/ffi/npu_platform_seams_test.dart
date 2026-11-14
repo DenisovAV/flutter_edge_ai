@@ -4,6 +4,7 @@
 // executable's directory and the cache directories. Each injected value must
 // be the one used, and each default must be what the code used before.
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_cache_dir.dart';
@@ -142,6 +143,37 @@ void main() {
         expect(r.bundled, isFalse);
       }
       expect(reads, 3, reason: 'the second cached read reuses the first');
+    });
+
+    test('cached answers are kept per reader, so one reader never answers '
+        'for another', () async {
+      Future<String> bundled() async => jsonEncode({
+        'native-assets': {
+          'android_arm64': {
+            for (final name in npuStackLibs(NpuStack.qualcomm, 'android'))
+              nativeAssetId(name): <Object>[],
+          },
+        },
+      });
+      Future<String> empty() async =>
+          '{"native-assets": {"android_arm64": {}}}';
+      Future<NpuStackCheck> check(NativeAssetsManifestReader read) =>
+          checkNpuStackInManifest(
+            NpuStack.qualcomm,
+            read: read,
+            cache: true,
+            abi: 'android_arm64',
+            operatingSystem: 'android',
+          );
+
+      final first = await check(empty);
+      final second = await check(bundled);
+      expect(first.bundled, isFalse);
+      expect(
+        second.bundled,
+        isNot(first.bundled),
+        reason: 'the second reader is read, not answered from the first',
+      );
     });
 
     test('a failed cached read is not cached', () async {

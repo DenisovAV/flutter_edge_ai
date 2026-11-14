@@ -11,6 +11,8 @@
 
 import 'package:flutter_edge_ai/engine.dart' show EdgeAiLogLevel, edgeAiLog;
 
+import 'build_mode.dart';
+
 /// Where [runtimeLog] sends a message. [verbose] marks model output, prompts
 /// and native log contents (`EdgeAiLogLevel.verbose`); everything else is
 /// `EdgeAiLogLevel.info`.
@@ -25,9 +27,13 @@ void _edgeAiLogSink(String message, {bool verbose = false}) => edgeAiLog(
 /// replaced.
 RuntimeLogSink runtimeLogSink = _edgeAiLogSink;
 
-/// Logs [message] through [runtimeLogSink].
-void runtimeLog(String message, {bool verbose = false}) =>
-    runtimeLogSink(message, verbose: verbose);
+/// Logs [message] through [runtimeLogSink], in debug builds only: the
+/// constant check lets a release build drop the call and its message, as
+/// `edgeAiLog`'s own `kDebugMode` check did when it was called directly.
+void runtimeLog(String message, {bool verbose = false}) {
+  if (!isDebugBuild) return;
+  runtimeLogSink(message, verbose: verbose);
+}
 
 /// Restores [runtimeLogSink] to core's `edgeAiLog`.
 void resetRuntimeLogSink() => runtimeLogSink = _edgeAiLogSink;

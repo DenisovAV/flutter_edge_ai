@@ -320,7 +320,7 @@ for page in pages:
         continue
     lm = f"\n    <lastmod>{escape(lastmod)}</lastmod>" if lastmod else ""
     entries.append(
-        f"  <url>\n    <loc>{loc}</loc>{lm}\n    <priority>0.5</priority>\n  </url>\n"
+        f"  <url>\n    <loc>{loc}</loc>{lm}\n  </url>\n"
     )
 
 if entries:

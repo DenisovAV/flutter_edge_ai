@@ -71,14 +71,14 @@ ClientOptions get defaultClientOptions => ClientOptions(
     ),
     'jaspr_content:zoomable_image': ClientLoader(
       (p) => _zoomable_image.ZoomableImage(
-        src: p['src'] as String,
-        alt: p['alt'] as String?,
-        caption: p['caption'] as String?,
+        src: p.get<String>('src'),
+        alt: p.get<String?>('alt'),
+        caption: p.get<String?>('caption'),
       ),
       loader: _zoomable_image.loadLibrary,
     ),
     'jaspr_content:github_button': ClientLoader(
-      (p) => _github_button.GitHubButton(repo: p['repo'] as String),
+      (p) => _github_button.GitHubButton(repo: p.get<String>('repo')),
       loader: _github_button.loadLibrary,
     ),
     'jaspr_content:sidebar_toggle_button': ClientLoader(

@@ -1,4 +1,4 @@
-// ORT-GenAI 0.17.0 ships Microsoft's telemetry on by default; the client turns
+// ORT-GenAI ships Microsoft's telemetry on by default since 0.17.0; the client turns
 // it off before the library is opened, and leaves a value the app set alone.
 import 'dart:ffi' as ffi;
 import 'dart:io';

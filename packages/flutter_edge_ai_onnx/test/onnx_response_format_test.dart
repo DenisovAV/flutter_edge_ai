@@ -125,7 +125,7 @@ void main() {
   }
 
   group('which hosts take a format', () {
-    test('ORT-GenAI 0.17.0 archives with guidance: the four Microsoft '
+    test('ORT-GenAI 0.19.0 archives with guidance: the four Microsoft '
         'desktop builds, not iOS or our Android build', () {
       for (final abi in [
         Abi.macosArm64,

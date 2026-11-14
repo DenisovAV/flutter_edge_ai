@@ -505,9 +505,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-08_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
-        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-14_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-23f84-usb.json",
+        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-14, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "macos_arm64": {
@@ -861,9 +861,9 @@
         "refused_by": "flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-10-31_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
-        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2, USB, 2026-10-31, flutter_edge_ai_litertlm 1.19.1"
+        "status": "verified",
+        "source": "evidence/2026-11-14_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-23f84-usb.json",
+        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-14, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "macos_arm64": {
@@ -4360,14 +4360,14 @@
       },
       "ios_arm64": {
        "gpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-08_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
-        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-14_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-23f84-usb.json",
+        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-14, flutter_edge_ai_litertlm 1.20.1"
        },
        "cpu": {
-        "status": "stale",
-        "source": "evidence/2026-11-08_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-usb.json",
-        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-08, flutter_edge_ai_litertlm 1.20.0"
+        "status": "verified",
+        "source": "evidence/2026-11-14_ios_arm64_iphone-17-pro-iphone18-1-ios-26-5-2-23f84-usb.json",
+        "note": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB, 2026-11-14, flutter_edge_ai_litertlm 1.20.1"
        }
       },
       "macos_arm64": {

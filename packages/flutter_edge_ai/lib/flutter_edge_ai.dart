@@ -122,7 +122,7 @@ export 'src/message_codec.dart'
         MessageMediaReference,
         MessageMediaWriter,
         MessageTranscriptCodec;
-export 'src/model.dart' show ModelFileType, ModelType;
+export 'src/model.dart' show ModelFamily, ModelFileType, ModelType;
 // Sampling a session asks for, and the fully resolved set an engine sends.
 export 'src/sampling.dart' show ResolvedSampling, SamplingParams;
 export 'src/model_response.dart'

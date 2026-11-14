@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "date": "2026-11-14",
+  "host": "ios_arm64",
+  "device": "iPhone 17 Pro (iPhone18,1), iOS 26.5.2 (23F84), USB",
+  "commit": "01f5f6fc3d5ae24b0f9ebcb8ea9413feb304db75",
+  "packages": {
+    "flutter_edge_ai": "2.6.0",
+    "flutter_edge_ai_litertlm": "1.20.1",
+    "flutter_edge_ai_speech": "0.6.1"
+  },
+  "native": "b477c3fad86dcfaab62ea87e327556fdfb2f4b61ce03351d71828b9e9f8f848f",
+  "log_sha256": "5e1bcc27929571ec2417f7a12a0b87529391f56b6ad0ee854ca1638a91d0474e",
+  "log_url": null,
+  "cells": {
+    "embeddinggemma-2-text-270m/generic": {
+      "cpu": [
+        "golden text vectors and ranking"
+      ]
+    },
+    "embeddinggemma-2-text-vision-440m/generic": {
+      "cpu": [
+        "text to image retrieval"
+      ]
+    },
+    "gemma-4-e2b-it/generic": {
+      "cpu": [
+        "audio",
+        "text",
+        "vision"
+      ],
+      "gpu": [
+        "text"
+      ]
+    }
+  }
+}

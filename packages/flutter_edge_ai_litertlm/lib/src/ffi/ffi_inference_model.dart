@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 
 import '../litertlm_decision_section.dart';
 import '../option_scoring_self_check.dart';
+import 'channel_content_filter.dart';
 import 'litert_lm_client.dart';
 import 'open_session_backing.dart';
 import '../reported_engine_turn.dart';
@@ -131,6 +132,19 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
       ? 'this model keeps linear attention state, which a rewind cannot '
             'restore'
       : null;
+
+  /// Whether LiteRT-LM may strip a completed reply's channel content (a
+  /// thought) from the KV cache, which it does by rewinding over the whole
+  /// reply ([liteRtLmFiltersChannelContent], where the trade-off is
+  /// described): only where every conversation is known to rewind, the rule
+  /// of [openSessionNoRewindReason], since the native rewind runs before Dart
+  /// could rebuild instead. The same for every conversation of this model,
+  /// native or virtual.
+  @visibleForTesting
+  bool get filterChannelContent => liteRtLmFiltersChannelContent(
+    npu: activeBackend == PreferredBackend.npu,
+    linearAttentionState: linearAttentionState,
+  );
 
   /// The same for an [openSession] conversation: also rebuilt when whether
   /// the model keeps linear attention state could not be read.
@@ -375,6 +389,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
             samplingExplicit: !explicit.isEmpty,
             maxOutputTokens: maxOutputTokens,
             multimodalOrder: multimodalOrder,
+            filterChannelContent: filterChannelContent,
           );
       final handle = RecoveringConversationHandle(
         await open(),
@@ -497,6 +512,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
               maxOutputTokens: maxOutputTokens,
               multimodalOrder: multimodalOrder,
               jsonSchema: jsonSchema,
+              filterChannelContent: filterChannelContent,
             );
         _openSessionsPending++;
         final LiteRtLmConversationHandle first;
@@ -531,6 +547,7 @@ base class FfiInferenceModel extends InferenceModel with CloseNotifier {
           maxOutputTokens: maxOutputTokens,
           multimodalOrder: multimodalOrder,
           jsonSchema: jsonSchema,
+          filterChannelContent: filterChannelContent,
         );
     }
 
@@ -1660,6 +1677,7 @@ class _VirtualConversationHandle implements ConversationHandle {
     required this.sampling,
     required this.samplingExplicit,
     required this.multimodalOrder,
+    required this.filterChannelContent,
     this.maxOutputTokens,
     this.jsonSchema,
   });
@@ -1672,6 +1690,7 @@ class _VirtualConversationHandle implements ConversationHandle {
   final MultimodalOrder multimodalOrder;
   final int? maxOutputTokens;
   final String? jsonSchema;
+  final bool filterChannelContent;
 
   /// The tokenizer belongs to the engine, not to a conversation, so a virtual
   /// session answers this as accurately as a live one.
@@ -1753,6 +1772,7 @@ class _VirtualConversationHandle implements ConversationHandle {
         thinking: enableThinking,
         maxOutputTokens: maxOutputTokens,
         jsonSchema: jsonSchema,
+        filterChannelContent: filterChannelContent,
       )) {
         final chunkText = LiteRtLmFfiClient.extractTextFromResponse(rawChunk);
         assistantText.write(chunkText);

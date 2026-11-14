@@ -6,6 +6,32 @@ meta:
     content: https://flutteredge.ai/images/og-image.png
 ---
 
+## Unreleased: Hugging Face resolvers per role
+
+- A `HuggingFaceResolver` implementation adds the role it serves:
+  `@override ModelManagementType get type => ModelManagementType.inference;`
+  for a language-model resolver (`embedding`, `stt` or `tts` for the others).
+  `initialize` throws `StateError` for a provider whose
+  `HuggingFaceResolverSource` resolver serves another role than the list it
+  is passed in.
+- `ResolvedHfModel.modelType` is `family`, a `ModelFamily` (`ModelType`,
+  `SttModelType` or `TtsModelType`). A resolver passes `family:`; an app that
+  read the language-model family casts it:
+  `r.family as ModelType? ?? ModelType.general`. The installer of
+  `installModel` throws `StateError` for a family that is not a `ModelType`.
+- `resolveHuggingFace` takes `type:` (default `inference`); apps that call it
+  for a language model change nothing.
+- `getActiveEmbedder`'s `supportImage` and `supportAudio` are `bool?`: an
+  omitted argument takes the `defaults:` value, then `false` as before. A
+  subclass of `EmbedderVariant`, `SttVariant` or `TtsVariant` inherits a
+  `runtimeDefaults` it may override.
+- A language-model directory install (`installModel(...).fromHuggingFace`)
+  checks each member's size when the resolver gives one, as catalog and
+  embedder installs do, and then also refuses to write over the files of the
+  active model: close and `uninstallModel` the active model before installing
+  another revision into the same directory. The ONNX resolver gives no sizes
+  yet, so its installs are unchanged.
+
 ## flutter_edge_ai 2.6.0: engine SPI
 
 Engine packages continue to import `package:flutter_edge_ai/engine.dart`. Core

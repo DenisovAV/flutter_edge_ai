@@ -6,6 +6,8 @@ import 'package:flutter_edge_ai/src/model.dart' show ModelFileType;
 import 'package:flutter_edge_ai/src/model_file_manager_interface.dart';
 import 'package:flutter_edge_ai/src/model_management/install_rule.dart';
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart';
+import 'package:flutter_edge_ai/src/registry/hugging_face_resolver.dart'
+    show ResolvedHfFile;
 import 'package:flutter_edge_ai/src/services/file_system_service.dart';
 import 'package:flutter_edge_ai/src/utils/file_name_utils.dart';
 import 'package:meta/meta.dart' show visibleForTesting;
@@ -35,6 +37,22 @@ final class FileExpectation {
   /// Whether there is anything to check.
   bool get isEmpty => size == null;
 }
+
+/// What each member of a DIRECTORY model resolved from Hugging Face must be
+/// once installed, keyed by its installed file name (`<directoryName>/<name>`,
+/// as `DirectoryBundleFile.member` names it): its [ResolvedHfFile.sizeBytes]
+/// when the resolver gave one, nothing to check otherwise. A negative size is
+/// refused with [ArgumentError] before anything downloads. A single-file
+/// model's size is not checked.
+Map<String, FileExpectation> directoryMemberExpectations(
+  String directoryName,
+  List<ResolvedHfFile> files,
+) => {
+  for (final f in files)
+    '$directoryName/${f.name}': f.sizeBytes == null
+        ? const FileExpectation()
+        : FileExpectation.checked(size: f.sizeBytes),
+};
 
 /// The largest file the web holds outside `WebStorageMode.streaming`: a file
 /// is read whole into one `ArrayBuffer`, which browsers cap near 2 GiB.

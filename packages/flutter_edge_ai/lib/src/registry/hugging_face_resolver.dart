@@ -146,8 +146,9 @@ class ResolvedHfFile {
 ///   accepted too). Each [ResolvedHfFile.sizeBytes], when given, is checked.
 ///   [family] is null.
 ///
-/// Of the resolvers shipped beside core, the ONNX language-model resolver
-/// gives no sizes yet.
+/// "Checked" means on native platforms; on the web a size only drives
+/// progress and the 2 GiB refusal outside streaming mode. Of the resolvers
+/// shipped beside core, the ONNX language-model resolver gives no sizes yet.
 class ResolvedHfModel {
   /// The variant filename chosen in the repo (e.g. `model.litertlm`). May
   /// contain `/` for a repo that nests variants in subfolders. Prefer [url] for
@@ -207,9 +208,11 @@ class ResolvedHfModel {
   /// [tokenizerFile] is not there, or is [file].
   final String? tokenizerFile;
 
-  /// For a DIRECTORY model: the single filesystem-safe subdirectory name the
-  /// files install into. REQUIRED whenever [files] is non-null (the installer
-  /// throws without it) and MUST include the resolved execution-provider variant
+  /// For a language-model DIRECTORY: the single filesystem-safe subdirectory
+  /// name the files install into. A language-model resolution with [files]
+  /// REQUIRES it (the installer throws without it); an embedder resolution
+  /// with [files] must leave it null, or it is refused as a directory. It MUST
+  /// include the resolved execution-provider variant
   /// (e.g. `microsoft__Phi-3.5-mini-instruct-onnx__cpu_and_mobile`) so two EP
   /// variants of the same repo never share a directory — build it with
   /// `FileNameUtils.sanitizeHfDirName(repo, variant: …)`. Null for a

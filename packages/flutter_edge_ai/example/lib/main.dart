@@ -1,3 +1,13 @@
+// The bridge below takes the legacy libraries' English localizations; both
+// libraries are deprecated from Flutter 3.50.
+// ignore: deprecated_member_use
+import 'package:flutter/cupertino.dart'
+    as legacy_cupertino
+    show DefaultCupertinoLocalizations;
+// ignore: deprecated_member_use
+import 'package:flutter/material.dart'
+    as legacy
+    show DefaultMaterialLocalizations;
 import 'package:flutter_edge_ai_example/gemma_bootstrap.dart';
 import 'package:flutter_edge_ai_example/home_screen.dart';
 import 'package:material_ui/material_ui.dart';
@@ -39,9 +49,19 @@ class ChatApp extends StatelessWidget {
       // above the Navigator so the agent's dialogs and bottom sheets see them
       // too. flutter_markdown (chat replies) is built on it as well and takes
       // its heading, link and list styles from that Theme. Remove the bridge
-      // only once neither depends on package:flutter/material.dart.
-      // ignore: deprecated_member_use
-      builder: (context, child) => MaterialUiCompatibilityBridge(child: child!),
+      // only once neither depends on package:flutter/material.dart. The app is
+      // English only: the bridge's default, every locale of
+      // flutter_localizations, adds about 250 KB to the web build.
+      builder: (context, child) =>
+          // ignore: deprecated_member_use
+          MaterialUiCompatibilityBridge(
+            delegates: const [
+              legacy.DefaultMaterialLocalizations.delegate,
+              legacy_cupertino.DefaultCupertinoLocalizations.delegate,
+              DefaultWidgetsLocalizations.delegate,
+            ],
+            child: child!,
+          ),
       home: const SafeArea(child: HomeScreen()),
     );
   }

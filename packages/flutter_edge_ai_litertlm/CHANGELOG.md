@@ -5,6 +5,7 @@
 - Gemma 4 on the GPU defaults to FP32 activations above a 2,048-token context (LiteRT-LM #4001).
 - GPU-artisan `-gpu.litertlm` builds fail natively with a clear error; the catalog withholds them.
 - Fix Intel's public Gemma 4 26B for Panther Lake losing track past 2,048 tokens (runtime masks).
+- Require `flutter_edge_ai` >=2.6.0 <2.7.0.
 
 ## 1.20.0
 - Enforce response formats with native LiteRT-LM constrained decoding.

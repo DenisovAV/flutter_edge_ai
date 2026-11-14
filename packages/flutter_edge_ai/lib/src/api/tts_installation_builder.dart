@@ -384,7 +384,13 @@ class TtsInstallationBuilder {
 class TtsInstallation {
   final TtsModelSpec spec;
 
-  TtsInstallation({required this.spec});
+  /// Overridable runtime defaults from the source the model was installed
+  /// from, to pass as `FlutterEdgeAi.getActiveTts(defaults:)`. Null today: no
+  /// installation source of this kind carries any yet (a catalog variant's
+  /// are on its `runtimeDefaults`). Not persisted.
+  final ModelRuntimeDefaults? runtime;
+
+  TtsInstallation({required this.spec, this.runtime});
 
   /// Model ID (bundle name).
   String get modelId => spec.name;

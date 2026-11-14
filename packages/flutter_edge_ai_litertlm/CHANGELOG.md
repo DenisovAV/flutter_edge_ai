@@ -1,3 +1,6 @@
+## Unreleased
+- `LitertlmManifestResolver` declares the `inference` role and returns `family`.
+
 ## 1.20.1
 - Fix tool calls and thinking on NPU failing with a multi-token rollback error.
 - Fix a Windows crash on thinking turns with tools (native-v0.19.1-b, LiteRT-LM v0.19.1).

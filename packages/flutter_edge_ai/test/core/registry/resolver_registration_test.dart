@@ -26,15 +26,29 @@ import 'package:flutter_edge_ai/src/di/service_registry.dart';
 import 'package:flutter_edge_ai/src/domain/platform_types.dart'
     show PreferredBackend;
 import 'package:flutter_edge_ai/src/model.dart' show ModelFileType;
+import 'package:flutter_edge_ai/src/embedding/embedding_pass.dart'
+    show EmbeddingPassDescriptor;
 import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
-    show InferenceModelSpec;
+    show
+        EmbeddingModelSpec,
+        InferenceModelSpec,
+        ModelManagementType,
+        SttModelSpec,
+        TtsModelSpec;
+import 'package:flutter_edge_ai/src/registry/embedding_backend_provider.dart';
+import 'package:flutter_edge_ai/src/registry/embedding_registry.dart';
+import 'package:flutter_edge_ai/src/registry/stt_backend_provider.dart';
+import 'package:flutter_edge_ai/src/registry/stt_registry.dart';
+import 'package:flutter_edge_ai/src/registry/tts_backend_provider.dart';
+import 'package:flutter_edge_ai/src/registry/tts_registry.dart';
 import 'package:flutter_edge_ai/src/registry/engine_registry.dart';
 import 'package:flutter_edge_ai/src/registry/hugging_face_resolver.dart';
 import 'package:flutter_edge_ai/src/registry/hugging_face_resolver_registry.dart';
 import 'package:flutter_edge_ai/src/registry/hugging_face_resolver_source.dart';
 import 'package:flutter_edge_ai/src/registry/inference_engine_provider.dart';
 import 'package:flutter_edge_ai/src/registry/runtime_config.dart';
-import 'package:flutter_edge_ai/src/interface.dart' show InferenceModel;
+import 'package:flutter_edge_ai/src/interface.dart'
+    show InferenceModel, SpeechRecognizer, SpeechSynthesizer;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -46,9 +60,11 @@ const _repo = 'org/repo';
 /// which resolver `resolveHuggingFace` reached without a mutable counter (which
 /// the `const` instance in the dedup case could not carry).
 class _FakeResolver implements HuggingFaceResolver {
-  const _FakeResolver(this.name);
+  const _FakeResolver(this.name, {this.type = ModelManagementType.inference});
   @override
   final String name;
+  @override
+  final ModelManagementType type;
   @override
   int get priority => 0;
   @override
@@ -87,6 +103,59 @@ class _FakeEngine
   ) => throw UnimplementedError();
 }
 
+/// Embedding backend that carries [huggingFaceResolver].
+final class _FakeEmbeddingBackend extends EmbeddingBackendProvider
+    implements HuggingFaceResolverSource {
+  const _FakeEmbeddingBackend(this.huggingFaceResolver);
+  @override
+  final HuggingFaceResolver huggingFaceResolver;
+  @override
+  String get name => 'fake-embedding-backend';
+  @override
+  bool canHandle(EmbeddingModelSpec spec) => false;
+  @override
+  Future<EmbeddingPassDescriptor<Object>> describe(
+    EmbeddingModelSpec spec,
+    RuntimeConfig config,
+  ) => throw UnimplementedError();
+}
+
+/// STT backend that carries [huggingFaceResolver].
+class _FakeSttBackend implements SttBackendProvider, HuggingFaceResolverSource {
+  const _FakeSttBackend(this.huggingFaceResolver);
+  @override
+  final HuggingFaceResolver huggingFaceResolver;
+  @override
+  String get name => 'fake-stt-backend';
+  @override
+  int get priority => 0;
+  @override
+  bool canHandle(SttModelSpec spec) => false;
+  @override
+  Future<SpeechRecognizer> createModel(
+    SttModelSpec spec,
+    RuntimeConfig config,
+  ) => throw UnimplementedError();
+}
+
+/// TTS backend that carries [huggingFaceResolver].
+class _FakeTtsBackend implements TtsBackendProvider, HuggingFaceResolverSource {
+  const _FakeTtsBackend(this.huggingFaceResolver);
+  @override
+  final HuggingFaceResolver huggingFaceResolver;
+  @override
+  String get name => 'fake-tts-backend';
+  @override
+  int get priority => 0;
+  @override
+  bool canHandle(TtsModelSpec spec) => false;
+  @override
+  Future<SpeechSynthesizer> createModel(
+    TtsModelSpec spec,
+    RuntimeConfig config,
+  ) => throw UnimplementedError();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -94,6 +163,9 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     ServiceRegistry.reset();
     EngineRegistry.instance.reset();
+    EmbeddingRegistry.instance.reset();
+    SttRegistry.instance.reset();
+    TtsRegistry.instance.reset();
     HuggingFaceResolverRegistry.instance.reset();
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
   });
@@ -102,6 +174,9 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
     HuggingFaceResolverRegistry.instance.reset();
     EngineRegistry.instance.reset();
+    EmbeddingRegistry.instance.reset();
+    SttRegistry.instance.reset();
+    TtsRegistry.instance.reset();
     ServiceRegistry.reset();
   });
 
@@ -118,6 +193,7 @@ void main() {
       expect(
         HuggingFaceResolverRegistry.instance.findFor(
           _repo,
+          type: ModelManagementType.inference,
           fileType: ModelFileType.litertlm,
         ),
         same(carried),
@@ -155,5 +231,150 @@ void main() {
     final registered = HuggingFaceResolverRegistry.instance.registered;
     expect(registered, hasLength(1));
     expect(registered.single, same(shared));
+  });
+
+  test('an embedding backend auto-registers the resolver it carries, which '
+      'resolveHuggingFace reaches only for the embedding role', () async {
+    const carried = _FakeResolver(
+      'embedder',
+      type: ModelManagementType.embedding,
+    );
+    await FlutterEdgeAi.initialize(
+      inferenceEngines: const [_FakeEngine(_FakeResolver('llm'))],
+      embeddingBackends: const [_FakeEmbeddingBackend(carried)],
+    );
+    expect(HuggingFaceResolverRegistry.instance.registered.map((r) => r.name), [
+      'llm',
+      'embedder',
+    ]);
+    final asEmbedder = await FlutterEdgeAi.resolveHuggingFace(
+      _repo,
+      type: ModelManagementType.embedding,
+      fileType: ModelFileType.litertlm,
+    );
+    expect(asEmbedder.file, 'embedder.litertlm');
+    final asLlm = await FlutterEdgeAi.resolveHuggingFace(
+      _repo,
+      fileType: ModelFileType.litertlm,
+    );
+    expect(asLlm.file, 'llm.litertlm');
+  });
+
+  test('an explicit resolver wins the tie within its role over a '
+      'backend-carried one', () async {
+    await FlutterEdgeAi.initialize(
+      embeddingBackends: const [
+        _FakeEmbeddingBackend(
+          _FakeResolver('carried', type: ModelManagementType.embedding),
+        ),
+      ],
+      huggingFaceResolvers: const [
+        _FakeResolver('explicit', type: ModelManagementType.embedding),
+      ],
+    );
+    final r = await FlutterEdgeAi.resolveHuggingFace(
+      _repo,
+      type: ModelManagementType.embedding,
+      fileType: ModelFileType.litertlm,
+    );
+    expect(r.file, 'explicit.litertlm');
+  });
+
+  test('a provider whose resolver serves another role is refused, naming '
+      'the provider, and nothing is registered', () async {
+    await expectLater(
+      FlutterEdgeAi.initialize(
+        huggingFaceResolvers: const [_FakeResolver('explicit')],
+        sttBackends: const [_FakeSttBackend(_FakeResolver('wrong-role'))],
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          allOf(contains('_FakeSttBackend'), contains('sttBackends')),
+        ),
+      ),
+    );
+    expect(HuggingFaceResolverRegistry.instance.registered, isEmpty);
+    expect(SttRegistry.instance.hasAny, isFalse);
+  });
+
+  test('a TTS backend carrying a tts resolver registers it; one carrying '
+      'another role is refused, naming ttsBackends', () async {
+    const tts = _FakeResolver('voice', type: ModelManagementType.tts);
+    await FlutterEdgeAi.initialize(ttsBackends: const [_FakeTtsBackend(tts)]);
+    expect(HuggingFaceResolverRegistry.instance.registered.single, same(tts));
+    final r = await FlutterEdgeAi.resolveHuggingFace(
+      _repo,
+      type: ModelManagementType.tts,
+      fileType: ModelFileType.litertlm,
+    );
+    expect(r.file, 'voice.litertlm');
+
+    HuggingFaceResolverRegistry.instance.reset();
+    TtsRegistry.instance.reset();
+    ServiceRegistry.reset();
+    for (final role in [
+      ModelManagementType.inference,
+      ModelManagementType.embedding,
+      ModelManagementType.stt,
+    ]) {
+      await expectLater(
+        FlutterEdgeAi.initialize(
+          ttsBackends: [_FakeTtsBackend(_FakeResolver('wrong', type: role))],
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('_FakeTtsBackend'), contains('ttsBackends')),
+          ),
+        ),
+        reason: '$role',
+      );
+      expect(HuggingFaceResolverRegistry.instance.registered, isEmpty);
+      expect(TtsRegistry.instance.hasAny, isFalse);
+    }
+  });
+
+  test('an embedding backend carrying a resolver of another role is '
+      'refused, naming embeddingBackends', () async {
+    for (final role in [
+      ModelManagementType.inference,
+      ModelManagementType.stt,
+      ModelManagementType.tts,
+    ]) {
+      await expectLater(
+        FlutterEdgeAi.initialize(
+          embeddingBackends: [
+            _FakeEmbeddingBackend(_FakeResolver('wrong', type: role)),
+          ],
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('_FakeEmbeddingBackend'),
+              contains('embeddingBackends'),
+            ),
+          ),
+        ),
+        reason: '$role',
+      );
+      expect(HuggingFaceResolverRegistry.instance.registered, isEmpty);
+      expect(EmbeddingRegistry.instance.hasAny, isFalse);
+    }
+  });
+
+  test('an engine whose resolver is not an inference one is refused', () {
+    expect(
+      () => FlutterEdgeAi.engineHuggingFaceResolvers(const [
+        _FakeEngine(
+          _FakeResolver('embedder', type: ModelManagementType.embedding),
+        ),
+      ]),
+      throwsStateError,
+    );
   });
 }

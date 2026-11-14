@@ -1,4 +1,5 @@
 ## Unreleased
+- Hugging Face resolvers per role: `type`, `family`, `tokenizerFile`, `installEmbedder().fromHuggingFace`, runtime defaults for every role.
 - `Message.hashCode` hashes media by content like `==`, which now compares `images` by content too (#823).
 
 ## 2.6.0

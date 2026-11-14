@@ -1,13 +1,17 @@
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter_edge_ai/src/registry/hugging_face_resolver.dart';
 import 'package:flutter_edge_ai/src/model.dart' show ModelFileType;
+import 'package:flutter_edge_ai/src/model_management/model_specs.dart'
+    show ModelManagementType;
 import 'package:flutter_edge_ai/src/utils/edge_ai_log.dart';
 
 /// Holds Hugging Face manifest resolvers registered via
-/// `FlutterEdgeAi.initialize`. Same probe-chain selection as [EngineRegistry]:
-/// the registered resolver with the highest [HuggingFaceResolver.priority] whose
-/// [HuggingFaceResolver.canResolve] is true wins (first-registered breaks ties).
-/// No central format map — a resolver self-selects.
+/// `FlutterEdgeAi.initialize`. Selection is by role first — only resolvers
+/// whose [HuggingFaceResolver.type] is the role asked for take part — then
+/// the same probe chain as [EngineRegistry]: the resolver with the highest
+/// [HuggingFaceResolver.priority] whose [HuggingFaceResolver.canResolve] is
+/// true wins (first-registered breaks ties). No central format map — a
+/// resolver self-selects within its role.
 class HuggingFaceResolverRegistry {
   HuggingFaceResolverRegistry._();
   static final HuggingFaceResolverRegistry instance =
@@ -21,11 +25,16 @@ class HuggingFaceResolverRegistry {
     }
   }
 
-  /// First resolver (by descending priority, then registration order) whose
-  /// [HuggingFaceResolver.canResolve] accepts [repo]; null if none.
-  HuggingFaceResolver? findFor(String repo, {ModelFileType? fileType}) {
+  /// First resolver of role [type] (by descending priority, then registration
+  /// order) whose [HuggingFaceResolver.canResolve] accepts [repo]; null if
+  /// none. A resolver of another role is never asked.
+  HuggingFaceResolver? findFor(
+    String repo, {
+    required ModelManagementType type,
+    ModelFileType? fileType,
+  }) {
     final matches = _registered
-        .where((r) => r.canResolve(repo, fileType: fileType))
+        .where((r) => r.type == type && r.canResolve(repo, fileType: fileType))
         .toList();
     if (matches.isEmpty) return null;
     // Composite-key sort (Dart's List.sort is NOT stable): descending priority,
@@ -39,7 +48,7 @@ class HuggingFaceResolverRegistry {
         indexed.length > 1 &&
         indexed[0].$2.priority == indexed[1].$2.priority) {
       edgeAiLog(
-        '[flutter_edge_ai] Ambiguous HF resolver: '
+        '[flutter_edge_ai] Ambiguous ${type.name} HF resolver: '
         '${indexed.map((e) => e.$2.name).join(", ")} all handle "$repo" at '
         'priority ${indexed[0].$2.priority}; using "${indexed[0].$2.name}" '
         '(first registered).',

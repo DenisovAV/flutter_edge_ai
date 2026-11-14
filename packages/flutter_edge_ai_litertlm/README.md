@@ -387,7 +387,7 @@ final r = await FlutterEdgeAi.resolveHuggingFace(
     fileType: ModelFileType.litertlm);
 await FlutterEdgeAi.installModel(
       // The manifest types 2507 as qwen3; ModelType.qwen is right for it.
-      // For other repos, r.modelType ?? ModelType.general.
+      // For other repos, r.family as ModelType? ?? ModelType.general.
       modelType: ModelType.qwen,
       fileType: r.fileType,
     )

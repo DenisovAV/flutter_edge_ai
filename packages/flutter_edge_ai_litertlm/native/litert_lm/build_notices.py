@@ -28,7 +28,7 @@ import urllib.request
 import zipfile
 
 # LiteRT-LM tag the native bundles are built from (build_*.sh DEFAULT_REF).
-LITERTLM_REF = "771b06e1a2c7f70a399a718599109facf37e38fd"  # v0.19.0
+LITERTLM_REF = "7a03724cece417f1724c923b3d527b4319730841"  # v0.19.1
 # Google's Android library for the same LiteRT-LM release: its
 # THIRD_PARTY_NOTICE.txt is Google's own list for the code the runtime links.
 # PR B moves the consumer pin and regenerates NOTICES from this 0.19.0 AAR.

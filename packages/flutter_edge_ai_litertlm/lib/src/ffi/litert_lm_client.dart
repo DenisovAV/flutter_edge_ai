@@ -11,9 +11,14 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:mutex/mutex.dart';
 
+import '../bundle/litertlm_bundle_info.dart' show LiteRtLmBundleException;
 import '../bundle/litertlm_bundle_reader.dart'
-    show liteRtLmPrefillFits, readLiteRtLmPrefillSignatureLengths;
+    show
+        liteRtLmPrefillFits,
+        readLiteRtLmHasLinearAttentionState,
+        readLiteRtLmPrefillSignatureLengths;
 import 'litert_default_scope.dart';
+import 'channel_content_filter.dart';
 import 'litert_lm_bindings.dart';
 import 'litert_lm_library.dart';
 import 'litert_lm_runtime_check.dart';
@@ -21,8 +26,10 @@ import 'litert_lm_status.dart';
 import 'macos_load_error.dart';
 import 'native_turns.dart';
 import 'stream_start_failure.dart';
+import 'engine_create_failure.dart';
 import 'npu_vendor_host.dart';
 import 'option_scoring_ffi.dart';
+import '../litertlm_bundle_activation.dart' show GpuActivationReason;
 import '../litertlm_bundle_sampler.dart';
 import 'engine_sampler_latch.dart';
 import 'intel_weight_banks.dart';
@@ -1101,7 +1108,7 @@ class EngineCreateRequest {
     this.activationDataType,
     this.nativeLogLevel,
     this.dispatchLibDir,
-    this.disableHwMaskingForNpu = false,
+    this.useHwMaskingForNpu,
     this.kernelBatchSize,
     this.blockSigprof = false,
     this.listWeightBanks = false,
@@ -1142,8 +1149,9 @@ class EngineCreateRequest {
   /// Where LiteRT loads the NPU dispatch from; null off the NPU.
   final String? dispatchLibDir;
 
-  /// Turns the HW mask update path off (the NPU vendor decides).
-  final bool disableHwMaskingForNpu;
+  /// What `use_hw_masking_for_npu` is set to (`npuHwMasking` decides); null
+  /// leaves LiteRT-LM's default.
+  final bool? useHwMaskingForNpu;
 
   /// Flushes the GPU command queue every N ops (#364); null leaves the
   /// engine's default.
@@ -1334,12 +1342,13 @@ EngineCreateResult createEngineWith(
         );
       }
 
-      if (r.disableHwMaskingForNpu) {
+      final useHwMasking = r.useHwMaskingForNpu;
+      if (useHwMasking != null) {
         setter(
           'litert_lm_engine_settings_set_use_hw_masking_for_npu',
           b.litert_lm_engine_settings_set_use_hw_masking_for_npu(
             settings,
-            false,
+            useHwMasking,
           ),
         );
       }
@@ -1623,6 +1632,24 @@ class LiteRtLmFfiClient {
 
   /// The loaded bundle's prefill lengths, read on first use.
   Future<List<int>>? _prefillLengths;
+
+  /// The loaded bundle's linear attention state, read on first use by the
+  /// legacy [createConversation].
+  Future<bool?>? _linearAttentionState;
+
+  /// Reads whether the model at a path keeps linear attention state; a test
+  /// seam.
+  @visibleForTesting
+  Future<bool> Function(String path) linearAttentionStateReader =
+      readLiteRtLmHasLinearAttentionState;
+
+  /// Test seam: the backend and file of a loaded engine, without one.
+  @visibleForTesting
+  void loadedModelForTest({required String backend, String? modelPath}) {
+    _backend = backend;
+    _modelPath = modelPath;
+    _linearAttentionState = null;
+  }
 
   /// The thinking token budget each send with thinking on carries
   /// (`LiteRtLmEngine.thinkingTokenBudget`), set by [initialize]; null sends
@@ -2291,6 +2318,7 @@ class LiteRtLmFfiClient {
     String audioBackend = 'cpu',
     bool? enableSpeculativeDecoding,
     int? activationDataType,
+    GpuActivationReason? gpuActivationReason,
     NpuDispatch? npuDispatch,
     LiteRtLmLogLevel? nativeLogLevel,
     int? thinkingTokenBudget,
@@ -2349,11 +2377,12 @@ class LiteRtLmFfiClient {
       );
     }
 
-    // The vendor decides (`npuDisablesHwMasking`): Intel turns the HW mask
-    // update path off.
-    final disableHwMasking = backend == 'npu' && npuDispatch!.disableHwMasking;
-    if (disableHwMasking) {
-      edgeAiLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=false');
+    // The vendor and the bundle decide (`npuHwMasking`): Intel turns the HW
+    // mask update path off, except for a bundle whose NPU-compiled mask graphs
+    // are known to be wrong (Intel's public Gemma 4 26B for Panther Lake).
+    final useHwMasking = backend == 'npu' ? npuDispatch!.useHwMasking : null;
+    if (useHwMasking != null) {
+      edgeAiLog('[LiteRtLmFfi] NPU: use_hw_masking_for_npu=$useHwMasking');
     }
 
     if (npuDispatchDir != null) {
@@ -2417,7 +2446,7 @@ class LiteRtLmFfiClient {
         activationDataType: activationDataType,
         nativeLogLevel: nativeLogLevel,
         dispatchLibDir: npuDispatchDir,
-        disableHwMaskingForNpu: disableHwMasking,
+        useHwMaskingForNpu: useHwMasking,
         kernelBatchSize: kernelBatchSize,
         // The QNN backend's init fails under the debug VM's SIGPROF sampling
         // on Linux (see withSigprofBlocked); Android's FastRPC client
@@ -2462,8 +2491,11 @@ class LiteRtLmFfiClient {
       _dumpNativeLog();
       final nativeCode = engineAddr.code == 0 ? null : engineAddr.code;
       final nativeMessage = engineAddr.message;
-      final because = nativeMessage == null ? '' : ': $nativeMessage';
-      if (constraint != null && constraint != backend) {
+      // A GPU-artisan build fails the same way on every backend, so it is
+      // named before a backend constraint it may also declare.
+      if (constraint != null &&
+          constraint != backend &&
+          !isGpuArtisanRefusal(nativeMessage)) {
         throw LiteRtLmEngineCreateException(
           'This .litertlm model requires the "$constraint" backend — it '
           'declares section_backend_constraint: $constraint, but the '
@@ -2473,17 +2505,14 @@ class LiteRtLmFfiClient {
           nativeMessage: nativeMessage,
         );
       }
-      // Only the GPU executor reads the activation type, so only a float32
-      // GPU attempt can have failed because of it.
-      final float32OnGpu = activationDataType == 0 && backend == 'gpu';
       throw LiteRtLmEngineCreateException(
-        'Failed to create engine on $backend$because. Model: $modelPath'
-        '${float32OnGpu ? ' (float32 activations need more GPU memory than '
-                  'the default. If you set activationDataType, try without '
-                  'it; if you did not, the engine chose float32 for a '
-                  'FunctionGemma bundle that declares no '
-                  'prefer_activation_type, and ActivationDataType.float16 '
-                  'asks for the default instead)' : ''}',
+        engineCreateFailureMessage(
+          backend: backend,
+          modelPath: modelPath,
+          nativeMessage: nativeMessage,
+          activationDataType: activationDataType,
+          gpuActivationReason: gpuActivationReason,
+        ),
         nativeCode: nativeCode,
         nativeMessage: nativeMessage,
       );
@@ -2506,6 +2535,7 @@ class LiteRtLmFfiClient {
     edgeAiLog('[LiteRtLmFfi] Engine initialized successfully');
     _modelPath = modelPath;
     _maxTokens = maxTokens;
+    _linearAttentionState = null;
 
     // Auto-dump the SDK's stderr log after successful engine_create so
     // users can see what happens inside the native call (model load time,
@@ -2580,6 +2610,9 @@ class LiteRtLmFfiClient {
   ///
   /// [multimodalOrder] is where the handle's messages put their media around
   /// the text — the model's own, resolved by the model layer too.
+  ///
+  /// [filterChannelContent] is false unless the model is known to rewind
+  /// ([liteRtLmFiltersChannelContent]), which the model layer knows.
   Future<LiteRtLmConversationHandle> createConversationHandle({
     String? systemMessage,
     String? toolsJson,
@@ -2589,6 +2622,7 @@ class LiteRtLmFfiClient {
     int? maxOutputTokens,
     required MultimodalOrder multimodalOrder,
     String? jsonSchema,
+    required bool filterChannelContent,
   }) {
     // The handle must be registered before the guard lifts: otherwise shutdown()
     // can clear _handles between the create and the add, leaving a live
@@ -2611,6 +2645,7 @@ class LiteRtLmFfiClient {
           samplingExplicit: samplingExplicit,
           maxOutputTokens: maxOutputTokens,
           jsonSchema: jsonSchema,
+          filterChannelContent: filterChannelContent,
         ),
       );
       edgeAiLog('[LiteRtLmFfi] Conversation created');
@@ -2640,6 +2675,7 @@ class LiteRtLmFfiClient {
     required bool samplingExplicit,
     int? maxOutputTokens,
     String? jsonSchema,
+    required bool filterChannelContent,
   }) async {
     final testCreate = structuredCreateForTest;
     if (testCreate == null) _assertInitialized();
@@ -2843,6 +2879,7 @@ class LiteRtLmFfiClient {
     final ({int address, int code, String? message}) created;
     try {
       _setConstraintProvider(convConfig, jsonSchema);
+      _setChannelContentFilter(convConfig, filter: filterChannelContent);
       if (testCreate != null) {
         conv = await testCreate(messagesJson, jsonSchema);
         created = (address: conv.address, code: 0, message: null);
@@ -2916,6 +2953,25 @@ class LiteRtLmFfiClient {
     );
   }
 
+  /// Turns off LiteRT-LM's channel filter when [filter] is false; when true
+  /// the native default (on) is left alone. Why, and what it costs:
+  /// [liteRtLmFiltersChannelContent].
+  void _setChannelContentFilter(
+    Pointer<LiteRtLmConversationConfig> config, {
+    required bool filter,
+  }) {
+    if (filter) return;
+    final b = _bindings!;
+    checkLiteRtLmSetter(
+      'litert_lm_conversation_config_set_filter_channel_content_from_kv_cache',
+      b.litert_lm_conversation_config_set_filter_channel_content_from_kv_cache(
+        config,
+        false,
+      ),
+      b.lastError,
+    );
+  }
+
   void _setConstraint(
     Pointer<LiteRtLmConversationOptionalArgs> args,
     String? jsonSchema,
@@ -2970,6 +3026,23 @@ class LiteRtLmFfiClient {
     }
   }
 
+  /// Whether the loaded model keeps linear attention state, read from its file
+  /// on first use; null when there is no model or the file could not be read.
+  Future<bool?> _loadedLinearAttentionState() {
+    final path = _modelPath;
+    if (path == null) return Future.value();
+    return _linearAttentionState ??= () async {
+      try {
+        return await linearAttentionStateReader(path);
+      } on LiteRtLmBundleException catch (e) {
+        edgeAiLog('[LiteRtLmFfi] linear attention state of $path unread: $e');
+      } on FileSystemException catch (e) {
+        edgeAiLog('[LiteRtLmFfi] linear attention state of $path unread: $e');
+      }
+      return null;
+    }();
+  }
+
   /// Legacy single-conversation create. Closes the previous legacy
   /// conversation (if any) and opens a fresh one stored in [_legacyHandle].
   /// Kept for backward compat — new code should use
@@ -2986,6 +3059,12 @@ class LiteRtLmFfiClient {
       sampling: sampling,
       samplingExplicit: true,
       multimodalOrder: MultimodalOrder.imagesAudioText,
+      // This raw path has no model layer, so the client reads the loaded
+      // bundle itself.
+      filterChannelContent: liteRtLmFiltersChannelContent(
+        npu: _backend == 'npu',
+        linearAttentionState: await _loadedLinearAttentionState(),
+      ),
     );
     // A shutdown that landed while we were suspended already closed this handle
     // (it was registered in _handles inside the guard). Publishing it would
@@ -3197,6 +3276,7 @@ class LiteRtLmFfiClient {
     required bool thinking,
     int? maxOutputTokens,
     String? jsonSchema,
+    required bool filterChannelContent,
   }) {
     // StreamController (not async*) so the mutex release is tied to the native
     // turn's end — done, error, or a cancel that native has finished — and not
@@ -3377,6 +3457,7 @@ class LiteRtLmFfiClient {
                     samplingExplicit: samplingExplicit,
                     maxOutputTokens: maxOutputTokens,
                     jsonSchema: jsonSchema,
+                    filterChannelContent: filterChannelContent,
                   );
             _virtualConv = conv;
             _virtualActiveToken = conversationToken;
@@ -4456,6 +4537,7 @@ class LiteRtLmFfiClient {
     _modelPath = null;
     _maxTokens = null;
     _prefillLengths = null;
+    _linearAttentionState = null;
     _npuWindowRead = false;
     _samplerLatch.reset();
     _warnedNpuSampling = false;

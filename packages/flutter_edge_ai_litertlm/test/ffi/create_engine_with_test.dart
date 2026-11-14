@@ -217,7 +217,7 @@ const _full = EngineCreateRequest(
   activationDataType: 0,
   nativeLogLevel: LiteRtLmLogLevel.warning,
   dispatchLibDir: '/vendor/dispatch',
-  disableHwMaskingForNpu: true,
+  useHwMaskingForNpu: false,
   kernelBatchSize: 2,
   blockSigprof: true,
 );
@@ -262,6 +262,30 @@ void main() {
     expect(result.address, _FakeLiteRtLm.engine.address);
     expect(result.code, 0);
     expect(result.message, isNull);
+  });
+
+  test('a Panther Lake load with NPU-compiled masks sets '
+      'use_hw_masking_for_npu true, before the create', () {
+    fake = _FakeLiteRtLm();
+
+    fake.create(
+      const EngineCreateRequest(
+        modelPath: '/models/gemma4-26B-A4B-it-Intel_PTL_NPU.litertlm',
+        backend: 'npu',
+        maxTokens: 8192,
+        logLevel: EdgeAiLogLevel.none,
+        dispatchLibDir: r'C:\app',
+        useHwMaskingForNpu: true,
+      ),
+    );
+
+    expect(fake.calls.where((c) => c.startsWith('use_hw_masking_for_npu')), [
+      'use_hw_masking_for_npu true',
+    ]);
+    expect(
+      fake.calls.indexOf('use_hw_masking_for_npu true'),
+      lessThan(fake.calls.indexOf('engine_create')),
+    );
   });
 
   test('an empty request calls no optional setter and does not block '

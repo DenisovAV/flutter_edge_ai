@@ -39,6 +39,12 @@ variants:
     sha256: 4912bb5a9c30993c51a7711f763212077458529312175df0573a78323a2bb7ff
     size: 2969059328
     install_filename: gemma-4-E4B-it-gpu.litertlm
+  withhold:
+    reason: A GPU-artisan build, for LiteRT-LM's Backend::GPU_ARTISAN engine (kAdvancedLegacyTfLite,
+      kLegacyTfLite), which the open-source LiteRT-LM runtime registers on no native platform, so
+      flutter_edge_ai_litertlm refuses it ("No available engine for backend GPU_ARTISAN"). Use the
+      generic variant.
+    issue: https://github.com/google-ai-edge/LiteRT-LM/blob/771b06e1a2c7f70a399a718599109facf37e38fd/runtime/engine/engine_factory.h#L209-L212
 - slug: web
   file_type: litertlm
   web_bundle: true

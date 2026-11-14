@@ -108,6 +108,11 @@ API(Status, litert_lm_conversation_optional_args_create, (P*))
 API(Status, litert_lm_conversation_optional_args_set_constraint,
     (P, int, const char*))
 API(void, litert_lm_conversation_optional_args_delete, (P))
+API(Status, litert_lm_thinking_config_create, (P*))
+API(void, litert_lm_thinking_config_delete, (P))
+API(Status, litert_lm_thinking_config_set_enable_thinking, (P, bool))
+API(Status, litert_lm_thinking_config_set_thinking_token_budget, (P, int))
+API(Status, litert_lm_conversation_optional_args_set_thinking_config, (P, P))
 API(Status, litert_lm_conversation_get_benchmark_info, (P, P*))
 API(Status, litert_lm_conversation_get_token_count, (P, size_t*))
 API(Status, litert_lm_benchmark_info_get_num_decode_turns, (P, size_t*))
@@ -226,6 +231,11 @@ static int LoadAll(LibHandle lib) {
   LOAD(litert_lm_conversation_optional_args_create);
   LOAD(litert_lm_conversation_optional_args_set_constraint);
   LOAD(litert_lm_conversation_optional_args_delete);
+  LOAD(litert_lm_thinking_config_create);
+  LOAD(litert_lm_thinking_config_delete);
+  LOAD(litert_lm_thinking_config_set_enable_thinking);
+  LOAD(litert_lm_thinking_config_set_thinking_token_budget);
+  LOAD(litert_lm_conversation_optional_args_set_thinking_config);
   LOAD(litert_lm_conversation_get_benchmark_info);
   LOAD(litert_lm_conversation_get_token_count);
   LOAD(litert_lm_benchmark_info_get_num_decode_turns);
@@ -1797,6 +1807,50 @@ static int CmdTools(P engine) {
   return called ? 0 : 1;
 }
 
+// A tool call with thinking on (patch_c_api.sh section 26): the Gemma tool
+// constraint wrapped in ThinkingBudgetConstraint, whose first decode step used
+// to copy the provider's mask inline. On Windows that aborted the process
+// (libc++ provider, MSVC runtime). PROBE_THINK_BUDGET sets the budget (512).
+// `think` is the same turn without tools or constraint, as its control.
+static int CmdToolsThink(P engine, bool with_tools) {
+  const char* tools =
+      "[{\"type\":\"function\",\"function\":{\"name\":\"get_weather\","
+      "\"description\":\"Gets the current weather for a city.\","
+      "\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{"
+      "\"type\":\"string\",\"description\":\"The city name.\"}},"
+      "\"required\":[\"city\"]}}}]";
+  int budget = getenv("PROBE_THINK_BUDGET") ? atoi(getenv("PROBE_THINK_BUDGET"))
+                                            : 512;
+  Status s;
+  P conv = NewConversation(engine, with_tools ? tools : NULL, with_tools, false,
+                           budget + 128);
+  P args = NULL, think = NULL;
+  CHECK(litert_lm_conversation_optional_args_create(&args));
+  CHECK(litert_lm_thinking_config_create(&think));
+  CHECK(litert_lm_thinking_config_set_enable_thinking(think, true));
+  CHECK(litert_lm_thinking_config_set_thinking_token_budget(think, budget));
+  CHECK(litert_lm_conversation_optional_args_set_thinking_config(args, think));
+  litert_lm_thinking_config_delete(think);
+  char* r = Send(conv, "What is the weather in Paris right now?", args, &s);
+  litert_lm_conversation_optional_args_delete(args);
+  if (!r) {
+    printf("RESULT %s FAIL status=%d err=%s\n",
+           with_tools ? "toolsthink" : "think", s,
+           litert_lm_get_last_error_message());
+    litert_lm_conversation_delete(conv);
+    return 1;
+  }
+  bool called = with_tools ? strstr(r, "tool_calls") && strstr(r, "get_weather") &&
+                                 strstr(r, "Paris")
+                           : strstr(r, "\"content\"") != NULL;
+  printf("RESULT %s %s budget=%d response=%s\n",
+         with_tools ? "toolsthink" : "think", called ? "PASS" : "FAIL", budget,
+         r);
+  free(r);
+  litert_lm_conversation_delete(conv);
+  return called ? 0 : 1;
+}
+
 // EmbeddingGemma 2: one query, its dimension, length and norm.
 static char* ReadWholeFile(const char* path, size_t* size) {
   FILE* f = fopen(path, "rb");
@@ -1935,7 +1989,7 @@ int main(int argc, char** argv) {
   if (argc < 5) {
     fprintf(stderr,
             "usage: %s <libLiteRtLm> <multiconv|constrained|rewind|scoring|"
-            "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|longprompt|determinism|"
+            "mtp-off|mtp-on|mtp-adaptive|mtp-default|tools|toolsthink|think|longprompt|determinism|"
             "turnend|exhausted|prefillroom|convrewind [image]|deleteduring|xsession|chat [image]|ctxgroup|eg2> "
             "<model> <cpu|gpu|npu>\n  env: PROBE_CACHE_DIR, PROBE_MAX_TOKENS, "
             "PROBE_DISPATCH_DIR\n",
@@ -1992,6 +2046,8 @@ int main(int argc, char** argv) {
   else if (!strcmp(cmd, "scoring")) rc = CmdScoring(engine);
   else if (mode) rc = CmdMtp(engine, mode);
   else if (!strcmp(cmd, "tools")) rc = CmdTools(engine);
+  else if (!strcmp(cmd, "toolsthink")) rc = CmdToolsThink(engine, true);
+  else if (!strcmp(cmd, "think")) rc = CmdToolsThink(engine, false);
   else if (!strcmp(cmd, "longprompt")) rc = CmdLongPrompt(engine);
   else if (!strcmp(cmd, "determinism")) rc = CmdDeterminism(engine);
   else if (!strcmp(cmd, "turnend")) rc = CmdTurnEnd(engine);

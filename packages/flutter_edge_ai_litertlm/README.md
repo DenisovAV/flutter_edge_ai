@@ -65,7 +65,7 @@ SoC). Every build, and where each has been run:
 [Model Registry](https://flutteredge.ai/docs/registry).
 
 > **Since 1.13.0 this package needs `flutter_edge_ai` 2.3.0 (^2.3.1 since
-> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0, ^2.5.4 since 1.19.0, ^2.5.5 since 1.19.1, `>=2.5.5 <2.6.0` for 1.19.2, ^2.6.0 since 1.20.0), and 2.3.0 needs every flutter_edge_ai package
+> 1.13.1, ^2.4.0 since 1.14.0, ^2.4.1 since 1.15.0, ^2.5.0 since 1.16.0, ^2.5.1 since 1.17.0, ^2.5.4 since 1.19.0, ^2.5.5 since 1.19.1, `>=2.5.5 <2.6.0` for 1.19.2, ^2.6.0 for 1.20.0, `>=2.6.0 <2.7.0` for 1.20.1), and 2.3.0 needs every flutter_edge_ai package
 > upgraded together:**
 > `flutter_edge_ai_embeddings` 2.3.0 · `flutter_edge_ai_onnx` 0.5.8 ·
 > `flutter_edge_ai_mediapipe` 1.2.2 · `flutter_edge_ai_builtin_ai` 0.3.5 ·
@@ -223,6 +223,13 @@ audio turn is also rebuilt this way on CPU/GPU because LiteRT-LM 0.19 can lose
 its audio while reporting that the rewind succeeded. The same rebuild holds
 for an `openSession` session when the model file could not be read to tell;
 that is printed when the model loads.
+
+LiteRT-LM strips a reply's thought from its KV cache by rewinding over the
+reply, so where a conversation does not rewind (the NPU, linear attention
+state, or a file that could not be read to tell) the thought stays there
+(1.20.1): a long chat fills its context faster than its history suggests,
+and a conversation rebuilt after a stop or a full context resumes without
+the earlier thoughts.
 
 Every idle native-backed session keeps a copy of its KV cache, so it costs
 memory while it is open, and the cost grows with `maxTokens`. Measured on
@@ -1063,7 +1070,7 @@ Native platforms need no web setup.
 | Windows  | ✅ FFI on x64 (CPU + GPU via DirectX 12 + Intel NPU); ARM64 has no native archive, see [Troubleshooting](#windows-arm64-litert-lm-inference-is-not-available) |
 | Web      | ⚠️ early preview via `@litert-lm/core` (CDN; LLMs text-only; EmbeddingGemma 2 text, images and audio on WebGPU) |
 
-The native library (`native-v0.19.0-a`, LiteRT-LM v0.19.0) is fetched at build
+The native library (`native-v0.19.1-b`, LiteRT-LM v0.19.1) is fetched at build
 time by `hook/build.dart` from a SHA256-verified GitHub release. The app still
 needs its platform setup: Android `minSdk 30`, iOS 15.0 and the memory
 entitlements, and macOS 14.0. On macOS the companion libraries come from this
@@ -1514,10 +1521,21 @@ larger Gemma bundles (Gemma 3 1B, Gemma 4) are not affected.
 ### Wrong digits from a long prompt on GPU
 
 Gemma 4 can copy numbers wrongly out of a prompt of about 2,000 tokens or more
-on Metal and Adreno, the same way on every run. The published Gemma 4
-`.litertlm` files ask for half-precision activations; pass
-`activationDataType: ActivationDataType.float32` to `getActiveModel` for full
-precision.
+on Metal and Adreno, the same way on every run, and on Intel D3D12 an agent
+with a ~4,875-token prompt made no tool calls at all. The published Gemma 4
+`.litertlm` files ask for half-precision activations, and at FP16 the rotary
+positions past about 2,048 tokens stop being distinct
+([LiteRT-LM #4001](https://github.com/google-ai-edge/LiteRT-LM/issues/4001)).
+
+Since 1.20.1, a Gemma 4 model (`ModelType.gemma4`) loaded with `maxTokens`
+above 2,048 and no `activationDataType` runs its GPU attempt at
+`ActivationDataType.float32`; the log line saying so is printed in debug builds
+only. The CPU and NPU attempts are left alone, and so is a value you pass:
+`activationDataType: ActivationDataType.float16` keeps the file's half
+precision, at the cost above. With `maxTokens` of 2,048 or less nothing
+changes. FP32 costs first-token time (1.5 s against 3.8 s on that Intel
+prompt) and GPU memory; on older versions pass
+`activationDataType: ActivationDataType.float32` to `getActiveModel` yourself.
 
 ### `Qwen3-0.6B.litertlm` fails to load
 

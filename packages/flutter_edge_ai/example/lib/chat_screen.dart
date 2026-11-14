@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'services/catalog_install.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
@@ -8,6 +7,7 @@ import 'package:flutter_edge_ai_example/chat_widget.dart';
 import 'package:flutter_edge_ai_example/loading_widget.dart';
 import 'package:flutter_edge_ai_example/models/model.dart';
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({

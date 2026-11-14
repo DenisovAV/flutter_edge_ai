@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'services/catalog_install.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/models/stt_model.dart';
@@ -10,6 +9,7 @@ import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
 import 'package:flutter_edge_ai_example/utils/audio_converter.dart';
 import 'package:flutter_edge_ai_example/utils/platform_io_helper.dart';
 import 'package:http/http.dart' as http;
+import 'package:material_ui/material_ui.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 

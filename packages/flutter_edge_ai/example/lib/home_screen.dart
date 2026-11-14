@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/agent_demo_screen.dart';
 import 'package:flutter_edge_ai_example/downloaded_models_screen.dart';
 import 'package:flutter_edge_ai_example/embedding_models_screen.dart';
@@ -13,6 +12,7 @@ import 'package:flutter_edge_ai_example/translate_models_screen.dart';
 import 'package:flutter_edge_ai_example/tts_models_screen.dart';
 import 'package:flutter_edge_ai_example/utils/installed_model_lookup.dart';
 import 'package:flutter_edge_ai_example/voice_setup_screen.dart';
+import 'package:material_ui/material_ui.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});

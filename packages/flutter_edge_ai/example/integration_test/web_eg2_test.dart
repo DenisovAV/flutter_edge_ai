@@ -80,7 +80,6 @@ import 'dart:js_interop_unsafe';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/engine.dart' show RuntimeConfig;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -91,6 +90,7 @@ import 'package:flutter_edge_ai_example/image_search/photo_preparation.dart';
 import 'package:flutter_edge_ai_example/image_search_screen.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart' as catalog;
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
+import 'package:material_ui/material_ui.dart';
 // ignore: implementation_imports — the CPU record and the minInputLength measurement build the web pass with a backend and a setting the public backend does not offer
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
 import 'package:flutter_test/flutter_test.dart';

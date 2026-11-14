@@ -42,12 +42,12 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_edge_ai_example/multimodal_rag/multimodal_rag_widgets.dart';
 import 'package:flutter_edge_ai_example/main.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'multimodal_rag_models.dart';

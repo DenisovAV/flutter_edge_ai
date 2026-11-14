@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' show FlutterEdgeAi;
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'gemma_bootstrap.dart';
 import 'models/embedding_model.dart' show embedderBackendForProfile;

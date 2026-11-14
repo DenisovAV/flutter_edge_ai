@@ -67,7 +67,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/engine.dart' show RuntimeConfig;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -83,6 +82,7 @@ import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_edge_ai_sqlite/flutter_edge_ai_sqlite.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'goldens/eg2_text_golden.dart';

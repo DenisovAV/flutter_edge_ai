@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/models/stt_model.dart';
 import 'package:flutter_edge_ai_example/stt_screen.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// STT model selection screen — mirrors [EmbeddingModelsScreen]. Lists the
 /// [SttModel] catalog; picking a supported entry pushes [SttScreen], which

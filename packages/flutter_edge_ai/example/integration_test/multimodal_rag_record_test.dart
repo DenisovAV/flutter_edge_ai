@@ -11,10 +11,10 @@
 //
 // No setUp/setUpAll (Rule 6b).
 
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/multimodal_rag_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'multimodal_rag_models.dart';
 

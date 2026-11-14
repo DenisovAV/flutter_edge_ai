@@ -11,7 +11,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/image_search/eg2_vision_samples.dart';
 import 'package:flutter_edge_ai_example/image_search/image_search_controller.dart';
@@ -20,6 +19,7 @@ import 'package:flutter_edge_ai_example/image_search/photo_store.dart';
 import 'package:flutter_edge_ai_example/image_search_screen.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 const _textId = 'embeddinggemma2-litertlm-text-4410a540ce75-prefix-v1';
 

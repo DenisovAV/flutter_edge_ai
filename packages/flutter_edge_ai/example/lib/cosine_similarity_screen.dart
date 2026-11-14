@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
@@ -7,6 +6,7 @@ import 'package:flutter_edge_ai_example/models/embedding_model.dart'
 import 'package:flutter_edge_ai_example/services/auth_token_service.dart';
 import 'package:flutter_edge_ai_example/services/embedding_catalog_install.dart';
 import 'package:flutter_edge_ai_example/services/embedding_catalog_provenance.dart';
+import 'package:material_ui/material_ui.dart';
 
 class CosineSimilarityScreen extends StatefulWidget {
   final example_embedding_model.EmbeddingModel model;

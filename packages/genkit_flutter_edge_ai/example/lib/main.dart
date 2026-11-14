@@ -1,8 +1,8 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_embeddings/flutter_edge_ai_embeddings.dart';
 import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_mediapipe/flutter_edge_ai_mediapipe.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'app_state.dart';
 import 'screens/chat_screen.dart';

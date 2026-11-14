@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'embedding_models_screen.dart';
 import 'image_search/image_search_app_dependencies.dart';

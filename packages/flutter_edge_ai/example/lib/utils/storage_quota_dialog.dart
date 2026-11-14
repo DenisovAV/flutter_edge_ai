@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/downloaded_models_screen.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Returns true when the download failed because the browser/device ran out of
 /// storage (OPFS / Cache API quota). Web models are ~2 GB each, so a few

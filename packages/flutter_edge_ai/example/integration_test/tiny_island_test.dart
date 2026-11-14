@@ -38,7 +38,6 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_catalog.dart';
 import 'package:flutter_edge_ai_example/tiny_island/island_held_out_requests.dart';
@@ -47,6 +46,7 @@ import 'package:flutter_edge_ai_example/tiny_island_screen.dart';
 import 'package:flutter_scene/scene.dart' show SceneView;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'tiny_island_requests.dart';

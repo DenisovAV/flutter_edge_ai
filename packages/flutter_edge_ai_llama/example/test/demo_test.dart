@@ -1,11 +1,11 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_selector_platform_interface/file_selector_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama_demo/main.dart' as demo;
+import 'package:material_ui/material_ui.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

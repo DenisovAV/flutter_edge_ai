@@ -3,7 +3,6 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart'
     show
         AbstainReason,
@@ -12,6 +11,7 @@ import 'package:flutter_edge_ai/flutter_edge_ai.dart'
         DeciderMethod,
         RankedOption,
         ScoreKind;
+import 'package:material_ui/material_ui.dart';
 
 import 'tiny_island_view_model.dart';
 

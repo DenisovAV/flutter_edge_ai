@@ -72,6 +72,86 @@ class _RecordingSession extends InferenceModelSession {
   Future<void> close() async {}
 }
 
+/// One session of a chat: records each staged text into [wire] (shared by
+/// every session the chat opens) and answers the next turn with the next of
+/// [replies]; a reply's token count is its entry in [replyTokens].
+class _WireSession extends InferenceModelSession {
+  _WireSession(this.wire, this.replies, this.replyTokens);
+
+  final List<List<String>> wire;
+  final List<String> replies;
+  final Map<String, int> replyTokens;
+  late final List<String> staged = () {
+    final list = <String>[];
+    wire.add(list);
+    return list;
+  }();
+
+  @override
+  Future<void> addQueryChunk(Message message) async => staged.add(message.text);
+
+  @override
+  Future<String> getResponse() async => replies.removeAt(0);
+
+  @override
+  Stream<String> getResponseAsync() => Stream.value(replies.removeAt(0));
+
+  @override
+  Future<int> sizeInTokens(String text) async => replyTokens[text] ?? 0;
+
+  @override
+  Future<void> stopGeneration() async {}
+
+  @override
+  SessionMetrics getSessionMetrics() => SessionMetrics();
+
+  @override
+  Future<void> close() async {}
+}
+
+/// A chat whose sessions record what each one was sent: `wire[i]` is the
+/// i-th session's input, in order.
+Future<({InferenceChat chat, List<List<String>> wire})> _wireChat({
+  required ModelType type,
+  bool isThinking = false,
+  required List<String> replies,
+  Map<String, int> replyTokens = const {},
+  int maxTokens = 1024,
+  int tokenBuffer = 0,
+}) async {
+  final wire = <List<String>>[];
+  final chat = InferenceChat(
+    sessionCreator: () async {
+      final session = _WireSession(wire, replies, replyTokens);
+      session.staged; // registers the session's list in [wire]
+      return session;
+    },
+    maxTokens: maxTokens,
+    tokenBuffer: tokenBuffer,
+    modelType: type,
+    enableThinking: isThinking,
+    fileType: ModelFileType.litertlm,
+  );
+  await chat.initSession();
+  return (chat: chat, wire: wire);
+}
+
+Future<void> _turn(
+  InferenceChat chat,
+  String text, {
+  bool streaming = false,
+}) async {
+  await chat.addQueryChunk(Message(text: text, isUser: true));
+  if (streaming) {
+    // Only the streaming path counts reply tokens and rebuilds the session.
+    await chat.generateChatResponseAsync().drain<void>();
+  } else {
+    await chat.generateChatResponse();
+  }
+}
+
+int _suffixes(String text) => '/no_think'.allMatches(text).length;
+
 Future<List<String>> _staged(
   Message message, {
   required ModelType type,
@@ -261,6 +341,113 @@ void main() {
     test('qwen3: not appended to an audio turn', () async {
       final audio = Message.audioOnly(audioBytes: Uint8List(4), isUser: true);
       expect(await _staged(audio, type: ModelType.qwen3), ['']);
+    });
+
+    group('stays out of the histories the app sees', () {
+      test('qwen3 with thinking off: fullHistory keeps the caller\'s text, '
+          'the model gets the suffix', () async {
+        final (:chat, :wire) = await _wireChat(
+          type: ModelType.qwen3,
+          replies: ['hello'],
+        );
+        await _turn(chat, 'hi');
+        expect(wire.single, ['hi /no_think']);
+        expect(chat.fullHistory.map((m) => m.text), ['hi', 'hello']);
+      });
+
+      test('qwen3: replaying fullHistory sends one suffix per user turn and '
+          'fullHistory keeps none', () async {
+        final (:chat, :wire) = await _wireChat(
+          type: ModelType.qwen3,
+          replies: ['a1', 'a2', 'a3'],
+        );
+        await _turn(chat, 'q1');
+        await _turn(chat, 'q2');
+        final saved = chat.fullHistory;
+
+        await chat.clearHistory(replayHistory: saved);
+        await _turn(chat, 'q3');
+        // And once more, from a history that was itself replayed.
+        await chat.clearHistory(replayHistory: chat.fullHistory);
+
+        final replayed = wire[1];
+        expect(replayed, [
+          'q1 /no_think',
+          'a1',
+          'q2 /no_think',
+          'a2',
+          'q3 '
+              '/no_think',
+        ]);
+        expect(wire[2], [...replayed, 'a3']);
+        for (final text in wire.expand((s) => s)) {
+          expect(_suffixes(text), text.startsWith('q') ? 1 : 0, reason: text);
+        }
+        expect(chat.fullHistory.map((m) => m.text), [
+          'q1',
+          'a1',
+          'q2',
+          'a2',
+          'q3',
+          'a3',
+        ]);
+      });
+
+      test(
+        'qwen3: a history saved with the suffix is not sent with two',
+        () async {
+          final (:chat, :wire) = await _wireChat(
+            type: ModelType.qwen3,
+            replies: [],
+          );
+          await chat.clearHistory(
+            replayHistory: const [Message(text: 'q1 /no_think', isUser: true)],
+          );
+          expect(wire.last, ['q1 /no_think']);
+        },
+      );
+
+      test('qwen3: a session rebuilt for the context window keeps the '
+          'suffix the model got', () async {
+        // maxTokens - tokenBuffer = 40: the second reply takes the count to
+        // 60, the rebuild drops q1 and a1 (30) and replays q2 and a2.
+        final (:chat, :wire) = await _wireChat(
+          type: ModelType.qwen3,
+          replies: ['a1', 'a2'],
+          replyTokens: {'a1': 30, 'a2': 30},
+          maxTokens: 60,
+          tokenBuffer: 20,
+        );
+        await _turn(chat, 'q1', streaming: true);
+        await _turn(chat, 'q2', streaming: true);
+        expect(wire, hasLength(2));
+        expect(wire.last, ['q2 /no_think', 'a2']);
+        expect(chat.fullHistory.map((m) => m.text), ['q1', 'a1', 'q2', 'a2']);
+      });
+
+      for (final (type, isThinking) in [
+        (ModelType.qwen3, true),
+        (ModelType.qwen, false),
+        (ModelType.qwen35, false),
+        (ModelType.gemmaIt, false),
+      ]) {
+        test('${type.name}, thinking ${isThinking ? 'on' : 'off'}: nothing '
+            'appended anywhere', () async {
+          final (:chat, :wire) = await _wireChat(
+            type: type,
+            isThinking: isThinking,
+            replies: ['a1', 'a2'],
+          );
+          await _turn(chat, 'q1');
+          await chat.clearHistory(replayHistory: chat.fullHistory);
+          await _turn(chat, 'q2');
+          expect(wire, [
+            ['q1'],
+            ['q1', 'a1', 'q2'],
+          ]);
+          expect(chat.fullHistory.map((m) => m.text), ['q1', 'a1', 'q2', 'a2']);
+        });
+      }
     });
 
     test('qwen3: not appended to a tool response', () async {

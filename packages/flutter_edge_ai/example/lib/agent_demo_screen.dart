@@ -1,10 +1,4 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-// AgentChatView's TextField is package:flutter/material.dart's, which asserts
-// a Material ancestor of that package's own type; material_ui's Scaffold does
-// not count. Remove once the agent package moves to material_ui. The library
-// is deprecated from Flutter 3.50.
-// ignore: deprecated_member_use
-import 'package:flutter/material.dart' as legacy show Material, MaterialType;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_edge_ai_example/loading_widget.dart';
@@ -145,14 +139,11 @@ class _AgentDemoScreenState extends State<AgentDemoScreen> {
         ],
       ),
       body: _session != null
-          ? legacy.Material(
-              type: legacy.MaterialType.transparency,
-              child: AgentChatView(
-                session: _session!,
-                hintText:
-                    'e.g. "Calculate the hash of hello" or '
-                    '"Show Paris on interactive map"',
-              ),
+          ? AgentChatView(
+              session: _session!,
+              hintText:
+                  'e.g. "Calculate the hash of hello" or '
+                  '"Show Paris on interactive map"',
             )
           : _buildIntro(context),
     );

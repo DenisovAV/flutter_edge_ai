@@ -72,7 +72,8 @@ WebView), verified on hardware. On web the skill runs in a sandboxed `<iframe>`.
   inline results, streamed text, a retry after an empty answer).
 - Cross-platform UI: `AgentChatView`, adaptive `SkillManagerView` /
   `McpManagerView`, `McpToolCallPermissionDialog`, `SecretEditorDialog`,
-  `SkillTesterView`, and the add-skill disclaimer.
+  `SkillTesterView`, and the add-skill disclaimer (in a `package:material_ui`
+  app, see [In a material_ui app](#in-a-material_ui-app)).
 - **Bundled starter skills** (seven ported from Gallery, Apache-2.0, some
   modified, plus `get-current-time`, written here) — see below.
 
@@ -595,6 +596,30 @@ need declarations in the app:
   webview plugin fetches its native dependencies with the
   [NuGet CLI](https://learn.microsoft.com/nuget/install-nuget-client-tools)
   while the app builds, so `nuget` has to be on the `PATH`.
+
+### In a material_ui app
+
+In an app built on `package:material_ui` (Flutter 3.50 deprecates
+`package:flutter/material.dart`), the package's UI widgets, which are still
+built on `package:flutter/material.dart`, need its `Theme` and
+`MaterialLocalizations`:
+put `MaterialUiCompatibilityBridge` in `MaterialApp.builder`, above the
+Navigator, so the dialogs and bottom sheets they open get them too:
+
+```dart
+MaterialApp(
+  // ignore: deprecated_member_use
+  builder: (context, child) => MaterialUiCompatibilityBridge(child: child!),
+  home: const HomePage(),
+);
+```
+
+The bridge's default localization delegates cover every locale of
+`flutter_localizations`; an app with one language can pass its own
+`delegates:` (on the web the full set adds about 250 KB).
+
+In such an app a failed add in `SkillManagerView` or `McpManagerView` is shown
+in a dialog rather than a snack bar.
 
 ## Third-party attribution
 

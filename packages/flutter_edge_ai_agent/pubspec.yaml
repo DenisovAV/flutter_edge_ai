@@ -60,6 +60,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  # Hosts the UI in a package:material_ui app (material_ui_host_test.dart).
+  material_ui: ^1.1.0
   # Tests stand in for the OS launcher to read the mail and SMS URIs.
   plugin_platform_interface: ^2.1.8
   url_launcher_platform_interface: ^2.3.2

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../mcp/mcp_client.dart';
 import '../mcp/mcp_server_config.dart';
 import 'add_skill_disclaimer.dart';
+import 'show_ui_error.dart';
 
 /// Manage the configured MCP servers and their tools.
 ///
@@ -78,8 +79,10 @@ class _McpManagerViewState extends State<McpManagerView> {
   late List<McpServerConfig> _servers = List.of(widget.servers);
   bool _connecting = false;
 
+  /// Reports the list to the host even when the view was closed while a
+  /// server connected, so an added server is never lost.
   void _commit() {
-    setState(() {});
+    if (mounted) setState(() {});
     widget.onChanged(List.of(_servers));
   }
 
@@ -94,8 +97,10 @@ class _McpManagerViewState extends State<McpManagerView> {
     if (entered == null || !mounted) return;
 
     setState(() => _connecting = true);
-    final client = (widget.clientFactory ?? McpClient.new)(entered);
+    final factory = widget.clientFactory;
+    McpClient? client;
     try {
+      client = factory != null ? factory(entered) : McpClient(config: entered);
       final connected = await client.connect();
       _servers = [..._servers, connected];
       _commit();
@@ -104,12 +109,10 @@ class _McpManagerViewState extends State<McpManagerView> {
       _servers = [..._servers, entered];
       _commit();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Added but could not connect: $e')),
-        );
+        showUiError(context, 'Added but could not connect: $e');
       }
     } finally {
-      client.close();
+      client?.close();
       if (mounted) setState(() => _connecting = false);
     }
   }

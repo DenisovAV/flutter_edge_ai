@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/utils/gated_model_access_dialog.dart';
 import 'package:flutter_edge_ai_example/utils/storage_quota_dialog.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// The active model core's refusal names: an install would write over a file
 /// it reads. Read from the refusal's message, whose words core holds in a

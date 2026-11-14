@@ -90,10 +90,12 @@ same page, `BuiltInAiPage`: a device status card, then a prompt field and an
 ## Step 1: Register the built-in engine
 Duration: 8
 
-Open `step_01_starter`. It already depends on both packages:
+Open `step_01_starter`. It already depends on both packages, and on
+`material_ui` for its widgets:
 
 ```yaml
 dependencies:
+  material_ui: ^1.1.0
   flutter_edge_ai: ^2.6.0
   flutter_edge_ai_builtin_ai: ^0.4.1
 ```
@@ -106,9 +108,9 @@ browser.
 `lib/main.dart` registers the engine before `runApp`:
 
 ```dart
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_builtin_ai/flutter_edge_ai_builtin_ai.dart';
+import 'package:material_ui/material_ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

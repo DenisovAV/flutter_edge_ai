@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/models/tts_model.dart';
 import 'package:flutter_edge_ai_example/tts_screen.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// TTS model selection screen — mirrors [SttModelsScreen]. Lists the
 /// [TtsModel] catalog; picking a supported entry pushes [TtsScreen], which

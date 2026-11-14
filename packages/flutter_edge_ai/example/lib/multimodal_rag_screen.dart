@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'embedding_models_screen.dart';
 import 'multimodal_rag/multimodal_rag_app_dependencies.dart';

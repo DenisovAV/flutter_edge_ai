@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:edge_ai_skills/download_page.dart';
 import 'package:edge_ai_skills/model.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() {
   // `isModelInstalled` is keyed by the file name. A name that drifts from its

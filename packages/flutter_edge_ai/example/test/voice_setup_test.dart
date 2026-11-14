@@ -2,10 +2,10 @@
 // and the LLM picker's `modelFilter` (it must not offer models the loop can't
 // network-install — built-in or localModel asset entries). Pure navigation /
 // filtering, no model download / FFI / device.
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_edge_ai_example/model_selection_screen.dart';
 import 'package:flutter_edge_ai_example/voice_setup_screen.dart';
+import 'package:material_ui/material_ui.dart';
 
 void main() {
   testWidgets('VoiceSetupScreen renders the default STT / LLM / TTS trio', (

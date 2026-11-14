@@ -80,7 +80,6 @@ import 'dart:js_interop_unsafe';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_edge_ai/engine.dart' show RuntimeConfig;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
@@ -95,6 +94,7 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/web/litert_lm_web_embedding_pass.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'goldens/eg2_image_golden.dart';
 import 'goldens/eg2_text_golden_web.dart';

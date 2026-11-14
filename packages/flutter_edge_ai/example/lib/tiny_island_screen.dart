@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart' show MaxLengthEnforcement;
 import 'package:flutter_scene/scene.dart'
     show CameraControls, RenderView, SceneView;
+import 'package:material_ui/material_ui.dart';
 
 import 'embedding_models_screen.dart';
 import 'tiny_island/island_hud.dart';

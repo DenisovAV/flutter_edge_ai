@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart' as edge;
 import 'package:flutter_edge_ai_llama/flutter_edge_ai_llama.dart';
 import 'package:llamadart/llamadart.dart' as llama;
+import 'package:material_ui/material_ui.dart';
 
 import 'model_import.dart';
 

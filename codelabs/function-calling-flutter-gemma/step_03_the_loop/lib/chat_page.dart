@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'model.dart';
 import 'tools.dart';

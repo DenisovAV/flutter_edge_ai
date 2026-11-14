@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:record/record.dart';
 
 import 'model.dart';

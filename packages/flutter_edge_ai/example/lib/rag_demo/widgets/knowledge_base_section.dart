@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../rag_demo_data.dart';
 import 'sample_documents_screen.dart';
 

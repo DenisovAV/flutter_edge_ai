@@ -7,6 +7,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  material_ui: ^1.1.0
   flutter_edge_ai: ^2.4.0
   # Flutter Edge AI keeps engines/backends in opt-in packages; register
   # them via FlutterEdgeAi.initialize() in main.dart. The bridge package itself

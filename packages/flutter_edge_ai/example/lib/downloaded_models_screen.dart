@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/chat_screen.dart';
@@ -7,6 +6,7 @@ import 'package:flutter_edge_ai_example/services/downloaded_model_deleter.dart';
 import 'package:flutter_edge_ai_example/services/downloaded_model_loader.dart';
 import 'package:flutter_edge_ai_example/utils/installed_model_lookup.dart';
 import 'package:flutter_edge_ai_example/utils/platform_io_helper.dart';
+import 'package:material_ui/material_ui.dart';
 
 class _DownloadedModelEntry {
   const _DownloadedModelEntry({

@@ -1,10 +1,16 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
+// AgentChatView's TextField is package:flutter/material.dart's, which asserts
+// a Material ancestor of that package's own type; material_ui's Scaffold does
+// not count. Remove once the agent package moves to material_ui. The library
+// is deprecated from Flutter 3.50.
+// ignore: deprecated_member_use
+import 'package:flutter/material.dart' as legacy show Material, MaterialType;
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_agent/flutter_edge_ai_agent.dart';
 import 'package:flutter_edge_ai_example/loading_widget.dart';
 import 'package:flutter_edge_ai_example/models/model.dart';
 import 'package:flutter_edge_ai_example/universal_download_screen.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Demonstrates `flutter_edge_ai_agent`: the bundled starter skills (ported from
 /// google-ai-edge/gallery, Apache-2.0) driving a Gemma 4 model through the
@@ -139,11 +145,14 @@ class _AgentDemoScreenState extends State<AgentDemoScreen> {
         ],
       ),
       body: _session != null
-          ? AgentChatView(
-              session: _session!,
-              hintText:
-                  'e.g. "Calculate the hash of hello" or '
-                  '"Show Paris on interactive map"',
+          ? legacy.Material(
+              type: legacy.MaterialType.transparency,
+              child: AgentChatView(
+                session: _session!,
+                hintText:
+                    'e.g. "Calculate the hash of hello" or '
+                    '"Show Paris on interactive map"',
+              ),
             )
           : _buildIntro(context),
     );

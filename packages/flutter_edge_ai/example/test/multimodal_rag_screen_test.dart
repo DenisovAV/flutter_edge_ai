@@ -10,7 +10,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/multimodal_rag/multimodal_rag_dependencies.dart';
 import 'package:flutter_edge_ai_example/multimodal_rag/multimodal_rag_item.dart';
 import 'package:flutter_edge_ai_example/multimodal_rag/multimodal_rag_library.dart';
@@ -21,6 +20,7 @@ import 'package:flutter_edge_ai_example/multimodal_rag_screen.dart';
 import 'package:flutter_edge_ai_example/utils/audio_converter.dart';
 import 'package:flutter_edge_ai_rag/flutter_edge_ai_rag.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'multimodal_rag_fakes.dart';
 

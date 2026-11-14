@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/integration_test_screen.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Separate entry point for Integration Tests
 ///

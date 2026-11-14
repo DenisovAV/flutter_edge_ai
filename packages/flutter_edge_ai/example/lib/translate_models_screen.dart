@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/models/translate_model.dart';
 import 'package:flutter_edge_ai_example/widgets/universal_model_card.dart';
+import 'package:material_ui/material_ui.dart';
 
 class TranslateModelsScreen extends StatefulWidget {
   const TranslateModelsScreen({super.key});

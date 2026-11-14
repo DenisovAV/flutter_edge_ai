@@ -1,6 +1,6 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart';
 import 'package:flutter_edge_ai_example/widgets/universal_model_card.dart';
+import 'package:material_ui/material_ui.dart';
 
 class EmbeddingModelsScreen extends StatefulWidget {
   const EmbeddingModelsScreen({super.key});

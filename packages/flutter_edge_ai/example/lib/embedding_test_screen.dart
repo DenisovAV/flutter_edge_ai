@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_edge_ai/flutter_edge_ai.dart';
 import 'package:flutter_edge_ai_example/models/embedding_model.dart'
@@ -9,6 +8,7 @@ import 'package:flutter_edge_ai_example/services/embedding_catalog_install.dart'
 import 'package:flutter_edge_ai_example/services/embedding_catalog_provenance.dart';
 import 'package:flutter_edge_ai_example/cosine_similarity_screen.dart';
 import 'package:flutter_edge_ai_example/rag_demo_screen.dart';
+import 'package:material_ui/material_ui.dart';
 
 class EmbeddingTestScreen extends StatefulWidget {
   final example_embedding_model.EmbeddingModel model;

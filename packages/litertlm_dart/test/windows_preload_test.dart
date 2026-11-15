@@ -114,17 +114,8 @@ void main() {
     expect(named.intersection(forbidden), isEmpty);
   });
 
-  test('the dropped samplers are legacy names: a stale copy is deleted, '
-      'never registered', () {
-    final legacy = _hookList(hook, 'legacyFileNames');
-    expect(
-      legacy,
-      containsAll([
-        'LiteRtTopKWebGpuSampler',
-        'libLiteRtTopKWebGpuSampler',
-        'LiteRtTopKMetalSampler',
-      ]),
-    );
+  test('the dropped samplers are never registered (each release tag has a '
+      'cache directory of its own, so no stale copy sits beside them)', () {
     expect(
       _hookList(hook, 'companions').where((n) => n.contains('TopK')),
       isEmpty,

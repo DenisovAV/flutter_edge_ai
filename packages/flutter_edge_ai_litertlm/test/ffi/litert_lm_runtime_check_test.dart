@@ -27,8 +27,7 @@ const _iosPath = '@executable_path/Frameworks/LiteRtLm.framework/LiteRtLm';
 bool _foreign(String symbol) => symbol != liteRtLmOwnBuildSymbol;
 
 String? _hostDylib() => firstExistingPath(
-  hostNativeLibraryCandidates(
-    libFileName: hostNativeLibraryFileName('LiteRtLm'),
+  liteRtLmHostLibraryCandidates(
     envOverride: Platform.environment['LITERTLM_DYLIB'],
   ),
 );

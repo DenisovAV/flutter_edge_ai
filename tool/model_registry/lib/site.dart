@@ -253,13 +253,7 @@ final class SiteInputs {
       }
     }
     final hook = File(
-      p.join(
-        repoRoot,
-        'packages',
-        'litertlm_dart',
-        'hook',
-        'build.dart',
-      ),
+      p.join(repoRoot, 'packages', 'litertlm_dart', 'hook', 'build.dart'),
     );
     if (!hook.existsSync() &&
         Directory(p.join(repoRoot, 'packages')).existsSync()) {

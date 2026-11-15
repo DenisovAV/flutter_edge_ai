@@ -110,11 +110,7 @@ Map<String, dynamic> _readGolden() {
 }
 
 void main() {
-  final dylib = firstExistingPath(
-    hostNativeLibraryCandidates(
-      libFileName: hostNativeLibraryFileName('LiteRtLm'),
-    ),
-  );
+  final dylib = firstExistingPath(liteRtLmHostLibraryCandidates());
   final bundle = _env('EG2_440M_LITERTLM');
   final skip = dylib == null
       ? 'no host libLiteRtLm in the download cache'

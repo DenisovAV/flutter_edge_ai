@@ -143,7 +143,7 @@ silently do the other thing.
 come from one of two sources, decided per-platform by `hook/build.dart` (Native
 Assets):
 
-1. **Local prebuilts** at `packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/<os>_<arch>/` — populated locally by `packages/flutter_edge_ai_litertlm/native/litert_lm/build_*.sh` scripts. **NOT tracked in git** (gitignored since 0.14.3 — keeps clones lean) and **excluded from the pub package** via `.pubignore`. Maintainers regenerate them on demand and upload to a GitHub Release.
+1. **Local prebuilts** at `packages/litertlm_dart/native/litert_lm/prebuilt/<os>_<arch>/` — populated locally by `packages/litertlm_dart/native/litert_lm/build_*.sh` scripts. **NOT tracked in git** (gitignored since 0.14.3 — keeps clones lean) and **excluded from the pub package** via `.pubignore`. Maintainers regenerate them on demand and upload to a GitHub Release.
 2. **GitHub Release `native-v<NATIVE_VERSION>` archives** (e.g. `native-v0.10.2-a`) — the **canonical source for both end users and CI**. URL pattern: `litertlm-<os>_<arch>.tar.gz` flat archive of the matching `prebuilt/` folder. End users fetch from there at `pub get` time via `hook/build.dart`. Maintainers re-fetch from there too if their local `prebuilt/` is missing (`gh release download native-v<X>` then extract — see Step 5).
 
 Whether to bump `native-v<NATIVE_VERSION>` or re-publish the existing tag is the **central decision** of every release.
@@ -226,7 +226,7 @@ shown N/A.
 
 ### 1b. Native dylibs changed (any platform)?
 ```bash
-git diff <last-tag> -- packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/
+git diff <last-tag> -- packages/litertlm_dart/native/litert_lm/prebuilt/
 ```
 If **any** dylib changed → must re-publish GitHub Release archives **and** update SHA256 checksums in `hook/build.dart`, otherwise end users will keep getting the stale dylibs.
 
@@ -290,7 +290,7 @@ Shared-code hotspots to sweep, per fix type:
   Sweep `compileSdk`, `minSdkVersion`, the AGP classpath, and the
   `kotlin { compilerOptions { jvmTarget } }` block — which must stay
   byte-identical across all three (#360, #440).
-- **Native hook** — `packages/flutter_edge_ai_litertlm/hook/build.dart` (the only
+- **Native hook** — `packages/litertlm_dart/hook/build.dart` (the only
   hook that owns the LiteRT-LM bundle — `flutter_edge_ai_onnx` owns the ORT one and
   `flutter_edge_ai_sqlite` the sqlite-vec one): the `_litertlmBundle` `version:` and `checksums:`
   fields, `_cacheBaseDir()` cache-busting, `stage()` Apple-only guard.
@@ -318,7 +318,7 @@ Shared-code hotspots to sweep, per fix type:
   #300/#368 fixes, and the README copy was missing `input_paths`, so every app
   built from it carried the #368 incremental-build bug. Keep the block a thin
   shim that only locates and runs
-  `flutter_edge_ai_litertlm/tool/stage_macos_companions.sh`: logic that lives in
+  `litertlm_dart/tool/stage_macos_companions.sh`: logic that lives in
   the snippet cannot be fixed by publishing a package (#457).
 - **FFI / web stubs** — `lib/**/*_stub.dart`: conditional-import signatures that
   `analyze`/`test` can't catch (web stub drift).
@@ -407,7 +407,8 @@ done
 Only if (1b) bumps `NATIVE_VERSION`:
 | File | Field |
 |------|-------|
-| `packages/flutter_edge_ai_litertlm/hook/build.dart` | the `version:` field of `_litertlmBundle` (a `_NativeBundle`) — bump (e.g. `'0.16.0'` → `'0.16.1'`). There is **no** `_nativeVersion` identifier; grep for `version:` inside `const _litertlmBundle`. The cache dir helper is `_cacheBaseDir()`. |
+| `packages/litertlm_dart/lib/src/runtime/native_release.dart` | `liteRtLmNativeVersion` — bump (e.g. `'0.19.1-b'` → `'0.19.1-c'`). The hook's `_litertlmBundle` takes `version:` from it; the host dev lookup and `package_macos_spm_companions.sh` read it too. Also bump `litertlm_dart`'s pubspec build number (`0.19.1+1` → `0.19.1+2`; a new upstream LiteRT-LM version resets it: `0.19.2+1`), the exact pin in `flutter_edge_ai_litertlm/pubspec.yaml`, and `nativeTag` in its `macos/flutter_edge_ai_litertlm/Package.swift`. The cache is per tag (`_cacheBaseDir()/<tag>/<platform>`). |
+| `packages/litertlm_dart/hook/build.dart` | the per-archive SHA256 `checksums` of `_litertlmBundle`. |
 
 For App Store / breaking platform fixes prefer **bumping NATIVE_VERSION** rather than overwriting `native-v0.10.2` assets — keeps consumers on `0.14.0` reproducible. Overwrite only for emergency hotfixes where downstream version pinning is acceptable.
 
@@ -421,7 +422,7 @@ Per-platform rebuild scripts. `bazelisk clean --expunge` between rebuilds **only
 # defaulted to a v0.14.0-era commit during the v0.15.0 migration. Get the SHA
 # with: gh api repos/google-ai-edge/LiteRT-LM/git/ref/tags/<tag> --jq '.object.sha'
 SHA=<pinned tag SHA>
-N=packages/flutter_edge_ai_litertlm/native/litert_lm
+N=packages/litertlm_dart/native/litert_lm
 
 # macOS arm64
 "$N/build_macos.sh" "$SHA"
@@ -451,7 +452,7 @@ strings prebuilt/ios_arm64/libLiteRtLm.dylib | grep '@executable_path'
 Each archive is a flat tar of the matching `prebuilt/` directory. Naming: `litertlm-<os>_<arch>.tar.gz`.
 
 ```bash
-PREBUILT=packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt
+PREBUILT=packages/litertlm_dart/native/litert_lm/prebuilt
 DIST=$(mktemp -d)
 # All SEVEN platforms the hook has checksums for. linux_arm64 was missing from
 # this list for six native releases: the loop silently skipped it (`if -d`
@@ -473,7 +474,7 @@ Only archive platforms whose dylibs actually changed since the previous release.
 
 ```bash
 # Count what you packed against what the hook demands.
-want=$(grep -cE "'litertlm-[a-z0-9_]+\.tar\.gz'" packages/flutter_edge_ai_litertlm/hook/build.dart)
+want=$(grep -cE "'litertlm-[a-z0-9_]+\.tar\.gz'" packages/litertlm_dart/hook/build.dart)
 got=$(ls "$DIST"/litertlm-*.tar.gz 2>/dev/null | wc -l | tr -d ' ')
 [ "$got" -eq "$want" ] || { echo "packed $got, hook expects $want"; exit 1; }
 ```
@@ -500,7 +501,7 @@ the gate can still save you. It diffs each new tarball's file list against the
 same archive in the previous tag and fails on any file that disappeared.
 
 ```bash
-packages/flutter_edge_ai_litertlm/native/litert_lm/verify_tarball_manifest.sh \
+packages/litertlm_dart/native/litert_lm/verify_tarball_manifest.sh \
   "$DIST" native-v<PREVIOUS>     # e.g. native-v0.14.0
 ```
 
@@ -561,7 +562,7 @@ Then the macOS Swift Package Manager companions (#689), built from the macOS
 tarball just published — the same bytes the hook pins — and uploaded to the
 same tag:
 ```bash
-bash packages/flutter_edge_ai_litertlm/native/litert_lm/package_macos_spm_companions.sh \
+bash packages/litertlm_dart/native/litert_lm/package_macos_spm_companions.sh \
   "$DIST"/litertlm-macos_arm64.tar.gz "$DIST"/spm
 gh release upload "$RELEASE" "$DIST"/spm/*.xcframework.zip "$DIST"/spm/checksums_spm_macos.txt
 ```
@@ -585,7 +586,7 @@ done
 
 `checksums_litertlm.txt` is informational (the build hook does NOT read it —
 it verifies against the `_checksums` map baked into
-`packages/flutter_edge_ai_litertlm/hook/build.dart`). But a STALE txt is
+`packages/litertlm_dart/hook/build.dart`). But a STALE txt is
 dangerous: in #316 a user (`@remingtonc`) hand-verified against the txt during a
 checksum-mismatch debug, the txt said `e24804d9…` while the actual asset was
 `f809c5a2…`, and it sent them down the wrong path. **For every tag you touch,
@@ -594,7 +595,7 @@ the same SHA must appear in all THREE places** — the uploaded `.tar.gz`,
 Verify after upload:
 
 ```bash
-HOOK=packages/flutter_edge_ai_litertlm/hook/build.dart
+HOOK=packages/litertlm_dart/hook/build.dart
 for f in "$DIST"/litertlm-*.tar.gz; do
   name=$(basename "$f")
   # 1. actual asset bytes served by GitHub
@@ -1019,7 +1020,7 @@ A manual `./deploy.sh` exists in `website/` for local one-off deploys (it does t
   accelerators had been broken on every Mali GPU since v0.17.0, and upstream
   #3575 said so six days before our first release. A hotfix tag ships every
   byte in the bundle, not just the bytes it changed, so it gets the full matrix.
-- **`packages/flutter_edge_ai_litertlm/native/litert_lm/prebuilt/` excluded from pub package** (`.pubignore`) — end users get dylibs from GitHub Release, NOT from the pub package. Updating local prebuilts without re-uploading them is invisible to users.
+- **`packages/litertlm_dart/native/litert_lm/prebuilt/` excluded from pub package** (`.pubignore`) — end users get dylibs from GitHub Release, NOT from the pub package. Updating local prebuilts without re-uploading them is invisible to users.
 - **The iOS `5e0d86b` pin is obsolete** — modern tags ship their own `prebuilt/ios_arm64/`, and `build_ios.sh` already defaults to the current tag SHA. Always pass the pinned SHA explicitly anyway: every script's `DEFAULT_REF` lags whatever release you are migrating to. The real invariant is that source and accelerator prebuilts come from one tree — see the `build-native` skill, which owns this.
 - **`bazelisk clean --expunge` is NOT free** — it forces a full rebuild (~25 min for one platform). Only do it when WORKSPACE patch_cmds changed; otherwise incremental rebuild.
 - **Linux/Windows builds run on remote VMs** — see `project_gcloud_vm_workflow` memory.

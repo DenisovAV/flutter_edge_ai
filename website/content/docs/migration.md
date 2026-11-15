@@ -1146,7 +1146,8 @@ inference engine. See the full [Installation guide](/docs/installation).
 **`dlopen` "library not found" after upgrading from `flutter_gemma_*`:** run
 `flutter clean` and delete `~/Library/Caches/flutter_gemma/native` (Linux:
 `~/.cache/flutter_gemma/native`, Windows: `%LOCALAPPDATA%\flutter_gemma\native`),
-then `flutter pub get`.
+then `flutter pub get`. From `flutter_edge_ai_litertlm` 1.21.0 LiteRT-LM's own
+cache is `litertlm_dart/native` in the same places.
 `flutter_edge_ai_litertlm` owns the native LiteRT library;
 `flutter_edge_ai_speech` consumes it transitively — it has no Native-Assets hook
 of its own. `flutter_edge_ai_embeddings` has no native code at all.

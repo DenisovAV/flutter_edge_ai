@@ -187,7 +187,7 @@ dart run bin/registry.dart generate
 
 A run is one host. The file records the commit, the package versions, the log's
 sha256 (and `--log-url` when the log is published) and the native build: the
-sha256 of the host's archive in `flutter_edge_ai_litertlm/hook/build.dart`, or
+sha256 of the host's archive in `litertlm_dart/hook/build.dart`, or
 on the web the litertlm version. When the log bytes cannot be copied from the
 machine that retains them, `log_sha256` is null and `log_location` names that
 machine; never substitute a hash of a report or copied evidence lines. A cell

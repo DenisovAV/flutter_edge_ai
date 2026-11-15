@@ -8,22 +8,22 @@
 
 import 'package:flutter_edge_ai/engine.dart';
 
+import '../embedder/embedder_constants.dart';
 import '../runtime/npu_stacks.dart';
+
+export '../embedder/embedder_constants.dart'
+    show liteRtLmAudioBundle, liteRtLmMaxInputLength;
 
 /// The engine's name in messages and errors, native and web alike: the same
 /// LiteRT-LM runtime, compiled to WebAssembly on the web.
 const liteRtLmEngineTag = 'LiteRT-LM';
-
-/// The EmbeddingGemma 2 bundle with an audio encoder, named when audio is
-/// declared on one without (the 270m, the 440m).
-const liteRtLmAudioBundle = 'embeddinggemma-2-740m';
 
 /// Declared audio on [file], a bundle whose container has no audio encoder
 /// (D23: read from the container, never from ModelInfo, which claims audio on
 /// the 270m and the 440m). The same words natively and on the web.
 EmbeddingLoadException liteRtLmNoAudioEncoder(String file) =>
     EmbeddingLoadException(
-      '$file has no audio encoder; install $liteRtLmAudioBundle',
+      liteRtLmNoAudioEncoderMessage(file),
       engine: liteRtLmEngineTag,
     );
 
@@ -35,16 +35,10 @@ EmbeddingLoadException liteRtLmUnreadableContainer(
   Object cause, {
   String looking = 'its audio encoder',
 }) => EmbeddingLoadException(
-  'could not read the container of $file to find $looking: '
-  '$reason',
+  liteRtLmUnreadableContainerMessage(file, reason, looking: looking),
   engine: liteRtLmEngineTag,
   cause: cause,
 );
-
-/// The explicit text input cap (D21), on every platform. Never raised on
-/// mobile; on the web it is also the runtime's own default, which keeps the
-/// engine inside the 4 GB wasm32 address space.
-const liteRtLmMaxInputLength = 1024;
 
 /// The image containers LiteRT-LM's stb decoder handles, as measured on our
 /// native-v0.18.0-d dylib (X3): PNG, JPEG, GIF and BMP decode; WebP, TIFF

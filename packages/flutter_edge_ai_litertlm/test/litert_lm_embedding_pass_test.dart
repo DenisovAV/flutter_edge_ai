@@ -22,13 +22,15 @@ import 'package:flutter_edge_ai_litertlm/flutter_edge_ai_litertlm.dart'
     show LiteRtEmbedders;
 import 'package:flutter_edge_ai_litertlm/src/catalog/litert_catalog.dart'
     show debugLiteRtCatalogHost;
-import 'package:flutter_edge_ai_litertlm/src/embedding/embedding_parts.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedder/embedding_parts.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedder/litert_lm_embedder.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
-import 'package:flutter_edge_ai_litertlm/src/embedding/litertlm_container_io.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedder/litertlm_container_io.dart';
 import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_npu_target.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_embedding_bindings.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_edge_ai_litertlm/src/bundle/litertlm_bundle_info.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedder/embedder_types.dart';
 
 const _file = 'eg2.litertlm';
 const _noAudioEncoder =
@@ -114,7 +116,7 @@ void main() {
     LiteRtLmEmbeddingConfig(
       modelPath: modelPath,
       cacheBase: cacheBase,
-      declaredMedia: declaredMedia,
+      declaredMedia: {for (final m in declaredMedia) embedderModalityOf(m)},
       numThreads: numThreads,
       visionTokensPerImage: visionTokensPerImage,
       requireWeightCache: requireWeightCache,
@@ -1782,8 +1784,10 @@ void main() {
       final second = Uint8List.fromList([2]);
       final clip = Uint8List.fromList([3]);
       final parts = embeddingParts(
-        EmbeddingInput(audio: clip, images: [first, second], text: 'hi'),
-        TaskType.retrievalQuery,
+        embedderInputOf(
+          EmbeddingInput(audio: clip, images: [first, second], text: 'hi'),
+          TaskType.retrievalQuery,
+        ),
       );
       expect(
         [for (final part in parts) part.kind],
@@ -1806,7 +1810,9 @@ void main() {
 
     test('a text input is one text part: the task prefix, then the text', () {
       for (final taskType in TaskType.values) {
-        final parts = embeddingParts(EmbeddingInput.text('héllo'), taskType);
+        final parts = embeddingParts(
+          embedderInputOf(EmbeddingInput.text('héllo'), taskType),
+        );
         expect(parts, hasLength(1));
         expect(parts.single.kind, EmbeddingPartKind.text);
         expect(utf8.decode(parts.single.bytes), '${taskType.prefix}héllo');
@@ -1815,7 +1821,9 @@ void main() {
 
     test('an image input is one image part with its bytes: no prefix', () {
       for (final taskType in TaskType.values) {
-        final parts = embeddingParts(EmbeddingInput.image(_png), taskType);
+        final parts = embeddingParts(
+          embedderInputOf(EmbeddingInput.image(_png), taskType),
+        );
         expect(parts, hasLength(1));
         expect(parts.single.kind, EmbeddingPartKind.image);
         expect(parts.single.bytes, _png);
@@ -1825,8 +1833,7 @@ void main() {
     test('an audio input is one audio part with its bytes: no prefix', () {
       final clip = Uint8List.fromList([82, 73, 70, 70]);
       final parts = embeddingParts(
-        EmbeddingInput.audio(clip),
-        TaskType.retrievalQuery,
+        embedderInputOf(EmbeddingInput.audio(clip), TaskType.retrievalQuery),
       );
       expect(parts.single.kind, EmbeddingPartKind.audio);
       expect(parts.single.bytes, clip);
@@ -1858,17 +1865,15 @@ void main() {
           library: 'libLiteRtLm.so',
         ),
         throwsA(
-          isA<EmbeddingLoadException>()
-              .having((e) => e.engine, 'engine', 'LiteRT-LM')
-              .having(
-                (e) => e.message,
-                'message',
-                allOf(
-                  contains('libLiteRtLm.so'),
-                  contains('litert_lm_embedding_engine_create'),
-                  contains('native-v0.19.0-a'),
-                ),
-              ),
+          isA<EmbedderLoadException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('libLiteRtLm.so'),
+              contains('litert_lm_embedding_engine_create'),
+              contains('native-v0.19.0-a'),
+            ),
+          ),
         ),
       );
     });

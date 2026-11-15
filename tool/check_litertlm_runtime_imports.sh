@@ -9,7 +9,7 @@
 #   plugin   — package:path_provider/ (a Flutter plugin)
 #   core     — package:flutter_edge_ai/ (core, which itself imports Flutter)
 # and prints per-area counts. The runtime side is lib/src/{ffi,bundle,runtime,
-# hook}; everything else is counted as the rest (adapter, web, catalog, …).
+# hook,embedder}; everything else is counted as the rest (adapter, web, catalog, …).
 # The Phase 0 exit criterion: no flutter/plugin/core directive in the runtime
 # side, and no relative import from it to a file outside it (so the whole
 # side moves into the Flutter-free package as it is).
@@ -51,7 +51,7 @@ kind_of() {
 
 area_of() {
   case "$1" in
-    ffi/* | bundle/* | runtime/* | hook/*) echo runtime ;;
+    ffi/* | bundle/* | runtime/* | hook/* | embedder/*) echo runtime ;;
     *) echo rest ;;
   esac
 }

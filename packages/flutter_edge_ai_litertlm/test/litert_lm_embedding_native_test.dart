@@ -40,6 +40,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_edge_ai/engine.dart';
 import 'package:flutter_edge_ai/engine_io.dart';
+import 'package:flutter_edge_ai_litertlm/src/embedder/litert_lm_embedder.dart';
 import 'package:flutter_edge_ai_litertlm/src/embedding/litert_lm_embedding_pass.dart';
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_embedding_bindings.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -203,7 +204,7 @@ void main() {
     LiteRtLmEmbeddingConfig(
       modelPath: modelPath,
       cacheBase: cacheBase.path,
-      declaredMedia: media,
+      declaredMedia: {for (final m in media) embedderModalityOf(m)},
       visionTokensPerImage: visionTokensPerImage,
     ),
     openBindings: bindings,

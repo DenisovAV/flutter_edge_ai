@@ -22,6 +22,7 @@ import 'package:flutter_edge_ai/engine.dart';
 import '../catalog/litert_catalog.dart' show LiteRtEmbedders;
 import 'embedding_cache_dir.dart';
 import 'litert_embedding_pass.dart';
+import '../embedder/embedder_types.dart';
 import 'litert_lm_embedding_pass.dart';
 import 'litert_lm_npu.dart';
 import '../bundle/litertlm_npu_target.dart';
@@ -203,7 +204,9 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   required bool requireWeightCache,
   required Future<String> Function() cacheDirectory,
 }) async {
-  if (config.supportAudio) requireLiteRtLmAudioEncoder(config.modelPath);
+  if (config.supportAudio) {
+    requireLiteRtLmAudioEncoderForCore(config.modelPath);
+  }
   final NpuStamp? target;
   try {
     target = await readLiteRtLmNpuTarget(config.modelPath);
@@ -234,7 +237,7 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
   // on the NPU and engine create fails (L1, Galaxy S25 Ultra, 2026-11-04).
   final onNpu = placement.target != null;
   final towers = onGpu || onNpu
-      ? readLiteRtLmMediaTowers(config.modelPath)
+      ? readLiteRtLmMediaTowersForCore(config.modelPath)
       : (vision: false, audio: false);
   if (onGpu) {
     final bundle = LiteRtLmEg2Bundle.of(
@@ -286,8 +289,8 @@ Future<EmbeddingPassDescriptor<LiteRtLmEmbeddingConfig>> _describeBundle(
       // name below it, and Windows paths must stay under MAX_PATH.
       cacheBase: '$cache${sep}flutter_edge_ai${sep}emb',
       declaredMedia: {
-        if (config.supportImage) EmbeddingModality.image,
-        if (config.supportAudio) EmbeddingModality.audio,
+        if (config.supportImage) EmbedderModality.image,
+        if (config.supportAudio) EmbedderModality.audio,
       },
       visionTokensPerImage: visionTokensPerImage,
       // The pass checks the cache on CPU and on the GPU, and on the NPU for

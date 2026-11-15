@@ -20,6 +20,7 @@ import 'dart:io';
 
 // ignore: implementation_imports — drives litertlm's FFI client directly to capture raw model output
 import 'package:flutter_edge_ai_litertlm/src/ffi/litert_lm_client.dart';
+// ignore: implementation_imports — the runtime's Sampler that client takes
 import 'package:flutter_edge_ai_litertlm/src/runtime/types.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';

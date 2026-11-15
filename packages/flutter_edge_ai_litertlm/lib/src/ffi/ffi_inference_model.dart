@@ -834,13 +834,15 @@ class FfiInferenceModelSession extends InferenceModelSession
     }
 
     if (message.hasImage && supportImage) {
-      if (message.imageBytes != null) {
-        _pendingImages.add(message.imageBytes!);
-      }
-      for (final image in message.images) {
-        if (!_pendingImages.contains(image)) {
-          _pendingImages.add(image);
-        }
+      // A message's images are [Message.images] when it has any, else its
+      // [Message.imageBytes] — the rule the MediaPipe, llama and built-in AI
+      // sessions follow. The factories set both to the same photo, and a
+      // message rebuilt from saved bytes holds two equal copies, so staging
+      // both would show the model the photo twice.
+      if (message.images.isNotEmpty) {
+        _pendingImages.addAll(message.images);
+      } else if (message.imageBytes case final image?) {
+        _pendingImages.add(image);
       }
     }
     if (message.hasAudio && message.audioBytes != null && supportAudio) {

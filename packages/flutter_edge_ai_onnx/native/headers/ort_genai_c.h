@@ -121,8 +121,9 @@ OGA_EXPORT const OgaASRPostProcessorTimestampRecord* OGA_API_CALL OgaASRPostProc
 OGA_EXPORT const char* OGA_API_CALL OgaASRPostProcessorTimestampRecordGetText(const OgaASRPostProcessorTimestampRecord* record);
 OGA_EXPORT int64_t OGA_API_CALL OgaASRPostProcessorTimestampRecordGetStartFrame(const OgaASRPostProcessorTimestampRecord* record);
 OGA_EXPORT int64_t OGA_API_CALL OgaASRPostProcessorTimestampRecordGetStopFrame(const OgaASRPostProcessorTimestampRecord* record);
-OGA_EXPORT double OGA_API_CALL OgaASRPostProcessorTimestampRecordGetStartTime(const OgaASRPostProcessorTimestampRecord* record);
-OGA_EXPORT double OGA_API_CALL OgaASRPostProcessorTimestampRecordGetStopTime(const OgaASRPostProcessorTimestampRecord* record);
+/** Time bounds are signed 64-bit milliseconds, with an exclusive stop. */
+OGA_EXPORT int64_t OGA_API_CALL OgaASRPostProcessorTimestampRecordGetStartTime(const OgaASRPostProcessorTimestampRecord* record);
+OGA_EXPORT int64_t OGA_API_CALL OgaASRPostProcessorTimestampRecordGetStopTime(const OgaASRPostProcessorTimestampRecord* record);
 
 typedef struct OgaNonGenerativeSession OgaNonGenerativeSession;
 
@@ -180,7 +181,9 @@ typedef uint32_t OgaErrorCode;
  *
  * \note Re-initialization: OgaShutdown() is a full teardown -- it destroys GenAI's ONNX Runtime environment and unloads
  *       GenAI's add-on libraries. GenAI may be used again after OgaShutdown(); the next GenAI call re-initializes with a
- *       fresh environment.
+ *       fresh environment. The one add-on that is not unloaded is the CUDA add-on of a process that has loaded a
+ *       qwen38_flash_graph model with the plane built into it: that plane is never unloaded, so the add-on stays mapped
+ *       (the next call enters it again). A host that has to replace the add-on file has to restart the process.
  *
  * \note If a host registered execution provider libraries directly on its own OrtEnv reference, it should unregister
  *       them (on that reference) and release the reference after OgaShutdown(), once all GenAI usage is finished.
@@ -743,6 +746,7 @@ OGA_EXPORT OgaResult* OGA_API_CALL OgaGenerator_SetModelInput(OgaGenerator* gene
 
 /**
  * \brief For additional model inputs that genai does not handle, this lets the user set their values.
+ * Images or audio with a num_image_tokens or audio_sizes count are refused after a SetInputs or AppendTokens call.
  * \param[in] generator The generator to add the inputs to.
  * \param[in] named_tensors The named tensors to set the inputs as.
  */
@@ -1454,6 +1458,10 @@ OGA_EXPORT OgaResult* OGA_API_CALL OgaEngineEventGetTurnId(
     const OgaEngineEvent* event, uint64_t* out);
 OGA_EXPORT OgaResult* OGA_API_CALL OgaEngineEventGetToken(
     const OgaEngineEvent* event, int32_t* out);
+/** \brief Returns the sampled EOS token that ended the turn, or -1 for other events.
+ * This is completion metadata, not an appended sequence token. */
+OGA_EXPORT OgaResult* OGA_API_CALL OgaEngineEventGetTerminalTokenId(
+    const OgaEngineEvent* event, int32_t* out);
 OGA_EXPORT OgaResult* OGA_API_CALL OgaEngineEventGetFinishReason(
     const OgaEngineEvent* event, OgaFinishReason* out);
 /**
@@ -1661,6 +1669,18 @@ OGA_EXPORT OgaResult* OGA_API_CALL OgaRequestBeginTurn(
     OgaRequest* request, const OgaTurnOptions* turn_options,
     const int32_t* input_ids, uint64_t input_ids_count,
     uint64_t* out_turn_id);
+
+/**
+ * \brief Begins a Turn from an already formatted incremental UTF-8 prompt and ordered images.
+ *
+ * images may be null for text-only input. The model's image markers must match the supplied
+ * images in order. CPU preprocessing completes before return; neural encoding is scheduled by
+ * OgaEngineRun. The caller may release images after success. No chat template is applied.
+ * Invalid input leaves the Request's prior history and Turn ID unchanged.
+ */
+OGA_EXPORT OgaResult* OGA_API_CALL OgaRequestBeginTurnWithImages(
+    OgaRequest* request, const OgaTurnOptions* turn_options,
+    const char* formatted_prompt, const OgaImages* images, uint64_t* out_turn_id);
 
 /**
  * \brief Cancels the named queued or active Turn.

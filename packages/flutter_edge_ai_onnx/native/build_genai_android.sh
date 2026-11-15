@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Builds ORT-GenAI v0.19.0 for Android arm64 WITHOUT telemetry, and packs it the
-# way hook/build.dart fetches it: onnxruntime-genai-android-0.19.0-a.zip with
+# Builds ORT-GenAI v0.20.0 for Android arm64 WITHOUT telemetry, and packs it the
+# way hook/build.dart fetches it: onnxruntime-genai-android-0.20.0-a.zip with
 # jni/arm64-v8a/libonnxruntime-genai.so.
 #
-# Why not Microsoft's AAR: its libonnxruntime-genai.so (0.17.0 and 0.19.0) lists libmat.so
+# Why not Microsoft's AAR: its libonnxruntime-genai.so (0.17.0 to 0.20.0) lists libmat.so
 # (the 1DS telemetry SDK) in DT_NEEDED, and libmat.so is 4 KB-aligned, which
 # Google Play rejects (API 35+) and a 16 KB-page device cannot load. With
 # ENABLE_TELEMETRY=OFF the library needs only liblog/libm/libdl/libc.
@@ -54,11 +54,11 @@ if [ "${1:-}" = --check ]; then
   check_lib "${2:?--check LIB}" && echo "$2: ok"; exit
 fi
 
-GENAI_TAG=v0.19.0
-GENAI_COMMIT=d01b2441a72d4e3223415b9b08474c6e65fbc028
-ZIP=onnxruntime-genai-android-0.19.0-a.zip
-ORT_AAR_URL=https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.27.0/onnxruntime-android-1.27.0.aar
-ORT_AAR_SHA256=077dec5e2d821234c7dc0aba584bec8f999854b546c754cab93a90741c56fbeb
+GENAI_TAG=v0.20.0
+GENAI_COMMIT=68745efd083d0cb03b94e7c3f175a918abf428f6
+ZIP=onnxruntime-genai-android-0.20.0-a.zip
+ORT_AAR_URL=https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android/1.32.0/onnxruntime-android-1.32.0.aar
+ORT_AAR_SHA256=8e8dbb412ed4939675a157702f0c1e3621b436a645af7f7244536ac20bfad628
 
 WORK=${1:-$PWD/genai-android-build}
 # Compile jobs: one per core can need 1-2 GB each and exhaust a 16 GB machine
@@ -73,7 +73,7 @@ mkdir -p "$WORK" && cd "$WORK"
 [ "$(git -C src rev-parse HEAD)" = "$GENAI_COMMIT" ] || {
   echo "onnxruntime-genai $GENAI_TAG is not $GENAI_COMMIT" >&2; exit 1; }
 
-# ORT 1.27.0 headers + library: the pin the package ships on every host.
+# ORT 1.32.0 headers + library: the pin the package ships on every host.
 if [ ! -f ort/jni/arm64-v8a/libonnxruntime.so ]; then
   mkdir -p ort && curl -sfL -o ort/ort.aar "$ORT_AAR_URL"
   echo "$ORT_AAR_SHA256  ort/ort.aar" | sha256sum -c -

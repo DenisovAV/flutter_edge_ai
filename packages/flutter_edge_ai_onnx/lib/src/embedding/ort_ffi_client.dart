@@ -260,8 +260,9 @@ class OrtFfiClient implements OrtClient {
   int _resolvedApiVersion = ORT_API_VERSION;
 
   /// The ORT C API version this client actually resolved at construction:
-  /// [ORT_API_VERSION] on desktop/Android (standalone ORT 1.27), lower on iOS
-  /// where the ORT inside `onnxruntime-genai.framework` predates 1.27.
+  /// [ORT_API_VERSION] on desktop/Android (standalone ORT 1.32, which serves
+  /// API 27), lower on iOS where the ORT inside `onnxruntime-genai.framework`
+  /// predates 1.27.
   int get resolvedApiVersion => _resolvedApiVersion;
 
   OrtFfiClient() {
@@ -276,7 +277,7 @@ class OrtFfiClient implements OrtClient {
         .asFunction<ffi.Pointer<OrtApi> Function(int)>();
     // Probe DOWN from our compiled ORT_API_VERSION to the newest API the
     // linked onnxruntime actually accepts. Desktop/Android link a standalone
-    // ORT 1.27 (API 27) so this matches on the first try; iOS reuses the ORT
+    // ORT 1.32, which serves API 27, so this matches on the first try; iOS reuses the ORT
     // statically linked inside `onnxruntime-genai.framework`, whose ORT can be
     // OLDER than 1.27 — there `GetApi(27)` returns nullptr and we step down.
     // `OrtApi` is append-only across versions and every function this client

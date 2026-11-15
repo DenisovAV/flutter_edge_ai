@@ -36,7 +36,7 @@
 // ship under the bare canonical name AND active staging is what breaks
 // Windows cancel/close (see AGENTS.md's build-native scar).
 //
-// This hook is the SOLE owner of exactly one `libonnxruntime` (1.27.0) per
+// This hook is the SOLE owner of exactly one `libonnxruntime` (1.32.0) per
 // design D1 — the embedding arm's `OrtFfiClient` (`ort_ffi_client.dart`)
 // still resolves the dylib directly by platform default name /
 // `FLUTTER_GEMMA_ORT_LIBRARY` for now; wiring it onto this CodeAsset is a
@@ -71,7 +71,7 @@ class _Archive {
   final String sha256;
 
   /// Path to the dylib INSIDE the extracted archive root, e.g.
-  /// `lib/libonnxruntime.1.27.0.dylib` — deliberately the concrete
+  /// `lib/libonnxruntime.1.32.0.dylib` — deliberately the concrete
   /// versioned file, not a same-named-copy or a `.1.dylib` symlink (the
   /// symlink chain the vendor ships alongside it; other platforms' archives
   /// only have the true binary at the fully-versioned name).
@@ -123,9 +123,9 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
     if (arch != Architecture.arm64) return null;
     const url =
         'https://github.com/microsoft/onnxruntime-genai/releases/'
-        'download/v0.19.0/onnxruntime-genai-ios-0.19.0.zip';
+        'download/v0.20.0/onnxruntime-genai-ios-0.20.0.zip';
     const sha256Hex =
-        '7081273f221b1738b02137f0d56aa75799f5e72e712ca0d8b1dd23d05a6f4a2b';
+        'dd3c1235e9cecff1606a9d70fb067a9e08b58489671a8e0ba8a78203a23c09a6';
     if (iOSSdk == IOSSdk.iPhoneSimulator) {
       return const _OrtBundle(
         dirName: 'ios_sim_arm64',
@@ -163,21 +163,21 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       ort: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime/releases/download/'
-            'v1.27.0/onnxruntime-osx-arm64-1.27.0.tgz',
+            'v1.32.0/onnxruntime-osx-arm64-1.32.0.tgz',
         sha256:
-            '545e81c58152353acb0d1e8bd6ce4b62f830c0961f5b3acfedc790ffd76e477a',
+            '8ddca23f532b9d4fbb279ba9b08dab6c0ac94fdc9aec2eb44a1db7049216c043',
         extractedLibPath:
-            'onnxruntime-osx-arm64-1.27.0/lib/libonnxruntime.1.27.0.dylib',
+            'onnxruntime-osx-arm64-1.32.0/lib/libonnxruntime.1.32.0.dylib',
         assetName: 'onnxruntime',
       ),
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.19.0/onnxruntime-genai-0.19.0-osx-arm64.tar.gz',
+            'download/v0.20.0/onnxruntime-genai-0.20.0-osx-arm64.tar.gz',
         sha256:
-            '3171d0ae98bcd364d861693f72d531e2b26399299d1003c3cc950830565c519b',
+            'b73cfe78995489357a208f8ffa00698b260d74d08cd1aa2a677b2516df6535bb',
         extractedLibPath:
-            'onnxruntime-genai-0.19.0-osx-arm64/lib/libonnxruntime-genai.dylib',
+            'onnxruntime-genai-0.20.0-osx-arm64/lib/libonnxruntime-genai.dylib',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -188,21 +188,21 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       ort: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime/releases/download/'
-            'v1.27.0/onnxruntime-linux-x64-1.27.0.tgz',
+            'v1.32.0/onnxruntime-linux-x64-1.32.0.tgz',
         sha256:
-            '547e40a48f1fe73e3f812d7c88a948612c23f896b91e4e2ee1e232d7b468246f',
+            'bb169b7e374731730d2ae406fb39de7be4b315f413a9132efe896261c31bb503',
         extractedLibPath:
-            'onnxruntime-linux-x64-1.27.0/lib/libonnxruntime.so.1.27.0',
+            'onnxruntime-linux-x64-1.32.0/lib/libonnxruntime.so.1.32.0',
         assetName: 'onnxruntime',
       ),
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.19.0/onnxruntime-genai-0.19.0-linux-x64.tar.gz',
+            'download/v0.20.0/onnxruntime-genai-0.20.0-linux-x64.tar.gz',
         sha256:
-            'cc4efa65d90fa43104519cd6a67e321a85645a238c5cfcabf42a128b274083c0',
+            'ec6731c22670ca541a0a5e3d5c3f62e8c11c2b2280ade56c020872c55879e62c',
         extractedLibPath:
-            'onnxruntime-genai-0.19.0-linux-x64/lib/libonnxruntime-genai.so',
+            'onnxruntime-genai-0.20.0-linux-x64/lib/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -213,20 +213,20 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       ort: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime/releases/download/'
-            'v1.27.0/onnxruntime-win-x64-1.27.0.zip',
+            'v1.32.0/onnxruntime-win-x64-1.32.0.zip',
         sha256:
-            'c5c81710938e68079ff1a192b04897faabe4b43830d48f39f27ecd4e16138bfc',
-        extractedLibPath: 'onnxruntime-win-x64-1.27.0/lib/onnxruntime.dll',
+            'aaa1d04fcf86bd31e84b90bc0cbde80e632bd0720dcc5d8ba05c4fe45c09d127',
+        extractedLibPath: 'onnxruntime-win-x64-1.32.0/lib/onnxruntime.dll',
         assetName: 'onnxruntime',
       ),
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.19.0/onnxruntime-genai-0.19.0-win-x64.zip',
+            'download/v0.20.0/onnxruntime-genai-0.20.0-win-x64.zip',
         sha256:
-            'af2659792d15fb97e35f71075427fed9f3138b58975c621adb01868dcf7f6861',
+            'e5670877448d1ab4cf6eef2fc14c146b70600d19e7c3f5ce64325148262b04c6',
         extractedLibPath:
-            'onnxruntime-genai-0.19.0-win-x64/lib/onnxruntime-genai.dll',
+            'onnxruntime-genai-0.20.0-win-x64/lib/onnxruntime-genai.dll',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -237,20 +237,20 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       ort: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime/releases/download/'
-            'v1.27.0/onnxruntime-win-arm64-1.27.0.zip',
+            'v1.32.0/onnxruntime-win-arm64-1.32.0.zip',
         sha256:
-            'a32f2650575b3c20df462e337519fd1cc4105356130d11dba9771c6f374d952f',
-        extractedLibPath: 'onnxruntime-win-arm64-1.27.0/lib/onnxruntime.dll',
+            '5eacf4eb3bee0cc99e280ddef563c90c561de61b1e08809fe648922326e3ce50',
+        extractedLibPath: 'onnxruntime-win-arm64-1.32.0/lib/onnxruntime.dll',
         assetName: 'onnxruntime',
       ),
       genai: _Archive(
         url:
             'https://github.com/microsoft/onnxruntime-genai/releases/'
-            'download/v0.19.0/onnxruntime-genai-0.19.0-win-arm64.zip',
+            'download/v0.20.0/onnxruntime-genai-0.20.0-win-arm64.zip',
         sha256:
-            '1cb17096c30ecf9d4a2208eb7cef38e13f02fa058363acf637a4b0b6e42c609d',
+            '575ea442594b4bed39c18ddf93780320118dee9eacf0f75a856a8e6d3ce00501',
         extractedLibPath:
-            'onnxruntime-genai-0.19.0-win-arm64/lib/onnxruntime-genai.dll',
+            'onnxruntime-genai-0.20.0-win-arm64/lib/onnxruntime-genai.dll',
         assetName: 'onnxruntime-genai',
       ),
     );
@@ -269,13 +269,13 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       // file out of their own archive's larger layout.
       //
       // NOT on the onnxruntime GitHub release (only Maven Central publishes
-      // the Android AAR) — verified by checking v1.27.0's release assets.
+      // the Android AAR) — verified by checking v1.32.0's release assets.
       ort: _Archive(
         url:
             'https://repo1.maven.org/maven2/com/microsoft/onnxruntime/'
-            'onnxruntime-android/1.27.0/onnxruntime-android-1.27.0.aar',
+            'onnxruntime-android/1.32.0/onnxruntime-android-1.32.0.aar',
         sha256:
-            '077dec5e2d821234c7dc0aba584bec8f999854b546c754cab93a90741c56fbeb',
+            '8e8dbb412ed4939675a157702f0c1e3621b436a645af7f7244536ac20bfad628',
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime.so',
         assetName: 'onnxruntime',
       ),
@@ -284,10 +284,10 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       // arm64-v8a + x86_64 only (no armeabi-v7a): arm64 is the only viable
       // device ABI, not a policy choice.
       // This is not Microsoft's AAR. Its `libonnxruntime-genai.so` (0.17.0
-      // and 0.19.0) lists `libmat.so` (the 1DS telemetry SDK) in DT_NEEDED,
+      // to 0.20.0) lists `libmat.so` (the 1DS telemetry SDK) in DT_NEEDED,
       // and that file is 4 KB-aligned: Google Play rejects it for apps that
       // target API 35+ and a 16 KB-page device cannot load it. This is the
-      // same v0.19.0 source built by `native/build_genai_android.sh` with
+      // same v0.20.0 source built by `native/build_genai_android.sh` with
       // ENABLE_TELEMETRY=OFF, so it needs only liblog/libm/libdl/libc and
       // every PT_LOAD is 16 KB-aligned.
       // The zip keeps the AAR's `jni/arm64-v8a/` layout. The build is not
@@ -297,10 +297,10 @@ _OrtBundle? _archivesFor(OS os, Architecture arch, {IOSSdk? iOSSdk}) {
       genai: _Archive(
         url:
             'https://github.com/DenisovAV/flutter_edge_ai/releases/download/'
-            'native-onnx-genai-v0.19.0-a/'
-            'onnxruntime-genai-android-0.19.0-a.zip',
+            'native-onnx-genai-v0.20.0-a/'
+            'onnxruntime-genai-android-0.20.0-a.zip',
         sha256:
-            '3f952de8734c7c282d136a2032a38eaa81f02ac8f68dc7a4c6b00e8fdbb226d7',
+            '1ae8dfa020366acc8915c1f9f74a3b8e52ceb60ca9ae2ac28fd0efe2d8e3b164',
         extractedLibPath: 'jni/arm64-v8a/libonnxruntime-genai.so',
         assetName: 'onnxruntime-genai',
       ),
@@ -335,10 +335,10 @@ class _OrtBundle {
 
   /// Cache-invalidation key — bump whenever either archive's URL/sha changes.
   String get version => ort == null
-      ? 'genai-0.19.0'
+      ? 'genai-0.20.0'
       : dirName.startsWith('android')
-      ? 'ort-1.27.0_genai-0.19.0-a.3f952de8'
-      : 'ort-1.27.0_genai-0.19.0';
+      ? 'ort-1.32.0_genai-0.20.0-a.1ae8dfa0'
+      : 'ort-1.32.0_genai-0.20.0';
 
   List<_Archive> get archives => [?ort, genai];
 }
@@ -559,7 +559,7 @@ Future<bool> _downloadVerifyExtract(_Archive archive, Directory destDir) async {
 
 /// Extracted lib's on-disk filename inside [destDir] for [archive] — the
 /// concrete versioned filename copied out of the archive (e.g.
-/// `libonnxruntime.1.27.0.dylib`), not the canonical asset name.
+/// `libonnxruntime.1.32.0.dylib`), not the canonical asset name.
 File _stagedSourceFile(Directory destDir, _Archive archive) {
   final fileName = archive.extractedLibPath.split('/').last;
   return File('${destDir.path}/$fileName');
@@ -650,7 +650,7 @@ void main(List<String> args) async {
     // macos`): Flutter's macOS/iOS asset-bundling derives each `.framework`'s
     // NAME from the STAGED FILE'S OWN FILENAME, not from the CodeAsset's
     // `name:` field — a naive `stage()` that preserves
-    // `libonnxruntime.1.27.0.dylib`'s on-disk name produces
+    // `libonnxruntime.1.32.0.dylib`'s on-disk name produces
     // `onnxruntime1270.framework/onnxruntime1270` (dots collapsed out of the
     // version suffix), which GenAI's bare-name
     // `dlopen("libonnxruntime.dylib")` and `GenAiFfiClient`'s own
@@ -669,7 +669,7 @@ void main(List<String> args) async {
     //
     // LINUX gets the same treatment for a different reason: Microsoft's own
     // Linux tarballs ship the concrete versioned file
-    // (`libonnxruntime.so.1.27.0`), not the bare `libonnxruntime.so` name
+    // (`libonnxruntime.so.1.32.0`), not the bare `libonnxruntime.so` name
     // `GenAiFfiClient`'s `_candidateNames` bare-name dlopen looks for — copy
     // + rename closes that gap, same as the macOS framework-name fix above.
     // WINDOWS stays a no-op: its .dll archives already ship under the bare

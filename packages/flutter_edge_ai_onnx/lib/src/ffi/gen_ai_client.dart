@@ -936,7 +936,7 @@ String genAiGuidanceSchema(JsonSchemaResponseFormat format) => jsonEncode({
   },
 });
 
-/// Whether ORT-GenAI 0.19.0's archive for [abi], as `hook/build.dart` bundles
+/// Whether ORT-GenAI 0.20.0's archive for [abi], as `hook/build.dart` bundles
 /// it, was built with guidance (llguidance). Read from the archives
 /// themselves: Microsoft's macOS arm64, Linux x64, Windows x64 and Windows
 /// ARM64 builds link llguidance in (its symbols and `GuidanceLogitsProcessor`

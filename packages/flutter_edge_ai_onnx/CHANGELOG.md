@@ -1,3 +1,6 @@
+## 0.9.2
+- Require `flutter_edge_ai` >=2.6.0 <2.7.0.
+
 ## 0.9.1
 - Web: closing a model releases its Transformers.js pipeline (#800).
 

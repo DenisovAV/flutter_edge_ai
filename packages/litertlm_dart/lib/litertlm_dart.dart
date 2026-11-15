@@ -177,3 +177,4 @@ export 'src/runtime/runtime_log.dart'
         runtimeLogLevel,
         runtimeLogLevelSource,
         runtimeLogSink;
+export 'src/ffi/litert_bindings.dart' show liteRtLmHostLibraryCandidates;

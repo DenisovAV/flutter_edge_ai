@@ -1,6 +1,6 @@
 ## Unreleased
 - `OnnxHuggingFaceResolver` declares the `inference` role.
-- Bundle ORT-GenAI 0.20.0 and ONNX Runtime 1.32.0 on every host (#810).
+- Bundle ORT-GenAI 0.20.0 and ONNX Runtime 1.32.0 (iOS: 1.30.0, needs iOS 15.1); telemetry off (#810).
 
 ## 0.9.1
 - Web: closing a model releases its Transformers.js pipeline (#800).

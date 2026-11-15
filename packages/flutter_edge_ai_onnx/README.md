@@ -74,9 +74,13 @@ embeddings) on macOS (~54 tok/s, M4 Pro), Linux (~5.3-5.8 tok/s), Windows x64
 (~3.3 tok/s), and Android (FTL Pixel 8 Pro, ~10.4 tok/s, ~3.74 GB RSS for a
 3.8B int4 model). On iOS the framework-embedding/dlopen path builds, signs,
 installs and launches on a real iPhone, and generation runs (the
-`@executable_path`-anchored dlopen resolves the single self-contained genai
-xcframework — the same proven pattern as `flutter_edge_ai_litertlm`'s iOS
-path). Windows ARM64 uses the same FFI path and checksum-pinned Microsoft
+`@executable_path`-anchored dlopen resolves the genai xcframework — the same
+proven pattern as `flutter_edge_ai_litertlm`'s iOS path). iOS bundles two
+frameworks: ORT-GenAI's, whose own ONNX Runtime is private since 0.18.0, and
+`onnxruntime.framework` (ONNX Runtime 1.30.0, Microsoft's static library
+linked into a framework by this repository, about 23 MB in an app) for
+embeddings. Microsoft compiles that library for **iOS 15.1**, so an app using
+this package on iOS needs a 15.1 deployment target. Windows ARM64 uses the same FFI path and checksum-pinned Microsoft
 archives. On a GitHub-hosted Windows 11 ARM64 runner (Azure Cobalt 100), the
 example built for ARM64, generation passed 2/2 (64 tokens at 10.9 tok/s), and
 MiniLM embeddings passed (dimension 384). The bundled DLLs are ARM64 builds.
@@ -279,8 +283,10 @@ entirely — see `test/onnx_generation_host_smoke_test.dart`.
 ### Telemetry is off, and the Windows runtime
 
 ORT-GenAI ships Microsoft's usage telemetry on every native host since 0.17.0,
-on by default (0.14.0 had none). `GenAiFfiClient` sets `ORT_DISABLE_TELEMETRY=1` in
-the process before it opens the library, and keeps a value your app already
+and ONNX Runtime's official builds do since 1.28 on Linux, macOS, Android and
+iOS, on by default (ORT-GenAI 0.14.0 and ONNX Runtime 1.27.0 had none).
+`GenAiFfiClient` and the embedding client set `ORT_DISABLE_TELEMETRY=1` in the
+process before they open their library, and keep a value your app already
 set; to turn it on, set `ORT_DISABLE_TELEMETRY=0` before the first model loads.
 
 The ORT-GenAI Windows DLLs import `MSVCP140_ATOMIC_WAIT.dll`, which the Visual C++

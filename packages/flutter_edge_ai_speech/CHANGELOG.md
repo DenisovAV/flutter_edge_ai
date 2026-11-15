@@ -1,3 +1,6 @@
+## Unreleased
+- LiteRT bindings come from `litertlm_dart`; require `flutter_edge_ai_litertlm` ^1.21.0.
+
 ## 0.6.1
 - Whisper/Parakeet log-mel: FFT replaces the direct DFT, ~35x faster; Moonshine unchanged (#784).
 
